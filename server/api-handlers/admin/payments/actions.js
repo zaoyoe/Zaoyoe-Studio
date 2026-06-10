@@ -36,7 +36,7 @@ const {
     deriveZpayPointBreakdown
 } = require('../../../../api/_lib/payments/zpay-points');
 
-const VALID_TARGET_TYPES = new Set(['order', 'event', 'session', 'ops_alert_job']);
+const VALID_TARGET_TYPES = new Set(['order', 'event', 'session', 'ops_alert_job', 'shop_profit_audit']);
 const VALID_ACTIONS = new Set([
     'mark_handled',
     'ignore',
@@ -102,6 +102,11 @@ const OPS_ALERT_ACTIONS = new Set([
     'request_retry',
     'reopen'
 ]);
+const SHOP_PROFIT_AUDIT_ACTIONS = new Set([
+    'mark_handled',
+    'ignore',
+    'reopen'
+]);
 const ARCHIVABLE_ANOMALY_STATUSES = new Set([
     'handled',
     'approved'
@@ -138,6 +143,11 @@ const GATEWAY_PROVIDER_META = Object.freeze({
         pointBreakdown: deriveNowpaymentsPointBreakdown
     })
 });
+
+function isUuid(value = '') {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        .test(String(value || '').trim());
+}
 const GATEWAY_ACTION_PROVIDER_MAP = Object.freeze({
     query_hupijiao_order: 'hupijiao',
     reconcile_hupijiao_order: 'hupijiao',
@@ -488,6 +498,18 @@ async function fetchTargetRecord(supabase, targetType, targetId) {
         return data;
     }
 
+    if (targetType === 'shop_profit_audit') {
+        if (!isUuid(targetId)) {
+            throw createActionError('无效的商城利润审计项', 400);
+        }
+        return {
+            id: targetId,
+            provider: 'shop_profit',
+            provider_order_no: targetId,
+            status: 'open'
+        };
+    }
+
     const { data, error } = await supabase
         .from('payment_checkout_sessions')
         .select('id, provider, session_key, provider_metadata, status, error_message, payment_order_id')
@@ -512,6 +534,15 @@ function assertActionAllowedForTarget(targetType, action, anomalyCase) {
     if (targetType === 'ops_alert_job') {
         if (!OPS_ALERT_ACTIONS.has(action)) {
             const error = new Error('该操作仅适用于支付异常项');
+            error.statusCode = 400;
+            throw error;
+        }
+        return;
+    }
+
+    if (targetType === 'shop_profit_audit') {
+        if (!SHOP_PROFIT_AUDIT_ACTIONS.has(action)) {
+            const error = new Error('该操作不适用于商城利润审计项');
             error.statusCode = 400;
             throw error;
         }
@@ -1616,6 +1647,17 @@ function resolveFriendlyActionError(error) {
         };
     }
 
+    if (
+        code === '23514'
+        && normalizedCombined.includes('payment_anomaly_cases_target_type_check')
+        && normalizedCombined.includes('payment_anomaly_cases')
+    ) {
+        return {
+            statusCode: 409,
+            message: '当前数据库还没有应用“商城利润审计异常处理”所需迁移，请先执行 20260610_allow_shop_profit_audit_anomaly_cases.sql。'
+        };
+    }
+
     return {
         statusCode: error?.statusCode || 500,
         message: message || 'Failed to apply anomaly action'
@@ -2461,193 +2503,206 @@ async function applyNowpaymentsRefundDecision(supabase, target, note, actorId, e
     throw error;
 }
 
-module.exports = async function handler(req, res) {
-    if (req.method !== 'POST') {
-        res.setHeader('Allow', 'POST');
-        return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+function createActionError(message, statusCode = 400) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    return error;
+}
+
+function normalizePaymentActionInput(input = {}) {
+    return {
+        targetType: normalizeText(input.targetType).toLowerCase(),
+        targetId: normalizeText(input.targetId),
+        action: normalizeText(input.action).toLowerCase(),
+        note: normalizeText(input.note)
+    };
+}
+
+async function executePaymentAction(context = {}, input = {}) {
+    const { supabase, requestSupabase, user, env = process.env } = context;
+    const { targetType, targetId, action, note } = normalizePaymentActionInput(input);
+
+    if (!VALID_TARGET_TYPES.has(targetType)) {
+        throw createActionError('Invalid target type', 400);
+    }
+    if (!targetId) {
+        throw createActionError('Missing target id', 400);
+    }
+    if (!VALID_ACTIONS.has(action)) {
+        throw createActionError('Invalid action', 400);
     }
 
-    try {
-        const { supabase, requestSupabase, user } = await requireAdmin(req, { permission: 'payments.manage' });
-        const body = await parseJsonBody(req);
-        const targetType = normalizeText(body.targetType).toLowerCase();
-        const targetId = normalizeText(body.targetId);
-        const action = normalizeText(body.action).toLowerCase();
-        const note = normalizeText(body.note);
+    const target = await fetchTargetRecord(supabase, targetType, targetId);
+    const targetPayload = targetType === 'ops_alert_job' ? normalizeJsonObject(target?.payload) : {};
+    const targetProvider = normalizeText(target?.provider || targetPayload.provider);
+    const targetProviderOrderNo = normalizeText(target?.provider_order_no || targetPayload.provider_order_no || target?.session_key);
 
-        if (!VALID_TARGET_TYPES.has(targetType)) {
-            return sendJson(res, 400, { success: false, message: 'Invalid target type' });
-        }
-        if (!targetId) {
-            return sendJson(res, 400, { success: false, message: 'Missing target id' });
-        }
-        if (!VALID_ACTIONS.has(action)) {
-            return sendJson(res, 400, { success: false, message: 'Invalid action' });
-        }
+    if (NOTE_REQUIRED_ACTIONS.has(action) && !note) {
+        throw createActionError('请填写处理备注后再执行该操作', 400);
+    }
 
-        const target = await fetchTargetRecord(supabase, targetType, targetId);
-        const targetPayload = targetType === 'ops_alert_job' ? normalizeJsonObject(target?.payload) : {};
-        const targetProvider = normalizeText(target?.provider || targetPayload.provider);
-        const targetProviderOrderNo = normalizeText(target?.provider_order_no || targetPayload.provider_order_no || target?.session_key);
+    if (SENSITIVE_REVIEW_ACTIONS.has(action) && targetType !== 'order') {
+        throw createActionError('该操作仅适用于支付订单', 400);
+    }
 
-        if (NOTE_REQUIRED_ACTIONS.has(action) && !note) {
-            return sendJson(res, 400, {
-                success: false,
-                message: '请填写处理备注后再执行该操作'
-            });
-        }
+    if (ORDER_ONLY_ACTIONS.has(action) && targetType !== 'order') {
+        throw createActionError('该操作仅适用于支付订单', 400);
+    }
 
-        if (SENSITIVE_REVIEW_ACTIONS.has(action) && targetType !== 'order') {
-            return sendJson(res, 400, {
-                success: false,
-                message: '该操作仅适用于支付订单'
-            });
-        }
+    const anomalyCaseRecord = targetType === 'ops_alert_job'
+        ? null
+        : await fetchAnomalyCase(supabase, targetType, targetId);
+    assertActionAllowedForTarget(targetType, action, anomalyCaseRecord);
 
-        if (ORDER_ONLY_ACTIONS.has(action) && targetType !== 'order') {
-            return sendJson(res, 400, {
-                success: false,
-                message: '该操作仅适用于支付订单'
-            });
-        }
+    let resolvedTarget = target;
+    let resolvedStatus = mapActionToStatus(action);
+    let resolvedResolution = getResolutionText(action, note);
+    let auditDetails = {};
+    let anomalyCase = null;
+    let responseMessage = '';
 
-        const anomalyCaseRecord = targetType === 'ops_alert_job'
-            ? null
-            : await fetchAnomalyCase(supabase, targetType, targetId);
-        assertActionAllowedForTarget(targetType, action, anomalyCaseRecord);
+    if (targetType === 'order' && SENSITIVE_REVIEW_ACTIONS.has(action)) {
+        const reviewDecision = await applyOrderReviewDecision(supabase, target, action, note, user.id);
+        resolvedTarget = reviewDecision.order || target;
+        auditDetails = reviewDecision.auditDetails || {};
+        responseMessage = normalizeText(reviewDecision.message);
+    }
 
-        let resolvedTarget = target;
-        let resolvedStatus = mapActionToStatus(action);
-        let resolvedResolution = getResolutionText(action, note);
-        let auditDetails = {};
-        let anomalyCase = null;
-        let responseMessage = '';
-
-        if (targetType === 'order' && SENSITIVE_REVIEW_ACTIONS.has(action)) {
-            const reviewDecision = await applyOrderReviewDecision(supabase, target, action, note, user.id);
-            resolvedTarget = reviewDecision.order || target;
-            auditDetails = reviewDecision.auditDetails || {};
-            responseMessage = normalizeText(reviewDecision.message);
-        }
-
-        if (targetType === 'order' && (
-            action === 'query_hupijiao_order'
-            || action === 'query_zpay_order'
-            || action === 'query_nowpayments_order'
-        )) {
-            const queryDecision = action === 'query_zpay_order'
-                ? await applyZpayOrderQuery(supabase, target, user.id, process.env)
-                : (action === 'query_nowpayments_order'
-                    ? await applyNowpaymentsOrderQuery(supabase, target, user.id, process.env)
-                    : await applyHupijiaoOrderQuery(supabase, target, user.id, process.env));
-
-            await writeAdminAuditLog({
-                supabase: requestSupabase || supabase,
-                adminId: user.id,
-                actionType: 'payments.order.query',
-                details: {
-                    targetType,
-                    targetId,
-                    targetProvider,
-                    targetProviderOrderNo,
-                    action,
-                    status: normalizeText(queryDecision.liveOrder?.status).toLowerCase() || 'unknown',
-                    ...queryDecision.auditDetails
-                }
-            });
-
-            return sendJson(res, 200, {
-                success: true,
-                message: queryDecision.message,
-                live_order: queryDecision.liveOrder,
-                order: queryDecision.order,
-                reload: queryDecision.reload === true
-            });
-        }
-
-        if (targetType === 'order' && (
-            action === 'refund_hupijiao'
-            || action === 'refund_zpay'
-            || action === 'refund_nowpayments'
-        )) {
-            const refundDecision = action === 'refund_zpay'
-                ? await applyZpayRefundDecision(supabase, target, note, user.id, process.env)
-                : (action === 'refund_nowpayments'
-                    ? await applyNowpaymentsRefundDecision(supabase, target, note, user.id, process.env)
-                    : await applyHupijiaoRefundDecision(supabase, target, note, user.id, process.env));
-            resolvedTarget = refundDecision.order || target;
-            resolvedStatus = refundDecision.anomalyStatus || resolvedStatus;
-            resolvedResolution = refundDecision.resolution || resolvedResolution;
-            auditDetails = refundDecision.auditDetails || {};
-            responseMessage = normalizeText(refundDecision.message);
-        }
-
-        if (targetType === 'order' && (action === 'reconcile_hupijiao_order' || action === 'reconcile_zpay_order')) {
-            const reconcileDecision = action === 'reconcile_zpay_order'
-                ? await applyZpayReconcileDecision(supabase, target, note, user.id, process.env)
-                : await applyHupijiaoReconcileDecision(supabase, target, note, user.id, process.env);
-            resolvedTarget = reconcileDecision.order || target;
-            resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
-            resolvedResolution = reconcileDecision.resolution || resolvedResolution;
-            auditDetails = reconcileDecision.auditDetails || {};
-            responseMessage = normalizeText(reconcileDecision.message);
-        }
-
-        if (targetType === 'order' && action === 'reconcile_checkout_session') {
-            const reconcileDecision = await applyCheckoutSessionReconcileDecision(supabase, target, note, user.id);
-            resolvedTarget = reconcileDecision.order || target;
-            resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
-            resolvedResolution = reconcileDecision.resolution || resolvedResolution;
-            auditDetails = reconcileDecision.auditDetails || {};
-            responseMessage = normalizeText(reconcileDecision.message);
-        }
-
-        if (targetType === 'ops_alert_job') {
-            const opsAlertDecision = await applyOpsAlertJobAction(supabase, target, action, note, user.id);
-            resolvedTarget = opsAlertDecision.job || target;
-            resolvedStatus = normalizeText(opsAlertDecision.job?.status) || resolvedStatus;
-            resolvedResolution = opsAlertDecision.resolution || resolvedResolution;
-            auditDetails = opsAlertDecision.auditDetails || {};
-        } else {
-            anomalyCase = await upsertAnomalyCase(supabase, {
-                targetType,
-                targetId,
-                targetProvider: normalizeText(resolvedTarget?.provider || targetProvider),
-                targetProviderOrderNo: normalizeText(resolvedTarget?.provider_order_no || targetProviderOrderNo),
-                status: resolvedStatus,
-                note,
-                resolution: resolvedResolution,
-                action,
-                actorId: user.id
-            });
-            resolvedStatus = anomalyCase.status;
-        }
+    if (targetType === 'order' && (
+        action === 'query_hupijiao_order'
+        || action === 'query_zpay_order'
+        || action === 'query_nowpayments_order'
+    )) {
+        const queryDecision = action === 'query_zpay_order'
+            ? await applyZpayOrderQuery(supabase, target, user.id, env)
+            : (action === 'query_nowpayments_order'
+                ? await applyNowpaymentsOrderQuery(supabase, target, user.id, env)
+                : await applyHupijiaoOrderQuery(supabase, target, user.id, env));
 
         await writeAdminAuditLog({
             supabase: requestSupabase || supabase,
             adminId: user.id,
-            actionType: targetType === 'ops_alert_job'
-                ? 'payments.ops_alert.action'
-                : (action.startsWith('reconcile_') ? 'payments.order.reconcile' : 'payments.anomaly.action'),
+            actionType: 'payments.order.query',
             details: {
                 targetType,
                 targetId,
                 targetProvider,
                 targetProviderOrderNo,
                 action,
-                note: note || null,
-                status: resolvedStatus,
-                ...auditDetails
+                status: normalizeText(queryDecision.liveOrder?.status).toLowerCase() || 'unknown',
+                ...queryDecision.auditDetails
             }
         });
 
-        return sendJson(res, 200, {
+        return {
             success: true,
-            message: responseMessage || undefined,
-            anomaly_case: anomalyCase,
-            order: targetType === 'order' ? resolvedTarget : undefined,
-            ops_alert_job: targetType === 'ops_alert_job' ? resolvedTarget : undefined
+            message: queryDecision.message,
+            live_order: queryDecision.liveOrder,
+            order: queryDecision.order,
+            reload: queryDecision.reload === true
+        };
+    }
+
+    if (targetType === 'order' && (
+        action === 'refund_hupijiao'
+        || action === 'refund_zpay'
+        || action === 'refund_nowpayments'
+    )) {
+        const refundDecision = action === 'refund_zpay'
+            ? await applyZpayRefundDecision(supabase, target, note, user.id, env)
+            : (action === 'refund_nowpayments'
+                ? await applyNowpaymentsRefundDecision(supabase, target, note, user.id, env)
+                : await applyHupijiaoRefundDecision(supabase, target, note, user.id, env));
+        resolvedTarget = refundDecision.order || target;
+        resolvedStatus = refundDecision.anomalyStatus || resolvedStatus;
+        resolvedResolution = refundDecision.resolution || resolvedResolution;
+        auditDetails = refundDecision.auditDetails || {};
+        responseMessage = normalizeText(refundDecision.message);
+    }
+
+    if (targetType === 'order' && (action === 'reconcile_hupijiao_order' || action === 'reconcile_zpay_order')) {
+        const reconcileDecision = action === 'reconcile_zpay_order'
+            ? await applyZpayReconcileDecision(supabase, target, note, user.id, env)
+            : await applyHupijiaoReconcileDecision(supabase, target, note, user.id, env);
+        resolvedTarget = reconcileDecision.order || target;
+        resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
+        resolvedResolution = reconcileDecision.resolution || resolvedResolution;
+        auditDetails = reconcileDecision.auditDetails || {};
+        responseMessage = normalizeText(reconcileDecision.message);
+    }
+
+    if (targetType === 'order' && action === 'reconcile_checkout_session') {
+        const reconcileDecision = await applyCheckoutSessionReconcileDecision(supabase, target, note, user.id);
+        resolvedTarget = reconcileDecision.order || target;
+        resolvedStatus = reconcileDecision.anomalyStatus || resolvedStatus;
+        resolvedResolution = reconcileDecision.resolution || resolvedResolution;
+        auditDetails = reconcileDecision.auditDetails || {};
+        responseMessage = normalizeText(reconcileDecision.message);
+    }
+
+    if (targetType === 'ops_alert_job') {
+        const opsAlertDecision = await applyOpsAlertJobAction(supabase, target, action, note, user.id);
+        resolvedTarget = opsAlertDecision.job || target;
+        resolvedStatus = normalizeText(opsAlertDecision.job?.status) || resolvedStatus;
+        resolvedResolution = opsAlertDecision.resolution || resolvedResolution;
+        auditDetails = opsAlertDecision.auditDetails || {};
+    } else {
+        anomalyCase = await upsertAnomalyCase(supabase, {
+            targetType,
+            targetId,
+            targetProvider: normalizeText(resolvedTarget?.provider || targetProvider),
+            targetProviderOrderNo: normalizeText(resolvedTarget?.provider_order_no || targetProviderOrderNo),
+            status: resolvedStatus,
+            note,
+            resolution: resolvedResolution,
+            action,
+            actorId: user.id
         });
+        resolvedStatus = anomalyCase.status;
+    }
+
+    await writeAdminAuditLog({
+        supabase: requestSupabase || supabase,
+        adminId: user.id,
+        actionType: targetType === 'ops_alert_job'
+            ? 'payments.ops_alert.action'
+            : (action.startsWith('reconcile_') ? 'payments.order.reconcile' : 'payments.anomaly.action'),
+        details: {
+            targetType,
+            targetId,
+            targetProvider,
+            targetProviderOrderNo,
+            action,
+            note: note || null,
+            status: resolvedStatus,
+            ...auditDetails
+        }
+    });
+
+    return {
+        success: true,
+        message: responseMessage || undefined,
+        anomaly_case: anomalyCase,
+        order: targetType === 'order' ? resolvedTarget : undefined,
+        ops_alert_job: targetType === 'ops_alert_job' ? resolvedTarget : undefined
+    };
+}
+
+async function handler(req, res) {
+    if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+    }
+
+    try {
+        const adminContext = await requireAdmin(req, { permission: 'payments.manage' });
+        const body = await parseJsonBody(req);
+        const payload = await executePaymentAction({
+            ...adminContext,
+            env: process.env
+        }, body);
+
+        return sendJson(res, 200, payload);
     } catch (error) {
         const friendlyError = resolveFriendlyActionError(error);
         return sendJson(res, normalizeActionResponseStatus(friendlyError.statusCode), {
@@ -2655,4 +2710,10 @@ module.exports = async function handler(req, res) {
             message: friendlyError.message
         });
     }
-};
+}
+
+module.exports = handler;
+module.exports.executePaymentAction = executePaymentAction;
+module.exports.normalizePaymentActionInput = normalizePaymentActionInput;
+module.exports.resolveFriendlyActionError = resolveFriendlyActionError;
+module.exports.normalizeActionResponseStatus = normalizeActionResponseStatus;

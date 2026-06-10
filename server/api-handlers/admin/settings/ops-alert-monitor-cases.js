@@ -9,7 +9,7 @@ const {
 } = require('../../../../api/_lib/admin-notifications');
 const {
     insertOpsAlertCaseEvents,
-    isMissingTableAccessError,
+    buildOpsAlertCaseKey,
     resolveOpsAlertCaseSite
 } = require('./_ops-alert-case-events');
 const {
@@ -20,8 +20,10 @@ const {
     buildCaseResponse,
     isMissingOpsAlertCasesTableError,
     fetchExistingCase,
+    fetchExistingCasesByItems,
     applyCaseAction,
-    persistCase
+    persistCase,
+    persistCases
 } = require('./_ops-alert-cases');
 
 const VALID_ACTIONS = new Set(['claim', 'assign', 'add_note', 'resolve', 'reopen']);
@@ -29,7 +31,7 @@ const VALID_ACTIONS = new Set(['claim', 'assign', 'add_note', 'resolve', 'reopen
 function buildActionMessage(action, results = [], skippedCount = 0) {
     const processedCount = Array.isArray(results) ? results.length : 0;
     const targetId = sanitizeText(results?.[0]?.target_id, 160) || '目标';
-    const suffix = skippedCount > 0 ? `，跳过 ${skippedCount} 条无效记录` : '';
+    const suffix = skippedCount > 0 ? `，另有 ${skippedCount} 条未完成` : '';
 
     if (processedCount > 1) {
         switch (action) {
@@ -50,15 +52,15 @@ function buildActionMessage(action, results = [], skippedCount = 0) {
     switch (action) {
     case 'claim':
     case 'assign':
-        return `已指派负责人 ${targetId}`;
+        return `已指派负责人 ${targetId}${suffix}`;
     case 'add_note':
-        return `已记录处理备注 ${targetId}`;
+        return `已记录处理备注 ${targetId}${suffix}`;
     case 'resolve':
-        return `已关闭集中告警 ${targetId}`;
+        return `已关闭集中告警 ${targetId}${suffix}`;
     case 'reopen':
-        return `已重新打开集中告警 ${targetId}`;
+        return `已重新打开集中告警 ${targetId}${suffix}`;
     default:
-        return '集中告警案例已更新';
+        return `集中告警案例已更新${suffix}`;
     }
 }
 
@@ -149,6 +151,10 @@ function normalizeRequestItems(body = {}) {
             title: sanitizeText(item?.title, 240),
             reference_label: sanitizeText(item?.reference_label || item?.referenceLabel, 120),
             reference_value: sanitizeText(item?.reference_value || item?.referenceValue, 240),
+            alert_job_id: sanitizeText(item?.alert_job_id || item?.alertJobId || item?.job_id || item?.jobId, 160),
+            alert_created_at: sanitizeText(item?.alert_created_at || item?.alertCreatedAt || item?.created_at || item?.createdAt, 80),
+            summary_window_start_at: sanitizeText(item?.summary_window_start_at || item?.summaryWindowStartAt, 80),
+            summary_window_end_at: sanitizeText(item?.summary_window_end_at || item?.summaryWindowEndAt, 80),
             metadata: normalizeJsonObject(item?.metadata)
         })).filter((item) => item.category_key && item.target_id);
     }
@@ -171,8 +177,258 @@ function normalizeRequestItems(body = {}) {
         title: sanitizeText(body.title || body?.metadata?.title, 240),
         reference_label: sanitizeText(body?.metadata?.reference_label, 120),
         reference_value: sanitizeText(body?.metadata?.reference_value, 240),
+        alert_job_id: sanitizeText(body.alert_job_id || body.alertJobId || body.job_id || body.jobId || body?.metadata?.alert_job_id, 160),
+        alert_created_at: sanitizeText(body.alert_created_at || body.alertCreatedAt || body.created_at || body.createdAt || body?.metadata?.alert_created_at, 80),
+        summary_window_start_at: sanitizeText(body.summary_window_start_at || body.summaryWindowStartAt || body?.metadata?.summary_window_start_at, 80),
+        summary_window_end_at: sanitizeText(body.summary_window_end_at || body.summaryWindowEndAt || body?.metadata?.summary_window_end_at, 80),
         metadata: normalizeJsonObject(body.metadata)
     }];
+}
+
+function getExpectedCaseStateForAction(action) {
+    switch (sanitizeText(action, 80).toLowerCase()) {
+    case 'claim':
+    case 'assign':
+        return {
+            status: 'claimed',
+            lastActions: new Set(['claimed', 'assigned'])
+        };
+    case 'resolve':
+        return {
+            status: 'resolved',
+            lastActions: new Set(['resolved'])
+        };
+    case 'reopen':
+        return {
+            status: 'open',
+            lastActions: new Set(['reopened'])
+        };
+    case 'add_note':
+        return {
+            status: '',
+            lastActions: new Set(['noted'])
+        };
+    default:
+        return {
+            status: '',
+            lastActions: new Set()
+        };
+    }
+}
+
+function isPersistedCaseMatchingAction(row = null, action = '') {
+    if (!row) {
+        return false;
+    }
+
+    const expected = getExpectedCaseStateForAction(action);
+    const status = sanitizeText(row.status, 40).toLowerCase();
+    const lastAction = sanitizeText(row.last_action, 80).toLowerCase();
+    if (expected.status && status !== expected.status) {
+        return false;
+    }
+    if (expected.lastActions.size && !expected.lastActions.has(lastAction)) {
+        return false;
+    }
+    return true;
+}
+
+async function processOpsAlertCaseItem({
+    supabase,
+    action,
+    item,
+    note,
+    resolution,
+    metadata,
+    user,
+    nowIso,
+    ownerInput
+}) {
+    const existingCase = await fetchExistingCase(supabase, item.category_key, item.target_id, item.site);
+
+    if (!existingCase && action === 'reopen') {
+        return {
+            skipped: {
+                ...item,
+                reason: 'missing_case'
+            }
+        };
+    }
+
+    const nextRecord = applyCaseAction(existingCase, action, item, {
+        note,
+        resolution,
+        metadata,
+        user,
+        nowIso,
+        owner: ownerInput
+    });
+    const persisted = await persistCase(supabase, nextRecord);
+
+    return {
+        result: buildCaseResponse(persisted),
+        eventEntry: {
+            action,
+            item,
+            record: persisted,
+            user,
+            note,
+            resolution: action === 'resolve' ? resolution : '',
+            metadata,
+            owner: ownerInput,
+            nowIso
+        }
+    };
+}
+
+async function processOpsAlertCaseItemsBatch({
+    supabase,
+    action,
+    items,
+    note,
+    resolution,
+    metadata,
+    user,
+    nowIso,
+    ownerInput
+}) {
+    const existingCasesByKey = await fetchExistingCasesByItems(supabase, items);
+    const pending = [];
+    const skipped = [];
+
+    for (const item of items) {
+        const caseKey = buildOpsAlertCaseKey(item.category_key, item.target_id, item.site);
+        const existingCase = existingCasesByKey.get(caseKey) || null;
+
+        if (!existingCase && action === 'reopen') {
+            skipped.push({
+                ...item,
+                reason: 'missing_case'
+            });
+            continue;
+        }
+
+        pending.push({
+            item,
+            record: applyCaseAction(existingCase, action, item, {
+                note,
+                resolution,
+                metadata,
+                user,
+                nowIso,
+                owner: ownerInput
+            })
+        });
+    }
+
+    const persistedRows = await persistCases(supabase, pending.map((entry) => entry.record));
+    const persistedByKey = new Map(
+        persistedRows.map((row) => [buildOpsAlertCaseKey(row.category_key, row.target_id, row.site), row])
+    );
+    const verifiedCasesByKey = await fetchExistingCasesByItems(supabase, pending.map((entry) => entry.record));
+    const results = [];
+    const eventEntries = [];
+    const failed = [];
+
+    pending.forEach((entry, index) => {
+        const caseKey = buildOpsAlertCaseKey(entry.record.category_key, entry.record.target_id, entry.record.site);
+        const persisted = persistedByKey.get(caseKey)
+            || verifiedCasesByKey.get(caseKey)
+            || persistedRows[index]
+            || null;
+        if (!isPersistedCaseMatchingAction(persisted, action)) {
+            failed.push({
+                ...entry.item,
+                reason: 'case_not_persisted',
+                message: '集中告警处置记录未确认写入，请刷新后重试'
+            });
+            return;
+        }
+
+        const result = buildCaseResponse(persisted);
+        results.push(result);
+        eventEntries.push({
+            action,
+            item: entry.item,
+            record: persisted,
+            user,
+            note,
+            resolution: action === 'resolve' ? resolution : '',
+            metadata,
+            owner: ownerInput,
+            nowIso
+        });
+    });
+
+    return {
+        results,
+        eventEntries,
+        skipped,
+        failed
+    };
+}
+
+async function processOpsAlertCaseItemsSequential({
+    supabase,
+    action,
+    items,
+    note,
+    resolution,
+    metadata,
+    user,
+    nowIso,
+    ownerInput
+}) {
+    const results = [];
+    const eventEntries = [];
+    const skipped = [];
+    const failed = [];
+    let missingCasesTableError = null;
+
+    for (const item of items) {
+        try {
+            const outcome = await processOpsAlertCaseItem({
+                supabase,
+                action,
+                item,
+                note,
+                resolution,
+                metadata,
+                user,
+                nowIso,
+                ownerInput
+            });
+
+            if (outcome?.skipped) {
+                skipped.push(outcome.skipped);
+            }
+            if (outcome?.result) {
+                results.push(outcome.result);
+            }
+            if (outcome?.eventEntry) {
+                eventEntries.push(outcome.eventEntry);
+            }
+        } catch (error) {
+            if (isMissingOpsAlertCasesTableError(error)) {
+                missingCasesTableError = error;
+            }
+            const failedItem = {
+                ...item,
+                reason: 'item_failed',
+                message: sanitizeText(error?.message || error, 500)
+            };
+            failed.push(failedItem);
+            console.warn('[AdminAPI] Ops alert case batch item failed:', failedItem.message || failedItem.reason);
+        }
+    }
+
+    return {
+        results,
+        eventEntries,
+        skipped,
+        failed,
+        missingCasesTableError
+    };
 }
 
 module.exports = async (req, res) => {
@@ -223,50 +479,68 @@ module.exports = async (req, res) => {
             });
         }
 
-        const results = [];
-        const eventEntries = [];
-        const skipped = [];
         const nowIso = new Date().toISOString();
         const ownerInput = {
             owner_label: body.owner_label || body.ownerLabel,
             owner_admin_id: body.owner_admin_id || body.ownerAdminId
         };
+        let processingOutcome = null;
 
-        for (const item of items) {
-            const existingCase = await fetchExistingCase(supabase, item.category_key, item.target_id, item.site);
-
-            if (!existingCase && action === 'reopen') {
-                skipped.push({
-                    ...item,
-                    reason: 'missing_case'
+        if (items.length > 1) {
+            try {
+                processingOutcome = await processOpsAlertCaseItemsBatch({
+                    supabase,
+                    action,
+                    items,
+                    note,
+                    resolution,
+                    metadata,
+                    user,
+                    nowIso,
+                    ownerInput
                 });
-                continue;
+            } catch (error) {
+                console.warn('[AdminAPI] Ops alert case batch fast path failed:', error.message || error);
             }
+        }
 
-            const nextRecord = applyCaseAction(existingCase, action, item, {
+        if (!processingOutcome) {
+            processingOutcome = await processOpsAlertCaseItemsSequential({
+                supabase,
+                action,
+                items,
                 note,
                 resolution,
                 metadata,
                 user,
                 nowIso,
-                owner: ownerInput
+                ownerInput
             });
-            const persisted = await persistCase(supabase, nextRecord);
-            eventEntries.push({
-                action,
-                item,
-                record: persisted,
-                user,
-                note,
-                resolution: action === 'resolve' ? resolution : '',
-                metadata,
-                owner: ownerInput,
-                nowIso
-            });
-            results.push(buildCaseResponse(persisted));
         }
 
+        const results = processingOutcome.results || [];
+        const eventEntries = processingOutcome.eventEntries || [];
+        const skipped = processingOutcome.skipped || [];
+        const failed = processingOutcome.failed || [];
+        const missingCasesTableError = processingOutcome.missingCasesTableError || null;
+
         if (!results.length) {
+            if (missingCasesTableError) {
+                throw missingCasesTableError;
+            }
+            if (failed.length) {
+                return sendJson(res, 500, {
+                    success: false,
+                    message: `集中告警处理失败，${failed.length} 条记录未完成`,
+                    skipped,
+                    failed,
+                    summary: {
+                        processed_count: 0,
+                        skipped_count: skipped.length,
+                        failed_count: failed.length
+                    }
+                });
+            }
             return sendJson(res, 404, {
                 success: false,
                 message: action === 'reopen'
@@ -275,7 +549,13 @@ module.exports = async (req, res) => {
             });
         }
 
-        await insertOpsAlertCaseEvents(supabase, eventEntries);
+        let eventInsertFailed = false;
+        try {
+            await insertOpsAlertCaseEvents(supabase, eventEntries);
+        } catch (eventError) {
+            eventInsertFailed = true;
+            console.warn('[AdminAPI] Failed to insert ops alert case events:', eventError.message || eventError);
+        }
 
         let assignmentNotification = {
             recipients: 0,
@@ -330,12 +610,16 @@ module.exports = async (req, res) => {
 
         return sendJson(res, 200, {
             success: true,
-            message: buildActionMessage(action, results, skipped.length),
+            message: buildActionMessage(action, results, skipped.length + failed.length),
             case: results[0],
             cases: results,
+            skipped,
+            failed,
             summary: {
                 processed_count: results.length,
                 skipped_count: skipped.length,
+                failed_count: failed.length,
+                event_insert_failed: eventInsertFailed,
                 assignment_notification_created: assignmentNotification.created || 0,
                 assignment_notification_skipped: assignmentNotification.skipped || 0
             },

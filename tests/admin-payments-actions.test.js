@@ -398,9 +398,12 @@ function createSupabaseStub(state = {}) {
 function createMockAdminModule(state = {}) {
     const supabase = createSupabaseStub(state);
     state.auditLogs = state.auditLogs || [];
+    state.metrics = state.metrics || {};
+    state.metrics.requireAdminCalls = state.metrics.requireAdminCalls || 0;
 
     return {
         async requireAdmin() {
+            state.metrics.requireAdminCalls += 1;
             return {
                 supabase,
                 requestSupabase: supabase,
@@ -497,6 +500,60 @@ async function withPaymentsActionHandler(state, callback) {
         return await callback(handler);
     } finally {
         delete require.cache[handlerPath];
+    }
+}
+
+async function withPaymentsBatchActionHandler(state, callback) {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/payments/batch-actions.js');
+    const actionsHandlerPath = path.resolve(__dirname, '../server/api-handlers/admin/payments/actions.js');
+    const originalLoad = Module._load;
+    const mockAdminModule = createMockAdminModule(state);
+    const providerAdaptersModule = state.providerAdaptersModule || null;
+    const opsAlertsModule = state.opsAlertsModule || null;
+    const paymentsOrdersModule = state.paymentsOrdersModule || null;
+    const discountTriggerLinkageModule = state.discountTriggerLinkageModule || null;
+
+    delete require.cache[handlerPath];
+    delete require.cache[actionsHandlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../../api/_lib/admin') {
+            return mockAdminModule;
+        }
+
+        if (request === '../../../../api/_lib/payments/provider-adapters' && providerAdaptersModule) {
+            return {
+                ...originalLoad.call(this, request, parent, isMain),
+                ...providerAdaptersModule
+            };
+        }
+
+        if (request === '../../../../api/_lib/ops-alerts' && opsAlertsModule) {
+            return opsAlertsModule;
+        }
+
+        if (request === '../../../../api/_lib/payments/orders' && paymentsOrdersModule) {
+            return paymentsOrdersModule;
+        }
+
+        if (request === '../../../../api/_lib/discount-trigger-linkage' && discountTriggerLinkageModule) {
+            return discountTriggerLinkageModule;
+        }
+
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let handler;
+    try {
+        handler = require(handlerPath);
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        return await callback(handler);
+    } finally {
+        delete require.cache[handlerPath];
+        delete require.cache[actionsHandlerPath];
     }
 }
 
@@ -837,6 +894,37 @@ test('archive returns a friendly message when the archived status migration is m
         assert.equal(
             payload.message,
             '当前数据库还没有应用“异常归档”所需迁移，请先执行 20260419_allow_archived_payment_anomaly_cases.sql。'
+        );
+    });
+});
+
+test('shop profit audit action returns a friendly message when target type migration is missing', async () => {
+    const state = {
+        anomalyUpsertError: {
+            code: '23514',
+            message: 'new row for relation "payment_anomaly_cases" violates check constraint "payment_anomaly_cases_target_type_check"'
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'shop_profit_audit',
+                targetId: '11111111-1111-4111-8111-111111111111',
+                action: 'ignore'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.equal(
+            payload.message,
+            '当前数据库还没有应用“商城利润审计异常处理”所需迁移，请先执行 20260610_allow_shop_profit_audit_anomaly_cases.sql。'
         );
     });
 });
@@ -2718,5 +2806,166 @@ test('ops_alert_job request_retry requeues a dead-letter alert job and records a
         assert.equal(state.auditLogs[0].actionType, 'payments.ops_alert.action');
         assert.equal(state.auditLogs[0].details.queue_previous_status, 'dead_letter');
         assert.equal(state.auditLogs[0].details.queue_next_status, 'retry');
+    });
+});
+
+test('payments batch actions process ops alert jobs through one admin request', async () => {
+    const state = {
+        opsAlertJobs: [
+            {
+                id: 'ops-job-batch-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: '支付退款积分回滚失败',
+                content: '站点：CN\n订单号：BATCH_1',
+                payload: { provider: 'hupijiao', provider_order_no: 'BATCH_1', site: 'cn' },
+                channels: ['telegram'],
+                remaining_channels: ['telegram'],
+                status: 'dead_letter',
+                attempt_count: 6,
+                max_attempts: 6
+            },
+            {
+                id: 'ops-job-batch-2',
+                alert_type: 'payment_refund_ops',
+                severity: 'warning',
+                title: '支付退款失败',
+                content: '站点：CN\n订单号：BATCH_2',
+                payload: { provider: 'zpay', provider_order_no: 'BATCH_2', site: 'cn' },
+                channels: ['feishu'],
+                remaining_channels: ['feishu'],
+                status: 'retry',
+                attempt_count: 1,
+                max_attempts: 6
+            }
+        ]
+    };
+
+    await withPaymentsBatchActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'mark_handled',
+                targets: [
+                    { targetType: 'ops_alert_job', targetId: 'ops-job-batch-1' },
+                    { targetType: 'ops_alert_job', targetId: 'ops-job-batch-2' },
+                    { targetType: 'ops_alert_job', targetId: 'ops-job-batch-2' }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.completed, true);
+        assert.equal(payload.total_count, 2);
+        assert.equal(payload.success_count, 2);
+        assert.equal(payload.fail_count, 0);
+        assert.equal(state.opsAlertJobs[0].status, 'handled');
+        assert.equal(state.opsAlertJobs[1].status, 'handled');
+        assert.equal(state.auditLogs.length, 2);
+        assert.equal(state.auditLogs.every((entry) => entry.actionType === 'payments.ops_alert.action'), true);
+        assert.equal(state.metrics.requireAdminCalls, 1);
+    });
+});
+
+test('payments batch actions can ignore shop profit audit items', async () => {
+    const state = {};
+
+    await withPaymentsBatchActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'ignore',
+                targets: [
+                    { targetType: 'shop_profit_audit', targetId: '11111111-1111-4111-8111-111111111111' },
+                    { targetType: 'shop_profit_audit', targetId: '22222222-2222-4222-8222-222222222222' }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.completed, true);
+        assert.equal(payload.total_count, 2);
+        assert.equal(payload.success_count, 2);
+        assert.equal(state.anomalyCases.length, 2);
+        assert.equal(state.anomalyCases.every((item) => item.target_type === 'shop_profit_audit'), true);
+        assert.equal(state.anomalyCases.every((item) => item.status === 'ignored'), true);
+        assert.equal(state.anomalyCases.every((item) => item.last_action === 'ignore'), true);
+        assert.equal(state.auditLogs.length, 2);
+        assert.equal(state.auditLogs.every((entry) => entry.actionType === 'payments.anomaly.action'), true);
+    });
+});
+
+test('payments batch actions return per-target failures without dropping successful items', async () => {
+    const state = {
+        opsAlertJobs: [
+            {
+                id: 'ops-job-batch-retry-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: '支付退款积分回滚失败',
+                content: '站点：CN\n订单号：RETRY_1',
+                payload: { provider: 'hupijiao', provider_order_no: 'RETRY_1', site: 'cn' },
+                channels: ['telegram'],
+                remaining_channels: ['telegram'],
+                status: 'dead_letter',
+                attempt_count: 6,
+                max_attempts: 6
+            },
+            {
+                id: 'ops-job-batch-retry-2',
+                alert_type: 'payment_refund_ops',
+                severity: 'warning',
+                title: '支付退款失败',
+                content: '站点：CN\n订单号：RETRY_2',
+                payload: { provider: 'zpay', provider_order_no: 'RETRY_2', site: 'cn' },
+                channels: ['feishu'],
+                remaining_channels: ['feishu'],
+                status: 'handled',
+                attempt_count: 1,
+                max_attempts: 6
+            }
+        ]
+    };
+
+    await withPaymentsBatchActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'request_retry',
+                targets: [
+                    { targetType: 'ops_alert_job', targetId: 'ops-job-batch-retry-1' },
+                    { targetType: 'ops_alert_job', targetId: 'ops-job-batch-retry-2' }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.completed, false);
+        assert.equal(payload.partial, true);
+        assert.equal(payload.total_count, 2);
+        assert.equal(payload.success_count, 1);
+        assert.equal(payload.fail_count, 1);
+        assert.equal(payload.results[0].success, true);
+        assert.equal(payload.results[1].success, false);
+        assert.match(payload.results[1].message, /只有死信状态/);
+        assert.equal(state.opsAlertJobs[0].status, 'retry');
+        assert.equal(state.opsAlertJobs[1].status, 'handled');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.metrics.requireAdminCalls, 1);
     });
 });

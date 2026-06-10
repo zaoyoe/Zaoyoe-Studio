@@ -257,10 +257,10 @@ async function settleAdminWorkbench(delayMs = 60) {
     ]);
 }
 
-function isAdminWorkbenchRetryableFetchError(error = null) {
+function isAdminWorkbenchRetryableFetchError(error = null, options = {}) {
     const name = String(error?.name || '').trim().toLowerCase();
     if (name === 'aborterror') {
-        return false;
+        return options.retryAbort !== false;
     }
 
     const message = String(error?.message || error || '').trim().toLowerCase();
@@ -347,7 +347,11 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         variantName: String(context.variantName || context.variant_name || '').trim(),
         placement: String(context.placement || context.placementKey || '').trim().toLowerCase(),
         targetMetric: String(context.targetMetric || context.target_metric || '').trim().toLowerCase(),
-        site: String(context.site || context.siteKey || '').trim().toLowerCase()
+        alertJobId: String(context.alertJobId || context.alert_job_id || context.jobId || context.job_id || '').trim(),
+        alertCreatedAt: String(context.alertCreatedAt || context.alert_created_at || context.createdAt || context.created_at || '').trim(),
+        summaryWindowStartAt: String(context.summaryWindowStartAt || context.summary_window_start_at || context.windowStartAt || context.window_start_at || '').trim(),
+        summaryWindowEndAt: String(context.summaryWindowEndAt || context.summary_window_end_at || context.windowEndAt || context.window_end_at || '').trim(),
+        site: String(context.site || context.case_site || context.caseSite || context.siteKey || context.workspaceSite || context.site_context || context.siteContext || '').trim().toLowerCase()
     };
 }
 
@@ -384,6 +388,10 @@ function buildOpsAlertWorkspaceContextAttrs(context = {}) {
         'data-workspace-variant-name': normalizedContext.variantName || '',
         'data-workspace-placement': normalizedContext.placement || '',
         'data-workspace-target-metric': normalizedContext.targetMetric || '',
+        'data-workspace-alert-job-id': normalizedContext.alertJobId || '',
+        'data-workspace-alert-created-at': normalizedContext.alertCreatedAt || '',
+        'data-workspace-summary-window-start-at': normalizedContext.summaryWindowStartAt || '',
+        'data-workspace-summary-window-end-at': normalizedContext.summaryWindowEndAt || '',
         'data-workspace-site': normalizedContext.site || ''
     };
 }
@@ -420,6 +428,10 @@ function readOpsAlertWorkspaceContextDataset(dataset = {}) {
         variantName: dataset.workspaceVariantName,
         placement: dataset.workspacePlacement,
         targetMetric: dataset.workspaceTargetMetric,
+        alertJobId: dataset.workspaceAlertJobId,
+        alertCreatedAt: dataset.workspaceAlertCreatedAt,
+        summaryWindowStartAt: dataset.workspaceSummaryWindowStartAt,
+        summaryWindowEndAt: dataset.workspaceSummaryWindowEndAt,
         site: dataset.workspaceSite
     });
 }
@@ -930,7 +942,11 @@ function buildOpsAlertCaseMutationContext(source = {}) {
         caseStatus: source.caseStatus || source.case_status || '',
         caseOwnerAdminId: source.caseOwnerAdminId || source.case_owner_admin_id || '',
         caseOwnerLabel: source.caseOwnerLabel || source.case_owner_label || '',
-        site: source.site || source.site_context || source.siteContext || source.payload?.site || ''
+        alertJobId: source.alertJobId || source.alert_job_id || source.jobId || source.job_id || source.id || '',
+        alertCreatedAt: source.alertCreatedAt || source.alert_created_at || source.createdAt || source.created_at || '',
+        summaryWindowStartAt: source.summaryWindowStartAt || source.summary_window_start_at || '',
+        summaryWindowEndAt: source.summaryWindowEndAt || source.summary_window_end_at || '',
+        site: source.site || source.case_site || source.caseSite || source.site_context || source.siteContext || source.payload?.site || ''
     });
 }
 
@@ -955,6 +971,22 @@ function buildOpsAlertCaseMutationItem(item = {}, categoryKey = '') {
 
     if (normalizedContext.site) {
         nextItem.site = normalizedContext.site;
+    }
+    if (normalizedContext.alertJobId) {
+        nextItem.alert_job_id = normalizedContext.alertJobId;
+        metadata.alert_job_id = normalizedContext.alertJobId;
+    }
+    if (normalizedContext.alertCreatedAt) {
+        nextItem.alert_created_at = normalizedContext.alertCreatedAt;
+        metadata.alert_created_at = normalizedContext.alertCreatedAt;
+    }
+    if (normalizedContext.summaryWindowStartAt) {
+        nextItem.summary_window_start_at = normalizedContext.summaryWindowStartAt;
+        metadata.summary_window_start_at = normalizedContext.summaryWindowStartAt;
+    }
+    if (normalizedContext.summaryWindowEndAt) {
+        nextItem.summary_window_end_at = normalizedContext.summaryWindowEndAt;
+        metadata.summary_window_end_at = normalizedContext.summaryWindowEndAt;
     }
     if (Object.keys(metadata).length) {
         nextItem.metadata = metadata;
@@ -2045,7 +2077,12 @@ function buildAdminWorkbenchOpsAlertMonitorActionContext(category = {}, item = {
         sessionId: item?.session_id || '',
         caseStatus: item?.case_status || '',
         caseOwnerAdminId: item?.case_owner_admin_id || '',
-        caseOwnerLabel: item?.case_owner_label || ''
+        caseOwnerLabel: item?.case_owner_label || '',
+        alertJobId: item?.id || item?.alert_job_id || '',
+        alertCreatedAt: item?.created_at || item?.alert_created_at || '',
+        summaryWindowStartAt: item?.summary_window_start_at || '',
+        summaryWindowEndAt: item?.summary_window_end_at || '',
+        site: item?.case_site || item?.site || ''
     });
 }
 
@@ -4546,10 +4583,14 @@ function buildAdminWorkbenchOpsAlertHealthPanelState(state = {}, options = {}) {
         };
     }
 
+    const readyMetaText = `最近 ${formatCount(summary.lookback_hours || 0)} 小时共记录 ${formatCount(summary.total_attempt_count || 0)} 次投递，送达 ${formatCount(summary.delivered_count || 0)} 次，失败 ${formatCount(summary.failed_count || 0)} 次，死信 ${formatCount(summary.dead_letter_count || 0)} 项。`;
+    const staleMessage = normalizedState.stale === true
+        ? String(normalizedState.message || normalizedState.load_error_message || '刷新失败，继续显示上一份通道健康快照').trim()
+        : '';
     return {
         status: 'ready',
-        metaIcon: 'fas fa-heart-pulse',
-        metaText: `最近 ${formatCount(summary.lookback_hours || 0)} 小时共记录 ${formatCount(summary.total_attempt_count || 0)} 次投递，送达 ${formatCount(summary.delivered_count || 0)} 次，失败 ${formatCount(summary.failed_count || 0)} 次，死信 ${formatCount(summary.dead_letter_count || 0)} 项。`,
+        metaIcon: staleMessage ? 'fas fa-triangle-exclamation' : 'fas fa-heart-pulse',
+        metaText: `${staleMessage ? `${staleMessage}；` : ''}${readyMetaText}`,
         emptyMessage: '',
         shouldRenderCards: true
     };
@@ -5218,27 +5259,42 @@ async function fetchAdminWorkbenchOpsAlertHealth(headers = {}, options = {}) {
     const clearScheduledTimeout = typeof options.clearTimeout === 'function'
         ? options.clearTimeout
         : ((timeoutId) => window.clearTimeout(timeoutId));
-    const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
-    const timeoutId = controller && timeoutMs > 0
-        ? scheduleTimeout(() => controller.abort(), timeoutMs)
-        : 0;
+    const retryCount = Math.max(0, Math.min(3, Number(options.retryCount || 0)));
+    let lastError = null;
 
-    try {
-        const response = await fetchImpl(requestTarget, {
-            method: 'GET',
-            headers,
-            signal: controller?.signal
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.success === false) {
-            throw new Error(payload.message || options.errorMessage || '加载站外告警通道健康状态失败');
-        }
-        return payload;
-    } finally {
-        if (timeoutId) {
-            clearScheduledTimeout(timeoutId);
+    for (let attemptIndex = 0; attemptIndex <= retryCount; attemptIndex += 1) {
+        const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
+        const timeoutId = controller && timeoutMs > 0
+            ? scheduleTimeout(() => controller.abort(), timeoutMs)
+            : 0;
+
+        try {
+            const response = await fetchImpl(requestTarget, {
+                method: 'GET',
+                headers,
+                signal: controller?.signal
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success === false) {
+                const error = new Error(payload.message || options.errorMessage || '加载站外告警通道健康状态失败');
+                error.status = Number(response.status || 0);
+                throw error;
+            }
+            return payload;
+        } catch (error) {
+            lastError = error;
+            if (attemptIndex >= retryCount || !isAdminWorkbenchRetryableFetchError(error, options)) {
+                throw error;
+            }
+            await waitAdminWorkbenchFetchRetry(options, attemptIndex);
+        } finally {
+            if (timeoutId) {
+                clearScheduledTimeout(timeoutId);
+            }
         }
     }
+
+    throw lastError || new Error(options.errorMessage || '加载站外告警通道健康状态失败');
 }
 
 async function fetchAdminWorkbenchRecoveryReadiness(headers = {}, options = {}) {
@@ -6132,7 +6188,7 @@ async function fetchAdminWorkbenchOpsAlertMonitor(headers = {}, options = {}) {
             return payload;
         } catch (error) {
             lastError = error;
-            if (attemptIndex >= retryCount || !isAdminWorkbenchRetryableFetchError(error)) {
+            if (attemptIndex >= retryCount || !isAdminWorkbenchRetryableFetchError(error, options)) {
                 throw error;
             }
             await waitAdminWorkbenchFetchRetry(options, attemptIndex);
@@ -6292,18 +6348,45 @@ async function submitOpsAlertCaseMutationRequest(headers = {}, action, context =
     const endpoint = String(options.endpoint || '/api/admin/settings/ops-alert-monitor-cases').trim()
         || '/api/admin/settings/ops-alert-monitor-cases';
     const requestBody = buildOpsAlertCaseMutationRequest(action, context, options);
-    const response = await fetchImpl(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody)
-    });
+    const timeoutMs = Number(options.timeoutMs || 0);
+    const AbortControllerImpl = typeof options.AbortController === 'function'
+        ? options.AbortController
+        : (typeof AbortController === 'function' ? AbortController : null);
+    const scheduleTimeout = typeof options.setTimeout === 'function'
+        ? options.setTimeout
+        : ((handler, delay) => window.setTimeout(handler, delay));
+    const clearScheduledTimeout = typeof options.clearTimeout === 'function'
+        ? options.clearTimeout
+        : ((timeoutId) => window.clearTimeout(timeoutId));
+    const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
+    const timeoutId = controller && timeoutMs > 0
+        ? scheduleTimeout(() => controller.abort(), timeoutMs)
+        : 0;
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.success === false) {
-        throw new Error(payload.message || options.errorMessage || '集中告警处理失败');
+    try {
+        const response = await fetchImpl(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: controller?.signal
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || options.errorMessage || '集中告警处理失败');
+        }
+
+        return payload;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error(options.timeoutMessage || '集中告警处理超时，请稍后刷新确认结果');
+        }
+        throw error;
+    } finally {
+        if (timeoutId) {
+            clearScheduledTimeout(timeoutId);
+        }
     }
-
-    return payload;
 }
 
 function getShopRiskWorkspaceActionDefinition(targetId = '') {

@@ -26,6 +26,8 @@
         autoRefreshTimer: null,
         anomalyActionLoading: {},
         batchAnomalyActionLoading: {},
+        batchSelections: {},
+        batchSelectionModes: {},
         businessBreakdownFocusKey: 'all',
         businessBreakdownHoverIndex: null,
         pointsBreakdownFocusKey: 'all',
@@ -64,6 +66,13 @@
         'reconcile_zpay_order',
         'refund_nowpayments'
     ]);
+    const BATCH_PROCESS_ACTIONS = ['mark_handled', 'ignore', 'request_retry'];
+    const BATCH_ACTION_ICONS = Object.freeze({
+        mark_handled: 'fas fa-circle-check',
+        ignore: 'fas fa-eye-slash',
+        request_retry: 'fas fa-rotate-right',
+        archive: 'fas fa-box-archive'
+    });
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
     const REFUND_TOPIC_ORDER = ['refund_compensation_failures', 'refund_reclaim_failures', 'refund_failures'];
@@ -2179,6 +2188,244 @@
         `;
     }
 
+    function normalizeBatchScope(scope = '') {
+        return String(scope || '').trim().toLowerCase();
+    }
+
+    function getBatchScopeLabel(scope = '') {
+        const map = {
+            'exception-topic-active': '支付异常专题项',
+            'exception-topic-handled': '已处理专题项',
+            'ops-alert-active': '站外告警'
+        };
+        return map[normalizeBatchScope(scope)] || '异常项';
+    }
+
+    function getBatchTargetKey(targetType = '', targetId = '') {
+        const normalizedTargetType = String(targetType || '').trim().toLowerCase();
+        const normalizedTargetId = String(targetId || '').trim();
+        return normalizedTargetType && normalizedTargetId ? `${normalizedTargetType}:${normalizedTargetId}` : '';
+    }
+
+    function getBatchTargetFromItem(item = {}) {
+        const targetType = String(item?.type || '').trim().toLowerCase();
+        const targetId = String(item?.id || '').trim();
+        const key = getBatchTargetKey(targetType, targetId);
+        if (!key) return null;
+        return { key, targetType, targetId };
+    }
+
+    function getBatchSelection(scope = '') {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return new Set();
+        if (!(state.batchSelections[normalizedScope] instanceof Set)) {
+            state.batchSelections[normalizedScope] = new Set();
+        }
+        return state.batchSelections[normalizedScope];
+    }
+
+    function clearBatchSelection(scope = '') {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return;
+        state.batchSelections[normalizedScope] = new Set();
+    }
+
+    function isBatchSelectionMode(scope = '') {
+        return state.batchSelectionModes[normalizeBatchScope(scope)] === true;
+    }
+
+    function setBatchSelectionMode(scope = '', enabled = false) {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return;
+        state.batchSelectionModes[normalizedScope] = enabled === true;
+        if (!state.batchSelectionModes[normalizedScope]) {
+            clearBatchSelection(normalizedScope);
+        }
+        syncBatchSelectionDom(normalizedScope);
+    }
+
+    function getUniqueBatchTargetsFromItems(items = [], options = {}) {
+        const action = String(options?.action || '').trim().toLowerCase();
+        const actionSet = Array.isArray(options?.actions) && options.actions.length
+            ? new Set(options.actions.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))
+            : new Set(BATCH_PROCESS_ACTIONS);
+        const uniqueTargets = new Map();
+
+        (items || []).forEach((item) => {
+            const actions = Array.isArray(item?.ops_available_actions)
+                ? item.ops_available_actions.map((entry) => String(entry || '').trim().toLowerCase())
+                : [];
+            if (action) {
+                if (!actions.includes(action)) return;
+            } else if (!actions.some((entry) => actionSet.has(entry))) {
+                return;
+            }
+
+            const target = getBatchTargetFromItem(item);
+            if (!target) return;
+            uniqueTargets.set(target.key, target);
+        });
+
+        return Array.from(uniqueTargets.values());
+    }
+
+    function pruneBatchSelection(scope = '', items = []) {
+        const normalizedScope = normalizeBatchScope(scope);
+        const selection = getBatchSelection(normalizedScope);
+        if (!selection.size) return selection;
+
+        const validKeys = new Set(getUniqueBatchTargetsFromItems(items).map((target) => target.key));
+        Array.from(selection).forEach((key) => {
+            if (!validKeys.has(key)) {
+                selection.delete(key);
+            }
+        });
+        return selection;
+    }
+
+    function isBatchTargetSelected(scope = '', item = {}) {
+        const target = getBatchTargetFromItem(item);
+        if (!target) return false;
+        return getBatchSelection(scope).has(target.key);
+    }
+
+    function renderBatchItemSelector(scope = '', item = {}) {
+        const normalizedScope = normalizeBatchScope(scope);
+        const target = getBatchTargetFromItem(item);
+        if (!normalizedScope || !target) return '';
+
+        const isSelectable = getUniqueBatchTargetsFromItems([item]).length > 0;
+        if (!isSelectable) return '';
+
+        const selectionMode = isBatchSelectionMode(normalizedScope);
+        const checked = isBatchTargetSelected(normalizedScope, item);
+        const isLoading = BATCH_PROCESS_ACTIONS.some((action) => isBatchAnomalyActionLoading(normalizedScope, action));
+
+        return `
+            <label class="payments-batch-select${selectionMode ? ' is-visible' : ''}" title="选中后可在上方批量处理" aria-hidden="${selectionMode ? 'false' : 'true'}">
+                <input
+                    type="checkbox"
+                    data-admin-action="payments-toggle-batch-target"
+                    data-payments-batch-scope="${escapeHtml(normalizedScope)}"
+                    data-payments-target-type="${escapeHtml(target.targetType)}"
+                    data-payments-target-id="${escapeHtml(target.targetId)}"
+                    ${checked ? 'checked' : ''}
+                    ${(!selectionMode || isLoading) ? 'disabled' : ''}
+                    aria-label="选择 ${escapeHtml(item?.title || getBatchScopeLabel(normalizedScope))}"
+                >
+                <span><i class="fas fa-check"></i></span>
+            </label>
+        `;
+    }
+
+    function renderBatchActionToolbar(scope = '', items = []) {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return '';
+
+        const selectableTargets = getUniqueBatchTargetsFromItems(items);
+        if (!selectableTargets.length) return '';
+
+        const scopeLabel = getBatchScopeLabel(normalizedScope);
+        const selectionMode = isBatchSelectionMode(normalizedScope);
+        const selection = pruneBatchSelection(normalizedScope, items);
+        const selectableKeys = new Set(selectableTargets.map((target) => target.key));
+        const selectedCount = Array.from(selection).filter((key) => selectableKeys.has(key)).length;
+        const allSelected = selectedCount > 0 && selectedCount === selectableTargets.length;
+        const isAnyLoading = BATCH_PROCESS_ACTIONS.some((action) => isBatchAnomalyActionLoading(normalizedScope, action));
+        const quickIgnoreTargets = normalizedScope === 'ops-alert-active'
+            ? getUniqueBatchTargetsFromItems(items, { action: 'ignore' })
+            : [];
+        const quickIgnoreLoading = isBatchAnomalyActionLoading(normalizedScope, 'ignore');
+        const actionButtons = BATCH_PROCESS_ACTIONS.map((action) => {
+            const actionTargets = getUniqueBatchTargetsFromItems(items, { action });
+            if (!actionTargets.length) return '';
+
+            const selectedActionCount = actionTargets.filter((target) => selection.has(target.key)).length;
+            const isLoading = isBatchAnomalyActionLoading(normalizedScope, action);
+            const label = getAnomalyActionLabel(action);
+            return `
+                <button
+                    type="button"
+                    class="payments-anomaly-action-btn ${escapeHtml(action)} compact"
+                    data-admin-action="payments-batch-anomaly-action"
+                    data-payments-batch-action-button="${escapeHtml(action)}"
+                    data-payments-batch-scope="${escapeHtml(normalizedScope)}"
+                    data-payments-action="${escapeHtml(action)}"
+                    ${selectedActionCount <= 0 || isAnyLoading ? 'disabled' : ''}
+                    title="${escapeHtml(selectedActionCount > 0 ? `对已选 ${selectedActionCount} 条执行${label}` : `先勾选可${label}的${scopeLabel}`)}"
+                >
+                    <i class="${escapeHtml(BATCH_ACTION_ICONS[action] || 'fas fa-wand-magic-sparkles')}"></i>
+                    <span data-payments-batch-action-label>${escapeHtml(isLoading ? '处理中...' : `${label} ${selectedActionCount || ''}`.trim())}</span>
+                </button>
+            `;
+        }).filter(Boolean).join('');
+
+        return `
+            <div class="payments-batch-toolbar ${selectionMode ? 'is-selection-mode' : 'payments-batch-toolbar--collapsed'}" data-payments-batch-toolbar="${escapeHtml(normalizedScope)}">
+                <div class="payments-batch-toolbar__collapsed">
+                    <button
+                        type="button"
+                        class="payments-anomaly-action-btn reopen compact"
+                        data-admin-action="payments-toggle-batch-mode"
+                        data-payments-batch-scope="${escapeHtml(normalizedScope)}"
+                        data-payments-batch-enabled="true"
+                    >
+                        <i class="fas fa-list-check"></i>
+                        勾选批量处理
+                    </button>
+                    ${quickIgnoreTargets.length ? `
+                        <button
+                            type="button"
+                            class="payments-anomaly-action-btn ignore compact payments-batch-toolbar__quick"
+                            data-admin-action="payments-batch-anomaly-action"
+                            data-payments-batch-scope="${escapeHtml(normalizedScope)}"
+                            data-payments-action="ignore"
+                            data-payments-batch-apply-all="true"
+                            ${quickIgnoreLoading || isAnyLoading ? 'disabled' : ''}
+                            title="忽略当前队列中可忽略的 ${escapeHtml(formatNumber(quickIgnoreTargets.length))} 条站外告警"
+                        >
+                            <i class="${escapeHtml(BATCH_ACTION_ICONS.ignore)}"></i>
+                            ${escapeHtml(quickIgnoreLoading ? '忽略中...' : `忽略当前 ${formatNumber(quickIgnoreTargets.length)} 条`)}
+                        </button>
+                    ` : ''}
+                    <span class="payments-batch-toolbar__hint">当前有 ${escapeHtml(formatNumber(selectableTargets.length))} 条${escapeHtml(scopeLabel)}可批量处理</span>
+                </div>
+                <div class="payments-batch-toolbar__active">
+                    <label class="payments-batch-select-all">
+                        <input
+                            type="checkbox"
+                            data-admin-action="payments-toggle-batch-scope"
+                            data-payments-batch-select-all="true"
+                            data-payments-batch-scope="${escapeHtml(normalizedScope)}"
+                            ${allSelected ? 'checked' : ''}
+                            ${(!selectionMode || isAnyLoading) ? 'disabled' : ''}
+                            aria-label="全选当前${escapeHtml(scopeLabel)}"
+                        >
+                        <span>全选可处理</span>
+                    </label>
+                    <div class="payments-batch-toolbar__meta">
+                        <strong>批量处理</strong>
+                        <span>已选 <b data-payments-batch-selected-count>${escapeHtml(formatNumber(selectedCount))}</b> / <b data-payments-batch-total-count>${escapeHtml(formatNumber(selectableTargets.length))}</b> 条${escapeHtml(scopeLabel)}</span>
+                    </div>
+                    <div class="payments-batch-toolbar__actions">
+                        ${actionButtons}
+                        <button
+                            type="button"
+                            class="payments-anomaly-action-btn compact"
+                            data-admin-action="payments-toggle-batch-mode"
+                            data-payments-batch-scope="${escapeHtml(normalizedScope)}"
+                            data-payments-batch-enabled="false"
+                            ${isAnyLoading ? 'disabled' : ''}
+                        >
+                            <i class="fas fa-xmark"></i>
+                            取消勾选
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     function renderMiniCountBadge(label, count, tone = 'muted') {
         if (!Number(count || 0)) return '';
         return `<span class="payments-mini-badge ${escapeHtml(tone)}">${escapeHtml(label)} ${escapeHtml(formatNumber(count))}</span>`;
@@ -2253,10 +2500,12 @@
         return getAnomalyOpsStatusLabel(item.queue_status);
     }
 
-    function renderOpsAlertQueueItemsHtml(items) {
+    function renderOpsAlertQueueItemsHtml(items, options = {}) {
+        const batchScope = normalizeBatchScope(options?.batchScope);
         return (items || []).map((item) => `
             <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
                 <div class="payments-anomaly-top">
+                    ${batchScope ? renderBatchItemSelector(batchScope, item) : ''}
                     <div class="payments-anomaly-copy">
                         <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
                         <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
@@ -2274,10 +2523,12 @@
         `).join('');
     }
 
-    function renderExceptionTopicItemsHtml(items) {
+    function renderExceptionTopicItemsHtml(items, options = {}) {
+        const batchScope = normalizeBatchScope(options?.batchScope);
         return (items || []).map((item) => `
             <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'info')}">
                 <div class="payments-anomaly-top">
+                    ${batchScope ? renderBatchItemSelector(batchScope, item) : ''}
                     <div class="payments-anomaly-copy">
                         <div class="payments-anomaly-title">${escapeHtml(item.title || '专题项')}</div>
                         <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
@@ -4074,8 +4325,9 @@
 
         target.innerHTML = `
             ${activeItems.length ? `
+                ${renderBatchActionToolbar('ops-alert-active', activeItems)}
                 <div class="payments-anomaly-items">
-                    ${renderOpsAlertQueueItemsHtml(activeItems)}
+                    ${renderOpsAlertQueueItemsHtml(activeItems, { batchScope: 'ops-alert-active' })}
                 </div>
             ` : `
                 <div class="payments-empty-state">
@@ -6579,8 +6831,9 @@
                 </div>
             </div>
             ${activeItems.length ? `
+                ${renderBatchActionToolbar('exception-topic-active', activeItems)}
                 <div class="payments-anomaly-items">
-                    ${renderExceptionTopicItemsHtml(activeItems)}
+                    ${renderExceptionTopicItemsHtml(activeItems, { batchScope: 'exception-topic-active' })}
                 </div>
             ` : ''}
             ${handledItems.length ? renderCollapsedHandledSection({
@@ -7259,14 +7512,136 @@
         });
     }
 
+    function requestBatchAnomalyAction({ targets = [], action = '', note } = {}) {
+        return fetchAdminJson('/api/admin/payments/batch-actions', {
+            method: 'POST',
+            body: JSON.stringify({
+                action,
+                note: note || undefined,
+                targets: (Array.isArray(targets) ? targets : []).map((target) => ({
+                    targetType: target?.targetType,
+                    targetId: target?.targetId
+                }))
+            })
+        });
+    }
+
     function isBatchAnomalyActionLoading(scope = '', action = '') {
         const key = `${String(scope || '').trim().toLowerCase()}:${String(action || '').trim().toLowerCase()}`;
         return Boolean(state.batchAnomalyActionLoading[key]);
     }
 
-    function getBatchAnomalyTargets(scope = '', action = '') {
+    function getBatchScopeItems(scope = '') {
+        const normalizedScope = normalizeBatchScope(scope);
+
+        if (normalizedScope === 'exception-topic-active') {
+            const filteredItems = getExceptionTopicFilteredItems(state.summary || {}, state.exceptionTopicFilter);
+            return splitItemsByResolution(filteredItems, (item) => item?.ops_status).activeItems;
+        }
+
+        if (normalizedScope === 'ops-alert-active') {
+            const items = Array.isArray(state.summary?.ops_alert_items) ? state.summary.ops_alert_items : [];
+            return splitItemsByResolution(items, (item) => item.queue_status).activeItems;
+        }
+
+        if (normalizedScope === 'exception-topic-handled') {
+            const filteredItems = getExceptionTopicFilteredItems(state.summary || {}, state.exceptionTopicFilter);
+            const split = splitItemsByResolution(filteredItems, (item) => item?.ops_status);
+            return filterItemsByStatuses(split.resolvedItems, ['handled', 'approved']);
+        }
+
+        return [];
+    }
+
+    function getSelectedBatchCount(scope = '') {
+        const normalizedScope = normalizeBatchScope(scope);
+        const items = getBatchScopeItems(normalizedScope);
+        const selection = pruneBatchSelection(normalizedScope, items);
+        const selectableKeys = new Set(getUniqueBatchTargetsFromItems(items).map((target) => target.key));
+        return Array.from(selection).filter((key) => selectableKeys.has(key)).length;
+    }
+
+    function getBatchToolbarElement(scope = '') {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return null;
+        return Array.from(document.querySelectorAll('[data-payments-batch-toolbar]'))
+            .find((element) => String(element?.dataset?.paymentsBatchToolbar || '').trim().toLowerCase() === normalizedScope) || null;
+    }
+
+    function syncBatchSelectionDom(scope = '') {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return;
+
+        const selectionMode = isBatchSelectionMode(normalizedScope);
+        const items = getBatchScopeItems(normalizedScope);
+        const selection = pruneBatchSelection(normalizedScope, items);
+        const selectableTargets = getUniqueBatchTargetsFromItems(items);
+        const selectableKeys = new Set(selectableTargets.map((target) => target.key));
+        const selectedCount = Array.from(selection).filter((key) => selectableKeys.has(key)).length;
+        const allSelected = selectedCount > 0 && selectedCount === selectableTargets.length;
+        const isAnyLoading = BATCH_PROCESS_ACTIONS.some((action) => isBatchAnomalyActionLoading(normalizedScope, action));
+        const toolbar = getBatchToolbarElement(normalizedScope);
+
+        Array.from(document.querySelectorAll('input[data-admin-action="payments-toggle-batch-target"]'))
+            .filter((input) => String(input?.dataset?.paymentsBatchScope || '').trim().toLowerCase() === normalizedScope)
+            .forEach((input) => {
+                const targetKey = getBatchTargetKey(input.dataset.paymentsTargetType, input.dataset.paymentsTargetId);
+                input.checked = targetKey ? selection.has(targetKey) : false;
+                input.disabled = !selectionMode || isAnyLoading;
+                const selector = input.closest('.payments-batch-select');
+                if (selector) {
+                    selector.classList.toggle('is-visible', selectionMode);
+                    selector.setAttribute('aria-hidden', selectionMode ? 'false' : 'true');
+                }
+            });
+
+        if (!toolbar) return;
+        toolbar.classList.toggle('is-selection-mode', selectionMode);
+        toolbar.classList.toggle('payments-batch-toolbar--collapsed', !selectionMode);
+
+        const selectedCountTarget = toolbar.querySelector('[data-payments-batch-selected-count]');
+        if (selectedCountTarget) {
+            selectedCountTarget.textContent = formatNumber(selectedCount);
+        }
+
+        const totalCountTarget = toolbar.querySelector('[data-payments-batch-total-count]');
+        if (totalCountTarget) {
+            totalCountTarget.textContent = formatNumber(selectableTargets.length);
+        }
+
+        const selectAllInput = toolbar.querySelector('input[data-payments-batch-select-all="true"]');
+        if (selectAllInput) {
+            selectAllInput.checked = allSelected;
+            selectAllInput.indeterminate = selectedCount > 0 && !allSelected;
+            selectAllInput.disabled = !selectionMode || isAnyLoading;
+        }
+
+        BATCH_PROCESS_ACTIONS.forEach((action) => {
+            const actionButton = toolbar.querySelector(`[data-payments-batch-action-button="${action}"]`);
+            if (!actionButton) return;
+
+            const actionTargets = getUniqueBatchTargetsFromItems(items, { action });
+            const selectedActionCount = actionTargets.filter((target) => selection.has(target.key)).length;
+            const isLoading = isBatchAnomalyActionLoading(normalizedScope, action);
+            const label = getAnomalyActionLabel(action);
+            const labelTarget = actionButton.querySelector('[data-payments-batch-action-label]');
+
+            actionButton.disabled = !selectionMode || selectedActionCount <= 0 || isAnyLoading;
+            actionButton.title = selectedActionCount > 0
+                ? `对已选 ${selectedActionCount} 条执行${label}`
+                : `先勾选可${label}的${getBatchScopeLabel(normalizedScope)}`;
+            if (labelTarget) {
+                labelTarget.textContent = isLoading ? '处理中...' : `${label} ${selectedActionCount || ''}`.trim();
+            }
+        });
+    }
+
+    function getBatchAnomalyTargets(scope = '', action = '', options = {}) {
         const normalizedScope = String(scope || '').trim().toLowerCase();
         const normalizedAction = String(action || '').trim().toLowerCase();
+        const applyToAll = options?.applyToAll === true
+            && normalizedScope === 'ops-alert-active'
+            && normalizedAction === 'ignore';
 
         if (normalizedScope === 'exception-topic-handled' && normalizedAction === 'archive') {
             const filteredItems = getExceptionTopicFilteredItems(state.summary || {}, state.exceptionTopicFilter);
@@ -7287,24 +7662,82 @@
             return Array.from(uniqueTargets.values());
         }
 
+        if (BATCH_PROCESS_ACTIONS.includes(normalizedAction)) {
+            const items = getBatchScopeItems(normalizedScope);
+            if (applyToAll) {
+                return getUniqueBatchTargetsFromItems(items, { action: normalizedAction });
+            }
+            const selectedKeys = pruneBatchSelection(normalizedScope, items);
+            return getUniqueBatchTargetsFromItems(items, { action: normalizedAction })
+                .filter((target) => selectedKeys.has(target.key));
+        }
+
         return [];
     }
 
-    async function handleBatchAnomalyAction(scope, action) {
+    function toggleBatchTarget(scope = '', targetType = '', targetId = '', selected = false) {
+        const normalizedScope = normalizeBatchScope(scope);
+        const targetKey = getBatchTargetKey(targetType, targetId);
+        if (!normalizedScope || !targetKey) return;
+
+        const selection = getBatchSelection(normalizedScope);
+        if (selected) {
+            selection.add(targetKey);
+        } else {
+            selection.delete(targetKey);
+        }
+        syncBatchSelectionDom(normalizedScope);
+    }
+
+    function toggleBatchScope(scope = '', selected = false) {
+        const normalizedScope = normalizeBatchScope(scope);
+        if (!normalizedScope) return;
+
+        const items = getBatchScopeItems(normalizedScope);
+        const targets = getUniqueBatchTargetsFromItems(items);
+        const selection = getBatchSelection(normalizedScope);
+
+        targets.forEach((target) => {
+            if (selected) {
+                selection.add(target.key);
+            } else {
+                selection.delete(target.key);
+            }
+        });
+
+        syncBatchSelectionDom(normalizedScope);
+    }
+
+    async function handleBatchAnomalyAction(scope, action, options = {}) {
         const normalizedScope = String(scope || '').trim().toLowerCase();
         const normalizedAction = String(action || '').trim().toLowerCase();
+        const applyToAll = options?.applyToAll === true
+            && normalizedScope === 'ops-alert-active'
+            && normalizedAction === 'ignore';
         if (!normalizedScope || !normalizedAction) return;
 
-        const targets = getBatchAnomalyTargets(normalizedScope, normalizedAction);
+        const targets = getBatchAnomalyTargets(normalizedScope, normalizedAction, { applyToAll });
         if (!targets.length) {
-            const emptyMessage = '当前专题下暂无可归档的已处理项。';
+            const selectedCount = getSelectedBatchCount(normalizedScope);
+            const emptyMessage = normalizedScope === 'exception-topic-handled' && normalizedAction === 'archive'
+                ? '当前专题下暂无可归档的已处理项。'
+                : (applyToAll
+                    ? `当前${getBatchScopeLabel(normalizedScope)}暂无可执行“${getAnomalyActionLabel(normalizedAction)}”的项目。`
+                    : (selectedCount <= 0
+                        ? `请先勾选要批量处理的${getBatchScopeLabel(normalizedScope)}。`
+                        : `选中的${getBatchScopeLabel(normalizedScope)}暂无可执行“${getAnomalyActionLabel(normalizedAction)}”的项目。`));
             window.showToast?.(emptyMessage, 'warning');
             emitPaymentsCommandFeedback(emptyMessage, 'partial', { source: 'payments-batch' });
             return;
         }
 
         const confirmed = window.confirm(
-            `确认归档当前专题下 ${targets.length} 条已处理项吗？归档后它们不会再计入四个专题卡片数字。`
+            normalizedScope === 'exception-topic-handled' && normalizedAction === 'archive'
+                ? `确认归档当前专题下 ${targets.length} 条已处理项吗？归档后它们不会再计入四个专题卡片数字。`
+                : (applyToAll
+                    ? `确认忽略当前队列中 ${targets.length} 条可忽略站外告警吗？这适合已确认久远且不可追寻的历史告警，忽略后仍可在“已忽略”折叠区复查或重新打开。`
+                    : `确认对已选 ${targets.length} 条${getBatchScopeLabel(normalizedScope)}执行“${getAnomalyActionLabel(normalizedAction)}”吗？`
+                )
         );
         if (!confirmed) return;
 
@@ -7315,25 +7748,37 @@
         rerenderCurrentView();
 
         try {
-            const results = await Promise.allSettled(
-                targets.map((target) => requestAnomalyAction({
-                    targetType: target.targetType,
-                    targetId: target.targetId,
-                    action: normalizedAction
-                }))
-            );
+            const batchPayload = await requestBatchAnomalyAction({
+                targets,
+                action: normalizedAction
+            });
+            const results = Array.isArray(batchPayload?.results)
+                ? batchPayload.results.map((result) => {
+                    if (result?.success) {
+                        return { status: 'fulfilled', value: result.payload || result };
+                    }
+                    const error = new Error(result?.message || '批量异常操作执行失败');
+                    error.statusCode = result?.statusCode;
+                    error.target = result?.target || null;
+                    return { status: 'rejected', reason: error };
+                })
+                : targets.map(() => ({ status: 'fulfilled', value: batchPayload }));
 
             const successCount = results.filter((result) => result.status === 'fulfilled').length;
             const failCount = results.length - successCount;
 
             if (successCount > 0) {
+                clearBatchSelection(normalizedScope);
+                state.batchSelectionModes[normalizedScope] = false;
                 clearTabPrefetch();
                 state.viewCache = {};
                 await reload();
             }
 
             if (failCount === 0) {
-                const successMessage = `已批量归档 ${successCount} 条异常。`;
+                const successMessage = normalizedAction === 'archive'
+                    ? `已批量归档 ${successCount} 条异常。`
+                    : `已对 ${successCount} 条${getBatchScopeLabel(normalizedScope)}执行“${getAnomalyActionLabel(normalizedAction)}”。`;
                 window.showToast?.(successMessage, 'success');
                 emitPaymentsCommandFeedback(successMessage, 'saved', { source: 'payments-batch' });
                 return results;
@@ -7341,10 +7786,10 @@
 
             const firstFailure = results.find((result) => result.status === 'rejected');
             const failureMessage = firstFailure?.reason
-                ? getFriendlyErrorMessage(firstFailure.reason, '部分异常归档失败，请稍后重试。')
-                : '部分异常归档失败，请稍后重试。';
+                ? getFriendlyErrorMessage(firstFailure.reason, `部分${getBatchScopeLabel(normalizedScope)}批量处理失败，请稍后重试。`)
+                : `部分${getBatchScopeLabel(normalizedScope)}批量处理失败，请稍后重试。`;
             const resultMessage = successCount > 0
-                ? `已归档 ${successCount} 条，另有 ${failCount} 条失败：${failureMessage}`
+                ? `已完成 ${successCount} 条，另有 ${failCount} 条失败：${failureMessage}`
                 : failureMessage;
             window.showToast?.(resultMessage, successCount > 0 ? 'warning' : 'error');
             emitPaymentsCommandFeedback(resultMessage, successCount > 0 ? 'partial' : 'failed', { source: 'payments-batch' });
@@ -7363,6 +7808,8 @@
 
     function setExceptionTopicFilter(topicKey = 'all') {
         state.exceptionTopicFilter = String(topicKey || 'all').trim().toLowerCase() || 'all';
+        clearBatchSelection('exception-topic-active');
+        state.batchSelectionModes['exception-topic-active'] = false;
         renderExceptionTopics(state.summary || {});
     }
 
@@ -8862,6 +9309,9 @@
         copyOrderNo,
         handleAnomalyAction,
         handleBatchAnomalyAction,
+        toggleBatchTarget,
+        toggleBatchScope,
+        setBatchSelectionMode,
         setExceptionTopicFilter,
         focusExceptionTopic,
         focusOpsAlertQueue,

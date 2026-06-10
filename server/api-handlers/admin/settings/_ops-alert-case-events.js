@@ -88,11 +88,22 @@ function resolveOpsAlertCaseSite(source = {}, fallback = 'cn') {
         .filter(Boolean);
     const candidates = [
         source?.site,
-        source?.site_context,
         source?.case_site,
+        source?.caseSite,
+        source?.siteKey,
         source?.workspaceSite,
+        source?.site_context,
+        source?.siteContext,
         metadata.site,
+        metadata.case_site,
+        metadata.caseSite,
+        metadata.site_context,
+        metadata.siteContext,
         payload.site,
+        payload.case_site,
+        payload.caseSite,
+        payload.site_context,
+        payload.siteContext,
         siteLabels.length === 1 ? siteLabels[0] : ''
     ];
     const explicitSite = candidates.find((item) => sanitizeText(item, 40));
@@ -108,6 +119,25 @@ function resolveOpsAlertCaseSite(source = {}, fallback = 'cn') {
 
 function buildOpsAlertCaseKey(categoryKey, targetId, site = 'cn') {
     return `${normalizeOpsAlertCaseSite(site, 'cn')}::${normalizeCategoryKey(categoryKey, targetId)}::${sanitizeText(targetId, 200)}`;
+}
+
+function buildOpsAlertTargetBaseKey(categoryKey, targetId) {
+    return [
+        normalizeCategoryKey(categoryKey, targetId),
+        sanitizeText(targetId, 200)
+    ].join('::');
+}
+
+function getOpsAlertCaseEventTime(value = '') {
+    const parsed = Date.parse(sanitizeText(value, 80));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getOpsAlertCaseLookupSites(site = 'cn') {
+    const normalizedSite = normalizeOpsAlertCaseSite(site, 'cn');
+    return normalizedSite === 'all'
+        ? ['all']
+        : Array.from(new Set([normalizedSite, 'all']));
 }
 
 function getOpsAlertCaseEventActionLabel(action) {
@@ -349,7 +379,22 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
         return new Map();
     }
 
-    const groupedTargets = normalizedTargets.reduce((accumulator, item) => {
+    const requestedTargetsByBaseKey = normalizedTargets.reduce((accumulator, item) => {
+        const baseKey = buildOpsAlertTargetBaseKey(item.category_key, item.target_id);
+        if (!accumulator.has(baseKey)) {
+            accumulator.set(baseKey, []);
+        }
+        accumulator.get(baseKey).push(item);
+        return accumulator;
+    }, new Map());
+    const lookupTargets = Array.from(new Map(
+        normalizedTargets.flatMap((item) => getOpsAlertCaseLookupSites(item.site).map((site) => ({
+            ...item,
+            site
+        }))).map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id, item.site), item])
+    ).values());
+
+    const groupedTargets = lookupTargets.reduce((accumulator, item) => {
         const groupKey = buildOpsAlertCaseKey(item.category_key, '', item.site);
         if (!accumulator.has(groupKey)) {
             accumulator.set(groupKey, {
@@ -380,11 +425,24 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
 
         groupedRows.flat().forEach((row) => {
             const eventRecord = buildOpsAlertCaseEventRecord(row);
-            const eventKey = buildOpsAlertCaseKey(eventRecord.category_key, eventRecord.target_id, eventRecord.site);
-            if (!eventMap.has(eventKey)) {
-                eventMap.set(eventKey, []);
-            }
-            eventMap.get(eventKey).push(eventRecord);
+            const baseKey = buildOpsAlertTargetBaseKey(eventRecord.category_key, eventRecord.target_id);
+            const requestedTargets = requestedTargetsByBaseKey.get(baseKey) || [];
+            requestedTargets.forEach((target) => {
+                const lookupSites = getOpsAlertCaseLookupSites(target.site);
+                if (!lookupSites.includes(eventRecord.site)) {
+                    return;
+                }
+                const eventKey = buildOpsAlertCaseKey(target.category_key, target.target_id, target.site);
+                if (!eventMap.has(eventKey)) {
+                    eventMap.set(eventKey, []);
+                }
+                eventMap.get(eventKey).push(eventRecord);
+            });
+        });
+        eventMap.forEach((events, eventKey) => {
+            eventMap.set(eventKey, events.slice().sort((left, right) => (
+                getOpsAlertCaseEventTime(right?.created_at) - getOpsAlertCaseEventTime(left?.created_at)
+            )));
         });
     } catch (error) {
         if (!isMissingOpsAlertCaseEventsTableError(error)) {

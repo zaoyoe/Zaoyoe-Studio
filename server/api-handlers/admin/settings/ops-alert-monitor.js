@@ -24,6 +24,9 @@ const OPS_ALERT_MONITOR_SHIFT_BUCKET_COUNT = 6;
 const OPS_ALERT_MONITOR_SHIFT_CATEGORY_LIMIT = 4;
 const OPS_ALERT_MONITOR_SHIFT_ADMIN_LIMIT = 6;
 const OPS_ALERT_MONITOR_SHIFT_CLOSE_REASON_LIMIT = 5;
+const OPS_ALERT_MONITOR_OPTIONAL_QUERY_TIMEOUT_MS = 4500;
+const OPS_ALERT_MONITOR_EVENT_QUERY_TIMEOUT_MS = 3500;
+const OPS_ALERT_MONITOR_CASE_TARGET_CHUNK_SIZE = 80;
 const OPS_ALERT_CASES_SELECT_FIELDS = 'site, category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
@@ -156,6 +159,67 @@ function getSafeTimestamp(value) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getCaseRecordActionTime(caseRecord = {}) {
+    const metadata = normalizePayload(caseRecord?.metadata);
+    return Math.max(
+        getSafeTimestamp(caseRecord?.last_action_at),
+        getSafeTimestamp(caseRecord?.updated_at),
+        getSafeTimestamp(metadata.resolved_at),
+        getSafeTimestamp(metadata.reopened_at)
+    );
+}
+
+function getSummaryWindowEndTime(value = {}) {
+    const payload = normalizePayload(value?.payload);
+    const metadata = normalizePayload(value?.metadata);
+    return getSafeTimestamp(payload.window_end_at)
+        || getSafeTimestamp(payload.summary_window_end_at)
+        || getSafeTimestamp(metadata.resolved_summary_window_end_at)
+        || getSafeTimestamp(metadata.summary_window_end_at)
+        || getSafeTimestamp(value?.summary_window_end_at)
+        || getSafeTimestamp(value?.window_end_at);
+}
+
+function getResolvedCaseCoveredAlertTime(caseRecord = {}) {
+    const metadata = normalizePayload(caseRecord?.metadata);
+    return Math.max(
+        getSafeTimestamp(metadata.resolved_alert_created_at),
+        getSafeTimestamp(metadata.alert_created_at),
+        getSafeTimestamp(metadata.covered_alert_created_at)
+    );
+}
+
+function isSummaryAlertJob(job = {}) {
+    return normalizeText(job?.alert_type, 120).toLowerCase().endsWith('_summary');
+}
+
+function isResolvedCaseCoveringJob(caseRecord = null, job = {}) {
+    if (normalizeText(caseRecord?.status, 40).toLowerCase() !== 'resolved') {
+        return false;
+    }
+
+    const jobCreatedAt = getCreatedAtTime(job);
+    const caseClosedAt = getCaseRecordActionTime(caseRecord);
+    if (jobCreatedAt > 0 && caseClosedAt > 0 && jobCreatedAt <= caseClosedAt) {
+        return true;
+    }
+
+    const coveredAlertAt = getResolvedCaseCoveredAlertTime(caseRecord);
+    if (jobCreatedAt > 0 && coveredAlertAt > 0 && jobCreatedAt <= coveredAlertAt) {
+        return true;
+    }
+
+    if (isSummaryAlertJob(job)) {
+        const jobWindowEndAt = getSummaryWindowEndTime(job);
+        const coveredWindowEndAt = getSummaryWindowEndTime(caseRecord);
+        if (jobWindowEndAt > 0 && coveredWindowEndAt > 0 && jobWindowEndAt <= coveredWindowEndAt) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function toIsoString(timestamp) {
     return Number.isFinite(timestamp) && timestamp > 0
         ? new Date(timestamp).toISOString()
@@ -229,6 +293,71 @@ function isMissingOpsAlertCasesTableError(error) {
     return isMissingTableAccessError(error, 'ops_alert_cases');
 }
 
+function chunkValues(values = [], chunkSize = 50) {
+    const normalizedValues = Array.isArray(values) ? values : [];
+    const normalizedChunkSize = Math.max(1, Number(chunkSize) || 50);
+    const chunks = [];
+
+    for (let index = 0; index < normalizedValues.length; index += normalizedChunkSize) {
+        chunks.push(normalizedValues.slice(index, index + normalizedChunkSize));
+    }
+
+    return chunks;
+}
+
+function getFallbackOpsAlertRuntime() {
+    return {
+        config: {
+            shop_order_risk: {}
+        },
+        secrets: {}
+    };
+}
+
+async function resolveOpsAlertMonitorOptionalValue(label, taskFactory, fallbackValue, timeoutMs = OPS_ALERT_MONITOR_OPTIONAL_QUERY_TIMEOUT_MS) {
+    const normalizedTimeoutMs = Math.max(0, Number(timeoutMs) || 0);
+    let timeoutId = 0;
+    let timedOut = false;
+    const taskPromise = Promise.resolve()
+        .then(taskFactory)
+        .catch((error) => {
+            if (timedOut) {
+                console.warn(`[AdminAPI] Ops alert monitor ${label} finished after timeout:`, error?.message || error);
+                return fallbackValue;
+            }
+            throw error;
+        });
+
+    if (!normalizedTimeoutMs) {
+        try {
+            return await taskPromise;
+        } catch (error) {
+            console.warn(`[AdminAPI] Ops alert monitor ${label} failed:`, error?.message || error);
+            return fallbackValue;
+        }
+    }
+
+    try {
+        return await Promise.race([
+            taskPromise,
+            new Promise((resolve) => {
+                timeoutId = setTimeout(() => {
+                    timedOut = true;
+                    console.warn(`[AdminAPI] Ops alert monitor ${label} timed out after ${normalizedTimeoutMs}ms; using degraded data.`);
+                    resolve(fallbackValue);
+                }, normalizedTimeoutMs);
+            })
+        ]);
+    } catch (error) {
+        console.warn(`[AdminAPI] Ops alert monitor ${label} failed:`, error?.message || error);
+        return fallbackValue;
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    }
+}
+
 async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_MONITOR_PAGE_SIZE, maxPages = OPS_ALERT_MONITOR_MAX_PAGES) {
     const rows = [];
 
@@ -295,6 +424,40 @@ async function fetchLegacyShopRiskCasesByTargetIds(supabase, targetIds = []) {
     );
 }
 
+function buildOpsAlertTargetBaseKey(categoryKey, targetId) {
+    return [
+        normalizeText(categoryKey, 80).toLowerCase(),
+        normalizeText(targetId, 200)
+    ].join('::');
+}
+
+function getOpsAlertCaseLookupSites(site = 'cn') {
+    const normalizedSite = normalizeOpsAlertCaseSite(site, 'cn');
+    return normalizedSite === 'all'
+        ? ['all']
+        : Array.from(new Set([normalizedSite, 'all']));
+}
+
+function preferOpsAlertCaseRecord(currentRecord = null, candidateRecord = null, targetSite = 'cn') {
+    if (!candidateRecord) {
+        return currentRecord;
+    }
+    if (!currentRecord) {
+        return candidateRecord;
+    }
+
+    const currentTime = getCaseRecordActionTime(currentRecord);
+    const candidateTime = getCaseRecordActionTime(candidateRecord);
+    if (candidateTime !== currentTime) {
+        return candidateTime > currentTime ? candidateRecord : currentRecord;
+    }
+
+    const normalizedTargetSite = normalizeOpsAlertCaseSite(targetSite, 'cn');
+    const currentExact = normalizeOpsAlertCaseSite(currentRecord.site, 'cn') === normalizedTargetSite;
+    const candidateExact = normalizeOpsAlertCaseSite(candidateRecord.site, 'cn') === normalizedTargetSite;
+    return candidateExact && !currentExact ? candidateRecord : currentRecord;
+}
+
 async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     const normalizedTargets = Array.from(new Map(
         (Array.isArray(targets) ? targets : [])
@@ -311,7 +474,22 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
         return new Map();
     }
 
-    const groupedTargets = normalizedTargets.reduce((accumulator, item) => {
+    const requestedTargetsByBaseKey = normalizedTargets.reduce((accumulator, item) => {
+        const baseKey = buildOpsAlertTargetBaseKey(item.category_key, item.target_id);
+        if (!accumulator.has(baseKey)) {
+            accumulator.set(baseKey, []);
+        }
+        accumulator.get(baseKey).push(item);
+        return accumulator;
+    }, new Map());
+    const lookupTargets = Array.from(new Map(
+        normalizedTargets.flatMap((item) => getOpsAlertCaseLookupSites(item.site).map((site) => ({
+            ...item,
+            site
+        }))).map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id, item.site), item])
+    ).values());
+
+    const groupedTargets = lookupTargets.reduce((accumulator, item) => {
         const groupKey = buildOpsAlertCaseKey(item.category_key, '', item.site);
         if (!accumulator.has(groupKey)) {
             accumulator.set(groupKey, {
@@ -328,28 +506,40 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
 
     try {
         const groupedRows = await Promise.all(
-            Array.from(groupedTargets.values()).map(async (group) => {
-                const { data, error } = await supabase
-                    .from('ops_alert_cases')
-                    .select(OPS_ALERT_CASES_SELECT_FIELDS)
-                    .in('site', [group.site])
-                    .in('category_key', [group.category_key])
-                    .in('target_id', Array.from(new Set(group.target_ids)));
+            Array.from(groupedTargets.values()).flatMap((group) => (
+                chunkValues(Array.from(new Set(group.target_ids)), OPS_ALERT_MONITOR_CASE_TARGET_CHUNK_SIZE)
+                    .map(async (targetIdChunk) => {
+                        const { data, error } = await supabase
+                            .from('ops_alert_cases')
+                            .select(OPS_ALERT_CASES_SELECT_FIELDS)
+                            .in('site', [group.site])
+                            .in('category_key', [group.category_key])
+                            .in('target_id', targetIdChunk);
 
-                if (error) {
-                    throw error;
-                }
+                        if (error) {
+                            throw error;
+                        }
 
-                return Array.isArray(data) ? data : [];
-            })
+                        return Array.isArray(data) ? data : [];
+                    })
+            ))
         );
 
         groupedRows.flat().forEach((row) => {
             const caseRecord = buildOpsAlertCaseRecord(row, row?.category_key);
-            caseMap.set(
-                buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id, caseRecord.site),
-                caseRecord
-            );
+            const baseKey = buildOpsAlertTargetBaseKey(caseRecord.category_key, caseRecord.target_id);
+            const requestedTargets = requestedTargetsByBaseKey.get(baseKey) || [];
+            requestedTargets.forEach((target) => {
+                const lookupSites = getOpsAlertCaseLookupSites(target.site);
+                if (!lookupSites.includes(caseRecord.site)) {
+                    return;
+                }
+                const targetKey = buildOpsAlertCaseKey(target.category_key, target.target_id, target.site);
+                caseMap.set(
+                    targetKey,
+                    preferOpsAlertCaseRecord(caseMap.get(targetKey) || null, caseRecord, target.site)
+                );
+            });
         });
 
         return caseMap;
@@ -438,15 +628,20 @@ function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord 
     const timeline = Array.isArray(rawEvents) && rawEvents.length
         ? rawEvents.map((event) => buildOpsAlertCaseEventView(event)).slice(0, OPS_ALERT_CASE_EVENT_LIMIT)
         : [];
-    const fallbackEvent = timeline.length ? null : buildFallbackOpsAlertCaseEvent({
+    const fallbackEvent = buildFallbackOpsAlertCaseEvent({
         ...caseRecord,
         site: normalizedSite,
         category_key: normalizedCategoryKey || caseRecord?.category_key,
         target_id: normalizedTargetId || caseRecord?.target_id
     });
+    const fallbackEventView = fallbackEvent ? buildOpsAlertCaseEventView(fallbackEvent) : null;
     const recentEvents = timeline.length
-        ? timeline
-        : (fallbackEvent ? [buildOpsAlertCaseEventView(fallbackEvent)] : []);
+        ? (
+            fallbackEventView && getSafeTimestamp(fallbackEventView.created_at) > getSafeTimestamp(timeline[0]?.created_at)
+                ? [fallbackEventView, ...timeline].slice(0, OPS_ALERT_CASE_EVENT_LIMIT)
+                : timeline
+        )
+        : (fallbackEventView ? [fallbackEventView] : []);
     const latestEvent = recentEvents[0] || null;
     const latestNoteEvent = recentEvents.find((event) => normalizeText(event?.note, 2000));
 
@@ -492,10 +687,12 @@ function isResolvedCaseStaleForJob(caseRecord = null, job = {}) {
     if (normalizeText(caseRecord?.status, 40).toLowerCase() !== 'resolved') {
         return false;
     }
+    if (isResolvedCaseCoveringJob(caseRecord, job)) {
+        return false;
+    }
 
     const jobCreatedAt = getCreatedAtTime(job);
-    const caseClosedAt = getSafeTimestamp(caseRecord?.last_action_at)
-        || getSafeTimestamp(caseRecord?.updated_at);
+    const caseClosedAt = getCaseRecordActionTime(caseRecord);
     return jobCreatedAt > 0 && caseClosedAt > 0 && jobCreatedAt > caseClosedAt;
 }
 
@@ -766,6 +963,8 @@ function buildAlertItem(job = {}, categoryKey = '', options = {}) {
         title: normalizeText(job.title, 240) || '系统告警',
         message: getAlertExcerpt(job),
         created_at: normalizeText(job.created_at, 80) || null,
+        summary_window_start_at: normalizeText(payload.window_start_at, 80) || null,
+        summary_window_end_at: normalizeText(payload.window_end_at, 80) || null,
         site: inferOpsAlertJobSite(job) || caseSite || null,
         site_labels: normalizeSupportedSiteList(payload.site_labels),
         target_id: targetId,
@@ -992,6 +1191,10 @@ function buildOpsAlertCaseSummary(items = []) {
     });
 }
 
+function isOpsAlertMonitorItemUnresolved(item = {}) {
+    return normalizeText(item?.case_status, 40).toLowerCase() !== 'resolved';
+}
+
 function buildCategorySnapshot(category, jobs = [], options = {}) {
     const shopRiskThresholdConfig = buildShopRiskThresholdConfig(options.shopRiskConfig);
     const opsAlertCasesByKey = options.opsAlertCasesByKey instanceof Map
@@ -1020,7 +1223,6 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     const activeJobs = Array.from(latestByTarget.values())
         .filter((job) => category.problem_types.includes(normalizeText(job.alert_type, 120).toLowerCase()))
         .sort((left, right) => getCreatedAtTime(right) - getCreatedAtTime(left));
-    const criticalCount = activeJobs.filter((job) => normalizeSeverity(job.severity) === 'critical').length;
     const latestJob = filteredJobs[0] || null;
     const latestState = latestJob
         ? (category.problem_types.includes(normalizeText(latestJob.alert_type, 120).toLowerCase()) ? 'problem' : 'recovered')
@@ -1029,12 +1231,14 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
         opsAlertCasesByKey,
         caseEventsByKey
     }));
+    const unresolvedItems = builtItems.filter((item) => isOpsAlertMonitorItemUnresolved(item));
+    const criticalCount = unresolvedItems.filter((item) => normalizeSeverity(item?.severity) === 'critical').length;
 
     return {
         key: category.key,
         label: category.label,
         description: category.description,
-        active_count: activeJobs.length,
+        active_count: unresolvedItems.length,
         critical_count: criticalCount,
         recent_job_count: filteredJobs.length,
         latest_state: latestState,
@@ -1680,13 +1884,21 @@ module.exports = async (req, res) => {
             rawJobs,
             assignableAdmins
         ] = await Promise.all([
-            loadOpsAlertsRuntimeConfig(supabase, process.env, { site: adminSite }),
+            resolveOpsAlertMonitorOptionalValue(
+                'runtime config',
+                () => loadOpsAlertsRuntimeConfig(supabase, process.env, { site: adminSite }),
+                getFallbackOpsAlertRuntime()
+            ),
             fetchRecentOpsAlertJobs(supabase, sinceIso),
-            fetchAssignableOpsAlertAdmins({
-                supabase,
-                adminSupabase,
-                currentUserId: user.id
-            })
+            resolveOpsAlertMonitorOptionalValue(
+                'assignable admins',
+                () => fetchAssignableOpsAlertAdmins({
+                    supabase,
+                    adminSupabase,
+                    currentUserId: user.id
+                }),
+                []
+            )
         ]);
         const jobs = rawJobs.filter((job) => shouldIncludeOpsAlertJobForAdminSite(job, adminSite));
         const targets = jobs
@@ -1696,8 +1908,18 @@ module.exports = async (req, res) => {
                 target_id: getAlertTargetId(job)
             }));
         const [opsAlertCasesByKey, caseEventsByKey] = await Promise.all([
-            fetchOpsAlertCasesByTargets(supabase, targets),
-            fetchOpsAlertCaseEventsByTargets(supabase, targets)
+            resolveOpsAlertMonitorOptionalValue(
+                'case records',
+                () => fetchOpsAlertCasesByTargets(supabase, targets),
+                new Map(),
+                OPS_ALERT_MONITOR_EVENT_QUERY_TIMEOUT_MS
+            ),
+            resolveOpsAlertMonitorOptionalValue(
+                'case events',
+                () => fetchOpsAlertCaseEventsByTargets(supabase, targets),
+                new Map(),
+                OPS_ALERT_MONITOR_EVENT_QUERY_TIMEOUT_MS
+            )
         ]);
         const currentAdmin = assignableAdmins.find((item) => item.is_current) || null;
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs, {

@@ -12,6 +12,8 @@ const OPS_ALERT_HEALTH_LOOKBACK_HOURS = 72;
 const OPS_ALERT_HEALTH_PAGE_SIZE = 1000;
 const OPS_ALERT_HEALTH_MAX_PAGES = 1;
 const OPS_ALERT_HEALTH_TREND_BUCKET_HOURS = 6;
+const OPS_ALERT_HEALTH_OPTIONAL_QUERY_TIMEOUT_MS = 8000;
+const OPS_ALERT_HEALTH_ATTEMPT_JOB_ID_CHUNK_SIZE = 80;
 const OPS_ALERT_HEALTH_CHANNELS = Object.freeze([
     { key: 'telegram', label: 'Telegram' },
     { key: 'feishu', label: '飞书' },
@@ -103,6 +105,72 @@ function compareValue(left, right) {
     return String(left || '').localeCompare(String(right || ''));
 }
 
+function chunkValues(values = [], chunkSize = 50) {
+    const normalizedValues = Array.isArray(values) ? values : [];
+    const normalizedChunkSize = Math.max(1, Number(chunkSize) || 50);
+    const chunks = [];
+
+    for (let index = 0; index < normalizedValues.length; index += normalizedChunkSize) {
+        chunks.push(normalizedValues.slice(index, index + normalizedChunkSize));
+    }
+
+    return chunks;
+}
+
+function getFallbackOpsAlertRuntime() {
+    return {
+        config: {
+            enabled: false,
+            channels: {}
+        },
+        secrets: {}
+    };
+}
+
+async function resolveOpsAlertHealthOptionalValue(label, taskFactory, fallbackValue, timeoutMs = OPS_ALERT_HEALTH_OPTIONAL_QUERY_TIMEOUT_MS) {
+    const normalizedTimeoutMs = Math.max(0, Number(timeoutMs) || 0);
+    let timeoutId = 0;
+    let timedOut = false;
+    const taskPromise = Promise.resolve()
+        .then(taskFactory)
+        .catch((error) => {
+            if (timedOut) {
+                console.warn(`[AdminAPI] Ops alert health ${label} finished after timeout:`, error?.message || error);
+                return fallbackValue;
+            }
+            throw error;
+        });
+
+    if (!normalizedTimeoutMs) {
+        try {
+            return await taskPromise;
+        } catch (error) {
+            console.warn(`[AdminAPI] Ops alert health ${label} failed:`, error?.message || error);
+            return fallbackValue;
+        }
+    }
+
+    try {
+        return await Promise.race([
+            taskPromise,
+            new Promise((resolve) => {
+                timeoutId = setTimeout(() => {
+                    timedOut = true;
+                    console.warn(`[AdminAPI] Ops alert health ${label} timed out after ${normalizedTimeoutMs}ms; using degraded data.`);
+                    resolve(fallbackValue);
+                }, normalizedTimeoutMs);
+            })
+        ]);
+    } catch (error) {
+        console.warn(`[AdminAPI] Ops alert health ${label} failed:`, error?.message || error);
+        return fallbackValue;
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    }
+}
+
 async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_HEALTH_PAGE_SIZE, maxPages = OPS_ALERT_HEALTH_MAX_PAGES) {
     const rows = [];
 
@@ -134,12 +202,29 @@ async function fetchRecentJobs(supabase, sinceIso) {
         .order('created_at', { ascending: false }));
 }
 
-async function fetchRecentAttempts(supabase, sinceIso) {
-    return fetchPagedRows(() => supabase
-        .from('ops_alert_job_attempts')
-        .select('job_id, channel, status, response_status, error_message, created_at')
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: false }));
+async function fetchRecentAttemptsForJobs(supabase, jobIds = [], sinceIso) {
+    const normalizedJobIds = Array.from(new Set(
+        (Array.isArray(jobIds) ? jobIds : [])
+            .map((value) => normalizeText(value, 120))
+            .filter(Boolean)
+    ));
+
+    if (!normalizedJobIds.length) {
+        return [];
+    }
+
+    const groupedRows = await Promise.all(
+        chunkValues(normalizedJobIds, OPS_ALERT_HEALTH_ATTEMPT_JOB_ID_CHUNK_SIZE).map((jobIdChunk) => fetchPagedRows(() => supabase
+            .from('ops_alert_job_attempts')
+            .select('job_id, channel, status, response_status, error_message, created_at')
+            .in('job_id', jobIdChunk)
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false })))
+    );
+
+    return groupedRows
+        .flat()
+        .sort((left, right) => compareValue(right?.created_at, left?.created_at));
 }
 
 function groupRecentErrors(attempts = []) {
@@ -526,19 +611,26 @@ module.exports = async (req, res) => {
 
         const requestUrl = new URL(req.url || '/api/admin/settings/ops-alert-health', 'http://localhost');
         const adminSite = normalizeAdminSite(requestUrl.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all';
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: adminSite });
+        const runtime = await resolveOpsAlertHealthOptionalValue(
+            'runtime config',
+            () => loadOpsAlertsRuntimeConfig(supabase, process.env, { site: adminSite }),
+            getFallbackOpsAlertRuntime()
+        );
         const secretStatus = buildOpsAlertSecretStatus(runtime);
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_HEALTH_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
-        const [rawJobs, rawAttempts] = await Promise.all([
-            fetchRecentJobs(supabase, sinceIso),
-            fetchRecentAttempts(supabase, sinceIso)
-        ]);
+        const rawJobs = await resolveOpsAlertHealthOptionalValue(
+            'recent jobs',
+            () => fetchRecentJobs(supabase, sinceIso),
+            []
+        );
         const jobs = rawJobs.filter((job) => shouldIncludeOpsAlertJobForAdminSite(job, adminSite));
         const visibleJobIds = new Set(jobs.map((job) => normalizeText(job.id, 120)).filter(Boolean));
-        const attempts = adminSite === 'all'
-            ? rawAttempts
-            : rawAttempts.filter((attempt) => visibleJobIds.has(normalizeText(attempt.job_id, 120)));
+        const attempts = await resolveOpsAlertHealthOptionalValue(
+            'recent attempts',
+            () => fetchRecentAttemptsForJobs(supabase, Array.from(visibleJobIds), sinceIso),
+            []
+        );
 
         const channels = OPS_ALERT_HEALTH_CHANNELS.map((channel) => {
             const channelKey = channel.key;

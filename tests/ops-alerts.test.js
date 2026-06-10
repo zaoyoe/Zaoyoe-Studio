@@ -3078,6 +3078,54 @@ test('enqueueOpsAlertJob auto-reopens a resolved case when the same target recei
     assert.equal(state.caseEvents[0].status, 'open');
 });
 
+test('enqueueOpsAlertJob does not auto-reopen a case closed after the triggering alert', async () => {
+    const state = {
+        jobs: [],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'verify_service:https://aidone.lol',
+            alert_type: 'verify_service_disabled',
+            status: 'resolved',
+            owner_admin_id: 'zaoyoe@gmail.com',
+            owner_label: 'zaoyoe@gmail.com',
+            resolution: '已经人工关闭当前告警',
+            metadata: {
+                title: '验证服务不可用'
+            },
+            last_action: 'resolved',
+            last_action_by: 'zaoyoe@gmail.com',
+            last_action_at: '2026-04-11T20:00:00.000Z',
+            updated_at: '2026-04-11T20:00:00.000Z'
+        }],
+        caseEvents: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig();
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_service_disabled',
+        severity: 'critical',
+        title: '验证服务不可用',
+        content: '验证服务当前不可用，新的验证请求将无法正常创建。',
+        payload: {
+            target_id: 'verify_service:https://aidone.lol',
+            api_base_url: 'https://aidone.lol',
+            response_status: 404
+        },
+        createdAt: '2026-04-11T19:57:32.000Z',
+        source: 'verify_service_monitor'
+    }, { runtime });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.caseSync?.reopened, false);
+    assert.equal(result.caseSync?.reason, 'case_closed_after_alert');
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.cases[0].status, 'resolved');
+    assert.equal(state.cases[0].last_action, 'resolved');
+    assert.equal(state.cases[0].resolution, '已经人工关闭当前告警');
+    assert.equal(state.caseEvents.length, 0);
+});
+
 test('enqueueOpsAlertJob auto-reopens a resolved case when an actionable summary receives a new alert', async () => {
     const state = {
         jobs: [],
@@ -3144,6 +3192,166 @@ test('enqueueOpsAlertJob auto-reopens a resolved case when an actionable summary
     assert.equal(state.caseEvents.length, 1);
     assert.equal(state.caseEvents[0].action, 'reopen');
     assert.equal(state.caseEvents[0].target_id, 'ops_summary:verify_quota_summary');
+});
+
+test('enqueueOpsAlertJob does not auto-reopen an actionable summary closed after the triggering alert', async () => {
+    const state = {
+        jobs: [],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: 'verify_quota_summary',
+            status: 'resolved',
+            owner_admin_id: 'zaoyoe@gmail.com',
+            owner_label: 'zaoyoe@gmail.com',
+            resolution: '额度已人工确认，无需继续关注',
+            metadata: {
+                title: '验证额度告警汇总'
+            },
+            last_action: 'resolved',
+            last_action_by: 'zaoyoe@gmail.com',
+            last_action_at: '2026-05-11T10:00:00.000Z',
+            updated_at: '2026-05-11T10:00:00.000Z'
+        }],
+        caseEvents: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            verify_quota: {
+                enabled: true,
+                summary_enabled: true,
+                summary_schedule_mode: 'hourly',
+                summary_hourly_minute: 0,
+                summary_window_minutes: 60,
+                summary_max_items: 10
+            }
+        }
+    });
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_quota_low',
+        severity: 'critical',
+        title: '验证额度不足预警（primary-key）',
+        content: '验证额度告警\nAPI Key：primary-key',
+        payload: {
+            target_id: 'verify_quota:primary-key',
+            key_name: 'primary-key',
+            balance: 0,
+            remaining_jobs: 0,
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态'
+        },
+        createdAt: '2026-05-11T09:04:10.404Z',
+        source: 'verify_quota_monitor'
+    }, {
+        runtime,
+        now: new Date('2026-05-11T09:04:10.404Z')
+    });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.summary, true);
+    assert.equal(result.caseSync?.reopened, false);
+    assert.equal(result.caseSync?.reason, 'case_closed_after_alert');
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'verify_quota_summary');
+    assert.equal(state.cases[0].status, 'resolved');
+    assert.equal(state.cases[0].last_action, 'resolved');
+    assert.equal(state.cases[0].resolution, '额度已人工确认，无需继续关注');
+    assert.equal(state.caseEvents.length, 0);
+});
+
+test('enqueueOpsAlertJob does not auto-reopen an actionable summary already closed for the same window', async () => {
+    const state = {
+        jobs: [],
+        cases: [],
+        caseEvents: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            verify_quota: {
+                enabled: true,
+                summary_enabled: true,
+                summary_schedule_mode: 'hourly',
+                summary_hourly_minute: 0,
+                summary_window_minutes: 60,
+                summary_max_items: 10
+            }
+        }
+    });
+
+    const first = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_quota_low',
+        severity: 'critical',
+        title: '验证额度不足预警（primary-key）',
+        content: '验证额度告警\nAPI Key：primary-key',
+        payload: {
+            target_id: 'verify_quota:primary-key',
+            key_name: 'primary-key',
+            balance: 0,
+            remaining_jobs: 0,
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态'
+        },
+        createdAt: '2026-05-11T12:04:10.404Z',
+        source: 'verify_quota_monitor'
+    }, {
+        runtime,
+        now: new Date('2026-05-11T12:04:10.404Z')
+    });
+
+    assert.equal(first.queued, true);
+    assert.equal(first.summary, true);
+    assert.equal(state.jobs.length, 1);
+
+    state.cases.push({
+        site: 'cn',
+        category_key: 'verify',
+        target_id: 'ops_summary:verify_quota_summary',
+        alert_type: 'verify_quota_summary',
+        status: 'resolved',
+        owner_admin_id: 'zaoyoe@gmail.com',
+        owner_label: 'zaoyoe@gmail.com',
+        resolution: '当前汇总窗口已确认，无需继续关注',
+        metadata: {
+            title: '验证额度告警汇总',
+            resolved_summary_window_start_at: state.jobs[0].payload.window_start_at,
+            resolved_summary_window_end_at: state.jobs[0].payload.window_end_at
+        },
+        last_action: 'resolved',
+        last_action_by: 'zaoyoe@gmail.com',
+        last_action_at: '2026-05-11T12:10:00.000Z',
+        updated_at: '2026-05-11T12:10:00.000Z'
+    });
+
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_quota_low',
+        severity: 'critical',
+        title: '验证额度不足预警（backup-key）',
+        content: '验证额度告警\nAPI Key：backup-key',
+        payload: {
+            target_id: 'verify_quota:backup-key',
+            key_name: 'backup-key',
+            balance: 0,
+            remaining_jobs: 0,
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态'
+        },
+        createdAt: '2026-05-11T12:20:10.404Z',
+        source: 'verify_quota_monitor'
+    }, {
+        runtime,
+        now: new Date('2026-05-11T12:20:10.404Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(second.caseSync?.reopened, false);
+    assert.equal(second.caseSync?.reason, 'case_closed_after_summary_window');
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.cases[0].status, 'resolved');
+    assert.equal(state.cases[0].last_action, 'resolved');
+    assert.equal(state.cases[0].resolution, '当前汇总窗口已确认，无需继续关注');
+    assert.equal(state.caseEvents.length, 0);
 });
 
 test('enqueueOpsAlertJob keeps resolved cases isolated by site when auto-reopening', async () => {

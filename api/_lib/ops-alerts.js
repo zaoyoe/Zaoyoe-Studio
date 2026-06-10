@@ -1046,6 +1046,10 @@ function buildOpsAlertCaseMetadata(existingCase = {}, input = {}) {
     const title = normalizeText(input.title || existingMetadata.title);
     const referenceLabel = normalizeText(payload.reference_label || existingMetadata.reference_label);
     const referenceValue = normalizeText(payload.reference_value || existingMetadata.reference_value);
+    const alertJobId = normalizeText(input.alert_job_id || input.alertJobId || payload.alert_job_id || payload.alertJobId || payload.job_id || payload.jobId);
+    const alertCreatedAt = normalizeText(input.alert_created_at || input.alertCreatedAt || input.createdAt || input.created_at || payload.alert_created_at || payload.alertCreatedAt);
+    const summaryWindowStartAt = normalizeText(input.summary_window_start_at || input.summaryWindowStartAt || payload.summary_window_start_at || payload.summaryWindowStartAt || payload.window_start_at);
+    const summaryWindowEndAt = normalizeText(input.summary_window_end_at || input.summaryWindowEndAt || payload.summary_window_end_at || payload.summaryWindowEndAt || payload.window_end_at);
 
     if (alertType) {
         nextMetadata.alert_type = alertType;
@@ -1059,9 +1063,103 @@ function buildOpsAlertCaseMetadata(existingCase = {}, input = {}) {
     if (referenceValue) {
         nextMetadata.reference_value = referenceValue;
     }
+    if (alertJobId) {
+        nextMetadata.alert_job_id = alertJobId;
+    }
+    if (alertCreatedAt) {
+        nextMetadata.alert_created_at = alertCreatedAt;
+    }
+    if (summaryWindowStartAt) {
+        nextMetadata.summary_window_start_at = summaryWindowStartAt;
+    }
+    if (summaryWindowEndAt) {
+        nextMetadata.summary_window_end_at = summaryWindowEndAt;
+    }
     nextMetadata.site = siteContext.site;
 
     return nextMetadata;
+}
+
+function parseOpsAlertTimestampMs(value = '') {
+    const timestamp = Date.parse(normalizeText(value));
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getOpsAlertCaseClosedAtMs(caseRecord = {}) {
+    const status = normalizeText(caseRecord?.status).toLowerCase();
+    const lastAction = normalizeText(caseRecord?.last_action).toLowerCase();
+    if (status !== 'resolved' && lastAction !== 'resolved') {
+        return 0;
+    }
+
+    return parseOpsAlertTimestampMs(caseRecord?.last_action_at)
+        || parseOpsAlertTimestampMs(caseRecord?.updated_at);
+}
+
+function getOpsAlertInputCreatedAtMs(input = {}) {
+    const payload = normalizeJsonObject(input.payload);
+    return parseOpsAlertTimestampMs(input.createdAt || input.created_at)
+        || parseOpsAlertTimestampMs(input.alert_created_at || input.alertCreatedAt)
+        || parseOpsAlertTimestampMs(payload.alert_created_at || payload.alertCreatedAt);
+}
+
+function getOpsAlertResolvedCoveredAlertMs(caseRecord = {}) {
+    const metadata = normalizeJsonObject(caseRecord?.metadata);
+    return parseOpsAlertTimestampMs(metadata.resolved_alert_created_at)
+        || parseOpsAlertTimestampMs(metadata.alert_created_at);
+}
+
+function getOpsAlertInputSummaryWindowEndMs(input = {}) {
+    const payload = normalizeJsonObject(input.payload);
+    const metadata = normalizeJsonObject(input.metadata);
+    return parseOpsAlertTimestampMs(input.summary_window_end_at || input.summaryWindowEndAt)
+        || parseOpsAlertTimestampMs(payload.summary_window_end_at || payload.summaryWindowEndAt || payload.window_end_at)
+        || parseOpsAlertTimestampMs(metadata.summary_window_end_at || metadata.summaryWindowEndAt || metadata.window_end_at);
+}
+
+function getOpsAlertResolvedSummaryWindowEndMs(caseRecord = {}) {
+    const metadata = normalizeJsonObject(caseRecord?.metadata);
+    return parseOpsAlertTimestampMs(metadata.resolved_summary_window_end_at)
+        || parseOpsAlertTimestampMs(metadata.summary_window_end_at);
+}
+
+function isOpsAlertSummaryCaseInput(input = {}) {
+    const payload = normalizeJsonObject(input.payload);
+    const alertType = normalizeText(input.alertType || input.alert_type || payload.summary_type).toLowerCase();
+    const targetId = normalizeText(payload.target_id || input.target_id || input.targetId).toLowerCase();
+    return alertType.endsWith('_summary') || targetId.startsWith('ops_summary:');
+}
+
+function getResolvedOpsAlertCaseInputCoverage(caseRecord = {}, input = {}) {
+    const triggerTime = getOpsAlertInputCreatedAtMs(input);
+    const coveredAlertTime = getOpsAlertResolvedCoveredAlertMs(caseRecord);
+    if (coveredAlertTime > 0 && triggerTime > 0 && triggerTime <= coveredAlertTime) {
+        return {
+            covered: true,
+            reason: 'case_closed_after_alert'
+        };
+    }
+
+    if (!isOpsAlertSummaryCaseInput(input)) {
+        return {
+            covered: false,
+            reason: ''
+        };
+    }
+
+    const inputWindowEnd = getOpsAlertInputSummaryWindowEndMs(input);
+    const coveredWindowEnd = getOpsAlertResolvedSummaryWindowEndMs(caseRecord);
+    if (inputWindowEnd > 0 && coveredWindowEnd > 0 && inputWindowEnd <= coveredWindowEnd) {
+        return {
+            covered: true,
+            reason: 'case_closed_after_summary_window'
+        };
+    }
+
+    return {
+        covered: false,
+        reason: ''
+    };
 }
 
 async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = {}) {
@@ -1132,7 +1230,35 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
     }
 
     const nowIso = normalizeText(input.createdAt || input.created_at) || new Date(options.now || Date.now()).toISOString();
+    const triggerTime = parseOpsAlertTimestampMs(nowIso);
+    const caseClosedAt = getOpsAlertCaseClosedAtMs(existingCase);
+    if (caseClosedAt > 0 && triggerTime > 0 && triggerTime <= caseClosedAt) {
+        return {
+            reopened: false,
+            reason: 'case_closed_after_alert',
+            site,
+            category_key: categoryKey,
+            target_id: targetId
+        };
+    }
+    const coverage = getResolvedOpsAlertCaseInputCoverage(existingCase, input);
+    if (coverage.covered) {
+        return {
+            reopened: false,
+            reason: coverage.reason,
+            site,
+            category_key: categoryKey,
+            target_id: targetId
+        };
+    }
+
     const metadata = buildOpsAlertCaseMetadata(existingCase, input);
+    metadata.reopened_at = nowIso;
+    delete metadata.resolved_at;
+    delete metadata.resolved_alert_job_id;
+    delete metadata.resolved_alert_created_at;
+    delete metadata.resolved_summary_window_start_at;
+    delete metadata.resolved_summary_window_end_at;
     const nextRecord = {
         ...existingCase,
         site,

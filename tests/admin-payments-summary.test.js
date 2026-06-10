@@ -3090,11 +3090,161 @@ test('payments ops alert queue includes shop profit audit risks', async () => {
         assert.equal(shopProfitAlert.severity, 'critical');
         assert.equal(shopProfitAlert.queue_status, 'pending');
         assert.equal(shopProfitAlert.ops_status, 'open');
+        assert.equal(shopProfitAlert.ops_available_actions.includes('mark_handled'), true);
+        assert.equal(shopProfitAlert.ops_available_actions.includes('ignore'), true);
         assert.equal(shopProfitAlert.action_label, '核对售价、采购成本、优惠和补发记录');
         assert.equal(shopProfitAlert.affected_order_count, 1);
         assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_orders'), true);
         assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_order_profit_ledger'), true);
         assert.equal(state.tableAccesses.some((entry) => entry.table === 'payment_orders'), false);
+    });
+});
+
+test('payments ops alert queue ignores only the current shop profit audit batch', async () => {
+    const state = {
+        shopOrders: [],
+        shopOrderItems: [],
+        shopInventory: [],
+        shopProductSkus: [
+            {
+                id: 'sku-ops-loss-batch',
+                product_id: 'product-ops-profit-batch',
+                sku_name: '运维亏损批次月卡',
+                sku_code: 'ops-loss-batch-month',
+                inventory_sku_id: null
+            }
+        ],
+        shopOrderProfitLedger: [],
+        paymentAnomalyCases: []
+    };
+
+    function addLossOrder(suffix, pricePaid, purchaseCost, createdAt) {
+        const orderId = `shop-ops-profit-loss-${suffix}`;
+        const inventoryId = `inventory-ops-profit-loss-${suffix}`;
+        state.shopOrders.push({
+            id: orderId,
+            user_id: `user-ops-loss-${suffix}`,
+            product_id: 'product-ops-profit-batch',
+            inventory_id: null,
+            sku_id: 'sku-ops-loss-batch',
+            snapshot_product_name: '运维亏损批次规格',
+            price_paid: pricePaid,
+            paid_points_spent: pricePaid,
+            bonus_points_spent: 0,
+            points_spend_breakdown: {
+                status: 'exact',
+                paid_points: pricePaid,
+                bonus_points: 0,
+                untracked_points: 0
+            },
+            total_price: pricePaid,
+            discount_amount: 0,
+            refund_status: 'none',
+            created_at: createdAt,
+            site: 'cn'
+        });
+        state.shopOrderItems.push({
+            id: `${orderId}-item`,
+            order_id: orderId,
+            inventory_id: inventoryId,
+            snapshot_product_name: '运维亏损批次规格',
+            price_paid: pricePaid,
+            created_at: createdAt
+        });
+        state.shopInventory.push({
+            id: inventoryId,
+            product_id: 'product-ops-profit-batch',
+            content: `loss-account-${suffix}`,
+            status: 'sold',
+            buyer_id: `user-ops-loss-${suffix}`,
+            sold_at: createdAt,
+            sku_id: 'sku-ops-loss-batch',
+            source_batch_id: `batch-ops-loss-${suffix}`,
+            purchase_unit_cost: purchaseCost,
+            purchase_currency: 'CNY',
+            purchase_exchange_rate_to_cny: 1,
+            purchase_unit_cost_cny: purchaseCost
+        });
+        state.shopOrderProfitLedger.push({
+            id: `ops-ledger-profit-loss-${suffix}`,
+            site: 'cn',
+            order_id: orderId,
+            inventory_id: inventoryId,
+            source_batch_id: `batch-ops-loss-${suffix}`,
+            dedupe_key: `${orderId}:${inventoryId}:inventory_cost`,
+            entry_type: 'inventory_cost',
+            entry_group: 'cost',
+            amount: -purchaseCost,
+            currency: 'CNY',
+            cash_value_cny: -purchaseCost,
+            points_amount: null,
+            status: 'settled',
+            confidence: 'exact',
+            occurred_at: createdAt,
+            snapshot: {
+                title: '采购成本',
+                tone: 'ready'
+            }
+        });
+    }
+
+    addLossOrder('one', 10, 15, '2026-03-24T10:00:00.000Z');
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        async function loadNegativeProfitAlert() {
+            const req = {
+                method: 'GET',
+                query: {
+                    view: 'overview',
+                    days: '30',
+                    scope: 'ops'
+                }
+            };
+            const res = createMockResponse();
+
+            await handler(req, res);
+            const payload = res.json();
+            return {
+                payload,
+                alert: (payload.ops_alert_items || [])
+                    .find((item) => item.type === 'shop_profit_audit' && item.audit_alert_type === 'negative_profit')
+            };
+        }
+
+        const firstRun = await loadNegativeProfitAlert();
+        assert.equal(firstRun.payload.success, true);
+        assert.ok(firstRun.alert);
+        assert.equal(firstRun.alert.queue_status, 'pending');
+
+        state.paymentAnomalyCases.push({
+            id: 'case-shop-profit-current-batch',
+            target_type: 'shop_profit_audit',
+            target_id: firstRun.alert.id,
+            status: 'ignored',
+            note: '当前批次已确认忽略',
+            resolution: '历史不可追溯',
+            last_action: 'ignore',
+            last_action_at: '2026-03-24T11:00:00.000Z',
+            updated_at: '2026-03-24T11:00:00.000Z'
+        });
+
+        const ignoredRun = await loadNegativeProfitAlert();
+        assert.ok(ignoredRun.alert);
+        assert.equal(ignoredRun.alert.id, firstRun.alert.id);
+        assert.equal(ignoredRun.alert.queue_status, 'ignored');
+        assert.equal(ignoredRun.alert.ops_available_actions.includes('ignore'), false);
+        assert.equal(ignoredRun.alert.ops_available_actions.includes('mark_handled'), false);
+
+        addLossOrder('two', 10, 13, '2026-03-24T12:00:00.000Z');
+
+        const newBatchRun = await loadNegativeProfitAlert();
+        assert.ok(newBatchRun.alert);
+        assert.notEqual(newBatchRun.alert.id, firstRun.alert.id);
+        assert.equal(newBatchRun.alert.queue_status, 'pending');
+        assert.equal(newBatchRun.alert.ops_status, 'open');
+        assert.equal(newBatchRun.alert.affected_order_count, 2);
+        assert.equal(newBatchRun.alert.ops_available_actions.includes('ignore'), true);
+        assert.equal(newBatchRun.payload.ops_alert_summary.actionable_count, 1);
     });
 });
 

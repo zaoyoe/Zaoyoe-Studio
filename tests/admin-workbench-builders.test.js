@@ -401,6 +401,163 @@ test('shared admin workbench submits case mutation requests and preserves metada
     }]);
 });
 
+test('shared admin workbench submits case mutation requests with timeout-aware settings', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const calls = [];
+    let clearedTimeoutId = 0;
+    class FakeAbortController {
+        constructor() {
+            this.signal = { aborted: false };
+        }
+        abort() {
+            this.signal.aborted = true;
+        }
+    }
+
+    const payload = await runtime.submitOpsAlertCaseMutationRequest({
+        Authorization: 'Bearer test'
+    }, 'resolve', {
+        category: 'inventory',
+        targetId: 'ops_summary:shop_inventory_summary'
+    }, {
+        timeoutMs: 4321,
+        AbortController: FakeAbortController,
+        setTimeout(handler, delay) {
+            calls.push({ type: 'setTimeout', delay, hasHandler: typeof handler === 'function' });
+            return 99;
+        },
+        clearTimeout(timeoutId) {
+            clearedTimeoutId = timeoutId;
+        },
+        fetch: async (url, init) => {
+            calls.push({ type: 'fetch', url, init });
+            return {
+                ok: true,
+                async json() {
+                    return { success: true, summary: { processed_count: 1 } };
+                }
+            };
+        }
+    });
+
+    assert.equal(payload.success, true);
+    assert.equal(calls[0].type, 'setTimeout');
+    assert.equal(calls[0].delay, 4321);
+    assert.equal(calls[1].type, 'fetch');
+    assert.equal(calls[1].url, '/api/admin/settings/ops-alert-monitor-cases');
+    assert.equal(calls[1].init.method, 'POST');
+    assert.equal(calls[1].init.headers.Authorization, 'Bearer test');
+    assert.ok(calls[1].init.signal);
+    assert.equal(clearedTimeoutId, 99);
+});
+
+test('shared admin workbench reports a friendly case mutation timeout message', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    class FakeAbortController {
+        constructor() {
+            this.signal = { aborted: false };
+        }
+        abort() {
+            this.signal.aborted = true;
+        }
+    }
+
+    await assert.rejects(
+        () => runtime.submitOpsAlertCaseMutationRequest({}, 'resolve', {
+            category: 'inventory',
+            targetId: 'ops_summary:shop_inventory_summary'
+        }, {
+            timeoutMs: 1,
+            AbortController: FakeAbortController,
+            setTimeout() {
+                return 7;
+            },
+            clearTimeout() {},
+            fetch: async () => {
+                const error = new Error('The operation was aborted');
+                error.name = 'AbortError';
+                throw error;
+            }
+        }),
+        /集中告警处理超时，请稍后刷新确认结果/
+    );
+});
+
+test('shared admin workbench preserves per-alert site when building batch case mutations', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const request = runtime.buildOpsAlertCaseMutationRequest('resolve', {
+        site_context: 'all'
+    }, {
+        items: [
+            {
+                category_key: 'inventory',
+                target_id: 'ops_summary:shop_inventory_summary',
+                case_site: 'cn',
+                reference_label: '目标',
+                reference_value: '库存汇总',
+                id: 'inventory-summary-job',
+                created_at: '2026-06-10T12:12:19.000Z',
+                summary_window_start_at: '2026-06-10T12:00:00.000Z',
+                summary_window_end_at: '2026-06-10T13:00:00.000Z'
+            },
+            {
+                category_key: 'verify',
+                target_id: 'ops_summary:verify_quota_summary',
+                caseSite: 'intl',
+                reference_label: '目标',
+                reference_value: '验证额度',
+                alert_job_id: 'verify-summary-job',
+                alert_created_at: '2026-06-10T12:15:00.000Z',
+                summary_window_start_at: '2026-06-10T12:00:00.000Z',
+                summary_window_end_at: '2026-06-10T13:00:00.000Z'
+            }
+        ],
+        resolution: '已批量处理'
+    });
+
+    assert.equal(request.metadata.site, 'all');
+    assert.deepEqual(JSON.parse(JSON.stringify(request.items)), [
+        {
+            category_key: 'inventory',
+            target_id: 'ops_summary:shop_inventory_summary',
+            alert_type: '',
+            title: '',
+            reference_label: '目标',
+            reference_value: '库存汇总',
+            site: 'cn',
+            alert_job_id: 'inventory-summary-job',
+            alert_created_at: '2026-06-10T12:12:19.000Z',
+            summary_window_start_at: '2026-06-10T12:00:00.000Z',
+            summary_window_end_at: '2026-06-10T13:00:00.000Z',
+            metadata: {
+                alert_job_id: 'inventory-summary-job',
+                alert_created_at: '2026-06-10T12:12:19.000Z',
+                summary_window_start_at: '2026-06-10T12:00:00.000Z',
+                summary_window_end_at: '2026-06-10T13:00:00.000Z'
+            }
+        },
+        {
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: '',
+            title: '',
+            reference_label: '目标',
+            reference_value: '验证额度',
+            site: 'intl',
+            alert_job_id: 'verify-summary-job',
+            alert_created_at: '2026-06-10T12:15:00.000Z',
+            summary_window_start_at: '2026-06-10T12:00:00.000Z',
+            summary_window_end_at: '2026-06-10T13:00:00.000Z',
+            metadata: {
+                alert_job_id: 'verify-summary-job',
+                alert_created_at: '2026-06-10T12:15:00.000Z',
+                summary_window_start_at: '2026-06-10T12:00:00.000Z',
+                summary_window_end_at: '2026-06-10T13:00:00.000Z'
+            }
+        }
+    ]);
+});
+
 test('shared admin workbench derives monitor batch items and mute module keys from prepared categories', () => {
     const runtime = loadAdminWorkbenchRuntime();
     const categories = [
@@ -411,6 +568,7 @@ test('shared admin workbench derives monitor batch items and mute module keys fr
                     target_id: 'payment_order:PAY-1',
                     reference_label: '支付单',
                     reference_value: 'PAY-1',
+                    case_site: 'cn',
                     case_status: 'open'
                 },
                 {
@@ -428,6 +586,7 @@ test('shared admin workbench derives monitor batch items and mute module keys fr
                     target_id: 'shop_order_risk:coupon:SPRING2026',
                     reference_label: '优惠码',
                     reference_value: 'SPRING2026',
+                    caseSite: 'intl',
                     case_status: 'claimed'
                 }
             ]
@@ -442,7 +601,8 @@ test('shared admin workbench derives monitor batch items and mute module keys fr
             alert_type: '',
             title: '',
             reference_label: '支付单',
-            reference_value: 'PAY-1'
+            reference_value: 'PAY-1',
+            site: 'cn'
         },
         {
             category_key: 'shop_risk',
@@ -450,7 +610,8 @@ test('shared admin workbench derives monitor batch items and mute module keys fr
             alert_type: '',
             title: '',
             reference_label: '优惠码',
-            reference_value: 'SPRING2026'
+            reference_value: 'SPRING2026',
+            site: 'intl'
         }
     ]);
 
@@ -1128,7 +1289,11 @@ test('shared admin workbench derives ops alert monitor action protocol helpers',
         signalType: 'coupon',
         caseStatus: 'claimed',
         caseOwnerAdminId: 'admin_1',
-        caseOwnerLabel: '陈值班'
+        caseOwnerLabel: '陈值班',
+        alertJobId: '',
+        alertCreatedAt: '',
+        summaryWindowStartAt: '',
+        summaryWindowEndAt: ''
     });
 
     assert.deepEqual(JSON.parse(JSON.stringify(runtime.getAdminWorkbenchOpsAlertMonitorWorkspaceAction({
@@ -1747,6 +1912,45 @@ test('shared admin workbench retries transient ops alert monitor fetch failures'
     assert.deepEqual(calls.filter((item) => item.type === 'retry-delay').map((item) => item.delay), [25, 50]);
 });
 
+test('shared admin workbench retries timed-out ops alert monitor fetches', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const calls = [];
+    const payload = await runtime.fetchAdminWorkbenchOpsAlertMonitor(
+        { authorization: 'Bearer timeout-retry' },
+        {
+            endpoint: '/custom/ops-alert-monitor',
+            retryCount: 1,
+            retryDelayMs: 15,
+            setTimeout(handler, delay) {
+                calls.push({ type: 'retry-delay', delay });
+                if (typeof handler === 'function') {
+                    handler();
+                }
+                return 9;
+            },
+            clearTimeout() {},
+            fetch: async (url, init) => {
+                calls.push({ type: 'fetch', url, init });
+                if (calls.filter((item) => item.type === 'fetch').length === 1) {
+                    const error = new Error('The operation was aborted');
+                    error.name = 'AbortError';
+                    throw error;
+                }
+                return {
+                    ok: true,
+                    async json() {
+                        return { success: true, fetched_at: '2026-04-01T12:07:00.000Z' };
+                    }
+                };
+            }
+        }
+    );
+
+    assert.equal(payload.fetched_at, '2026-04-01T12:07:00.000Z');
+    assert.equal(calls.filter((item) => item.type === 'fetch').length, 2);
+    assert.deepEqual(calls.filter((item) => item.type === 'retry-delay').map((item) => item.delay), [15]);
+});
+
 test('shared admin workbench normalizes ops alert monitor payloads into state-friendly snapshots', () => {
     const runtime = loadAdminWorkbenchRuntime();
     const normalized = runtime.normalizeAdminWorkbenchOpsAlertMonitorPayload({
@@ -1842,6 +2046,47 @@ test('shared admin workbench fetches ops alert health payloads with timeout-awar
     assert.equal(calls[1].init.headers.authorization, 'Bearer test');
     assert.ok(calls[1].init.signal);
     assert.equal(clearedTimeoutId, 84);
+});
+
+test('shared admin workbench retries timed-out ops alert health fetches', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const calls = [];
+    const payload = await runtime.fetchAdminWorkbenchOpsAlertHealth(
+        { authorization: 'Bearer health-timeout-retry' },
+        {
+            endpoint: '/custom/ops-alert-health',
+            site: 'cn',
+            retryCount: 1,
+            retryDelayMs: 20,
+            setTimeout(handler, delay) {
+                calls.push({ type: 'retry-delay', delay });
+                if (typeof handler === 'function') {
+                    handler();
+                }
+                return 11;
+            },
+            clearTimeout() {},
+            fetch: async (url, init) => {
+                calls.push({ type: 'fetch', url, init });
+                if (calls.filter((item) => item.type === 'fetch').length === 1) {
+                    const error = new Error('The operation was aborted');
+                    error.name = 'AbortError';
+                    throw error;
+                }
+                return {
+                    ok: true,
+                    async json() {
+                        return { success: true, fetched_at: '2026-04-01T13:05:00.000Z' };
+                    }
+                };
+            }
+        }
+    );
+
+    assert.equal(payload.fetched_at, '2026-04-01T13:05:00.000Z');
+    assert.equal(calls.filter((item) => item.type === 'fetch').length, 2);
+    assert.equal(calls.find((item) => item.type === 'fetch')?.url, '/custom/ops-alert-health?site=cn');
+    assert.deepEqual(calls.filter((item) => item.type === 'retry-delay').map((item) => item.delay), [20]);
 });
 
 test('shared admin workbench normalizes ops alert health payloads into state-friendly snapshots', () => {
@@ -4139,6 +4384,53 @@ test('shared admin workbench builds ops alert overview and health render states'
     assert.equal(healthRenderState.channelCardStates.length, 1);
     assert.equal(healthRenderState.channelCardStates[0].label, 'Telegram');
     assert.equal(healthRenderState.channelCardStates[0].summaryText, '最近 72 小时内暂无投递记录');
+
+    const staleHealthRenderState = runtime.buildAdminWorkbenchOpsAlertHealthRenderState({
+        status: 'ready',
+        stale: true,
+        message: '刷新失败，继续显示上一份通道健康快照：加载站外告警通道健康状态超时，请稍后重试',
+        summary: {
+            lookback_hours: 24,
+            total_attempt_count: 5,
+            delivered_count: 4,
+            failed_count: 1,
+            dead_letter_count: 0
+        },
+        channels: [{
+            key: 'telegram',
+            label: 'Telegram',
+            tone: 'success',
+            enabled: true,
+            configured: true,
+            health_label: '已就绪',
+            minimum_severity: 'warning',
+            source: 'stored',
+            recipient_summary: '2 个 chat',
+            total_attempts: 5,
+            delivery_rate: 80,
+            dead_letter_count: 0,
+            retry_count: 1,
+            recent_errors: []
+        }]
+    }, {
+        defaultHealthState: {
+            status: 'idle',
+            summary: {
+                lookback_hours: 72,
+                total_attempt_count: 0,
+                delivered_count: 0,
+                failed_count: 0,
+                dead_letter_count: 0
+            }
+        },
+        formatCount: (value) => `#${value}`,
+        formatDateTime: (value) => `FMT:${value}`
+    });
+
+    assert.equal(staleHealthRenderState.panelState.status, 'ready');
+    assert.equal(staleHealthRenderState.panelState.metaIcon, 'fas fa-triangle-exclamation');
+    assert.equal(staleHealthRenderState.panelState.metaText.includes('继续显示上一份通道健康快照'), true);
+    assert.equal(staleHealthRenderState.channelCardStates.length, 1);
 });
 
 test('shared admin workbench builds ops alert overview recent visual state from health summary', () => {

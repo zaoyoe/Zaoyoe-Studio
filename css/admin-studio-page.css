@@ -30545,6 +30545,12 @@ html:not([data-theme="dark"]) #opsAlertBatchMuteModal .admin-shop-risk-case-moda
     color: rgba(15, 23, 42, 0.82) !important;
 }
 
+html[data-theme="light"] #opsAlertBatchMuteModal :is(.ops-alert-batch-mute-picker__label, .ops-alert-batch-mute-picker__control > span:first-child),
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal :is(.ops-alert-batch-mute-picker__label, .ops-alert-batch-mute-picker__control > span:first-child) {
+    color: rgba(15, 23, 42, 0.82) !important;
+    -webkit-text-fill-color: rgba(15, 23, 42, 0.82) !important;
+}
+
 html[data-theme="light"] #shopRiskCaseComposerModal :is(
     .admin-shop-risk-case-modal__field select,
     .admin-shop-risk-case-modal__field textarea,
@@ -30568,6 +30574,64 @@ html:not([data-theme="dark"]) #opsAlertBatchMuteModal :is(
     border-color: rgba(100, 116, 139, 0.15) !important;
     color: #0f172a !important;
     box-shadow: none !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell,
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell {
+    background: rgba(255, 255, 255, 0.92) !important;
+    background-image: none !important;
+    border-color: rgba(100, 116, 139, 0.15) !important;
+    color: #0f172a !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell:focus-within,
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell:focus-within {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42) !important;
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.12) !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell i,
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell i {
+    color: var(--admin-studio-ui-blue) !important;
+    -webkit-text-fill-color: var(--admin-studio-ui-blue) !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input,
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input:is(:focus, :focus-visible),
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input,
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input:is(:focus, :focus-visible) {
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input::placeholder,
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input::placeholder {
+    color: rgba(100, 116, 139, 0.58) !important;
+    -webkit-text-fill-color: rgba(100, 116, 139, 0.58) !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__presets button,
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__presets button {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.24) !important;
+    color: #315f8c !important;
+    -webkit-text-fill-color: #315f8c !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__presets button:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__presets button:is(:hover, :focus-visible) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42) !important;
+    color: #244f78 !important;
+    -webkit-text-fill-color: #244f78 !important;
 }
 
 html[data-theme="light"] #shopRiskCaseComposerModal .admin-shop-risk-case-modal__field .shop-custom-select__trigger,
@@ -42436,8 +42500,8 @@ html[data-theme="light"] #module-ops-alerts :is(.ops-alert-monitor-filter-btn.ac
 html:not([data-theme="dark"]) #module-ops-alerts :is(.ops-alert-monitor-filter-btn.active, .ops-alert-shift-report__view-chip.is-active, .ops-alert-strategy-tab-btn.is-active) {
     background: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.14) !important;
     border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.32) !important;
-    color: #1d4ed8 !important;
-    -webkit-text-fill-color: #1d4ed8 !important;
+    color: var(--admin-studio-ui-blue, #769dca) !important;
+    -webkit-text-fill-color: var(--admin-studio-ui-blue, #769dca) !important;
     box-shadow: none !important;
 }
 
@@ -42526,9 +42590,9 @@ html:not([data-theme="dark"]) #module-payments {
     --payments-light-danger-bg: rgba(254, 242, 242, 0.94);
     --payments-light-danger-border: rgba(220, 38, 38, 0.22);
     --payments-light-danger-text: #b91c1c;
-    --payments-light-info-bg: rgba(239, 246, 255, 0.94);
-    --payments-light-info-border: rgba(37, 99, 235, 0.22);
-    --payments-light-info-text: #1d4ed8;
+    --payments-light-info-bg: rgba(107, 158, 206, 0.12);
+    --payments-light-info-border: rgba(107, 158, 206, 0.32);
+    --payments-light-info-text: var(--admin-studio-ui-blue, #6b9ece);
     color: var(--payments-light-text) !important;
 }
 
@@ -43160,6 +43224,35 @@ html:not([data-theme="dark"]) #module-payments .payments-date-menu .custom-range
     border: 1px solid var(--payments-light-accent) !important;
     color: #ffffff !important;
     box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-payments :is(.payments-batch-select span, .payments-batch-select-all::before),
+html:not([data-theme="dark"]) #module-payments :is(.payments-batch-select span, .payments-batch-select-all::before) {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border-color: rgba(var(--payments-light-accent-rgb), 0.34) !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] #module-payments :is(.payments-batch-select input:checked + span, .payments-batch-select-all:has(input:checked)::before),
+html:not([data-theme="dark"]) #module-payments :is(.payments-batch-select input:checked + span, .payments-batch-select-all:has(input:checked)::before) {
+    background: var(--payments-light-accent) !important;
+    border-color: var(--payments-light-accent) !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(var(--payments-light-accent-rgb), 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.26) !important;
+}
+
+html[data-theme="light"] #module-payments .payments-batch-select span i,
+html:not([data-theme="dark"]) #module-payments .payments-batch-select span i {
+    color: inherit !important;
+    -webkit-text-fill-color: currentColor !important;
+}
+
+html[data-theme="light"] #module-payments :is(.payments-batch-select input:focus-visible + span, .payments-batch-select-all:has(input:focus-visible)::before),
+html:not([data-theme="dark"]) #module-payments :is(.payments-batch-select input:focus-visible + span, .payments-batch-select-all:has(input:focus-visible)::before) {
+    outline-color: rgba(var(--payments-light-accent-rgb), 0.52) !important;
 }
 
 /* 20260428_ADMIN_STUDIO_PAYMENTS_LIGHT_READABILITY_CLIP_FIX_1 */
@@ -53211,6 +53304,43 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     #opsAlertBatchMuteModal .admin-shop-risk-case-modal__field input {
         min-height: 40px !important;
         border-radius: 10px !important;
+    }
+
+    #opsAlertBatchMuteModal .ops-alert-batch-mute-picker {
+        width: 100% !important;
+        gap: 8px !important;
+    }
+
+    #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__grid {
+        grid-template-columns: minmax(0, 1fr) minmax(94px, 0.72fr) !important;
+        gap: 8px !important;
+    }
+
+    #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell {
+        min-height: 40px !important;
+        border-radius: 10px !important;
+        padding: 0 10px !important;
+    }
+
+    #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__input-shell input {
+        min-height: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        font-size: 0.84rem !important;
+    }
+
+    #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__presets {
+        gap: 6px !important;
+    }
+
+    #opsAlertBatchMuteModal .ops-alert-batch-mute-picker__presets button {
+        flex: 1 1 82px !important;
+        min-height: 32px !important;
+        border-radius: 10px !important;
+        font-size: 0.74rem !important;
     }
 
     #shopRiskCaseComposerModal .admin-shop-risk-case-modal__field textarea {
