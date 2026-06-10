@@ -27,7 +27,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
+        indexSource.includes('./js/framer_home.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -807,7 +807,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
+        indexSource.includes('./js/framer_home.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );

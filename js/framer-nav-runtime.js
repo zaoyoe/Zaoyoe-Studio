@@ -1,7 +1,7 @@
 (function (global) {
     'use strict';
 
-    const VERSION = '20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3';
+    const VERSION = '20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1';
     const MOBILE_MENU_LOCK_CLASS = 'mobile-menu-open';
     const runtimeState = {
         cachedData: {
@@ -150,31 +150,163 @@
         );
     };
 
+    function getCurrentNavSite() {
+        const configuredSite = String(global.SiteConfig?.site || '').trim().toLowerCase();
+        if (configuredSite === 'intl' || configuredSite === 'cn') {
+            return configuredSite;
+        }
+
+        try {
+            const siteParam = new URLSearchParams(global.location?.search || '').get('site');
+            if (siteParam === 'intl' || siteParam === 'cn') {
+                return siteParam;
+            }
+        } catch (_error) {
+            // Ignore URL parsing issues and fall back to hostname detection.
+        }
+
+        const hostname = String(global.location?.hostname || '').trim().toLowerCase();
+        return hostname === 'zaoyoe.xyz' || hostname === 'www.zaoyoe.xyz' ? 'intl' : 'cn';
+    }
+
+    function hasShopNavCategoryPublicFlag(category = {}) {
+        return category
+            && typeof category === 'object'
+            && Object.prototype.hasOwnProperty.call(category, 'is_public');
+    }
+
+    function isPublicShopNavCategory(category = {}) {
+        if (!hasShopNavCategoryPublicFlag(category)) {
+            return true;
+        }
+        if (typeof category.is_public === 'boolean') {
+            return category.is_public;
+        }
+        const normalized = String(category.is_public ?? '').trim().toLowerCase();
+        return !['0', 'false', 'no', 'off', 'hidden', 'private'].includes(normalized);
+    }
+
+    function normalizeShopNavCategoryNames(categories = []) {
+        const names = [];
+        const seen = new Set();
+
+        (Array.isArray(categories) ? categories : []).forEach((category) => {
+            if (category && typeof category === 'object' && !isPublicShopNavCategory(category)) {
+                return;
+            }
+            const name = String(
+                category && typeof category === 'object'
+                    ? category.name
+                    : category
+            ).trim();
+            if (!name || seen.has(name)) return;
+
+            seen.add(name);
+            names.push(name);
+        });
+
+        return names;
+    }
+
+    function getShopNavProductPriceForSite(product = {}, site = getCurrentNavSite()) {
+        const priceField = site === 'intl' ? 'price_points_intl' : 'price_points';
+        const rawValue = product?.[priceField];
+        if (rawValue === null || rawValue === undefined || rawValue === '') {
+            return null;
+        }
+
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function filterShopNavCategoriesWithSiteProducts(categories = [], products = [], site = getCurrentNavSite()) {
+        const visibleCategoryNames = new Set(
+            (Array.isArray(products) ? products : [])
+                .filter((product) => product?.is_active !== false)
+                .filter((product) => getShopNavProductPriceForSite(product, site) !== null)
+                .map((product) => String(product?.category || '').trim())
+                .filter(Boolean)
+        );
+
+        return (Array.isArray(categories) ? categories : [])
+            .filter((category) => isPublicShopNavCategory(category))
+            .filter((category) => visibleCategoryNames.has(String(category?.name || '').trim()));
+    }
+
+    async function fetchShopNavCategoriesFromCatalog(site = getCurrentNavSite()) {
+        const response = await fetch(`/api/shop/catalog?site=${encodeURIComponent(site)}`, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json'
+            }
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || 'shop catalog unavailable');
+        }
+
+        const categories = Array.isArray(payload?.categories)
+            ? payload.categories
+            : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
+        return normalizeShopNavCategoryNames(categories);
+    }
+
+    async function fetchShopNavCategoriesFromSupabase(site = getCurrentNavSite()) {
+        if (!global.supabaseClient) {
+            return [];
+        }
+
+        const [categoryResult, productResult] = await Promise.all([
+            global.supabaseClient
+                .from('shop_categories')
+                .select('*')
+                .order('sort_order'),
+            global.supabaseClient
+                .from('shop_products')
+                .select('id, category, price_points, price_points_intl, is_active')
+                .eq('is_active', true)
+                .order('display_order', { ascending: false })
+        ]);
+
+        if (categoryResult.error) {
+            throw categoryResult.error;
+        }
+        if (productResult.error) {
+            throw productResult.error;
+        }
+
+        return normalizeShopNavCategoryNames(filterShopNavCategoriesWithSiteProducts(
+            Array.isArray(categoryResult.data) ? categoryResult.data : [],
+            Array.isArray(productResult.data) ? productResult.data : [],
+            site
+        ));
+    }
+
+    async function loadShopNavCategories() {
+        const site = getCurrentNavSite();
+
+        try {
+            return await fetchShopNavCategoriesFromCatalog(site);
+        } catch (catalogError) {
+            console.warn('[FramerNavRuntime] Failed to load site-scoped shop categories from catalog:', catalogError?.message || catalogError);
+        }
+
+        try {
+            return await fetchShopNavCategoriesFromSupabase(site);
+        } catch (supabaseError) {
+            console.warn('[FramerNavRuntime] Failed to load site-scoped shop categories from Supabase:', supabaseError?.message || supabaseError);
+            return [];
+        }
+    }
+
     async function loadNavData() {
         if (global.PROMPTS && Array.isArray(global.PROMPTS)) {
             runtimeState.cachedData.prompts = global.PROMPTS;
         }
 
-        if (!global.supabaseClient) {
-            runtimeState.cachedData.shopCategories = [];
-            return runtimeState.cachedData;
-        }
-
-        try {
-            const { data, error } = await global.supabaseClient
-                .from('shop_categories')
-                .select('*')
-                .order('sort_order');
-
-            runtimeState.cachedData.shopCategories = !error && Array.isArray(data)
-                ? data
-                    .filter((category) => category?.is_public !== false)
-                    .map((category) => category.name)
-                : [];
-        } catch (error) {
-            console.warn('[FramerNavRuntime] Failed to load shop categories for nav:', error?.message || error);
-            runtimeState.cachedData.shopCategories = [];
-        }
+        runtimeState.cachedData.shopCategories = await loadShopNavCategories();
 
         return runtimeState.cachedData;
     }
@@ -229,7 +361,7 @@
 
         const getShopCategories = () => {
             const categories = runtimeState.cachedData.shopCategories || [];
-            return categories.length > 0 ? categories : ['全部商品', 'API密钥', '会员服务', '资源包'];
+            return Array.isArray(categories) ? categories : [];
         };
 
         const dropdownData = {
@@ -476,6 +608,7 @@
     global.FramerNavRuntime = Object.freeze({
         version: VERSION,
         loadNavData,
+        loadShopNavCategories,
         initNavDropdowns,
         initStandaloneNavBar
     });
