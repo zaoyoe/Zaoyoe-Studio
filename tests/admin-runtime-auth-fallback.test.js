@@ -273,6 +273,46 @@ test('analytics admin auth headers reuse AdminApi request init before reading sd
     assert.equal(headers['Content-Type'], 'application/json');
 });
 
+test('admin config api headers force bearer auth for raw settings fetches', async () => {
+    const source = readRepoFile('admin-config.js');
+    const functionSource = extractFunction(source, 'getAdminConfigApiHeaders');
+    let capturedInit = null;
+    const HeadersImpl = globalThis.Headers;
+    const context = {
+        Headers: HeadersImpl,
+        window: {
+            AdminApi: {
+                async buildRequestInit(init = {}) {
+                    capturedInit = init;
+                    return {
+                        headers: new HeadersImpl({
+                            ...init.headers,
+                            Authorization: 'Bearer config-runtime-token'
+                        })
+                    };
+                }
+            },
+            supabaseClient: {
+                auth: {
+                    async getSession() {
+                        throw new Error('getSession should not run when AdminApi.buildRequestInit succeeds');
+                    }
+                }
+            }
+        }
+    };
+    context.globalThis = context;
+
+    vm.runInNewContext(`${functionSource}; globalThis.getAdminConfigApiHeaders = getAdminConfigApiHeaders;`, context);
+    const headers = await context.getAdminConfigApiHeaders();
+
+    assert.equal(headers.Authorization, 'Bearer config-runtime-token');
+    assert.equal(headers['Content-Type'], 'application/json');
+    assert.equal(Object.prototype.hasOwnProperty.call(headers, 'authorization'), false);
+    assert.equal(capturedInit.authMode, 'bearer');
+    assert.equal(capturedInit.forceBearerToken, true);
+});
+
 test('shop admin auth headers fall back to runtime accessToken when sdk session is not ready', async () => {
     const source = readRepoFile('js/admin-shop.js');
     const functionSource = extractObjectFunctionExpression(source, 'getAdminAuthHeaders');

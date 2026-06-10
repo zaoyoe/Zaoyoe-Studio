@@ -60,6 +60,7 @@ const shopProfitLedgerBackfillHandler = require('../server/api-handlers/admin/sh
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
 const paymentsActionsHandler = require('../server/api-handlers/admin/payments/actions');
+const paymentsBatchActionsHandler = require('../server/api-handlers/admin/payments/batch-actions');
 const paymentsCleanupHandler = require('../server/api-handlers/admin/payments/cleanup');
 const paymentsShopRefundHandler = require('../server/api-handlers/admin/payments/shop-refund');
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
@@ -179,6 +180,7 @@ const ROUTE_HANDLERS = {
     'shop/delivery-tasks': shopDeliveryTasksHandler,
     'shop/delivery-strategy': shopDeliveryTasksHandler,
     'payments/actions': paymentsActionsHandler,
+    'payments/batch-actions': paymentsBatchActionsHandler,
     'payments/cleanup': paymentsCleanupHandler,
     'payments/shop-refund': paymentsShopRefundHandler,
     'payments/summary': paymentsSummaryHandler,

@@ -4927,8 +4927,31 @@
                                 当前筛选命中的模块会统一写入静默截止时间。
                             </div>
                             <div class="admin-shop-risk-case-modal__field">
-                                <label for="opsAlertBatchMuteUntil">静默截止时间</label>
-                                <input id="opsAlertBatchMuteUntil" type="datetime-local" class="config-input" />
+                                <span class="ops-alert-batch-mute-picker__label">静默截止时间</span>
+                                <input id="opsAlertBatchMuteUntil" type="hidden" />
+                                <div class="ops-alert-batch-mute-picker" data-ops-alert-batch-mute-picker>
+                                    <div class="ops-alert-batch-mute-picker__grid">
+                                        <label class="ops-alert-batch-mute-picker__control" for="opsAlertBatchMuteDate">
+                                            <span>日期</span>
+                                            <span class="ops-alert-batch-mute-picker__input-shell">
+                                                <i class="fas fa-calendar-day" aria-hidden="true"></i>
+                                                <input id="opsAlertBatchMuteDate" type="text" inputmode="numeric" autocomplete="off" placeholder="2026/06/10" maxlength="10" />
+                                            </span>
+                                        </label>
+                                        <label class="ops-alert-batch-mute-picker__control" for="opsAlertBatchMuteTime">
+                                            <span>时间</span>
+                                            <span class="ops-alert-batch-mute-picker__input-shell">
+                                                <i class="fas fa-clock" aria-hidden="true"></i>
+                                                <input id="opsAlertBatchMuteTime" type="text" inputmode="numeric" autocomplete="off" placeholder="18:00" maxlength="5" />
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div class="ops-alert-batch-mute-picker__presets" aria-label="静默快捷时间">
+                                        <button type="button" data-admin-action="settings-set-ops-alert-batch-mute-preset" data-mute-hours="1">1 小时</button>
+                                        <button type="button" data-admin-action="settings-set-ops-alert-batch-mute-preset" data-mute-hours="6">6 小时</button>
+                                        <button type="button" data-admin-action="settings-set-ops-alert-batch-mute-preset" data-mute-hours="24">24 小时</button>
+                                    </div>
+                                </div>
                             </div>
                             <div class="admin-shop-risk-case-modal__actions admin-shop-risk-case-modal__actions--split">
                                 <button type="button" class="btn-add-config btn-add-config--compact" id="opsAlertBatchMuteAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-batch-mute-allow-critical">
@@ -12387,10 +12410,10 @@
     <script src="js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0&analyticsExportFeedback=20260501_ADMIN_ANALYTICS_EXPORT_FEEDBACK_1"></script>
     <script src="js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2&overviewSkeleton=20260430_ADMIN_PAYMENTS_OVERVIEW_SKELETON_PARITY_1&paymentsActionFeedback=20260501_ADMIN_PAYMENTS_ACTION_FEEDBACK_1&siteSwitchGuard=20260513_ADMIN_SITE_SWITCH_STALE_GUARD_1&shopProfitSummary=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_SUMMARY_1&shopProfitAudit=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_7&activationRecovery=20260606_ADMIN_PAYMENTS_ACTIVATION_RECOVERY_1"></script>
     <script src="js/admin-smoke-loader.js?v=20260420_ADMIN_SMOKE_LOADER_1"></script>
-    <script src="js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&opsExceptionInbox=20260511_ADMIN_STUDIO_OPS_EXCEPTION_INBOX_1"></script>
+    <script src="js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&opsExceptionInbox=20260511_ADMIN_STUDIO_OPS_EXCEPTION_INBOX_1&opsAlertCaseMutationTimeout=20260610_OPS_ALERT_CASE_MUTATION_TIMEOUT_1"></script>
     <script src="js/admin-ticket-links.js?v=20260410_ADMIN_SHELL_CONTEXT_P1_1"></script>
     <script src="js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2"></script>
-    <script src="admin-config.js?v=20260513_SETTINGS_SITE_REFRESH_2&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&xianyuProductPickerInline=20260525_XIANYU_PRODUCT_PICKER_INLINE_1&googleOneModeDropdown=20260520_GOOGLE_ONE_MODE_DROPDOWN_2&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&announcementWorkflowFeedback=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_FEEDBACK_1&opsExceptionInbox=20260511_ADMIN_STUDIO_OPS_EXCEPTION_INBOX_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&richTextPasteNormalize=20260604_SHOP_RICH_TEXT_PASTE_NORMALIZE_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1"></script>
+    <script src="admin-config.js?v=20260513_SETTINGS_SITE_REFRESH_2&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&xianyuProductPickerInline=20260525_XIANYU_PRODUCT_PICKER_INLINE_1&googleOneModeDropdown=20260520_GOOGLE_ONE_MODE_DROPDOWN_2&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&announcementWorkflowFeedback=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_FEEDBACK_1&opsExceptionInbox=20260511_ADMIN_STUDIO_OPS_EXCEPTION_INBOX_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&richTextPasteNormalize=20260604_SHOP_RICH_TEXT_PASTE_NORMALIZE_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1&opsAlertCaseMutationTimeout=20260610_OPS_ALERT_CASE_MUTATION_TIMEOUT_1"></script>
     <script src="js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1"></script>
     <script src="admin-homepage.js?v=20260529_HOME_RUNTIME_CACHE_1&siteSwitchGuard=20260513_ADMIN_SITE_SWITCH_STALE_GUARD_1&supportChannels=20260608_SITE_ENTRY_ICONS_1"></script>
     <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>

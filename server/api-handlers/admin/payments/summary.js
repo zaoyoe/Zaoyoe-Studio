@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const {
     requireAdmin,
     sendJson,
@@ -875,10 +876,87 @@ function formatShopProfitAuditMetric(alert = {}) {
     return `${roundNumber(alert.order_count || alert.affected_order_count || 0, 0).toLocaleString('zh-CN')} 笔`;
 }
 
-function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '') {
+function buildStableUuidFromText(value = '') {
+    const hash = crypto
+        .createHash('sha256')
+        .update(String(value || '').trim())
+        .digest('hex');
+    const variant = ((Number.parseInt(hash.slice(16, 18), 16) & 0x3f) | 0x80)
+        .toString(16)
+        .padStart(2, '0');
+
+    return [
+        hash.slice(0, 8),
+        hash.slice(8, 12),
+        `4${hash.slice(13, 16)}`,
+        `${variant}${hash.slice(18, 20)}`,
+        hash.slice(20, 32)
+    ].join('-');
+}
+
+function buildShopProfitOrderFingerprint(orderIds = []) {
+    const normalizedIds = Array.from(orderIds instanceof Set ? orderIds : (Array.isArray(orderIds) ? orderIds : []))
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .sort();
+
+    if (!normalizedIds.length) return null;
+    return buildStableUuidFromText(`shop-profit-orders:${JSON.stringify(normalizedIds)}`);
+}
+
+function getShopProfitAuditSampleOrderKeys(alert = {}) {
+    return (Array.isArray(alert.sample_orders) ? alert.sample_orders : [])
+        .map((item) => (
+            String(item?.order_id || item?.provider_order_no || item?.order_no || item?.id || '').trim()
+        ))
+        .filter(Boolean)
+        .sort();
+}
+
+function buildShopProfitAuditTargetFingerprint(alert = {}, site = '') {
+    const normalizedType = String(alert.type || '').trim().toLowerCase() || 'unknown';
+    const normalizedSite = String(site || '').trim().toLowerCase() || 'all';
+    return JSON.stringify({
+        site: normalizedSite,
+        type: normalizedType,
+        case_target_id: String(alert.case_target_id || normalizedType).trim().toLowerCase() || normalizedType,
+        affected_order_fingerprint: String(alert.affected_order_fingerprint || '').trim(),
+        affected_order_count: roundNumber(alert.order_count ?? alert.affected_order_count ?? 0, 0),
+        amount_cny: roundNumber(alert.amount_cny, 4),
+        points: roundNumber(alert.points, 2),
+        metric_label: String(alert.metric_label || '').trim(),
+        sample_orders: getShopProfitAuditSampleOrderKeys(alert)
+    });
+}
+
+function buildShopProfitAuditTargetId(alert = {}, site = '') {
+    return buildStableUuidFromText(`shop-profit-audit:${buildShopProfitAuditTargetFingerprint(alert, site)}`);
+}
+
+function getShopProfitAuditAvailableActions(status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (isArchivedOpsStatus(normalizedStatus)) return [];
+    if (isResolvedOpsStatus(normalizedStatus)) return ['reopen'];
+    return ['mark_handled', 'ignore'];
+}
+
+function resolveShopProfitAuditQueueStatus(status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (normalizedStatus === 'handled' || normalizedStatus === 'ignored' || normalizedStatus === 'archived') {
+        return normalizedStatus;
+    }
+    return 'pending';
+}
+
+function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '', anomalyCases = []) {
     const alerts = normalizeJsonObject(shopProfitSummary.shop_profit_audit_alerts);
     const items = Array.isArray(alerts.items) ? alerts.items.filter(Boolean) : [];
     const nowIso = new Date().toISOString();
+    const caseMap = new Map(
+        (Array.isArray(anomalyCases) ? anomalyCases : [])
+            .filter((item) => String(item?.target_type || '').trim().toLowerCase() === 'shop_profit_audit')
+            .map((item) => [buildAnomalyCaseKey(item.target_type, item.target_id), item])
+    );
 
     return items
         .filter((item) => item.action_required)
@@ -886,9 +964,13 @@ function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '') {
             const type = String(alert.type || '').trim().toLowerCase() || 'unknown';
             const orderCount = roundNumber(alert.order_count || alert.affected_order_count || 0, 0);
             const metric = formatShopProfitAuditMetric(alert);
+            const id = buildShopProfitAuditTargetId(alert, site);
+            const linkedCase = caseMap.get(buildAnomalyCaseKey('shop_profit_audit', id));
+            const opsStatus = String(linkedCase?.status || 'open').trim().toLowerCase() || 'open';
+            const queueStatus = resolveShopProfitAuditQueueStatus(opsStatus);
             return {
                 type: 'shop_profit_audit',
-                id: `shop-profit-audit:${type}`,
+                id,
                 provider: 'shop_profit',
                 provider_order_no: String(alert.case_target_id || type).trim() || type,
                 site: String(site || '').trim().toLowerCase() || null,
@@ -896,7 +978,7 @@ function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '') {
                 title: String(alert.title || '商城利润审计').trim(),
                 message: String(alert.description || '').trim() || '商城净利润审计发现需要处理的风险项。',
                 created_at: nowIso,
-                queue_status: 'pending',
+                queue_status: queueStatus,
                 channels: ['shop_profit_audit'],
                 remaining_channels: [],
                 attempt_count: 0,
@@ -904,10 +986,12 @@ function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '') {
                 next_retry_at: null,
                 delivered_at: null,
                 last_error: null,
-                ops_status: 'open',
-                ops_resolution: `影响 ${orderCount.toLocaleString('zh-CN')} 笔订单 · ${metric}`,
-                ops_last_action_at: null,
-                ops_available_actions: [],
+                ops_status: opsStatus,
+                ops_note: linkedCase?.note || null,
+                ops_resolution: linkedCase?.resolution || `影响 ${orderCount.toLocaleString('zh-CN')} 笔订单 · ${metric}`,
+                ops_last_action: linkedCase?.last_action || null,
+                ops_last_action_at: linkedCase?.last_action_at || null,
+                ops_available_actions: getShopProfitAuditAvailableActions(opsStatus),
                 action_label: alert.action_label || null,
                 audit_alert_type: type,
                 audit_metric: metric,
@@ -919,9 +1003,9 @@ function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '') {
         });
 }
 
-function mergeOpsAlertQueueWithShopProfit(opsAlertJobs = [], shopProfitSummary = {}, site = '') {
+function mergeOpsAlertQueueWithShopProfit(opsAlertJobs = [], shopProfitSummary = {}, site = '', anomalyCases = []) {
     const jobItems = buildOpsAlertQueueItems(opsAlertJobs);
-    const shopProfitItems = buildShopProfitOpsAlertItems(shopProfitSummary, site);
+    const shopProfitItems = buildShopProfitOpsAlertItems(shopProfitSummary, site, anomalyCases);
     const combinedItems = [...shopProfitItems, ...jobItems].sort((left, right) => {
         const leftStatusPriority = OPS_ALERT_JOB_STATUS_PRIORITY[left.queue_status] ?? 99;
         const rightStatusPriority = OPS_ALERT_JOB_STATUS_PRIORITY[right.queue_status] ?? 99;
@@ -937,12 +1021,15 @@ function mergeOpsAlertQueueWithShopProfit(opsAlertJobs = [], shopProfitSummary =
     });
 
     const jobSummary = buildOpsAlertSummary(opsAlertJobs);
+    const activeShopProfitItems = shopProfitItems.filter((item) => OPS_ALERT_JOB_OPEN_STATUSES.has(item.queue_status));
     return {
         summary: {
             ...jobSummary,
             total: jobSummary.total + shopProfitItems.length,
-            pending: jobSummary.pending + shopProfitItems.length,
-            actionable_count: jobSummary.actionable_count + shopProfitItems.length,
+            pending: jobSummary.pending + activeShopProfitItems.length,
+            handled: jobSummary.handled + shopProfitItems.filter((item) => item.queue_status === 'handled').length,
+            ignored: jobSummary.ignored + shopProfitItems.filter((item) => item.queue_status === 'ignored').length,
+            actionable_count: jobSummary.actionable_count + activeShopProfitItems.length,
             shop_profit_audit: shopProfitItems.length,
             shop_profit_audit_critical: shopProfitItems.filter((item) => item.severity === 'critical').length,
             shop_profit_audit_warning: shopProfitItems.filter((item) => item.severity === 'warning').length
@@ -1865,7 +1952,8 @@ async function fetchAnomalyCasesByTargets(client, anomalies) {
     const groupedIds = {
         order: new Set(),
         event: new Set(),
-        session: new Set()
+        session: new Set(),
+        shop_profit_audit: new Set()
     };
 
     (anomalies || []).forEach((item) => {
@@ -2632,6 +2720,8 @@ function createEmptyShopProfitAdjustmentSummary() {
         item_count: 0,
         total_amount_cny: 0,
         total_points: 0,
+        affected_order_fingerprint: null,
+        review_order_fingerprint: null,
         coupon_discount_cny: 0,
         bonus_points_excluded_cny: 0,
         untracked_points_estimated_cny: 0,
@@ -2660,6 +2750,7 @@ function createEmptyShopProfitLedgerPreview() {
         status: 'none',
         entry_count: 0,
         order_count: 0,
+        affected_order_fingerprint: null,
         net_amount_cny: 0,
         revenue_amount_cny: 0,
         cost_amount_cny: 0,
@@ -2678,6 +2769,8 @@ function createEmptyShopProfitPointSourceCoverage() {
         tone: 'neutral',
         label: '暂无订单',
         order_count: 0,
+        affected_order_fingerprint: null,
+        action_required_order_fingerprint: null,
         source_lot_order_count: 0,
         exact_order_count: 0,
         partial_order_count: 0,
@@ -3062,7 +3155,8 @@ function buildShopProfitReconciliationIssues(shopProfitRows = []) {
         order_count: 0,
         amount_cny: 0,
         points: 0,
-        sample_orders: []
+        sample_orders: [],
+        _orderIds: new Set()
     }]));
     const affectedOrderIds = new Set();
     const sampleLimit = 4;
@@ -3079,6 +3173,7 @@ function buildShopProfitReconciliationIssues(shopProfitRows = []) {
         const orderId = String(row?.order?.id || '').trim();
         if (orderId) {
             affectedOrderIds.add(orderId);
+            bucket._orderIds.add(orderId);
         }
 
         if (bucket.sample_orders.length < sampleLimit) {
@@ -3140,12 +3235,16 @@ function buildShopProfitReconciliationIssues(shopProfitRows = []) {
     const issues = order
         .map((type) => buckets.get(type))
         .filter((issue) => issue && issue.order_count > 0)
-        .map((issue) => ({
-            ...issue,
-            count: roundNumber(issue.count, 2),
-            amount_cny: roundNumber(issue.amount_cny, 4),
-            points: roundNumber(issue.points, 2)
-        }));
+        .map((issue) => {
+            const { _orderIds, ...item } = issue;
+            return {
+                ...item,
+                count: roundNumber(item.count, 2),
+                amount_cny: roundNumber(item.amount_cny, 4),
+                points: roundNumber(item.points, 2),
+                affected_order_fingerprint: buildShopProfitOrderFingerprint(_orderIds)
+            };
+        });
     const hasCritical = issues.some((issue) => issue.tone === 'critical');
     const hasWarning = issues.some((issue) => issue.tone === 'warning');
 
@@ -3889,6 +3988,8 @@ function buildShopSourceProcurementRecommendations(dimensionBreakdown = {}) {
 function buildShopProfitAdjustmentSummary(shopProfitRows = []) {
     const summary = createEmptyShopProfitAdjustmentSummary();
     const buckets = new Map();
+    const affectedOrderIds = new Set();
+    const reviewOrderIds = new Set();
 
     (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach((row) => {
         const attribution = row?.attribution || {};
@@ -3925,11 +4026,15 @@ function buildShopProfitAdjustmentSummary(shopProfitRows = []) {
             bucket.affects_net_profit = bucket.affects_net_profit || Boolean(item?.affects_net_profit);
             if (orderId && !bucket._orderIds.has(orderId)) {
                 bucket._orderIds.add(orderId);
+                affectedOrderIds.add(orderId);
                 bucket.order_count += 1;
             }
             if (String(item?.status || '').trim().toLowerCase() === 'review_required') {
                 bucket.status = 'review_required';
                 bucket.tone = 'warning';
+                if (orderId) {
+                    reviewOrderIds.add(orderId);
+                }
             }
         });
     });
@@ -3953,6 +4058,8 @@ function buildShopProfitAdjustmentSummary(shopProfitRows = []) {
         });
 
     summary.item_count = summary.items.length;
+    summary.affected_order_fingerprint = buildShopProfitOrderFingerprint(affectedOrderIds);
+    summary.review_order_fingerprint = buildShopProfitOrderFingerprint(reviewOrderIds);
     summary.total_amount_cny = roundNumber(summary.items.reduce((sum, item) => sum + normalizeNumber(item.amount_cny, 0), 0), 4);
     summary.total_points = roundNumber(summary.items.reduce((sum, item) => sum + normalizeNumber(item.points, 0), 0), 2);
     summary.coupon_discount_cny = roundNumber(summary.coupon_discount_cny, 4);
@@ -4330,6 +4437,7 @@ function buildShopProfitLedgerPreview(shopProfitRows = []) {
         });
 
     preview.order_count = orderIds.size;
+    preview.affected_order_fingerprint = buildShopProfitOrderFingerprint(orderIds);
     preview.net_amount_cny = roundNumber(preview.net_amount_cny, 4);
     preview.revenue_amount_cny = roundNumber(preview.revenue_amount_cny, 4);
     preview.cost_amount_cny = roundNumber(preview.cost_amount_cny, 4);
@@ -4382,6 +4490,8 @@ function buildPersistedShopProfitLedgerPreview(ledgerRows = []) {
 function buildShopProfitPointSourceCoverage(shopProfitRows = []) {
     const summary = createEmptyShopProfitPointSourceCoverage();
     const typeBuckets = new Map();
+    const affectedOrderIds = new Set();
+    const actionRequiredOrderIds = new Set();
 
     function ensureTypeBucket(sourceType, sourceLabel = '') {
         const normalizedType = String(sourceType || '').trim().toLowerCase() || 'unknown';
@@ -4421,6 +4531,9 @@ function buildShopProfitPointSourceCoverage(shopProfitRows = []) {
         const lotItems = Array.isArray(lotSummary.items) ? lotSummary.items.filter(Boolean) : [];
 
         summary.order_count += 1;
+        if (orderId) {
+            affectedOrderIds.add(orderId);
+        }
         summary.expected_points += expectedPoints;
         summary.source_lot_points += sourceLotPoints;
         summary.cash_backed_points += cashBackedPoints;
@@ -4445,6 +4558,9 @@ function buildShopProfitPointSourceCoverage(shopProfitRows = []) {
 
         if (traceability.action_required) {
             summary.action_required_order_count += 1;
+            if (orderId) {
+                actionRequiredOrderIds.add(orderId);
+            }
         }
 
         if (lotItems.length) {
@@ -4473,6 +4589,8 @@ function buildShopProfitPointSourceCoverage(shopProfitRows = []) {
     });
 
     summary.expected_points = roundNumber(summary.expected_points, 2);
+    summary.affected_order_fingerprint = buildShopProfitOrderFingerprint(affectedOrderIds);
+    summary.action_required_order_fingerprint = buildShopProfitOrderFingerprint(actionRequiredOrderIds);
     summary.source_lot_points = roundNumber(summary.source_lot_points, 2);
     summary.cash_backed_points = roundNumber(summary.cash_backed_points, 2);
     summary.non_cash_points = roundNumber(summary.non_cash_points, 2);
@@ -4610,6 +4728,7 @@ function buildShopProfitAuditAlerts(summary = {}) {
             action_required: actionRequired,
             order_count: orderCount,
             affected_order_count: orderCount,
+            affected_order_fingerprint: String(input.affected_order_fingerprint || '').trim() || null,
             amount_cny: amountCny,
             points,
             metric_label: String(input.metric_label || '').trim() || null,
@@ -4646,6 +4765,7 @@ function buildShopProfitAuditAlerts(summary = {}) {
                 amount_cny: issue.amount_cny,
                 points: issue.points,
                 sample_orders: issue.sample_orders,
+                affected_order_fingerprint: issue.affected_order_fingerprint,
                 metric_label: issue.points > 0
                     ? `${roundNumber(issue.points, 2)} 积分`
                     : (issue.amount_cny > 0 ? `¥${roundNumber(issue.amount_cny, 2)}` : `${roundNumber(issue.count, 0)} 项`)
@@ -4660,6 +4780,7 @@ function buildShopProfitAuditAlerts(summary = {}) {
             description: '部分商城订单尚未匹配到完整积分来源批次，现金/非现金收入归因需要继续复核。',
             order_count: coverage.action_required_order_count || coverage.order_count || 0,
             points: coverage.untracked_points || 0,
+            affected_order_fingerprint: coverage.action_required_order_fingerprint || coverage.affected_order_fingerprint,
             metric_label: `覆盖率 ${roundNumber(Number(coverage.coverage_rate || 0) * 100, 2)}%`
         });
     }
@@ -4672,6 +4793,7 @@ function buildShopProfitAuditAlerts(summary = {}) {
             description: '商城利润分录存在缺成本或未完整结算项，当前净利润仍需复核。',
             order_count: ledgerPreview.order_count || 0,
             amount_cny: Math.abs(normalizeNumber(ledgerPreview.net_amount_cny, 0)),
+            affected_order_fingerprint: ledgerPreview.affected_order_fingerprint,
             metric_label: `${roundNumber(ledgerPreview.incomplete_entry_count, 0)} 条缺口`
         });
     } else if (String(ledgerPreview.status || '').trim().toLowerCase() === 'estimated') {
@@ -4682,6 +4804,7 @@ function buildShopProfitAuditAlerts(summary = {}) {
             description: '商城利润分录仍包含估算项，建议在结算前确认来源和成本。',
             order_count: ledgerPreview.order_count || 0,
             amount_cny: Math.abs(normalizeNumber(ledgerPreview.net_amount_cny, 0)),
+            affected_order_fingerprint: ledgerPreview.affected_order_fingerprint,
             metric_label: `${roundNumber(ledgerPreview.estimated_entry_count, 0)} 条估算`
         });
     }
@@ -4696,6 +4819,7 @@ function buildShopProfitAuditAlerts(summary = {}) {
                 .map((item) => normalizeNumber(item.order_count, 0)), 0),
             amount_cny: Math.abs(normalizeNumber(adjustments.total_amount_cny, 0)),
             points: adjustments.total_points || 0,
+            affected_order_fingerprint: adjustments.review_order_fingerprint || adjustments.affected_order_fingerprint,
             metric_label: `${roundNumber(adjustments.item_count, 0)} 类调整`
         });
     }
@@ -5741,15 +5865,8 @@ module.exports = async function handler(req, res) {
                     : buildSessionSummary(checkoutSessions || [], visibleOrders || [])
             )
             : undefined;
-        const opsAlertPayload = needsOpsAlerts
-            ? mergeOpsAlertQueueWithShopProfit(
-                opsAlertJobs,
-                needsShopProfitOpsAudit ? shopProfitSummary : undefined,
-                site
-            )
-            : { summary: undefined, items: [] };
-        const opsAlertSummary = opsAlertPayload.summary;
-        const opsAlertItems = opsAlertPayload.items;
+        let opsAlertSummary;
+        let opsAlertItems = [];
         const siteOrderIds = useOverviewAggregate
             ? new Set()
             : new Set((visibleOrders || []).map((order) => order.id).filter(Boolean));
@@ -5880,15 +5997,31 @@ module.exports = async function handler(req, res) {
             ? [...recentOrderAnomalies, ...recentEventAnomalies, ...recentSessionAnomalies]
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
             : [];
-        const anomalyCaseTargets = view === 'ops'
-            ? [...combinedRecentAnomalies, ...(exceptionTopics.countItems || exceptionTopics.items || [])]
-            : [
+        const shopProfitCaseTargets = needsOpsAlerts && needsShopProfitOpsAudit
+            ? buildShopProfitOpsAlertItems(shopProfitSummary, site)
+            : [];
+        const anomalyCaseTargets = [
+            ...(view === 'ops'
+                ? [...combinedRecentAnomalies, ...(exceptionTopics.countItems || exceptionTopics.items || [])]
+                : [
                 ...(refundAlertSummary.countItems || refundAlertSummary.items || []),
                 ...duplicateWebhookTopicItems
-            ];
+                ]),
+            ...shopProfitCaseTargets
+        ];
         const anomalyCases = anomalyCaseTargets.length
             ? await fetchAnomalyCasesByTargets(scopedClient, anomalyCaseTargets)
             : [];
+        const opsAlertPayload = needsOpsAlerts
+            ? mergeOpsAlertQueueWithShopProfit(
+                opsAlertJobs,
+                needsShopProfitOpsAudit ? shopProfitSummary : undefined,
+                site,
+                anomalyCases
+            )
+            : { summary: undefined, items: [] };
+        opsAlertSummary = opsAlertPayload.summary;
+        opsAlertItems = opsAlertPayload.items;
         const enrichedRefundAlertItems = needsEvents
             ? enrichAnomaliesWithCases(refundAlertSummary.items || [], anomalyCases)
             : [];

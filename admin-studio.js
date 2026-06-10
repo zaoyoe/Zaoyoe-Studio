@@ -2170,6 +2170,22 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
 
+        if (String(actionEl.dataset.adminAction || '').trim() === 'settings-submit-shop-risk-case-modal') {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            window.submitShopRiskCaseComposer?.();
+            return;
+        }
+
+        if (String(actionEl.dataset.adminAction || '').trim() === 'settings-submit-ops-alert-batch-mute-modal') {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            window.submitOpsAlertBatchMuteModal?.();
+            return;
+        }
+
         if (handleOpsAlertMonitorBatchActionElement(actionEl, event)) {
             event.stopImmediatePropagation?.();
             return;
@@ -3637,6 +3653,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-submit-ops-alert-batch-mute-modal':
                 window.submitOpsAlertBatchMuteModal?.();
                 break;
+            case 'settings-set-ops-alert-batch-mute-preset':
+                window.setOpsAlertBatchMutePreset?.(actionEl.dataset.muteHours);
+                break;
             case 'settings-copy-ops-alert-monitor-checklist':
                 window.copyOpsAlertMonitorChecklist?.();
                 break;
@@ -3920,7 +3939,32 @@ function bindAdminStudioDelegatedControls() {
                 event.stopPropagation();
                 window.AdminPayments?.handleBatchAnomalyAction?.(
                     actionEl.dataset.paymentsBatchScope,
-                    actionEl.dataset.paymentsAction
+                    actionEl.dataset.paymentsAction,
+                    {
+                        applyToAll: actionEl.dataset.paymentsBatchApplyAll === 'true'
+                    }
+                );
+                break;
+            case 'payments-toggle-batch-mode':
+                event.preventDefault();
+                event.stopPropagation();
+                window.AdminPayments?.setBatchSelectionMode?.(
+                    actionEl.dataset.paymentsBatchScope,
+                    actionEl.dataset.paymentsBatchEnabled === 'true'
+                );
+                break;
+            case 'payments-toggle-batch-target':
+                window.AdminPayments?.toggleBatchTarget?.(
+                    actionEl.dataset.paymentsBatchScope,
+                    actionEl.dataset.paymentsTargetType,
+                    actionEl.dataset.paymentsTargetId,
+                    actionEl.checked === true
+                );
+                break;
+            case 'payments-toggle-batch-scope':
+                window.AdminPayments?.toggleBatchScope?.(
+                    actionEl.dataset.paymentsBatchScope,
+                    actionEl.checked === true
                 );
                 break;
             case 'payments-go-to-page':

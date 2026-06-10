@@ -43,6 +43,7 @@ const MARKETPLACE_PRODUCT_PICKER_MAX_RESULTS = 50;
 let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
+let opsAlertHealthLastReadyState = null;
 let recoveryReadinessState = getDefaultRecoveryReadinessState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorLastReadyState = null;
@@ -411,11 +412,14 @@ const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
     'ops-alerts-shop-risk'
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 25000;
+const OPS_ALERT_HEALTH_FETCH_RETRY_COUNT = 2;
+const OPS_ALERT_HEALTH_FETCH_RETRY_DELAY_MS = 450;
 const RECOVERY_READINESS_FETCH_TIMEOUT_MS = 30000;
 const EXTERNAL_MONITORING_SMOKE_TIMEOUT_MS = 12000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;
 const OPS_ALERT_MONITOR_FETCH_RETRY_COUNT = 2;
 const OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS = 450;
+const OPS_ALERT_CASE_MUTATION_TIMEOUT_MS = 30000;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 15000;
 const ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW = '#f4b400';
 const ADMIN_CONFIG_RICH_TEXT_LOW_CONTRAST_YELLOW_PATTERN = /#ffeb3b|rgb\s*\(\s*255\s*,\s*235\s*,\s*59\s*\)|rgba\s*\(\s*255\s*,\s*235\s*,\s*59\s*,\s*1(?:\.0+)?\s*\)/gi;
@@ -18238,7 +18242,11 @@ function buildLocalOpsAlertMonitorActionContext(category = {}, item = {}) {
         caseStatus: item.case_status || '',
         caseOwnerAdminId: item.case_owner_admin_id || '',
         caseOwnerLabel: item.case_owner_label || '',
-        site: item.site || item.case_site || ''
+        alertJobId: item.id || item.alert_job_id || '',
+        alertCreatedAt: item.created_at || item.alert_created_at || '',
+        summaryWindowStartAt: item.summary_window_start_at || '',
+        summaryWindowEndAt: item.summary_window_end_at || '',
+        site: item.case_site || item.site || ''
     };
 }
 
@@ -18270,7 +18278,15 @@ function buildLocalOpsAlertWorkspaceContextAttrs(context = {}) {
         caseStatus: normalizedContext.caseStatus || normalizedContext.case_status || '',
         caseOwnerAdminId: normalizedContext.caseOwnerAdminId || normalizedContext.case_owner_admin_id || '',
         caseOwnerLabel: normalizedContext.caseOwnerLabel || normalizedContext.case_owner_label || '',
+        alertJobId: normalizedContext.alertJobId || normalizedContext.alert_job_id || normalizedContext.jobId || normalizedContext.job_id || '',
+        alertCreatedAt: normalizedContext.alertCreatedAt || normalizedContext.alert_created_at || normalizedContext.createdAt || normalizedContext.created_at || '',
+        summaryWindowStartAt: normalizedContext.summaryWindowStartAt || normalizedContext.summary_window_start_at || '',
+        summaryWindowEndAt: normalizedContext.summaryWindowEndAt || normalizedContext.summary_window_end_at || '',
         site: normalizedContext.site || normalizedContext.site_context || '',
+        'data-workspace-alert-job-id': normalizedContext.alertJobId || normalizedContext.alert_job_id || normalizedContext.jobId || normalizedContext.job_id || '',
+        'data-workspace-alert-created-at': normalizedContext.alertCreatedAt || normalizedContext.alert_created_at || normalizedContext.createdAt || normalizedContext.created_at || '',
+        'data-workspace-summary-window-start-at': normalizedContext.summaryWindowStartAt || normalizedContext.summary_window_start_at || '',
+        'data-workspace-summary-window-end-at': normalizedContext.summaryWindowEndAt || normalizedContext.summary_window_end_at || '',
         'data-workspace-site': normalizedContext.site || normalizedContext.site_context || ''
     };
 }
@@ -20252,9 +20268,35 @@ function buildLocalOpsAlertCaseMutationItems(items = [], categoryKey = '') {
                 reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
                 reference_value: String(item.reference_value || item.referenceValue || '').trim()
             };
-            const site = String(item.site || item.case_site || item.site_context || '').trim().toLowerCase();
+            const metadata = item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+                ? { ...item.metadata }
+                : {};
+            const site = String(item.site || item.case_site || item.caseSite || item.site_context || item.siteContext || '').trim().toLowerCase();
+            const alertJobId = String(item.alert_job_id || item.alertJobId || item.job_id || item.jobId || item.id || '').trim();
+            const alertCreatedAt = String(item.alert_created_at || item.alertCreatedAt || item.created_at || item.createdAt || '').trim();
+            const summaryWindowStartAt = String(item.summary_window_start_at || item.summaryWindowStartAt || '').trim();
+            const summaryWindowEndAt = String(item.summary_window_end_at || item.summaryWindowEndAt || '').trim();
             if (site) {
                 nextItem.site = site;
+            }
+            if (alertJobId) {
+                nextItem.alert_job_id = alertJobId;
+                metadata.alert_job_id = alertJobId;
+            }
+            if (alertCreatedAt) {
+                nextItem.alert_created_at = alertCreatedAt;
+                metadata.alert_created_at = alertCreatedAt;
+            }
+            if (summaryWindowStartAt) {
+                nextItem.summary_window_start_at = summaryWindowStartAt;
+                metadata.summary_window_start_at = summaryWindowStartAt;
+            }
+            if (summaryWindowEndAt) {
+                nextItem.summary_window_end_at = summaryWindowEndAt;
+                metadata.summary_window_end_at = summaryWindowEndAt;
+            }
+            if (Object.keys(metadata).length) {
+                nextItem.metadata = metadata;
             }
             return nextItem;
         })
@@ -20769,13 +20811,38 @@ async function getAdminConfigApiHeaders() {
     const baseHeaders = {
         'Content-Type': 'application/json'
     };
+    const normalizeHeaders = (headers = baseHeaders) => {
+        const normalizedHeaders = { ...baseHeaders };
+        const applyHeader = (name, value) => {
+            const normalizedName = String(name || '').trim();
+            if (!normalizedName) {
+                return;
+            }
+            const canonicalName = normalizedName.toLowerCase() === 'authorization'
+                ? 'Authorization'
+                : (normalizedName.toLowerCase() === 'content-type' ? 'Content-Type' : normalizedName);
+            normalizedHeaders[canonicalName] = String(value || '');
+        };
+
+        if (headers?.forEach && typeof headers.forEach === 'function') {
+            headers.forEach((value, name) => applyHeader(name, value));
+            return normalizedHeaders;
+        }
+
+        Object.entries(headers && typeof headers === 'object' ? headers : {}).forEach(([name, value]) => {
+            applyHeader(name, value);
+        });
+        return normalizedHeaders;
+    };
 
     if (window.AdminApi?.buildRequestInit) {
         try {
             const requestInit = await window.AdminApi.buildRequestInit({
-                headers: baseHeaders
+                headers: baseHeaders,
+                authMode: 'bearer',
+                forceBearerToken: true
             });
-            return requestInit?.headers || baseHeaders;
+            return normalizeHeaders(requestInit?.headers || baseHeaders);
         } catch (_) {
             // Fall through to direct token resolution.
         }
@@ -20905,7 +20972,7 @@ function resolveLocalOpsAlertRuntimeState(mode = 'ready', value = null, builders
         return builders.loading(currentState);
     }
     if (normalizedMode === 'error' && typeof builders.error === 'function') {
-        return builders.error(value);
+        return builders.error(value, currentState);
     }
     if (typeof builders.ready === 'function') {
         return builders.ready(value || {});
@@ -21006,6 +21073,8 @@ async function fetchOpsAlertHealthPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertHealth')(headers, {
         site: getAdminSettingsSiteFilterValue(),
         timeoutMs: OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS,
+        retryCount: OPS_ALERT_HEALTH_FETCH_RETRY_COUNT,
+        retryDelayMs: OPS_ALERT_HEALTH_FETCH_RETRY_DELAY_MS,
         errorMessage: '加载站外告警通道健康状态失败'
     });
 }
@@ -21025,19 +21094,82 @@ function buildLocalOpsAlertHealthLoadingState(state = opsAlertHealthState || get
 }
 
 function resolveOpsAlertHealthReadyState(payload = {}) {
+    const normalizedPayload = resolveOpsAlertHealthPayload(payload);
     return {
         status: 'ready',
-        ...resolveOpsAlertHealthPayload(payload)
+        ...normalizedPayload,
+        site_context: normalizeAdminSettingsSiteContext(payload?.site_context || normalizedPayload.site_context, getAdminSettingsSiteFilterValue())
     };
 }
 
-function buildLocalOpsAlertHealthErrorState(error = null) {
+function getOpsAlertHealthLoadErrorMessage(error = null) {
+    const rawMessage = String(error?.message || '').trim();
+    const normalizedMessage = rawMessage.toLowerCase();
+    if (error?.name === 'AbortError') {
+        return '加载站外告警通道健康状态超时，请稍后重试';
+    }
+    if (normalizedMessage.includes('fetch failed')
+        || normalizedMessage.includes('failed to fetch')
+        || normalizedMessage.includes('network')) {
+        return '网络请求没有完成，已自动重试；请稍后刷新健康页';
+    }
+    return rawMessage || '加载站外告警通道健康状态失败';
+}
+
+function hasOpsAlertHealthSnapshotData(state = {}) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        return false;
+    }
+    if (Array.isArray(state.channels) && state.channels.length > 0) {
+        return true;
+    }
+    const summary = state.summary && typeof state.summary === 'object' && !Array.isArray(state.summary)
+        ? state.summary
+        : {};
+    return Boolean(state.fetched_at)
+        || Number(summary.total_job_count || 0) > 0
+        || Number(summary.total_attempt_count || 0) > 0
+        || Number(summary.delivered_count || 0) > 0
+        || Number(summary.failed_count || 0) > 0
+        || Number(summary.dead_letter_count || 0) > 0;
+}
+
+function getOpsAlertHealthFallbackSnapshot(currentState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const requestedSiteContext = normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), 'all');
+    const currentSiteContext = normalizeAdminSettingsSiteContext(currentState?.site_context, requestedSiteContext);
+    const lastReadySiteContext = normalizeAdminSettingsSiteContext(opsAlertHealthLastReadyState?.site_context, requestedSiteContext);
+    if (hasOpsAlertHealthSnapshotData(currentState) && currentSiteContext === requestedSiteContext) {
+        return currentState;
+    }
+    if (hasOpsAlertHealthSnapshotData(opsAlertHealthLastReadyState) && lastReadySiteContext === requestedSiteContext) {
+        return opsAlertHealthLastReadyState;
+    }
+    return null;
+}
+
+function rememberOpsAlertHealthReadyState(state = {}) {
+    if (state?.status === 'ready' && state.stale !== true && hasOpsAlertHealthSnapshotData(state)) {
+        opsAlertHealthLastReadyState = state;
+    }
+}
+
+function buildLocalOpsAlertHealthErrorState(error = null, currentState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const message = getOpsAlertHealthLoadErrorMessage(error);
+    const fallbackState = getOpsAlertHealthFallbackSnapshot(currentState);
+    if (fallbackState) {
+        return {
+            ...fallbackState,
+            status: 'ready',
+            stale: true,
+            load_error_message: message,
+            message: `刷新失败，继续显示上一份通道健康快照：${message}`
+        };
+    }
+
     return {
         ...getDefaultOpsAlertHealthState(),
         status: 'error',
-        message: error?.name === 'AbortError'
-            ? '加载站外告警通道健康状态超时，请稍后重试'
-            : (error?.message || '加载站外告警通道健康状态失败')
+        message
     };
 }
 
@@ -21053,6 +21185,7 @@ function applyOpsAlertHealthRuntimeState(nextState = getDefaultOpsAlertHealthSta
     return applyLocalOpsAlertRuntimeState(nextState, {
         applyState: (state = {}) => {
             opsAlertHealthState = state;
+            rememberOpsAlertHealthReadyState(state);
         },
         render: () => renderOpsAlertHealthPanel()
     });
@@ -24774,6 +24907,18 @@ function buildLocalOpsAlertCaseComposerSubmissionContext(state = shopRiskCaseCom
         };
     }
 
+    if (normalizedState.submitting === true) {
+        return {
+            state: normalizedState,
+            textValue,
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
+            canSubmit: false,
+            validationError: '',
+            validationFocus: null
+        };
+    }
+
     if (normalizedAction === 'assign' && !selectedOwnerAdminId) {
         return {
             state: normalizedState,
@@ -24822,6 +24967,7 @@ async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
         context,
         {
             ...options,
+            timeoutMs: Number(options.timeoutMs || OPS_ALERT_CASE_MUTATION_TIMEOUT_MS),
             errorMessage: '集中告警处理失败'
         }
     );
@@ -24881,18 +25027,36 @@ function resolveOpsAlertCaseMutationRequestBuilder() {
 
 async function submitLocalOpsAlertCaseMutationRequest(headers = {}, action, context = {}, options = {}) {
     const requestBody = resolveOpsAlertCaseMutationRequestBuilder()(action, context, options);
-    const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(requestBody)
-    });
+    const timeoutMs = Number(options.timeoutMs || 0);
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller && timeoutMs > 0
+        ? window.setTimeout(() => controller.abort(), timeoutMs)
+        : 0;
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.success) {
-        throw new Error(payload.message || options.errorMessage || '集中告警处理失败');
+    try {
+        const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: controller?.signal
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || options.errorMessage || '集中告警处理失败');
+        }
+
+        return payload;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error(options.timeoutMessage || '集中告警处理超时，请稍后刷新确认结果');
+        }
+        throw error;
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
     }
-
-    return payload;
 }
 
 function resolveOpsAlertCaseMutationRequestSubmitter() {
@@ -24997,6 +25161,146 @@ function getDefaultOpsAlertBatchMuteUntilInputValue() {
     return formatDateTimeLocalInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());
 }
 
+function splitOpsAlertBatchMuteLocalValue(value = '') {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+        return {
+            dateText: '',
+            timeText: ''
+        };
+    }
+
+    const localValue = normalized.includes('T')
+        ? normalized
+        : formatDateTimeLocalInputValue(normalized);
+    const [datePart = '', timePart = ''] = String(localValue || '').split('T');
+    const [year = '', month = '', day = ''] = datePart.split('-');
+    const [hour = '', minute = ''] = timePart.split(':');
+    return {
+        dateText: year && month && day ? `${year}/${month}/${day}` : '',
+        timeText: hour && minute ? `${hour}:${minute}` : ''
+    };
+}
+
+function normalizeOpsAlertBatchMuteDateText(value = '') {
+    const raw = String(value || '').trim();
+    const digits = raw.replace(/\D/g, '').slice(0, 8);
+    if (digits.length === 8) {
+        return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6, 8)}`;
+    }
+    return raw.replace(/-/g, '/').slice(0, 10);
+}
+
+function normalizeOpsAlertBatchMuteTimeText(value = '') {
+    const raw = String(value || '').trim();
+    const digits = raw.replace(/\D/g, '').slice(0, 4);
+    if (digits.length === 4) {
+        return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+    }
+    return raw.slice(0, 5);
+}
+
+function buildOpsAlertBatchMuteLocalValue(dateText = '', timeText = '') {
+    const dateMatch = normalizeOpsAlertBatchMuteDateText(dateText).match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    const timeMatch = normalizeOpsAlertBatchMuteTimeText(timeText).match(/^(\d{1,2}):(\d{2})$/);
+    if (!dateMatch || !timeMatch) {
+        return '';
+    }
+
+    const year = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]);
+    const day = Number(dateMatch[3]);
+    const hour = Number(timeMatch[1]);
+    const minute = Number(timeMatch[2]);
+    if (
+        !Number.isInteger(year)
+        || !Number.isInteger(month)
+        || !Number.isInteger(day)
+        || !Number.isInteger(hour)
+        || !Number.isInteger(minute)
+        || month < 1
+        || month > 12
+        || day < 1
+        || day > 31
+        || hour < 0
+        || hour > 23
+        || minute < 0
+        || minute > 59
+    ) {
+        return '';
+    }
+
+    const candidate = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (
+        candidate.getFullYear() !== year
+        || candidate.getMonth() !== month - 1
+        || candidate.getDate() !== day
+        || candidate.getHours() !== hour
+        || candidate.getMinutes() !== minute
+    ) {
+        return '';
+    }
+
+    return [
+        String(year).padStart(4, '0'),
+        String(month).padStart(2, '0'),
+        String(day).padStart(2, '0')
+    ].join('-') + `T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function setOpsAlertBatchMuteUntilValue(value = '', elements = {}) {
+    const untilInput = elements.untilInput || document.getElementById('opsAlertBatchMuteUntil');
+    const dateInput = elements.dateInput || document.getElementById('opsAlertBatchMuteDate');
+    const timeInput = elements.timeInput || document.getElementById('opsAlertBatchMuteTime');
+    const normalizedValue = formatDateTimeLocalInputValue(value) || String(value || '').trim();
+    const parts = splitOpsAlertBatchMuteLocalValue(normalizedValue);
+
+    if (untilInput) {
+        untilInput.value = normalizedValue;
+    }
+    if (dateInput) {
+        dateInput.value = parts.dateText;
+    }
+    if (timeInput) {
+        timeInput.value = parts.timeText;
+    }
+}
+
+function syncOpsAlertBatchMuteUntilFromCustomInputs(elements = {}) {
+    const untilInput = elements.untilInput || document.getElementById('opsAlertBatchMuteUntil');
+    const dateInput = elements.dateInput || document.getElementById('opsAlertBatchMuteDate');
+    const timeInput = elements.timeInput || document.getElementById('opsAlertBatchMuteTime');
+    const currentParts = splitOpsAlertBatchMuteLocalValue(untilInput?.value || '');
+    const dateText = normalizeOpsAlertBatchMuteDateText(dateInput ? dateInput.value : currentParts.dateText);
+    const timeText = normalizeOpsAlertBatchMuteTimeText(timeInput ? timeInput.value : currentParts.timeText);
+    const nextValue = buildOpsAlertBatchMuteLocalValue(dateText, timeText);
+
+    if (dateInput && dateText !== dateInput.value) {
+        dateInput.value = dateText;
+    }
+    if (timeInput && timeText !== timeInput.value) {
+        timeInput.value = timeText;
+    }
+    if (untilInput) {
+        untilInput.value = nextValue;
+    }
+    return nextValue;
+}
+
+function bindOpsAlertBatchMutePickerControls(elements = {}) {
+    const untilInput = elements.untilInput || document.getElementById('opsAlertBatchMuteUntil');
+    const dateInput = elements.dateInput || document.getElementById('opsAlertBatchMuteDate');
+    const timeInput = elements.timeInput || document.getElementById('opsAlertBatchMuteTime');
+    [dateInput, timeInput].forEach((input) => {
+        if (!input || input.dataset.opsAlertBatchMutePickerBound === '1') {
+            return;
+        }
+        input.dataset.opsAlertBatchMutePickerBound = '1';
+        input.addEventListener('input', () => syncOpsAlertBatchMuteUntilFromCustomInputs({ untilInput, dateInput, timeInput }));
+        input.addEventListener('blur', () => syncOpsAlertBatchMuteUntilFromCustomInputs({ untilInput, dateInput, timeInput }));
+    });
+}
+
 function buildLocalOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {
     const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
         ? state
@@ -25061,6 +25365,8 @@ function applyOpsAlertBatchMuteModalViewState(viewState = {}, elements = {}) {
         summaryEl,
         noteEl,
         untilInput,
+        dateInput,
+        timeInput,
         allowCriticalToggle,
         submitBtn
     } = elements;
@@ -25068,11 +25374,14 @@ function applyOpsAlertBatchMuteModalViewState(viewState = {}, elements = {}) {
     summaryEl.textContent = viewState.summaryText || '集中告警模块静默';
     noteEl.textContent = viewState.noteText || '';
     if (!untilInput.value) {
-        untilInput.value = viewState.defaultUntilValue || '';
+        setOpsAlertBatchMuteUntilValue(viewState.defaultUntilValue || '', { untilInput, dateInput, timeInput });
+    } else {
+        setOpsAlertBatchMuteUntilValue(untilInput.value, { untilInput, dateInput, timeInput });
     }
     allowCriticalToggle.classList.toggle('active', viewState.allowCriticalActive === true);
     submitBtn.disabled = viewState.submitDisabled === true;
     submitBtn.textContent = viewState.submitLabel || '保存静默';
+    bindOpsAlertBatchMutePickerControls({ untilInput, dateInput, timeInput });
 }
 
 function renderOpsAlertBatchMuteModal() {
@@ -25080,10 +25389,12 @@ function renderOpsAlertBatchMuteModal() {
     const summaryEl = document.getElementById('opsAlertBatchMuteSummary');
     const noteEl = document.getElementById('opsAlertBatchMuteDescription');
     const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    const dateInput = document.getElementById('opsAlertBatchMuteDate');
+    const timeInput = document.getElementById('opsAlertBatchMuteTime');
     const allowCriticalToggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
     const submitBtn = document.getElementById('opsAlertBatchMuteSubmit');
 
-    if (!modal || !summaryEl || !noteEl || !untilInput || !allowCriticalToggle || !submitBtn) {
+    if (!modal || !summaryEl || !noteEl || !untilInput || !dateInput || !timeInput || !allowCriticalToggle || !submitBtn) {
         return;
     }
 
@@ -25093,22 +25404,21 @@ function renderOpsAlertBatchMuteModal() {
         summaryEl,
         noteEl,
         untilInput,
+        dateInput,
+        timeInput,
         allowCriticalToggle,
         submitBtn
     });
 
     setOpsAlertBatchMuteModalVisible(viewState.open);
     if (viewState.shouldFocusAfterOpen) {
-        window.setTimeout(() => untilInput.focus(), 40);
+        window.setTimeout(() => dateInput.focus(), 40);
     }
 }
 
 function closeOpsAlertBatchMuteModal() {
     opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
-    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
-    if (untilInput) {
-        untilInput.value = '';
-    }
+    setOpsAlertBatchMuteUntilValue('');
     renderOpsAlertBatchMuteModal();
 }
 
@@ -25147,6 +25457,15 @@ function openOpsAlertBatchMuteModal(categoryKey = '') {
     return true;
 }
 
+function setOpsAlertBatchMutePreset(hours) {
+    const numericHours = Math.max(1, Number(hours) || 0);
+    const target = new Date(Date.now() + numericHours * 60 * 60 * 1000);
+    setOpsAlertBatchMuteUntilValue(target);
+    syncOpsAlertBatchMuteUntilFromCustomInputs();
+    showToast(`已设置静默 ${numericHours} 小时`, 'info');
+    return true;
+}
+
 function buildLocalOpsAlertBatchMuteSubmissionState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState(), options = {}) {
     return {
         ...state,
@@ -25162,11 +25481,17 @@ function applyOpsAlertBatchMuteSubmissionState(nextState = getDefaultOpsAlertBat
 
 function buildLocalOpsAlertBatchMuteSubmissionContext(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState(), elements = {}) {
     const untilInput = elements.untilInput || document.getElementById('opsAlertBatchMuteUntil');
+    const dateInput = elements.dateInput || document.getElementById('opsAlertBatchMuteDate');
+    const timeInput = elements.timeInput || document.getElementById('opsAlertBatchMuteTime');
     const allowCriticalToggle = elements.allowCriticalToggle || document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
     const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
         ? state
         : getDefaultOpsAlertBatchMuteState();
-    const normalizedUntil = normalizeDateTimeLocalInputValue(String(untilInput?.value || '').trim());
+    const customValue = dateInput || timeInput
+        ? syncOpsAlertBatchMuteUntilFromCustomInputs({ untilInput, dateInput, timeInput })
+        : '';
+    const rawUntilValue = dateInput || timeInput ? customValue : String(untilInput?.value || '').trim();
+    const normalizedUntil = normalizeDateTimeLocalInputValue(rawUntilValue);
     const allowCritical = allowCriticalToggle?.classList.contains('active') !== false;
     const moduleLabels = normalizedState.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
 
@@ -25190,7 +25515,7 @@ function buildLocalOpsAlertBatchMuteSubmissionContext(state = opsAlertBatchMuteS
             moduleLabels,
             canSubmit: false,
             validationError: '请先选择静默截止时间',
-            validationFocus: untilInput || null
+            validationFocus: dateInput || untilInput || null
         };
     }
 
@@ -25284,6 +25609,9 @@ async function submitOpsAlertBatchMuteModal() {
 
 async function submitOpsAlertCaseComposer() {
     const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
+    if (state.submitting === true) {
+        return false;
+    }
     const submissionContext = buildLocalOpsAlertCaseComposerSubmissionContext(state);
 
     if (!submissionContext.canSubmit) {
@@ -25310,10 +25638,18 @@ async function submitOpsAlertCaseComposer() {
             refreshOpsAlertMonitorPanel?.(),
             refreshRelatedOpsAlertWorkspaces(state.context)
         ]);
-        showConfigSavedToast(payload.message || '集中告警已更新', {
-            source: 'ops-alerts-case',
-            module: 'ops-alerts'
-        });
+        if (Number(payload?.summary?.failed_count || 0) > 0) {
+            showToast(payload.message || '集中告警部分处理失败，请刷新后重试未关闭项', 'warning');
+            emitAdminConfigCommandFeedback(payload.message || '集中告警部分处理失败', 'partial', {
+                source: 'ops-alerts-case',
+                module: 'ops-alerts'
+            });
+        } else {
+            showConfigSavedToast(payload.message || '集中告警已更新', {
+                source: 'ops-alerts-case',
+                module: 'ops-alerts'
+            });
+        }
         return true;
     } catch (error) {
         console.error('[Config] Submit ops alert case composer failed:', error);
@@ -30468,6 +30804,7 @@ Object.assign(window, {
     handleOpsAlertMonitorBatchCaseAction,
     openOpsAlertBatchMuteModal,
     toggleOpsAlertBatchMuteAllowCritical,
+    setOpsAlertBatchMutePreset,
     closeOpsAlertBatchMuteModal,
     submitOpsAlertBatchMuteModal,
     closeOpsAlertCaseComposer,

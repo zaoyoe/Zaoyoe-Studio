@@ -41,6 +41,9 @@ function createState(overrides = {}) {
         notifications: [],
         auditLogs: [],
         tableErrors: {},
+        upsertErrorsByTarget: {},
+        silentUpsertDropsByTarget: {},
+        bulkUpsertCalls: 0,
         ...overrides
     };
 }
@@ -62,7 +65,13 @@ function createSupabaseStub(state) {
             };
 
             function applyFilters(rows) {
-                return rows.filter((row) => queryState.filters.every(({ column, value }) => row[column] === value));
+                return rows.filter((row) => queryState.filters.every(({ op = 'eq', column, value }) => {
+                    const rowValue = column === 'site' && !row[column] ? 'cn' : row[column];
+                    if (op === 'in') {
+                        return Array.isArray(value) ? value.includes(rowValue) : false;
+                    }
+                    return rowValue === value;
+                }));
             }
 
             function execute() {
@@ -88,40 +97,62 @@ function createSupabaseStub(state) {
                 }
 
                 if (queryState.mode === 'upsert') {
-                    const payload = {
-                        ...(queryState.payload || {})
-                    };
+                    const payloads = Array.isArray(queryState.payload)
+                        ? queryState.payload.map((payload) => ({ ...(payload || {}) }))
+                        : [{ ...(queryState.payload || {}) }];
+                    if (Array.isArray(queryState.payload)) {
+                        state.bulkUpsertCalls += 1;
+                    }
+                    const upsertError = payloads
+                        .map((payload) => state.upsertErrorsByTarget?.[payload.target_id] || null)
+                        .find(Boolean) || null;
+                    if (upsertError) {
+                        return {
+                            data: queryState.single ? null : [],
+                            error: upsertError
+                        };
+                    }
                     const targetRows = table === 'shop_risk_cases'
                         ? (state.legacyCases || [])
                         : (state.cases || []);
-                    const existingIndex = targetRows.findIndex((row) => (
-                        table === 'shop_risk_cases'
-                            ? row.target_id === payload.target_id
-                            : (row.category_key === payload.category_key && row.target_id === payload.target_id)
-                    ));
-                    const nextRow = existingIndex >= 0
-                        ? {
-                            ...targetRows[existingIndex],
-                            ...payload
+                    const rows = payloads.map((payload) => {
+                        if (state.silentUpsertDropsByTarget?.[payload.target_id]) {
+                            return null;
                         }
-                        : {
-                            id: payload.id || `${table === 'shop_risk_cases' ? 'legacy-case' : 'case'}-${targetRows.length + 1}`,
-                            created_at: payload.created_at || new Date().toISOString(),
-                            ...payload
-                        };
+                        const existingIndex = targetRows.findIndex((row) => (
+                            table === 'shop_risk_cases'
+                                ? row.target_id === payload.target_id
+                                : (
+                                    String(row.site || 'cn').trim().toLowerCase() === String(payload.site || 'cn').trim().toLowerCase()
+                                    && row.category_key === payload.category_key
+                                    && row.target_id === payload.target_id
+                                )
+                        ));
+                        const nextRow = existingIndex >= 0
+                            ? {
+                                ...targetRows[existingIndex],
+                                ...payload
+                            }
+                            : {
+                                id: payload.id || `${table === 'shop_risk_cases' ? 'legacy-case' : 'case'}-${targetRows.length + 1}`,
+                                created_at: payload.created_at || new Date().toISOString(),
+                                ...payload
+                            };
 
-                    if (!nextRow.updated_at) {
-                        nextRow.updated_at = new Date().toISOString();
-                    }
+                        if (!nextRow.updated_at) {
+                            nextRow.updated_at = new Date().toISOString();
+                        }
 
-                    if (existingIndex >= 0) {
-                        targetRows[existingIndex] = nextRow;
-                    } else {
-                        targetRows.push(nextRow);
-                    }
+                        if (existingIndex >= 0) {
+                            targetRows[existingIndex] = nextRow;
+                        } else {
+                            targetRows.push(nextRow);
+                        }
+                        return nextRow;
+                    }).filter(Boolean);
 
                     return {
-                        data: queryState.single ? nextRow : [nextRow],
+                        data: queryState.single ? rows[0] : rows,
                         error: null
                     };
                 }
@@ -151,7 +182,11 @@ function createSupabaseStub(state) {
                     return query;
                 },
                 eq(column, value) {
-                    queryState.filters.push({ column, value });
+                    queryState.filters.push({ op: 'eq', column, value });
+                    return query;
+                },
+                in(column, value) {
+                    queryState.filters.push({ op: 'in', column, value });
                     return query;
                 },
                 maybeSingle() {
@@ -486,7 +521,172 @@ test('ops alert case handler supports batch claim for generic monitor items', as
         assert.equal(state.events.length, 2);
         assert.equal(state.events[0].action, 'claim');
         assert.equal(state.events[1].action, 'claim');
+        assert.equal(state.bulkUpsertCalls, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alert_case.batch.claim');
+    });
+});
+
+test('ops alert case handler keeps batch resolve successes when one item fails', async () => {
+    await withHandler({
+        upsertErrorsByTarget: {
+            'shop_inventory:broken-product': {
+                code: '23514',
+                message: 'simulated item failure'
+            }
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'resolve',
+                resolution: '已完成批量复核。',
+                items: [
+                    {
+                        category_key: 'inventory',
+                        target_id: 'shop_inventory:product-a',
+                        alert_type: 'shop_inventory_low',
+                        title: '库存偏低'
+                    },
+                    {
+                        category_key: 'inventory',
+                        target_id: 'shop_inventory:broken-product',
+                        alert_type: 'shop_inventory_low',
+                        title: '库存写入失败'
+                    }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.processed_count, 1);
+        assert.equal(payload.summary.failed_count, 1);
+        assert.match(payload.message, /另有 1 条未完成/);
+        assert.equal(state.cases.length, 1);
+        assert.equal(state.cases[0].target_id, 'shop_inventory:product-a');
+        assert.equal(state.cases[0].status, 'resolved');
+        assert.equal(state.events.length, 1);
+        assert.equal(payload.failed[0].target_id, 'shop_inventory:broken-product');
+    });
+});
+
+test('ops alert case handler does not report batch resolve success when rows are not persisted', async () => {
+    await withHandler({
+        silentUpsertDropsByTarget: {
+            'shop_inventory:product-a': true,
+            'shop_inventory:product-b': true
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'resolve',
+                resolution: '已完成批量复核。',
+                items: [
+                    {
+                        category_key: 'inventory',
+                        target_id: 'shop_inventory:product-a',
+                        alert_type: 'shop_inventory_low',
+                        title: '库存偏低'
+                    },
+                    {
+                        category_key: 'inventory',
+                        target_id: 'shop_inventory:product-b',
+                        alert_type: 'shop_inventory_empty',
+                        title: '库存售罄'
+                    }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 500);
+        assert.equal(payload.success, false);
+        assert.equal(payload.summary.processed_count, 0);
+        assert.equal(payload.summary.failed_count, 2);
+        assert.equal(state.cases.length, 0);
+        assert.equal(state.events.length, 0);
+        assert.equal(state.bulkUpsertCalls, 1);
+        assert.equal(payload.failed.every((item) => item.reason === 'case_not_persisted'), true);
+    });
+});
+
+test('ops alert case handler resolves batch items using each alert case site', async () => {
+    await withHandler({}, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'resolve',
+                metadata: {
+                    site: 'all'
+                },
+                resolution: '已批量处理，关闭当前筛选告警。',
+                items: [
+                    {
+                        category_key: 'inventory',
+                        target_id: 'ops_summary:shop_inventory_summary',
+                        case_site: 'cn',
+                        title: '库存与补货汇总',
+                        alert_job_id: 'inventory-summary-cn-job',
+                        alert_created_at: '2026-06-10T12:12:19.000Z',
+                        summary_window_start_at: '2026-06-10T12:00:00.000Z',
+                        summary_window_end_at: '2026-06-10T13:00:00.000Z'
+                    },
+                    {
+                        category_key: 'inventory',
+                        target_id: 'ops_summary:shop_inventory_summary',
+                        caseSite: 'intl',
+                        title: '库存与补货汇总',
+                        alert_job_id: 'inventory-summary-intl-job',
+                        alert_created_at: '2026-06-10T12:16:30.000Z',
+                        summary_window_start_at: '2026-06-10T12:00:00.000Z',
+                        summary_window_end_at: '2026-06-10T13:00:00.000Z'
+                    }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.processed_count, 2);
+        assert.equal(state.cases.length, 2);
+
+        const cnCase = state.cases.find((item) => item.site === 'cn');
+        const intlCase = state.cases.find((item) => item.site === 'intl');
+        assert.equal(cnCase?.status, 'resolved');
+        assert.equal(intlCase?.status, 'resolved');
+        assert.equal(cnCase?.target_id, 'ops_summary:shop_inventory_summary');
+        assert.equal(intlCase?.target_id, 'ops_summary:shop_inventory_summary');
+        assert.equal(cnCase?.metadata.alert_job_id, 'inventory-summary-cn-job');
+        assert.equal(cnCase?.metadata.alert_created_at, '2026-06-10T12:12:19.000Z');
+        assert.equal(cnCase?.metadata.summary_window_start_at, '2026-06-10T12:00:00.000Z');
+        assert.equal(cnCase?.metadata.summary_window_end_at, '2026-06-10T13:00:00.000Z');
+        assert.equal(cnCase?.metadata.resolved_alert_job_id, 'inventory-summary-cn-job');
+        assert.equal(cnCase?.metadata.resolved_alert_created_at, '2026-06-10T12:12:19.000Z');
+        assert.equal(cnCase?.metadata.resolved_summary_window_start_at, '2026-06-10T12:00:00.000Z');
+        assert.equal(cnCase?.metadata.resolved_summary_window_end_at, '2026-06-10T13:00:00.000Z');
+        assert.equal(intlCase?.metadata.resolved_alert_job_id, 'inventory-summary-intl-job');
+        assert.equal(intlCase?.metadata.resolved_alert_created_at, '2026-06-10T12:16:30.000Z');
+        assert.equal(intlCase?.metadata.resolved_summary_window_end_at, '2026-06-10T13:00:00.000Z');
+        assert.equal(state.cases.some((item) => item.site === 'all'), false);
+        assert.equal(state.bulkUpsertCalls, 1);
+        assert.equal(state.events.length, 2);
+        assert.deepEqual(state.events.map((item) => item.site).sort(), ['cn', 'intl']);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alert_case.batch.resolve');
     });
 });
 

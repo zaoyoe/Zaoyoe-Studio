@@ -64,6 +64,8 @@ test('getMigrationSet exposes both incremental and full payment rollout chains',
     assert.equal(getMigrationSet('full').migrations.includes('20260419_allow_archived_payment_anomaly_cases.sql'), true);
     assert.equal(getMigrationSet('incremental').migrations.includes('20260419_fix_payment_overview_summary_active_anomalies.sql'), true);
     assert.equal(getMigrationSet('full').migrations.includes('20260419_fix_payment_overview_summary_active_anomalies.sql'), true);
+    assert.equal(getMigrationSet('incremental').migrations.includes('20260610_allow_shop_profit_audit_anomaly_cases.sql'), true);
+    assert.equal(getMigrationSet('full').migrations.includes('20260610_allow_shop_profit_audit_anomaly_cases.sql'), true);
 });
 
 test('resolveRolloutContext prefers explicit project ref and db url overrides', () => {

@@ -695,6 +695,418 @@ test('ops alert monitor handler keeps newer summary alerts visible after an olde
     });
 });
 
+test('ops alert monitor handler excludes summary alerts closed after the latest job from active counts', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('verify_quota_summary', {
+                id: 'verify-quota-summary-older-than-close',
+                severity: 'critical',
+                title: '验证额度告警汇总（1 条额度告警）',
+                content: '验证额度告警汇总\n累计额度告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_quota_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(2)
+            })
+        ],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: 'verify_quota_summary',
+            status: 'resolved',
+            owner_admin_id: 'admin-user-1',
+            owner_label: '当前值班',
+            resolution: '额度已补充',
+            metadata: {
+                title: '验证额度告警汇总'
+            },
+            last_action: 'resolved',
+            last_action_at: hoursAgo(1),
+            updated_at: hoursAgo(1)
+        }]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const verify = payload.categories.find((item) => item.key === 'verify');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.total_active_count, 0);
+        assert.equal(payload.summary.total_critical_count, 0);
+        assert.equal(verify.active_count, 0);
+        assert.equal(verify.critical_count, 0);
+        assert.equal(verify.items.length, 1);
+        assert.equal(verify.items[0].alert_type, 'verify_quota_summary');
+        assert.equal(verify.items[0].case_status, 'resolved');
+        assert.equal(verify.items[0].case_last_action, 'resolved');
+        assert.equal(verify.items[0].case_resolution, '额度已补充');
+        assert.equal(verify.case_summary.resolved, 1);
+    });
+});
+
+test('ops alert monitor handler keeps a closed summary window resolved after the job is updated later', async () => {
+    const windowStartAt = hoursAgo(1.5);
+    const windowEndAt = hoursAgo(0.5);
+    await withHandler({
+        jobs: [
+            buildJob('verify_quota_summary', {
+                id: 'verify-quota-summary-same-window',
+                severity: 'critical',
+                title: '验证额度告警汇总（2 条额度告警）',
+                content: '验证额度告警汇总\n累计额度告警：2 条',
+                payload: {
+                    target_id: 'ops_summary:verify_quota_summary',
+                    item_count: 2,
+                    window_start_at: windowStartAt,
+                    window_end_at: windowEndAt,
+                    site: 'cn'
+                },
+                created_at: hoursAgo(0.25)
+            })
+        ],
+        cases: [{
+            site: 'cn',
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: 'verify_quota_summary',
+            status: 'resolved',
+            owner_admin_id: 'admin-user-1',
+            owner_label: '当前值班',
+            resolution: '当前窗口已确认，无需继续关注',
+            metadata: {
+                title: '验证额度告警汇总',
+                resolved_summary_window_start_at: windowStartAt,
+                resolved_summary_window_end_at: windowEndAt
+            },
+            last_action: 'resolved',
+            last_action_at: hoursAgo(0.75),
+            updated_at: hoursAgo(0.75)
+        }]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const verify = payload.categories.find((item) => item.key === 'verify');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.total_active_count, 0);
+        assert.equal(verify.active_count, 0);
+        assert.equal(verify.critical_count, 0);
+        assert.equal(verify.items[0].case_status, 'resolved');
+        assert.equal(verify.items[0].case_last_action, 'resolved');
+        assert.equal(verify.items[0].case_resolution, '当前窗口已确认，无需继续关注');
+        assert.equal(verify.case_summary.resolved, 1);
+    });
+});
+
+test('ops alert monitor handler can apply a newer all-site resolved case to a site-specific summary alert', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('verify_quota_summary', {
+                id: 'verify-quota-summary-cn',
+                severity: 'critical',
+                title: '验证额度告警汇总（1 条额度告警）',
+                content: '验证额度告警汇总\n累计额度告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_quota_summary',
+                    item_count: 1,
+                    site: 'cn'
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        cases: [
+            {
+                site: 'cn',
+                category_key: 'verify',
+                target_id: 'ops_summary:verify_quota_summary',
+                alert_type: 'verify_quota_summary',
+                status: 'open',
+                resolution: null,
+                last_action: 'reopened',
+                last_action_at: hoursAgo(2),
+                updated_at: hoursAgo(2)
+            },
+            {
+                site: 'all',
+                category_key: 'verify',
+                target_id: 'ops_summary:verify_quota_summary',
+                alert_type: 'verify_quota_summary',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                resolution: '全站筛选已批量关闭',
+                metadata: {
+                    title: '验证额度告警汇总'
+                },
+                last_action: 'resolved',
+                last_action_at: hoursAgo(0.5),
+                updated_at: hoursAgo(0.5)
+            }
+        ],
+        events: [
+            {
+                site: 'all',
+                category_key: 'verify',
+                target_id: 'ops_summary:verify_quota_summary',
+                alert_type: 'verify_quota_summary',
+                action: 'resolve',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                actor_admin_id: 'admin-user-1',
+                actor_label: '当前值班',
+                resolution: '全站事件也应回填到 CN 视图',
+                metadata: {
+                    site: 'all'
+                },
+                created_at: hoursAgo(0.45)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const verify = payload.categories.find((item) => item.key === 'verify');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(verify.active_count, 0);
+        assert.equal(verify.items[0].site, 'cn');
+        assert.equal(verify.items[0].case_status, 'resolved');
+        assert.equal(verify.items[0].case_last_action, 'resolved');
+        assert.equal(verify.items[0].case_resolution, '全站筛选已批量关闭');
+        assert.equal(verify.items[0].case_latest_event_action, 'resolve');
+        assert.equal(verify.items[0].case_latest_event_summary, '全站事件也应回填到 CN 视图');
+    });
+});
+
+test('ops alert monitor handler keeps resolved case state when case event timeline is unavailable', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('verify_quota_summary', {
+                id: 'verify-quota-summary-without-events',
+                severity: 'critical',
+                title: '验证额度告警汇总（1 条额度告警）',
+                content: '验证额度告警汇总\n累计额度告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_quota_summary',
+                    item_count: 1,
+                    site: 'cn'
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        cases: [{
+            site: 'cn',
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: 'verify_quota_summary',
+            status: 'resolved',
+            owner_admin_id: 'admin-user-1',
+            owner_label: '当前值班',
+            resolution: '已确认额度恢复',
+            metadata: {
+                title: '验证额度告警汇总'
+            },
+            last_action: 'resolved',
+            last_action_at: hoursAgo(0.5),
+            updated_at: hoursAgo(0.5)
+        }],
+        tableErrors: {
+            ops_alert_case_events: {
+                message: 'statement timeout while reading ops_alert_case_events'
+            }
+        }
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const verify = payload.categories.find((item) => item.key === 'verify');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(verify.active_count, 0);
+        assert.equal(verify.case_summary.resolved, 1);
+        assert.equal(verify.items[0].case_status, 'resolved');
+        assert.equal(verify.items[0].case_latest_event_action, 'resolve');
+        assert.equal(verify.items[0].case_latest_event_summary, '已确认额度恢复');
+    });
+});
+
+test('ops alert monitor handler keeps alert jobs visible when case records are unavailable', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('verify_queue_backlog', {
+                id: 'verify-queue-backlog-without-cases',
+                severity: 'critical',
+                title: '验证队列堆积',
+                content: '验证队列告警\n当前队列积压过高',
+                payload: {
+                    target_id: 'verify_queue:primary',
+                    site: 'cn'
+                },
+                created_at: hoursAgo(0.5)
+            })
+        ],
+        cases: [{
+            site: 'cn',
+            category_key: 'verify',
+            target_id: 'verify_queue:primary',
+            alert_type: 'verify_queue_backlog',
+            status: 'resolved',
+            owner_admin_id: 'admin-user-1',
+            owner_label: '当前值班',
+            resolution: '旧 case 不应在降级读取中阻断面板',
+            last_action: 'resolved',
+            last_action_at: hoursAgo(0.25),
+            updated_at: hoursAgo(0.25)
+        }],
+        tableErrors: {
+            ops_alert_cases: {
+                message: 'statement timeout while reading ops_alert_cases'
+            }
+        }
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const verify = payload.categories.find((item) => item.key === 'verify');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.total_active_count, 1);
+        assert.equal(verify.active_count, 1);
+        assert.equal(verify.items[0].title, '验证队列堆积');
+        assert.equal(verify.items[0].case_status, 'open');
+        assert.equal(verify.case_summary.open, 1);
+    });
+});
+
+test('ops alert monitor handler keeps batch-closed inventory product and summary alerts out of active counts', async () => {
+    const resolvedAt = hoursAgo(0.05);
+    const summaryWindowStartAt = hoursAgo(1);
+    const summaryWindowEndAt = hoursAgo(0.1);
+    const productJobs = Array.from({ length: 16 }, (_, index) => {
+        const productNumber = index + 1;
+        const productId = `inventory-product-${productNumber}`;
+        return buildJob('shop_inventory_empty', {
+            id: `inventory-empty-${productNumber}`,
+            severity: 'critical',
+            title: `库存商品 ${productNumber} 已售罄`,
+            content: `库存商品 ${productNumber} 当前已无可售库存，请尽快补货。`,
+            payload: {
+                target_id: productId,
+                product_id: productId,
+                product_name: `库存商品 ${productNumber}`,
+                stock_count: 0,
+                low_stock_threshold: 5
+            },
+            created_at: hoursAgo(0.5 + index * 0.01)
+        });
+    });
+    const summaryJob = buildJob('shop_inventory_summary', {
+        id: 'inventory-summary-same-window-updated-after-close',
+        severity: 'critical',
+        title: '库存与补货汇总（16 条库存告警）',
+        content: '库存与补货汇总\n累计库存告警：16 条',
+        payload: {
+            target_id: 'ops_summary:shop_inventory_summary',
+            item_count: 16,
+            window_start_at: summaryWindowStartAt,
+            window_end_at: summaryWindowEndAt,
+            site: 'cn'
+        },
+        created_at: hoursAgo(0.01)
+    });
+    const cases = productJobs.map((job) => ({
+        site: 'cn',
+        category_key: 'inventory',
+        target_id: job.payload.target_id,
+        alert_type: job.alert_type,
+        status: 'resolved',
+        owner_admin_id: 'admin-user-1',
+        owner_label: '当前值班',
+        resolution: '当前筛选已批量关闭',
+        metadata: {
+            title: job.title,
+            alert_job_id: job.id,
+            alert_created_at: job.created_at,
+            resolved_alert_job_id: job.id,
+            resolved_alert_created_at: job.created_at
+        },
+        last_action: 'resolved',
+        last_action_at: resolvedAt,
+        updated_at: resolvedAt
+    }));
+    cases.push({
+        site: 'cn',
+        category_key: 'inventory',
+        target_id: 'ops_summary:shop_inventory_summary',
+        alert_type: 'shop_inventory_summary',
+        status: 'resolved',
+        owner_admin_id: 'admin-user-1',
+        owner_label: '当前值班',
+        resolution: '当前筛选已批量关闭',
+        metadata: {
+            title: summaryJob.title,
+            alert_job_id: summaryJob.id,
+            alert_created_at: summaryJob.created_at,
+            resolved_alert_job_id: summaryJob.id,
+            resolved_alert_created_at: summaryJob.created_at,
+            summary_window_start_at: summaryWindowStartAt,
+            summary_window_end_at: summaryWindowEndAt,
+            resolved_summary_window_start_at: summaryWindowStartAt,
+            resolved_summary_window_end_at: summaryWindowEndAt
+        },
+        last_action: 'resolved',
+        last_action_at: resolvedAt,
+        updated_at: resolvedAt
+    });
+
+    await withHandler({
+        jobs: [
+            summaryJob,
+            ...productJobs
+        ],
+        cases
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const inventory = payload.categories.find((item) => item.key === 'inventory');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.total_active_count, 0);
+        assert.equal(payload.summary.total_critical_count, 0);
+        assert.equal(inventory.active_count, 0);
+        assert.equal(inventory.critical_count, 0);
+        assert.equal(inventory.items.length, 17);
+        assert.equal(inventory.case_summary.resolved, 17);
+        assert.equal(inventory.items.every((item) => item.case_status === 'resolved'), true);
+        assert.equal(
+            inventory.items.find((item) => item.target_id === 'ops_summary:shop_inventory_summary')?.case_last_action,
+            'resolved'
+        );
+    });
+});
+
 test('ops alert monitor handler can build assignable admins without scanning auth user pages', async () => {
     await withHandler({
         authUsers: [

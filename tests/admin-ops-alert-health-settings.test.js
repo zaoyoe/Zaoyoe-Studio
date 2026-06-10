@@ -36,6 +36,7 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         requireAdminCalls: [],
+        queryLog: [],
         jobs: [],
         attempts: [],
         runtime: {
@@ -90,6 +91,9 @@ function compareValue(left, right) {
 
 function applyFilters(rows, filters) {
     return rows.filter((row) => filters.every(({ op, column, value }) => {
+        if (op === 'in') {
+            return Array.isArray(value) ? value.includes(row[column]) : false;
+        }
         if (op === 'gte') {
             return compareValue(row[column], value) >= 0;
         }
@@ -130,6 +134,10 @@ function createSupabaseStub(state) {
                 select() {
                     return query;
                 },
+                in(column, value) {
+                    queryState.filters.push({ op: 'in', column, value });
+                    return query;
+                },
                 gte(column, value) {
                     queryState.filters.push({ op: 'gte', column, value });
                     return query;
@@ -142,6 +150,11 @@ function createSupabaseStub(state) {
                     return query;
                 },
                 async range(from, to) {
+                    state.queryLog.push({
+                        table,
+                        filters: queryState.filters.slice(),
+                        range: { from, to }
+                    });
                     return {
                         data: applyRange(sortRows(applyFilters(rows, queryState.filters), queryState.order), { from, to }),
                         error: null
@@ -425,6 +438,61 @@ test('ops alert health handler keeps the panel readable when a stored secret can
         assert.equal(telegram.source, 'error');
         assert.equal(telegram.errors[0].includes('ADMIN_CONFIG_ENCRYPTION_KEY'), true);
         assert.equal(telegram.last_error.includes('ADMIN_CONFIG_ENCRYPTION_KEY'), true);
+    });
+});
+
+test('ops alert health handler fetches attempts by visible job ids instead of scanning every recent attempt', async () => {
+    await withHandler({
+        jobs: [
+            {
+                id: 'visible-email-job',
+                status: 'delivered',
+                channels: ['email'],
+                remaining_channels: [],
+                created_at: hoursAgo(2),
+                alert_type: 'wallet_recharge_succeeded',
+                title: '充值成功',
+                payload: {
+                    buyer_label: '林白',
+                    user_id: 'user_demo_buyer_001'
+                }
+            }
+        ],
+        attempts: [
+            {
+                job_id: 'visible-email-job',
+                channel: 'email',
+                status: 'delivered',
+                response_status: 200,
+                error_message: '',
+                created_at: hoursAgo(1.5)
+            },
+            {
+                job_id: 'unrelated-heavy-job',
+                channel: 'email',
+                status: 'failed',
+                response_status: 500,
+                error_message: 'unrelated failure should not be scanned into the panel',
+                created_at: hoursAgo(1)
+            }
+        ]
+    }, async (handler, state) => {
+        const response = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, response);
+
+        const payload = response.json();
+        const attemptQueries = state.queryLog.filter((entry) => entry.table === 'ops_alert_job_attempts');
+
+        assert.equal(response.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.total_attempt_count, 1);
+        assert.equal(payload.summary.failed_count, 0);
+        assert.equal(payload.summary.recent_errors.length, 0);
+        assert.equal(attemptQueries.length, 1);
+        assert.deepEqual(
+            attemptQueries[0].filters.find((filter) => filter.op === 'in' && filter.column === 'job_id')?.value,
+            ['visible-email-job']
+        );
     });
 });
 

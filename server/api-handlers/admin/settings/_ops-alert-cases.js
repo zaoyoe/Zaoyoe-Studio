@@ -1,5 +1,6 @@
 const {
     isMissingTableAccessError,
+    buildOpsAlertCaseKey,
     normalizeOpsAlertCaseSite,
     resolveOpsAlertCaseSite
 } = require('./_ops-alert-case-events');
@@ -156,6 +157,59 @@ async function fetchExistingCase(supabase, categoryKey, targetId, site = 'cn') {
     }
 }
 
+function groupCaseLookupItems(items = []) {
+    return Array.from((Array.isArray(items) ? items : []).reduce((groups, item) => {
+        const site = normalizeOpsAlertCaseSite(item?.site, 'cn');
+        const categoryKey = normalizeCategoryKey(item?.category_key || item?.categoryKey, item?.target_id || item?.targetId);
+        const targetId = sanitizeText(item?.target_id || item?.targetId, 200);
+        if (!categoryKey || !targetId) {
+            return groups;
+        }
+
+        const groupKey = buildOpsAlertCaseKey(categoryKey, '', site);
+        if (!groups.has(groupKey)) {
+            groups.set(groupKey, {
+                site,
+                category_key: categoryKey,
+                target_ids: []
+            });
+        }
+        groups.get(groupKey).target_ids.push(targetId);
+        return groups;
+    }, new Map()).values());
+}
+
+async function fetchExistingCasesByItems(supabase, items = []) {
+    const groups = groupCaseLookupItems(items);
+    const caseMap = new Map();
+    if (!groups.length) {
+        return caseMap;
+    }
+
+    const groupedRows = await Promise.all(groups.map(async (group) => {
+        const { data, error } = await supabase
+            .from('ops_alert_cases')
+            .select('*')
+            .eq('site', group.site)
+            .eq('category_key', group.category_key)
+            .in('target_id', Array.from(new Set(group.target_ids)));
+
+        if (error) {
+            throw error;
+        }
+        return Array.isArray(data) ? data : [];
+    }));
+
+    groupedRows.flat().forEach((row) => {
+        caseMap.set(
+            buildOpsAlertCaseKey(row?.category_key, row?.target_id, row?.site),
+            row
+        );
+    });
+
+    return caseMap;
+}
+
 function buildCaseMetadata(existingCase = {}, item = {}, requestMetadata = {}) {
     const existingMetadata = normalizeJsonObject(existingCase?.metadata);
     const itemMetadata = normalizeJsonObject(item?.metadata);
@@ -175,6 +229,22 @@ function buildCaseMetadata(existingCase = {}, item = {}, requestMetadata = {}) {
         item.reference_value || item.referenceValue || itemMetadata.reference_value || requestMetadata.reference_value || existingMetadata.reference_value,
         240
     );
+    const alertJobId = sanitizeText(
+        item.alert_job_id || item.alertJobId || itemMetadata.alert_job_id || itemMetadata.alertJobId || requestMetadata.alert_job_id || requestMetadata.alertJobId,
+        160
+    );
+    const alertCreatedAt = sanitizeText(
+        item.alert_created_at || item.alertCreatedAt || itemMetadata.alert_created_at || itemMetadata.alertCreatedAt || requestMetadata.alert_created_at || requestMetadata.alertCreatedAt,
+        80
+    );
+    const summaryWindowStartAt = sanitizeText(
+        item.summary_window_start_at || item.summaryWindowStartAt || itemMetadata.summary_window_start_at || itemMetadata.summaryWindowStartAt || requestMetadata.summary_window_start_at || requestMetadata.summaryWindowStartAt,
+        80
+    );
+    const summaryWindowEndAt = sanitizeText(
+        item.summary_window_end_at || item.summaryWindowEndAt || itemMetadata.summary_window_end_at || itemMetadata.summaryWindowEndAt || requestMetadata.summary_window_end_at || requestMetadata.summaryWindowEndAt,
+        80
+    );
 
     if (alertType) {
         nextMetadata.alert_type = alertType;
@@ -187,6 +257,18 @@ function buildCaseMetadata(existingCase = {}, item = {}, requestMetadata = {}) {
     }
     if (referenceValue) {
         nextMetadata.reference_value = referenceValue;
+    }
+    if (alertJobId) {
+        nextMetadata.alert_job_id = alertJobId;
+    }
+    if (alertCreatedAt) {
+        nextMetadata.alert_created_at = alertCreatedAt;
+    }
+    if (summaryWindowStartAt) {
+        nextMetadata.summary_window_start_at = summaryWindowStartAt;
+    }
+    if (summaryWindowEndAt) {
+        nextMetadata.summary_window_end_at = summaryWindowEndAt;
     }
     nextMetadata.site = resolveOpsAlertCaseSite(item, resolveOpsAlertCaseSite(existingCase, 'cn'));
 
@@ -262,9 +344,37 @@ function applyCaseAction(existingCase = null, action, item = {}, options = {}) {
         nextRecord.owner_label = nextRecord.owner_label || buildOwnerLabel(user);
         nextRecord.resolution = resolution;
         nextRecord.last_action = 'resolved';
+        nextRecord.metadata = {
+            ...normalizeJsonObject(nextRecord.metadata),
+            resolved_at: nowIso
+        };
+        if (nextRecord.metadata.alert_job_id) {
+            nextRecord.metadata.resolved_alert_job_id = nextRecord.metadata.alert_job_id;
+        }
+        if (nextRecord.metadata.alert_created_at) {
+            nextRecord.metadata.resolved_alert_created_at = nextRecord.metadata.alert_created_at;
+        }
+        if (nextRecord.metadata.summary_window_start_at) {
+            nextRecord.metadata.resolved_summary_window_start_at = nextRecord.metadata.summary_window_start_at;
+        }
+        if (nextRecord.metadata.summary_window_end_at) {
+            nextRecord.metadata.resolved_summary_window_end_at = nextRecord.metadata.summary_window_end_at;
+        }
+        delete nextRecord.metadata.implicit_reopen_reason;
+        delete nextRecord.metadata.implicit_reopen_alert_job_id;
+        delete nextRecord.metadata.implicit_reopen_at;
     } else if (action === 'reopen') {
         nextRecord.status = 'open';
         nextRecord.last_action = 'reopened';
+        nextRecord.metadata = {
+            ...normalizeJsonObject(nextRecord.metadata),
+            reopened_at: nowIso
+        };
+        delete nextRecord.metadata.resolved_at;
+        delete nextRecord.metadata.resolved_alert_job_id;
+        delete nextRecord.metadata.resolved_alert_created_at;
+        delete nextRecord.metadata.resolved_summary_window_start_at;
+        delete nextRecord.metadata.resolved_summary_window_end_at;
     }
 
     nextRecord.last_action_by = user.id;
@@ -325,6 +435,30 @@ async function persistCase(supabase, record = {}) {
     }
 }
 
+async function persistCases(supabase, records = []) {
+    const normalizedRecords = (Array.isArray(records) ? records : [])
+        .map((record) => ({
+            ...record,
+            site: normalizeOpsAlertCaseSite(record?.site, 'cn')
+        }))
+        .filter((record) => record.category_key && record.target_id);
+
+    if (!normalizedRecords.length) {
+        return [];
+    }
+
+    const { data, error } = await supabase
+        .from('ops_alert_cases')
+        .upsert(normalizedRecords, { onConflict: 'site,category_key,target_id' })
+        .select('*');
+
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data) ? data : [];
+}
+
 module.exports = {
     sanitizeText,
     normalizeJsonObject,
@@ -334,8 +468,10 @@ module.exports = {
     buildCaseResponse,
     isMissingOpsAlertCasesTableError,
     fetchExistingCase,
+    fetchExistingCasesByItems,
     buildCaseMetadata,
     resolveAssignedOwner,
     applyCaseAction,
-    persistCase
+    persistCase,
+    persistCases
 };
