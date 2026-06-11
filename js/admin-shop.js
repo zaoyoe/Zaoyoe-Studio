@@ -7756,6 +7756,15 @@ Example output format:
         return message.includes('delivery_type') || message.includes('webhook_target');
     },
 
+    isProductBasePriceConstraintError: function (err) {
+        const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return message.includes('price_points')
+            && (
+                message.includes('not-null constraint')
+                || message.includes('null value in column')
+            );
+    },
+
     getFriendlySaveErrorMessage: function (err) {
         const rawErrorText = `${err?.code || ''} ${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
         if (
@@ -7791,6 +7800,10 @@ Example output format:
 
         if (this.isProductDeliverySchemaError(err)) {
             return '保存失败：当前 Supabase 数据库还没有商品发货模式字段。请先执行 `supabase/migrations/20260321_add_shop_delivery_pipeline.sql`，再保存商品。';
+        }
+
+        if (this.isProductBasePriceConstraintError(err)) {
+            return '保存失败：当前 Supabase 数据库仍要求 CN 价格必填。请先执行 `supabase/migrations/20260611_allow_site_scoped_shop_product_prices.sql`，再保存 EN 站商品。';
         }
 
         const details = [err?.message, err?.details, err?.hint].filter(Boolean).join(' | ');

@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS shop_products (
     description TEXT,
     icon_url VARCHAR(255),                  -- 商品图标 (FontAwesome类名 或 URL)
     image_assets JSONB DEFAULT '{}'::JSONB, -- 商品图片资产对象: original/card/thumb/home/detail
-    price_points INT NOT NULL CHECK (price_points >= 0),
+    price_points INT CHECK (price_points >= 0), -- CN shop price; NULL means not sold on CN site
     category VARCHAR(50) DEFAULT 'account', -- account, api_key, resource
     tags JSONB DEFAULT '[]'::JSONB,         -- ["hot", "new"]
     display_order INT DEFAULT 0,            -- 排序权重
