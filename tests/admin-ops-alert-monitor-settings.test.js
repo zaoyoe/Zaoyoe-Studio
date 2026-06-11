@@ -464,7 +464,7 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(payload.summary.total_critical_count, 5);
         assert.equal(payload.summary.active_category_count, 6);
         assert.equal(Array.isArray(payload.categories), true);
-        assert.equal(payload.categories.length, 7);
+        assert.equal(payload.categories.length, 8);
 
         const payments = payload.categories.find((item) => item.key === 'payments');
         assert.equal(payments.active_count, 1);
@@ -1260,6 +1260,54 @@ test('ops alert monitor handler includes verify and security categories in recov
         assert.equal(security.items[0].case_owner_label, '当前值班');
         assert.equal(security.items[0].case_note, '正在核对来源 IP 和登录设备。');
         assert.equal(security.case_summary.claimed, 1);
+    });
+});
+
+test('ops alert monitor handler includes kvm4 watchdog category', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('kvm4_watchdog_incident', {
+                id: 'kvm4-incident-1',
+                severity: 'critical',
+                title: 'KVM4 watchdog 触发闲鱼容器重建',
+                content: 'dockerd CPU 过高，watchdog 已触发自愈。',
+                payload: {
+                    target_id: 'kvm4_watchdog:xianyu-auto-reply-fix',
+                    guard_label: '闲鱼自动回复',
+                    service_name: 'xianyu-auto-reply-fix',
+                    container_name: 'xianyu-auto-reply-fix'
+                },
+                created_at: hoursAgo(2)
+            }),
+            buildJob('kvm4_watchdog_recovered', {
+                id: 'kvm4-recovered-1',
+                severity: 'info',
+                title: 'KVM4 watchdog 已恢复',
+                content: '闲鱼容器恢复健康。',
+                payload: {
+                    target_id: 'kvm4_watchdog:xianyu-auto-reply-fix',
+                    guard_label: '闲鱼自动回复',
+                    service_name: 'xianyu-auto-reply-fix',
+                    container_name: 'xianyu-auto-reply-fix'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/admin/settings/ops-alert-monitor?site=cn',
+            headers: {}
+        };
+        const res = createMockResponse();
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        const payload = res.json();
+        const categories = Array.isArray(payload?.categories) ? payload.categories : [];
+        const kvm4Category = categories.find((item) => item.key === 'kvm4');
+        assert.ok(kvm4Category);
+        assert.equal(kvm4Category.label, 'KVM4 运维');
     });
 });
 

@@ -43531,6 +43531,74 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     gap: 16px;
 }
 
+.ops-alert-kvm4-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px;
+    border-radius: 18px;
+    border: 1px solid rgba(107, 158, 206, 0.2);
+    background:
+        linear-gradient(135deg, rgba(107, 158, 206, 0.08), rgba(107, 158, 206, 0.03)),
+        rgba(255, 255, 255, 0.02);
+}
+
+.ops-alert-kvm4-summary-card__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 16px;
+}
+
+.ops-alert-kvm4-summary-card__copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ops-alert-kvm4-summary-card__title {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.ops-alert-kvm4-summary-card__desc {
+    color: var(--text-secondary);
+    font-size: 0.96rem;
+    line-height: 1.65;
+}
+
+.ops-alert-kvm4-summary-card__meta {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+}
+
+.ops-alert-kvm4-summary-card__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    background: rgba(59, 130, 246, 0.1);
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.ops-alert-kvm4-summary-card__foot {
+    padding-top: 14px;
+    border-top: 1px solid rgba(107, 158, 206, 0.16);
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    line-height: 1.65;
+}
+
 .ops-alert-config-card:is(
     [data-config="ops-alerts-telegram"],
     [data-config="ops-alerts-feishu"],
@@ -43545,6 +43613,7 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     [data-config="ops-alerts-verify-quota"],
     [data-config="ops-alerts-verify-queue"],
     [data-config="ops-alerts-verify-failure"],
+    [data-config="ops-alerts-kvm4"],
     [data-config="ops-alerts-shop-risk"]
 ):hover {
     border-color: rgba(107, 158, 206, 0.34);

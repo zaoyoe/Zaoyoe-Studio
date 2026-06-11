@@ -387,6 +387,25 @@ const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
         summary_daily_hour_id: 'opsAlertVerifyFailureSummaryDailyHour',
         summary_daily_minute_id: 'opsAlertVerifyFailureSummaryDailyMinute',
         summary_max_items_id: 'opsAlertVerifyFailureSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'kvm4_watchdog',
+        label: 'KVM4 运维',
+        preset_group: 'operations',
+        supports_work_hours_only: false,
+        target_checkbox_id: '',
+        monitor_status_id: '',
+        work_hours_status_id: '',
+        summary_status_id: '',
+        enabled_toggle_id: '',
+        work_hours_toggle_id: '',
+        summary_toggle_id: '',
+        summary_schedule_mode_id: '',
+        summary_window_minutes_id: '',
+        summary_hourly_minute_id: '',
+        summary_daily_hour_id: '',
+        summary_daily_minute_id: '',
+        summary_max_items_id: ''
     })
 ]);
 const OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS = Object.freeze({
@@ -409,6 +428,7 @@ const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
     'ops-alerts-verify-quota',
     'ops-alerts-verify-queue',
     'ops-alerts-verify-failure',
+    'ops-alerts-kvm4',
     'ops-alerts-shop-risk'
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 25000;
@@ -3525,6 +3545,10 @@ function getDefaultOpsAlertConfig() {
                 verify_failure: {
                     until: '',
                     allow_critical: true
+                },
+                kvm4_watchdog: {
+                    until: '',
+                    allow_critical: true
                 }
             },
             modules: {
@@ -3652,6 +3676,11 @@ function getDefaultOpsAlertConfig() {
                 email: true
             },
             verify_failure: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            kvm4_watchdog: {
                 telegram: true,
                 feishu: true,
                 email: true
@@ -7741,6 +7770,9 @@ function normalizeOpsAlertConfig(raw) {
     const routingVerifyFailureSource = routingSource.verify_failure && typeof routingSource.verify_failure === 'object' && !Array.isArray(routingSource.verify_failure)
         ? routingSource.verify_failure
         : {};
+    const routingKvm4WatchdogSource = routingSource.kvm4_watchdog && typeof routingSource.kvm4_watchdog === 'object' && !Array.isArray(routingSource.kvm4_watchdog)
+        ? routingSource.kvm4_watchdog
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -7829,6 +7861,10 @@ function normalizeOpsAlertConfig(raw) {
                 verify_failure: {
                     until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.verify_failure?.until || '') || '',
                     allow_critical: normalizeConfigBoolean(typeMuteRulesSource.verify_failure?.allow_critical, defaults.mute_rules.types.verify_failure.allow_critical)
+                },
+                kvm4_watchdog: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.kvm4_watchdog?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.kvm4_watchdog?.allow_critical, defaults.mute_rules.types.kvm4_watchdog.allow_critical)
                 }
             },
             modules: {
@@ -7959,6 +7995,11 @@ function normalizeOpsAlertConfig(raw) {
                 telegram: normalizeConfigBoolean(routingVerifyFailureSource.telegram, defaults.routing.verify_failure.telegram),
                 feishu: normalizeConfigBoolean(routingVerifyFailureSource.feishu, defaults.routing.verify_failure.feishu),
                 email: normalizeConfigBoolean(routingVerifyFailureSource.email, defaults.routing.verify_failure.email)
+            },
+            kvm4_watchdog: {
+                telegram: normalizeConfigBoolean(routingKvm4WatchdogSource.telegram, defaults.routing.kvm4_watchdog.telegram),
+                feishu: normalizeConfigBoolean(routingKvm4WatchdogSource.feishu, defaults.routing.kvm4_watchdog.feishu),
+                email: normalizeConfigBoolean(routingKvm4WatchdogSource.email, defaults.routing.kvm4_watchdog.email)
             }
         },
         shop_order_risk: {
@@ -11872,7 +11913,8 @@ function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
         payment_gateway: 'PaymentGateway',
         verify_quota: 'VerifyQuota',
         verify_queue: 'VerifyQueue',
-        verify_failure: 'VerifyFailure'
+        verify_failure: 'VerifyFailure',
+        kvm4_watchdog: 'Kvm4Watchdog'
     };
     const channelIdMap = {
         telegram: 'Telegram',
@@ -11953,6 +11995,11 @@ const OPS_ALERT_ROUTING_DEFINITIONS = Object.freeze([
         key: 'verify_failure',
         label: '验证失败率 / 综合事故',
         description: '验证失败率异常、综合事故升级和恢复通知使用同一组路由。'
+    },
+    {
+        key: 'kvm4_watchdog',
+        label: 'KVM4 运维',
+        description: 'KVM4 watchdog 告警、自愈和恢复通知使用同一组路由。'
     }
 ]);
 
@@ -12040,6 +12087,12 @@ const OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS = Object.freeze([
         id: 'VerifyFailure',
         label: '验证失败率 / 综合事故',
         description: '静默验证失败率异常、综合事故升级/恢复和对应汇总通知。'
+    },
+    {
+        key: 'kvm4_watchdog',
+        id: 'Kvm4Watchdog',
+        label: 'KVM4 运维',
+        description: '静默 KVM4 watchdog 告警、自愈和恢复通知。'
     }
 ]);
 
@@ -17522,6 +17575,9 @@ function buildLocalOpsAlertMonitorCategoryActions(categoryKey) {
             { target: 'shop-risk-orders', label: '风险订单', icon: 'fas fa-bag-shopping' },
             { target: 'shop-risk-discounts', label: '优惠券码', icon: 'fas fa-ticket' },
             { target: 'shop-risk-users', label: '用户详情', icon: 'fas fa-user-shield' }
+        ],
+        security: [
+            { target: 'admin-audit-monitor', label: '安全审计', icon: 'fas fa-shield-halved' }
         ]
     };
     return actionMap[normalizedKey] || [];
@@ -18567,7 +18623,9 @@ function buildLocalOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonito
         tickets: '工单与售后',
         inventory: '库存与补货',
         fulfillment: '履约与死信',
-        shop_risk: '商城风控'
+        shop_risk: '商城风控',
+        verify: '验证服务',
+        security: '安全与审计'
     };
 
     return [scopeLabels[filters.scope], severityLabels[filters.severity], categoryLabels[filters.category]]
@@ -20325,7 +20383,8 @@ function buildLocalOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories =
         tickets: 'tickets',
         inventory: 'inventory',
         fulfillment: 'fulfillment',
-        shop_risk: 'shop_risk'
+        shop_risk: 'shop_risk',
+        security: 'security'
     };
 
     return Array.from(new Set(
@@ -22920,6 +22979,9 @@ function buildLocalOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(s
             },
             verify_failure: {
                 ...currentConfig.routing.verify_failure
+            },
+            kvm4_watchdog: {
+                ...currentConfig.routing.kvm4_watchdog
             }
         },
         shop_order_risk: {

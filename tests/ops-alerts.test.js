@@ -4209,7 +4209,7 @@ test('sendEmailAlert uses Resend with recipients, sender, and severity subject',
     assert.deepEqual(body.to, ['ops@example.com', 'owner@example.com']);
     assert.equal(body.from, 'Zaoyoe Ops <alerts@zaoyoe.com>');
     assert.equal(body.reply_to, 'owner@zaoyoe.com');
-    assert.match(body.subject, /\[Zaoyoe告警\] \[CRITICAL\] 虎皮椒 支付通道异常波动（CN）/);
+    assert.match(body.subject, /\[Zaoyoe告警\] \[CN站\] \[CRITICAL\] 虎皮椒 支付通道异常波动（CN）/);
 });
 
 test('sweepOpsAlertJobs can deliver email-only queued alerts', async () => {
