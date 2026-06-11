@@ -124,6 +124,38 @@ test('SKU prices are site-scoped sale switches and never inherit from another si
     );
 });
 
+test('product base prices are nullable site sale switches', () => {
+    const schemaSource = readRepoFile('shop_schema.sql');
+    const migrationSource = readRepoFile('supabase/migrations/20260611_allow_site_scoped_shop_product_prices.sql');
+    const adminSource = readRepoFile('js/admin-shop.js');
+
+    assert.match(
+        schemaSource,
+        /price_points INT CHECK \(price_points >= 0\)/,
+        'base schema should allow CN price_points to be NULL for non-CN products'
+    );
+    assert.doesNotMatch(
+        schemaSource,
+        /price_points INT NOT NULL/,
+        'base schema should not force every product to be sold on CN'
+    );
+    assert.match(
+        migrationSource,
+        /ALTER TABLE public\.shop_products[\s\S]*ALTER COLUMN price_points DROP NOT NULL/,
+        'migration should drop the legacy CN price NOT NULL constraint'
+    );
+    assert.match(
+        migrationSource,
+        /NULL means the product is not sold on the CN shop/,
+        'migration should document the site-scoped sale-switch meaning'
+    );
+    assert.match(
+        adminSource,
+        /20260611_allow_site_scoped_shop_product_prices\.sql/,
+        'admin save errors should point operators to the schema migration when EN-only creation hits an old database'
+    );
+});
+
 test('SKU tier pricing is selected and persisted independently from product tier pricing', () => {
     const adminHtml = readRepoFile('admin-studio.html');
     const shopSource = readRepoFile('js/shop-client.js');
