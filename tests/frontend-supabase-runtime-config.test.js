@@ -5817,6 +5817,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-config="ops-alerts-shop-purchase-success"',
         'data-config="ops-alerts-wallet-recharge-success"',
         'data-config="ops-alerts-shop-inventory"',
+        'data-config="ops-alerts-kvm4"',
         'data-config="ops-alerts-shop-risk"',
         'data-config="ops-alerts-health"',
         'id="opsAlertSummary"',

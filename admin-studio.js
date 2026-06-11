@@ -5878,6 +5878,7 @@ const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([
     { configId: 'ops-alerts-shop-order-delivery', bucket: 'monitors-side' },
     { configId: 'ops-alerts-verify-quota', bucket: 'monitors-side' },
     { configId: 'ops-alerts-verify-failure', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-kvm4', bucket: 'monitors-side' },
     { configId: 'ops-alerts-shop-risk', bucket: 'monitors-side' },
     { configId: 'ops-alerts-monitor', bucket: 'workspace-main' },
     { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },

@@ -78,6 +78,13 @@ const ALERT_MONITOR_CATEGORIES = Object.freeze([
         description: '聚合管理员异常登录等后台安全告警。',
         problem_types: ['security_admin_login_anomaly'],
         recovery_types: []
+    },
+    {
+        key: 'kvm4',
+        label: 'KVM4 运维',
+        description: '聚合 KVM4 watchdog 自愈、容器异常与恢复告警。',
+        problem_types: ['kvm4_watchdog_incident'],
+        recovery_types: ['kvm4_watchdog_recovered']
     }
 ]);
 

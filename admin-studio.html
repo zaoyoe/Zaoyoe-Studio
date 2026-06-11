@@ -4695,6 +4695,39 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-kvm4">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-server"></i>
+                                        <span>KVM4 运维告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note" data-tone="info">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这组规则用于接收 KVM4 watchdog 上报的容器异常、自愈动作和恢复通知。阈值与自愈逻辑在服务器 watchdog 脚本侧维护，这里负责统一配置外发渠道与静默规则。</span>
+                                    </div>
+                                    <div class="ops-alert-kvm4-summary-card">
+                                        <div class="ops-alert-kvm4-summary-card__head">
+                                            <div class="ops-alert-kvm4-summary-card__copy">
+                                                <div class="ops-alert-kvm4-summary-card__title">统一走 Ops Alerts 路由</div>
+                                                <div class="ops-alert-kvm4-summary-card__desc">KVM4 运维不在 Admin Studio 内做本地巡检，而是接收 KVM4 watchdog 主动推送的 incident / recovered 事件。</div>
+                                            </div>
+                                            <div class="ops-alert-kvm4-summary-card__meta">
+                                                <span class="ops-alert-kvm4-summary-card__badge">Webhook Push</span>
+                                            </div>
+                                        </div>
+                                        <div class="ops-alert-kvm4-summary-card__foot">
+                                            运维提示：临时静默、渠道切换和恢复通知节奏都在上方“策略中心”统一配置，不需要改 KVM4 服务器脚本。
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note" data-tone="success">
+                                        <i class="fas fa-shield-heart"></i>
+                                        <span>如果需要临时静默或切换 Telegram / 飞书 / 邮件，只需要在上方“策略中心”里调整 `KVM4 运维` 的路由和静默规则即可，无需改服务器脚本。</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-risk">
                                 <div class="config-card-header">
                                     <div class="config-card-title">

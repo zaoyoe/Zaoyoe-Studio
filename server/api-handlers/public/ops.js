@@ -4,6 +4,9 @@ const {
 const {
     createExternalMonitoringSmokeHandler
 } = require('./ops-external-monitoring-smoke');
+const {
+    createWatchdogAlertHandler
+} = require('./ops-watchdog-alert');
 
 function createOpsHandlers({
     admin,
@@ -15,6 +18,10 @@ function createOpsHandlers({
             env
         }),
         'external-monitoring-smoke': createExternalMonitoringSmokeHandler({
+            env
+        }),
+        'watchdog-alert': createWatchdogAlertHandler({
+            admin,
             env
         })
     };

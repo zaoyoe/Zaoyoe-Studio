@@ -48,7 +48,8 @@ const SUPPORTED_ROUTING_KEYS = Object.freeze([
     'payment_gateway',
     'verify_quota',
     'verify_queue',
-    'verify_failure'
+    'verify_failure',
+    'kvm4_watchdog'
 ]);
 const SUPPORTED_MUTE_RULE_MODULE_KEYS = Object.freeze([
     'customer_engagement',
@@ -246,7 +247,9 @@ const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     verify_failure_summary: 'verify_failure',
     verify_failure_rate_spike: 'verify_failure',
     verify_incident_escalated: 'verify_failure',
-    verify_incident_recovered: 'verify_failure'
+    verify_incident_recovered: 'verify_failure',
+    kvm4_watchdog_incident: 'kvm4_watchdog',
+    kvm4_watchdog_recovered: 'kvm4_watchdog'
 });
 const ALERT_TYPE_MODULE_MAP = Object.freeze({
     customer_chat_message_received: 'customer_engagement',
@@ -288,7 +291,9 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     shop_order_delivery_recovered: 'fulfillment',
     shop_order_delivery_incident: 'fulfillment',
     shop_order_delivery_incident_recovered: 'fulfillment',
-    security_admin_login_anomaly: 'security'
+    security_admin_login_anomaly: 'security',
+    kvm4_watchdog_incident: 'security',
+    kvm4_watchdog_recovered: 'security'
 });
 const AUTO_REOPEN_SUMMARY_ALERT_TYPES = new Set([
     'shop_inventory_summary',
@@ -455,6 +460,10 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
             verify_failure: Object.freeze({
                 until: '',
                 allow_critical: true
+            }),
+            kvm4_watchdog: Object.freeze({
+                until: '',
+                allow_critical: true
             })
         }),
         modules: Object.freeze({
@@ -589,6 +598,11 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
             email: true
         }),
         verify_failure: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        kvm4_watchdog: Object.freeze({
             telegram: true,
             feishu: true,
             email: true
@@ -902,6 +916,18 @@ function withOpsAlertSitePayload(payload = {}, siteContext = {}) {
         ...normalizedPayload,
         site: normalizeOpsAlertConfigSite(siteContext.site, { fallback: 'cn' })
     };
+}
+
+function getOpsAlertSiteBadgeLabel(input = {}) {
+    const siteContext = resolveOpsAlertInputSite(input);
+    const site = normalizeOpsAlertConfigSite(siteContext.site, { fallback: 'cn' });
+    if (site === 'intl') {
+        return '[INTL站]';
+    }
+    if (site === 'all') {
+        return '[全站]';
+    }
+    return '[CN站]';
 }
 
 function isMissingTableAccessError(error, tableName = '') {
@@ -1917,6 +1943,10 @@ function cloneDefaultConfig() {
                 verify_failure: {
                     until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_failure.until,
                     allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_failure.allow_critical
+                },
+                kvm4_watchdog: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.kvm4_watchdog.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.kvm4_watchdog.allow_critical
                 }
             },
             modules: {
@@ -2054,6 +2084,11 @@ function cloneDefaultConfig() {
                 telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_failure.telegram,
                 feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_failure.feishu,
                 email: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_failure.email
+            },
+            kvm4_watchdog: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.kvm4_watchdog.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.kvm4_watchdog.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.kvm4_watchdog.email
             }
         },
         customer_chat_message: {
@@ -4448,164 +4483,173 @@ function getNextRetryAt(attemptCount, config = {}) {
 }
 
 function buildExternalAlertText(job = {}) {
+    const siteBadge = getOpsAlertSiteBadgeLabel(job);
     const refundOpsText = buildRefundOpsAlertText(job);
     if (refundOpsText) {
-        return refundOpsText;
+        return `${siteBadge} ${refundOpsText}`;
     }
     const customerChatSummaryText = buildCustomerChatMessageSummaryAlertText(job);
     if (customerChatSummaryText) {
-        return customerChatSummaryText;
+        return `${siteBadge} ${customerChatSummaryText}`;
     }
     const customerChatText = buildCustomerChatMessageReceivedAlertText(job);
     if (customerChatText) {
-        return customerChatText;
+        return `${siteBadge} ${customerChatText}`;
     }
     const shopPurchaseSummaryText = buildShopPurchaseSummaryAlertText(job);
     if (shopPurchaseSummaryText) {
-        return shopPurchaseSummaryText;
+        return `${siteBadge} ${shopPurchaseSummaryText}`;
     }
     const shopPurchaseText = buildShopPurchaseSucceededAlertText(job);
     if (shopPurchaseText) {
-        return shopPurchaseText;
+        return `${siteBadge} ${shopPurchaseText}`;
     }
     const walletRechargeSummaryText = buildWalletRechargeSummaryAlertText(job);
     if (walletRechargeSummaryText) {
-        return walletRechargeSummaryText;
+        return `${siteBadge} ${walletRechargeSummaryText}`;
     }
     const ticketSlaSummaryText = buildTicketSlaSummaryAlertText(job);
     if (ticketSlaSummaryText) {
-        return ticketSlaSummaryText;
+        return `${siteBadge} ${ticketSlaSummaryText}`;
     }
     const ticketCreatedText = buildTicketCreatedAlertText(job);
     if (ticketCreatedText) {
-        return ticketCreatedText;
+        return `${siteBadge} ${ticketCreatedText}`;
     }
     const shopInventorySummaryText = buildShopInventorySummaryAlertText(job);
     if (shopInventorySummaryText) {
-        return shopInventorySummaryText;
+        return `${siteBadge} ${shopInventorySummaryText}`;
     }
     const paymentGatewaySummaryText = buildPaymentGatewaySummaryAlertText(job);
     if (paymentGatewaySummaryText) {
-        return paymentGatewaySummaryText;
+        return `${siteBadge} ${paymentGatewaySummaryText}`;
     }
     const verifyQuotaSummaryText = buildVerifyQuotaSummaryAlertText(job);
     if (verifyQuotaSummaryText) {
-        return verifyQuotaSummaryText;
+        return `${siteBadge} ${verifyQuotaSummaryText}`;
     }
     const verifyQueueSummaryText = buildVerifyQueueSummaryAlertText(job);
     if (verifyQueueSummaryText) {
-        return verifyQueueSummaryText;
+        return `${siteBadge} ${verifyQueueSummaryText}`;
     }
     const verifyFailureSummaryText = buildVerifyFailureSummaryAlertText(job);
     if (verifyFailureSummaryText) {
-        return verifyFailureSummaryText;
+        return `${siteBadge} ${verifyFailureSummaryText}`;
     }
     const shopOrderDeliverySummaryText = buildShopOrderDeliverySummaryAlertText(job);
     if (shopOrderDeliverySummaryText) {
-        return shopOrderDeliverySummaryText;
+        return `${siteBadge} ${shopOrderDeliverySummaryText}`;
     }
     const walletRechargeText = buildWalletRechargeSucceededAlertText(job);
     if (walletRechargeText) {
-        return walletRechargeText;
+        return `${siteBadge} ${walletRechargeText}`;
     }
     const paymentConfigIncidentRecoveredText = buildPaymentConfigIncidentRecoveredAlertText(job);
     if (paymentConfigIncidentRecoveredText) {
-        return paymentConfigIncidentRecoveredText;
+        return `${siteBadge} ${paymentConfigIncidentRecoveredText}`;
     }
     const paymentConfigIncidentText = buildPaymentConfigIncidentAlertText(job);
     if (paymentConfigIncidentText) {
-        return paymentConfigIncidentText;
+        return `${siteBadge} ${paymentConfigIncidentText}`;
     }
     const paymentConfigRecoveredText = buildPaymentConfigRecoveredAlertText(job);
     if (paymentConfigRecoveredText) {
-        return paymentConfigRecoveredText;
+        return `${siteBadge} ${paymentConfigRecoveredText}`;
     }
     const paymentConfigChangedText = buildPaymentConfigChangedAlertText(job);
     if (paymentConfigChangedText) {
-        return paymentConfigChangedText;
+        return `${siteBadge} ${paymentConfigChangedText}`;
     }
     const gatewayAlertText = buildPaymentGatewayDegradedAlertText(job);
     if (gatewayAlertText) {
-        return gatewayAlertText;
+        return `${siteBadge} ${gatewayAlertText}`;
     }
     const gatewayRecoveredText = buildPaymentGatewayRecoveredAlertText(job);
     if (gatewayRecoveredText) {
-        return gatewayRecoveredText;
+        return `${siteBadge} ${gatewayRecoveredText}`;
     }
     const verifyServiceText = buildVerifyServiceDisabledAlertText(job);
     if (verifyServiceText) {
-        return verifyServiceText;
+        return `${siteBadge} ${verifyServiceText}`;
     }
     const verifyFailureText = buildVerifyFailureRateSpikeAlertText(job);
     if (verifyFailureText) {
-        return verifyFailureText;
+        return `${siteBadge} ${verifyFailureText}`;
     }
     const verifyIncidentText = buildVerifyIncidentEscalatedAlertText(job);
     if (verifyIncidentText) {
-        return verifyIncidentText;
+        return `${siteBadge} ${verifyIncidentText}`;
     }
     const verifyIncidentRecoveredText = buildVerifyIncidentRecoveredAlertText(job);
     if (verifyIncidentRecoveredText) {
-        return verifyIncidentRecoveredText;
+        return `${siteBadge} ${verifyIncidentRecoveredText}`;
     }
     const verifyQueueText = buildVerifyQueueBacklogAlertText(job);
     if (verifyQueueText) {
-        return verifyQueueText;
+        return `${siteBadge} ${verifyQueueText}`;
     }
     const verifyQuotaText = buildVerifyQuotaLowAlertText(job);
     if (verifyQuotaText) {
-        return verifyQuotaText;
+        return `${siteBadge} ${verifyQuotaText}`;
+    }
+    const kvm4IncidentText = buildKvm4WatchdogIncidentAlertText(job);
+    if (kvm4IncidentText) {
+        return `${siteBadge} ${kvm4IncidentText}`;
+    }
+    const kvm4RecoveredText = buildKvm4WatchdogRecoveredAlertText(job);
+    if (kvm4RecoveredText) {
+        return `${siteBadge} ${kvm4RecoveredText}`;
     }
     const ticketSlaText = buildTicketSlaOverdueAlertText(job);
     if (ticketSlaText) {
-        return ticketSlaText;
+        return `${siteBadge} ${ticketSlaText}`;
     }
     const ticketSlaRecoveredText = buildTicketSlaRecoveredAlertText(job);
     if (ticketSlaRecoveredText) {
-        return ticketSlaRecoveredText;
+        return `${siteBadge} ${ticketSlaRecoveredText}`;
     }
     const shopInventoryText = buildShopInventoryAlertText(job);
     if (shopInventoryText) {
-        return shopInventoryText;
+        return `${siteBadge} ${shopInventoryText}`;
     }
     const shopInventoryRecoveredText = buildShopInventoryRecoveredAlertText(job);
     if (shopInventoryRecoveredText) {
-        return shopInventoryRecoveredText;
+        return `${siteBadge} ${shopInventoryRecoveredText}`;
     }
     const shopOrderDeliveryText = buildShopOrderDeliveryFailedAlertText(job);
     if (shopOrderDeliveryText) {
-        return shopOrderDeliveryText;
+        return `${siteBadge} ${shopOrderDeliveryText}`;
     }
     const shopOrderDeliveryIncidentText = buildShopOrderDeliveryIncidentAlertText(job);
     if (shopOrderDeliveryIncidentText) {
-        return shopOrderDeliveryIncidentText;
+        return `${siteBadge} ${shopOrderDeliveryIncidentText}`;
     }
     const shopOrderDeliveryIncidentRecoveredText = buildShopOrderDeliveryIncidentRecoveredAlertText(job);
     if (shopOrderDeliveryIncidentRecoveredText) {
-        return shopOrderDeliveryIncidentRecoveredText;
+        return `${siteBadge} ${shopOrderDeliveryIncidentRecoveredText}`;
     }
     const shopOrderDeliveryRecoveredText = buildShopOrderDeliveryRecoveredAlertText(job);
     if (shopOrderDeliveryRecoveredText) {
-        return shopOrderDeliveryRecoveredText;
+        return `${siteBadge} ${shopOrderDeliveryRecoveredText}`;
     }
     const shopOrderRiskText = buildShopOrderRiskAlertText(job);
     if (shopOrderRiskText) {
-        return shopOrderRiskText;
+        return `${siteBadge} ${shopOrderRiskText}`;
     }
     const shopOrderRiskRecoveredText = buildShopOrderRiskRecoveredAlertText(job);
     if (shopOrderRiskRecoveredText) {
-        return shopOrderRiskRecoveredText;
+        return `${siteBadge} ${shopOrderRiskRecoveredText}`;
     }
     const adminLoginAnomalyText = buildAdminLoginAnomalyAlertText(job);
     if (adminLoginAnomalyText) {
-        return adminLoginAnomalyText;
+        return `${siteBadge} ${adminLoginAnomalyText}`;
     }
 
     const lines = [
         `[站外告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '系统通知'}`,
         normalizeText(job.content)
     ].filter(Boolean);
-    return lines.join('\n\n');
+    return `${siteBadge} ${lines.join('\n\n')}`;
 }
 
 function getProviderLabel(value) {
@@ -6277,6 +6321,55 @@ function buildAdminLoginAnomalyAlertText(job = {}) {
     return lines.filter(Boolean).join('\n');
 }
 
+function buildKvm4WatchdogIncidentAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'kvm4_watchdog_incident') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[KVM4 运维告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || 'KVM4 watchdog 触发告警'}`
+    ];
+
+    if (normalizeText(payload.guard_label)) lines.push(`巡检项：${normalizeText(payload.guard_label)}`);
+    if (normalizeText(payload.service_name)) lines.push(`服务：${normalizeText(payload.service_name)}`);
+    if (normalizeText(payload.container_name)) lines.push(`容器：${normalizeText(payload.container_name)}`);
+    if (normalizeText(payload.host)) lines.push(`主机：${normalizeText(payload.host)}`);
+    if (normalizeText(payload.state)) lines.push(`状态：${normalizeText(payload.state)}`);
+    if (Number.isFinite(Number(payload.children))) lines.push(`子进程数：${Math.max(0, Math.round(Number(payload.children || 0)))}`);
+    if (Number.isFinite(Number(payload.zombies))) lines.push(`僵尸进程：${Math.max(0, Math.round(Number(payload.zombies || 0)))}`);
+    if (Number.isFinite(Number(payload.cpu_percent))) lines.push(`CPU：${Math.max(0, Number(payload.cpu_percent || 0))}%`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`触发时间：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildKvm4WatchdogRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'kvm4_watchdog_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[KVM4 运维恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || 'KVM4 watchdog 已恢复'}`
+    ];
+
+    if (normalizeText(payload.guard_label)) lines.push(`巡检项：${normalizeText(payload.guard_label)}`);
+    if (normalizeText(payload.service_name)) lines.push(`服务：${normalizeText(payload.service_name)}`);
+    if (normalizeText(payload.container_name)) lines.push(`容器：${normalizeText(payload.container_name)}`);
+    if (normalizeText(payload.host)) lines.push(`主机：${normalizeText(payload.host)}`);
+    if (normalizeText(payload.state)) lines.push(`状态：${normalizeText(payload.state)}`);
+    if (Number.isFinite(Number(payload.children))) lines.push(`当前子进程数：${Math.max(0, Math.round(Number(payload.children || 0)))}`);
+    if (Number.isFinite(Number(payload.zombies))) lines.push(`当前僵尸进程：${Math.max(0, Math.round(Number(payload.zombies || 0)))}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`异常开始：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
 async function postJson(url, body, {
     timeoutMs = DEFAULT_OPS_ALERTS_CONFIG.timeout_ms,
     fetchImpl = global.fetch,
@@ -6360,9 +6453,10 @@ async function postJsonWithRetry(url, body, options = {}) {
 function buildEmailAlertSubject(job = {}, runtime = {}) {
     const prefix = normalizeText(runtime?.config?.channels?.email?.subject_prefix)
         || DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix;
+    const siteBadge = getOpsAlertSiteBadgeLabel(job);
     const severity = normalizeSeverity(job?.severity, 'warning').toUpperCase();
     const title = normalizeText(job?.title) || normalizeText(job?.alert_type) || '系统告警';
-    return [prefix, `[${severity}]`, title].filter(Boolean).join(' ');
+    return [prefix, siteBadge, `[${severity}]`, title].filter(Boolean).join(' ');
 }
 
 async function sendTelegramAlert(job, runtime, options = {}) {
