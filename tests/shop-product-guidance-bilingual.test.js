@@ -20,6 +20,11 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
     );
     assert.match(
         adminShopSource,
+        /Translate the following English product information to Simplified Chinese[\s\S]*"purchase_notes", and "usage_instructions"/,
+        'intl product saves should reverse-translate product fields and guidance to Chinese'
+    );
+    assert.match(
+        adminShopSource,
         /buildProductGuidancePayloadPatch\('purchase_notes'[\s\S]*translatedEn: purchase_notes_en/,
         'purchase notes should be converted into localized payload fields before save'
     );
@@ -27,6 +32,51 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
         adminShopSource,
         /buildProductGuidancePayloadPatch\('usage_instructions'[\s\S]*translatedEn: usage_instructions_en/,
         'usage instructions should be converted into localized payload fields before save'
+    );
+    assert.match(
+        adminShopSource,
+        /buildProductGuidancePayloadPatch\('purchase_notes'[\s\S]*translatedZh: purchase_notes_zh/,
+        'intl purchase notes should preserve a generated Chinese copy when reverse translation succeeds'
+    );
+    assert.match(
+        adminShopSource,
+        /buildProductGuidancePayloadPatch\('purchase_notes'[\s\S]*sourceLanguage: productInputLanguage\.purchase_notes/,
+        'intl purchase notes should choose payload fields from the detected source language'
+    );
+    assert.match(
+        adminShopSource,
+        /buildProductGuidancePayloadPatch\('usage_instructions'[\s\S]*sourceLanguage: productInputLanguage\.usage_instructions/,
+        'intl usage instructions should choose payload fields from the detected source language'
+    );
+    assert.match(
+        adminShopSource,
+        /hasChineseProductText\(value\)[\s\S]*\\u3400-\\u9fff/,
+        'intl product saves should detect Chinese input before choosing translation direction'
+    );
+    assert.match(
+        adminShopSource,
+        /const productInputLanguage = editSite === 'intl'[\s\S]*name: this\.hasChineseProductText\(persistedProductTextValues\.name\) \? 'zh' : 'en'[\s\S]*usage_instructions: this\.hasChineseProductText\(persistedProductTextValues\.usage_instructions\) \? 'zh' : 'en'/,
+        'intl product saves should detect source language for title, description, purchase notes, and usage instructions'
+    );
+    assert.match(
+        adminShopSource,
+        /this\.translateToEnglish\(\s*productInputLanguage\.name === 'zh' \? name : ''[\s\S]*purchaseNotes: productInputLanguage\.purchase_notes === 'zh'[\s\S]*usageInstructions: productInputLanguage\.usage_instructions === 'zh'/,
+        'intl product saves should translate Chinese source fields to English'
+    );
+    assert.match(
+        adminShopSource,
+        /this\.translateToChinese\(\s*productInputLanguage\.name === 'en' \? name : ''[\s\S]*purchaseNotes: productInputLanguage\.purchase_notes === 'en'[\s\S]*usageInstructions: productInputLanguage\.usage_instructions === 'en'/,
+        'intl product saves should translate English source fields back to Chinese'
+    );
+    assert.match(
+        adminShopSource,
+        /if \(productInputLanguage\.name === 'zh'\) \{[\s\S]*payload\.name = name;[\s\S]*payload\.name_en = name_en[\s\S]*if \(productInputLanguage\.description === 'zh'\) \{[\s\S]*payload\.description = description;[\s\S]*payload\.description_en = description_en/,
+        'intl Chinese title and description input should preserve the Chinese original and save English translations into EN fields'
+    );
+    assert.match(
+        adminShopSource,
+        /payload\.name_en = name;[\s\S]*if \(name_zh\) \{[\s\S]*payload\.name = name_zh;[\s\S]*payload\.description_en = description;[\s\S]*if \(description_zh\) \{[\s\S]*payload\.description = description_zh;/,
+        'intl English title and description input should keep EN fields and backfill base Chinese fields from reverse translation'
     );
     assert.match(
         adminShopSource,
@@ -65,8 +115,8 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
     );
     assert.match(
         adminShopSource,
-        /商品已保存（英文翻译未完成：/,
-        'product save success feedback should warn when enabled guidance was saved without usable English text'
+        /missingTranslationWarnings\.push\(`英文翻译未完成：\$\{missingEnglishTranslations\.join\('、'\)\}`\)[\s\S]*missingTranslationWarnings\.push\(`中文翻译未完成：\$\{missingChineseTranslations\.join\('、'\)\}`\)[\s\S]*商品已保存（\$\{missingTranslationWarnings\.join\('；'\)\}）/,
+        'product save success feedback should warn in each missing translation direction'
     );
     assert.match(
         migrationSource,

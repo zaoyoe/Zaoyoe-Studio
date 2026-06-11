@@ -44,7 +44,7 @@ test('admin product editor keeps product-level tier pricing out of the modal and
     );
     assert.match(
         source,
-        /if \(editSite === 'intl' && !id && !payload\.name\) \{[\s\S]*payload\.name = name;/,
+        /if \(editSite === 'intl'\) \{[\s\S]*if \(productInputLanguage\.name === 'zh'\) \{[\s\S]*payload\.name = name;[\s\S]*\} else \{[\s\S]*else if \(!id && !payload\.name\) \{[\s\S]*payload\.name = name;/,
         'creating an intl product should still backfill the base required name field'
     );
     assert.doesNotMatch(

@@ -12,10 +12,15 @@ test('shop save validation reuses existing-product fallback payload before valid
 
     assert.match(
         source,
-        /const validationPayload = id\s*\?\s*this\.buildExistingProductUpsertPayload\(id, payload\)\s*:\s*payload;/
+        /const validationPayload = id\s*\?\s*this\.buildExistingProductUpsertPayload\(id, payload, \{ editSite \}\)\s*:\s*payload;/
     );
     assert.match(
         source,
         /const validation = await this\.validateProductPayloadViaAdminApi\(\{\s*productId: id,\s*payload: validationPayload,/
+    );
+    assert.match(
+        source,
+        /else if \(editSite !== 'intl'\) \{\s*throw new Error\('缺少商品基础价格，无法保存现有商品'\);/,
+        'intl edits should not require the legacy CN base price fallback'
     );
 });

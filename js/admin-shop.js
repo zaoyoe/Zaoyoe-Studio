@@ -691,11 +691,17 @@ const ShopAdmin = {
             : (zhText || legacyText || '');
     },
 
+    hasChineseProductText(value) {
+        return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+    },
+
     buildProductGuidancePayloadPatch(baseField, {
         value = '',
         show = false,
         editSite = 'cn',
         translatedEn = '',
+        translatedZh = '',
+        sourceLanguage = '',
         existing = null
     } = {}) {
         const normalizedText = String(value || '').replace(/\r\n/g, '\n').trim();
@@ -705,7 +711,20 @@ const ShopAdmin = {
         const patch = {};
 
         if (editSite === 'intl') {
+            const normalizedTranslatedEn = String(translatedEn || '').replace(/\r\n/g, '\n').trim();
+            const normalizedTranslatedZh = String(translatedZh || '').replace(/\r\n/g, '\n').trim();
+            if (sourceLanguage === 'zh') {
+                patch[`${baseField}_en`] = show ? (normalizedTranslatedEn || existingEn || normalizedText || null) : null;
+                patch[baseField] = show ? (normalizedText || null) : null;
+                patch[`${baseField}_zh`] = show ? (normalizedText || null) : null;
+                return patch;
+            }
+
             patch[`${baseField}_en`] = show ? (normalizedText || null) : null;
+            if (normalizedTranslatedZh || !show) {
+                patch[baseField] = show ? normalizedTranslatedZh : null;
+                patch[`${baseField}_zh`] = show ? normalizedTranslatedZh : null;
+            }
             return patch;
         }
 
@@ -845,6 +864,12 @@ Example output format:
                 }
 
                 const missingTranslatedFields = [];
+                if (name && !String(result.name_en || '').trim()) {
+                    missingTranslatedFields.push('商品名称');
+                }
+                if (description && !String(result.description_en || '').trim()) {
+                    missingTranslatedFields.push('商品描述');
+                }
                 if (purchaseNotes && !String(result.purchase_notes_en || '').trim()) {
                     missingTranslatedFields.push('注意事项');
                 }
@@ -860,6 +885,93 @@ Example output format:
             throw new Error('AI 翻译没有返回可解析的 JSON，已跳过英文同步。');
         } catch (err) {
             console.error('[ShopAdmin] Translation failed:', err);
+            throw err;
+        }
+    },
+
+    // Translate English product fields to Simplified Chinese using the configured admin AI provider.
+    translateToChinese: async function (name, description, options = {}) {
+        if (!window.AdminAI?.configured) {
+            throw new Error('当前 AI 翻译服务未配置，请先在后台配置 Gemini / Codex Relay，或切到中文站手动填写中文。');
+        }
+
+        const purchaseNotes = String(options?.purchaseNotes || '').trim();
+        const usageInstructions = String(options?.usageInstructions || '').trim();
+        const preferredService = window.AdminAI?.getPreferredService?.() || window.ADMIN_AI_SERVICE || 'gemini';
+        const serviceMeta = window.AdminAI?.getServiceMeta?.(preferredService) || {};
+        const currentModel = String(window.AdminAI?.defaultModel || '').trim();
+        const currentModelMatchesService = preferredService === 'codex'
+            ? !/^gemini-/i.test(currentModel)
+            : (preferredService === 'gemini' ? /^gemini-/i.test(currentModel) : Boolean(currentModel));
+        const translationModel = currentModelMatchesService
+            ? currentModel
+            : (serviceMeta.defaultModel || currentModel || 'gemini-2.0-flash');
+        const prompt = `Translate the following English product information to Simplified Chinese. Return ONLY a JSON object with "name", "description", "purchase_notes", and "usage_instructions" fields, no markdown or extra text.
+
+Preserve URLs, line breaks, numbers, product terms, and any simple HTML tags. Use an empty string for empty source fields.
+Every non-empty source field must have a Simplified Chinese translation. If a sentence is ambiguous, translate it literally instead of omitting it.
+
+Product Name: ${name}
+Description: ${description || 'N/A'}
+Purchase Notes: ${purchaseNotes || 'N/A'}
+Usage Instructions: ${usageInstructions || 'N/A'}
+
+Example output format:
+{"name": "中文名称", "description": "中文描述", "purchase_notes": "中文注意事项", "usage_instructions": "中文使用说明"}`;
+
+        try {
+            const text = await window.AdminAI.generateText(prompt, {
+                model: translationModel,
+                generationConfig: { temperature: 0.1, maxOutputTokens: 900 },
+                budget: {
+                    tier: 'balanced',
+                    maxInputChars: 9000,
+                    maxOutputTokens: 900
+                }
+            });
+
+            const jsonMatch = (text || '').match(/\{[\s\S]*?\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log('[ShopAdmin] Reverse translation result:', parsed);
+                const result = {
+                    name_zh: parsed.name || parsed.name_zh || null,
+                    description_zh: parsed.description || parsed.description_zh || null,
+                    purchase_notes_zh: parsed.purchase_notes || parsed.purchase_notes_zh || null,
+                    usage_instructions_zh: parsed.usage_instructions || parsed.usage_instructions_zh || null
+                };
+                const hasTranslationOutput = [
+                    result.name_zh,
+                    result.description_zh,
+                    result.purchase_notes_zh,
+                    result.usage_instructions_zh
+                ].some((value) => String(value || '').trim());
+                if (!hasTranslationOutput) {
+                    throw new Error('AI 翻译返回为空，已跳过中文同步。');
+                }
+
+                const missingTranslatedFields = [];
+                if (name && !String(result.name_zh || '').trim()) {
+                    missingTranslatedFields.push('商品名称');
+                }
+                if (description && !String(result.description_zh || '').trim()) {
+                    missingTranslatedFields.push('商品描述');
+                }
+                if (purchaseNotes && !String(result.purchase_notes_zh || '').trim()) {
+                    missingTranslatedFields.push('注意事项');
+                }
+                if (usageInstructions && !String(result.usage_instructions_zh || '').trim()) {
+                    missingTranslatedFields.push('使用说明');
+                }
+                if (missingTranslatedFields.length) {
+                    result.warning_message = `AI 未返回${missingTranslatedFields.join('、')}的中文内容，可能是输出被截断或格式不完整；英文内容已正常保存。`;
+                }
+                return result;
+            }
+
+            throw new Error('AI 翻译没有返回可解析的 JSON，已跳过中文同步。');
+        } catch (err) {
+            console.error('[ShopAdmin] Reverse translation failed:', err);
             throw err;
         }
     },
@@ -7679,7 +7791,7 @@ Example output format:
         this.toggleFormSection('usageInstructionsWrapper', show);
     },
 
-    buildExistingProductUpsertPayload: function (id, payload) {
+    buildExistingProductUpsertPayload: function (id, payload, { editSite = this.getEditSite() } = {}) {
         const snapshot = this.editingProductSnapshot && this.editingProductSnapshot.id === id
             ? this.editingProductSnapshot
             : null;
@@ -7696,10 +7808,11 @@ Example output format:
 
         if (upsertPayload.price_points == null) {
             const fallbackPrice = Number.parseInt(snapshot?.price_points, 10);
-            if (!Number.isFinite(fallbackPrice) || fallbackPrice < 0) {
+            if (Number.isFinite(fallbackPrice) && fallbackPrice >= 0) {
+                upsertPayload.price_points = fallbackPrice;
+            } else if (editSite !== 'intl') {
                 throw new Error('缺少商品基础价格，无法保存现有商品');
             }
-            upsertPayload.price_points = fallbackPrice;
         }
 
         return upsertPayload;
@@ -8318,14 +8431,53 @@ Example output format:
                 return;
             }
 
-            // Auto-translate CN edits to English so guidance can be saved as a bilingual pair.
+            // Auto-translate active-site edits so product copy can be saved as a bilingual pair.
             let name_en = null;
             let description_en = null;
             let purchase_notes_en = null;
             let usage_instructions_en = null;
+            let name_zh = null;
+            let description_zh = null;
+            let purchase_notes_zh = null;
+            let usage_instructions_zh = null;
             let productTranslationFailed = false;
             let productTranslationErrorMessage = '';
             let productTranslationWarningMessage = '';
+            const persistedProductTextValues = {
+                name,
+                description,
+                purchase_notes: showPurchaseNotes ? normalizedPurchaseNotes : '',
+                usage_instructions: showUsageInstructions ? normalizedUsageInstructions : ''
+            };
+            const productInputLanguage = editSite === 'intl'
+                ? {
+                    name: this.hasChineseProductText(persistedProductTextValues.name) ? 'zh' : 'en',
+                    description: this.hasChineseProductText(persistedProductTextValues.description) ? 'zh' : 'en',
+                    purchase_notes: this.hasChineseProductText(persistedProductTextValues.purchase_notes) ? 'zh' : 'en',
+                    usage_instructions: this.hasChineseProductText(persistedProductTextValues.usage_instructions) ? 'zh' : 'en'
+                }
+                : {
+                    name: 'zh',
+                    description: 'zh',
+                    purchase_notes: 'zh',
+                    usage_instructions: 'zh'
+                };
+            const hasProductSourceInput = (field, language) => productInputLanguage[field] === language
+                && Boolean(String(persistedProductTextValues[field] || '').trim());
+            const appendProductTranslationWarning = (message) => {
+                const normalized = String(message || '').trim();
+                if (!normalized) return;
+                productTranslationWarningMessage = productTranslationWarningMessage
+                    ? `${productTranslationWarningMessage}；${normalized}`
+                    : normalized;
+            };
+            const markProductTranslationFailed = (message) => {
+                productTranslationFailed = true;
+                const normalized = String(message || '').trim() || '商品双语自动翻译失败';
+                productTranslationErrorMessage = productTranslationErrorMessage
+                    ? `${productTranslationErrorMessage}；${normalized}`
+                    : normalized;
+            };
             if (editSite === 'cn') {
                 try {
                     const translation = await this.withProductSaveTimeout(
@@ -8340,7 +8492,7 @@ Example output format:
                     description_en = translation.description_en;
                     purchase_notes_en = translation.purchase_notes_en;
                     usage_instructions_en = translation.usage_instructions_en;
-                    productTranslationWarningMessage = String(translation.warning_message || '').trim();
+                    appendProductTranslationWarning(translation.warning_message);
                     const hasTranslationOutput = [
                         name_en,
                         description_en,
@@ -8348,13 +8500,105 @@ Example output format:
                         usage_instructions_en
                     ].some((value) => String(value || '').trim());
                     if (!hasTranslationOutput) {
-                        productTranslationFailed = true;
-                        productTranslationErrorMessage = '商品双语自动翻译未返回英文内容';
+                        markProductTranslationFailed('商品双语自动翻译未返回英文内容');
                     }
                 } catch (e) {
-                    productTranslationFailed = true;
-                    productTranslationErrorMessage = e?.message || '商品双语自动翻译失败';
+                    markProductTranslationFailed(e?.message || '商品双语自动翻译失败');
                     console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
+                }
+            } else if (editSite === 'intl') {
+                const productTextFields = Object.keys(persistedProductTextValues);
+                const hasChineseSourceInput = productTextFields.some((field) => hasProductSourceInput(field, 'zh'));
+                const hasEnglishSourceInput = productTextFields.some((field) => hasProductSourceInput(field, 'en'));
+
+                if (hasChineseSourceInput) {
+                    try {
+                        const translation = await this.withProductSaveTimeout(
+                            this.translateToEnglish(
+                                productInputLanguage.name === 'zh' ? name : '',
+                                productInputLanguage.description === 'zh' ? description : '',
+                                {
+                                    purchaseNotes: productInputLanguage.purchase_notes === 'zh' ? persistedProductTextValues.purchase_notes : '',
+                                    usageInstructions: productInputLanguage.usage_instructions === 'zh' ? persistedProductTextValues.usage_instructions : ''
+                                }
+                            ),
+                            this.getProductTranslationTimeoutMs(),
+                            '商品双语自动翻译'
+                        );
+                        if (productInputLanguage.name === 'zh') {
+                            name_en = translation.name_en;
+                            name_zh = name;
+                        }
+                        if (productInputLanguage.description === 'zh') {
+                            description_en = translation.description_en;
+                            description_zh = description;
+                        }
+                        if (productInputLanguage.purchase_notes === 'zh') {
+                            purchase_notes_en = translation.purchase_notes_en;
+                            purchase_notes_zh = normalizedPurchaseNotes;
+                        }
+                        if (productInputLanguage.usage_instructions === 'zh') {
+                            usage_instructions_en = translation.usage_instructions_en;
+                            usage_instructions_zh = normalizedUsageInstructions;
+                        }
+                        appendProductTranslationWarning(translation.warning_message);
+                        const requestedEnglishTranslations = [
+                            productInputLanguage.name === 'zh' ? name_en : null,
+                            productInputLanguage.description === 'zh' ? description_en : null,
+                            productInputLanguage.purchase_notes === 'zh' ? purchase_notes_en : null,
+                            productInputLanguage.usage_instructions === 'zh' ? usage_instructions_en : null
+                        ];
+                        const hasTranslationOutput = requestedEnglishTranslations.some((value) => String(value || '').trim());
+                        if (!hasTranslationOutput) {
+                            markProductTranslationFailed('商品双语自动翻译未返回英文内容');
+                        }
+                    } catch (e) {
+                        markProductTranslationFailed(e?.message || '商品双语自动翻译失败');
+                        console.warn('[ShopAdmin] Intl Chinese-to-English translation step failed, continuing without:', e);
+                    }
+                }
+
+                if (hasEnglishSourceInput) {
+                    try {
+                        const translation = await this.withProductSaveTimeout(
+                            this.translateToChinese(
+                                productInputLanguage.name === 'en' ? name : '',
+                                productInputLanguage.description === 'en' ? description : '',
+                                {
+                                    purchaseNotes: productInputLanguage.purchase_notes === 'en' ? persistedProductTextValues.purchase_notes : '',
+                                    usageInstructions: productInputLanguage.usage_instructions === 'en' ? persistedProductTextValues.usage_instructions : ''
+                                }
+                            ),
+                            this.getProductTranslationTimeoutMs(),
+                            '商品双语自动翻译'
+                        );
+                        if (productInputLanguage.name === 'en') {
+                            name_zh = translation.name_zh;
+                        }
+                        if (productInputLanguage.description === 'en') {
+                            description_zh = translation.description_zh;
+                        }
+                        if (productInputLanguage.purchase_notes === 'en') {
+                            purchase_notes_zh = translation.purchase_notes_zh;
+                        }
+                        if (productInputLanguage.usage_instructions === 'en') {
+                            usage_instructions_zh = translation.usage_instructions_zh;
+                        }
+                        appendProductTranslationWarning(translation.warning_message);
+                        const requestedChineseTranslations = [
+                            productInputLanguage.name === 'en' ? name_zh : null,
+                            productInputLanguage.description === 'en' ? description_zh : null,
+                            productInputLanguage.purchase_notes === 'en' ? purchase_notes_zh : null,
+                            productInputLanguage.usage_instructions === 'en' ? usage_instructions_zh : null
+                        ];
+                        const hasTranslationOutput = requestedChineseTranslations.some((value) => String(value || '').trim());
+                        if (!hasTranslationOutput) {
+                            markProductTranslationFailed('商品双语自动翻译未返回中文内容');
+                        }
+                    } catch (e) {
+                        markProductTranslationFailed(e?.message || '商品双语自动翻译失败');
+                        console.warn('[ShopAdmin] Intl English-to-Chinese translation step failed, continuing without:', e);
+                    }
                 }
             }
 
@@ -8362,24 +8606,87 @@ Example output format:
                 const normalized = String(value || '').trim();
                 return Boolean(normalized && !/[\u3400-\u9fff\uf900-\ufaff]/.test(normalized));
             };
+            const hasSavedEnglishProductText = (baseField, translatedEn) => hasUsableEnglishGuidanceText(translatedEn)
+                || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+            const hasSavedChineseProductText = (baseField, translatedZh) => {
+                const normalizedTranslatedZh = String(translatedZh || '').trim();
+                const existingLegacy = String(this.editingProductSnapshot?.[baseField] || '').trim();
+                return Boolean(normalizedTranslatedZh || existingLegacy);
+            };
             const hasSavedEnglishGuidanceText = (baseField, translatedEn) => hasUsableEnglishGuidanceText(translatedEn)
                 || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
-            const missingGuidanceTranslations = [];
-            if (
-                editSite === 'cn'
-                && showPurchaseNotes
-                && normalizedPurchaseNotes
-                && !hasSavedEnglishGuidanceText('purchase_notes', purchase_notes_en)
-            ) {
-                missingGuidanceTranslations.push('注意事项');
-            }
-            if (
-                editSite === 'cn'
-                && showUsageInstructions
-                && normalizedUsageInstructions
-                && !hasSavedEnglishGuidanceText('usage_instructions', usage_instructions_en)
-            ) {
-                missingGuidanceTranslations.push('使用说明');
+            const hasSavedChineseGuidanceText = (baseField, translatedZh) => {
+                const normalizedTranslatedZh = String(translatedZh || '').trim();
+                const existingZh = String(this.editingProductSnapshot?.[`${baseField}_zh`] || '').trim();
+                const existingLegacy = String(this.editingProductSnapshot?.[baseField] || '').trim();
+                return Boolean(normalizedTranslatedZh || existingZh || existingLegacy);
+            };
+            const missingEnglishTranslations = [];
+            const missingChineseTranslations = [];
+            const addMissingTranslation = (language, label) => {
+                const list = language === 'en' ? missingEnglishTranslations : missingChineseTranslations;
+                if (!list.includes(label)) {
+                    list.push(label);
+                }
+            };
+            if (editSite === 'cn') {
+                if (name && !hasSavedEnglishProductText('name', name_en)) {
+                    addMissingTranslation('en', '商品名称');
+                }
+                if (description && !hasSavedEnglishProductText('description', description_en)) {
+                    addMissingTranslation('en', '商品描述');
+                }
+                if (showPurchaseNotes && normalizedPurchaseNotes && !hasSavedEnglishGuidanceText('purchase_notes', purchase_notes_en)) {
+                    addMissingTranslation('en', '注意事项');
+                }
+                if (showUsageInstructions && normalizedUsageInstructions && !hasSavedEnglishGuidanceText('usage_instructions', usage_instructions_en)) {
+                    addMissingTranslation('en', '使用说明');
+                }
+            } else if (editSite === 'intl') {
+                if (name && productInputLanguage.name === 'zh' && !hasSavedEnglishProductText('name', name_en)) {
+                    addMissingTranslation('en', '商品名称');
+                }
+                if (name && productInputLanguage.name === 'en' && !hasSavedChineseProductText('name', name_zh)) {
+                    addMissingTranslation('zh', '商品名称');
+                }
+                if (description && productInputLanguage.description === 'zh' && !hasSavedEnglishProductText('description', description_en)) {
+                    addMissingTranslation('en', '商品描述');
+                }
+                if (description && productInputLanguage.description === 'en' && !hasSavedChineseProductText('description', description_zh)) {
+                    addMissingTranslation('zh', '商品描述');
+                }
+                if (
+                    showPurchaseNotes
+                    && normalizedPurchaseNotes
+                    && productInputLanguage.purchase_notes === 'zh'
+                    && !hasSavedEnglishGuidanceText('purchase_notes', purchase_notes_en)
+                ) {
+                    addMissingTranslation('en', '注意事项');
+                }
+                if (
+                    showPurchaseNotes
+                    && normalizedPurchaseNotes
+                    && productInputLanguage.purchase_notes === 'en'
+                    && !hasSavedChineseGuidanceText('purchase_notes', purchase_notes_zh)
+                ) {
+                    addMissingTranslation('zh', '注意事项');
+                }
+                if (
+                    showUsageInstructions
+                    && normalizedUsageInstructions
+                    && productInputLanguage.usage_instructions === 'zh'
+                    && !hasSavedEnglishGuidanceText('usage_instructions', usage_instructions_en)
+                ) {
+                    addMissingTranslation('en', '使用说明');
+                }
+                if (
+                    showUsageInstructions
+                    && normalizedUsageInstructions
+                    && productInputLanguage.usage_instructions === 'en'
+                    && !hasSavedChineseGuidanceText('usage_instructions', usage_instructions_zh)
+                ) {
+                    addMissingTranslation('zh', '使用说明');
+                }
             }
 
             const usageGuidancePayload = this.buildProductGuidancePayloadPatch('usage_instructions', {
@@ -8387,6 +8694,8 @@ Example output format:
                 show: showUsageInstructions,
                 editSite,
                 translatedEn: usage_instructions_en,
+                translatedZh: usage_instructions_zh,
+                sourceLanguage: productInputLanguage.usage_instructions,
                 existing: this.editingProductSnapshot
             });
             const purchaseGuidancePayload = this.buildProductGuidancePayloadPatch('purchase_notes', {
@@ -8394,6 +8703,8 @@ Example output format:
                 show: showPurchaseNotes,
                 editSite,
                 translatedEn: purchase_notes_en,
+                translatedZh: purchase_notes_zh,
+                sourceLanguage: productInputLanguage.purchase_notes,
                 existing: this.editingProductSnapshot
             });
             const iconUrl = String(document.getElementById('prodIcon').value || '').trim();
@@ -8425,8 +8736,28 @@ Example output format:
                 [marketingFields.flashSaleEnd]: null
             };
 
-            if (editSite === 'intl' && !id && !payload.name) {
-                payload.name = name;
+            if (editSite === 'intl') {
+                if (productInputLanguage.name === 'zh') {
+                    payload.name = name;
+                    payload.name_en = name_en || this.editingProductSnapshot?.name_en || name;
+                } else {
+                    payload.name_en = name;
+                    if (name_zh) {
+                        payload.name = name_zh;
+                    } else if (!id && !payload.name) {
+                        payload.name = name;
+                    }
+                }
+
+                if (productInputLanguage.description === 'zh') {
+                    payload.description = description;
+                    payload.description_en = description_en || this.editingProductSnapshot?.description_en || description;
+                } else {
+                    payload.description_en = description;
+                    if (description_zh) {
+                        payload.description = description_zh;
+                    }
+                }
             }
 
             if (shouldPersistProductDescriptionVisibility) {
@@ -8456,7 +8787,7 @@ Example output format:
 
             try {
                 const validationPayload = id
-                    ? this.buildExistingProductUpsertPayload(id, payload)
+                    ? this.buildExistingProductUpsertPayload(id, payload, { editSite })
                     : payload;
                 const validation = await this.validateProductPayloadViaAdminApi({
                     productId: id,
@@ -8488,7 +8819,7 @@ Example output format:
                 let savedWithLegacyGuidanceFallback = false;
                 const upsertProductPayload = async (nextPayload) => {
                     if (id) {
-                        const upsertPayload = this.buildExistingProductUpsertPayload(id, nextPayload);
+                        const upsertPayload = this.buildExistingProductUpsertPayload(id, nextPayload, { editSite });
                         return this.callAdminMutation('upsert_product', {
                             productId: id,
                             payload: upsertPayload,
@@ -8532,17 +8863,36 @@ Example output format:
 
                 finishSaveFeedback();
                 this.hideProductModal();
-                const translationApplied = !savedWithLegacyGuidanceFallback && Boolean(name_en || description_en || purchase_notes_en || usage_instructions_en);
-                const savedWithTranslationWarning = !savedWithLegacyGuidanceFallback && missingGuidanceTranslations.length > 0;
+                const translationApplied = !savedWithLegacyGuidanceFallback && Boolean(
+                    name_en
+                    || description_en
+                    || purchase_notes_en
+                    || usage_instructions_en
+                    || name_zh
+                    || description_zh
+                    || purchase_notes_zh
+                    || usage_instructions_zh
+                );
+                const missingTranslationWarnings = [];
+                if (missingEnglishTranslations.length) {
+                    missingTranslationWarnings.push(`英文翻译未完成：${missingEnglishTranslations.join('、')}`);
+                }
+                if (missingChineseTranslations.length) {
+                    missingTranslationWarnings.push(`中文翻译未完成：${missingChineseTranslations.join('、')}`);
+                }
+                const productTranslationDetailMessage = productTranslationErrorMessage || productTranslationWarningMessage;
+                if ((productTranslationFailed || productTranslationWarningMessage) && productTranslationDetailMessage && !missingTranslationWarnings.length) {
+                    missingTranslationWarnings.push(productTranslationDetailMessage);
+                }
+                const savedWithTranslationWarning = !savedWithLegacyGuidanceFallback && missingTranslationWarnings.length > 0;
                 const successMessage = savedWithLegacyGuidanceFallback
                     ? '商品已保存（部分新字段待迁移）'
                     : (savedWithTranslationWarning
-                        ? `商品已保存（英文翻译未完成：${missingGuidanceTranslations.join('、')}）`
+                        ? `商品已保存（${missingTranslationWarnings.join('；')}）`
                         : ('商品已保存' + (translationApplied ? '（已自动翻译）' : '')));
                 const saveToastType = savedWithLegacyGuidanceFallback || savedWithTranslationWarning ? 'warning' : 'success';
                 const saveToastDuration = savedWithLegacyGuidanceFallback ? 7000 : (savedWithTranslationWarning ? 9000 : undefined);
                 this.showActionToast(successMessage, saveToastType, { durationMs: saveToastDuration });
-                const productTranslationDetailMessage = productTranslationErrorMessage || productTranslationWarningMessage;
                 const feedbackMessage = savedWithTranslationWarning && productTranslationDetailMessage
                     ? `${successMessage}：${name}；${productTranslationDetailMessage}`
                     : `${successMessage}：${name}`;
