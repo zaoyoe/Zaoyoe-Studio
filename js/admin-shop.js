@@ -6527,6 +6527,20 @@ Example output format:
         return ShopAdmin.getEditSite() === 'intl' ? 'Points' : '积分';
     },
 
+    getAdminProductDisplayName: function (product = {}) {
+        const fields = this.getFieldMap();
+        const localizedName = String(product?.[fields.name] || '').trim();
+        const baseName = String(product?.name || '').trim();
+        return localizedName || baseName || (this.getEditSite() === 'intl' ? 'Unnamed product' : '未命名商品');
+    },
+
+    getAdminProductDescription: function (product = {}) {
+        const fields = this.getFieldMap();
+        const localizedDescription = String(product?.[fields.desc] || '').trim();
+        const baseDescription = String(product?.description || '').trim();
+        return localizedDescription || baseDescription || (this.getEditSite() === 'intl' ? 'No description' : '暂无描述');
+    },
+
     getAdminProductBasePrice: function (product = {}) {
         const rawPrice = ShopAdmin.getEditSite() === 'intl'
             ? product?.price_points_intl
@@ -6719,16 +6733,17 @@ Example output format:
                             : 'shop-admin-product-stock shop-admin-product-stock--healthy');
                 const stockLabel = manualDelivery ? '人工发货' : `库存 ${stock}`;
                 const safeProductId = this.escapeForAttr(String(p.id || ''));
-                const safeProductName = this.escapeHtml(p.name || '未命名商品');
-                const safeProductDescription = this.escapeHtml(p.description || '暂无描述');
+                const productDisplayName = this.getAdminProductDisplayName(p);
+                const safeProductName = this.escapeHtml(productDisplayName);
+                const safeProductDescription = this.escapeHtml(this.getAdminProductDescription(p));
                 const productImageAsset = getShopProductImageAsset(p);
                 const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(p.icon_url || '');
                 const productImageCacheVersion = buildShopProductImageCacheVersion(p);
                 const productImageDisplayOriginalUrl = appendShopImageUrlVersion(productImageOriginalUrl, productImageCacheVersion);
                 const safeProductIconUrl = this.escapeForAttr(productImageDisplayOriginalUrl);
                 const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
-                const safeProductNameAttr = this.escapeForAttr(p.name || '');
-                const productAltText = this.escapeForAttr(p.name || '商品封面');
+                const safeProductNameAttr = this.escapeForAttr(productDisplayName);
+                const productAltText = this.escapeForAttr(productDisplayName || '商品封面');
                 const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
                 const priceHtml = (() => {
                     const editSite = ShopAdmin.getEditSite();

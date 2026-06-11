@@ -31,6 +31,11 @@ test('shop product description visibility toggle is wired through admin, storefr
     );
     assert.match(
         adminShopSource,
+        /getAdminProductDescription: function[\s\S]*product\?\.\[fields\.desc\][\s\S]*safeProductDescription = this\.escapeHtml\(this\.getAdminProductDescription\(p\)\)/,
+        'admin product cards should render the active-site description field after save'
+    );
+    assert.match(
+        adminShopSource,
         /const previewDesc = document\.getElementById\('previewDesc'\);[\s\S]*if \(previewDesc\) \{/,
         'admin runtime should tolerate product forms without the removed preview description node'
     );
