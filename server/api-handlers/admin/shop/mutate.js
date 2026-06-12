@@ -314,6 +314,20 @@ function isMissingProcurementSchemaError(error = {}) {
         || text.includes('does not exist');
 }
 
+function isMissingReusableInventorySchemaError(error = {}) {
+    const text = [
+        error?.message,
+        error?.details,
+        error?.hint,
+        error?.code
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return text.includes("could not find the 'is_shared' column")
+        || text.includes('column "is_shared"')
+        || text.includes('shop_inventory.is_shared')
+        || text.includes('schema cache');
+}
+
 function createMissingProcurementSchemaError(sourceError = null) {
     return Object.assign(new Error('货源/采购批次数据库结构尚未部署，请先执行 20260606_add_shop_inventory_procurement_sources.sql 后再导入带货源信息的库存。'), {
         statusCode: 400,
@@ -2641,6 +2655,15 @@ module.exports = async (req, res) => {
             const lines = Array.isArray(body.lines) ? body.lines : [];
             const importStatus = String(body.importStatus || 'available').trim() || 'available';
             const batchId = body.batchId ? String(body.batchId) : `batch_${Date.now()}`;
+            const reusableDelivery = normalizeBoolean(
+                body.reusableDelivery
+                ?? body.reusable_delivery
+                ?? body.repeatableDelivery
+                ?? body.repeatable_delivery
+                ?? body.isShared
+                ?? body.is_shared,
+                false
+            );
             let procurement = null;
 
             if (!productId || !lines.length) {
@@ -2680,13 +2703,19 @@ module.exports = async (req, res) => {
             const inserts = lines
                 .map((line) => String(line || '').trim())
                 .filter(Boolean)
-                .map((content) => ({
-                    product_id: productId,
-                    sku_id: inventorySkuId,
-                    content,
-                    status: importStatus,
-                    batch_id: batchId
-                }));
+                .map((content) => {
+                    const entry = {
+                        product_id: productId,
+                        sku_id: inventorySkuId,
+                        content,
+                        status: importStatus,
+                        batch_id: batchId
+                    };
+                    if (reusableDelivery) {
+                        entry.is_shared = true;
+                    }
+                    return entry;
+                });
 
             if (!inserts.length) {
                 return sendJson(res, 400, { success: false, message: '没有有效库存数据' });
@@ -2725,6 +2754,15 @@ module.exports = async (req, res) => {
 
             const { error } = await supabase.from('shop_inventory').insert(inserts);
             if (error) {
+                if (reusableDelivery && isMissingReusableInventorySchemaError(error)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        code: 'shop_reusable_inventory_schema_missing',
+                        message: '可重复发货库存字段尚未部署，请先执行 20260612_add_shop_reusable_inventory.sql。',
+                        details: error?.details || '',
+                        hint: error?.hint || ''
+                    });
+                }
                 if (procurementContext?.batch?.id && isMissingProcurementSchemaError(error)) {
                     return sendJson(res, 400, {
                         success: false,
@@ -2762,7 +2800,9 @@ module.exports = async (req, res) => {
                     source_warning_type: procurementContext?.sourceWarning?.type || null,
                     source_warning_batch_id: procurementContext?.sourceWarning?.batchId || null,
                     count: inserts.length,
-                    import_status: importStatus
+                    import_status: importStatus,
+                    reusable_delivery: reusableDelivery,
+                    is_shared: reusableDelivery
                 }
             });
 
@@ -2777,7 +2817,9 @@ module.exports = async (req, res) => {
                 procurementBatch: procurementContext?.batch || null,
                 inventorySource: procurementContext?.source || null,
                 procurementWarning: procurementContext?.sourceWarning || null,
-                sourceWarning: procurementContext?.sourceWarning || null
+                sourceWarning: procurementContext?.sourceWarning || null,
+                reusableDelivery,
+                isShared: reusableDelivery
             });
         }
 

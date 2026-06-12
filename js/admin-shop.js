@@ -3158,6 +3158,13 @@ Example output format:
         counter.textContent = `(${lineCount}个)`;
     },
 
+    isReusableInventoryInputChecked: function (scope = 'importView') {
+        const elementId = scope === 'modal' || scope === 'importModal'
+            ? 'importModalReusableDelivery'
+            : (scope === 'legacy' || scope === 'inventory' ? 'inventoryReusableDelivery' : 'importViewReusableDelivery');
+        return document.getElementById(elementId)?.checked === true;
+    },
+
     toggleMobileImportView: function (view) {
         const layout = document.querySelector('.import-layout');
         const sidebarBtn = document.getElementById('mobileImportSidebarBtn');
@@ -9288,10 +9295,11 @@ Example output format:
                     const content = this.truncateText(String(item.content || ''), 48);
                     const createdAt = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '-';
                     const procurementMeta = this.getInventoryProcurementMetaText(item);
+                    const reusableText = item.is_shared === true ? ' · 可重复发货' : '';
                     return `
                         <div class="shop-import-inventory-overview__item">
                             <span class="shop-import-inventory-overview__item-content">${this.escapeHtml(content || '无内容')}</span>
-                            <span class="shop-import-inventory-overview__item-meta">${this.escapeHtml(statusMeta.label || item.status || '-')} · ${this.escapeHtml(createdAt)} · ${this.escapeHtml(procurementMeta)}</span>
+                            <span class="shop-import-inventory-overview__item-meta">${this.escapeHtml(statusMeta.label || item.status || '-')} · ${this.escapeHtml(createdAt)} · ${this.escapeHtml(procurementMeta)}${this.escapeHtml(reusableText)}</span>
                         </div>
                     `;
                 }).join('')
@@ -9580,6 +9588,7 @@ Example output format:
         if (lines.length === 0) { alert('没有检测到有效数据'); return; }
 
         const importStatus = document.querySelector('input[name="importStatus"]:checked')?.value || 'available';
+        const reusableDelivery = this.isReusableInventoryInputChecked('legacy');
         const skuId = document.getElementById('inventorySkuSelect')?.value || this.selectedProductSkuId || '';
         const blocker = this.getSkuImportBlocker(this.selectedProductId, skuId);
         if (blocker) {
@@ -9605,7 +9614,8 @@ Example output format:
                 skuId,
                 lines,
                 importStatus,
-                batchId
+                batchId,
+                reusableDelivery
             });
             const imported = this.normalizeInventoryStockCount(result?.imported) || lines.length;
             const stockCount = this.syncProductStockAfterInventoryMutation({
@@ -9616,13 +9626,15 @@ Example output format:
             });
 
             this.finishActionButton(btnElement, '已导入');
-            const successMessage = `成功导入 ${imported} 条库存`;
+            const successMessage = `成功导入 ${imported} 条库存${reusableDelivery ? '，已标记为可重复发货' : ''}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
 
             // Clear input
             input.value = '';
             document.getElementById('lineCount').textContent = '0';
+            const reusableInput = document.getElementById('inventoryReusableDelivery');
+            if (reusableInput) reusableInput.checked = false;
 
             // Refresh visuals
             await this.refreshInventoryStockViews();
@@ -9705,7 +9717,7 @@ Example output format:
         };
     },
 
-    performInventoryImport: async function ({ productId, skuId = '', contentLines, status = 'available', batchId = '', procurement = null } = {}) {
+    performInventoryImport: async function ({ productId, skuId = '', contentLines, status = 'available', batchId = '', procurement = null, reusableDelivery = false } = {}) {
         const lines = Array.isArray(contentLines)
             ? contentLines.map((line) => String(line || '').trim()).filter(Boolean)
             : [];
@@ -9730,7 +9742,8 @@ Example output format:
             skuId: String(skuId || '').trim(),
             lines,
             importStatus: String(status || 'available').trim() || 'available',
-            batchId: resolvedBatchId
+            batchId: resolvedBatchId,
+            reusableDelivery: reusableDelivery === true
         };
 
         if (procurement && typeof procurement === 'object') {
@@ -16503,6 +16516,9 @@ Example output format:
                 const safeProductName = this.escapeHtml(item.product_name || '-');
                 const procurementMeta = this.getInventoryProcurementMetaText(item);
                 const safeProcurementMeta = this.escapeHtml(procurementMeta);
+                const reusableMeta = item.is_shared === true
+                    ? '<span class="shop-inventory-product-meta shop-inventory-product-meta--reusable" title="可重复发货"><i class="fas fa-repeat"></i> 可重复发货</span>'
+                    : '';
                 const safeItemId = this.escapeForAttr(String(item.id || ''));
                 const safeFullContent = this.escapeForAttr(item.content || '');
                 const safeBuyerEmail = this.escapeHtml(item.buyer_email || '-');
@@ -16524,6 +16540,7 @@ Example output format:
                         <td class="shop-inventory-product-cell">
                             <span class="shop-inventory-product-name" title="${this.escapeForAttr(item.product_name || '-')}">${safeProductName}</span>
                             <span class="shop-inventory-product-meta" title="${this.escapeForAttr(procurementMeta)}"><i class="fas fa-truck-ramp-box"></i> ${safeProcurementMeta}</span>
+                            ${reusableMeta}
                         </td>
                         <td class="shop-inventory-selection-toggle-cell" data-shop-action="inventory-toggle-selection-cell">
                             <div class="content-cell shop-inventory-content-chip"
@@ -16882,6 +16899,8 @@ Example output format:
             const safeCreatedAt = this.escapeHtml(new Date(invData.created_at).toLocaleString('zh-CN'));
             const safeBatchId = this.escapeHtml(invData.batch_id || '-');
             const safeRemark = this.escapeHtml(invData.remark || '');
+            const reusableDeliveryLabel = invData.is_shared === true ? '可重复发货' : '一次性库存';
+            const safeReusableDeliveryLabel = this.escapeHtml(reusableDeliveryLabel);
             const procurementItem = {
                 ...invData,
                 procurement_unit_cost_cny: procurementBatch?.unit_cost_cny
@@ -16991,6 +17010,12 @@ Example output format:
                     <div class="shop-inventory-detail-card">
                         <div class="shop-inventory-detail-card-label">状态</div>
                         <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--status shop-inventory-detail-card-value--${statusMeta.modifier}">${safeStatusLabel}</div>
+                    </div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">发货模式</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small${invData.is_shared === true ? ' shop-inventory-detail-card-value--shared' : ''}">
+                            ${invData.is_shared === true ? '<i class="fas fa-repeat"></i> ' : ''}${safeReusableDeliveryLabel}
+                        </div>
                     </div>
                     <div class="shop-inventory-detail-card">
                         <div class="shop-inventory-detail-card-label">导入时间</div>
@@ -17200,6 +17225,7 @@ Example output format:
         const contentInput = document.getElementById('importContentInput');
         const content = contentInput?.value || '';
         const status = document.querySelector('#importInventoryModal input[name="importStatus"]:checked')?.value || 'available';
+        const reusableDelivery = this.isReusableInventoryInputChecked('importModal');
 
         if (!productId) { alert('请选择商品'); return; }
         if (!content.trim()) { alert('请输入账号内容'); return; }
@@ -17227,7 +17253,8 @@ Example output format:
                 skuId,
                 contentLines,
                 status,
-                procurement
+                procurement,
+                reusableDelivery
             });
             this.syncProductStockAfterInventoryMutation({
                 productId,
@@ -17236,11 +17263,13 @@ Example output format:
                 status
             });
             this.finishActionButton(importButton, '已导入');
-            const successMessage = `成功导入 ${imported} 个账号，批次号: ${batchId}`;
+            const successMessage = `成功导入 ${imported} 个账号${reusableDelivery ? '，已标记为可重复发货' : ''}，批次号: ${batchId}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
             this.notifyProcurementImportWarning(procurementWarning);
             contentInput.value = '';
+            const reusableInput = document.getElementById('importModalReusableDelivery');
+            if (reusableInput) reusableInput.checked = false;
             this.updateLegacyImportLineCount();
             this.closeImportModal();
             await this.refreshInventoryStockViews({ inventoryPage: this.inventoryPage });
@@ -18472,6 +18501,7 @@ Example output format:
         const skuId = document.getElementById('importViewSkuSelect')?.value || this.selectedImportViewProductSkuId || '';
         const content = document.getElementById('importViewContentInput').value;
         const status = document.querySelector('input[name="importViewStatus"]:checked').value;
+        const reusableDelivery = this.isReusableInventoryInputChecked('importView');
 
         if (!productId) { alert('请先在左侧选择商品'); return; }
         if (!content.trim()) { alert('请输入账号内容'); return; }
@@ -18499,7 +18529,8 @@ Example output format:
                 skuId,
                 contentLines,
                 status,
-                procurement
+                procurement,
+                reusableDelivery
             });
             this.syncProductStockAfterInventoryMutation({
                 productId,
@@ -18508,7 +18539,7 @@ Example output format:
                 status
             });
             this.finishActionButton(actionButton, '已导入');
-            const successMessage = `成功导入 ${imported} 个账号，批次号: ${batchId}`;
+            const successMessage = `成功导入 ${imported} 个账号${reusableDelivery ? '，已标记为可重复发货' : ''}，批次号: ${batchId}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
             this.notifyProcurementImportWarning(procurementWarning);
@@ -18516,6 +18547,8 @@ Example output format:
             // Clear input
             document.getElementById('importViewContentInput').value = '';
             document.getElementById('importViewLineCount').textContent = '(0个)';
+            const reusableInput = document.getElementById('importViewReusableDelivery');
+            if (reusableInput) reusableInput.checked = false;
 
             // Note: We don't clear selection so user can continue importing if needed.
             await this.refreshInventoryStockViews({

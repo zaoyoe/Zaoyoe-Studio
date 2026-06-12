@@ -24018,6 +24018,7 @@ function resolveOpsAlertSettingsSubmitter(options = {}) {
         'submitAdminWorkbenchOpsAlertSettings',
         (headers = {}, body = {}) => submitLocalOpsAlertSettingsPayload(headers, body, options),
         (headers = {}, body = {}) => ({
+            site: body?.site || options.site || '',
             errorMessage: options.errorMessage || '保存站外告警配置失败'
         })
     );
@@ -24128,14 +24129,31 @@ function handleOpsAlertSettingsSaveError(error, options = {}) {
 }
 
 function buildLocalOpsAlertActionFeedbackState(payload = {}, options = {}) {
+    const partial = payload?.partial === true;
     return {
-        message: options.successMessage || payload.message || ''
+        partial,
+        message: payload.message || options.successMessage || '',
+        feedbackState: partial ? 'partial' : 'saved',
+        toastType: partial ? 'warning' : 'success'
     };
 }
 
 function applyOpsAlertActionFeedback(payload = {}, options = {}) {
     const feedbackState = buildLocalOpsAlertActionFeedbackState(payload, options);
-    showConfigSavedToast(feedbackState.message);
+    if (feedbackState.partial) {
+        showToast(feedbackState.message, feedbackState.toastType);
+        emitAdminConfigCommandFeedback(feedbackState.message, feedbackState.feedbackState, {
+            source: options.feedbackSource || 'ops-alerts-settings',
+            module: options.feedbackModule || 'ops-alerts',
+            tone: 'warning'
+        });
+        return feedbackState;
+    }
+    showConfigSavedToast(feedbackState.message, {
+        source: options.feedbackSource || 'ops-alerts-settings',
+        module: options.feedbackModule || 'ops-alerts'
+    });
+    return feedbackState;
 }
 
 async function saveOpsAlertConfigOverride(config, options = {}) {
@@ -24175,6 +24193,11 @@ async function saveOpsAlertSettings() {
 }
 
 async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
+    const writableSite = requireWritableAdminSettingsSite('发送站外告警联调测试');
+    if (!writableSite) {
+        return false;
+    }
+
     const config = collectOpsAlertConfigFromForm();
     const secrets = resolveOpsAlertSecretInputs();
     resolveOpsAlertDispatchConfigValidation(config, opsAlertSecretStatus, secrets);
@@ -24183,10 +24206,12 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
     const submissionState = resolveOpsAlertSettingsSubmissionState(config, {
         action,
         secrets,
+        site: writableSite,
         successMessage: fallbackMessage,
         errorMessage: fallbackMessage
     });
     const payload = await submitOpsAlertSettingsPayload(headers, submissionState.body, {
+        site: writableSite,
         errorMessage: submissionState.errorMessage
     });
 

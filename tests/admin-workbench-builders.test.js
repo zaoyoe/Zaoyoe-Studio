@@ -2379,10 +2379,12 @@ test('shared admin workbench reads, clears, and builds ops alert settings reques
 
     const requestBody = runtime.buildAdminWorkbenchOpsAlertSettingsRequestBody({ enabled: true }, {
         document: documentRef,
+        site: 'intl',
         action: 'send_test_telegram',
         caseEvents: [{ action: 'batch_mute' }]
     });
     assert.deepEqual(JSON.parse(JSON.stringify(requestBody)), {
+        site: 'intl',
         config: { enabled: true },
         secrets: {
             telegram_bot_token: 'tg-token',
