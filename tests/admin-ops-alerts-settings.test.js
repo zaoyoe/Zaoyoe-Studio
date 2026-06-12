@@ -1287,6 +1287,9 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
 
                     if (state.telegramSendFailure) {
                         const failure = state.telegramSendFailure;
+                        if (failure && typeof failure === 'object' && failure.returnResult) {
+                            return cloneValue(failure.returnResult);
+                        }
                         const error = new Error(String(failure.message || 'telegram delivery failed'));
                         error.name = String(failure.name || 'Error');
                         throw error;
@@ -2744,6 +2747,7 @@ test('ops alert settings POST can send a Telegram self-check without persisting 
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_test_telegram',
                 config: {
                     enabled: true,
@@ -2809,6 +2813,7 @@ test('ops alert settings POST reports Telegram self-check aborts as timeout fail
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_test_telegram',
                 config: {
                     enabled: true,
@@ -2871,6 +2876,7 @@ test('ops alert settings POST can send a preview self-check through email when t
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_test_telegram',
                 config: {
                     enabled: true,
@@ -2935,6 +2941,7 @@ test('ops alert settings POST can send a refund detail sample to Telegram withou
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_refund_telegram',
                 config: {
                     enabled: true,
@@ -2968,6 +2975,254 @@ test('ops alert settings POST can send a refund detail sample to Telegram withou
     });
 });
 
+test('ops alert settings POST stamps preview samples with the requested INTL site', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                site: 'intl',
+                action: 'send_sample_refund_telegram',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.site, 'intl');
+        assert.equal(state.telegramTests[0].job.site_context, 'intl');
+        assert.equal(state.telegramTests[0].job.payload.site, 'intl');
+        assert.equal(state.telegramTests[0].job.payload.provider_order_no, 'DEMO_HJ_ORDER_20260325');
+        assert.equal(payload.site, 'intl');
+        assert.equal(payload.preview_site, 'intl');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].details.site, 'intl');
+        assert.equal(state.auditLogs[0].details.preview_site, 'intl');
+        assert.equal(state.auditLogs[0].details.job_site, 'intl');
+        assert.equal(state.auditLogs[0].details.payload_site, 'intl');
+    });
+});
+
+test('ops alert settings POST rejects preview tests without a concrete site', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                site: 'all',
+                action: 'send_test_telegram',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /请先选择 CN 或 EN 站点/);
+        assert.equal(state.telegramTests.length, 0);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('ops alert settings POST returns success with partial warning for Telegram receipt failures after delivery', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        },
+        telegramSendFailure: {
+            returnResult: {
+                ok: false,
+                partial: true,
+                status: 0,
+                error: 'fetch failed',
+                body: JSON.stringify([
+                    { chatId: '5104238366', ok: true, status: 200 },
+                    { chatId: '5104238367', ok: false, status: 0, error: 'fetch failed' }
+                ])
+            }
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                site: 'intl',
+                action: 'send_test_telegram',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366', '5104238367']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.partial, true);
+        assert.equal(payload.preview_site, 'intl');
+        assert.match(payload.message, /通道回执异常/);
+        assert.match(payload.delivery_message, /Telegram：fetch failed/);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].details.partial, true);
+    });
+});
+
+test('ops alert settings POST returns success warning for a single Telegram receipt failure', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        },
+        telegramSendFailure: {
+            returnResult: {
+                ok: false,
+                partial: true,
+                receipt_uncertain: true,
+                status: 0,
+                error: 'fetch failed',
+                body: JSON.stringify([
+                    { chatId: '5104238366', ok: false, status: 0, receipt_uncertain: true, error: 'fetch failed' }
+                ])
+            }
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                site: 'intl',
+                action: 'send_test_telegram',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.partial, true);
+        assert.equal(payload.preview_site, 'intl');
+        assert.match(payload.message, /通道回执异常/);
+        assert.match(payload.delivery_message, /Telegram：fetch failed/);
+        assert.equal(state.telegramTests[0].job.site, 'intl');
+        assert.equal(state.telegramTests[0].job.payload.site, 'intl');
+        assert.equal(state.auditLogs[0].details.partial, true);
+    });
+});
+
 test('ops alert settings POST can send a customer chat message sample without persisting config changes', async () => {
     await withOpsAlertsSettingsHandler({
         config: createNormalizedConfig({
@@ -2992,6 +3247,7 @@ test('ops alert settings POST can send a customer chat message sample without pe
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_customer_chat_message',
                 config: {
                     enabled: true,
@@ -3049,6 +3305,7 @@ test('ops alert settings POST can send a shop purchase success sample without pe
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_purchase_succeeded',
                 config: {
                     enabled: true,
@@ -3106,6 +3363,7 @@ test('ops alert settings POST can send a wallet recharge success sample without 
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_wallet_recharge_succeeded',
                 config: {
                     enabled: true,
@@ -3163,6 +3421,7 @@ test('ops alert settings POST can send a payment gateway degradation sample with
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_gateway_degraded',
                 config: {
                     enabled: true,
@@ -3220,6 +3479,7 @@ test('ops alert settings POST can send a payment gateway recovery sample without
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_gateway_recovered',
                 config: {
                     enabled: true,
@@ -3277,6 +3537,7 @@ test('ops alert settings POST can send a verify quota low sample without persist
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_verify_quota_low',
                 config: {
                     enabled: true,
@@ -3334,6 +3595,7 @@ test('ops alert settings POST can send a verify service disabled sample without 
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_verify_service_disabled',
                 config: {
                     enabled: true,
@@ -3391,6 +3653,7 @@ test('ops alert settings POST can send a verify queue backlog sample without per
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_verify_queue_backlog',
                 config: {
                     enabled: true,
@@ -3448,6 +3711,7 @@ test('ops alert settings POST can send a verify failure rate spike sample withou
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_verify_failure_rate_spike',
                 config: {
                     enabled: true,
@@ -3505,6 +3769,7 @@ test('ops alert settings POST can send a verify incident escalation sample witho
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_verify_incident_escalated',
                 config: {
                     enabled: true,
@@ -3561,6 +3826,7 @@ test('ops alert settings POST can send a verify incident recovery sample without
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_verify_incident_recovered',
                 config: {
                     enabled: true,
@@ -3617,6 +3883,7 @@ test('ops alert settings POST can send a ticket SLA overdue sample without persi
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_ticket_sla_overdue',
                 config: {
                     enabled: true,
@@ -3674,6 +3941,7 @@ test('ops alert settings POST can send a ticket SLA recovery sample without pers
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_ticket_sla_recovered',
                 config: {
                     enabled: true,
@@ -3730,6 +3998,7 @@ test('ops alert settings POST can send a shop inventory low sample without persi
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_inventory_low',
                 config: {
                     enabled: true,
@@ -3787,6 +4056,7 @@ test('ops alert settings POST can send a shop inventory recovery sample without 
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_inventory_recovered',
                 config: {
                     enabled: true,
@@ -3843,6 +4113,7 @@ test('ops alert settings POST can send an admin login anomaly sample without per
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_admin_login_anomaly',
                 config: {
                     enabled: true,
@@ -3899,6 +4170,7 @@ test('ops alert settings POST can send a shop order delivery failed sample witho
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_order_delivery_failed',
                 config: {
                     enabled: true,
@@ -3956,6 +4228,7 @@ test('ops alert settings POST can send a shop order delivery incident sample wit
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_order_delivery_incident',
                 config: {
                     enabled: true,
@@ -4013,6 +4286,7 @@ test('ops alert settings POST can send a shop order delivery incident recovery s
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_order_delivery_incident_recovered',
                 config: {
                     enabled: true,
@@ -4074,6 +4348,7 @@ test('ops alert settings POST can send a shop order delivery recovered sample wi
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_shop_order_delivery_recovered',
                 config: {
                     enabled: true,
@@ -4136,6 +4411,7 @@ test('ops alert settings POST can send a payment config changed sample without p
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_payment_config_changed',
                 config: {
                     enabled: true,
@@ -4196,6 +4472,7 @@ test('ops alert settings POST can send a payment config incident sample without 
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_payment_config_incident',
                 config: {
                     enabled: true,
@@ -4261,6 +4538,7 @@ test('ops alert settings POST can send a payment config incident recovered sampl
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_payment_config_incident_recovered',
                 config: {
                     enabled: true,
@@ -4326,6 +4604,7 @@ test('ops alert settings POST can send a payment config recovered sample without
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_sample_payment_config_recovered',
                 config: {
                     enabled: true,
@@ -4391,6 +4670,7 @@ test('ops alert settings preview actions fan out to Feishu when the channel is e
         const req = {
             method: 'POST',
             body: {
+                site: 'cn',
                 action: 'send_test_telegram',
                 config: {
                     enabled: true,

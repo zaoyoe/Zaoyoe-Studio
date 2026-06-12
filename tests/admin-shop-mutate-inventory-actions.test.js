@@ -404,6 +404,8 @@ test('shop mutate handler imports inventory through shared admin mutation flow',
         assert.equal(res.json().success, true);
         assert.equal(res.json().imported, 2);
         assert.equal(res.json().stockCount, 3);
+        assert.equal(res.json().reusableDelivery, false);
+        assert.equal(res.json().isShared, false);
         assert.equal(state.inventoryRows.length, 3);
         assert.deepEqual(
             state.inventoryRows.slice(1).map((row) => ({
@@ -411,11 +413,12 @@ test('shop mutate handler imports inventory through shared admin mutation flow',
                 sku_id: row.sku_id,
                 status: row.status,
                 batch_id: row.batch_id,
-                content: row.content
+                content: row.content,
+                has_is_shared: Object.prototype.hasOwnProperty.call(row, 'is_shared')
             })),
             [
-                { product_id: 'prod_1', sku_id: 'sku_default_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-1' },
-                { product_id: 'prod_1', sku_id: 'sku_default_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-2' }
+                { product_id: 'prod_1', sku_id: 'sku_default_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-1', has_is_shared: false },
+                { product_id: 'prod_1', sku_id: 'sku_default_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-2', has_is_shared: false }
             ]
         );
         assert.equal(res.json().skuId, 'sku_default_1');
@@ -425,7 +428,76 @@ test('shop mutate handler imports inventory through shared admin mutation flow',
         assert.equal(state.auditCalls[0].site, 'intl');
         assert.equal(state.auditCalls[0].actionType, 'shop.inventory.import');
         assert.equal(state.auditCalls[0].details.count, 2);
+        assert.equal(state.auditCalls[0].details.reusable_delivery, false);
+        assert.equal(state.auditCalls[0].details.is_shared, false);
         assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
+test('shop mutate handler marks reusable delivery inventory rows during import', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_default_1',
+                product_id: 'prod_1',
+                sku_name: '默认规格',
+                sku_code: 'default',
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                lines: ['https://drive.example.com/shared-folder'],
+                importStatus: 'available',
+                batchId: 'batch_shared_20260612',
+                reusableDelivery: true
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.imported, 1);
+        assert.equal(payload.stockCount, 1);
+        assert.equal(payload.skuStockCount, 1);
+        assert.equal(payload.reusableDelivery, true);
+        assert.equal(payload.isShared, true);
+        assert.equal(state.inventoryRows.length, 1);
+        assert.deepEqual(
+            state.inventoryRows.map((row) => ({
+                product_id: row.product_id,
+                sku_id: row.sku_id,
+                status: row.status,
+                batch_id: row.batch_id,
+                content: row.content,
+                is_shared: row.is_shared
+            })),
+            [
+                {
+                    product_id: 'prod_1',
+                    sku_id: 'sku_default_1',
+                    status: 'available',
+                    batch_id: 'batch_shared_20260612',
+                    content: 'https://drive.example.com/shared-folder',
+                    is_shared: true
+                }
+            ]
+        );
+        assert.equal(state.auditCalls.length, 1);
+        assert.equal(state.auditCalls[0].details.reusable_delivery, true);
+        assert.equal(state.auditCalls[0].details.is_shared, true);
     });
 });
 

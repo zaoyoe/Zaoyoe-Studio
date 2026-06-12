@@ -31,6 +31,82 @@ test('shop import view patches product stock badges immediately after inventory 
     const searchOrdersBlock = extractFunctionBlock(shopSource, 'searchOrders: async function');
     const renderOrderDetailBodyBlock = extractFunctionBlock(shopSource, 'renderOrderDetailBody: function');
 
+    for (const elementId of [
+        'importViewReusableDelivery',
+        'inventoryReusableDelivery',
+        'importModalReusableDelivery'
+    ]) {
+        assert.equal(adminHtml.includes(`id="${elementId}"`), true, `admin studio should render ${elementId}`);
+    }
+    for (const cssMarker of [
+        '.shop-import-reusable-option',
+        '.shop-import-reusable-option__control',
+        '.shop-import-reusable-option__hint',
+        '.shop-inventory-detail-card-value--shared'
+    ]) {
+        assert.equal(stylesSource.includes(cssMarker), true, `styles should include ${cssMarker}`);
+    }
+    assert.equal(
+        adminHtml.includes('reusableInventory=20260612_ADMIN_STUDIO_REUSABLE_INVENTORY_1'),
+        true,
+        'admin studio CSS should be cache-busted for reusable inventory import UI'
+    );
+    assert.equal(
+        adminHtml.includes('reusableInventory=20260612_ADMIN_SHOP_REUSABLE_INVENTORY_1'),
+        true,
+        'admin shop JS should be cache-busted for reusable inventory import behavior'
+    );
+    assert.equal(
+        shopSource.includes('isReusableInventoryInputChecked: function'),
+        true,
+        'ShopAdmin should expose a helper for the reusable delivery checkbox'
+    );
+    assert.match(
+        shopSource,
+        /isReusableInventoryInputChecked: function \(scope = 'importView'\)[\s\S]*importModalReusableDelivery[\s\S]*inventoryReusableDelivery[\s\S]*importViewReusableDelivery/,
+        'the reusable delivery checkbox helper should map all import surfaces to their own inputs'
+    );
+    assert.match(
+        performInventoryImportBlock,
+        /performInventoryImport: async function \(\{ productId, skuId = '', contentLines[\s\S]*reusableDelivery = false/,
+        'the shared import helper should accept reusable delivery state'
+    );
+    assert.match(
+        performInventoryImportBlock,
+        /reusableDelivery: reusableDelivery === true/,
+        'the shared import helper should forward reusable delivery state to the admin mutation'
+    );
+    assert.match(
+        importInventoryBlock,
+        /const reusableDelivery = this\.isReusableInventoryInputChecked\('legacy'\);[\s\S]*reusableDelivery[\s\S]*inventoryReusableDelivery/,
+        'legacy inventory import should submit and clear the reusable delivery checkbox'
+    );
+    assert.match(
+        doImportFromViewBlock,
+        /const reusableDelivery = this\.isReusableInventoryInputChecked\('importView'\);[\s\S]*reusableDelivery[\s\S]*importViewReusableDelivery/,
+        'the import workspace should submit and clear the reusable delivery checkbox'
+    );
+    assert.match(
+        shopSource,
+        /doImport: async function \(\)[\s\S]*const reusableDelivery = this\.isReusableInventoryInputChecked\('importModal'\);[\s\S]*reusableDelivery[\s\S]*importModalReusableDelivery/,
+        'the import modal should submit and clear the reusable delivery checkbox'
+    );
+    assert.match(
+        shopSource,
+        /item\.is_shared === true \? ' · 可重复发货' : ''/,
+        'the import SKU overview should label reusable inventory rows'
+    );
+    assert.match(
+        shopSource,
+        /item\.is_shared === true[\s\S]*shop-inventory-product-meta--reusable[\s\S]*可重复发货/,
+        'the inventory list should label reusable inventory rows'
+    );
+    assert.match(
+        showInventoryDetailBlock,
+        /invData\.is_shared === true \? '可重复发货' : '一次性库存'[\s\S]*shop-inventory-detail-card-value--shared/,
+        'inventory detail should show the delivery mode for reusable rows'
+    );
+
     assert.equal(
         shopSource.includes('syncProductStockAfterInventoryMutation: function'),
         true,

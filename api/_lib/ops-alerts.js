@@ -6477,25 +6477,55 @@ async function sendTelegramAlert(job, runtime, options = {}) {
         timeoutMs: resolveOpsAlertDeliveryTimeoutMs(runtime, options)
     };
     for (const chatId of chatIds) {
-        const result = await postJsonWithRetry(
-            `https://api.telegram.org/bot${token}/sendMessage`,
-            {
-                chat_id: chatId,
-                text,
-                disable_web_page_preview: true
-            },
-            deliveryOptions
-        );
-        results.push({
-            chatId,
-            ...result
-        });
+        try {
+            const result = await postJsonWithRetry(
+                `https://api.telegram.org/bot${token}/sendMessage`,
+                {
+                    chat_id: chatId,
+                    text,
+                    disable_web_page_preview: true
+                },
+                deliveryOptions
+            );
+            results.push({
+                chatId,
+                ...result
+            });
+        } catch (error) {
+            if (!isRetryableFetchError(error)) {
+                throw error;
+            }
+            const failedResult = {
+                chatId,
+                ok: false,
+                status: 0,
+                receipt_uncertain: true,
+                error: normalizeText(error?.message || error?.name) || 'fetch failed'
+            };
+            results.push(failedResult);
+        }
     }
 
+    const deliveredCount = results.filter((item) => item.ok === true).length;
+    const receiptUncertainCount = results.filter((item) => item.receipt_uncertain === true).length;
+    const failedCount = results.length - deliveredCount;
+    const hasFailures = failedCount > 0 || results.some((item) => item.ok !== true);
     return {
-        ok: results.every((item) => item.ok),
-        status: results.every((item) => item.ok) ? 200 : Math.max(...results.map((item) => Number(item.status || 0))),
-        body: JSON.stringify(results)
+        ok: !hasFailures,
+        partial: hasFailures && (deliveredCount > 0 || receiptUncertainCount > 0),
+        receipt_uncertain: receiptUncertainCount > 0,
+        delivered_count: deliveredCount,
+        receipt_uncertain_count: receiptUncertainCount,
+        failed_count: Math.max(0, results.length - deliveredCount),
+        status: !hasFailures ? 200 : Math.max(...results.map((item) => Number(item.status || 0))),
+        body: JSON.stringify(results),
+        error: hasFailures
+            ? results
+                .filter((item) => item.ok !== true)
+                .map((item) => normalizeText(item.error) || `HTTP ${Number(item.status || 0) || 0}`)
+                .filter(Boolean)
+                .join('；')
+            : ''
     };
 }
 

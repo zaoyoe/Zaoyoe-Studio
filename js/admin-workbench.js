@@ -2279,7 +2279,11 @@ function clearAdminWorkbenchOpsAlertSecretInputs(options = {}) {
 }
 
 function buildAdminWorkbenchOpsAlertSettingsRequestBody(config, options = {}) {
+    const normalizedSite = ['all', 'cn', 'intl'].includes(String(options.site || '').trim().toLowerCase())
+        ? String(options.site || '').trim().toLowerCase()
+        : '';
     const body = {
+        ...(normalizedSite ? { site: normalizedSite } : {}),
         config,
         secrets: options.secrets && typeof options.secrets === 'object' && !Array.isArray(options.secrets)
             ? options.secrets

@@ -1438,6 +1438,22 @@ test('buildExternalAlertText renders rich refund details for payment refund ops 
     assert.match(text, /处理入口：支付对账 -> 异常运维 -> 回滚失败/);
 });
 
+test('buildExternalAlertText prefixes INTL site alerts for admin routing clarity', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'ops_alert_test',
+        severity: 'warning',
+        title: '站外告警联调测试',
+        site: 'intl',
+        payload: {
+            site: 'intl'
+        },
+        content: ['联调测试']
+    });
+
+    assert.match(text, /^\[INTL站\]/);
+    assert.doesNotMatch(text, /^\[CN站\]/);
+});
+
 test('buildExternalAlertText renders customer chat message details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'customer_chat_message_received',
@@ -1896,6 +1912,95 @@ test('sendTelegramAlert does not retry aborted requests to avoid duplicate deliv
     );
 
     assert.equal(calls, 1);
+});
+
+test('sendTelegramAlert reports partial delivery when one Telegram target has a fetch receipt failure', async () => {
+    let calls = 0;
+    const result = await __testUtils.sendTelegramAlert({
+        alert_type: 'ops_alert_test',
+        severity: 'warning',
+        title: 'Telegram partial smoke',
+        site: 'intl',
+        content: ['network receipt partial']
+    }, {
+        config: normalizeOpsAlertsConfig({
+            timeout_ms: 15000,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['5104238366', '5104238367']
+                }
+            }
+        }),
+        secrets: {
+            telegram_bot_token: 'telegram-token'
+        }
+    }, {
+        telegramFetchRetryCount: 0,
+        telegramFetchRetryDelayMs: 0,
+        fetchImpl: async () => {
+            calls += 1;
+            if (calls === 2) {
+                throw new TypeError('fetch failed');
+            }
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({ ok: true })
+            };
+        }
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(result.ok, false);
+    assert.equal(result.partial, true);
+    assert.equal(result.receipt_uncertain, true);
+    assert.equal(result.delivered_count, 1);
+    assert.equal(result.receipt_uncertain_count, 1);
+    assert.equal(result.failed_count, 1);
+    assert.match(result.error || '', /fetch failed/);
+});
+
+test('sendTelegramAlert marks single target fetch receipt failures as uncertain partial delivery', async () => {
+    let calls = 0;
+    const result = await __testUtils.sendTelegramAlert({
+        alert_type: 'ops_alert_test',
+        severity: 'warning',
+        title: 'Telegram uncertain receipt smoke',
+        site: 'intl',
+        content: ['network receipt uncertain']
+    }, {
+        config: normalizeOpsAlertsConfig({
+            timeout_ms: 15000,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['5104238366']
+                }
+            }
+        }),
+        secrets: {
+            telegram_bot_token: 'telegram-token'
+        }
+    }, {
+        telegramFetchRetryCount: 0,
+        telegramFetchRetryDelayMs: 0,
+        fetchImpl: async () => {
+            calls += 1;
+            throw new TypeError('fetch failed');
+        }
+    });
+
+    assert.equal(calls, 1);
+    assert.equal(result.ok, false);
+    assert.equal(result.partial, true);
+    assert.equal(result.receipt_uncertain, true);
+    assert.equal(result.delivered_count, 0);
+    assert.equal(result.receipt_uncertain_count, 1);
+    assert.equal(result.failed_count, 1);
+    assert.match(result.error || '', /fetch failed/);
 });
 
 test('buildExternalAlertText renders provider degradation details for payment gateway alerts', () => {

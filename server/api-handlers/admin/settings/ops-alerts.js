@@ -36,6 +36,34 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     email_api_key: 'ops_alert_email_api_key'
 });
 const DEFAULT_OPS_ALERT_PREVIEW_TIMEOUT_MS = 15000;
+const OPS_ALERT_PREVIEW_ACTION_LABELS = Object.freeze({
+    send_sample_refund_telegram: '退款详情示例消息',
+    send_sample_customer_chat_message: '客服消息示例',
+    send_sample_shop_purchase_succeeded: '购买成功示例消息',
+    send_sample_wallet_recharge_succeeded: '充值成功示例消息',
+    send_sample_gateway_degraded: '支付通道异常示例消息',
+    send_sample_gateway_recovered: '支付通道恢复示例消息',
+    send_sample_verify_service_disabled: '验证服务停摆示例消息',
+    send_sample_verify_queue_backlog: '验证任务堆积示例消息',
+    send_sample_verify_failure_rate_spike: '验证失败率异常示例消息',
+    send_sample_verify_incident_escalated: '验证综合异常示例消息',
+    send_sample_verify_incident_recovered: '验证恢复示例消息',
+    send_sample_verify_quota_low: '验证额度告警示例消息',
+    send_sample_ticket_sla_overdue: '工单超时示例消息',
+    send_sample_ticket_sla_recovered: '工单恢复示例消息',
+    send_sample_shop_inventory_low: '库存预警示例消息',
+    send_sample_shop_inventory_recovered: '库存恢复示例消息',
+    send_sample_admin_login_anomaly: '管理员异常登录示例消息',
+    send_sample_shop_order_delivery_failed: '履约失败示例消息',
+    send_sample_shop_order_delivery_incident: '履约异常升级示例消息',
+    send_sample_shop_order_delivery_incident_recovered: '履约事故恢复示例消息',
+    send_sample_shop_order_delivery_recovered: '履约恢复示例消息',
+    send_sample_payment_config_changed: '支付配置变更示例消息',
+    send_sample_payment_config_incident: '支付配置异常升级示例消息',
+    send_sample_payment_config_incident_recovered: '支付配置事故恢复示例消息',
+    send_sample_payment_config_recovered: '支付配置恢复示例消息',
+    send_test_telegram: '测试站外告警'
+});
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -228,6 +256,16 @@ function formatPreviewChannelLabels(channels = []) {
     return labels.join('、');
 }
 
+function buildPreviewSuccessMessage(action, channels = [], result = {}) {
+    const normalizedAction = sanitizeText(action);
+    const label = OPS_ALERT_PREVIEW_ACTION_LABELS[normalizedAction] || OPS_ALERT_PREVIEW_ACTION_LABELS.send_test_telegram;
+    const channelLabels = formatPreviewChannelLabels(channels);
+    if (result?.partial && result.message) {
+        return `${label}已提交到 ${channelLabels || '已启用通道'}，通道回执异常：${result.message}`;
+    }
+    return `${label}已发送到 ${channelLabels || '已启用通道'}`;
+}
+
 async function sendOpsAlertPreview(job, runtime) {
     const channels = getConfiguredPreviewChannels(runtime);
     const validationError = validatePreviewRuntime(runtime, channels);
@@ -271,13 +309,47 @@ async function sendOpsAlertPreview(job, runtime) {
     }
 
     const failed = deliveries.filter((item) => item.ok !== true);
+    const hasUncertainReceipt = deliveries.some((item) => item.receipt_uncertain === true);
     return {
         ok: failed.length === 0,
+        partial: deliveries.some((item) => item.partial === true) || hasUncertainReceipt,
+        receipt_uncertain: hasUncertainReceipt,
         channels,
         deliveries,
         message: failed.length
             ? failed.map((item) => extractDeliveryFailureMessage(item.channel, item)).join(' | ')
             : ''
+    };
+}
+
+function normalizePreviewSite(value) {
+    const normalized = normalizeAdminSite(value, { defaultValue: 'cn' }) || 'cn';
+    return normalized === 'intl' ? 'intl' : 'cn';
+}
+
+function requirePreviewSite(value) {
+    const normalized = normalizeAdminSite(value, { defaultValue: '' });
+    if (normalized === 'cn' || normalized === 'intl') {
+        return normalized;
+    }
+
+    const error = new Error('发送站外告警联调测试前，请先选择 CN 或 EN 站点');
+    error.statusCode = 400;
+    throw error;
+}
+
+function withPreviewJobSite(job = {}, site = 'cn') {
+    const normalizedSite = normalizePreviewSite(site);
+    const payload = normalizeJsonObject(job?.payload);
+
+    return {
+        ...job,
+        site: normalizedSite,
+        site_context: normalizedSite,
+        payload: {
+            ...payload,
+            site: normalizedSite
+        }
     };
 }
 
@@ -1121,14 +1193,15 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_payment_config_incident_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_recovered'
             ) {
-                const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: requestSite });
+                const previewSite = requirePreviewSite(body.site || req.adminSite);
+                const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: previewSite });
                 const runtime = {
                     config: normalizeOpsAlertsConfig(body.config),
                     secrets: mergeRuntimeSecrets(storedRuntime?.secrets, body.secrets)
                 };
 
                 const normalizedAction = sanitizeText(body.action);
-                const job = normalizedAction === 'send_sample_refund_telegram'
+                const rawJob = normalizedAction === 'send_sample_refund_telegram'
                     ? buildTelegramRefundSampleJob(user)
                     : normalizedAction === 'send_sample_customer_chat_message'
                         ? buildCustomerChatMessageSampleJob(user)
@@ -1179,6 +1252,7 @@ module.exports = async (req, res) => {
                                             : normalizedAction === 'send_sample_payment_config_recovered'
                                                 ? buildPaymentConfigRecoveredSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
+                const job = withPreviewJobSite(rawJob, previewSite);
                 const result = await sendOpsAlertPreview(job, runtime);
 
                 await writeAdminAuditLog({
@@ -1236,74 +1310,31 @@ module.exports = async (req, res) => {
                                                     ? 'admin.ops_alerts.payment_config_recovered_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
-                        site: requestSite,
+                        site: previewSite,
+                        preview_site: previewSite,
+                        job_site: job.site || null,
+                        payload_site: job.payload?.site || null,
                         ok: result?.ok === true,
+                        partial: result?.partial === true,
                         channels: result?.channels || [],
                         delivery_count: Array.isArray(result?.deliveries) ? result.deliveries.length : 0
                     }
                 });
 
-                if (!result?.ok) {
+                if (!result?.ok && result?.partial !== true) {
                     return sendJson(res, 502, {
                         success: false,
                         message: `站外测试消息发送失败：${result.message || '未知错误'}`
                     });
                 }
 
-                const channelLabels = formatPreviewChannelLabels(result.channels);
                 return sendJson(res, 200, {
                     success: true,
-                    message: normalizedAction === 'send_sample_refund_telegram'
-                        ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
-                        : normalizedAction === 'send_sample_customer_chat_message'
-                            ? `客服消息示例已发送到 ${channelLabels || '已启用通道'}`
-                        : normalizedAction === 'send_sample_shop_purchase_succeeded'
-                            ? `购买成功示例消息已发送到 ${channelLabels || '已启用通道'}`
-                        : normalizedAction === 'send_sample_wallet_recharge_succeeded'
-                            ? `充值成功示例消息已发送到 ${channelLabels || '已启用通道'}`
-                        : normalizedAction === 'send_sample_gateway_degraded'
-                            ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
-                        : normalizedAction === 'send_sample_gateway_recovered'
-                            ? `支付通道恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                        : normalizedAction === 'send_sample_verify_service_disabled'
-                                ? `验证服务停摆示例消息已发送到 ${channelLabels || '已启用通道'}`
-                            : normalizedAction === 'send_sample_verify_queue_backlog'
-                                ? `验证任务堆积示例消息已发送到 ${channelLabels || '已启用通道'}`
-                            : normalizedAction === 'send_sample_verify_failure_rate_spike'
-                            ? `验证失败率异常示例消息已发送到 ${channelLabels || '已启用通道'}`
-                            : normalizedAction === 'send_sample_verify_incident_escalated'
-                                ? `验证综合异常示例消息已发送到 ${channelLabels || '已启用通道'}`
-                            : normalizedAction === 'send_sample_verify_incident_recovered'
-                                ? `验证恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                            : normalizedAction === 'send_sample_verify_quota_low'
-                                ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                : normalizedAction === 'send_sample_ticket_sla_overdue'
-                                    ? `工单超时示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                    : normalizedAction === 'send_sample_ticket_sla_recovered'
-                                        ? `工单恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                    : normalizedAction === 'send_sample_shop_inventory_low'
-                                        ? `库存预警示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                        : normalizedAction === 'send_sample_shop_inventory_recovered'
-                                            ? `库存恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                        : normalizedAction === 'send_sample_admin_login_anomaly'
-                                            ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                            : normalizedAction === 'send_sample_shop_order_delivery_failed'
-                                                ? `履约失败示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_shop_order_delivery_incident'
-                                                    ? `履约异常升级示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_shop_order_delivery_incident_recovered'
-                                                    ? `履约事故恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_shop_order_delivery_recovered'
-                                                    ? `履约恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_payment_config_changed'
-                                                    ? `支付配置变更示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_payment_config_incident'
-                                                    ? `支付配置异常升级示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_payment_config_incident_recovered'
-                                                    ? `支付配置事故恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                                                : normalizedAction === 'send_sample_payment_config_recovered'
-                                                    ? `支付配置恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
-                        : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
+                    partial: result?.partial === true,
+                    site: previewSite,
+                    preview_site: previewSite,
+                    delivery_message: result.message || '',
+                    message: buildPreviewSuccessMessage(normalizedAction, result.channels, result)
                 });
             }
 
