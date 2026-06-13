@@ -75,9 +75,19 @@ test('public shop catalog normalizes marketing pricing for the requested site', 
         'public catalog should expose normalized marketing fields to the storefront'
     );
     assert.match(
+        handlerSource,
+        /const inventorySkus = rawSkus[\s\S]*const skus = inventorySkus[\s\S]*inventory_skus: inventorySkus,[\s\S]*skus/,
+        'public catalog should keep all active inventory SKUs while exposing only current-site purchasable SKUs'
+    );
+    assert.match(
         shopSource,
         /getProductSiteScopedMarketingValue: function[\s\S]*Object\.prototype\.hasOwnProperty\.call\(product, intlField\)[\s\S]*return product\[intlField\]/,
         'direct storefront fallback should use the same site-scoped marketing fallback rule'
+    );
+    assert.match(
+        shopSource,
+        /normalizeProductMarketingForCurrentSite: function[\s\S]*const inventorySkus = rawInventorySkus[\s\S]*inventory_skus: inventorySkus,[\s\S]*skus/,
+        'storefront direct normalization should keep inventory SKUs available for aggregate stock math'
     );
     assert.match(
         mutateSource,
@@ -327,13 +337,13 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         mutateSource,
-        /inventory_sku_id: inventorySkuId \|\| null[\s\S]*quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
-        'admin mutation should persist SKU inventory source and tier rules'
+        /inventorySourceSkuIds = normalizeInventorySourceSkuIds[\s\S]*inventory_sku_id: getCompatibilityInventorySkuId\(inventorySourceSkuIds, id\)[\s\S]*inventory_source_sku_ids: inventorySourceSkuIds[\s\S]*quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
+        'admin mutation should persist prioritized SKU inventory sources and tier rules'
     );
     assert.match(
         publicHandlerSource,
-        /selectAttempts = \[[\s\S]*inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl[\s\S]*spec_values, manual_delivery, price_points/,
-        'public catalog should include SKU shared inventory, manual delivery, and tier pricing columns'
+        /selectAttempts = \[[\s\S]*inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl[\s\S]*spec_values, inventory_sku_id, manual_delivery, price_points[\s\S]*spec_values, manual_delivery, price_points/,
+        'public catalog should include SKU prioritized inventory sources, manual delivery, and tier pricing columns'
     );
     assert.match(
         migrationSource,

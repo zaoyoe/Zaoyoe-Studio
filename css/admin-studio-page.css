@@ -28181,6 +28181,35 @@ html:not([data-theme="dark"]) #productModal .shop-sku-inventory-link__swatch {
     box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.12) !important;
 }
 
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-head,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-head {
+    color: rgba(51, 65, 85, 0.8) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-head small,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-head small {
+    color: rgba(100, 116, 139, 0.84) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source-empty,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source-empty {
+    background: rgba(248, 250, 252, 0.96) !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+    color: rgba(71, 85, 105, 0.82) !important;
+}
+
+html[data-theme="light"] #productModal .shop-sku-inventory-source-chip,
+html:not([data-theme="dark"]) #productModal .shop-sku-inventory-source-chip {
+    background: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 11%, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 34%, rgba(148, 163, 184, 0.24)) !important;
+    color: rgba(51, 65, 85, 0.9) !important;
+}
+
+html[data-theme="light"] #productModal .shop-sku-inventory-source-chip__remove:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #productModal .shop-sku-inventory-source-chip__remove:is(:hover, :focus-visible) {
+    background: rgba(15, 23, 42, 0.08) !important;
+}
+
 html[data-theme="light"] #productModal .shop-product-sku-editor__loading,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__loading {
     background: rgba(248, 250, 252, 0.92) !important;
@@ -28193,6 +28222,8 @@ html[data-theme="light"] #productModal .shop-product-sku-row__tier-toggle,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__tier-toggle,
 html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-add,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-add,
 html[data-theme="light"] #productModal .shop-product-sku-row__toggle,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle {
     background: rgba(248, 250, 252, 0.96) !important;
@@ -28202,7 +28233,9 @@ html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle {
 }
 
 html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger,
-html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger {
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__trigger {
     min-height: 36px !important;
     padding: 0 10px !important;
     border-radius: 8px !important;
@@ -28217,14 +28250,20 @@ html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-sou
 html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
 html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
-html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible) {
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible) {
     background: #ffffff !important;
     border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.34) !important;
     color: var(--admin-studio-product-modal-text, #0f172a) !important;
 }
 
 html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__menu,
-html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__menu {
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__menu,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__menu,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__menu {
     padding: 6px !important;
     border-radius: 10px !important;
     background: rgba(255, 255, 255, 0.98) !important;
@@ -28233,7 +28272,9 @@ html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-sou
 }
 
 html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option,
-html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option {
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__option,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-fallback-add.shop-custom-select .shop-custom-select__option {
     min-height: 34px !important;
     padding: 8px 10px !important;
     border-radius: 8px !important;

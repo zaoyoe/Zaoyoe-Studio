@@ -1170,13 +1170,8 @@ Example output format:
         return (Array.isArray(skus) ? skus : [])
             .filter((sku) => sku && typeof sku === 'object')
             .filter((sku) => !this.isAdminRemovedProductSku(sku))
-            .map((sku) => ({
-                ...sku,
-                id: String(sku.id || '').trim(),
-                product_id: String(sku.product_id || sku.productId || '').trim(),
-                sku_name: String(sku.sku_name || sku.skuName || sku.name || '默认规格').trim() || '默认规格',
-                sku_code: String(sku.sku_code || sku.skuCode || '').trim(),
-                inventory_sku_id: String(
+            .map((sku) => {
+                const fallbackInventorySourceId = String(
                     sku.inventory_sku_id
                     || sku.inventorySkuId
                     || sku.inventory_source_sku_id
@@ -1184,18 +1179,93 @@ Example output format:
                     || sku.stock_sku_id
                     || sku.stockSkuId
                     || ''
-                ).trim(),
-                manual_delivery: this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false),
-                is_default: sku.is_default === true,
-                is_active: sku.is_active !== false,
-                stock_count: Number(sku.stock_count || 0) || 0,
-                sort_order: Number(sku.sort_order || 0) || 0
-            }))
+                ).trim();
+                const inventorySourceSkuIds = this.normalizeSkuInventorySourceIds(
+                    sku.inventory_source_sku_ids
+                    ?? sku.inventorySourceSkuIds
+                    ?? sku.inventory_sources
+                    ?? sku.inventorySources,
+                    fallbackInventorySourceId ? [fallbackInventorySourceId] : []
+                );
+
+                const currentSkuId = String(sku.id || '').trim();
+                const compatibilityInventorySourceId = inventorySourceSkuIds
+                    .find((sourceId) => sourceId && sourceId !== currentSkuId) || '';
+
+                return {
+                    ...sku,
+                    id: currentSkuId,
+                    product_id: String(sku.product_id || sku.productId || '').trim(),
+                    sku_name: String(sku.sku_name || sku.skuName || sku.name || '默认规格').trim() || '默认规格',
+                    sku_code: String(sku.sku_code || sku.skuCode || '').trim(),
+                    inventory_sku_id: compatibilityInventorySourceId,
+                    inventory_source_sku_ids: inventorySourceSkuIds,
+                    manual_delivery: this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false),
+                    is_default: sku.is_default === true,
+                    is_active: sku.is_active !== false,
+                    stock_count: Number(sku.stock_count || 0) || 0,
+                    sort_order: Number(sku.sort_order || 0) || 0
+                };
+            })
             .filter((sku) => sku.id)
             .sort((left, right) => {
                 if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
                 return left.sort_order - right.sort_order || left.sku_name.localeCompare(right.sku_name, 'zh-CN');
             });
+    },
+
+    normalizeSkuInventorySourceIds: function (value = [], fallback = []) {
+        const rawEntries = Array.isArray(value)
+            ? value
+            : (typeof value === 'string'
+                ? value.split(/[,\n]/)
+                : []);
+        const fallbackEntries = Array.isArray(fallback) ? fallback : [];
+        const seen = new Set();
+        return [...rawEntries, ...fallbackEntries]
+            .map((item) => String(
+                item && typeof item === 'object' && !Array.isArray(item)
+                    ? (item.id || item.sku_id || item.skuId || item.inventory_sku_id || item.inventorySkuId || '')
+                    : item
+            ).trim())
+            .filter((id) => {
+                if (!id || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            });
+    },
+
+    serializeSkuInventorySourceIds: function (sourceIds = []) {
+        return this.normalizeSkuInventorySourceIds(sourceIds).join(',');
+    },
+
+    parseSkuInventorySourceIdsInputValue: function (value = '') {
+        return this.normalizeSkuInventorySourceIds(String(value || '').split(','));
+    },
+
+    createClientUuid: function () {
+        const cryptoApi = globalThis.crypto || globalThis.msCrypto || null;
+        if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+            return cryptoApi.randomUUID();
+        }
+
+        const bytes = new Uint8Array(16);
+        if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+            cryptoApi.getRandomValues(bytes);
+        } else {
+            for (let index = 0; index < bytes.length; index += 1) {
+                bytes[index] = Math.floor(Math.random() * 256);
+            }
+        }
+
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0'));
+        return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
+    },
+
+    createClientProductSkuId: function () {
+        return this.createClientUuid();
     },
 
     isAdminRemovedProductSku: function (sku = {}) {
@@ -1250,42 +1320,65 @@ Example output format:
     getSkuInventoryPoolMeta: function (sku = {}, allSkus = []) {
         const safeSkus = this.normalizeProductSkus(allSkus);
         const currentId = String(sku?.id || '').trim();
-        const sourceId = String(sku?.inventory_sku_id || '').trim() || currentId;
+        const sourceIds = this.getSkuOrderedInventorySourceIds(sku);
+        const primarySourceId = this.getSkuPrimaryInventorySourceId(sku);
+        const sourceId = primarySourceId || currentId;
+        const sourceSkus = sourceIds
+            .map((id) => safeSkus.find((entry) => entry.id === id))
+            .filter(Boolean);
         const sourceSku = sourceId
             ? (safeSkus.find((entry) => entry.id === sourceId) || (sourceId === currentId ? sku : null))
             : null;
         const members = sourceId
-            ? safeSkus.filter((entry) => (String(entry.inventory_sku_id || '').trim() || entry.id) === sourceId)
+            ? safeSkus.filter((entry) => {
+                if (entry.id === sourceId) return true;
+                const entrySourceIds = this.getSkuOrderedInventorySourceIds(entry);
+                return entrySourceIds.includes(sourceId);
+            })
             : [];
         const memberCount = Math.max(members.length, sourceId ? 1 : 0);
-        const isSharedAlias = Boolean(currentId && String(sku?.inventory_sku_id || '').trim());
+        const isSharedAlias = this.isSkuExternalInventoryAlias(sku);
         const isPoolSource = Boolean(currentId && sourceId === currentId && memberCount > 1);
         const sourceLabel = sourceSku
             ? this.getSkuDisplayName(sourceSku)
             : '被关联规格';
+        const sourceLabels = sourceSkus.map((entry) => this.getSkuDisplayName(entry));
 
         return {
             poolId: sourceId,
             color: this.getSkuInventoryPoolColor(sourceId || currentId || sourceLabel),
             tone: this.getSkuInventoryPoolTone(sourceId || currentId || sourceLabel),
             sourceId,
+            sourceIds,
             sourceSku,
+            sourceSkus,
             sourceLabel,
+            sourceLabels,
             memberCount,
             isSharedAlias,
             isPoolSource,
-            isLinked: isSharedAlias || isPoolSource
+            hasFallbackSources: this.getSkuFallbackInventorySourceIds(sku).length > 0,
+            isLinked: isSharedAlias || isPoolSource || this.getSkuFallbackInventorySourceIds(sku).length > 0
         };
     },
 
     getSkuInventoryRelationText: function (meta = {}, context = 'editor') {
         if (meta.isSharedAlias) {
+            if (Array.isArray(meta.sourceLabels) && meta.sourceLabels.length > 1) {
+                const label = meta.sourceLabels.join(' → ');
+                return context === 'import'
+                    ? `按顺序调用 ${label}，请上传到来源规格`
+                    : `库存调用：${label}`;
+            }
             return context === 'import'
                 ? `共用 ${meta.sourceLabel}，请上传到被关联的规格`
                 : `共用库存：${meta.sourceLabel}`;
         }
+        if (meta.hasFallbackSources && Array.isArray(meta.sourceLabels) && meta.sourceLabels.length > 1) {
+            return `库存调用：${meta.sourceLabels.join(' → ')}`;
+        }
         if (meta.isPoolSource) {
-            return `库存源 · ${meta.memberCount} 个规格共用`;
+            return `库存源 · ${meta.memberCount} 个规格可调用`;
         }
         return '本规格库存';
     },
@@ -1307,17 +1400,35 @@ Example output format:
 
         const skus = this.getCachedProductSkus(normalizedProductId);
         const sku = skus.find((entry) => entry.id === normalizedSkuId);
-        if (!sku || !String(sku.inventory_sku_id || '').trim()) {
+        if (!sku || !this.isSkuExternalInventoryAlias(sku)) {
             return null;
         }
+        const sourceIds = this.getSkuOrderedInventorySourceIds(sku);
 
         const meta = this.getSkuInventoryPoolMeta(sku, skus);
         return {
             sku,
             sourceSku: meta.sourceSku,
+            sourceSkus: meta.sourceSkus,
             sourceLabel: meta.sourceLabel || '被关联的规格',
-            message: `该规格共用其他规格库存，请上传到被关联的规格：${meta.sourceLabel || '库存源规格'}`
+            sourceLabels: meta.sourceLabels,
+            message: sourceIds.length > 1
+                ? `该规格会按顺序调用库存，请上传到来源规格：${(meta.sourceLabels || []).join('、') || '库存源规格'}`
+                : `该规格共用其他规格库存，请上传到被关联的规格：${meta.sourceLabel || '库存源规格'}`
         };
+    },
+
+    buildSkuInventorySourceListNote: function (sku = {}, skus = []) {
+        const sourceIds = this.getSkuOrderedInventorySourceIds(sku);
+        if (!this.isSkuExternalInventoryAlias(sku)) {
+            return '可上传到本规格';
+        }
+        const safeSkus = this.normalizeProductSkus(skus);
+        const labels = sourceIds.map((sourceId) => {
+            const sourceSku = safeSkus.find((entry) => entry.id === sourceId);
+            return sourceSku ? this.getSkuDisplayName(sourceSku) : '已失效来源';
+        });
+        return `按顺序调用 ${labels.join(' → ')}，请上传到来源规格`;
     },
 
     formatSkuTierRulesInputValue: function (rules = []) {
@@ -1444,6 +1555,75 @@ Example output format:
         return `${name}${code ? ` / ${code}` : ''}`;
     },
 
+    getSkuStoredInventorySourceIds: function (sku = {}) {
+        return this.normalizeSkuInventorySourceIds(
+            sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+            String(sku?.inventory_sku_id || sku?.inventorySkuId || '').trim()
+                ? [sku?.inventory_sku_id || sku?.inventorySkuId]
+                : []
+        );
+    },
+
+    getSkuPrimaryInventorySourceId: function (sku = {}) {
+        const currentId = String(sku?.id || '').trim();
+        const sourceIds = this.getSkuStoredInventorySourceIds(sku);
+        const primarySourceId = sourceIds[0] || '';
+        return primarySourceId && primarySourceId !== currentId ? primarySourceId : '';
+    },
+
+    getSkuFallbackInventorySourceIds: function (sku = {}) {
+        const currentId = String(sku?.id || '').trim();
+        const sourceIds = this.getSkuStoredInventorySourceIds(sku);
+        if (!sourceIds.length) return [];
+
+        return this.normalizeSkuInventorySourceIds(sourceIds.slice(1))
+            .filter((sourceId) => sourceId !== currentId);
+    },
+
+    getSkuOrderedInventorySourceIds: function (sku = {}) {
+        const currentId = String(sku?.id || '').trim();
+        const sourceIds = this.getSkuStoredInventorySourceIds(sku);
+        if (!currentId) {
+            return sourceIds;
+        }
+        if (!sourceIds.length) {
+            return [currentId];
+        }
+        if (sourceIds[0] === currentId) {
+            return this.normalizeSkuInventorySourceIds([currentId, ...sourceIds.slice(1)]);
+        }
+        return sourceIds;
+    },
+
+    getSkuPersistedInventorySourceIds: function (sku = {}) {
+        const currentId = String(sku?.id || '').trim();
+        const primarySourceId = this.getSkuPrimaryInventorySourceId(sku);
+        const fallbackIds = this.getSkuFallbackInventorySourceIds(sku);
+
+        if (primarySourceId) {
+            return this.normalizeSkuInventorySourceIds([primarySourceId, ...fallbackIds]);
+        }
+        if (currentId && fallbackIds.length) {
+            return this.normalizeSkuInventorySourceIds([currentId, ...fallbackIds]);
+        }
+        return [];
+    },
+
+    getSkuCompatibilityInventorySourceId: function (sku = {}) {
+        const currentId = String(sku?.id || '').trim();
+        return this.getSkuPersistedInventorySourceIds(sku)
+            .find((sourceId) => sourceId && sourceId !== currentId) || '';
+    },
+
+    isSkuExternalInventoryAlias: function (sku = {}) {
+        return Boolean(String(sku?.id || '').trim() && this.getSkuPrimaryInventorySourceId(sku));
+    },
+
+    isSkuStandaloneInventorySource: function (sku = {}) {
+        return !this.isSkuExternalInventoryAlias(sku)
+            && this.getSkuFallbackInventorySourceIds(sku).length === 0;
+    },
+
     getProductSkuRowSnapshot: function (row) {
         if (!row) return null;
         const read = (field) => row.querySelector(`[data-product-sku-field="${field}"]`);
@@ -1468,7 +1648,7 @@ Example output format:
     createDefaultProductSkuDraft: function (product = {}) {
         const skuFields = this.getSkuSiteFieldMap();
         return {
-            id: '',
+            id: this.createClientProductSkuId(),
             sku_name: String(product?.sku_name || product?.name || '默认规格').trim() || '默认规格',
             sku_code: String(product?.sku_code || 'default').trim() || 'default',
             price_points: product?.price_points ?? '',
@@ -1478,6 +1658,7 @@ Example output format:
             [skuFields.price]: product?.[skuFields.price] ?? '',
             [skuFields.quantityRules]: product?.[skuFields.quantityRules] ?? null,
             inventory_sku_id: '',
+            inventory_source_sku_ids: [],
             manual_delivery: this.normalizeSkuManualDeliveryFlag(product?.manual_delivery ?? product?.manualDelivery, false),
             is_default: true,
             is_active: true,
@@ -1487,11 +1668,11 @@ Example output format:
 
     buildProductSkuInventorySourceOptions: function (sku = {}, allSkus = []) {
         const currentSkuId = String(sku?.id || '').trim();
-        const selectedSourceId = String(sku?.inventory_sku_id || '').trim();
+        const selectedSourceId = this.getSkuPrimaryInventorySourceId(sku);
         const safeSkus = this.normalizeProductSkus(allSkus)
             .filter((entry) => entry.id && entry.id !== currentSkuId)
             .filter((entry) => entry.is_active !== false)
-            .filter((entry) => !String(entry.inventory_sku_id || '').trim());
+            .filter((entry) => this.isSkuStandaloneInventorySource(entry));
         const hasSelectedSource = selectedSourceId && safeSkus.some((entry) => entry.id === selectedSourceId);
 
         if (selectedSourceId && !hasSelectedSource && selectedSourceId !== currentSkuId) {
@@ -1518,6 +1699,138 @@ Example output format:
         ].join('');
     },
 
+    buildProductSkuInventoryFallbackOptions: function (sku = {}, allSkus = []) {
+        const currentSkuId = String(sku?.id || '').trim();
+        const selectedSourceIds = this.getSkuOrderedInventorySourceIds(sku);
+        const selectedSet = new Set(selectedSourceIds);
+        const candidates = this.normalizeProductSkus(allSkus)
+            .filter((entry) => entry.id && entry.id !== currentSkuId)
+            .filter((entry) => entry.is_active !== false)
+            .filter((entry) => !selectedSet.has(entry.id))
+            .filter((entry) => this.isSkuStandaloneInventorySource(entry));
+
+        return [
+            `<option value="">添加备选库存</option>`,
+            ...candidates.map((entry) => {
+                const poolMeta = this.getSkuInventoryPoolMeta(entry, allSkus);
+                const note = this.getSkuInventoryRelationText(poolMeta);
+                return `
+                <option value="${this.escapeForAttr(entry.id)}"
+                    data-shop-custom-select-pool-tone="${this.escapeForAttr(String(poolMeta.tone || 0))}"
+                    data-shop-custom-select-note="${this.escapeForAttr(note)}"
+                    data-shop-custom-select-tone="${poolMeta.isPoolSource ? 'source' : 'standalone'}">
+                    ${this.escapeHtml(this.buildSkuOptionLabel(entry))}
+                </option>
+            `;
+            })
+        ].join('');
+    },
+
+    buildProductSkuInventoryFallbackMarkup: function (sku = {}, allSkus = []) {
+        const sourceIds = this.getSkuOrderedInventorySourceIds(sku);
+        const fallbackIds = this.getSkuFallbackInventorySourceIds(sku);
+        const currentSkuId = String(sku?.id || '').trim();
+        const safeSkus = this.normalizeProductSkus(allSkus);
+        const chips = sourceIds.map((sourceId, index) => {
+            const isLocalSource = currentSkuId && sourceId === currentSkuId;
+            const sourceSku = isLocalSource
+                ? (safeSkus.find((entry) => entry.id === currentSkuId) || sku)
+                : safeSkus.find((entry) => entry.id === sourceId);
+            const label = isLocalSource ? '本规格库存' : (sourceSku ? this.getSkuDisplayName(sourceSku) : '已失效来源');
+            const tone = this.getSkuInventoryPoolTone(sourceId || label);
+            const canRemove = index > 0;
+            return `
+                <span class="shop-sku-inventory-source-chip" data-shop-sku-inventory-tone="${this.escapeForAttr(String(tone || 0))}">
+                    <span class="shop-sku-inventory-source-chip__rank">${index + 1}</span>
+                    <span class="shop-sku-inventory-source-chip__label">${this.escapeHtml(label)}</span>
+                    ${canRemove ? `<button type="button" class="shop-sku-inventory-source-chip__remove" data-shop-action="product-remove-sku-inventory-source" data-source-sku-id="${this.escapeForAttr(sourceId)}" title="移除此库存来源">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>` : ''}
+                </span>
+            `;
+        }).join('');
+
+        return `
+            <input type="hidden" data-product-sku-field="inventory_source_sku_ids" value="${this.escapeForAttr(this.serializeSkuInventorySourceIds(fallbackIds))}">
+            <div class="shop-product-sku-row__inventory-fallback-head">
+                <span>库存调用顺序</span>
+                <small>${sourceIds.length > 1 ? '首选用完后自动尝试后续来源' : '默认使用本规格库存'}</small>
+            </div>
+            <div class="shop-product-sku-row__inventory-source-chips" data-product-sku-inventory-source-chips>
+                ${chips || '<span class="shop-product-sku-row__inventory-source-empty">本规格库存</span>'}
+            </div>
+            <select class="modern-input shop-product-sku-row__inventory-fallback-add" data-shop-change="product-sku-inventory-fallback-add" data-shop-custom-select="true" aria-label="添加备选库存来源" title="添加备选库存来源">
+                ${this.buildProductSkuInventoryFallbackOptions(sku, allSkus)}
+            </select>
+        `;
+    },
+
+    getProductSkuInventorySourceIdsFromRow: function (row) {
+        if (!(row instanceof Element)) return [];
+        const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
+        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        const primary = row.querySelector('[data-product-sku-field="inventory_sku_id"]');
+        const primaryId = String(primary?.value || '').trim();
+        const fallbackIds = this.parseSkuInventorySourceIdsInputValue(hidden?.value || '')
+            .filter((sourceId) => sourceId !== currentSkuId && sourceId !== primaryId);
+
+        if (primaryId) {
+            return this.normalizeSkuInventorySourceIds([primaryId, ...fallbackIds]);
+        }
+        if (currentSkuId && fallbackIds.length) {
+            return this.normalizeSkuInventorySourceIds([currentSkuId, ...fallbackIds]);
+        }
+        return [];
+    },
+
+    getProductSkuFallbackInventorySourceIdsFromRow: function (row) {
+        if (!(row instanceof Element)) return [];
+        const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
+        const primaryId = String(row.querySelector('[data-product-sku-field="inventory_sku_id"]')?.value || '').trim();
+        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        return this.parseSkuInventorySourceIdsInputValue(hidden?.value || '')
+            .filter((sourceId) => sourceId !== currentSkuId && sourceId !== primaryId);
+    },
+
+    setProductSkuInventoryFallbackIdsForRow: function (row, fallbackIds = []) {
+        if (!(row instanceof Element)) return;
+        const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
+        const primaryId = String(row.querySelector('[data-product-sku-field="inventory_sku_id"]')?.value || '').trim();
+        const normalizedFallbackIds = this.normalizeSkuInventorySourceIds(fallbackIds)
+            .filter((sourceId) => sourceId !== currentSkuId && sourceId !== primaryId);
+        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        if (hidden) {
+            hidden.value = this.serializeSkuInventorySourceIds(normalizedFallbackIds);
+        }
+    },
+
+    setProductSkuInventorySourceIdsForRow: function (row, sourceIds = []) {
+        if (!(row instanceof Element)) return;
+        const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
+        const normalizedIds = this.normalizeSkuInventorySourceIds(sourceIds);
+        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        const primary = row.querySelector('[data-product-sku-field="inventory_sku_id"]');
+        const primaryId = normalizedIds[0] && normalizedIds[0] !== currentSkuId
+            ? normalizedIds[0]
+            : '';
+        const fallbackIds = normalizedIds.slice(primaryId ? 1 : (normalizedIds[0] === currentSkuId ? 1 : 0));
+        if (hidden) {
+            hidden.value = this.serializeSkuInventorySourceIds(fallbackIds);
+        }
+        if (primary instanceof HTMLSelectElement) {
+            primary.value = primaryId;
+            this.syncShopCustomSelect(primary);
+        }
+        this.setProductSkuInventoryFallbackIdsForRow(row, fallbackIds);
+    },
+
+    renderProductSkuInventoryFallbacksForRow: function (row, sku = {}, allSkus = []) {
+        const fallbackContainer = row?.querySelector?.('[data-product-sku-inventory-fallbacks]');
+        if (!(fallbackContainer instanceof HTMLElement)) return;
+        fallbackContainer.innerHTML = this.buildProductSkuInventoryFallbackMarkup(sku, allSkus);
+        this.enhanceShopCustomSelects(fallbackContainer);
+    },
+
     collectProductSkuInventorySourceRows: function () {
         const rows = [...document.querySelectorAll('#productSkuEditorRows [data-product-sku-row]')];
         return rows.map((row, index) => {
@@ -1526,7 +1839,11 @@ Example output format:
                 id: String(read('id')?.value || '').trim(),
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
-                inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim(),
+                inventory_sku_id: this.getSkuCompatibilityInventorySourceId({
+                    id: String(read('id')?.value || '').trim(),
+                    inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row)
+                }),
+                inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row),
                 manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
@@ -1545,18 +1862,31 @@ Example output format:
             const select = read('inventory_sku_id');
             if (!(select instanceof HTMLSelectElement)) return;
 
-            const previousValue = String(select.value || '').trim();
+            const currentSkuId = String(read('id')?.value || '').trim();
+            const previousSourceIds = this.getProductSkuInventorySourceIdsFromRow(row);
+            const previousPrimaryId = String(select.value || '').trim();
             const validSourceIds = new Set(allSkus
-                .filter((entry) => entry.id && entry.id !== String(read('id')?.value || '').trim())
+                .filter((entry) => entry.id && entry.id !== currentSkuId)
                 .filter((entry) => entry.is_active !== false)
-                .filter((entry) => !String(entry.inventory_sku_id || '').trim())
+                .filter((entry) => this.isSkuStandaloneInventorySource(entry))
                 .map((entry) => entry.id));
-            const nextValue = previousValue && validSourceIds.has(previousValue) ? previousValue : '';
+            const nextPrimaryId = previousPrimaryId && validSourceIds.has(previousPrimaryId)
+                ? previousPrimaryId
+                : '';
+            const nextFallbackIds = previousSourceIds
+                .filter((sourceId) => sourceId !== currentSkuId && sourceId !== nextPrimaryId)
+                .filter((sourceId) => validSourceIds.has(sourceId));
+            const nextSourceIds = nextPrimaryId
+                ? this.normalizeSkuInventorySourceIds([nextPrimaryId, ...nextFallbackIds])
+                : (currentSkuId && nextFallbackIds.length
+                    ? this.normalizeSkuInventorySourceIds([currentSkuId, ...nextFallbackIds])
+                    : []);
             const sku = {
-                id: String(read('id')?.value || '').trim(),
+                id: currentSkuId,
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
-                inventory_sku_id: nextValue,
+                inventory_sku_id: nextPrimaryId,
+                inventory_source_sku_ids: nextSourceIds,
                 manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
@@ -1564,7 +1894,9 @@ Example output format:
             };
 
             select.innerHTML = this.buildProductSkuInventorySourceOptions(sku, allSkus);
-            select.value = nextValue;
+            select.value = nextPrimaryId;
+            this.setProductSkuInventorySourceIdsForRow(row, nextSourceIds);
+            this.renderProductSkuInventoryFallbacksForRow(row, sku, allSkus);
             this.syncShopCustomSelect(select);
         });
         this.syncProductSkuInventoryRelationBadges();
@@ -1581,7 +1913,11 @@ Example output format:
                 id: String(read('id')?.value || '').trim(),
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
-                inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim(),
+                inventory_sku_id: this.getSkuCompatibilityInventorySourceId({
+                    id: String(read('id')?.value || '').trim(),
+                    inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row)
+                }),
+                inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row),
                 manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
@@ -1691,6 +2027,7 @@ Example output format:
         const siteTierRulesValue = this.formatSkuTierRulesInputValue(sku?.[skuFields.quantityRules]);
         const siteTierRulesSummary = this.formatSkuTierRulesSummary(siteTierRulesValue);
         const inventorySourceOptions = this.buildProductSkuInventorySourceOptions(sku, allSkus);
+        const inventoryFallbackMarkup = this.buildProductSkuInventoryFallbackMarkup(sku, allSkus);
         const poolMeta = this.getSkuInventoryPoolMeta(sku, allSkus);
         const relationMarkup = this.buildSkuInventoryRelationBadge(poolMeta);
         const isManualDelivery = this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false);
@@ -1742,6 +2079,9 @@ Example output format:
                 <div class="shop-sku-inventory-link" data-product-sku-inventory-link ${poolMeta.isLinked ? '' : 'hidden'}>
                     ${relationMarkup}
                 </div>
+                <div class="shop-product-sku-row__inventory-fallbacks" data-product-sku-inventory-fallbacks>
+                    ${inventoryFallbackMarkup}
+                </div>
                 <div class="shop-product-sku-row__tier-panel" data-product-sku-tier-panel hidden>
                     <input type="text" class="modern-input shop-product-sku-row__tier" data-product-sku-site-field="quantity_rules" data-shop-input="product-sku-tier-input" value="${this.escapeForAttr(siteTierRulesValue)}" placeholder="${this.escapeForAttr(skuFields.quantityRulesPlaceholder)}">
                 </div>
@@ -1759,12 +2099,14 @@ Example output format:
         if (!container) return;
         const index = container.querySelectorAll('[data-product-sku-row]').length;
         const currentSkus = this.collectProductSkuInventorySourceRows();
+        const nextSkuId = this.createClientProductSkuId();
         const wrapper = document.createElement('div');
         wrapper.innerHTML = this.buildProductSkuEditorRow({
-            id: '',
+            id: nextSkuId,
             sku_name: '',
             sku_code: '',
             inventory_sku_id: '',
+            inventory_source_sku_ids: [],
             manual_delivery: document.getElementById('prodManualDelivery')?.value === 'true',
             is_default: index === 0,
             is_active: true,
@@ -1884,6 +2226,39 @@ Example output format:
         summary.textContent = this.formatSkuTierRulesSummary(input.value || '');
     },
 
+    addProductSkuInventoryFallbackSource: function (select) {
+        const row = select?.closest?.('[data-product-sku-row]');
+        const sourceId = String(select?.value || '').trim();
+        if (!(row instanceof Element) || !sourceId) {
+            if (select instanceof HTMLSelectElement) {
+                select.value = '';
+                this.syncShopCustomSelect(select);
+            }
+            return;
+        }
+
+        const fallbackIds = this.getProductSkuFallbackInventorySourceIdsFromRow(row);
+        const primaryId = String(row.querySelector('[data-product-sku-field="inventory_sku_id"]')?.value || '').trim();
+        const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
+        if (sourceId !== primaryId && sourceId !== currentSkuId && !fallbackIds.includes(sourceId)) {
+            this.setProductSkuInventoryFallbackIdsForRow(row, [...fallbackIds, sourceId]);
+            this.refreshProductSkuInventorySourceOptions();
+        }
+        select.value = '';
+        this.syncShopCustomSelect(select);
+    },
+
+    removeProductSkuInventorySource: function (button) {
+        const row = button?.closest?.('[data-product-sku-row]');
+        const sourceId = String(button?.dataset?.sourceSkuId || '').trim();
+        if (!(row instanceof Element) || !sourceId) return;
+
+        const nextFallbackIds = this.getProductSkuFallbackInventorySourceIdsFromRow(row)
+            .filter((id) => id !== sourceId);
+        this.setProductSkuInventoryFallbackIdsForRow(row, nextFallbackIds);
+        this.refreshProductSkuInventorySourceOptions();
+    },
+
     collectProductSkuEditorRows: function () {
         const rows = [...document.querySelectorAll('#productSkuEditorRows [data-product-sku-row]')];
         const drafts = rows.map((row, index) => {
@@ -1896,17 +2271,23 @@ Example output format:
             const pricePointsIntl = String(read('price_points_intl')?.value || '').trim() || null;
             const quantityRules = this.parseStoredSkuTierRulesInputValue(read('quantity_rules')?.value || '');
             const quantityRulesIntl = this.parseStoredSkuTierRulesInputValue(read('quantity_rules_intl')?.value || '');
+            const inventorySourceSkuIds = this.getProductSkuInventorySourceIdsFromRow(row);
             const parseTierRules = (field) => {
                 const rawValue = String(readSite(field)?.value || '').trim();
                 return rawValue ? this.parseSkuTierRulesInputValue(rawValue) : null;
             };
             const sitePrice = String(readSite('price')?.value || '').trim() || null;
             const siteQuantityRules = parseTierRules('quantity_rules');
+            const skuId = String(read('id')?.value || '').trim();
             return {
-                id: String(read('id')?.value || '').trim(),
+                id: skuId,
                 sku_name: name,
                 sku_code: code,
-                inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim() || null,
+                inventory_sku_id: this.getSkuCompatibilityInventorySourceId({
+                    id: skuId,
+                    inventory_source_sku_ids: inventorySourceSkuIds
+                }) || null,
+                inventory_source_sku_ids: inventorySourceSkuIds,
                 price_points: skuFields.price === 'price_points' ? sitePrice : pricePoints,
                 price_points_intl: skuFields.price === 'price_points_intl' ? sitePrice : pricePointsIntl,
                 quantity_rules: skuFields.quantityRules === 'quantity_rules' ? siteQuantityRules : quantityRules,
@@ -1939,7 +2320,7 @@ Example output format:
     renderSkuSelectOptions: function (select, skus = [], selectedSkuId = '') {
         if (!(select instanceof HTMLSelectElement)) return '';
         const safeSkus = this.normalizeProductSkus(skus).filter((sku) => sku.is_active !== false);
-        const uploadableSkus = safeSkus.filter((sku) => !String(sku.inventory_sku_id || '').trim());
+        const uploadableSkus = safeSkus.filter((sku) => !this.isSkuExternalInventoryAlias(sku));
         const fallbackSkuId = selectedSkuId && uploadableSkus.some((sku) => sku.id === selectedSkuId)
             ? selectedSkuId
             : (uploadableSkus.find((sku) => sku.is_default)?.id || uploadableSkus[0]?.id || '');
@@ -1948,7 +2329,9 @@ Example output format:
             ? safeSkus.map((sku) => {
                 const meta = this.getSkuInventoryPoolMeta(sku, safeSkus);
                 const disabled = meta.isSharedAlias;
-                const note = this.getSkuInventoryRelationText(meta, 'import');
+                const note = disabled
+                    ? this.buildSkuInventorySourceListNote(sku, safeSkus)
+                    : this.getSkuInventoryRelationText(meta, 'import');
                 return `
                 <option value="${this.escapeForAttr(sku.id)}"${sku.id === fallbackSkuId ? ' selected' : ''}${disabled ? ' disabled' : ''}
                     data-shop-custom-select-pool-tone="${this.escapeForAttr(String(meta.tone || 0))}"
@@ -3576,6 +3959,9 @@ Example output format:
                 case 'product-confirm-remove-sku-row':
                     this.confirmRemoveProductSkuEditorRow(actionEl);
                     break;
+                case 'product-remove-sku-inventory-source':
+                    this.removeProductSkuInventorySource(actionEl);
+                    break;
                 case 'product-toggle-sku-tier-editor':
                     this.toggleProductSkuTierEditor(actionEl);
                     break;
@@ -3819,7 +4205,21 @@ Example output format:
                 case 'inventory-selection-count':
                     this.updateSelectionCount();
                     break;
-                case 'product-sku-inventory-source':
+                case 'product-sku-inventory-source': {
+                    const row = actionEl.closest('[data-product-sku-row]');
+                    const primarySourceId = String(actionEl.value || '').trim();
+                    const currentSkuId = String(row?.querySelector?.('[data-product-sku-field="id"]')?.value || '').trim();
+                    const existingFallbacks = this.getProductSkuFallbackInventorySourceIdsFromRow(row)
+                        .filter((sourceId) => sourceId !== primarySourceId && sourceId !== currentSkuId);
+                    this.setProductSkuInventorySourceIdsForRow(row, primarySourceId
+                        ? [primarySourceId, ...existingFallbacks]
+                        : (currentSkuId && existingFallbacks.length ? [currentSkuId, ...existingFallbacks] : []));
+                    this.refreshProductSkuInventorySourceOptions();
+                    break;
+                }
+                case 'product-sku-inventory-fallback-add':
+                    this.addProductSkuInventoryFallbackSource(actionEl);
+                    break;
                 case 'product-sku-active':
                     this.refreshProductSkuInventorySourceOptions();
                     break;
@@ -7909,6 +8309,22 @@ Example output format:
             );
     },
 
+    isTransientShopSaveNetworkError: function (err) {
+        const message = `${err?.code || ''} ${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return Boolean(message)
+            && (
+                message.includes('shop_upstream_connect_timeout')
+                || message.includes('fetch failed')
+                || message.includes('und_err_connect_timeout')
+                || message.includes('connecttimeouterror')
+                || message.includes('connect timeout')
+                || message.includes('network request failed')
+                || message.includes('etimedout')
+                || message.includes('econnreset')
+                || message.includes('socket hang up')
+            );
+    },
+
     getFriendlySaveErrorMessage: function (err) {
         const rawErrorText = `${err?.code || ''} ${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
         if (
@@ -7919,6 +8335,10 @@ Example output format:
             return err?.message && err.message !== '管理员接口调用失败'
                 ? err.message
                 : '商品规格编码重复：同一个商品下每个规格的编码必须唯一，请修改重复编码后再保存。';
+        }
+
+        if (this.isTransientShopSaveNetworkError(err)) {
+            return '保存失败：连接 Supabase 超时，请稍后重试。若连续出现，请检查服务器到 Supabase 的网络连通性。';
         }
 
         if (this.isProductGuidanceBilingualSchemaError(err)) {
@@ -7951,7 +8371,7 @@ Example output format:
         }
 
         const details = [err?.message, err?.details, err?.hint].filter(Boolean).join(' | ');
-        return `Save failed: ${details}`;
+        return `保存失败：${details || '未知错误'}`;
     },
 
     validateProductPayloadViaAdminApi: async function ({ productId = '', payload = null, pendingCategory = null } = {}) {
@@ -9266,6 +9686,7 @@ Example output format:
         skuId = '',
         skuLabel = '默认规格',
         skuCode = '',
+        relationNote = '',
         stats = {},
         total = 0,
         items = [],
@@ -9335,7 +9756,7 @@ Example output format:
                         <i class="fas ${expanded ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>
                         <span>
                             <strong>当前规格库存</strong>
-                            <small>${this.escapeHtml(skuLabel)}${skuCode ? ` · ${this.escapeHtml(skuCode)}` : ''}</small>
+                            <small>${this.escapeHtml(skuLabel)}${skuCode ? ` · ${this.escapeHtml(skuCode)}` : ''}${relationNote ? ` · ${this.escapeHtml(relationNote)}` : ''}</small>
                         </span>
                     </span>
                 </button>
@@ -9441,6 +9862,8 @@ Example output format:
         }
 
         const { skuId, skuName, skuCode } = this.getImportViewSkuContext();
+        const cachedSku = this.getCachedProductSkus(productId).find((sku) => sku.id === skuId) || null;
+        const relationNote = cachedSku ? this.buildSkuInventorySourceListNote(cachedSku, this.getCachedProductSkus(productId)) : '';
         const page = Math.max(1, Number(this.importSkuInventoryPage || 1) || 1);
         const pageSize = Math.max(1, Number(this.importSkuInventoryPageSize || 5) || 5);
         const status = String(this.importSkuInventoryStatus || '').trim();
@@ -9453,6 +9876,7 @@ Example output format:
             skuId,
             skuLabel,
             skuCode,
+            relationNote,
             status,
             page,
             pageSize,
@@ -9490,6 +9914,7 @@ Example output format:
                 skuId,
                 skuLabel,
                 skuCode,
+                relationNote,
                 stats,
                 total,
                 items,

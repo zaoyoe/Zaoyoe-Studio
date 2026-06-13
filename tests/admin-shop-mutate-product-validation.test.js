@@ -32,6 +32,17 @@ function createMockResponse() {
     };
 }
 
+function createTransientSupabaseTimeoutError() {
+    const cause = Object.assign(
+        new Error('Connect Timeout Error (attempted addresses: 104.18.38.10:443, 172.64.149.246:443, timeout: 10000ms)'),
+        {
+            name: 'ConnectTimeoutError',
+            code: 'UND_ERR_CONNECT_TIMEOUT'
+        }
+    );
+    return Object.assign(new TypeError('fetch failed'), { cause });
+}
+
 function createCountQueryBuilder(state, table) {
     const queryState = {
         table,
@@ -554,11 +565,12 @@ test('shop mutate upsert saves product skus for admin inventory selectors', asyn
                 product_id: row.product_id,
                 sku_name: row.sku_name,
                 sku_code: row.sku_code,
+                inventory_source_sku_ids: row.inventory_source_sku_ids,
                 is_default: row.is_default
             })),
             [
-                { product_id: 'prod_saved', sku_name: '月卡', sku_code: 'month', is_default: false },
-                { product_id: 'prod_saved', sku_name: '年卡', sku_code: 'year', is_default: false }
+                { product_id: 'prod_saved', sku_name: '月卡', sku_code: 'month', inventory_source_sku_ids: [], is_default: false },
+                { product_id: 'prod_saved', sku_name: '年卡', sku_code: 'year', inventory_source_sku_ids: [], is_default: false }
             ]
         );
         assert.deepEqual(state.insertPayloadsByTable.shop_product_skus[0].quantity_rules, [
@@ -576,6 +588,54 @@ test('shop mutate upsert saves product skus for admin inventory selectors', asyn
         );
         assert.equal(payload.skus.length, 2);
         assert.equal(payload.product.skus.length, 2);
+    });
+});
+
+test('shop mutate upsert returns sanitized upstream timeout when sku save fails', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                { data: [], error: null },
+                { data: null, error: createTransientSupabaseTimeoutError() },
+                { data: null, error: createTransientSupabaseTimeoutError() }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Timeout SKU Product',
+                    category: 'cards',
+                    price_points: 10,
+                    delivery_type: 'KEY'
+                },
+                skus: [{
+                    sku_name: '默认规格',
+                    sku_code: 'default',
+                    price_points: 10,
+                    is_default: true,
+                    is_active: true
+                }]
+            }
+        }, res);
+
+        const payload = res.json();
+        const serialized = JSON.stringify(payload);
+        assert.equal(res.statusCode, 503);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'shop_upstream_connect_timeout');
+        assert.match(payload.message, /连接 Supabase 超时/);
+        assert.equal(payload.details, '');
+        assert.match(payload.hint, /远端连接超时/);
+        assert.doesNotMatch(serialized, /node:internal|undici|attempted addresses|104\.18\.38\.10|172\.64\.149\.246/i);
+        assert.equal((state.insertPayloadsByTable.shop_product_skus || []).length, 2);
+        assert.equal(state.auditCalls.length, 0);
     });
 });
 
@@ -720,6 +780,7 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
                         sku_name: '目标规格',
                         spec_values: {},
                         inventory_sku_id: null,
+                        inventory_source_sku_ids: [],
                         manual_delivery: false,
                         price_points: 30,
                         price_points_intl: null,
@@ -777,6 +838,7 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
                         sku_name: '目标规格',
                         spec_values: {},
                         inventory_sku_id: null,
+                        inventory_source_sku_ids: [],
                         manual_delivery: false,
                         price_points: 30,
                         price_points_intl: null,
@@ -797,6 +859,7 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
         assert.equal(archivedUpdate?.payload?.is_default, false);
         assert.equal(archivedUpdate?.payload?.sku_code, null);
         assert.equal(archivedUpdate?.payload?.inventory_sku_id, null);
+        assert.deepEqual(archivedUpdate?.payload?.inventory_source_sku_ids, []);
         assert.equal(archivedUpdate?.payload?.spec_values?.label, '旧三号规格');
         assert.equal(archivedUpdate?.payload?.spec_values?.__admin_removed_from_editor, true);
         assert.equal(payload.skus.some((sku) => sku.id === 'sku_old_code_3'), false);
@@ -817,6 +880,7 @@ test('shop mutate upsert persists shared inventory source for an existing sku', 
                             sku_name: '美区',
                             spec_values: {},
                             inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
                             price_points: 45,
                             price_points_intl: null,
                             quantity_rules: null,
@@ -833,6 +897,7 @@ test('shop mutate upsert persists shared inventory source for an existing sku', 
                             sku_name: '美区带质保',
                             spec_values: {},
                             inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
                             price_points: 80,
                             price_points_intl: null,
                             quantity_rules: null,
@@ -845,8 +910,8 @@ test('shop mutate upsert persists shared inventory source for an existing sku', 
                     ],
                     error: null
                 },
-                { data: [{ id: 'sku_us', product_id: 'prod_saved', sku_code: 'us', sku_name: '美区', inventory_sku_id: null, is_default: false, is_active: true, sort_order: 0 }], error: null },
-                { data: [{ id: 'sku_us_warranty', product_id: 'prod_saved', sku_code: 'us-warranty', sku_name: '美区带质保', inventory_sku_id: 'sku_us', is_default: false, is_active: true, sort_order: 1 }], error: null }
+                { data: [{ id: 'sku_us', product_id: 'prod_saved', sku_code: 'us', sku_name: '美区', inventory_sku_id: null, inventory_source_sku_ids: [], is_default: false, is_active: true, sort_order: 0 }], error: null },
+                { data: [{ id: 'sku_us_warranty', product_id: 'prod_saved', sku_code: 'us-warranty', sku_name: '美区带质保', inventory_sku_id: 'sku_us', inventory_source_sku_ids: ['sku_us'], is_default: false, is_active: true, sort_order: 1 }], error: null }
             ]
         }
     }, async ({ handler, state }) => {
@@ -895,7 +960,182 @@ test('shop mutate upsert persists shared inventory source for an existing sku', 
             entry.filters.some(([column, value]) => column === 'id' && value === 'sku_us_warranty')
         ));
         assert.equal(warrantyUpdate?.payload?.inventory_sku_id, 'sku_us');
+        assert.deepEqual(warrantyUpdate?.payload?.inventory_source_sku_ids, ['sku_us']);
         assert.equal(warrantyUpdate?.payload?.price_points, 80);
+    });
+});
+
+test('shop mutate upsert persists priority inventory source list for an existing sku', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_primary',
+                            product_id: 'prod_saved',
+                            sku_code: 'primary',
+                            sku_name: '首选库存',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 8,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_backup',
+                            product_id: 'prod_saved',
+                            sku_code: 'backup',
+                            sku_name: '备选库存',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 5,
+                            sort_order: 1
+                        },
+                        {
+                            id: 'sku_alias',
+                            product_id: 'prod_saved',
+                            sku_code: 'alias',
+                            sku_name: '优先调用规格',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 0,
+                            sort_order: 2
+                        }
+                    ],
+                    error: null
+                },
+                { data: [{ id: 'sku_primary', product_id: 'prod_saved', sku_code: 'primary', sku_name: '首选库存', inventory_sku_id: null, inventory_source_sku_ids: [], is_default: false, is_active: true, sort_order: 0 }], error: null },
+                { data: [{ id: 'sku_backup', product_id: 'prod_saved', sku_code: 'backup', sku_name: '备选库存', inventory_sku_id: null, inventory_source_sku_ids: [], is_default: false, is_active: true, sort_order: 1 }], error: null },
+                { data: [{ id: 'sku_alias', product_id: 'prod_saved', sku_code: 'alias', sku_name: '优先调用规格', inventory_sku_id: 'sku_primary', inventory_source_sku_ids: ['sku_primary', 'sku_backup'], is_default: false, is_active: true, sort_order: 2 }], error: null }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'Priority Product',
+                    category: 'cards',
+                    price_points: 45,
+                    delivery_type: 'KEY'
+                },
+                skus: [
+                    { id: 'sku_primary', sku_name: '首选库存', sku_code: 'primary', price_points: 45, is_default: true, is_active: true },
+                    { id: 'sku_backup', sku_name: '备选库存', sku_code: 'backup', price_points: 45, is_default: false, is_active: true },
+                    {
+                        id: 'sku_alias',
+                        sku_name: '优先调用规格',
+                        sku_code: 'alias',
+                        inventory_source_sku_ids: ['sku_primary', 'sku_backup'],
+                        price_points: 80,
+                        is_default: false,
+                        is_active: true
+                    }
+                ]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const aliasUpdate = state.updatePayloadsByTable.shop_product_skus.find((entry) => (
+            entry.filters.some(([column, value]) => column === 'id' && value === 'sku_alias')
+        ));
+        assert.equal(aliasUpdate?.payload?.inventory_sku_id, 'sku_primary');
+        assert.deepEqual(aliasUpdate?.payload?.inventory_source_sku_ids, ['sku_primary', 'sku_backup']);
+    });
+});
+
+test('shop mutate upsert preserves local sku as first priority before fallback inventory', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_local',
+                            product_id: 'prod_saved',
+                            sku_code: 'local',
+                            sku_name: '本地优先',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 3,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_backup',
+                            product_id: 'prod_saved',
+                            sku_code: 'backup',
+                            sku_name: '备用库存',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 5,
+                            sort_order: 1
+                        }
+                    ],
+                    error: null
+                },
+                { data: [{ id: 'sku_local', product_id: 'prod_saved', sku_code: 'local', sku_name: '本地优先', inventory_sku_id: 'sku_backup', inventory_source_sku_ids: ['sku_local', 'sku_backup'], is_default: false, is_active: true, sort_order: 0 }], error: null },
+                { data: [{ id: 'sku_backup', product_id: 'prod_saved', sku_code: 'backup', sku_name: '备用库存', inventory_sku_id: null, inventory_source_sku_ids: [], is_default: false, is_active: true, sort_order: 1 }], error: null }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'Local Priority Product',
+                    category: 'cards',
+                    price_points: 45,
+                    delivery_type: 'KEY'
+                },
+                skus: [
+                    {
+                        id: 'sku_local',
+                        sku_name: '本地优先',
+                        sku_code: 'local',
+                        inventory_source_sku_ids: ['sku_local', 'sku_backup'],
+                        price_points: 80,
+                        is_default: true,
+                        is_active: true
+                    },
+                    { id: 'sku_backup', sku_name: '备用库存', sku_code: 'backup', price_points: 45, is_default: false, is_active: true }
+                ]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const localUpdate = state.updatePayloadsByTable.shop_product_skus.find((entry) => (
+            entry.filters.some(([column, value]) => column === 'id' && value === 'sku_local')
+        ));
+        assert.equal(localUpdate?.payload?.inventory_sku_id, 'sku_backup');
+        assert.deepEqual(localUpdate?.payload?.inventory_source_sku_ids, ['sku_local', 'sku_backup']);
     });
 });
 

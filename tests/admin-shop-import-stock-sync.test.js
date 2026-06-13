@@ -253,7 +253,7 @@ test('shop import view patches product stock badges immediately after inventory 
     );
     assert.match(
         renderSkuSelectOptionsBlock,
-        /const uploadableSkus = safeSkus\.filter\(\(sku\) => !String\(sku\.inventory_sku_id \|\| ''\)\.trim\(\)\);[\s\S]*uploadableSkus\.some\(\(sku\) => sku\.id === selectedSkuId\)[\s\S]*uploadableSkus\.find\(\(sku\) => sku\.is_default\)\?\.id/,
+        /const uploadableSkus = safeSkus\.filter\(\(sku\) => !this\.isSkuExternalInventoryAlias\(sku\)\);[\s\S]*uploadableSkus\.some\(\(sku\) => sku\.id === selectedSkuId\)[\s\S]*uploadableSkus\.find\(\(sku\) => sku\.is_default\)\?\.id/,
         'SKU import selectors should default only to source SKUs that accept card uploads'
     );
     assert.match(
@@ -263,8 +263,13 @@ test('shop import view patches product stock badges immediately after inventory 
     );
     assert.match(
         shopSource,
-        /getSkuImportBlocker: function \(productId = '', skuId = ''\)[\s\S]*inventory_sku_id[\s\S]*该规格共用其他规格库存，请上传到被关联的规格/,
+        /getSkuImportBlocker: function \(productId = '', skuId = ''\)[\s\S]*isSkuExternalInventoryAlias\(sku\)[\s\S]*该规格会按顺序调用库存，请上传到来源规格[\s\S]*该规格共用其他规格库存，请上传到被关联的规格/,
         'the client should expose a blocker for shared-inventory alias SKU imports'
+    );
+    assert.match(
+        shopSource,
+        /buildSkuInventorySourceListNote: function \(sku = \{\}, skus = \[\]\)[\s\S]*按顺序调用 \$\{labels\.join\(' → '\)\}，请上传到来源规格/,
+        'the import module should display ordered source-SKU relationships for priority inventory aliases'
     );
     assert.match(
         performInventoryImportBlock,

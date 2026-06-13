@@ -482,7 +482,7 @@ const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';
 const SHOP_STARRY_SKY_IDLE_DELAY_MS = 1200;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -949,8 +949,7 @@ const ShopClient = {
             [groupName]: value
         };
         const resolvedSku = this.resolveSkuForSpecSelection(nextSpecMap);
-        const product = this.getCachedProductById(this.currentPurchase?.productId);
-        return Boolean(resolvedSku && (this.isShopSkuManualDelivery(product, resolvedSku) || Number(resolvedSku.stock_count || 0) > 0));
+        return Boolean(resolvedSku);
     },
 
     renderPurchaseSkuSelectedSummary: function (sku = {}) {
@@ -982,7 +981,8 @@ const ShopClient = {
             const skuId = String(sku.id || '').trim();
             const stock = Math.max(0, Number(sku.stock_count || 0) || 0);
             const manualDelivery = this.isShopSkuManualDelivery(product, sku);
-            const disabled = stock <= 0 && !manualDelivery;
+            const soldOut = stock <= 0 && !manualDelivery;
+            const disabled = !skuId;
             const selected = skuId === selectedSkuId;
             const name = this.resolveSkuDisplayName(sku);
             const stockLabel = manualDelivery
@@ -991,7 +991,7 @@ const ShopClient = {
             return `
                 <button
                     type="button"
-                    class="shop-sku-option shop-sku-option--pill${selected ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
+                    class="shop-sku-option shop-sku-option--pill${selected ? ' is-selected' : ''}${soldOut ? ' is-sold-out' : ''}${disabled ? ' is-disabled' : ''}"
                     data-shop-sku-id="${this.escapeAttribute(skuId)}"
                     data-purchase-stagger-child="sku-option"
                     aria-pressed="${selected ? 'true' : 'false'}"
@@ -1019,17 +1019,23 @@ const ShopClient = {
                 const resolvedSku = this.resolveSkuForSpecSelection(nextSpecMap);
                 const skuId = String(resolvedSku?.id || '').trim();
                 const manualDelivery = this.isShopSkuManualDelivery(product, resolvedSku);
-                const disabled = !skuId || (Number(resolvedSku?.stock_count || 0) <= 0 && !manualDelivery);
+                const stock = this.getShopSkuStockCount(resolvedSku);
+                const soldOut = Boolean(skuId && !manualDelivery && stock <= 0);
+                const disabled = !skuId;
                 const selected = value === selectedValue;
+                const stockLabel = manualDelivery
+                    ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
+                    : `${window.i18n?.t('shop.stock') || '库存'} ${stock}`;
                 return `
                     <button
                         type="button"
-                        class="shop-sku-spec-option${selected ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
+                        class="shop-sku-spec-option${selected ? ' is-selected' : ''}${soldOut ? ' is-sold-out' : ''}${disabled ? ' is-disabled' : ''}"
                         data-shop-sku-id="${this.escapeAttribute(skuId)}"
                         data-shop-sku-spec-name="${this.escapeAttribute(group.name)}"
                         data-shop-sku-spec-value="${this.escapeAttribute(value)}"
                         data-purchase-stagger-child="sku-option"
                         aria-pressed="${selected ? 'true' : 'false'}"
+                        aria-label="${this.escapeAttribute(`${value}，${stockLabel}`)}"
                         ${disabled ? 'disabled aria-disabled="true"' : ''}
                     >
                         ${this.escapeHtml(value)}
@@ -1055,7 +1061,6 @@ const ShopClient = {
         if (!sku) return;
 
         const manualDelivery = this.isShopSkuManualDelivery(product, sku);
-        if (Number(sku.stock_count || 0) <= 0 && !manualDelivery) return;
 
         const productForPricing = { ...(product || {}), selected_sku_id: normalizedSkuId };
         const pricing = this.resolveProductPricing(productForPricing, this.agentPricesCache || {});
@@ -1201,6 +1206,14 @@ const ShopClient = {
         const quantityRules = this.getProductSiteScopedMarketingValue(product, 'quantity_rules');
         const flashSalePrice = this.getProductSiteScopedMarketingValue(product, 'flash_sale_price');
         const flashSaleEnd = this.getProductSiteScopedMarketingValue(product, 'flash_sale_end');
+        const rawInventorySkus = Array.isArray(product.inventory_skus)
+            ? product.inventory_skus
+            : (Array.isArray(product.inventorySkus)
+                ? product.inventorySkus
+                : (Array.isArray(product.skus) ? product.skus : []));
+        const inventorySkus = rawInventorySkus
+            .filter((sku) => sku?.is_active !== false)
+            .map((sku) => this.normalizeProductSkuForCurrentSite(sku, product));
         const skus = (Array.isArray(product.skus) ? product.skus : [])
             .filter((sku) => sku?.is_active !== false)
             .map((sku) => this.normalizeProductSkuForCurrentSite(sku, product))
@@ -1211,6 +1224,7 @@ const ShopClient = {
             quantity_rules: quantityRules ?? null,
             flash_sale_price: flashSalePrice ?? null,
             flash_sale_end: flashSaleEnd || null,
+            inventory_skus: inventorySkus,
             skus
         };
     },
@@ -1250,6 +1264,21 @@ const ShopClient = {
             .filter((category) => this.isPublicShopCategory(category));
     },
 
+    getShopCategorySortOrder: function (category = {}, fallbackIndex = 0) {
+        const sortOrder = Number(category?.sort_order ?? category?.sortOrder ?? fallbackIndex);
+        return Number.isFinite(sortOrder) ? sortOrder : fallbackIndex;
+    },
+
+    sortShopCategoriesByAdminOrder: function (categories = []) {
+        return (Array.isArray(categories) ? categories : [])
+            .map((category, index) => ({ category, index }))
+            .sort((left, right) => (
+                this.getShopCategorySortOrder(left.category, left.index)
+                - this.getShopCategorySortOrder(right.category, right.index)
+            ) || left.index - right.index)
+            .map((entry) => entry.category);
+    },
+
     filterShopCategoriesWithVisibleProducts: function (categories = [], products = []) {
         const visibleCategoryNames = new Set(
             (Array.isArray(products) ? products : [])
@@ -1257,7 +1286,7 @@ const ShopClient = {
                 .filter(Boolean)
         );
 
-        return this.filterPublicShopCategories(categories)
+        return this.sortShopCategoriesByAdminOrder(this.filterPublicShopCategories(categories))
             .filter((category) => {
                 const name = String(category?.name || '').trim();
                 return name && visibleCategoryNames.has(name);
@@ -1292,12 +1321,15 @@ const ShopClient = {
         };
     },
 
-    filterProductsForCategory: function (products, category = 'all') {
-        const normalizedCategory = String(category || 'all').trim();
+    filterProductsForCategory: function (products, category = '') {
+        const normalizedCategory = String(category || '').trim();
         const publicProducts = this.filterProductsForPublicShopCategories(products, this.availableCategories);
         const visibleProducts = this.filterProductsForCurrentSite(publicProducts);
-        if (!normalizedCategory || normalizedCategory === 'all') {
+        if (normalizedCategory === 'all') {
             return visibleProducts;
+        }
+        if (!normalizedCategory) {
+            return [];
         }
         return visibleProducts.filter((product) => String(product?.category || '').trim() === normalizedCategory);
     },
@@ -1321,6 +1353,25 @@ const ShopClient = {
         return Number.isFinite(stockCount) ? Math.max(0, Math.trunc(stockCount)) : 0;
     },
 
+    normalizeSkuInventorySourceIds: function (value = [], fallback = []) {
+        const rawEntries = Array.isArray(value)
+            ? value
+            : (typeof value === 'string' ? value.split(/[,\n]/) : []);
+        const fallbackEntries = Array.isArray(fallback) ? fallback : [];
+        const seen = new Set();
+        return [...rawEntries, ...fallbackEntries]
+            .map((entry) => String(
+                entry && typeof entry === 'object' && !Array.isArray(entry)
+                    ? (entry.id || entry.sku_id || entry.skuId || entry.inventory_sku_id || entry.inventorySkuId || '')
+                    : entry
+            ).trim())
+            .filter((id) => {
+                if (!id || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            });
+    },
+
     getShopProductStockCount: function (product = {}) {
         const stockCount = Number(product?.stock_count ?? product?.stockCount ?? 0);
         return Number.isFinite(stockCount) ? Math.max(0, Math.trunc(stockCount)) : 0;
@@ -1331,9 +1382,47 @@ const ShopClient = {
         if (!skus.length) {
             return this.getShopProductStockCount(product);
         }
+        const inventorySkus = (Array.isArray(product?.inventory_skus) ? product.inventory_skus : (Array.isArray(product?.inventorySkus) ? product.inventorySkus : skus))
+            .filter((sku) => sku?.is_active !== false)
+            .map((sku) => this.normalizeProductSkuForCurrentSite(sku, product));
 
         const stockByInventoryPool = new Map();
+        const stockBySkuId = new Map();
+        inventorySkus.forEach((sku) => {
+            const skuId = String(sku?.id || '').trim();
+            if (!skuId) return;
+            stockBySkuId.set(skuId, Math.max(stockBySkuId.get(skuId) || 0, this.getShopSkuStockCount(sku)));
+        });
+
         skus.forEach((sku, index) => {
+            const sourceIds = this.normalizeSkuInventorySourceIds(
+                sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+                String(sku?.inventory_sku_id || sku?.inventorySkuId || '').trim()
+                    ? [sku?.inventory_sku_id || sku?.inventorySkuId]
+                    : []
+            );
+            if (sourceIds.length) {
+                const allSourceStocksKnown = sourceIds.every((sourceId) => stockBySkuId.has(String(sourceId || '').trim()));
+                if (!allSourceStocksKnown) {
+                    const inventoryKey = `sources:${sourceIds.join('|') || sku?.id || index}`;
+                    stockByInventoryPool.set(
+                        inventoryKey,
+                        Math.max(stockByInventoryPool.get(inventoryKey) || 0, this.getShopSkuStockCount(sku))
+                    );
+                    return;
+                }
+
+                sourceIds.forEach((sourceId) => {
+                    const inventoryKey = String(sourceId || '').trim();
+                    if (!inventoryKey) return;
+                    stockByInventoryPool.set(
+                        inventoryKey,
+                        Math.max(stockByInventoryPool.get(inventoryKey) || 0, stockBySkuId.get(inventoryKey) || 0)
+                    );
+                });
+                return;
+            }
+
             const rawInventoryKey = sku?.inventory_sku_id
                 || sku?.inventorySkuId
                 || sku?.stock_sku_id
@@ -3065,6 +3154,8 @@ const ShopClient = {
         this.availableCategories = categories;
         if (filtersContainer) {
             this.renderCategoryFilterButtons(filtersContainer, categories);
+        } else {
+            this.normalizeCurrentShopCategoryFromEntries(this.getCategoryFilterEntries(categories));
         }
 
         // 短路：当 realtime 事件触发但商品可见字段并未变化时，跳过整页 grid 重渲染。
@@ -7005,7 +7096,7 @@ const ShopClient = {
         if (this.isShopCurrentPurchaseSoldOut()) {
             container.innerHTML = `<div class="shop-discount-assets-empty shop-discount-assets-empty--sold-out">${this.trShop('soldOutDiscountUnavailable', this.isEnglishShopLocale()
                 ? 'Coupons are unavailable while this product is sold out. Contact support for restock.'
-                : '商品售罄后暂不可使用优惠码，联系客服补货后再兑换。')}</div>`;
+                : '商品售罄后暂不可使用优惠码，请联系客服补货。')}</div>`;
             this.schedulePurchaseModalKeyboardContentSync();
             this.bindPurchaseDiscountActionTapFallbacks();
             this.syncPurchaseDiscountInteractivity();
@@ -8396,7 +8487,7 @@ const ShopClient = {
             if (!target) return;
 
             event.preventDefault?.();
-            this.filterCategory(target.dataset.shopCategory || 'all', target);
+            this.filterCategory(target.dataset.shopCategory || '', target);
         });
 
         const shopGrid = document.getElementById('userShopGrid');
@@ -9880,13 +9971,16 @@ const ShopClient = {
         });
     },
 
-    currentCategory: 'all',
+    currentCategory: '',
 
     filterCategory: function (category, btn) {
-        if (category === this.currentCategory && btn?.classList.contains('active')) {
+        const normalizedCategory = String(category || '').trim();
+        if (!normalizedCategory) return;
+
+        if (normalizedCategory === this.currentCategory && btn?.classList.contains('active')) {
             return;
         }
-        this.currentCategory = category;
+        this.currentCategory = normalizedCategory;
         const currentCards = document.querySelectorAll('#userShopGrid .shop-card').length;
         if (currentCards > 0) {
             this.lastSkeletonCount = Math.min(Math.max(currentCards, 3), 8);
@@ -9896,8 +9990,10 @@ const ShopClient = {
             t.classList.remove('active');
             t.setAttribute('aria-pressed', 'false');
         });
-        btn.classList.add('active');
-        btn.setAttribute('aria-pressed', 'true');
+        if (btn) {
+            btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
+        }
         this.loadProducts();
     },
 
@@ -10049,20 +10145,16 @@ const ShopClient = {
 
     updateCategoryFilterButtons: function () {
         document.querySelectorAll('#shopCategoryFilters .filter-tab[data-shop-category]').forEach((tab) => {
-            const isActive = String(tab.dataset.shopCategory || '') === String(this.currentCategory || 'all');
+            const isActive = String(tab.dataset.shopCategory || '') === String(this.currentCategory || '');
             tab.classList.toggle('active', isActive);
             tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
     },
 
     getCategoryFilterEntries: function (categories = []) {
-        const entries = [{
-            name: 'all',
-            label: window.i18n?.t('shop.allCategories') || '全部',
-            i18nKey: 'shop.allCategories'
-        }];
+        const entries = [];
 
-        (Array.isArray(categories) ? categories : []).forEach((category) => {
+        this.sortShopCategoriesByAdminOrder(categories).forEach((category) => {
             if (!this.isPublicShopCategory(category)) return;
             const name = String(category?.name || '').trim();
             if (!name) return;
@@ -10077,10 +10169,22 @@ const ShopClient = {
         return entries;
     },
 
+    normalizeCurrentShopCategoryFromEntries: function (entries = []) {
+        const currentCategory = String(this.currentCategory || '').trim();
+        if (currentCategory && entries.some((entry) => entry.name === currentCategory)) {
+            this.currentCategory = currentCategory;
+            return currentCategory;
+        }
+
+        const fallbackCategory = String(entries[0]?.name || '').trim();
+        this.currentCategory = fallbackCategory;
+        return fallbackCategory;
+    },
+
     syncCategoryFilterButton: function (button, entry) {
         if (!button || !entry) return;
 
-        const isActive = String(this.currentCategory || 'all') === entry.name;
+        const isActive = String(this.currentCategory || '') === entry.name;
         button.type = 'button';
         button.className = isActive ? 'filter-tab active' : 'filter-tab';
         button.textContent = entry.label;
@@ -10098,9 +10202,7 @@ const ShopClient = {
         if (!container) return;
 
         const entries = this.getCategoryFilterEntries(categories);
-        if (!entries.some((entry) => entry.name === String(this.currentCategory || 'all'))) {
-            this.currentCategory = 'all';
-        }
+        this.normalizeCurrentShopCategoryFromEntries(entries);
         const existingTabs = Array.from(container.querySelectorAll('.filter-tab[data-shop-category]'));
         const canPatchInPlace = existingTabs.length === entries.length
             && existingTabs.every((tab, index) => String(tab.dataset.shopCategory || '') === entries[index].name);
@@ -10217,12 +10319,36 @@ const ShopClient = {
             return;
         }
 
-        if (!pending.expandedSearch && this.currentCategory !== 'all') {
+        if (!pending.expandedSearch) {
+            const targetProduct = Array.isArray(this.allProductsCache)
+                ? this.allProductsCache.find((product) => String(product?.id || '').trim() === normalizedProductId)
+                : null;
+            const targetCategory = String(targetProduct?.category || '').trim();
+            if (targetCategory && targetCategory !== this.currentCategory) {
+                this.pendingProductSpotlight = {
+                    ...pending,
+                    expandedSearch: true
+                };
+                this.currentCategory = targetCategory;
+                this.updateCategoryFilterButtons();
+                await this.loadProducts();
+                return;
+            }
+        }
+
+        if (!pending.expandedSearch) {
             this.pendingProductSpotlight = {
                 ...pending,
                 expandedSearch: true
             };
-            this.currentCategory = 'all';
+            const fallbackCategory = String(this.availableCategories?.[0]?.name || '').trim();
+            if (!fallbackCategory || fallbackCategory === this.currentCategory) {
+                this.pendingProductSpotlight = null;
+                this.clearPendingProductSpotlightUrl();
+                this.showShopToast(this.trShop('couponProductHidden', '这张卡券对应的商品当前暂不可见，请先浏览商城其他商品。'), 'error');
+                return;
+            }
+            this.currentCategory = fallbackCategory;
             this.updateCategoryFilterButtons();
             await this.loadProducts();
             return;
@@ -11556,15 +11682,21 @@ const ShopClient = {
         return trackedRequest;
     },
 
-    fetchProductsFromServer: async function (category = 'all') {
+    fetchProductsFromServer: async function (category = '') {
         const catalog = await this.fetchShopCatalogFromApi();
         if (Array.isArray(catalog?.categories)) {
             this.availableCategories = catalog.categories;
+            if (!category) {
+                category = this.normalizeCurrentShopCategoryFromEntries(this.getCategoryFilterEntries(catalog.categories));
+            }
         }
         return this.filterProductsForCategory(catalog?.products || [], category);
     },
 
-    getProductsForCategory: async function (category, { forceRefresh = false } = {}) {
+    getProductsForCategory: async function (category = this.currentCategory, { forceRefresh = false } = {}) {
+        const normalizedCategory = String(category || '').trim();
+        category = normalizedCategory || this.normalizeCurrentShopCategoryFromEntries(this.getCategoryFilterEntries(this.availableCategories || []));
+
         if (!forceRefresh) {
             const cachedProducts = this.getCachedProductsForCategory(category);
             if (cachedProducts !== null) {

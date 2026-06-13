@@ -116,8 +116,13 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
     );
     assert.match(
         shopSource,
-        /selectPurchaseSku: function[\s\S]*const manualDelivery = this\.isShopSkuManualDelivery\(product, sku\)[\s\S]*if \(Number\(sku\.stock_count \|\| 0\) <= 0 && !manualDelivery\) return;/,
-        'manual-delivery SKUs should remain selectable in the purchase/detail modal even when stock is zero'
+        /selectPurchaseSku: function[\s\S]*const manualDelivery = this\.isShopSkuManualDelivery\(product, sku\)[\s\S]*this\.currentPurchase\.soldOut = !manualDelivery && this\.getShopSkuStockCount\(sku\) <= 0;/,
+        'changing purchase SKU should allow zero-stock SKUs while switching the modal into sold-out state'
+    );
+    assert.doesNotMatch(
+        shopSource,
+        /if \(Number\(sku\.stock_count \|\| 0\) <= 0 && !manualDelivery\) return;/,
+        'zero-stock auto-delivery SKUs should not be blocked before selection'
     );
     assert.match(
         shopSource,
@@ -126,8 +131,8 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
     );
     assert.match(
         shopSource,
-        /renderPurchaseSkuPills: function[\s\S]*const manualDelivery = this\.isShopSkuManualDelivery\(product, sku\)[\s\S]*const disabled = stock <= 0 && !manualDelivery/,
-        'manual-delivery SKUs should remain selectable even without self-service stock'
+        /renderPurchaseSkuPills: function[\s\S]*const soldOut = stock <= 0 && !manualDelivery;[\s\S]*const disabled = !skuId;[\s\S]*is-sold-out/,
+        'zero-stock SKU pills should stay selectable and only carry a sold-out visual state'
     );
     assert.match(
         shopSource,
@@ -136,7 +141,7 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
     );
     assert.match(
         shopSource,
-        /getShopProductCardStockCount: function \(product = \{\}\) \{[\s\S]*const skus = this\.getProductSkusForPurchase\(product\);[\s\S]*const stockByInventoryPool = new Map\(\);[\s\S]*sku\?\.inventory_sku_id[\s\S]*stockByInventoryPool\.set\([\s\S]*Math\.max\(stockByInventoryPool\.get\(inventoryKey\) \|\| 0, stockCount\)[\s\S]*reduce\(\(total, stockCount\) => total \+ stockCount, 0\);[\s\S]*\}/,
+        /getShopProductCardStockCount: function \(product = \{\}\) \{[\s\S]*const skus = this\.getProductSkusForPurchase\(product\);[\s\S]*const inventorySkus = \(Array\.isArray\(product\?\.inventory_skus\)[\s\S]*const stockByInventoryPool = new Map\(\);[\s\S]*const stockBySkuId = new Map\(\);[\s\S]*inventorySkus\.forEach\(\(sku\) => \{[\s\S]*sku\?\.inventory_source_sku_ids[\s\S]*const allSourceStocksKnown = sourceIds\.every[\s\S]*sourceIds\.forEach\(\(sourceId\) => \{[\s\S]*Math\.max\(stockByInventoryPool\.get\(inventoryKey\) \|\| 0, stockBySkuId\.get\(inventoryKey\) \|\| 0\)[\s\S]*reduce\(\(total, stockCount\) => total \+ stockCount, 0\);[\s\S]*\}/,
         'storefront card stock should sum all visible SKU inventory pools instead of showing only the display SKU'
     );
     assert.match(
