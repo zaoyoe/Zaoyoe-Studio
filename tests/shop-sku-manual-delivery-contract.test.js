@@ -134,4 +134,14 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
         /getShopProductCardFulfillmentState: function[\s\S]*const autoStockSku = this\.getPreferredAutoDeliverySkuFromList\(product, skus\);[\s\S]*const manualSku = this\.getPreferredManualDeliverySkuFromList\(product, skus\);[\s\S]*const manualDelivery = hasSkuRows[\s\S]*\(!autoStockSku && Boolean\(manualSku\)\)[\s\S]*const soldOut = hasSkuRows[\s\S]*\(!autoStockSku && !manualSku\)/,
         'storefront cards should prefer in-stock auto-delivery SKUs, then manual-delivery SKUs, before marking the card sold out'
     );
+    assert.match(
+        shopSource,
+        /getShopProductCardStockCount: function \(product = \{\}\) \{[\s\S]*const skus = this\.getProductSkusForPurchase\(product\);[\s\S]*const stockByInventoryPool = new Map\(\);[\s\S]*sku\?\.inventory_sku_id[\s\S]*stockByInventoryPool\.set\([\s\S]*Math\.max\(stockByInventoryPool\.get\(inventoryKey\) \|\| 0, stockCount\)[\s\S]*reduce\(\(total, stockCount\) => total \+ stockCount, 0\);[\s\S]*\}/,
+        'storefront card stock should sum all visible SKU inventory pools instead of showing only the display SKU'
+    );
+    assert.match(
+        shopSource,
+        /syncProductCardPricing: function[\s\S]*const stockCount = this\.getShopProductCardStockCount\(product\);[\s\S]*buildProductCardElement: function[\s\S]*const stockCount = this\.getShopProductCardStockCount\(product\);/,
+        'both initial product cards and refreshed cards should render the aggregate SKU stock badge'
+    );
 });
