@@ -674,6 +674,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sku_name',
     'spec_values',
     'inventory_sku_id',
+    'inventory_source_sku_ids',
     'manual_delivery',
     'price_points',
     'price_points_intl',
@@ -685,6 +686,186 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sort_order'
 ].join(', ');
 
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT
+    .replace('inventory_source_sku_ids, ', '');
+
+function isMissingColumnError(error = {}, columnName = '') {
+    const normalizedMessage = [
+        error?.message,
+        error?.details,
+        error?.hint,
+        error?.code
+    ].filter(Boolean).join(' ').toLowerCase();
+    const normalizedColumn = normalizeText(columnName, 120).toLowerCase();
+    if (!normalizedMessage || !normalizedColumn) {
+        return false;
+    }
+
+    return normalizedMessage.includes(normalizedColumn)
+        && (
+            normalizedMessage.includes('does not exist')
+            || normalizedMessage.includes('not exist')
+            || normalizedMessage.includes('undefined column')
+            || normalizedMessage.includes('schema cache')
+            || normalizedMessage.includes('could not find')
+        );
+}
+
+function isMissingSkuInventorySourceListColumnError(error = {}) {
+    return isMissingColumnError(error, 'inventory_source_sku_ids');
+}
+
+function collectErrorText(error = {}, depth = 0) {
+    if (!error || depth > 3) {
+        return '';
+    }
+
+    const parts = [
+        error.name,
+        error.code,
+        error.message,
+        error.details,
+        error.hint
+    ];
+    if (error.cause) {
+        parts.push(collectErrorText(error.cause, depth + 1));
+    }
+    return parts.filter(Boolean).join(' ');
+}
+
+function isTransientSupabaseNetworkError(error = {}) {
+    const text = collectErrorText(error).toLowerCase();
+    return Boolean(text)
+        && (
+            text.includes('fetch failed')
+            || text.includes('connecttimeouterror')
+            || text.includes('connect timeout')
+            || text.includes('und_err_connect_timeout')
+            || text.includes('etimedout')
+            || text.includes('econnreset')
+            || text.includes('socket hang up')
+            || text.includes('network request failed')
+        );
+}
+
+function buildShopMutationErrorPayload(error = {}, fallbackMessage = 'Shop mutation failed', fallbackStatus = 400, fallbackCode = '') {
+    if (isTransientSupabaseNetworkError(error)) {
+        return {
+            statusCode: 503,
+            code: 'shop_upstream_connect_timeout',
+            message: '保存失败：连接 Supabase 超时，请稍后重试。若连续出现，请检查当前服务器到 Supabase 的网络连通性。',
+            details: '',
+            hint: '这是远端连接超时，不是商品规格配置校验失败。'
+        };
+    }
+
+    return {
+        statusCode: Number(error?.statusCode) || fallbackStatus,
+        code: error?.code || fallbackCode || undefined,
+        message: error?.message || fallbackMessage,
+        details: error?.details || '',
+        hint: error?.hint || ''
+    };
+}
+
+function delay(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+async function runWithTransientSupabaseRetry(taskFactory, {
+    attempts = 2,
+    baseDelayMs = 120
+} = {}) {
+    const maxAttempts = Math.max(1, Number(attempts) || 1);
+    let lastResponse = null;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            const response = await taskFactory();
+            lastResponse = response;
+            if (!response?.error || !isTransientSupabaseNetworkError(response.error) || attempt >= maxAttempts) {
+                return response;
+            }
+            lastError = response.error;
+        } catch (error) {
+            lastError = error;
+            if (!isTransientSupabaseNetworkError(error) || attempt >= maxAttempts) {
+                throw error;
+            }
+        }
+
+        await delay(baseDelayMs * attempt);
+    }
+
+    if (lastResponse) {
+        return lastResponse;
+    }
+    throw lastError || new Error('Supabase request failed');
+}
+
+async function runShopProductSkuSelectWithSourceListFallback(baseQueryFactory) {
+    let response = await runWithTransientSupabaseRetry(
+        () => baseQueryFactory(SHOP_PRODUCT_SKU_SELECT)
+    );
+    if (response?.error && isMissingSkuInventorySourceListColumnError(response.error)) {
+        response = await runWithTransientSupabaseRetry(
+            () => baseQueryFactory(SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST)
+        );
+    }
+    return response;
+}
+
+async function writeProductSkuRow(supabase, {
+    payload = {},
+    resolvedExistingId = '',
+    hasExistingId = false,
+    selectClause = SHOP_PRODUCT_SKU_SELECT
+} = {}) {
+    const query = hasExistingId
+        ? supabase
+            .from('shop_product_skus')
+            .update(payload)
+            .eq('id', resolvedExistingId)
+        : supabase
+            .from('shop_product_skus')
+            .insert(payload);
+
+    return query
+        .select(selectClause)
+        .limit(1);
+}
+
+async function writeProductSkuRowWithSourceListFallback(supabase, {
+    payload = {},
+    resolvedExistingId = '',
+    hasExistingId = false
+} = {}) {
+    let response = await runWithTransientSupabaseRetry(
+        () => writeProductSkuRow(supabase, {
+            payload,
+            resolvedExistingId,
+            hasExistingId,
+            selectClause: SHOP_PRODUCT_SKU_SELECT
+        })
+    );
+
+    if (response?.error && isMissingSkuInventorySourceListColumnError(response.error)) {
+        const fallbackPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
+        delete fallbackPayload.inventory_source_sku_ids;
+        response = await runWithTransientSupabaseRetry(
+            () => writeProductSkuRow(supabase, {
+                payload: fallbackPayload,
+                resolvedExistingId,
+                hasExistingId,
+                selectClause: SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST
+            })
+        );
+    }
+
+    return response;
+}
+
 async function resolveProductSkuForInventoryImport(supabase, productId, requestedSkuId = '') {
     const normalizedProductId = normalizeText(productId, 160);
     const normalizedSkuId = normalizeText(requestedSkuId, 160);
@@ -693,16 +874,26 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
         return null;
     }
 
-    let query = supabase
-        .from('shop_product_skus')
-        .select('id, product_id, sku_name, sku_code, inventory_sku_id, is_default, is_active, stock_count')
-        .eq('product_id', normalizedProductId);
+    const buildQuery = (selectClause) => {
+        let query = supabase
+            .from('shop_product_skus')
+            .select(selectClause)
+            .eq('product_id', normalizedProductId);
 
-    query = normalizedSkuId
-        ? query.eq('id', normalizedSkuId)
-        : query.eq('is_default', true);
+        return normalizedSkuId
+            ? query.eq('id', normalizedSkuId).single()
+            : query.eq('is_default', true).single();
+    };
+    let response = await runWithTransientSupabaseRetry(
+        () => buildQuery('id, product_id, sku_name, sku_code, inventory_sku_id, inventory_source_sku_ids, is_default, is_active, stock_count')
+    );
+    if (response?.error && isMissingSkuInventorySourceListColumnError(response.error)) {
+        response = await runWithTransientSupabaseRetry(
+            () => buildQuery('id, product_id, sku_name, sku_code, inventory_sku_id, is_default, is_active, stock_count')
+        );
+    }
 
-    const { data, error } = await query.single();
+    const { data, error } = response;
 
     if (error || !data) {
         if (normalizedSkuId) {
@@ -721,16 +912,25 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
         });
     }
 
-    const inventorySourceSkuId = normalizeText(data.inventory_sku_id, 160);
-    if (inventorySourceSkuId) {
+    const inventorySourceSkuIds = normalizeInventorySourceSkuIds(
+        data.inventory_source_sku_ids,
+        normalizeText(data.inventory_sku_id, 160) ? [data.inventory_sku_id] : []
+    );
+    const isExternalInventoryAlias = Boolean(
+        inventorySourceSkuIds[0]
+        && normalizeText(inventorySourceSkuIds[0], 160) !== normalizeText(data.id, 160)
+    );
+    if (isExternalInventoryAlias) {
         let sourceLabel = '被关联的规格';
         try {
-            const { data: sourceSku } = await supabase
-                .from('shop_product_skus')
-                .select('id, sku_name, sku_code')
-                .eq('product_id', normalizedProductId)
-                .eq('id', inventorySourceSkuId)
-                .single();
+            const { data: sourceSku } = await runWithTransientSupabaseRetry(
+                () => supabase
+                    .from('shop_product_skus')
+                    .select('id, sku_name, sku_code')
+                    .eq('product_id', normalizedProductId)
+                    .eq('id', inventorySourceSkuIds[0])
+                    .single()
+            );
 
             const sourceName = normalizeText(sourceSku?.sku_name, 120);
             const sourceCode = normalizeText(sourceSku?.sku_code, 80);
@@ -741,13 +941,41 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
             sourceLabel = '被关联的规格';
         }
 
-        throw Object.assign(new Error(`该规格共用其他规格库存，请上传到被关联的规格：${sourceLabel}`), {
+        throw Object.assign(new Error(inventorySourceSkuIds.length > 1
+            ? `该规格会按顺序调用多个库存来源，请上传到来源规格：${sourceLabel} 等`
+            : `该规格共用其他规格库存，请上传到被关联的规格：${sourceLabel}`), {
             statusCode: 400,
             code: 'shop_product_sku_inventory_alias_not_importable'
         });
     }
 
     return data;
+}
+
+function normalizeInventorySourceSkuIds(value = [], fallback = []) {
+    const rawEntries = Array.isArray(value)
+        ? value
+        : (typeof value === 'string' ? value.split(/[,\n]/) : []);
+    const fallbackEntries = Array.isArray(fallback) ? fallback : [];
+    const seen = new Set();
+    return [...rawEntries, ...fallbackEntries]
+        .map((item) => normalizeText(
+            item && typeof item === 'object' && !Array.isArray(item)
+                ? (item.id || item.sku_id || item.skuId || item.inventory_sku_id || item.inventorySkuId)
+                : item,
+            160
+        ))
+        .filter((id) => {
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+}
+
+function getCompatibilityInventorySkuId(sourceIds = [], currentSkuId = '') {
+    const normalizedCurrentSkuId = normalizeText(currentSkuId, 160);
+    return normalizeInventorySourceSkuIds(sourceIds)
+        .find((sourceId) => sourceId && sourceId !== normalizedCurrentSkuId) || null;
 }
 
 function normalizeProductSkuDrafts(value = []) {
@@ -767,8 +995,15 @@ function normalizeProductSkuDrafts(value = []) {
                 || source.stockSkuId,
                 160
             );
+            const inventorySourceSkuIds = normalizeInventorySourceSkuIds(
+                source.inventory_source_sku_ids
+                ?? source.inventorySourceSkuIds
+                ?? source.inventory_sources
+                ?? source.inventorySources,
+                inventorySkuId ? [inventorySkuId] : []
+            );
 
-            if (!skuName && !skuCode && !id && !inventorySkuId) {
+            if (!skuName && !skuCode && !id && !inventorySourceSkuIds.length) {
                 return null;
             }
 
@@ -779,7 +1014,8 @@ function normalizeProductSkuDrafts(value = []) {
                 spec_values: source.spec_values && typeof source.spec_values === 'object' && !Array.isArray(source.spec_values)
                     ? source.spec_values
                     : {},
-                inventory_sku_id: inventorySkuId || null,
+                inventory_sku_id: getCompatibilityInventorySkuId(inventorySourceSkuIds, id),
+                inventory_source_sku_ids: inventorySourceSkuIds,
                 price_points: normalizeNullableNumber(source.price_points ?? source.pricePoints),
                 price_points_intl: normalizeNullableNumber(source.price_points_intl ?? source.pricePointsIntl),
                 quantity_rules: normalizeSkuQuantityPricingRules(source.quantity_rules ?? source.quantityRules),
@@ -882,7 +1118,7 @@ function createInvalidProductSkuInventorySourceError(sourceSkuId = '') {
     const normalizedSourceSkuId = normalizeText(sourceSkuId, 160);
     const sourceLabel = normalizedSourceSkuId ? `「${normalizedSourceSkuId}」` : '当前库存来源';
     return Object.assign(
-        new Error(`商品规格库存来源无效：${sourceLabel} 必须是本商品本次保留的规格，且不能指向另一个共享库存规格。`),
+        new Error(`商品规格库存来源无效：${sourceLabel} 必须是本商品本次保留的真实库存规格，且不能指向另一个调用库存的规格。`),
         {
             statusCode: 400,
             code: 'shop_product_sku_inventory_source_invalid'
@@ -896,12 +1132,14 @@ async function ensureDefaultProductSku(supabase, product = {}) {
         return null;
     }
 
-    const { data: existing, error: existingError } = await supabase
-        .from('shop_product_skus')
-        .select(SHOP_PRODUCT_SKU_SELECT)
-        .eq('product_id', productId)
-        .eq('is_default', true)
-        .limit(1);
+    const { data: existing, error: existingError } = await runShopProductSkuSelectWithSourceListFallback(
+        (selectClause) => supabase
+            .from('shop_product_skus')
+            .select(selectClause)
+            .eq('product_id', productId)
+            .eq('is_default', true)
+            .limit(1)
+    );
 
     if (existingError) {
         throw existingError;
@@ -911,12 +1149,14 @@ async function ensureDefaultProductSku(supabase, product = {}) {
         return existing[0];
     }
 
-    const { data: existingDefaultCode, error: existingDefaultCodeError } = await supabase
-        .from('shop_product_skus')
-        .select(SHOP_PRODUCT_SKU_SELECT)
-        .eq('product_id', productId)
-        .eq('sku_code', 'default')
-        .limit(1);
+    const { data: existingDefaultCode, error: existingDefaultCodeError } = await runShopProductSkuSelectWithSourceListFallback(
+        (selectClause) => supabase
+            .from('shop_product_skus')
+            .select(selectClause)
+            .eq('product_id', productId)
+            .eq('sku_code', 'default')
+            .limit(1)
+    );
 
     if (existingDefaultCodeError) {
         throw existingDefaultCodeError;
@@ -925,10 +1165,12 @@ async function ensureDefaultProductSku(supabase, product = {}) {
     if (Array.isArray(existingDefaultCode) && existingDefaultCode.length) {
         const defaultCodeSku = existingDefaultCode[0];
         if (defaultCodeSku?.id && defaultCodeSku.is_default !== true) {
-            const { error: activateDefaultError } = await supabase
-                .from('shop_product_skus')
-                .update({ is_default: true, is_active: true })
-                .eq('id', defaultCodeSku.id);
+            const { error: activateDefaultError } = await runWithTransientSupabaseRetry(
+                () => supabase
+                    .from('shop_product_skus')
+                    .update({ is_default: true, is_active: true })
+                    .eq('id', defaultCodeSku.id)
+            );
 
             if (activateDefaultError) {
                 throw activateDefaultError;
@@ -940,13 +1182,14 @@ async function ensureDefaultProductSku(supabase, product = {}) {
         return defaultCodeSku;
     }
 
-    const { data, error } = await supabase
-        .from('shop_product_skus')
-        .insert({
+    const { data, error } = await writeProductSkuRowWithSourceListFallback(supabase, {
+        payload: {
             product_id: productId,
             sku_code: 'default',
             sku_name: normalizeText(product?.name, 120) || '默认规格',
             spec_values: { label: '默认规格' },
+            inventory_sku_id: null,
+            inventory_source_sku_ids: [],
             price_points: normalizeNullableNumber(product?.price_points),
             price_points_intl: normalizeNullableNumber(product?.price_points_intl),
             quantity_rules: normalizeSkuQuantityPricingRules(product?.quantity_rules),
@@ -955,9 +1198,9 @@ async function ensureDefaultProductSku(supabase, product = {}) {
             is_default: true,
             is_active: true,
             sort_order: 0
-        })
-        .select(SHOP_PRODUCT_SKU_SELECT)
-        .limit(1);
+        },
+        hasExistingId: false
+    });
 
     if (error) {
         throw error;
@@ -978,10 +1221,12 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
         return defaultSku ? [defaultSku] : [];
     }
 
-    const { data: existingRows, error: existingError } = await supabase
-        .from('shop_product_skus')
-        .select(SHOP_PRODUCT_SKU_SELECT)
-        .eq('product_id', productId);
+    const { data: existingRows, error: existingError } = await runShopProductSkuSelectWithSourceListFallback(
+        (selectClause) => supabase
+            .from('shop_product_skus')
+            .select(selectClause)
+            .eq('product_id', productId)
+    );
 
     if (existingError) {
         throw existingError;
@@ -1000,7 +1245,10 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             existingRowsByCode.set(codeKey, row);
         }
         if (rowId) {
-            existingInventorySourceById.set(rowId, normalizeText(row?.inventory_sku_id, 160) || null);
+            existingInventorySourceById.set(rowId, normalizeInventorySourceSkuIds(
+                row?.inventory_source_sku_ids,
+                normalizeText(row?.inventory_sku_id, 160) ? [row.inventory_sku_id] : []
+            ));
         }
     });
     const matchedDrafts = normalizedDrafts.map((draft) => {
@@ -1010,49 +1258,52 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
         const resolvedExistingId = draftId && existingIds.has(draftId)
             ? draftId
             : normalizeText(matchedExistingByCode?.id, 160);
+        const targetId = resolvedExistingId || draftId;
 
         return {
             draft,
             draftCodeKey,
-            resolvedExistingId
+            resolvedExistingId,
+            targetId
         };
     });
-    const retainedResolvedIds = new Set(matchedDrafts
-        .map((entry) => normalizeText(entry.resolvedExistingId, 160))
+    const retainedTargetIds = new Set(matchedDrafts
+        .map((entry) => normalizeText(entry.targetId, 160))
         .filter(Boolean));
     const desiredInventorySourceById = new Map();
     matchedDrafts.forEach((entry) => {
-        const resolvedExistingId = normalizeText(entry.resolvedExistingId, 160);
-        if (!resolvedExistingId) return;
+        const targetId = normalizeText(entry.targetId, 160);
+        if (!targetId) return;
 
-        const sourceId = normalizeText(entry.draft.inventory_sku_id, 160);
-        desiredInventorySourceById.set(
-            resolvedExistingId,
-            sourceId && sourceId !== resolvedExistingId ? sourceId : null
-        );
+        const sourceIds = normalizeInventorySourceSkuIds(entry.draft.inventory_source_sku_ids);
+        entry.draft.inventory_source_sku_ids = sourceIds;
+        entry.draft.inventory_sku_id = getCompatibilityInventorySkuId(sourceIds, targetId);
+        desiredInventorySourceById.set(targetId, sourceIds);
     });
 
     for (const entry of matchedDrafts) {
-        const sourceId = normalizeText(entry.draft.inventory_sku_id, 160);
-        if (!sourceId) {
+        const targetId = normalizeText(entry.targetId, 160);
+        const sourceIds = normalizeInventorySourceSkuIds(entry.draft.inventory_source_sku_ids);
+        entry.draft.inventory_source_sku_ids = sourceIds;
+        entry.draft.inventory_sku_id = getCompatibilityInventorySkuId(sourceIds, targetId);
+        const externalSourceIds = sourceIds.filter((sourceId) => sourceId !== targetId);
+        if (!externalSourceIds.length) {
             continue;
         }
 
-        const resolvedExistingId = normalizeText(entry.resolvedExistingId, 160);
-        if (sourceId === resolvedExistingId) {
-            entry.draft.inventory_sku_id = null;
-            continue;
-        }
+        for (const sourceId of externalSourceIds) {
+            if (!retainedTargetIds.has(sourceId)) {
+                throw createInvalidProductSkuInventorySourceError(sourceId);
+            }
 
-        if (!retainedResolvedIds.has(sourceId)) {
-            throw createInvalidProductSkuInventorySourceError(sourceId);
-        }
-
-        const targetDesiredSource = desiredInventorySourceById.has(sourceId)
-            ? desiredInventorySourceById.get(sourceId)
-            : existingInventorySourceById.get(sourceId);
-        if (targetDesiredSource) {
-            throw createInvalidProductSkuInventorySourceError(sourceId);
+            const targetDesiredSources = desiredInventorySourceById.has(sourceId)
+                ? desiredInventorySourceById.get(sourceId)
+                : existingInventorySourceById.get(sourceId);
+            const targetExternalSources = normalizeInventorySourceSkuIds(targetDesiredSources)
+                .filter((targetSourceId) => targetSourceId !== sourceId);
+            if (targetExternalSources.length) {
+                throw createInvalidProductSkuInventorySourceError(sourceId);
+            }
         }
     }
 
@@ -1060,10 +1311,10 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
     for (const entry of matchedDrafts) {
         if (!entry.draftCodeKey) continue;
         const previousTarget = desiredCodeTargets.get(entry.draftCodeKey);
-        if (previousTarget && previousTarget !== entry.resolvedExistingId) {
+        if (previousTarget && previousTarget !== entry.targetId) {
             throw createDuplicateProductSkuCodeError(entry.draft.sku_code);
         }
-        desiredCodeTargets.set(entry.draftCodeKey, entry.resolvedExistingId);
+        desiredCodeTargets.set(entry.draftCodeKey, entry.targetId);
     }
 
     for (const [codeKey, targetId] of desiredCodeTargets.entries()) {
@@ -1097,6 +1348,7 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             sku_name: draft.sku_name,
             spec_values: draft.spec_values,
             inventory_sku_id: draft.inventory_sku_id || null,
+            inventory_source_sku_ids: normalizeInventorySourceSkuIds(draft.inventory_source_sku_ids),
             manual_delivery: draft.manual_delivery === true,
             price_points: draft.price_points,
             price_points_intl: draft.price_points_intl,
@@ -1107,18 +1359,14 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             sort_order: draft.sort_order
         };
         const hasExistingId = Boolean(resolvedExistingId && existingIds.has(resolvedExistingId));
-        const query = hasExistingId
-            ? supabase
-                .from('shop_product_skus')
-                .update(basePayload)
-                .eq('id', resolvedExistingId)
-            : supabase
-                .from('shop_product_skus')
-                .insert(basePayload);
-
-        const { data, error } = await query
-            .select(SHOP_PRODUCT_SKU_SELECT)
-            .limit(1);
+        const payload = hasExistingId || !draft.id
+            ? basePayload
+            : { id: draft.id, ...basePayload };
+        const { data, error } = await writeProductSkuRowWithSourceListFallback(supabase, {
+            payload,
+            resolvedExistingId,
+            hasExistingId
+        });
 
         if (error) {
             if (isDuplicateProductSkuCodeError(error)) {
@@ -1138,19 +1386,23 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
     }
 
     if (defaultSkuId) {
-        const { error: clearDefaultError } = await supabase
-            .from('shop_product_skus')
-            .update({ is_default: false })
-            .eq('product_id', productId);
+        const { error: clearDefaultError } = await runWithTransientSupabaseRetry(
+            () => supabase
+                .from('shop_product_skus')
+                .update({ is_default: false })
+                .eq('product_id', productId)
+        );
 
         if (clearDefaultError) {
             throw clearDefaultError;
         }
 
-        const { error: setDefaultError } = await supabase
-            .from('shop_product_skus')
-            .update({ is_default: true, is_active: true })
-            .eq('id', defaultSkuId);
+        const { error: setDefaultError } = await runWithTransientSupabaseRetry(
+            () => supabase
+                .from('shop_product_skus')
+                .update({ is_default: true, is_active: true })
+                .eq('id', defaultSkuId)
+        );
 
         if (setDefaultError) {
             throw setDefaultError;
@@ -1172,12 +1424,26 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             is_default: false,
             sku_code: null,
             inventory_sku_id: null,
+            inventory_source_sku_ids: [],
             spec_values: buildArchivedProductSkuSpecValues(existing)
         };
-        const { error: updateError } = await supabase
-            .from('shop_product_skus')
-            .update(updatePayload)
-            .eq('id', removableId);
+        let { error: updateError } = await runWithTransientSupabaseRetry(
+            () => supabase
+                .from('shop_product_skus')
+                .update(updatePayload)
+                .eq('id', removableId)
+        );
+
+        if (updateError && isMissingSkuInventorySourceListColumnError(updateError)) {
+            const fallbackUpdatePayload = { ...updatePayload };
+            delete fallbackUpdatePayload.inventory_source_sku_ids;
+            ({ error: updateError } = await runWithTransientSupabaseRetry(
+                () => supabase
+                    .from('shop_product_skus')
+                    .update(fallbackUpdatePayload)
+                    .eq('id', removableId)
+            ));
+        }
 
         if (updateError) {
             throw updateError;
@@ -1529,7 +1795,9 @@ async function writeProductRowWithSchemaFallback(supabase, {
     let lastResult = null;
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
-        const result = await writeProductRow(supabase, { productId, payload: nextPayload });
+        const result = await runWithTransientSupabaseRetry(
+            () => writeProductRow(supabase, { productId, payload: nextPayload })
+        );
         lastResult = result;
 
         if (!result.error || result.data?.length) {
@@ -1896,12 +2164,13 @@ module.exports = async (req, res) => {
             const result = writeResult.result;
 
             if (result.error || !result.data?.length) {
-                return sendJson(res, 400, {
+                const errorPayload = buildShopMutationErrorPayload(result.error, '保存商品失败', 400, 'shop_product_save_failed');
+                return sendJson(res, errorPayload.statusCode, {
                     success: false,
-                    message: result.error?.message || '保存商品失败',
-                    details: result.error?.details || '',
-                    hint: result.error?.hint || '',
-                    code: result.error?.code || ''
+                    message: errorPayload.message,
+                    details: errorPayload.details,
+                    hint: errorPayload.hint,
+                    code: errorPayload.code || ''
                 });
             }
 
@@ -1910,30 +2179,33 @@ module.exports = async (req, res) => {
             try {
                 savedSkus = await syncProductSkus(supabase, savedProduct, body.skus || payload.skus || payload.product_skus);
             } catch (error) {
-                return sendJson(res, Number(error?.statusCode) || 400, {
+                const errorPayload = buildShopMutationErrorPayload(error, '保存商品规格失败', 400, 'shop_product_skus_save_failed');
+                return sendJson(res, errorPayload.statusCode, {
                     success: false,
-                    message: error?.message || '保存商品规格失败',
-                    details: error?.details || '',
-                    hint: error?.hint || '',
-                    code: error?.code || 'shop_product_skus_save_failed'
+                    message: errorPayload.message,
+                    details: errorPayload.details,
+                    hint: errorPayload.hint,
+                    code: errorPayload.code || 'shop_product_skus_save_failed'
                 });
             }
 
-            await writeAdminAuditLog({
-                supabase,
-                adminId: user.id,
-                module: 'shop',
-                site: writableSite,
-                actionType: productId ? 'shop.product.update' : 'shop.product.create',
-                details: {
-                    product_id: savedProduct.id,
-                    name: savedProduct.name,
-                    category: savedProduct.category,
-                    is_active: savedProduct.is_active,
-                    manual_delivery: savedProduct.manual_delivery === true,
-                    sku_count: savedSkus.length
-                }
-            });
+            await runWithTransientSupabaseRetry(
+                () => writeAdminAuditLog({
+                    supabase,
+                    adminId: user.id,
+                    module: 'shop',
+                    site: writableSite,
+                    actionType: productId ? 'shop.product.update' : 'shop.product.create',
+                    details: {
+                        product_id: savedProduct.id,
+                        name: savedProduct.name,
+                        category: savedProduct.category,
+                        is_active: savedProduct.is_active,
+                        manual_delivery: savedProduct.manual_delivery === true,
+                        sku_count: savedSkus.length
+                    }
+                })
+            );
 
             return sendJson(res, 200, {
                 success: true,
@@ -3234,10 +3506,13 @@ module.exports = async (req, res) => {
 
         return sendJson(res, 400, { success: false, message: `Unsupported action: ${action}` });
     } catch (error) {
-        return sendJson(res, error.statusCode || 500, {
+        const errorPayload = buildShopMutationErrorPayload(error, 'Shop mutation failed', 500);
+        return sendJson(res, errorPayload.statusCode, {
             success: false,
-            code: error.code || undefined,
-            message: error.message || 'Shop mutation failed'
+            code: errorPayload.code || undefined,
+            message: errorPayload.message,
+            details: errorPayload.details,
+            hint: errorPayload.hint
         });
     }
 };

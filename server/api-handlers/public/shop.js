@@ -434,13 +434,47 @@ function createShopHandlers({
             : normalizeBoolean(product?.manual_delivery ?? product?.manualDelivery, false);
     }
 
+    function normalizeSkuInventorySourceIds(value = [], fallback = []) {
+        const rawEntries = Array.isArray(value)
+            ? value
+            : (typeof value === 'string' ? value.split(/[,\n]/) : []);
+        const fallbackEntries = Array.isArray(fallback) ? fallback : [];
+        const seen = new Set();
+        return [...rawEntries, ...fallbackEntries]
+            .map((entry) => normalizeText(
+                entry && typeof entry === 'object' && !Array.isArray(entry)
+                    ? (entry.id || entry.sku_id || entry.skuId || entry.inventory_sku_id || entry.inventorySkuId)
+                    : entry,
+                160
+            ))
+            .filter((id) => {
+                if (!id || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            });
+    }
+
     function normalizePublicShopSkuForSite(sku = {}, product = {}, currentSite = 'cn') {
         const skuPriceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
         const skuPrice = normalizeShopSitePriceValue(sku?.[skuPriceField]);
         const skuQuantityRules = getSiteScopedShopMarketingValue(sku, 'quantity_rules', currentSite);
+        const inventorySourceSkuIds = normalizeSkuInventorySourceIds(
+            sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+            normalizeText(sku?.inventory_sku_id ?? sku?.inventorySkuId, 160)
+                ? [sku?.inventory_sku_id ?? sku?.inventorySkuId]
+                : []
+        );
+        const currentSkuId = normalizeText(sku?.id, 160);
+        const rawInventorySkuId = normalizeText(sku?.inventory_sku_id, 160);
+        const compatibilityInventorySkuId = inventorySourceSkuIds
+            .find((sourceId) => sourceId && sourceId !== currentSkuId)
+            || (rawInventorySkuId && rawInventorySkuId !== currentSkuId ? rawInventorySkuId : null)
+            || null;
 
         return {
             ...sku,
+            inventory_sku_id: compatibilityInventorySkuId,
+            inventory_source_sku_ids: inventorySourceSkuIds,
             price_points: skuPrice,
             quantity_rules: skuQuantityRules ?? null,
             manual_delivery: resolvePublicShopSkuManualDelivery(sku, product),
@@ -457,9 +491,10 @@ function createShopHandlers({
             product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at,
             80
         );
-        const skus = rawSkus
+        const inventorySkus = rawSkus
             .filter((sku) => sku?.is_active !== false)
-            .map((sku) => normalizePublicShopSkuForSite(sku, product, currentSite))
+            .map((sku) => normalizePublicShopSkuForSite(sku, product, currentSite));
+        const skus = inventorySkus
             .filter((sku) => sku.price_points !== null && sku.price_points !== undefined && sku.price_points !== '');
 
         return {
@@ -469,6 +504,7 @@ function createShopHandlers({
             flash_sale_price: flashSalePrice ?? null,
             flash_sale_end: flashSaleEnd || null,
             ...(imageCacheVersion ? { image_cache_version: imageCacheVersion } : {}),
+            inventory_skus: inventorySkus,
             skus
         };
     }
@@ -482,7 +518,9 @@ function createShopHandlers({
 
         try {
             const selectAttempts = [
+                'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
+                'id, product_id, sku_code, sku_name, spec_values, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order'
@@ -501,6 +539,7 @@ function createShopHandlers({
                 }
                 if (
                     !isMissingColumnError(response.error, 'inventory_sku_id')
+                    && !isMissingColumnError(response.error, 'inventory_source_sku_ids')
                     && !isMissingColumnError(response.error, 'manual_delivery')
                 ) {
                     break;

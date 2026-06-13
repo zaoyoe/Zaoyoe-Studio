@@ -288,7 +288,7 @@
         "discountOptionalMeta": "可选",
         "soldOutDiscountMeta": "补货后可用",
         "soldOutDiscountPlaceholder": "售罄商品暂不可使用优惠码",
-        "soldOutDiscountUnavailable": "商品售罄后暂不可使用优惠码，联系客服补货后再兑换。",
+        "soldOutDiscountUnavailable": "商品售罄后暂不可使用优惠码，请联系客服补货。",
         "manualDeliveryUnavailableHint": "人工发货商品请联系客服咨询，暂不支持自助兑换或加入购物车。",
         "manualDeliverySupportUnavailable": "客服入口暂时不可用，请稍后再试。",
         "noStock": "无货",

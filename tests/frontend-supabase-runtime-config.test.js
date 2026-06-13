@@ -3667,6 +3667,26 @@ test('shop category filters keep live pills mounted during refresh revalidation'
         'shop category filters should patch existing live pills in place before falling back to a full replacement'
     );
     assert.match(
+        shopClientSource,
+        /getCategoryFilterEntries: function \(categories = \[\]\) \{[\s\S]*const entries = \[\];[\s\S]*this\.sortShopCategoriesByAdminOrder\(categories\)\.forEach[\s\S]*return entries;[\s\S]*\}/,
+        'shop category filters should render only admin-defined categories without injecting an "all" pill'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /name:\s*'all',\s*label:\s*window\.i18n\?\.t\('shop\.allCategories'\)/,
+        'storefront category filters should not add the legacy all category tab'
+    );
+    assert.match(
+        shopClientSource,
+        /sortShopCategoriesByAdminOrder: function \(categories = \[\]\) \{[\s\S]*getShopCategorySortOrder\(left\.category, left\.index\)[\s\S]*getShopCategorySortOrder\(right\.category, right\.index\)[\s\S]*left\.index - right\.index[\s\S]*\}/,
+        'shop category filters should preserve the admin studio category sort_order'
+    );
+    assert.match(
+        shopClientSource,
+        /normalizeCurrentShopCategoryFromEntries: function \(entries = \[\]\) \{[\s\S]*const fallbackCategory = String\(entries\[0\]\?\.name \|\| ''\)\.trim\(\);[\s\S]*this\.currentCategory = fallbackCategory;/,
+        'shop category filters should default to the first admin-ordered category'
+    );
+    assert.match(
         loadCategoryBlock,
         /Using prefetched shop categories[\s\S]*return;/,
         'prefetched shop categories should render immediately and leave DB refresh to the background revalidation path'
@@ -3702,9 +3722,9 @@ test('shop category filters keep live pills mounted during refresh revalidation'
         'loadCategoryFilters should not fall back to default categories when the API intentionally returns an empty current-site category list'
     );
     assert.equal(
-        shopHtmlSource.includes('siteScopedCategoryFilter=20260608_SHOP_SITE_SCOPED_CATEGORY_FILTER_1'),
+        shopHtmlSource.includes('categoryDefaultFirst=20260614_SHOP_CATEGORY_DEFAULT_FIRST_1'),
         true,
-        'shop.html should cache-bust the site-scoped category filter storefront runtime'
+        'shop.html should cache-bust the storefront runtime for first-category default filtering'
     );
 });
 

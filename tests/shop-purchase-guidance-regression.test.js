@@ -26,7 +26,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
@@ -122,8 +122,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';/,
-        'homepage shop prefetch should use the same guidance-aware schema version'
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';/,
+        'homepage shop prefetch should use the same category-default-aware schema version'
     );
     assert.match(
         homeBootstrapSource,
@@ -594,6 +594,21 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
+        /renderPurchaseSkuPills: function \(skus = \[\], selectedSkuId = ''\) \{[\s\S]*const soldOut = stock <= 0 && !manualDelivery;[\s\S]*const disabled = !skuId;[\s\S]*is-sold-out[\s\S]*\$\{disabled \? 'disabled aria-disabled="true"' : ''\}/s,
+        'sold-out SKU pills should remain clickable and only invalid empty SKU entries should be disabled'
+    );
+    assert.match(
+        shopClientSource,
+        /renderPurchaseSkuSpecGroups: function \(groups = \[\], selectedSkuId = ''\) \{[\s\S]*const soldOut = Boolean\(skuId && !manualDelivery && stock <= 0\);[\s\S]*const disabled = !skuId;[\s\S]*is-sold-out[\s\S]*\$\{disabled \? 'disabled aria-disabled="true"' : ''\}/s,
+        'sold-out grouped SKU options should remain selectable while impossible combinations stay disabled'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /if \(Number\(sku\.stock_count \|\| 0\) <= 0 && !manualDelivery\) return;/,
+        'selecting a sold-out SKU should update the modal instead of being ignored'
+    );
+    assert.match(
+        shopClientSource,
         /const requestProductSkuId = String\(this\.currentPurchase\.productSkuId \|\| ''\)\.trim\(\);[\s\S]*const isCurrentDiscountAssetsRequest = \(\) => \([\s\S]*String\(this\.currentPurchase\.productSkuId \|\| ''\)\.trim\(\) === requestProductSkuId[\s\S]*if \(!isCurrentDiscountAssetsRequest\(\)\) \{\s+return;\s+\}/s,
         'coupon refreshes should guard against slower responses from a previously selected spec'
     );
@@ -804,7 +819,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.equal(
         zhLang.shop.soldOutDiscountUnavailable,
-        '商品售罄后暂不可使用优惠码，联系客服补货后再兑换。',
+        '商品售罄后暂不可使用优惠码，请联系客服补货。',
         'sold-out purchase modal should explain why coupons are disabled in Chinese'
     );
     assert.equal(
@@ -836,6 +851,11 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopCssSource,
         /\.shop-purchase-discount\.is-purchase-sold-out[\s\S]*\.shop-discount-assets-empty--sold-out[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-purchase-discount\.is-purchase-sold-out/s,
         'sold-out coupon module should have disabled-state styling in dark and light storefront themes'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-discount-assets-empty--sold-out\s*\{[\s\S]*box-sizing:\s*border-box;[\s\S]*padding:\s*9px 11px;[\s\S]*border:\s*1px solid rgba\(248, 113, 113, 0\.16\);/s,
+        'sold-out coupon message should compensate for its border so switching to a sold-out SKU does not grow the purchase modal'
     );
     assert.equal(
         shopCssSource.includes('.shop-btn-primary:hover:not(:disabled):not([aria-disabled="true"])'),

@@ -854,6 +854,7 @@ test('shop mutate handler rejects shared-sku alias inventory import and accepts 
                 product_id: 'prod_1',
                 sku_name: '美区带质保',
                 inventory_sku_id: 'sku_us',
+                inventory_source_sku_ids: ['sku_us'],
                 is_default: false,
                 is_active: true,
                 stock_count: 0
@@ -915,6 +916,122 @@ test('shop mutate handler rejects shared-sku alias inventory import and accepts 
         );
         assert.equal(state.auditCalls[0]?.details?.sku_id, 'sku_us');
         assert.equal(state.auditCalls[0]?.details?.inventory_sku_id, 'sku_us');
+    });
+});
+
+test('shop mutate handler rejects priority-source alias inventory import', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_primary',
+                product_id: 'prod_1',
+                sku_name: '首选库存',
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            },
+            {
+                id: 'sku_backup',
+                product_id: 'prod_1',
+                sku_name: '备选库存',
+                is_default: false,
+                is_active: true,
+                stock_count: 0
+            },
+            {
+                id: 'sku_alias',
+                product_id: 'prod_1',
+                sku_name: '组合规格',
+                inventory_sku_id: 'sku_primary',
+                inventory_source_sku_ids: ['sku_primary', 'sku_backup'],
+                is_default: false,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const aliasRes = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                skuId: 'sku_alias',
+                lines: ['combo-card-1'],
+                importStatus: 'available',
+                batchId: 'batch_combo'
+            }
+        }, aliasRes);
+
+        const aliasPayload = aliasRes.json();
+        assert.equal(aliasRes.statusCode, 400);
+        assert.equal(aliasPayload.success, false);
+        assert.equal(aliasPayload.code, 'shop_product_sku_inventory_alias_not_importable');
+        assert.match(aliasPayload.message, /按顺序调用多个库存来源/);
+        assert.deepEqual(state.inventoryRows, []);
+    });
+});
+
+test('shop mutate handler accepts local-priority sku inventory import with fallback sources', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_local',
+                product_id: 'prod_1',
+                sku_name: '本地优先',
+                inventory_sku_id: 'sku_backup',
+                inventory_source_sku_ids: ['sku_local', 'sku_backup'],
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            },
+            {
+                id: 'sku_backup',
+                product_id: 'prod_1',
+                sku_name: '备用库存',
+                is_default: false,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                skuId: 'sku_local',
+                lines: ['local-card-1'],
+                importStatus: 'available',
+                batchId: 'batch_local'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.skuId, 'sku_local');
+        assert.equal(payload.inventorySkuId, 'sku_local');
+        assert.equal(payload.skuStockCount, 1);
+        assert.deepEqual(
+            state.inventoryRows.map((row) => ({
+                product_id: row.product_id,
+                sku_id: row.sku_id,
+                content: row.content
+            })),
+            [{ product_id: 'prod_1', sku_id: 'sku_local', content: 'local-card-1' }]
+        );
     });
 });
 

@@ -38,3 +38,43 @@ test('shop reusable inventory migration keeps shared delivery rows reusable', ()
         'purchase RPC patches should never mark reusable rows as sold'
     );
 });
+
+test('shop priority inventory-source migration resolves and locks sources in order', () => {
+    const migration = readRepoFile('supabase/migrations/20260613_add_shop_sku_inventory_source_priority.sql');
+    const localPriorityPatch = readRepoFile('supabase/migrations/20260613_allow_shop_sku_local_priority_inventory_source.sql');
+
+    for (const marker of [
+        'ADD COLUMN IF NOT EXISTS inventory_source_sku_ids UUID[]',
+        'CREATE OR REPLACE FUNCTION public.fn_resolve_shop_sku_inventory_sources',
+        'CREATE OR REPLACE FUNCTION public.fn_lock_shop_sku_inventory',
+        'fn_lock_shop_sku_inventory(p_product_id, v_sku_id, p_quantity)',
+        'fn_lock_shop_sku_inventory(p_product_id, v_sku_id, v_quantity)',
+        'array_agg(source_sku_id ORDER BY item_index)',
+        'COALESCE(inventory.sku_id, locked.source_sku_id, v_inventory_sku_id)',
+        'failed to patch fn_purchase_shop_item_core with priority SKU inventory sources',
+        'failed to patch fn_create_marketplace_shop_order with priority SKU inventory sources'
+    ]) {
+        assert.equal(migration.includes(marker), true, `priority migration should contain ${marker}`);
+    }
+
+    assert.match(
+        migration,
+        /ORDER BY source_rows\.source_rank ASC, i\.created_at ASC, i\.id ASC[\s\S]*LIMIT v_quantity[\s\S]*FOR UPDATE OF i SKIP LOCKED/,
+        'priority lock helper should consume one-time inventory by configured source priority'
+    );
+    assert.match(
+        migration,
+        /COALESCE\(i\.is_shared, false\) = true[\s\S]*ORDER BY source_rows\.source_rank ASC, i\.created_at ASC, i\.id ASC[\s\S]*LIMIT 1/,
+        'priority lock helper should fall back to the first reusable row from the highest-priority available source'
+    );
+    assert.match(
+        localPriorityPatch,
+        /NEW\.inventory_source_sku_ids := COALESCE\(v_source_ids, ARRAY\[\]::UUID\[\]\);[\s\S]*IF v_source_id = NEW\.id THEN[\s\S]*CONTINUE;/,
+        'local-priority patch should allow the current SKU itself as the first inventory source'
+    );
+    assert.equal(
+        localPriorityPatch.includes('sku cannot use itself as inventory source'),
+        false,
+        'local-priority patch should not reject self as an inventory source'
+    );
+});

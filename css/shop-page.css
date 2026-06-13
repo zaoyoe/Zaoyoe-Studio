@@ -6591,6 +6591,8 @@
 }
 
 .shop-discount-assets-empty--sold-out {
+    box-sizing: border-box;
+    padding: 9px 11px;
     border: 1px solid rgba(248, 113, 113, 0.16);
     background: rgba(127, 29, 29, 0.1);
     color: rgba(254, 202, 202, 0.86);
@@ -8699,6 +8701,23 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
 }
 
+#shopPurchaseModal .shop-sku-option--pill.is-sold-out:not(.is-disabled):not(:disabled),
+#shopPurchaseModal .shop-sku-spec-option.is-sold-out:not(.is-disabled):not(:disabled) {
+    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.42);
+    background: rgba(var(--shop-sold-out-soft-red-rgb), 0.1);
+    color: #fecaca;
+    cursor: pointer;
+    opacity: 1;
+}
+
+#shopPurchaseModal .shop-sku-option--pill.is-sold-out.is-selected,
+#shopPurchaseModal .shop-sku-spec-option.is-sold-out.is-selected {
+    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.68);
+    background: rgba(var(--shop-sold-out-soft-red-rgb), 0.16);
+    color: #fff1f2;
+    box-shadow: 0 0 0 3px rgba(var(--shop-sold-out-soft-red-rgb), 0.12);
+}
+
 #shopPurchaseModal .shop-sku-option--pill.is-disabled,
 #shopPurchaseModal .shop-sku-option--pill:disabled,
 #shopPurchaseModal .shop-sku-spec-option.is-disabled,
@@ -8776,6 +8795,24 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-o
     box-shadow:
         0 0 0 3px rgba(34, 197, 94, 0.12),
         0 5px 14px rgba(15, 23, 42, 0.045);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill.is-sold-out:not(.is-disabled):not(:disabled),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-option.is-sold-out:not(.is-disabled):not(:disabled) {
+    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.32);
+    background: rgba(var(--shop-sold-out-soft-red-rgb), 0.08);
+    color: var(--shop-sold-out-soft-red-deep);
+    box-shadow: 0 3px 8px rgba(var(--shop-sold-out-soft-red-deep-rgb), 0.035);
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill.is-sold-out.is-selected,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-option.is-sold-out.is-selected {
+    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.48);
+    background: rgba(var(--shop-sold-out-soft-red-rgb), 0.12);
+    color: var(--shop-sold-out-soft-red-deep);
+    box-shadow:
+        0 0 0 3px rgba(var(--shop-sold-out-soft-red-rgb), 0.1),
+        0 5px 14px rgba(var(--shop-sold-out-soft-red-deep-rgb), 0.045);
 }
 
 html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill.is-disabled,
