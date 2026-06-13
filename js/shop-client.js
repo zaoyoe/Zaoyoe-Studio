@@ -1326,6 +1326,33 @@ const ShopClient = {
         return Number.isFinite(stockCount) ? Math.max(0, Math.trunc(stockCount)) : 0;
     },
 
+    getShopProductCardStockCount: function (product = {}) {
+        const skus = this.getProductSkusForPurchase(product);
+        if (!skus.length) {
+            return this.getShopProductStockCount(product);
+        }
+
+        const stockByInventoryPool = new Map();
+        skus.forEach((sku, index) => {
+            const rawInventoryKey = sku?.inventory_sku_id
+                || sku?.inventorySkuId
+                || sku?.stock_sku_id
+                || sku?.stockSkuId
+                || sku?.id
+                || sku?.sku_code
+                || `sku:${index}`;
+            const inventoryKey = String(rawInventoryKey || `sku:${index}`).trim() || `sku:${index}`;
+            const stockCount = this.getShopSkuStockCount(sku);
+            stockByInventoryPool.set(
+                inventoryKey,
+                Math.max(stockByInventoryPool.get(inventoryKey) || 0, stockCount)
+            );
+        });
+
+        return Array.from(stockByInventoryPool.values())
+            .reduce((total, stockCount) => total + stockCount, 0);
+    },
+
     getProductSkusForPurchase: function (product = {}) {
         return (Array.isArray(product?.skus) ? product.skus : [])
             .filter((sku) => sku?.is_active !== false)
@@ -3648,7 +3675,7 @@ const ShopClient = {
         const fulfillmentState = this.getShopProductCardFulfillmentState(product);
         const manualDelivery = fulfillmentState.manualDelivery;
         const noStock = fulfillmentState.soldOut;
-        const stockCount = fulfillmentState.stockCount;
+        const stockCount = this.getShopProductCardStockCount(product);
         const stockLabel = manualDelivery
             ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
             : (noStock
@@ -10656,7 +10683,7 @@ const ShopClient = {
         const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
         const purchaseDataset = this.buildProductCardPurchaseDataset(product, currentPrice);
         const fulfillmentState = this.getShopProductCardFulfillmentState(product);
-        const stockCount = fulfillmentState.stockCount;
+        const stockCount = this.getShopProductCardStockCount(product);
         const manualDelivery = fulfillmentState.manualDelivery;
         const noStock = fulfillmentState.soldOut;
         const stockLabel = manualDelivery
