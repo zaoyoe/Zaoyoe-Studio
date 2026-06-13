@@ -200,6 +200,92 @@ test('shop products handler loads a single product by id', async () => {
     });
 });
 
+test('shop products handler hides skus removed from the product editor', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: { id: 'prod_2', name: 'VIP Account' },
+                    error: null
+                }
+            ],
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_default_1',
+                            product_id: 'prod_2',
+                            sku_name: '默认规格',
+                            sku_code: 'default',
+                            spec_values: {},
+                            inventory_sku_id: null,
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 2,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_archived_flagged',
+                            product_id: 'prod_2',
+                            sku_name: '旧规格',
+                            sku_code: null,
+                            spec_values: { label: '旧规格', __admin_removed_from_editor: true },
+                            inventory_sku_id: null,
+                            is_default: false,
+                            is_active: false,
+                            stock_count: 8,
+                            sort_order: 1
+                        },
+                        {
+                            id: 'sku_paused_empty_code',
+                            product_id: 'prod_2',
+                            sku_name: '停用空编码但保留',
+                            sku_code: null,
+                            spec_values: {},
+                            inventory_sku_id: null,
+                            is_default: false,
+                            is_active: false,
+                            stock_count: 3,
+                            sort_order: 2
+                        },
+                        {
+                            id: 'sku_paused_manual',
+                            product_id: 'prod_2',
+                            sku_name: '暂停但保留',
+                            sku_code: 'paused',
+                            spec_values: {},
+                            inventory_sku_id: null,
+                            is_default: false,
+                            is_active: false,
+                            stock_count: 0,
+                            sort_order: 3
+                        }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?id=prod_2&includeSkus=true'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(payload.product?.skus?.map((sku) => sku.id), [
+            'sku_default_1',
+            'sku_paused_empty_code',
+            'sku_paused_manual'
+        ]);
+    });
+});
+
 test('shop products handler includes stock_count for import tree payloads', async () => {
     await withShopProductsHandler({
         queryResults: {

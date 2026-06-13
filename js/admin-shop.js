@@ -1169,6 +1169,7 @@ Example output format:
     normalizeProductSkus: function (skus = []) {
         return (Array.isArray(skus) ? skus : [])
             .filter((sku) => sku && typeof sku === 'object')
+            .filter((sku) => !this.isAdminRemovedProductSku(sku))
             .map((sku) => ({
                 ...sku,
                 id: String(sku.id || '').trim(),
@@ -1195,6 +1196,14 @@ Example output format:
                 if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
                 return left.sort_order - right.sort_order || left.sku_name.localeCompare(right.sku_name, 'zh-CN');
             });
+    },
+
+    isAdminRemovedProductSku: function (sku = {}) {
+        const specValues = sku?.spec_values && typeof sku.spec_values === 'object' && !Array.isArray(sku.spec_values)
+            ? sku.spec_values
+            : {};
+
+        return specValues.__admin_removed_from_editor === true;
     },
 
     normalizeSkuManualDeliveryFlag: function (value, fallback = false) {

@@ -43912,13 +43912,19 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 
 .xianyu-fulfillment-topbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: start;
     gap: 14px;
     width: 100%;
 }
 
+.xianyu-fulfillment-topbar::before {
+    content: "";
+    min-width: 0;
+}
+
 .xianyu-fulfillment-tabs.admin-tabs {
+    grid-column: 2;
     justify-content: center;
     gap: 6px;
     margin: 0;
@@ -43955,6 +43961,8 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 }
 
 .xianyu-fulfillment-admin-link {
+    grid-column: 3;
+    justify-self: end;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -45191,7 +45199,12 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
         gap: 10px;
     }
 
+    .xianyu-fulfillment-topbar::before {
+        display: none;
+    }
+
     .xianyu-fulfillment-tabs.admin-tabs {
+        grid-column: auto;
         padding-bottom: 8px;
     }
 
@@ -45200,6 +45213,8 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     }
 
     .xianyu-fulfillment-admin-link {
+        grid-column: auto;
+        justify-self: stretch;
         width: 100%;
         min-height: 44px;
     }
