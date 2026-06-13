@@ -824,6 +824,18 @@ function normalizeProductSkuCodeKey(value) {
     return normalizeText(value, 80).toLowerCase();
 }
 
+function normalizeProductSkuSpecValues(value = {}) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
+
+function buildArchivedProductSkuSpecValues(row = {}) {
+    return {
+        ...normalizeProductSkuSpecValues(row?.spec_values),
+        __admin_removed_from_editor: true,
+        __admin_removed_at: new Date().toISOString()
+    };
+}
+
 function extractDuplicateProductSkuCode(error = {}) {
     const text = [
         error?.details,
@@ -1154,16 +1166,14 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
 
     const removableIds = [...existingIds].filter((id) => !retainedIds.has(id));
     for (const removableId of removableIds) {
-        const { count, error: countError } = await supabase
-            .from('shop_inventory')
-            .select('*', { count: 'exact', head: true })
-            .eq('sku_id', removableId);
-
-        if (countError) {
-            throw countError;
-        }
-
-        const updatePayload = { is_active: false, is_default: false, sku_code: null };
+        const existing = existingRowList.find((row) => row.id === removableId) || null;
+        const updatePayload = {
+            is_active: false,
+            is_default: false,
+            sku_code: null,
+            inventory_sku_id: null,
+            spec_values: buildArchivedProductSkuSpecValues(existing)
+        };
         const { error: updateError } = await supabase
             .from('shop_product_skus')
             .update(updatePayload)
@@ -1171,14 +1181,6 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
 
         if (updateError) {
             throw updateError;
-        }
-
-        if (Number(count || 0) > 0) {
-            const existing = (Array.isArray(existingRows) ? existingRows : []).find((row) => row.id === removableId);
-            savedRows.push({
-                ...(existing || { id: removableId, product_id: productId }),
-                ...updatePayload
-            });
         }
     }
 

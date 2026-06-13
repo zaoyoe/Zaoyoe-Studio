@@ -202,6 +202,19 @@ function attachShopProductsImageCacheVersion(rows = []) {
     return (Array.isArray(rows) ? rows : []).map((row) => attachShopProductImageCacheVersion(row));
 }
 
+function normalizeProductSkuSpecValues(value = {}) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function isAdminRemovedProductSku(row = {}) {
+    const specValues = normalizeProductSkuSpecValues(row?.spec_values);
+    return specValues.__admin_removed_from_editor === true;
+}
+
+function filterEditableProductSkus(rows = []) {
+    return (Array.isArray(rows) ? rows : []).filter((row) => !isAdminRemovedProductSku(row));
+}
+
 async function runProductSelectWithFallback(baseQueryFactory, selectAttempts = []) {
     let lastError = null;
     const attempts = Array.isArray(selectAttempts) && selectAttempts.length ? selectAttempts : ['*'];
@@ -327,7 +340,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
 
                 product = {
                     ...product,
-                    skus: Array.isArray(skuRows) ? skuRows : []
+                    skus: filterEditableProductSkus(skuRows)
                 };
             }
 
@@ -390,7 +403,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
             }
 
             const skusByProductId = new Map();
-            (Array.isArray(skuRows) ? skuRows : []).forEach((sku) => {
+            filterEditableProductSkus(skuRows).forEach((sku) => {
                 const skuProductId = normalizeText(sku?.product_id, 160);
                 if (!skuProductId) return;
                 if (!skusByProductId.has(skuProductId)) {

@@ -790,6 +790,17 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
                 }
             ]
         );
+        const archivedUpdate = state.updatePayloadsByTable.shop_product_skus.find((entry) => (
+            entry.filters.some(([column, value]) => column === 'id' && value === 'sku_old_code_3')
+            && entry.payload?.is_active === false
+        ));
+        assert.equal(archivedUpdate?.payload?.is_default, false);
+        assert.equal(archivedUpdate?.payload?.sku_code, null);
+        assert.equal(archivedUpdate?.payload?.inventory_sku_id, null);
+        assert.equal(archivedUpdate?.payload?.spec_values?.label, '旧三号规格');
+        assert.equal(archivedUpdate?.payload?.spec_values?.__admin_removed_from_editor, true);
+        assert.equal(payload.skus.some((sku) => sku.id === 'sku_old_code_3'), false);
+        assert.deepEqual(payload.product.skus.map((sku) => sku.id), ['sku_target']);
     });
 });
 
