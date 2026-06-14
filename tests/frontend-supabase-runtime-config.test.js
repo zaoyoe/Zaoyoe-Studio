@@ -11479,6 +11479,17 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         );
     }
 
+    assert.doesNotMatch(
+        shopSource,
+        /allBtn\.textContent = '全部'|dataset\.category = 'all'/,
+        'admin shop product category filters should not inject the legacy all tab'
+    );
+    assert.match(
+        shopSource,
+        /normalizeCurrentProductCategory: function \(categories = this\.categoryData\) \{[\s\S]*const fallbackCategory = String\(sortedCategories\[0\]\?\.name \|\| ''\)\.trim\(\);[\s\S]*this\.currentCategory = fallbackCategory;/,
+        'admin shop product filters should default to the first admin-ordered category'
+    );
+
     assert.equal(shopSource.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated handlers');
     assert.equal(shopSource.includes('data-shop-overlay-close="dynamic-modal"'), true, 'js/admin-shop.js should render delegated dynamic modal overlays');
     assert.equal(shopSource.includes('bindOverlayDismiss: function'), true, 'js/admin-shop.js should expose a shared overlay dismiss helper for shop modals');
@@ -16605,7 +16616,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         "if ((url.pathname === '/api/admin/shop/mutate' || adminRoute === 'shop/mutate') && method === 'POST') {",
         '商城模块会通过 shop products handler 渲染商品工作台',
         '商城导入树会通过 shop categories 和 products handler 渲染分类与商品',
-        '商城拖拽排序会通过 shop mutate handler 持久化 sort_order',
+        '商城拖拽排序会通过 shop mutate handler 持久化 sort_order 和 display_order',
         '商城分类创建与重命名会通过 shop mutate handler 写回分类树',
         '商城跨分类移动与删分类回退会保持工作台闭环',
         '库存列表会通过 shop inventory handler 渲染统计和表格',

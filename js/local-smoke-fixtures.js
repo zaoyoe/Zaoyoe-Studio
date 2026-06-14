@@ -4582,7 +4582,8 @@
                 .map((entry) => ({
                     id: normalizeText(entry?.id || entry?.productId, 160),
                     category: normalizeText(entry?.category || entry?.targetCategory, 120),
-                    sort_order: normalizeNonNegativeInteger(entry?.sortOrder ?? entry?.sort_order)
+                    sort_order: normalizeNonNegativeInteger(entry?.sortOrder ?? entry?.sort_order),
+                    display_order: normalizeNonNegativeInteger(entry?.displayOrder ?? entry?.display_order)
                 }))
                 .filter((entry) => entry.id && entry.category && entry.sort_order !== null);
 
@@ -4607,6 +4608,9 @@
                 }
                 target.category = assignment.category;
                 target.sort_order = assignment.sort_order;
+                if (assignment.display_order !== null) {
+                    target.display_order = assignment.display_order;
+                }
                 updatedProducts.push({
                     ...target
                 });
@@ -10228,7 +10232,8 @@
             () => {
                 const productRows = getTableRows('shop_products');
                 return productRows.find((row) => row.id === 'shop-prod-cn-2')?.sort_order === 0
-                    && productRows.find((row) => row.id === 'shop-prod-cn-1')?.sort_order === 1;
+                    && productRows.find((row) => row.id === 'shop-prod-cn-1')?.sort_order === 1
+                    && productRows.find((row) => row.id === 'shop-prod-cn-2')?.display_order > productRows.find((row) => row.id === 'shop-prod-cn-1')?.display_order;
             },
             { message: '商城排序未通过 reorder_products 写回本地 smoke 状态' }
         );
@@ -10237,7 +10242,7 @@
             document.querySelectorAll('.tree-category[data-category="account"] .tree-product-item')
         ).map((element) => element.getAttribute('data-id'));
         recordResult(
-            '商城拖拽排序会通过 shop mutate handler 持久化 sort_order',
+            '商城拖拽排序会通过 shop mutate handler 持久化 sort_order 和 display_order',
             reorderedAccountProductIds[0] === 'shop-prod-cn-2' && reorderedAccountProductIds[1] === 'shop-prod-cn-1',
             `account=${reorderedAccountProductIds.join(',')}`
         );

@@ -464,9 +464,9 @@ test('shop mutate handler updates category public visibility', async () => {
 test('shop mutate handler reorders products within and across categories', async () => {
     await withShopMutateHandler({
         productRows: [
-            { id: 'prod_1', name: 'A', is_active: true, category: 'cards', sort_order: 0 },
-            { id: 'prod_2', name: 'B', is_active: true, category: 'cards', sort_order: 1 },
-            { id: 'prod_3', name: 'C', is_active: true, category: 'keys', sort_order: 0 }
+            { id: 'prod_1', name: 'A', is_active: true, category: 'cards', sort_order: 0, display_order: 30 },
+            { id: 'prod_2', name: 'B', is_active: true, category: 'cards', sort_order: 1, display_order: 20 },
+            { id: 'prod_3', name: 'C', is_active: true, category: 'keys', sort_order: 0, display_order: 10 }
         ],
         categoryRows: []
     }, async ({ handler, state }) => {
@@ -479,9 +479,9 @@ test('shop mutate handler reorders products within and across categories', async
                 action: 'reorder_products',
                 site: 'cn',
                 assignments: [
-                    { id: 'prod_2', category: 'cards', sortOrder: 0 },
-                    { id: 'prod_1', category: 'cards', sortOrder: 1 },
-                    { id: 'prod_3', category: 'cards', sortOrder: 2 }
+                    { id: 'prod_2', category: 'cards', sortOrder: 0, displayOrder: 30 },
+                    { id: 'prod_1', category: 'cards', sortOrder: 1, displayOrder: 20 },
+                    { id: 'prod_3', category: 'cards', sortOrder: 2, displayOrder: 10 }
                 ]
             }
         }, res);
@@ -493,16 +493,28 @@ test('shop mutate handler reorders products within and across categories', async
             state.productRows.map((row) => ({
                 id: row.id,
                 category: row.category,
-                sort_order: row.sort_order
+                sort_order: row.sort_order,
+                display_order: row.display_order
             })),
             [
-                { id: 'prod_1', category: 'cards', sort_order: 1 },
-                { id: 'prod_2', category: 'cards', sort_order: 0 },
-                { id: 'prod_3', category: 'cards', sort_order: 2 }
+                { id: 'prod_1', category: 'cards', sort_order: 1, display_order: 20 },
+                { id: 'prod_2', category: 'cards', sort_order: 0, display_order: 30 },
+                { id: 'prod_3', category: 'cards', sort_order: 2, display_order: 10 }
             ]
         );
         assert.equal(state.auditCalls[0]?.actionType, 'shop.product.reorder');
         assert.deepEqual(state.auditCalls[0]?.details.product_ids, ['prod_2', 'prod_1', 'prod_3']);
+        assert.deepEqual(
+            state.auditCalls[0]?.details.changes.map((row) => ({
+                id: row.id,
+                display_order: row.display_order
+            })),
+            [
+                { id: 'prod_2', display_order: 30 },
+                { id: 'prod_1', display_order: 20 },
+                { id: 'prod_3', display_order: 10 }
+            ]
+        );
     });
 });
 
