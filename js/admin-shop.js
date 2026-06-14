@@ -9294,7 +9294,11 @@ Example output format:
             }
 
             if (shouldPersistProductDescriptionVisibility) {
-                payload[productDescriptionSwitchField] = showProductDescription;
+                if (productDescriptionSwitchField === 'show_product_description') {
+                    payload.show_product_description = showProductDescription;
+                } else {
+                    payload[productDescriptionSwitchField] = showProductDescription;
+                }
             }
 
             if (this.purchaseNotesSchemaAvailable !== false) {

@@ -41,8 +41,8 @@ test('shop product description visibility toggle is wired through admin, storefr
     );
     assert.match(
         shopClientSource,
-        /shouldShowProductCardDescription: function \(product\) \{\s+return product\?\.show_product_description !== false;/s,
-        'shop storefront should default to showing descriptions unless the persisted flag is explicitly false'
+        /shouldShowProductCardDescription: function \(product\) \{\s+if \(this\.getCurrentShopSite\(\) === 'intl'[\s\S]+show_product_description_intl[\s\S]+return product\?\.show_product_description !== false;/s,
+        'shop storefront should default to showing descriptions unless the active-site persisted flag is explicitly false'
     );
     assert.match(
         shopClientSource,
