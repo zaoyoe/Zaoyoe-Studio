@@ -62,7 +62,8 @@ test('shop catalog and homepage prefetches use the KVM public API fast path with
         assert.equal(shopClientSource.includes(marker), true, `shop-client.js should contain ${marker}`);
     });
 
-    assert.equal(homeBootstrapSource.includes('fetchShopCatalogPayload(currentSite)'), true);
+    assert.equal(homeBootstrapSource.includes('fetchShopCatalogPayload(currentSite, currentLanguage)'), true);
+    assert.equal(homeBootstrapSource.includes('language: currentLanguage'), true);
     assert.equal(prefetchHomeSource.includes('fetchPublicShopCatalogPayload(getCurrentSite())'), true);
     assert.equal(framerHomeSource.includes('fetchHomepageShopCatalogPayload(getHomepageRuntimeSite())'), true);
 });

@@ -1589,10 +1589,21 @@ function formatValidationMessages(issues = []) {
 
 const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'updated_at',
+    'name_intl',
+    'name_intl_zh',
+    'description_intl',
+    'description_intl_zh',
+    'show_product_description_intl',
     'purchase_notes_zh',
     'purchase_notes_en',
+    'purchase_notes_intl',
+    'purchase_notes_intl_zh',
+    'show_purchase_notes_intl',
     'usage_instructions_zh',
     'usage_instructions_en',
+    'usage_instructions_intl',
+    'usage_instructions_intl_zh',
+    'show_usage_instructions_intl',
     'purchase_notes',
     'show_purchase_notes',
     'usage_instructions',
@@ -1676,6 +1687,17 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
         });
     };
 
+    if (hasMissing('name_intl', 'name_intl_zh')) {
+        if (
+            site === 'intl'
+            && Object.prototype.hasOwnProperty.call(nextPayload, 'name_intl')
+            && !Object.prototype.hasOwnProperty.call(nextPayload, 'name_en')
+        ) {
+            nextPayload.name_en = nextPayload.name_intl;
+        }
+        removeFields(['name_intl', 'name_intl_zh']);
+    }
+
     if (hasMissing('purchase_notes_zh', 'purchase_notes_en')) {
         if (site !== 'intl' && Object.prototype.hasOwnProperty.call(nextPayload, 'purchase_notes_zh')) {
             nextPayload.purchase_notes = nextPayload.purchase_notes_zh;
@@ -1683,11 +1705,19 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
         removeFields(['purchase_notes_zh', 'purchase_notes_en']);
     }
 
+    if (hasMissing('purchase_notes_intl', 'purchase_notes_intl_zh', 'show_purchase_notes_intl')) {
+        removeFields(['purchase_notes_intl', 'purchase_notes_intl_zh', 'show_purchase_notes_intl']);
+    }
+
     if (hasMissing('usage_instructions_zh', 'usage_instructions_en')) {
         if (site !== 'intl' && Object.prototype.hasOwnProperty.call(nextPayload, 'usage_instructions_zh')) {
             nextPayload.usage_instructions = nextPayload.usage_instructions_zh;
         }
         removeFields(['usage_instructions_zh', 'usage_instructions_en']);
+    }
+
+    if (hasMissing('usage_instructions_intl', 'usage_instructions_intl_zh', 'show_usage_instructions_intl')) {
+        removeFields(['usage_instructions_intl', 'usage_instructions_intl_zh', 'show_usage_instructions_intl']);
     }
 
     if (hasMissing('purchase_notes', 'show_purchase_notes')) {
@@ -1700,6 +1730,10 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
 
     if (hasMissing('show_product_description')) {
         removeFields(['show_product_description']);
+    }
+
+    if (hasMissing('description_intl', 'description_intl_zh', 'show_product_description_intl')) {
+        removeFields(['description_intl', 'description_intl_zh', 'show_product_description_intl']);
     }
 
     if (hasMissing(
@@ -1853,7 +1887,7 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
 
     if (writableSite === 'intl' && !normalizedProductId) {
         const baseName = normalizeText(nextPayload.name, 160);
-        const englishName = normalizeText(nextPayload.name_en, 160);
+        const englishName = normalizeText(nextPayload.name_intl || nextPayload.name_en, 160);
         if (!baseName && englishName) {
             nextPayload.name = englishName;
         }
@@ -1897,10 +1931,16 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const purchaseNotes = normalizeText(safePayload.purchase_notes, 4000);
     const purchaseNotesZh = normalizeText(safePayload.purchase_notes_zh, 4000);
     const purchaseNotesEn = normalizeText(safePayload.purchase_notes_en, 4000);
+    const showPurchaseNotesIntl = normalizeBoolean(safePayload.show_purchase_notes_intl, false);
+    const purchaseNotesIntl = normalizeText(safePayload.purchase_notes_intl, 4000);
+    const purchaseNotesIntlZh = normalizeText(safePayload.purchase_notes_intl_zh, 4000);
     const showUsageInstructions = normalizeBoolean(safePayload.show_usage_instructions, false);
     const usageInstructions = normalizeText(safePayload.usage_instructions, 4000);
     const usageInstructionsZh = normalizeText(safePayload.usage_instructions_zh, 4000);
     const usageInstructionsEn = normalizeText(safePayload.usage_instructions_en, 4000);
+    const showUsageInstructionsIntl = normalizeBoolean(safePayload.show_usage_instructions_intl, false);
+    const usageInstructionsIntl = normalizeText(safePayload.usage_instructions_intl, 4000);
+    const usageInstructionsIntlZh = normalizeText(safePayload.usage_instructions_intl_zh, 4000);
 
     if (!name) {
         appendProductValidationIssue(blockingIssues, 'blocking', 'name_required', '商品名称不能为空。', 'name');
@@ -1996,10 +2036,16 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
         && !purchaseNotes
         && !purchaseNotesZh
         && !purchaseNotesEn
+        && !showPurchaseNotesIntl
+        && !purchaseNotesIntl
+        && !purchaseNotesIntlZh
         && !showUsageInstructions
         && !usageInstructions
         && !usageInstructionsZh
         && !usageInstructionsEn
+        && !showUsageInstructionsIntl
+        && !usageInstructionsIntl
+        && !usageInstructionsIntlZh
     ) {
         appendProductValidationIssue(
             warnings,

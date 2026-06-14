@@ -45,6 +45,7 @@
     const prefetching = {};
 
     const site = () => window.SiteConfig?.site || 'cn';
+    const language = () => String(window.i18n?.getCurrentLanguage?.() || 'zh').toLowerCase().startsWith('en') ? 'en' : 'zh';
     const publicApiBaseUrl = () => String(
         window.ZAOYOE_PUBLIC_API_BASE_URL
         || window.VERIFY_SERVER_URL
@@ -65,9 +66,13 @@
         }
     }
 
-    async function fetchShopCatalogPayload(currentSite) {
-        const relativeUrl = `/api/shop/catalog?site=${encodeURIComponent(currentSite)}`;
-        const directUrl = buildPublicApiUrl('/api/shop/catalog', { site: currentSite });
+    async function fetchShopCatalogPayload(currentSite, currentLanguage) {
+        const params = new URLSearchParams({
+            site: currentSite,
+            language: currentLanguage
+        });
+        const relativeUrl = `/api/shop/catalog?${params.toString()}`;
+        const directUrl = buildPublicApiUrl('/api/shop/catalog', { site: currentSite, language: currentLanguage });
         const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
         let lastError = null;
 
@@ -143,11 +148,12 @@
     async function prefetchShop() {
         try {
             const currentSite = site();
+            const currentLanguage = language();
             let categories = [];
             let products = [];
 
             try {
-                const payload = await fetchShopCatalogPayload(currentSite);
+                const payload = await fetchShopCatalogPayload(currentSite, currentLanguage);
                 categories = Array.isArray(payload?.categories)
                     ? payload.categories
                     : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
@@ -184,7 +190,8 @@
                     categories,
                     products: filteredProducts,
                     timestamp: Date.now(),
-                    site: currentSite
+                    site: currentSite,
+                    language: currentLanguage
                 }));
                 console.log('⚡ Shop prefetched');
             } else {

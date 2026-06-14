@@ -70,13 +70,13 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
     );
     assert.match(
         adminShopSource,
-        /if \(productInputLanguage\.name === 'zh'\) \{[\s\S]*payload\.name = name;[\s\S]*payload\.name_en = name_en[\s\S]*if \(productInputLanguage\.description === 'zh'\) \{[\s\S]*payload\.description = description;[\s\S]*payload\.description_en = description_en/,
-        'intl Chinese title and description input should preserve the Chinese original and save English translations into EN fields'
+        /if \(editSite === 'intl'\) \{[\s\S]*payload\.name_intl = productInputLanguage\.name === 'zh'[\s\S]*payload\.name_intl_zh = productInputLanguage\.name === 'zh'[\s\S]*payload\.description_intl = productInputLanguage\.description === 'zh'[\s\S]*payload\.description_intl_zh = productInputLanguage\.description === 'zh'[\s\S]*delete payload\.name;[\s\S]*delete payload\.description;/,
+        'intl title and description input should save site-scoped bilingual fields without overwriting CN copy'
     );
     assert.match(
         adminShopSource,
-        /payload\.name_en = name;[\s\S]*if \(name_zh\) \{[\s\S]*payload\.name = name_zh;[\s\S]*payload\.description_en = description;[\s\S]*if \(description_zh\) \{[\s\S]*payload\.description = description_zh;/,
-        'intl English title and description input should keep EN fields and backfill base Chinese fields from reverse translation'
+        /payload\.name_intl = productInputLanguage\.name === 'zh'[\s\S]*\? \(name_en[\s\S]*: name;[\s\S]*payload\.name_intl_zh = productInputLanguage\.name === 'zh'[\s\S]*\? name[\s\S]*: \(name_zh[\s\S]*payload\.description_intl = productInputLanguage\.description === 'zh'[\s\S]*\? \(description_en[\s\S]*: description;[\s\S]*payload\.description_intl_zh = productInputLanguage\.description === 'zh'[\s\S]*\? description[\s\S]*: \(description_zh/,
+        'intl English and Chinese title/description input should stay within the INTL field set'
     );
     assert.match(
         adminShopSource,
@@ -138,13 +138,13 @@ test('shop and wallet guidance readers resolve bilingual fields by site', () => 
     );
     assert.match(
         shopClientSource,
-        /getGuidanceSiteForCurrentLanguage: function \(\) \{\s+return this\.isEnglishShopLocale\(\) \? 'intl' : 'cn';\s+\}/,
-        'storefront should request product guidance with the current UI language instead of the business site'
+        /getGuidanceSiteForCurrentLanguage: function \(\) \{\s+return this\.getCurrentShopSite\(\);\s+\}/,
+        'storefront should request product guidance for the active business site'
     );
     assert.match(
         shopClientSource,
-        /fetch\('\/api\/shop\/product-guidance'[\s\S]*site: this\.getGuidanceSiteForCurrentLanguage\(\)/,
-        'product guidance refreshes should pass the UI-language site to the public API'
+        /fetch\('\/api\/shop\/product-guidance'[\s\S]*site: this\.getGuidanceSiteForCurrentLanguage\(\),[\s\S]*language: this\.isEnglishShopLocale\(\) \? 'en' : 'zh'/,
+        'product guidance refreshes should pass both business site and UI language to the public API'
     );
     assert.match(
         shopClientSource,
@@ -153,8 +153,8 @@ test('shop and wallet guidance readers resolve bilingual fields by site', () => 
     );
     assert.match(
         shopHandlerSource,
-        /resolveLocalizedGuidanceText\(product = \{\}, baseField = '', guidanceSite = 'cn'\)/,
-        'public shop APIs should localize guidance from bilingual fields'
+        /resolveLocalizedGuidanceText\(product = \{\}, baseField = '', guidanceSite = 'cn', language = ''\)/,
+        'public shop APIs should localize guidance from site-scoped bilingual fields'
     );
     assert.match(
         shopHandlerSource,
