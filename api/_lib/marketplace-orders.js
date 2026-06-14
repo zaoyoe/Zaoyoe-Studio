@@ -62,17 +62,22 @@ function normalizeSnapshot(value) {
 }
 
 function resolveLocalizedUsageInstructions(product = {}, site = 'cn') {
-    if (product?.show_usage_instructions !== true) return '';
-
     const usageInstructions = sanitizeText(product?.usage_instructions, 4000);
     const usageInstructionsZh = sanitizeText(product?.usage_instructions_zh, 4000);
     const usageInstructionsEn = sanitizeText(product?.usage_instructions_en, 4000);
+    const usageInstructionsIntl = sanitizeText(product?.usage_instructions_intl, 4000);
+    const usageInstructionsIntlZh = sanitizeText(product?.usage_instructions_intl_zh, 4000);
 
     if (normalizeSite(site) === 'intl') {
-        return usageInstructionsEn || usageInstructions || usageInstructionsZh;
+        const showIntl = Object.prototype.hasOwnProperty.call(product, 'show_usage_instructions_intl')
+            ? product.show_usage_instructions_intl === true
+            : product?.show_usage_instructions === true;
+        if (!showIntl) return '';
+        return usageInstructionsIntlZh || usageInstructionsIntl || usageInstructionsEn;
     }
 
-    return usageInstructionsZh || usageInstructions || usageInstructionsEn;
+    if (product?.show_usage_instructions !== true) return '';
+    return usageInstructionsZh || usageInstructions;
 }
 
 function isMissingGuidanceColumnError(error) {
@@ -92,6 +97,7 @@ async function loadMarketplaceProductUsageInstructions(supabase, productId, site
     }
 
     const selects = [
+        'id, show_usage_instructions, show_usage_instructions_intl, usage_instructions, usage_instructions_zh, usage_instructions_en, usage_instructions_intl, usage_instructions_intl_zh',
         'id, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en',
         'id, show_usage_instructions, usage_instructions'
     ];

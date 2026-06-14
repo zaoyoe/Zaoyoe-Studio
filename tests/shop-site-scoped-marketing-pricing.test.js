@@ -44,8 +44,8 @@ test('admin product editor keeps product-level tier pricing out of the modal and
     );
     assert.match(
         source,
-        /if \(editSite === 'intl'\) \{[\s\S]*if \(productInputLanguage\.name === 'zh'\) \{[\s\S]*payload\.name = name;[\s\S]*\} else \{[\s\S]*else if \(!id && !payload\.name\) \{[\s\S]*payload\.name = name;/,
-        'creating an intl product should still backfill the base required name field'
+        /if \(editSite === 'intl'\) \{[\s\S]*payload\.name_intl = productInputLanguage\.name === 'zh'[\s\S]*payload\.name_intl_zh = productInputLanguage\.name === 'zh'[\s\S]*payload\.description_intl = productInputLanguage\.description === 'zh'[\s\S]*payload\.description_intl_zh = productInputLanguage\.description === 'zh'[\s\S]*delete payload\.name;[\s\S]*delete payload\.description;/,
+        'intl product edits should save site-scoped copy without overwriting CN name or description'
     );
     assert.doesNotMatch(
         source,

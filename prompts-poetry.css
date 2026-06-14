@@ -2741,6 +2741,8 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
     /* Consistent aspect ratio */
     z-index: 2;
     /* Ensure cards are above any extended light */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 /* Pinterest-style Favorite Button */
@@ -2762,22 +2764,13 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
     transition: all 0.25s ease;
     z-index: 10;
     backdrop-filter: blur(4px);
+    pointer-events: none;
 }
 
 .card-fav-btn i {
     color: white;
     font-size: 1rem;
     transition: all 0.2s ease;
-}
-
-.prompt-card:hover .card-fav-btn {
-    opacity: 1;
-    transform: scale(1);
-}
-
-.card-fav-btn:hover {
-    background: rgba(255, 71, 87, 0.9);
-    transform: scale(1.1);
 }
 
 .card-fav-btn:active {
@@ -2918,13 +2911,6 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
     transform: scale(1.3);
 }
 
-.prompt-card:hover {
-    transform: translateY(-8px) scale(1.01);
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-    /* Stronger shadow */
-    border-color: rgba(0, 0, 0, 0.1);
-}
-
 .card-image {
     width: 100%;
     height: 100%;
@@ -2935,10 +2921,6 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
 
 .card-image.loaded {
     opacity: 1;
-}
-
-.prompt-card:hover .card-image {
-    transform: scale(1.05);
 }
 
 .card-overlay {
@@ -2961,11 +2943,7 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
     justify-content: flex-end;
     align-items: center;
     box-sizing: border-box;
-}
-
-.prompt-card:hover .card-overlay {
-    transform: translateY(0);
-    opacity: 1;
+    pointer-events: none;
 }
 
 .card-title {
@@ -3001,9 +2979,43 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
     transition: all 0.2s ease;
 }
 
-.card-tags span:hover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.35);
+@media (hover: hover) and (pointer: fine) {
+
+    .prompt-card:hover .card-fav-btn {
+        opacity: 1;
+        transform: scale(1);
+        pointer-events: auto;
+    }
+
+    .card-fav-btn:hover {
+        background: rgba(255, 71, 87, 0.9);
+        transform: scale(1.1);
+    }
+
+    .card-fav-btn:active {
+        transform: scale(0.95);
+    }
+
+    .prompt-card:hover {
+        transform: translateY(-8px) scale(1.01);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+        /* Stronger shadow */
+        border-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .prompt-card:hover .card-image {
+        transform: scale(1.05);
+    }
+
+    .prompt-card:hover .card-overlay {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    .card-tags span:hover {
+        background: rgba(255, 255, 255, 0.25);
+        border-color: rgba(255, 255, 255, 0.35);
+    }
 }
 
 /* --- Modal --- */

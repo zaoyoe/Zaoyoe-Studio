@@ -3802,6 +3802,97 @@ function toggleFavorite(id, btn, e) {
     }
 }
 
+const PROMPT_CARD_TOUCH_TAP_MAX_DISTANCE = 10;
+const PROMPT_CARD_TOUCH_CLICK_SUPPRESS_MS = 700;
+const PROMPT_CARD_INTERACTIVE_SELECTOR = [
+    'a',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    '[role="button"]',
+    '.card-fav-btn'
+].join(', ');
+
+function isPromptCardTouchPointer(event) {
+    return String(event?.pointerType || '') === 'touch';
+}
+
+function isPromptCardInteractiveTarget(target) {
+    return target instanceof Element && Boolean(target.closest(PROMPT_CARD_INTERACTIVE_SELECTOR));
+}
+
+function suppressPromptCardFollowupClick(card) {
+    if (!card) return;
+    card._promptCardSuppressClickUntil = Date.now() + PROMPT_CARD_TOUCH_CLICK_SUPPRESS_MS;
+}
+
+function shouldSuppressPromptCardClick(card) {
+    return Boolean(card?._promptCardSuppressClickUntil && Date.now() < card._promptCardSuppressClickUntil);
+}
+
+function bindPromptCardActivation(card, promptId) {
+    if (!card) return;
+
+    card.onclick = (event) => {
+        if (shouldSuppressPromptCardClick(card)) {
+            event?.preventDefault();
+            return;
+        }
+        openPromptModal(promptId);
+    };
+
+    if (typeof window.PointerEvent === 'undefined') return;
+
+    let touchTapState = null;
+
+    card.addEventListener('pointerdown', (event) => {
+        if (!isPromptCardTouchPointer(event) || isPromptCardInteractiveTarget(event.target)) {
+            touchTapState = null;
+            return;
+        }
+
+        touchTapState = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            moved: false
+        };
+    });
+
+    card.addEventListener('pointermove', (event) => {
+        if (!touchTapState || event.pointerId !== touchTapState.pointerId) return;
+
+        const dx = event.clientX - touchTapState.startX;
+        const dy = event.clientY - touchTapState.startY;
+        if (Math.hypot(dx, dy) > PROMPT_CARD_TOUCH_TAP_MAX_DISTANCE) {
+            touchTapState.moved = true;
+        }
+    });
+
+    card.addEventListener('pointerup', (event) => {
+        if (!touchTapState || event.pointerId !== touchTapState.pointerId) return;
+
+        const tapState = touchTapState;
+        touchTapState = null;
+
+        const dx = event.clientX - tapState.startX;
+        const dy = event.clientY - tapState.startY;
+        const moved = tapState.moved || Math.hypot(dx, dy) > PROMPT_CARD_TOUCH_TAP_MAX_DISTANCE;
+
+        if (moved || isPromptCardInteractiveTarget(event.target)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        suppressPromptCardFollowupClick(card);
+        openPromptModal(promptId);
+    });
+
+    card.addEventListener('pointercancel', () => {
+        touchTapState = null;
+    });
+}
+
 // --- Render Gallery ---
 function renderGallery(filter, reset = true) {
     const grid = document.querySelector('.gallery-container');
@@ -3882,7 +3973,7 @@ function renderCurrentPage() {
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
         card.dataset.images = JSON.stringify(imageAssets); // Store all images
-        card.onclick = () => openPromptModal(item.id);
+        bindPromptCardActivation(card, item.id);
         setPromptCardStaggerClass(card, index);
 
         // Generate image indicator dots if multiple images

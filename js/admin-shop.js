@@ -389,7 +389,7 @@ const ShopAdmin = {
     // ==================== Site-Context Editing ====================
     SITE_FIELD_MAP: {
         cn: { price: 'price_points', name: 'name', desc: 'description' },
-        intl: { price: 'price_points_intl', name: 'name_en', desc: 'description_en' }
+        intl: { price: 'price_points_intl', name: 'name_intl', desc: 'description_intl' }
     },
     SITE_MARKETING_FIELD_MAP: {
         cn: {
@@ -408,6 +408,30 @@ const ShopAdmin = {
     getEditSite() {
         const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
         return filter === 'intl' ? 'intl' : 'cn'; // 'all' defaults to 'cn'
+    },
+
+    getSiteScopedProductTextForEdit(data, baseField) {
+        if (!data || !baseField) return '';
+        if (this.getEditSite() === 'intl') {
+            const intlField = baseField === 'name' ? 'name_intl' : `${baseField}_intl`;
+            const legacyEnField = baseField === 'name' ? 'name_en' : `${baseField}_en`;
+            return String(data?.[intlField] || data?.[legacyEnField] || '').trim();
+        }
+        return String(data?.[baseField] || '').trim();
+    },
+
+    getSiteScopedProductSwitchForEdit(data, baseField, fallback = false) {
+        if (!data || !baseField) return Boolean(fallback);
+        if (this.getEditSite() === 'intl') {
+            const intlField = `${baseField}_intl`;
+            if (Object.prototype.hasOwnProperty.call(data, intlField)) {
+                return data[intlField] === true;
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(data, baseField)) {
+            return data[baseField] === true;
+        }
+        return Boolean(fallback);
     },
 
     requireWritableSite(options = {}) {
@@ -635,10 +659,10 @@ const ShopAdmin = {
         if (hint) {
             hint.classList.add('shop-product-site-hint--visible');
             hint.innerHTML = filter === 'all'
-                ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。'
+                ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称、价格、描述、注意事项、使用说明和展示开关。'
                 : (isCN
                     ? '🇨🇳 正在编辑 <strong>CN</strong> 商品信息'
-                    : '🌍 正在编辑 <strong>国际站</strong> 商品信息（英文名称 / 描述、国际价格）');
+                    : '🌍 正在编辑 <strong>国际站</strong> 商品信息（名称 / 描述 / 注意事项 / 使用说明 / 开关独立于 CN 站）');
         }
     },
 
@@ -686,8 +710,9 @@ const ShopAdmin = {
         const legacyText = typeof data?.[baseField] === 'string' ? data[baseField] : '';
         const zhText = typeof data?.[`${baseField}_zh`] === 'string' ? data[`${baseField}_zh`] : '';
         const enText = typeof data?.[`${baseField}_en`] === 'string' ? data[`${baseField}_en`] : '';
+        const intlText = typeof data?.[`${baseField}_intl`] === 'string' ? data[`${baseField}_intl`] : '';
         return this.getEditSite() === 'intl'
-            ? (enText || '')
+            ? (intlText || enText || '')
             : (zhText || legacyText || '');
     },
 
@@ -705,33 +730,39 @@ const ShopAdmin = {
         existing = null
     } = {}) {
         const normalizedText = String(value || '').replace(/\r\n/g, '\n').trim();
-        const existingEn = typeof existing?.[`${baseField}_en`] === 'string'
-            ? existing[`${baseField}_en`].trim()
-            : '';
         const patch = {};
 
         if (editSite === 'intl') {
             const normalizedTranslatedEn = String(translatedEn || '').replace(/\r\n/g, '\n').trim();
             const normalizedTranslatedZh = String(translatedZh || '').replace(/\r\n/g, '\n').trim();
-            if (sourceLanguage === 'zh') {
-                patch[`${baseField}_en`] = show ? (normalizedTranslatedEn || existingEn || normalizedText || null) : null;
-                patch[baseField] = show ? (normalizedText || null) : null;
-                patch[`${baseField}_zh`] = show ? (normalizedText || null) : null;
-                return patch;
-            }
-
-            patch[`${baseField}_en`] = show ? (normalizedText || null) : null;
-            if (normalizedTranslatedZh || !show) {
-                patch[baseField] = show ? normalizedTranslatedZh : null;
-                patch[`${baseField}_zh`] = show ? normalizedTranslatedZh : null;
-            }
+            const existingIntl = typeof existing?.[`${baseField}_intl`] === 'string'
+                ? existing[`${baseField}_intl`].trim()
+                : '';
+            const existingIntlZh = typeof existing?.[`${baseField}_intl_zh`] === 'string'
+                ? existing[`${baseField}_intl_zh`].trim()
+                : '';
+            patch[`${baseField}_intl`] = show
+                ? (sourceLanguage === 'zh'
+                    ? (normalizedTranslatedEn || existingIntl || null)
+                    : (normalizedText || null))
+                : null;
+            patch[`${baseField}_intl_zh`] = show
+                ? (sourceLanguage === 'zh'
+                    ? (normalizedText || null)
+                    : (normalizedTranslatedZh || existingIntlZh || null))
+                : null;
+            patch[`show_${baseField}_intl`] = show;
             return patch;
         }
 
         const normalizedTranslatedEn = String(translatedEn || '').replace(/\r\n/g, '\n').trim();
+        const existingEn = typeof existing?.[`${baseField}_en`] === 'string'
+            ? existing[`${baseField}_en`].trim()
+            : '';
         patch[baseField] = show ? (normalizedText || null) : null;
         patch[`${baseField}_zh`] = show ? (normalizedText || null) : null;
         patch[`${baseField}_en`] = show ? (normalizedTranslatedEn || existingEn || null) : null;
+        patch[`show_${baseField}`] = show;
         return patch;
     },
 
@@ -8038,7 +8069,7 @@ Example output format:
         const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
 
         document.getElementById('editProductId').value = data.id;
-        document.getElementById('prodName').value = data[fields.name] || '';
+        document.getElementById('prodName').value = this.getSiteScopedProductTextForEdit(data, 'name');
         document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
         const skuEditorProduct = {
             name: data[fields.name] || data.name || '',
@@ -8057,8 +8088,12 @@ Example output format:
         if (!shouldPreservePendingProductImage) {
             document.getElementById('prodIcon').value = getShopProductImageAssetUrl(this.currentProductImageAsset, 'original') || data.icon_url || '';
         }
-        document.getElementById('prodDesc').value = data[fields.desc] || '';
-        document.getElementById('prodShowProductDescription').checked = data.show_product_description !== false;
+        document.getElementById('prodDesc').value = this.getSiteScopedProductTextForEdit(data, 'description');
+        document.getElementById('prodShowProductDescription').checked = this.getSiteScopedProductSwitchForEdit(
+            data,
+            'show_product_description',
+            true
+        );
         document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
         document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
             ? data.max_purchase_quantity
@@ -8100,12 +8135,12 @@ Example output format:
         this.toggleWebhookField(normalizedDeliveryType);
         this.setProductManualDelivery(data.manual_delivery === true || String(data.manual_delivery || '').toLowerCase() === 'true', { updatePreview: false });
 
-        const showPurchaseNotes = !!data.show_purchase_notes;
+        const showPurchaseNotes = this.getSiteScopedProductSwitchForEdit(data, 'show_purchase_notes', false);
         document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
         document.getElementById('prodPurchaseNotes').value = this.getProductGuidanceTextForEdit(data, 'purchase_notes');
         this.togglePurchaseNotes(showPurchaseNotes);
 
-        const showUsageInstructions = !!data.show_usage_instructions;
+        const showUsageInstructions = this.getSiteScopedProductSwitchForEdit(data, 'show_usage_instructions', false);
         document.getElementById('prodShowUsageInstructions').checked = showUsageInstructions;
         document.getElementById('prodUsageInstructions').value = this.getProductGuidanceTextForEdit(data, 'usage_instructions');
         this.toggleUsageInstructions(showUsageInstructions);
@@ -8268,8 +8303,14 @@ Example output format:
         const guidanceFields = [
             'purchase_notes_zh',
             'purchase_notes_en',
+            'purchase_notes_intl',
+            'purchase_notes_intl_zh',
+            'show_purchase_notes_intl',
             'usage_instructions_zh',
-            'usage_instructions_en'
+            'usage_instructions_en',
+            'usage_instructions_intl',
+            'usage_instructions_intl_zh',
+            'show_usage_instructions_intl'
         ];
 
         if (editSite !== 'intl') {
@@ -8298,8 +8339,14 @@ Example output format:
         return [
             'purchase_notes_zh',
             'purchase_notes_en',
+            'purchase_notes_intl',
+            'purchase_notes_intl_zh',
+            'show_purchase_notes_intl',
             'usage_instructions_zh',
-            'usage_instructions_en'
+            'usage_instructions_en',
+            'usage_instructions_intl',
+            'usage_instructions_intl_zh',
+            'show_usage_instructions_intl'
         ].some((field) => message.includes(field));
     },
 
@@ -8371,7 +8418,7 @@ Example output format:
         }
 
         if (this.isProductGuidanceBilingualSchemaError(err)) {
-            return '保存失败：当前 Supabase 数据库还没有“注意事项 / 使用说明”的双语字段。请先执行 `supabase/migrations/20260430_add_bilingual_shop_guidance.sql`，再保存商品。';
+            return '保存失败：当前 Supabase 数据库还没有站点隔离的“注意事项 / 使用说明”双语字段。请先执行 `supabase/migrations/20260614_add_site_scoped_shop_copy.sql`，再保存商品。';
         }
 
         if (this.isProductDescriptionVisibilitySchemaError(err)) {
@@ -8816,8 +8863,11 @@ Example output format:
             const showPurchaseNotes = document.getElementById('prodShowPurchaseNotes').checked;
             const showProductDescription = document.getElementById('prodShowProductDescription').checked;
             const webhookTargetValue = document.getElementById('prodWebhookTarget').value.trim();
+            const productDescriptionSwitchField = editSite === 'intl'
+                ? 'show_product_description_intl'
+                : 'show_product_description';
             const originalShowProductDescription = id
-                ? (this.editingProductSnapshot?.show_product_description !== false)
+                ? this.getSiteScopedProductSwitchForEdit(this.editingProductSnapshot, 'show_product_description', true)
                 : true;
             const shouldPersistProductDescriptionVisibility = id
                 ? showProductDescription !== originalShowProductDescription
@@ -8969,7 +9019,7 @@ Example output format:
                     }
                 } catch (e) {
                     markProductTranslationFailed(e?.message || '商品双语自动翻译失败');
-                    console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
+                    console.warn('[ShopAdmin] CN Chinese-to-English translation step failed, continuing without:', e);
                 }
             } else if (editSite === 'intl') {
                 const productTextFields = Object.keys(persistedProductTextValues);
@@ -9038,15 +9088,19 @@ Example output format:
                             '商品双语自动翻译'
                         );
                         if (productInputLanguage.name === 'en') {
+                            name_en = name;
                             name_zh = translation.name_zh;
                         }
                         if (productInputLanguage.description === 'en') {
+                            description_en = description;
                             description_zh = translation.description_zh;
                         }
                         if (productInputLanguage.purchase_notes === 'en') {
+                            purchase_notes_en = normalizedPurchaseNotes;
                             purchase_notes_zh = translation.purchase_notes_zh;
                         }
                         if (productInputLanguage.usage_instructions === 'en') {
+                            usage_instructions_en = normalizedUsageInstructions;
                             usage_instructions_zh = translation.usage_instructions_zh;
                         }
                         appendProductTranslationWarning(translation.warning_message);
@@ -9071,25 +9125,47 @@ Example output format:
                 const normalized = String(value || '').trim();
                 return Boolean(normalized && !/[\u3400-\u9fff\uf900-\ufaff]/.test(normalized));
             };
-            const hasSavedEnglishProductText = (baseField, translatedEn) => hasUsableEnglishGuidanceText(translatedEn)
-                || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+            const hasSavedEnglishProductText = (baseField, translatedEn) => {
+                if (hasUsableEnglishGuidanceText(translatedEn)) return true;
+                if (editSite === 'intl') {
+                    const intlField = baseField === 'name' ? 'name_intl' : `${baseField}_intl`;
+                    const legacyEnField = baseField === 'name' ? 'name_en' : `${baseField}_en`;
+                    return hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[intlField])
+                        || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[legacyEnField]);
+                }
+                return hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+            };
             const hasSavedChineseProductText = (baseField, translatedZh) => {
                 const normalizedTranslatedZh = String(translatedZh || '').trim();
-                const existingLegacy = String(this.editingProductSnapshot?.[baseField] || '').trim();
-                return Boolean(normalizedTranslatedZh || existingLegacy);
+                if (normalizedTranslatedZh) return true;
+                if (editSite === 'intl') {
+                    const intlZhField = baseField === 'name' ? 'name_intl_zh' : `${baseField}_intl_zh`;
+                    return Boolean(String(this.editingProductSnapshot?.[intlZhField] || '').trim());
+                }
+                return Boolean(String(this.editingProductSnapshot?.[baseField] || '').trim());
             };
-            const hasSavedEnglishGuidanceText = (baseField, translatedEn) => hasUsableEnglishGuidanceText(translatedEn)
-                || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+            const hasSavedEnglishGuidanceText = (baseField, translatedEn) => {
+                if (hasUsableEnglishGuidanceText(translatedEn)) return true;
+                if (editSite === 'intl') {
+                    return hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_intl`])
+                        || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+                }
+                return hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+            };
             const hasSavedChineseGuidanceText = (baseField, translatedZh) => {
                 const normalizedTranslatedZh = String(translatedZh || '').trim();
+                if (normalizedTranslatedZh) return true;
+                if (editSite === 'intl') {
+                    return Boolean(String(this.editingProductSnapshot?.[`${baseField}_intl_zh`] || '').trim());
+                }
                 const existingZh = String(this.editingProductSnapshot?.[`${baseField}_zh`] || '').trim();
                 const existingLegacy = String(this.editingProductSnapshot?.[baseField] || '').trim();
-                return Boolean(normalizedTranslatedZh || existingZh || existingLegacy);
+                return Boolean(existingZh || existingLegacy);
             };
             const missingEnglishTranslations = [];
             const missingChineseTranslations = [];
             const addMissingTranslation = (language, label) => {
-                const list = language === 'en' ? missingEnglishTranslations : missingChineseTranslations;
+                const list = language === 'zh' ? missingChineseTranslations : missingEnglishTranslations;
                 if (!list.includes(label)) {
                     list.push(label);
                 }
@@ -9189,7 +9265,6 @@ Example output format:
                 purchase_limit_window_quantity: normalizedPurchaseLimitWindowQuantity,
                 purchase_limit_window_minutes: normalizedPurchaseLimitWindowMinutes,
                 per_account_purchase_limit: normalizedPerAccountPurchaseLimit,
-                show_usage_instructions: showUsageInstructions,
                 ...usageGuidancePayload,
                 delivery_type: normalizedDeliveryType,
                 webhook_target: normalizedDeliveryType === 'API' ? (webhookTargetValue || null) : null,
@@ -9202,36 +9277,37 @@ Example output format:
             };
 
             if (editSite === 'intl') {
-                if (productInputLanguage.name === 'zh') {
-                    payload.name = name;
-                    payload.name_en = name_en || this.editingProductSnapshot?.name_en || name;
-                } else {
-                    payload.name_en = name;
-                    if (name_zh) {
-                        payload.name = name_zh;
-                    } else if (!id && !payload.name) {
-                        payload.name = name;
-                    }
-                }
-
-                if (productInputLanguage.description === 'zh') {
-                    payload.description = description;
-                    payload.description_en = description_en || this.editingProductSnapshot?.description_en || description;
-                } else {
-                    payload.description_en = description;
-                    if (description_zh) {
-                        payload.description = description_zh;
-                    }
-                }
+                payload.name_intl = productInputLanguage.name === 'zh'
+                    ? (name_en || this.editingProductSnapshot?.name_intl || this.editingProductSnapshot?.name_en || name)
+                    : name;
+                payload.name_intl_zh = productInputLanguage.name === 'zh'
+                    ? name
+                    : (name_zh || this.editingProductSnapshot?.name_intl_zh || null);
+                payload.description_intl = productInputLanguage.description === 'zh'
+                    ? (description_en || this.editingProductSnapshot?.description_intl || this.editingProductSnapshot?.description_en || description)
+                    : description;
+                payload.description_intl_zh = productInputLanguage.description === 'zh'
+                    ? description
+                    : (description_zh || this.editingProductSnapshot?.description_intl_zh || null);
+                delete payload.name;
+                delete payload.description;
             }
 
             if (shouldPersistProductDescriptionVisibility) {
-                payload.show_product_description = showProductDescription;
+                payload[productDescriptionSwitchField] = showProductDescription;
             }
 
             if (this.purchaseNotesSchemaAvailable !== false) {
-                payload.show_purchase_notes = showPurchaseNotes;
                 Object.assign(payload, purchaseGuidancePayload);
+            }
+
+            if (editSite === 'cn') {
+                if (name_en) {
+                    payload.name_en = name_en;
+                }
+                if (description_en) {
+                    payload.description_en = description_en;
+                }
             }
 
             const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
@@ -9242,12 +9318,6 @@ Example output format:
             const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
             if (flashEndRaw) {
                 payload[marketingFields.flashSaleEnd] = new Date(flashEndRaw).toISOString();
-            }
-
-            // For CN site, also save auto-translated English fields
-            if (editSite === 'cn' && name_en) {
-                payload.name_en = name_en;
-                payload.description_en = description_en;
             }
 
             try {

@@ -147,8 +147,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /guidanceSelect = 'show_purchase_notes, purchase_notes, purchase_notes_zh, purchase_notes_en, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en'/,
-        'shop-client.js should keep a bilingual direct product guidance fallback for local and static preview environments'
+        /guidanceSelect = 'show_purchase_notes, show_purchase_notes_intl, purchase_notes, purchase_notes_zh, purchase_notes_en, purchase_notes_intl, purchase_notes_intl_zh, show_usage_instructions, show_usage_instructions_intl, usage_instructions, usage_instructions_zh, usage_instructions_en, usage_instructions_intl, usage_instructions_intl_zh'/,
+        'shop-client.js should keep a site-scoped bilingual direct product guidance fallback for local and static preview environments'
     );
     assert.match(
         shopHandlerSource,
@@ -162,8 +162,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHandlerSource,
-        /const responseUsageInstructions = normalizeGuidanceText\(responseData\.usage_instructions\);[\s\S]*const responseHasUsageInstructions = responseData\.show_usage_instructions === true[\s\S]*usage_instructions: responseUsageInstructions \|\| null,[\s\S]*show_usage_instructions: responseHasUsageInstructions/s,
-        'purchase responses should normalize direct RPC usage instructions without blocking on a post-purchase guidance refetch'
+        /let responseUsageInstructions = normalizeGuidanceText\(responseData\.usage_instructions\);[\s\S]*let responseHasUsageInstructions = responseData\.show_usage_instructions === true[\s\S]*\|\| Boolean\(responseUsageInstructions\);[\s\S]*const \{ data: productGuidanceRow \} = await loadProductGuidanceRow\(systemSupabase, payload\.productId\);[\s\S]*const guidancePayload = buildProductGuidancePayload\(productGuidanceRow, payload\.site, payload\.language\);[\s\S]*responseUsageInstructions = normalizeGuidanceText\(guidancePayload\.usage_instructions\);[\s\S]*responseHasUsageInstructions = guidancePayload\.show_usage_instructions === true[\s\S]*&& Boolean\(responseUsageInstructions\)/s,
+        'purchase responses should refresh usage instructions from site-scoped product guidance before returning success'
     );
     assert.doesNotMatch(
         shopHandlerSource,
@@ -177,8 +177,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHandlerSource,
-        /resolveLocalizedGuidanceText\(product = \{\}, baseField = '', guidanceSite = 'cn'\)/,
-        'shared shop handlers should resolve purchase guidance from bilingual fields by site'
+        /resolveLocalizedGuidanceText\(product = \{\}, baseField = '', guidanceSite = 'cn', language = ''\)/,
+        'shared shop handlers should resolve purchase guidance from site-scoped bilingual fields'
     );
     assert.match(
         shopHandlerSource,

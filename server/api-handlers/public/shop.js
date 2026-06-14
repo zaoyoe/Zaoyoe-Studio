@@ -77,12 +77,14 @@ function shouldBypassShopCatalogHotCache(req, requestUrl) {
 
 function buildShopCatalogCacheKey({
     site = 'cn',
-    category = 'all'
+    category = 'all',
+    language = 'zh'
 } = {}) {
     return [
         'shop-catalog',
         String(site || 'cn').trim().toLowerCase(),
-        String(category || 'all').trim().toLowerCase()
+        String(category || 'all').trim().toLowerCase(),
+        String(language || 'zh').trim().toLowerCase()
     ].join(':');
 }
 
@@ -323,19 +325,30 @@ function createShopHandlers({
             'image_assets',
             'price_points_intl',
             'name_en',
+            'name_intl',
+            'name_intl_zh',
             'description_en',
+            'description_intl',
+            'description_intl_zh',
             'quantity_rules',
             'quantity_rules_intl',
             'max_purchase_quantity',
             'show_product_description',
+            'show_product_description_intl',
             'show_purchase_notes',
+            'show_purchase_notes_intl',
             'purchase_notes',
             'purchase_notes_zh',
             'purchase_notes_en',
+            'purchase_notes_intl',
+            'purchase_notes_intl_zh',
             'show_usage_instructions',
+            'show_usage_instructions_intl',
             'usage_instructions',
             'usage_instructions_zh',
             'usage_instructions_en',
+            'usage_instructions_intl',
+            'usage_instructions_intl_zh',
             'flash_sale_price',
             'flash_sale_price_intl',
             'flash_sale_end',
@@ -482,10 +495,26 @@ function createShopHandlers({
         };
     }
 
-    function normalizeShopCatalogProductForSite(product = {}, currentSite = 'cn') {
+    function normalizeShopCatalogProductForSite(product = {}, currentSite = 'cn', language = '') {
         const quantityRules = getSiteScopedShopMarketingValue(product, 'quantity_rules', currentSite);
         const flashSalePrice = getSiteScopedShopMarketingValue(product, 'flash_sale_price', currentSite);
         const flashSaleEnd = getSiteScopedShopMarketingValue(product, 'flash_sale_end', currentSite);
+        const isIntlSite = currentSite === 'intl';
+        const languageKey = resolveGuidanceLanguage(language, currentSite);
+        const description = isIntlSite
+            ? (languageKey === 'en'
+                ? normalizeText(product?.description_intl || product?.description_en, 4000)
+                : normalizeText(product?.description_intl_zh || product?.description_intl || product?.description_en, 4000))
+            : (languageKey === 'en'
+                ? normalizeText(product?.description_en, 4000)
+                : product?.description);
+        const showProductDescription = isIntlSite
+            ? (Object.prototype.hasOwnProperty.call(product, 'show_product_description_intl')
+                ? product.show_product_description_intl !== false
+                : product.show_product_description !== false)
+            : product.show_product_description !== false;
+        const showPurchaseNotes = resolveSiteScopedGuidanceVisible(product, 'purchase_notes', currentSite);
+        const showUsageInstructions = resolveSiteScopedGuidanceVisible(product, 'usage_instructions', currentSite);
         const rawSkus = Array.isArray(product?.skus) ? product.skus : [];
         const imageCacheVersion = normalizeText(
             product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at,
@@ -499,6 +528,12 @@ function createShopHandlers({
 
         return {
             ...product,
+            description,
+            show_product_description: showProductDescription,
+            show_purchase_notes: showPurchaseNotes,
+            show_usage_instructions: showUsageInstructions,
+            purchase_notes: resolveLocalizedGuidanceText(product, 'purchase_notes', currentSite, languageKey),
+            usage_instructions: resolveLocalizedGuidanceText(product, 'usage_instructions', currentSite, languageKey),
             manual_delivery: normalizeBoolean(product?.manual_delivery, false),
             quantity_rules: quantityRules ?? null,
             flash_sale_price: flashSalePrice ?? null,
@@ -589,6 +624,7 @@ function createShopHandlers({
     async function loadPublicShopProducts(dataSupabase, {
         category = 'all',
         currentSite = 'cn',
+        language = '',
         hiddenCategoryNames = []
     } = {}) {
         const hiddenCategoryNameSet = hiddenCategoryNames instanceof Set
@@ -606,8 +642,12 @@ function createShopHandlers({
                 'id',
                 'name',
                 'name_en',
+                'name_intl',
+                'name_intl_zh',
                 'description',
                 'description_en',
+                'description_intl',
+                'description_intl_zh',
                 'icon_url',
                 'image_assets',
                 'price_points',
@@ -622,14 +662,21 @@ function createShopHandlers({
                 'max_purchase_quantity',
                 'manual_delivery',
                 'show_product_description',
+                'show_product_description_intl',
                 'show_purchase_notes',
+                'show_purchase_notes_intl',
                 'purchase_notes',
                 'purchase_notes_zh',
                 'purchase_notes_en',
+                'purchase_notes_intl',
+                'purchase_notes_intl_zh',
                 'show_usage_instructions',
+                'show_usage_instructions_intl',
                 'usage_instructions',
                 'usage_instructions_zh',
                 'usage_instructions_en',
+                'usage_instructions_intl',
+                'usage_instructions_intl_zh',
                 'flash_sale_price',
                 'flash_sale_price_intl',
                 'flash_sale_end',
@@ -657,10 +704,16 @@ function createShopHandlers({
                 'show_product_description',
                 'show_purchase_notes',
                 'purchase_notes',
+                'purchase_notes_zh',
+                'purchase_notes_en',
                 'show_usage_instructions',
                 'usage_instructions',
+                'usage_instructions_zh',
+                'usage_instructions_en',
                 'flash_sale_price',
+                'flash_sale_price_intl',
                 'flash_sale_end',
+                'flash_sale_end_intl',
                 'updated_at',
                 'created_at'
             ].join(', '),
@@ -685,7 +738,7 @@ function createShopHandlers({
                 return products
                     .filter((product) => !hiddenCategoryNameSet.has(normalizeText(product?.category, 120)))
                     .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite))
-                    .map((product) => normalizeShopCatalogProductForSite(product, currentSite));
+                    .map((product) => normalizeShopCatalogProductForSite(product, currentSite, language));
             }
 
             lastError = error;
@@ -2149,6 +2202,8 @@ function createShopHandlers({
         const quantity = Number.isFinite(quantityValue) ? Math.trunc(quantityValue) : NaN;
         const discountCode = String(body?.discountCode || body?.p_discount_code || '').trim().toUpperCase() || null;
         const discountAssetId = String(body?.discountAssetId || body?.p_discount_asset_id || '').trim() || null;
+        const site = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
+        const requestedLanguage = body?.language || body?.lang || body?.locale || headers['x-shop-language'] || headers['X-Shop-Language'] || '';
         const rawProductSkuId = String(
             body?.productSkuId
             || body?.product_sku_id
@@ -2166,7 +2221,8 @@ function createShopHandlers({
         return {
             productId: String(body?.productId || body?.product_id || '').trim(),
             quantity,
-            site: requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' }),
+            site,
+            language: resolveGuidanceLanguage(requestedLanguage, site),
             productSkuId,
             discountCode,
             discountAssetId,
@@ -2316,50 +2372,95 @@ function createShopHandlers({
         return normalized === 'intl' || normalized === 'en' ? 'intl' : 'cn';
     }
 
-    function resolveLocalizedGuidanceText(product = {}, baseField = '', guidanceSite = 'cn') {
+    function normalizeGuidanceLanguage(value = 'zh') {
+        const normalized = String(value || 'zh').trim().toLowerCase();
+        return normalized === 'en' || normalized.startsWith('en-') ? 'en' : 'zh';
+    }
+
+    function resolveGuidanceLanguage(value = '', site = 'cn') {
+        const normalizedValue = String(value || '').trim();
+        if (normalizedValue) {
+            return normalizeGuidanceLanguage(normalizedValue);
+        }
+        return 'zh';
+    }
+
+    function resolveLocalizedGuidanceText(product = {}, baseField = '', guidanceSite = 'cn', language = '') {
         const siteKey = normalizeGuidanceSite(guidanceSite);
+        const languageKey = String(language || '').trim()
+            ? normalizeGuidanceLanguage(language)
+            : resolveGuidanceLanguage('', siteKey);
         const legacyText = normalizeGuidanceText(product?.[baseField]);
         const zhText = normalizeGuidanceText(product?.[`${baseField}_zh`]);
         const enText = normalizeGuidanceText(product?.[`${baseField}_en`]);
+        const intlText = normalizeGuidanceText(product?.[`${baseField}_intl`]);
+        const intlZhText = normalizeGuidanceText(product?.[`${baseField}_intl_zh`]);
 
         if (siteKey === 'intl') {
-            const candidate = enText || legacyText;
+            if (languageKey === 'zh') {
+                return intlZhText || intlText || enText;
+            }
+            const candidate = intlText || enText;
             return containsGuidanceCjkText(candidate) ? '' : candidate;
         }
 
-        return zhText || legacyText || enText;
+        if (languageKey === 'en') {
+            return containsGuidanceCjkText(enText) ? '' : enText;
+        }
+
+        return zhText || legacyText;
+    }
+
+    function resolveSiteScopedGuidanceVisible(product = {}, baseField = '', guidanceSite = 'cn') {
+        const siteKey = normalizeGuidanceSite(guidanceSite);
+        const intlField = `show_${baseField}_intl`;
+        const baseVisible = product?.[`show_${baseField}`] === true;
+        if (siteKey === 'intl') {
+            if (Object.prototype.hasOwnProperty.call(product, intlField)) {
+                return product?.[intlField] === true;
+            }
+            return baseVisible && Boolean(resolveLocalizedGuidanceText(product, baseField, guidanceSite));
+        }
+        return baseVisible;
     }
 
     function hasProductGuidanceSourceText(product = {}, baseField = '') {
         return [
             product?.[baseField],
             product?.[`${baseField}_zh`],
-            product?.[`${baseField}_en`]
+            product?.[`${baseField}_en`],
+            product?.[`${baseField}_intl`],
+            product?.[`${baseField}_intl_zh`]
         ].some((value) => normalizeGuidanceText(value).length > 0);
     }
 
-    function getProductGuidanceSelectClause({ includeIdentity = false, bilingual = true, purchaseNotes = true } = {}) {
+    function getProductGuidanceSelectClause({ includeIdentity = false, mode = 'site', purchaseNotes = true } = {}) {
         const fields = includeIdentity ? ['id', 'is_active'] : [];
         if (purchaseNotes) {
-            fields.push(
-                'show_purchase_notes',
-                'purchase_notes',
-                ...(bilingual ? ['purchase_notes_zh', 'purchase_notes_en'] : [])
-            );
+            if (mode === 'site') {
+                fields.push('show_purchase_notes', 'show_purchase_notes_intl', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en', 'purchase_notes_intl', 'purchase_notes_intl_zh');
+            } else if (mode === 'bilingual') {
+                fields.push('show_purchase_notes', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en');
+            } else {
+                fields.push('show_purchase_notes', 'purchase_notes');
+            }
         }
-        fields.push(
-            'show_usage_instructions',
-            'usage_instructions',
-            ...(bilingual ? ['usage_instructions_zh', 'usage_instructions_en'] : [])
-        );
+        if (mode === 'site') {
+            fields.push('show_usage_instructions', 'show_usage_instructions_intl', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en', 'usage_instructions_intl', 'usage_instructions_intl_zh');
+        } else if (mode === 'bilingual') {
+            fields.push('show_usage_instructions', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en');
+        } else {
+            fields.push('show_usage_instructions', 'usage_instructions');
+        }
         return fields.join(', ');
     }
 
     async function loadProductGuidanceRow(dataSupabase, normalizedProductId, { includeIdentity = false } = {}) {
         const selectAttempts = [
-            getProductGuidanceSelectClause({ includeIdentity, bilingual: true, purchaseNotes: true }),
-            getProductGuidanceSelectClause({ includeIdentity, bilingual: false, purchaseNotes: true }),
-            getProductGuidanceSelectClause({ includeIdentity, bilingual: false, purchaseNotes: false })
+            getProductGuidanceSelectClause({ includeIdentity, mode: 'site', purchaseNotes: true }),
+            getProductGuidanceSelectClause({ includeIdentity, mode: 'bilingual', purchaseNotes: true }),
+            getProductGuidanceSelectClause({ includeIdentity, mode: 'legacy', purchaseNotes: true }),
+            getProductGuidanceSelectClause({ includeIdentity, mode: 'legacy', purchaseNotes: false })
         ];
 
         let lastError = null;
@@ -2380,10 +2481,16 @@ function createShopHandlers({
             const isGuidanceColumnMissing = [
                 'purchase_notes',
                 'show_purchase_notes',
+                'show_purchase_notes_intl',
                 'purchase_notes_zh',
                 'purchase_notes_en',
+                'purchase_notes_intl',
+                'purchase_notes_intl_zh',
+                'show_usage_instructions_intl',
                 'usage_instructions_zh',
-                'usage_instructions_en'
+                'usage_instructions_en',
+                'usage_instructions_intl',
+                'usage_instructions_intl_zh'
             ].some((field) => isMissingColumnError(error, field));
             if (!isGuidanceColumnMissing) {
                 return { data: null, error };
@@ -2393,14 +2500,14 @@ function createShopHandlers({
         return { data: null, error: lastError };
     }
 
-    function buildProductGuidancePayload(product = {}, guidanceSite = 'cn') {
-        const showPurchaseNotes = product?.show_purchase_notes === true;
-        const showUsageInstructions = product?.show_usage_instructions === true;
-        const purchaseNotes = product?.show_purchase_notes
-            ? resolveLocalizedGuidanceText(product, 'purchase_notes', guidanceSite)
+    function buildProductGuidancePayload(product = {}, guidanceSite = 'cn', language = '') {
+        const showPurchaseNotes = resolveSiteScopedGuidanceVisible(product, 'purchase_notes', guidanceSite);
+        const showUsageInstructions = resolveSiteScopedGuidanceVisible(product, 'usage_instructions', guidanceSite);
+        const purchaseNotes = showPurchaseNotes
+            ? resolveLocalizedGuidanceText(product, 'purchase_notes', guidanceSite, language)
             : '';
-        const usageInstructions = product?.show_usage_instructions
-            ? resolveLocalizedGuidanceText(product, 'usage_instructions', guidanceSite)
+        const usageInstructions = showUsageInstructions
+            ? resolveLocalizedGuidanceText(product, 'usage_instructions', guidanceSite, language)
             : '';
 
         return {
@@ -2651,9 +2758,10 @@ function createShopHandlers({
         return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
     }
 
-    async function loadShopOrderDetail(dataSupabase, { orderId = '', userId = '', site = 'cn' } = {}) {
+    async function loadShopOrderDetail(dataSupabase, { orderId = '', userId = '', site = 'cn', language = '' } = {}) {
         const normalizedOrderId = String(orderId || '').trim();
         const normalizedUserId = String(userId || '').trim();
+        const guidanceLanguage = resolveGuidanceLanguage(language, site);
 
         const { data: order, error: orderError } = await dataSupabase
             .from('shop_orders')
@@ -2709,12 +2817,9 @@ function createShopHandlers({
                 throw productGuidanceError;
             }
 
-            purchaseNotes = productGuidanceRow?.show_purchase_notes
-                ? resolveLocalizedGuidanceText(productGuidanceRow, 'purchase_notes', site)
-                : '';
-            usageInstructions = productGuidanceRow?.show_usage_instructions
-                ? resolveLocalizedGuidanceText(productGuidanceRow, 'usage_instructions', site)
-                : '';
+            const guidancePayload = buildProductGuidancePayload(productGuidanceRow || {}, site, guidanceLanguage);
+            purchaseNotes = normalizeGuidanceText(guidancePayload.purchase_notes);
+            usageInstructions = normalizeGuidanceText(guidancePayload.usage_instructions);
 
             return { purchaseNotes, usageInstructions };
         })();
@@ -2799,7 +2904,7 @@ function createShopHandlers({
         };
     }
 
-    async function loadProductGuidance(dataSupabase, { productId = '', site = 'cn' } = {}) {
+    async function loadProductGuidance(dataSupabase, { productId = '', site = 'cn', language = '' } = {}) {
         const normalizedProductId = String(productId || '').trim();
         if (!isUuid(normalizedProductId)) {
             const error = new Error('商品标识格式不正确');
@@ -2823,13 +2928,14 @@ function createShopHandlers({
             throw inactiveError;
         }
 
-        return buildProductGuidancePayload(data, site);
+        return buildProductGuidancePayload(data, site, language);
     }
 
     return {
         catalog: async function catalogHandler(req, res) {
             const startedAt = Date.now();
             let currentSite = 'cn';
+            let currentLanguage = 'zh';
             let category = 'all';
             let cacheStatus = 'miss';
             let loadMs = 0;
@@ -2862,11 +2968,19 @@ function createShopHandlers({
                 currentSite = requireSupportedSite(requestUrl.searchParams.get('site') || 'cn', {
                     fieldName: 'site'
                 });
+                currentLanguage = resolveGuidanceLanguage(
+                    requestUrl.searchParams.get('language')
+                    || requestUrl.searchParams.get('lang')
+                    || requestUrl.searchParams.get('locale')
+                    || '',
+                    currentSite
+                );
                 category = normalizeShopCatalogCategory(requestUrl.searchParams.get('category') || 'all');
                 const bypassHotCache = shouldBypassShopCatalogHotCache(req, requestUrl);
                 const cacheKey = buildShopCatalogCacheKey({
                     site: currentSite,
-                    category
+                    category,
+                    language: currentLanguage
                 });
                 const loadStartedAt = Date.now();
                 const cachedResult = await shopCatalogCache.getOrLoad(cacheKey, async () => {
@@ -2876,6 +2990,7 @@ function createShopHandlers({
                     const products = await loadPublicShopProducts(adminSupabase, {
                         category,
                         currentSite,
+                        language: currentLanguage,
                         hiddenCategoryNames
                     });
                     const categorySourceProducts = category === 'all'
@@ -2883,6 +2998,7 @@ function createShopHandlers({
                         : await loadPublicShopProducts(adminSupabase, {
                             category: 'all',
                             currentSite,
+                            language: currentLanguage,
                             hiddenCategoryNames
                         });
                     const categories = filterShopCategoriesWithVisibleProducts(publicCategories, categorySourceProducts);
@@ -2890,6 +3006,7 @@ function createShopHandlers({
                     return {
                         success: true,
                         site: currentSite,
+                        language: currentLanguage,
                         category,
                         categories,
                         products,
@@ -3679,6 +3796,7 @@ function createShopHandlers({
                 const body = await parseJsonBody(req);
                 const orderId = normalizeOrderDetailId(body);
                 const currentSite = requireSupportedSite(body?.site || 'cn', { fieldName: 'site' });
+                const language = resolveGuidanceLanguage(body?.language || body?.lang || body?.locale || '', currentSite);
 
                 if (!isUuid(orderId)) {
                     return sendJson(res, 400, {
@@ -3706,7 +3824,8 @@ function createShopHandlers({
                 const data = await loadShopOrderDetail(requestAdminSupabase || supabase, {
                     orderId,
                     userId: user.id,
-                    site: currentSite
+                    site: currentSite,
+                    language
                 });
 
                 return sendJson(res, 200, {
@@ -3752,6 +3871,7 @@ function createShopHandlers({
                 const body = await parseJsonBody(req);
                 const productId = String(body?.productId || body?.product_id || '').trim();
                 const currentSite = requireSupportedSite(body?.site || 'cn', { fieldName: 'site' });
+                const language = resolveGuidanceLanguage(body?.language || body?.lang || body?.locale || '', currentSite);
                 const dataSupabase = adminSupabase;
                 if (!dataSupabase) {
                     return sendJson(res, 503, {
@@ -3762,7 +3882,8 @@ function createShopHandlers({
 
                 const data = await loadProductGuidance(dataSupabase, {
                     productId,
-                    site: currentSite
+                    site: currentSite,
+                    language
                 });
 
                 return sendJson(res, 200, {
@@ -3977,9 +4098,20 @@ function createShopHandlers({
                     : {};
                 const orderId = normalizeText(responseData.order_id || responseData.id, 160);
                 const systemSupabase = requestAdminSupabase || adminSupabase || supabase;
-                const responseUsageInstructions = normalizeGuidanceText(responseData.usage_instructions);
-                const responseHasUsageInstructions = responseData.show_usage_instructions === true
+                let responseUsageInstructions = normalizeGuidanceText(responseData.usage_instructions);
+                let responseHasUsageInstructions = responseData.show_usage_instructions === true
                     || Boolean(responseUsageInstructions);
+                try {
+                    const { data: productGuidanceRow } = await loadProductGuidanceRow(systemSupabase, payload.productId);
+                    if (productGuidanceRow) {
+                        const guidancePayload = buildProductGuidancePayload(productGuidanceRow, payload.site, payload.language);
+                        responseUsageInstructions = normalizeGuidanceText(guidancePayload.usage_instructions);
+                        responseHasUsageInstructions = guidancePayload.show_usage_instructions === true
+                            && Boolean(responseUsageInstructions);
+                    }
+                } catch (guidanceError) {
+                    console.warn('[Shop] Failed to refresh site-scoped purchase guidance:', guidanceError?.message || guidanceError);
+                }
                 const pricingWaterfall = buildPricingWaterfall({
                     ...responseData,
                     applied_discounts: responseData.applied_discounts || [],

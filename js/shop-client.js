@@ -1136,12 +1136,6 @@ const ShopClient = {
         }
     },
 
-    getCurrentShopSite: function () {
-        return String(window.SiteConfig?.site || 'cn').trim().toLowerCase() === 'intl'
-            ? 'intl'
-            : 'cn';
-    },
-
     getProductSiteScopedMarketingValue: function (product = {}, baseField = '') {
         if (!product || !baseField) {
             return null;
@@ -1529,7 +1523,7 @@ const ShopClient = {
     },
 
     getGuidanceSiteForCurrentLanguage: function () {
-        return this.isEnglishShopLocale() ? 'intl' : 'cn';
+        return this.getCurrentShopSite();
     },
 
     getMissingProductGuidanceTranslationText: function (baseField) {
@@ -1552,6 +1546,30 @@ const ShopClient = {
             return fallback;
         }
         return normalized || fallback;
+    },
+
+    getShopProductSiteNamePair: function (product) {
+        if (!product) {
+            return { name: '', nameEn: '' };
+        }
+        const isIntlSite = this.getCurrentShopSite() === 'intl';
+        const normalizeText = (value) => String(value || '').trim();
+        const normalizeEnglishText = (value) => {
+            const normalized = normalizeText(value);
+            return normalized && !this.containsCjkText(normalized) ? normalized : '';
+        };
+        const nameEn = isIntlSite
+            ? (normalizeEnglishText(product.name_intl) || normalizeEnglishText(product.name_en))
+            : normalizeEnglishText(product.name_en);
+        const name = isIntlSite
+            ? (
+                normalizeText(product.name_intl_zh)
+                || normalizeText(product.name_intl)
+                || normalizeText(product.name_en)
+                || normalizeText(product.name)
+            )
+            : (normalizeText(product.name) || normalizeText(product.name_en));
+        return { name, nameEn };
     },
 
     getProductCategoryLabelMap: function () {
@@ -1616,36 +1634,62 @@ const ShopClient = {
 
     getLocalizedProductName: function (product) {
         if (!product) return '';
-        const isEn = this.isEnglishShopLocale();
-        if (isEn && product.name_en) {
-            return this.resolveShopDataText(product.name_en, window.i18n?.t('shop.unknownProduct') || 'Product');
-        }
-        return this.resolveShopDataText(product.name, isEn ? (window.i18n?.t('shop.unknownProduct') || 'Product') : '');
+        const isEnglishLocale = this.isEnglishShopLocale();
+        const fallback = isEnglishLocale
+            ? (window.i18n?.t('shop.unknownProduct') || 'Product')
+            : '';
+        const siteNamePair = this.getShopProductSiteNamePair(product);
+        return (isEnglishLocale ? siteNamePair.nameEn : siteNamePair.name) || fallback;
     },
 
     getLocalizedProductDescription: function (product) {
         if (!product) return '';
-        const isEn = this.isEnglishShopLocale();
-        const fallback = window.i18n?.t('shop.noDescription') || (isEn ? 'No description' : '暂无描述');
-        if (isEn && product.description_en) {
-            return this.resolveShopDataText(product.description_en, fallback);
+        const isIntlSite = this.getCurrentShopSite() === 'intl';
+        const isEnglishLocale = this.isEnglishShopLocale();
+        const fallback = window.i18n?.t('shop.noDescription') || (this.isEnglishShopLocale() ? 'No description' : '暂无描述');
+        if (isIntlSite) {
+            if (isEnglishLocale) {
+                return this.resolveShopDataText(product.description_intl || product.description_en || '', fallback);
+            }
+            return String(product.description_intl_zh || product.description_intl || product.description_en || '').trim() || fallback;
         }
-        return this.resolveShopDataText(product.description, fallback);
+        if (isEnglishLocale) {
+            return this.resolveShopDataText(product.description_en || '', fallback);
+        }
+        return String(product.description || product.description_en || '').trim() || fallback;
     },
 
     getLocalizedProductGuidanceText: function (product, baseField) {
         if (!product || !baseField) return '';
+        const isIntlSite = this.getCurrentShopSite() === 'intl';
+        const isEnglishLocale = this.isEnglishShopLocale();
         const legacyText = String(product?.[baseField] || '').trim();
         const zhText = String(product?.[`${baseField}_zh`] || '').trim();
         const enText = String(product?.[`${baseField}_en`] || '').trim();
+        const intlText = String(product?.[`${baseField}_intl`] || '').trim();
+        const intlZhText = String(product?.[`${baseField}_intl_zh`] || '').trim();
 
-        if (this.isEnglishShopLocale()) {
-            const localizedText = this.resolveShopDataText(enText || legacyText, '');
-            const showField = `show_${baseField}`;
+        if (isIntlSite) {
+            if (!isEnglishLocale) {
+                return intlZhText || intlText || enText;
+            }
+            const localizedText = this.resolveShopDataText(intlText || enText, '');
+            const showField = `show_${baseField}_intl`;
             if (localizedText) {
                 return localizedText;
             }
-            if (product?.[showField] === true && (zhText || legacyText || enText)) {
+            if (product?.[showField] === true && (intlText || enText || intlZhText)) {
+                return this.getMissingProductGuidanceTranslationText(baseField);
+            }
+            return '';
+        }
+
+        if (isEnglishLocale) {
+            const localizedText = this.resolveShopDataText(enText, '');
+            if (localizedText) {
+                return localizedText;
+            }
+            if (product?.[`show_${baseField}`] === true && (zhText || legacyText || enText)) {
                 return this.getMissingProductGuidanceTranslationText(baseField);
             }
             return '';
@@ -1701,7 +1745,21 @@ const ShopClient = {
     },
 
     shouldShowProductCardDescription: function (product) {
+        if (this.getCurrentShopSite() === 'intl' && Object.prototype.hasOwnProperty.call(product || {}, 'show_product_description_intl')) {
+            return product?.show_product_description_intl !== false;
+        }
         return product?.show_product_description !== false;
+    },
+
+    isProductGuidanceVisibleForCurrentSite: function (product, baseField) {
+        if (!product || !baseField) return false;
+        if (this.getCurrentShopSite() === 'intl') {
+            const intlField = `show_${baseField}_intl`;
+            if (Object.prototype.hasOwnProperty.call(product, intlField)) {
+                return product?.[intlField] === true;
+            }
+        }
+        return product?.[`show_${baseField}`] === true;
     },
 
     formatShopPoints: function (value) {
@@ -2869,8 +2927,8 @@ const ShopClient = {
             price,
             this.resolveQuantityPricingRulesForProductSelection(product),
             quantityCap,
-            product.show_purchase_notes === true ? this.getLocalizedProductGuidanceText(product, 'purchase_notes') : '',
-            product.show_usage_instructions === true ? this.getLocalizedProductGuidanceText(product, 'usage_instructions') : '',
+            this.isProductGuidanceVisibleForCurrentSite(product, 'purchase_notes') ? this.getLocalizedProductGuidanceText(product, 'purchase_notes') : '',
+            this.isProductGuidanceVisibleForCurrentSite(product, 'usage_instructions') ? this.getLocalizedProductGuidanceText(product, 'usage_instructions') : '',
             {
                 category: product.category || '',
                 initialQuantity: quantity,
@@ -3605,11 +3663,12 @@ const ShopClient = {
         const defaultSku = fulfillmentState.displaySku;
         const selectionRules = this.resolveQuantityPricingRulesForSku(product, defaultSku);
         const qtyRulesStr = selectionRules.length ? encodeURIComponent(JSON.stringify(selectionRules)) : '';
+        const siteNamePair = this.getShopProductSiteNamePair(product);
 
         return {
             productId,
-            productName: product?.name || '',
-            productNameEn: product?.name_en || '',
+            productName: siteNamePair.name,
+            productNameEn: siteNamePair.nameEn,
             unitPrice,
             defaultSkuId: defaultSku?.id || '',
             skuCount: skus.length,
@@ -3619,9 +3678,9 @@ const ShopClient = {
             stockCount: fulfillmentState.stockCount,
             stockState: fulfillmentState.soldOut ? 'sold-out' : 'available',
             manualDelivery: fulfillmentState.manualDelivery,
-            showPurchaseNotes: product?.show_purchase_notes === true,
+            showPurchaseNotes: this.isProductGuidanceVisibleForCurrentSite(product, 'purchase_notes'),
             purchaseNotes: this.getLocalizedProductGuidanceText(product, 'purchase_notes'),
-            showUsageInstructions: product?.show_usage_instructions === true,
+            showUsageInstructions: this.isProductGuidanceVisibleForCurrentSite(product, 'usage_instructions'),
             usageInstructions: this.getLocalizedProductGuidanceText(product, 'usage_instructions')
         };
     },
@@ -3984,9 +4043,14 @@ const ShopClient = {
             id: String(product.id || '').trim(),
             name: product.name || '',
             name_en: product.name_en || '',
+            name_intl: product.name_intl || '',
+            name_intl_zh: product.name_intl_zh || '',
             description: product.description || '',
             description_en: product.description_en || '',
+            description_intl: product.description_intl || '',
+            description_intl_zh: product.description_intl_zh || '',
             show_product_description: product.show_product_description !== false,
+            show_product_description_intl: product.show_product_description_intl !== false,
             icon_url: product.icon_url || '',
             image_assets: normalizeShopProductImageAsset(product.image_assets || product.imageAssets) || {},
             category: product.category || '',
@@ -3996,13 +4060,19 @@ const ShopClient = {
             max_purchase_quantity: this.normalizePurchaseQuantityCap(product.max_purchase_quantity),
             quantity_rules: this.normalizeQuantityPricingRules(product.quantity_rules),
             show_purchase_notes: product.show_purchase_notes === true,
+            show_purchase_notes_intl: product.show_purchase_notes_intl === true,
             purchase_notes: product.purchase_notes || '',
             purchase_notes_zh: product.purchase_notes_zh || '',
             purchase_notes_en: product.purchase_notes_en || '',
+            purchase_notes_intl: product.purchase_notes_intl || '',
+            purchase_notes_intl_zh: product.purchase_notes_intl_zh || '',
             show_usage_instructions: product.show_usage_instructions === true,
+            show_usage_instructions_intl: product.show_usage_instructions_intl === true,
             usage_instructions: product.usage_instructions || '',
             usage_instructions_zh: product.usage_instructions_zh || '',
             usage_instructions_en: product.usage_instructions_en || '',
+            usage_instructions_intl: product.usage_instructions_intl || '',
+            usage_instructions_intl_zh: product.usage_instructions_intl_zh || '',
             flash_sale_price: product.flash_sale_price ?? null,
             flash_sale_end: product.flash_sale_end || null,
             resolved_unit_price: resolvedUnitPrice == null ? null : Number(resolvedUnitPrice),
@@ -4232,8 +4302,8 @@ const ShopClient = {
                     finalTotal
                 }
                 : null;
-            const hasPurchaseNotes = product.show_purchase_notes === true && this.getLocalizedProductGuidanceText(product, 'purchase_notes').length > 0;
-            const hasUsageInstructions = product.show_usage_instructions === true && this.getLocalizedProductGuidanceText(product, 'usage_instructions').length > 0;
+            const hasPurchaseNotes = this.isProductGuidanceVisibleForCurrentSite(product, 'purchase_notes') && this.getLocalizedProductGuidanceText(product, 'purchase_notes').length > 0;
+            const hasUsageInstructions = this.isProductGuidanceVisibleForCurrentSite(product, 'usage_instructions') && this.getLocalizedProductGuidanceText(product, 'usage_instructions').length > 0;
             const manualDelivery = this.resolveShopProductSelectionManualDelivery(product, skuId);
 
             entries.push({
@@ -5709,10 +5779,11 @@ const ShopClient = {
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn'
         });
+        const siteNamePair = this.getShopProductSiteNamePair(entry.product);
         this.openPurchaseModal(
             entry.productId,
-            entry.product?.name || entry.displayName,
-            entry.product?.name_en || '',
+            siteNamePair.name || entry.displayName,
+            siteNamePair.nameEn,
             entry.unitPrice,
             this.resolveQuantityPricingRulesForProductSelection(entry.product, entry.productSkuId || ''),
             purchaseQuantityCap,
@@ -6531,7 +6602,7 @@ const ShopClient = {
 
             const label = String(
                 this.getLocalizedProductName(cachedProduct)
-                || (this.isEnglishShopLocale() ? cachedProduct?.name_en : '')
+                || (this.getCurrentShopSite() === 'intl' ? this.getShopProductSiteNamePair(cachedProduct).nameEn : '')
                 || fallbackName
                 || ''
             ).trim() || this.trShop('specificProduct', '指定商品');
@@ -6553,7 +6624,7 @@ const ShopClient = {
             const skuLabel = scopeSku?.display_name || scopeSku?.sku_name || scopeSku?.sku_code || '';
             pushProduct(
                 scopeProduct?.id || item?.scope_product_id,
-                (this.isEnglishShopLocale() ? scopeProduct?.name_en : '')
+                this.getLocalizedProductName(scopeProduct)
                     || scopeProduct?.display_name
                     || scopeProduct?.name
                     || scopeProduct?.name_en
@@ -7282,7 +7353,8 @@ const ShopClient = {
                 headers,
                 body: JSON.stringify({
                     productId: normalizedProductId,
-                    site: this.getGuidanceSiteForCurrentLanguage()
+                    site: this.getGuidanceSiteForCurrentLanguage(),
+                    language: this.isEnglishShopLocale() ? 'en' : 'zh'
                 })
             });
             const payload = await response.json().catch(() => ({}));
@@ -7298,7 +7370,7 @@ const ShopClient = {
 
         try {
             const client = window.supabaseClient || supabaseClient;
-            const guidanceSelect = 'show_purchase_notes, purchase_notes, purchase_notes_zh, purchase_notes_en, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en';
+            const guidanceSelect = 'show_purchase_notes, show_purchase_notes_intl, purchase_notes, purchase_notes_zh, purchase_notes_en, purchase_notes_intl, purchase_notes_intl_zh, show_usage_instructions, show_usage_instructions_intl, usage_instructions, usage_instructions_zh, usage_instructions_en, usage_instructions_intl, usage_instructions_intl_zh';
             let { data, error } = await client
                 .from('shop_products')
                 .select(guidanceSelect)
@@ -7311,12 +7383,45 @@ const ShopClient = {
                 const missingBilingualGuidanceColumn = [
                     'purchase_notes_zh',
                     'purchase_notes_en',
+                    'purchase_notes_intl',
+                    'purchase_notes_intl_zh',
+                    'show_purchase_notes_intl',
                     'usage_instructions_zh',
-                    'usage_instructions_en'
+                    'usage_instructions_en',
+                    'usage_instructions_intl',
+                    'usage_instructions_intl_zh',
+                    'show_usage_instructions_intl'
                 ].some((field) => message.includes(field));
                 if (!missingBilingualGuidanceColumn) {
                     throw error;
                 }
+                const bilingualResult = await client
+                    .from('shop_products')
+                    .select('show_purchase_notes, purchase_notes, purchase_notes_zh, purchase_notes_en, purchase_notes_intl, purchase_notes_intl_zh, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en, usage_instructions_intl, usage_instructions_intl_zh')
+                    .eq('id', normalizedProductId)
+                    .eq('is_active', true)
+                    .single();
+                data = bilingualResult.data;
+                error = bilingualResult.error;
+                if (error) {
+                    const bilingualMessage = String(error?.message || '').toLowerCase();
+                    const missingLegacyBilingualGuidanceColumn = [
+                        'purchase_notes_zh',
+                        'purchase_notes_en',
+                        'purchase_notes_intl',
+                        'purchase_notes_intl_zh',
+                        'usage_instructions_zh',
+                        'usage_instructions_en',
+                        'usage_instructions_intl',
+                        'usage_instructions_intl_zh'
+                    ].some((field) => bilingualMessage.includes(field));
+                    if (!missingLegacyBilingualGuidanceColumn) {
+                        throw error;
+                    }
+                }
+            }
+
+            if (error) {
                 const legacyResult = await client
                     .from('shop_products')
                     .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
@@ -7331,8 +7436,12 @@ const ShopClient = {
             }
 
             return normalizeGuidancePayload({
-                purchase_notes: data?.show_purchase_notes ? this.getLocalizedProductGuidanceText(data, 'purchase_notes') : '',
-                usage_instructions: data?.show_usage_instructions ? this.getLocalizedProductGuidanceText(data, 'usage_instructions') : ''
+                purchase_notes: this.isProductGuidanceVisibleForCurrentSite(data, 'purchase_notes')
+                    ? this.getLocalizedProductGuidanceText(data, 'purchase_notes')
+                    : '',
+                usage_instructions: this.isProductGuidanceVisibleForCurrentSite(data, 'usage_instructions')
+                    ? this.getLocalizedProductGuidanceText(data, 'usage_instructions')
+                    : ''
             });
         } catch (error) {
             console.warn('Failed to load latest product guidance:', error);
@@ -7851,6 +7960,7 @@ const ShopClient = {
                     productSkuId: purchasePayload.productSkuId || null,
                     agentId: purchasePayload.agentId || null,
                     site: purchasePayload.site || (window.SiteConfig?.site || 'cn'),
+                    language: this.isEnglishShopLocale() ? 'en' : 'zh',
                     idempotencyKey
                 })
             });
@@ -7946,6 +8056,7 @@ const ShopClient = {
                         const prefetch = JSON.parse(prefetchRaw);
                         const age = Date.now() - prefetch.timestamp;
                         const currentSite = window.SiteConfig?.site || 'cn';
+                        const currentLanguage = this.isEnglishShopLocale() ? 'en' : 'zh';
                         const prefetchVersionMatches = prefetch?.version === SHOP_PREFETCH_SCHEMA_VERSION;
                         // Only use prefetch if it actually contains products, otherwise ignore (Safari empty state bug)
                         if (
@@ -7955,6 +8066,7 @@ const ShopClient = {
                             && prefetch.products
                             && prefetch.products.length > 0
                             && (!prefetch.site || prefetch.site === currentSite)
+                            && prefetch.language === currentLanguage
                         ) {
                             sessionStorage.removeItem('shop_prefetch');
                             // Inject prefetched data into Cache for loadCategoryFilters / loadProducts to use
@@ -9645,12 +9757,9 @@ const ShopClient = {
         const productSnapshot = resolvedProduct
             ? (this.buildCartProductSnapshot(resolvedProduct) || resolvedProduct)
             : null;
-        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
         const fallbackDisplayName = productSnapshot
-            ? (currentLang === 'en'
-                ? (productSnapshot.name_en || productSnapshot.name || '')
-                : (productSnapshot.name || productSnapshot.name_en || ''))
-            : (currentLang === 'en'
+            ? this.getLocalizedProductName(productSnapshot)
+            : (this.getCurrentShopSite() === 'intl'
                 ? (this.currentPurchase?.productNameEn || this.currentPurchase?.productName || '')
                 : (this.currentPurchase?.productName || this.currentPurchase?.productNameEn || ''));
         const normalizedDisplayName = String(displayName || fallbackDisplayName || window.i18n?.t('shop.unknownProduct') || '商品').trim();
@@ -9661,10 +9770,10 @@ const ShopClient = {
                 .split(/\n----\n/)
                 .map((segment) => String(segment || '').trim())
                 .filter(Boolean);
-        const resolvedPurchaseNotes = productSnapshot?.show_purchase_notes === true
+        const resolvedPurchaseNotes = this.isProductGuidanceVisibleForCurrentSite(productSnapshot, 'purchase_notes')
             ? this.getLocalizedProductGuidanceText(productSnapshot, 'purchase_notes')
             : '';
-        const resolvedUsageInstructions = productSnapshot?.show_usage_instructions === true
+        const resolvedUsageInstructions = this.isProductGuidanceVisibleForCurrentSite(productSnapshot, 'usage_instructions')
             ? this.getLocalizedProductGuidanceText(productSnapshot, 'usage_instructions')
             : '';
         const fallbackPurchaseNotes = String(this.currentPurchase?.productId || '').trim() === normalizedProductId
@@ -10034,7 +10143,8 @@ const ShopClient = {
                 categories: this.availableCategories || [],
                 products: this.allProductsCache,
                 timestamp: Date.now(),
-                site: window.SiteConfig?.site || 'cn'
+                site: window.SiteConfig?.site || 'cn',
+                language: this.isEnglishShopLocale() ? 'en' : 'zh'
             }));
         } catch (e) {
             console.warn('Failed to persist shop prefetch:', e);
@@ -11518,15 +11628,16 @@ const ShopClient = {
         };
     },
 
-    getShopCatalogBrowserCacheKey: function ({ site = 'cn', category = 'all' } = {}) {
+    getShopCatalogBrowserCacheKey: function ({ site = 'cn', category = 'all', language = 'zh' } = {}) {
         const normalizedSite = String(site || 'cn').trim().toLowerCase() || 'cn';
         const normalizedCategory = String(category || 'all').trim().toLowerCase() || 'all';
-        return `${SHOP_CATALOG_BROWSER_CACHE_PREFIX}:${SHOP_PREFETCH_SCHEMA_VERSION}:${normalizedSite}:${normalizedCategory}`;
+        const normalizedLanguage = String(language || 'zh').trim().toLowerCase() === 'en' ? 'en' : 'zh';
+        return `${SHOP_CATALOG_BROWSER_CACHE_PREFIX}:${SHOP_PREFETCH_SCHEMA_VERSION}:${normalizedSite}:${normalizedCategory}:${normalizedLanguage}`;
     },
 
-    readShopCatalogBrowserCache: function ({ site = 'cn', category = 'all' } = {}) {
+    readShopCatalogBrowserCache: function ({ site = 'cn', category = 'all', language = 'zh' } = {}) {
         try {
-            const raw = window.sessionStorage?.getItem(this.getShopCatalogBrowserCacheKey({ site, category }));
+            const raw = window.sessionStorage?.getItem(this.getShopCatalogBrowserCacheKey({ site, category, language }));
             if (!raw) return null;
 
             const cached = JSON.parse(raw);
@@ -11550,15 +11661,16 @@ const ShopClient = {
         }
     },
 
-    writeShopCatalogBrowserCache: function ({ site = 'cn', category = 'all', categories = [], products = [] } = {}) {
+    writeShopCatalogBrowserCache: function ({ site = 'cn', category = 'all', language = 'zh', categories = [], products = [] } = {}) {
         if (!Array.isArray(categories) || !Array.isArray(products)) {
             return;
         }
 
         try {
-            window.sessionStorage?.setItem(this.getShopCatalogBrowserCacheKey({ site, category }), JSON.stringify({
+            window.sessionStorage?.setItem(this.getShopCatalogBrowserCacheKey({ site, category, language }), JSON.stringify({
                 version: SHOP_PREFETCH_SCHEMA_VERSION,
                 cachedAt: Date.now(),
+                language: String(language || 'zh').trim().toLowerCase() === 'en' ? 'en' : 'zh',
                 categories,
                 products
             }));
@@ -11567,8 +11679,11 @@ const ShopClient = {
         }
     },
 
-    fetchShopCatalogPayloadFromApi: async function ({ site = 'cn', category = 'all', forceRefresh = false } = {}) {
-        const catalogParams = new URLSearchParams({ site });
+    fetchShopCatalogPayloadFromApi: async function ({ site = 'cn', category = 'all', language = 'zh', forceRefresh = false } = {}) {
+        const catalogParams = new URLSearchParams({
+            site,
+            language: String(language || 'zh').trim().toLowerCase() === 'en' ? 'en' : 'zh'
+        });
         if (category && category !== 'all') {
             catalogParams.set('category', category);
         }
@@ -11618,12 +11733,14 @@ const ShopClient = {
 
         const request = (async () => {
             const currentSite = window.SiteConfig?.site || 'cn';
+            const currentLanguage = this.isEnglishShopLocale() ? 'en' : 'zh';
             const category = 'all';
 
             if (!forceRefresh) {
                 const cachedCatalog = this.readShopCatalogBrowserCache({
                     site: currentSite,
-                    category
+                    category,
+                    language: currentLanguage
                 });
                 if (cachedCatalog) {
                     void this.fetchShopCatalogFromApi({ forceRefresh: true }).catch((error) => {
@@ -11641,6 +11758,7 @@ const ShopClient = {
                 const payload = await this.fetchShopCatalogPayloadFromApi({
                     site: currentSite,
                     category,
+                    language: currentLanguage,
                     forceRefresh
                 });
 
@@ -11658,6 +11776,7 @@ const ShopClient = {
                 this.writeShopCatalogBrowserCache({
                     site: currentSite,
                     category,
+                    language: currentLanguage,
                     categories: normalizedCatalog.categories,
                     products: normalizedCatalog.products
                 });
@@ -13224,7 +13343,7 @@ const ShopClient = {
                 createdAt: String(responseData.created_at || '').trim() || new Date().toISOString(),
                 quantity: Number(entry?.quantity || 0) || 1,
                 content: rawContent,
-                purchaseNotes: entry?.product?.show_purchase_notes === true
+                purchaseNotes: this.isProductGuidanceVisibleForCurrentSite(entry?.product, 'purchase_notes')
                     ? this.getLocalizedProductGuidanceText(entry?.product, 'purchase_notes')
                     : '',
                 usageInstructions: rawUsageInstructions,
