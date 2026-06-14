@@ -2863,7 +2863,7 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260604_VERIFY_CARD_SURFACE_SOFTEN_1'],
+        ['verify.html', 'css/verify-page.css?v=20260614_VERIFY_WIDGET_SUBTLE_SHADOW_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
@@ -9926,7 +9926,7 @@ test('verify history reads canonical verification log payload columns', () => {
         'verify widget should distinguish history load errors from an empty history state'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260604_VERIFY_HISTORY_DETAIL_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260614_VERIFY_RESET_TEXT_ONLY_1'),
         true,
         'verify.html should cache-bust the fixed history query runtime'
     );
@@ -9983,7 +9983,7 @@ test('verify polling treats status aliases as terminal and avoids cached status 
         'verify status polling and repair reads should bypass cached running responses'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260604_VERIFY_HISTORY_DETAIL_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260614_VERIFY_RESET_TEXT_ONLY_1'),
         true,
         'verify.html should cache-bust the fixed polling runtime'
     );
@@ -10274,7 +10274,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        verifyPageSource.includes('css/verify-page.css?v=20260604_VERIFY_CARD_SURFACE_SOFTEN_1'),
+        verifyPageSource.includes('css/verify-page.css?v=20260614_VERIFY_WIDGET_SUBTLE_SHADOW_1'),
         true,
         'verify.html should load the latest verify page stylesheet version'
     );
@@ -10284,7 +10284,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260604_VERIFY_HISTORY_DETAIL_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260614_VERIFY_RESET_TEXT_ONLY_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );

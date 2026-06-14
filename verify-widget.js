@@ -2065,7 +2065,6 @@ ${fullModeMarkup}
 
                                 <div class="verify-form-actions">
                                     <button class="verify-reset-btn" id="verifyResetBtn" data-verify-action="reset-form">
-                                        <i class="fas fa-rotate-left"></i>
                                         ${t('verify.resetForm', '清空输入')}
                                     </button>
                                     <button class="verify-submit-btn" id="verifySubmitBtn" data-verify-action="submit">

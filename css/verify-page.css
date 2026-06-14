@@ -243,16 +243,16 @@ body {
         linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.95) 100%);
     border: 1px solid rgba(31, 54, 83, 0.12);
     box-shadow:
-        0 28px 80px rgba(31, 54, 83, 0.14),
-        0 10px 24px rgba(31, 54, 83, 0.08),
+        0 8px 18px rgba(31, 54, 83, 0.055),
+        0 1px 4px rgba(31, 54, 83, 0.035),
         inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
 .verify-widget:hover {
     border-color: rgba(72, 118, 166, 0.22);
     box-shadow:
-        0 34px 90px rgba(31, 54, 83, 0.16),
-        0 14px 30px rgba(31, 54, 83, 0.1),
+        0 10px 22px rgba(31, 54, 83, 0.065),
+        0 2px 6px rgba(31, 54, 83, 0.04),
         inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
@@ -735,12 +735,12 @@ html[data-theme="dark"] .verify-widget {
     --trail-aura-opacity: 0.58;
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
 
 html[data-theme="dark"] .verify-widget:hover {
     border-color: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 5px 18px rgba(0, 0, 0, 0.15);
 }
 
 html[data-theme="dark"] .verify-widget-title h3,
