@@ -413,7 +413,7 @@ test('marketplace order helper backfills product usage instructions when RPC omi
     assert.equal(result.data.usage_instructions, '中文使用说明优先');
     assert.deepEqual(state.tableReads[0], {
         table: 'shop_products',
-        columns: 'id, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en',
+        columns: 'id, show_usage_instructions, show_usage_instructions_intl, usage_instructions, usage_instructions_zh, usage_instructions_en, usage_instructions_intl, usage_instructions_intl_zh',
         eq: [['id', productId]]
     });
 });

@@ -52,12 +52,15 @@ test('shop order detail handler skips unnecessary item lookups and parallelizes 
     }
 });
 
-test('shop purchase handler keeps post-purchase bookkeeping off the response path without reloading guidance', () => {
+test('shop purchase handler keeps post-purchase bookkeeping off the response path while refreshing localized usage guidance', () => {
     const shopHandlerSource = readRepoFile('server/api-handlers/public/shop.js');
 
     const markers = [
-        'const responseUsageInstructions = normalizeGuidanceText(responseData.usage_instructions);',
-        'const responseHasUsageInstructions = responseData.show_usage_instructions === true',
+        'let responseUsageInstructions = normalizeGuidanceText(responseData.usage_instructions);',
+        'let responseHasUsageInstructions = responseData.show_usage_instructions === true',
+        'const { data: productGuidanceRow } = await loadProductGuidanceRow(systemSupabase, payload.productId);',
+        'const guidancePayload = buildProductGuidancePayload(productGuidanceRow, payload.site, payload.language);',
+        'responseUsageInstructions = normalizeGuidanceText(guidancePayload.usage_instructions);',
         'async function safeProcessShopPurchaseRewards(supabase, { orderId = \'\', site = \'cn\' } = {})',
         'function scheduleShopPurchaseFollowups(followupTask) {',
         "if (typeof setImmediate === 'function') {",
@@ -72,7 +75,7 @@ test('shop purchase handler keeps post-purchase bookkeeping off the response pat
     assert.equal(
         shopHandlerSource.includes('const guidancePromise = loadProductGuidance(requestAdminSupabase || adminSupabase || supabase, {'),
         false,
-        'server/api-handlers/public/shop.js should not block purchase success on a guidance refetch'
+        'server/api-handlers/public/shop.js should not use the full product-guidance endpoint path inside purchase success'
     );
     assert.equal(
         shopHandlerSource.includes('await Promise.all([\n                        affiliateLinkagePromise,\n                        paidTagPromise'),
