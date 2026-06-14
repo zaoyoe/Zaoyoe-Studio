@@ -314,7 +314,7 @@ test('shop products handler includes stock_count for import tree payloads', asyn
         assert.deepEqual(state.queryCalls[0], {
             table: 'shop_products',
             operations: [
-                { method: 'select', args: ['id, name, category, sort_order, stock_count, is_active'] },
+                { method: 'select', args: ['id, name, category, sort_order, display_order, stock_count, is_active'] },
                 { method: 'order', args: ['sort_order', { ascending: true }] }
             ],
             mode: 'order'

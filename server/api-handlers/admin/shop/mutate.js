@@ -2811,9 +2811,10 @@ module.exports = async (req, res) => {
                 .map((entry) => ({
                     id: normalizeText(entry?.id || entry?.productId, 160),
                     category: normalizeText(entry?.category || entry?.targetCategory, 120),
-                    sort_order: normalizeNonNegativeInteger(entry?.sortOrder ?? entry?.sort_order)
+                    sort_order: normalizeNonNegativeInteger(entry?.sortOrder ?? entry?.sort_order),
+                    display_order: normalizeNonNegativeInteger(entry?.displayOrder ?? entry?.display_order)
                 }))
-                .filter((entry) => entry.id || entry.category || entry.sort_order !== null);
+                .filter((entry) => entry.id || entry.category || entry.sort_order !== null || entry.display_order !== null);
 
             if (!assignments.length) {
                 return sendJson(res, 400, {
@@ -2836,7 +2837,7 @@ module.exports = async (req, res) => {
 
             const { data: productRows, error: productError } = await supabase
                 .from('shop_products')
-                .select('id, name, category, sort_order')
+                .select('id, name, category, sort_order, display_order')
                 .in('id', productIds);
 
             if (productError) {
@@ -2865,13 +2866,34 @@ module.exports = async (req, res) => {
                 });
             }
 
+            const rpcProducts = Array.isArray(rpcResult?.products) ? rpcResult.products : [];
+            const rpcReturnedDisplayOrder = rpcProducts.some((row) => (
+                row && typeof row === 'object' && Object.prototype.hasOwnProperty.call(row, 'display_order')
+            ));
+            if (rpcResult?.success === true && !rpcReturnedDisplayOrder) {
+                for (const assignment of uniqueAssignments) {
+                    if (assignment.display_order === null) continue;
+                    const { error: displayOrderError } = await supabase
+                        .from('shop_products')
+                        .update({
+                            display_order: assignment.display_order
+                        })
+                        .eq('id', assignment.id);
+
+                    if (displayOrderError) {
+                        return sendJson(res, 400, { success: false, message: displayOrderError.message });
+                    }
+                }
+            }
+
             if (!rpcResult) {
                 for (const assignment of uniqueAssignments) {
                     const { error: updateError } = await supabase
                         .from('shop_products')
                         .update({
                             category: assignment.category,
-                            sort_order: assignment.sort_order
+                            sort_order: assignment.sort_order,
+                            ...(assignment.display_order !== null ? { display_order: assignment.display_order } : {})
                         })
                         .eq('id', assignment.id);
 
@@ -2881,12 +2903,17 @@ module.exports = async (req, res) => {
                 }
             }
 
+            const rpcProductMap = new Map(rpcProducts.map((row) => [String(row?.id || '').trim(), row]));
             const products = uniqueAssignments.map((assignment) => {
                 const existingRow = existingMap.get(assignment.id) || {};
+                const rpcProduct = rpcProductMap.get(assignment.id) || {};
                 return {
                     ...existingRow,
-                    category: assignment.category,
-                    sort_order: assignment.sort_order
+                    ...rpcProduct,
+                    category: rpcProduct.category || assignment.category,
+                    sort_order: rpcProduct.sort_order ?? assignment.sort_order,
+                    display_order: rpcProduct.display_order
+                        ?? (assignment.display_order !== null ? assignment.display_order : existingRow.display_order)
                 };
             });
 
@@ -2903,7 +2930,8 @@ module.exports = async (req, res) => {
                         id: row.id,
                         name: row.name,
                         category: row.category,
-                        sort_order: row.sort_order
+                        sort_order: row.sort_order,
+                        display_order: row.display_order
                     }))
                 }
             });

@@ -367,7 +367,7 @@ const ShopAdmin = {
     deliveryAnalyticsWindow: '24h',
     deliveryStrategyConfig: null,
     pageSize: 10,
-    currentCategory: 'all', // State for category filter
+    currentCategory: '', // State for category filter
     currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
     productSearchQuery: '',
     currentProductDeliveryFilter: 'all',
@@ -2512,14 +2512,46 @@ Example output format:
     },
 
     // Category Filter Logic
+    getSortedAdminProductCategories: function (categories = this.categoryData) {
+        return (Array.isArray(categories) ? categories : [])
+            .filter((category) => String(category?.name || '').trim())
+            .map((category, index) => ({ category, index }))
+            .sort((left, right) => (
+                Number(left.category?.sort_order || 0) - Number(right.category?.sort_order || 0)
+            ) || left.index - right.index)
+            .map((entry) => entry.category);
+    },
+
+    normalizeCurrentProductCategory: function (categories = this.categoryData) {
+        const sortedCategories = this.getSortedAdminProductCategories(categories);
+        const currentCategory = String(this.currentCategory || '').trim();
+        if (currentCategory && sortedCategories.some((category) => category.name === currentCategory)) {
+            this.currentCategory = currentCategory;
+            return currentCategory;
+        }
+
+        const fallbackCategory = String(sortedCategories[0]?.name || '').trim();
+        this.currentCategory = fallbackCategory;
+        return fallbackCategory;
+    },
+
+    syncProductCategoryFilterButtons: function () {
+        document.querySelectorAll('#productCategoryFilters .filter-tab[data-category]').forEach((tab) => {
+            const isActive = String(tab.dataset.category || '').trim() === String(this.currentCategory || '').trim();
+            tab.classList.toggle('active', isActive);
+        });
+    },
+
     filterCategory: function (category, btn) {
-        this.currentCategory = category;
+        const normalizedCategory = String(category || '').trim();
+        if (!normalizedCategory) return;
+        this.currentCategory = normalizedCategory;
 
         // Update UI - only update category tabs, not status tabs
         const container = document.getElementById('productCategoryFilters');
-        const categoryTabs = container.querySelectorAll('.filter-tab:not(.status-filter)');
+        const categoryTabs = container?.querySelectorAll('.filter-tab:not(.status-filter)') || [];
         categoryTabs.forEach(t => t.classList.remove('active'));
-        btn.classList.add('active');
+        btn?.classList.add('active');
 
         // Reload Grid
         this.loadProducts();
@@ -4406,20 +4438,14 @@ Example output format:
 
             console.log('Categories for filters:', this.categoryData);
 
-            // Rebuild: first add "全部" button
             container.innerHTML = '';
-            const currentCategory = this.currentCategory || 'all';
-            const allBtn = document.createElement('button');
-            allBtn.className = `filter-tab${currentCategory === 'all' ? ' active' : ''}`;
-            allBtn.textContent = '全部';
-            allBtn.dataset.shopAction = 'product-filter-category';
-            allBtn.dataset.category = 'all';
-            container.appendChild(allBtn);
+            const categories = this.getSortedAdminProductCategories(this.categoryData);
+            this.normalizeCurrentProductCategory(categories);
 
             // Add dynamic category buttons from categoryData
-            (this.categoryData || []).forEach(cat => {
+            categories.forEach(cat => {
                 const btn = document.createElement('button');
-                btn.className = `filter-tab${currentCategory === cat.name ? ' active' : ''}`;
+                btn.className = `filter-tab${this.currentCategory === cat.name ? ' active' : ''}`;
                 btn.textContent = cat.name;
                 btn.dataset.shopAction = 'product-filter-category';
                 btn.dataset.category = cat.name;
@@ -7214,9 +7240,12 @@ Example output format:
         this.productGridCache = new Map();
 
         try {
+            await this.loadCategories();
+            const normalizedCategory = this.normalizeCurrentProductCategory();
+            this.syncProductCategoryFilterButtons();
             const payload = await this.loadShopProductsViaAdminApi({
                 status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
-                category: this.currentCategory !== 'all' ? this.currentCategory : null,
+                category: normalizedCategory || null,
                 query: this.productSearchQuery || null,
                 deliveryType: this.currentProductDeliveryFilter !== 'all' ? this.currentProductDeliveryFilter : null,
                 fields: 'full',
@@ -8563,7 +8592,7 @@ Example output format:
 
             // Use current category filter as default, or fall back to first option
             let defaultCategory = null;
-            if (this.currentCategory && this.currentCategory !== 'all') {
+            if (this.currentCategory) {
                 // Find the category in our data to get its color
                 const catData = this.categoryData.find(c => c.name === this.currentCategory);
                 if (catData) {
@@ -8572,7 +8601,7 @@ Example output format:
                 }
             }
 
-            // If no current category or it's 'all', select first available
+            // If no current category, select first available
             await this.productCategoryDropdownPromise;
             if (!defaultCategory) {
                 const firstOption = document.querySelector('#prodCategoryOptions .custom-category-option');
@@ -18419,6 +18448,12 @@ Example output format:
         }
     },
 
+    getAdminProductDisplayOrderFromImportIndex: function (index = 0, total = 0) {
+        const normalizedIndex = Math.max(0, Number.parseInt(index, 10) || 0);
+        const normalizedTotal = Math.max(normalizedIndex + 1, Number.parseInt(total, 10) || 0);
+        return (normalizedTotal - normalizedIndex) * 10;
+    },
+
     // Reorder product within or across categories
     reorderProduct: async function (productId, targetCategory, beforeId, options = {}) {
         if (!productId) return;
@@ -18465,7 +18500,8 @@ Example output format:
             assignments.push({
                 id: entry.id,
                 category: targetCategory,
-                sortOrder: idx
+                sortOrder: idx,
+                displayOrder: this.getAdminProductDisplayOrderFromImportIndex(idx, reorderedTargetProducts.length)
             });
             seenProductIds.add(entry.id);
         });
@@ -18475,7 +18511,8 @@ Example output format:
             assignments.push({
                 id: entry.id,
                 category: sourceCategory,
-                sortOrder: idx
+                sortOrder: idx,
+                displayOrder: this.getAdminProductDisplayOrderFromImportIndex(idx, sourceProducts.length)
             });
             seenProductIds.add(entry.id);
         });
@@ -18484,7 +18521,8 @@ Example output format:
             const currentProduct = this.allProductsForImport.find((candidate) => candidate.id === entry.id);
             if (!currentProduct) return false;
             return String(currentProduct.category || '') !== entry.category
-                || Number(currentProduct.sort_order || 0) !== entry.sortOrder;
+                || Number(currentProduct.sort_order || 0) !== entry.sortOrder
+                || Number(currentProduct.display_order || 0) !== entry.displayOrder;
         });
 
         if (!changedAssignments.length) {
@@ -18503,6 +18541,7 @@ Example output format:
                 if (!updatedEntry) return;
                 entry.category = updatedEntry.category;
                 entry.sort_order = updatedEntry.sort_order;
+                entry.display_order = updatedEntry.display_order;
             });
 
             product.category = targetCategory;
@@ -18864,10 +18903,12 @@ Example output format:
                 if (p.category === cat.name) p.category = fallbackCategory;
             });
             if (this.currentImportCategory === cat.name) {
-                this.currentImportCategory = 'all';
+                this.currentImportCategory = fallbackCategory;
             }
             if (this.currentCategory === cat.name) {
-                this.currentCategory = 'all';
+                this.currentCategory = this.categoryData.find((entry) => entry.name === fallbackCategory)?.name
+                    || this.categoryData[0]?.name
+                    || '';
             }
 
             await this.renderProductCategoryFilters();
