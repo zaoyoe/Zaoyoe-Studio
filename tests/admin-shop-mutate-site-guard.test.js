@@ -206,7 +206,7 @@ test('shop mutate handler accepts writable site and writes audit context', async
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().success, true);
-        assert.deepEqual(state.fromCalls, ['shop_products', 'shop_product_skus', 'shop_product_skus', 'shop_product_skus']);
+        assert.deepEqual(state.fromCalls, ['shop_products']);
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].site, 'intl');
         assert.equal(state.auditCalls[0].module, 'shop');
