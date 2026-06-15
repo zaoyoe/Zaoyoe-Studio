@@ -52,6 +52,11 @@ test('admin studio exposes reusable action button feedback and product save uses
     );
     assert.match(
         adminHtmlSource,
+        /id="productCompleteTranslationBtn"[^>]+data-shop-action="product-complete-translation"[^>]+disabled/s,
+        'product modal should expose a disabled-by-default translation completion button next to save'
+    );
+    assert.match(
+        adminHtmlSource,
         /data-admin-action="settings-save-announcement"[^>]+data-admin-action-feedback="发布中\.\.\."/s,
         'announcement publish button should declare a publishing feedback label'
     );

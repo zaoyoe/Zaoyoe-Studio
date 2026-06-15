@@ -379,8 +379,12 @@ const ShopAdmin = {
     editingProductSnapshot: null, // Original product row for resilient saves on existing items
     purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
     productSaveInFlight: false,
+    productTranslationInFlight: false,
     productSkuEditorLoading: false,
     productSkuEditorErrorMessage: '',
+    productModalDirty: false,
+    productCopyLanguage: 'zh',
+    productCopyLanguageDrafts: null,
     richTextEditorsReady: false,
     shopCustomSelectBridgeReady: false,
     productDeliveryFilterPlacementBound: false,
@@ -410,12 +414,99 @@ const ShopAdmin = {
         return filter === 'intl' ? 'intl' : 'cn'; // 'all' defaults to 'cn'
     },
 
-    getSiteScopedProductTextForEdit(data, baseField) {
+    isProductModalElement(element) {
+        return element instanceof Element
+            && Boolean(element.closest('#productModal'));
+    },
+
+    markProductModalDirty(element = null) {
+        if (element && !this.isProductModalElement(element)) {
+            return;
+        }
+        this.productModalDirty = true;
+    },
+
+    normalizeProductCopyLanguage(value = 'zh') {
+        const normalized = String(value || 'zh').trim().toLowerCase();
+        return normalized === 'en' || normalized.startsWith('en-') ? 'en' : 'zh';
+    },
+
+    getProductCopyLanguageForEdit() {
+        if (this.getEditSite() !== 'intl') {
+            return 'zh';
+        }
+        const inputValue = document.getElementById('prodCopyLanguage')?.value;
+        return this.normalizeProductCopyLanguage(inputValue || this.productCopyLanguage || 'zh');
+    },
+
+    captureProductCopyLanguageDraft() {
+        if (this.getEditSite() !== 'intl') return;
+        const language = this.getProductCopyLanguageForEdit();
+        this.productCopyLanguageDrafts = this.productCopyLanguageDrafts || {};
+        this.productCopyLanguageDrafts[language] = {
+            name: document.getElementById('prodName')?.value || '',
+            description: document.getElementById('prodDesc')?.value || '',
+            purchase_notes: document.getElementById('prodPurchaseNotes')?.value || '',
+            usage_instructions: document.getElementById('prodUsageInstructions')?.value || ''
+        };
+    },
+
+    syncProductCopyLanguageControls() {
+        const isIntl = this.getEditSite() === 'intl';
+        const language = isIntl ? this.getProductCopyLanguageForEdit() : 'zh';
+        const group = document.getElementById('productCopyLanguageGroup');
+        const input = document.getElementById('prodCopyLanguage');
+
+        if (group) {
+            group.hidden = !isIntl;
+        }
+        if (input) {
+            input.value = language;
+        }
+
+        document.querySelectorAll('#productModal [data-shop-action="product-select-copy-language"]').forEach((button) => {
+            if (!(button instanceof HTMLElement)) return;
+            const isActive = isIntl && button.dataset.copyLanguage === language;
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+    },
+
+    setProductCopyLanguage(language = 'zh', options = {}) {
+        if (options.captureCurrentDraft !== false) {
+            this.captureProductCopyLanguageDraft();
+        }
+
+        this.productCopyLanguage = this.getEditSite() === 'intl'
+            ? this.normalizeProductCopyLanguage(language)
+            : 'zh';
+
+        const input = document.getElementById('prodCopyLanguage');
+        if (input) {
+            input.value = this.productCopyLanguage;
+        }
+
+        this.syncProductCopyLanguageControls();
+        this.updateModalLabels();
+
+        if (options.refreshFields === true) {
+            this.fillProductCopyFieldsForActiveLanguage(this.editingProductSnapshot || {}, {
+                useDraft: true
+            });
+        }
+        this.syncProductTranslationCompletionButton();
+    },
+
+    getSiteScopedProductTextForEdit(data, baseField, language = this.getProductCopyLanguageForEdit()) {
         if (!data || !baseField) return '';
         if (this.getEditSite() === 'intl') {
             const intlField = baseField === 'name' ? 'name_intl' : `${baseField}_intl`;
+            const intlZhField = baseField === 'name' ? 'name_intl_zh' : `${baseField}_intl_zh`;
             const legacyEnField = baseField === 'name' ? 'name_en' : `${baseField}_en`;
-            return String(data?.[intlField] || data?.[legacyEnField] || '').trim();
+            if (this.normalizeProductCopyLanguage(language) === 'en') {
+                return String(data?.[intlField] || data?.[legacyEnField] || '').trim();
+            }
+            return String(data?.[intlZhField] || data?.[intlField] || data?.[legacyEnField] || data?.[baseField] || '').trim();
         }
         return String(data?.[baseField] || '').trim();
     },
@@ -633,36 +724,61 @@ const ShopAdmin = {
             };
     },
 
+    getShopSiteShortLabel: function (site = this.getEditSite()) {
+        return site === 'intl' ? '国际站' : 'CN 站';
+    },
+
+    getOppositeShopSite: function (site = this.getEditSite()) {
+        return site === 'intl' ? 'cn' : 'intl';
+    },
+
+    syncProductSkuCopyPriceButton: function () {
+        const button = document.querySelector('#productModal [data-shop-action="product-copy-other-site-sku-prices"]');
+        if (!button) return;
+
+        const sourceSite = this.getOppositeShopSite();
+        const targetSite = this.getEditSite();
+        const label = button.querySelector('[data-product-sku-copy-price-label]');
+        const copyText = `复用${this.getShopSiteShortLabel(sourceSite)}规格价格`;
+        if (label) {
+            label.textContent = copyText;
+        }
+        button.title = `将${this.getShopSiteShortLabel(sourceSite)}的各规格价格填入当前${this.getShopSiteShortLabel(targetSite)}规格价格`;
+    },
+
     /** Update modal labels and hint based on current site */
     updateModalLabels() {
         const site = this.getEditSite();
         const isCN = site === 'cn';
         const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        const copyLanguage = this.getProductCopyLanguageForEdit();
+        const isEnglishCopy = copyLanguage === 'en';
 
         // Update labels
         const nameLabel = document.getElementById('prodNameLabel');
-        const priceLabel = document.getElementById('prodPriceLabel');
-        const descLabel = document.getElementById('prodDescLabel');
-        const hint = document.getElementById('productSiteHint');
+	        const descLabel = document.getElementById('prodDescLabel');
+	        const hint = document.getElementById('productSiteHint');
 
-        if (nameLabel) nameLabel.textContent = isCN ? '商品名称' : '商品名称（英文）';
-        if (priceLabel) priceLabel.textContent = isCN ? '价格（积分）' : '国际价格（积分）';
-        if (descLabel) descLabel.textContent = isCN ? '商品描述' : '商品描述（英文）';
+        this.syncProductCopyLanguageControls();
+        this.syncProductSkuCopyPriceButton();
+
+	        if (nameLabel) nameLabel.textContent = isCN ? '商品名称' : (isEnglishCopy ? '商品名称（INTL 英文）' : '商品名称（INTL 中文）');
+	        if (descLabel) descLabel.textContent = isCN ? '商品描述' : (isEnglishCopy ? '商品描述（INTL 英文）' : '商品描述（INTL 中文）');
 
         // Update placeholder
         const nameInput = document.getElementById('prodName');
         const descInput = document.getElementById('prodDesc');
-        if (nameInput) nameInput.placeholder = isCN ? '输入商品名称' : '输入英文商品名称';
-        if (descInput) descInput.placeholder = isCN ? '商品简介...' : '输入英文商品描述...';
+        if (nameInput) nameInput.placeholder = isCN ? '输入商品名称' : (isEnglishCopy ? '输入 INTL 英文商品名称' : '输入 INTL 中文商品名称');
+        if (descInput) descInput.placeholder = isCN ? '商品简介...' : (isEnglishCopy ? '输入 INTL 英文商品描述...' : '输入 INTL 中文商品描述...');
 
         // Show site hint
         if (hint) {
             hint.classList.add('shop-product-site-hint--visible');
             hint.innerHTML = filter === 'all'
-                ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称、价格、描述、注意事项、使用说明和展示开关。'
+	                ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称、规格价格、描述、注意事项、使用说明和展示开关。'
                 : (isCN
                     ? '🇨🇳 正在编辑 <strong>CN</strong> 商品信息'
-                    : '🌍 正在编辑 <strong>国际站</strong> 商品信息（名称 / 描述 / 注意事项 / 使用说明 / 开关独立于 CN 站）');
+                    : `🌍 正在编辑 <strong>国际站</strong> ${isEnglishCopy ? '英文' : '中文'}文案（默认中文；切到 EN 才编辑英文文案，开关独立于 CN 站）`);
         }
     },
 
@@ -705,19 +821,415 @@ const ShopAdmin = {
         ];
     },
 
-    getProductGuidanceTextForEdit(data, baseField) {
+    getProductGuidanceTextForEdit(data, baseField, language = this.getProductCopyLanguageForEdit()) {
         if (!data || !baseField) return '';
         const legacyText = typeof data?.[baseField] === 'string' ? data[baseField] : '';
         const zhText = typeof data?.[`${baseField}_zh`] === 'string' ? data[`${baseField}_zh`] : '';
         const enText = typeof data?.[`${baseField}_en`] === 'string' ? data[`${baseField}_en`] : '';
         const intlText = typeof data?.[`${baseField}_intl`] === 'string' ? data[`${baseField}_intl`] : '';
+        const intlZhText = typeof data?.[`${baseField}_intl_zh`] === 'string' ? data[`${baseField}_intl_zh`] : '';
         return this.getEditSite() === 'intl'
-            ? (intlText || enText || '')
+            ? (this.normalizeProductCopyLanguage(language) === 'en'
+                ? (intlText || enText || '')
+                : (intlZhText || intlText || enText || ''))
             : (zhText || legacyText || '');
     },
 
-    hasChineseProductText(value) {
-        return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+    fillProductCopyFieldsForActiveLanguage(data = {}, options = {}) {
+        const language = this.getProductCopyLanguageForEdit();
+        const draft = options.useDraft === true
+            ? this.productCopyLanguageDrafts?.[language]
+            : null;
+        const useDraftValue = (key, fallback) => (
+            draft && Object.prototype.hasOwnProperty.call(draft, key)
+                ? draft[key]
+                : fallback
+        );
+
+        const nameInput = document.getElementById('prodName');
+        const descInput = document.getElementById('prodDesc');
+        const purchaseNotesInput = document.getElementById('prodPurchaseNotes');
+        const usageInstructionsInput = document.getElementById('prodUsageInstructions');
+
+        if (nameInput) {
+            nameInput.value = useDraftValue('name', this.getSiteScopedProductTextForEdit(data, 'name', language));
+        }
+        if (descInput) {
+            descInput.value = useDraftValue('description', this.getSiteScopedProductTextForEdit(data, 'description', language));
+        }
+        if (purchaseNotesInput) {
+            purchaseNotesInput.value = useDraftValue('purchase_notes', this.getProductGuidanceTextForEdit(data, 'purchase_notes', language));
+        }
+        if (usageInstructionsInput) {
+            usageInstructionsInput.value = useDraftValue('usage_instructions', this.getProductGuidanceTextForEdit(data, 'usage_instructions', language));
+        }
+
+        this.syncRichTextEditorsFromInputs();
+        this.refreshFormSectionHeight('purchaseNotesWrapper');
+        this.refreshFormSectionHeight('usageInstructionsWrapper');
+        this.updatePreview();
+    },
+
+    normalizeProductCopyTextValue: function (value = '') {
+        return String(value || '').replace(/\r\n/g, '\n').trim();
+    },
+
+    hasUsableEnglishProductCopy: function (value = '') {
+        const normalized = this.normalizeProductCopyTextValue(value);
+        return Boolean(normalized && !/[\u3400-\u9fff\uf900-\ufaff]/.test(normalized));
+    },
+
+    hasUsableChineseProductCopy: function (value = '') {
+        return Boolean(this.normalizeProductCopyTextValue(value));
+    },
+
+    getProductCopyFieldLabel: function (field = '') {
+        return {
+            name: '商品名称',
+            description: '商品描述',
+            purchase_notes: '注意事项',
+            usage_instructions: '使用说明'
+        }[field] || field;
+    },
+
+    getCurrentProductCopyDraft: function (options = {}) {
+        if (options.syncRichText !== false && window.AdminRichTextEditor?.syncHiddenInput) {
+            window.AdminRichTextEditor.syncHiddenInput('productPurchaseNotes', false);
+            window.AdminRichTextEditor.syncHiddenInput('productUsageInstructions', false);
+        }
+
+        const editSite = this.getEditSite();
+        const copyLanguage = editSite === 'intl' ? this.getProductCopyLanguageForEdit() : 'zh';
+        const showPurchaseNotes = document.getElementById('prodShowPurchaseNotes')?.checked === true;
+        const showUsageInstructions = document.getElementById('prodShowUsageInstructions')?.checked === true;
+        const values = {
+            name: this.normalizeProductCopyTextValue(document.getElementById('prodName')?.value || ''),
+            description: this.normalizeProductCopyTextValue(document.getElementById('prodDesc')?.value || ''),
+            purchase_notes: showPurchaseNotes
+                ? this.normalizeProductCopyTextValue(document.getElementById('prodPurchaseNotes')?.value || '')
+                : '',
+            usage_instructions: showUsageInstructions
+                ? this.normalizeProductCopyTextValue(document.getElementById('prodUsageInstructions')?.value || '')
+                : ''
+        };
+
+        return {
+            editSite,
+            copyLanguage,
+            productInputLanguage: editSite === 'intl'
+                ? {
+                    name: copyLanguage,
+                    description: copyLanguage,
+                    purchase_notes: copyLanguage,
+                    usage_instructions: copyLanguage
+                }
+                : {
+                    name: 'zh',
+                    description: 'zh',
+                    purchase_notes: 'zh',
+                    usage_instructions: 'zh'
+                },
+            values,
+            showPurchaseNotes,
+            showUsageInstructions
+        };
+    },
+
+    getProductCopySnapshotValue: function (field = '', draft = {}, existing = this.editingProductSnapshot) {
+        if (!existing) {
+            return '';
+        }
+
+        const language = draft?.productInputLanguage?.[field] || 'zh';
+        if (field === 'purchase_notes' || field === 'usage_instructions') {
+            const showField = field === 'purchase_notes' ? 'show_purchase_notes' : 'show_usage_instructions';
+            const isShown = this.getSiteScopedProductSwitchForEdit(existing, showField, false);
+            return isShown
+                ? this.normalizeProductCopyTextValue(this.getProductGuidanceTextForEdit(existing, field, language))
+                : '';
+        }
+
+        return this.normalizeProductCopyTextValue(this.getSiteScopedProductTextForEdit(existing, field, language));
+    },
+
+    hasProductCopyDraftChanged: function (draft = {}, existing = this.editingProductSnapshot) {
+        if (!existing?.id) {
+            return true;
+        }
+
+        return ['name', 'description', 'purchase_notes', 'usage_instructions'].some((field) => (
+            this.normalizeProductCopyTextValue(draft?.values?.[field])
+                !== this.getProductCopySnapshotValue(field, draft, existing)
+        ));
+    },
+
+    getProductCopyTargetValue: function (field = '', direction = 'en', draft = {}, translations = {}, existing = this.editingProductSnapshot) {
+        const translatedKey = `${field}_${direction}`;
+        const translatedValue = this.normalizeProductCopyTextValue(translations?.[translatedKey]);
+        if (translatedValue) {
+            return translatedValue;
+        }
+
+        if (!existing) {
+            return '';
+        }
+
+        if (direction === 'en') {
+            if (draft?.editSite === 'intl') {
+                const intlField = field === 'name' ? 'name_intl' : `${field}_intl`;
+                const legacyEnField = field === 'name' ? 'name_en' : `${field}_en`;
+                return this.normalizeProductCopyTextValue(existing?.[intlField] || existing?.[legacyEnField] || '');
+            }
+            return this.normalizeProductCopyTextValue(existing?.[`${field}_en`] || '');
+        }
+
+        if (draft?.editSite === 'intl') {
+            const intlZhField = field === 'name' ? 'name_intl_zh' : `${field}_intl_zh`;
+            return this.normalizeProductCopyTextValue(existing?.[intlZhField] || '');
+        }
+
+        return this.normalizeProductCopyTextValue(existing?.[`${field}_zh`] || existing?.[field] || '');
+    },
+
+    getProductCopyMissingTranslationItems: function (draft = {}, options = {}) {
+        const translations = options.translations || {};
+        const fields = ['name', 'description', 'purchase_notes', 'usage_instructions'];
+        return fields.flatMap((field) => {
+            const sourceValue = this.normalizeProductCopyTextValue(draft?.values?.[field]);
+            const sourceLanguage = draft?.productInputLanguage?.[field] || 'zh';
+            if (!sourceValue) {
+                return [];
+            }
+
+            const direction = sourceLanguage === 'en' ? 'zh' : 'en';
+            const targetValue = this.getProductCopyTargetValue(field, direction, draft, translations, options.existing || this.editingProductSnapshot);
+            const hasTarget = direction === 'en'
+                ? this.hasUsableEnglishProductCopy(targetValue)
+                : this.hasUsableChineseProductCopy(targetValue);
+
+            return hasTarget
+                ? []
+                : [{
+                    field,
+                    direction,
+                    sourceLanguage,
+                    label: this.getProductCopyFieldLabel(field),
+                    sourceValue
+                }];
+        });
+    },
+
+    formatProductCopyMissingTranslationSummary: function (items = []) {
+        const englishLabels = items
+            .filter((item) => item.direction === 'en')
+            .map((item) => item.label);
+        const chineseLabels = items
+            .filter((item) => item.direction === 'zh')
+            .map((item) => item.label);
+        const parts = [];
+        if (englishLabels.length) {
+            parts.push(`英文：${[...new Set(englishLabels)].join('、')}`);
+        }
+        if (chineseLabels.length) {
+            parts.push(`中文：${[...new Set(chineseLabels)].join('、')}`);
+        }
+        return parts.join('；');
+    },
+
+    syncProductTranslationCompletionButton: function () {
+        const button = document.getElementById('productCompleteTranslationBtn');
+        if (!button) return;
+
+        const productId = this.normalizeProductCopyTextValue(document.getElementById('editProductId')?.value || '');
+        const draft = this.getCurrentProductCopyDraft({ syncRichText: false });
+        const missingItems = productId ? this.getProductCopyMissingTranslationItems(draft) : [];
+        const missingSummary = this.formatProductCopyMissingTranslationSummary(missingItems);
+        const disabled = !productId
+            || this.productSaveInFlight
+            || this.productTranslationInFlight
+            || missingItems.length === 0;
+
+        button.disabled = disabled;
+        button.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        button.dataset.missingCount = String(missingItems.length);
+        button.title = !productId
+            ? '新建商品需先保存后再补全翻译'
+            : (missingItems.length ? `补全缺失翻译：${missingSummary}` : '当前商品双语已完整');
+    },
+
+    buildProductTranslationPatch: function ({ draft = {}, translationEn = null, translationZh = null } = {}) {
+        const payload = {};
+        const existing = this.editingProductSnapshot || {};
+        const getValue = (field) => this.normalizeProductCopyTextValue(draft?.values?.[field]);
+        const getEn = (field) => this.normalizeProductCopyTextValue(translationEn?.[`${field}_en`]);
+        const getZh = (field) => this.normalizeProductCopyTextValue(translationZh?.[`${field}_zh`]);
+
+        if (draft.editSite === 'intl') {
+            const sourceLanguage = draft.copyLanguage === 'en' ? 'en' : 'zh';
+            const name = getValue('name');
+            const description = getValue('description');
+            if (sourceLanguage === 'zh') {
+                payload.name_intl = getEn('name') || existing.name_intl || existing.name_en || null;
+                payload.name_intl_zh = name || existing.name_intl_zh || null;
+                payload.description_intl = getEn('description') || existing.description_intl || existing.description_en || null;
+                payload.description_intl_zh = description || existing.description_intl_zh || null;
+            } else {
+                payload.name_intl = name || existing.name_intl || existing.name_en || null;
+                payload.name_intl_zh = getZh('name') || existing.name_intl_zh || null;
+                payload.description_intl = description || existing.description_intl || existing.description_en || null;
+                payload.description_intl_zh = getZh('description') || existing.description_intl_zh || null;
+            }
+
+            Object.assign(payload, this.buildProductGuidancePayloadPatch('purchase_notes', {
+                value: getValue('purchase_notes'),
+                show: draft.showPurchaseNotes,
+                editSite: draft.editSite,
+                translatedEn: translationEn?.purchase_notes_en,
+                translatedZh: translationZh?.purchase_notes_zh,
+                sourceLanguage,
+                existing
+            }));
+            Object.assign(payload, this.buildProductGuidancePayloadPatch('usage_instructions', {
+                value: getValue('usage_instructions'),
+                show: draft.showUsageInstructions,
+                editSite: draft.editSite,
+                translatedEn: translationEn?.usage_instructions_en,
+                translatedZh: translationZh?.usage_instructions_zh,
+                sourceLanguage,
+                existing
+            }));
+            return payload;
+        }
+
+        payload.name = getValue('name') || existing.name || '';
+        payload.description = getValue('description') || existing.description || '';
+        payload.name_en = getEn('name') || existing.name_en || null;
+        payload.description_en = getEn('description') || existing.description_en || null;
+        Object.assign(payload, this.buildProductGuidancePayloadPatch('purchase_notes', {
+            value: getValue('purchase_notes'),
+            show: draft.showPurchaseNotes,
+            editSite: draft.editSite,
+            translatedEn: translationEn?.purchase_notes_en,
+            existing
+        }));
+        Object.assign(payload, this.buildProductGuidancePayloadPatch('usage_instructions', {
+            value: getValue('usage_instructions'),
+            show: draft.showUsageInstructions,
+            editSite: draft.editSite,
+            translatedEn: translationEn?.usage_instructions_en,
+            existing
+        }));
+        return payload;
+    },
+
+    completeProductMissingTranslations: async function () {
+        const productId = this.normalizeProductCopyTextValue(document.getElementById('editProductId')?.value || '');
+        if (!productId) {
+            this.showActionToast('请先保存商品，再补全翻译', 'warning');
+            return;
+        }
+        if (this.productTranslationInFlight || this.productSaveInFlight) {
+            this.showActionToast('商品正在处理中，请稍候', 'info');
+            return;
+        }
+
+        const button = document.getElementById('productCompleteTranslationBtn');
+        const draft = this.getCurrentProductCopyDraft();
+        const missingItems = this.getProductCopyMissingTranslationItems(draft);
+        if (!missingItems.length) {
+            this.showActionToast('当前商品双语已完整', 'info');
+            this.syncProductTranslationCompletionButton();
+            return;
+        }
+
+        this.productTranslationInFlight = true;
+        this.setProductSaveInlineError('');
+        const started = this.setActionButtonLoading(button, '补全中...');
+        this.syncProductTranslationCompletionButton();
+
+        try {
+            const needsEnglish = missingItems.some((item) => item.direction === 'en');
+            const needsChinese = missingItems.some((item) => item.direction === 'zh');
+            let translationEn = null;
+            let translationZh = null;
+            if (needsEnglish) {
+                translationEn = await this.withProductSaveTimeout(
+                    this.translateToEnglish(
+                        draft.productInputLanguage.name === 'zh' ? draft.values.name : '',
+                        draft.productInputLanguage.description === 'zh' ? draft.values.description : '',
+                        {
+                            purchaseNotes: draft.productInputLanguage.purchase_notes === 'zh' ? draft.values.purchase_notes : '',
+                            usageInstructions: draft.productInputLanguage.usage_instructions === 'zh' ? draft.values.usage_instructions : ''
+                        }
+                    ),
+                    this.getProductTranslationTimeoutMs(),
+                    '商品翻译补全'
+                );
+            }
+            if (needsChinese) {
+                translationZh = await this.withProductSaveTimeout(
+                    this.translateToChinese(
+                        draft.productInputLanguage.name === 'en' ? draft.values.name : '',
+                        draft.productInputLanguage.description === 'en' ? draft.values.description : '',
+                        {
+                            purchaseNotes: draft.productInputLanguage.purchase_notes === 'en' ? draft.values.purchase_notes : '',
+                            usageInstructions: draft.productInputLanguage.usage_instructions === 'en' ? draft.values.usage_instructions : ''
+                        }
+                    ),
+                    this.getProductTranslationTimeoutMs(),
+                    '商品翻译补全'
+                );
+            }
+
+            const translationPayload = this.buildProductTranslationPatch({ draft, translationEn, translationZh });
+            const basePayload = this.buildExistingProductUpsertPayload(productId, {
+                id: productId,
+                name: this.editingProductSnapshot?.name || draft.values.name || '商品',
+                category: this.editingProductSnapshot?.category || document.getElementById('prodCategory')?.value || 'other',
+                price_points: this.editingProductSnapshot?.price_points ?? document.getElementById('prodPrice')?.value ?? 0,
+                delivery_type: this.editingProductSnapshot?.delivery_type || document.getElementById('prodDeliveryType')?.value || 'KEY',
+                manual_delivery: this.editingProductSnapshot?.manual_delivery === true,
+                ...translationPayload
+            }, { editSite: draft.editSite });
+
+            const result = await this.callAdminMutation('upsert_product', {
+                productId,
+                payload: basePayload
+            });
+
+            if (result?.product) {
+                this.editingProductSnapshot = result.product;
+                this.currentProductImageAsset = getShopProductImageAsset(result.product);
+                if (this.productGridCache instanceof Map) {
+                    this.productGridCache.set(String(result.product.id || productId), { ...result.product });
+                }
+            }
+
+            const nextDraft = this.getCurrentProductCopyDraft({ syncRichText: false });
+            const remainingItems = this.getProductCopyMissingTranslationItems(nextDraft, {
+                translations: { ...(translationEn || {}), ...(translationZh || {}) },
+                existing: result?.product || this.editingProductSnapshot
+            });
+            const message = remainingItems.length
+                ? `翻译已补全部分内容，仍缺失：${this.formatProductCopyMissingTranslationSummary(remainingItems)}`
+                : '翻译已补全';
+            if (started) {
+                this.finishActionButton(button, remainingItems.length ? '部分完成' : '已补全');
+            }
+            this.showActionToast(message, remainingItems.length ? 'warning' : 'success', { durationMs: remainingItems.length ? 7000 : undefined });
+            this.loadProducts();
+        } catch (error) {
+            console.error('[ShopAdmin] Complete product translation failed:', error);
+            const failureMessage = error?.message || '翻译补全失败';
+            if (started) {
+                this.failActionButton(button, '补全失败');
+            }
+            this.setProductSaveInlineError(failureMessage);
+            this.showActionToast(failureMessage, 'error', { durationMs: 7000 });
+        } finally {
+            this.productTranslationInFlight = false;
+            this.syncProductTranslationCompletionButton();
+        }
     },
 
     buildProductGuidancePayloadPatch(baseField, {
@@ -1184,8 +1696,9 @@ Example output format:
     },
 
     loadShopProductsViaAdminApi: async function (params = {}) {
+        const site = params.site || window.AdminSiteFilter?.getSiteFilter?.() || 'all';
         const response = await (window.AdminApi?.fetch || fetch)(
-            this.buildAdminShopUrl('shop/products', params),
+            this.buildAdminShopUrl('shop/products', { site, ...params }),
             { credentials: 'include' }
         );
         const payload = await response.json().catch(() => ({}));
@@ -1218,6 +1731,13 @@ Example output format:
                     ?? sku.inventorySources,
                     fallbackInventorySourceId ? [fallbackInventorySourceId] : []
                 );
+                const inventorySourceSkuIdsIntl = this.normalizeSkuInventorySourceIds(
+                    sku.inventory_source_sku_ids_intl
+                    ?? sku.inventorySourceSkuIdsIntl
+                    ?? sku.inventory_sources_intl
+                    ?? sku.inventorySourcesIntl,
+                    []
+                );
 
                 const currentSkuId = String(sku.id || '').trim();
                 const compatibilityInventorySourceId = inventorySourceSkuIds
@@ -1231,8 +1751,13 @@ Example output format:
                     sku_code: String(sku.sku_code || sku.skuCode || '').trim(),
                     inventory_sku_id: compatibilityInventorySourceId,
                     inventory_source_sku_ids: inventorySourceSkuIds,
-                    manual_delivery: this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false),
-                    is_default: sku.is_default === true,
+	                    inventory_source_sku_ids_intl: inventorySourceSkuIdsIntl,
+	                    price_points: sku.price_points ?? sku.pricePoints ?? null,
+	                    price_points_intl: sku.price_points_intl ?? sku.pricePointsIntl ?? null,
+	                    quantity_rules: sku.quantity_rules ?? sku.quantityRules ?? null,
+	                    quantity_rules_intl: sku.quantity_rules_intl ?? sku.quantityRulesIntl ?? null,
+	                    manual_delivery: this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false),
+	                    is_default: sku.is_default === true,
                     is_active: sku.is_active !== false,
                     stock_count: Number(sku.stock_count || 0) || 0,
                     sort_order: Number(sku.sort_order || 0) || 0
@@ -1586,7 +2111,32 @@ Example output format:
         return `${name}${code ? ` / ${code}` : ''}`;
     },
 
-    getSkuStoredInventorySourceIds: function (sku = {}) {
+    getSkuInventorySourceFieldForSite: function (site = this.getEditSite()) {
+        return site === 'intl' ? 'inventory_source_sku_ids_intl' : 'inventory_source_sku_ids';
+    },
+
+    getSkuStoredInventorySourceIds: function (sku = {}, { site = this.getEditSite() } = {}) {
+        if (site === 'intl') {
+            const hasIntlSourceList = sku
+                && typeof sku === 'object'
+                && (
+                    Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_ids_intl')
+                    || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuIdsIntl')
+                );
+            if (!hasIntlSourceList) {
+                return this.normalizeSkuInventorySourceIds(
+                    sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+                    String(sku?.inventory_sku_id || sku?.inventorySkuId || '').trim()
+                        ? [sku?.inventory_sku_id || sku?.inventorySkuId]
+                        : []
+                );
+            }
+            return this.normalizeSkuInventorySourceIds(
+                sku?.inventory_source_sku_ids_intl ?? sku?.inventorySourceSkuIdsIntl,
+                []
+            );
+        }
+
         return this.normalizeSkuInventorySourceIds(
             sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
             String(sku?.inventory_sku_id || sku?.inventorySkuId || '').trim()
@@ -1595,25 +2145,25 @@ Example output format:
         );
     },
 
-    getSkuPrimaryInventorySourceId: function (sku = {}) {
+    getSkuPrimaryInventorySourceId: function (sku = {}, options = {}) {
         const currentId = String(sku?.id || '').trim();
-        const sourceIds = this.getSkuStoredInventorySourceIds(sku);
+        const sourceIds = this.getSkuStoredInventorySourceIds(sku, options);
         const primarySourceId = sourceIds[0] || '';
         return primarySourceId && primarySourceId !== currentId ? primarySourceId : '';
     },
 
-    getSkuFallbackInventorySourceIds: function (sku = {}) {
+    getSkuFallbackInventorySourceIds: function (sku = {}, options = {}) {
         const currentId = String(sku?.id || '').trim();
-        const sourceIds = this.getSkuStoredInventorySourceIds(sku);
+        const sourceIds = this.getSkuStoredInventorySourceIds(sku, options);
         if (!sourceIds.length) return [];
 
         return this.normalizeSkuInventorySourceIds(sourceIds.slice(1))
             .filter((sourceId) => sourceId !== currentId);
     },
 
-    getSkuOrderedInventorySourceIds: function (sku = {}) {
+    getSkuOrderedInventorySourceIds: function (sku = {}, options = {}) {
         const currentId = String(sku?.id || '').trim();
-        const sourceIds = this.getSkuStoredInventorySourceIds(sku);
+        const sourceIds = this.getSkuStoredInventorySourceIds(sku, options);
         if (!currentId) {
             return sourceIds;
         }
@@ -1626,10 +2176,10 @@ Example output format:
         return sourceIds;
     },
 
-    getSkuPersistedInventorySourceIds: function (sku = {}) {
+    getSkuPersistedInventorySourceIds: function (sku = {}, options = {}) {
         const currentId = String(sku?.id || '').trim();
-        const primarySourceId = this.getSkuPrimaryInventorySourceId(sku);
-        const fallbackIds = this.getSkuFallbackInventorySourceIds(sku);
+        const primarySourceId = this.getSkuPrimaryInventorySourceId(sku, options);
+        const fallbackIds = this.getSkuFallbackInventorySourceIds(sku, options);
 
         if (primarySourceId) {
             return this.normalizeSkuInventorySourceIds([primarySourceId, ...fallbackIds]);
@@ -1640,9 +2190,9 @@ Example output format:
         return [];
     },
 
-    getSkuCompatibilityInventorySourceId: function (sku = {}) {
+    getSkuCompatibilityInventorySourceId: function (sku = {}, options = {}) {
         const currentId = String(sku?.id || '').trim();
-        return this.getSkuPersistedInventorySourceIds(sku)
+        return this.getSkuPersistedInventorySourceIds(sku, options)
             .find((sourceId) => sourceId && sourceId !== currentId) || '';
     },
 
@@ -1690,6 +2240,7 @@ Example output format:
             [skuFields.quantityRules]: product?.[skuFields.quantityRules] ?? null,
             inventory_sku_id: '',
             inventory_source_sku_ids: [],
+            inventory_source_sku_ids_intl: [],
             manual_delivery: this.normalizeSkuManualDeliveryFlag(product?.manual_delivery ?? product?.manualDelivery, false),
             is_default: true,
             is_active: true,
@@ -1759,7 +2310,10 @@ Example output format:
 
     buildProductSkuInventoryFallbackMarkup: function (sku = {}, allSkus = []) {
         const sourceIds = this.getSkuOrderedInventorySourceIds(sku);
+        const activeSourceField = this.getSkuInventorySourceFieldForSite();
         const fallbackIds = this.getSkuFallbackInventorySourceIds(sku);
+        const sharedSourceIds = this.normalizeSkuInventorySourceIds(sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds);
+        const intlSourceIds = this.normalizeSkuInventorySourceIds(sku?.inventory_source_sku_ids_intl ?? sku?.inventorySourceSkuIdsIntl);
         const currentSkuId = String(sku?.id || '').trim();
         const safeSkus = this.normalizeProductSkus(allSkus);
         const chips = sourceIds.map((sourceId, index) => {
@@ -1782,7 +2336,8 @@ Example output format:
         }).join('');
 
         return `
-            <input type="hidden" data-product-sku-field="inventory_source_sku_ids" value="${this.escapeForAttr(this.serializeSkuInventorySourceIds(fallbackIds))}">
+            <input type="hidden" data-product-sku-field="inventory_source_sku_ids" value="${this.escapeForAttr(this.serializeSkuInventorySourceIds(activeSourceField === 'inventory_source_sku_ids' ? fallbackIds : sharedSourceIds))}">
+            <input type="hidden" data-product-sku-field="inventory_source_sku_ids_intl" value="${this.escapeForAttr(this.serializeSkuInventorySourceIds(activeSourceField === 'inventory_source_sku_ids_intl' ? fallbackIds : intlSourceIds))}">
             <div class="shop-product-sku-row__inventory-fallback-head">
                 <span>库存调用顺序</span>
                 <small>${sourceIds.length > 1 ? '首选用完后自动尝试后续来源' : '默认使用本规格库存'}</small>
@@ -1799,7 +2354,8 @@ Example output format:
     getProductSkuInventorySourceIdsFromRow: function (row) {
         if (!(row instanceof Element)) return [];
         const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
-        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        const activeSourceField = this.getSkuInventorySourceFieldForSite();
+        const hidden = row.querySelector(`[data-product-sku-field="${activeSourceField}"]`);
         const primary = row.querySelector('[data-product-sku-field="inventory_sku_id"]');
         const primaryId = String(primary?.value || '').trim();
         const fallbackIds = this.parseSkuInventorySourceIdsInputValue(hidden?.value || '')
@@ -1814,11 +2370,24 @@ Example output format:
         return [];
     },
 
+    getProductSkuInventorySourceIdsFromRowForField: function (row, fieldName = 'inventory_source_sku_ids') {
+        if (!(row instanceof Element)) return [];
+        const normalizedFieldName = fieldName === 'inventory_source_sku_ids_intl'
+            ? 'inventory_source_sku_ids_intl'
+            : 'inventory_source_sku_ids';
+        if (normalizedFieldName === this.getSkuInventorySourceFieldForSite()) {
+            return this.getProductSkuInventorySourceIdsFromRow(row);
+        }
+        const hidden = row.querySelector(`[data-product-sku-field="${normalizedFieldName}"]`);
+        return this.parseSkuInventorySourceIdsInputValue(hidden?.value || '');
+    },
+
     getProductSkuFallbackInventorySourceIdsFromRow: function (row) {
         if (!(row instanceof Element)) return [];
         const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
         const primaryId = String(row.querySelector('[data-product-sku-field="inventory_sku_id"]')?.value || '').trim();
-        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        const activeSourceField = this.getSkuInventorySourceFieldForSite();
+        const hidden = row.querySelector(`[data-product-sku-field="${activeSourceField}"]`);
         return this.parseSkuInventorySourceIdsInputValue(hidden?.value || '')
             .filter((sourceId) => sourceId !== currentSkuId && sourceId !== primaryId);
     },
@@ -1829,7 +2398,8 @@ Example output format:
         const primaryId = String(row.querySelector('[data-product-sku-field="inventory_sku_id"]')?.value || '').trim();
         const normalizedFallbackIds = this.normalizeSkuInventorySourceIds(fallbackIds)
             .filter((sourceId) => sourceId !== currentSkuId && sourceId !== primaryId);
-        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        const activeSourceField = this.getSkuInventorySourceFieldForSite();
+        const hidden = row.querySelector(`[data-product-sku-field="${activeSourceField}"]`);
         if (hidden) {
             hidden.value = this.serializeSkuInventorySourceIds(normalizedFallbackIds);
         }
@@ -1839,7 +2409,8 @@ Example output format:
         if (!(row instanceof Element)) return;
         const currentSkuId = String(row.querySelector('[data-product-sku-field="id"]')?.value || '').trim();
         const normalizedIds = this.normalizeSkuInventorySourceIds(sourceIds);
-        const hidden = row.querySelector('[data-product-sku-field="inventory_source_sku_ids"]');
+        const activeSourceField = this.getSkuInventorySourceFieldForSite();
+        const hidden = row.querySelector(`[data-product-sku-field="${activeSourceField}"]`);
         const primary = row.querySelector('[data-product-sku-field="inventory_sku_id"]');
         const primaryId = normalizedIds[0] && normalizedIds[0] !== currentSkuId
             ? normalizedIds[0]
@@ -1866,15 +2437,21 @@ Example output format:
         const rows = [...document.querySelectorAll('#productSkuEditorRows [data-product-sku-row]')];
         return rows.map((row, index) => {
             const read = (field) => row.querySelector(`[data-product-sku-field="${field}"]`);
+            const skuId = String(read('id')?.value || '').trim();
+            const sharedSourceIds = this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids');
+            const intlSourceIds = this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids_intl');
+            const activeSourceIds = this.getProductSkuInventorySourceIdsFromRow(row);
             return {
-                id: String(read('id')?.value || '').trim(),
+                id: skuId,
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
                 inventory_sku_id: this.getSkuCompatibilityInventorySourceId({
-                    id: String(read('id')?.value || '').trim(),
-                    inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row)
+                    id: skuId,
+                    inventory_source_sku_ids: sharedSourceIds
                 }),
-                inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row),
+                inventory_source_sku_ids: sharedSourceIds,
+                inventory_source_sku_ids_intl: intlSourceIds,
+                [this.getSkuInventorySourceFieldForSite()]: activeSourceIds,
                 manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
@@ -1918,6 +2495,7 @@ Example output format:
                 sku_code: String(read('sku_code')?.value || '').trim(),
                 inventory_sku_id: nextPrimaryId,
                 inventory_source_sku_ids: nextSourceIds,
+                inventory_source_sku_ids_intl: this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids_intl'),
                 manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
@@ -1940,15 +2518,21 @@ Example output format:
         const allSkus = this.collectProductSkuInventorySourceRows();
         [...container.querySelectorAll('[data-product-sku-row]')].forEach((row, index) => {
             const read = (field) => row.querySelector(`[data-product-sku-field="${field}"]`);
+            const skuId = String(read('id')?.value || '').trim();
+            const sharedSourceIds = this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids');
+            const intlSourceIds = this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids_intl');
+            const activeSourceIds = this.getProductSkuInventorySourceIdsFromRow(row);
             const sku = {
-                id: String(read('id')?.value || '').trim(),
+                id: skuId,
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
                 inventory_sku_id: this.getSkuCompatibilityInventorySourceId({
-                    id: String(read('id')?.value || '').trim(),
-                    inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row)
+                    id: skuId,
+                    inventory_source_sku_ids: sharedSourceIds
                 }),
-                inventory_source_sku_ids: this.getProductSkuInventorySourceIdsFromRow(row),
+                inventory_source_sku_ids: sharedSourceIds,
+                inventory_source_sku_ids_intl: intlSourceIds,
+                [this.getSkuInventorySourceFieldForSite()]: activeSourceIds,
                 manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
@@ -1995,11 +2579,26 @@ Example output format:
         this.syncProductSkuInventoryRelationBadges();
     },
 
+    renderProductSkuEditorFromProductData: function (data = {}) {
+        const modalProductName = this.getSiteScopedProductTextForEdit(data, 'name');
+        this.renderProductSkuEditor(this.buildProductSkusForEditor(data), {
+            name: modalProductName || data.name || '',
+            price_points: data.price_points,
+            price_points_intl: data.price_points_intl,
+            quantity_rules: data.quantity_rules,
+            quantity_rules_intl: data.quantity_rules_intl,
+            manual_delivery: data.manual_delivery
+        });
+    },
+
     setProductSkuEditorAddDisabled: function (disabled = false) {
         const addButton = document.querySelector('#productModal [data-shop-action="product-add-sku-row"]');
-        if (!addButton) return;
-        addButton.disabled = Boolean(disabled);
-        addButton.setAttribute('aria-disabled', String(Boolean(disabled)));
+        const copyButton = document.querySelector('#productModal [data-shop-action="product-copy-other-site-sku-prices"]');
+        [addButton, copyButton].forEach((button) => {
+            if (!button) return;
+            button.disabled = Boolean(disabled);
+            button.setAttribute('aria-disabled', String(Boolean(disabled)));
+        });
     },
 
     renderProductSkuEditorLoading: function (product = {}) {
@@ -2081,7 +2680,7 @@ Example output format:
                 <div class="shop-product-sku-row__main">
                     <input type="text" class="modern-input shop-product-sku-row__input shop-product-sku-row__input--name" data-product-sku-field="sku_name" value="${this.escapeForAttr(String(sku.sku_name || ''))}" placeholder="规格名称，如 月卡">
                     <input type="text" class="modern-input shop-product-sku-row__input shop-product-sku-row__input--code" data-product-sku-field="sku_code" value="${this.escapeForAttr(String(sku.sku_code || ''))}" placeholder="编码">
-                    <input type="number" class="modern-input shop-product-sku-row__input shop-product-sku-row__input--price" data-product-sku-site-field="price" value="${this.escapeForAttr(String(sitePriceValue))}" placeholder="${this.escapeForAttr(skuFields.pricePlaceholder)}">
+                    <input type="number" class="modern-input shop-product-sku-row__input shop-product-sku-row__input--price" data-product-sku-site-field="price" data-shop-input="product-sku-price-input" value="${this.escapeForAttr(String(sitePriceValue))}" placeholder="${this.escapeForAttr(skuFields.pricePlaceholder)}">
                     <button type="button" class="shop-product-sku-row__tier-toggle" data-shop-action="product-toggle-sku-tier-editor" aria-expanded="false">
                         <i class="fas fa-layer-group" aria-hidden="true"></i>
                         <span data-product-sku-tier-summary>${this.escapeHtml(siteTierRulesSummary)}</span>
@@ -2138,17 +2737,142 @@ Example output format:
             sku_code: '',
             inventory_sku_id: '',
             inventory_source_sku_ids: [],
+            inventory_source_sku_ids_intl: [],
             manual_delivery: document.getElementById('prodManualDelivery')?.value === 'true',
             is_default: index === 0,
             is_active: true,
             sort_order: index
         }, index, currentSkus);
         const row = wrapper.firstElementChild;
-        if (row) {
-            container.appendChild(row);
-            this.enhanceShopCustomSelects(row);
-            row.querySelector('[data-product-sku-field="sku_name"]')?.focus();
+	        if (row) {
+	            container.appendChild(row);
+	            this.enhanceShopCustomSelects(row);
+	            row.querySelector('[data-product-sku-field="sku_name"]')?.focus();
+	        }
+	        this.syncProductHiddenPriceFromSkuEditor();
+	        this.updatePreview();
+	    },
+
+    copyOtherSiteSkuPricesToCurrentSite: function () {
+        if (this.productSkuEditorLoading || this.productSkuEditorErrorMessage) {
+            this.showActionToast(this.productSkuEditorErrorMessage || '商品规格还在加载中，请稍候', 'warning');
+            return;
         }
+
+        const targetSite = this.getEditSite();
+        const sourceSite = this.getOppositeShopSite(targetSite);
+        const sourceField = this.getSkuSiteFieldMap(sourceSite).price;
+        const rows = [...document.querySelectorAll('#productSkuEditorRows [data-product-sku-row]')];
+        if (!rows.length) {
+            this.showActionToast('当前商品还没有规格可复制价格', 'warning');
+            return;
+        }
+
+        let copiedCount = 0;
+        let emptyCount = 0;
+        rows.forEach((row) => {
+            const sourceInput = row.querySelector(`[data-product-sku-field="${sourceField}"]`);
+            const targetInput = row.querySelector('[data-product-sku-site-field="price"]');
+            if (!(sourceInput instanceof HTMLInputElement) || !(targetInput instanceof HTMLInputElement)) {
+                return;
+            }
+            const sourceValue = String(sourceInput.value || '').trim();
+            if (!sourceValue) {
+                emptyCount += 1;
+                return;
+            }
+            targetInput.value = sourceValue;
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            copiedCount += 1;
+        });
+
+        if (!copiedCount) {
+            this.showActionToast(`${this.getShopSiteShortLabel(sourceSite)}没有可复用的规格价格`, 'warning');
+            return;
+        }
+
+	        const skippedText = emptyCount > 0 ? `，${emptyCount} 个规格无来源价格已跳过` : '';
+	        this.showActionToast(`已复用 ${copiedCount} 个${this.getShopSiteShortLabel(sourceSite)}规格价格${skippedText}`, 'success');
+	        this.syncProductHiddenPriceFromSkuEditor();
+	        this.updatePreview();
+	    },
+
+    normalizeProductPriceDraftValue: function (value) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+
+        const rawValue = String(value).trim();
+        if (!rawValue) {
+            return null;
+        }
+
+        const numericValue = Number(rawValue);
+        if (!Number.isFinite(numericValue) || numericValue < 0) {
+            return null;
+        }
+
+        return Math.round(numericValue * 100) / 100;
+    },
+
+    normalizeProductLegacyPriceValue: function (value) {
+        const normalizedPrice = this.normalizeProductPriceDraftValue(value);
+        if (normalizedPrice === null) {
+            return null;
+        }
+
+        return Math.ceil(normalizedPrice);
+    },
+
+    getProductSkuEditorSitePriceCandidates: function (productSkus = null) {
+        if (Array.isArray(productSkus)) {
+            const skuFields = this.getSkuSiteFieldMap();
+            return productSkus
+                .filter((sku) => sku && typeof sku === 'object')
+                .filter((sku) => sku.is_active !== false)
+                .map((sku, index) => ({
+                    price: this.normalizeProductPriceDraftValue(sku[skuFields.price]),
+                    isDefault: sku.is_default === true,
+                    index
+                }))
+                .filter((candidate) => candidate.price !== null);
+        }
+
+        return [...document.querySelectorAll('#productSkuEditorRows [data-product-sku-row]')]
+            .filter((row) => row.querySelector('[data-product-sku-field="is_active"]')?.checked !== false)
+            .map((row, index) => ({
+                price: this.normalizeProductPriceDraftValue(row.querySelector('[data-product-sku-site-field="price"]')?.value),
+                isDefault: row.querySelector('[data-product-sku-field="is_default"]')?.checked === true,
+                index
+            }))
+            .filter((candidate) => candidate.price !== null);
+    },
+
+    deriveProductHiddenPriceFromSkuEditor: function (productSkus = null) {
+        const candidates = this.getProductSkuEditorSitePriceCandidates(productSkus);
+        const defaultCandidate = candidates.find((candidate) => candidate.isDefault);
+        const selectedCandidate = defaultCandidate || candidates[0];
+        if (selectedCandidate) {
+            return selectedCandidate.price;
+        }
+
+        const hiddenPrice = this.normalizeProductPriceDraftValue(document.getElementById('prodPrice')?.value);
+        if (hiddenPrice !== null) {
+            return hiddenPrice;
+        }
+
+        const fields = this.getFieldMap();
+        return this.normalizeProductPriceDraftValue(this.editingProductSnapshot?.[fields.price]);
+    },
+
+    syncProductHiddenPriceFromSkuEditor: function (productSkus = null) {
+        const hiddenInput = document.getElementById('prodPrice');
+        const derivedPrice = this.deriveProductHiddenPriceFromSkuEditor(productSkus);
+        const legacyPrice = this.normalizeProductLegacyPriceValue(derivedPrice);
+        if (hiddenInput && legacyPrice !== null) {
+            hiddenInput.value = String(legacyPrice);
+        }
+        return legacyPrice;
     },
 
     removeProductSkuEditorRow: function (button, options = {}) {
@@ -2172,9 +2896,11 @@ Example output format:
         if (wasDefault) {
             const firstDefault = container.querySelector('[data-product-sku-field="is_default"]');
             if (firstDefault) firstDefault.checked = true;
-        }
-        this.refreshProductSkuInventorySourceOptions();
-    },
+	        }
+	        this.refreshProductSkuInventorySourceOptions();
+	        this.syncProductHiddenPriceFromSkuEditor();
+	        this.updatePreview();
+	    },
 
     openProductSkuDeleteGuardModal: function (row, sku = null) {
         const snapshot = sku || this.getProductSkuRowSnapshot(row);
@@ -2302,7 +3028,8 @@ Example output format:
             const pricePointsIntl = String(read('price_points_intl')?.value || '').trim() || null;
             const quantityRules = this.parseStoredSkuTierRulesInputValue(read('quantity_rules')?.value || '');
             const quantityRulesIntl = this.parseStoredSkuTierRulesInputValue(read('quantity_rules_intl')?.value || '');
-            const inventorySourceSkuIds = this.getProductSkuInventorySourceIdsFromRow(row);
+            const sharedInventorySourceSkuIds = this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids');
+            const intlInventorySourceSkuIds = this.getProductSkuInventorySourceIdsFromRowForField(row, 'inventory_source_sku_ids_intl');
             const parseTierRules = (field) => {
                 const rawValue = String(readSite(field)?.value || '').trim();
                 return rawValue ? this.parseSkuTierRulesInputValue(rawValue) : null;
@@ -2316,9 +3043,10 @@ Example output format:
                 sku_code: code,
                 inventory_sku_id: this.getSkuCompatibilityInventorySourceId({
                     id: skuId,
-                    inventory_source_sku_ids: inventorySourceSkuIds
+                    inventory_source_sku_ids: sharedInventorySourceSkuIds
                 }) || null,
-                inventory_source_sku_ids: inventorySourceSkuIds,
+                inventory_source_sku_ids: sharedInventorySourceSkuIds,
+                inventory_source_sku_ids_intl: intlInventorySourceSkuIds,
                 price_points: skuFields.price === 'price_points' ? sitePrice : pricePoints,
                 price_points_intl: skuFields.price === 'price_points_intl' ? sitePrice : pricePointsIntl,
                 quantity_rules: skuFields.quantityRules === 'quantity_rules' ? siteQuantityRules : quantityRules,
@@ -2330,12 +3058,14 @@ Example output format:
             };
         }).filter((sku) => sku.id || sku.sku_name || sku.sku_code);
 
-        if (!drafts.length) {
-            drafts.push(this.createDefaultProductSkuDraft({
-                name: document.getElementById('prodName')?.value || '默认规格',
-                price_points: document.getElementById('prodPrice')?.value || ''
-            }));
-        }
+	        if (!drafts.length) {
+	            const skuFields = this.getSkuSiteFieldMap();
+	            const hiddenPrice = document.getElementById('prodPrice')?.value || '';
+	            drafts.push(this.createDefaultProductSkuDraft({
+	                name: document.getElementById('prodName')?.value || '默认规格',
+	                [skuFields.price]: hiddenPrice
+	            }));
+	        }
 
         if (!drafts.some((sku) => sku.is_default && sku.is_active !== false)) {
             const firstActive = drafts.find((sku) => sku.is_active !== false) || drafts[0];
@@ -2431,7 +3161,11 @@ Example output format:
         }
 
         const response = await (window.AdminApi?.fetch || fetch)(
-            this.buildAdminShopUrl('shop/products', { id: normalizedId, includeSkus: 'true' }),
+            this.buildAdminShopUrl('shop/products', {
+                id: normalizedId,
+                includeSkus: 'true',
+                site: window.AdminSiteFilter?.getSiteFilter?.() || 'all'
+            }),
             { credentials: 'include' }
         );
         const payload = await response.json().catch(() => ({}));
@@ -2675,6 +3409,11 @@ Example output format:
         if (modal) {
             modal.classList.remove('active');
         }
+        this.activeProductEditRequestId = '';
+        this.productModalDirty = false;
+        this.productCopyLanguageDrafts = null;
+        this.productCopyLanguage = 'zh';
+        this.syncProductTranslationCompletionButton();
         this.resetProductIconUploadState();
     },
 
@@ -4008,9 +4747,18 @@ Example output format:
                     document.getElementById('iconUploadFile')?.click();
                     break;
                 case 'product-add-sku-row':
+                    this.markProductModalDirty(actionEl);
                     this.addProductSkuEditorRow();
                     break;
+                case 'product-copy-other-site-sku-prices':
+                    this.markProductModalDirty(actionEl);
+                    this.copyOtherSiteSkuPricesToCurrentSite();
+                    break;
+                case 'product-complete-translation':
+                    this.completeProductMissingTranslations();
+                    break;
                 case 'product-remove-sku-row':
+                    this.markProductModalDirty(actionEl);
                     this.removeProductSkuEditorRow(actionEl);
                     break;
                 case 'product-sku-delete-guard-close':
@@ -4020,9 +4768,11 @@ Example output format:
                     this.exportProductSkuInventory(actionEl);
                     break;
                 case 'product-confirm-remove-sku-row':
+                    this.markProductModalDirty(actionEl);
                     this.confirmRemoveProductSkuEditorRow(actionEl);
                     break;
                 case 'product-remove-sku-inventory-source':
+                    this.markProductModalDirty(actionEl);
                     this.removeProductSkuInventorySource(actionEl);
                     break;
                 case 'product-toggle-sku-tier-editor':
@@ -4036,6 +4786,12 @@ Example output format:
                     break;
                 case 'product-select-manual-delivery':
                     this.setProductManualDelivery(actionEl.dataset.manualDelivery === 'true');
+                    break;
+                case 'product-select-copy-language':
+                    event.preventDefault();
+                    this.setProductCopyLanguage(actionEl.dataset.copyLanguage || 'zh', {
+                        refreshFields: true
+                    });
                     break;
                 case 'product-select-category':
                     this.selectCategory(actionEl.dataset.categoryName, actionEl.dataset.categoryColor);
@@ -4247,10 +5003,17 @@ Example output format:
                 return;
             }
 
+            if (this.isProductModalElement(target) && target.matches('input, textarea, select')) {
+                this.markProductModalDirty(target);
+                this.syncProductTranslationCompletionButton();
+            }
+
             const actionEl = target.closest('[data-shop-change]');
             if (!actionEl) {
                 return;
             }
+
+            this.markProductModalDirty(actionEl);
 
             switch (actionEl.dataset.shopChange) {
                 case 'pagination-go': {
@@ -4283,9 +5046,11 @@ Example output format:
                 case 'product-sku-inventory-fallback-add':
                     this.addProductSkuInventoryFallbackSource(actionEl);
                     break;
-                case 'product-sku-active':
-                    this.refreshProductSkuInventorySourceOptions();
-                    break;
+	                case 'product-sku-active':
+	                    this.refreshProductSkuInventorySourceOptions();
+	                    this.syncProductHiddenPriceFromSkuEditor();
+	                    this.updatePreview();
+	                    break;
                 case 'delivery-task-status-filter':
                     this.setDeliveryTaskStatusFilter(actionEl.value);
                     break;
@@ -4352,18 +5117,29 @@ Example output format:
                 return;
             }
 
+            if (this.isProductModalElement(target) && target.matches('input, textarea, select')) {
+                this.markProductModalDirty(target);
+                this.syncProductTranslationCompletionButton();
+            }
+
             const actionEl = target.closest('[data-shop-input]');
             if (!actionEl) {
                 return;
             }
 
+            this.markProductModalDirty(actionEl);
+
             switch (actionEl.dataset.shopInput) {
                 case 'product-update-preview':
                     this.updatePreview();
                     break;
-                case 'product-sku-tier-input':
-                    this.syncProductSkuTierSummary(actionEl);
-                    break;
+	                case 'product-sku-tier-input':
+	                    this.syncProductSkuTierSummary(actionEl);
+	                    break;
+	                case 'product-sku-price-input':
+	                    this.syncProductHiddenPriceFromSkuEditor();
+	                    this.updatePreview();
+	                    break;
                 case 'inventory-import-line-count':
                     this.updateLegacyImportLineCount();
                     break;
@@ -7109,29 +7885,46 @@ Example output format:
     },
 
     getAdminProductPointUnit: function () {
-        return ShopAdmin.getEditSite() === 'intl' ? 'Points' : '积分';
+        return '积分';
     },
 
     getAdminProductDisplayName: function (product = {}) {
-        const fields = this.getFieldMap();
-        const localizedName = String(product?.[fields.name] || '').trim();
+        const localizedName = this.getEditSite() === 'intl'
+            ? String(product?.name_intl_zh || product?.name_intl || product?.name_en || '').trim()
+            : String(product?.name || '').trim();
         const baseName = String(product?.name || '').trim();
-        return localizedName || baseName || (this.getEditSite() === 'intl' ? 'Unnamed product' : '未命名商品');
+        return localizedName || baseName || '未命名商品';
     },
 
     getAdminProductDescription: function (product = {}) {
-        const fields = this.getFieldMap();
-        const localizedDescription = String(product?.[fields.desc] || '').trim();
+        const localizedDescription = this.getEditSite() === 'intl'
+            ? String(product?.description_intl_zh || product?.description_intl || product?.description_en || '').trim()
+            : String(product?.description || '').trim();
         const baseDescription = String(product?.description || '').trim();
-        return localizedDescription || baseDescription || (this.getEditSite() === 'intl' ? 'No description' : '暂无描述');
+        return localizedDescription || baseDescription || '暂无描述';
     },
 
     getAdminProductBasePrice: function (product = {}) {
-        const rawPrice = ShopAdmin.getEditSite() === 'intl'
+        const skuPrice = this.getAdminProductPrimarySkuPrice(product);
+        const rawPrice = skuPrice ?? (ShopAdmin.getEditSite() === 'intl'
             ? product?.price_points_intl
-            : product?.price_points;
+            : product?.price_points);
         const price = Number(rawPrice);
         return Number.isFinite(price) ? Math.max(0, price) : null;
+    },
+
+    getAdminProductPrimarySkuPrice: function (product = {}) {
+        const skuFields = this.getSkuSiteFieldMap();
+        const skus = this.normalizeProductSkus(product?.skus || []);
+        const candidates = skus
+            .filter((sku) => sku.is_active !== false)
+            .map((sku) => ({
+                sku,
+                price: this.normalizeProductPriceDraftValue(sku?.[skuFields.price])
+            }))
+            .filter((candidate) => candidate.price !== null);
+        const defaultCandidate = candidates.find((candidate) => candidate.sku.is_default === true);
+        return (defaultCandidate || candidates[0] || null)?.price ?? null;
     },
 
     normalizeAdminQuantityPricingRules: function (rules = []) {
@@ -7274,14 +8067,15 @@ Example output format:
             await this.loadCategories();
             const normalizedCategory = this.normalizeCurrentProductCategory();
             this.syncProductCategoryFilterButtons();
-            const payload = await this.loadShopProductsViaAdminApi({
-                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
-                category: normalizedCategory || null,
-                query: this.productSearchQuery || null,
-                deliveryType: this.currentProductDeliveryFilter !== 'all' ? this.currentProductDeliveryFilter : null,
-                fields: 'full',
-                order: 'display_order_desc'
-            });
+	            const payload = await this.loadShopProductsViaAdminApi({
+	                status: this.currentStatusFilter === 'active' ? 'active' : 'deleted',
+	                category: normalizedCategory || null,
+	                query: this.productSearchQuery || null,
+	                deliveryType: this.currentProductDeliveryFilter !== 'all' ? this.currentProductDeliveryFilter : null,
+	                fields: 'full',
+	                includeSkus: 'true',
+	                order: 'display_order_desc'
+	            });
             const data = Array.isArray(payload?.rows) ? payload.rows : [];
             this.productGridCache = new Map((data || []).map((product) => [String(product.id || ''), { ...product }]));
 
@@ -7332,17 +8126,21 @@ Example output format:
                 const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
                 const safeProductNameAttr = this.escapeForAttr(productDisplayName);
                 const productAltText = this.escapeForAttr(productDisplayName || '商品封面');
-                const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
-                const priceHtml = (() => {
-                    const editSite = ShopAdmin.getEditSite();
-                    if (editSite === 'intl') {
-                        const intlPrice = p.price_points_intl;
-                        return intlPrice != null
-                            ? `<div class="shop-admin-product-price shop-admin-product-price--intl">${intlPrice} <span>Points</span></div>`
-                            : '<div class="shop-admin-product-price shop-admin-product-price--unset">未设置国际价格</div>';
-                    }
-                    return `<div class="shop-admin-product-price shop-admin-product-price--cn">${p.price_points} <span>积分</span></div>`;
-                })();
+	                const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
+	                const priceHtml = (() => {
+	                    const editSite = ShopAdmin.getEditSite();
+	                    const skuPrice = this.getAdminProductPrimarySkuPrice(p);
+	                    if (editSite === 'intl') {
+	                        const intlPrice = skuPrice ?? p.price_points_intl;
+	                        return intlPrice != null
+	                            ? `<div class="shop-admin-product-price shop-admin-product-price--intl">${this.formatAdminProductPointValue(intlPrice)} <span>积分</span></div>`
+	                            : '<div class="shop-admin-product-price shop-admin-product-price--unset">未设置国际价格</div>';
+	                    }
+	                    const cnPrice = skuPrice ?? p.price_points;
+	                    return cnPrice != null
+	                        ? `<div class="shop-admin-product-price shop-admin-product-price--cn">${this.formatAdminProductPointValue(cnPrice)} <span>积分</span></div>`
+	                        : '<div class="shop-admin-product-price shop-admin-product-price--unset">未设置价格</div>';
+	                })();
                 const specialPriceBadgeHtml = this.buildAdminProductSpecialPriceBadgeHtml(p);
 
                 const card = document.createElement('div');
@@ -7656,7 +8454,8 @@ Example output format:
         }
 
         const name = document.getElementById('prodName').value || '商品名称';
-        const price = document.getElementById('prodPrice').value || '0';
+        const price = this.deriveProductHiddenPriceFromSkuEditor();
+        const priceLabel = price !== null ? String(price) : '0';
         const iconInput = document.getElementById('prodIcon').value || 'fas fa-box';
         const desc = document.getElementById('prodDesc').value || '无描述...';
         const showProductDescription = document.getElementById('prodShowProductDescription')?.checked !== false;
@@ -7675,7 +8474,7 @@ Example output format:
             : true;
 
         previewTitle.textContent = name;
-        previewPrice.textContent = `${price} 积分`;
+        previewPrice.textContent = `${priceLabel} 积分`;
         if (previewDesc) {
             previewDesc.hidden = !showProductDescription;
             previewDesc.textContent = showProductDescription
@@ -8067,12 +8866,12 @@ Example output format:
         const marketingFields = this.getMarketingFieldMap();
         const sortValue = Number.parseInt(data.display_order, 10);
         const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
+        const modalProductName = this.getSiteScopedProductTextForEdit(data, 'name');
 
         document.getElementById('editProductId').value = data.id;
-        document.getElementById('prodName').value = this.getSiteScopedProductTextForEdit(data, 'name');
         document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
         const skuEditorProduct = {
-            name: data[fields.name] || data.name || '',
+            name: modalProductName || data.name || '',
             price_points: data.price_points,
             price_points_intl: data.price_points_intl,
             quantity_rules: data.quantity_rules,
@@ -8083,12 +8882,11 @@ Example output format:
         if (options.skuLoading === true) {
             this.renderProductSkuEditorLoading(skuEditorProduct);
         } else {
-            this.renderProductSkuEditor(this.buildProductSkusForEditor(data), skuEditorProduct);
+            this.renderProductSkuEditorFromProductData(data);
         }
         if (!shouldPreservePendingProductImage) {
             document.getElementById('prodIcon').value = getShopProductImageAssetUrl(this.currentProductImageAsset, 'original') || data.icon_url || '';
         }
-        document.getElementById('prodDesc').value = this.getSiteScopedProductTextForEdit(data, 'description');
         document.getElementById('prodShowProductDescription').checked = this.getSiteScopedProductSwitchForEdit(
             data,
             'show_product_description',
@@ -8137,19 +8935,14 @@ Example output format:
 
         const showPurchaseNotes = this.getSiteScopedProductSwitchForEdit(data, 'show_purchase_notes', false);
         document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
-        document.getElementById('prodPurchaseNotes').value = this.getProductGuidanceTextForEdit(data, 'purchase_notes');
         this.togglePurchaseNotes(showPurchaseNotes);
 
         const showUsageInstructions = this.getSiteScopedProductSwitchForEdit(data, 'show_usage_instructions', false);
         document.getElementById('prodShowUsageInstructions').checked = showUsageInstructions;
-        document.getElementById('prodUsageInstructions').value = this.getProductGuidanceTextForEdit(data, 'usage_instructions');
         this.toggleUsageInstructions(showUsageInstructions);
 
-        this.syncRichTextEditorsFromInputs();
-        this.refreshFormSectionHeight('purchaseNotesWrapper');
-        this.refreshFormSectionHeight('usageInstructionsWrapper');
+        this.fillProductCopyFieldsForActiveLanguage(data);
         void this.applyProductModalCategorySelection(data.category || 'other');
-        this.updatePreview();
     },
 
     // Show input field for adding new category
@@ -8611,6 +9404,7 @@ Example output format:
         console.log('Opening Modal', isEdit); // Debug
         const modal = document.getElementById('productModal');
         if (!modal) { alert('Modal not found in DOM'); return; }
+        this.productModalDirty = false;
         this.resetProductIconUploadState();
         this.ensureRichTextEditors();
         this.bindProductModalOverlayDismiss();
@@ -8622,6 +9416,11 @@ Example output format:
         const siteEmoji = this.getEditSite() === 'intl' ? ' 🌍' : ' 🇨🇳';
         title.textContent = (isEdit ? '编辑商品' : '新建商品') + siteEmoji;
         modal.classList.add('active'); // In case CSS uses .active for transition
+        this.productCopyLanguageDrafts = null;
+        this.setProductCopyLanguage('zh', {
+            captureCurrentDraft: false,
+            refreshFields: false
+        });
 
         document.getElementById('prodShowProductDescription').checked = true;
 
@@ -8701,11 +9500,13 @@ Example output format:
 
         // Trigger initial preview update
         this.updatePreview();
+        this.syncProductTranslationCompletionButton();
     },
 
     editProduct: async function (id) {
         const requestId = `${String(id || '')}:${Date.now()}`;
         this.activeProductEditRequestId = requestId;
+        this.productModalDirty = false;
 
         void this.openProductModal(true);
 
@@ -8728,6 +9529,17 @@ Example output format:
 
             if (this.productGridCache instanceof Map) {
                 this.productGridCache.set(String(data.id || ''), { ...data });
+            }
+            if (this.productModalDirty) {
+                this.editingProductSnapshot = data;
+                const editProductIdInput = document.getElementById('editProductId');
+                if (editProductIdInput && !editProductIdInput.value) {
+                    editProductIdInput.value = data.id || '';
+                }
+                if (this.productSkuEditorLoading) {
+                    this.renderProductSkuEditorFromProductData(data);
+                }
+                return;
             }
             this.fillProductModalFromData(data);
         } catch (error) {
@@ -8803,7 +9615,6 @@ Example output format:
         try {
             const id = document.getElementById('editProductId').value;
             const name = document.getElementById('prodName').value.trim();
-            const price = document.getElementById('prodPrice').value;
             const description = document.getElementById('prodDesc').value;
             let productSkus = [];
             try {
@@ -8816,15 +9627,20 @@ Example output format:
             }
             console.log('[ShopAdmin] Base fields read successfully');
 
-            if (!name || !price) {
-                const failureMessage = '名称和价格必填';
+            const sitePriceCandidates = this.getProductSkuEditorSitePriceCandidates(productSkus);
+            const skuPriceForCurrentSite = sitePriceCandidates.length
+                ? this.deriveProductHiddenPriceFromSkuEditor(productSkus)
+                : null;
+            const legacyProductPrice = this.normalizeProductLegacyPriceValue(skuPriceForCurrentSite);
+            this.syncProductHiddenPriceFromSkuEditor(productSkus);
+            if (!name) {
+                const failureMessage = '商品名称必填';
                 this.setProductSaveInlineError(failureMessage);
                 this.showActionToast(failureMessage, 'warning');
                 return;
             }
-            const normalizedPrice = Number.parseInt(price, 10);
-            if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0) {
-                const failureMessage = '价格格式错误';
+            if (skuPriceForCurrentSite === null || legacyProductPrice === null) {
+                const failureMessage = '请至少为一个启用规格填写当前站点价格';
                 this.setProductSaveInlineError(failureMessage);
                 this.showActionToast(failureMessage, 'warning');
                 return;
@@ -8964,12 +9780,13 @@ Example output format:
                 purchase_notes: showPurchaseNotes ? normalizedPurchaseNotes : '',
                 usage_instructions: showUsageInstructions ? normalizedUsageInstructions : ''
             };
+            const explicitIntlProductCopyLanguage = this.getProductCopyLanguageForEdit();
             const productInputLanguage = editSite === 'intl'
                 ? {
-                    name: this.hasChineseProductText(persistedProductTextValues.name) ? 'zh' : 'en',
-                    description: this.hasChineseProductText(persistedProductTextValues.description) ? 'zh' : 'en',
-                    purchase_notes: this.hasChineseProductText(persistedProductTextValues.purchase_notes) ? 'zh' : 'en',
-                    usage_instructions: this.hasChineseProductText(persistedProductTextValues.usage_instructions) ? 'zh' : 'en'
+                    name: explicitIntlProductCopyLanguage,
+                    description: explicitIntlProductCopyLanguage,
+                    purchase_notes: explicitIntlProductCopyLanguage,
+                    usage_instructions: explicitIntlProductCopyLanguage
                 }
                 : {
                     name: 'zh',
@@ -8977,6 +9794,8 @@ Example output format:
                     purchase_notes: 'zh',
                     usage_instructions: 'zh'
                 };
+            const productCopyDraft = this.getCurrentProductCopyDraft({ syncRichText: false });
+            const shouldAutoTranslateProductCopy = this.hasProductCopyDraftChanged(productCopyDraft, this.editingProductSnapshot);
             const hasProductSourceInput = (field, language) => productInputLanguage[field] === language
                 && Boolean(String(persistedProductTextValues[field] || '').trim());
             const appendProductTranslationWarning = (message) => {
@@ -8993,7 +9812,7 @@ Example output format:
                     ? `${productTranslationErrorMessage}；${normalized}`
                     : normalized;
             };
-            if (editSite === 'cn') {
+            if (shouldAutoTranslateProductCopy && editSite === 'cn') {
                 try {
                     const translation = await this.withProductSaveTimeout(
                         this.translateToEnglish(name, description, {
@@ -9021,7 +9840,7 @@ Example output format:
                     markProductTranslationFailed(e?.message || '商品双语自动翻译失败');
                     console.warn('[ShopAdmin] CN Chinese-to-English translation step failed, continuing without:', e);
                 }
-            } else if (editSite === 'intl') {
+            } else if (shouldAutoTranslateProductCopy && editSite === 'intl') {
                 const productTextFields = Object.keys(persistedProductTextValues);
                 const hasChineseSourceInput = productTextFields.some((field) => hasProductSourceInput(field, 'zh'));
                 const hasEnglishSourceInput = productTextFields.some((field) => hasProductSourceInput(field, 'en'));
@@ -9170,7 +9989,7 @@ Example output format:
                     list.push(label);
                 }
             };
-            if (editSite === 'cn') {
+            if (shouldAutoTranslateProductCopy && editSite === 'cn') {
                 if (name && !hasSavedEnglishProductText('name', name_en)) {
                     addMissingTranslation('en', '商品名称');
                 }
@@ -9183,7 +10002,7 @@ Example output format:
                 if (showUsageInstructions && normalizedUsageInstructions && !hasSavedEnglishGuidanceText('usage_instructions', usage_instructions_en)) {
                     addMissingTranslation('en', '使用说明');
                 }
-            } else if (editSite === 'intl') {
+            } else if (shouldAutoTranslateProductCopy && editSite === 'intl') {
                 if (name && productInputLanguage.name === 'zh' && !hasSavedEnglishProductText('name', name_en)) {
                     addMissingTranslation('en', '商品名称');
                 }
@@ -9254,7 +10073,7 @@ Example output format:
 
             const payload = {
                 [fields.name]: name,
-                [fields.price]: normalizedPrice,
+                [fields.price]: legacyProductPrice,
                 [fields.desc]: description,
                 icon_url: iconUrl,
                 image_assets: imageAsset,

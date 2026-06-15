@@ -76,7 +76,7 @@ test('public shop exposes SKU manual delivery and purchase availability checks s
     );
     assert.match(
         publicHandlerSource,
-        /selectAttempts = \[[\s\S]*inventory_sku_id, manual_delivery, price_points[\s\S]*spec_values, manual_delivery, price_points/,
+        /selectAttempts = \[[\s\S]*inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points[\s\S]*inventory_sku_id, manual_delivery, price_points[\s\S]*spec_values, manual_delivery, price_points/,
         'public catalog should select SKU manual delivery with compatibility fallbacks'
     );
     assert.match(

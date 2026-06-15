@@ -105,6 +105,13 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
                 });
             }
 
+            if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
             assert.equal(table, 'shop_products');
             return createThenableQuery(() => ({
                 data: [
@@ -224,6 +231,13 @@ test('public shop catalog hides private categories and their products', async ()
                 }));
             }
 
+            if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
             assert.equal(table, 'shop_products');
             return createThenableQuery(() => ({
                 data: [
@@ -307,6 +321,13 @@ test('public shop catalog hides categories without products priced for the reque
             }
 
             if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_inventory') {
                 return createThenableQuery(() => ({
                     data: [],
                     error: null
@@ -426,6 +447,13 @@ test('public shop catalog hides skus without a price for the requested site', as
                 }));
             }
 
+            if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
             assert.equal(table, 'shop_products');
             return createThenableQuery(() => ({
                 data: [
@@ -481,4 +509,207 @@ test('public shop catalog hides skus without a price for the requested site', as
             { id: 'sku-intl', price_points: 2 }
         ]
     );
+});
+
+test('public shop catalog keeps decimal default sku price even when legacy product price is stale', async () => {
+    const supabase = {
+        from(table) {
+            if (table === 'shop_categories') {
+                return createThenableQuery(() => ({
+                    data: [
+                        { id: 'cat_public', name: 'games', sort_order: 1, is_public: true }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [
+                        {
+                            id: 'sku-default-decimal',
+                            product_id: 'product-decimal',
+                            sku_name: '永久维护',
+                            price_points: 6.9,
+                            stock_count: 5,
+                            is_default: true,
+                            is_active: true,
+                            sort_order: 0
+                        }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            assert.equal(table, 'shop_products');
+            return createThenableQuery(() => ({
+                data: [
+                    {
+                        id: 'product-decimal',
+                        name: 'Decimal Product',
+                        price_points: 6,
+                        stock_count: 5,
+                        category: 'games',
+                        display_order: 1,
+                        is_active: true
+                    }
+                ],
+                error: null
+            }));
+        }
+    };
+    const handler = createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                return String(value || 'cn').trim().toLowerCase() || 'cn';
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '0'
+        }
+    }).catalog;
+
+    const res = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&refresh=1',
+        headers: {}
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().products[0].price_points, 6);
+    assert.equal(res.json().products[0].skus[0].price_points, 6.9);
+});
+
+test('public shop catalog resolves site-scoped sku inventory source chains', async () => {
+    const supabase = {
+        from(table) {
+            if (table === 'shop_categories') {
+                return createThenableQuery(() => ({
+                    data: [
+                        { id: 'cat_public', name: 'memberships', sort_order: 1, is_public: true }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [
+                        {
+                            id: 'sku-local',
+                            product_id: 'product-stock',
+                            sku_name: 'Local',
+                            inventory_source_sku_ids: ['sku-local', 'sku-backup'],
+                            inventory_source_sku_ids_intl: [],
+                            price_points: 10,
+                            price_points_intl: 2,
+                            stock_count: 99,
+                            is_default: true,
+                            is_active: true,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku-backup',
+                            product_id: 'product-stock',
+                            sku_name: 'Backup',
+                            inventory_source_sku_ids: [],
+                            inventory_source_sku_ids_intl: [],
+                            price_points: 10,
+                            price_points_intl: 2,
+                            stock_count: 99,
+                            is_default: false,
+                            is_active: true,
+                            sort_order: 1
+                        }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [
+                        { product_id: 'product-stock', sku_id: 'sku-local', status: 'available' },
+                        { product_id: 'product-stock', sku_id: 'sku-backup', status: 'available' },
+                        { product_id: 'product-stock', sku_id: 'sku-backup', status: 'available' }
+                    ],
+                    error: null
+                }));
+            }
+
+            assert.equal(table, 'shop_products');
+            return createThenableQuery(() => ({
+                data: [
+                    {
+                        id: 'product-stock',
+                        name: 'Site scoped stock product',
+                        price_points: 99,
+                        price_points_intl: 9,
+                        stock_count: 99,
+                        category: 'memberships',
+                        display_order: 1,
+                        is_active: true
+                    }
+                ],
+                error: null
+            }));
+        }
+    };
+    const handler = createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                return String(value || 'cn').trim().toLowerCase() || 'cn';
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '0'
+        }
+    }).catalog;
+
+    const cnRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&refresh=1',
+        headers: {}
+    }, cnRes);
+
+    const intlRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=intl&refresh=2',
+        headers: {}
+    }, intlRes);
+
+    assert.equal(cnRes.statusCode, 200);
+    assert.equal(intlRes.statusCode, 200);
+    assert.equal(cnRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.stock_count, 3);
+    assert.deepEqual(cnRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.inventory_source_sku_ids, ['sku-local', 'sku-backup']);
+    assert.equal(intlRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.stock_count, 1);
+    assert.deepEqual(intlRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.inventory_source_sku_ids, []);
 });

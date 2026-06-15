@@ -65,6 +65,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'spec_values',
     'inventory_sku_id',
     'inventory_source_sku_ids',
+    'inventory_source_sku_ids_intl',
     'manual_delivery',
     'price_points',
     'price_points_intl',
@@ -75,10 +76,12 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'stock_count',
     'sort_order'
 ].join(', ');
-const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT
+    .replace('inventory_source_sku_ids_intl, ', '');
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST
     .replace('inventory_source_sku_ids, ', '');
 const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY = SHOP_PRODUCT_SKU_SELECT
-    .replace('spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points', 'spec_values, manual_delivery, price_points');
+    .replace('spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points', 'spec_values, manual_delivery, price_points');
 const SHOP_PRODUCT_SKU_SELECT_WITHOUT_MANUAL_DELIVERY = SHOP_PRODUCT_SKU_SELECT
     .replace('manual_delivery, ', '');
 const SHOP_PRODUCT_SKU_SELECT_LEGACY = SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY
@@ -264,6 +267,7 @@ async function loadProductSkusWithSharedInventoryFallback(supabase, applyFilter)
     let response = { data: null, error: null };
     const selectAttempts = [
         SHOP_PRODUCT_SKU_SELECT,
+        SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST,
         SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST,
         SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY,
         SHOP_PRODUCT_SKU_SELECT_WITHOUT_MANUAL_DELIVERY,
@@ -278,6 +282,7 @@ async function loadProductSkusWithSharedInventoryFallback(supabase, applyFilter)
         if (
             !isMissingColumnError(response.error, 'inventory_sku_id')
             && !isMissingColumnError(response.error, 'inventory_source_sku_ids')
+            && !isMissingColumnError(response.error, 'inventory_source_sku_ids_intl')
             && !isMissingColumnError(response.error, 'manual_delivery')
         ) {
             break;

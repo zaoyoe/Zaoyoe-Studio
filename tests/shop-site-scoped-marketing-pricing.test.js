@@ -19,7 +19,7 @@ test('admin product editor keeps product-level tier pricing out of the modal and
     );
     assert.match(
         source,
-        /fillProductModalFromData: function[\s\S]*const marketingFields = this\.getMarketingFieldMap\(\);[\s\S]*this\.renderProductSkuEditor\(this\.buildProductSkusForEditor\(data\)/,
+        /renderProductSkuEditorFromProductData: function[\s\S]*this\.renderProductSkuEditor\(this\.buildProductSkusForEditor\(data\)[\s\S]*fillProductModalFromData: function[\s\S]*const marketingFields = this\.getMarketingFieldMap\(\);[\s\S]*this\.renderProductSkuEditorFromProductData\(data\)/,
         'editing a product should hydrate tiered pricing through the SKU editor'
     );
     assert.match(
@@ -39,8 +39,8 @@ test('admin product editor keeps product-level tier pricing out of the modal and
     );
     assert.match(
         source,
-        /if \(nameLabel\) nameLabel\.textContent = isCN \? '商品名称' : '商品名称（英文）';[\s\S]*if \(descLabel\) descLabel\.textContent = isCN \? '商品描述' : '商品描述（英文）';/,
-        'intl product fields should stay localized for Chinese admin operators'
+        /if \(nameLabel\) nameLabel\.textContent = isCN \? '商品名称' : \(isEnglishCopy \? '商品名称（INTL 英文）' : '商品名称（INTL 中文）'\);[\s\S]*if \(descLabel\) descLabel\.textContent = isCN \? '商品描述' : \(isEnglishCopy \? '商品描述（INTL 英文）' : '商品描述（INTL 中文）'\);/,
+        'intl product fields should default to Chinese while keeping an explicit English edit mode'
     );
     assert.match(
         source,
@@ -49,7 +49,7 @@ test('admin product editor keeps product-level tier pricing out of the modal and
     );
     assert.doesNotMatch(
         source,
-        /editSite === 'intl'[\s\S]{0,160}payload\.price_points = normalizedPrice/,
+        /editSite === 'intl'[\s\S]{0,200}payload\.price_points\s*=/,
         'creating an intl product should not mirror the intl price into the CN price field'
     );
 });
@@ -108,9 +108,19 @@ test('SKU prices are site-scoped sale switches and never inherit from another si
         'public catalog should read only the requested site SKU price field'
     );
     assert.match(
+        handlerSource,
+        /function isShopCatalogProductAvailableForSite[\s\S]*Array\.isArray\(product\?\.skus\) && product\.skus\.length > 0[\s\S]*Number\.isFinite\(Number\(sku\.price_points\)\)[\s\S]*normalizeShopSitePriceValue\(product\?\.\[priceField\]\) !== null/,
+        'public catalog should treat SKU prices as the current-site sale switch before falling back to legacy product price'
+    );
+    assert.match(
         shopSource,
         /getSkuPriceFieldForCurrentSite: function[\s\S]*price_points_intl[\s\S]*price_points[\s\S]*getProductSkuPriceForCurrentSite: function[\s\S]*normalizeShopSitePriceValue\(sku\?\.\[priceField\]\)/,
         'storefront purchase UI should read only the current site SKU price field'
+    );
+    assert.match(
+        shopSource,
+        /resolveProductPricing: function[\s\S]*const purchasableSkus = this\.getProductSkusForPurchase\(product\);[\s\S]*purchasableSkus\.find\(\(sku\) => sku\.is_default === true\) \|\| purchasableSkus\[0\][\s\S]*this\.getProductSkuPriceForCurrentSite\(selectedSku, product\)/,
+        'storefront product cards should display the current-site default SKU price before falling back to legacy product price'
     );
     assert.doesNotMatch(
         `${handlerSource}\n${shopSource}`,
@@ -217,6 +227,51 @@ test('SKU tier pricing is selected and persisted independently from product tier
         /productBaseTierPricingSection|默认规格阶梯价|prodQuantityRulesContainer/,
         'product-level default-SKU tier pricing should not appear as a separate modal section'
     );
+    assert.match(
+        adminHtml,
+        /<input type="hidden" id="prodPrice" value="">/,
+        'product editor should keep only a hidden product-level price for legacy payload compatibility'
+    );
+    assert.doesNotMatch(
+        adminHtml,
+        /id="prodPriceLabel"|id="prodPrice" class="modern-input"/,
+        'product editor main info should not expose product-level price inputs now that SKU prices are authoritative'
+    );
+    assert.match(
+        adminSource,
+        /deriveProductHiddenPriceFromSkuEditor: function[\s\S]*getProductSkuEditorSitePriceCandidates\(productSkus\)[\s\S]*defaultCandidate \|\| candidates\[0\][\s\S]*syncProductHiddenPriceFromSkuEditor: function/,
+        'admin save should derive the hidden product compatibility price from active SKU prices'
+    );
+    assert.match(
+        adminSource,
+        /const sitePriceCandidates = this\.getProductSkuEditorSitePriceCandidates\(productSkus\);[\s\S]*const skuPriceForCurrentSite = sitePriceCandidates\.length[\s\S]*this\.deriveProductHiddenPriceFromSkuEditor\(productSkus\)[\s\S]*const legacyProductPrice = this\.normalizeProductLegacyPriceValue\(skuPriceForCurrentSite\)[\s\S]*if \(skuPriceForCurrentSite === null \|\| legacyProductPrice === null\)[\s\S]*请至少为一个启用规格填写当前站点价格[\s\S]*\[fields\.price\]: legacyProductPrice/,
+        'saving a product should require a current-site SKU price while writing an integer-safe legacy product price'
+    );
+    assert.match(
+        adminSource,
+        /normalizeProductLegacyPriceValue: function[\s\S]*normalizeProductPriceDraftValue\(value\)[\s\S]*return Math\.ceil\(normalizedPrice\)/,
+        'hidden product compatibility price should not write decimal SKU prices into legacy integer product columns'
+    );
+    assert.match(
+        adminSource,
+        /productModalDirty:[\s\S]*markProductModalDirty: function|productModalDirty:[\s\S]*markProductModalDirty\(element = null\)/,
+        'product editor should track local edits while product details are loading'
+    );
+    assert.match(
+        adminSource,
+        /if \(this\.productModalDirty\) \{[\s\S]*this\.editingProductSnapshot = data;[\s\S]*if \(this\.productSkuEditorLoading\) \{[\s\S]*this\.renderProductSkuEditorFromProductData\(data\);[\s\S]*return;[\s\S]*\}[\s\S]*this\.fillProductModalFromData\(data\);/,
+        'late product detail responses should not overwrite SKU price edits already typed into the modal'
+    );
+    assert.match(
+        adminSource,
+        /getAdminProductPrimarySkuPrice: function[\s\S]*const skuFields = this\.getSkuSiteFieldMap\(\);[\s\S]*normalizeProductPriceDraftValue\(sku\?\.\[skuFields\.price\]\)[\s\S]*defaultCandidate \|\| candidates\[0\]/,
+        'admin product cards should prefer the current-site default SKU price over legacy product price'
+    );
+    assert.match(
+        adminSource,
+        /loadProducts: async function[\s\S]*loadShopProductsViaAdminApi\(\{[\s\S]*fields: 'full',[\s\S]*includeSkus: 'true',[\s\S]*order: 'display_order_desc'/,
+        'admin product grid should load SKU rows so card prices match SKU prices'
+    );
     assert.equal(
         adminHtml.includes('skuDarkTheme=20260531_ADMIN_STUDIO_PRODUCT_SKU_DARK_THEME_1'),
         true,
@@ -226,6 +281,26 @@ test('SKU tier pricing is selected and persisted independently from product tier
         adminHtml.includes('sharedSkuInventory=20260604_SHARED_SKU_INVENTORY_POOL_LINK_1'),
         true,
         'admin studio should cache-bust shared SKU inventory editor custom-select assets'
+    );
+    assert.equal(
+        adminHtml.includes('skuPriceCopy=20260615_ADMIN_SKU_PRICE_COPY_1'),
+        true,
+        'admin studio should cache-bust the cross-site SKU price copy controls'
+    );
+    assert.match(
+        adminHtml,
+        /data-shop-action="product-copy-other-site-sku-prices"[\s\S]*data-product-sku-copy-price-label/,
+        'admin SKU editor should expose a one-click control for copying prices from the other site'
+    );
+    assert.match(
+        adminSource,
+        /copyOtherSiteSkuPricesToCurrentSite: function[\s\S]*const sourceSite = this\.getOppositeShopSite\(targetSite\);[\s\S]*const sourceField = this\.getSkuSiteFieldMap\(sourceSite\)\.price;[\s\S]*data-product-sku-field="\$\{sourceField\}"[\s\S]*data-product-sku-site-field="price"[\s\S]*targetInput\.value = sourceValue/,
+        'admin SKU editor should copy other-site SKU prices into the current visible site price inputs only'
+    );
+    assert.match(
+        adminSource,
+        /syncProductSkuCopyPriceButton: function[\s\S]*复用\$\{this\.getShopSiteShortLabel\(sourceSite\)\}规格价格[\s\S]*this\.syncProductSkuCopyPriceButton\(\);/,
+        'SKU price copy control should label the source site based on the active edit site'
     );
     assert.doesNotMatch(
         adminSource,
@@ -305,8 +380,8 @@ test('SKU tier pricing is selected and persisted independently from product tier
     }
     assert.match(
         adminStyles,
-        /shop-product-sku-editor__header[\s\S]*margin-bottom: 10px;[\s\S]*shop-product-sku-editor__add[\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__toggle input[\s\S]*appearance: none;[\s\S]*shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)/,
-        'admin SKU add button should breathe away from rows and toggles should use custom save-blue controls'
+        /shop-product-sku-editor__header[\s\S]*margin-bottom: 10px;[\s\S]*shop-product-sku-editor__actions[\s\S]*shop-product-sku-editor__copy-prices[\s\S]*shop-product-sku-editor__add[\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__toggle input[\s\S]*appearance: none;[\s\S]*shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)/,
+        'admin SKU actions should breathe away from rows and toggles should use custom save-blue controls'
     );
     assert.match(
         adminStyles,
@@ -337,12 +412,12 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         mutateSource,
-        /inventorySourceSkuIds = normalizeInventorySourceSkuIds[\s\S]*inventory_sku_id: getCompatibilityInventorySkuId\(inventorySourceSkuIds, id\)[\s\S]*inventory_source_sku_ids: inventorySourceSkuIds[\s\S]*quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
+        /inventorySourceSkuIds = normalizeInventorySourceSkuIds[\s\S]*inventorySourceSkuIdsIntl = normalizeInventorySourceSkuIds[\s\S]*inventory_sku_id: getCompatibilityInventorySkuId\(inventorySourceSkuIds, id\)[\s\S]*inventory_source_sku_ids: inventorySourceSkuIds[\s\S]*inventory_source_sku_ids_intl: inventorySourceSkuIdsIntl[\s\S]*quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
         'admin mutation should persist prioritized SKU inventory sources and tier rules'
     );
     assert.match(
         publicHandlerSource,
-        /selectAttempts = \[[\s\S]*inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl[\s\S]*spec_values, inventory_sku_id, manual_delivery, price_points[\s\S]*spec_values, manual_delivery, price_points/,
+        /selectAttempts = \[[\s\S]*inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl[\s\S]*inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points[\s\S]*spec_values, inventory_sku_id, manual_delivery, price_points[\s\S]*spec_values, manual_delivery, price_points/,
         'public catalog should include SKU prioritized inventory sources, manual delivery, and tier pricing columns'
     );
     assert.match(

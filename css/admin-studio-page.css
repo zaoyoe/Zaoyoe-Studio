@@ -9893,6 +9893,28 @@ body.admin-access-pending,
                 color: #fff;
             }
 
+            #productModal .btn-translate-complete {
+                padding: 10px 22px;
+                background: rgba(107, 158, 206, 0.12);
+                border: 1px solid rgba(107, 158, 206, 0.34);
+                border-radius: 8px;
+                color: rgba(255, 255, 255, 0.86);
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            #productModal .btn-translate-complete:hover:not(:disabled) {
+                background: rgba(107, 158, 206, 0.2);
+                border-color: rgba(107, 158, 206, 0.5);
+                color: #fff;
+            }
+
+            #productModal .btn-translate-complete:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+
             #productModal .btn-save {
                 padding: 10px 30px;
                 background: #6b9ece;
@@ -28133,6 +28155,30 @@ html:not([data-theme="dark"]) #productModal .btn-cancel:is(:hover, :focus-visibl
     box-shadow: none !important;
 }
 
+html[data-theme="light"] #productModal .btn-translate-complete,
+html:not([data-theme="dark"]) #productModal .btn-translate-complete {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border: 1px solid rgba(var(--admin-studio-ui-blue-rgb), 0.24) !important;
+    color: var(--admin-studio-ui-blue) !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .btn-translate-complete:is(:hover, :focus-visible):not(:disabled),
+html:not([data-theme="dark"]) #productModal .btn-translate-complete:is(:hover, :focus-visible):not(:disabled) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.13) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.34) !important;
+    color: #245986 !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .btn-translate-complete:disabled,
+html:not([data-theme="dark"]) #productModal .btn-translate-complete:disabled {
+    background: rgba(226, 232, 240, 0.82) !important;
+    border-color: rgba(148, 163, 184, 0.24) !important;
+    color: rgba(100, 116, 139, 0.64) !important;
+}
+
 html[data-theme="light"] #productModal .btn-save,
 html:not([data-theme="dark"]) #productModal .btn-save {
     background: var(--admin-studio-ui-blue) !important;
@@ -28291,9 +28337,27 @@ html:not([data-theme="dark"]) #productModal .shop-product-sku-row__tier-toggle[a
 
 html[data-theme="light"] #productModal .shop-product-sku-editor__add,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__add,
+html[data-theme="light"] #productModal .shop-product-sku-editor__copy-prices,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__copy-prices,
 html[data-theme="light"] #productModal .shop-product-sku-row__toggle input,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle input {
     accent-color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-editor__copy-prices,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__copy-prices {
+    background: rgba(248, 250, 252, 0.96) !important;
+    border-color: rgba(148, 163, 184, 0.32) !important;
+    color: rgba(71, 85, 105, 0.9) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-editor__copy-prices:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__copy-prices:is(:hover, :focus-visible) {
+    background: #ffffff !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.34) !important;
+    color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.1) !important;
 }
 
 html[data-theme="light"] #productModal .shop-product-sku-row__toggle input,

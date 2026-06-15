@@ -407,12 +407,15 @@ function createShopHandlers({
     }
 
     function isShopCatalogProductAvailableForSite(product = {}, currentSite = 'cn') {
-        const priceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
-        const rawValue = product?.[priceField];
-        if (rawValue === null || rawValue === undefined || rawValue === '') {
-            return false;
+        if (Array.isArray(product?.skus) && product.skus.length > 0) {
+            return product.skus.some((sku) => sku?.price_points !== null
+                && sku?.price_points !== undefined
+                && sku?.price_points !== ''
+                && Number.isFinite(Number(sku.price_points)));
         }
-        return Number.isFinite(Number(rawValue));
+
+        const priceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
+        return normalizeShopSitePriceValue(product?.[priceField]) !== null;
     }
 
     function getSiteScopedShopMarketingValue(product = {}, baseField = '', currentSite = 'cn') {
@@ -467,16 +470,84 @@ function createShopHandlers({
             });
     }
 
-    function normalizePublicShopSkuForSite(sku = {}, product = {}, currentSite = 'cn') {
-        const skuPriceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
-        const skuPrice = normalizeShopSitePriceValue(sku?.[skuPriceField]);
-        const skuQuantityRules = getSiteScopedShopMarketingValue(sku, 'quantity_rules', currentSite);
-        const inventorySourceSkuIds = normalizeSkuInventorySourceIds(
+    function getPublicShopSkuInventorySourceIdsForSite(sku = {}, currentSite = 'cn') {
+        if (currentSite === 'intl') {
+            const hasIntlSourceList = sku
+                && typeof sku === 'object'
+                && (
+                    Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_ids_intl')
+                    || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuIdsIntl')
+                );
+            if (!hasIntlSourceList) {
+                return normalizeSkuInventorySourceIds(
+                    sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+                    normalizeText(sku?.inventory_sku_id ?? sku?.inventorySkuId, 160)
+                        ? [sku?.inventory_sku_id ?? sku?.inventorySkuId]
+                        : []
+                );
+            }
+            return normalizeSkuInventorySourceIds(
+                sku?.inventory_source_sku_ids_intl ?? sku?.inventorySourceSkuIdsIntl,
+                []
+            );
+        }
+
+        return normalizeSkuInventorySourceIds(
             sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
             normalizeText(sku?.inventory_sku_id ?? sku?.inventorySkuId, 160)
                 ? [sku?.inventory_sku_id ?? sku?.inventorySkuId]
                 : []
         );
+    }
+
+    function getPublicShopSkuAvailableStockById(skus = [], inventoryStockBySkuId = null) {
+        if (inventoryStockBySkuId instanceof Map && inventoryStockBySkuId.size) {
+            return inventoryStockBySkuId;
+        }
+
+        const stockBySkuId = new Map();
+        (Array.isArray(skus) ? skus : []).forEach((sku) => {
+            const skuId = normalizeText(sku?.id, 160);
+            if (!skuId) return;
+            const stockCount = Math.max(0, Math.trunc(Number(sku?.stock_count ?? sku?.stockCount ?? 0) || 0));
+            stockBySkuId.set(skuId, stockCount);
+        });
+        return stockBySkuId;
+    }
+
+    function resolvePublicShopSkuStockCountForSite(sku = {}, stockBySkuId = new Map(), currentSite = 'cn', defaultSkuIds = new Set()) {
+        const skuId = normalizeText(sku?.id, 160);
+        const sourceIds = getPublicShopSkuInventorySourceIdsForSite(sku, currentSite);
+        if (!sourceIds.length) {
+            const localStock = stockBySkuId instanceof Map && stockBySkuId.has(skuId)
+                ? Math.max(0, Math.trunc(Number(stockBySkuId.get(skuId)) || 0))
+                : Math.max(0, Math.trunc(Number(sku?.stock_count ?? sku?.stockCount ?? 0) || 0));
+            const defaultStock = defaultSkuIds.has(skuId)
+                ? Math.max(0, Math.trunc(Number(stockBySkuId.get('__default__')) || 0))
+                : 0;
+            return localStock + defaultStock;
+        }
+
+        const targetSourceIds = sourceIds.length ? sourceIds : (skuId ? [skuId] : []);
+        return targetSourceIds.reduce((total, sourceId) => {
+            const sourceKey = normalizeText(sourceId, 160);
+            if (!sourceKey) return total;
+            if (stockBySkuId.has(sourceKey)) {
+                const sourceStock = Math.max(0, Math.trunc(Number(stockBySkuId.get(sourceKey)) || 0));
+                const defaultStock = defaultSkuIds.has(sourceKey)
+                    ? Math.max(0, Math.trunc(Number(stockBySkuId.get('__default__')) || 0))
+                    : 0;
+                return total + sourceStock + defaultStock;
+            }
+            return total;
+        }, 0);
+    }
+
+    function normalizePublicShopSkuForSite(sku = {}, product = {}, currentSite = 'cn') {
+        const skuPriceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
+        const skuPrice = normalizeShopSitePriceValue(sku?.[skuPriceField]);
+        const skuQuantityRules = getSiteScopedShopMarketingValue(sku, 'quantity_rules', currentSite);
+        const inventorySourceSkuIds = getPublicShopSkuInventorySourceIdsForSite(sku, currentSite);
         const currentSkuId = normalizeText(sku?.id, 160);
         const rawInventorySkuId = normalizeText(sku?.inventory_sku_id, 160);
         const compatibilityInventorySkuId = inventorySourceSkuIds
@@ -491,7 +562,7 @@ function createShopHandlers({
             price_points: skuPrice,
             quantity_rules: skuQuantityRules ?? null,
             manual_delivery: resolvePublicShopSkuManualDelivery(sku, product),
-            stock_count: Math.max(0, Number(sku.stock_count || 0) || 0)
+            stock_count: Math.max(0, Math.trunc(Number(sku.stock_count || 0) || 0))
         };
     }
 
@@ -516,18 +587,28 @@ function createShopHandlers({
         const showPurchaseNotes = resolveSiteScopedGuidanceVisible(product, 'purchase_notes', currentSite);
         const showUsageInstructions = resolveSiteScopedGuidanceVisible(product, 'usage_instructions', currentSite);
         const rawSkus = Array.isArray(product?.skus) ? product.skus : [];
+        const stockBySkuId = getPublicShopSkuAvailableStockById(rawSkus, product?.inventoryStockBySkuId);
+        const defaultSkuIds = new Set(rawSkus
+            .filter((sku) => sku?.is_default === true)
+            .map((sku) => normalizeText(sku?.id, 160))
+            .filter(Boolean));
         const imageCacheVersion = normalizeText(
             product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at,
             80
         );
+        const { inventoryStockBySkuId: _inventoryStockBySkuId, ...publicProduct } = product;
         const inventorySkus = rawSkus
             .filter((sku) => sku?.is_active !== false)
+            .map((sku) => ({
+                ...sku,
+                stock_count: resolvePublicShopSkuStockCountForSite(sku, stockBySkuId, currentSite, defaultSkuIds)
+            }))
             .map((sku) => normalizePublicShopSkuForSite(sku, product, currentSite));
         const skus = inventorySkus
             .filter((sku) => sku.price_points !== null && sku.price_points !== undefined && sku.price_points !== '');
 
         return {
-            ...product,
+            ...publicProduct,
             description,
             show_product_description: showProductDescription,
             show_purchase_notes: showPurchaseNotes,
@@ -544,6 +625,50 @@ function createShopHandlers({
         };
     }
 
+    async function loadAvailableShopInventoryStockByProduct(dataSupabase, productIds = []) {
+        const normalizedProductIds = [...new Set(
+            (Array.isArray(productIds) ? productIds : [])
+                .map((productId) => normalizeText(productId, 160))
+                .filter(Boolean)
+        )];
+        if (!normalizedProductIds.length || !dataSupabase?.from) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await dataSupabase
+                .from('shop_inventory')
+                .select('product_id, sku_id, status')
+                .in('product_id', normalizedProductIds)
+                .eq('status', 'available');
+
+            if (error) throw error;
+
+            const stockByProductId = new Map();
+            (Array.isArray(data) ? data : []).forEach((row) => {
+                const productId = normalizeText(row?.product_id, 160);
+                if (!productId) return;
+                if (!stockByProductId.has(productId)) {
+                    stockByProductId.set(productId, new Map());
+                }
+                const stockBySkuId = stockByProductId.get(productId);
+                const skuId = normalizeText(row?.sku_id, 160) || '__default__';
+                stockBySkuId.set(skuId, (stockBySkuId.get(skuId) || 0) + 1);
+            });
+
+            return stockByProductId;
+        } catch (error) {
+            if (
+                isMissingRelationError(error, 'shop_inventory')
+                || isMissingColumnError(error, 'sku_id')
+                || isMissingColumnError(error, 'status')
+            ) {
+                return new Map();
+            }
+            throw error;
+        }
+    }
+
     async function attachPublicShopProductSkus(dataSupabase, products = []) {
         const rows = Array.isArray(products) ? products : [];
         const productIds = rows.map((product) => normalizeText(product?.id, 160)).filter(Boolean);
@@ -553,6 +678,7 @@ function createShopHandlers({
 
         try {
             const selectAttempts = [
+                'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
@@ -575,6 +701,7 @@ function createShopHandlers({
                 if (
                     !isMissingColumnError(response.error, 'inventory_sku_id')
                     && !isMissingColumnError(response.error, 'inventory_source_sku_ids')
+                    && !isMissingColumnError(response.error, 'inventory_source_sku_ids_intl')
                     && !isMissingColumnError(response.error, 'manual_delivery')
                 ) {
                     break;
@@ -734,11 +861,22 @@ function createShopHandlers({
 
             const { data, error } = await query;
             if (!error) {
-                const products = await attachPublicShopProductSkus(dataSupabase, Array.isArray(data) ? data : []);
+                const productsWithSkus = await attachPublicShopProductSkus(dataSupabase, Array.isArray(data) ? data : []);
+                const stockByProductId = await loadAvailableShopInventoryStockByProduct(
+                    dataSupabase,
+                    productsWithSkus.map((product) => product?.id)
+                );
+                const products = productsWithSkus.map((product) => {
+                    const productId = normalizeText(product?.id, 160);
+                    return {
+                        ...product,
+                        inventoryStockBySkuId: stockByProductId.get(productId) || null
+                    };
+                });
                 return products
                     .filter((product) => !hiddenCategoryNameSet.has(normalizeText(product?.category, 120)))
-                    .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite))
-                    .map((product) => normalizeShopCatalogProductForSite(product, currentSite, language));
+                    .map((product) => normalizeShopCatalogProductForSite(product, currentSite, language))
+                    .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite));
             }
 
             lastError = error;

@@ -427,6 +427,73 @@ test('shop mutate upsert backfills base name from name_en for intl product creat
     });
 });
 
+test('shop mutate upsert keeps decimal SKU prices while writing integer-safe legacy product prices', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Decimal SKU Product',
+                    category: 'cards',
+                    price_points: 12.8,
+                    delivery_type: 'KEY',
+                    is_active: true
+                },
+                skus: [{
+                    sku_name: '默认规格',
+                    sku_code: 'default',
+                    price_points: 12.8,
+                    is_default: true,
+                    is_active: true
+                }]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayload.price_points, 13);
+        assert.equal(state.insertPayloadsByTable.shop_product_skus[0].price_points, 12.8);
+    });
+});
+
+test('shop mutate upsert can patch product copy without syncing skus', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'Copy Patch Product',
+                    name_en: 'Copy Patch Product',
+                    category: 'cards',
+                    price_points: 12,
+                    delivery_type: 'KEY',
+                    is_active: true
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.upsertPayload.name_en, 'Copy Patch Product');
+        assert.equal(state.insertPayloadsByTable.shop_product_skus, undefined);
+        assert.equal(state.updatePayloadsByTable.shop_product_skus, undefined);
+    });
+});
+
 test('shop mutate upsert blocks invalid API product payload before writing', async () => {
     await withShopMutateHandler({}, async ({ handler, state }) => {
         const res = createMockResponse();
@@ -1056,6 +1123,106 @@ test('shop mutate upsert persists priority inventory source list for an existing
         ));
         assert.equal(aliasUpdate?.payload?.inventory_sku_id, 'sku_primary');
         assert.deepEqual(aliasUpdate?.payload?.inventory_source_sku_ids, ['sku_primary', 'sku_backup']);
+    });
+});
+
+test('shop mutate upsert persists intl inventory source list without replacing cn list', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_primary',
+                            product_id: 'prod_saved',
+                            sku_code: 'primary',
+                            sku_name: '首选库存',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            inventory_source_sku_ids_intl: [],
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 8,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_backup',
+                            product_id: 'prod_saved',
+                            sku_code: 'backup',
+                            sku_name: '备选库存',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: [],
+                            inventory_source_sku_ids_intl: [],
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 5,
+                            sort_order: 1
+                        },
+                        {
+                            id: 'sku_alias',
+                            product_id: 'prod_saved',
+                            sku_code: 'alias',
+                            sku_name: '站点独立调用',
+                            inventory_sku_id: null,
+                            inventory_source_sku_ids: ['sku_primary'],
+                            inventory_source_sku_ids_intl: [],
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 0,
+                            sort_order: 2
+                        }
+                    ],
+                    error: null
+                },
+                { data: [{ id: 'sku_primary', product_id: 'prod_saved', sku_code: 'primary', sku_name: '首选库存', inventory_sku_id: null, inventory_source_sku_ids: [], inventory_source_sku_ids_intl: [], is_default: false, is_active: true, sort_order: 0 }], error: null },
+                { data: [{ id: 'sku_backup', product_id: 'prod_saved', sku_code: 'backup', sku_name: '备选库存', inventory_sku_id: null, inventory_source_sku_ids: [], inventory_source_sku_ids_intl: [], is_default: false, is_active: true, sort_order: 1 }], error: null },
+                { data: [{ id: 'sku_alias', product_id: 'prod_saved', sku_code: 'alias', sku_name: '站点独立调用', inventory_sku_id: null, inventory_source_sku_ids: ['sku_primary'], inventory_source_sku_ids_intl: ['sku_alias', 'sku_backup'], is_default: false, is_active: true, sort_order: 2 }], error: null }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'intl',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'Site Scoped Product',
+                    category: 'cards',
+                    price_points: 45,
+                    price_points_intl: 5,
+                    delivery_type: 'KEY'
+                },
+                skus: [
+                    { id: 'sku_primary', sku_name: '首选库存', sku_code: 'primary', price_points_intl: 5, is_default: true, is_active: true },
+                    { id: 'sku_backup', sku_name: '备选库存', sku_code: 'backup', price_points_intl: 5, is_default: false, is_active: true },
+                    {
+                        id: 'sku_alias',
+                        sku_name: '站点独立调用',
+                        sku_code: 'alias',
+                        inventory_source_sku_ids: ['sku_primary'],
+                        inventory_source_sku_ids_intl: ['sku_alias', 'sku_backup'],
+                        price_points_intl: 8,
+                        is_default: false,
+                        is_active: true
+                    }
+                ]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const aliasUpdate = state.updatePayloadsByTable.shop_product_skus.find((entry) => (
+            entry.filters.some(([column, value]) => column === 'id' && value === 'sku_alias')
+        ));
+        assert.equal(Object.prototype.hasOwnProperty.call(aliasUpdate?.payload || {}, 'inventory_sku_id'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(aliasUpdate?.payload || {}, 'inventory_source_sku_ids'), false);
+        assert.deepEqual(aliasUpdate?.payload?.inventory_source_sku_ids_intl, ['sku_alias', 'sku_backup']);
     });
 });
 
