@@ -1,6 +1,25 @@
--- Site-aware recharge RPC aligned with the hardened migration
-DROP FUNCTION IF EXISTS public.fn_recharge_points(UUID, INTEGER, INTEGER, TEXT, TEXT);
-DROP FUNCTION IF EXISTS public.fn_recharge_points(UUID, INTEGER, INTEGER, TEXT, TEXT, VARCHAR);
+-- Harden payment recharge settlement idempotency.
+--
+-- The payment webhooks and active status polling can legitimately race each
+-- other. A payment reference must therefore be idempotent at the balance RPC,
+-- not only at the caller.
+
+CREATE INDEX IF NOT EXISTS idx_points_ledger_user_site_reference_positive
+    ON public.points_ledger(user_id, site, reference_id, created_at)
+    WHERE reference_id IS NOT NULL AND amount > 0;
+
+DELETE FROM public.payment_events pe
+USING public.payment_events keeper
+WHERE pe.event_key IS NOT NULL
+  AND keeper.event_key = pe.event_key
+  AND (
+      keeper.created_at < pe.created_at
+      OR (keeper.created_at = pe.created_at AND keeper.id < pe.id)
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_events_event_key_unique
+    ON public.payment_events(event_key)
+    WHERE event_key IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.fn_recharge_points(
     target_user_id UUID,
@@ -19,8 +38,10 @@ DECLARE
     v_recharge_ledger_id UUID;
     v_existing_ledger RECORD;
     v_pending_reward RECORD;
+    v_pending_reward_ledger_id UUID;
     v_paid NUMERIC(12,2) := ROUND(COALESCE(p_paid, 0), 2);
     v_bonus NUMERIC(12,2) := ROUND(COALESCE(p_bonus, 0), 2);
+    v_source_type VARCHAR(40);
 BEGIN
     IF COALESCE(auth.role(), '') <> 'service_role' THEN
         RAISE EXCEPTION 'Access denied';
@@ -80,10 +101,40 @@ BEGIN
     VALUES (target_user_id, v_paid, v_bonus)
     ON CONFLICT (user_id)
     DO UPDATE SET
-        paid_balance = public.points_balance.paid_balance + EXCLUDED.paid_balance,
-        bonus_balance = public.points_balance.bonus_balance + EXCLUDED.bonus_balance,
+        paid_balance = ROUND(public.points_balance.paid_balance + EXCLUDED.paid_balance, 2),
+        bonus_balance = ROUND(public.points_balance.bonus_balance + EXCLUDED.bonus_balance, 2),
         updated_at = NOW()
     RETURNING paid_balance, bonus_balance, total_balance INTO v_new_balance;
+
+    v_source_type := public.fn_classify_wallet_point_lot_source(p_reason, p_reference_id, v_paid, v_bonus);
+    IF v_paid > 0 THEN
+        PERFORM public.fn_create_wallet_point_lot(
+            target_user_id,
+            'cn',
+            v_source_type,
+            p_reason,
+            p_reference_id,
+            v_paid,
+            v_paid,
+            'CNY',
+            v_recharge_ledger_id,
+            jsonb_build_object('component', 'paid', 'legacy_site_overload', true)
+        );
+    END IF;
+    IF v_bonus > 0 THEN
+        PERFORM public.fn_create_wallet_point_lot(
+            target_user_id,
+            'cn',
+            CASE WHEN v_source_type IN ('recharge', 'redemption_code') THEN 'activity_bonus' ELSE v_source_type END,
+            p_reason,
+            p_reference_id,
+            v_bonus,
+            0,
+            'CNY',
+            NULL,
+            jsonb_build_object('component', 'bonus', 'source_ledger_id', v_recharge_ledger_id, 'legacy_site_overload', true)
+        );
+    END IF;
 
     IF ROUND(v_paid + v_bonus, 2) > 0
        AND public.fn_is_affiliate_qualifying_recharge_reason(p_reason) THEN
@@ -94,17 +145,31 @@ BEGIN
 
         IF FOUND THEN
             INSERT INTO public.points_balance (user_id, paid_balance, bonus_balance)
-            VALUES (v_pending_reward.inviter_id, 0, v_pending_reward.reward_points)
+            VALUES (v_pending_reward.inviter_id, 0, ROUND(v_pending_reward.reward_points, 2))
             ON CONFLICT (user_id) DO UPDATE SET
-                bonus_balance = public.points_balance.bonus_balance + EXCLUDED.bonus_balance,
+                bonus_balance = ROUND(public.points_balance.bonus_balance + EXCLUDED.bonus_balance, 2),
                 updated_at = NOW();
 
             INSERT INTO public.points_ledger (user_id, amount, reason, reference_id)
             VALUES (
                 v_pending_reward.inviter_id,
-                v_pending_reward.reward_points,
+                ROUND(v_pending_reward.reward_points, 2),
                 '拉新固定奖励 (下线首充激活)',
                 'REG_REWARD_UNLOCK_RECHARGE_' || v_recharge_ledger_id
+            )
+            RETURNING id INTO v_pending_reward_ledger_id;
+
+            PERFORM public.fn_create_wallet_point_lot(
+                v_pending_reward.inviter_id,
+                'cn',
+                'affiliate_commission',
+                '拉新固定奖励 (下线首充激活)',
+                'REG_REWARD_UNLOCK_RECHARGE_' || v_recharge_ledger_id,
+                ROUND(v_pending_reward.reward_points, 2),
+                0,
+                'CNY',
+                v_pending_reward_ledger_id,
+                jsonb_build_object('invitee_id', target_user_id, 'legacy_site_overload', true)
             );
 
             DELETE FROM public.pending_referral_rewards
@@ -114,6 +179,8 @@ BEGIN
 
     RETURN jsonb_build_object(
         'success', true,
+        'deduped', false,
+        'ledger_id', v_recharge_ledger_id,
         'paid', v_new_balance.paid_balance,
         'bonus', v_new_balance.bonus_balance,
         'total', v_new_balance.total_balance
@@ -139,9 +206,11 @@ DECLARE
     v_recharge_ledger_id UUID;
     v_existing_ledger RECORD;
     v_pending_reward RECORD;
+    v_pending_reward_ledger_id UUID;
     v_paid NUMERIC(12,2) := ROUND(COALESCE(p_paid, 0), 2);
     v_bonus NUMERIC(12,2) := ROUND(COALESCE(p_bonus, 0), 2);
     v_site VARCHAR := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
+    v_source_type VARCHAR(40);
 BEGIN
     IF COALESCE(auth.role(), '') <> 'service_role' THEN
         RAISE EXCEPTION 'Access denied';
@@ -201,10 +270,40 @@ BEGIN
     VALUES (target_user_id, v_site, v_paid, v_bonus)
     ON CONFLICT (user_id, site)
     DO UPDATE SET
-        paid_balance = public.points_balance.paid_balance + EXCLUDED.paid_balance,
-        bonus_balance = public.points_balance.bonus_balance + EXCLUDED.bonus_balance,
+        paid_balance = ROUND(public.points_balance.paid_balance + EXCLUDED.paid_balance, 2),
+        bonus_balance = ROUND(public.points_balance.bonus_balance + EXCLUDED.bonus_balance, 2),
         updated_at = NOW()
     RETURNING paid_balance, bonus_balance, total_balance INTO v_new_balance;
+
+    v_source_type := public.fn_classify_wallet_point_lot_source(p_reason, p_reference_id, v_paid, v_bonus);
+    IF v_paid > 0 THEN
+        PERFORM public.fn_create_wallet_point_lot(
+            target_user_id,
+            v_site,
+            v_source_type,
+            p_reason,
+            p_reference_id,
+            v_paid,
+            v_paid,
+            'CNY',
+            v_recharge_ledger_id,
+            jsonb_build_object('component', 'paid')
+        );
+    END IF;
+    IF v_bonus > 0 THEN
+        PERFORM public.fn_create_wallet_point_lot(
+            target_user_id,
+            v_site,
+            CASE WHEN v_source_type IN ('recharge', 'redemption_code') THEN 'activity_bonus' ELSE v_source_type END,
+            p_reason,
+            p_reference_id,
+            v_bonus,
+            0,
+            'CNY',
+            NULL,
+            jsonb_build_object('component', 'bonus', 'source_ledger_id', v_recharge_ledger_id)
+        );
+    END IF;
 
     IF ROUND(v_paid + v_bonus, 2) > 0
        AND public.fn_is_affiliate_qualifying_recharge_reason(p_reason) THEN
@@ -215,18 +314,32 @@ BEGIN
 
         IF FOUND THEN
             INSERT INTO public.points_balance (user_id, site, paid_balance, bonus_balance)
-            VALUES (v_pending_reward.inviter_id, v_site, 0, v_pending_reward.reward_points)
+            VALUES (v_pending_reward.inviter_id, v_site, 0, ROUND(v_pending_reward.reward_points, 2))
             ON CONFLICT (user_id, site) DO UPDATE SET
-                bonus_balance = public.points_balance.bonus_balance + EXCLUDED.bonus_balance,
+                bonus_balance = ROUND(public.points_balance.bonus_balance + EXCLUDED.bonus_balance, 2),
                 updated_at = NOW();
 
             INSERT INTO public.points_ledger (user_id, amount, reason, reference_id, site)
             VALUES (
                 v_pending_reward.inviter_id,
-                v_pending_reward.reward_points,
+                ROUND(v_pending_reward.reward_points, 2),
                 '拉新固定奖励 (下线首充激活)',
                 'REG_REWARD_UNLOCK_RECHARGE_' || v_recharge_ledger_id,
                 v_site
+            )
+            RETURNING id INTO v_pending_reward_ledger_id;
+
+            PERFORM public.fn_create_wallet_point_lot(
+                v_pending_reward.inviter_id,
+                v_site,
+                'affiliate_commission',
+                '拉新固定奖励 (下线首充激活)',
+                'REG_REWARD_UNLOCK_RECHARGE_' || v_recharge_ledger_id,
+                ROUND(v_pending_reward.reward_points, 2),
+                0,
+                'CNY',
+                v_pending_reward_ledger_id,
+                jsonb_build_object('invitee_id', target_user_id)
             );
 
             DELETE FROM public.pending_referral_rewards
@@ -236,6 +349,8 @@ BEGIN
 
     RETURN jsonb_build_object(
         'success', true,
+        'deduped', false,
+        'ledger_id', v_recharge_ledger_id,
         'paid', v_new_balance.paid_balance,
         'bonus', v_new_balance.bonus_balance,
         'total', v_new_balance.total_balance

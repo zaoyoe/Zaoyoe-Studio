@@ -33,6 +33,16 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
         'fn_recharge_points helper should preserve the site-aware overload'
     );
     assert.match(
+        rechargeSql,
+        /pg_advisory_xact_lock\(hashtext\(\s*'fn_recharge_points:'[\s\S]*p_reference_id[\s\S]*\)::BIGINT\)/,
+        'fn_recharge_points should serialize payment reference settlement before checking existing positive ledger rows'
+    );
+    assert.match(
+        rechargeSql,
+        /'deduped', true/,
+        'fn_recharge_points should return a deduped marker when a positive ledger row already exists for the reference'
+    );
+    assert.match(
         reclaimSql,
         /CREATE OR REPLACE FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(\s*p_target_user_id UUID,\s*p_amount NUMERIC\(12,2\),\s*p_reason TEXT DEFAULT 'Admin Deduction',\s*p_reference_id TEXT DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
         'refund reclaim helper should expose the site-aware breakdown signature'

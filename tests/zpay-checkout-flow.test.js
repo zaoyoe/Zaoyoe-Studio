@@ -192,10 +192,19 @@ test('createPaymentRequest launches ZPAY checkout and precreates the payment ord
                 if (table === 'payment_checkout_sessions' && query.mode === 'insert') {
                     const nextRow = {
                         id: `checkout-session-${state.checkoutSessions.length + 1}`,
+                        created_at: new Date().toISOString(),
                         ...query.payload
                     };
                     state.checkoutSessions.push(nextRow);
                     return { data: nextRow, error: null };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'select') {
+                    const rows = applyFilters(state.checkoutSessions, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
                 }
 
                 if (table === 'payment_checkout_sessions' && query.mode === 'update') {
@@ -391,10 +400,19 @@ test('createPaymentRequest rewrites managed ZPAY callback urls for intl site che
                 if (table === 'payment_checkout_sessions' && query.mode === 'insert') {
                     const nextRow = {
                         id: `checkout-session-${state.checkoutSessions.length + 1}`,
+                        created_at: new Date().toISOString(),
                         ...query.payload
                     };
                     state.checkoutSessions.push(nextRow);
                     return { data: nextRow, error: null };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'select') {
+                    const rows = applyFilters(state.checkoutSessions, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
                 }
 
                 if (table === 'payment_checkout_sessions' && query.mode === 'update') {
@@ -474,6 +492,396 @@ test('createPaymentRequest rewrites managed ZPAY callback urls for intl site che
         assert.equal(result.provider, 'zpay');
         assert.equal(state.paymentOrders[0].site, 'intl');
         assert.equal(state.checkoutSessions[0].site, 'intl');
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('createPaymentRequest reuses a fresh equivalent ZPAY checkout instead of creating another gateway order', async () => {
+    const state = {
+        checkoutSessions: [
+            {
+                id: 'checkout-session-existing',
+                session_key: 'PCS_ZPAY_EXISTING_1',
+                provider: 'zpay',
+                user_id: 'user-1',
+                site: 'intl',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 0.01,
+                bonus_points: 0,
+                granted_points: 0.01,
+                expected_amount: 0.02,
+                status: 'redirect_ready',
+                checkout_url: 'https://zpayz.cn/pay/existing',
+                query_mode: 'provider_order_no',
+                payment_order_id: 'payment-order-existing',
+                created_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                request_payload: {
+                    request: {
+                        client_payment_request_id: 'pay-intent-existing'
+                    }
+                },
+                provider_metadata: {
+                    client_payment_request_id: 'pay-intent-existing',
+                    display_name: '易支付',
+                    action: 'redirect',
+                    provider_order_no: 'ZPEXISTING12345678901234567890',
+                    summary: {
+                        out_trade_no: 'ZPEXISTING12345678901234567890',
+                        qrcode_url: 'https://zpayz.cn/pay/existing',
+                        expectedAmount: 0.02
+                    }
+                }
+            }
+        ],
+        paymentOrders: [
+            {
+                id: 'payment-order-existing',
+                provider: 'zpay',
+                provider_order_no: 'ZPEXISTING12345678901234567890',
+                checkout_session_id: 'checkout-session-existing',
+                status: 'pending'
+            }
+        ],
+        pointsPackages: [],
+        systemConfigRows: [
+            {
+                config_key: 'payment_channels',
+                config_value: {
+                    active_provider: 'zpay',
+                    providers: {
+                        mock: {
+                            enabled: false,
+                            display_name: '模拟支付',
+                            description: ''
+                        },
+                        zpay: {
+                            enabled: true,
+                            display_name: '易支付',
+                            checkout_url: 'https://zpayz.cn',
+                            pid: 'pid-123',
+                            payment_type: 'alipay',
+                            channel_ids: '',
+                            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+                            return_url: 'https://www.fatherkey.com/wallet',
+                            package_hint: '请完成易支付支付',
+                            custom_amount_hint: ''
+                        }
+                    }
+                }
+            },
+            {
+                config_key: 'recharge_options',
+                config_value: {
+                    custom_amount_enabled: true,
+                    custom_amount_min_points: 0.01,
+                    custom_amount_max_points: 100,
+                    custom_amount_step_points: 0.01,
+                    custom_amount_points_per_cny: 1,
+                    mock_payment_enabled: false
+                }
+            }
+        ]
+    };
+
+    const supabase = {
+        from(table) {
+            return createQueryBuilder(async (query) => {
+                if (table === 'system_config' && query.mode === 'select') {
+                    const rows = applyFilters(state.systemConfigRows, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_secret_store' && query.mode === 'select') {
+                    return {
+                        data: query.single || query.maybeSingle ? null : [],
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'select') {
+                    const rows = applyFilters(state.checkoutSessions, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'insert') {
+                    throw new Error('A reusable ZPAY checkout should avoid creating another checkout session');
+                }
+
+                if (table === 'payment_orders' && query.mode === 'select') {
+                    const rows = applyFilters(state.paymentOrders, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                throw new Error(`Unexpected table access in reuse test: ${table}/${query.mode}`);
+            });
+        }
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => {
+        throw new Error('A reusable ZPAY checkout should avoid hitting the gateway again');
+    };
+
+    try {
+        const result = await createPaymentRequest({
+            supabase,
+            user: {
+                id: 'user-1'
+            },
+            body: {
+                site: 'intl',
+                provider_key: 'zpay',
+                points_amount: 0.01,
+                client_payment_request_id: 'pay-intent-existing'
+            },
+            env: {
+                APP_BASE_URL: 'https://www.fatherkey.com',
+                ZPAY_PKEY: 'pkey-123',
+                PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+            },
+            requestHost: 'www.zaoyoe.xyz',
+            clientIp: '203.0.113.10',
+            userAgent: 'Mozilla/5.0'
+        });
+
+        assert.equal(result.success, true);
+        assert.equal(result.provider, 'zpay');
+        assert.equal(result.reused_existing_checkout, true);
+        assert.equal(result.checkout_url, 'https://zpayz.cn/pay/existing');
+        assert.equal(result.provider_order_no, 'ZPEXISTING12345678901234567890');
+        assert.equal(result.checkout_session_id, 'checkout-session-existing');
+        assert.equal(state.checkoutSessions.length, 1);
+        assert.equal(state.paymentOrders.length, 1);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('createPaymentRequest creates a new ZPAY order for a different client payment intent even with the same amount', async () => {
+    const state = {
+        checkoutSessions: [
+            {
+                id: 'checkout-session-existing',
+                session_key: 'PCS_ZPAY_EXISTING_1',
+                provider: 'zpay',
+                user_id: 'user-1',
+                site: 'intl',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 0.01,
+                bonus_points: 0,
+                granted_points: 0.01,
+                expected_amount: 0.02,
+                status: 'redirect_ready',
+                checkout_url: 'https://zpayz.cn/pay/existing',
+                query_mode: 'provider_order_no',
+                payment_order_id: 'payment-order-existing',
+                created_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                request_payload: {
+                    request: {
+                        client_payment_request_id: 'pay-intent-existing'
+                    }
+                },
+                provider_metadata: {
+                    client_payment_request_id: 'pay-intent-existing',
+                    display_name: '易支付',
+                    action: 'redirect',
+                    provider_order_no: 'ZPEXISTING12345678901234567890',
+                    summary: {
+                        out_trade_no: 'ZPEXISTING12345678901234567890',
+                        qrcode_url: 'https://zpayz.cn/pay/existing',
+                        expectedAmount: 0.02
+                    }
+                }
+            }
+        ],
+        paymentOrders: [
+            {
+                id: 'payment-order-existing',
+                provider: 'zpay',
+                provider_order_no: 'ZPEXISTING12345678901234567890',
+                checkout_session_id: 'checkout-session-existing',
+                status: 'pending'
+            }
+        ],
+        pointsPackages: [],
+        systemConfigRows: [
+            {
+                config_key: 'payment_channels',
+                config_value: {
+                    active_provider: 'zpay',
+                    providers: {
+                        mock: {
+                            enabled: false,
+                            display_name: '模拟支付',
+                            description: ''
+                        },
+                        zpay: {
+                            enabled: true,
+                            display_name: '易支付',
+                            checkout_url: 'https://zpayz.cn',
+                            pid: 'pid-123',
+                            payment_type: 'alipay',
+                            channel_ids: '',
+                            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+                            return_url: 'https://www.fatherkey.com/wallet',
+                            package_hint: '请完成易支付支付',
+                            custom_amount_hint: ''
+                        }
+                    }
+                }
+            },
+            {
+                config_key: 'recharge_options',
+                config_value: {
+                    custom_amount_enabled: true,
+                    custom_amount_min_points: 0.01,
+                    custom_amount_max_points: 100,
+                    custom_amount_step_points: 0.01,
+                    custom_amount_points_per_cny: 1,
+                    mock_payment_enabled: false
+                }
+            }
+        ]
+    };
+
+    const supabase = {
+        from(table) {
+            return createQueryBuilder(async (query) => {
+                if (table === 'system_config' && query.mode === 'select') {
+                    const rows = applyFilters(state.systemConfigRows, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_secret_store' && query.mode === 'select') {
+                    return {
+                        data: query.single || query.maybeSingle ? null : [],
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'select') {
+                    const rows = applyFilters(state.checkoutSessions, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'insert') {
+                    const nextRow = {
+                        id: `checkout-session-${state.checkoutSessions.length + 1}`,
+                        created_at: new Date().toISOString(),
+                        ...query.payload
+                    };
+                    state.checkoutSessions.push(nextRow);
+                    return { data: nextRow, error: null };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'update') {
+                    const rows = applyFilters(state.checkoutSessions, query);
+                    rows.forEach((row) => Object.assign(row, query.payload || {}));
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'select') {
+                    const rows = applyFilters(state.paymentOrders, query);
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'insert') {
+                    const nextRow = {
+                        id: `payment-order-${state.paymentOrders.length + 1}`,
+                        ...query.payload
+                    };
+                    state.paymentOrders.push(nextRow);
+                    return { data: nextRow, error: null };
+                }
+
+                throw new Error(`Unexpected table access in new intent test: ${table}/${query.mode}`);
+            });
+        }
+    };
+
+    let gatewayRequestCount = 0;
+    const originalFetch = global.fetch;
+    global.fetch = async (url, request) => {
+        gatewayRequestCount += 1;
+        assert.equal(String(url), 'https://zpayz.cn/mapi.php');
+        assert.match(String(request.body || ''), /out_trade_no=ZP[A-Z0-9]{30}/);
+
+        return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            async text() {
+                return JSON.stringify({
+                    code: 1,
+                    msg: 'success',
+                    trade_no: 'TRADE_ZPAY_NEW_INTENT',
+                    O_id: 'OID_ZPAY_NEW_INTENT',
+                    payurl: 'https://zpayz.cn/pay/new-intent'
+                });
+            }
+        };
+    };
+
+    try {
+        const result = await createPaymentRequest({
+            supabase,
+            user: {
+                id: 'user-1'
+            },
+            body: {
+                site: 'intl',
+                provider_key: 'zpay',
+                points_amount: 0.01,
+                client_payment_request_id: 'pay-intent-second'
+            },
+            env: {
+                APP_BASE_URL: 'https://www.fatherkey.com',
+                ZPAY_PKEY: 'pkey-123',
+                PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+            },
+            requestHost: 'www.zaoyoe.xyz',
+            clientIp: '203.0.113.10',
+            userAgent: 'Mozilla/5.0'
+        });
+
+        assert.equal(result.success, true);
+        assert.equal(result.provider, 'zpay');
+        assert.notEqual(result.reused_existing_checkout, true);
+        assert.equal(result.checkout_url, 'https://zpayz.cn/pay/new-intent');
+        assert.equal(gatewayRequestCount, 1);
+        assert.equal(state.checkoutSessions.length, 2);
+        assert.equal(state.paymentOrders.length, 2);
+        assert.equal(state.checkoutSessions[1].request_payload.request.client_payment_request_id, 'pay-intent-second');
+        assert.equal(state.checkoutSessions[1].provider_metadata.client_payment_request_id, 'pay-intent-second');
+        assert.equal(state.paymentOrders[1].raw_payload.request.client_payment_request_id, 'pay-intent-second');
+        assert.equal(state.paymentOrders[1].provider_order_no, result.provider_order_no);
+        assert.notEqual(result.checkout_session_id, 'checkout-session-existing');
     } finally {
         global.fetch = originalFetch;
     }

@@ -24,6 +24,27 @@
     const WALLET_AUTH_TOKEN_REFRESH_SKEW_SECONDS = 60;
     const WALLET_AUTH_RESOLVE_TIMEOUT_MS = 4_000;
 
+    function buildPaymentCreateDedupeKey(payload = {}) {
+        const normalizedPayload = {
+            provider_key: String(payload.provider_key || '').trim().toLowerCase(),
+            package_id: String(payload.package_id || '').trim(),
+            package_name: String(payload.package_name || '').trim(),
+            points_amount: normalizePointValue(payload.points_amount, 0),
+            paid_amount: Number.isFinite(Number(payload.paid_amount))
+                ? Math.round(Number(payload.paid_amount) * 100) / 100
+                : null,
+            site: String(payload.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn'
+        };
+        return JSON.stringify(normalizedPayload);
+    }
+
+    function buildPaymentCreateRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return `pay_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+    }
+
     function isUnsafeDirectRechargeAllowed() {
         const host = String(window.location.hostname || '').toLowerCase();
         return host === 'localhost' || host === '127.0.0.1';
@@ -670,32 +691,57 @@
         },
 
         async createPaymentRequest(payload = {}) {
-            const token = await this._getAccessToken();
-            if (!token) throw new Error('请先登录');
-
-            const response = await fetch('/api/payments/create', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    ...payload,
-                    site: payload.site || window.SiteConfig?.site || 'cn'
-                })
-            });
-
-            const responsePayload = await response.json().catch(() => ({}));
-            if (!response.ok || responsePayload?.success === false) {
-                const error = new Error(responsePayload?.message || '创建支付请求失败');
-                error.code = String(responsePayload?.code || responsePayload?.payment_error?.code || '').trim();
-                error.rawMessage = String(responsePayload?.raw_message || responsePayload?.payment_error?.raw_message || responsePayload?.message || '').trim();
-                error.payload = responsePayload || null;
-                error.paymentError = responsePayload?.payment_error || null;
-                throw error;
+            const dedupeKey = buildPaymentCreateDedupeKey(payload);
+            if (!(this._paymentCreateRequestPromises instanceof Map)) {
+                this._paymentCreateRequestPromises = new Map();
             }
 
-            return responsePayload;
+            const existingRequest = this._paymentCreateRequestPromises.get(dedupeKey);
+            if (existingRequest) {
+                return existingRequest;
+            }
+
+            const request = (async () => {
+                const token = await this._getAccessToken();
+                if (!token) throw new Error('请先登录');
+
+                const clientPaymentRequestId = String(
+                    payload.client_payment_request_id
+                    || payload.clientPaymentRequestId
+                    || buildPaymentCreateRequestId()
+                ).trim();
+                const response = await fetch('/api/payments/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        ...payload,
+                        client_payment_request_id: clientPaymentRequestId,
+                        site: payload.site || window.SiteConfig?.site || 'cn'
+                    })
+                });
+
+                const responsePayload = await response.json().catch(() => ({}));
+                if (!response.ok || responsePayload?.success === false) {
+                    const error = new Error(responsePayload?.message || '创建支付请求失败');
+                    error.code = String(responsePayload?.code || responsePayload?.payment_error?.code || '').trim();
+                    error.rawMessage = String(responsePayload?.raw_message || responsePayload?.payment_error?.raw_message || responsePayload?.message || '').trim();
+                    error.payload = responsePayload || null;
+                    error.paymentError = responsePayload?.payment_error || null;
+                    throw error;
+                }
+
+                return responsePayload;
+            })().finally(() => {
+                if (this._paymentCreateRequestPromises instanceof Map) {
+                    this._paymentCreateRequestPromises.delete(dedupeKey);
+                }
+            });
+
+            this._paymentCreateRequestPromises.set(dedupeKey, request);
+            return request;
         },
 
         async getPaymentRequestStatus(payload = {}) {

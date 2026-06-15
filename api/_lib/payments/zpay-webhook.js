@@ -176,6 +176,23 @@ async function applyRequestRateLimit(req, res, {
 }
 
 async function recordPaymentEvent(supabase, eventPayload) {
+    const normalizedEventKey = String(eventPayload?.event_key || '').trim();
+    if (normalizedEventKey) {
+        const { data: existingEvent, error: existingLookupError } = await supabase
+            .from('payment_events')
+            .select('id')
+            .eq('event_key', normalizedEventKey)
+            .limit(1);
+
+        if (existingLookupError) {
+            throw existingLookupError;
+        }
+
+        if (Array.isArray(existingEvent) && existingEvent.length > 0) {
+            return { duplicate: true, id: existingEvent[0]?.id || null };
+        }
+    }
+
     const { data, error } = await supabase
         .from('payment_events')
         .insert(eventPayload)

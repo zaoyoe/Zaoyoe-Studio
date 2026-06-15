@@ -40,6 +40,21 @@ function createSupabaseMock(state) {
         from(table) {
             if (table === 'payment_events') {
                 return {
+                    select() {
+                        return {
+                            eq(column, value) {
+                                state.eventLookupWhere = { column, value };
+                                return {
+                                    limit() {
+                                        return {
+                                            data: state.existingPaymentEvents || [],
+                                            error: null
+                                        };
+                                    }
+                                };
+                            }
+                        };
+                    },
                     insert(payload) {
                         state.insertedEvent = payload;
                         return {
@@ -384,6 +399,70 @@ test('zpay webhook uses strict verification mode when production source allowlis
         assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
         assert.equal(state.finalizedEvent.signature_valid, true);
         assert.equal(state.finalizedEvent.amount_valid, true);
+    });
+});
+
+test('zpay webhook ignores a duplicate event key before crediting points', async () => {
+    const state = {
+        existingPaymentEvents: [
+            {
+                id: 'event-already-processed'
+            }
+        ],
+        existingPaymentOrder: {
+            id: 'payment-order-duplicate-event',
+            user_id: 'user-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP123',
+            checkout_session_id: 'checkout-session-1',
+            site: 'cn',
+            package_id: 'pkg-1',
+            package_name: '月度积分充值',
+            expected_amount: 12.34,
+            paid_amount: null,
+            points_amount: 100,
+            status: 'pending',
+            sign_verified: false,
+            amount_verified: false,
+            provider_metadata: {
+                payment_type: 'alipay'
+            },
+            raw_payload: {}
+        }
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_ENV: 'production',
+                APP_BASE_URL: 'https://www.fatherkey.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8',
+                ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
+            }
+        });
+        const req = {
+            method: 'GET',
+            url: '/api/payments/zpay/webhook?out_trade_no=ZP123&trade_no=TRADE-1&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=%7B%22user_id%22%3A%22user-1%22%7D',
+            headers: {
+                host: 'www.fatherkey.com',
+                'x-forwarded-for': '203.0.113.10'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'success');
+        assert.deepEqual(state.eventLookupWhere, {
+            column: 'event_key',
+            value: 'zpay:ZP123:TRADE-1:TRADE_SUCCESS'
+        });
+        assert.equal(state.insertedEvent, undefined);
+        assert.equal(state.queryOrderRequest, undefined);
+        assert.equal(state.rechargePayload, undefined);
+        assert.equal(state.paymentOrderPatch, undefined);
     });
 });
 

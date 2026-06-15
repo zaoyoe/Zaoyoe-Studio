@@ -43,6 +43,31 @@ test('shop realtime catalog refresh bypasses stale HTTP and worker caches', () =
         'force refreshes should send no-cache request headers for intermediaries that honor them'
     );
     assert.match(
+        shopClient,
+        /const SHOP_EMPTY_CATALOG_REFRESH_GRACE_MS = 90000;/,
+        'empty catalog snapshots should get a short grace window before replacing visible products'
+    );
+    assert.match(
+        shopClient,
+        /shouldPreserveVisibleShopCatalogOnEmptyRefresh: function \(\{ forceRefresh = false, hasRenderedCards = null \} = \{\}\)[\s\S]*return now - firstEmptyAt < SHOP_EMPTY_CATALOG_REFRESH_GRACE_MS;/,
+        'storefront should preserve already visible products during short-lived empty catalog refreshes'
+    );
+    assert.match(
+        shopClient,
+        /cached\.products\.length === 0/,
+        'empty browser catalog snapshots should not be reused as valid product data'
+    );
+    assert.match(
+        shopClient,
+        /fetchProductsFromServer: async function \(category = '', \{ forceRefresh = false \} = \{\}\) \{[\s\S]*this\.fetchShopCatalogFromApi\(\{ forceRefresh \}\)/,
+        'force-refresh product loads should bypass browser/catalog caches all the way to the catalog fetch'
+    );
+    assert.match(
+        shopClient,
+        /if \(\(!data \|\| data\.length === 0\)[\s\S]*this\.shouldPreserveVisibleShopCatalogOnEmptyRefresh\(\{ forceRefresh, hasRenderedCards \}\)[\s\S]*Ignored empty product refresh while products are already visible/s,
+        'product refresh should not transition the grid to empty when a transient empty catalog arrives'
+    );
+    assert.match(
         serviceWorker,
         /LEGACY_CACHE_NAME_RE = \/\^\(\?:prompts-gallery\|static\|images\)-v\/i/,
         'legacy worker cleanup should target the historical static/image cache families'
