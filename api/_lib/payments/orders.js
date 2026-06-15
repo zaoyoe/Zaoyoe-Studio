@@ -35,6 +35,7 @@ const mockProvider = getPaymentProviderAdapter('mock');
 const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
 const ACTIVE_CHECKOUT_SESSION_STATUSES = ['created', 'redirect_ready', 'failed'];
 const TERMINAL_CHECKOUT_SESSION_STATUSES = ['completed', 'cancelled', 'expired'];
+const REUSABLE_PAYMENT_CREATE_LOOKBACK_MINUTES = 3;
 const PENDING_PROVIDER_ORDER_PREFIX = 'PENDING';
 const CUSTOM_RECHARGE_QUOTE_PREFIX = 'crq';
 const PAYMENT_INTENT_CLAIM_PREFIX = 'pic';
@@ -57,6 +58,10 @@ function sanitizeText(value, fallback = '', maxLength = 240) {
     if (typeof value !== 'string') return fallback;
     const normalized = value.trim();
     return normalized ? normalized.slice(0, maxLength) : fallback;
+}
+
+function normalizeClientPaymentRequestId(value) {
+    return sanitizeText(value, '', 160);
 }
 
 function normalizeCurrency(value, fallback = null) {
@@ -1111,6 +1116,230 @@ async function loadCheckoutSessionById(supabase, checkoutSessionId) {
     }
 
     return data || null;
+}
+
+function getCheckoutSessionSummary(checkoutSession = {}) {
+    const providerMetadata = checkoutSession?.provider_metadata && typeof checkoutSession.provider_metadata === 'object'
+        ? checkoutSession.provider_metadata
+        : {};
+    const summary = providerMetadata.summary && typeof providerMetadata.summary === 'object'
+        ? providerMetadata.summary
+        : {};
+
+    return summary && typeof summary === 'object' ? summary : {};
+}
+
+function getReusableCheckoutSessionPaymentUrl(checkoutSession = {}) {
+    const summary = getCheckoutSessionSummary(checkoutSession);
+    return sanitizeText(
+        checkoutSession?.checkout_url
+            || summary.checkout_url
+            || summary.checkoutUrl
+            || summary.qrcode_url
+            || summary.qrcode_img_url,
+        '',
+        1000
+    );
+}
+
+function getReusableCheckoutSessionProviderOrderNo(checkoutSession = {}) {
+    return getCheckoutSessionProviderOrderNo(checkoutSession);
+}
+
+function getCheckoutSessionClientPaymentRequestId(checkoutSession = {}) {
+    const metadata = checkoutSession?.provider_metadata && typeof checkoutSession.provider_metadata === 'object'
+        ? checkoutSession.provider_metadata
+        : {};
+    const requestPayload = checkoutSession?.request_payload && typeof checkoutSession.request_payload === 'object'
+        ? checkoutSession.request_payload
+        : {};
+    const request = requestPayload.request && typeof requestPayload.request === 'object'
+        ? requestPayload.request
+        : {};
+
+    return normalizeClientPaymentRequestId(
+        metadata.client_payment_request_id
+        || metadata.clientPaymentRequestId
+        || request.client_payment_request_id
+        || request.clientPaymentRequestId
+    );
+}
+
+function isReusableCheckoutSessionForPaymentRequest(checkoutSession = {}, {
+    providerKey = '',
+    userId = '',
+    site = '',
+    packageId = '',
+    packageName = '',
+    grantedPoints = 0,
+    paidAmount = null,
+    clientPaymentRequestId = ''
+} = {}) {
+    const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+    const normalizedUserId = String(userId || '').trim();
+    const normalizedSite = requireSupportedSite(site || checkoutSession?.site || 'cn');
+    const normalizedClientPaymentRequestId = normalizeClientPaymentRequestId(clientPaymentRequestId);
+    const status = sanitizeText(checkoutSession?.status, '', 40).toLowerCase();
+
+    if (!normalizedProviderKey || !normalizedUserId) return false;
+    if (!normalizedClientPaymentRequestId) return false;
+    if (getCheckoutSessionClientPaymentRequestId(checkoutSession) !== normalizedClientPaymentRequestId) return false;
+    if (checkoutSession?.provider !== normalizedProviderKey) return false;
+    if (checkoutSession?.user_id !== normalizedUserId) return false;
+    if (checkoutSession?.site !== normalizedSite) return false;
+    if (status !== 'redirect_ready') return false;
+    if (!getReusableCheckoutSessionPaymentUrl(checkoutSession)) return false;
+
+    const nowMs = Date.now();
+    const createdAtMs = Date.parse(String(checkoutSession?.created_at || ''));
+    if (!Number.isFinite(createdAtMs) || (nowMs - createdAtMs) > REUSABLE_PAYMENT_CREATE_LOOKBACK_MINUTES * 60_000) {
+        return false;
+    }
+
+    const expiresMs = Date.parse(String(checkoutSession?.expires_at || ''));
+    if (Number.isFinite(expiresMs) && expiresMs <= nowMs) return false;
+
+    const expectedAmount = normalizeCurrency(paidAmount, null);
+    const sessionExpectedAmount = normalizeCurrency(checkoutSession?.expected_amount, null);
+    if (expectedAmount !== null && sessionExpectedAmount !== expectedAmount) return false;
+
+    const expectedPoints = normalizePointAmount(grantedPoints, 0);
+    const sessionGrantedPoints = normalizePointAmount(checkoutSession?.granted_points, 0);
+    if (expectedPoints > 0 && sessionGrantedPoints !== expectedPoints) return false;
+
+    const normalizedPackageId = String(packageId || '').trim();
+    if (normalizedPackageId) {
+        if (String(checkoutSession?.package_id || '').trim() !== normalizedPackageId) return false;
+    } else if (checkoutSession?.package_id) {
+        return false;
+    }
+
+    const normalizedPackageName = sanitizeText(packageName, '', 120);
+    if (normalizedPackageName && sanitizeText(checkoutSession?.package_name, '', 120) !== normalizedPackageName) {
+        return false;
+    }
+
+    return true;
+}
+
+function isReusablePaymentOrderForCheckoutSession(paymentOrder = null, checkoutSession = {}) {
+    if (!paymentOrder?.id) return false;
+    if (String(paymentOrder.checkout_session_id || '').trim() !== String(checkoutSession?.id || '').trim()) {
+        return false;
+    }
+
+    const status = sanitizeText(paymentOrder.status, '', 40).toLowerCase();
+    return !['paid', 'redeemed', 'pending_review', 'amount_mismatch', 'rejected', 'refunded'].includes(status);
+}
+
+async function findReusableCheckoutSessionForPaymentRequest(supabase, context = {}) {
+    const normalizedProviderKey = String(context.providerKey || '').trim().toLowerCase();
+    const normalizedUserId = String(context.userId || '').trim();
+    const normalizedSite = requireSupportedSite(context.site || 'cn');
+    const normalizedClientPaymentRequestId = normalizeClientPaymentRequestId(context.clientPaymentRequestId);
+    if (!supabase || !normalizedProviderKey || !normalizedUserId || !normalizedClientPaymentRequestId) return null;
+
+    let query = supabase
+        .from('payment_checkout_sessions')
+        .select('*')
+        .eq('provider', normalizedProviderKey)
+        .eq('user_id', normalizedUserId)
+        .eq('site', normalizedSite)
+        .eq('status', 'redirect_ready')
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+    if (context.packageId) {
+        query = query.eq('package_id', context.packageId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+        if (isMissingDatabaseStructureError(error)) return null;
+        throw new Error(error.message || 'Failed to inspect reusable payment checkout sessions');
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    for (const session of rows) {
+        if (!isReusableCheckoutSessionForPaymentRequest(session, context)) {
+            continue;
+        }
+
+        const providerOrderNo = getReusableCheckoutSessionProviderOrderNo(session);
+        let linkedPaymentOrder = null;
+        if (session.payment_order_id) {
+            linkedPaymentOrder = await loadPaymentOrderForLinking(supabase, session.payment_order_id);
+        } else if (providerOrderNo) {
+            linkedPaymentOrder = await loadPaymentOrderByProviderOrderNo(supabase, normalizedProviderKey, providerOrderNo);
+        }
+
+        if (!linkedPaymentOrder?.id || isReusablePaymentOrderForCheckoutSession(linkedPaymentOrder, session)) {
+            return session;
+        }
+    }
+
+    return null;
+}
+
+async function buildReusablePaymentRequestResponse({
+    checkoutSession,
+    providerKey,
+    adapter,
+    packageName,
+    grantedPoints,
+    paidAmount,
+    paymentPricing,
+    customQuote = null
+}) {
+    const providerMetadata = checkoutSession?.provider_metadata && typeof checkoutSession.provider_metadata === 'object'
+        ? checkoutSession.provider_metadata
+        : {};
+    const summary = getCheckoutSessionSummary(checkoutSession);
+    const pricingPayload = buildPaymentPricingPayload(paymentPricing || providerMetadata.payment_pricing || summary);
+    const providerSummary = {
+        ...summary,
+        ...pricingPayload
+    };
+    const providerOrderNo = getReusableCheckoutSessionProviderOrderNo(checkoutSession);
+
+    return {
+        success: true,
+        provider: providerKey,
+        mode: providerMetadata.action || 'redirect',
+        reused_existing_checkout: true,
+        display_name: providerMetadata.display_name || adapter?.label || '当前支付通道',
+        checkout_url: getReusableCheckoutSessionPaymentUrl(checkoutSession),
+        package_name: packageName,
+        points_amount: normalizePointValue(grantedPoints, 0),
+        paid_amount: normalizeCurrency(paidAmount, null),
+        base_amount: pricingPayload.base_amount,
+        payment_fee_amount: pricingPayload.payment_fee_amount,
+        payment_fee_rate: pricingPayload.payment_fee_rate,
+        payment_fee_label: pricingPayload.payment_fee_label,
+        query_mode: checkoutSession.query_mode || 'provider_order_no',
+        provider_order_no: providerOrderNo || null,
+        checkout_session_id: checkoutSession.id,
+        checkout_session_key: checkoutSession.session_key,
+        checkout_session_status: checkoutSession.status || 'redirect_ready',
+        message: providerMetadata.message || `${providerMetadata.display_name || adapter?.label || '当前支付通道'}已准备就绪。`,
+        provider_summary: providerSummary,
+        custom_quote: customQuote
+            ? {
+                quote_id: customQuote.quoteId,
+                token: customQuote.token,
+                issued_at: customQuote.issuedAt,
+                expires_at: customQuote.expiresAt,
+                points_amount: customQuote.pointsAmount,
+                paid_amount: paidAmount,
+                base_amount: pricingPayload.base_amount,
+                payment_fee_amount: pricingPayload.payment_fee_amount,
+                payment_fee_rate: pricingPayload.payment_fee_rate,
+                pricing_mode: customQuote.pricingMode,
+                points_per_cny: customQuote.pointsPerCny
+            }
+            : (providerMetadata.custom_quote || null),
+        payment_claim: null
+    };
 }
 
 async function loadPaymentOrderForLinking(supabase, paymentOrderId) {
@@ -2319,6 +2548,7 @@ async function createCheckoutSession({
     paymentPricing = null
 }) {
     const normalizedSite = requireSupportedSite(site);
+    const clientPaymentRequestId = normalizeClientPaymentRequestId(body.client_payment_request_id || body.clientPaymentRequestId);
     const customQuotePayload = customQuote
         ? {
             quote_id: customQuote.quoteId,
@@ -2361,11 +2591,13 @@ async function createCheckoutSession({
                 paid_amount: paidAmount,
                 site: normalizedSite,
                 is_custom_recharge: isCustomRecharge,
+                client_payment_request_id: clientPaymentRequestId || null,
                 custom_quote: customQuotePayload,
                 payment_pricing: pricingPayload
             }
         },
         provider_metadata: {
+            client_payment_request_id: clientPaymentRequestId || null,
             charge_type: isCustomRecharge ? 'custom' : 'package',
             custom_quote_id: customQuotePayload?.quote_id || null,
             custom_quote_expires_at: customQuotePayload?.expires_at || null,
@@ -2932,6 +3164,7 @@ async function createPaymentRequest({
     const requestedProviderKey = String(body.provider_key || '').trim().toLowerCase();
     const packageId = body.package_id ? String(body.package_id).trim() : '';
     const isCustomRecharge = !packageId;
+    const clientPaymentRequestId = normalizeClientPaymentRequestId(body.client_payment_request_id || body.clientPaymentRequestId);
     const requestOrigin = resolveSiteRequestOrigin({
         site,
         requestHost,
@@ -3016,6 +3249,35 @@ async function createPaymentRequest({
         baseAmount: basePaidAmount
     });
     paidAmount = paymentPricing.payableAmount;
+
+    if (providerKey === 'zpay') {
+        const reusableCheckoutSession = await runPaymentWriteOperation(
+            'find reusable payment checkout session',
+            (client) => findReusableCheckoutSessionForPaymentRequest(client, {
+                providerKey,
+                userId: user.id,
+                site,
+                packageId,
+                packageName,
+                grantedPoints,
+                paidAmount,
+                clientPaymentRequestId
+            })
+        );
+
+        if (reusableCheckoutSession) {
+            return buildReusablePaymentRequestResponse({
+                checkoutSession: reusableCheckoutSession,
+                providerKey,
+                adapter,
+                packageName,
+                grantedPoints,
+                paidAmount,
+                paymentPricing,
+                customQuote: null
+            });
+        }
+    }
 
     const checkoutSession = await runPaymentWriteOperation(
         'create payment checkout session',

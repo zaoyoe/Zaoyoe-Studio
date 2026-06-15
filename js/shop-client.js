@@ -496,6 +496,7 @@ const SHOP_REALTIME_RETRY_MS = 30000;
 const SHOP_REALTIME_FALLBACK_REFRESH_MS = 30000;
 const SHOP_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
 const SHOP_CATALOG_BROWSER_CACHE_TTL_MS = 30000;
+const SHOP_EMPTY_CATALOG_REFRESH_GRACE_MS = 90000;
 const SHOP_CATALOG_BROWSER_CACHE_PREFIX = 'zaoyoe_shop_catalog_v2';
 
 function getShopPublicApiBaseUrl() {
@@ -598,6 +599,7 @@ const ShopClient = {
     allProductsCache: null,
     allProductsPromise: null,
     shopCatalogPromise: null,
+    lastEmptyShopCatalogRefreshAt: 0,
     prefetchedShopRevalidationPromise: null,
     agentPricesCache: null,
     agentPricesCacheSite: '',
@@ -3223,6 +3225,13 @@ const ShopClient = {
     refreshStorefrontCatalogFromRealtime: async function () {
         const catalog = await this.fetchShopCatalogFromApi({ forceRefresh: true });
         const products = Array.isArray(catalog?.products) ? this.filterProductsForCurrentSite(catalog.products) : [];
+        if (products.length === 0 && this.shouldPreserveVisibleShopCatalogOnEmptyRefresh({ forceRefresh: true })) {
+            console.warn('[ShopRealtime] Ignored empty catalog refresh while products are already visible.');
+            return;
+        }
+        if (products.length > 0) {
+            this.markShopCatalogRefreshNonEmpty();
+        }
         const categories = this.filterShopCategoriesWithVisibleProducts(
             Array.isArray(catalog?.categories) ? catalog.categories : [],
             products
@@ -10155,6 +10164,49 @@ const ShopClient = {
         return null;
     },
 
+    hasRenderedShopProductCards: function (container = document.getElementById('userShopGrid')) {
+        return !!container?.querySelector?.('.shop-card[data-product-id]');
+    },
+
+    hasNonEmptyShopProductCache: function () {
+        if (Array.isArray(this.allProductsCache) && this.allProductsCache.length > 0) {
+            return true;
+        }
+
+        return Object.values(this.categoryProductsCache || {}).some((products) => (
+            Array.isArray(products) && products.length > 0
+        ));
+    },
+
+    shouldPreserveVisibleShopCatalogOnEmptyRefresh: function ({ forceRefresh = false, hasRenderedCards = null } = {}) {
+        if (hasRenderedCards === null) {
+            hasRenderedCards = this.hasRenderedShopProductCards();
+        }
+
+        if (!hasRenderedCards && !this.hasNonEmptyShopProductCache()) {
+            return false;
+        }
+
+        const now = Date.now();
+        const firstEmptyAt = Number(this.lastEmptyShopCatalogRefreshAt || 0);
+        if (!firstEmptyAt) {
+            this.lastEmptyShopCatalogRefreshAt = now;
+            return true;
+        }
+
+        return now - firstEmptyAt < SHOP_EMPTY_CATALOG_REFRESH_GRACE_MS;
+    },
+
+    markShopCatalogRefreshNonEmpty: function () {
+        this.lastEmptyShopCatalogRefreshAt = 0;
+    },
+
+    shouldSkipEmptyShopProductCacheWrite: function (products = []) {
+        const isEmpty = !Array.isArray(products) || products.length === 0;
+        const firstEmptyAt = Number(this.lastEmptyShopCatalogRefreshAt || 0);
+        return Boolean(isEmpty && firstEmptyAt && Date.now() - firstEmptyAt < SHOP_EMPTY_CATALOG_REFRESH_GRACE_MS);
+    },
+
     persistPrefetchedShopData: function () {
         if (!Array.isArray(this.allProductsCache) || this.allProductsCache.length === 0) return;
 
@@ -11669,6 +11721,7 @@ const ShopClient = {
                 || ageMs > SHOP_CATALOG_BROWSER_CACHE_TTL_MS
                 || !Array.isArray(cached?.categories)
                 || !Array.isArray(cached?.products)
+                || cached.products.length === 0
             ) {
                 return null;
             }
@@ -11794,13 +11847,16 @@ const ShopClient = {
                     products
                 });
 
-                this.writeShopCatalogBrowserCache({
-                    site: currentSite,
-                    category,
-                    language: currentLanguage,
-                    categories: normalizedCatalog.categories,
-                    products: normalizedCatalog.products
-                });
+                if (normalizedCatalog.products.length > 0) {
+                    this.markShopCatalogRefreshNonEmpty();
+                    this.writeShopCatalogBrowserCache({
+                        site: currentSite,
+                        category,
+                        language: currentLanguage,
+                        categories: normalizedCatalog.categories,
+                        products: normalizedCatalog.products
+                    });
+                }
 
                 return {
                     categories: normalizedCatalog.categories,
@@ -11822,13 +11878,24 @@ const ShopClient = {
         return trackedRequest;
     },
 
-    fetchProductsFromServer: async function (category = '') {
-        const catalog = await this.fetchShopCatalogFromApi();
+    fetchProductsFromServer: async function (category = '', { forceRefresh = false } = {}) {
+        const catalog = await this.fetchShopCatalogFromApi({ forceRefresh });
+        const catalogProducts = Array.isArray(catalog?.products)
+            ? this.filterProductsForCurrentSite(catalog.products)
+            : [];
+        if (Array.isArray(catalog?.products)
+            && catalogProducts.length === 0
+            && this.shouldPreserveVisibleShopCatalogOnEmptyRefresh({ forceRefresh })) {
+            return [];
+        }
         if (Array.isArray(catalog?.categories)) {
             this.availableCategories = catalog.categories;
             if (!category) {
                 category = this.normalizeCurrentShopCategoryFromEntries(this.getCategoryFilterEntries(catalog.categories));
             }
+        }
+        if (catalogProducts.length > 0) {
+            this.markShopCatalogRefreshNonEmpty();
         }
         return this.filterProductsForCategory(catalog?.products || [], category);
     },
@@ -11851,9 +11918,9 @@ const ShopClient = {
                 return this.allProductsPromise;
             }
 
-            const request = this.fetchProductsFromServer('all')
+            const request = this.fetchProductsFromServer('all', { forceRefresh })
                 .then(products => {
-                    if (cacheEpoch === this.productsCacheEpoch) {
+                    if (cacheEpoch === this.productsCacheEpoch && !this.shouldSkipEmptyShopProductCacheWrite(products)) {
                         this.hydrateProductCaches(products);
                     }
                     return products;
@@ -11872,9 +11939,9 @@ const ShopClient = {
             return this.categoryProductsPromises[category];
         }
 
-        const request = this.fetchProductsFromServer(category)
+        const request = this.fetchProductsFromServer(category, { forceRefresh })
             .then(products => {
-                if (cacheEpoch === this.productsCacheEpoch) {
+                if (cacheEpoch === this.productsCacheEpoch && !this.shouldSkipEmptyShopProductCacheWrite(products)) {
                     this.cacheCategoryProducts(category, products);
                 }
                 return products;
@@ -12091,6 +12158,15 @@ const ShopClient = {
             const catalogProducts = Array.isArray(catalog?.products)
                 ? this.filterProductsForCurrentSite(catalog.products)
                 : [];
+            if (Array.isArray(catalog?.products)
+                && catalogProducts.length === 0
+                && this.shouldPreserveVisibleShopCatalogOnEmptyRefresh({ forceRefresh })) {
+                this.updateCategoryFilterButtons();
+                return;
+            }
+            if (catalogProducts.length > 0) {
+                this.markShopCatalogRefreshNonEmpty();
+            }
             if (Array.isArray(catalog?.products) && catalog.products.length > 0 && (forceRefresh || !Array.isArray(this.allProductsCache))) {
                 this.hydrateProductCaches(catalogProducts);
             }
@@ -12164,6 +12240,15 @@ const ShopClient = {
 
             if (requestToken !== this.productsRequestToken) return;
 
+            if ((!data || data.length === 0)
+                && this.shouldPreserveVisibleShopCatalogOnEmptyRefresh({ forceRefresh, hasRenderedCards })) {
+                console.warn('[Shop] Ignored empty product refresh while products are already visible.');
+                this.renderCart();
+                this.scheduleBackgroundProductPrefetch();
+                void this.fulfillPendingProductSpotlight();
+                return;
+            }
+
             if (!data || data.length === 0) {
                 this.transitionProductGrid(container, [], { empty: true });
                 this.renderCart();
@@ -12172,6 +12257,7 @@ const ShopClient = {
                 return;
             }
 
+            this.markShopCatalogRefreshNonEmpty();
             this.warmShopCardLeadImages(data);
             const renderedCards = this.buildProductCardElements(data, agentPrices);
             if (renderedCards.length === 0) {
