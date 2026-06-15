@@ -8710,9 +8710,9 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     opacity: 1;
 }
 
-#shopPurchaseModal .shop-sku-option--pill.is-sold-out.is-selected,
-#shopPurchaseModal .shop-sku-spec-option.is-sold-out.is-selected {
-    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.68);
+#shopPurchaseModal .shop-sku-option--pill.is-sold-out.is-selected:not(.is-disabled):not(:disabled),
+#shopPurchaseModal .shop-sku-spec-option.is-sold-out.is-selected:not(.is-disabled):not(:disabled) {
+    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.72);
     background: rgba(var(--shop-sold-out-soft-red-rgb), 0.16);
     color: #fff1f2;
     box-shadow: 0 0 0 3px rgba(var(--shop-sold-out-soft-red-rgb), 0.12);
@@ -8805,13 +8805,13 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-o
     box-shadow: 0 3px 8px rgba(var(--shop-sold-out-soft-red-deep-rgb), 0.035);
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill.is-sold-out.is-selected,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-option.is-sold-out.is-selected {
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill.is-sold-out.is-selected:not(.is-disabled):not(:disabled),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-option.is-sold-out.is-selected:not(.is-disabled):not(:disabled) {
     border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.48);
     background: rgba(var(--shop-sold-out-soft-red-rgb), 0.12);
     color: var(--shop-sold-out-soft-red-deep);
     box-shadow:
-        0 0 0 3px rgba(var(--shop-sold-out-soft-red-rgb), 0.1),
+        0 0 0 3px rgba(var(--shop-sold-out-soft-red-rgb), 0.12),
         0 5px 14px rgba(var(--shop-sold-out-soft-red-deep-rgb), 0.045);
 }
 
@@ -8893,12 +8893,13 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-o
 /* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 */
 #shopPurchaseModal .shop-sku-selector__options--pills {
     margin-top: 0;
-    padding: 6px 2px 8px 0;
+    padding: 6px 6px 8px;
     scroll-padding-top: 8px;
+    scroll-padding-inline: 6px;
 }
 
 #shopPurchaseModal .shop-sku-spec-group__options {
-    padding: 6px 0 7px;
+    padding: 6px 6px 7px;
 }
 
 #shopPurchaseModal .shop-purchase-stage-quantity {

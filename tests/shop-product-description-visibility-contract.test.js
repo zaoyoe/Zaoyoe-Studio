@@ -31,7 +31,7 @@ test('shop product description visibility toggle is wired through admin, storefr
     );
     assert.match(
         adminShopSource,
-        /getAdminProductDescription: function[\s\S]*product\?\.\[fields\.desc\][\s\S]*safeProductDescription = this\.escapeHtml\(this\.getAdminProductDescription\(p\)\)/,
+        /getAdminProductDescription: function \(product = \{\}\) \{[\s\S]*description_intl_zh \|\| product\?\.description_intl \|\| product\?\.description_en[\s\S]*String\(product\?\.description \|\| ''\)\.trim\(\)[\s\S]*safeProductDescription = this\.escapeHtml\(this\.getAdminProductDescription\(p\)\)/s,
         'admin product cards should render the active-site description field after save'
     );
     assert.match(

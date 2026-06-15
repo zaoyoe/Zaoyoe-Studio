@@ -77,6 +77,15 @@ function normalizeNullableNumber(value) {
     return Math.round(parsed * 100) / 100;
 }
 
+function normalizeLegacyProductIntegerPrice(value) {
+    const normalized = normalizeNullableNumber(value);
+    if (normalized === null) {
+        return null;
+    }
+
+    return Math.ceil(normalized);
+}
+
 function hasOwnValue(source = {}, keys = []) {
     if (!source || typeof source !== 'object') {
         return false;
@@ -675,6 +684,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'spec_values',
     'inventory_sku_id',
     'inventory_source_sku_ids',
+    'inventory_source_sku_ids_intl',
     'manual_delivery',
     'price_points',
     'price_points_intl',
@@ -686,7 +696,10 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sort_order'
 ].join(', ');
 
-const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT
+    .replace('inventory_source_sku_ids_intl, ', '');
+
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST = SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST
     .replace('inventory_source_sku_ids, ', '');
 
 function isMissingColumnError(error = {}, columnName = '') {
@@ -713,6 +726,10 @@ function isMissingColumnError(error = {}, columnName = '') {
 
 function isMissingSkuInventorySourceListColumnError(error = {}) {
     return isMissingColumnError(error, 'inventory_source_sku_ids');
+}
+
+function isMissingSkuIntlInventorySourceListColumnError(error = {}) {
+    return isMissingColumnError(error, 'inventory_source_sku_ids_intl');
 }
 
 function collectErrorText(error = {}, depth = 0) {
@@ -808,6 +825,11 @@ async function runShopProductSkuSelectWithSourceListFallback(baseQueryFactory) {
     let response = await runWithTransientSupabaseRetry(
         () => baseQueryFactory(SHOP_PRODUCT_SKU_SELECT)
     );
+    if (response?.error && isMissingSkuIntlInventorySourceListColumnError(response.error)) {
+        response = await runWithTransientSupabaseRetry(
+            () => baseQueryFactory(SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST)
+        );
+    }
     if (response?.error && isMissingSkuInventorySourceListColumnError(response.error)) {
         response = await runWithTransientSupabaseRetry(
             () => baseQueryFactory(SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST)
@@ -850,9 +872,23 @@ async function writeProductSkuRowWithSourceListFallback(supabase, {
         })
     );
 
+    if (response?.error && isMissingSkuIntlInventorySourceListColumnError(response.error)) {
+        const fallbackPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
+        delete fallbackPayload.inventory_source_sku_ids_intl;
+        response = await runWithTransientSupabaseRetry(
+            () => writeProductSkuRow(supabase, {
+                payload: fallbackPayload,
+                resolvedExistingId,
+                hasExistingId,
+                selectClause: SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST
+            })
+        );
+    }
+
     if (response?.error && isMissingSkuInventorySourceListColumnError(response.error)) {
         const fallbackPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
         delete fallbackPayload.inventory_source_sku_ids;
+        delete fallbackPayload.inventory_source_sku_ids_intl;
         response = await runWithTransientSupabaseRetry(
             () => writeProductSkuRow(supabase, {
                 payload: fallbackPayload,
@@ -866,9 +902,10 @@ async function writeProductSkuRowWithSourceListFallback(supabase, {
     return response;
 }
 
-async function resolveProductSkuForInventoryImport(supabase, productId, requestedSkuId = '') {
+async function resolveProductSkuForInventoryImport(supabase, productId, requestedSkuId = '', { site = 'cn' } = {}) {
     const normalizedProductId = normalizeText(productId, 160);
     const normalizedSkuId = normalizeText(requestedSkuId, 160);
+    const inventorySite = normalizeShopSkuInventorySite(site);
 
     if (!normalizedProductId) {
         return null;
@@ -885,8 +922,13 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
             : query.eq('is_default', true).single();
     };
     let response = await runWithTransientSupabaseRetry(
-        () => buildQuery('id, product_id, sku_name, sku_code, inventory_sku_id, inventory_source_sku_ids, is_default, is_active, stock_count')
+        () => buildQuery('id, product_id, sku_name, sku_code, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, is_default, is_active, stock_count')
     );
+    if (response?.error && isMissingSkuIntlInventorySourceListColumnError(response.error)) {
+        response = await runWithTransientSupabaseRetry(
+            () => buildQuery('id, product_id, sku_name, sku_code, inventory_sku_id, inventory_source_sku_ids, is_default, is_active, stock_count')
+        );
+    }
     if (response?.error && isMissingSkuInventorySourceListColumnError(response.error)) {
         response = await runWithTransientSupabaseRetry(
             () => buildQuery('id, product_id, sku_name, sku_code, inventory_sku_id, is_default, is_active, stock_count')
@@ -912,10 +954,7 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
         });
     }
 
-    const inventorySourceSkuIds = normalizeInventorySourceSkuIds(
-        data.inventory_source_sku_ids,
-        normalizeText(data.inventory_sku_id, 160) ? [data.inventory_sku_id] : []
-    );
+    const inventorySourceSkuIds = getSkuInventorySourceIdsForSite(data, inventorySite);
     const isExternalInventoryAlias = Boolean(
         inventorySourceSkuIds[0]
         && normalizeText(inventorySourceSkuIds[0], 160) !== normalizeText(data.id, 160)
@@ -978,6 +1017,61 @@ function getCompatibilityInventorySkuId(sourceIds = [], currentSkuId = '') {
         .find((sourceId) => sourceId && sourceId !== normalizedCurrentSkuId) || null;
 }
 
+function normalizeShopSkuInventorySite(value = 'cn') {
+    return normalizeText(value, 20).toLowerCase() === 'intl' ? 'intl' : 'cn';
+}
+
+function getSkuInventorySourceIdsForSite(sku = {}, site = 'cn') {
+    const normalizedSite = normalizeShopSkuInventorySite(site);
+    if (normalizedSite === 'intl') {
+        const hasIntlSourceList = sku
+            && typeof sku === 'object'
+            && (
+                Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_ids_intl')
+                || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuIdsIntl')
+            );
+        if (!hasIntlSourceList) {
+            return normalizeInventorySourceSkuIds(
+                sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+                normalizeText(sku?.inventory_sku_id ?? sku?.inventorySkuId, 160)
+                    ? [sku?.inventory_sku_id ?? sku?.inventorySkuId]
+                    : []
+            );
+        }
+        return normalizeInventorySourceSkuIds(
+            sku?.inventory_source_sku_ids_intl ?? sku?.inventorySourceSkuIdsIntl,
+            []
+        );
+    }
+
+    return normalizeInventorySourceSkuIds(
+        sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+        normalizeText(sku?.inventory_sku_id ?? sku?.inventorySkuId, 160)
+            ? [sku?.inventory_sku_id ?? sku?.inventorySkuId]
+            : []
+    );
+}
+
+function hasSkuInventorySourceIdsForSite(sku = {}, site = 'cn') {
+    if (!sku || typeof sku !== 'object' || Array.isArray(sku)) {
+        return false;
+    }
+    if (normalizeShopSkuInventorySite(site) === 'intl') {
+        return Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_ids_intl')
+            || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuIdsIntl');
+    }
+    return Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_ids')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuIds')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventory_sources')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventorySources')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventory_sku_id')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventorySkuId')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_id')
+        || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuId')
+        || Object.prototype.hasOwnProperty.call(sku, 'stock_sku_id')
+        || Object.prototype.hasOwnProperty.call(sku, 'stockSkuId');
+}
+
 function normalizeProductSkuDrafts(value = []) {
     const rawEntries = Array.isArray(value) ? value : [];
     const normalized = rawEntries
@@ -995,6 +1089,7 @@ function normalizeProductSkuDrafts(value = []) {
                 || source.stockSkuId,
                 160
             );
+            const hasInventorySourceSkuIdsIntl = hasSkuInventorySourceIdsForSite(source, 'intl');
             const inventorySourceSkuIds = normalizeInventorySourceSkuIds(
                 source.inventory_source_sku_ids
                 ?? source.inventorySourceSkuIds
@@ -1002,8 +1097,15 @@ function normalizeProductSkuDrafts(value = []) {
                 ?? source.inventorySources,
                 inventorySkuId ? [inventorySkuId] : []
             );
+            const inventorySourceSkuIdsIntl = normalizeInventorySourceSkuIds(
+                source.inventory_source_sku_ids_intl
+                ?? source.inventorySourceSkuIdsIntl
+                ?? source.inventory_sources_intl
+                ?? source.inventorySourcesIntl,
+                []
+            );
 
-            if (!skuName && !skuCode && !id && !inventorySourceSkuIds.length) {
+            if (!skuName && !skuCode && !id && !inventorySourceSkuIds.length && !inventorySourceSkuIdsIntl.length) {
                 return null;
             }
 
@@ -1016,6 +1118,7 @@ function normalizeProductSkuDrafts(value = []) {
                     : {},
                 inventory_sku_id: getCompatibilityInventorySkuId(inventorySourceSkuIds, id),
                 inventory_source_sku_ids: inventorySourceSkuIds,
+                ...(hasInventorySourceSkuIdsIntl ? { inventory_source_sku_ids_intl: inventorySourceSkuIdsIntl } : {}),
                 price_points: normalizeNullableNumber(source.price_points ?? source.pricePoints),
                 price_points_intl: normalizeNullableNumber(source.price_points_intl ?? source.pricePointsIntl),
                 quantity_rules: normalizeSkuQuantityPricingRules(source.quantity_rules ?? source.quantityRules),
@@ -1209,11 +1312,12 @@ async function ensureDefaultProductSku(supabase, product = {}) {
     return Array.isArray(data) ? data[0] || null : null;
 }
 
-async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
+async function syncProductSkus(supabase, product = {}, skuDrafts = [], { site = 'cn' } = {}) {
     const productId = normalizeText(product?.id, 160);
     if (!productId) {
         return [];
     }
+    const inventorySite = normalizeShopSkuInventorySite(site);
 
     const normalizedDrafts = normalizeProductSkuDrafts(skuDrafts);
     if (!normalizedDrafts.length) {
@@ -1245,10 +1349,7 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             existingRowsByCode.set(codeKey, row);
         }
         if (rowId) {
-            existingInventorySourceById.set(rowId, normalizeInventorySourceSkuIds(
-                row?.inventory_source_sku_ids,
-                normalizeText(row?.inventory_sku_id, 160) ? [row.inventory_sku_id] : []
-            ));
+            existingInventorySourceById.set(rowId, getSkuInventorySourceIdsForSite(row, inventorySite));
         }
     });
     const matchedDrafts = normalizedDrafts.map((draft) => {
@@ -1275,17 +1376,33 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
         const targetId = normalizeText(entry.targetId, 160);
         if (!targetId) return;
 
-        const sourceIds = normalizeInventorySourceSkuIds(entry.draft.inventory_source_sku_ids);
-        entry.draft.inventory_source_sku_ids = sourceIds;
-        entry.draft.inventory_sku_id = getCompatibilityInventorySkuId(sourceIds, targetId);
+        const existingSourceIds = existingInventorySourceById.get(targetId) || [];
+        const hasDraftSiteSourceIds = hasSkuInventorySourceIdsForSite(entry.draft, inventorySite);
+        const sourceIds = hasDraftSiteSourceIds
+            ? getSkuInventorySourceIdsForSite(entry.draft, inventorySite)
+            : normalizeInventorySourceSkuIds(existingSourceIds);
+        if (inventorySite === 'intl') {
+            entry.draft.inventory_source_sku_ids_intl = sourceIds;
+        } else {
+            entry.draft.inventory_source_sku_ids = sourceIds;
+            entry.draft.inventory_sku_id = getCompatibilityInventorySkuId(sourceIds, targetId);
+        }
         desiredInventorySourceById.set(targetId, sourceIds);
     });
 
     for (const entry of matchedDrafts) {
         const targetId = normalizeText(entry.targetId, 160);
-        const sourceIds = normalizeInventorySourceSkuIds(entry.draft.inventory_source_sku_ids);
-        entry.draft.inventory_source_sku_ids = sourceIds;
-        entry.draft.inventory_sku_id = getCompatibilityInventorySkuId(sourceIds, targetId);
+        const existingSourceIds = existingInventorySourceById.get(targetId) || [];
+        const hasDraftSiteSourceIds = hasSkuInventorySourceIdsForSite(entry.draft, inventorySite);
+        const sourceIds = hasDraftSiteSourceIds
+            ? getSkuInventorySourceIdsForSite(entry.draft, inventorySite)
+            : normalizeInventorySourceSkuIds(existingSourceIds);
+        if (inventorySite === 'intl') {
+            entry.draft.inventory_source_sku_ids_intl = sourceIds;
+        } else {
+            entry.draft.inventory_source_sku_ids = sourceIds;
+            entry.draft.inventory_sku_id = getCompatibilityInventorySkuId(sourceIds, targetId);
+        }
         const externalSourceIds = sourceIds.filter((sourceId) => sourceId !== targetId);
         if (!externalSourceIds.length) {
             continue;
@@ -1342,13 +1459,16 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
     let defaultSkuId = '';
 
     for (const { draft, resolvedExistingId } of matchedDrafts) {
+        const targetId = normalizeText(resolvedExistingId || draft.id, 160);
+        const sharedSourceIds = normalizeInventorySourceSkuIds(draft.inventory_source_sku_ids);
+        const intlSourceIds = normalizeInventorySourceSkuIds(draft.inventory_source_sku_ids_intl);
+        const hasIntlDraftSourceIds = hasSkuInventorySourceIdsForSite(draft, 'intl');
+        const activeSourceIds = inventorySite === 'intl' ? intlSourceIds : sharedSourceIds;
         const basePayload = {
             product_id: productId,
             sku_code: draft.sku_code,
             sku_name: draft.sku_name,
             spec_values: draft.spec_values,
-            inventory_sku_id: draft.inventory_sku_id || null,
-            inventory_source_sku_ids: normalizeInventorySourceSkuIds(draft.inventory_source_sku_ids),
             manual_delivery: draft.manual_delivery === true,
             price_points: draft.price_points,
             price_points_intl: draft.price_points_intl,
@@ -1359,6 +1479,21 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             sort_order: draft.sort_order
         };
         const hasExistingId = Boolean(resolvedExistingId && existingIds.has(resolvedExistingId));
+        if (inventorySite === 'intl') {
+            if (hasIntlDraftSourceIds || !hasExistingId) {
+                basePayload.inventory_source_sku_ids_intl = activeSourceIds;
+            }
+            if (!hasExistingId) {
+                basePayload.inventory_sku_id = getCompatibilityInventorySkuId(sharedSourceIds, targetId) || null;
+                basePayload.inventory_source_sku_ids = sharedSourceIds;
+            }
+        } else {
+            basePayload.inventory_sku_id = getCompatibilityInventorySkuId(activeSourceIds, targetId) || null;
+            basePayload.inventory_source_sku_ids = activeSourceIds;
+            if (hasIntlDraftSourceIds || !hasExistingId) {
+                basePayload.inventory_source_sku_ids_intl = intlSourceIds;
+            }
+        }
         const payload = hasExistingId || !draft.id
             ? basePayload
             : { id: draft.id, ...basePayload };
@@ -1425,6 +1560,7 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             sku_code: null,
             inventory_sku_id: null,
             inventory_source_sku_ids: [],
+            inventory_source_sku_ids_intl: [],
             spec_values: buildArchivedProductSkuSpecValues(existing)
         };
         let { error: updateError } = await runWithTransientSupabaseRetry(
@@ -1434,9 +1570,21 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
                 .eq('id', removableId)
         );
 
+        if (updateError && isMissingSkuIntlInventorySourceListColumnError(updateError)) {
+            const fallbackUpdatePayload = { ...updatePayload };
+            delete fallbackUpdatePayload.inventory_source_sku_ids_intl;
+            ({ error: updateError } = await runWithTransientSupabaseRetry(
+                () => supabase
+                    .from('shop_product_skus')
+                    .update(fallbackUpdatePayload)
+                    .eq('id', removableId)
+            ));
+        }
+
         if (updateError && isMissingSkuInventorySourceListColumnError(updateError)) {
             const fallbackUpdatePayload = { ...updatePayload };
             delete fallbackUpdatePayload.inventory_source_sku_ids;
+            delete fallbackUpdatePayload.inventory_source_sku_ids_intl;
             ({ error: updateError } = await runWithTransientSupabaseRetry(
                 () => supabase
                     .from('shop_product_skus')
@@ -1885,6 +2033,14 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
         nextPayload.updated_at = new Date().toISOString();
     }
 
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'price_points')) {
+        nextPayload.price_points = normalizeLegacyProductIntegerPrice(nextPayload.price_points);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'price_points_intl')) {
+        nextPayload.price_points_intl = normalizeLegacyProductIntegerPrice(nextPayload.price_points_intl);
+    }
+
     if (writableSite === 'intl' && !normalizedProductId) {
         const baseName = normalizeText(nextPayload.name, 160);
         const englishName = normalizeText(nextPayload.name_intl || nextPayload.name_en, 160);
@@ -2223,7 +2379,14 @@ module.exports = async (req, res) => {
             const savedProduct = result.data[0];
             let savedSkus = [];
             try {
-                savedSkus = await syncProductSkus(supabase, savedProduct, body.skus || payload.skus || payload.product_skus);
+                const hasSkuPayload = Object.prototype.hasOwnProperty.call(body, 'skus')
+                    || Object.prototype.hasOwnProperty.call(payload, 'skus')
+                    || Object.prototype.hasOwnProperty.call(payload, 'product_skus');
+                savedSkus = hasSkuPayload
+                    ? await syncProductSkus(supabase, savedProduct, body.skus || payload.skus || payload.product_skus, {
+                        site: writableSite
+                    })
+                    : [];
             } catch (error) {
                 const errorPayload = buildShopMutationErrorPayload(error, '保存商品规格失败', 400, 'shop_product_skus_save_failed');
                 return sendJson(res, errorPayload.statusCode, {
@@ -3038,7 +3201,9 @@ module.exports = async (req, res) => {
 
             let sku = null;
             try {
-                sku = await resolveProductSkuForInventoryImport(supabase, productId, skuId);
+                sku = await resolveProductSkuForInventoryImport(supabase, productId, skuId, {
+                    site: writableSite
+                });
             } catch (error) {
                 return sendJson(res, Number(error?.statusCode) || 400, {
                     success: false,

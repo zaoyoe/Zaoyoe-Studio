@@ -71,6 +71,11 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         'shop.html should bust storefront styles after restoring compact success card content height'
     );
     assert.equal(
+        shopHtml.includes('soldOutSkuFocus=20260615_SHOP_SOLD_OUT_SKU_FOCUS_1'),
+        true,
+        'shop.html should bust storefront styles after strengthening sold-out SKU selected focus'
+    );
+    assert.equal(
         shopHtml.includes('purchaseTitleCompact=20260524_SHOP_PURCHASE_TITLE_COMPACT_1'),
         true,
         'shop.html should bust storefront styles after matching the purchase title to the compact success title'
@@ -302,8 +307,8 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     );
     assert.match(
         shopStyles,
-        /\/\* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 \*\/[\s\S]*#shopPurchaseModal \.shop-sku-selector__options--pills\s*\{[\s\S]*margin-top:\s*0;[\s\S]*padding:\s*6px 2px 8px 0;[\s\S]*#shopPurchaseModal \.shop-sku-spec-group__options\s*\{[\s\S]*padding:\s*6px 0 7px;/,
-        'compact SKU choices should keep real hit area padding instead of relying on negative offsets'
+        /\/\* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 \*\/[\s\S]*#shopPurchaseModal \.shop-sku-selector__options--pills\s*\{[\s\S]*margin-top:\s*0;[\s\S]*padding:\s*6px 6px 8px;[\s\S]*scroll-padding-inline:\s*6px;[\s\S]*#shopPurchaseModal \.shop-sku-spec-group__options\s*\{[\s\S]*padding:\s*6px 6px 7px;/,
+        'compact SKU choices should keep real hit area padding and preserve selected glow at the edges'
     );
     assert.match(
         shopStyles,
@@ -314,6 +319,16 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         shopStyles,
         /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal \.shop-sku-option--pill\.is-disabled,[\s\S]*color:\s*rgba\(71, 85, 105, 0\.62\);/,
         'light theme disabled SKU pills should keep gray text instead of flashing as active black text'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-sku-option--pill\.is-sold-out\.is-selected:not\(\.is-disabled\):not\(:disabled\),[\s\S]*#shopPurchaseModal \.shop-sku-spec-option\.is-sold-out\.is-selected:not\(\.is-disabled\):not\(:disabled\)\s*\{[\s\S]*border-color:\s*rgba\(var\(--shop-sold-out-soft-red-rgb\), 0\.72\);[\s\S]*background:\s*rgba\(var\(--shop-sold-out-soft-red-rgb\), 0\.16\);[\s\S]*box-shadow:\s*0 0 0 3px rgba\(var\(--shop-sold-out-soft-red-rgb\), 0\.12\);/,
+        'sold-out SKU pills should mirror the normal selected focus ring with red color'
+    );
+    assert.match(
+        shopStyles,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal \.shop-sku-option--pill\.is-sold-out\.is-selected:not\(\.is-disabled\):not\(:disabled\),[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal \.shop-sku-spec-option\.is-sold-out\.is-selected:not\(\.is-disabled\):not\(:disabled\)\s*\{[\s\S]*border-color:\s*rgba\(var\(--shop-sold-out-soft-red-rgb\), 0\.48\);[\s\S]*background:\s*rgba\(var\(--shop-sold-out-soft-red-rgb\), 0\.12\);[\s\S]*0 0 0 3px rgba\(var\(--shop-sold-out-soft-red-rgb\), 0\.12\)/,
+        'light theme sold-out SKU pills should mirror the normal selected focus ring with red color'
     );
     const skuHoverRule = shopStyles.match(
         /#shopPurchaseModal \.shop-sku-option--pill:hover:not\(:disabled\),\s*#shopPurchaseModal \.shop-sku-spec-option:hover:not\(:disabled\)\s*\{(?<body>[\s\S]*?)\n\}/

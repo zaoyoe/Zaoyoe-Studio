@@ -42,6 +42,7 @@ test('shop reusable inventory migration keeps shared delivery rows reusable', ()
 test('shop priority inventory-source migration resolves and locks sources in order', () => {
     const migration = readRepoFile('supabase/migrations/20260613_add_shop_sku_inventory_source_priority.sql');
     const localPriorityPatch = readRepoFile('supabase/migrations/20260613_allow_shop_sku_local_priority_inventory_source.sql');
+    const siteScopedPatch = readRepoFile('supabase/migrations/20260615_site_scoped_shop_sku_inventory_sources.sql');
 
     for (const marker of [
         'ADD COLUMN IF NOT EXISTS inventory_source_sku_ids UUID[]',
@@ -76,5 +77,22 @@ test('shop priority inventory-source migration resolves and locks sources in ord
         localPriorityPatch.includes('sku cannot use itself as inventory source'),
         false,
         'local-priority patch should not reject self as an inventory source'
+    );
+
+    for (const marker of [
+        'ADD COLUMN IF NOT EXISTS inventory_source_sku_ids_intl UUID[]',
+        'public.fn_resolve_shop_sku_inventory_sources(UUID, TEXT)',
+        'public.fn_lock_shop_sku_inventory(UUID, UUID, INT, TEXT)',
+        'fn_lock_shop_sku_inventory(p_product_id, v_sku_id, p_quantity, v_site)',
+        'fn_lock_shop_sku_inventory(p_product_id, v_sku_id, v_quantity, v_site)',
+        'failed to patch fn_purchase_shop_item_core with site-scoped SKU inventory sources',
+        'failed to patch fn_create_marketplace_shop_order with site-scoped SKU inventory sources'
+    ]) {
+        assert.equal(siteScopedPatch.includes(marker), true, `site-scoped patch should contain ${marker}`);
+    }
+    assert.match(
+        siteScopedPatch,
+        /WHEN t\.normalized_site = 'intl'[\s\S]*THEN t\.inventory_source_sku_ids_intl[\s\S]*WHEN t\.normalized_site <> 'intl'[\s\S]*THEN t\.inventory_source_sku_ids/,
+        'site-scoped patch should resolve INTL and CN fallback chains independently'
     );
 });

@@ -52,6 +52,7 @@ test('shop product copy migration adds independent bilingual INTL copy and visib
 
 test('admin product editor writes bilingual copy and switches only for the active site', () => {
     const adminSource = readRepoFile('js/admin-shop.js');
+    const adminHtmlSource = readRepoFile('admin-studio.html');
     const mutateSource = readRepoFile('server/api-handlers/admin/shop/mutate.js');
     const productsSource = readRepoFile('server/api-handlers/admin/shop/products.js');
 
@@ -64,6 +65,26 @@ test('admin product editor writes bilingual copy and switches only for the activ
         adminSource,
         /getSiteScopedProductSwitchForEdit\(data, baseField[\s\S]*const intlField = `\$\{baseField\}_intl`[\s\S]*return data\[intlField\] === true/,
         'admin editor should hydrate INTL visibility switches from *_intl switch fields'
+    );
+    assert.match(
+        adminHtmlSource,
+        /id="productCopyLanguageGroup"[\s\S]*data-copy-language="zh"[\s\S]*data-copy-language="en"/,
+        'admin product editor should expose an explicit INTL copy-language switch'
+    );
+    assert.match(
+        adminSource,
+        /getProductCopyLanguageForEdit\(\)[\s\S]*return 'zh';[\s\S]*prodCopyLanguage[\s\S]*this\.productCopyLanguage \|\| 'zh'/,
+        'admin product editor should default INTL copy editing to Chinese'
+    );
+    assert.match(
+        adminSource,
+        /getSiteScopedProductTextForEdit\(data, baseField, language = this\.getProductCopyLanguageForEdit\(\)\)[\s\S]*const intlZhField[\s\S]*normalizeProductCopyLanguage\(language\) === 'en'[\s\S]*return String\(data\?\.\[intlZhField\] \|\| data\?\.\[intlField\]/,
+        'admin product editor should load INTL Chinese copy unless EN is explicitly selected'
+    );
+    assert.match(
+        adminSource,
+        /getProductGuidanceTextForEdit\(data, baseField, language = this\.getProductCopyLanguageForEdit\(\)\)[\s\S]*const intlZhText[\s\S]*normalizeProductCopyLanguage\(language\) === 'en'[\s\S]*: \(intlZhText \|\| intlText \|\| enText \|\| ''\)/,
+        'admin product guidance editor should load INTL Chinese guidance unless EN is explicitly selected'
     );
     assert.match(
         adminSource,

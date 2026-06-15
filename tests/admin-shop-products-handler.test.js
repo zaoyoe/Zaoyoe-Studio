@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
 
-const SHOP_PRODUCT_SKU_SELECT = 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order';
+const SHOP_PRODUCT_SKU_SELECT = 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order';
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST = 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order';
 const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST = 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order';
 const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY = 'id, product_id, sku_code, sku_name, spec_values, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order';
 
@@ -431,6 +432,59 @@ test('shop products handler can include product skus for inventory import select
     });
 });
 
+test('shop products handler falls back while intl inventory source column is warming up', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [
+                        { id: 'prod_import_1', name: 'Import Product', stock_count: 12, is_active: true }
+                    ],
+                    error: null
+                }
+            ],
+            shop_product_skus: [
+                {
+                    data: null,
+                    error: { message: 'Could not find the inventory_source_sku_ids_intl column of shop_product_skus in the schema cache' }
+                },
+                {
+                    data: [
+                        {
+                            id: 'sku_default_1',
+                            product_id: 'prod_import_1',
+                            sku_name: '默认规格',
+                            sku_code: 'default',
+                            inventory_source_sku_ids: [],
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 2,
+                            sort_order: 0
+                        }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?fields=full&includeSkus=true'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(payload.rows[0]?.skus?.map((sku) => sku.id), ['sku_default_1']);
+        assert.equal(state.queryCalls[1]?.operations?.[0]?.args?.[0], SHOP_PRODUCT_SKU_SELECT);
+        assert.equal(state.queryCalls[2]?.operations?.[0]?.args?.[0], SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST);
+    });
+});
+
 test('shop products handler falls back while shared inventory column is warming up', async () => {
     await withShopProductsHandler({
         queryResults: {
@@ -443,6 +497,10 @@ test('shop products handler falls back while shared inventory column is warming 
                 }
             ],
             shop_product_skus: [
+                {
+                    data: null,
+                    error: { message: 'Could not find the inventory_source_sku_ids column of shop_product_skus in the schema cache' }
+                },
                 {
                     data: null,
                     error: { message: 'Could not find the inventory_source_sku_ids column of shop_product_skus in the schema cache' }
@@ -479,7 +537,8 @@ test('shop products handler falls back while shared inventory column is warming 
         assert.equal(payload.success, true);
         assert.deepEqual(payload.rows[0]?.skus?.map((sku) => sku.id), ['sku_default_1']);
         assert.equal(state.queryCalls[1]?.operations?.[0]?.args?.[0], SHOP_PRODUCT_SKU_SELECT);
-        assert.equal(state.queryCalls[2]?.operations?.[0]?.args?.[0], SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST);
+        assert.equal(state.queryCalls[2]?.operations?.[0]?.args?.[0], SHOP_PRODUCT_SKU_SELECT_WITHOUT_INTL_INVENTORY_SOURCE_LIST);
+        assert.equal(state.queryCalls[3]?.operations?.[0]?.args?.[0], SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY_SOURCE_LIST);
     });
 });
 

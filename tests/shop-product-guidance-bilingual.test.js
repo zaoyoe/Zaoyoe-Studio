@@ -41,22 +41,22 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
     assert.match(
         adminShopSource,
         /buildProductGuidancePayloadPatch\('purchase_notes'[\s\S]*sourceLanguage: productInputLanguage\.purchase_notes/,
-        'intl purchase notes should choose payload fields from the detected source language'
+        'intl purchase notes should choose payload fields from the explicit edit language'
     );
     assert.match(
         adminShopSource,
         /buildProductGuidancePayloadPatch\('usage_instructions'[\s\S]*sourceLanguage: productInputLanguage\.usage_instructions/,
-        'intl usage instructions should choose payload fields from the detected source language'
+        'intl usage instructions should choose payload fields from the explicit edit language'
     );
     assert.match(
         adminShopSource,
-        /hasChineseProductText\(value\)[\s\S]*\\u3400-\\u9fff/,
-        'intl product saves should detect Chinese input before choosing translation direction'
+        /getProductCopyLanguageForEdit\(\)[\s\S]*return 'zh';[\s\S]*prodCopyLanguage[\s\S]*this\.productCopyLanguage \|\| 'zh'/,
+        'intl product saves should default to Chinese edit language'
     );
     assert.match(
         adminShopSource,
-        /const productInputLanguage = editSite === 'intl'[\s\S]*name: this\.hasChineseProductText\(persistedProductTextValues\.name\) \? 'zh' : 'en'[\s\S]*usage_instructions: this\.hasChineseProductText\(persistedProductTextValues\.usage_instructions\) \? 'zh' : 'en'/,
-        'intl product saves should detect source language for title, description, purchase notes, and usage instructions'
+        /const explicitIntlProductCopyLanguage = this\.getProductCopyLanguageForEdit\(\);[\s\S]*const productInputLanguage = editSite === 'intl'[\s\S]*name: explicitIntlProductCopyLanguage[\s\S]*usage_instructions: explicitIntlProductCopyLanguage/,
+        'intl product saves should use the explicit edit language for title, description, purchase notes, and usage instructions'
     );
     assert.match(
         adminShopSource,
@@ -67,6 +67,26 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
         adminShopSource,
         /this\.translateToChinese\(\s*productInputLanguage\.name === 'en' \? name : ''[\s\S]*purchaseNotes: productInputLanguage\.purchase_notes === 'en'[\s\S]*usageInstructions: productInputLanguage\.usage_instructions === 'en'/,
         'intl product saves should translate English source fields back to Chinese'
+    );
+    assert.match(
+        adminShopSource,
+        /const productCopyDraft = this\.getCurrentProductCopyDraft\(\{ syncRichText: false \}\);[\s\S]*const shouldAutoTranslateProductCopy = this\.hasProductCopyDraftChanged\(productCopyDraft, this\.editingProductSnapshot\);[\s\S]*if \(shouldAutoTranslateProductCopy && editSite === 'cn'\)[\s\S]*else if \(shouldAutoTranslateProductCopy && editSite === 'intl'\)/,
+        'product save should skip automatic translation when only prices or SKU settings changed'
+    );
+    assert.match(
+        adminShopSource,
+        /syncProductTranslationCompletionButton: function[\s\S]*getProductCopyMissingTranslationItems\(draft\)[\s\S]*button\.disabled = disabled/,
+        'product translation completion button should be enabled only when bilingual copy is missing'
+    );
+    assert.match(
+        adminShopSource,
+        /completeProductMissingTranslations: async function[\s\S]*this\.translateToEnglish[\s\S]*this\.translateToChinese[\s\S]*this\.callAdminMutation\('upsert_product'/,
+        'translation completion should have an explicit button flow separate from normal product save'
+    );
+    assert.match(
+        adminShopSource,
+        /buildProductTranslationPatch: function[\s\S]*buildProductGuidancePayloadPatch\('purchase_notes'[\s\S]*buildProductGuidancePayloadPatch\('usage_instructions'/,
+        'translation completion should patch title, description, purchase notes, and usage instructions'
     );
     assert.match(
         adminShopSource,

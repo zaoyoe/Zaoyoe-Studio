@@ -1182,9 +1182,29 @@ const ShopClient = {
     normalizeProductSkuForCurrentSite: function (sku = {}, product = {}) {
         const quantityRules = this.getSkuSiteScopedMarketingValue(sku, 'quantity_rules');
         const price = this.getProductSkuPriceForCurrentSite(sku, product);
+        const currentSite = this.getCurrentShopSite();
+        const hasIntlSourceList = sku
+            && typeof sku === 'object'
+            && (
+                Object.prototype.hasOwnProperty.call(sku, 'inventory_source_sku_ids_intl')
+                || Object.prototype.hasOwnProperty.call(sku, 'inventorySourceSkuIdsIntl')
+            );
+        const inventorySourceSkuIds = currentSite === 'intl' && hasIntlSourceList
+            ? this.normalizeSkuInventorySourceIds(sku?.inventory_source_sku_ids_intl ?? sku?.inventorySourceSkuIdsIntl)
+            : this.normalizeSkuInventorySourceIds(
+                sku?.inventory_source_sku_ids ?? sku?.inventorySourceSkuIds,
+                String(sku?.inventory_sku_id || sku?.inventorySkuId || '').trim()
+                    ? [sku?.inventory_sku_id || sku?.inventorySkuId]
+                    : []
+            );
+        const currentSkuId = String(sku?.id || '').trim();
+        const compatibilityInventorySkuId = inventorySourceSkuIds
+            .find((sourceId) => sourceId && sourceId !== currentSkuId) || null;
 
         return {
             ...sku,
+            inventory_sku_id: compatibilityInventorySkuId,
+            inventory_source_sku_ids: inventorySourceSkuIds,
             price_points: price,
             quantity_rules: quantityRules ?? null,
             manual_delivery: this.isShopSkuManualDelivery(product, sku),
@@ -3463,9 +3483,10 @@ const ShopClient = {
 
     resolveProductPricing: function (product, agentPrices = {}) {
         const selectedSkuId = String(product?.selected_sku_id || product?.selectedSkuId || '').trim();
+        const purchasableSkus = this.getProductSkusForPurchase(product);
         const selectedSku = selectedSkuId
-            ? this.getProductSkusForPurchase(product).find((sku) => String(sku.id || '').trim() === selectedSkuId)
-            : null;
+            ? purchasableSkus.find((sku) => String(sku.id || '').trim() === selectedSkuId)
+            : (purchasableSkus.find((sku) => sku.is_default === true) || purchasableSkus[0] || null);
         const basePrice = selectedSku
             ? this.getProductSkuPriceForCurrentSite(selectedSku, product)
             : this.getProductPriceForCurrentSite(product);
