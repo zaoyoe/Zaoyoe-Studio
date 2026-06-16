@@ -27,6 +27,13 @@
     const VERIFY_BATCH_SUBMIT_CONCURRENCY = 2;
     const SUBMISSION_COUNT_SHORTAGE_MESSAGE_ZH = '当前剩余可提交任务的次数不足，请联系管理员补足后方可继续提交。';
     const SUBMISSION_COUNT_SHORTAGE_MESSAGE_EN = 'The remaining task submission count is insufficient. Please contact the admin to add more before continuing.';
+    const VERIFY_PROVIDER_AIDONE = 'aidone';
+    const VERIFY_PROVIDER_CATCARD = 'catcard';
+    const VERIFY_PROVIDER_KEYS = [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD];
+    const VERIFY_PROVIDER_LABELS = {
+        [VERIFY_PROVIDER_AIDONE]: '通道 1',
+        [VERIFY_PROVIDER_CATCARD]: '通道 2'
+    };
 
     let currentUser = null;
     let userBalance = 0;
@@ -36,13 +43,21 @@
     let isLoading = false;
     let batchStats = { success: 0, failed: 0, total: 0 };
     let activeTasks = new Map(); // jobId -> { index, email, timer }
+    let activeVerifyProvider = VERIFY_PROVIDER_AIDONE;
+    let verifyProviders = VERIFY_PROVIDER_KEYS.map((provider) => ({
+        provider,
+        label: VERIFY_PROVIDER_LABELS[provider],
+        enabled: true
+    }));
+    let channelStates = new Map();
     let historyData = [];
+    let retryEntries = new Map();
     let authBootstrapResolved = false;
     let hadOptimisticLogin = false;
     let authNullConfirmTimer = null;
     let walletBalanceListenerBound = false;
-    let quotaRefreshTimer = null;
-    let quotaRefreshPending = false;
+    let quotaRefreshTimers = new Map();
+    let quotaRefreshPending = new Set();
     let previewMode = 'success';
     let verifySubmitMode = 'single';
     let previewTimers = [];
@@ -99,8 +114,107 @@
         return window.SiteConfig?.site || 'cn';
     }
 
-    function getQuotaCacheKey(site = getCurrentSiteValue()) {
-        return `${VERIFY_QUOTA_CACHE_KEY}:${String(site || 'cn').trim().toLowerCase() || 'cn'}`;
+    function normalizeVerifyProvider(value, fallback = activeVerifyProvider || VERIFY_PROVIDER_AIDONE) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
+            return VERIFY_PROVIDER_CATCARD;
+        }
+        if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
+            return VERIFY_PROVIDER_AIDONE;
+        }
+        return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+    }
+
+    function getProviderLabel(provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider, VERIFY_PROVIDER_AIDONE);
+        return VERIFY_PROVIDER_LABELS[normalizedProvider] || normalizedProvider;
+    }
+
+    function getVisibleVerifyProviders() {
+        const enabledProviders = verifyProviders
+            .map((item) => ({
+                ...item,
+                provider: normalizeVerifyProvider(item.provider, VERIFY_PROVIDER_AIDONE),
+                enabled: item.enabled !== false
+            }))
+            .filter((item) => item.enabled);
+
+        return enabledProviders.length
+            ? enabledProviders
+            : VERIFY_PROVIDER_KEYS.map((provider) => ({
+                provider,
+                label: VERIFY_PROVIDER_LABELS[provider],
+                enabled: true
+            }));
+    }
+
+    function createChannelState(provider = VERIFY_PROVIDER_AIDONE) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        return {
+            provider: normalizedProvider,
+            apiCredits: -1,
+            apiQuotaSummary: null,
+            health: null,
+            apiUsageCosts: normalizedProvider === VERIFY_PROVIDER_CATCARD
+                ? { extract: 1, full: 1 }
+                : { extract: 0.5, full: 1 },
+            isLoading: false,
+            batchStats: { success: 0, failed: 0, total: 0 },
+            resultItems: [],
+            progress: { current: 0, total: 1 },
+            showResults: false,
+            showSummary: false,
+            singleResult: null,
+            ring: { state: 'idle', progress: 0 },
+            lastOutcome: '',
+            form: {
+                submitMode: 'single',
+                taskType: '',
+                email: '',
+                password: '',
+                totp: '',
+                batch: ''
+            }
+        };
+    }
+
+    function getChannelState(provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        if (!channelStates.has(normalizedProvider)) {
+            channelStates.set(normalizedProvider, createChannelState(normalizedProvider));
+        }
+        return channelStates.get(normalizedProvider);
+    }
+
+    function syncCurrentChannelMirrors(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        apiCredits = state.apiCredits;
+        apiQuotaSummary = state.apiQuotaSummary;
+        apiUsageCosts = state.apiUsageCosts;
+        isLoading = state.isLoading;
+        batchStats = state.batchStats;
+        verifySubmitMode = state.form.submitMode || verifySubmitMode;
+        return state;
+    }
+
+    function persistCurrentChannelMirrors(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        state.apiCredits = apiCredits;
+        state.apiQuotaSummary = apiQuotaSummary;
+        state.apiUsageCosts = apiUsageCosts;
+        state.isLoading = isLoading;
+        state.batchStats = batchStats;
+        state.form.submitMode = verifySubmitMode;
+        return state;
+    }
+
+    function getActiveChannelState() {
+        return syncCurrentChannelMirrors(activeVerifyProvider);
+    }
+
+    function getQuotaCacheKey(site = getCurrentSiteValue(), provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        return `${VERIFY_QUOTA_CACHE_KEY}:${String(site || 'cn').trim().toLowerCase() || 'cn'}:${normalizedProvider}`;
     }
 
     function buildVerifyStatusEndpoints(jobId) {
@@ -179,9 +293,9 @@
         return Math.max(0, Math.floor(num + 1e-9));
     }
 
-    function readCachedApiQuota(site = getCurrentSiteValue()) {
+    function readCachedApiQuota(site = getCurrentSiteValue(), provider = activeVerifyProvider) {
         try {
-            const raw = localStorage.getItem(getQuotaCacheKey(site));
+            const raw = localStorage.getItem(getQuotaCacheKey(site, provider));
             if (!raw) return null;
             const parsed = JSON.parse(raw);
             const value = pickFiniteNumber(parsed?.balance, parsed?.credits, parsed?.remaining_uses, parsed?.remainingUses);
@@ -194,11 +308,39 @@
                 remaining_extract_jobs: pickFiniteNumber(parsed?.remaining_extract_jobs, parsed?.remainingExtractJobs, parsed?.extractJobs),
                 remaining_full_jobs: pickFiniteNumber(parsed?.remaining_full_jobs, parsed?.remainingFullJobs, parsed?.fullJobs),
                 extractCostPerJob: pickFiniteNumber(parsed?.extract_cost_per_job, parsed?.extractCostPerJob),
-                fullCostPerJob: pickFiniteNumber(parsed?.full_cost_per_job, parsed?.fullCostPerJob)
+                fullCostPerJob: pickFiniteNumber(parsed?.full_cost_per_job, parsed?.fullCostPerJob),
+                queue_size: pickFiniteNumber(parsed?.queue_size, parsed?.queueSize),
+                running_jobs: pickFiniteNumber(parsed?.running_jobs, parsed?.runningJobs),
+                worker_count: pickFiniteNumber(parsed?.worker_count, parsed?.workerCount),
+                online_servers: pickFiniteNumber(parsed?.online_servers, parsed?.onlineServers),
+                service_status: parsed?.service_status || parsed?.serviceStatus || '',
+                service_message: parsed?.service_message || parsed?.serviceMessage || '',
+                service_checked_at: parsed?.service_checked_at || parsed?.serviceCheckedAt || parsed?.checked_at || ''
             };
         } catch (_) {
             return null;
         }
+    }
+
+    function normalizeProviderHealth(data = {}) {
+        const status = String(data?.service_status || data?.serviceStatus || '').trim().toLowerCase();
+        const queueSize = Math.max(0, Number(data?.queue_size ?? data?.queueSize ?? 0) || 0);
+        const runningJobs = Math.max(0, Number(data?.running_jobs ?? data?.runningJobs ?? 0) || 0);
+        const workerCount = Math.max(0, Number(data?.worker_count ?? data?.workerCount ?? 0) || 0);
+        const onlineServers = Math.max(0, Number(data?.online_servers ?? data?.onlineServers ?? 0) || 0);
+        const unhealthy = ['paused', 'offline', 'unavailable', 'stopped', 'down', 'error'].includes(status);
+        const busy = !unhealthy && (queueSize >= 6 || runningJobs >= 4);
+        const tone = unhealthy ? 'down' : busy ? 'busy' : 'ok';
+        return {
+            status,
+            tone,
+            queueSize,
+            runningJobs,
+            workerCount,
+            onlineServers,
+            message: String(data?.service_message || data?.serviceMessage || data?.message || '').trim(),
+            checkedAt: String(data?.service_checked_at || data?.serviceCheckedAt || data?.checked_at || '').trim()
+        };
     }
 
     function normalizeApiUsageCosts(costs = {}) {
@@ -210,20 +352,26 @@
         };
     }
 
-    function applyApiUsageCosts(costs = {}) {
-        apiUsageCosts = normalizeApiUsageCosts({
-            ...apiUsageCosts,
+    function applyApiUsageCosts(costs = {}, provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        const nextCosts = normalizeApiUsageCosts({
+            ...state.apiUsageCosts,
             ...costs
         });
+        state.apiUsageCosts = nextCosts;
+        if (normalizeVerifyProvider(provider) === activeVerifyProvider) {
+            apiUsageCosts = nextCosts;
+        }
     }
 
     function normalizeApiQuotaSummary(data = {}, fallbackBalance = null) {
+        const provider = normalizeVerifyProvider(arguments[2] || activeVerifyProvider);
         const rawExtractJobs = pickFiniteNumber(data?.remaining_extract_jobs, data?.remainingExtractJobs, data?.extractJobs);
         const rawFullJobs = pickFiniteNumber(data?.remaining_full_jobs, data?.remainingFullJobs, data?.fullJobs);
         const rawExtractUses = pickFiniteNumber(data?.remaining_extract_uses, data?.remainingExtractUses);
         const rawFullUses = pickFiniteNumber(data?.remaining_full_uses, data?.remainingFullUses);
-        const extractCost = getTaskTypeUsageCost('extract');
-        const fullCost = getTaskTypeUsageCost('full');
+        const extractCost = getTaskTypeUsageCost('extract', provider);
+        const fullCost = getTaskTypeUsageCost('full', provider);
         const typedExtractUses = normalizeNonNegativeAmount(rawExtractUses);
         const typedFullUses = normalizeNonNegativeAmount(rawFullUses);
         const typedExtractUsesFromJobs = rawExtractJobs !== null
@@ -288,13 +436,14 @@
         return getSubmissionCountShortageMessage();
     }
 
-    function persistCachedApiQuota(value, site = getCurrentSiteValue(), costs = apiUsageCosts, quotaSummary = null) {
+    function persistCachedApiQuota(value, site = getCurrentSiteValue(), costs = apiUsageCosts, quotaSummary = null, provider = activeVerifyProvider) {
         try {
             const balance = Number(value);
             if (!Number.isFinite(balance)) return;
             const normalizedCosts = normalizeApiUsageCosts(costs);
-            const normalizedSummary = normalizeApiQuotaSummary(quotaSummary || { balance }, balance);
-            localStorage.setItem(getQuotaCacheKey(site), JSON.stringify({
+            const normalizedSummary = normalizeApiQuotaSummary(quotaSummary || { balance }, balance, provider);
+            localStorage.setItem(getQuotaCacheKey(site, provider), JSON.stringify({
+                provider: normalizeVerifyProvider(provider),
                 balance: Math.max(0, Math.round(balance * 100) / 100),
                 remaining_uses: normalizedSummary?.remainingUses,
                 remaining_extract_uses: normalizedSummary?.remainingExtractUses,
@@ -303,6 +452,13 @@
                 remaining_full_jobs: normalizedSummary?.fullJobs,
                 extract_cost_per_job: normalizedCosts.extract,
                 full_cost_per_job: normalizedCosts.full,
+                queue_size: quotaSummary?.queueSize ?? quotaSummary?.queue_size ?? null,
+                running_jobs: quotaSummary?.runningJobs ?? quotaSummary?.running_jobs ?? null,
+                worker_count: quotaSummary?.workerCount ?? quotaSummary?.worker_count ?? null,
+                online_servers: quotaSummary?.onlineServers ?? quotaSummary?.online_servers ?? null,
+                service_status: quotaSummary?.serviceStatus || quotaSummary?.service_status || '',
+                service_message: quotaSummary?.serviceMessage || quotaSummary?.service_message || '',
+                service_checked_at: quotaSummary?.serviceCheckedAt || quotaSummary?.service_checked_at || '',
                 checked_at: new Date().toISOString()
             }));
         } catch (_) {
@@ -409,8 +565,9 @@
             : Number(CONFIG.pricePerVerifyExtract || CONFIG.pricePerVerify || 10);
     }
 
-    function getTaskTypeUsageCost(taskType = 'extract') {
-        const usageCosts = normalizeApiUsageCosts(apiUsageCosts);
+    function getTaskTypeUsageCost(taskType = 'extract', provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        const usageCosts = normalizeApiUsageCosts(state.apiUsageCosts || apiUsageCosts);
         return normalizeTaskType(taskType) === 'full' ? usageCosts.full : usageCosts.extract;
     }
 
@@ -438,14 +595,22 @@
             : quotaSummary?.extractJobs ?? 0;
     }
 
-    function updateSystemRemainingDisplay(quotaSummary = buildQuotaSummary(apiCredits)) {
-        const remainingEl = document.getElementById('verifySystemRemainingCount');
-        if (!remainingEl) return;
-        if (apiCredits < 0) {
-            remainingEl.textContent = '--';
-            return;
-        }
-        remainingEl.textContent = formatBalanceValue(getApiQuotaModeRemainingJobs(getSelectedTaskType(), quotaSummary));
+    function getChannelRemainingJobs(provider = activeVerifyProvider, taskType = getSelectedTaskType()) {
+        const state = getChannelState(provider);
+        if (state.apiCredits < 0) return null;
+        return getApiQuotaModeRemainingJobs(
+            taskType,
+            buildQuotaSummary(state.apiCredits, state.apiQuotaSummary, provider)
+        );
+    }
+
+    function getProviderRemainingTone(remaining) {
+        if (remaining === null || remaining === undefined || remaining === '') return 'unknown';
+        const numeric = Number(remaining);
+        if (!Number.isFinite(numeric)) return 'unknown';
+        if (numeric <= 0) return 'danger';
+        if (numeric < 5) return 'warning';
+        return 'ok';
     }
 
     function getTaskTypeSubmitLabel(taskType = 'extract') {
@@ -558,6 +723,281 @@
         return true;
     }
 
+    function saveActiveChannelFormState() {
+        const state = getChannelState(activeVerifyProvider);
+        state.form = {
+            ...state.form,
+            submitMode: verifySubmitMode,
+            taskType: getSelectedTaskType(),
+            email: String(document.getElementById('verifyEmailInput')?.value || ''),
+            password: String(document.getElementById('verifyPasswordInput')?.value || ''),
+            totp: String(document.getElementById('verifyTotpInput')?.value || ''),
+            batch: String(document.getElementById('verifyBatchInput')?.value || '')
+        };
+        persistCurrentChannelMirrors(activeVerifyProvider);
+    }
+
+    function snapshotResultPanel(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        const batchPanel = document.getElementById('verifyBatchResults');
+        const result = document.getElementById('verifyResult');
+        const resultItems = Array.from(document.querySelectorAll('#verifyResultsList .verify-result-item')).map((item) => ({
+            index: Number(String(item.id || '').replace('result-item-', '')),
+            labelHtml: item.querySelector('.verify-result-item-id')?.innerHTML || '',
+            messageHtml: item.querySelector('.verify-result-item-message')?.innerHTML || '',
+            status: Array.from(item.classList).find((className) => ['success', 'error', 'pending', 'processing', 'info'].includes(className)) || 'pending'
+        }));
+
+        state.resultItems = resultItems;
+        state.showResults = batchPanel?.classList.contains('show') === true;
+        state.singleResult = result?.classList.contains('show')
+            ? {
+                type: Array.from(result.classList).find((className) => ['success', 'error', 'pending'].includes(className)) || 'pending',
+                title: document.getElementById('verifyResultTitle')?.textContent || '',
+                message: document.getElementById('verifyResultMessage')?.textContent || ''
+            }
+            : null;
+        state.progress = {
+            current: Number(document.querySelector('#verifyBatchProgress .current')?.textContent || state.progress?.current || 0) || 0,
+            total: Number(document.querySelector('#verifyBatchProgress .total')?.textContent || state.progress?.total || 1) || 1
+        };
+        state.showSummary = document.getElementById('verifyBatchSummary')?.hidden === false;
+    }
+
+    function restoreChannelFormState(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        const form = state.form || {};
+        const emailInput = document.getElementById('verifyEmailInput');
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const totpInput = document.getElementById('verifyTotpInput');
+        const batchInput = document.getElementById('verifyBatchInput');
+
+        verifySubmitMode = normalizeSubmitMode(form.submitMode || verifySubmitMode);
+        if (emailInput) emailInput.value = form.email || '';
+        if (passwordInput) passwordInput.value = form.password || '';
+        if (totpInput) totpInput.value = form.totp || '';
+        if (batchInput) batchInput.value = form.batch || '';
+        setSelectedTaskType(form.taskType || getDefaultTaskType());
+        updateSubmitModeUi();
+    }
+
+    function restoreChannelResultPanel(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        const batchPanel = document.getElementById('verifyBatchResults');
+        const result = document.getElementById('verifyResult');
+        const list = document.getElementById('verifyResultsList');
+
+        if (list) {
+            list.innerHTML = '';
+            (state.resultItems || []).forEach((item, fallbackIndex) => {
+                const index = Number.isFinite(Number(item.index)) ? Number(item.index) : fallbackIndex;
+                const el = document.createElement('div');
+                el.className = `verify-result-item ${item.status || 'pending'}`;
+                el.id = `result-item-${index}`;
+                el.innerHTML = `
+                    <div class="verify-result-item-content">
+                        <div class="verify-result-item-id">${item.labelHtml || `#${index + 1}`}</div>
+                        <div class="verify-result-item-message">${item.messageHtml || ''}</div>
+                    </div>
+                `;
+                list.appendChild(el);
+            });
+        }
+
+        if (batchPanel) batchPanel.classList.toggle('show', state.showResults === true);
+        if (state.singleResult && result) {
+            result.className = `verify-result show ${state.singleResult.type || 'pending'}`;
+            const titleEl = document.getElementById('verifyResultTitle');
+            const msgEl = document.getElementById('verifyResultMessage');
+            if (titleEl) titleEl.textContent = state.singleResult.title || '';
+            if (msgEl) msgEl.textContent = state.singleResult.message || '';
+        } else if (result) {
+            result.classList.remove('show');
+        }
+
+        updateBatchProgress(state.progress?.current || 0, state.progress?.total || state.batchStats?.total || 1);
+        if (state.showSummary) {
+            showBatchSummary(provider);
+        } else {
+            hideBatchSummary(provider);
+        }
+    }
+
+    function refreshChannelControls(provider = activeVerifyProvider) {
+        const state = syncCurrentChannelMirrors(provider);
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const resetBtn = document.getElementById('verifyResetBtn');
+        if (submitBtn) {
+            submitBtn.classList.remove('verify-submit-btn--maintenance');
+            submitBtn.disabled = state.isLoading || CONFIG.enabled === false;
+            submitBtn.innerHTML = state.isLoading
+                ? `<div class="spinner"></div> ${verifySubmitMode === 'batch' ? t('verify.batchSubmitting', '批量提交中...') : t('verify.verifying', '提交中...')}`
+                : buildVerifySubmitButtonMarkup(getSubmitButtonLabel(getSelectedTaskType()));
+        }
+        if (resetBtn) resetBtn.disabled = state.isLoading;
+        updateQuotaDisplay();
+        updateProviderSwitcherUi();
+        if (CONFIG.enabled === false) applyMaintenanceState();
+    }
+
+    function getProviderActiveTaskCount(provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        let count = 0;
+        activeTasks.forEach((task) => {
+            if (normalizeVerifyProvider(task.provider) === normalizedProvider) {
+                count += 1;
+            }
+        });
+        return count;
+    }
+
+    function getRecommendedVerifyProvider(taskType = getSelectedTaskType()) {
+        const candidates = getVisibleVerifyProviders()
+            .map((providerConfig) => {
+                const provider = normalizeVerifyProvider(providerConfig.provider, VERIFY_PROVIDER_AIDONE);
+                const state = getChannelState(provider);
+                const health = state.health || normalizeProviderHealth({});
+                const remaining = getChannelRemainingJobs(provider, taskType);
+                const activeCount = getProviderActiveTaskCount(provider);
+                const unavailable = health.tone === 'down' || remaining === 0;
+                const unknownPenalty = remaining === null ? 1 : 0;
+                const score = unavailable
+                    ? -1000
+                    : (Number.isFinite(Number(remaining)) ? Math.min(50, Number(remaining)) : 8)
+                        - activeCount * 4
+                        - health.queueSize * 0.6
+                        - health.runningJobs * 1.2
+                        - (health.tone === 'busy' ? 6 : 0)
+                        - unknownPenalty;
+                return {
+                    provider,
+                    score
+                };
+            })
+            .sort((left, right) => right.score - left.score);
+
+        return candidates[0]?.score > -1000
+            ? candidates[0].provider
+            : normalizeVerifyProvider(getVisibleVerifyProviders()[0]?.provider || activeVerifyProvider);
+    }
+
+    function getProviderHealthLabel(provider = activeVerifyProvider) {
+        const health = getChannelState(provider).health || normalizeProviderHealth({});
+        if (health.tone === 'down') return t('verify.channelDown', '异常');
+        if (health.tone === 'busy') return t('verify.channelBusy', '繁忙');
+        return t('verify.channelHealthy', '正常');
+    }
+
+    function updateProviderSwitcherUi() {
+        const recommendedProvider = getRecommendedVerifyProvider(getSelectedTaskType());
+        document.querySelectorAll('[data-verify-provider-option]').forEach((btn) => {
+            const provider = normalizeVerifyProvider(btn.dataset.verifyProviderOption);
+            const isActive = provider === activeVerifyProvider;
+            const isRecommended = provider === recommendedProvider;
+            const remaining = getChannelRemainingJobs(provider, getSelectedTaskType());
+            const running = getProviderActiveTaskCount(provider);
+            const health = getChannelState(provider).health || normalizeProviderHealth({});
+            btn.classList.toggle('active', isActive);
+            btn.classList.toggle('recommended', isRecommended);
+            btn.dataset.healthTone = health.tone || 'ok';
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            const countEl = btn.querySelector('[data-verify-provider-remaining]');
+            const runningEl = btn.querySelector('[data-verify-provider-running]');
+            const healthEl = btn.querySelector('[data-verify-provider-health]');
+            if (countEl) {
+                countEl.textContent = remaining === null ? '--' : formatBalanceValue(remaining);
+                countEl.dataset.remainingTone = getProviderRemainingTone(remaining);
+            }
+            if (healthEl) healthEl.textContent = getProviderHealthLabel(provider);
+            if (runningEl) {
+                runningEl.textContent = String(running);
+                runningEl.closest('.verify-provider-option__running')?.toggleAttribute('hidden', running <= 0);
+            }
+        });
+
+        const activeLabelEl = document.getElementById('verifyActiveProviderLabel');
+        if (activeLabelEl) activeLabelEl.textContent = getProviderLabel(activeVerifyProvider);
+    }
+
+    function getAlternateVerifyProvider(provider = activeVerifyProvider, taskType = getSelectedTaskType()) {
+        const currentProvider = normalizeVerifyProvider(provider);
+        const alternatives = getVisibleVerifyProviders()
+            .map((item) => normalizeVerifyProvider(item.provider, VERIFY_PROVIDER_AIDONE))
+            .filter((item) => item !== currentProvider);
+        if (!alternatives.length) return '';
+        const recommended = getRecommendedVerifyProvider(taskType);
+        return alternatives.includes(recommended) ? recommended : alternatives[0];
+    }
+
+    function buildRetryOnAlternateMarkup(entry = {}, provider = activeVerifyProvider) {
+        if (!entry?.email || !entry?.password || !entry?.totpSecret) {
+            return '';
+        }
+        const retryProvider = getAlternateVerifyProvider(provider, entry.taskType || getSelectedTaskType());
+        if (!retryProvider) return '';
+        const retryId = `${normalizeVerifyProvider(provider)}:${Number(entry.index) || 0}:${Date.now()}`;
+        retryEntries.set(retryId, {
+            ...entry,
+            index: 0,
+            provider: retryProvider,
+            retryFromProvider: normalizeVerifyProvider(provider)
+        });
+        return `
+            <div class="verify-result-actions">
+                <button type="button" class="verify-result-action-btn" data-verify-action="retry-on-provider" data-verify-retry-id="${escapeHtml(retryId)}">
+                    <i class="fas fa-right-left"></i>
+                    <span>${escapeHtml(t('verify.retryOnAlternateChannel', '转投另一通道'))}</span>
+                    <strong>${escapeHtml(getProviderLabel(retryProvider))}</strong>
+                </button>
+            </div>
+        `;
+    }
+
+    async function retryOnProvider(retryId = '') {
+        const entry = retryEntries.get(String(retryId || ''));
+        if (!entry || isLoading) return;
+        const provider = normalizeVerifyProvider(entry.provider || getAlternateVerifyProvider(activeVerifyProvider, entry.taskType));
+        if (!provider) return;
+
+        switchVerifyProvider(provider);
+        verifySubmitMode = 'single';
+        const state = getChannelState(provider);
+        state.form = {
+            ...state.form,
+            submitMode: 'single',
+            taskType: normalizeTaskType(entry.taskType || getDefaultTaskType()),
+            email: entry.email || '',
+            password: entry.password || '',
+            totp: entry.totpSecret || '',
+            batch: ''
+        };
+        restoreChannelFormState(provider);
+        retryEntries.delete(String(retryId || ''));
+        await submit();
+    }
+
+    function switchVerifyProvider(provider = VERIFY_PROVIDER_AIDONE) {
+        const nextProvider = normalizeVerifyProvider(provider);
+        if (nextProvider === activeVerifyProvider) {
+            return;
+        }
+
+        saveActiveChannelFormState();
+        snapshotResultPanel(activeVerifyProvider);
+        activeVerifyProvider = nextProvider;
+        syncCurrentChannelMirrors(activeVerifyProvider);
+        restoreChannelFormState(activeVerifyProvider);
+        restoreChannelResultPanel(activeVerifyProvider);
+        refreshChannelControls(activeVerifyProvider);
+        const state = getChannelState(activeVerifyProvider);
+        if (state.isLoading || state.ring?.state === 'running') {
+            applyRingState('running', state.ring?.progress || 12);
+        } else {
+            syncRingStateFromInputs();
+        }
+        refreshQuotaSoon(0, activeVerifyProvider);
+    }
+
     function isTransientAvatarUrl(url) {
         if (!url) return false;
         return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url));
@@ -637,47 +1077,71 @@
         const site = String(task.site || getCurrentSiteValue()).trim() || 'cn';
         const createdAt = String(task.createdAt || task.created_at || new Date().toISOString()).trim();
         const taskType = normalizeTaskType(task.taskType || task.task_type || 'extract');
+        const provider = normalizeVerifyProvider(task.provider || task.verify_provider || activeVerifyProvider);
 
         if (!jobId || !email || !userId) return null;
 
-        return { jobId, email, userId, site, createdAt, taskType };
+        return { jobId, email, userId, site, createdAt, taskType, provider };
     }
 
-    function readPendingTask() {
+    function readPendingTasks() {
         try {
             const raw = localStorage.getItem(PENDING_TASK_STORAGE_KEY);
-            if (!raw) return null;
-            const normalized = normalizePendingTask(JSON.parse(raw));
-            if (!normalized) {
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            const sourceTasks = Array.isArray(parsed)
+                ? parsed
+                : Array.isArray(parsed?.tasks)
+                    ? parsed.tasks
+                    : [parsed];
+            const normalizedTasks = sourceTasks.map(normalizePendingTask).filter(Boolean);
+            if (!normalizedTasks.length) {
                 localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
-                return null;
+                return [];
             }
-            return normalized;
+            return normalizedTasks;
         } catch (_) {
             localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
-            return null;
+            return [];
         }
+    }
+
+    function readPendingTask(provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        return readPendingTasks().find((task) => normalizeVerifyProvider(task.provider) === normalizedProvider) || null;
     }
 
     function persistPendingTask(task) {
         const normalized = normalizePendingTask(task);
         if (!normalized) return;
-        localStorage.setItem(PENDING_TASK_STORAGE_KEY, JSON.stringify(normalized));
+        const tasks = readPendingTasks()
+            .filter((item) => item.jobId !== normalized.jobId && normalizeVerifyProvider(item.provider) !== normalizeVerifyProvider(normalized.provider));
+        tasks.push(normalized);
+        localStorage.setItem(PENDING_TASK_STORAGE_KEY, JSON.stringify({ tasks }));
     }
 
     function clearPendingTask(jobId = '') {
-        const pending = readPendingTask();
-        if (!pending) return;
-        if (!jobId || pending.jobId === jobId) {
+        if (!jobId) {
+            localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
+            return;
+        }
+        const tasks = readPendingTasks().filter((task) => task.jobId !== jobId);
+        if (tasks.length) {
+            localStorage.setItem(PENDING_TASK_STORAGE_KEY, JSON.stringify({ tasks }));
+        } else {
             localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
         }
     }
 
-    function clearActiveTaskTimers() {
-        activeTasks.forEach((task) => {
+    function clearActiveTaskTimers(provider = '') {
+        const normalizedProvider = provider ? normalizeVerifyProvider(provider) : '';
+        activeTasks.forEach((task, jobId) => {
+            if (normalizedProvider && normalizeVerifyProvider(task?.provider) !== normalizedProvider) {
+                return;
+            }
             if (task?.timer) clearInterval(task.timer);
+            activeTasks.delete(jobId);
         });
-        activeTasks.clear();
     }
 
     function getLang() {
@@ -767,6 +1231,9 @@
             }
 
             switch (actionEl.dataset.verifyAction) {
+                case 'switch-provider':
+                    switchVerifyProvider(actionEl.dataset.verifyProvider || actionEl.dataset.verifyProviderOption || VERIFY_PROVIDER_AIDONE);
+                    break;
                 case 'wallet-open':
                     void openVerifyWalletBalance();
                     break;
@@ -808,6 +1275,9 @@
                     break;
                 case 'purchase-failed-link':
                     void handleHistoryJobAction('purchase_failed_link', actionEl);
+                    break;
+                case 'retry-on-provider':
+                    void retryOnProvider(actionEl.dataset.verifyRetryId || '');
                     break;
                 default:
                     break;
@@ -924,6 +1394,11 @@
     function applyRingState(state, progress = null) {
         const widget = getWidgetElement();
         if (!widget) return;
+        const channelState = getChannelState(activeVerifyProvider);
+        channelState.ring = {
+            state,
+            progress: progress ?? channelState.ring?.progress ?? 0
+        };
 
         widget.classList.remove(
             'ring-idle',
@@ -947,11 +1422,15 @@
         }
 
         if (state === 'running') {
-            setRingProgress(progress ?? 12, true);
+            const resolvedProgress = progress ?? 12;
+            channelState.ring.progress = resolvedProgress;
+            setRingProgress(resolvedProgress, true);
             return;
         }
 
-        setRingProgress(progress ?? 100, true);
+        const resolvedProgress = progress ?? 100;
+        channelState.ring.progress = resolvedProgress;
+        setRingProgress(resolvedProgress, true);
     }
 
     function syncRingStateFromInputs() {
@@ -962,6 +1441,7 @@
     function triggerRingOutcome(outcome) {
         const widget = getWidgetElement();
         if (!widget) return;
+        getChannelState(activeVerifyProvider).lastOutcome = outcome;
 
         clearRingResetTimer();
         applyRingState(outcome, 100);
@@ -980,6 +1460,19 @@
     }
 
     function updateExecutionRing(data) {
+        const provider = normalizeVerifyProvider(arguments[1] || activeVerifyProvider);
+        if (!isProviderVisible(provider)) {
+            const status = normalizeVerifyClientStatus(data);
+            const providerProgress = getProviderProgress(data);
+            const state = getChannelState(provider);
+            state.ring = {
+                state: 'running',
+                progress: providerProgress !== null
+                    ? (status === 'success' || status === 'failed' ? 100 : providerProgress)
+                    : state.ring?.progress || 12
+            };
+            return;
+        }
         const status = normalizeVerifyClientStatus(data);
         const providerProgress = getProviderProgress(data);
 
@@ -1081,13 +1574,13 @@
         return Math.max(0, Math.floor((numericBalance + 1e-9) / usageCost));
     }
 
-    function buildQuotaSummary(balance, summary = apiQuotaSummary) {
-        const normalizedSummary = normalizeApiQuotaSummary(summary, balance);
+    function buildQuotaSummary(balance, summary = apiQuotaSummary, provider = activeVerifyProvider) {
+        const normalizedSummary = normalizeApiQuotaSummary(summary, balance, provider);
         if (normalizedSummary) {
             return normalizedSummary;
         }
 
-        return normalizeApiQuotaSummary({ balance });
+        return normalizeApiQuotaSummary({ balance }, null, provider);
     }
 
     function getQuotaAvailableJobs(quotaSummary = null, taskType = 'extract') {
@@ -1560,7 +2053,38 @@
                     CONFIG.pricePerVerifyFull = Number(config.price_per_verify_full || config.pricePerVerifyFull) || Math.max(CONFIG.pricePerVerifyExtract, CONFIG.pricePerVerifyExtract * 2);
                     CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);
                     CONFIG.enabled = config.enabled !== false;
+                    const providers = Array.isArray(config.providers) && config.providers.length
+                        ? config.providers
+                        : VERIFY_PROVIDER_KEYS.map((provider) => ({ provider, label: VERIFY_PROVIDER_LABELS[provider], enabled: CONFIG.enabled }));
+                    verifyProviders = providers.map((item) => {
+                        const provider = normalizeVerifyProvider(item.provider || item.provider_key || item.key);
+                        return {
+                            ...item,
+                            provider,
+                            label: String(item.label || item.provider_label || VERIFY_PROVIDER_LABELS[provider] || provider).trim(),
+                            enabled: item.enabled !== false
+                        };
+                    });
+                    activeVerifyProvider = normalizeVerifyProvider(config.active_provider || config.activeProvider || config.provider || activeVerifyProvider);
+                    if (!getVisibleVerifyProviders().some((item) => item.provider === activeVerifyProvider)) {
+                        activeVerifyProvider = getVisibleVerifyProviders()[0]?.provider || VERIFY_PROVIDER_AIDONE;
+                    }
+                    VERIFY_PROVIDER_KEYS.forEach((provider) => getChannelState(provider));
+                    verifyProviders.forEach((providerConfig) => {
+                        const state = getChannelState(providerConfig.provider);
+                        state.provider = providerConfig.provider;
+                        state.label = providerConfig.label;
+                        state.enabled = providerConfig.enabled !== false;
+                        state.apiUsageCosts = normalizeApiUsageCosts({
+                            extract_cost_per_job: providerConfig.extract_cost_per_job,
+                            full_cost_per_job: providerConfig.full_cost_per_job,
+                            extract: providerConfig.provider === VERIFY_PROVIDER_CATCARD ? 1 : 0.5,
+                            full: 1
+                        });
+                    });
+                    syncCurrentChannelMirrors(activeVerifyProvider);
                     syncModeSelectorFromConfig();
+                    updateProviderSwitcherUi();
                 }
             }
         } catch (_) {
@@ -1710,6 +2234,7 @@
     async function handleHistoryJobAction(action, button) {
         const jobId = String(button?.dataset?.verifyJobId || '').trim();
         if (!jobId) return;
+        const actionProvider = normalizeVerifyProvider(activeTasks.get(jobId)?.provider || activeVerifyProvider);
 
         const isPurchaseAction = action === 'purchase_failed_link';
         const confirmMessage = isPurchaseAction
@@ -1760,7 +2285,7 @@
             }
 
             loadUserBalance();
-            loadApiQuota();
+            loadApiQuota(actionProvider);
             loadHistory();
         } catch (error) {
             showSingleResult(
@@ -1775,23 +2300,29 @@
         }
     }
 
-    async function loadApiQuota() {
+    async function loadApiQuota(provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        const state = getChannelState(normalizedProvider);
         try {
             const headers = await getVerifyRequestHeaders();
             const site = getCurrentSiteValue();
+            const providerQuery = `provider=${encodeURIComponent(normalizedProvider)}`;
             const quotaEndpoints = [
-                `/api/public?scope=config&route=verify-quota&site=${encodeURIComponent(site)}`,
-                `${CONFIG.nodeServerUrl}/api/quota?site=${encodeURIComponent(site)}`
+                `/api/public?scope=config&route=verify-quota&site=${encodeURIComponent(site)}&${providerQuery}`,
+                `${CONFIG.nodeServerUrl}/api/quota?site=${encodeURIComponent(site)}&${providerQuery}`
             ];
 
-            const cachedQuota = readCachedApiQuota(site);
-            apiCredits = Number.isFinite(Number(cachedQuota?.balance)) ? Number(cachedQuota.balance) : -1;
+            const cachedQuota = readCachedApiQuota(site, normalizedProvider);
+            state.apiCredits = Number.isFinite(Number(cachedQuota?.balance)) ? Number(cachedQuota.balance) : -1;
             if (cachedQuota) {
-                applyApiUsageCosts(cachedQuota);
-                apiQuotaSummary = buildQuotaSummary(apiCredits, cachedQuota);
+                applyApiUsageCosts(cachedQuota, normalizedProvider);
+                state.apiQuotaSummary = buildQuotaSummary(state.apiCredits, cachedQuota, normalizedProvider);
+                state.health = normalizeProviderHealth(cachedQuota);
             } else {
-                apiQuotaSummary = null;
+                state.apiQuotaSummary = null;
+                state.health = normalizeProviderHealth({});
             }
+            if (normalizedProvider === activeVerifyProvider) syncCurrentChannelMirrors(normalizedProvider);
 
             for (const endpoint of quotaEndpoints) {
                 try {
@@ -1801,15 +2332,27 @@
                         applyApiUsageCosts({
                             extract_cost_per_job: data.extract_cost_per_job,
                             full_cost_per_job: data.full_cost_per_job
-                        });
-                        apiQuotaSummary = buildQuotaSummary(
+                        }, normalizedProvider);
+                        state.apiQuotaSummary = buildQuotaSummary(
                             pickFiniteNumber(data.balance, data.credits, data.remaining_uses),
-                            data
+                            data,
+                            normalizedProvider
                         );
-                        apiCredits = Number.isFinite(Number(apiQuotaSummary?.remainingUses))
-                            ? Number(apiQuotaSummary.remainingUses)
+                        state.apiCredits = Number.isFinite(Number(state.apiQuotaSummary?.remainingUses))
+                            ? Number(state.apiQuotaSummary.remainingUses)
                             : 0;
-                        persistCachedApiQuota(apiCredits, site, apiUsageCosts, apiQuotaSummary);
+                        state.health = normalizeProviderHealth(data);
+                        persistCachedApiQuota(state.apiCredits, site, state.apiUsageCosts, {
+                            ...state.apiQuotaSummary,
+                            queue_size: data.queue_size,
+                            running_jobs: data.running_jobs,
+                            worker_count: data.worker_count,
+                            online_servers: data.online_servers,
+                            service_status: data.service_status,
+                            service_message: data.service_message,
+                            service_checked_at: data.service_checked_at
+                        }, normalizedProvider);
+                        if (normalizedProvider === activeVerifyProvider) syncCurrentChannelMirrors(normalizedProvider);
                         break;
                     }
                 } catch (_) {
@@ -1817,35 +2360,55 @@
                 }
             }
         } catch (_) {
-            const cachedQuota = readCachedApiQuota();
-            apiCredits = Number.isFinite(Number(cachedQuota?.balance)) ? Number(cachedQuota.balance) : -1;
+            const cachedQuota = readCachedApiQuota(getCurrentSiteValue(), normalizedProvider);
+            state.apiCredits = Number.isFinite(Number(cachedQuota?.balance)) ? Number(cachedQuota.balance) : -1;
             if (cachedQuota) {
-                applyApiUsageCosts(cachedQuota);
-                apiQuotaSummary = buildQuotaSummary(apiCredits, cachedQuota);
+                applyApiUsageCosts(cachedQuota, normalizedProvider);
+                state.apiQuotaSummary = buildQuotaSummary(state.apiCredits, cachedQuota, normalizedProvider);
+                state.health = normalizeProviderHealth(cachedQuota);
             } else {
-                apiQuotaSummary = null;
+                state.apiQuotaSummary = null;
+                state.health = normalizeProviderHealth({});
             }
+            if (normalizedProvider === activeVerifyProvider) syncCurrentChannelMirrors(normalizedProvider);
         }
-        updateQuotaDisplay();
+        if (normalizedProvider === activeVerifyProvider) updateQuotaDisplay();
+        updateProviderSwitcherUi();
     }
 
-    function scheduleQuotaRefresh(delayMs = 0) {
-        if (quotaRefreshTimer) {
-            clearTimeout(quotaRefreshTimer);
-            quotaRefreshTimer = null;
+    async function loadAllApiQuotas() {
+        await Promise.all(VERIFY_PROVIDER_KEYS.map((provider) => loadApiQuota(provider)));
+    }
+
+    function getQuotaRefreshKey(provider = '') {
+        return provider ? normalizeVerifyProvider(provider) : 'all';
+    }
+
+    function scheduleQuotaRefresh(delayMs = 0, provider = '') {
+        const key = getQuotaRefreshKey(provider);
+        const existingTimer = quotaRefreshTimers.get(key);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+            quotaRefreshTimers.delete(key);
         }
 
-        quotaRefreshTimer = window.setTimeout(() => {
-            quotaRefreshTimer = null;
-            quotaRefreshPending = false;
-            void loadApiQuota();
+        const timer = window.setTimeout(() => {
+            quotaRefreshTimers.delete(key);
+            quotaRefreshPending.delete(key);
+            if (provider) {
+                void loadApiQuota(provider);
+            } else {
+                void loadAllApiQuotas();
+            }
         }, Math.max(0, Number(delayMs) || 0));
+        quotaRefreshTimers.set(key, timer);
     }
 
-    function refreshQuotaSoon(delayMs = 0) {
-        if (quotaRefreshPending) return;
-        quotaRefreshPending = true;
-        scheduleQuotaRefresh(delayMs);
+    function refreshQuotaSoon(delayMs = 0, provider = '') {
+        const key = getQuotaRefreshKey(provider);
+        if (quotaRefreshPending.has(key)) return;
+        quotaRefreshPending.add(key);
+        scheduleQuotaRefresh(delayMs, provider);
     }
 
     function updateQuotaDisplay() {
@@ -1878,8 +2441,6 @@
                 quotaEl.innerHTML = `<i class="fas fa-gem"></i> <span class="verify-api-quota-value">${escapeHtml(formatBalanceValue(selectedRemainingJobs))}</span>`;
             }
         }
-        updateSystemRemainingDisplay(quotaSummary);
-
         if (quotaBar) {
             if (quotaWarningState) {
                 setVerifyHidden(quotaBar, false);
@@ -1924,8 +2485,29 @@
                                                 <span class="verify-mode-option__title">${t('verify.modeFullTitle', '全流程包绑卡')}</span>
                                                 <span class="verify-mode-option__meta"><span id="verifyFullModePrice">${CONFIG.pricePerVerifyFull}</span> ${t('verify.points', '积分')} · <span id="verifyFullModeMeta">${t('verify.modeDescFull', '完成 Google One 订阅流程')}</span></span>
                                             </span>
-                                        </label>`
+	                                        </label>`
             : '';
+        const providerTabsMarkup = getVisibleVerifyProviders().map((providerConfig) => {
+            const provider = normalizeVerifyProvider(providerConfig.provider);
+            const isActive = provider === activeVerifyProvider;
+            const isRecommended = provider === getRecommendedVerifyProvider(defaultTaskType);
+            const label = getProviderLabel(provider);
+            const remaining = getChannelRemainingJobs(provider, defaultTaskType);
+            const remainingTone = getProviderRemainingTone(remaining);
+            const running = getProviderActiveTaskCount(provider);
+            const health = getChannelState(provider).health || normalizeProviderHealth({});
+            return `
+                                    <button class="verify-provider-option ${isActive ? 'active' : ''} ${isRecommended ? 'recommended' : ''}" type="button" data-verify-action="switch-provider" data-verify-provider="${escapeHtml(provider)}" data-verify-provider-option="${escapeHtml(provider)}" data-health-tone="${escapeHtml(health.tone || 'ok')}" aria-pressed="${isActive ? 'true' : 'false'}">
+                                        <span class="verify-provider-option__main">
+                                            <span>${escapeHtml(label)}</span>
+                                        </span>
+                                        <span class="verify-provider-option__meta">
+                                            <span class="verify-provider-option__health">${t('verify.channelHealth', '状态')} <strong data-verify-provider-health>${escapeHtml(getProviderHealthLabel(provider))}</strong></span>
+                                            <span class="verify-provider-option__running"${running > 0 ? '' : ' hidden'}>${t('verify.processText', '处理中')} <strong data-verify-provider-running>${running}</strong></span>
+                                        </span>
+                                        <span class="verify-provider-option__remaining">${t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')}<strong data-verify-provider-remaining data-remaining-tone="${escapeHtml(remainingTone)}">${remaining === null ? '--' : escapeHtml(formatBalanceValue(remaining))}</strong></span>
+                                    </button>`;
+        }).join('');
 
         container.innerHTML = `
             <div class="verify-widget ring-idle">
@@ -1943,9 +2525,6 @@
                         <p>${t('verify.subtitle', '获取 1年 pro 权限的使用权限')}</p>
                     </div>
                     <div class="verify-header-right">
-                        <div class="verify-api-quota" id="verifyApiQuota" aria-label="${t('verify.remainingSubmitCount', '剩余可提交次数')}">
-                            <i class="fas fa-gem"></i> <span class="verify-api-quota-value">--</span>
-                        </div>
                         <div class="verify-balance" id="verifyBalance" data-verify-action="wallet-open" title="${t('verify.walletTitle', '我的钱包')}"${isLoggedIn ? '' : ' hidden'}>
                             <i class="fas fa-coins"></i>
                             <span id="verifyBalanceValue">0</span>
@@ -1967,10 +2546,14 @@
                         </button>
                     </div>
 
-                    <div id="verifyForm">
-                        <div class="verify-form-shell">
-                            <div class="verify-input-area verify-form-main">
-                                <div class="verify-submit-mode-tabs" role="group" aria-label="${t('verify.submitModeLabel', '提交方式')}" data-verify-submit-mode="single">
+	                    <div id="verifyForm">
+	                        <div class="verify-form-shell">
+	                            <div class="verify-input-area verify-form-main">
+	                                <div class="verify-provider-switcher" role="group" aria-label="${t('verify.providerChannelLabel', '验证通道')}">
+${providerTabsMarkup}
+	                                </div>
+
+	                                <div class="verify-submit-mode-tabs" role="group" aria-label="${t('verify.submitModeLabel', '提交方式')}" data-verify-submit-mode="single">
                                     <button class="verify-submit-mode-btn active" type="button" data-verify-action="set-submit-mode" data-verify-mode="single" aria-pressed="true">
                                         <i class="fas fa-user"></i>
                                         ${t('verify.singleMode', '单个账号')}
@@ -2057,8 +2640,6 @@ ${fullModeMarkup}
                                         <i class="fas fa-coins"></i>
                                         ${t('verify.singleCost', '本次提交消耗')} <span class="price" id="verifySingleCost">${CONFIG.pricePerVerify}</span> ${t('verify.points', '积分')}
                                         <span class="verify-price-separator" aria-hidden="true">·</span>
-                                        <span class="verify-system-remaining">${t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')} <span class="verify-system-remaining-count" id="verifySystemRemainingCount">--</span></span>
-                                        <span class="verify-price-separator" aria-hidden="true">·</span>
                                         <span class="verify-bulk-contact">${t('verify.bulkContactSupport', '大批量可联系客服')}</span>
                                     </div>
                                 </div>
@@ -2074,11 +2655,12 @@ ${fullModeMarkup}
                                 </div>
 
                                 <div class="verify-batch-results" id="verifyBatchResults">
-                                    <div class="verify-batch-results-header">
-                                        <div class="verify-batch-results-title">
-                                            <i class="fas fa-list-check"></i>
-                                            ${t('verify.results', '任务状态')}
-                                        </div>
+	                                    <div class="verify-batch-results-header">
+	                                        <div class="verify-batch-results-title">
+	                                            <i class="fas fa-list-check"></i>
+	                                            ${t('verify.results', '任务状态')}
+	                                            <span class="verify-active-provider-badge" id="verifyActiveProviderLabel">${escapeHtml(getProviderLabel(activeVerifyProvider))}</span>
+	                                        </div>
                                         <div class="verify-batch-progress" id="verifyBatchProgress">
                                             ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">1</span>
                                         </div>
@@ -2221,12 +2803,18 @@ ${fullModeMarkup}
         bindDelegatedUi(container);
         setupInputListener();
         updatePreviewModeUI();
+        syncCurrentChannelMirrors(activeVerifyProvider);
+        restoreChannelFormState(activeVerifyProvider);
+        restoreChannelResultPanel(activeVerifyProvider);
         updatePriceDisplay();
         updateTaskTypeUi();
         updateQuotaDisplay();
+        updateProviderSwitcherUi();
         loadHistory();
         syncRingStateFromInputs();
-        if (currentUser) restorePendingTask({ restart: true });
+        if (currentUser) {
+            VERIFY_PROVIDER_KEYS.forEach((provider) => restorePendingTask({ restart: true, provider }));
+        }
 
         if (!walletBalanceListenerBound) {
             window.addEventListener('walletBalanceUpdated', (e) => {
@@ -2755,10 +3343,10 @@ ${fullModeMarkup}
         const unitCost = getTaskTypePrice(getSelectedTaskType());
         const singleCost = document.getElementById('verifySingleCost');
         if (singleCost) singleCost.textContent = taskCount > 1 ? `${unitCost * taskCount}` : unitCost;
-        updateSystemRemainingDisplay();
     }
 
     function prepareExecutionDisplay(label, waitingMessage, total = 1) {
+        const state = getChannelState(activeVerifyProvider);
         const batchPanel = document.getElementById('verifyBatchResults');
         const singleResult = document.getElementById('verifyResult');
         const normalizedTotal = Math.max(1, Number(total) || 1);
@@ -2767,7 +3355,9 @@ ${fullModeMarkup}
         if (batchPanel) batchPanel.classList.add('show');
 
         batchStats = { success: 0, failed: 0, total: normalizedTotal };
-        clearActiveTaskTimers();
+        state.batchStats = batchStats;
+        state.singleResult = null;
+        clearActiveTaskTimers(activeVerifyProvider);
         clearResultsList();
         hideBatchSummary();
         addResultItem(0, label, 'processing', escapeHtml(waitingMessage));
@@ -2776,6 +3366,7 @@ ${fullModeMarkup}
     }
 
     function prepareBatchExecutionDisplay(entries, waitingMessage) {
+        const state = getChannelState(activeVerifyProvider);
         const batchPanel = document.getElementById('verifyBatchResults');
         const singleResult = document.getElementById('verifyResult');
         const total = Math.max(1, entries.length);
@@ -2784,7 +3375,9 @@ ${fullModeMarkup}
         if (batchPanel) batchPanel.classList.add('show');
 
         batchStats = { success: 0, failed: 0, total };
-        clearActiveTaskTimers();
+        state.batchStats = batchStats;
+        state.singleResult = null;
+        clearActiveTaskTimers(activeVerifyProvider);
         clearResultsList();
         hideBatchSummary();
         entries.forEach((entry) => {
@@ -2807,6 +3400,7 @@ ${fullModeMarkup}
         prepareExecutionDisplay(label, t('verify.previewQueued', '演示排队中...'));
 
         isLoading = true;
+        getChannelState(activeVerifyProvider).isLoading = true;
         if (submitBtn) {
             submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = true;
@@ -2829,6 +3423,7 @@ ${fullModeMarkup}
 
             if (previewMode === 'success') {
                 batchStats.success = 1;
+                getChannelState(activeVerifyProvider).batchStats = batchStats;
                 updateResultItem(
                     0,
                     'success',
@@ -2840,6 +3435,7 @@ ${fullModeMarkup}
             }
 
             batchStats.failed = 1;
+            getChannelState(activeVerifyProvider).batchStats = batchStats;
             updateResultItem(
                 0,
                 'error',
@@ -2876,7 +3472,7 @@ ${fullModeMarkup}
 
     function restorePendingTask(options = {}) {
         const { restart = false } = options;
-        const pending = readPendingTask();
+        const pending = readPendingTask(options.provider || activeVerifyProvider);
         const currentUserId = getUserId(currentUser);
 
         if (!pending || !currentUserId || pending.userId !== String(currentUserId) || pending.site !== getCurrentSiteValue()) {
@@ -2887,6 +3483,12 @@ ${fullModeMarkup}
             return true;
         }
 
+        const provider = normalizeVerifyProvider(pending.provider || activeVerifyProvider);
+        const previousProvider = activeVerifyProvider;
+        if (previousProvider !== provider) {
+            activeVerifyProvider = provider;
+            syncCurrentChannelMirrors(provider);
+        }
         clearPreviewTimers();
         clearRingResetTimer();
         const pendingTaskType = normalizeTaskType(pending.taskType || getDefaultTaskType(), getDefaultTaskType());
@@ -2894,15 +3496,16 @@ ${fullModeMarkup}
         prepareExecutionDisplay(pending.email, t('verify.resumePending', '正在恢复任务状态...'));
 
         isLoading = true;
+        getChannelState(provider).isLoading = true;
         const submitBtn = document.getElementById('verifySubmitBtn');
         const resetBtn = document.getElementById('verifyResetBtn');
-        if (submitBtn) {
+        if (submitBtn && isProviderVisible(provider)) {
             submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = true;
             submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.restoringTask', '恢复中...')}`;
         }
-        if (resetBtn) resetBtn.disabled = true;
-        setPreviewControlsDisabled(true);
+        if (resetBtn && isProviderVisible(provider)) resetBtn.disabled = true;
+        if (isProviderVisible(provider)) setPreviewControlsDisabled(true);
 
         activeTasks.set(pending.jobId, {
             index: 0,
@@ -2912,36 +3515,52 @@ ${fullModeMarkup}
             priority: 0,
             taskType: pendingTaskType,
             pointsCost: getTaskTypePrice(pendingTaskType),
+            provider,
             restored: true
         });
-        updateExecutionRing({ status: 'queued', queue_position: 0 });
+        updateExecutionRing({ status: 'queued', queue_position: 0 }, provider);
 
         pollTask(pending.jobId, {
             index: 0,
-            email: pending.email
+            email: pending.email,
+            taskType: pendingTaskType,
+            provider
         }).then((result) => {
+            const channelState = getChannelState(provider);
+            const stats = channelState.batchStats || { success: 0, failed: 0, total: 1 };
             if (result.terminal && result.success) {
-                batchStats.success = 1;
+                stats.success = 1;
                 if (result.pointsDeducted) {
                     userBalance = Math.max(0, userBalance - result.pointsDeducted);
                     const balEl = document.getElementById('verifyBalanceValue');
                     if (balEl) balEl.textContent = userBalance;
                 }
             } else if (result.terminal) {
-                batchStats.failed = 1;
+                stats.failed = 1;
             }
 
             if (result.terminal) {
-                updateBatchProgress(1, 1);
+                channelState.batchStats = stats;
+                if (provider === activeVerifyProvider) batchStats = stats;
+                updateBatchProgress(1, 1, provider);
             }
 
             finishVerification({
                 outcome: result.terminal ? (result.success ? 'success' : 'error') : '',
                 jobId: pending.jobId,
                 preservePending: !result.terminal,
-                showSummary: result.terminal
+                showSummary: result.terminal,
+                provider
             });
         });
+
+        if (previousProvider !== provider) {
+            snapshotResultPanel(provider);
+            activeVerifyProvider = previousProvider;
+            syncCurrentChannelMirrors(previousProvider);
+            restoreChannelResultPanel(previousProvider);
+            refreshChannelControls(previousProvider);
+        }
 
         return true;
     }
@@ -2967,10 +3586,11 @@ ${fullModeMarkup}
     }
 
     async function submitVerifyEntry(entry, userId, options = {}) {
+        const provider = normalizeVerifyProvider(options.provider || entry.provider || activeVerifyProvider);
         const totalCost = Number(options.pointsCost ?? getTaskTypePrice(entry.taskType)) || getTaskTypePrice(entry.taskType);
         const batchTotal = Math.max(1, Number(options.batchTotal) || 1);
 
-        updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')));
+        updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')), provider);
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -2984,7 +3604,8 @@ ${fullModeMarkup}
             password: entry.password,
             totpSecret: entry.totpSecret,
             priority: entry.priority,
-            taskType: entry.taskType
+            taskType: entry.taskType,
+            provider
         });
         let res = null;
         let data = {};
@@ -3031,7 +3652,12 @@ ${fullModeMarkup}
 
         if (!res.ok || !data.success) {
             const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
-            updateResultItem(entry.index, 'error', escapeHtml(errorText));
+            updateResultItem(
+                entry.index,
+                'error',
+                `${escapeHtml(errorText)}${buildRetryOnAlternateMarkup(entry, provider)}`,
+                provider
+            );
             trackVerifyAnalyticsEvent('verify_fail', {
                 metadata: {
                     reason_code: String(data.code || 'submit_failed').trim() || 'submit_failed',
@@ -3046,6 +3672,7 @@ ${fullModeMarkup}
             await logToHistory(entry.email, 'failed', {
                 email: entry.email,
                 task_type: entry.taskType,
+                provider,
                 error_code: data.code || '',
                 error_message: errorText,
                 raw_status: 'submit_failed'
@@ -3056,7 +3683,12 @@ ${fullModeMarkup}
         const jobId = data.job_id || data.task_id;
         if (!jobId) {
             const errorText = t('verify.loadFailed', '提交失败');
-            updateResultItem(entry.index, 'error', escapeHtml(errorText));
+            updateResultItem(
+                entry.index,
+                'error',
+                `${escapeHtml(errorText)}${buildRetryOnAlternateMarkup(entry, provider)}`,
+                provider
+            );
             trackVerifyAnalyticsEvent('verify_fail', {
                 metadata: {
                     reason_code: 'missing_job_id',
@@ -3071,6 +3703,7 @@ ${fullModeMarkup}
             await logToHistory(entry.email, 'failed', {
                 email: entry.email,
                 task_type: entry.taskType,
+                provider,
                 error_message: errorText,
                 raw_status: 'missing_job_id'
             });
@@ -3085,6 +3718,7 @@ ${fullModeMarkup}
             priority: entry.priority,
             taskType: normalizeTaskType(data.task_type || entry.taskType),
             pointsCost: totalCost,
+            provider: normalizeVerifyProvider(data.provider || provider),
             restored: false
         });
         trackVerifyAnalyticsEvent('verify_submit', {
@@ -3095,6 +3729,7 @@ ${fullModeMarkup}
                 priority: entry.priority,
                 points_cost: totalCost,
                 task_type: entry.taskType,
+                provider,
                 batch_total: batchTotal,
                 batch_index: entry.index + 1
             }
@@ -3118,7 +3753,8 @@ ${fullModeMarkup}
             email: entry.email,
             userId,
             site: getCurrentSiteValue(),
-            taskType: normalizeTaskType(data.task_type || entry.taskType)
+            taskType: normalizeTaskType(data.task_type || entry.taskType),
+            provider: normalizeVerifyProvider(data.provider || provider)
         });
 
         const display = getResultDisplay({
@@ -3134,16 +3770,21 @@ ${fullModeMarkup}
             elapsed_seconds: data.elapsed_seconds,
             task_type: data.task_type || entry.taskType
         });
-        updateResultItem(entry.index, display.status, display.html);
-        updateExecutionRing(data);
+        updateResultItem(entry.index, display.status, display.html, provider);
+        updateExecutionRing(data, provider);
 
-        return { submitted: true, jobId, data };
+        return { submitted: true, jobId, data, provider };
     }
 
     async function runBatchSubmit(entries, submitBtn, resetBtn) {
+        const provider = activeVerifyProvider;
+        const channelState = getChannelState(provider);
+        entries.forEach((entry) => {
+            entry.provider = provider;
+        });
         const total = entries.length;
         const totalCost = entries.reduce((sum, entry) => sum + getTaskTypePrice(entry.taskType), 0);
-        const requiredUses = entries.reduce((sum, entry) => sum + getTaskTypeUsageCost(entry.taskType), 0);
+        const requiredUses = entries.reduce((sum, entry) => sum + getTaskTypeUsageCost(entry.taskType, provider), 0);
 
         if (userBalance < totalCost) {
             triggerVerifyEngagementEvent('points_insufficient', {
@@ -3157,7 +3798,8 @@ ${fullModeMarkup}
             showSingleResult(
                 'error',
                 t('verify.insufficientPoints', '积分不足'),
-                `${t('verify.needPoints', '需要积分')}: ${totalCost} / ${t('verify.remaining', '当前余额')}: ${userBalance}`
+                `${t('verify.needPoints', '需要积分')}: ${totalCost} / ${t('verify.remaining', '当前余额')}: ${userBalance}`,
+                provider
             );
             return;
         }
@@ -3169,7 +3811,8 @@ ${fullModeMarkup}
             showSingleResult(
                 'error',
                 t('verify.quotaExhausted', 'API 余额不足'),
-                formatApiQuotaShortageMessage(quotaShortage, requiredUses, '本批需要接口额度')
+                formatApiQuotaShortageMessage(quotaShortage, requiredUses, '本批需要接口额度'),
+                provider
             );
             return;
         }
@@ -3179,20 +3822,29 @@ ${fullModeMarkup}
         prepareBatchExecutionDisplay(entries, t('verify.waiting', '等待提交...'));
 
         isLoading = true;
+        channelState.isLoading = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.batchSubmitting', '批量提交中...')}`;
         if (resetBtn) resetBtn.disabled = true;
         setPreviewControlsDisabled(true);
 
         let userId = '';
+        const stats = channelState.batchStats || { success: 0, failed: 0, total };
+        stats.success = Number(stats.success) || 0;
+        stats.failed = Number(stats.failed) || 0;
+        stats.total = total;
+        channelState.batchStats = stats;
+        if (provider === activeVerifyProvider) batchStats = stats;
         try {
             userId = await resolveCurrentUserId();
         } catch (error) {
             const errorMessage = error.message || t('verify.pleaseLogin', '请先登录');
-            entries.forEach((entry) => updateResultItem(entry.index, 'error', escapeHtml(errorMessage)));
-            batchStats.failed = total;
-            updateBatchProgress(total, total);
-            finishVerification({ outcome: 'error' });
+            entries.forEach((entry) => updateResultItem(entry.index, 'error', escapeHtml(errorMessage), provider));
+            stats.failed = total;
+            channelState.batchStats = stats;
+            if (provider === activeVerifyProvider) batchStats = stats;
+            updateBatchProgress(total, total, provider);
+            finishVerification({ outcome: 'error', provider });
             return;
         }
 
@@ -3200,20 +3852,22 @@ ${fullModeMarkup}
         const pollPromises = [];
         const markTerminal = (result = {}, entry = {}, jobId = '') => {
             if (result.terminal && result.success) {
-                batchStats.success += 1;
+                stats.success += 1;
                 if (result.pointsDeducted) {
                     userBalance = Math.max(0, userBalance - result.pointsDeducted);
                     const balEl = document.getElementById('verifyBalanceValue');
                     if (balEl) balEl.textContent = userBalance;
                 }
             } else {
-                batchStats.failed += 1;
+                stats.failed += 1;
             }
 
             if (jobId) {
                 clearPendingTask(jobId);
             }
-            updateBatchProgress(batchStats.success + batchStats.failed, batchStats.total);
+            channelState.batchStats = stats;
+            if (provider === activeVerifyProvider) batchStats = stats;
+            updateBatchProgress(stats.success + stats.failed, stats.total, provider);
         };
 
         const submitWorker = async () => {
@@ -3224,14 +3878,15 @@ ${fullModeMarkup}
                 try {
                     const submitted = await submitVerifyEntry(entry, userId, {
                         pointsCost: getTaskTypePrice(entry.taskType),
-                        batchTotal: total
+                        batchTotal: total,
+                        provider
                     });
                     if (!submitted.submitted) {
                         markTerminal({ terminal: true, success: false }, entry);
                         continue;
                     }
 
-                    const pollPromise = pollTask(submitted.jobId, entry)
+                    const pollPromise = pollTask(submitted.jobId, { ...entry, provider })
                         .then((result) => {
                             markTerminal(result, entry, submitted.jobId);
                             return result;
@@ -3239,7 +3894,12 @@ ${fullModeMarkup}
                     pollPromises.push(pollPromise);
                 } catch (error) {
                     const errorText = error.message || t('verify.loadFailed', '提交失败');
-                    updateResultItem(entry.index, 'error', escapeHtml(errorText));
+                    updateResultItem(
+                        entry.index,
+                        'error',
+                        `${escapeHtml(errorText)}${buildRetryOnAlternateMarkup(entry, provider)}`,
+                        provider
+                    );
                     trackVerifyAnalyticsEvent('verify_fail', {
                         metadata: {
                             reason_code: 'submit_error',
@@ -3254,6 +3914,7 @@ ${fullModeMarkup}
                     await logToHistory(entry.email, 'error', {
                         email: entry.email,
                         task_type: entry.taskType,
+                        provider,
                         error_message: errorText,
                         raw_status: 'submit_error'
                     });
@@ -3267,8 +3928,9 @@ ${fullModeMarkup}
         await Promise.all(pollPromises);
 
         finishVerification({
-            outcome: batchStats.failed > 0 ? 'error' : 'success',
-            showSummary: true
+            outcome: stats.failed > 0 ? 'error' : 'success',
+            showSummary: true,
+            provider
         });
     }
 
@@ -3328,6 +3990,9 @@ ${fullModeMarkup}
         }
 
         const entry = entries[0];
+        const provider = activeVerifyProvider;
+        entry.provider = provider;
+        const channelState = getChannelState(provider);
         const totalCost = getTaskTypePrice(entry.taskType);
         if (userBalance < totalCost) {
             triggerVerifyEngagementEvent('points_insufficient', {
@@ -3340,12 +4005,13 @@ ${fullModeMarkup}
             showSingleResult(
                 'error',
                 t('verify.insufficientPoints', '积分不足'),
-                `${t('verify.needPoints', '需要积分')}: ${totalCost} / ${t('verify.remaining', '当前余额')}: ${userBalance}`
+                `${t('verify.needPoints', '需要积分')}: ${totalCost} / ${t('verify.remaining', '当前余额')}: ${userBalance}`,
+                provider
             );
             return;
         }
 
-        const requiredUses = getTaskTypeUsageCost(entry.taskType);
+        const requiredUses = getTaskTypeUsageCost(entry.taskType, provider);
         const quotaShortage = apiCredits >= 0
             ? findApiQuotaShortageForEntries([entry], buildQuotaSummary(apiCredits))
             : null;
@@ -3353,7 +4019,8 @@ ${fullModeMarkup}
             showSingleResult(
                 'error',
                 t('verify.quotaExhausted', 'API 余额不足'),
-                formatApiQuotaShortageMessage(quotaShortage, requiredUses, '本次需要接口额度')
+                formatApiQuotaShortageMessage(quotaShortage, requiredUses, '本次需要接口额度'),
+                provider
             );
             return;
         }
@@ -3363,6 +4030,7 @@ ${fullModeMarkup}
         prepareExecutionDisplay(entry.email, t('verify.waiting', '等待提交...'));
 
         isLoading = true;
+        channelState.isLoading = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.verifying', '提交中...')}`;
         if (resetBtn) resetBtn.disabled = true;
@@ -3372,44 +4040,63 @@ ${fullModeMarkup}
             const userId = await resolveCurrentUserId();
             const submitted = await submitVerifyEntry(entry, userId, {
                 pointsCost: totalCost,
-                batchTotal: 1
+                batchTotal: 1,
+                provider
             });
 
             if (!submitted.submitted) {
-                batchStats.failed = 1;
-                updateBatchProgress(1, 1);
-                finishVerification({ outcome: 'error' });
+                const stats = channelState.batchStats || { success: 0, failed: 0, total: 1 };
+                stats.failed = 1;
+                stats.total = 1;
+                channelState.batchStats = stats;
+                if (provider === activeVerifyProvider) batchStats = stats;
+                updateBatchProgress(1, 1, provider);
+                finishVerification({ outcome: 'error', provider });
                 return;
             }
 
-            pollTask(submitted.jobId, entry).then((result) => {
+            pollTask(submitted.jobId, { ...entry, provider }).then((result) => {
+                const state = getChannelState(provider);
+                const stats = state.batchStats || { success: 0, failed: 0, total: 1 };
                 if (result.terminal && result.success) {
-                    batchStats.success = 1;
+                    stats.success = 1;
                     if (result.pointsDeducted) {
                         userBalance = Math.max(0, userBalance - result.pointsDeducted);
                         const balEl = document.getElementById('verifyBalanceValue');
                         if (balEl) balEl.textContent = userBalance;
                     }
                 } else if (result.terminal) {
-                    batchStats.failed = 1;
+                    stats.failed = 1;
                 }
 
                 if (result.terminal) {
-                    updateBatchProgress(1, 1);
+                    state.batchStats = stats;
+                    if (provider === activeVerifyProvider) batchStats = stats;
+                    updateBatchProgress(1, 1, provider);
                 }
 
                 finishVerification({
                     outcome: result.terminal ? (result.success ? 'success' : 'error') : '',
                     jobId: submitted.jobId,
                     preservePending: !result.terminal,
-                    showSummary: result.terminal
+                    showSummary: result.terminal,
+                    provider
                 });
             });
         } catch (error) {
             const errorText = error.message || t('verify.loadFailed', '提交失败');
-            updateResultItem(entry.index, 'error', escapeHtml(errorText));
-            batchStats.failed = 1;
-            updateBatchProgress(1, 1);
+            updateResultItem(
+                entry.index,
+                'error',
+                `${escapeHtml(errorText)}${buildRetryOnAlternateMarkup(entry, provider)}`,
+                provider
+            );
+            const stats = channelState.batchStats || { success: 0, failed: 0, total: 1 };
+            stats.failed = 1;
+            stats.total = 1;
+            channelState.batchStats = stats;
+            if (provider === activeVerifyProvider) batchStats = stats;
+            updateBatchProgress(1, 1, provider);
             trackVerifyAnalyticsEvent('verify_fail', {
                 metadata: {
                     reason_code: 'submit_error',
@@ -3422,10 +4109,11 @@ ${fullModeMarkup}
             await logToHistory(entry.email, 'error', {
                 email: entry.email,
                 task_type: entry.taskType,
+                provider,
                 error_message: errorText,
                 raw_status: 'submit_error'
             });
-            finishVerification({ outcome: 'error' });
+            finishVerification({ outcome: 'error', provider });
         }
     }
 
@@ -3433,6 +4121,7 @@ ${fullModeMarkup}
         return new Promise((resolve) => {
             const startTime = Date.now();
             const taskInfoAtStart = activeTasks.get(jobId) || {};
+            const provider = normalizeVerifyProvider(taskInfoAtStart.provider || entry.provider || activeVerifyProvider);
             const pollTimeoutMs = getTaskPollTimeoutMs(taskInfoAtStart.taskType || entry.taskType || 'extract');
             const backgroundContinueText = t('verify.pendingBackgroundContinue', '任务耗时较长，仍在后台处理，可稍后在任务历史查看');
             const backgroundContinueHint = t('verify.pendingBackgroundContinueHint', '页面会继续自动同步；你也可以刷新页面继续追踪当前任务');
@@ -3457,7 +4146,8 @@ ${fullModeMarkup}
                         updateResultItem(
                             entry.index,
                             'processing',
-                            `${escapeHtml(backgroundContinueText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                            `${escapeHtml(backgroundContinueText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`,
+                            provider
                         );
                     }
                 }
@@ -3493,14 +4183,18 @@ ${fullModeMarkup}
                         updateResultItem(
                             entry.index,
                             'processing',
-                            `${escapeHtml(statusRetryText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                            `${escapeHtml(statusRetryText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`,
+                            provider
                         );
                         return;
                     }
 
                     const display = getResultDisplay(data);
-                    updateResultItem(entry.index, display.status, display.html);
-                    updateExecutionRing(data);
+                    const displayHtml = display.terminal && !display.success
+                        ? `${display.html}${buildRetryOnAlternateMarkup(entry, provider)}`
+                        : display.html;
+                    updateResultItem(entry.index, display.status, displayHtml, provider);
+                    updateExecutionRing(data, provider);
 
                     if (display.terminal) {
                         clearInterval(timer);
@@ -3519,6 +4213,7 @@ ${fullModeMarkup}
                                     priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                     points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
                                     task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type),
+                                    provider,
                                     restored: taskInfo.restored === true
                                 }
                             }, {
@@ -3531,7 +4226,8 @@ ${fullModeMarkup}
                                 duration_ms: resolvedDurationMs,
                                 priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                 points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
-                                task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type)
+                                task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type),
+                                provider
                             });
                         } else {
                             trackVerifyAnalyticsEvent('verify_fail', {
@@ -3543,6 +4239,7 @@ ${fullModeMarkup}
                                     priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                     points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
                                     task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type),
+                                    provider,
                                     restored: taskInfo.restored === true
                                 }
                             }, {
@@ -3557,11 +4254,13 @@ ${fullModeMarkup}
                                 stage_label: formatStageLabel(data?.stage_label),
                                 priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
                                 points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
-                                task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type)
+                                task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type),
+                                provider
                             });
                         }
 
                         activeTasks.delete(jobId);
+                        updateProviderSwitcherUi();
                         resolve({
                             success: display.success,
                             pointsDeducted: Number(data.pointsDeducted) || 0,
@@ -3573,7 +4272,8 @@ ${fullModeMarkup}
                     updateResultItem(
                         entry.index,
                         'processing',
-                        `${escapeHtml(statusRetryText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                        `${escapeHtml(statusRetryText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`,
+                        provider
                     );
                 } finally {
                     pollingRequestInFlight = false;
@@ -3597,73 +4297,105 @@ ${fullModeMarkup}
             outcome = '',
             jobId = '',
             preservePending = false,
-            showSummary = true
+            showSummary = true,
+            provider = activeVerifyProvider
         } = options;
-        isLoading = false;
-        clearActiveTaskTimers();
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        const state = getChannelState(normalizedProvider);
+        state.isLoading = false;
+        if (normalizedProvider === activeVerifyProvider) {
+            isLoading = false;
+        }
         if (jobId && !preservePending) clearPendingTask(jobId);
         clearPreviewTimers();
 
         const submitBtn = document.getElementById('verifySubmitBtn');
         const resetBtn = document.getElementById('verifyResetBtn');
-        if (submitBtn) {
+        if (submitBtn && isProviderVisible(normalizedProvider)) {
             submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = false;
             submitBtn.innerHTML = buildVerifySubmitButtonMarkup(getSubmitButtonLabel(getSelectedTaskType()));
         }
-        if (resetBtn) resetBtn.disabled = false;
-        setPreviewControlsDisabled(false);
+        if (resetBtn && isProviderVisible(normalizedProvider)) resetBtn.disabled = false;
+        if (isProviderVisible(normalizedProvider)) setPreviewControlsDisabled(false);
 
         if (showSummary) {
-            showBatchSummary();
+            showBatchSummary(normalizedProvider);
         } else {
-            hideBatchSummary();
+            hideBatchSummary(normalizedProvider);
         }
-        updateQuotaDisplay();
+        if (isProviderVisible(normalizedProvider)) updateQuotaDisplay();
+        updateProviderSwitcherUi();
 
         if (!skipRefresh) {
             loadUserBalance();
-            loadApiQuota();
+            loadApiQuota(normalizedProvider);
             loadHistory();
         }
 
-        if (outcome === 'success' || outcome === 'error') {
+        if ((outcome === 'success' || outcome === 'error') && isProviderVisible(normalizedProvider)) {
             triggerRingOutcome(outcome);
-        } else {
+        } else if (isProviderVisible(normalizedProvider)) {
             syncRingStateFromInputs();
         }
 
-        if (CONFIG.enabled === false) {
+        if (CONFIG.enabled === false && isProviderVisible(normalizedProvider)) {
             applyMaintenanceState();
         }
     }
 
-    function clearResultsList() {
-        const list = document.getElementById('verifyResultsList');
-        if (list) list.innerHTML = '';
+    function isProviderVisible(provider = activeVerifyProvider) {
+        return normalizeVerifyProvider(provider) === activeVerifyProvider;
     }
 
-    function addResultItem(index, label, status, messageHtml) {
+    function clearResultsList(provider = activeVerifyProvider) {
         const list = document.getElementById('verifyResultsList');
-        if (!list) return;
+        const state = getChannelState(provider);
+        state.resultItems = [];
+        state.showResults = false;
+        if (list && isProviderVisible(provider)) list.innerHTML = '';
+    }
 
+    function addResultItem(index, label, status, messageHtml, provider = activeVerifyProvider) {
+        const list = document.getElementById('verifyResultsList');
         const shortLabel = String(label || '').length > 55
             ? String(label).substring(0, 55) + '...'
             : String(label || '');
+        const labelHtml = `#${index + 1}: ${escapeHtml(shortLabel)}`;
+        const state = getChannelState(provider);
+        state.resultItems = (state.resultItems || []).filter((item) => Number(item.index) !== Number(index));
+        state.resultItems.push({
+            index,
+            labelHtml,
+            messageHtml,
+            status
+        });
+        state.showResults = true;
+
+        if (!list || !isProviderVisible(provider)) return;
 
         const item = document.createElement('div');
         item.className = `verify-result-item ${status}`;
         item.id = `result-item-${index}`;
         item.innerHTML = `
             <div class="verify-result-item-content">
-                <div class="verify-result-item-id">#${index + 1}: ${escapeHtml(shortLabel)}</div>
+                <div class="verify-result-item-id">${labelHtml}</div>
                 <div class="verify-result-item-message">${messageHtml}</div>
             </div>
         `;
         list.appendChild(item);
     }
 
-    function updateResultItem(index, status, messageHtml) {
+    function updateResultItem(index, status, messageHtml, provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        const resultItems = state.resultItems || [];
+        const existing = resultItems.find((item) => Number(item.index) === Number(index));
+        if (existing) {
+            existing.status = status;
+            existing.messageHtml = messageHtml;
+        }
+
+        if (!isProviderVisible(provider)) return;
         const item = document.getElementById(`result-item-${index}`);
         if (!item) return;
 
@@ -3673,14 +4405,21 @@ ${fullModeMarkup}
         if (msgEl) msgEl.innerHTML = messageHtml;
     }
 
-    function updateBatchProgress(current, total) {
+    function updateBatchProgress(current, total, provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        state.progress = { current, total };
+        if (!isProviderVisible(provider)) return;
         const el = document.getElementById('verifyBatchProgress');
         if (el) {
             el.innerHTML = `${t('verify.progress', '进度')}: <span class="current">${current}</span>/<span class="total">${total}</span>`;
         }
     }
 
-    function showBatchSummary() {
+    function showBatchSummary(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        state.showSummary = true;
+        const stats = state.batchStats || batchStats;
+        if (!isProviderVisible(provider)) return;
         const el = document.getElementById('verifyBatchSummary');
         setVerifyHidden(el, false);
 
@@ -3688,12 +4427,15 @@ ${fullModeMarkup}
         const failedEl = document.getElementById('failedCount');
         const totalEl = document.getElementById('totalCount');
 
-        if (successEl) successEl.textContent = batchStats.success;
-        if (failedEl) failedEl.textContent = batchStats.failed;
-        if (totalEl) totalEl.textContent = batchStats.total;
+        if (successEl) successEl.textContent = stats.success;
+        if (failedEl) failedEl.textContent = stats.failed;
+        if (totalEl) totalEl.textContent = stats.total;
     }
 
-    function hideBatchSummary() {
+    function hideBatchSummary(provider = activeVerifyProvider) {
+        const state = getChannelState(provider);
+        state.showSummary = false;
+        if (!isProviderVisible(provider)) return;
         const el = document.getElementById('verifyBatchSummary');
         setVerifyHidden(el, true);
 
@@ -3702,12 +4444,16 @@ ${fullModeMarkup}
         const totalEl = document.getElementById('totalCount');
         if (successEl) successEl.textContent = '0';
         if (failedEl) failedEl.textContent = '0';
-        if (totalEl) totalEl.textContent = String(batchStats.total || 0);
+        if (totalEl) totalEl.textContent = String(state.batchStats?.total || batchStats.total || 0);
     }
 
-    function showSingleResult(type, title, message) {
+    function showSingleResult(type, title, message, provider = activeVerifyProvider) {
         const result = document.getElementById('verifyResult');
         const batch = document.getElementById('verifyBatchResults');
+        const state = getChannelState(provider);
+        state.singleResult = { type, title, message };
+        state.showResults = false;
+        if (!isProviderVisible(provider)) return;
         if (!result) return;
         if (batch) batch.classList.remove('show');
 
@@ -3797,12 +4543,14 @@ ${fullModeMarkup}
                     : `<div class="verify-history-item-message">${detailHtml}</div>`;
                 const actionHtml = buildHistoryActionButtons(item, payload);
                 const cost = item.points_deducted || 0;
+                const providerLabel = getProviderLabel(payload.provider || payload.provider_adapter || activeVerifyProvider);
 
                 return `
                     <div class="verify-history-item ${getHistoryStatusCss(item.status)}">
                         <div class="verify-history-item-time">${time}</div>
                         <div class="verify-history-item-main">
                             <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" data-verify-action="copy-history-id">${escapeHtml(shortEmail)}</div>
+                            <div class="verify-history-provider">${escapeHtml(providerLabel)}</div>
                             ${detailRowHtml}
                             ${actionHtml}
                         </div>
@@ -3888,6 +4636,7 @@ ${fullModeMarkup}
 
         const headers = [
             t('verify.exportHeaderTime', '时间'),
+            t('verify.providerChannelLabel', '验证通道'),
             t('verify.exportHeaderEmail', '邮箱'),
             t('verify.exportHeaderStatus', '状态'),
             t('verify.exportHeaderDetail', '详情'),
@@ -3895,12 +4644,14 @@ ${fullModeMarkup}
         ];
         const rows = data.map((item) => {
             const time = new Date(item.created_at).toLocaleString(getLocale());
+            const payload = parseHistoryMessage(item?.message) || {};
+            const providerLabel = getProviderLabel(payload.provider || payload.provider_adapter || activeVerifyProvider);
             const email = getHistoryEmail(item);
             const statusText = getHistoryStatusText(item.status).replace(/<[^>]*>?/gm, '').trim();
             const detailText = getHistoryDetailText(item);
             const cost = item.points_deducted || 0;
 
-            return [time, email, statusText, detailText, cost > 0 ? '-' + cost : '0']
+            return [time, providerLabel, email, statusText, detailText, cost > 0 ? '-' + cost : '0']
                 .map((field) => `"${String(field).replace(/"/g, '""')}"`)
                 .join(',');
         });
@@ -3984,8 +4735,10 @@ ${fullModeMarkup}
         exportHistory,
         copyId,
         refreshQuota: () => {
-            quotaRefreshPending = false;
-            return loadApiQuota();
+            quotaRefreshTimers.forEach((timer) => clearTimeout(timer));
+            quotaRefreshTimers.clear();
+            quotaRefreshPending.clear();
+            return loadAllApiQuotas();
         }
     };
 

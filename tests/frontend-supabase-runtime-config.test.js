@@ -10071,7 +10071,6 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "const VERIFY_BATCH_MAX_ENTRIES = 50;",
         "const VERIFY_BATCH_SUBMIT_CONCURRENCY = 2;",
         "function getApiQuotaModeRemainingJobs(taskType = 'extract'",
-        "function updateSystemRemainingDisplay(quotaSummary = buildQuotaSummary(apiCredits))",
         "function setSubmitMode(mode = 'single')",
         "modeTabs.dataset.verifySubmitMode = mode;",
         "function readBatchEntries()",
@@ -10087,11 +10086,16 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "remaining_full_uses: normalizedSummary?.remainingFullUses",
         "extract_cost_per_job: data.extract_cost_per_job",
         "full_cost_per_job: data.full_cost_per_job",
+        "function getProviderRemainingTone(remaining)",
+        "if (remaining === null || remaining === undefined || remaining === '') return 'unknown';",
+        "if (numeric <= 0) return 'danger';",
+        "if (numeric < 5) return 'warning';",
+        "return 'ok';",
+        'data-remaining-tone="${escapeHtml(remainingTone)}"',
         "id=\"verifyBatchInput\"",
         "data-verify-submit-mode=\"single\"",
         "data-verify-mode=\"batch\"",
         "email----password----2FA",
-        'id="verifySystemRemainingCount"',
         "t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')",
         "t('verify.bulkContactSupport', '大批量可联系客服')",
         "quotaEl.removeAttribute('title');",
@@ -10130,6 +10134,16 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify API quota badge should not render a second mode-specific count beside the number'
     );
     assert.equal(
+        verifyWidgetSource.includes('id="verifyApiQuota"'),
+        false,
+        'verify widget header should not render the legacy diamond quota badge'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('通道 1 · aidone') || verifyWidgetSource.includes('通道 2 · 1free'),
+        false,
+        'verify channel cards should not expose upstream provider names'
+    );
+    assert.equal(
         verifyWidgetSource.includes("const selectedRemainingJobs = getApiQuotaModeRemainingJobs(selectedTaskType, quotaSummary);"),
         true,
         'verify API quota badge value should be the selected mode remaining submission count'
@@ -10150,9 +10164,19 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify API quota badge should keep the selected remaining count as an accessible label'
     );
     assert.equal(
-        verifyWidgetSource.includes("updateSystemRemainingDisplay(quotaSummary);"),
+        verifyWidgetSource.includes('id="verifySystemRemainingCount"'),
+        false,
+        'verify price row should no longer show a duplicate system remaining submission count'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('class="verify-system-remaining"'),
+        false,
+        'verify price row should remove the legacy system remaining count wrapper'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('verify-provider-option__remaining'),
         true,
-        'verify price row should refresh the visible system remaining submission count with quota data'
+        'verify channel cards should keep the per-channel system remaining count'
     );
     assert.equal(
         zhLocale.verify.systemRemainingSubmitCount,
@@ -10206,8 +10230,10 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-api-quota--ok',
         '.verify-api-quota--warning',
         '.verify-api-quota--danger',
-        '.verify-system-remaining',
-        '.verify-system-remaining-count',
+        '.verify-provider-option__remaining',
+        '.verify-provider-option__remaining strong[data-remaining-tone="ok"]',
+        '.verify-provider-option__remaining strong[data-remaining-tone="warning"]',
+        '.verify-provider-option__remaining strong[data-remaining-tone="danger"]',
         '.verify-bulk-contact',
         '.verify-submit-mode-tabs',
         '.verify-submit-mode-tabs::before',
@@ -10231,13 +10257,14 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-submit-mode-tabs::before',
         '.verify-submit-mode-btn:hover',
         '.verify-batch-textarea::placeholder',
-        '.verify-system-remaining-count',
+        'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="ok"]',
+        'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="warning"]',
+        'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="danger"]',
         '.verify-bulk-contact',
         'html[data-theme="dark"] .verify-widget textarea.verify-input:focus',
         'html[data-theme="dark"] .verify-widget textarea.verify-input:focus-visible',
         'html[data-theme="dark"] .verify-submit-mode-tabs::before',
         'html[data-theme="dark"] .verify-batch-textarea::placeholder',
-        'html[data-theme="dark"] .verify-system-remaining-count',
         'html[data-theme="dark"] .verify-bulk-contact',
         'html[data-theme="dark"] .verify-submit-mode-btn.active'
     ];

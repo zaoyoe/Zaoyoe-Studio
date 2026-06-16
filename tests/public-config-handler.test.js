@@ -496,6 +496,20 @@ test('public verify settings handler resolves site price without exposing CDKeys
     assert.equal(payload.config.price_per_verify_full, 12);
     assert.equal(payload.config.mode_visibility, 'full_only');
     assert.equal(payload.config.modeVisibility, 'full_only');
+    assert.equal(payload.config.active_provider, 'catcard');
+    assert.ok(Array.isArray(payload.config.providers));
+    assert.deepEqual(
+        payload.config.providers.map((provider) => provider.provider),
+        ['aidone', 'catcard']
+    );
+    assert.deepEqual(
+        payload.config.providers.map((provider) => provider.label),
+        ['通道 1', '通道 2']
+    );
+    assert.deepEqual(
+        payload.config.providers.map((provider) => provider.provider_label),
+        ['通道 1', '通道 2']
+    );
     assert.deepEqual(payload.config.capabilities, {
         cancelTask: false,
         failedLinkPurchase: false,

@@ -693,9 +693,23 @@ async function selectVerifyCredentialForTask(config = {}, requiredUses = 0, opti
 }
 
 async function fetchDirectVerifyQuotaState(supabase, options = {}) {
-    const config = await loadVerifyRuntimeConfig(supabase, options.env || process.env, {
-        site: options.site
-    });
+    const config = options.config && typeof options.config === 'object' && !Array.isArray(options.config)
+        ? options.config
+        : await loadVerifyRuntimeConfig(supabase, options.env || process.env, {
+            site: options.site
+        });
+    let providerStatus = null;
+    if (isPixelBridgeAdapter(config.adapter || config.provider_adapter)) {
+        try {
+            providerStatus = await fetchPixelBridgeServiceStatus(config, options);
+        } catch (error) {
+            providerStatus = {
+                ok: false,
+                service_status: 'unavailable',
+                message: normalizeVerifySnapshotError(error)
+            };
+        }
+    }
     if (!config.apiKey || !config.apiBaseUrl) {
         return {
             success: false,
@@ -703,6 +717,11 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
             site: config.site,
             provider: config.provider,
             provider_label: config.provider_label,
+            service_status: providerStatus?.service_status || '',
+            queue_size: Number(providerStatus?.queue_size || 0) || 0,
+            running_jobs: Number(providerStatus?.running_jobs || 0) || 0,
+            worker_count: Number(providerStatus?.worker_count || 0) || 0,
+            online_servers: Number(providerStatus?.online_servers || 0) || 0,
             message: '验证服务未配置 CDKey 或 Base URL'
         };
     }
@@ -718,6 +737,11 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
             provider: config.provider,
             provider_label: config.provider_label,
             adapter: config.adapter,
+            service_status: providerStatus?.service_status || '',
+            queue_size: Number(providerStatus?.queue_size || 0) || 0,
+            running_jobs: Number(providerStatus?.running_jobs || 0) || 0,
+            worker_count: Number(providerStatus?.worker_count || 0) || 0,
+            online_servers: Number(providerStatus?.online_servers || 0) || 0,
             message: normalizeText(firstFailedSnapshot?.error || firstFailedSnapshot?.message) || '查询额度失败'
         };
     }
@@ -749,7 +773,14 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
         api_base_url: config.apiBaseUrl,
         key_count: Number(config.keyCount || healthySnapshots.length || 0),
         healthy_key_count: healthySnapshots.length,
-        key_states: snapshots.map((snapshot) => buildVerifyQuotaKeyState(snapshot))
+        key_states: snapshots.map((snapshot) => buildVerifyQuotaKeyState(snapshot)),
+        queue_size: Number(providerStatus?.queue_size || 0) || 0,
+        running_jobs: Number(providerStatus?.running_jobs || 0) || 0,
+        worker_count: Number(providerStatus?.worker_count || 0) || 0,
+        online_servers: Number(providerStatus?.online_servers || 0) || 0,
+        service_status: providerStatus?.service_status || (providerStatus?.ok === false ? 'unavailable' : ''),
+        service_message: providerStatus?.message || '',
+        service_checked_at: providerStatus?.checked_at || ''
     };
 }
 

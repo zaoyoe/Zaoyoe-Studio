@@ -77,7 +77,7 @@ test('heavy page runtimes and engagement chrome load without blocking first pain
         ],
         'verify.html': [
             './starry-sky.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
-            './verify-widget.js?v=20260614_VERIFY_RESET_TEXT_ONLY_1',
+            './verify-widget.js?v=20260614_VERIFY_RESET_TEXT_ONLY_1&dualChannel=20260615_VERIFY_DUAL_CHANNEL_1&channelOps=20260615_VERIFY_CHANNEL_OPS_1&providerHeader=20260616_VERIFY_PROVIDER_HEADER_1&priceRow=20260616_VERIFY_PRICE_ROW_CLEAN_1&remainingTone=20260616_VERIFY_REMAINING_TONE_1',
             'js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
         ],
         'prompts.html': [
