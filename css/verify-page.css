@@ -631,6 +631,18 @@ body {
     color: #172033;
 }
 
+.verify-history-provider {
+    background: #e8f4ff;
+    border-color: rgba(76, 131, 183, 0.24);
+    color: #3f74a8;
+}
+
+.verify-history-provider[data-history-provider="catcard"] {
+    background: #e9f8f4;
+    border-color: rgba(20, 148, 123, 0.22);
+    color: #0f766e;
+}
+
 .verify-history-item.cancelled .verify-history-item-status,
 .verify-batch-stat.cancelled {
     color: rgba(23, 32, 51, 0.45);
@@ -1181,6 +1193,18 @@ html[data-theme="dark"] .verify-history-card:hover {
 
 html[data-theme="dark"] .verify-history-item-id:hover {
     color: rgba(255, 255, 255, 0.9);
+}
+
+html[data-theme="dark"] .verify-history-provider {
+    background: rgba(107, 158, 206, 0.11);
+    border-color: rgba(159, 215, 229, 0.16);
+    color: rgba(191, 232, 242, 0.82);
+}
+
+html[data-theme="dark"] .verify-history-provider[data-history-provider="catcard"] {
+    background: rgba(45, 212, 191, 0.1);
+    border-color: rgba(94, 234, 212, 0.18);
+    color: rgba(153, 246, 228, 0.84);
 }
 
 html[data-theme="dark"] .verify-history-item.cancelled .verify-history-item-status,

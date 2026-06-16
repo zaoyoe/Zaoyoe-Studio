@@ -6524,6 +6524,26 @@ let _unlockInProgress = false;
 let _unlockPrice = 1; // 默认值，将从配置加载
 let _copyInProgress = false; // 防止重复复制操作
 
+function getPromptRuntimeSite() {
+    return window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+}
+
+function normalizePromptUnlockPrice(value, fallback = 1) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.max(0, Math.trunc(parsed));
+}
+
+function syncPromptUnlockButtonPrice() {
+    const unlockBtn = document.getElementById('unlockPromptBtn');
+    if (!unlockBtn || _unlockInProgress || unlockBtn.classList.contains('copy-btn')) {
+        return;
+    }
+    unlockBtn.innerHTML = `<i class="fas fa-gem"></i> ${_unlockPrice}`;
+}
+
 function findPromptAnalyticsItem(promptId = currentPromptId) {
     const normalizedPromptId = String(promptId || '').trim();
     if (!normalizedPromptId) return null;
@@ -6577,17 +6597,30 @@ function trackPromptAnalyticsEvent(eventName, payload = {}, options = {}) {
     });
 }
 
-// 从数据库加载解锁价格配置
+// 从公共站点配置加载解锁价格配置
 async function loadUnlockPrice() {
     try {
-        if (!window.supabaseClient) return;
-        const { data, error } = await window.supabaseClient
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', 'unlock_pricing')
-            .single();
-        if (!error && data?.config_value?.default_points) {
-            _unlockPrice = data.config_value.default_points;
+        const url = new URL('/api/public', window.location.origin);
+        url.searchParams.set('scope', 'config');
+        url.searchParams.set('route', 'site-system-config');
+        url.searchParams.set('site', getPromptRuntimeSite());
+        url.searchParams.append('key', 'unlock_pricing');
+
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            credentials: 'same-origin',
+            cache: 'no-store'
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || '加载解锁价格配置失败');
+        }
+
+        const config = payload?.configs?.unlock_pricing;
+        if (config && Object.prototype.hasOwnProperty.call(config, 'default_points')) {
+            _unlockPrice = normalizePromptUnlockPrice(config.default_points, 1);
+            syncPromptUnlockButtonPrice();
             console.log('[Unlock] Price loaded from config:', _unlockPrice);
         }
     } catch (err) {

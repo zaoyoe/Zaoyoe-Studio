@@ -9597,6 +9597,22 @@ async function parseAdminConfigApiResponse(response) {
     return payload;
 }
 
+function normalizeUnlockPricingPoints(value, fallback = 1) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.max(0, parsed);
+}
+
+function normalizeUnlockPricingDiscount(value, fallback = 0.9) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.min(1, Math.max(0, parsed));
+}
+
 async function fetchSystemConfigDomain(domain) {
     const searchParams = new URLSearchParams();
     searchParams.set('domain', domain);
@@ -9630,8 +9646,8 @@ function renderUnlockPricingConfig() {
     const pointsInput = document.getElementById('cfgUnlockPoints');
     const discountInput = document.getElementById('cfgVipDiscount');
 
-    if (pointsInput) pointsInput.value = config.default_points || 1;
-    if (discountInput) discountInput.value = (config.vip_discount || 0.9) * 100;
+    if (pointsInput) pointsInput.value = normalizeUnlockPricingPoints(config.default_points, 1);
+    if (discountInput) discountInput.value = Math.round(normalizeUnlockPricingDiscount(config.vip_discount, 0.9) * 100);
 }
 
 function renderPackagesConfig() {
@@ -22008,7 +22024,8 @@ function setupConfigEventListeners() {
     if (unlockPointsInput) {
         unlockPointsInput.addEventListener('change', async (e) => {
             const config = systemConfigCache['unlock_pricing'] || {};
-            config.default_points = parseInt(e.target.value) || 1;
+            config.default_points = normalizeUnlockPricingPoints(e.target.value, 1);
+            e.target.value = config.default_points;
             if (await saveConfig('unlock_pricing', config)) {
                 showSaveIndicator(e.target);
             }
@@ -22018,7 +22035,8 @@ function setupConfigEventListeners() {
     if (vipDiscountInput) {
         vipDiscountInput.addEventListener('change', async (e) => {
             const config = systemConfigCache['unlock_pricing'] || {};
-            config.vip_discount = (parseInt(e.target.value) || 90) / 100;
+            config.vip_discount = normalizeUnlockPricingDiscount(Number.parseInt(e.target.value, 10) / 100, 0.9);
+            e.target.value = Math.round(config.vip_discount * 100);
             if (await saveConfig('unlock_pricing', config)) {
                 showSaveIndicator(e.target);
             }
