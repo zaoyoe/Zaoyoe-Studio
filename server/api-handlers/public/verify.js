@@ -1,6 +1,7 @@
 const {
     activateVerifyProviderConfig,
     loadVerifyRuntimeConfig,
+    normalizeVerifyProvider,
     selectVerifyCredentialForTask
 } = require('../_verify-provider-runtime');
 const {
@@ -101,7 +102,10 @@ function createPublicVerifyHandlers({
             priority,
             site,
             taskType,
-            task_type
+            task_type,
+            provider,
+            verifyProvider,
+            verify_provider
         } = body || {};
         const normalizedEmail = String(email || '').trim().toLowerCase();
         const normalizedPassword = String(password || '');
@@ -126,9 +130,14 @@ function createPublicVerifyHandlers({
             });
         }
 
-        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env, {
+        const loadedConfig = await runtimeLoadVerifyRuntimeConfig(supabase, env, {
             site: currentSite
         });
+        const requestedProvider = normalizeVerifyProvider(
+            provider || verifyProvider || verify_provider || loadedConfig.provider,
+            loadedConfig.provider
+        );
+        const config = runtimeActivateVerifyProviderConfig(loadedConfig, requestedProvider);
         if (!config.apiKey) {
             return sendJson(res, 500, {
                 success: false,

@@ -1,6 +1,8 @@
 const {
+    activateVerifyProviderConfig,
     fetchDirectVerifyQuotaState,
-    loadVerifyRuntimeConfig
+    loadVerifyRuntimeConfig,
+    normalizeVerifyProvider
 } = require('../_verify-provider-runtime');
 const {
     SITE_LAYOUT_CONFIG_KEY,
@@ -32,6 +34,15 @@ function createPublicConfigHandlers({
     function normalizeVerifyModeVisibility(value) {
         const normalized = sanitizeText(value, 40).toLowerCase();
         return ['both', 'extract_only', 'full_only'].includes(normalized) ? normalized : 'both';
+    }
+
+    function getVerifyPublicProviderKeys(config = {}) {
+        const keys = ['aidone', 'catcard'];
+        const activeProvider = normalizeVerifyProvider(config.active_provider || config.activeProvider || config.provider || 'aidone');
+        if (!keys.includes(activeProvider)) {
+            keys.unshift(activeProvider);
+        }
+        return uniqueValues(keys);
     }
 
     function uniqueValues(values = []) {
@@ -492,9 +503,15 @@ function createPublicConfigHandlers({
             });
         }
 
+        const requestedProvider = sanitizeText(url.searchParams.get('provider') || url.searchParams.get('verify_provider'), 80);
+        const loadedConfig = await loadVerifyRuntimeConfig(supabase, process.env, { site });
+        const provider = normalizeVerifyProvider(requestedProvider || loadedConfig.provider, loadedConfig.provider);
+        const config = activateVerifyProviderConfig(loadedConfig, provider);
+
         const quotaState = await fetchDirectVerifyQuotaState(supabase, {
             fetchImpl: global.fetch,
-            site
+            site,
+            config
         });
 
         res.setHeader('Cache-Control', 'no-store');
@@ -538,6 +555,21 @@ function createPublicConfigHandlers({
         };
     }
 
+    function sanitizeVerifyProviderSettings(config = {}, activeProvider = '') {
+        const sanitized = sanitizeVerifyPublicSettings(config);
+        const provider = normalizeVerifyProvider(config.provider || activeProvider || sanitized.provider || 'aidone');
+        const publicLabel = provider === 'catcard' ? '通道 2' : '通道 1';
+        return {
+            ...sanitized,
+            provider,
+            provider_key: provider,
+            active: provider === normalizeVerifyProvider(activeProvider || provider),
+            enabled: config.enabled !== false && sanitized.enabled !== false,
+            label: publicLabel,
+            provider_label: publicLabel
+        };
+    }
+
     async function verifySettingsHandler(req, res) {
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');
@@ -553,12 +585,22 @@ function createPublicConfigHandlers({
             ? getOptionalSupabaseAdmin()
             : null;
         const config = await loadVerifyRuntimeConfig(supabase, process.env, { site });
+        const providerKeys = getVerifyPublicProviderKeys(config);
+        const activeProvider = normalizeVerifyProvider(config.active_provider || config.activeProvider || config.provider);
+        const providers = providerKeys
+            .map((providerKey) => activateVerifyProviderConfig(config, providerKey))
+            .map((providerConfig) => sanitizeVerifyProviderSettings(providerConfig, activeProvider));
 
         res.setHeader('Cache-Control', 'no-store');
         return sendJson(res, 200, {
             success: true,
             site: config.site || site,
-            config: sanitizeVerifyPublicSettings(config)
+            config: {
+                ...sanitizeVerifyPublicSettings(config),
+                active_provider: activeProvider,
+                activeProvider,
+                providers
+            }
         });
     }
 
