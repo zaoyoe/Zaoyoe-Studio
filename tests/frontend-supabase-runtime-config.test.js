@@ -10116,6 +10116,10 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "el.classList.add('verify-history-item-id--copied');",
         "ta.className = 'verify-copy-fallback';",
         "submitBtn.classList.add('verify-submit-btn--maintenance');",
+        "const historyProvider = normalizeVerifyProvider(payload.provider || payload.provider_adapter || activeVerifyProvider);",
+        "const providerBadgeHtml = `<span class=\"verify-history-provider\" data-history-provider=\"${escapeHtml(historyProvider)}\">${escapeHtml(providerLabel)}</span>`;",
+        "class=\"verify-history-item-meta\"",
+        "class=\"verify-history-message-text\"",
         '<span class="verify-history-status-badge"><i class="fas fa-check-circle"></i>'
     ];
 
@@ -10177,6 +10181,11 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         verifyWidgetSource.includes('verify-provider-option__remaining'),
         true,
         'verify channel cards should keep the per-channel system remaining count'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('`${providerBadgeHtml}${detailHtml}`'),
+        false,
+        'verify history channel badge should stay in the timestamp meta column instead of preceding the result message'
     );
     assert.equal(
         zhLocale.verify.systemRemainingSubmitCount,
@@ -10242,6 +10251,8 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-widget .verify-single-fields[hidden]',
         '.verify-widget .verify-batch-field[hidden]',
         '.verify-batch-textarea',
+        '.verify-history-item-meta',
+        '.verify-history-message-text',
         '.verify-history-item-id--copied',
         '.verify-history-status-badge',
         '.verify-copy-fallback'
@@ -10257,6 +10268,8 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-submit-mode-tabs::before',
         '.verify-submit-mode-btn:hover',
         '.verify-batch-textarea::placeholder',
+        '.verify-history-provider',
+        '.verify-history-provider[data-history-provider="catcard"]',
         'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="ok"]',
         'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="warning"]',
         'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="danger"]',
@@ -17359,5 +17372,58 @@ test('shop page loads auth sheet after legacy shared styles', () => {
     assert.ok(
         authSheetIndex > sharedStyleIndex,
         'shop.html should load auth-sheet.css after style.css so the mobile login sheet keeps the homepage layout'
+    );
+});
+
+test('unlock pricing accepts zero points across admin and prompt runtime', () => {
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const promptsHtml = readRepoFile('prompts.html');
+
+    assert.equal(
+        adminStudioHtml.includes('id="cfgUnlockPoints" min="0"'),
+        true,
+        'admin unlock pricing input should allow zero points'
+    );
+    assert.equal(
+        adminConfigSource.includes('normalizeUnlockPricingPoints(config.default_points, 1)'),
+        true,
+        'admin unlock pricing renderer should preserve default_points: 0'
+    );
+    assert.equal(
+        adminConfigSource.includes('config.default_points = normalizeUnlockPricingPoints(e.target.value, 1);'),
+        true,
+        'admin unlock pricing save handler should preserve zero input values'
+    );
+    assert.equal(
+        adminConfigSource.includes('config.default_points || 1'),
+        false,
+        'admin unlock pricing should not treat zero as a missing value'
+    );
+    assert.equal(
+        promptsSource.includes("url.searchParams.set('route', 'site-system-config');"),
+        true,
+        'prompt unlock pricing should use public site-scoped config'
+    );
+    assert.equal(
+        promptsSource.includes("Object.prototype.hasOwnProperty.call(config, 'default_points')"),
+        true,
+        'prompt unlock pricing should accept explicit default_points: 0'
+    );
+    assert.equal(
+        promptsSource.includes('data?.config_value?.default_points'),
+        false,
+        'prompt unlock pricing should not use truthy checks for default_points'
+    );
+    assert.equal(
+        promptsHtml.includes('unlockPricingZero=20260616_UNLOCK_PRICING_ZERO_1'),
+        true,
+        'prompts.html should cache-bust the unlock pricing runtime'
+    );
+    assert.equal(
+        adminStudioHtml.includes('unlockPricingZero=20260616_UNLOCK_PRICING_ZERO_1'),
+        true,
+        'admin-studio.html should cache-bust the unlock pricing runtime'
     );
 });

@@ -182,3 +182,71 @@ test('public site-system-config route exposes checkin rewards by site', async ()
     assert.equal(payload.success, true);
     assert.equal(payload.configs.checkin_system.base_points, 8);
 });
+
+test('public site-system-config route preserves zero unlock pricing by site', async () => {
+    const handlers = createPublicConfigHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return {
+                    from(table) {
+                        assert.equal(table, 'system_config');
+                        return {
+                            select() {
+                                return this;
+                            },
+                            in(column, values) {
+                                assert.equal(column, 'config_key');
+                                assert.deepEqual(values, ['unlock_pricing']);
+                                return {
+                                    order() {
+                                        return Promise.resolve({
+                                            data: [
+                                                {
+                                                    config_key: 'unlock_pricing',
+                                                    config_value: {
+                                                        __site_scoped: true,
+                                                        default: {
+                                                            default_points: 1,
+                                                            vip_discount: 0.9
+                                                        },
+                                                        sites: {
+                                                            cn: {
+                                                                default_points: 0,
+                                                                vip_discount: 0.9
+                                                            }
+                                                        }
+                                                    },
+                                                    updated_at: '2026-06-16T04:00:00.000Z'
+                                                }
+                                            ],
+                                            error: null
+                                        });
+                                    }
+                                };
+                            }
+                        };
+                    }
+                };
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        }
+    });
+    const req = {
+        method: 'GET',
+        url: '/api/public?scope=config&route=site-system-config&site=cn&key=unlock_pricing',
+        headers: {
+            host: 'localhost:3000'
+        }
+    };
+    const res = createMockResponse();
+
+    await handlers['site-system-config'](req, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.configs.unlock_pricing.default_points, 0);
+});

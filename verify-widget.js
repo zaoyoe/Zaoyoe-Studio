@@ -4534,23 +4534,27 @@ ${fullModeMarkup}
                 });
                 const email = getHistoryEmail(item);
                 const shortEmail = email.length > 28 ? email.substring(0, 28) + '...' : email;
+                const actionHtml = buildHistoryActionButtons(item, payload);
+                const cost = item.points_deducted || 0;
+                const historyProvider = normalizeVerifyProvider(payload.provider || payload.provider_adapter || activeVerifyProvider);
+                const providerLabel = getProviderLabel(historyProvider);
+                const providerBadgeHtml = `<span class="verify-history-provider" data-history-provider="${escapeHtml(historyProvider)}">${escapeHtml(providerLabel)}</span>`;
                 const detail = getHistoryDetail(item);
                 const detailHtml = detail.type === 'url'
                     ? `<a class="verify-history-link-text" href="${escapeHtml(detail.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(detail.text)}</a>`
-                    : escapeHtml(detail.text || '--');
+                    : `<span class="verify-history-message-text">${escapeHtml(detail.text || '--')}</span>`;
                 const detailRowHtml = detail.type === 'empty'
                     ? ''
                     : `<div class="verify-history-item-message">${detailHtml}</div>`;
-                const actionHtml = buildHistoryActionButtons(item, payload);
-                const cost = item.points_deducted || 0;
-                const providerLabel = getProviderLabel(payload.provider || payload.provider_adapter || activeVerifyProvider);
 
                 return `
                     <div class="verify-history-item ${getHistoryStatusCss(item.status)}">
-                        <div class="verify-history-item-time">${time}</div>
+                        <div class="verify-history-item-meta">
+                            <div class="verify-history-item-time">${time}</div>
+                            ${providerBadgeHtml}
+                        </div>
                         <div class="verify-history-item-main">
                             <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" data-verify-action="copy-history-id">${escapeHtml(shortEmail)}</div>
-                            <div class="verify-history-provider">${escapeHtml(providerLabel)}</div>
                             ${detailRowHtml}
                             ${actionHtml}
                         </div>

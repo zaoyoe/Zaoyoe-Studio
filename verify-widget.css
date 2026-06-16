@@ -2155,11 +2155,18 @@
     background: rgba(255, 255, 255, 0.06);
 }
 
+.verify-history-item-meta {
+    min-width: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
 .verify-history-item-time {
     color: rgba(255, 255, 255, 0.45);
     font-size: 0.75rem;
     white-space: nowrap;
-    min-width: 80px;
 }
 
 .verify-history-item-main {
@@ -2187,7 +2194,6 @@
     align-items: center;
     max-width: 140px;
     min-height: 20px;
-    margin-top: 5px;
     padding: 2px 7px;
     border-radius: 999px;
     border: 1px solid rgba(159, 215, 229, 0.16);
@@ -2210,7 +2216,12 @@
     font-size: 0.75rem;
     line-height: 1.45;
     color: rgba(255, 255, 255, 0.48);
-    word-break: break-all;
+    word-break: break-word;
+}
+
+.verify-history-link-text,
+.verify-history-message-text {
+    min-width: 0;
 }
 
 .verify-history-link-text {
