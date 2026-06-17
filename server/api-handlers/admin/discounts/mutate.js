@@ -60,9 +60,18 @@ function normalizeCreatePayload(body = {}, options = {}) {
 
     const code = normalizeText(sourcePayload.code, 80).toUpperCase();
     const discountType = normalizeText(sourcePayload.discount_type || sourcePayload.discountType, 20).toLowerCase();
-    const discountValue = normalizePositiveInteger(sourcePayload.discount_value ?? sourcePayload.discountValue, null);
+    const discountValue = normalizePositiveInteger(
+        sourcePayload.discount_value ?? sourcePayload.discountValue,
+        null,
+        { allowZero: discountType === 'percent', min: discountType === 'percent' ? 0 : 1 }
+    );
     const maxUses = normalizePositiveInteger(sourcePayload.max_uses ?? sourcePayload.maxUses ?? 0, null, { allowZero: true });
     const maxUsesPerUser = normalizePositiveInteger(sourcePayload.max_uses_per_user ?? sourcePayload.maxUsesPerUser ?? 0, null, { allowZero: true });
+    const maxDiscountQuantity = normalizePositiveInteger(
+        sourcePayload.max_discount_quantity ?? sourcePayload.maxDiscountQuantity ?? 0,
+        0,
+        { allowZero: true, min: 0, max: 9999 }
+    );
     const startsAt = normalizeOptionalIsoDate(sourcePayload.starts_at ?? sourcePayload.startsAt);
     const expiresAt = normalizeOptionalIsoDate(sourcePayload.expires_at ?? sourcePayload.expiresAt);
     const applicableSite = normalizeOptionalSite(sourcePayload.applicable_site ?? sourcePayload.applicableSite);
@@ -119,8 +128,10 @@ function normalizeCreatePayload(body = {}, options = {}) {
         throw new Error('discount_type is invalid');
     }
 
-    if (!discountValue) {
-        throw new Error('discount_value must be a positive integer');
+    if (discountValue === null) {
+        throw new Error(discountType === 'percent'
+            ? 'percent discount_value must be between 0 and 100'
+            : 'discount_value must be a positive integer');
     }
 
     if (discountType === 'percent' && discountValue > 100) {
@@ -133,6 +144,10 @@ function normalizeCreatePayload(body = {}, options = {}) {
 
     if (maxUsesPerUser === null) {
         throw new Error('max_uses_per_user must be a non-negative integer');
+    }
+
+    if (maxDiscountQuantity === null) {
+        throw new Error('max_discount_quantity must be a non-negative integer');
     }
 
     if ((sourcePayload.starts_at || sourcePayload.startsAt) && !startsAt) {
@@ -181,6 +196,7 @@ function normalizeCreatePayload(body = {}, options = {}) {
         discount_value: discountValue,
         max_uses: maxUses,
         max_uses_per_user: maxUsesPerUser,
+        max_discount_quantity: maxDiscountQuantity,
         starts_at: startsAt,
         expires_at: expiresAt,
         applicable_site: applicableSite,
@@ -299,6 +315,7 @@ module.exports = async function adminDiscountsMutateHandler(req, res) {
                     discount_value: data.discount_value,
                     max_uses: data.max_uses,
                     max_uses_per_user: data.max_uses_per_user,
+                    max_discount_quantity: data.max_discount_quantity || 0,
                     starts_at: data.starts_at || null,
                     scope_type: data.scope_type,
                     scope_category: data.scope_category || null,
@@ -390,6 +407,8 @@ module.exports = async function adminDiscountsMutateHandler(req, res) {
                     max_uses: data.max_uses,
                     previous_max_uses_per_user: existingRow.max_uses_per_user,
                     max_uses_per_user: data.max_uses_per_user,
+                    previous_max_discount_quantity: existingRow.max_discount_quantity || 0,
+                    max_discount_quantity: data.max_discount_quantity || 0,
                     previous_starts_at: existingRow.starts_at || null,
                     starts_at: data.starts_at || null,
                     previous_scope_type: existingRow.scope_type,

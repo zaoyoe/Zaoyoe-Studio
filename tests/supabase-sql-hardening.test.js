@@ -776,3 +776,111 @@ test('traffic runtime config migration promotes traffic_runtime as the canonical
         'traffic runtime key-alignment migration should prefer the newest traffic_runtime-compatible record'
     );
 });
+
+test('prompt free unlock daily limit is enforced by site-aware unlock SQL', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '202606171905_prompt_free_unlock_daily_limit_hotfix.sql'));
+    const helperSql = readRepoFile(path.join('supabase', 'enforce_points_ban_v2.sql'));
+    const systemConfigSql = readRepoFile(path.join('supabase', 'system_config.sql'));
+
+    for (const [label, sql] of [
+        ['migration', migrationSql],
+        ['helper', helperSql]
+    ]) {
+        assert.match(
+            sql,
+            /CREATE OR REPLACE FUNCTION public\.unlock_prompt_v2\(p_prompt_id TEXT, p_cost INTEGER, p_site TEXT DEFAULT 'cn'\)/,
+            `${label} should expose the site-aware prompt unlock signature`
+        );
+        assert.match(
+            sql,
+            /public\.fn_resolve_site_scoped_system_config\('unlock_pricing', v_site\)/,
+            `${label} should resolve unlock pricing through the site-scoped config helper`
+        );
+        assert.match(
+            sql,
+            /v_unlock_cost := CASE[\s\S]*v_unlock_pricing->>'default_points'[\s\S]*ELSE 1[\s\S]*END;/,
+            `${label} should treat backend unlock pricing as authoritative`
+        );
+        assert.match(
+            sql,
+            /IF p_cost IS NOT NULL AND p_cost < v_unlock_cost THEN[\s\S]*'unlock_price_changed'/,
+            `${label} should reject stale cheaper client-side unlock prices`
+        );
+        assert.match(
+            sql,
+            /IF v_unlock_cost = 0 THEN[\s\S]*v_free_daily_limit := CASE[\s\S]*v_unlock_pricing->>'free_daily_limit'[\s\S]*ELSE 3[\s\S]*END;/,
+            `${label} should only apply the daily free limit when configured unlock cost is zero`
+        );
+        assert.match(
+            sql,
+            /pg_advisory_xact_lock\([\s\S]*unlock_prompt_free_daily:[\s\S]*v_user_id[\s\S]*v_site[\s\S]*YYYY-MM-DD/,
+            `${label} should serialize same-user same-site daily free unlock checks`
+        );
+        assert.match(
+            sql,
+            /FROM public\.prompt_unlocks[\s\S]*WHERE user_id = v_user_id[\s\S]*AND site = v_site[\s\S]*AND cost = 0[\s\S]*AND unlocked_at >= date_trunc\('day', NOW\(\)\)/,
+            `${label} should count only today's free unlocks for the current site`
+        );
+        assert.match(
+            sql,
+            /'code', 'free_daily_limit_reached'/,
+            `${label} should return a machine-readable free limit code`
+        );
+        assert.match(
+            sql,
+            /INSERT INTO public\.points_ledger \(user_id, amount, reason, reference_id, site\)[\s\S]*VALUES \(v_user_id, -v_unlock_cost, 'unlock_prompt', p_prompt_id, v_site\);/,
+            `${label} should write site-aware unlock ledger rows with the authoritative cost`
+        );
+        assert.match(
+            sql,
+            /INSERT INTO public\.prompt_unlocks \(user_id, prompt_id, cost, site\)[\s\S]*VALUES \(v_user_id, v_prompt_id_bigint, v_unlock_cost, v_site\);/,
+            `${label} should store site-aware prompt unlock rows with the authoritative cost`
+        );
+        assert.match(
+            sql,
+            /GRANT EXECUTE ON FUNCTION public\.unlock_prompt_v2\(TEXT, INTEGER, TEXT\) TO authenticated;/,
+            `${label} should grant only the site-aware prompt unlock overload to authenticated callers`
+        );
+        assert.match(
+            sql,
+            /DROP FUNCTION IF EXISTS public\.unlock_prompt_v2\(text, integer, character varying\);/,
+            `${label} should remove the varchar site overload that makes PostgREST RPC resolution ambiguous`
+        );
+    }
+
+    assert.match(
+        migrationSql,
+        /jsonb_set\([\s\S]*\{default,free_daily_limit\}[\s\S]*'3'::jsonb/,
+        'migration should backfill the default site-scoped free daily limit'
+    );
+    assert.match(
+        migrationSql,
+        /jsonb_set\([\s\S]*\{free_daily_limit\}[\s\S]*'3'::jsonb/,
+        'migration should backfill legacy non-site-scoped free daily limit configs'
+    );
+    assert.match(
+        systemConfigSql,
+        /"free_daily_limit": 3/,
+        'system_config bootstrap should include the default free daily unlock limit'
+    );
+});
+
+test('prompt unlock overload hotfix removes the varchar RPC signature and refreshes PostgREST', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '202606171922_unlock_prompt_v2_drop_varchar_overload.sql'));
+
+    assert.match(
+        migrationSql,
+        /DROP FUNCTION IF EXISTS public\.unlock_prompt_v2\(text, integer, character varying\);/,
+        'overload hotfix should remove the integer + varchar unlock_prompt_v2 overload'
+    );
+    assert.match(
+        migrationSql,
+        /DROP FUNCTION IF EXISTS public\.unlock_prompt_v2\(text, bigint, character varying\);/,
+        'overload hotfix should remove the bigint + varchar unlock_prompt_v2 overload'
+    );
+    assert.match(
+        migrationSql,
+        /NOTIFY pgrst, 'reload schema';/,
+        'overload hotfix should force PostgREST to refresh its function cache'
+    );
+});

@@ -207,12 +207,14 @@ test('public site-system-config route preserves zero unlock pricing by site', as
                                                         __site_scoped: true,
                                                         default: {
                                                             default_points: 1,
-                                                            vip_discount: 0.9
+                                                            vip_discount: 0.9,
+                                                            free_daily_limit: 3
                                                         },
                                                         sites: {
                                                             cn: {
                                                                 default_points: 0,
-                                                                vip_discount: 0.9
+                                                                vip_discount: 0.9,
+                                                                free_daily_limit: 2
                                                             }
                                                         }
                                                     },
@@ -249,4 +251,5 @@ test('public site-system-config route preserves zero unlock pricing by site', as
     assert.equal(res.statusCode, 200);
     assert.equal(payload.success, true);
     assert.equal(payload.configs.unlock_pricing.default_points, 0);
+    assert.equal(payload.configs.unlock_pricing.free_daily_limit, 2);
 });

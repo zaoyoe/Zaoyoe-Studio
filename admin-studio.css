@@ -6429,7 +6429,9 @@ button[data-admin-action].is-running:not([data-action-feedback-state]) i:first-c
     margin-top: 20px;
 }
 
+/* 20260617_ADMIN_DISCOUNTS_EMPTY_STATE_CENTER_1 */
 .admin-discount-table-state-cell {
+    display: table-cell !important;
     padding: 20px;
     text-align: center;
 }
@@ -12767,6 +12769,12 @@ input:checked+.toggle-slider:before {
     font-family: 'JetBrains Mono', 'SFMono-Regular', monospace;
 }
 
+.admin-ledger-chip-discount {
+    color: #fef3c7;
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.24);
+}
+
 .admin-ledger-time {
     margin-left: auto;
     color: rgba(148, 163, 184, 0.72);
@@ -12803,6 +12811,8 @@ input:checked+.toggle-slider:before {
 .admin-ledger-modal {
     width: min(860px, 100%);
     max-height: min(82vh, 920px);
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     border-radius: 24px;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -12828,6 +12838,7 @@ input:checked+.toggle-slider:before {
 }
 
 .admin-ledger-modal-header {
+    flex: 0 0 auto;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -12849,9 +12860,14 @@ input:checked+.toggle-slider:before {
 }
 
 .admin-ledger-modal-body {
-    max-height: calc(82vh - 84px);
-    overflow: auto;
-    padding: 20px 24px 24px;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 20px 24px calc(32px + env(safe-area-inset-bottom, 0px));
+    scroll-padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -13902,7 +13918,7 @@ input:checked+.toggle-slider:before {
 
     .admin-ledger-modal {
         width: 100%;
-        max-height: 88vh;
+        max-height: min(88vh, calc(100dvh - 28px));
         border-radius: 20px;
     }
 
@@ -13911,8 +13927,8 @@ input:checked+.toggle-slider:before {
     }
 
     .admin-ledger-modal-body {
-        max-height: calc(88vh - 76px);
-        padding: 16px 18px 18px;
+        padding: 16px 18px calc(28px + env(safe-area-inset-bottom, 0px));
+        scroll-padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
     }
 
     .admin-ledger-detail-grid {
@@ -43614,7 +43630,8 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     [data-config="ops-alerts-verify-queue"],
     [data-config="ops-alerts-verify-failure"],
     [data-config="ops-alerts-kvm4"],
-    [data-config="ops-alerts-shop-risk"]
+    [data-config="ops-alerts-shop-risk"],
+    [data-config="ops-alerts-admin-login-anomaly"]
 ):hover {
     border-color: rgba(107, 158, 206, 0.34);
     box-shadow: inset 0 0 0 1px rgba(107, 158, 206, 0.12), 0 0 0 1px rgba(107, 158, 206, 0.06);

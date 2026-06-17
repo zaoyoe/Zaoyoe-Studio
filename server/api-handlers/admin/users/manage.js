@@ -292,7 +292,7 @@ function formatDiscountBenefitLabel(discount = {}) {
 
     if (discountType === 'percent') {
         const folded = discountValue / 10;
-        if (Number.isFinite(folded) && folded > 0) {
+        if (Number.isFinite(folded) && folded >= 0) {
             const display = Number.isInteger(folded)
                 ? String(folded)
                 : folded.toFixed(1).replace(/\.0$/, '');
@@ -1608,6 +1608,40 @@ async function handleListDiscountAssets({ supabase, body, site }) {
     };
 }
 
+async function handleListVerifyLogs({ supabase, body, site }) {
+    const userId = requireSingleUserId(body);
+    const limit = Math.max(1, Math.min(300, Number.parseInt(body.limit || body.max || 200, 10) || 200));
+    const from = sanitizeText(body.from || body.createdFrom || body.created_from, 80);
+    const to = sanitizeText(body.to || body.createdTo || body.created_to, 80);
+    let query = supabase
+        .from('verification_logs')
+        .select('verification_id, user_id, site, status, message, points_deducted, created_at')
+        .eq('user_id', userId);
+
+    if (site && site !== 'all') {
+        query = query.eq('site', site);
+    }
+    if (from) {
+        query = query.gte('created_at', from);
+    }
+    if (to) {
+        query = query.lte('created_at', to);
+    }
+
+    const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+    if (error) {
+        throw error;
+    }
+
+    return {
+        userId,
+        logs: Array.isArray(data) ? data : []
+    };
+}
+
 async function handleRevokeDiscountAsset({ supabase, user, body, site }) {
     const userId = requireSingleUserId(body);
     const assetId = requireAssetId(body);
@@ -1856,6 +1890,9 @@ module.exports = async (req, res) => {
             break;
         case 'list_discount_assets':
             payload = await handleListDiscountAssets({ supabase, user, body, site });
+            break;
+        case 'list_verify_logs':
+            payload = await handleListVerifyLogs({ supabase, user, body, site });
             break;
         case 'revoke_discount_asset':
             payload = await handleRevokeDiscountAsset({ supabase, user, body, site });

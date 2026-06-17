@@ -6,15 +6,17 @@ CREATE TABLE IF NOT EXISTS discount_codes (
     discount_value INT NOT NULL,           -- 打折比例 (0-100) 或抵扣积分
     max_uses INT DEFAULT 0,                -- 最大使用次数 (0 = 无限)
     used_count INT DEFAULT 0,              -- 已使用次数
+    max_discount_quantity INT NOT NULL DEFAULT 0, -- 单笔订单最多参与抵扣件数 (0 = 无限)
     expires_at TIMESTAMPTZ,                -- 过期时间
     is_active BOOLEAN DEFAULT true,        -- 是否启用
     created_at TIMESTAMPTZ DEFAULT NOW(),
     
     CONSTRAINT chk_discount_type CHECK (discount_type IN ('percent', 'fixed')),
     CONSTRAINT chk_discount_value_percent CHECK (
-        (discount_type = 'percent' AND discount_value > 0 AND discount_value <= 100) OR
+        (discount_type = 'percent' AND discount_value >= 0 AND discount_value <= 100) OR
         (discount_type = 'fixed' AND discount_value > 0)
-    )
+    ),
+    CONSTRAINT discount_codes_max_discount_quantity_check CHECK (max_discount_quantity >= 0)
 );
 
 -- 优惠券 RLS

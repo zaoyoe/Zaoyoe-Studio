@@ -488,7 +488,7 @@ function buildAnalyticsVerificationTaskDetails(row = {}) {
     if (Number.isFinite(points) && points > 0) {
         details.push({ label: '扣积分', value: `${formatNumber(points)} 积分` });
     }
-    if (Number.isFinite(queuePosition) && queuePosition >= 0) {
+    if (Number.isFinite(queuePosition) && queuePosition > 0) {
         details.push({ label: '队列位置', value: `#${queuePosition}` });
     }
     if (Number.isFinite(waitSeconds) && waitSeconds > 0) {

@@ -7350,6 +7350,29 @@ async function handleAdminPointsSiteChange() {
     schedulePointsViewPrefetch(activeView.replace(/^points-view-/, '') || 'batches');
 }
 
+Object.assign(window, {
+    generateCodes,
+    searchCodeInBatches,
+    toggleBatchDateFilter,
+    filterBatchByDate,
+    toggleBatchChannelFilter,
+    filterBatchByChannel,
+    toggleBatchPackageFilter,
+    filterBatchByPackage,
+    toggleBatchExportMenu,
+    exportBatchList,
+    exportSelectedBatches,
+    toggleBatchSelectMode,
+    togglePointsBatchActionsMenu,
+    toggleSelectAllBatches,
+    batchInvalidateCodes,
+    batchDeleteBatches,
+    sortBatches,
+    copyAllCodes,
+    downloadCodesCSV,
+    lookupCode,
+    handleAdminPointsSiteChange
+});
 window.handleAdminPointsSiteChange = handleAdminPointsSiteChange;
 
 if (window.AdminShell?.registerModule) {

@@ -26,7 +26,7 @@ const VERIFY_TASK_UNIT_COSTS = Object.freeze({
     extract: 0.5,
     full: 1
 });
-const ACTIVE_TRACKED_JOB_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending']);
+const ACTIVE_TRACKED_JOB_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned']);
 const TERMINAL_TRACKED_JOB_STATUSES = Object.freeze(['success', 'failed']);
 const jobSyncLocks = new Map();
 
@@ -68,6 +68,15 @@ function getApiErrorCode(payload) {
 function getApiErrorMessage(payload, fallback) {
     const detail = getApiErrorDetail(payload);
     return detail?.message || payload?.message || payload?.msg || payload?.error || fallback;
+}
+
+function isVerifyInsufficientBalanceError(payload = {}, message = '') {
+    const code = String(getApiErrorCode(payload) || '').trim().toLowerCase();
+    const text = String(message || getApiErrorMessage(payload, '') || '').trim().toLowerCase();
+    return code === 'insufficient_balance'
+        || code === 'balance_insufficient'
+        || code === 'not_enough_balance'
+        || /余额不足|额度不足|insufficient.*balance|not enough.*balance/.test(text);
 }
 
 function normalizeVerifyApiBaseUrl(value) {
@@ -156,7 +165,7 @@ function normalizeVerifyUpstreamStatus(value) {
     if (!normalized) return 'queued';
     if (['success', 'completed', 'done', 'ok'].includes(normalized)) return 'success';
     if (['failed', 'fail', 'error', 'timeout', 'cancelled', 'canceled'].includes(normalized)) return 'failed';
-    if (['running', 'processing', 'working', 'in_progress'].includes(normalized)) return 'running';
+    if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)) return 'running';
     if (['queued', 'queueing', 'waiting', 'pending'].includes(normalized)) return 'queued';
     return normalized;
 }
@@ -558,7 +567,7 @@ function buildClientStatusMessage(job) {
     if (status === 'queued') {
         const queuePosition = Number(job?.queue_position);
         const waitSeconds = Number(job?.estimated_wait_seconds);
-        const queueLabel = Number.isFinite(queuePosition) && queuePosition >= 0
+        const queueLabel = Number.isFinite(queuePosition) && queuePosition > 0
             ? `排队中（队列位置 ${queuePosition}）`
             : '排队中';
         return Number.isFinite(waitSeconds) && waitSeconds > 0
@@ -655,7 +664,7 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
         progress: Number.isFinite(progress) ? progress : null,
         provider_progress: Number.isFinite(progress) ? progress : null,
         raw_status: apiData?.status || status || '',
-        queue_position: Number.isFinite(queuePosition) ? queuePosition : null,
+        queue_position: Number.isFinite(queuePosition) && queuePosition > 0 ? queuePosition : null,
         estimated_wait_seconds: Number.isFinite(estimatedWait) ? estimatedWait : null,
         elapsed_seconds: Number.isFinite(elapsedSeconds) ? elapsedSeconds : null,
         points_deducted: pointsDeducted,
@@ -1237,6 +1246,7 @@ module.exports = {
     postVerifyProviderAction,
     resolveVerifyRequestSite,
     resolveVerifyApiKeyByFingerprint,
+    isVerifyInsufficientBalanceError,
     selectVerifyCredentialForTask,
     syncTrackedJobStatus,
     validateUserBalance

@@ -127,6 +127,87 @@ test('wallet order detail copying uses mobile-safe fallback path', () => {
     assert.match(script, /copyOrderContent\(element\)[\s\S]*this\.copyToClipboard\(content, null, \{/);
 });
 
+test('wallet shop orders display paid amount before gross total after discounts', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const paidAmountHelperSource = sliceSourceBetween(
+        script,
+        'getShopOrderPaidAmount(order = {})',
+        'readOptionalPointDataset(value)'
+    );
+    const renderOrdersSource = sliceSourceBetween(
+        script,
+        'renderOrders(orders)',
+        'findShopOrderPreview(orderId = \'\')'
+    );
+    const previewSource = sliceSourceBetween(
+        script,
+        'buildWalletShopOrderPreviewMarkup(orderId = \'\', previewOrder = {})',
+        'showPromptOrderDetail(orderId, promptName, price, createdAt, promptId)'
+    );
+    const shopDetailSource = sliceSourceBetween(
+        script,
+        'async showOrderDetail(orderId)',
+        'openTicketModal(orderId)'
+    );
+    const balanceSnapshotSource = sliceSourceBetween(
+        script,
+        'resolveOrderBalanceSnapshot(orderId = \'\', balanceSnapshot = {})',
+        'formatPoints(value)'
+    );
+
+    assert.match(paidAmountHelperSource, /normalizeOptionalPointValue\(order\?\.price_paid\)/);
+    assert.match(paidAmountHelperSource, /normalizeOptionalPointValue\(order\?\.amount\)/);
+    assert.match(paidAmountHelperSource, /normalizePointValue\(order\?\.total_price \|\| 0\)/);
+    assert.ok(
+        paidAmountHelperSource.indexOf('order?.price_paid') < paidAmountHelperSource.indexOf('order?.amount'),
+        'paid amount helper should prefer price_paid before ledger amount fallback'
+    );
+    assert.ok(
+        paidAmountHelperSource.indexOf('order?.amount') < paidAmountHelperSource.indexOf('order?.total_price'),
+        'paid amount helper should only use total_price as the last fallback'
+    );
+    assert.match(balanceSnapshotSource, /-this\.getShopOrderPaidAmount\(order\)/);
+    assert.match(renderOrdersSource, /-this\.getShopOrderPaidAmount\(order\)/);
+    assert.match(previewSource, /const totalPrice = this\.getShopOrderPaidAmount\(previewOrder\);/);
+    assert.match(shopDetailSource, /const totalPrice = this\.getShopOrderPaidAmount\(order\);/);
+    assert.match(shopDetailSource, /-\$\{this\.formatPoints\(totalPrice\)\}/);
+    assert.doesNotMatch(script, /order\.total_price != null \? order\.total_price : order\.price_paid/);
+    assert.doesNotMatch(script, /isShopOrder[\s\S]{0,80}-this\.normalizePointValue\(order(?:\?|\.)\.total_price \|\| 0\)/);
+    assert.match(script, /order\.price_paid,[\s\S]*order\.total_price/);
+});
+
+test('wallet shop order detail displays applied coupon breakdown', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const discountHelperSource = sliceSourceBetween(
+        script,
+        'getShopOrderGrossAmount(order = {})',
+        'readOptionalPointDataset(value)'
+    );
+    const previewSource = sliceSourceBetween(
+        script,
+        'buildWalletShopOrderPreviewMarkup(orderId = \'\', previewOrder = {})',
+        'showPromptOrderDetail(orderId, promptName, price, createdAt, promptId)'
+    );
+    const shopDetailSource = sliceSourceBetween(
+        script,
+        'async showOrderDetail(orderId)',
+        'openTicketModal(orderId)'
+    );
+
+    assert.match(discountHelperSource, /getShopOrderDiscountAmount\(order = \{\}\)/);
+    assert.match(discountHelperSource, /getShopOrderDiscountSelections\(order = \{\}\)/);
+    assert.match(discountHelperSource, /formatShopOrderDiscountLabel\(order = \{\}\)/);
+    assert.match(discountHelperSource, /buildWalletShopOrderDiscountRows\(order = \{\}\)/);
+    assert.match(discountHelperSource, /order\?\.applied_discounts/);
+    assert.match(discountHelperSource, /order\?\.discount_snapshot\?\.applied_discounts/);
+    assert.match(discountHelperSource, /order\?\.discount_code/);
+    assert.match(discountHelperSource, /wallet\.originalPoints/);
+    assert.match(discountHelperSource, /wallet\.discountCouponCode/);
+    assert.match(discountHelperSource, /wallet\.discountAmount/);
+    assert.match(previewSource, /\$\{this\.buildWalletShopOrderDiscountRows\(previewOrder\)\}/);
+    assert.match(shopDetailSource, /\$\{this\.buildWalletShopOrderDiscountRows\(order\)\}/);
+});
+
 test('wallet prompt, redeem, and shop details expose clickable names with green status checks', () => {
     const script = fs.readFileSync(walletScriptPath, 'utf8');
     const styles = fs.readFileSync(walletStylesPath, 'utf8');
@@ -278,13 +359,43 @@ test('wallet ledger list labels redemption revocations separately from redemptio
     assert.match(styles, /\.wallet-redemption-reversal-detail\s*\{/);
 });
 
+test('wallet ledger treats refunded shop orders as refunds even when product names contain redeem code', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const refundIndex = script.indexOf('this.isShopRefundLedgerReason(entry.reason, entry.reference_id)');
+    const redeemIndex = script.indexOf("entry.reason === 'redeem_code' || (entry.reason && entry.reason.includes('兑换码'))");
+    const clickSource = sliceSourceBetween(
+        script,
+        'handleOpenOrderDetailAction(actionEl)',
+        'bindOverlayCloseButtons(detailOverlay)'
+    );
+    const filterSource = sliceSourceBetween(
+        script,
+        'applyOrderFilter()',
+        'async clearOrders()'
+    );
+
+    assert.notEqual(refundIndex, -1, 'wallet should detect shop refund ledger rows');
+    assert.notEqual(redeemIndex, -1, 'wallet should still detect redeem code ledger rows');
+    assert.equal(refundIndex < redeemIndex, true, 'shop refunds must be classified before generic redeem-code rows');
+    assert.match(script, /isShopRefundLedgerReason\(reason = '', referenceId = ''\)/);
+    assert.match(script, /getShopRefundOrderIdFromReference\(referenceId = ''\)/);
+    assert.match(script, /getShopRefundDisplayName\(reason = ''\)/);
+    assert.match(script, /transactionType = 'shop_refund'/);
+    assert.match(script, /showShopRefundOrderDetail\(orderId, amount, createdAt, reason = '', referenceId = '', balanceSnapshot = \{\}\)/);
+    assert.match(clickSource, /case 'shop_refund':[\s\S]*showShopRefundOrderDetail/);
+    assert.match(filterSource, /order\.transactionType === 'shop_refund'/);
+    assert.match(script, /wallet\.shopRefundReturn/);
+    assert.match(script, /wallet\.shopRefundDetails/);
+    assert.doesNotMatch(script, /transactionType = 'redeem';\s*displayName = this\.tr\('wallet\.shopRefundReturn'/);
+});
+
 test('wallet recharge detail shows balance snapshots and hides internal type/name rows', () => {
     const script = fs.readFileSync(walletScriptPath, 'utf8');
     const styles = fs.readFileSync(walletStylesPath, 'utf8');
     const rechargeDetailSource = sliceSourceBetween(
         script,
         'showRechargeOrderDetail(orderId, amount, createdAt, reason = \'\', referenceId = \'\', balanceSnapshot = {})',
-        'showVerifyOrderDetail(orderId, referenceId, pointsPaid, createdAt, reason = \'\')'
+        'showShopRefundOrderDetail(orderId, amount, createdAt, reason = \'\', referenceId = \'\', balanceSnapshot = {})'
     );
 
     assert.match(script, /annotateLedgerEntriesWithBalanceSnapshots\(ledgerEntries = \[\]\)/);

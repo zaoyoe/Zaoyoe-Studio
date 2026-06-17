@@ -55,6 +55,18 @@ function applyFilters(rows, filters = []) {
             ));
         }
 
+        if (filter.kind === 'gte' || filter.kind === 'lte') {
+            const rowValue = normalizeComparableValue(row?.[filter.field]);
+            const filterValue = normalizeComparableValue(filter.value);
+            const rowTime = Date.parse(rowValue);
+            const filterTime = Date.parse(filterValue);
+            const comparableRowValue = Number.isFinite(rowTime) && Number.isFinite(filterTime) ? rowTime : rowValue;
+            const comparableFilterValue = Number.isFinite(rowTime) && Number.isFinite(filterTime) ? filterTime : filterValue;
+            return filter.kind === 'gte'
+                ? comparableRowValue >= comparableFilterValue
+                : comparableRowValue <= comparableFilterValue;
+        }
+
         return true;
     }));
 }
@@ -68,6 +80,22 @@ function createSupabaseDouble(state) {
     }
 
     function buildSelectQuery(table, filters = []) {
+        let limitCount = null;
+        let orderConfig = null;
+        const resolveRows = () => {
+            let rows = applyFilters(getTable(table), filters);
+            if (orderConfig?.field) {
+                rows = rows.slice().sort((a, b) => {
+                    const aValue = normalizeComparableValue(a?.[orderConfig.field]);
+                    const bValue = normalizeComparableValue(b?.[orderConfig.field]);
+                    if (aValue === bValue) return 0;
+                    const result = aValue > bValue ? 1 : -1;
+                    return orderConfig.ascending === false ? -result : result;
+                });
+            }
+            return Number.isFinite(limitCount) ? rows.slice(0, limitCount) : rows;
+        };
+
         return {
             eq(field, value) {
                 filters.push({ kind: 'eq', field, value });
@@ -77,18 +105,34 @@ function createSupabaseDouble(state) {
                 filters.push({ kind: 'in', field, values });
                 return this;
             },
-            order() {
+            gte(field, value) {
+                filters.push({ kind: 'gte', field, value });
+                return this;
+            },
+            lte(field, value) {
+                filters.push({ kind: 'lte', field, value });
+                return this;
+            },
+            order(field, options = {}) {
+                orderConfig = {
+                    field,
+                    ascending: options?.ascending !== false
+                };
+                return this;
+            },
+            limit(count) {
+                limitCount = Number.parseInt(count, 10);
                 return this;
             },
             async maybeSingle() {
-                const rows = applyFilters(getTable(table), filters);
+                const rows = resolveRows();
                 return {
                     data: rows.length ? clone(rows[0]) : null,
                     error: null
                 };
             },
             async single() {
-                const rows = applyFilters(getTable(table), filters);
+                const rows = resolveRows();
                 if (!rows.length) {
                     return {
                         data: null,
@@ -104,7 +148,7 @@ function createSupabaseDouble(state) {
             then(resolve, reject) {
                 try {
                     resolve({
-                        data: clone(applyFilters(getTable(table), filters)),
+                        data: clone(resolveRows()),
                         error: null
                     });
                 } catch (error) {
@@ -302,6 +346,7 @@ async function withUsersManageHandler(options, callback) {
             guestbook_messages: clone(options?.tables?.guestbook_messages || []),
             guestbook_comments: clone(options?.tables?.guestbook_comments || []),
             points_ledger: clone(options?.tables?.points_ledger || []),
+            verification_logs: clone(options?.tables?.verification_logs || []),
             block_history: clone(options?.tables?.block_history || []),
             admin_audit_logs: clone(options?.tables?.admin_audit_logs || [])
         }
@@ -437,6 +482,65 @@ test('users manage handler adjusts points through hardened RPCs and server notif
         assert.equal(state.notifications.length, 1);
         assert.equal(state.notifications[0]?.scope, 'user_personal');
         assert.equal(state.auditEntries[0]?.actionType, 'UPDATE_POINT');
+    });
+});
+
+test('users manage handler lists target user verify logs for admin ledger enrichment', async () => {
+    await withUsersManageHandler({
+        tables: {
+            verification_logs: [
+                {
+                    verification_id: '61585',
+                    user_id: 'user_1',
+                    site: 'cn',
+                    status: 'success',
+                    message: JSON.stringify({
+                        kind: 'google_one_job',
+                        job_id: '61585',
+                        email: 'gamaunaijan634@gmail.com'
+                    }),
+                    points_deducted: 48,
+                    created_at: '2026-06-17T06:43:00.000Z'
+                },
+                {
+                    verification_id: 'other-user-task',
+                    user_id: 'user_2',
+                    site: 'cn',
+                    status: 'success',
+                    message: JSON.stringify({
+                        kind: 'google_one_job',
+                        job_id: 'other-user-task',
+                        email: 'other@example.com'
+                    }),
+                    points_deducted: 48,
+                    created_at: '2026-06-17T06:44:00.000Z'
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'list_verify_logs',
+                userId: 'user_1',
+                site: 'cn',
+                from: '2026-06-17T05:00:00.000Z',
+                to: '2026-06-17T07:00:00.000Z',
+                limit: 20
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.userId, 'user_1');
+        assert.equal(payload.logs.length, 1);
+        assert.equal(payload.logs[0].verification_id, '61585');
+        assert.match(payload.logs[0].message, /gamaunaijan634@gmail\.com/);
+        assert.deepEqual(state.requireAdminCalls[0]?.config, { permission: 'users.manage' });
     });
 });
 

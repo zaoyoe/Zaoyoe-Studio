@@ -405,6 +405,21 @@ function createDefaultState() {
                 summary_daily_hour: 9,
                 summary_daily_minute: 0
             },
+            admin_login_anomaly: {
+                enabled: true,
+                sweep_interval_ms: 10 * 60 * 1000,
+                recent_window_minutes: 30,
+                baseline_lookback_days: 30,
+                dedupe_window_minutes: 6 * 60,
+                ip_grouping_enabled: true,
+                ipv4_group_prefix_bits: 24,
+                ipv6_group_prefix_bits: 64,
+                recent_distinct_ip_group_threshold: 3,
+                user_agent_family_grouping_enabled: true,
+                recent_distinct_user_agent_family_threshold: 3,
+                page_size: 500,
+                max_pages: 10
+            },
             customer_chat_message: {
                 enabled: true,
                 sweep_interval_ms: 60 * 1000,
@@ -650,6 +665,7 @@ function createNormalizedConfig(raw) {
     const moduleMuteRules = muteRules.modules && typeof muteRules.modules === 'object' ? muteRules.modules : {};
     const shopOrderRisk = source.shop_order_risk && typeof source.shop_order_risk === 'object' ? source.shop_order_risk : {};
     const shopInventory = source.shop_inventory && typeof source.shop_inventory === 'object' ? source.shop_inventory : {};
+    const adminLoginAnomaly = source.admin_login_anomaly && typeof source.admin_login_anomaly === 'object' ? source.admin_login_anomaly : {};
     const customerChatMessage = source.customer_chat_message && typeof source.customer_chat_message === 'object' ? source.customer_chat_message : {};
     const shopPurchaseSuccess = source.shop_purchase_success && typeof source.shop_purchase_success === 'object' ? source.shop_purchase_success : {};
     const walletRechargeSuccess = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' ? source.wallet_recharge_success : {};
@@ -911,6 +927,21 @@ function createNormalizedConfig(raw) {
             summary_hourly_minute: Math.min(59, Math.max(0, Number(shopInventory.summary_hourly_minute || 0) || 0)),
             summary_daily_hour: Math.min(23, Math.max(0, Number(shopInventory.summary_daily_hour ?? 9) || 9)),
             summary_daily_minute: Math.min(59, Math.max(0, Number(shopInventory.summary_daily_minute || 0) || 0))
+        },
+        admin_login_anomaly: {
+            enabled: normalizeBoolean(adminLoginAnomaly.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(adminLoginAnomaly.sweep_interval_ms || 10 * 60 * 1000) || (10 * 60 * 1000))),
+            recent_window_minutes: Math.min(24 * 60, Math.max(5, Number(adminLoginAnomaly.recent_window_minutes || 30) || 30)),
+            baseline_lookback_days: Math.min(180, Math.max(1, Number(adminLoginAnomaly.baseline_lookback_days || 30) || 30)),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(adminLoginAnomaly.dedupe_window_minutes || 6 * 60) || (6 * 60))),
+            ip_grouping_enabled: normalizeBoolean(adminLoginAnomaly.ip_grouping_enabled, true),
+            ipv4_group_prefix_bits: Math.round(Math.min(32, Math.max(8, Number(adminLoginAnomaly.ipv4_group_prefix_bits || 24) || 24))),
+            ipv6_group_prefix_bits: Math.round(Math.min(128, Math.max(16, Number(adminLoginAnomaly.ipv6_group_prefix_bits || 64) || 64))),
+            recent_distinct_ip_group_threshold: Math.round(Math.min(20, Math.max(2, Number(adminLoginAnomaly.recent_distinct_ip_group_threshold || 3) || 3))),
+            user_agent_family_grouping_enabled: normalizeBoolean(adminLoginAnomaly.user_agent_family_grouping_enabled, true),
+            recent_distinct_user_agent_family_threshold: Math.round(Math.min(20, Math.max(2, Number(adminLoginAnomaly.recent_distinct_user_agent_family_threshold || 3) || 3))),
+            page_size: Math.min(5000, Math.max(50, Number(adminLoginAnomaly.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(adminLoginAnomaly.max_pages || 10) || 10))
         },
         customer_chat_message: {
             enabled: normalizeBoolean(customerChatMessage.enabled, true),
@@ -1457,6 +1488,19 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.shop_inventory.summary_hourly_minute, 0);
         assert.equal(payload.config.shop_inventory.summary_daily_hour, 9);
         assert.equal(payload.config.shop_inventory.summary_daily_minute, 0);
+        assert.equal(payload.config.admin_login_anomaly.enabled, true);
+        assert.equal(payload.config.admin_login_anomaly.sweep_interval_ms, 10 * 60 * 1000);
+        assert.equal(payload.config.admin_login_anomaly.recent_window_minutes, 30);
+        assert.equal(payload.config.admin_login_anomaly.baseline_lookback_days, 30);
+        assert.equal(payload.config.admin_login_anomaly.dedupe_window_minutes, 6 * 60);
+        assert.equal(payload.config.admin_login_anomaly.ip_grouping_enabled, true);
+        assert.equal(payload.config.admin_login_anomaly.ipv4_group_prefix_bits, 24);
+        assert.equal(payload.config.admin_login_anomaly.ipv6_group_prefix_bits, 64);
+        assert.equal(payload.config.admin_login_anomaly.recent_distinct_ip_group_threshold, 3);
+        assert.equal(payload.config.admin_login_anomaly.user_agent_family_grouping_enabled, true);
+        assert.equal(payload.config.admin_login_anomaly.recent_distinct_user_agent_family_threshold, 3);
+        assert.equal(payload.config.admin_login_anomaly.page_size, 500);
+        assert.equal(payload.config.admin_login_anomaly.max_pages, 10);
         assert.equal(payload.config.customer_chat_message.enabled, true);
         assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 60 * 1000);
         assert.equal(payload.config.customer_chat_message.lookback_minutes, 15);
@@ -1914,6 +1958,21 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         summary_daily_hour: 11,
                         summary_daily_minute: 5
                     },
+                    admin_login_anomaly: {
+                        enabled: false,
+                        sweep_interval_ms: 7 * 60 * 1000,
+                        recent_window_minutes: 45,
+                        baseline_lookback_days: 21,
+                        dedupe_window_minutes: 420,
+                        ip_grouping_enabled: false,
+                        ipv4_group_prefix_bits: 20,
+                        ipv6_group_prefix_bits: 56,
+                        recent_distinct_ip_group_threshold: 4,
+                        user_agent_family_grouping_enabled: false,
+                        recent_distinct_user_agent_family_threshold: 5,
+                        page_size: 600,
+                        max_pages: 12
+                    },
                     verify_quota: {
                         enabled: true,
                         sweep_interval_ms: 12 * 60 * 1000,
@@ -2247,6 +2306,19 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.shop_order_delivery.summary_hourly_minute, 10);
         assert.equal(payload.config.shop_order_delivery.summary_daily_hour, 11);
         assert.equal(payload.config.shop_order_delivery.summary_daily_minute, 5);
+        assert.equal(payload.config.admin_login_anomaly.enabled, false);
+        assert.equal(payload.config.admin_login_anomaly.sweep_interval_ms, 7 * 60 * 1000);
+        assert.equal(payload.config.admin_login_anomaly.recent_window_minutes, 45);
+        assert.equal(payload.config.admin_login_anomaly.baseline_lookback_days, 21);
+        assert.equal(payload.config.admin_login_anomaly.dedupe_window_minutes, 420);
+        assert.equal(payload.config.admin_login_anomaly.ip_grouping_enabled, false);
+        assert.equal(payload.config.admin_login_anomaly.ipv4_group_prefix_bits, 20);
+        assert.equal(payload.config.admin_login_anomaly.ipv6_group_prefix_bits, 56);
+        assert.equal(payload.config.admin_login_anomaly.recent_distinct_ip_group_threshold, 4);
+        assert.equal(payload.config.admin_login_anomaly.user_agent_family_grouping_enabled, false);
+        assert.equal(payload.config.admin_login_anomaly.recent_distinct_user_agent_family_threshold, 5);
+        assert.equal(payload.config.admin_login_anomaly.page_size, 600);
+        assert.equal(payload.config.admin_login_anomaly.max_pages, 12);
         assert.equal(payload.config.verify_quota.enabled, true);
         assert.equal(payload.config.verify_quota.sweep_interval_ms, 12 * 60 * 1000);
         assert.equal(payload.config.verify_quota.low_balance_threshold, 24);

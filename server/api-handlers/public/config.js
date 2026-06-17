@@ -36,6 +36,14 @@ function createPublicConfigHandlers({
         return ['both', 'extract_only', 'full_only'].includes(normalized) ? normalized : 'both';
     }
 
+    function normalizeVerifyProviderVisibility(value) {
+        const normalized = sanitizeText(value, 40).toLowerCase();
+        if (normalized === 'aidone' || normalized === 'catcard') {
+            return normalized;
+        }
+        return 'both';
+    }
+
     function getVerifyPublicProviderKeys(config = {}) {
         const keys = ['aidone', 'catcard'];
         const activeProvider = normalizeVerifyProvider(config.active_provider || config.activeProvider || config.provider || 'aidone');
@@ -529,6 +537,7 @@ function createPublicConfigHandlers({
         );
 
         const modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);
+        const providerVisibility = normalizeVerifyProviderVisibility(config.provider_visibility || config.providerVisibility || config.verify_provider_visibility);
 
         return {
             enabled: config.enabled !== false,
@@ -546,6 +555,8 @@ function createPublicConfigHandlers({
                 : {},
             mode_visibility: modeVisibility,
             modeVisibility,
+            provider_visibility: providerVisibility,
+            providerVisibility,
             price_per_verify: extractPrice,
             price_per_verify_extract: extractPrice,
             price_per_verify_full: fullPrice,

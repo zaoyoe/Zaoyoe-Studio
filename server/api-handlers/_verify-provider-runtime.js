@@ -7,7 +7,7 @@ const {
     resolveSiteScopedSystemConfigValue
 } = require('./_site-scoped-system-config');
 
-const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending']);
+const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned']);
 const VERIFY_PROVIDER_AIDONE = 'aidone';
 const VERIFY_PROVIDER_CATCARD = 'catcard';
 const VERIFY_ADAPTER_AIDONE_OPENAPI = 'aidone_openapi';
@@ -122,6 +122,14 @@ function getVerifyPriceMap(config = {}) {
 function normalizeVerifyModeVisibility(value) {
     const normalized = normalizeText(value).toLowerCase();
     return ['both', 'extract_only', 'full_only'].includes(normalized) ? normalized : 'both';
+}
+
+function normalizeVerifyProviderVisibility(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (normalized === VERIFY_PROVIDER_AIDONE || normalized === VERIFY_PROVIDER_CATCARD) {
+        return normalized;
+    }
+    return 'both';
 }
 
 function normalizeVerifyCredentialList(value) {
@@ -388,6 +396,8 @@ function activateVerifyProviderConfig(runtimeConfig = {}, provider = '') {
         providers: runtimeConfig.providers,
         activeProvider: normalizedProvider,
         active_provider: normalizedProvider,
+        providerVisibility: runtimeConfig.providerVisibility,
+        provider_visibility: runtimeConfig.provider_visibility,
         modeVisibility: runtimeConfig.modeVisibility,
         mode_visibility: runtimeConfig.mode_visibility,
         pricePerVerify: runtimeConfig.pricePerVerify,
@@ -474,6 +484,15 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
         || env?.VERIFY_ACTIVE_PROVIDER
         || VERIFY_PROVIDER_AIDONE
     );
+    const providerVisibility = normalizeVerifyProviderVisibility(
+        config.provider_visibility
+        || config.providerVisibility
+        || config.verify_provider_visibility
+        || defaultConfig.provider_visibility
+        || defaultConfig.providerVisibility
+        || defaultConfig.verify_provider_visibility
+        || env?.VERIFY_PROVIDER_VISIBILITY
+    );
     const providers = {
         [VERIFY_PROVIDER_AIDONE]: buildRuntimeProviderConfig({
             config: mergedForDefaults,
@@ -507,7 +526,9 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
         pricePerVerifyExtract: prices.extract,
         pricePerVerifyFull: prices.full,
         modeVisibility,
-        mode_visibility: modeVisibility
+        mode_visibility: modeVisibility,
+        providerVisibility,
+        provider_visibility: providerVisibility
     };
 }
 
@@ -842,7 +863,7 @@ async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
 
     const rows = Array.isArray(data) ? data : [];
     const localQueueSize = rows.filter((row) => ['queued', 'pending'].includes(normalizeText(row?.status).toLowerCase())).length;
-    const localRunningJobs = rows.filter((row) => ['running', 'processing'].includes(normalizeText(row?.status).toLowerCase())).length;
+    const localRunningJobs = rows.filter((row) => ['running', 'processing', 'assigned'].includes(normalizeText(row?.status).toLowerCase())).length;
     let providerStatus = null;
     if (isPixelBridgeAdapter(config.adapter)) {
         try {

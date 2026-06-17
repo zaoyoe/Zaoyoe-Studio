@@ -34,6 +34,7 @@ let usersTagCenterCache = null;
 let usersActivityChannel = null;
 let usersActivityRefreshTimer = null;
 let usersActivityReloadTimer = null;
+let usersVisibleActivationTimer = 0;
 
 function bindUsersOverlayDismissGuard(overlay) {
     return window.AdminOverlayDismissGuard?.bind?.(overlay);
@@ -153,6 +154,10 @@ async function fetchPromptCache() {
 function isUsersModuleActive() {
     const module = document.getElementById('module-users');
     return Boolean(module && module.classList.contains('active') && !module.hidden);
+}
+
+function canActivateVisibleUsersModule() {
+    return window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true;
 }
 
 function syncUserModuleControls() {
@@ -731,16 +736,18 @@ function updateUserAccountVisibilityMeta() {
     const metaEl = document.getElementById('userTestAccountCount');
     if (!metaEl) return;
 
+    const totalAccountCount = userState.users.length;
     const testAccountCount = userState.users.filter(user => user.is_test_or_system).length;
+    const visibleRealAccountCount = Math.max(0, totalAccountCount - testAccountCount);
 
     if (testAccountCount === 0) {
-        metaEl.textContent = '未发现测试/系统账号';
+        metaEl.textContent = `共 ${totalAccountCount.toLocaleString()} 位用户`;
         return;
     }
 
     metaEl.textContent = userState.filters.showTestAccounts
-        ? `测试/系统账号 ${testAccountCount}`
-        : `已隐藏 ${testAccountCount} 个测试/系统账号`;
+        ? `共 ${totalAccountCount.toLocaleString()} 位用户 · 测试/系统 ${testAccountCount.toLocaleString()}`
+        : `共 ${visibleRealAccountCount.toLocaleString()} 位真实用户 · 已隐藏 ${testAccountCount.toLocaleString()}`;
 }
 
 function setUsersHiddenState(element, hidden) {
@@ -784,8 +791,6 @@ function activateUsersModule(context = {}, options = {}) {
         usersModuleInitialized = true;
         void fetchPromptCache();
     }
-
-    refreshUsersOnActivate();
 
     // Enable horizontal scroll with mouse wheel on desktop
     // Must use #module-users context to avoid selecting the wrong .users-table-panel (e.g., points batch table)
@@ -1531,6 +1536,7 @@ async function loadUsers(options = {}) {
                     加载失败: ${err.message}
                 </td></tr>
             `;
+            renderUsersPaginationStatus('加载失败');
             hideUsersEmptyState();
             return false;
         }
@@ -1579,6 +1585,73 @@ function hideUsersEmptyState() {
     emptyDiv.hidden = true;
     emptyDiv.innerHTML = '';
     setUsersHiddenState(emptyDiv, true);
+}
+
+function formatUsersCount(count = 0) {
+    return `${Math.max(0, Number(count) || 0).toLocaleString()} 位用户`;
+}
+
+function renderUsersPaginationStatus(statusText = '加载中...') {
+    const pagination = document.getElementById('usersPagination');
+    if (!pagination) return;
+
+    pagination.innerHTML = `
+        <button class="page-btn prev" type="button" disabled aria-label="上一页">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <span class="page-info users-page-info">${escapeHtml(statusText)}</span>
+        <button class="page-btn next" type="button" disabled aria-label="下一页">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+    `;
+}
+
+function renderUsersPagination({ totalPages = null, start = null, visibleCount = null } = {}) {
+    const pagination = document.getElementById('usersPagination');
+    if (!pagination) return;
+
+    const filteredCount = userState.filteredUsers.length;
+    const totalUserCount = userState.users.length;
+    const testAccountCount = userState.users.filter(user => user.is_test_or_system).length;
+    const pageCount = Math.max(
+        1,
+        totalPages !== null && totalPages !== undefined && Number.isFinite(Number(totalPages))
+            ? Number(totalPages)
+            : Math.ceil(filteredCount / userState.itemsPerPage)
+    );
+    const currentPage = Math.min(Math.max(Number(userState.currentPage) || 1, 1), pageCount);
+    const currentStart = start !== null && start !== undefined && Number.isFinite(Number(start))
+        ? Number(start)
+        : (currentPage - 1) * userState.itemsPerPage;
+    const currentVisibleCount = visibleCount !== null && visibleCount !== undefined && Number.isFinite(Number(visibleCount))
+        ? Number(visibleCount)
+        : Math.max(0, Math.min(userState.itemsPerPage, filteredCount - currentStart));
+    const from = filteredCount > 0 ? currentStart + 1 : 0;
+    const to = filteredCount > 0 ? Math.min(filteredCount, currentStart + currentVisibleCount) : 0;
+    const rangeLabel = filteredCount > 0
+        ? `显示 ${from.toLocaleString()}-${to.toLocaleString()} / ${formatUsersCount(filteredCount)}`
+        : `共 ${formatUsersCount(0)}`;
+    const scopeLabel = !userState.filters.showTestAccounts && testAccountCount > 0
+        ? ` · 全量 ${formatUsersCount(totalUserCount)}`
+        : '';
+
+    pagination.innerHTML = `
+        <button class="page-btn prev" type="button"
+            data-admin-action="users-change-page"
+            data-users-page="${currentPage - 1}"
+            ${currentPage <= 1 ? 'disabled' : ''}
+            aria-label="上一页">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <span class="page-info users-page-info">第 ${currentPage.toLocaleString()} / ${pageCount.toLocaleString()} 页 · ${rangeLabel}${scopeLabel}</span>
+        <button class="page-btn next" type="button"
+            data-admin-action="users-change-page"
+            data-users-page="${currentPage + 1}"
+            ${currentPage >= pageCount ? 'disabled' : ''}
+            aria-label="下一页">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+    `;
 }
 
 function toggleUserTestAccountVisibility(checked) {
@@ -1674,6 +1747,11 @@ function renderUsersTable() {
     }
     const start = (userState.currentPage - 1) * userState.itemsPerPage;
     const paginatedUsers = userState.filteredUsers.slice(start, start + userState.itemsPerPage);
+    renderUsersPagination({
+        totalPages,
+        start,
+        visibleCount: paginatedUsers.length
+    });
 
     const tableHead = document.querySelector('.users-table thead tr');
     if (tableHead) {
@@ -1807,6 +1885,23 @@ function renderUsersTable() {
     `}).join('');
 }
 
+function changeUsersPage(page) {
+    const totalPages = Math.max(1, Math.ceil(userState.filteredUsers.length / userState.itemsPerPage));
+    const nextPage = Math.min(Math.max(Number.parseInt(page, 10) || 1, 1), totalPages);
+    if (nextPage === userState.currentPage) {
+        renderUsersPagination();
+        return false;
+    }
+
+    userState.currentPage = nextPage;
+    renderUsersTable();
+    document.querySelector('#module-users .users-table-panel')?.scrollIntoView?.({
+        block: 'nearest',
+        inline: 'nearest'
+    });
+    return true;
+}
+
 // Loading State
 function buildUsersTableLoadingSkeleton(rowCount = 7) {
     const rows = Math.max(4, Number.parseInt(rowCount, 10) || 7);
@@ -1877,6 +1972,7 @@ function renderUserLoading() {
     if (tbody) {
         tbody.innerHTML = buildUsersTableLoadingSkeleton();
     }
+    renderUsersPaginationStatus('加载用户中...');
     hideUsersEmptyState();
 }
 
@@ -7688,6 +7784,9 @@ function renderLedgerItems(data) {
         const focusChip = isFocused
             ? '<span class="users-payment-focus-pill users-ledger-focus-pill">当前验证记录</span>'
             : '';
+        const shopDiscountChips = isAdminShopLedgerReason(record.reason, referenceId) && record.shop_order
+            ? buildAdminShopOrderDiscountChips(record.shop_order)
+            : '';
 
         return `
             <div class="data-list-item admin-ledger-item admin-ledger-item--${tone}${isFocused ? ' is-focused' : ''}" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}" data-ledger-reference-id="${escapeHtml(referenceId)}">
@@ -7706,6 +7805,7 @@ function renderLedgerItems(data) {
                         <span class="admin-ledger-chip">${escapeHtml(meta.badge)}</span>
                         ${referenceChip}
                         ${focusChip}
+                        ${shopDiscountChips}
                         <span class="admin-ledger-time">${escapeHtml(meta.timeLabel)}</span>
                     </div>
                 </div>
@@ -7775,7 +7875,7 @@ function formatUserDiscountBenefitLabel(asset = {}) {
 
     const discountType = String(asset?.discount_type || '').trim().toLowerCase();
     const discountValue = Number(asset?.discount_value);
-    if (discountType === 'percent' && Number.isFinite(discountValue) && discountValue > 0) {
+    if (discountType === 'percent' && Number.isFinite(discountValue) && discountValue >= 0) {
         const folded = discountValue / 10;
         const display = Number.isInteger(folded)
             ? String(folded)
@@ -7786,6 +7886,147 @@ function formatUserDiscountBenefitLabel(asset = {}) {
         return `立减 ${discountValue} 积分`;
     }
     return String(asset?.code || '优惠券').trim() || '优惠券';
+}
+
+function normalizeAdminShopDiscountSnapshot(order = {}) {
+    const snapshot = order?.discount_snapshot;
+    if (!snapshot) return {};
+    if (typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+        return snapshot;
+    }
+    if (typeof snapshot === 'string') {
+        try {
+            const parsed = JSON.parse(snapshot);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_) {
+            return {};
+        }
+    }
+    return {};
+}
+
+function getAdminShopOrderDiscountSelections(order = {}) {
+    const snapshot = normalizeAdminShopDiscountSnapshot(order);
+    const snapshotDiscounts = Array.isArray(snapshot.applied_discounts) ? snapshot.applied_discounts : [];
+    const selections = snapshotDiscounts
+        .filter(selection => selection && typeof selection === 'object')
+        .map(selection => ({
+            ...selection,
+            code: String(
+                selection.code
+                || selection.discount_code
+                || selection.coupon_code
+                || selection.asset_code
+                || selection.promotion_code
+                || ''
+            ).trim()
+        }));
+    const fallbackCode = String(order?.discount_code || order?.coupon_code || '').trim();
+
+    if (fallbackCode && !selections.some(selection => selection.code === fallbackCode)) {
+        selections.push({
+            code: fallbackCode,
+            benefit_label: fallbackCode,
+            discount_amount: getAdminShopOrderDiscountPoints(order)
+        });
+    }
+
+    return selections;
+}
+
+function formatAdminShopOrderDiscountSelectionLabel(selection = {}) {
+    const code = String(selection?.code || selection?.discount_code || '').trim();
+    const benefitLabel = formatUserDiscountBenefitLabel({
+        ...selection,
+        code
+    });
+
+    if (code && benefitLabel && benefitLabel !== code) {
+        return `${code}（${benefitLabel}）`;
+    }
+    return benefitLabel || code || '';
+}
+
+function formatAdminShopOrderDiscountLabel(order = {}) {
+    return getAdminShopOrderDiscountSelections(order)
+        .map(selection => formatAdminShopOrderDiscountSelectionLabel(selection))
+        .filter(Boolean)
+        .join('、');
+}
+
+function getAdminShopOrderGrossPoints(order = {}, fallback = 0) {
+    const gross = order?.total_price;
+    if (gross !== null && gross !== undefined && String(gross).trim() !== '') {
+        return Math.abs(normalizeAdminLedgerValue(gross));
+    }
+    const paid = order?.price_paid;
+    if (paid !== null && paid !== undefined && String(paid).trim() !== '') {
+        return Math.abs(normalizeAdminLedgerValue(paid));
+    }
+    return Math.abs(normalizeAdminLedgerValue(fallback));
+}
+
+function getAdminShopOrderPaidPoints(order = {}, fallback = 0) {
+    const paid = order?.price_paid;
+    if (paid !== null && paid !== undefined && String(paid).trim() !== '') {
+        return Math.abs(normalizeAdminLedgerValue(paid));
+    }
+    return Math.abs(normalizeAdminLedgerValue(fallback));
+}
+
+function getAdminShopOrderDiscountPoints(order = {}) {
+    const explicitDiscount = order?.discount_amount;
+    if (explicitDiscount !== null && explicitDiscount !== undefined && String(explicitDiscount).trim() !== '') {
+        return Math.max(0, Math.abs(normalizeAdminLedgerValue(explicitDiscount)));
+    }
+
+    const gross = getAdminShopOrderGrossPoints(order);
+    const paid = getAdminShopOrderPaidPoints(order);
+    return Math.max(0, normalizeAdminLedgerValue(gross - paid));
+}
+
+function buildAdminShopOrderDiscountChips(order = {}) {
+    const discountLabel = formatAdminShopOrderDiscountLabel(order);
+    const discountPoints = getAdminShopOrderDiscountPoints(order);
+    const grossPoints = getAdminShopOrderGrossPoints(order);
+    const paidPoints = getAdminShopOrderPaidPoints(order);
+    const chips = [];
+
+    if (discountLabel) {
+        chips.push(`<span class="admin-ledger-chip admin-ledger-chip-discount">优惠券码 ${escapeHtml(discountLabel)}</span>`);
+    }
+    if (discountPoints > 0) {
+        chips.push(`<span class="admin-ledger-chip admin-ledger-chip-discount">优惠 -${escapeHtml(formatAdminPointValue(discountPoints))} 分</span>`);
+    }
+    if (discountPoints > 0 || grossPoints > paidPoints) {
+        chips.push(`<span class="admin-ledger-chip">原价 ${escapeHtml(formatAdminPointValue(grossPoints))} 分</span>`);
+        chips.push(`<span class="admin-ledger-chip">实付 ${escapeHtml(formatAdminPointValue(paidPoints))} 分</span>`);
+    }
+
+    return chips.join('');
+}
+
+function appendAdminShopOrderDiscountSummaryRows(rows = [], order = null, fallback = 0) {
+    if (!order || typeof order !== 'object') return rows;
+
+    const discountLabel = formatAdminShopOrderDiscountLabel(order);
+    const discountPoints = getAdminShopOrderDiscountPoints(order);
+    const grossPoints = getAdminShopOrderGrossPoints(order, Math.abs(fallback));
+    const paidPoints = getAdminShopOrderPaidPoints(order, Math.abs(fallback));
+    const hasDiscountTotals = discountPoints > 0 || grossPoints > paidPoints;
+
+    if (!discountLabel && !hasDiscountTotals) return rows;
+
+    if (discountLabel) {
+        rows.push({ label: '优惠券码', value: discountLabel });
+    }
+    if (hasDiscountTotals) {
+        rows.push({ label: '优惠金额', value: discountPoints > 0 ? `-${formatAdminPointValue(discountPoints)} 分` : '' });
+        rows.push({ label: '原价积分', value: `${formatAdminPointValue(grossPoints)} 分` });
+        rows.push({ label: '实付积分', value: `${formatAdminPointValue(paidPoints)} 分`, color: '#f87171' });
+    }
+
+    return rows;
 }
 
 function formatUserDiscountSiteLabel(value = '') {
@@ -8373,6 +8614,49 @@ function parseAdminVerifyLogMessage(message) {
     }
 }
 
+function normalizeAdminVerifyLedgerLog(verifyLog = null, referenceId = '') {
+    if (!verifyLog || typeof verifyLog !== 'object') return null;
+
+    const payload = parseAdminVerifyLogMessage(verifyLog.message) || {};
+    const normalizedReferenceId = String(referenceId || '').trim();
+    const verificationId = String(verifyLog.verification_id || '').trim();
+    const fallbackEmail = looksLikeAdminEmail(verificationId)
+        ? verificationId
+        : (looksLikeAdminEmail(normalizedReferenceId) ? normalizedReferenceId : '');
+    const fallbackJobId = fallbackEmail
+        ? ''
+        : String(verificationId || normalizedReferenceId || '').trim();
+    const email = String(payload.email || verifyLog.email || fallbackEmail || '').trim();
+    const jobId = String(payload.job_id || payload.task_id || fallbackJobId || '').trim();
+
+    return {
+        ...verifyLog,
+        payload: {
+            ...payload,
+            email,
+            job_id: jobId
+        },
+        email,
+        jobId
+    };
+}
+
+function getAdminVerifyLedgerSubmittedAccount(record = {}) {
+    const normalizedLog = normalizeAdminVerifyLedgerLog(record.verify_log || record.verifyLog || null, record.reference_id || record.referenceId || '');
+    return String(normalizedLog?.email || '').trim();
+}
+
+function getAdminVerifyLedgerJobId(record = {}) {
+    const referenceId = String(record.reference_id || record.referenceId || '').trim();
+    const normalizedLog = normalizeAdminVerifyLedgerLog(record.verify_log || record.verifyLog || null, referenceId);
+    return String(normalizedLog?.jobId || (!looksLikeAdminEmail(referenceId) ? referenceId : '') || '').trim();
+}
+
+function getAdminVerifyLedgerTaskType(record = {}) {
+    const normalizedLog = normalizeAdminVerifyLedgerLog(record.verify_log || record.verifyLog || null, record.reference_id || record.referenceId || '');
+    return String(normalizedLog?.payload?.task_type || normalizedLog?.task_type || '').trim();
+}
+
 function getAdminVerifyStatusMeta(status = '') {
     const normalized = String(status || '').trim().toLowerCase();
 
@@ -8470,6 +8754,16 @@ function isAdminShopLedgerReason(reason = '', referenceId = '') {
         normalizedRef.startsWith('SHOP_ORDER_');
 }
 
+function isAdminShopRefundLedgerReason(reason = '', referenceId = '') {
+    const rawReason = String(reason || '').trim();
+    const normalizedReason = rawReason.toLowerCase();
+    const normalizedRef = String(referenceId || '').trim().toUpperCase();
+    return rawReason.startsWith('订单退款:') ||
+        rawReason.startsWith('订单退款：') ||
+        normalizedReason.startsWith('shop refund:') ||
+        normalizedRef.startsWith('REFUND_');
+}
+
 function getAdminShopOrderIdFromReference(referenceId = '') {
     const normalizedRef = String(referenceId || '').trim();
     if (!normalizedRef) return '';
@@ -8477,6 +8771,22 @@ function getAdminShopOrderIdFromReference(referenceId = '') {
         return normalizedRef.slice('SHOP_ORDER_'.length);
     }
     return normalizedRef;
+}
+
+function getAdminShopRefundOrderIdFromReference(referenceId = '') {
+    const normalizedRef = String(referenceId || '').trim();
+    if (!normalizedRef) return '';
+    if (normalizedRef.startsWith('REFUND_')) {
+        return normalizedRef.slice('REFUND_'.length);
+    }
+    return normalizedRef;
+}
+
+function getAdminShopRefundProductName(reason = '') {
+    return String(reason || '')
+        .replace(/^订单退款[:：]\s*/i, '')
+        .replace(/^shop refund[:：]\s*/i, '')
+        .trim();
 }
 
 function isAdminAffiliateRewardReason(reason = '', referenceId = '') {
@@ -8556,6 +8866,7 @@ function getAdminLedgerReasonText(reason = '', referenceId = '') {
         const promptTitle = referenceId && promptCache[referenceId] ? promptCache[referenceId] : '';
         return promptTitle ? `解锁提示词：${promptTitle}` : '解锁提示词并扣除对应积分';
     }
+    if (isAdminShopRefundLedgerReason(rawReason, referenceId)) return '商城订单退款积分返还';
     if (rawReason === 'redeem_code' || rawReason.includes('兑换码')) return '兑换码兑换积分';
     if (rawReason === 'package_purchase' || rawReason === 'afdian_recharge' || rawReason === 'custom_recharge' || rawReason.startsWith('模拟充值:') || rawReason.startsWith('模拟充值：')) {
         return `${getAdminRechargeDisplayName(rawReason)}积分到账`;
@@ -8576,6 +8887,8 @@ function getAdminReferenceMeta(detail) {
             return { label: '提示词编号', usage: '用于回溯本次解锁对应的提示词记录' };
         case 'shop':
             return { label: '关联订单号', usage: '用于回溯本次商城订单和商品内容' };
+        case 'shop_refund':
+            return { label: '退款订单号', usage: '用于回溯本次商城订单退款和积分返还' };
         case 'affiliate':
             return { label: '关联奖励号', usage: '用于回溯返佣对应的来源订单或奖励流水' };
         case 'verify':
@@ -8699,12 +9012,16 @@ function getAdminLedgerMeta(record = {}) {
     }
 
     if (isAdminVerifyServiceReason(reason)) {
+        const verifyAccount = getAdminVerifyLedgerSubmittedAccount(record);
+        const verifyJobId = getAdminVerifyLedgerJobId(record);
         return {
             transactionType: 'verify',
             title: 'Google One 验证',
-            subtitle: referenceId ? `任务 ${shortReference}` : '验证服务记录',
+            subtitle: verifyAccount
+                ? `Google 账号 ${verifyAccount}`
+                : (referenceId ? `任务 ${shortReference}` : '验证服务记录'),
             badge: '验证服务',
-            referenceLabel: shortReference,
+            referenceLabel: verifyJobId ? `任务 ${truncateAdminLedgerText(verifyJobId, 8, 4)}` : shortReference,
             icon: 'fa-key',
             accent: '#60a5fa',
             timeLabel
@@ -8725,6 +9042,21 @@ function getAdminLedgerMeta(record = {}) {
             referenceLabel: orderId ? `Order ${truncateAdminLedgerText(orderId, 8, 4)}` : shortReference,
             icon: 'fa-bag-shopping',
             accent: amount >= 0 ? '#22c55e' : '#34d399',
+            timeLabel
+        };
+    }
+
+    if (isAdminShopRefundLedgerReason(reason, referenceId)) {
+        const orderId = getAdminShopRefundOrderIdFromReference(referenceId);
+        const productName = getAdminShopRefundProductName(reason) || '商城商品';
+        return {
+            transactionType: 'shop_refund',
+            title: '订单退款返还',
+            subtitle: `${productName}${orderId ? ` · 订单 ${truncateAdminLedgerText(orderId, 8, 4)}` : ''}`,
+            badge: '订单退款',
+            referenceLabel: orderId ? `Refund ${truncateAdminLedgerText(orderId, 8, 4)}` : shortReference,
+            icon: 'fa-rotate-left',
+            accent: '#10b981',
             timeLabel
         };
     }
@@ -8816,9 +9148,10 @@ function toAdminOptionalNumber(value) {
 
 function buildAdminVerifyLedgerDetail(detail, verifyLog = null) {
     const context = normalizeUserAnalyticsContext(currentModalData?.analyticsContext || null) || {};
-    const payload = parseAdminVerifyLogMessage(verifyLog?.message) || {};
+    const normalizedLog = normalizeAdminVerifyLedgerLog(verifyLog || detail.record?.verify_log || null, detail.referenceId);
+    const payload = normalizedLog?.payload || {};
     const status = String(
-        verifyLog?.status
+        normalizedLog?.status
         || payload.status
         || payload.raw_status
         || context.statusLabel
@@ -8826,13 +9159,14 @@ function buildAdminVerifyLedgerDetail(detail, verifyLog = null) {
         || (detail.amount < 0 ? 'success' : '')
         || ''
     ).trim();
-    const taskType = String(payload.task_type || verifyLog?.task_type || '').trim();
+    const taskType = String(payload.task_type || normalizedLog?.task_type || '').trim();
     const taskTypeLabel = taskType
         ? getAdminVerifyTaskTypeLabel(taskType)
         : String(context.taskTypeLabel || context.task_type_label || '').trim() || '未记录';
-    const resultUrl = String(payload.offer_url || payload.url || extractAdminFirstUrl(verifyLog?.message) || '').trim();
+    const resultUrl = String(payload.offer_url || payload.url || extractAdminFirstUrl(normalizedLog?.message) || '').trim();
     const submittedAccount = String(
         payload.email
+        || normalizedLog?.email
         || context.submittedAccount
         || context.submitted_account
         || (looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')
@@ -8841,50 +9175,51 @@ function buildAdminVerifyLedgerDetail(detail, verifyLog = null) {
     const jobId = String(
         payload.job_id
         || payload.task_id
+        || normalizedLog?.jobId
         || (!looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')
         || ''
     ).trim();
     const failureReason = pickAdminVerifyFailureText([
         payload.failure_reason,
-        verifyLog?.error_message,
+        normalizedLog?.error_message,
         payload.error_message,
         payload.message,
-        verifyLog?.summary,
+        normalizedLog?.summary,
         payload.summary,
         payload.reason,
         payload.error,
         payload.error_code,
-        verifyLog?.stage_label,
+        normalizedLog?.stage_label,
         payload.stage_label,
-        verifyLog?.raw_status,
+        normalizedLog?.raw_status,
         payload.raw_status
     ]);
 
     return {
-        ...(verifyLog || {}),
-        verification_id: String(verifyLog?.verification_id || detail.referenceId || jobId || '').trim(),
+        ...(normalizedLog || {}),
+        verification_id: String(normalizedLog?.verification_id || detail.referenceId || jobId || '').trim(),
         payload,
         status,
-        site: String(verifyLog?.site || payload.site || context.site || '').trim(),
+        site: String(normalizedLog?.site || payload.site || context.site || '').trim(),
         submitterEmail: String(currentModalUser?.email || context.userEmail || context.user_email || context.email || '').trim(),
-        submitterUserId: String(verifyLog?.user_id || detail.record?.user_id || currentModalUser?.id || context.userId || context.user_id || '').trim(),
+        submitterUserId: String(normalizedLog?.user_id || detail.record?.user_id || currentModalUser?.id || context.userId || context.user_id || '').trim(),
         email: submittedAccount,
         jobId,
         taskType,
         taskTypeLabel,
         passLabel: String(context.statusLabel || context.status_label || '').trim() || getAdminVerifyPassLabel(status),
         failureReason,
-        stageLabel: String(verifyLog?.stage_label || payload.stage_label || '').trim(),
-        rawStatus: String(verifyLog?.raw_status || payload.raw_status || payload.status || '').trim(),
+        stageLabel: String(normalizedLog?.stage_label || payload.stage_label || '').trim(),
+        rawStatus: String(normalizedLog?.raw_status || payload.raw_status || payload.status || '').trim(),
         errorCode: String(payload.error_code || payload.error || '').trim(),
         providerKeyName: String(payload.provider_key_name || '').trim(),
         providerKeyFingerprint: String(payload.provider_key_fingerprint || '').trim(),
         queuePosition: toAdminOptionalNumber(payload.queue_position),
         estimatedWaitSeconds: toAdminOptionalNumber(payload.estimated_wait_seconds),
         elapsedSeconds: toAdminOptionalNumber(payload.elapsed_seconds),
-        resultText: String(verifyLog?.summary || payload.summary || payload.message || payload.error_message || verifyLog?.error_message || '').trim(),
-        points_deducted: verifyLog?.points_deducted ?? Math.abs(detail.amount),
-        created_at: verifyLog?.created_at || detail.createdAt,
+        resultText: String(normalizedLog?.summary || payload.summary || payload.message || payload.error_message || normalizedLog?.error_message || '').trim(),
+        points_deducted: normalizedLog?.points_deducted ?? Math.abs(detail.amount),
+        created_at: normalizedLog?.created_at || detail.createdAt,
         url: resultUrl
     };
 }
@@ -8936,7 +9271,10 @@ async function fetchAdminLedgerDetail(record) {
                 ]);
 
                 detail.shop = {
-                    order: orderResult.data || null,
+                    order: {
+                        ...(record.shop_order || {}),
+                        ...(orderResult.data || {})
+                    },
                     items: (itemsResult.data || []).map(item => ({
                         name: item.snapshot_product_name || '未知商品',
                         price: normalizeAdminLedgerValue(item.price_paid),
@@ -8953,37 +9291,8 @@ async function fetchAdminLedgerDetail(record) {
                 detail.affiliate = data;
             }
         } else if (meta.transactionType === 'verify') {
-            let verifyLog = null;
-            const verifyLogColumns = 'verification_id, user_id, site, status, summary, message, points_deducted, created_at';
-            if (detail.referenceId) {
-                const { data, error } = await window.supabaseClient
-                    .from('verification_logs')
-                    .select(verifyLogColumns)
-                    .eq('verification_id', detail.referenceId)
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-
-                if (error) throw error;
-                verifyLog = Array.isArray(data) && data.length > 0 ? data[0] : null;
-
-                if (!verifyLog) {
-                    let query = window.supabaseClient
-                        .from('verification_logs')
-                        .select(verifyLogColumns)
-                        .ilike('message', `%${detail.referenceId}%`);
-                    const modalUserId = String(currentModalUser?.id || '').trim();
-                    if (modalUserId) {
-                        query = query.eq('user_id', modalUserId);
-                    }
-                    const fallbackResult = await query
-                        .order('created_at', { ascending: false })
-                        .limit(1);
-                    if (fallbackResult.error) throw fallbackResult.error;
-                    verifyLog = Array.isArray(fallbackResult.data) && fallbackResult.data.length > 0
-                        ? fallbackResult.data[0]
-                        : null;
-                }
-            }
+            const verifyLogColumns = 'verification_id, user_id, site, status, message, points_deducted, created_at';
+            const verifyLog = await findAdminVerifyLogForLedgerRecord(detail.record, { columns: verifyLogColumns });
 
             detail.verify = buildAdminVerifyLedgerDetail(detail, verifyLog);
         }
@@ -9028,9 +9337,10 @@ function renderAdminLedgerDetailModal(detail) {
         { label: '变动时间', value: formatAdminDateTime(detail.createdAt) },
         { label: '积分变动', value: amountText, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
         { label: referenceMeta.label, value: detail.referenceId || '无', mono: !!detail.referenceId },
-        { label: '关联用途', value: referenceMeta.usage },
-        { label: '原因说明', value: humanizedReason }
+        { label: '关联用途', value: referenceMeta.usage }
     ];
+    appendAdminShopOrderDiscountSummaryRows(summaryRows, detail.shop?.order, detail.amount);
+    summaryRows.push({ label: '原因说明', value: humanizedReason });
 
     let extraSections = '';
 
@@ -9057,6 +9367,11 @@ function renderAdminLedgerDetailModal(detail) {
 
     if (detail.shop?.order || (detail.shop?.items || []).length) {
         const order = detail.shop.order || {};
+        const orderFallbackAmount = Math.abs(detail.amount);
+        const grossPoints = getAdminShopOrderGrossPoints(order, orderFallbackAmount);
+        const paidPoints = getAdminShopOrderPaidPoints(order, orderFallbackAmount);
+        const discountPoints = getAdminShopOrderDiscountPoints(order);
+        const discountLabel = formatAdminShopOrderDiscountLabel(order);
         extraSections += `
             <section class="admin-ledger-section">
                 <div class="admin-ledger-section-title">商城订单详情</div>
@@ -9065,7 +9380,10 @@ function renderAdminLedgerDetailModal(detail) {
                         { label: '订单编号', value: order.id || getAdminShopOrderIdFromReference(detail.referenceId) || '未找到', mono: true },
                         { label: '订单状态', value: order.status || '已完成' },
                         { label: '下单时间', value: formatAdminDateTime(order.created_at || detail.createdAt) },
-                        { label: '订单金额', value: `${formatAdminPointValue(order.total_price ?? order.price_paid ?? Math.abs(detail.amount))} 分` }
+                        { label: '原价积分', value: discountPoints > 0 || grossPoints > paidPoints ? `${formatAdminPointValue(grossPoints)} 分` : '' },
+                        { label: '优惠券码', value: discountLabel },
+                        { label: '优惠金额', value: discountPoints > 0 ? `-${formatAdminPointValue(discountPoints)} 分` : '' },
+                        { label: '实付积分', value: `${formatAdminPointValue(paidPoints)} 分`, color: '#f87171' }
                     ])}
                 </div>
                 ${renderAdminLedgerContentCards((detail.shop.items || []).map((item, index) => ({
@@ -9180,6 +9498,26 @@ function renderAdminLedgerDetailModal(detail) {
                         { label: '兑换时间', value: formatAdminDateTime(detail.createdAt) },
                         { label: '获得积分', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
                         { label: '兑换码 / 关联号', value: detail.referenceId || '未记录', mono: !!detail.referenceId },
+                        { label: '流水说明', value: humanizedReason }
+                    ])}
+                </div>
+            </section>
+        `;
+    }
+
+    if (detail.meta.transactionType === 'shop_refund') {
+        const refundOrderId = getAdminShopRefundOrderIdFromReference(detail.referenceId);
+        const refundProductName = getAdminShopRefundProductName(detail.reason) || detail.meta.subtitle || '商城商品';
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">订单退款详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '退款状态', value: '已完成', color: '#34d399' },
+                        { label: '退款时间', value: formatAdminDateTime(detail.createdAt) },
+                        { label: '返还积分', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
+                        { label: '退款商品', value: refundProductName },
+                        { label: '关联订单号', value: refundOrderId || '未记录', mono: !!refundOrderId },
                         { label: '流水说明', value: humanizedReason }
                     ])}
                 </div>
@@ -9839,6 +10177,10 @@ function buildAdminLedgerExportRow(detail = {}) {
         '来源对象': '',
         '被邀请人': '',
         '订单/来源金额(分)': '',
+        '订单原价(分)': '',
+        '订单实付(分)': '',
+        '优惠券码': '',
+        '优惠金额(分)': '',
         '配置比例': '',
         '实际到账比例': '',
         '按配置应返(分)': '',
@@ -9866,12 +10208,21 @@ function buildAdminLedgerExportRow(detail = {}) {
 
     if (detail.shop?.order || (detail.shop?.items || []).length) {
         const order = detail.shop.order || {};
+        const orderFallbackAmount = Math.abs(detail.amount);
+        const grossPoints = getAdminShopOrderGrossPoints(order, orderFallbackAmount);
+        const paidPoints = getAdminShopOrderPaidPoints(order, orderFallbackAmount);
+        const discountPoints = getAdminShopOrderDiscountPoints(order);
+        const discountLabel = formatAdminShopOrderDiscountLabel(order);
         const itemSummaries = (detail.shop.items || []).map(item => `${item.name || '未知商品'} · ${formatAdminPointValue(item.price || 0)} 分`);
         const itemContentSummaries = (detail.shop.items || [])
             .filter(item => item.content)
             .map(item => `${item.name || '未知商品'}：${summarizeAdminExportText(item.content, 140)}`);
         row['来源对象'] = itemSummaries.join('；') || detail.meta?.title || '商城订单';
-        row['订单/来源金额(分)'] = normalizeAdminLedgerValue(order.total_price ?? order.price_paid ?? Math.abs(detail.amount));
+        row['订单/来源金额(分)'] = paidPoints;
+        row['订单原价(分)'] = grossPoints;
+        row['订单实付(分)'] = paidPoints;
+        row['优惠券码'] = discountLabel;
+        row['优惠金额(分)'] = discountPoints > 0 ? discountPoints : '';
         row['订单编号'] = order.id || getAdminShopOrderIdFromReference(detail.referenceId) || '';
         row['订单状态'] = order.status || '已完成';
         row['状态/阶段'] = row['订单状态'];
@@ -9916,6 +10267,17 @@ function buildAdminLedgerExportRow(detail = {}) {
         row['状态/阶段'] = '已兑换';
         row['来源对象'] = '兑换码兑换';
         row['附加说明'] = '兑换码积分到账';
+    }
+
+    if (detail.meta?.transactionType === 'shop_refund') {
+        const refundOrderId = getAdminShopRefundOrderIdFromReference(detail.referenceId);
+        row['状态/阶段'] = '已退款';
+        row['来源对象'] = getAdminShopRefundProductName(detail.reason) || detail.meta?.subtitle || '商城订单退款';
+        row['订单编号'] = refundOrderId || detail.referenceId || '';
+        row['订单状态'] = '已退款';
+        row['订单/来源金额(分)'] = Math.abs(detail.amount);
+        row['订单实付(分)'] = Math.abs(detail.amount);
+        row['附加说明'] = '商城订单退款积分返还';
     }
 
     if (detail.meta?.transactionType === 'bonus') {
@@ -9977,6 +10339,10 @@ async function exportTabData(tabName) {
                     '来源对象',
                     '被邀请人',
                     '订单/来源金额(分)',
+                    '订单原价(分)',
+                    '订单实付(分)',
+                    '优惠券码',
+                    '优惠金额(分)',
                     '配置比例',
                     '实际到账比例',
                     '按配置应返(分)',
@@ -10252,6 +10618,263 @@ async function fetchRelatedAccounts(userId) {
 }
 
 // Fetch user's points ledger (transaction history)
+async function enrichUserPointsLedgerWithShopOrders(rows = []) {
+    const ledgerRows = Array.isArray(rows) ? rows : [];
+    const orderIds = [...new Set(
+        ledgerRows
+            .filter(row => {
+                const referenceId = row?.reference_id || row?.referenceId;
+                return isAdminShopLedgerReason(row?.reason, referenceId) || isAdminShopRefundLedgerReason(row?.reason, referenceId);
+            })
+            .map(row => {
+                const referenceId = row?.reference_id || row?.referenceId;
+                return isAdminShopRefundLedgerReason(row?.reason, referenceId)
+                    ? getAdminShopRefundOrderIdFromReference(referenceId)
+                    : getAdminShopOrderIdFromReference(referenceId);
+            })
+            .filter(Boolean)
+    )];
+
+    if (orderIds.length === 0 || !window.supabaseClient?.from) {
+        return ledgerRows;
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('shop_orders')
+            .select('id, price_paid, total_price, discount_code, discount_amount, discount_snapshot, snapshot_product_name, status, created_at, item_count')
+            .in('id', orderIds);
+
+        if (error) throw error;
+
+        const orderMap = new Map((Array.isArray(data) ? data : [])
+            .map(order => [String(order?.id || '').trim(), order])
+            .filter(([id]) => id));
+
+        return ledgerRows.map(row => {
+            const referenceId = row?.reference_id || row?.referenceId;
+            const orderId = isAdminShopRefundLedgerReason(row?.reason, referenceId)
+                ? getAdminShopRefundOrderIdFromReference(referenceId)
+                : getAdminShopOrderIdFromReference(referenceId);
+            const shopOrder = orderMap.get(orderId) || null;
+            return shopOrder ? { ...row, shop_order: shopOrder } : row;
+        });
+    } catch (error) {
+        console.warn('Failed to enrich points ledger with shop orders:', error);
+        return ledgerRows;
+    }
+}
+
+function scoreAdminVerifyLogForLedger(row = {}, verifyLog = {}) {
+    if (!verifyLog || typeof verifyLog !== 'object') return null;
+
+    const referenceId = String(row?.reference_id || row?.referenceId || '').trim();
+    const normalizedLog = normalizeAdminVerifyLedgerLog(verifyLog, referenceId);
+    if (!normalizedLog) return null;
+
+    const logJobId = String(normalizedLog.jobId || '').trim();
+    const logEmail = String(normalizedLog.email || '').trim().toLowerCase();
+    const ledgerTime = row?.created_at ? new Date(row.created_at).getTime() : 0;
+    const logTime = normalizedLog.created_at ? new Date(normalizedLog.created_at).getTime() : 0;
+    const diffMs = ledgerTime && logTime ? Math.abs(logTime - ledgerTime) : Number.MAX_SAFE_INTEGER;
+    const diffMinutes = Number.isFinite(diffMs) ? diffMs / 60000 : Number.MAX_SAFE_INTEGER;
+    const rowAmount = Math.abs(normalizeAdminLedgerValue(row?.amount));
+    const logAmount = Math.abs(normalizeAdminLedgerValue(normalizedLog.points_deducted));
+    let score = 0;
+
+    if (referenceId && logJobId && logJobId === referenceId) score += 1000000;
+    if (referenceId && normalizedLog.verification_id === referenceId) score += 900000;
+    if (looksLikeAdminEmail(referenceId) && logEmail === referenceId.toLowerCase()) score += 600000;
+    if (rowAmount > 0 && logAmount > 0 && Math.abs(rowAmount - logAmount) <= 1) score += 220;
+    if (rowAmount > 0 && logAmount > 0 && rowAmount === logAmount) score += 80;
+    if (logEmail) score += 80;
+
+    if (Number.isFinite(diffMinutes)) {
+        if (diffMinutes <= 1) score += 320;
+        else if (diffMinutes <= 3) score += 240;
+        else if (diffMinutes <= 10) score += 180;
+        else if (diffMinutes <= 30) score += 120;
+        else if (diffMinutes <= 120) score += 60;
+        else if (diffMinutes <= 1440) score += 20;
+    }
+
+    if (score <= 0) return null;
+    return { row: normalizedLog, score, diffMs };
+}
+
+function pickAdminVerifyLogForLedgerRecord(row = {}, verifyLogs = []) {
+    const scoredMatches = (Array.isArray(verifyLogs) ? verifyLogs : [])
+        .map(verifyLog => scoreAdminVerifyLogForLedger(row, verifyLog))
+        .filter(Boolean)
+        .sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return a.diffMs - b.diffMs;
+        });
+
+    return scoredMatches[0]?.row || null;
+}
+
+function getAdminVerifyLedgerWindow(rows = []) {
+    const createdTimes = (Array.isArray(rows) ? rows : [])
+        .map(row => row?.created_at ? new Date(row.created_at).getTime() : 0)
+        .filter(Number.isFinite)
+        .filter(Boolean);
+
+    if (createdTimes.length === 0) {
+        return { from: '', to: '' };
+    }
+
+    return {
+        from: new Date(Math.min(...createdTimes) - (24 * 60 * 60 * 1000)).toISOString(),
+        to: new Date(Math.max(...createdTimes) + (24 * 60 * 60 * 1000)).toISOString()
+    };
+}
+
+async function fetchAdminVerifyLogsForLedgerRows(rows = [], userId = '', { limit = 200, columns = 'verification_id, user_id, site, status, message, points_deducted, created_at' } = {}) {
+    const ledgerRows = Array.isArray(rows) ? rows : [];
+    const modalUserId = String(userId || currentModalUser?.id || '').trim();
+    if (ledgerRows.length === 0 || !modalUserId) return [];
+
+    const { from, to } = getAdminVerifyLedgerWindow(ledgerRows);
+    let verifyLogs = [];
+
+    try {
+        const payload = await postAdminUsersManage('list_verify_logs', {
+            userId: modalUserId,
+            from,
+            to,
+            limit
+        });
+        verifyLogs = Array.isArray(payload?.logs) ? payload.logs : [];
+    } catch (error) {
+        console.warn('Failed to fetch admin verify logs via users API:', error);
+    }
+
+    if (verifyLogs.length > 0 || !window.supabaseClient?.from) {
+        return verifyLogs;
+    }
+
+    let query = window.supabaseClient
+        .from('verification_logs')
+        .select(columns)
+        .eq('user_id', modalUserId);
+
+    if (from) query = query.gte('created_at', from);
+    if (to) query = query.lte('created_at', to);
+
+    const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+}
+
+async function findAdminVerifyLogForLedgerRecord(row = {}, { columns = 'verification_id, user_id, site, status, message, points_deducted, created_at' } = {}) {
+    const referenceId = String(row?.reference_id || row?.referenceId || '').trim();
+    const modalUserId = String(currentModalUser?.id || row?.user_id || '').trim();
+    const site = String(row?.site || currentModalUser?.site || '').trim();
+
+    if (!isAdminVerifyServiceReason(row?.reason || '')) {
+        return row?.verify_log || null;
+    }
+
+    if (row?.verify_log) {
+        return normalizeAdminVerifyLedgerLog(row.verify_log, referenceId);
+    }
+
+    try {
+        const adminVerifyLogs = await fetchAdminVerifyLogsForLedgerRows([row], modalUserId, { limit: 120, columns });
+        const adminMatch = pickAdminVerifyLogForLedgerRecord(row, adminVerifyLogs);
+        if (adminMatch) return adminMatch;
+    } catch (error) {
+        console.warn('Failed to find verify ledger log via users API:', error);
+    }
+
+    if (!window.supabaseClient?.from) {
+        return null;
+    }
+
+    if (referenceId) {
+        let exactQuery = window.supabaseClient
+            .from('verification_logs')
+            .select(columns)
+            .eq('verification_id', referenceId);
+        if (modalUserId) exactQuery = exactQuery.eq('user_id', modalUserId);
+        if (site) exactQuery = exactQuery.eq('site', site);
+        const exactResult = await exactQuery
+            .order('created_at', { ascending: false })
+            .limit(1);
+        if (exactResult.error) throw exactResult.error;
+        if (Array.isArray(exactResult.data) && exactResult.data.length > 0) {
+            return normalizeAdminVerifyLedgerLog(exactResult.data[0], referenceId);
+        }
+
+        let messageQuery = window.supabaseClient
+            .from('verification_logs')
+            .select(columns)
+            .ilike('message', `%${referenceId}%`);
+        if (modalUserId) messageQuery = messageQuery.eq('user_id', modalUserId);
+        if (site) messageQuery = messageQuery.eq('site', site);
+        const messageResult = await messageQuery
+            .order('created_at', { ascending: false })
+            .limit(20);
+        if (messageResult.error) throw messageResult.error;
+        const messageMatch = pickAdminVerifyLogForLedgerRecord(row, messageResult.data || []);
+        if (messageMatch) return messageMatch;
+    }
+
+    const ledgerTime = row?.created_at ? new Date(row.created_at).getTime() : 0;
+    let fallbackQuery = window.supabaseClient
+        .from('verification_logs')
+        .select(columns);
+    if (modalUserId) fallbackQuery = fallbackQuery.eq('user_id', modalUserId);
+    if (site) fallbackQuery = fallbackQuery.eq('site', site);
+    if (ledgerTime) {
+        fallbackQuery = fallbackQuery
+            .gte('created_at', new Date(ledgerTime - (24 * 60 * 60 * 1000)).toISOString())
+            .lte('created_at', new Date(ledgerTime + (24 * 60 * 60 * 1000)).toISOString());
+    }
+    const fallbackResult = await fallbackQuery
+        .order('created_at', { ascending: false })
+        .limit(120);
+    if (fallbackResult.error) throw fallbackResult.error;
+
+    return pickAdminVerifyLogForLedgerRecord(row, fallbackResult.data || []);
+}
+
+async function enrichUserPointsLedgerWithVerifyLogs(rows = [], userId = '') {
+    const ledgerRows = Array.isArray(rows) ? rows : [];
+    const verifyRows = ledgerRows.filter(row => isAdminVerifyServiceReason(row?.reason || ''));
+    const modalUserId = String(userId || currentModalUser?.id || '').trim();
+
+    if (verifyRows.length === 0 || !modalUserId) {
+        return ledgerRows;
+    }
+
+    try {
+        const verifyLogColumns = 'verification_id, user_id, site, status, message, points_deducted, created_at';
+        const verifyLogs = await fetchAdminVerifyLogsForLedgerRows(verifyRows, modalUserId, {
+            limit: 200,
+            columns: verifyLogColumns
+        });
+
+        return ledgerRows.map(row => {
+            if (!isAdminVerifyServiceReason(row?.reason || '')) return row;
+            const verifyLog = pickAdminVerifyLogForLedgerRecord(row, verifyLogs);
+            return verifyLog ? { ...row, verify_log: verifyLog } : row;
+        });
+    } catch (error) {
+        console.warn('Failed to enrich points ledger with verify logs:', error);
+        return ledgerRows;
+    }
+}
+
+async function enrichUserPointsLedgerRows(rows = [], userId = '') {
+    const withShopOrders = await enrichUserPointsLedgerWithShopOrders(rows);
+    return enrichUserPointsLedgerWithVerifyLogs(withShopOrders, userId);
+}
+
 async function fetchPointsLedger(userId) {
     try {
         const { data, error } = await window.supabaseClient
@@ -10266,7 +10889,7 @@ async function fetchPointsLedger(userId) {
         const rows = Array.isArray(data) ? data : [];
         const focusReferenceId = getUserModalLedgerFocusReferenceId();
         if (!focusReferenceId || rows.some((row) => String(row?.reference_id || '').trim() === focusReferenceId)) {
-            return rows;
+            return enrichUserPointsLedgerRows(rows, userId);
         }
 
         const { data: focusData, error: focusError } = await window.supabaseClient
@@ -10278,12 +10901,12 @@ async function fetchPointsLedger(userId) {
             .limit(1);
 
         if (focusError || !Array.isArray(focusData) || focusData.length === 0) {
-            return rows;
+            return enrichUserPointsLedgerRows(rows);
         }
 
         const existingIds = new Set(rows.map((row) => String(row?.id || '').trim()).filter(Boolean));
         const missingFocusRows = focusData.filter((row) => !existingIds.has(String(row?.id || '').trim()));
-        return [...missingFocusRows, ...rows];
+        return enrichUserPointsLedgerRows([...missingFocusRows, ...rows], userId);
     } catch (err) {
         console.error('Failed to fetch points ledger:', err);
         return [];
@@ -11777,8 +12400,19 @@ window.getTagLabel = getTagLabel;
 window.toggleAdminRole = toggleAdminRole;
 window.saveAdminPermissions = saveAdminPermissions;
 window.checkSuperAdmin = checkSuperAdmin;
+window.toggleUserStatusFilter = toggleUserStatusFilter;
+window.filterUserByStatus = filterUserByStatus;
+window.toggleUserLevelFilter = toggleUserLevelFilter;
+window.filterUserByLevel = filterUserByLevel;
+window.toggleUserRoleFilter = toggleUserRoleFilter;
+window.filterUserByRole = filterUserByRole;
 window.toggleUserAdminExpiryFilter = toggleUserAdminExpiryFilter;
 window.filterUserByAdminExpiry = filterUserByAdminExpiry;
+window.toggleUserTestAccountVisibility = toggleUserTestAccountVisibility;
+window.changeUsersPage = changeUsersPage;
+window.toggleUserSelectMode = toggleUserSelectMode;
+window.toggleUserBatchMenu = toggleUserBatchMenu;
+window.selectAllUsersOnPage = selectAllUsersOnPage;
 window.openUserModal = openUserModal;
 window.closeUserModal = closeUserModal;
 window.switchUserTab = switchUserTab;
@@ -11803,11 +12437,30 @@ window.handleAdminUsersSiteChange = handleAdminUsersSiteChange;
 window.openAdminUsersShellContext = openAdminUsersShellContext;
 
 function activateVisibleUsersModuleOnAccess() {
-    if (!isUsersModuleActive()) {
-        return;
+    if (!canActivateVisibleUsersModule() || !isUsersModuleActive()) {
+        return false;
     }
 
     void activateUsersModule();
+    return true;
+}
+
+function scheduleVisibleUsersModuleActivation() {
+    if (usersVisibleActivationTimer) {
+        return;
+    }
+
+    const runActivation = () => {
+        usersVisibleActivationTimer = 0;
+        activateVisibleUsersModuleOnAccess();
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+        usersVisibleActivationTimer = window.requestAnimationFrame(runActivation);
+        return;
+    }
+
+    usersVisibleActivationTimer = window.setTimeout(runActivation, 0);
 }
 
 if (window.AdminShell?.registerModule) {
@@ -11823,12 +12476,19 @@ if (window.AdminShell?.registerModule) {
 
 document.addEventListener?.('DOMContentLoaded', () => {
     if (window.adminStudioAccessGranted) {
-        activateVisibleUsersModuleOnAccess();
+        scheduleVisibleUsersModuleActivation();
         return;
     }
 
-    window.addEventListener?.('adminStudioAccessGranted', activateVisibleUsersModuleOnAccess, { once: true });
+    window.addEventListener?.('adminStudioAccessGranted', scheduleVisibleUsersModuleActivation, { once: true });
 });
+
+window.addEventListener?.('permissionsLoaded', scheduleVisibleUsersModuleActivation, { once: true });
+window.addEventListener?.('load', scheduleVisibleUsersModuleActivation, { once: true });
+
+if (document.readyState !== 'loading') {
+    scheduleVisibleUsersModuleActivation();
+}
 
 function bindAdminUsersRuntimeDelegates() {
     if (document.documentElement.dataset.adminUsersRuntimeDelegatesBound === '1') {

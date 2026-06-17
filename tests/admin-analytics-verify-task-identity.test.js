@@ -307,9 +307,14 @@ test('analytics verify task cards lead with submitter identity and expose expand
         'verify ledger detail should have a fallback builder that can render even when the log lookup misses'
     );
     assert.equal(
-        usersSource.includes("const verifyLogColumns = 'verification_id, user_id, site, status, summary, message, points_deducted, created_at';"),
+        usersSource.includes("const verifyLogColumns = 'verification_id, user_id, site, status, message, points_deducted, created_at';"),
         true,
         'verify ledger detail lookup should only request stable verification log columns'
+    );
+    assert.equal(
+        usersSource.includes("const verifyLogColumns = 'verification_id, user_id, site, status, summary, message, points_deducted, created_at';"),
+        false,
+        'verify ledger detail lookup should not request the optional summary column'
     );
     assert.equal(
         usersSource.includes("select('verification_id, user_id, site, status, summary, message, error_message, stage_label, raw_status, points_deducted, created_at')"),
@@ -317,9 +322,54 @@ test('analytics verify task cards lead with submitter identity and expose expand
         'verify ledger detail lookup should not fail when optional expanded columns are absent'
     );
     assert.equal(
-        usersSource.includes(".ilike('message', `%${detail.referenceId}%`)"),
+        usersSource.includes('async function findAdminVerifyLogForLedgerRecord(row = {},'),
+        true,
+        'verify ledger detail lookup should share the same robust log matcher as the ledger list'
+    );
+    assert.equal(
+        usersSource.includes('async function fetchAdminVerifyLogsForLedgerRows(rows = [], userId = \'\','),
+        true,
+        'verify ledger list and detail should share the admin API log fetcher'
+    );
+    assert.equal(
+        usersSource.includes('const adminVerifyLogs = await fetchAdminVerifyLogsForLedgerRows([row], modalUserId, { limit: 120, columns });'),
+        true,
+        'verify ledger detail lookup should use the admin API fetcher before falling back to direct table reads'
+    );
+    assert.equal(
+        usersSource.includes(".ilike('message', `%${referenceId}%`)"),
         true,
         'verify ledger detail lookup should recover old logs where the job id only lives in the message payload'
+    );
+    assert.equal(
+        usersSource.includes('pickAdminVerifyLogForLedgerRecord(row, fallbackResult.data || [])'),
+        true,
+        'verify ledger detail lookup should recover task logs by timestamp and charged points when the reference id is stale'
+    );
+    assert.equal(
+        usersSource.includes("async function enrichUserPointsLedgerWithVerifyLogs(rows = [], userId = '')"),
+        true,
+        'user ledger list should enrich Google One rows with verification logs before rendering'
+    );
+    assert.equal(
+        usersSource.includes("postAdminUsersManage('list_verify_logs'"),
+        true,
+        'admin user ledger list should fetch target-user verification logs through the admin route so RLS does not hide them'
+    );
+    assert.equal(
+        usersSource.includes("const verifyLogColumns = 'verification_id, user_id, site, status, message, points_deducted, created_at';"),
+        true,
+        'verify log lookups should only request columns that exist in the canonical verification_logs schema'
+    );
+    assert.equal(
+        usersSource.includes('return verifyLog ? { ...row, verify_log: verifyLog } : row;'),
+        true,
+        'user ledger list should attach the matched verification log to each Google One ledger row'
+    );
+    assert.equal(
+        usersSource.includes('Google 账号 ${verifyAccount}'),
+        true,
+        'Google One ledger rows should lead with the submitted Google account when available'
     );
     assert.equal(
         usersSource.includes('detail.verify = buildAdminVerifyLedgerDetail(detail, null);'),

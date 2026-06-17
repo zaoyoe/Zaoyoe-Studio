@@ -2,6 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
+const {
+    resolveDiscountStacking
+} = require('../api/_lib/discount-pricing');
 
 function createMockResponse() {
     const state = {
@@ -31,6 +34,57 @@ function createMockResponse() {
         }
     };
 }
+
+test('discount pricing treats zero percent settlement as a zero-total coupon behind the allow-zero gate', () => {
+    const allowed = resolveDiscountStacking({
+        subtotal: 18,
+        discounts: [{
+            code: 'FREE0',
+            discount_type: 'percent',
+            discount_value: 0,
+            allow_zero_total: true
+        }]
+    });
+
+    assert.equal(allowed.success, true);
+    assert.equal(allowed.discount_amount, 18);
+    assert.equal(allowed.final_total, 0);
+    assert.equal(allowed.applied_discounts[0].final_total_after_apply, 0);
+
+    const blocked = resolveDiscountStacking({
+        subtotal: 18,
+        discounts: [{
+            code: 'FREE0',
+            discount_type: 'percent',
+            discount_value: 0,
+            allow_zero_total: false
+        }]
+    });
+
+    assert.equal(blocked.success, false);
+    assert.match(blocked.message, /不允许全额抵扣/);
+});
+
+test('discount pricing caps zero percent settlement by max discount quantity', () => {
+    const capped = resolveDiscountStacking({
+        subtotal: 54,
+        discounts: [{
+            code: 'FREE_ONE',
+            discount_type: 'percent',
+            discount_value: 0,
+            allow_zero_total: true,
+            quantity: 3,
+            unit_price: 18,
+            max_discount_quantity: 1
+        }]
+    });
+
+    assert.equal(capped.success, true);
+    assert.equal(capped.discount_amount, 18);
+    assert.equal(capped.final_total, 36);
+    assert.equal(capped.applied_discounts[0].max_discount_quantity, 1);
+    assert.equal(capped.applied_discounts[0].final_total_after_apply, 36);
+});
 
 function createQueryBuilder(executor) {
     const state = {

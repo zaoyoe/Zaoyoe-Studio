@@ -152,7 +152,7 @@ const BACKGROUND_WORKERS_ENABLED = !['0', 'false', 'no', 'off'].includes(
         .trim()
         .toLowerCase()
 );
-const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending'];
+const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending', 'assigned'];
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
 const DEFAULT_VERIFY_TASK_TYPE = 'extract';
 const VERIFY_TASK_UNIT_COSTS = Object.freeze({
@@ -725,6 +725,15 @@ function getApiErrorMessage(payload, fallback) {
     return detail?.message || payload?.message || payload?.msg || payload?.error || fallback;
 }
 
+function isVerifyInsufficientBalanceError(payload = {}, message = '') {
+    const code = String(getApiErrorCode(payload) || '').trim().toLowerCase();
+    const text = String(message || getApiErrorMessage(payload, '') || '').trim().toLowerCase();
+    return code === 'insufficient_balance'
+        || code === 'balance_insufficient'
+        || code === 'not_enough_balance'
+        || /余额不足|额度不足|insufficient.*balance|not enough.*balance/.test(text);
+}
+
 function normalizeVerifyApiBaseUrl(value) {
     const normalized = String(value || '').trim().replace(/\/+$/, '');
     if (!normalized) return '';
@@ -1090,7 +1099,7 @@ function normalizeVerifyUpstreamStatus(value) {
     if (!normalized) return 'queued';
     if (['success', 'completed', 'done', 'ok'].includes(normalized)) return 'success';
     if (['failed', 'fail', 'error', 'timeout', 'cancelled', 'canceled'].includes(normalized)) return 'failed';
-    if (['running', 'processing', 'working', 'in_progress'].includes(normalized)) return 'running';
+    if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)) return 'running';
     if (['queued', 'queueing', 'waiting', 'pending'].includes(normalized)) return 'queued';
     return normalized;
 }
@@ -2836,7 +2845,7 @@ function buildClientStatusMessage(job) {
     if (status === 'queued') {
         const queuePosition = Number(job?.queue_position);
         const waitSeconds = Number(job?.estimated_wait_seconds);
-        const queueLabel = Number.isFinite(queuePosition) && queuePosition >= 0
+        const queueLabel = Number.isFinite(queuePosition) && queuePosition > 0
             ? `排队中（队列位置 ${queuePosition}）`
             : '排队中';
         return Number.isFinite(waitSeconds) && waitSeconds > 0
@@ -2942,7 +2951,7 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
         progress: Number.isFinite(progress) ? progress : null,
         provider_progress: Number.isFinite(progress) ? progress : null,
         raw_status: apiData?.status || status || '',
-        queue_position: Number.isFinite(queuePosition) ? queuePosition : null,
+        queue_position: Number.isFinite(queuePosition) && queuePosition > 0 ? queuePosition : null,
         estimated_wait_seconds: Number.isFinite(estimatedWait) ? estimatedWait : null,
         elapsed_seconds: Number.isFinite(elapsedSeconds) ? elapsedSeconds : null,
         points_deducted: pointsDeducted,
@@ -3544,7 +3553,7 @@ async function buildLocalVerifyQueueSnapshot(config = {}) {
 
     const rows = Array.isArray(data) ? data : [];
     const localQueueSize = rows.filter((row) => ['queued', 'pending'].includes(String(row?.status || '').trim().toLowerCase())).length;
-    const localRunningJobs = rows.filter((row) => ['running', 'processing'].includes(String(row?.status || '').trim().toLowerCase())).length;
+    const localRunningJobs = rows.filter((row) => ['running', 'processing', 'assigned'].includes(String(row?.status || '').trim().toLowerCase())).length;
     let providerStatus = null;
     if (isPixelBridgeVerifyConfig(config)) {
         try {
@@ -5457,8 +5466,15 @@ app.post('/api/verify', async (req, res) => {
             taskType: normalizedTaskType
         });
         const selectedCredential = credentialSelection.selected;
+        const credentialCandidates = [
+            selectedCredential,
+            ...(Array.isArray(credentialSelection?.healthySnapshots) ? credentialSelection.healthySnapshots : [])
+        ].filter((candidate, index, list) => {
+            const apiKey = String(candidate?.apiKey || '').trim();
+            return apiKey && list.findIndex((item) => String(item?.apiKey || '').trim() === apiKey) === index;
+        });
 
-        if (!selectedCredential?.apiKey) {
+        if (!credentialCandidates.length) {
             return res.status(400).json({
                 success: false,
                 message: '当前所有已激活 CDKey 余额都不足，请先补充卡密额度',
@@ -5468,15 +5484,29 @@ app.post('/api/verify', async (req, res) => {
 
         console.log(`[Verify] Submitting Google One ${normalizedTaskType} job: ${normalizedEmail}`);
 
-        const upstream = await postVerifyProviderAction(config, {
-            action: 'submit_task',
-            cdkey: selectedCredential.apiKey,
-            email: normalizedEmail,
-            password: normalizedPassword,
-            twofa: normalizedTotpSecret,
-            priority: normalizedPriority,
-            task_type: normalizedTaskType
-        });
+        let upstream = null;
+        let submittedCredential = null;
+        for (const candidate of credentialCandidates) {
+            upstream = await postVerifyProviderAction(config, {
+                action: 'submit_task',
+                cdkey: candidate.apiKey,
+                email: normalizedEmail,
+                password: normalizedPassword,
+                twofa: normalizedTotpSecret,
+                priority: normalizedPriority,
+                task_type: normalizedTaskType
+            });
+            submittedCredential = candidate;
+
+            if (upstream.ok) {
+                break;
+            }
+
+            const errorMessage = getApiErrorMessage(upstream.payload, '任务提交失败');
+            if (!isVerifyInsufficientBalanceError(upstream.payload, errorMessage)) {
+                break;
+            }
+        }
 
         if (!upstream.ok) {
             console.error('[Verify] API error:', upstream.payload);
@@ -5492,8 +5522,8 @@ app.post('/api/verify', async (req, res) => {
             task_type: normalizedTaskType,
             provider: config.provider,
             provider_adapter: config.adapter || config.provider_adapter,
-            provider_key_fingerprint: buildVerifyCredentialFingerprint(selectedCredential.apiKey),
-            provider_key_name: selectedCredential.keyName || maskVerifyCredential(selectedCredential.apiKey)
+            provider_key_fingerprint: buildVerifyCredentialFingerprint(submittedCredential.apiKey),
+            provider_key_name: submittedCredential.keyName || submittedCredential.key_name || maskVerifyCredential(submittedCredential.apiKey)
         });
         const jobId = String(apiData.job_id || apiData.task_id || '').trim();
         if (jobId) {
@@ -5516,7 +5546,7 @@ app.post('/api/verify', async (req, res) => {
             provider: apiData.provider || config.provider,
             provider_label: config.provider_label || config.providerLabel || '',
             provider_adapter: apiData.provider_adapter || config.adapter || config.provider_adapter || '',
-            queue_position: apiData.queue_position ?? -1,
+            queue_position: apiData.queue_position ?? null,
             estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
             stage: apiData.stage,
             total_stages: apiData.total_stages,

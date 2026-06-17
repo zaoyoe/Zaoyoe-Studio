@@ -14,7 +14,7 @@ const {
     buildOpsAlertItemCaseState
 } = require('./_ops-alert-case-state');
 
-const ACTIVE_VERIFY_STATUSES = new Set(['queued', 'running', 'processing', 'pending']);
+const ACTIVE_VERIFY_STATUSES = new Set(['queued', 'running', 'processing', 'pending', 'assigned']);
 const SUCCESS_VERIFY_STATUSES = new Set(['success']);
 const VERIFY_MONITOR_RAW_SCAN_PAGE_SIZE = 200;
 const VERIFY_MONITOR_RAW_SCAN_MAX_PAGES = 5;

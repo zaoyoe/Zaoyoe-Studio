@@ -64,3 +64,18 @@ test('cart flow preserves selected discount snapshots from purchase modal throug
         'shop-page.css should style the dedicated cart discount pill so preserved coupons remain visible in the cart UI'
     );
 });
+
+test('shop client local discount pricing allows zero percent settlement coupons', () => {
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+
+    assert.match(
+        shopClientSource,
+        /calculateDiscountPricingForConfig: function \(subtotal, \{[\s\S]*discountType = '',[\s\S]*discountValue = null[\s\S]*\} = \{\}\) \{[\s\S]*normalizedDiscountType === 'percent' \? normalizedDiscountValue < 0 : normalizedDiscountValue <= 0/s,
+        'local shop pricing should allow percent discount_value 0 while keeping fixed coupons positive'
+    );
+    assert.match(
+        shopClientSource,
+        /calculateDiscountPricing: function \(subtotal\) \{[\s\S]*discountType === 'percent' \? discountValue < 0 : discountValue <= 0/s,
+        'active purchase pricing should also treat 0 as valid for percent coupons'
+    );
+});

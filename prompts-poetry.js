@@ -6522,6 +6522,7 @@ async function checkUnlockStatus(promptId) {
 // ============================================
 let _unlockInProgress = false;
 let _unlockPrice = 1; // 默认值，将从配置加载
+let _freeUnlockDailyLimit = 3;
 let _copyInProgress = false; // 防止重复复制操作
 
 function getPromptRuntimeSite() {
@@ -6534,6 +6535,55 @@ function normalizePromptUnlockPrice(value, fallback = 1) {
         return fallback;
     }
     return Math.max(0, Math.trunc(parsed));
+}
+
+function normalizePromptFreeDailyLimit(value, fallback = 3) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.max(0, Math.trunc(parsed));
+}
+
+function getPromptUnlockErrorMessage(errorLike) {
+    const rawMessage = String(
+        errorLike?.message
+        || errorLike?.error
+        || errorLike
+        || ''
+    ).trim();
+    const rawCode = String(errorLike?.code || '').trim();
+
+    if (rawCode === 'free_daily_limit_reached' || rawMessage.includes('免费解锁次数已用完')) {
+        return '今天的免费解锁次数已经用完了，明天再来解锁吧。';
+    }
+
+    if (rawCode === 'unlock_price_changed' || rawMessage.includes('解锁价格已更新')) {
+        return '解锁价格刚刚更新了，请刷新页面后再试。';
+    }
+
+    if (rawMessage.includes('积分不足') || rawMessage.includes('Insufficient')) {
+        return '积分余额不足，请先充值后再解锁。';
+    }
+
+    if (
+        rawMessage.includes('Could not choose the best candidate function')
+        || rawMessage.includes('multiple functions')
+        || rawMessage.includes('function between')
+        || rawMessage.includes('PGRST203')
+    ) {
+        return '解锁服务刚刚更新中，请刷新页面后再试一次。';
+    }
+
+    if (rawMessage.includes('Failed to fetch') || rawMessage.includes('NetworkError')) {
+        return '网络连接不稳定，请稍后再试。';
+    }
+
+    if (rawMessage) {
+        return rawMessage.length > 120 ? '解锁失败，请刷新页面后再试。' : rawMessage;
+    }
+
+    return '解锁失败，请刷新页面后再试。';
 }
 
 function syncPromptUnlockButtonPrice() {
@@ -6620,8 +6670,9 @@ async function loadUnlockPrice() {
         const config = payload?.configs?.unlock_pricing;
         if (config && Object.prototype.hasOwnProperty.call(config, 'default_points')) {
             _unlockPrice = normalizePromptUnlockPrice(config.default_points, 1);
+            _freeUnlockDailyLimit = normalizePromptFreeDailyLimit(config.free_daily_limit, 3);
             syncPromptUnlockButtonPrice();
-            console.log('[Unlock] Price loaded from config:', _unlockPrice);
+            console.log('[Unlock] Price loaded from config:', _unlockPrice, 'free daily limit:', _freeUnlockDailyLimit);
         }
     } catch (err) {
         console.warn('[Unlock] Failed to load price config, using default:', err.message);
@@ -6738,8 +6789,9 @@ async function handleUnlockPrompt() {
             setPromptUnlocked();
             console.log('[Unlock] Success! New Balance:', data.new_balance);
         } else {
-            const errMsg = data?.error || '解锁失败';
+            const errMsg = getPromptUnlockErrorMessage(data || '解锁失败');
             const hasInsufficientPoints = errMsg.includes('积分不足') || errMsg.includes('Insufficient');
+            const hasFreeDailyLimit = data?.code === 'free_daily_limit_reached' || errMsg.includes('免费解锁次数');
             // If insufficient points, open wallet modal for recharging
             if (hasInsufficientPoints) {
                 triggerPromptUnlockEngagement('points_insufficient', currentPromptId, {
@@ -6747,6 +6799,15 @@ async function handleUnlockPrompt() {
                     source_event_id: `points_insufficient:prompts:${String(currentPromptId || '').trim() || 'unknown'}:${Date.now()}`,
                     category: promptMetadata.category || null,
                     points_cost: _unlockPrice,
+                    error_message: errMsg
+                });
+            }
+            if (hasFreeDailyLimit) {
+                triggerPromptUnlockEngagement('prompt_free_unlock_limit_reached', currentPromptId, {
+                    source: 'unlock_free_daily_limit',
+                    source_event_id: `prompt_free_daily_limit:prompts:${String(currentPromptId || '').trim() || 'unknown'}:${Date.now()}`,
+                    category: promptMetadata.category || null,
+                    free_daily_limit: _freeUnlockDailyLimit,
                     error_message: errMsg
                 });
             }
@@ -6766,7 +6827,7 @@ async function handleUnlockPrompt() {
         }
     } catch (err) {
         console.error('[Unlock] Error:', err);
-        alert('解锁失败: ' + err.message);
+        alert(getPromptUnlockErrorMessage(err));
         if (btn) {
             btn.innerHTML = originalHTML;
             btn.disabled = false;

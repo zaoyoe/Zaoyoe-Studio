@@ -259,6 +259,7 @@ test('discounts mutate handler creates discount codes and writes audit context',
                     discount_value: 80,
                     max_uses: 100,
                     max_uses_per_user: 1,
+                    max_discount_quantity: 1,
                     starts_at: '2099-04-10T00:00:00.000Z',
                     expires_at: '2099-05-01T00:00:00.000Z',
                     applicable_site: 'cn',
@@ -282,6 +283,7 @@ test('discounts mutate handler creates discount codes and writes audit context',
         assert.equal(state.discountRows[0].code, 'FLASH0');
         assert.equal(state.discountRows[0].scope_product_id, 'prod_1');
         assert.equal(state.discountRows[0].scope_product_sku_id, 'sku_1');
+        assert.equal(state.discountRows[0].max_discount_quantity, 1);
         assert.equal(state.discountRows[0].allow_zero_total, true);
         assert.equal(state.discountRows[0].starts_at, '2099-04-10T00:00:00.000Z');
         assert.equal(state.discountRows[0].is_exclusive, false);
@@ -297,6 +299,44 @@ test('discounts mutate handler creates discount codes and writes audit context',
         assert.equal(state.auditCalls[0].actionType, 'discount.code.create');
         assert.equal(state.auditCalls[0].details.code, 'FLASH0');
         assert.equal(state.auditCalls[0].details.scope_product_sku_id, 'sku_1');
+        assert.equal(state.auditCalls[0].details.max_discount_quantity, 1);
+    });
+});
+
+test('discounts mutate handler allows zero percent settlement coupons', async () => {
+    await withDiscountsMutateHandler({
+        discountRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'create',
+                site: 'cn',
+                payload: {
+                    code: 'FREE0',
+                    discount_type: 'percent',
+                    discount_value: 0,
+                    max_uses: 1,
+                    max_uses_per_user: 1,
+                    applicable_site: 'cn',
+                    scope_type: 'product',
+                    scope_product_id: 'product_free',
+                    allow_zero_total: true,
+                    is_active: true
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.discountRows.length, 1);
+        assert.equal(state.discountRows[0].code, 'FREE0');
+        assert.equal(state.discountRows[0].discount_type, 'percent');
+        assert.equal(state.discountRows[0].discount_value, 0);
+        assert.equal(state.discountRows[0].allow_zero_total, true);
     });
 });
 
@@ -312,6 +352,7 @@ test('discounts mutate handler updates discount codes and writes change audit co
                 discount_value: 85,
                 max_uses: 10,
                 max_uses_per_user: 1,
+                max_discount_quantity: 0,
                 allow_zero_total: false,
                 scope_type: 'all',
                 scope_category: null,
@@ -343,6 +384,7 @@ test('discounts mutate handler updates discount codes and writes change audit co
                     discount_value: 30,
                     max_uses: 50,
                     max_uses_per_user: 2,
+                    max_discount_quantity: 2,
                     starts_at: '2099-04-12T08:00:00.000Z',
                     applicable_site: 'cn',
                     scope_type: 'category',
@@ -364,6 +406,7 @@ test('discounts mutate handler updates discount codes and writes change audit co
         assert.equal(state.discountRows[0].discount_type, 'fixed');
         assert.equal(state.discountRows[0].scope_type, 'category');
         assert.equal(state.discountRows[0].scope_category, 'cards');
+        assert.equal(state.discountRows[0].max_discount_quantity, 2);
         assert.equal(state.discountRows[0].allow_zero_total, true);
         assert.equal(state.discountRows[0].starts_at, '2099-04-12T08:00:00.000Z');
         assert.equal(state.discountRows[0].is_exclusive, false);
@@ -375,6 +418,8 @@ test('discounts mutate handler updates discount codes and writes change audit co
         assert.equal(state.auditCalls[0].actionType, 'discount.code.update');
         assert.equal(state.auditCalls[0].details.previous_code, 'SPRING2026');
         assert.equal(state.auditCalls[0].details.code, 'SPRINGVIP');
+        assert.equal(state.auditCalls[0].details.previous_max_discount_quantity, 0);
+        assert.equal(state.auditCalls[0].details.max_discount_quantity, 2);
     });
 });
 

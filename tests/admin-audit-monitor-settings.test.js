@@ -242,6 +242,16 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
                     granted: true
                 }
             }),
+            buildAuditRow('admin.access.session.issue', {
+                id: 'access-recent-c',
+                created_at: minutesAgo(3),
+                details: {
+                    client_ip: '192.0.2.44',
+                    user_agent: 'Firefox / tablet',
+                    origin: 'https://www.fatherkey.com',
+                    granted: true
+                }
+            }),
             buildAuditRow('admin.payment_channels.upsert', {
                 id: 'config-upsert',
                 created_at: minutesAgo(6),
@@ -335,23 +345,23 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(payload.access_summary.access_count, 3);
-        assert.equal(payload.access_summary.distinct_ip_count, 3);
+        assert.equal(payload.access_summary.access_count, 4);
+        assert.equal(payload.access_summary.distinct_ip_count, 4);
         assert.equal(Array.isArray(payload.recent_accesses), true);
         assert.equal(payload.recent_accesses[0].id, 'access-recent-b');
         assert.equal(payload.access_anomalies.length > 0, true);
         assert.equal(payload.config_summary.config_change_count, 2);
         assert.equal(payload.config_summary.secret_delete_count, 1);
         assert.equal(payload.config_summary.mock_switch_count, 1);
-        assert.equal(payload.facts.access_sample_count, 3);
+        assert.equal(payload.facts.access_sample_count, 4);
         assert.equal(payload.facts.config_sample_count, 2);
-        assert.equal(payload.facts.issued_access_count, 2);
+        assert.equal(payload.facts.issued_access_count, 3);
         assert.equal(Array.isArray(payload.facts.top_access_admins), true);
         assert.equal(Array.isArray(payload.facts.anomaly_reason_breakdown), true);
         assert.equal(payload.payment_config_events[0].id, 'config-delete');
         assert.equal(payload.payment_config_events[1].id, 'config-upsert');
         assert.equal(payload.recent_access_pagination.page, 1);
-        assert.equal(payload.recent_access_pagination.total_items, 3);
+        assert.equal(payload.recent_access_pagination.total_items, 4);
         assert.equal(payload.anomaly_pagination.page, 1);
         assert.equal(payload.config_event_pagination.total_items, 2);
         assert.equal(payload.alert_summary.visible_count, 2);

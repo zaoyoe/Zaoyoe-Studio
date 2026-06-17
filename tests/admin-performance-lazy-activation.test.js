@@ -121,6 +121,9 @@ test('users module initializes through shell activation while preserving site re
         'async function openAdminUsersShellContext(context = {}, options = {}) {',
         'return refreshUsersOnActivate({',
         'function activateVisibleUsersModuleOnAccess() {',
+        'function scheduleVisibleUsersModuleActivation() {',
+        'window.addEventListener?.(\'permissionsLoaded\', scheduleVisibleUsersModuleActivation, { once: true });',
+        'window.addEventListener?.(\'load\', scheduleVisibleUsersModuleActivation, { once: true });',
         'window.openAdminUsersShellContext = openAdminUsersShellContext;',
         "window.AdminShell.registerModule('users', {",
         'activate: activateUsersModule,',
@@ -131,6 +134,12 @@ test('users module initializes through shell activation while preserving site re
     for (const marker of requiredMarkers) {
         assert.equal(usersSource.includes(marker), true, `admin-users.js should contain ${marker}`);
     }
+
+    assert.equal(
+        usersSource.includes('    refreshUsersOnActivate();'),
+        false,
+        'admin-users.js should not trigger a duplicate unforced refresh before the shell activation refresh'
+    );
 });
 
 test('settings module resolves the target tab through shell activation before warming config', () => {

@@ -996,7 +996,7 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     const loaderMarkers = [
         "const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -5837,6 +5837,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-config="ops-alerts-shop-purchase-success"',
         'data-config="ops-alerts-wallet-recharge-success"',
         'data-config="ops-alerts-shop-inventory"',
+        'data-config="ops-alerts-admin-login-anomaly"',
         'data-config="ops-alerts-kvm4"',
         'data-config="ops-alerts-shop-risk"',
         'data-config="ops-alerts-health"',
@@ -6102,6 +6103,20 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertShopRiskAutoBanUserMinRiskScore"',
         'id="opsAlertShopRiskAutoBanUserDurationDays"',
         'id="opsAlertShopRiskAutoSuspendProductMinRiskScore"',
+        'id="opsAlertAdminLoginAnomalyEnabledToggle"',
+        'id="opsAlertAdminLoginAnomalyRecentWindowMinutes"',
+        'id="opsAlertAdminLoginAnomalyBaselineLookbackDays"',
+        'id="opsAlertAdminLoginAnomalyIpGroupThreshold"',
+        'id="opsAlertAdminLoginAnomalyUserAgentFamilyThreshold"',
+        'id="opsAlertAdminLoginAnomalySweepIntervalMinutes"',
+        'id="opsAlertAdminLoginAnomalyDedupeWindowMinutes"',
+        'id="opsAlertAdminLoginAnomalyIpGroupingEnabledToggle"',
+        'id="opsAlertAdminLoginAnomalyIpv4GroupPrefixBits"',
+        'id="opsAlertAdminLoginAnomalyIpv6GroupPrefixBits"',
+        'id="opsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabledToggle"',
+        'data-admin-action="settings-toggle-ops-alert-admin-login-anomaly-enabled"',
+        'data-admin-action="settings-toggle-ops-alert-admin-login-anomaly-ip-grouping"',
+        'data-admin-action="settings-toggle-ops-alert-admin-login-anomaly-ua-grouping"',
         'id="opsAlertTelegramChatIds"',
         'id="opsAlertTelegramBotToken"',
         'id="opsAlertFeishuWebhookUrl"',
@@ -6197,8 +6212,14 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     );
     const opsAlertMonitorAssignmentIndex = adminStudioScript.indexOf("{ configId: 'ops-alerts-monitor', bucket: 'workspace-main' }");
     const opsAlertWorkspaceAssignmentIndex = adminStudioScript.indexOf("{ configId: 'ops-alerts-workspace', bucket: 'workspace-main' }");
+    const opsAlertAdminLoginAnomalyAssignmentIndex = adminStudioScript.indexOf("{ configId: 'ops-alerts-admin-login-anomaly', bucket: 'monitors-main' }");
     assert.notEqual(opsAlertMonitorAssignmentIndex, -1, 'admin-studio.js should assign the ops alert monitor card to the workspace view');
     assert.notEqual(opsAlertWorkspaceAssignmentIndex, -1, 'admin-studio.js should assign the ops alert workspace card to the workspace view');
+    assert.notEqual(
+        opsAlertAdminLoginAnomalyAssignmentIndex,
+        -1,
+        'admin-studio.js should assign the admin login anomaly card to the monitor rules view'
+    );
     assert.ok(
         opsAlertMonitorAssignmentIndex < opsAlertWorkspaceAssignmentIndex,
         'the actionable ops alert monitor panel should appear before the link-only workspace shortcuts'
@@ -6242,6 +6263,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-toggle-ops-alert-tickets-work-hours-only':",
         "case 'settings-toggle-ops-alert-tickets-summary-enabled':",
         "case 'settings-change-ops-alert-tickets-summary-schedule-mode':",
+        "case 'settings-toggle-ops-alert-admin-login-anomaly-enabled':",
+        "case 'settings-toggle-ops-alert-admin-login-anomaly-ip-grouping':",
+        "case 'settings-toggle-ops-alert-admin-login-anomaly-ua-grouping':",
         "case 'settings-select-ops-alert-unified-summary-targets':",
         "case 'settings-apply-ops-alert-unified-summary-draft':",
         "case 'settings-save-ops-alerts':",
@@ -7552,6 +7576,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function applyOpsAlertShopPurchaseSuccessControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
         'function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
         'function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
+        'function applyOpsAlertAdminLoginAnomalyControls(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']))',
         "requireOpsAlertWorkbenchMethod('buildAdminWorkbenchOpsAlertSummaryOrchestrationRenderState')",
         'function resolveOpsAlertSummaryOrchestrationRenderState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\']), selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions()) {',
         'function buildOpsAlertSummaryOrchestrationMarkupState(config = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {',
@@ -7584,6 +7609,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'toggleOpsAlertTicketsEnabled,',
         'toggleOpsAlertTicketsSummaryEnabled,',
         'toggleOpsAlertTicketsWorkHoursOnlyEnabled,',
+        'toggleOpsAlertAdminLoginAnomalyEnabled,',
+        'toggleOpsAlertAdminLoginAnomalyIpGroupingEnabled,',
+        'toggleOpsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabled,',
         'handleOpsAlertTicketsSummaryScheduleModeChange,',
         'selectOpsAlertUnifiedSummaryTargets,',
         'applyOpsAlertUnifiedSummaryDraft,',
@@ -8073,6 +8101,7 @@ test('admin studio points and users controls route through delegated actions', (
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminStudioStyles = readRepoFile('admin-studio.css');
     const adminUsersSource = readRepoFile('admin-users.js');
+    const adminPointsSource = readRepoFile('admin-points.js');
 
     const removedInlineMarkers = [
         `onclick="switchPointsView('batches')"`,
@@ -8160,6 +8189,8 @@ test('admin studio points and users controls route through delegated actions', (
 
     assert.equal(adminStudioSource.includes('js/ios-scroll-lock.js'), true, 'admin-studio.html should load the shared iOS scroll lock helper');
     assert.equal(adminStudioScript.includes('points-switch-view'), true, 'admin-studio.js should handle points tab delegation');
+    assert.equal(adminStudioScript.includes('window.switchView = switchView;'), true, 'admin-studio.js should explicitly expose gallery view switching for delegated controls');
+    assert.equal(adminStudioScript.includes('window.resetForm = resetForm;'), true, 'admin-studio.js should explicitly expose gallery form reset for delegated controls');
     assert.equal(adminStudioScript.includes('users-switch-tab'), true, 'admin-studio.js should handle user modal tab delegation');
     assert.equal(adminUsersSource.includes('USER_MODAL_TAB_REGISTRY'), true, 'admin-users.js should register user modal tabs centrally');
     assert.equal(adminUsersSource.includes('renderUserTabNavigation(activeTab = currentTab)'), true, 'admin-users.js should render the user modal tab nav from the registry');
@@ -8170,6 +8201,34 @@ test('admin studio points and users controls route through delegated actions', (
     assert.equal(adminStudioStyles.includes('right: var(--admin-scroll-lock-gap, 0px);'), true, 'admin-studio.css should compensate the hidden scrollbar width while a modal is open');
     assert.equal(adminStudioScript.includes('[data-admin-keydown-action]'), true, 'admin-studio.js should delegate keydown-based admin controls');
     assert.equal(adminStudioScript.includes("form.id === 'generateCodesForm'"), true, 'admin-studio.js should delegate points generate form submission');
+
+    const pointsWindowExports = [
+        'generateCodes',
+        'searchCodeInBatches',
+        'toggleBatchDateFilter',
+        'filterBatchByDate',
+        'toggleBatchChannelFilter',
+        'filterBatchByChannel',
+        'toggleBatchPackageFilter',
+        'filterBatchByPackage',
+        'toggleBatchExportMenu',
+        'exportBatchList',
+        'exportSelectedBatches',
+        'toggleBatchSelectMode',
+        'togglePointsBatchActionsMenu',
+        'toggleSelectAllBatches',
+        'batchInvalidateCodes',
+        'batchDeleteBatches',
+        'sortBatches',
+        'copyAllCodes',
+        'downloadCodesCSV',
+        'lookupCode'
+    ];
+
+    assert.equal(adminPointsSource.includes('Object.assign(window, {'), true, 'admin-points.js should explicitly export delegated points controls');
+    for (const marker of pointsWindowExports) {
+        assert.equal(adminPointsSource.includes(marker), true, `admin-points.js should expose ${marker} for delegated controls`);
+    }
 });
 
 test('admin user runtime renderers route list, modal, toolbar, and notification controls through delegated actions', () => {
@@ -8286,6 +8345,17 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-admin-action="users-remove-discount-asset"',
         'data-admin-action="users-open-ledger-detail"',
         'data-admin-action="users-open-user-modal"',
+        'data-admin-action="users-change-page"',
+        'data-users-page="${currentPage + 1}"',
+        'function renderUsersPagination(',
+        'function changeUsersPage(page)',
+        'window.toggleUserTestAccountVisibility = toggleUserTestAccountVisibility;',
+        'window.changeUsersPage = changeUsersPage;',
+        'window.toggleUserSelectMode = toggleUserSelectMode;',
+        'window.toggleUserBatchMenu = toggleUserBatchMenu;',
+        'window.selectAllUsersOnPage = selectAllUsersOnPage;',
+        '共 ${totalAccountCount.toLocaleString()} 位用户',
+        '显示 ${from.toLocaleString()}-${to.toLocaleString()} / ${formatUsersCount(filteredCount)}',
         'data-admin-action="users-reload-tab"',
         'data-users-note-input="1"',
         'data-admin-action="users-submit-note"',
@@ -8430,6 +8500,7 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         "case 'users-open-ledger-detail':",
         "case 'users-close-ledger-detail':",
         "case 'users-open-user-modal':",
+        "case 'users-change-page':",
         "case 'users-reload-tab':",
         "case 'users-reload-affiliate':",
         "case 'users-submit-note':",
@@ -8613,6 +8684,131 @@ test('user modal expiry picker uses a body-mounted floating flatpickr inside the
         /\.users-fixed-flatpickr-calendar\s*\{[\s\S]*position:\s*fixed !important;/,
         'admin-studio.css should keep the fixed-position flatpickr helper class for floating calendars'
     );
+});
+
+test('admin user ledger shows shop coupon usage in records, details, and exports', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    const fetchLedgerSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('async function enrichUserPointsLedgerWithShopOrders'),
+        adminUsersSource.indexOf('async function fetchUserPaymentOrders')
+    );
+    const renderLedgerSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function renderLedgerItems(data)'),
+        adminUsersSource.indexOf('function renderPaymentItems(data)')
+    );
+    const detailSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('async function fetchAdminLedgerDetail(record)'),
+        adminUsersSource.indexOf('function bindAdminLedgerDetailInteractions')
+    );
+    const modalSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function renderAdminLedgerDetailModal(detail)'),
+        adminUsersSource.indexOf('function closeAdminLedgerDetailModal')
+    );
+    const exportSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function buildAdminLedgerExportRow(detail = {})'),
+        adminUsersSource.indexOf('async function buildAdminLedgerExportData')
+    );
+
+    assert.match(adminUsersSource, /function formatUserDiscountBenefitLabel\(asset = \{\}\)[\s\S]*discountValue >= 0/);
+    assert.match(adminUsersSource, /function getAdminShopOrderDiscountSelections\(order = \{\}\)/);
+    assert.match(adminUsersSource, /function formatAdminShopOrderDiscountLabel\(order = \{\}\)/);
+    assert.match(adminUsersSource, /function buildAdminShopOrderDiscountChips\(order = \{\}\)/);
+    assert.match(adminUsersSource, /function appendAdminShopOrderDiscountSummaryRows\(rows = \[\], order = null, fallback = 0\)/);
+    assert.match(fetchLedgerSource, /from\('shop_orders'\)[\s\S]*select\('id, price_paid, total_price, discount_code, discount_amount, discount_snapshot/);
+    assert.match(fetchLedgerSource, /\.in\('id', orderIds\)/);
+    assert.match(fetchLedgerSource, /shop_order: shopOrder/);
+    assert.match(renderLedgerSource, /buildAdminShopOrderDiscountChips\(record\.shop_order\)/);
+    assert.match(adminUsersSource, /admin-ledger-chip-discount/);
+    assert.match(detailSource, /record\.shop_order/);
+    assert.match(modalSource, /appendAdminShopOrderDiscountSummaryRows\(summaryRows, detail\.shop\?\.order, detail\.amount\)/);
+    assert.match(modalSource, /label: '原价积分'/);
+    assert.match(modalSource, /label: '优惠券码'/);
+    assert.match(modalSource, /label: '优惠金额'/);
+    assert.match(modalSource, /label: '实付积分'/);
+    assert.match(exportSource, /'订单原价\(分\)'/);
+    assert.match(exportSource, /'订单实付\(分\)'/);
+    assert.match(exportSource, /'优惠券码'/);
+    assert.match(exportSource, /'优惠金额\(分\)'/);
+    assert.match(adminUsersSource, /'订单原价\(分\)'/);
+    assert.match(adminUsersSource, /'订单实付\(分\)'/);
+    assert.match(adminUsersSource, /'优惠券码'/);
+    assert.match(adminUsersSource, /'优惠金额\(分\)'/);
+    assert.match(adminStudioStyles, /\.admin-ledger-chip-discount\s*\{/);
+});
+
+test('admin user ledger treats shop refunds as refund returns before redeem-code matching', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const refundIndex = adminUsersSource.indexOf('isAdminShopRefundLedgerReason(reason, referenceId)');
+    const redeemIndex = adminUsersSource.indexOf("reason === 'redeem_code' || reason.includes('兑换码')");
+    const metaSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function getAdminLedgerMeta(record = {})'),
+        adminUsersSource.indexOf('function renderAdminLedgerDetailRows')
+    );
+    const modalSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function renderAdminLedgerDetailModal(detail)'),
+        adminUsersSource.indexOf('function closeAdminLedgerDetailModal')
+    );
+    const exportSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function buildAdminLedgerExportRow(detail = {})'),
+        adminUsersSource.indexOf('async function buildAdminLedgerExportData')
+    );
+    const fetchLedgerSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('async function enrichUserPointsLedgerWithShopOrders'),
+        adminUsersSource.indexOf('async function fetchUserPaymentOrders')
+    );
+
+    assert.match(adminUsersSource, /function isAdminShopRefundLedgerReason\(reason = '', referenceId = ''\)/);
+    assert.match(adminUsersSource, /function getAdminShopRefundOrderIdFromReference\(referenceId = ''\)/);
+    assert.notEqual(refundIndex, -1, 'admin users should detect shop refund ledger rows');
+    assert.notEqual(redeemIndex, -1, 'admin users should still detect redeem code ledger rows');
+    assert.equal(refundIndex < redeemIndex, true, 'shop refunds must be classified before generic redeem-code rows');
+    assert.match(metaSource, /transactionType: 'shop_refund'/);
+    assert.match(metaSource, /title: '订单退款返还'/);
+    assert.match(modalSource, /detail\.meta\.transactionType === 'shop_refund'/);
+    assert.match(modalSource, /订单退款详情/);
+    assert.match(exportSource, /detail\.meta\?\.transactionType === 'shop_refund'/);
+    assert.match(exportSource, /商城订单退款积分返还/);
+    assert.match(fetchLedgerSource, /isAdminShopRefundLedgerReason\(row\?\.reason, referenceId\)/);
+    assert.match(fetchLedgerSource, /getAdminShopRefundOrderIdFromReference\(referenceId\)/);
+});
+
+test('admin user ledger Google One rows prefer submitted account over legacy task id', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const metaSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('function getAdminLedgerMeta(record = {})'),
+        adminUsersSource.indexOf('function renderAdminLedgerDetailRows')
+    );
+    const verifyLookupSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('async function fetchAdminVerifyLogsForLedgerRows'),
+        adminUsersSource.indexOf('async function enrichUserPointsLedgerWithVerifyLogs')
+    );
+    const enrichSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('async function enrichUserPointsLedgerWithVerifyLogs'),
+        adminUsersSource.indexOf('async function enrichUserPointsLedgerRows')
+    );
+    const fetchLedgerSource = adminUsersSource.slice(
+        adminUsersSource.indexOf('async function fetchPointsLedger'),
+        adminUsersSource.indexOf('async function fetchUserPaymentOrders')
+    );
+
+    assert.match(adminUsersSource, /function normalizeAdminVerifyLedgerLog\(verifyLog = null, referenceId = ''\)/);
+    assert.match(adminUsersSource, /function getAdminVerifyLedgerSubmittedAccount\(record = \{\}\)/);
+    assert.match(adminUsersSource, /function pickAdminVerifyLogForLedgerRecord\(row = \{\}, verifyLogs = \[\]\)/);
+    assert.match(adminUsersSource, /async function fetchAdminVerifyLogsForLedgerRows\(rows = \[\], userId = '',/);
+    assert.match(metaSource, /const verifyAccount = getAdminVerifyLedgerSubmittedAccount\(record\)/);
+    assert.match(metaSource, /subtitle: verifyAccount[\s\S]*`Google 账号 \$\{verifyAccount\}`[\s\S]*`任务 \$\{shortReference\}`/);
+    assert.match(metaSource, /referenceLabel: verifyJobId \? `任务 \$\{truncateAdminLedgerText\(verifyJobId, 8, 4\)\}` : shortReference/);
+    assert.match(verifyLookupSource, /postAdminUsersManage\('list_verify_logs'/);
+    assert.match(verifyLookupSource, /const adminVerifyLogs = await fetchAdminVerifyLogsForLedgerRows\(\[row\], modalUserId, \{ limit: 120, columns \}\)/);
+    assert.match(verifyLookupSource, /\.ilike\('message', `%\$\{referenceId\}%`\)/);
+    assert.match(verifyLookupSource, /pickAdminVerifyLogForLedgerRecord\(row, fallbackResult\.data \|\| \[\]\)/);
+    assert.doesNotMatch(verifyLookupSource, /summary/);
+    assert.match(enrichSource, /fetchAdminVerifyLogsForLedgerRows\(verifyRows, modalUserId/);
+    assert.doesNotMatch(enrichSource, /summary/);
+    assert.match(enrichSource, /return verifyLog \? \{ \.\.\.row, verify_log: verifyLog \} : row/);
+    assert.match(fetchLedgerSource, /return enrichUserPointsLedgerRows\(rows\)/);
 });
 
 test('admin studio centralizes module permissions and gates sidebar modules through the shared registry', () => {
@@ -9860,6 +10056,7 @@ test('verify widget runtime renderers route wallet/login/form/history actions th
         "async function callVerifyJobAction(action, jobId)",
         "async function handleHistoryJobAction(action, button)",
         "function buildHistoryActionButtons(item = {}, payload = null)",
+        "if (isPixelBridgeHistoryPayload(parsedPayload))",
         'bindDelegatedUi(container);'
     ];
 
@@ -9945,16 +10142,97 @@ test('verify history hides channel-specific redundant details', () => {
         "['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(provider)",
         'function isHistorySubmissionEcho(message = \'\', email = \'\')',
         'if (isFullTask && status === \'success\')',
-        'if (isPixelBridgeTask && status === \'success\')',
+        "if (isPixelBridgeTask && status === 'success' && isHistorySubmissionEcho(payload?.message || '', email))",
+        "return { type: 'text', text: getTaskTypeSuccessText(taskType, false) };",
         'if (offerUrl && !isFullTask && !isPixelBridgeTask)',
         'if (isPixelBridgeTask && isHistorySubmissionEcho(payload.message, email))',
         "const detailRowHtml = detail.type === 'empty'",
-        "if (normalizeTaskType(parsedPayload.task_type) === 'full')"
+        "if (normalizeTaskType(parsedPayload.task_type) === 'full')",
+        "function getCanonicalUpstreamMessage(value = '')",
+        "'风控账号：google无法验证账号归属，请前往 g.co/recover处理'",
+        'Risk-controlled account: Google could not verify account ownership. Please go to g.co/recover.',
+        "normalized.includes('g.co/recover') && (normalized.includes('账号归属') || normalized.includes('无法验证'))",
+        'function getLocalizedHistoryMessage(value = \'\', taskType = \'extract\')',
+        'const raw = getCanonicalUpstreamMessage(value);',
+        "'包绑卡流程完成': () => getTaskTypeSuccessText('full', false)",
+        "'链接获取成功': () => getTaskTypeSuccessText('extract', true)",
+        "'提链任务完成': () => getTaskTypeSuccessText('extract', false)",
+        "getLocalizedHistoryMessage(\n            getErrorLabel(data?.error, data?.message || (lang === 'zh' ? '任务失败' : 'Job failed')),",
+        "return { type: 'text', text: getLocalizedHistoryMessage(payload.message, taskType) };",
+        'const rawMessage = getLocalizedHistoryMessage(item?.message, taskType);'
     ];
 
     for (const marker of requiredMarkers) {
         assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
     }
+});
+
+test('verify dual-channel copy waits for loaded locales and uses localized channel/batch labels', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const verifyPageSource = readRepoFile('verify.html');
+    const zhLocale = JSON.parse(readRepoFile('lang/zh.json'));
+    const enLocale = JSON.parse(readRepoFile('lang/en.json'));
+
+    const requiredMarkers = [
+        "const VERIFY_PROVIDER_LABELS = {",
+        "[VERIFY_PROVIDER_AIDONE]: { key: 'verify.providerChannelOne', fallback: '通道 1' }",
+        "[VERIFY_PROVIDER_CATCARD]: { key: 'verify.providerChannelTwo', fallback: '通道 2' }",
+        'function getProviderLabel(provider = activeVerifyProvider)',
+        'function normalizeVerifyProviderVisibility(value)',
+        "function resolveDefaultVerifyProvider(providerVisibility = 'both')",
+        "function applyDefaultVerifyProvider(providerVisibility = 'both')",
+        "return VERIFY_PROVIDER_AIDONE;",
+        "const providerVisibility = normalizeVerifyProviderVisibility(config.provider_visibility || config.providerVisibility);",
+        "const visible = providerVisibility === 'both' || providerVisibility === provider;",
+        "applyDefaultVerifyProvider(providerVisibility);",
+        "applyDefaultVerifyProvider();",
+        'label: getProviderLabel(provider)',
+        'function waitForI18nReady()',
+        "typeof window.i18n.ready === 'function'",
+        'await waitForI18nReady();',
+        "t('verify.singleMode', '单个账号')",
+        "t('verify.batchMode', '批量任务')",
+        "t('verify.batchAccountsLabel', '批量任务')",
+        "function formatBatchLineError(lineNumber, reason = '')",
+        "t('verify.batchLineError', '第 {line} 行: {reason}')",
+        "reason: formatBatchLineError(lineIndex + 1, parsed.reason)"
+    ];
+
+    for (const marker of requiredMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+
+    assert.equal(zhLocale.verify.providerChannelOne, '通道 1');
+    assert.equal(zhLocale.verify.providerChannelTwo, '通道 2');
+    assert.equal(zhLocale.verify.batchMode, '批量任务');
+    assert.equal(zhLocale.verify.batchAccountsLabel, '批量任务');
+    assert.equal(zhLocale.verify.batchLineError, '第 {line} 行: {reason}');
+    assert.equal(enLocale.verify.providerChannelOne, 'Channel 1');
+    assert.equal(enLocale.verify.providerChannelTwo, 'Channel 2');
+    assert.equal(enLocale.verify.singleMode, 'Single account');
+    assert.equal(enLocale.verify.batchMode, 'Batch tasks');
+    assert.equal(enLocale.verify.batchAccountsLabel, 'Batch tasks');
+    assert.equal(enLocale.verify.batchLineError, 'Line {line}: {reason}');
+    assert.equal(
+        Object.values(enLocale.verify).filter((value) => typeof value === 'string' && /[\u4e00-\u9fff]/.test(value)).length,
+        0,
+        'English verify locale should not contain Chinese text'
+    );
+    assert.equal(
+        verifyPageSource.includes('js/i18n.js?v=20260616_VERIFY_I18N_DUAL_CHANNEL_1'),
+        true,
+        'verify.html should cache-bust locale loading for the dual-channel copy'
+    );
+    assert.equal(
+        verifyPageSource.includes('i18nHistory=20260616_VERIFY_I18N_HISTORY_TEXT_1'),
+        true,
+        'verify.html should cache-bust the widget runtime for localized history text'
+    );
+    assert.equal(
+        verifyPageSource.includes('upstreamMessage=20260616_VERIFY_UPSTREAM_MESSAGE_I18N_1'),
+        true,
+        'verify.html should cache-bust localized upstream failure messages'
+    );
 });
 
 test('verify polling treats status aliases as terminal and avoids cached status reads', () => {
@@ -9965,12 +10243,24 @@ test('verify polling treats status aliases as terminal and avoids cached status 
         'function buildVerifyStatusEndpoints(jobId)',
         "`/api/public?scope=verify&route=status&taskId=${encodedJobId}&site=${encodedSite}`",
         "`${CONFIG.nodeServerUrl}/api/verify/status/${encodedJobId}?site=${encodedSite}`",
+        'async function fetchVerifyJobStatusOnce(jobId)',
         'function normalizeVerifyClientStatus(data = {})',
         "['success', 'completed', 'complete', 'done', 'ok'].includes(normalized)",
         "['failed', 'failure', 'fail', 'error', 'timeout', 'timed_out', 'cancelled', 'canceled'].includes(normalized)",
-        "['running', 'processing', 'working', 'in_progress', 'executing'].includes(normalized)",
+        "['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)",
         "const status = normalizeVerifyClientStatus(data);",
-        "const response = await fetch(endpoint, { headers, cache: 'no-store' });"
+        "const response = await fetch(endpoint, { headers, cache: 'no-store' });",
+        'Number.isFinite(queuePosition) && queuePosition > 0',
+        "updateExecutionRing({ status: 'queued', queue_position: null }, provider)",
+        'fetchVerifyJobStatusOnce(pending.jobId).then',
+        'function shouldRefreshActiveHistoryStatus(item)',
+        "return status === 'queued' || status === 'running';",
+        'const candidateMap = new Map();',
+        'const candidates = Array.from(candidateMap.values()).slice(0, 5);',
+        'function isGenericVerifyFailureText(value)',
+        'function getAssignedStatusText()',
+        '执行失败，上游未返回具体原因',
+        "s_claim: { zh: '领取权益', en: 'Claim benefits' }"
     ];
 
     for (const marker of requiredMarkers) {
@@ -10074,6 +10364,11 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "function setSubmitMode(mode = 'single')",
         "modeTabs.dataset.verifySubmitMode = mode;",
         "function readBatchEntries()",
+        "function isValidCredentialEmail(value = '')",
+        "function normalizeTotpSecretValue(value = '')",
+        "function getBatchCredentialTotpPart(parts = [])",
+        "raw.split(/\\s*(?:\\||-{4,})\\s*/)",
+        "const detailStartIndex = isValidCredentialEmail(parts[2]) ? 3 : 2;",
         "function runBatchSubmit(entries, submitBtn, resetBtn)",
         "let apiQuotaSummary = null;",
         "let apiUsageCosts = { extract: 0.5, full: 1 };",
@@ -10091,11 +10386,34 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "if (numeric <= 0) return 'danger';",
         "if (numeric < 5) return 'warning';",
         "return 'ok';",
+        "function getProviderQueueSize(provider = activeVerifyProvider)",
+        "function getProviderQueueLabel(provider = activeVerifyProvider)",
+        "return queueSize === null ? '--' : formatBalanceValue(queueSize);",
+        "function getProviderReservedUses(provider = activeVerifyProvider)",
+        "reservedUses += getTaskTypeUsageCost(task?.taskType || 'extract', normalizedProvider);",
+        "function getChannelAvailableJobs(provider = activeVerifyProvider, taskType = getSelectedTaskType())",
+        "const availableUses = Math.max(0, remainingUses - getProviderReservedUses(provider));",
+        "const visibleProviderConfigs = getVisibleVerifyProviders();",
+        "const isSingleProviderView = visibleProviderConfigs.length === 1;",
+        "const providerOptionTag = isSingleProviderView ? 'div' : 'button';",
+        "const providerOptionAttrs = isSingleProviderView",
+        "if (btn.matches('button'))",
+        "verify-provider-option--single",
+        "verify-provider-switcher--single",
+        "${isSingleProviderView ? ' hidden' : ''}",
+        "t('verify.queueSize', '排队')",
+        "return getRemainingTaskCount(availableUses, normalizedTaskType, provider);",
+        "function getRemainingTaskCount(balance, taskType = 'extract', provider = activeVerifyProvider)",
+        "const usageCost = getTaskTypeUsageCost(taskType, provider);",
+        "function findChannelQuotaShortageForEntries(entries = [], provider = activeVerifyProvider)",
+        "findChannelQuotaShortageForEntries(entries, provider)",
+        "findChannelQuotaShortageForEntries([entry], provider)",
+        "t('verify.queueSize', '排队')",
         'data-remaining-tone="${escapeHtml(remainingTone)}"',
         "id=\"verifyBatchInput\"",
         "data-verify-submit-mode=\"single\"",
         "data-verify-mode=\"batch\"",
-        "email----password----2FA",
+        "邮箱----密码----2FA，或 邮箱|密码|辅助邮箱|2FA|注册时间|注册地",
         "t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')",
         "t('verify.bulkContactSupport', '大批量可联系客服')",
         "quotaEl.removeAttribute('title');",
@@ -10104,6 +10422,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);",
         "syncModeSelectorFromConfig();",
         "const availableTaskTypes = getAvailableTaskTypes();",
+        "return availableTaskTypes.includes('full')",
         "verify-mode-selector--single",
         "const pollTimeoutMs = getTaskPollTimeoutMs(taskInfoAtStart.taskType || entry.taskType || 'extract');",
         "setVerifyRuntimeStyles(widget, {",
@@ -10153,6 +10472,21 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify API quota badge value should be the selected mode remaining submission count'
     );
     assert.equal(
+        verifyWidgetSource.includes("getRemainingTaskCount(typedExtractUses, 'extract', provider)"),
+        true,
+        'verify quota normalization should convert extract uses with the target provider costs'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("getRemainingTaskCount(typedFullUses, 'full', provider)"),
+        true,
+        'verify quota normalization should convert full-flow uses with the target provider costs'
+    );
+    assert.equal(
+        /function updateTaskTypeUi\(\)[\s\S]*updateQuotaDisplay\(\);\s*updateProviderSwitcherUi\(\);/.test(verifyWidgetSource),
+        true,
+        'verify task mode changes should refresh channel card remaining counts'
+    );
+    assert.equal(
         verifyWidgetSource.includes('id="verifyApiQuota" title='),
         false,
         'verify API quota badge should not ship a native title hover tooltip'
@@ -10181,6 +10515,17 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         verifyWidgetSource.includes('verify-provider-option__remaining'),
         true,
         'verify channel cards should keep the per-channel system remaining count'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.channelHealth', '状态')"),
+        false,
+        'verify channel cards should show queue count instead of generic health status text'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.channelHealthy', '正常')")
+            || verifyWidgetSource.includes("t('verify.channelBusy', '繁忙')"),
+        false,
+        'verify channel cards should not show healthy/busy labels in place of queue count'
     );
     assert.equal(
         verifyWidgetSource.includes('`${providerBadgeHtml}${detailHtml}`'),
@@ -10228,9 +10573,9 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify widget subtitle should describe access instead of a trial link'
     );
     assert.equal(
-        verifyWidgetSource.includes('支持 email----password----2FA，也兼容 Tab /逗号分隔。最多 50个账号。'),
+        verifyWidgetSource.includes('支持 ----、|、Tab、逗号分隔；带辅助邮箱/注册时间/注册地时会自动提取 email、password、2FA。最多 50个账号。'),
         true,
-        'verify batch format note should use the current compact copy'
+        'verify batch format note should describe compatible separators and long account rows'
     );
 
     const cssMarkers = [
@@ -10240,6 +10585,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-api-quota--warning',
         '.verify-api-quota--danger',
         '.verify-provider-option__remaining',
+        '.verify-provider-switcher--single',
+        '.verify-provider-option--single',
+        '.verify-provider-option--single .verify-provider-option__main[hidden]',
+        '.verify-provider-option--single .verify-provider-option__health',
+        '.verify-provider-option--single .verify-provider-option__remaining',
+        'cursor: default;',
         '.verify-provider-option__remaining strong[data-remaining-tone="ok"]',
         '.verify-provider-option__remaining strong[data-remaining-tone="warning"]',
         '.verify-provider-option__remaining strong[data-remaining-tone="danger"]',
@@ -10268,8 +10619,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-submit-mode-tabs::before',
         '.verify-submit-mode-btn:hover',
         '.verify-batch-textarea::placeholder',
+        '.verify-active-provider-badge',
         '.verify-history-provider',
         '.verify-history-provider[data-history-provider="catcard"]',
+        'html[data-theme="dark"] .verify-provider-option--single',
+        'html[data-theme="dark"] .verify-provider-option--single .verify-provider-option__health',
+        'html[data-theme="dark"] .verify-provider-option--single .verify-provider-option__remaining',
         'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="ok"]',
         'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="warning"]',
         'html[data-theme="dark"] .verify-provider-option__remaining strong[data-remaining-tone="danger"]',
@@ -10278,6 +10633,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'html[data-theme="dark"] .verify-widget textarea.verify-input:focus-visible',
         'html[data-theme="dark"] .verify-submit-mode-tabs::before',
         'html[data-theme="dark"] .verify-batch-textarea::placeholder',
+        'html[data-theme="dark"] .verify-active-provider-badge',
         'html[data-theme="dark"] .verify-bulk-contact',
         'html[data-theme="dark"] .verify-submit-mode-btn.active'
     ];
@@ -10319,6 +10675,11 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the latest verify page stylesheet version'
     );
     assert.equal(
+        verifyPageSource.includes('activeProviderBadge=20260616_VERIFY_ACTIVE_PROVIDER_BADGE_LIGHT_1'),
+        true,
+        'verify.html should cache-bust the active provider badge light theme fix'
+    );
+    assert.equal(
         verifyPageSource.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'verify.html should load the shared user event tracker before the verify widget runtime'
@@ -10329,9 +10690,54 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the latest verify-widget script version'
     );
     assert.equal(
-        verifyPageSource.includes('js/i18n.js?v=20260530_VERIFY_PAYMENT_PROFILE_BODY_1'),
+        verifyPageSource.includes('historyActiveRepair=20260616_VERIFY_HISTORY_REPAIR_ACTIVE_1'),
         true,
-        'verify.html should cache-bust locale loading for the latest payment profile copy'
+        'verify.html should force refresh the active-history repair path'
+    );
+    assert.equal(
+        verifyPageSource.includes('historySuccessText=20260616_VERIFY_HISTORY_SUCCESS_TEXT_1'),
+        true,
+        'verify.html should force refresh the history success text display'
+    );
+    assert.equal(
+        verifyPageSource.includes('queueCount=20260616_VERIFY_QUEUE_COUNT_1'),
+        true,
+        'verify.html should cache-bust the channel queue count display'
+    );
+    assert.equal(
+        verifyPageSource.includes('batchCompat=20260616_VERIFY_BATCH_COMPAT_1'),
+        true,
+        'verify.html should cache-bust the batch account format compatibility parser'
+    );
+    assert.equal(
+        verifyPageSource.includes('quotaReserve=20260616_VERIFY_QUOTA_RESERVE_1'),
+        true,
+        'verify.html should cache-bust the local reserved quota display'
+    );
+    assert.equal(
+        verifyPageSource.includes('modeQuota=20260616_VERIFY_MODE_QUOTA_COUNT_2'),
+        true,
+        'verify.html should cache-bust the selected-mode channel quota display and default mode'
+    );
+    assert.equal(
+        verifyPageSource.includes('singleProviderBar=20260616_VERIFY_SINGLE_PROVIDER_BAR_2'),
+        true,
+        'verify.html should cache-bust the single-provider queue and remaining count bar'
+    );
+    assert.equal(
+        verifyPageSource.includes('defaultProvider=20260617_VERIFY_DEFAULT_PROVIDER_AIDONE_2'),
+        true,
+        'verify.html should cache-bust the default channel focus fix'
+    );
+    assert.equal(
+        verifyPageSource.includes('queuePosition=20260616_VERIFY_QUEUE_POSITION_1'),
+        true,
+        'verify.html should cache-bust the queue position display fix'
+    );
+    assert.equal(
+        verifyPageSource.includes('js/i18n.js?v=20260616_VERIFY_I18N_DUAL_CHANNEL_1'),
+        true,
+        'verify.html should cache-bust locale loading for the latest dual-channel copy'
     );
     assert.equal(
         archivedIndexSource.includes('verify-widget.css?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
@@ -10573,6 +10979,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
     const discountsSource = readRepoFile('admin-discounts.js');
     const ticketsSource = readRepoFile('js/admin-tickets.js');
 
@@ -10678,6 +11085,22 @@ test('admin studio settings, discounts, and tickets controls route through deleg
     assert.equal(adminStudioScript.includes('[data-admin-overlay-close]'), true, 'admin-studio.js should delegate overlay dismissal');
     assert.equal(adminStudioScript.includes("form.id === 'discountGenerateForm'"), true, 'admin-studio.js should delegate discount generate form submission');
     assert.equal(adminStudioScript.includes("form.id === 'ticketReplyForm'"), true, 'admin-studio.js should delegate ticket reply form submission');
+
+    const settingsWindowExports = [
+        'window.insertFormat = insertFormat;',
+        'window.toggleAlignPicker = toggleAlignPicker;',
+        'window.applyTextAlign = applyTextAlign;',
+        'window.insertLink = insertLink;',
+        'window.toggleEmojiPicker = toggleEmojiPicker;',
+        'window.selectEmoji = selectEmoji;',
+        'window.toggleDropdown = toggleDropdown;',
+        'window.selectColor = selectColor;',
+        'window.selectFontSize = selectFontSize;'
+    ];
+
+    for (const marker of settingsWindowExports) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should explicitly expose ${marker}`);
+    }
 
     const discountHelpers = [
         'renderScopeHint: function',
@@ -11086,6 +11509,12 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.match(
+        adminStudioCss,
+        /\.admin-discount-table-state-cell\s*\{[\s\S]*display:\s*table-cell !important;[\s\S]*text-align:\s*center;/,
+        'discount table empty/loading cells should remain table cells so the inner state can stay centered'
+    );
+
+    assert.match(
         adminStudioSource,
         /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
@@ -11286,9 +11715,12 @@ test('admin studio security, verify, and affiliate controls route through delega
         'class="custom-dropdown verify-provider-channel-dropdown"',
         'data-dropdown-id="verifyModeVisibilityDropdown"',
         'data-dropdown-id="verifyProviderChannelDropdown"',
+        'data-option-value="both"',
         'data-option-value="extract_only"',
         'data-option-value="full_only"',
         'data-option-value="catcard"',
+        '当前展示通道',
+        '通道 1 + 通道 2',
         'data-admin-action="settings-refresh-verify-monitor"',
         'data-admin-focus-action="settings-verify-api-key-unlock"',
         'data-admin-blur-action="settings-verify-api-key-lock"',
@@ -11332,9 +11764,11 @@ test('admin studio security, verify, and affiliate controls route through delega
     [
         'verifyModeVisibilityDropdown',
         'verifyProviderChannelDropdown',
+        'normalizeVerifyProviderVisibility',
         'normalizeVerifyProvider',
         'providers.catcard',
         'mode_visibility',
+        'provider_visibility',
         'normalizeVerifyModeVisibility',
         'getVerifyModeVisibilityLabel',
         'getVerifyModeVisibilityDropdownLabel',
@@ -15637,6 +16071,8 @@ test('analytics user drill-down carries commerce context into the user detail mo
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260529_HOME_RUNTIME_CACHE_1'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('usersFirstLoadActivation=20260617_ADMIN_USERS_VISIBLE_ACTIVATION_1'), true, 'admin-studio.html should bust the users runtime cache after first-load activation recovery');
+    assert.equal(adminStudioHtml.includes('usersListPagination=20260617_ADMIN_USERS_LIST_PAGINATION_1'), true, 'admin-studio.html should bust the users runtime cache after list pagination and toggle exports');
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should reference the latest ops alert report helper runtime version');
@@ -15644,9 +16080,13 @@ test('analytics user drill-down carries commerce context into the user detail mo
     assert.equal(adminStudioHtml.includes('admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1'), true, 'admin-studio.html should reference the latest admin discounts runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
     assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
+    assert.equal(adminStudioHtml.includes('usersListPagination=20260617_ADMIN_USERS_LIST_PAGINATION_1'), true, 'admin-studio.html should bust the admin studio action router after users pagination routing changes');
     assert.equal(adminUsersSource.includes('const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === \'function\''), true, 'admin-users.js should read analytics resolution feedback entries for commerce trace context');
     assert.equal(adminUsersSource.includes('users-commerce-trace__feedback'), true, 'admin-users.js should render a recent handling feedback block in commerce traces');
     assert.equal(adminUsersSource.includes("function activateUsersModule(context = {}, options = {}) {"), true, 'admin-users.js should activate the users module through the shell lifecycle');
+    assert.equal(adminUsersSource.includes('function scheduleVisibleUsersModuleActivation() {'), true, 'admin-users.js should recover when the users module is already visible before its lifecycle activation runs');
+    assert.equal(adminUsersSource.includes("window.addEventListener?.('permissionsLoaded', scheduleVisibleUsersModuleActivation, { once: true });"), true, 'admin-users.js should retry visible activation after permissions resolve');
+    assert.equal(adminUsersSource.includes("window.addEventListener?.('load', scheduleVisibleUsersModuleActivation, { once: true });"), true, 'admin-users.js should retry visible activation after late script/load timing');
     assert.equal(adminUsersSource.includes("async function handleAdminUsersShellContext(context = {}, options = {}) {"), true, 'admin-users.js should handle user modal context through the shell lifecycle');
     assert.equal(adminUsersSource.includes('window.openAdminUsersShellContext = openAdminUsersShellContext;'), true, 'admin-users.js should export the shared users context helper for shell-less fallback paths');
     assert.equal(adminUsersSource.includes('window.handleAdminUsersSiteChange = handleAdminUsersSiteChange;'), true, 'admin-users.js should expose the users site-change helper for shared fallback paths');
@@ -16853,6 +17293,37 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
     );
 });
 
+test('admin user ledger detail modal keeps its bottom content reachable while scrolling', () => {
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    assert.match(
+        adminStudioStyles,
+        /\.admin-ledger-modal\s*\{[\s\S]*max-height:\s*min\(82vh,\s*920px\);[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;[\s\S]*overflow:\s*hidden;/,
+        'ledger detail modal should use a column layout so the body receives the remaining height'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.admin-ledger-modal-header\s*\{[\s\S]*flex:\s*0 0 auto;/,
+        'ledger detail header should not consume scroll height from the body'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.admin-ledger-modal-body\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;[\s\S]*overflow-x:\s*hidden;[\s\S]*overflow-y:\s*auto;[\s\S]*padding:\s*20px 24px calc\(32px \+ env\(safe-area-inset-bottom,\s*0px\)\);[\s\S]*scroll-padding-bottom:\s*calc\(32px \+ env\(safe-area-inset-bottom,\s*0px\)\);/,
+        'ledger detail body should scroll independently with enough bottom padding for the last content card'
+    );
+    assert.doesNotMatch(
+        adminStudioStyles,
+        /\.admin-ledger-modal-body\s*\{[\s\S]*max-height:\s*calc\(82vh - 84px\);/,
+        'ledger detail body should not depend on a fixed header-height subtraction that can crop the bottom'
+    );
+    assert.equal(
+        adminStudioHtml.includes('ledgerModalScroll=20260617_ADMIN_LEDGER_MODAL_SCROLL_1'),
+        true,
+        'admin-studio.html should cache-bust the ledger detail modal scroll fix'
+    );
+});
+
 test('admin studio helper extends scrollbar auto-hide coverage to legacy modal body scrollers', () => {
     const adminStudioHtml = readRepoFile('admin-studio.html');
     const helperSource = readRepoFile('js/admin-scrollbar-auto-hide-helper.js');
@@ -17387,14 +17858,34 @@ test('unlock pricing accepts zero points across admin and prompt runtime', () =>
         'admin unlock pricing input should allow zero points'
     );
     assert.equal(
+        adminStudioHtml.includes('id="cfgFreeUnlockDailyLimit" min="0"'),
+        true,
+        'admin unlock pricing should expose a configurable daily free unlock limit'
+    );
+    assert.equal(
         adminConfigSource.includes('normalizeUnlockPricingPoints(config.default_points, 1)'),
         true,
         'admin unlock pricing renderer should preserve default_points: 0'
     );
     assert.equal(
+        adminConfigSource.includes('function normalizeFreeUnlockDailyLimit(value, fallback = 3)'),
+        true,
+        'admin unlock pricing should normalize the free daily unlock limit'
+    );
+    assert.equal(
+        adminConfigSource.includes('normalizeFreeUnlockDailyLimit(config.free_daily_limit, 3)'),
+        true,
+        'admin unlock pricing renderer should preserve the configured daily free unlock limit'
+    );
+    assert.equal(
         adminConfigSource.includes('config.default_points = normalizeUnlockPricingPoints(e.target.value, 1);'),
         true,
         'admin unlock pricing save handler should preserve zero input values'
+    );
+    assert.equal(
+        adminConfigSource.includes('config.free_daily_limit = normalizeFreeUnlockDailyLimit(e.target.value, 3);'),
+        true,
+        'admin unlock pricing save handler should persist the daily free unlock limit'
     );
     assert.equal(
         adminConfigSource.includes('config.default_points || 1'),
@@ -17412,6 +17903,26 @@ test('unlock pricing accepts zero points across admin and prompt runtime', () =>
         'prompt unlock pricing should accept explicit default_points: 0'
     );
     assert.equal(
+        promptsSource.includes('_freeUnlockDailyLimit = normalizePromptFreeDailyLimit(config.free_daily_limit, 3);'),
+        true,
+        'prompt unlock runtime should load the daily free unlock limit from public config'
+    );
+    assert.equal(
+        promptsSource.includes("data?.code === 'free_daily_limit_reached'"),
+        true,
+        'prompt unlock runtime should detect the free daily limit RPC response'
+    );
+    assert.equal(
+        promptsSource.includes('function getPromptUnlockErrorMessage(errorLike)'),
+        true,
+        'prompt unlock runtime should normalize raw RPC errors before showing them to users'
+    );
+    assert.equal(
+        promptsSource.includes('解锁服务刚刚更新中，请刷新页面后再试一次。'),
+        true,
+        'prompt unlock runtime should replace overload-resolution errors with human-readable copy'
+    );
+    assert.equal(
         promptsSource.includes('data?.config_value?.default_points'),
         false,
         'prompt unlock pricing should not use truthy checks for default_points'
@@ -17422,8 +17933,18 @@ test('unlock pricing accepts zero points across admin and prompt runtime', () =>
         'prompts.html should cache-bust the unlock pricing runtime'
     );
     assert.equal(
+        promptsHtml.includes('freeUnlockLimit=20260617_FREE_UNLOCK_DAILY_LIMIT_1'),
+        true,
+        'prompts.html should cache-bust the free daily unlock limit runtime'
+    );
+    assert.equal(
         adminStudioHtml.includes('unlockPricingZero=20260616_UNLOCK_PRICING_ZERO_1'),
         true,
         'admin-studio.html should cache-bust the unlock pricing runtime'
+    );
+    assert.equal(
+        adminStudioHtml.includes('freeUnlockLimit=20260617_FREE_UNLOCK_DAILY_LIMIT_1'),
+        true,
+        'admin-studio.html should cache-bust the free daily unlock limit config runtime'
     );
 });

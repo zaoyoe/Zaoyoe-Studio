@@ -12,6 +12,7 @@ const {
     getApiErrorCode,
     getApiErrorMessage,
     getVerifyPriceForTaskType,
+    isVerifyInsufficientBalanceError,
     normalizeVerifyJobPayload,
     normalizeVerifyTaskType,
     parseHistoryMessage,
@@ -46,6 +47,7 @@ function createPublicVerifyHandlers({
     const runtimeGetApiErrorCode = runtime.getApiErrorCode || getApiErrorCode;
     const runtimeGetApiErrorMessage = runtime.getApiErrorMessage || getApiErrorMessage;
     const runtimeGetVerifyPriceForTaskType = runtime.getVerifyPriceForTaskType || getVerifyPriceForTaskType;
+    const runtimeIsVerifyInsufficientBalanceError = runtime.isVerifyInsufficientBalanceError || isVerifyInsufficientBalanceError;
     const runtimeNormalizeVerifyJobPayload = runtime.normalizeVerifyJobPayload || normalizeVerifyJobPayload;
     const runtimeNormalizeVerifyTaskType = runtime.normalizeVerifyTaskType || normalizeVerifyTaskType;
     const runtimeParseHistoryMessage = runtime.parseHistoryMessage || parseHistoryMessage;
@@ -167,7 +169,14 @@ function createPublicVerifyHandlers({
             taskType: normalizedTaskType
         });
         const selectedCredential = credentialSelection?.selected || null;
-        if (!selectedCredential?.apiKey) {
+        const credentialCandidates = [
+            selectedCredential,
+            ...(Array.isArray(credentialSelection?.healthySnapshots) ? credentialSelection.healthySnapshots : [])
+        ].filter((candidate, index, list) => {
+            const apiKey = String(candidate?.apiKey || '').trim();
+            return apiKey && list.findIndex((item) => String(item?.apiKey || '').trim() === apiKey) === index;
+        });
+        if (!credentialCandidates.length) {
             return sendJson(res, 400, {
                 success: false,
                 message: '当前剩余可提交任务的次数不足，请联系管理员补足后方可继续提交。',
@@ -175,17 +184,31 @@ function createPublicVerifyHandlers({
             });
         }
 
-        const upstream = await runtimePostVerifyProviderAction(config, {
-            action: 'submit_task',
-            cdkey: selectedCredential.apiKey,
-            email: normalizedEmail,
-            password: normalizedPassword,
-            twofa: normalizedTotpSecret,
-            priority: normalizedPriority,
-            task_type: normalizedTaskType
-        }, {
-            fetchImpl
-        });
+        let upstream = null;
+        let submittedCredential = null;
+        for (const candidate of credentialCandidates) {
+            upstream = await runtimePostVerifyProviderAction(config, {
+                action: 'submit_task',
+                cdkey: candidate.apiKey,
+                email: normalizedEmail,
+                password: normalizedPassword,
+                twofa: normalizedTotpSecret,
+                priority: normalizedPriority,
+                task_type: normalizedTaskType
+            }, {
+                fetchImpl
+            });
+            submittedCredential = candidate;
+
+            if (upstream.ok) {
+                break;
+            }
+
+            const errorMessage = runtimeGetApiErrorMessage(upstream.payload, '任务提交失败');
+            if (!runtimeIsVerifyInsufficientBalanceError(upstream.payload, errorMessage)) {
+                break;
+            }
+        }
 
         if (!upstream.ok) {
             return sendJson(res, upstream.status || 502, {
@@ -200,8 +223,8 @@ function createPublicVerifyHandlers({
             task_type: normalizedTaskType,
             provider: config.provider,
             provider_adapter: config.adapter || config.provider_adapter,
-            provider_key_fingerprint: runtimeBuildVerifyCredentialFingerprint(selectedCredential.apiKey),
-            provider_key_name: selectedCredential.key_name || ''
+            provider_key_fingerprint: runtimeBuildVerifyCredentialFingerprint(submittedCredential.apiKey),
+            provider_key_name: submittedCredential.key_name || submittedCredential.keyName || ''
         });
         const jobId = String(apiData.job_id || apiData.task_id || '').trim();
 
@@ -226,7 +249,7 @@ function createPublicVerifyHandlers({
             provider: apiData.provider || config.provider,
             provider_label: config.provider_label || config.providerLabel || '',
             provider_adapter: apiData.provider_adapter || config.adapter || config.provider_adapter || '',
-            queue_position: apiData.queue_position ?? -1,
+            queue_position: apiData.queue_position ?? null,
             estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
             stage: apiData.stage,
             total_stages: apiData.total_stages,
