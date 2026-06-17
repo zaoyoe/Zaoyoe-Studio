@@ -5421,8 +5421,8 @@ const FramerHome = {
       extractMeta: copy('', { zh: '只拿可用订阅链接', en: 'Get the available subscription link only' }),
       fullMeta: copy('', { zh: '完成 Google One 订阅流程', en: 'Complete the Google One subscription flow' }),
       modeNote: copy('', {
-        zh: '提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。',
-        en: 'After link extraction succeeds, open the link to finish card binding. Cards are available in the shop.'
+        zh: '任务成功后，自行打开链接按提示完成绑卡，不懂请勿提交此模式 ！',
+        en: 'After the task succeeds, open the link yourself and follow the prompts to bind a card. Do not submit this mode if you are unsure.'
       }),
       singleCost: copy('verify.singleCost', { zh: '本次提交消耗', en: 'This submission costs' }),
       resetForm: copy('verify.resetForm', { zh: '清空', en: 'Clear' }),

@@ -1179,7 +1179,7 @@ const AdminDiscounts = {
 
     formatPercentDiscountValue: function (value) {
         const numericValue = Number(value);
-        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        if (!Number.isFinite(numericValue) || numericValue < 0) {
             return '--折';
         }
 
@@ -1485,6 +1485,7 @@ const AdminDiscounts = {
             this.normalizeScopeType(discount?.scope_type) === 'category' ? this.getCategoryLabel(discount?.scope_category) : '',
             this.normalizeScopeType(discount?.scope_type) === 'product' ? this.getProductLabel(discount?.scope_product_id) : '',
             this.normalizeScopeType(discount?.scope_type) === 'product' ? this.getProductSkuLabel(discount?.scope_product_sku_id) : '',
+            Number(discount?.max_discount_quantity || 0) > 0 ? `最多抵扣 ${discount.max_discount_quantity} 件` : '',
             discount?.allow_zero_total ? '允许全免' : '禁止全免',
             discount?.campaign_tag,
             discount?.audience_segment,
@@ -2726,6 +2727,7 @@ const AdminDiscounts = {
             { label: '结算优先级', value: `${Math.max(1, Number.parseInt(discount.stack_priority, 10) || 100)}` },
             { label: '总使用限制', value: Number(discount.max_uses || 0) > 0 ? `${discount.max_uses} 次` : '不限' },
             { label: '每用户限制', value: Number(discount.max_uses_per_user || 0) > 0 ? `${discount.max_uses_per_user} 次` : '不限' },
+            { label: '最大抵扣件数', value: Number(discount.max_discount_quantity || 0) > 0 ? `${discount.max_discount_quantity} 件` : '不限' },
             { label: '生效时间', value: this.formatDate(discount.starts_at, { includeTime: true }) || '立即生效' },
             { label: '过期时间', value: this.formatDate(discount.expires_at, { includeTime: true }) || '永久有效' },
             { label: '领取开始', value: this.formatDate(discount.claim_starts_at, { includeTime: true }) || '立即' },
@@ -4541,6 +4543,11 @@ const AdminDiscounts = {
             policyLines.push('<div class="admin-discount-expiry-meta"><i class="fas fa-tags"></i> 范围: 全部商品</div>');
         }
 
+        const maxDiscountQuantity = Math.max(0, Number.parseInt(discount.max_discount_quantity, 10) || 0);
+        if (maxDiscountQuantity > 0) {
+            policyLines.push(`<div class="admin-discount-expiry-meta"><i class="fas fa-boxes-stacked"></i> 最多抵扣: ${this.escapeHtml(String(maxDiscountQuantity))} 件</div>`);
+        }
+
         if (discount.allow_zero_total) {
             policyLines.push('<div><span class="status-badge active"><i class="fas fa-unlock"></i> 允许全免</span></div>');
         } else {
@@ -5435,6 +5442,7 @@ const AdminDiscounts = {
         document.getElementById('discountValue').value = '';
         document.getElementById('discountMaxUses').value = '1';
         document.getElementById('discountMaxUsesPerUser').value = '0';
+        document.getElementById('discountMaxDiscountQuantity').value = '0';
         document.getElementById('discountStartsAtDate').value = '';
         document.getElementById('discountExpiryDate').value = '';
         document.getElementById('discountAllowZeroTotal').checked = false;
@@ -5471,9 +5479,11 @@ const AdminDiscounts = {
     populateGenerateFormFromDiscount: function (discount = {}) {
         document.getElementById('discountCodeInput').value = this.safeText(discount.code).toUpperCase();
         this.selectDiscountType(discount.discount_type === 'fixed' ? 'fixed' : 'percent');
-        document.getElementById('discountValue').value = Number.parseInt(discount.discount_value, 10) || '';
+        const parsedDiscountValue = Number.parseInt(discount.discount_value, 10);
+        document.getElementById('discountValue').value = Number.isFinite(parsedDiscountValue) ? String(parsedDiscountValue) : '';
         document.getElementById('discountMaxUses').value = Math.max(0, Number.parseInt(discount.max_uses, 10) || 0);
         document.getElementById('discountMaxUsesPerUser').value = Math.max(0, Number.parseInt(discount.max_uses_per_user, 10) || 0);
+        document.getElementById('discountMaxDiscountQuantity').value = Math.max(0, Number.parseInt(discount.max_discount_quantity, 10) || 0);
         document.getElementById('discountStartsAtDate').value = this.toDateInputValue(discount.starts_at);
         document.getElementById('discountExpiryDate').value = this.toDateInputValue(discount.expires_at);
         this.setGenerateCustomSelectValue('site', this.safeText(discount.applicable_site).toLowerCase(), { close: false });
@@ -5569,7 +5579,7 @@ const AdminDiscounts = {
         }
 
         if (valueInput) {
-            valueInput.placeholder = isFixed ? '如: 100' : '如: 80';
+            valueInput.placeholder = isFixed ? '如: 100' : '如: 80，免单填 0';
         }
 
         if (valueLabel) {
@@ -5579,7 +5589,7 @@ const AdminDiscounts = {
         if (valueHint) {
             valueHint.textContent = isFixed
                 ? '直接抵扣固定积分，如 100 表示立减 100 积分。'
-                : '按百分比填写折后结算比例；80 = 按原价 80% 结算，实际抵扣 20%，不要填 8。';
+                : '按百分比填写折后结算比例；80 = 按原价 80% 结算，实际抵扣 20%；0 = 0折免单，需同时开启允许全免。';
         }
 
         this.setTypeDropdownOpen(false);
@@ -5628,8 +5638,8 @@ const AdminDiscounts = {
 
             const type = document.getElementById('discountValueType').value;
             const value = parseInt(document.getElementById('discountValue').value);
-            if (!value || value <= 0) {
-                this.notify(type === 'percent' ? '请输入 1-100 的结算比例' : '请输入有效的优惠券面额', 'warning');
+            if (!Number.isFinite(value) || value < 0 || (type !== 'percent' && value <= 0)) {
+                this.notify(type === 'percent' ? '请输入 0-100 的结算比例；0 表示 0折免单' : '请输入有效的优惠券面额', 'warning');
                 return;
             }
 
@@ -5646,6 +5656,11 @@ const AdminDiscounts = {
             const maxUsesPerUser = parseInt(document.getElementById('discountMaxUsesPerUser').value) || 0;
             if (maxUsesPerUser < 0) {
                 this.notify('每用户最多使用次数不能小于 0', 'warning');
+                return;
+            }
+            const maxDiscountQuantity = parseInt(document.getElementById('discountMaxDiscountQuantity')?.value, 10) || 0;
+            if (maxDiscountQuantity < 0) {
+                this.notify('最大抵扣件数不能小于 0', 'warning');
                 return;
             }
 
@@ -5755,6 +5770,7 @@ const AdminDiscounts = {
                 discount_value: value,
                 max_uses: maxUses,
                 max_uses_per_user: maxUsesPerUser,
+                max_discount_quantity: maxDiscountQuantity,
                 starts_at: starts_at,
                 expires_at: expires_at,
                 applicable_site: applicableSite,

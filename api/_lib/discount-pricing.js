@@ -65,6 +65,24 @@ function normalizeMoney(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeMaxDiscountQuantity(value) {
+    const parsed = normalizeInteger(value, 0, { min: 0, max: 9999 });
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveDiscountEligibleSubtotal({ subtotal = 0, unitPrice = 0, quantity = 1, maxDiscountQuantity = 0 } = {}) {
+    const normalizedSubtotal = Math.max(0, normalizeMoney(subtotal, 0));
+    const normalizedQuantity = normalizeInteger(quantity, 1, { min: 1, max: 9999 });
+    const normalizedUnitPrice = Math.max(0, normalizeMoney(unitPrice, normalizedQuantity > 0 ? normalizedSubtotal / normalizedQuantity : normalizedSubtotal));
+    const normalizedMaxQuantity = normalizeMaxDiscountQuantity(maxDiscountQuantity);
+
+    if (normalizedMaxQuantity <= 0 || normalizedMaxQuantity >= normalizedQuantity || !(normalizedUnitPrice > 0)) {
+        return normalizedSubtotal;
+    }
+
+    return Math.max(0, Math.min(normalizedSubtotal, Number((normalizedUnitPrice * normalizedMaxQuantity).toFixed(2))));
+}
+
 function buildDiscountStackingPolicy(source = {}) {
     const isExclusive = normalizeBoolean(source?.is_exclusive, true);
     const stackPriority = normalizeInteger(source?.stack_priority, 100, { min: 1, max: 9999 });
@@ -86,6 +104,14 @@ function normalizeDiscountSelection(source = {}) {
     const pricingApplyStage = normalizePricingApplyStage(source?.pricing_apply_stage ?? source?.pricingApplyStage, 'order_discount');
     const discountType = normalizeText(source?.discount_type ?? source?.discountType, 20).toLowerCase();
     const discountValue = normalizeMoney(source?.discount_value ?? source?.discountValue, NaN);
+    const quantity = normalizeInteger(source?.quantity ?? source?.item_count ?? source?.itemCount, 1, { min: 1, max: 9999 });
+    const unitPrice = Math.max(0, normalizeMoney(source?.unit_price ?? source?.unitPrice, 0));
+    const maxDiscountQuantity = normalizeMaxDiscountQuantity(
+        source?.max_discount_quantity
+        ?? source?.maxDiscountQuantity
+        ?? source?.discount_quantity_limit
+        ?? source?.discountQuantityLimit
+    );
     const discountAmount = Math.max(0, normalizeMoney(source?.discount_amount ?? source?.discountAmount, 0));
     const finalTotalAfterApply = normalizeMoney(
         source?.final_total_after_apply
@@ -102,6 +128,9 @@ function normalizeDiscountSelection(source = {}) {
         scope_product_sku_id: normalizeText(source?.scope_product_sku_id ?? source?.scopeProductSkuId, 160) || null,
         discount_type: discountType || null,
         discount_value: Number.isFinite(discountValue) ? discountValue : null,
+        quantity,
+        unit_price: unitPrice,
+        max_discount_quantity: maxDiscountQuantity,
         discount_amount: discountAmount,
         final_total_after_apply: Number.isFinite(finalTotalAfterApply) ? Math.max(0, finalTotalAfterApply) : null,
         allow_zero_total: normalizeBoolean(source?.allow_zero_total ?? source?.allowZeroTotal, false),
@@ -166,8 +195,20 @@ function resolveSingleDiscountAmount(subtotal = 0, discount = {}) {
     const normalizedSubtotal = Math.max(0, normalizeMoney(subtotal, 0));
     const normalizedDiscount = normalizeDiscountSelection(discount);
     const discountValue = Number(normalizedDiscount.discount_value);
+    const eligibleSubtotal = resolveDiscountEligibleSubtotal({
+        subtotal: normalizedSubtotal,
+        unitPrice: normalizedDiscount.unit_price,
+        quantity: normalizedDiscount.quantity,
+        maxDiscountQuantity: normalizedDiscount.max_discount_quantity
+    });
 
-    if (!normalizedDiscount.discount_type || !Number.isFinite(discountValue) || discountValue <= 0 || normalizedSubtotal <= 0) {
+    if (
+        !normalizedDiscount.discount_type
+        || !Number.isFinite(discountValue)
+        || (normalizedDiscount.discount_type === 'percent' ? discountValue < 0 : discountValue <= 0)
+        || normalizedSubtotal <= 0
+        || eligibleSubtotal <= 0
+    ) {
         return {
             has_effective_discount: false,
             discount_amount: 0,
@@ -176,11 +217,12 @@ function resolveSingleDiscountAmount(subtotal = 0, discount = {}) {
     }
 
     if (normalizedDiscount.discount_type === 'percent') {
-        const finalTotal = Math.max(
+        const eligibleFinalTotal = Math.max(
             0,
-            Math.min(normalizedSubtotal, Number(((normalizedSubtotal * discountValue) / 100).toFixed(2)))
+            Math.min(eligibleSubtotal, Number(((eligibleSubtotal * discountValue) / 100).toFixed(2)))
         );
-        const discountAmount = Math.max(0, Number((normalizedSubtotal - finalTotal).toFixed(2)));
+        const discountAmount = Math.max(0, Math.min(normalizedSubtotal, Number((eligibleSubtotal - eligibleFinalTotal).toFixed(2))));
+        const finalTotal = Math.max(0, Number((normalizedSubtotal - discountAmount).toFixed(2)));
         if (!(discountAmount > 0)) {
             return {
                 has_effective_discount: false,
@@ -205,7 +247,7 @@ function resolveSingleDiscountAmount(subtotal = 0, discount = {}) {
     }
 
     if (normalizedDiscount.discount_type === 'fixed') {
-        const discountAmount = Math.min(normalizedSubtotal, discountValue);
+        const discountAmount = Math.min(eligibleSubtotal, discountValue);
         const finalTotal = Math.max(0, Number((normalizedSubtotal - discountAmount).toFixed(2)));
         if (!(discountAmount > 0)) {
             return {
@@ -267,7 +309,10 @@ function resolveDiscountStacking({ subtotal = 0, discounts = [] } = {}) {
     const appliedDiscounts = [];
 
     for (const discount of normalizedDiscounts) {
-        const pricing = resolveSingleDiscountAmount(runningTotal, discount);
+        const pricing = resolveSingleDiscountAmount(runningTotal, {
+            ...discount,
+            unit_price: discount.unit_price || (discount.quantity > 0 ? normalizedSubtotal / discount.quantity : 0)
+        });
         if (!pricing.has_effective_discount) {
             const isZeroTotalRestricted = pricing.final_total === 0 && pricing.discount_amount > 0 && !discount.allow_zero_total;
             return {
@@ -404,6 +449,8 @@ module.exports = {
     normalizeText,
     normalizePricingApplyStage,
     formatPricingApplyStageLabel,
+    normalizeMaxDiscountQuantity,
+    resolveDiscountEligibleSubtotal,
     buildDiscountStackingPolicy,
     normalizeDiscountSelection,
     sortDiscountSelections,

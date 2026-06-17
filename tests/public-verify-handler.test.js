@@ -79,6 +79,24 @@ test('verify status message prefers provider realtime feedback while running', (
     );
 });
 
+test('verify queued status only shows positive upstream queue position', () => {
+    assert.equal(
+        buildClientStatusMessage({
+            status: 'queued',
+            queue_position: 0
+        }),
+        '排队中'
+    );
+    assert.equal(
+        buildClientStatusMessage({
+            status: 'queued',
+            queue_position: 2,
+            estimated_wait_seconds: 18
+        }),
+        '排队中（队列位置 2），预计等待 18 秒'
+    );
+});
+
 test('public verify submit handler returns queued task metadata for authenticated users', async () => {
     const handlers = createPublicVerifyHandlers({
         admin: {
@@ -567,6 +585,132 @@ test('public verify submit handler forwards the selected CDKey from the pool to 
     assert.equal(payload.task_type, 'extract');
 });
 
+test('public verify submit handler retries the next CDKey when the selected key is out of quota', async () => {
+    const attemptedKeys = [];
+    const handlers = createPublicVerifyHandlers({
+        admin: {
+            async requireAuthenticatedUser() {
+                return {
+                    user: { id: 'user-1' },
+                    adminSupabase: {
+                        from() {
+                            throw new Error('submit route should use injected runtime stubs');
+                        }
+                    }
+                };
+            },
+            async parseJsonBody() {
+                return {
+                    email: 'pool@example.com',
+                    password: 'secret-pass',
+                    totpSecret: 'JBSWY3DPEHPK3PXP',
+                    priority: 0,
+                    taskType: 'full'
+                };
+            },
+            getOptionalSupabaseAdmin() {
+                return null;
+            },
+            sendJson
+        },
+        verifyRuntime: {
+            normalizeVerifyTaskType() {
+                return 'full';
+            },
+            resolveVerifyRequestSite() {
+                return 'cn';
+            },
+            async loadVerifyRuntimeConfig() {
+                return {
+                    apiKey: 'SYS-AAA111',
+                    apiKeys: ['SYS-AAA111', 'SYS-BBB222'],
+                    apiBaseUrl: 'https://aidone.lol',
+                    pricePerVerifyExtract: 10,
+                    pricePerVerifyFull: 20
+                };
+            },
+            getVerifyPriceForTaskType(config, taskType) {
+                return taskType === 'full' ? config.pricePerVerifyFull : config.pricePerVerifyExtract;
+            },
+            async validateUserBalance() {
+                return { valid: true, balance: 88 };
+            },
+            async selectVerifyCredentialForTask() {
+                return {
+                    selected: {
+                        apiKey: 'SYS-AAA111',
+                        key_name: 'SYS-AAA111',
+                        balance: 1
+                    },
+                    healthySnapshots: [{
+                        apiKey: 'SYS-AAA111',
+                        key_name: 'SYS-AAA111',
+                        balance: 1
+                    }, {
+                        apiKey: 'SYS-BBB222',
+                        key_name: 'SYS-BBB222',
+                        balance: 1
+                    }]
+                };
+            },
+            buildVerifyCredentialFingerprint(value) {
+                return value === 'SYS-BBB222' ? 'fp-bbb222' : 'fp-aaa111';
+            },
+            isVerifyInsufficientBalanceError(payload) {
+                return payload?.code === 'insufficient_balance';
+            },
+            async postVerifyProviderAction(config, payload) {
+                assert.equal(config.apiKey, 'SYS-AAA111');
+                attemptedKeys.push(payload.cdkey);
+                if (payload.cdkey === 'SYS-AAA111') {
+                    return {
+                        ok: false,
+                        status: 400,
+                        payload: {
+                            success: false,
+                            code: 'insufficient_balance',
+                            message: '余额不足，当前任务需要 1.0 额度'
+                        }
+                    };
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    payload: {
+                        success: true,
+                        task_id: 'SYS-POOL-RETRY-1',
+                        status: 'queued',
+                        task_type: 'full'
+                    }
+                };
+            },
+            normalizeVerifyJobPayload(payload, fallback) {
+                return {
+                    job_id: String(payload.task_id || 'SYS-POOL-RETRY-1'),
+                    task_id: String(payload.task_id || 'SYS-POOL-RETRY-1'),
+                    status: 'queued',
+                    task_type: fallback.task_type,
+                    provider_key_fingerprint: fallback.provider_key_fingerprint,
+                    provider_key_name: fallback.provider_key_name
+                };
+            },
+            async syncTrackedJobStatus() {
+                return { pointsDeducted: 0 };
+            }
+        }
+    });
+
+    const res = createResponseRecorder();
+    await handlers.submit({ method: 'POST', headers: {} }, res);
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.deepEqual(attemptedKeys, ['SYS-AAA111', 'SYS-BBB222']);
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.job_id, 'SYS-POOL-RETRY-1');
+    assert.equal(payload.task_type, 'full');
+});
+
 test('verify job runtime status lookup falls back across the CDKey pool when the preferred key reports job_not_found', async () => {
     const originalFetch = global.fetch;
     const seenKeys = [];
@@ -947,4 +1091,45 @@ test('verify job runtime submits and polls 1free pixel bridge tasks', async () =
     assert.equal(status.data.progress, 42);
     assert.equal(status.data.elapsed_seconds, 18);
     assert.equal(requests[1].method, 'GET');
+});
+
+test('verify job runtime maps assigned pixel bridge tasks to running', async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({
+        code: 0,
+        msg: 'success',
+        data: {
+            tasks: [{
+                id: 'PX-ASSIGNED',
+                email: 'member@example.com',
+                status: 'assigned',
+                step: 'S_LOGIN',
+                step_status: 'running',
+                progress: 30,
+                duration: 0
+            }]
+        }
+    }), {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+
+    const status = await fetchUpstreamJobStatus({
+        provider: 'catcard',
+        adapter: 'pixel_bridge_rest',
+        apiKey: 'SUB-KEY',
+        apiKeys: ['SUB-KEY'],
+        apiBaseUrl: 'https://1free.qzz.io'
+    }, 'PX-ASSIGNED', {
+        fetchImpl,
+        apiKey: 'SUB-KEY',
+        taskType: 'full'
+    });
+
+    assert.equal(status.ok, true);
+    assert.equal(status.data.status, 'running');
+    assert.equal(status.data.raw_step, 'S_LOGIN');
+    assert.equal(status.data.provider_progress, 30);
+    assert.equal(status.data.queue_position, null);
 });

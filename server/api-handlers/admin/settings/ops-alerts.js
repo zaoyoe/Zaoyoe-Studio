@@ -883,15 +883,19 @@ function buildAdminLoginAnomalySampleJob(user) {
             admin_id: sanitizeText(user?.id) || 'admin-demo-user',
             admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
             client_ip: '203.0.113.88',
+            client_ip_group: '203.0.113.0/24',
             user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 Chrome/124.0',
+            user_agent_fingerprint: 'chrome:macos:desktop',
             occurred_at: new Date().toISOString(),
             previous_ips: ['198.51.100.21', '198.51.100.22'],
+            previous_ip_groups: ['198.51.100.0/24'],
+            previous_user_agent_fingerprints: ['safari:macos:desktop'],
             recent_distinct_ip_count: 3,
-            recent_distinct_user_agent_count: 2,
+            recent_distinct_user_agent_count: 3,
             detected_reasons: [
-                '管理员首次从该 IP 登录后台',
-                '最近窗口内出现 3 个登录 IP',
-                '最近窗口内出现 2 个登录设备指纹'
+                '管理员首次从新的 IP 段和设备家族组合登录后台',
+                '最近窗口内出现 3 个登录 IP 段',
+                '最近窗口内出现 3 个登录设备家族'
             ],
             origin: 'https://www.fatherkey.com',
             referer: 'https://www.fatherkey.com/admin-entry.html',

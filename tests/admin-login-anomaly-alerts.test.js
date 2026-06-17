@@ -188,7 +188,9 @@ function createOpsRuntime() {
     };
 }
 
-test('buildAdminLoginAnomalyAlerts flags new admin login IPs and short-window drift', () => {
+test('buildAdminLoginAnomalyAlerts flags combined new network and device family signal', () => {
+    const chromeMac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const firefoxWindows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0';
     const alerts = buildAdminLoginAnomalyAlerts([
         {
             id: 'log-1',
@@ -198,7 +200,7 @@ test('buildAdminLoginAnomalyAlerts flags new admin login IPs and short-window dr
             created_at: '2026-03-25T09:40:00.000Z',
             details: {
                 client_ip: '198.51.100.21',
-                user_agent: 'UA-1'
+                user_agent: chromeMac
             }
         },
         {
@@ -209,7 +211,7 @@ test('buildAdminLoginAnomalyAlerts flags new admin login IPs and short-window dr
             created_at: '2026-03-25T09:55:00.000Z',
             details: {
                 client_ip: '203.0.113.88',
-                user_agent: 'UA-2'
+                user_agent: firefoxWindows
             }
         }
     ], normalizeAdminLoginAnomalyMonitorConfig(), {
@@ -222,7 +224,88 @@ test('buildAdminLoginAnomalyAlerts flags new admin login IPs and short-window dr
     assert.equal(alerts[0].payload.client_ip, '203.0.113.88');
     assert.equal(alerts[0].payload.client_ip_group, '203.0.113.0/24');
     assert.equal(alerts[0].payload.recent_distinct_ip_count, 2);
-    assert.match(alerts[0].content, /首次从该 IP 段登录后台/);
+    assert.equal(alerts[0].payload.recent_distinct_user_agent_count, 2);
+    assert.match(alerts[0].content, /首次从新的 IP 段和设备家族组合登录后台/);
+});
+
+test('buildAdminLoginAnomalyAlerts ignores a single new network on a known device family', () => {
+    const chromeMac124 = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const chromeMac125 = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+    const alerts = buildAdminLoginAnomalyAlerts([
+        {
+            id: 'log-1',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:40:00.000Z',
+            details: {
+                client_ip: '198.51.100.21',
+                user_agent: chromeMac124
+            }
+        },
+        {
+            id: 'log-2',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:55:00.000Z',
+            details: {
+                client_ip: '203.0.113.88',
+                user_agent: chromeMac125
+            }
+        }
+    ], normalizeAdminLoginAnomalyMonitorConfig(), {
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(alerts.length, 0);
+});
+
+test('buildAdminLoginAnomalyAlerts flags three network groups in the recent window', () => {
+    const chromeMac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const alerts = buildAdminLoginAnomalyAlerts([
+        {
+            id: 'log-1',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:35:00.000Z',
+            details: {
+                client_ip: '198.51.100.21',
+                user_agent: chromeMac
+            }
+        },
+        {
+            id: 'log-2',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:45:00.000Z',
+            details: {
+                client_ip: '203.0.113.88',
+                user_agent: chromeMac
+            }
+        },
+        {
+            id: 'log-3',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:55:00.000Z',
+            details: {
+                client_ip: '192.0.2.44',
+                user_agent: chromeMac
+            }
+        }
+    ], normalizeAdminLoginAnomalyMonitorConfig(), {
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].payload.client_ip, '192.0.2.44');
+    assert.equal(alerts[0].payload.recent_distinct_ip_count, 3);
+    assert.equal(alerts[0].payload.recent_distinct_user_agent_count, 1);
+    assert.match(alerts[0].content, /最近窗口内出现 3 个登录 IP 段/);
 });
 
 test('buildAdminLoginAnomalyAlerts ignores same network and browser-family drift', () => {
@@ -259,6 +342,8 @@ test('buildAdminLoginAnomalyAlerts ignores same network and browser-family drift
 });
 
 test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stable dedupe', async () => {
+    const chromeMac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const firefoxWindows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0';
     const state = {
         jobs: [],
         adminRoles: [
@@ -275,7 +360,7 @@ test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stabl
                 created_at: '2026-03-25T09:40:00.000Z',
                 details: {
                     client_ip: '198.51.100.21',
-                    user_agent: 'UA-1'
+                    user_agent: chromeMac
                 }
             },
             {
@@ -286,7 +371,7 @@ test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stabl
                 created_at: '2026-03-25T09:55:00.000Z',
                 details: {
                     client_ip: '203.0.113.88',
-                    user_agent: 'UA-2'
+                    user_agent: firefoxWindows
                 }
             }
         ]

@@ -429,7 +429,8 @@ const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
     'ops-alerts-verify-queue',
     'ops-alerts-verify-failure',
     'ops-alerts-kvm4',
-    'ops-alerts-shop-risk'
+    'ops-alerts-shop-risk',
+    'ops-alerts-admin-login-anomaly'
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 25000;
 const OPS_ALERT_HEALTH_FETCH_RETRY_COUNT = 2;
@@ -648,11 +649,13 @@ function getVerifyRemainingTaskCount(balance, unitCost) {
 
 const VERIFY_PROVIDER_AIDONE = 'aidone';
 const VERIFY_PROVIDER_CATCARD = 'catcard';
+const VERIFY_PROVIDER_VISIBILITY_BOTH = 'both';
 const VERIFY_PROVIDER_LABELS = {
     [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
     [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
 };
 const VERIFY_PROVIDER_DROPDOWN_LABELS = {
+    [VERIFY_PROVIDER_VISIBILITY_BOTH]: '通道 1 + 通道 2',
     [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
     [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
 };
@@ -669,8 +672,19 @@ function normalizeVerifyProvider(value, fallback = VERIFY_PROVIDER_AIDONE) {
 }
 
 function getVerifyProviderDropdownLabel(provider) {
-    const normalizedProvider = normalizeVerifyProvider(provider);
-    return VERIFY_PROVIDER_DROPDOWN_LABELS[normalizedProvider] || VERIFY_PROVIDER_DROPDOWN_LABELS[VERIFY_PROVIDER_AIDONE];
+    const normalizedVisibility = normalizeVerifyProviderVisibility(provider);
+    return VERIFY_PROVIDER_DROPDOWN_LABELS[normalizedVisibility] || VERIFY_PROVIDER_DROPDOWN_LABELS[VERIFY_PROVIDER_VISIBILITY_BOTH];
+}
+
+function normalizeVerifyProviderVisibility(value, fallback = VERIFY_PROVIDER_VISIBILITY_BOTH) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === VERIFY_PROVIDER_VISIBILITY_BOTH || normalized === 'dual' || normalized === 'all') {
+        return VERIFY_PROVIDER_VISIBILITY_BOTH;
+    }
+    if (normalized === VERIFY_PROVIDER_AIDONE || normalized === VERIFY_PROVIDER_CATCARD) {
+        return normalized;
+    }
+    return VERIFY_PROVIDER_VISIBILITY_BOTH;
 }
 
 function buildVerifyQuotaUsageSummary(balance, costs = {}) {
@@ -807,6 +821,16 @@ function getActiveVerifyProvider(config = systemConfigCache['verify_settings'] |
     );
 }
 
+function getVerifyProviderVisibility(config = systemConfigCache['verify_settings'] || {}) {
+    return normalizeVerifyProviderVisibility(
+        config.provider_visibility
+        || config.providerVisibility
+        || config.verify_provider_visibility
+        || config.frontend_provider_visibility
+        || VERIFY_PROVIDER_VISIBILITY_BOTH
+    );
+}
+
 function getActiveVerifyProviderKeys(config = systemConfigCache['verify_settings'] || {}) {
     const activeProvider = getActiveVerifyProvider(config);
     if (activeProvider === VERIFY_PROVIDER_CATCARD) {
@@ -900,12 +924,14 @@ function getVerifyProviderStatusElement(provider) {
 
 function syncVerifyProviderStatus(config = systemConfigCache['verify_settings'] || {}) {
     const activeProvider = getActiveVerifyProvider(config);
+    const providerVisibility = getVerifyProviderVisibility(config);
+    const isBothVisible = providerVisibility === VERIFY_PROVIDER_VISIBILITY_BOTH;
     [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD].forEach((provider) => {
         const element = getVerifyProviderStatusElement(provider);
         if (!element) return;
-        const isActive = activeProvider === provider;
-        element.classList.toggle('is-active', isActive);
-        element.textContent = isActive ? '当前生效' : '备用通道';
+        const isVisible = isBothVisible || providerVisibility === provider;
+        element.classList.toggle('is-active', isVisible);
+        element.textContent = isVisible ? '前台展示' : '备用通道';
     });
 }
 
@@ -3707,6 +3733,21 @@ function getDefaultOpsAlertConfig() {
             summary_hourly_minute: 0,
             summary_daily_hour: 9,
             summary_daily_minute: 0
+        },
+        admin_login_anomaly: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            recent_window_minutes: 30,
+            baseline_lookback_days: 30,
+            dedupe_window_minutes: 6 * 60,
+            ip_grouping_enabled: true,
+            ipv4_group_prefix_bits: 24,
+            ipv6_group_prefix_bits: 64,
+            recent_distinct_ip_group_threshold: 3,
+            user_agent_family_grouping_enabled: true,
+            recent_distinct_user_agent_family_threshold: 3,
+            page_size: 500,
+            max_pages: 10
         },
         customer_chat_message: {
             enabled: true,
@@ -7698,6 +7739,9 @@ function normalizeOpsAlertConfig(raw) {
     const shopInventorySource = source.shop_inventory && typeof source.shop_inventory === 'object' && !Array.isArray(source.shop_inventory)
         ? source.shop_inventory
         : {};
+    const adminLoginAnomalySource = source.admin_login_anomaly && typeof source.admin_login_anomaly === 'object' && !Array.isArray(source.admin_login_anomaly)
+        ? source.admin_login_anomaly
+        : {};
     const customerChatMessageSource = source.customer_chat_message && typeof source.customer_chat_message === 'object' && !Array.isArray(source.customer_chat_message)
         ? source.customer_chat_message
         : {};
@@ -8083,6 +8127,67 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(shopInventorySource.summary_daily_minute, defaults.shop_inventory.summary_daily_minute),
                 0,
                 59
+            )
+        },
+        admin_login_anomaly: {
+            enabled: normalizeConfigBoolean(adminLoginAnomalySource.enabled, defaults.admin_login_anomaly.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(adminLoginAnomalySource.sweep_interval_ms, defaults.admin_login_anomaly.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            recent_window_minutes: clamp(
+                toWholeNumber(adminLoginAnomalySource.recent_window_minutes, defaults.admin_login_anomaly.recent_window_minutes),
+                5,
+                24 * 60
+            ),
+            baseline_lookback_days: clamp(
+                toWholeNumber(adminLoginAnomalySource.baseline_lookback_days, defaults.admin_login_anomaly.baseline_lookback_days),
+                1,
+                180
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(adminLoginAnomalySource.dedupe_window_minutes, defaults.admin_login_anomaly.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            ip_grouping_enabled: normalizeConfigBoolean(
+                adminLoginAnomalySource.ip_grouping_enabled,
+                defaults.admin_login_anomaly.ip_grouping_enabled
+            ),
+            ipv4_group_prefix_bits: clamp(
+                toWholeNumber(adminLoginAnomalySource.ipv4_group_prefix_bits, defaults.admin_login_anomaly.ipv4_group_prefix_bits),
+                8,
+                32
+            ),
+            ipv6_group_prefix_bits: clamp(
+                toWholeNumber(adminLoginAnomalySource.ipv6_group_prefix_bits, defaults.admin_login_anomaly.ipv6_group_prefix_bits),
+                16,
+                128
+            ),
+            recent_distinct_ip_group_threshold: clamp(
+                toWholeNumber(adminLoginAnomalySource.recent_distinct_ip_group_threshold, defaults.admin_login_anomaly.recent_distinct_ip_group_threshold),
+                2,
+                20
+            ),
+            user_agent_family_grouping_enabled: normalizeConfigBoolean(
+                adminLoginAnomalySource.user_agent_family_grouping_enabled,
+                defaults.admin_login_anomaly.user_agent_family_grouping_enabled
+            ),
+            recent_distinct_user_agent_family_threshold: clamp(
+                toWholeNumber(adminLoginAnomalySource.recent_distinct_user_agent_family_threshold, defaults.admin_login_anomaly.recent_distinct_user_agent_family_threshold),
+                2,
+                20
+            ),
+            page_size: clamp(
+                toWholeNumber(adminLoginAnomalySource.page_size, defaults.admin_login_anomaly.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(adminLoginAnomalySource.max_pages, defaults.admin_login_anomaly.max_pages),
+                1,
+                100
             )
         },
         customer_chat_message: {
@@ -9613,6 +9718,14 @@ function normalizeUnlockPricingDiscount(value, fallback = 0.9) {
     return Math.min(1, Math.max(0, parsed));
 }
 
+function normalizeFreeUnlockDailyLimit(value, fallback = 3) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.min(1000, Math.max(0, parsed));
+}
+
 async function fetchSystemConfigDomain(domain) {
     const searchParams = new URLSearchParams();
     searchParams.set('domain', domain);
@@ -9641,13 +9754,15 @@ async function loadAllSystemConfig() {
 // ============================================
 
 function renderUnlockPricingConfig() {
-    const config = systemConfigCache['unlock_pricing'] || { default_points: 1, vip_discount: 0.9 };
+    const config = systemConfigCache['unlock_pricing'] || { default_points: 1, vip_discount: 0.9, free_daily_limit: 3 };
 
     const pointsInput = document.getElementById('cfgUnlockPoints');
     const discountInput = document.getElementById('cfgVipDiscount');
+    const freeDailyLimitInput = document.getElementById('cfgFreeUnlockDailyLimit');
 
     if (pointsInput) pointsInput.value = normalizeUnlockPricingPoints(config.default_points, 1);
     if (discountInput) discountInput.value = Math.round(normalizeUnlockPricingDiscount(config.vip_discount, 0.9) * 100);
+    if (freeDailyLimitInput) freeDailyLimitInput.value = normalizeFreeUnlockDailyLimit(config.free_daily_limit, 3);
 }
 
 function renderPackagesConfig() {
@@ -9790,6 +9905,7 @@ const OPS_ALERT_SECTION_CONTROL_APPLIERS = [
     applyOpsAlertWalletRechargeSuccessControls,
     applyOpsAlertTicketsControls,
     applyOpsAlertShopOrderDeliveryControls,
+    applyOpsAlertAdminLoginAnomalyControls,
     applyOpsAlertVerifyQuotaControls,
     applyOpsAlertVerifyQueueControls,
     applyOpsAlertVerifyFailureControls,
@@ -16172,6 +16288,38 @@ function applyOpsAlertShopOrderDeliveryControls(config = normalizeOpsAlertConfig
     });
 }
 
+function applyOpsAlertAdminLoginAnomalyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.admin_login_anomaly || getDefaultOpsAlertConfig().admin_login_anomaly;
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertAdminLoginAnomalyEnabledToggle',
+        inputIds: [
+            'opsAlertAdminLoginAnomalyRecentWindowMinutes',
+            'opsAlertAdminLoginAnomalyBaselineLookbackDays',
+            'opsAlertAdminLoginAnomalyIpGroupThreshold',
+            'opsAlertAdminLoginAnomalyUserAgentFamilyThreshold',
+            'opsAlertAdminLoginAnomalySweepIntervalMinutes',
+            'opsAlertAdminLoginAnomalyDedupeWindowMinutes',
+            'opsAlertAdminLoginAnomalyIpv4GroupPrefixBits',
+            'opsAlertAdminLoginAnomalyIpv6GroupPrefixBits'
+        ],
+        extraToggles: [
+            {
+                key: 'ip_grouping_enabled',
+                id: 'opsAlertAdminLoginAnomalyIpGroupingEnabledToggle'
+            },
+            {
+                key: 'user_agent_family_grouping_enabled',
+                id: 'opsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabledToggle'
+            }
+        ],
+        sharedOptions: {
+            extraToggleKeys: ['ip_grouping_enabled', 'user_agent_family_grouping_enabled'],
+            extraToggleDisabledWhenMonitorDisabledKeys: ['ip_grouping_enabled', 'user_agent_family_grouping_enabled']
+        }
+    });
+}
+
 function applyOpsAlertVerifyQuotaControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.verify_quota || getDefaultOpsAlertConfig().verify_quota;
@@ -16276,8 +16424,8 @@ function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(sy
         summaryWindowMinutes: 'opsAlertPaymentGatewaySummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertPaymentGatewaySummaryHourlyMinute',
         summaryDailyHour: 'opsAlertPaymentGatewaySummaryDailyHour',
-        summaryDailyMinute: 'opsAlertPaymentGatewaySummaryDailyMinute',
-        summaryMaxItems: 'opsAlertPaymentGatewaySummaryMaxItems'
+            summaryDailyMinute: 'opsAlertPaymentGatewaySummaryDailyMinute',
+            summaryMaxItems: 'opsAlertPaymentGatewaySummaryMaxItems'
         }
     });
 }
@@ -16364,6 +16512,19 @@ function buildOpsAlertSettingsFieldGroups(config = normalizeOpsAlertConfig(syste
             { id: 'opsAlertTicketsSummaryMaxItems', value: normalizedConfig.tickets.summary_max_items }
         ],
         [
+            { id: 'opsAlertAdminLoginAnomalyRecentWindowMinutes', value: normalizedConfig.admin_login_anomaly.recent_window_minutes },
+            { id: 'opsAlertAdminLoginAnomalyBaselineLookbackDays', value: normalizedConfig.admin_login_anomaly.baseline_lookback_days },
+            { id: 'opsAlertAdminLoginAnomalyIpGroupThreshold', value: normalizedConfig.admin_login_anomaly.recent_distinct_ip_group_threshold },
+            { id: 'opsAlertAdminLoginAnomalyUserAgentFamilyThreshold', value: normalizedConfig.admin_login_anomaly.recent_distinct_user_agent_family_threshold },
+            { id: 'opsAlertAdminLoginAnomalySweepIntervalMinutes', value: normalizedConfig.admin_login_anomaly.sweep_interval_ms, transform: getOpsAlertMinutesFieldValue },
+            { id: 'opsAlertAdminLoginAnomalyDedupeWindowMinutes', value: normalizedConfig.admin_login_anomaly.dedupe_window_minutes },
+            { id: 'opsAlertAdminLoginAnomalyIpv4GroupPrefixBits', value: normalizedConfig.admin_login_anomaly.ipv4_group_prefix_bits },
+            { id: 'opsAlertAdminLoginAnomalyIpv6GroupPrefixBits', value: normalizedConfig.admin_login_anomaly.ipv6_group_prefix_bits }
+        ],
+        [
+            { id: 'opsAlertAdminLoginAnomalyEnabledToggle', value: normalizedConfig.admin_login_anomaly.enabled },
+            { id: 'opsAlertAdminLoginAnomalyIpGroupingEnabledToggle', value: normalizedConfig.admin_login_anomaly.ip_grouping_enabled },
+            { id: 'opsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabledToggle', value: normalizedConfig.admin_login_anomaly.user_agent_family_grouping_enabled },
             { id: 'opsAlertShopOrderDeliveryLookbackDays', value: normalizedConfig.shop_order_delivery.lookback_days },
             { id: 'opsAlertShopOrderDeliveryStateLookbackMinutes', value: normalizedConfig.shop_order_delivery.state_lookback_minutes },
             { id: 'opsAlertShopOrderDeliveryRetryWaitingMinAttempts', value: normalizedConfig.shop_order_delivery.retry_waiting_min_attempts },
@@ -22020,11 +22181,13 @@ function setupConfigEventListeners() {
     // Unlock pricing
     const unlockPointsInput = document.getElementById('cfgUnlockPoints');
     const vipDiscountInput = document.getElementById('cfgVipDiscount');
+    const freeUnlockDailyLimitInput = document.getElementById('cfgFreeUnlockDailyLimit');
 
     if (unlockPointsInput) {
         unlockPointsInput.addEventListener('change', async (e) => {
             const config = systemConfigCache['unlock_pricing'] || {};
             config.default_points = normalizeUnlockPricingPoints(e.target.value, 1);
+            config.free_daily_limit = normalizeFreeUnlockDailyLimit(config.free_daily_limit, 3);
             e.target.value = config.default_points;
             if (await saveConfig('unlock_pricing', config)) {
                 showSaveIndicator(e.target);
@@ -22036,7 +22199,21 @@ function setupConfigEventListeners() {
         vipDiscountInput.addEventListener('change', async (e) => {
             const config = systemConfigCache['unlock_pricing'] || {};
             config.vip_discount = normalizeUnlockPricingDiscount(Number.parseInt(e.target.value, 10) / 100, 0.9);
+            config.free_daily_limit = normalizeFreeUnlockDailyLimit(config.free_daily_limit, 3);
             e.target.value = Math.round(config.vip_discount * 100);
+            if (await saveConfig('unlock_pricing', config)) {
+                showSaveIndicator(e.target);
+            }
+        });
+    }
+
+    if (freeUnlockDailyLimitInput) {
+        freeUnlockDailyLimitInput.addEventListener('change', async (e) => {
+            const config = systemConfigCache['unlock_pricing'] || {};
+            config.default_points = normalizeUnlockPricingPoints(config.default_points, 1);
+            config.vip_discount = normalizeUnlockPricingDiscount(config.vip_discount, 0.9);
+            config.free_daily_limit = normalizeFreeUnlockDailyLimit(e.target.value, 3);
+            e.target.value = config.free_daily_limit;
             if (await saveConfig('unlock_pricing', config)) {
                 showSaveIndicator(e.target);
             }
@@ -23568,6 +23745,50 @@ function buildLocalOpsAlertOperationalThresholdDrafts(currentConfig = normalizeO
                 currentConfig.shop_order_delivery.summary_max_items
             )
         },
+        admin_login_anomaly: {
+            ...currentConfig.admin_login_anomaly,
+            enabled: document.getElementById('opsAlertAdminLoginAnomalyEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.admin_login_anomaly.enabled,
+            recent_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyRecentWindowMinutes')?.value,
+                currentConfig.admin_login_anomaly.recent_window_minutes
+            ),
+            baseline_lookback_days: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyBaselineLookbackDays')?.value,
+                currentConfig.admin_login_anomaly.baseline_lookback_days
+            ),
+            dedupe_window_minutes: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyDedupeWindowMinutes')?.value,
+                currentConfig.admin_login_anomaly.dedupe_window_minutes
+            ),
+            ip_grouping_enabled: document.getElementById('opsAlertAdminLoginAnomalyIpGroupingEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.admin_login_anomaly.ip_grouping_enabled,
+            ipv4_group_prefix_bits: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyIpv4GroupPrefixBits')?.value,
+                currentConfig.admin_login_anomaly.ipv4_group_prefix_bits
+            ),
+            ipv6_group_prefix_bits: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyIpv6GroupPrefixBits')?.value,
+                currentConfig.admin_login_anomaly.ipv6_group_prefix_bits
+            ),
+            recent_distinct_ip_group_threshold: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyIpGroupThreshold')?.value,
+                currentConfig.admin_login_anomaly.recent_distinct_ip_group_threshold
+            ),
+            user_agent_family_grouping_enabled: document.getElementById('opsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabledToggle')?.classList.contains('active')
+                ?? currentConfig.admin_login_anomaly.user_agent_family_grouping_enabled,
+            recent_distinct_user_agent_family_threshold: toWholeNumber(
+                document.getElementById('opsAlertAdminLoginAnomalyUserAgentFamilyThreshold')?.value,
+                currentConfig.admin_login_anomaly.recent_distinct_user_agent_family_threshold
+            ),
+            sweep_interval_ms: Math.max(
+                10000,
+                toWholeNumber(
+                    document.getElementById('opsAlertAdminLoginAnomalySweepIntervalMinutes')?.value,
+                    Math.max(1, Math.round(Number(currentConfig.admin_login_anomaly.sweep_interval_ms || 0) / 60000))
+                ) * 60 * 1000
+            )
+        },
         verify_quota: {
             ...currentConfig.verify_quota,
             enabled: document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
@@ -23874,6 +24095,7 @@ function collectOpsAlertConfigFromForm() {
     };
     nextConfig.tickets.reply_templates = collectOpsAlertTicketReplyTemplatesFromForm();
     nextConfig.shop_order_delivery = operationalThresholdDrafts.shop_order_delivery;
+    nextConfig.admin_login_anomaly = operationalThresholdDrafts.admin_login_anomaly;
     nextConfig.verify_quota = operationalThresholdDrafts.verify_quota;
     nextConfig.verify_queue = operationalThresholdDrafts.verify_queue;
     nextConfig.verify_failure = operationalThresholdDrafts.verify_failure;
@@ -26184,6 +26406,20 @@ const toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled = createOpsAlertSectio
 );
 const handleOpsAlertShopOrderDeliverySummaryScheduleModeChange = createOpsAlertSectionSummaryScheduleModeHandler(
     applyOpsAlertShopOrderDeliveryControls
+);
+const toggleOpsAlertAdminLoginAnomalyEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertAdminLoginAnomalyEnabledToggle',
+    applyOpsAlertAdminLoginAnomalyControls
+);
+const toggleOpsAlertAdminLoginAnomalyIpGroupingEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertAdminLoginAnomalyIpGroupingEnabledToggle',
+    applyOpsAlertAdminLoginAnomalyControls,
+    { monitorToggleId: 'opsAlertAdminLoginAnomalyEnabledToggle' }
+);
+const toggleOpsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabled = createOpsAlertSectionToggleHandler(
+    'opsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabledToggle',
+    applyOpsAlertAdminLoginAnomalyControls,
+    { monitorToggleId: 'opsAlertAdminLoginAnomalyEnabledToggle' }
 );
 const toggleOpsAlertVerifyQuotaEnabled = createOpsAlertSectionToggleHandler(
     'opsAlertVerifyQuotaEnabledToggle',
@@ -29443,11 +29679,13 @@ function renderVerifyConfig() {
         verify_cdkeys: [],
         verify_api_base_url: '',
         active_provider: VERIFY_PROVIDER_AIDONE,
+        provider_visibility: VERIFY_PROVIDER_VISIBILITY_BOTH,
         providers: {}
     };
     const extractPrice = Number(config.price_per_verify_extract || config.price_per_verify) || 10;
     const fullPrice = Number(config.price_per_verify_full) || Math.max(extractPrice, Math.round(extractPrice * 2));
     const activeProvider = getActiveVerifyProvider(config);
+    const providerVisibility = getVerifyProviderVisibility(config);
     const providersConfig = getVerifyProvidersConfig(config);
     const aidoneProviderConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_AIDONE);
     const catcardProviderConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
@@ -29470,8 +29708,8 @@ function renderVerifyConfig() {
 
     applyCustomDropdownValue(
         'verifyProviderChannelDropdown',
-        activeProvider,
-        getVerifyProviderDropdownLabel(activeProvider)
+        providerVisibility,
+        getVerifyProviderDropdownLabel(providerVisibility)
     );
 
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
@@ -29505,6 +29743,8 @@ function renderVerifyConfig() {
     config.providers = providersConfig;
     config.active_provider = activeProvider;
     config.verify_active_provider = activeProvider;
+    config.provider_visibility = providerVisibility;
+    config.verify_provider_visibility = providerVisibility;
     systemConfigCache['verify_settings'] = config;
     syncVerifyProviderStatus(config);
     renderVerifyMonitorPanel();
@@ -29640,9 +29880,12 @@ async function saveVerifyConfig(options = {}) {
     const previousCatcardConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
     const extractPrice = Math.max(1, parseInt(priceInput?.value, 10) || Number(config.price_per_verify_extract || config.price_per_verify) || 10);
     const fullPrice = Math.max(extractPrice, parseInt(fullPriceInput?.value, 10) || Number(config.price_per_verify_full) || Math.round(extractPrice * 2));
-    const activeProvider = normalizeVerifyProvider(
-        getCustomDropdownSelectedValue('verifyProviderChannelDropdown', config.active_provider || config.verify_active_provider || VERIFY_PROVIDER_AIDONE)
+    const providerVisibility = normalizeVerifyProviderVisibility(
+        getCustomDropdownSelectedValue('verifyProviderChannelDropdown', getVerifyProviderVisibility(config))
     );
+    const activeProvider = providerVisibility === VERIFY_PROVIDER_VISIBILITY_BOTH
+        ? getActiveVerifyProvider(config)
+        : normalizeVerifyProvider(providerVisibility);
 
     if (priceInput) {
         config.price_per_verify = extractPrice;
@@ -29697,6 +29940,8 @@ async function saveVerifyConfig(options = {}) {
     config.verify_api_key = finalKeys[0] || '';
     config.active_provider = activeProvider;
     config.verify_active_provider = activeProvider;
+    config.provider_visibility = providerVisibility;
+    config.verify_provider_visibility = providerVisibility;
 
     let aidoneApiBaseUrl = String(previousAidoneConfig.api_base_url || previousAidoneConfig.apiBaseUrl || config.verify_api_base_url || 'https://aidone.lol').trim().replace(/\/+$/, '');
     if (apiBaseInput) {
@@ -29748,8 +29993,8 @@ async function saveVerifyConfig(options = {}) {
     };
     applyCustomDropdownValue(
         'verifyProviderChannelDropdown',
-        activeProvider,
-        getVerifyProviderDropdownLabel(activeProvider)
+        providerVisibility,
+        getVerifyProviderDropdownLabel(providerVisibility)
     );
     syncVerifyProviderStatus(config);
 
@@ -29769,7 +30014,7 @@ async function saveVerifyConfig(options = {}) {
     }
 
     if (success && publicModeSynced) {
-        const successMessage = options?.successMessage || `Google One / ${getVerifyProviderDropdownLabel(activeProvider)} 配置已保存`;
+        const successMessage = options?.successMessage || `Google One / ${getVerifyProviderDropdownLabel(providerVisibility)} 配置已保存`;
         if (options?.toast !== false && typeof showToast === 'function') {
             showToast(successMessage, 'success');
         }
@@ -30565,17 +30810,25 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         void saveVerifyConfig();
     } else if (dropdownId === 'verifyProviderChannelDropdown') {
         const config = systemConfigCache['verify_settings'] || {};
-        config.active_provider = normalizeVerifyProvider(value);
-        config.verify_active_provider = config.active_provider;
+        const providerVisibility = normalizeVerifyProviderVisibility(value);
+        config.provider_visibility = providerVisibility;
+        config.verify_provider_visibility = providerVisibility;
+        if (providerVisibility !== VERIFY_PROVIDER_VISIBILITY_BOTH) {
+            config.active_provider = normalizeVerifyProvider(providerVisibility);
+            config.verify_active_provider = config.active_provider;
+        } else {
+            config.active_provider = getActiveVerifyProvider(config);
+            config.verify_active_provider = config.active_provider;
+        }
         systemConfigCache['verify_settings'] = config;
         applyCustomDropdownValue(
             'verifyProviderChannelDropdown',
-            config.active_provider,
-            getVerifyProviderDropdownLabel(config.active_provider)
+            providerVisibility,
+            getVerifyProviderDropdownLabel(providerVisibility)
         );
         syncVerifyProviderStatus(config);
         void saveVerifyConfig({
-            successMessage: `Google One 已切换到 ${getVerifyProviderDropdownLabel(config.active_provider)}`
+            successMessage: `Google One 已切换到 ${getVerifyProviderDropdownLabel(providerVisibility)}`
         });
     }
 };
@@ -30769,6 +31022,8 @@ window.switchMarketplaceXianyuFulfillmentTab = switchMarketplaceXianyuFulfillmen
 window.applyMarketplaceXianyuFulfillmentTabState = applyMarketplaceXianyuFulfillmentTabState;
 window.addMarketplaceXianyuProductMapping = addMarketplaceXianyuProductMapping;
 window.removeMarketplaceXianyuProductMapping = removeMarketplaceXianyuProductMapping;
+window.addMarketplaceXianyuProductMappingChild = addMarketplaceXianyuProductMappingChild;
+window.removeMarketplaceXianyuProductMappingChild = removeMarketplaceXianyuProductMappingChild;
 window.toggleMarketplaceXianyuProductMapping = toggleMarketplaceXianyuProductMapping;
 window.toggleMarketplaceXianyuProductMappingCollapse = toggleMarketplaceXianyuProductMappingCollapse;
 window.handleMarketplaceXianyuProductMappingCollapseAction = handleMarketplaceXianyuProductMappingCollapseAction;
@@ -30837,6 +31092,9 @@ Object.assign(window, {
     toggleOpsAlertShopOrderDeliverySummaryEnabled,
     toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled,
     handleOpsAlertShopOrderDeliverySummaryScheduleModeChange,
+    toggleOpsAlertAdminLoginAnomalyEnabled,
+    toggleOpsAlertAdminLoginAnomalyIpGroupingEnabled,
+    toggleOpsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabled,
     toggleOpsAlertVerifyQuotaEnabled,
     toggleOpsAlertVerifyQuotaSummaryEnabled,
     toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled,
@@ -30942,6 +31200,15 @@ window.saveSensitiveWords = saveSensitiveWords;
 window.toggleDecoration = toggleDecoration;
 window.selectDecoration = selectDecoration;
 window.togglePageTarget = togglePageTarget;
+window.insertFormat = insertFormat;
+window.toggleAlignPicker = toggleAlignPicker;
+window.applyTextAlign = applyTextAlign;
+window.insertLink = insertLink;
+window.toggleEmojiPicker = toggleEmojiPicker;
+window.selectEmoji = selectEmoji;
+window.toggleDropdown = toggleDropdown;
+window.selectColor = selectColor;
+window.selectFontSize = selectFontSize;
 window.copyDefaultAnnouncementToScope = copyDefaultAnnouncementToScope;
 window.clearAnnouncementScopeOverride = clearAnnouncementScopeOverride;
 window.loadAnnouncementRules = loadAnnouncementRules;

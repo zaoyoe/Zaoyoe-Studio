@@ -13,6 +13,9 @@ const {
 const {
     normalizeSiteValue
 } = require('./site');
+const {
+    DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG
+} = require('./admin-login-anomaly-defaults');
 
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
 const OPS_ALERTS_SITE_SCOPED_CONFIG_MARKER = '__site_scoped';
@@ -665,6 +668,21 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         summary_hourly_minute: 0,
         summary_daily_hour: 9,
         summary_daily_minute: 0
+    }),
+    admin_login_anomaly: Object.freeze({
+        enabled: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.enabled,
+        sweep_interval_ms: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.sweep_interval_ms,
+        recent_window_minutes: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_window_minutes,
+        baseline_lookback_days: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.baseline_lookback_days,
+        dedupe_window_minutes: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.dedupe_window_minutes,
+        ip_grouping_enabled: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ip_grouping_enabled,
+        ipv4_group_prefix_bits: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ipv4_group_prefix_bits,
+        ipv6_group_prefix_bits: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ipv6_group_prefix_bits,
+        recent_distinct_ip_group_threshold: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_ip_group_threshold,
+        user_agent_family_grouping_enabled: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.user_agent_family_grouping_enabled,
+        recent_distinct_user_agent_family_threshold: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_user_agent_family_threshold,
+        page_size: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.page_size,
+        max_pages: DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.max_pages
     }),
     tickets: Object.freeze({
         enabled: true,
@@ -2149,6 +2167,21 @@ function cloneDefaultConfig() {
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_hour,
             summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_minute
         },
+        admin_login_anomaly: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.sweep_interval_ms,
+            recent_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.recent_window_minutes,
+            baseline_lookback_days: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.baseline_lookback_days,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.dedupe_window_minutes,
+            ip_grouping_enabled: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.ip_grouping_enabled,
+            ipv4_group_prefix_bits: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.ipv4_group_prefix_bits,
+            ipv6_group_prefix_bits: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.ipv6_group_prefix_bits,
+            recent_distinct_ip_group_threshold: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.recent_distinct_ip_group_threshold,
+            user_agent_family_grouping_enabled: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.user_agent_family_grouping_enabled,
+            recent_distinct_user_agent_family_threshold: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.recent_distinct_user_agent_family_threshold,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.admin_login_anomaly.max_pages
+        },
         tickets: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.enabled,
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.tickets.sweep_interval_ms,
@@ -2331,6 +2364,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const shopInventoryConfig = source.shop_inventory && typeof source.shop_inventory === 'object'
         ? source.shop_inventory
+        : {};
+    const adminLoginAnomalyConfig = source.admin_login_anomaly && typeof source.admin_login_anomaly === 'object'
+        ? source.admin_login_anomaly
         : {};
     const ticketsConfig = source.tickets && typeof source.tickets === 'object'
         ? source.tickets
@@ -2850,6 +2886,79 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         config.shop_inventory.summary_daily_minute,
         0,
         59
+    );
+
+    config.admin_login_anomaly.enabled = normalizeBoolean(
+        adminLoginAnomalyConfig.enabled,
+        normalizeBoolean(env?.ADMIN_LOGIN_ANOMALY_MONITOR_ENABLED, config.admin_login_anomaly.enabled)
+    );
+    config.admin_login_anomaly.sweep_interval_ms = normalizeNumber(
+        adminLoginAnomalyConfig.sweep_interval_ms,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_SWEEP_INTERVAL_MS, config.admin_login_anomaly.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.admin_login_anomaly.recent_window_minutes = normalizeNumber(
+        adminLoginAnomalyConfig.recent_window_minutes,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_RECENT_WINDOW_MINUTES, config.admin_login_anomaly.recent_window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.admin_login_anomaly.baseline_lookback_days = normalizeNumber(
+        adminLoginAnomalyConfig.baseline_lookback_days,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_BASELINE_LOOKBACK_DAYS, config.admin_login_anomaly.baseline_lookback_days, 1, 180),
+        1,
+        180
+    );
+    config.admin_login_anomaly.dedupe_window_minutes = normalizeNumber(
+        adminLoginAnomalyConfig.dedupe_window_minutes,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_DEDUPE_WINDOW_MINUTES, config.admin_login_anomaly.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.admin_login_anomaly.ip_grouping_enabled = normalizeBoolean(
+        adminLoginAnomalyConfig.ip_grouping_enabled,
+        normalizeBoolean(env?.ADMIN_LOGIN_ANOMALY_MONITOR_IP_GROUPING_ENABLED, config.admin_login_anomaly.ip_grouping_enabled)
+    );
+    config.admin_login_anomaly.ipv4_group_prefix_bits = Math.round(normalizeNumber(
+        adminLoginAnomalyConfig.ipv4_group_prefix_bits,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_IPV4_GROUP_PREFIX_BITS, config.admin_login_anomaly.ipv4_group_prefix_bits, 8, 32),
+        8,
+        32
+    ));
+    config.admin_login_anomaly.ipv6_group_prefix_bits = Math.round(normalizeNumber(
+        adminLoginAnomalyConfig.ipv6_group_prefix_bits,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_IPV6_GROUP_PREFIX_BITS, config.admin_login_anomaly.ipv6_group_prefix_bits, 16, 128),
+        16,
+        128
+    ));
+    config.admin_login_anomaly.recent_distinct_ip_group_threshold = Math.round(normalizeNumber(
+        adminLoginAnomalyConfig.recent_distinct_ip_group_threshold,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_RECENT_DISTINCT_IP_GROUP_THRESHOLD, config.admin_login_anomaly.recent_distinct_ip_group_threshold, 2, 20),
+        2,
+        20
+    ));
+    config.admin_login_anomaly.user_agent_family_grouping_enabled = normalizeBoolean(
+        adminLoginAnomalyConfig.user_agent_family_grouping_enabled,
+        normalizeBoolean(env?.ADMIN_LOGIN_ANOMALY_MONITOR_UA_FAMILY_GROUPING_ENABLED, config.admin_login_anomaly.user_agent_family_grouping_enabled)
+    );
+    config.admin_login_anomaly.recent_distinct_user_agent_family_threshold = Math.round(normalizeNumber(
+        adminLoginAnomalyConfig.recent_distinct_user_agent_family_threshold,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_RECENT_DISTINCT_UA_FAMILY_THRESHOLD, config.admin_login_anomaly.recent_distinct_user_agent_family_threshold, 2, 20),
+        2,
+        20
+    ));
+    config.admin_login_anomaly.page_size = normalizeNumber(
+        adminLoginAnomalyConfig.page_size,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_PAGE_SIZE, config.admin_login_anomaly.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.admin_login_anomaly.max_pages = normalizeNumber(
+        adminLoginAnomalyConfig.max_pages,
+        normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_MAX_PAGES, config.admin_login_anomaly.max_pages, 1, 100),
+        1,
+        100
     );
 
     config.tickets.enabled = normalizeBoolean(

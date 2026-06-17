@@ -472,6 +472,33 @@ test('coupon scope can target a concrete product SKU', () => {
     );
 });
 
+test('coupon form can cap the maximum discounted item quantity', () => {
+    const adminHtml = readRepoFile('admin-studio.html');
+    const adminDiscountsSource = readRepoFile('admin-discounts.js');
+    const mutateSource = readRepoFile('server/api-handlers/admin/discounts/mutate.js');
+
+    assert.match(
+        adminHtml,
+        /id="discountScopeProductSkuWrapper"[\s\S]*id="discountMaxDiscountQuantityWrapper"[\s\S]*id="discountMaxDiscountQuantity"[\s\S]*placeholder="0 = 不限制"/,
+        'discount modal should place the maximum discounted quantity field immediately after the SKU scope selector'
+    );
+    assert.match(
+        adminHtml,
+        /admin-discounts\.js\?v=[^"]*maxDiscountQuantity=20260617_MAX_DISCOUNT_QUANTITY_1/,
+        'admin studio should cache-bust the discount quantity cap form logic'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /discountMaxDiscountQuantity[\s\S]*max_discount_quantity: maxDiscountQuantity/,
+        'admin discount form should persist max_discount_quantity'
+    );
+    assert.match(
+        mutateSource,
+        /maxDiscountQuantity[\s\S]*max_discount_quantity: maxDiscountQuantity/,
+        'admin discount mutation should normalize and save max_discount_quantity'
+    );
+});
+
 test('database migration splits shop marketing pricing and RPC pricing by site', () => {
     const migrationSource = readRepoFile('supabase/migrations/20260513_split_shop_marketing_pricing_by_site.sql');
 

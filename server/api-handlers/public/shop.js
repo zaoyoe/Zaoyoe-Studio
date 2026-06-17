@@ -139,7 +139,8 @@ function createShopHandlers({
         buildPricingWaterfall,
         buildDiscountStackingPolicy,
         normalizeDiscountSelection: normalizePricingDiscountSelection,
-        resolveDiscountStacking: resolvePricingDiscountStacking
+        resolveDiscountStacking: resolvePricingDiscountStacking,
+        normalizeMaxDiscountQuantity
     } = discountPricing || {};
     const shopCatalogCache = createHotCache({
         ttlMs: normalizePositiveInteger(env.SHOP_CATALOG_HOT_CACHE_TTL_MS, 15_000, 0),
@@ -149,6 +150,10 @@ function createShopHandlers({
     const normalizeText = typeof normalizeDiscountAssetText === 'function'
         ? normalizeDiscountAssetText
         : ((value, maxLength = 160) => String(value || '').trim().slice(0, Math.max(0, maxLength)));
+
+    const normalizeDiscountQuantityLimit = typeof normalizeMaxDiscountQuantity === 'function'
+        ? normalizeMaxDiscountQuantity
+        : ((value) => Math.max(0, Math.trunc(Number(value || 0) || 0)));
 
     function setPrivateApiCache(res) {
         if (!res?.setHeader) return;
@@ -973,22 +978,67 @@ function createShopHandlers({
         }
     }
 
+    function buildDiscountCodesSelectFields({ includeScopeProductSku = true, includeMaxDiscountQuantity = true, includeObservationEndsAt = false } = {}) {
+        return [
+            'id',
+            'code',
+            'is_active',
+            'applicable_site',
+            'discount_type',
+            'discount_value',
+            'max_uses',
+            'used_count',
+            'max_uses_per_user',
+            includeMaxDiscountQuantity ? 'max_discount_quantity' : '',
+            'starts_at',
+            'expires_at',
+            'lifecycle_status',
+            'status_reason',
+            'scope_type',
+            'scope_category',
+            'scope_product_id',
+            includeScopeProductSku ? 'scope_product_sku_id' : '',
+            'allow_zero_total',
+            'distribution_mode',
+            'claim_starts_at',
+            'claim_expires_at',
+            'claim_limit_per_user',
+            'campaign_tag',
+            'audience_segment',
+            includeObservationEndsAt ? 'observation_ends_at' : '',
+            'is_exclusive',
+            'stack_priority',
+            'pricing_apply_stage'
+        ].filter(Boolean).join(', ');
+    }
+
     async function loadDiscountRowsByIds(supabase, ids = []) {
         const discountIds = [...new Set((Array.isArray(ids) ? ids : []).map((value) => normalizeText(value, 160)).filter(Boolean))];
         if (!discountIds.length) {
             return [];
         }
 
-        let response = await supabase
-            .from('discount_codes')
-            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, scope_product_sku_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, observation_ends_at, is_exclusive, stack_priority, pricing_apply_stage')
-            .in('id', discountIds);
-
-        if (response.error && isMissingColumnError(response.error, 'scope_product_sku_id')) {
+        let includeScopeProductSku = true;
+        let includeMaxDiscountQuantity = true;
+        let response = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
             response = await supabase
                 .from('discount_codes')
-                .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, observation_ends_at, is_exclusive, stack_priority, pricing_apply_stage')
+                .select(buildDiscountCodesSelectFields({
+                    includeScopeProductSku,
+                    includeMaxDiscountQuantity,
+                    includeObservationEndsAt: true
+                }))
                 .in('id', discountIds);
+            if (response.error && includeMaxDiscountQuantity && isMissingColumnError(response.error, 'max_discount_quantity')) {
+                includeMaxDiscountQuantity = false;
+                continue;
+            }
+            if (response.error && includeScopeProductSku && isMissingColumnError(response.error, 'scope_product_sku_id')) {
+                includeScopeProductSku = false;
+                continue;
+            }
+            break;
         }
 
         if (response.error) throw response.error;
@@ -996,18 +1046,27 @@ function createShopHandlers({
     }
 
     async function loadPublicClaimDiscounts(supabase) {
-        let response = await supabase
-            .from('discount_codes')
-            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, scope_product_sku_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, is_exclusive, stack_priority, pricing_apply_stage')
-            .eq('distribution_mode', 'public_claim')
-            .order('created_at', { ascending: false });
-
-        if (response.error && isMissingColumnError(response.error, 'scope_product_sku_id')) {
+        let includeScopeProductSku = true;
+        let includeMaxDiscountQuantity = true;
+        let response = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
             response = await supabase
                 .from('discount_codes')
-                .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, is_exclusive, stack_priority, pricing_apply_stage')
+                .select(buildDiscountCodesSelectFields({
+                    includeScopeProductSku,
+                    includeMaxDiscountQuantity
+                }))
                 .eq('distribution_mode', 'public_claim')
                 .order('created_at', { ascending: false });
+            if (response.error && includeMaxDiscountQuantity && isMissingColumnError(response.error, 'max_discount_quantity')) {
+                includeMaxDiscountQuantity = false;
+                continue;
+            }
+            if (response.error && includeScopeProductSku && isMissingColumnError(response.error, 'scope_product_sku_id')) {
+                includeScopeProductSku = false;
+                continue;
+            }
+            break;
         }
 
         if (response.error) throw response.error;
@@ -1567,11 +1626,18 @@ function createShopHandlers({
                 : {};
             const discountId = normalizeText(responseData?.discount_id, 160);
             const matchingDiscountRow = discountRowById.get(discountId) || {};
+            const responseQuantity = Number(responseData.quantity ?? quantity);
+            const responseUnitPrice = Number(responseData.unit_price ?? 0);
 
             return {
                 ...responseData,
                 discount_code: responseData.discount_code || selection.code,
                 discount_asset_id: selection.assetId || responseData.discount_asset_id || null,
+                quantity: Number.isFinite(responseQuantity) ? Math.max(1, Math.trunc(responseQuantity)) : Math.max(1, Math.trunc(Number(quantity || 1) || 1)),
+                unit_price: Number.isFinite(responseUnitPrice) && responseUnitPrice > 0
+                    ? responseUnitPrice
+                    : Math.max(0, Number(responseData.subtotal || 0) / Math.max(1, Math.trunc(Number(quantity || 1) || 1))),
+                max_discount_quantity: normalizeDiscountQuantityLimit(matchingDiscountRow.max_discount_quantity),
                 allow_zero_total: matchingDiscountRow.allow_zero_total === true,
                 benefit_label: formatBenefitLabel({
                     discount_type: responseData.discount_type,
@@ -1601,8 +1667,14 @@ function createShopHandlers({
             ...discount,
             benefit_label: discount?.benefit_label || formatBenefitLabel(discount)
         }));
-        const totalDiscountAmount = Number(resolvedStack.discount_amount || 0) || 0;
-        const finalTotal = Number(resolvedStack.final_total || subtotal || 0) || 0;
+        const rawTotalDiscountAmount = Number(resolvedStack.discount_amount);
+        const totalDiscountAmount = Number.isFinite(rawTotalDiscountAmount)
+            ? Math.max(0, rawTotalDiscountAmount)
+            : 0;
+        const rawFinalTotal = Number(resolvedStack.final_total);
+        const finalTotal = Number.isFinite(rawFinalTotal)
+            ? Math.max(0, rawFinalTotal)
+            : (Number.isFinite(subtotal) ? Math.max(0, subtotal) : 0);
         const primaryDiscount = resolvedAppliedDiscounts[0] || null;
         const displayCode = resolvedAppliedDiscounts
             .map((discount) => normalizeText(discount?.code, 80).toUpperCase())
@@ -1624,6 +1696,7 @@ function createShopHandlers({
                         audience_segment: primaryDiscount.audience_segment || null,
                         discount_type: primaryDiscount.discount_type || null,
                         discount_value: primaryDiscount.discount_value ?? null,
+                        max_discount_quantity: primaryDiscount.max_discount_quantity ?? 0,
                         is_exclusive: primaryDiscount.is_exclusive !== false,
                         stack_priority: primaryDiscount.stack_priority ?? 100,
                         pricing_apply_stage: primaryDiscount.pricing_apply_stage || 'order_discount'
@@ -1656,8 +1729,10 @@ function createShopHandlers({
                 return rightDiscountAmount - leftDiscountAmount;
             }
 
-            const leftFinalTotal = Number(left?.preview?.final_total || Number.MAX_SAFE_INTEGER);
-            const rightFinalTotal = Number(right?.preview?.final_total || Number.MAX_SAFE_INTEGER);
+            const parsedLeftFinalTotal = Number(left?.preview?.final_total);
+            const parsedRightFinalTotal = Number(right?.preview?.final_total);
+            const leftFinalTotal = Number.isFinite(parsedLeftFinalTotal) ? parsedLeftFinalTotal : Number.MAX_SAFE_INTEGER;
+            const rightFinalTotal = Number.isFinite(parsedRightFinalTotal) ? parsedRightFinalTotal : Number.MAX_SAFE_INTEGER;
             if (leftFinalTotal !== rightFinalTotal) {
                 return leftFinalTotal - rightFinalTotal;
             }
@@ -1714,7 +1789,7 @@ function createShopHandlers({
 
     function formatPercentDiscountValue(value) {
         const numericValue = Number(value);
-        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+        if (!Number.isFinite(numericValue) || numericValue < 0) {
             return '折扣券';
         }
 
@@ -2026,6 +2101,7 @@ function createShopHandlers({
             source_channel: asset.source_channel || null,
             discount_type: discount.discount_type || null,
             discount_value: discount.discount_value == null ? null : Number(discount.discount_value),
+            max_discount_quantity: normalizeDiscountQuantityLimit(discount.max_discount_quantity),
             distribution_mode: normalizeDistributionMode(discount.distribution_mode, 'general_code'),
             is_exclusive: stackingPresentation.is_exclusive,
             stack_priority: stackingPresentation.stack_priority,
@@ -3317,6 +3393,7 @@ function createShopHandlers({
                         ...buildDiscountScopePayload(masterDiscount, scopedProductById, scopedSkuById),
                         discount_type: masterDiscount.discount_type || null,
                         discount_value: masterDiscount.discount_value == null ? null : Number(masterDiscount.discount_value),
+                        max_discount_quantity: normalizeDiscountQuantityLimit(masterDiscount.max_discount_quantity),
                         distribution_mode: normalizeDistributionMode(masterDiscount.distribution_mode, 'general_code'),
                         ...buildDiscountStackingPresentation(masterDiscount),
                         source_label: formatSourceLabel(asset, masterDiscount),
@@ -3343,6 +3420,7 @@ function createShopHandlers({
                             ...buildDiscountScopePayload(discount, scopedProductById, scopedSkuById),
                             discount_type: discount.discount_type || null,
                             discount_value: discount.discount_value == null ? null : Number(discount.discount_value),
+                            max_discount_quantity: normalizeDiscountQuantityLimit(discount.max_discount_quantity),
                             distribution_mode: 'public_claim',
                             ...buildDiscountStackingPresentation(discount),
                             source_label: formatSourceLabel({}, discount),

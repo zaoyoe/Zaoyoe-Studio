@@ -1832,7 +1832,7 @@ const ShopClient = {
             ?? item?.preview?.discount_value
         );
 
-        if (!discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
+        if (!discountType || !Number.isFinite(discountValue) || discountValue < 0) {
             return '';
         }
 
@@ -1878,7 +1878,7 @@ const ShopClient = {
             ? Math.max(0, rawSubtotal)
             : Math.max(0, Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0);
 
-        if (discountType !== 'percent' || !Number.isFinite(discountValue) || discountValue <= 0 || subtotal <= 0) {
+        if (discountType !== 'percent' || !Number.isFinite(discountValue) || discountValue < 0 || subtotal <= 0) {
             return null;
         }
 
@@ -1920,8 +1920,18 @@ const ShopClient = {
 
         const discountType = String(discount.discountType || '').trim().toLowerCase();
         const discountValue = Number(discount.discountValue);
-        if (discountType && Number.isFinite(discountValue) && discountValue > 0) {
-            return this.calculateDiscountPricingForConfig(normalizedSubtotal, { discountType, discountValue });
+        if (
+            discountType
+            && Number.isFinite(discountValue)
+            && (discountType === 'percent' ? discountValue >= 0 : discountValue > 0)
+        ) {
+            return this.calculateDiscountPricingForConfig(normalizedSubtotal, {
+                discountType,
+                discountValue,
+                quantity: discount.quantity,
+                unitPrice: discount.unitPrice,
+                maxDiscountQuantity: discount.maxDiscountQuantity
+            });
         }
 
         const storedDiscountAmount = Number(discount.discountAmount);
@@ -1987,7 +1997,20 @@ const ShopClient = {
             selection.discountValue
             ?? selection.discount_value
         );
-        const hasPricingConfig = Boolean(discountType) && Number.isFinite(discountValue) && discountValue > 0;
+        const maxDiscountQuantity = Math.max(0, Math.trunc(Number(
+            selection.maxDiscountQuantity
+            ?? selection.max_discount_quantity
+            ?? selection.discountQuantityLimit
+            ?? selection.discount_quantity_limit
+            ?? 0
+        ) || 0));
+        const unitPrice = Number(
+            selection.unitPrice
+            ?? selection.unit_price
+        );
+        const hasPricingConfig = Boolean(discountType)
+            && Number.isFinite(discountValue)
+            && (discountType === 'percent' ? discountValue >= 0 : discountValue > 0);
 
         if ((!code && !assetId) || (!allowIdentityOnly && !hasPricingConfig)) {
             return null;
@@ -2024,6 +2047,8 @@ const ShopClient = {
             discountId: String(selection.discountId || selection.discount_id || '').trim() || null,
             discountType: hasPricingConfig ? discountType : null,
             discountValue: hasPricingConfig ? discountValue : null,
+            maxDiscountQuantity,
+            unitPrice: Number.isFinite(unitPrice) ? Math.max(0, Number(unitPrice.toFixed(2))) : null,
             benefitLabel: benefitLabel || null,
             discountAmount: Number.isFinite(discountAmount) ? Math.max(0, Number(discountAmount.toFixed(2))) : 0,
             finalTotalAfterApply: Number.isFinite(finalTotalAfterApply) ? Math.max(0, Number(finalTotalAfterApply.toFixed(2))) : null,
@@ -2100,6 +2125,14 @@ const ShopClient = {
             discountValue: normalizedSelections.length === 1
                 ? firstSelection.discountValue
                 : null,
+            maxDiscountQuantity: normalizedSelections.length === 1
+                ? Math.max(0, Number(firstSelection.maxDiscountQuantity || 0) || 0)
+                : 0,
+            unitPrice: Number.isFinite(Number(options.unitPrice ?? options.unit_price))
+                ? Math.max(0, Number(Number(options.unitPrice ?? options.unit_price).toFixed(2)))
+                : (normalizedSelections.length === 1 && Number.isFinite(Number(firstSelection.unitPrice))
+                    ? Math.max(0, Number(Number(firstSelection.unitPrice).toFixed(2)))
+                    : null),
             benefitLabel: normalizedSelections.length === 1
                 ? (firstSelection.benefitLabel || null)
                 : this.trShop('stackedCoupons', '已叠加 {count} 张券', { count: normalizedSelections.length }),
@@ -2131,6 +2164,7 @@ const ShopClient = {
             {
                 quantity: options.quantity ?? discount.quantity ?? 1,
                 subtotal: options.subtotal ?? discount.subtotal ?? discount.preview?.subtotal,
+                unitPrice: options.unitPrice ?? options.unit_price ?? discount.unitPrice ?? discount.unit_price ?? discount.preview?.unit_price,
                 discountAmount: discount.discountAmount ?? discount.discount_amount,
                 finalTotal: discount.finalTotal ?? discount.final_total
             }
@@ -2160,8 +2194,28 @@ const ShopClient = {
             discount.discountValue
             ?? discount.discount_value
         );
+        const maxDiscountQuantity = Math.max(0, Math.trunc(Number(
+            discount.maxDiscountQuantity
+            ?? discount.max_discount_quantity
+            ?? discount.discountQuantityLimit
+            ?? discount.discount_quantity_limit
+            ?? discount.preview?.max_discount_quantity
+            ?? 0
+        ) || 0));
+        const unitPrice = Number(
+            options.unitPrice
+            ?? options.unit_price
+            ?? discount.unitPrice
+            ?? discount.unit_price
+            ?? discount.preview?.unit_price
+        );
 
-        if ((!code && !assetId) || !discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
+        if (
+            (!code && !assetId)
+            || !discountType
+            || !Number.isFinite(discountValue)
+            || (discountType === 'percent' ? discountValue < 0 : discountValue <= 0)
+        ) {
             return null;
         }
 
@@ -2182,7 +2236,13 @@ const ShopClient = {
             ? Math.max(0, Number(subtotalCandidate.toFixed(2)))
             : null;
         const pricing = Number.isFinite(subtotal)
-            ? this.calculateDiscountPricingForConfig(subtotal, { discountType, discountValue })
+            ? this.calculateDiscountPricingForConfig(subtotal, {
+                discountType,
+                discountValue,
+                quantity,
+                unitPrice: Number.isFinite(unitPrice) ? unitPrice : null,
+                maxDiscountQuantity
+            })
             : null;
         const storedDiscountAmount = Number(
             discount.discountAmount
@@ -2218,6 +2278,8 @@ const ShopClient = {
             scopeProductSkuId: String(discount.scopeProductSkuId || discount.scope_product_sku_id || '').trim() || null,
             discountType,
             discountValue,
+            maxDiscountQuantity,
+            unitPrice: Number.isFinite(unitPrice) ? Math.max(0, Number(unitPrice.toFixed(2))) : null,
             benefitLabel: benefitLabel || null,
             quantity,
             subtotal: Number.isFinite(subtotal) ? subtotal : null,
@@ -2229,6 +2291,8 @@ const ShopClient = {
                 scopeProductSkuId: String(discount.scopeProductSkuId || discount.scope_product_sku_id || '').trim() || null,
                 discountType,
                 discountValue,
+                maxDiscountQuantity,
+                unitPrice: Number.isFinite(unitPrice) ? Math.max(0, Number(unitPrice.toFixed(2))) : null,
                 benefitLabel: benefitLabel || null,
                 discountAmount: Number.isFinite(discountAmount) ? Number(discountAmount.toFixed(2)) : 0,
                 finalTotalAfterApply: Number.isFinite(finalTotal) ? Number(finalTotal.toFixed(2)) : subtotal
@@ -2252,7 +2316,8 @@ const ShopClient = {
             quantity: this.currentPurchase?.quantity || 1,
             subtotal,
             discountAmount,
-            finalTotal
+            finalTotal,
+            unitPrice: this.currentPurchase?.unitPrice
         });
     },
 
@@ -2279,12 +2344,20 @@ const ShopClient = {
                 benefit_label: selection.benefitLabel || '',
                 discount_type: selection.discountType,
                 discount_value: selection.discountValue,
+                max_discount_quantity: Math.max(0, Number(selection.maxDiscountQuantity || 0) || 0),
+                unit_price: Number.isFinite(Number(selection.unitPrice))
+                    ? Number(selection.unitPrice)
+                    : (Number.isFinite(Number(normalizedDiscount.unitPrice)) ? Number(normalizedDiscount.unitPrice) : null),
                 available: true,
                 preview: {
                     discount_code: selection.code || '',
                     scope_product_sku_id: selection.scopeProductSkuId || normalizedDiscount.scopeProductSkuId || null,
                     discount_type: selection.discountType,
                     discount_value: selection.discountValue,
+                    max_discount_quantity: Math.max(0, Number(selection.maxDiscountQuantity || 0) || 0),
+                    unit_price: Number.isFinite(Number(selection.unitPrice))
+                        ? Number(selection.unitPrice)
+                        : (Number.isFinite(Number(normalizedDiscount.unitPrice)) ? Number(normalizedDiscount.unitPrice) : null),
                     benefit_label: selection.benefitLabel || '',
                     subtotal: normalizedDiscount.subtotal,
                     discount_amount: selection.discountAmount,
@@ -2677,7 +2750,7 @@ const ShopClient = {
 
         const discountType = String(item?.discount_type || item?.discountType || '').trim().toLowerCase();
         const discountValue = Number(item?.discount_value ?? item?.discountValue);
-        if (!Number.isFinite(discountValue) || discountValue <= 0) return 0;
+        if (!Number.isFinite(discountValue) || discountValue < 0) return 0;
 
         if (discountType === 'fixed') {
             return Math.min(subtotal, discountValue);
@@ -6338,11 +6411,36 @@ const ShopClient = {
         `;
     },
 
-    calculateDiscountPricingForConfig: function (subtotal, { discountType = '', discountValue = null } = {}) {
+    calculateDiscountPricingForConfig: function (subtotal, {
+        discountType = '',
+        discountValue = null,
+        quantity = 1,
+        unitPrice = null,
+        maxDiscountQuantity = 0
+    } = {}) {
         const normalizedSubtotal = Math.max(0, Number(subtotal || 0) || 0);
         const normalizedDiscountType = String(discountType || '').trim().toLowerCase();
         const normalizedDiscountValue = Number(discountValue);
-        if (!normalizedDiscountType || !Number.isFinite(normalizedDiscountValue) || normalizedDiscountValue <= 0) {
+        const normalizedQuantity = Math.max(1, Math.trunc(Number(quantity || 1) || 1));
+        const normalizedUnitPrice = Math.max(0, Number.isFinite(Number(unitPrice))
+            ? Number(unitPrice)
+            : (normalizedQuantity > 0 ? normalizedSubtotal / normalizedQuantity : normalizedSubtotal));
+        const normalizedMaxDiscountQuantity = Math.max(0, Math.trunc(Number(maxDiscountQuantity || 0) || 0));
+        const eligibleSubtotal = normalizedMaxDiscountQuantity > 0
+            ? Math.max(
+                0,
+                Math.min(
+                    normalizedSubtotal,
+                    Number((normalizedUnitPrice * Math.min(normalizedQuantity, normalizedMaxDiscountQuantity)).toFixed(2))
+                )
+            )
+            : normalizedSubtotal;
+        if (
+            !normalizedDiscountType
+            || !Number.isFinite(normalizedDiscountValue)
+            || (normalizedDiscountType === 'percent' ? normalizedDiscountValue < 0 : normalizedDiscountValue <= 0)
+            || eligibleSubtotal <= 0
+        ) {
             return {
                 discountAmount: 0,
                 finalTotal: normalizedSubtotal
@@ -6350,19 +6448,20 @@ const ShopClient = {
         }
 
         if (normalizedDiscountType === 'percent') {
-            const finalTotal = Math.max(
+            const eligibleFinalTotal = Math.max(
                 0,
-                Math.min(normalizedSubtotal, Number(((normalizedSubtotal * normalizedDiscountValue) / 100).toFixed(2)))
+                Math.min(eligibleSubtotal, Number(((eligibleSubtotal * normalizedDiscountValue) / 100).toFixed(2)))
             );
+            const discountAmount = Math.max(0, Math.min(normalizedSubtotal, Number((eligibleSubtotal - eligibleFinalTotal).toFixed(2))));
 
             return {
-                discountAmount: Math.max(0, Number((normalizedSubtotal - finalTotal).toFixed(2))),
-                finalTotal
+                discountAmount,
+                finalTotal: Math.max(0, Number((normalizedSubtotal - discountAmount).toFixed(2)))
             };
         }
 
         if (normalizedDiscountType === 'fixed') {
-            const discountAmount = Math.min(normalizedSubtotal, normalizedDiscountValue);
+            const discountAmount = Math.min(eligibleSubtotal, normalizedDiscountValue);
             return {
                 discountAmount,
                 finalTotal: Math.max(0, Number((normalizedSubtotal - discountAmount).toFixed(2)))
@@ -6378,13 +6477,23 @@ const ShopClient = {
     calculateDiscountPricing: function (subtotal) {
         const discountType = this.currentPurchase.discountType;
         const discountValue = Number(this.currentPurchase.discountValue);
-        if (!discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
+        if (
+            !discountType
+            || !Number.isFinite(discountValue)
+            || (discountType === 'percent' ? discountValue < 0 : discountValue <= 0)
+        ) {
             return {
                 discountAmount: 0,
                 finalTotal: Math.max(0, subtotal)
             };
         }
-        return this.calculateDiscountPricingForConfig(subtotal, { discountType, discountValue });
+        return this.calculateDiscountPricingForConfig(subtotal, {
+            discountType,
+            discountValue,
+            quantity: this.currentPurchase?.quantity || 1,
+            unitPrice: this.currentPurchase?.unitPrice,
+            maxDiscountQuantity: this.currentPurchase?.maxDiscountQuantity || 0
+        });
     },
 
     syncDiscountedTotal: function () {
@@ -6444,6 +6553,14 @@ const ShopClient = {
         this.currentPurchase.discountValue = normalizedSelections.length === 1
             ? (firstSelection?.discountValue ?? null)
             : null;
+        this.currentPurchase.maxDiscountQuantity = normalizedSelections.length === 1
+            ? Math.max(0, Number(firstSelection?.maxDiscountQuantity || 0) || 0)
+            : 0;
+        if (normalizedSelections.length === 1 && Number.isFinite(Number(firstSelection?.unitPrice))) {
+            this.currentPurchase.discountUnitPrice = Math.max(0, Number(Number(firstSelection.unitPrice).toFixed(2)));
+        } else {
+            this.currentPurchase.discountUnitPrice = null;
+        }
         this.currentPurchase.discountBenefitLabel = this.buildCurrentPurchaseDiscountBenefitLabel(normalizedSelections);
         return normalizedSelections;
     },
@@ -6457,7 +6574,9 @@ const ShopClient = {
         return normalizedSelections.map((selection) => ({
             code: selection.code || null,
             assetId: selection.assetId || null,
-            scopeProductSkuId: selection.scopeProductSkuId || null
+            scopeProductSkuId: selection.scopeProductSkuId || null,
+            maxDiscountQuantity: Math.max(0, Number(selection.maxDiscountQuantity || 0) || 0),
+            unitPrice: Number.isFinite(Number(selection.unitPrice)) ? Number(selection.unitPrice) : null
         }));
     },
 
@@ -6483,7 +6602,7 @@ const ShopClient = {
                     unit: pointsLabel,
                     saved: savedText
                 })
-                : `已应用 ${normalizedBenefitLabel}，当前实付 ${this.formatShopPointValue(normalizedFinalTotal)} ${pointsLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}`;
+                : `已应用 ${normalizedBenefitLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}，当前实付 ${this.formatShopPointValue(normalizedFinalTotal)} ${pointsLabel}`;
         } else if (normalizedBenefitLabel) {
             messageText = this.trShop('discountAppliedSaved', '已应用 {benefit}{saved}', {
                 benefit: normalizedBenefitLabel,
@@ -6878,6 +6997,7 @@ const ShopClient = {
                 data-discount-id="${this.escapeHtml(item.discount_id || '')}"
                 data-discount-code="${this.escapeHtml(item.code || '')}"
                 data-scope-product-sku-id="${this.escapeHtml(item.scope_product_sku_id || item.scope_product_sku?.id || '')}"
+                data-max-discount-quantity="${this.escapeHtml(String(Math.max(0, Number(item.max_discount_quantity || item.maxDiscountQuantity || 0) || 0)))}"
                 ${claimPending ? 'aria-busy="true"' : ''}
                 ${claimable ? (!item.can_claim ? 'disabled' : '') : (!item.available ? 'disabled' : '')}
             `
@@ -7522,6 +7642,8 @@ const ShopClient = {
                         assetId: assetId || preview.discount_asset_id || null,
                         discountType: preview.discount_type,
                         discountValue: preview.discount_value,
+                        maxDiscountQuantity: Math.max(0, Number(preview.max_discount_quantity || preview.maxDiscountQuantity || 0) || 0),
+                        unitPrice: Number.isFinite(Number(preview.unit_price)) ? Number(preview.unit_price) : null,
                         benefitLabel: preview.benefit_label || this.getDiscountBenefitLabel(preview)
                     }])
         );
@@ -7775,7 +7897,8 @@ const ShopClient = {
                     || options.scope_product_sku_id
                     || currentSelections.find((selection) => String(selection.assetId || '').trim() === String(assetId || '').trim())?.scopeProductSkuId
                     || ''
-                ).trim() || null
+                ).trim() || null,
+                maxDiscountQuantity: Math.max(0, Number(options.maxDiscountQuantity ?? options.max_discount_quantity ?? 0) || 0)
             }];
 
         try {
@@ -7795,7 +7918,8 @@ const ShopClient = {
                     await this.applyExclusiveReplacementSelection({
                         assetId: String(assetId || '').trim() || null,
                         code: String(discountCode || '').trim().toUpperCase() || null,
-                        scopeProductSkuId: String(options.scopeProductSkuId || options.scope_product_sku_id || '').trim() || null
+                        scopeProductSkuId: String(options.scopeProductSkuId || options.scope_product_sku_id || '').trim() || null,
+                        maxDiscountQuantity: Math.max(0, Number(options.maxDiscountQuantity ?? options.max_discount_quantity ?? 0) || 0)
                     }, {
                         conflictMessage: error?.message || ''
                     });
@@ -8545,7 +8669,10 @@ const ShopClient = {
                 void this.applyOwnedDiscountAsset(
                     target.dataset.discountAssetId || '',
                     target.dataset.discountCode || '',
-                    { scopeProductSkuId: target.dataset.scopeProductSkuId || '' }
+                    {
+                        scopeProductSkuId: target.dataset.scopeProductSkuId || '',
+                        maxDiscountQuantity: target.dataset.maxDiscountQuantity || '0'
+                    }
                 );
             });
         });
@@ -8895,7 +9022,10 @@ const ShopClient = {
                 void this.applyOwnedDiscountAsset(
                     discountAssetTrigger.dataset.discountAssetId || '',
                     discountAssetTrigger.dataset.discountCode || '',
-                    { scopeProductSkuId: discountAssetTrigger.dataset.scopeProductSkuId || '' }
+                    {
+                        scopeProductSkuId: discountAssetTrigger.dataset.scopeProductSkuId || '',
+                        maxDiscountQuantity: discountAssetTrigger.dataset.maxDiscountQuantity || '0'
+                    }
                 );
                 return;
             }
@@ -12350,6 +12480,7 @@ const ShopClient = {
         discountAssetId: null,
         discountType: null,
         discountValue: null,
+        maxDiscountQuantity: 0,
         discountBenefitLabel: '',
         discountAmount: 0,
         discountFinalTotal: null,
@@ -13062,6 +13193,7 @@ const ShopClient = {
             discountAssetId: null,
             discountType: null,
             discountValue: null,
+            maxDiscountQuantity: 0,
             discountBenefitLabel: '',
             discountAmount: 0,
             discountFinalTotal: null,
@@ -13133,6 +13265,7 @@ const ShopClient = {
                 discount_code: runtimeCartDiscount.code || '',
                 discount_type: runtimeCartDiscount.discountType,
                 discount_value: runtimeCartDiscount.discountValue,
+                max_discount_quantity: Math.max(0, Number(runtimeCartDiscount.maxDiscountQuantity || 0) || 0),
                 benefit_label: runtimeCartDiscount.benefitLabel || '',
                 subtotal: runtimeCartDiscount.subtotal,
                 discount_amount: runtimeCartDiscount.discountAmount,
@@ -13144,6 +13277,7 @@ const ShopClient = {
                         scope_product_sku_id: selection.scopeProductSkuId || null,
                         discount_type: selection.discountType,
                         discount_value: selection.discountValue,
+                        max_discount_quantity: Math.max(0, Number(selection.maxDiscountQuantity || runtimeCartDiscount.maxDiscountQuantity || 0) || 0),
                         benefit_label: selection.benefitLabel || '',
                         discount_amount: selection.discountAmount,
                         final_total_after_apply: selection.finalTotalAfterApply
@@ -13741,7 +13875,7 @@ const ShopClient = {
             }
 
             const { subtotal, discountAmount, finalTotal } = this.getCurrentPurchasePricingSummary();
-            const tentativeTotalPoints = finalTotal || null;
+            const tentativeTotalPoints = Number.isFinite(Number(finalTotal)) ? Number(finalTotal) : null;
             const purchaseSourceContext = {
                 sourcePage: this.currentPurchase?.sourcePage || null,
                 sourceChannel: this.currentPurchase?.sourceChannel || null,

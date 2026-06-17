@@ -258,8 +258,40 @@ test('shop purchase selection keeps server preview totals authoritative after a 
     );
     assert.match(
         shopClientSource,
-        /当前实付 \$\{this\.formatShopPointValue\(normalizedFinalTotal\)\} \$\{pointsLabel\}/,
-        'the success message should report the exact payable total returned by the server'
+        /已应用 \$\{normalizedBenefitLabel\}\$\{Number\.isFinite\(normalizedDiscountAmount\)[\s\S]*已优惠 \$\{this\.formatShopPointValue\(normalizedDiscountAmount\)\} \$\{pointsLabel\}[\s\S]*当前实付 \$\{this\.formatShopPointValue\(normalizedFinalTotal\)\} \$\{pointsLabel\}/,
+        'the success message should show saved points before the exact payable total returned by the server'
+    );
+});
+
+test('shop discount previews preserve explicit zero totals and quantity caps', () => {
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+    const shopHandlerSource = readRepoFile(path.join('server', 'api-handlers', 'public', 'shop.js'));
+    const shopHtmlSource = readRepoFile('shop.html');
+
+    assert.match(
+        shopHandlerSource,
+        /const rawFinalTotal = Number\(resolvedStack\.final_total\);[\s\S]*Number\.isFinite\(rawFinalTotal\)[\s\S]*Math\.max\(0, rawFinalTotal\)/,
+        'server discount preview should preserve explicit 0 final_total from stacking resolution'
+    );
+    assert.doesNotMatch(
+        shopHandlerSource,
+        /resolvedStack\.final_total\s*\|\|\s*subtotal/,
+        'server discount preview should not fall back from explicit zero to the original subtotal'
+    );
+    assert.match(
+        shopClientSource,
+        /calculateDiscountPricingForConfig:[\s\S]*maxDiscountQuantity[\s\S]*eligibleSubtotal/,
+        'storefront fallback pricing should cap the eligible subtotal with maxDiscountQuantity'
+    );
+    assert.match(
+        shopClientSource,
+        /data-max-discount-quantity=/,
+        'coupon cards should carry the maximum discounted quantity into click handlers'
+    );
+    assert.match(
+        shopHtmlSource,
+        /shop-client\.js\?v=[^"]*maxDiscountQuantity=20260617_MAX_DISCOUNT_QUANTITY_1/,
+        'shop page should cache-bust storefront discount quantity cap logic'
     );
 });
 

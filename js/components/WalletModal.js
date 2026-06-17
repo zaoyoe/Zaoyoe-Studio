@@ -1907,7 +1907,7 @@
             const explicitLabel = String(asset?.benefit_label || '').trim();
             const isEnglish = this.isEnglishLanguage();
 
-            if (discountType === 'percent' && Number.isFinite(discountValue) && discountValue > 0) {
+            if (discountType === 'percent' && Number.isFinite(discountValue) && discountValue >= 0) {
                 const offPercent = Math.max(0, Math.min(100, Number((100 - discountValue).toFixed(2))));
                 if (isEnglish) {
                     return this.tr('wallet.percentOff', '{value}% off', { value: this.formatPoints(offPercent) });
@@ -2303,6 +2303,19 @@
                 case 'shop':
                     this.showOrderDetail(this.decodeActionValue(actionEl.dataset.walletOrderId));
                     break;
+                case 'shop_refund':
+                    this.showShopRefundOrderDetail(
+                        this.decodeActionValue(actionEl.dataset.walletOrderId),
+                        Number(actionEl.dataset.walletAmount || 0),
+                        this.decodeActionValue(actionEl.dataset.walletCreatedAt),
+                        this.decodeActionValue(actionEl.dataset.walletReason),
+                        this.decodeActionValue(actionEl.dataset.walletReferenceId),
+                        {
+                            balanceBefore: this.readOptionalPointDataset(actionEl.dataset.walletBalanceBefore),
+                            balanceAfter: this.readOptionalPointDataset(actionEl.dataset.walletBalanceAfter)
+                        }
+                    );
+                    break;
                 case 'affiliate':
                     this.showAffiliateRewardDetail(
                         this.decodeActionValue(actionEl.dataset.walletOrderId),
@@ -2416,6 +2429,16 @@
                 normalizedRef.startsWith('SHOP_ORDER_');
         },
 
+        isShopRefundLedgerReason(reason = '', referenceId = '') {
+            const rawReason = String(reason || '').trim();
+            const normalizedReason = rawReason.toLowerCase();
+            const normalizedRef = String(referenceId || '').trim().toUpperCase();
+            return rawReason.startsWith('订单退款:') ||
+                rawReason.startsWith('订单退款：') ||
+                normalizedReason.startsWith('shop refund:') ||
+                normalizedRef.startsWith('REFUND_');
+        },
+
         getShopOrderIdFromReference(referenceId = '') {
             const normalizedRef = String(referenceId || '').trim();
             if (!normalizedRef) return '';
@@ -2423,6 +2446,28 @@
                 return normalizedRef.slice('SHOP_ORDER_'.length);
             }
             return normalizedRef;
+        },
+
+        getShopRefundOrderIdFromReference(referenceId = '') {
+            const normalizedRef = String(referenceId || '').trim();
+            if (!normalizedRef) return '';
+            if (normalizedRef.startsWith('REFUND_')) {
+                return normalizedRef.slice('REFUND_'.length);
+            }
+            return normalizedRef;
+        },
+
+        getShopRefundProductName(reason = '') {
+            return String(reason || '')
+                .replace(/^订单退款[:：]\s*/i, '')
+                .replace(/^shop refund[:：]\s*/i, '')
+                .trim();
+        },
+
+        getShopRefundDisplayName(reason = '') {
+            const productName = this.getShopRefundProductName(reason);
+            const refundLabel = this.tr('wallet.shopRefundReturn', '订单退款返还');
+            return productName ? `${refundLabel} · ${productName}` : refundLabel;
         },
 
         isAffiliateRewardReason(reason = '', referenceId = '') {
@@ -2663,6 +2708,10 @@
                 return this.getRedemptionReversalDisplayName(rawReason);
             }
 
+            if (this.isShopRefundLedgerReason(rawReason, '')) {
+                return this.tr('wallet.shopRefundReturn', '订单退款返还');
+            }
+
             if (rawReason.startsWith('admin_manual')) {
                 return window.i18n?.t('wallet.adminAdjustment') || '管理员调整';
             }
@@ -2687,6 +2736,130 @@
             }
             const parsed = Number(value);
             return Number.isFinite(parsed) ? this.normalizePointValue(parsed) : null;
+        },
+
+        getShopOrderPaidAmount(order = {}) {
+            const paidAmount = this.normalizeOptionalPointValue(order?.price_paid);
+            if (paidAmount !== null) {
+                return Math.abs(paidAmount);
+            }
+
+            const ledgerAmount = this.normalizeOptionalPointValue(order?.amount);
+            if (ledgerAmount !== null) {
+                return Math.abs(ledgerAmount);
+            }
+
+            return Math.abs(this.normalizePointValue(order?.total_price || 0));
+        },
+
+        getShopOrderGrossAmount(order = {}) {
+            const grossAmount = this.normalizeOptionalPointValue(order?.total_price);
+            if (grossAmount !== null) {
+                return Math.abs(grossAmount);
+            }
+
+            return this.getShopOrderPaidAmount(order);
+        },
+
+        getShopOrderDiscountAmount(order = {}) {
+            const explicitDiscount = this.normalizeOptionalPointValue(order?.discount_amount);
+            if (explicitDiscount !== null) {
+                return Math.max(0, Math.abs(explicitDiscount));
+            }
+
+            const grossAmount = this.getShopOrderGrossAmount(order);
+            const paidAmount = this.getShopOrderPaidAmount(order);
+            return Math.max(0, this.normalizePointValue(grossAmount - paidAmount));
+        },
+
+        getShopOrderDiscountSelections(order = {}) {
+            const snapshotDiscounts = Array.isArray(order?.applied_discounts)
+                ? order.applied_discounts
+                : (Array.isArray(order?.discount_snapshot?.applied_discounts)
+                    ? order.discount_snapshot.applied_discounts
+                : []);
+            const normalizedSelections = snapshotDiscounts
+                .filter((selection) => selection && typeof selection === 'object')
+                .map((selection) => ({
+                    ...selection,
+                    code: String(
+                        selection.code
+                        || selection.discount_code
+                        || selection.coupon_code
+                        || selection.asset_code
+                        || selection.promotion_code
+                        || ''
+                    ).trim()
+                }));
+
+            const fallbackCode = String(order?.discount_code || order?.coupon_code || '').trim();
+            if (fallbackCode && !normalizedSelections.some((selection) => selection.code === fallbackCode)) {
+                normalizedSelections.push({
+                    code: fallbackCode,
+                    benefit_label: fallbackCode,
+                    discount_amount: this.getShopOrderDiscountAmount(order)
+                });
+            }
+
+            return normalizedSelections;
+        },
+
+        formatShopOrderDiscountSelectionLabel(selection = {}) {
+            const code = String(selection?.code || selection?.discount_code || '').trim();
+            const benefitLabel = this.getLocalizedDiscountBenefitLabel({
+                ...selection,
+                code
+            });
+
+            if (code && benefitLabel && benefitLabel !== code) {
+                return `${code}（${benefitLabel}）`;
+            }
+            return benefitLabel || code || '';
+        },
+
+        formatShopOrderDiscountLabel(order = {}) {
+            return this.getShopOrderDiscountSelections(order)
+                .map((selection) => this.formatShopOrderDiscountSelectionLabel(selection))
+                .filter(Boolean)
+                .join('、');
+        },
+
+        buildWalletShopOrderDiscountRows(order = {}) {
+            const grossAmount = this.getShopOrderGrossAmount(order);
+            const paidAmount = this.getShopOrderPaidAmount(order);
+            const discountAmount = this.getShopOrderDiscountAmount(order);
+            const discountLabel = this.formatShopOrderDiscountLabel(order);
+            const pointsUnit = this.tr('wallet.pointsUnit', '积分');
+            const rows = [];
+
+            if (discountAmount > 0 || grossAmount > paidAmount) {
+                rows.push(`
+                    <div class="detail-row">
+                        <span class="detail-label">${this.tr('wallet.originalPoints', '原价积分')}</span>
+                        <span class="detail-val">${this.formatPoints(grossAmount)} ${pointsUnit}</span>
+                    </div>
+                `);
+            }
+
+            if (discountLabel) {
+                rows.push(`
+                    <div class="detail-row">
+                        <span class="detail-label">${this.tr('wallet.discountCouponCode', '优惠券码')}</span>
+                        <span class="detail-val">${this.escapeHtml(discountLabel)}</span>
+                    </div>
+                `);
+            }
+
+            if (discountAmount > 0) {
+                rows.push(`
+                    <div class="detail-row">
+                        <span class="detail-label">${this.tr('wallet.discountAmount', '优惠金额')}</span>
+                        <span class="detail-val highlight">-${this.formatPoints(discountAmount)} ${pointsUnit}</span>
+                    </div>
+                `);
+            }
+
+            return rows.join('');
         },
 
         readOptionalPointDataset(value) {
@@ -2875,7 +3048,7 @@
             sortedOrders.forEach((order) => {
                 const id = String(order?.id || '').trim();
                 const signedAmount = order?.isShopOrder
-                    ? -this.normalizePointValue(order?.total_price || 0)
+                    ? -this.getShopOrderPaidAmount(order)
                     : this.normalizePointValue(order?.amount ?? order?.total_price ?? 0);
 
                 const balanceAfter = this.normalizePointValue(runningBalance);
@@ -11894,6 +12067,7 @@
                 order.promptId,
                 order.redeemCode,
                 order.amount,
+                order.price_paid,
                 order.total_price
             ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
         },
@@ -12209,7 +12383,7 @@
             } else if (typeFilter === 'prompt') {
                 filtered = filtered.filter(order => order.transactionType === 'prompt');
             } else if (typeFilter === 'recharge') {
-                filtered = filtered.filter(order => order.transactionType === 'recharge' || order.transactionType === 'affiliate');
+                filtered = filtered.filter(order => order.transactionType === 'recharge' || order.transactionType === 'affiliate' || order.transactionType === 'shop_refund');
             } else if (typeFilter === 'redeem') {
                 filtered = filtered.filter(order => order.transactionType === 'redeem' || order.transactionType === 'redemption_reversal');
             }
@@ -12538,6 +12712,11 @@
                         transactionType = 'recharge';
                         displayName = this.getRechargeDisplayName(entry.reason);
                         icon = '⚡';
+                    } else if (this.isShopRefundLedgerReason(entry.reason, entry.reference_id)) {
+                        transactionType = 'shop_refund';
+                        displayName = this.getShopRefundDisplayName(entry.reason);
+                        icon = '↩️';
+                        shopOrderId = this.getShopRefundOrderIdFromReference(entry.reference_id);
                     } else if (this.isRedemptionReversalReason(entry.reason, entry.reference_id, entryAmount)) {
                         transactionType = 'redemption_reversal';
                         displayName = this.getRedemptionReversalDisplayName(entry.reason, entry.reference_id);
@@ -12572,6 +12751,7 @@
                         isPromptUnlock: transactionType === 'prompt',
                         isVerifyOrder: transactionType === 'verify',
                         isRecharge: transactionType === 'recharge',
+                        isShopRefund: transactionType === 'shop_refund',
                         isAffiliateReward: transactionType === 'affiliate',
                         isRedeem: transactionType === 'redeem',
                         isRedemptionReversal: transactionType === 'redemption_reversal',
@@ -12679,7 +12859,7 @@
                 let statusText = completedText;
                 let statusClass = 'status-completed';
                 const signedAmount = order.isShopOrder
-                    ? -this.normalizePointValue(order.total_price || 0)
+                    ? -this.getShopOrderPaidAmount(order)
                     : this.normalizePointValue(order.amount ?? order.total_price ?? 0);
                 const absAmountText = this.formatPoints(Math.abs(signedAmount));
                 const balanceBeforeValue = this.normalizeOptionalPointValue(order.balanceBefore);
@@ -12782,6 +12962,19 @@
                         'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
                         'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
                     });
+                } else if (order.transactionType === 'shop_refund') {
+                    displayName = `${this.renderWalletInlineIcon('fa-undo-alt', '#10b981')} ${this.escapeHtml(order.snapshot_product_name)}`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'shop_refund',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-amount': this.normalizePointValue(order.amount || order.total_price || 0),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-reason': this.encodeActionValue(order.rawReason || ''),
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || ''),
+                        'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
+                        'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
+                    });
                 } else if (order.transactionType === 'recharge') {
                     const isRedemptionReversal = this.isRedemptionReversalReason(order.rawReason, order.referenceId, signedAmount);
                     displayName = `${this.renderWalletInlineIcon(isRedemptionReversal ? 'fa-undo-alt' : 'fa-bolt', isRedemptionReversal ? '#fb7185' : '#fbbf24')} ${this.escapeHtml(order.snapshot_product_name)}`;
@@ -12864,7 +13057,7 @@
             const dateStr = previewOrder?.created_at
                 ? this.formatOrderDateTime(previewOrder.created_at)
                 : (window.i18n?.t('wallet.loading') || '加载中...');
-            const totalPrice = Math.abs(this.normalizePointValue(previewOrder?.total_price ?? previewOrder?.price_paid ?? 0));
+            const totalPrice = this.getShopOrderPaidAmount(previewOrder);
             const productName = this.getLocalizedProductNameFromPayload(previewOrder || {}, '')
                 || (window.i18n?.t('wallet.unknownProduct') || '未知商品');
             const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
@@ -12891,6 +13084,7 @@
                                 <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
                                 <span class="detail-val highlight">-${this.formatPoints(totalPrice)} ${pointsUnit}</span>
                             </div>
+                            ${this.buildWalletShopOrderDiscountRows(previewOrder)}
                             <div class="detail-row wallet-detail-row--product">
                                 <span class="detail-label">${window.i18n?.t('shop.productName') || '商品名称'}</span>
                                 <span class="detail-val wallet-order-product-name">${this.escapeHtml(productName)}</span>
@@ -13339,6 +13533,94 @@
             });
         },
 
+        showShopRefundOrderDetail(orderId, amount, createdAt, reason = '', referenceId = '', balanceSnapshot = {}) {
+            const date = new Date(createdAt);
+            const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+            const normalizedAmount = Math.abs(this.normalizePointValue(amount));
+            const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
+            const shortLedgerId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
+            const refundOrderId = this.getShopRefundOrderIdFromReference(referenceId);
+            const shortRefundOrderId = refundOrderId ? `${refundOrderId.substring(0, 8)}...${refundOrderId.slice(-4)}` : '';
+            const productName = this.getShopRefundProductName(reason) || this.tr('wallet.shopPurchase', '商品');
+            const resolvedBalanceSnapshot = this.resolveOrderBalanceSnapshot(orderId, balanceSnapshot);
+            const balanceBefore = this.normalizeOptionalPointValue(resolvedBalanceSnapshot?.balanceBefore);
+            const balanceAfter = this.normalizeOptionalPointValue(resolvedBalanceSnapshot?.balanceAfter);
+            const balanceSnapshotMarkup = balanceBefore !== null && balanceAfter !== null
+                ? `
+                            <div class="detail-row">
+                                <span class="detail-label">${this.tr('wallet.balanceBeforeRefund', '退款前积分')}</span>
+                                <span class="detail-val">${this.escapeHtml(this.formatPoints(balanceBefore))} ${pointsUnit}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${this.tr('wallet.balanceAfterRefund', '退款后积分')}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatPoints(balanceAfter))} ${pointsUnit}</span>
+                            </div>`
+                : '';
+
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            ${this.renderWalletInlineIcon('fa-undo-alt', '#10b981')} ${this.tr('wallet.shopRefundDetails', '退款详情')}
+                        </div>
+                    </div>
+                    <div class="wallet-order-modal-body">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono copyable js-copy-refund-ledger" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortLedgerId)}</span>
+                            </div>
+                            ${refundOrderId ? `
+                            <div class="detail-row">
+                                <span class="detail-label">${this.tr('wallet.refundedOrderNumber', '关联退款订单')}</span>
+                                <span class="detail-val mono copyable js-copy-refund-order" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortRefundOrderId)}</span>
+                            </div>
+                            ` : ''}
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.transactionType') || '交易类型'}</span>
+                                <span class="detail-val ${this.getWalletToneClass('#10b981')}">${this.tr('wallet.shopRefundReturn', '订单退款返还')}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${this.tr('wallet.refundedProduct', '退款商品')}</span>
+                                <span class="detail-val">${this.escapeHtml(productName)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${this.tr('wallet.refundTime', '退款时间')}</span>
+                                <span class="detail-val">${this.escapeHtml(dateStr)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${this.tr('wallet.refundedPoints', '返还积分')}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${this.escapeHtml(this.formatPoints(normalizedAmount))} ${pointsUnit}</span>
+                            </div>
+                            ${balanceSnapshotMarkup}
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
+                                <span class="detail-val wallet-status-success"><span class="wallet-status-check" aria-hidden="true">✓</span> ${window.i18n?.t('wallet.completed') || '已完成'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(detailOverlay);
+            this.bindOverlayCloseButtons(detailOverlay);
+
+            detailOverlay.querySelector('.js-copy-refund-ledger')?.addEventListener('click', (event) => {
+                this.copyToClipboard(orderId, event);
+            });
+            if (refundOrderId) {
+                detailOverlay.querySelector('.js-copy-refund-order')?.addEventListener('click', (event) => {
+                    this.copyToClipboard(refundOrderId, event);
+                });
+            }
+        },
+
         /**
          * Show Google One verify order detail modal
          */
@@ -13578,7 +13860,7 @@
                     : [];
 
                 const dateStr = this.formatOrderDateTime(order.created_at);
-                const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
+                const totalPrice = this.getShopOrderPaidAmount(order);
                 const productName = items.length > 0 ? items[0].name : this.getLocalizedProductNameFromPayload(order, '');
                 const productId = String(order.product_id || '').trim();
                 const purchaseNotes = typeof detail?.guidance?.purchase_notes === 'string'
@@ -13704,8 +13986,9 @@
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
-                                    <span class="detail-val highlight">-${totalPrice} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                    <span class="detail-val highlight">-${this.formatPoints(totalPrice)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                                 </div>
+                                ${this.buildWalletShopOrderDiscountRows(order)}
                                 ${productName ? `
                                     <div class="detail-row wallet-detail-row--product">
                                         <span class="detail-label">${window.i18n?.t('shop.productName') || '商品名称'}</span>

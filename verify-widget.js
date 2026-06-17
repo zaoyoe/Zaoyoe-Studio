@@ -31,8 +31,8 @@
     const VERIFY_PROVIDER_CATCARD = 'catcard';
     const VERIFY_PROVIDER_KEYS = [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD];
     const VERIFY_PROVIDER_LABELS = {
-        [VERIFY_PROVIDER_AIDONE]: '通道 1',
-        [VERIFY_PROVIDER_CATCARD]: '通道 2'
+        [VERIFY_PROVIDER_AIDONE]: { key: 'verify.providerChannelOne', fallback: '通道 1' },
+        [VERIFY_PROVIDER_CATCARD]: { key: 'verify.providerChannelTwo', fallback: '通道 2' }
     };
 
     let currentUser = null;
@@ -46,7 +46,7 @@
     let activeVerifyProvider = VERIFY_PROVIDER_AIDONE;
     let verifyProviders = VERIFY_PROVIDER_KEYS.map((provider) => ({
         provider,
-        label: VERIFY_PROVIDER_LABELS[provider],
+        label: getProviderLabel(provider),
         enabled: true
     }));
     let channelStates = new Map();
@@ -127,7 +127,12 @@
 
     function getProviderLabel(provider = activeVerifyProvider) {
         const normalizedProvider = normalizeVerifyProvider(provider, VERIFY_PROVIDER_AIDONE);
-        return VERIFY_PROVIDER_LABELS[normalizedProvider] || normalizedProvider;
+        const config = VERIFY_PROVIDER_LABELS[normalizedProvider];
+        if (config) {
+            return t(config.key, config.fallback);
+        }
+        const configuredLabel = getChannelState(normalizedProvider).label;
+        return String(configuredLabel || normalizedProvider).trim();
     }
 
     function getVisibleVerifyProviders() {
@@ -143,9 +148,34 @@
             ? enabledProviders
             : VERIFY_PROVIDER_KEYS.map((provider) => ({
                 provider,
-                label: VERIFY_PROVIDER_LABELS[provider],
+                label: getProviderLabel(provider),
                 enabled: true
             }));
+    }
+
+    function normalizeVerifyProviderVisibility(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (normalized === VERIFY_PROVIDER_AIDONE || normalized === VERIFY_PROVIDER_CATCARD) {
+            return normalized;
+        }
+        return 'both';
+    }
+
+    function resolveDefaultVerifyProvider(providerVisibility = 'both') {
+        const normalizedVisibility = normalizeVerifyProviderVisibility(providerVisibility);
+        if (normalizedVisibility === 'both') {
+            return VERIFY_PROVIDER_AIDONE;
+        }
+        return normalizedVisibility;
+    }
+
+    function applyDefaultVerifyProvider(providerVisibility = 'both') {
+        const defaultProvider = resolveDefaultVerifyProvider(providerVisibility);
+        activeVerifyProvider = getVisibleVerifyProviders().some((item) => item.provider === defaultProvider)
+            ? defaultProvider
+            : getVisibleVerifyProviders()[0]?.provider || VERIFY_PROVIDER_AIDONE;
+        syncCurrentChannelMirrors(activeVerifyProvider);
+        return activeVerifyProvider;
     }
 
     function createChannelState(provider = VERIFY_PROVIDER_AIDONE) {
@@ -227,6 +257,28 @@
         ];
     }
 
+    async function fetchVerifyJobStatusOnce(jobId) {
+        const headers = await getVerifyRequestHeaders();
+        const statusEndpoints = buildVerifyStatusEndpoints(jobId);
+
+        for (const endpoint of statusEndpoints) {
+            try {
+                const response = await fetch(endpoint, { headers, cache: 'no-store' });
+                const payload = await response.json().catch(() => ({}));
+
+                if (!response.ok && shouldFallbackVerifyEndpoint(response, payload)) {
+                    continue;
+                }
+
+                return { response, payload };
+            } catch (_) {
+                // try the next endpoint
+            }
+        }
+
+        return { response: null, payload: {} };
+    }
+
     function buildVerifyActionEndpoints() {
         return [
             '/api/public?scope=verify&route=action',
@@ -248,7 +300,7 @@
             return 'failed';
         }
 
-        if (['running', 'processing', 'working', 'in_progress', 'executing'].includes(normalized)) {
+        if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)) {
             return 'running';
         }
 
@@ -406,17 +458,17 @@
         const extractJobs = rawExtractJobs !== null
             ? normalizeJobCount(rawExtractJobs)
             : typedExtractUses !== null
-                ? getRemainingTaskCount(typedExtractUses, 'extract')
+                ? getRemainingTaskCount(typedExtractUses, 'extract', provider)
                 : hasTypedQuota
                     ? 0
-                    : getRemainingTaskCount(remainingUses, 'extract');
+                    : getRemainingTaskCount(remainingUses, 'extract', provider);
         const fullJobs = rawFullJobs !== null
             ? normalizeJobCount(rawFullJobs)
             : typedFullUses !== null
-                ? getRemainingTaskCount(typedFullUses, 'full')
+                ? getRemainingTaskCount(typedFullUses, 'full', provider)
                 : hasTypedQuota
                     ? 0
-                    : getRemainingTaskCount(remainingUses, 'full');
+                    : getRemainingTaskCount(remainingUses, 'full', provider);
 
         return {
             remainingUses,
@@ -552,7 +604,10 @@
     }
 
     function getDefaultTaskType() {
-        return getAvailableTaskTypes()[0] || 'extract';
+        const availableTaskTypes = getAvailableTaskTypes();
+        return availableTaskTypes.includes('full')
+            ? 'full'
+            : availableTaskTypes[0] || 'extract';
     }
 
     function isTaskTypeAvailable(taskType = 'extract') {
@@ -604,6 +659,37 @@
         );
     }
 
+    function getProviderReservedUses(provider = activeVerifyProvider) {
+        const normalizedProvider = normalizeVerifyProvider(provider);
+        let reservedUses = 0;
+        activeTasks.forEach((task) => {
+            if (normalizeVerifyProvider(task?.provider) === normalizedProvider) {
+                reservedUses += getTaskTypeUsageCost(task?.taskType || 'extract', normalizedProvider);
+            }
+        });
+        return Math.max(0, Math.round(reservedUses * 100) / 100);
+    }
+
+    function getChannelAvailableJobs(provider = activeVerifyProvider, taskType = getSelectedTaskType()) {
+        const state = getChannelState(provider);
+        if (state.apiCredits < 0) return null;
+        const quotaSummary = buildQuotaSummary(state.apiCredits, state.apiQuotaSummary, provider);
+        if (!quotaSummary) return null;
+        const normalizedTaskType = normalizeTaskType(taskType);
+        const typedUses = normalizedTaskType === 'full'
+            ? quotaSummary.remainingFullUses
+            : quotaSummary.remainingExtractUses;
+        const remainingUses = Number.isFinite(Number(typedUses))
+            ? Number(typedUses)
+            : Number(quotaSummary.remainingUses);
+        const usageCost = getTaskTypeUsageCost(normalizedTaskType, provider);
+        if (!Number.isFinite(remainingUses) || !Number.isFinite(usageCost) || usageCost <= 0) {
+            return 0;
+        }
+        const availableUses = Math.max(0, remainingUses - getProviderReservedUses(provider));
+        return getRemainingTaskCount(availableUses, normalizedTaskType, provider);
+    }
+
     function getProviderRemainingTone(remaining) {
         if (remaining === null || remaining === undefined || remaining === '') return 'unknown';
         const numeric = Number(remaining);
@@ -639,7 +725,7 @@
         if (normalizeTaskType(taskType) === 'full') {
             return t('verify.fullGuideNote', '全流程模式会由服务商完成绑卡与订阅，不需要你再手动开链接。');
         }
-        return t('verify.extractGuideNote', '提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。');
+        return t('verify.extractGuideNote', '任务成功后，自行打开链接按提示完成绑卡，不懂请勿提交此模式 ！');
     }
 
     function getTaskTypeModeMeta(taskType = 'extract') {
@@ -699,6 +785,7 @@
         if (extractMetaEl) extractMetaEl.textContent = getTaskTypeModeMeta('extract').description;
         if (fullMetaEl) fullMetaEl.textContent = getTaskTypeModeMeta('full').description;
         updateQuotaDisplay();
+        updateProviderSwitcherUi();
     }
 
     function syncModeSelectorFromConfig() {
@@ -857,7 +944,7 @@
                 const provider = normalizeVerifyProvider(providerConfig.provider, VERIFY_PROVIDER_AIDONE);
                 const state = getChannelState(provider);
                 const health = state.health || normalizeProviderHealth({});
-                const remaining = getChannelRemainingJobs(provider, taskType);
+                const remaining = getChannelAvailableJobs(provider, taskType);
                 const activeCount = getProviderActiveTaskCount(provider);
                 const unavailable = health.tone === 'down' || remaining === 0;
                 const unknownPenalty = remaining === null ? 1 : 0;
@@ -881,11 +968,15 @@
             : normalizeVerifyProvider(getVisibleVerifyProviders()[0]?.provider || activeVerifyProvider);
     }
 
-    function getProviderHealthLabel(provider = activeVerifyProvider) {
+    function getProviderQueueSize(provider = activeVerifyProvider) {
         const health = getChannelState(provider).health || normalizeProviderHealth({});
-        if (health.tone === 'down') return t('verify.channelDown', '异常');
-        if (health.tone === 'busy') return t('verify.channelBusy', '繁忙');
-        return t('verify.channelHealthy', '正常');
+        const queueSize = Number(health.queueSize);
+        return Number.isFinite(queueSize) ? Math.max(0, Math.round(queueSize)) : null;
+    }
+
+    function getProviderQueueLabel(provider = activeVerifyProvider) {
+        const queueSize = getProviderQueueSize(provider);
+        return queueSize === null ? '--' : formatBalanceValue(queueSize);
     }
 
     function updateProviderSwitcherUi() {
@@ -894,13 +985,15 @@
             const provider = normalizeVerifyProvider(btn.dataset.verifyProviderOption);
             const isActive = provider === activeVerifyProvider;
             const isRecommended = provider === recommendedProvider;
-            const remaining = getChannelRemainingJobs(provider, getSelectedTaskType());
+            const remaining = getChannelAvailableJobs(provider, getSelectedTaskType());
             const running = getProviderActiveTaskCount(provider);
             const health = getChannelState(provider).health || normalizeProviderHealth({});
             btn.classList.toggle('active', isActive);
             btn.classList.toggle('recommended', isRecommended);
             btn.dataset.healthTone = health.tone || 'ok';
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            if (btn.matches('button')) {
+                btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            }
             const countEl = btn.querySelector('[data-verify-provider-remaining]');
             const runningEl = btn.querySelector('[data-verify-provider-running]');
             const healthEl = btn.querySelector('[data-verify-provider-health]');
@@ -908,7 +1001,7 @@
                 countEl.textContent = remaining === null ? '--' : formatBalanceValue(remaining);
                 countEl.dataset.remainingTone = getProviderRemainingTone(remaining);
             }
-            if (healthEl) healthEl.textContent = getProviderHealthLabel(provider);
+            if (healthEl) healthEl.textContent = getProviderQueueLabel(provider);
             if (runningEl) {
                 runningEl.textContent = String(running);
                 runningEl.closest('.verify-provider-option__running')?.toggleAttribute('hidden', running <= 0);
@@ -1188,6 +1281,40 @@
             }
         }
         return fallback || key;
+    }
+
+    async function waitForI18nReady() {
+        if (window.i18n && typeof window.i18n.ready === 'function') {
+            try {
+                await window.i18n.ready();
+                return;
+            } catch (_) {
+                return;
+            }
+        }
+
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return;
+        }
+
+        await new Promise((resolve) => {
+            let count = 0;
+            const check = setInterval(() => {
+                count += 1;
+                if ((window.i18n && typeof window.i18n.t === 'function') || count > 20) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 100);
+        });
+
+        if (window.i18n && typeof window.i18n.ready === 'function') {
+            try {
+                await window.i18n.ready();
+            } catch (_) {
+                // Fall back to widget defaults if locale loading fails.
+            }
+        }
     }
 
     function escapeHtml(value) {
@@ -1564,9 +1691,9 @@
         return Number.isInteger(num) ? String(num) : num.toFixed(1);
     }
 
-    function getRemainingTaskCount(balance, taskType = 'extract') {
+    function getRemainingTaskCount(balance, taskType = 'extract', provider = activeVerifyProvider) {
         const numericBalance = Number(balance);
-        const usageCost = getTaskTypeUsageCost(taskType);
+        const usageCost = getTaskTypeUsageCost(taskType, provider);
         if (!Number.isFinite(numericBalance) || !Number.isFinite(usageCost) || usageCost <= 0) {
             return 0;
         }
@@ -1624,6 +1751,24 @@
         return null;
     }
 
+    function findChannelQuotaShortageForEntries(entries = [], provider = activeVerifyProvider) {
+        const counts = getEntryCountsByTaskType(entries);
+        const quotaSummary = buildQuotaSummary(getChannelState(provider).apiCredits, getChannelState(provider).apiQuotaSummary, provider);
+        for (const taskType of ['extract', 'full']) {
+            if (!counts[taskType]) continue;
+            const availableJobs = getChannelAvailableJobs(provider, taskType);
+            if (availableJobs !== null && Number.isFinite(Number(availableJobs)) && Number(availableJobs) < counts[taskType]) {
+                return {
+                    taskType,
+                    neededJobs: counts[taskType],
+                    availableJobs,
+                    quotaSummary
+                };
+            }
+        }
+        return findApiQuotaShortageForEntries(entries, quotaSummary);
+    }
+
     function getQuotaUnavailableMessage(taskType = 'extract') {
         const normalizedTaskType = normalizeTaskType(taskType);
         if (normalizedTaskType === 'full') {
@@ -1669,7 +1814,126 @@
     }
 
     function formatStageLabel(stageLabel) {
-        return String(stageLabel || '').replace(/_/g, ' ').trim();
+        const raw = String(stageLabel || '').trim();
+        const normalized = raw.toLowerCase().replace(/[\s-]+/g, '_');
+        const lang = getLang();
+        const labelMap = {
+            s_login: { zh: '登录账号', en: 'Sign in' },
+            login: { zh: '登录账号', en: 'Sign in' },
+            s_claim: { zh: '领取权益', en: 'Claim benefits' },
+            claim: { zh: '领取权益', en: 'Claim benefits' },
+            s_fetch_link: { zh: '获取链接', en: 'Fetch link' },
+            fetch_link: { zh: '获取链接', en: 'Fetch link' },
+            s_proxy: { zh: '准备代理', en: 'Prepare proxy' },
+            proxy: { zh: '准备代理', en: 'Prepare proxy' },
+            s_cleaning: { zh: '清理环境', en: 'Clean environment' },
+            cleaning: { zh: '清理环境', en: 'Clean environment' },
+            submit: { zh: '提交任务', en: 'Submit task' }
+        };
+        return labelMap[normalized]?.[lang] || labelMap[normalized]?.zh || raw.replace(/_/g, ' ').trim();
+    }
+
+    function isGenericVerifyFailureText(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['执行失败', '任务失败', '失败', 'failed', 'fail', 'error', 'task failed', 'unknown'].includes(normalized);
+    }
+
+    function getAssignedStatusText() {
+        return getLang() === 'zh'
+            ? '已分配设备，等待执行'
+            : 'Assigned to a worker, waiting to run';
+    }
+
+    function getCanonicalUpstreamMessage(value = '') {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+
+        const normalized = raw
+            .toLowerCase()
+            .replace(/[。.!！]+$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const exactMap = {
+            '风控账号：google无法验证账号归属，请前往 g.co/recover处理': {
+                zh: '风控账号：Google无法验证账号归属，请前往 g.co/recover 处理',
+                en: 'Risk-controlled account: Google could not verify account ownership. Please go to g.co/recover.'
+            },
+            'google无法验证账号归属，请前往 g.co/recover处理': {
+                zh: 'Google无法验证账号归属，请前往 g.co/recover 处理',
+                en: 'Google could not verify account ownership. Please go to g.co/recover.'
+            },
+            'google无法验证账号归属，请前往 g.co/recover': {
+                zh: 'Google无法验证账号归属，请前往 g.co/recover 处理',
+                en: 'Google could not verify account ownership. Please go to g.co/recover.'
+            },
+            'account ownership could not be verified. please go to g.co/recover.': {
+                zh: 'Google无法验证账号归属，请前往 g.co/recover 处理',
+                en: 'Google could not verify account ownership. Please go to g.co/recover.'
+            }
+        };
+
+        if (exactMap[normalized]) {
+            return exactMap[normalized][getLang()] || exactMap[normalized].zh;
+        }
+
+        if (normalized.includes('g.co/recover') && (normalized.includes('账号归属') || normalized.includes('无法验证'))) {
+            return getLang() === 'zh'
+                ? 'Google无法验证账号归属，请前往 g.co/recover 处理'
+                : 'Google could not verify account ownership. Please go to g.co/recover.';
+        }
+
+        return raw;
+    }
+
+    function getLocalizedHistoryMessage(value = '', taskType = 'extract') {
+        const raw = getCanonicalUpstreamMessage(value);
+        if (!raw) return '';
+
+        const normalized = raw
+            .toLowerCase()
+            .replace(/[。.!！]+$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const messageMap = {
+            '包绑卡流程完成': () => getTaskTypeSuccessText('full', false),
+            'card-binding flow complete': () => getTaskTypeSuccessText('full', false),
+            '链接获取成功': () => getTaskTypeSuccessText('extract', true),
+            'link ready': () => getTaskTypeSuccessText('extract', true),
+            '提链任务完成': () => getTaskTypeSuccessText('extract', false),
+            'link extraction complete': () => getTaskTypeSuccessText('extract', false),
+            '任务已取消': () => t('verify.cancelTaskDone', '任务已取消'),
+            'task cancelled': () => t('verify.cancelTaskDone', '任务已取消'),
+            '处理中': () => t('verify.processText', '处理中'),
+            'processing': () => t('verify.processText', '处理中'),
+            '排队中': () => (getLang() === 'zh' ? '排队中' : 'Queued'),
+            'queued': () => (getLang() === 'zh' ? '排队中' : 'Queued')
+        };
+
+        if (messageMap[normalized]) {
+            return messageMap[normalized]();
+        }
+
+        if (isGenericVerifyFailureText(raw)) {
+            return getErrorLabel('', '');
+        }
+
+        if (normalizeTaskType(taskType) === 'full' && normalized.includes('包绑卡流程完成')) {
+            return getTaskTypeSuccessText('full', false);
+        }
+
+        return raw;
+    }
+
+    function getUnspecifiedFailureText(payload = {}) {
+        const stageLabel = formatStageLabel(payload?.stage_label || payload?.raw_step || payload?.step);
+        const base = getLang() === 'zh'
+            ? '执行失败，上游未返回具体原因'
+            : 'Execution failed; upstream did not return a specific reason';
+        if (!stageLabel) return base;
+        return getLang() === 'zh'
+            ? `${base}（失败阶段：${stageLabel}）`
+            : `${base} (stage: ${stageLabel})`;
     }
 
     function formatWaitSeconds(seconds) {
@@ -1765,11 +2029,11 @@
         const isPixelBridgeTask = isPixelBridgeHistoryPayload(payload);
         const offerUrl = String(payload?.url || payload?.offer_url || '').trim();
 
-        if (isPixelBridgeTask && status === 'success') {
-            return { type: 'empty', text: '' };
+        if (isFullTask && status === 'success') {
+            return { type: 'text', text: getTaskTypeSuccessText(taskType, false) };
         }
 
-        if (isFullTask && status === 'success') {
+        if (isPixelBridgeTask && status === 'success' && isHistorySubmissionEcho(payload?.message || '', email)) {
             return { type: 'text', text: getTaskTypeSuccessText(taskType, false) };
         }
 
@@ -1777,23 +2041,30 @@
             return { type: 'url', text: offerUrl, href: offerUrl };
         }
 
+        if (status === 'running' && String(payload?.raw_status || item?.status || '').trim().toLowerCase() === 'assigned') {
+            return { type: 'text', text: getAssignedStatusText() };
+        }
+
         const errorText = payload?.error_message || (payload?.error_code ? getErrorLabel(payload.error_code, '') : '');
+        if (status === 'failed' && (!errorText || isGenericVerifyFailureText(errorText))) {
+            return { type: 'text', text: getUnspecifiedFailureText(payload) };
+        }
         if (errorText) {
-            return { type: 'text', text: errorText };
+            return { type: 'text', text: getLocalizedHistoryMessage(errorText, taskType) };
         }
 
         if (payload?.message) {
             if (isPixelBridgeTask && isHistorySubmissionEcho(payload.message, email)) {
                 return { type: 'empty', text: '' };
             }
-            return { type: 'text', text: payload.message };
+            return { type: 'text', text: getLocalizedHistoryMessage(payload.message, taskType) };
         }
 
         if (status === 'success') {
             return { type: 'text', text: getTaskTypeSuccessText(taskType, false) };
         }
 
-        const rawMessage = String(item?.message || '').trim();
+        const rawMessage = getLocalizedHistoryMessage(item?.message, taskType);
         return { type: 'text', text: rawMessage || '--' };
     }
 
@@ -1819,6 +2090,18 @@
             || errorMessage.includes('not found');
     }
 
+    function shouldRefreshActiveHistoryStatus(item) {
+        const payload = parseHistoryMessage(item?.message);
+        const jobId = String(payload?.job_id || item?.verification_id || '').trim();
+        const status = normalizeVerifyClientStatus(item?.status || payload?.raw_status || payload?.status || '');
+
+        if (!jobId) {
+            return false;
+        }
+
+        return status === 'queued' || status === 'running';
+    }
+
     function getHistoryJobId(item = {}, payload = null) {
         const parsedPayload = payload || parseHistoryMessage(item?.message) || {};
         return String(parsedPayload.job_id || parsedPayload.task_id || item?.verification_id || '').trim();
@@ -1827,6 +2110,9 @@
     function canCancelHistoryJob(item = {}, payload = null) {
         const parsedPayload = payload || parseHistoryMessage(item?.message) || {};
         const status = normalizeVerifyClientStatus(item?.status || parsedPayload.raw_status || parsedPayload.status || '');
+        if (isPixelBridgeHistoryPayload(parsedPayload)) {
+            return false;
+        }
         return Boolean(getHistoryJobId(item, parsedPayload)) && ['queued', 'running'].includes(status);
     }
 
@@ -1875,7 +2161,18 @@
             return false;
         }
 
-        const candidates = items.filter(shouldAttemptHistoryRepair).slice(0, 3);
+        const candidateMap = new Map();
+        items.forEach((item) => {
+            if (!shouldAttemptHistoryRepair(item) && !shouldRefreshActiveHistoryStatus(item)) {
+                return;
+            }
+            const payload = parseHistoryMessage(item?.message);
+            const repairKey = String(item?.id || payload?.job_id || item?.verification_id || '').trim();
+            if (repairKey && !candidateMap.has(repairKey)) {
+                candidateMap.set(repairKey, item);
+            }
+        });
+        const candidates = Array.from(candidateMap.values()).slice(0, 5);
         if (!candidates.length) {
             return false;
         }
@@ -1892,29 +2189,16 @@
                 const jobId = String(payload?.job_id || item?.verification_id || '').trim();
                 if (!jobId) continue;
 
-                if (repairKey) {
+                const shouldTrackAttempt = shouldAttemptHistoryRepair(item);
+                if (shouldTrackAttempt && repairKey) {
                     attemptedHistoryRepairIds.add(repairKey);
                 }
 
-                const statusEndpoints = buildVerifyStatusEndpoints(jobId);
-
-                for (const endpoint of statusEndpoints) {
-                    try {
-                        const response = await fetch(endpoint, { headers, cache: 'no-store' });
-                        const responsePayload = await response.json().catch(() => ({}));
-
-                        if (!response.ok && shouldFallbackVerifyEndpoint(response, responsePayload)) {
-                            continue;
-                        }
-
-                        const normalizedStatus = normalizeVerifyClientStatus(responsePayload);
-                        if (response.ok && normalizedStatus && normalizedStatus !== 'failed') {
-                            repaired = true;
-                        }
-                        break;
-                    } catch (_) {
-                        // try the next endpoint
-                    }
+                const { response, payload: responsePayload } = await fetchVerifyJobStatusOnce(jobId);
+                const normalizedStatus = normalizeVerifyClientStatus(responsePayload);
+                const previousStatus = normalizeVerifyClientStatus(item?.status || payload?.raw_status || payload?.status || '');
+                if (response?.ok && normalizedStatus && normalizedStatus !== previousStatus) {
+                    repaired = true;
                 }
             }
         } finally {
@@ -1950,7 +2234,7 @@
                 segments.push(stepStatusLabel);
             }
 
-            if (Number.isFinite(queuePosition) && queuePosition >= 0) {
+            if (Number.isFinite(queuePosition) && queuePosition > 0) {
                 segments.push(lang === 'zh' ? `队列位置 ${queuePosition}` : `Position ${queuePosition}`);
             }
 
@@ -2014,12 +2298,15 @@
         }
 
         if (status === 'failed') {
-            const errorText = getErrorLabel(data?.error, data?.message || (lang === 'zh' ? '任务失败' : 'Job failed'));
-            let html = escapeHtml(errorText);
+        const errorText = getLocalizedHistoryMessage(
+            getErrorLabel(data?.error, data?.message || (lang === 'zh' ? '任务失败' : 'Job failed')),
+            taskType
+        );
+        let html = escapeHtml(errorText);
 
-            if (stageLabel) {
-                html += `<div class="verify-result-subtle">${escapeHtml((lang === 'zh' ? '失败阶段: ' : 'Stage: ') + stageLabel)}</div>`;
-            }
+        if (stageLabel) {
+            html += `<div class="verify-result-subtle">${escapeHtml((lang === 'zh' ? '失败阶段: ' : 'Stage: ') + stageLabel)}</div>`;
+        }
 
             return {
                 status: 'error',
@@ -2055,20 +2342,19 @@
                     CONFIG.enabled = config.enabled !== false;
                     const providers = Array.isArray(config.providers) && config.providers.length
                         ? config.providers
-                        : VERIFY_PROVIDER_KEYS.map((provider) => ({ provider, label: VERIFY_PROVIDER_LABELS[provider], enabled: CONFIG.enabled }));
+                        : VERIFY_PROVIDER_KEYS.map((provider) => ({ provider, label: getProviderLabel(provider), enabled: CONFIG.enabled }));
+                    const providerVisibility = normalizeVerifyProviderVisibility(config.provider_visibility || config.providerVisibility);
                     verifyProviders = providers.map((item) => {
                         const provider = normalizeVerifyProvider(item.provider || item.provider_key || item.key);
+                        const visible = providerVisibility === 'both' || providerVisibility === provider;
                         return {
                             ...item,
                             provider,
-                            label: String(item.label || item.provider_label || VERIFY_PROVIDER_LABELS[provider] || provider).trim(),
-                            enabled: item.enabled !== false
+                            label: String(item.label || item.provider_label || getProviderLabel(provider) || provider).trim(),
+                            enabled: item.enabled !== false && visible
                         };
                     });
-                    activeVerifyProvider = normalizeVerifyProvider(config.active_provider || config.activeProvider || config.provider || activeVerifyProvider);
-                    if (!getVisibleVerifyProviders().some((item) => item.provider === activeVerifyProvider)) {
-                        activeVerifyProvider = getVisibleVerifyProviders()[0]?.provider || VERIFY_PROVIDER_AIDONE;
-                    }
+                    applyDefaultVerifyProvider(providerVisibility);
                     VERIFY_PROVIDER_KEYS.forEach((provider) => getChannelState(provider));
                     verifyProviders.forEach((providerConfig) => {
                         const state = getChannelState(providerConfig.provider);
@@ -2418,8 +2704,17 @@
         const selectedTaskType = getSelectedTaskType();
         const taskCount = getBatchLineCount();
         const quotaSummary = buildQuotaSummary(apiCredits);
-        const hasEnoughForSelectedTask = hasEnoughApiQuotaForTaskCount(selectedTaskType, taskCount, quotaSummary);
-        const quotaWarningState = buildQuotaWarningState(selectedTaskType, quotaSummary, taskCount);
+        const availableJobs = getChannelAvailableJobs(activeVerifyProvider, selectedTaskType);
+        const hasEnoughForSelectedTask = availableJobs === null || availableJobs >= taskCount;
+        const quotaWarningState = availableJobs !== null && availableJobs < taskCount
+            ? (buildQuotaWarningState(selectedTaskType, quotaSummary, taskCount) || {
+                tone: 'danger',
+                message: taskCount > 1
+                    ? t('verify.batchQuotaExhausted', getSubmissionCountShortageMessage())
+                    : getQuotaUnavailableMessage(selectedTaskType),
+                action: null
+            })
+            : null;
 
         if (quotaEl) {
             quotaEl.removeAttribute('title');
@@ -2487,7 +2782,9 @@
                                             </span>
 	                                        </label>`
             : '';
-        const providerTabsMarkup = getVisibleVerifyProviders().map((providerConfig) => {
+        const visibleProviderConfigs = getVisibleVerifyProviders();
+        const isSingleProviderView = visibleProviderConfigs.length === 1;
+        const providerTabsMarkup = visibleProviderConfigs.map((providerConfig) => {
             const provider = normalizeVerifyProvider(providerConfig.provider);
             const isActive = provider === activeVerifyProvider;
             const isRecommended = provider === getRecommendedVerifyProvider(defaultTaskType);
@@ -2496,17 +2793,21 @@
             const remainingTone = getProviderRemainingTone(remaining);
             const running = getProviderActiveTaskCount(provider);
             const health = getChannelState(provider).health || normalizeProviderHealth({});
+            const providerOptionTag = isSingleProviderView ? 'div' : 'button';
+            const providerOptionAttrs = isSingleProviderView
+                ? `data-verify-provider="${escapeHtml(provider)}" data-verify-provider-option="${escapeHtml(provider)}" data-health-tone="${escapeHtml(health.tone || 'ok')}"`
+                : `type="button" data-verify-action="switch-provider" data-verify-provider="${escapeHtml(provider)}" data-verify-provider-option="${escapeHtml(provider)}" data-health-tone="${escapeHtml(health.tone || 'ok')}" aria-pressed="${isActive ? 'true' : 'false'}"`;
             return `
-                                    <button class="verify-provider-option ${isActive ? 'active' : ''} ${isRecommended ? 'recommended' : ''}" type="button" data-verify-action="switch-provider" data-verify-provider="${escapeHtml(provider)}" data-verify-provider-option="${escapeHtml(provider)}" data-health-tone="${escapeHtml(health.tone || 'ok')}" aria-pressed="${isActive ? 'true' : 'false'}">
-                                        <span class="verify-provider-option__main">
+                                    <${providerOptionTag} class="verify-provider-option ${isSingleProviderView ? 'verify-provider-option--single' : ''} ${isActive ? 'active' : ''} ${isRecommended && !isSingleProviderView ? 'recommended' : ''}" ${providerOptionAttrs}>
+                                        <span class="verify-provider-option__main"${isSingleProviderView ? ' hidden' : ''}>
                                             <span>${escapeHtml(label)}</span>
                                         </span>
                                         <span class="verify-provider-option__meta">
-                                            <span class="verify-provider-option__health">${t('verify.channelHealth', '状态')} <strong data-verify-provider-health>${escapeHtml(getProviderHealthLabel(provider))}</strong></span>
+                                            <span class="verify-provider-option__health">${t('verify.queueSize', '排队')} <strong data-verify-provider-health>${escapeHtml(getProviderQueueLabel(provider))}</strong></span>
                                             <span class="verify-provider-option__running"${running > 0 ? '' : ' hidden'}>${t('verify.processText', '处理中')} <strong data-verify-provider-running>${running}</strong></span>
                                         </span>
                                         <span class="verify-provider-option__remaining">${t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')}<strong data-verify-provider-remaining data-remaining-tone="${escapeHtml(remainingTone)}">${remaining === null ? '--' : escapeHtml(formatBalanceValue(remaining))}</strong></span>
-                                    </button>`;
+                                    </${providerOptionTag}>`;
         }).join('');
 
         container.innerHTML = `
@@ -2549,7 +2850,7 @@
 	                    <div id="verifyForm">
 	                        <div class="verify-form-shell">
 	                            <div class="verify-input-area verify-form-main">
-	                                <div class="verify-provider-switcher" role="group" aria-label="${t('verify.providerChannelLabel', '验证通道')}">
+	                                <div class="verify-provider-switcher ${isSingleProviderView ? 'verify-provider-switcher--single' : ''}" role="group" aria-label="${t('verify.providerChannelLabel', '验证通道')}">
 ${providerTabsMarkup}
 	                                </div>
 
@@ -2560,7 +2861,7 @@ ${providerTabsMarkup}
                                     </button>
                                     <button class="verify-submit-mode-btn" type="button" data-verify-action="set-submit-mode" data-verify-mode="batch" aria-pressed="false">
                                         <i class="fas fa-layer-group"></i>
-                                        ${t('verify.batchMode', '批量账号')}
+                                        ${t('verify.batchMode', '批量任务')}
                                     </button>
                                 </div>
 
@@ -2615,15 +2916,15 @@ ${providerTabsMarkup}
                                 </div>
 
                                 <div class="verify-form-field verify-batch-field" id="verifyBatchField" hidden>
-                                    <span class="verify-field-label">${t('verify.batchAccountsLabel', '批量账号')} <em>*</em></span>
+                                    <span class="verify-field-label">${t('verify.batchAccountsLabel', '批量任务')} <em>*</em></span>
                                     <textarea
                                         class="verify-input verify-batch-textarea"
                                         id="verifyBatchInput"
                                         spellcheck="false"
                                         autocomplete="off"
-                                        placeholder="${t('verify.batchPlaceholder', '每行一个账号：邮箱----密码----2FA密钥')}"
+                                        placeholder="${t('verify.batchPlaceholder', '每行一个账号：邮箱----密码----2FA，或 邮箱|密码|辅助邮箱|2FA|注册时间|注册地')}"
                                     ></textarea>
-                                    <div class="verify-batch-format-note">${t('verify.batchFormatNote', '支持 email----password----2FA，也兼容 Tab /逗号分隔。最多 50个账号。')}</div>
+                                    <div class="verify-batch-format-note">${t('verify.batchFormatNote', '支持 ----、|、Tab、逗号分隔；带辅助邮箱/注册时间/注册地时会自动提取 email、password、2FA。最多 50个账号。')}</div>
                                 </div>
 
                                 <div class="verify-form-field">
@@ -2803,6 +3104,7 @@ ${fullModeMarkup}
         bindDelegatedUi(container);
         setupInputListener();
         updatePreviewModeUI();
+        applyDefaultVerifyProvider();
         syncCurrentChannelMirrors(activeVerifyProvider);
         restoreChannelFormState(activeVerifyProvider);
         restoreChannelResultPanel(activeVerifyProvider);
@@ -3139,8 +3441,8 @@ ${fullModeMarkup}
         const raw = String(line || '').trim();
         if (!raw) return [];
 
-        if (raw.includes('----')) {
-            return raw.split('----').map((part) => part.trim());
+        if (raw.includes('|') || /-{4,}/.test(raw)) {
+            return raw.split(/\s*(?:\||-{4,})\s*/).map((part) => part.trim());
         }
 
         if (raw.includes('\t')) {
@@ -3154,13 +3456,36 @@ ${fullModeMarkup}
         return raw.split(/\s+/).map((part) => part.trim());
     }
 
-    function normalizeCredentialEntry(parts = [], index = 0, priority = 0, taskType = getSelectedTaskType()) {
-        const email = String(parts[0] || '').trim().toLowerCase();
-        const password = String(parts[1] || '').trim();
-        const totpSecret = String(parts.slice(2).join('').replace(/\s+/g, '') || '')
+    function isValidCredentialEmail(value = '') {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim().toLowerCase());
+    }
+
+    function normalizeTotpSecretValue(value = '') {
+        return String(value || '')
             .trim()
             .toUpperCase()
             .replace(/[^A-Z2-7]/g, '');
+    }
+
+    function getBatchCredentialTotpPart(parts = []) {
+        const detailStartIndex = isValidCredentialEmail(parts[2]) ? 3 : 2;
+        const candidate = parts[detailStartIndex] || '';
+        if (!String(candidate || '').trim() && parts[detailStartIndex + 1]) {
+            return parts[detailStartIndex + 1] || '';
+        }
+        return candidate;
+    }
+
+    function formatBatchLineError(lineNumber, reason = '') {
+        return t('verify.batchLineError', '第 {line} 行: {reason}')
+            .replace('{line}', String(lineNumber))
+            .replace('{reason}', String(reason || ''));
+    }
+
+    function normalizeCredentialEntry(parts = [], index = 0, priority = 0, taskType = getSelectedTaskType()) {
+        const email = String(parts[0] || '').trim().toLowerCase();
+        const password = String(parts[1] || '').trim();
+        const totpSecret = normalizeTotpSecretValue(getBatchCredentialTotpPart(parts));
 
         if (!email || !password || !totpSecret) {
             return {
@@ -3169,7 +3494,7 @@ ${fullModeMarkup}
             };
         }
 
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (!isValidCredentialEmail(email)) {
             return {
                 valid: false,
                 reason: t('verify.invalidEmail', '邮箱格式不正确')
@@ -3216,7 +3541,8 @@ ${fullModeMarkup}
         if (rawLines.length > VERIFY_BATCH_MAX_ENTRIES) {
             return {
                 valid: false,
-                reason: t('verify.batchTooMany', `单次最多提交 ${VERIFY_BATCH_MAX_ENTRIES} 个账号`)
+                reason: t('verify.batchTooMany', '单次最多提交 {count} 个账号')
+                    .replace('{count}', String(VERIFY_BATCH_MAX_ENTRIES))
             };
         }
 
@@ -3228,14 +3554,14 @@ ${fullModeMarkup}
             if (!parsed.valid) {
                 return {
                     valid: false,
-                    reason: `${t('verify.batchLinePrefix', '第')} ${lineIndex + 1} ${t('verify.batchLineSuffix', '行')}: ${parsed.reason}`
+                    reason: formatBatchLineError(lineIndex + 1, parsed.reason)
                 };
             }
 
             if (seenEmails.has(parsed.entry.email)) {
                 return {
                     valid: false,
-                    reason: `${t('verify.batchLinePrefix', '第')} ${lineIndex + 1} ${t('verify.batchLineSuffix', '行')}: ${t('verify.batchDuplicateEmail', '邮箱重复')}`
+                    reason: formatBatchLineError(lineIndex + 1, t('verify.batchDuplicateEmail', '邮箱重复'))
                 };
             }
 
@@ -3518,7 +3844,27 @@ ${fullModeMarkup}
             provider,
             restored: true
         });
-        updateExecutionRing({ status: 'queued', queue_position: 0 }, provider);
+        updateExecutionRing({ status: 'queued', queue_position: null }, provider);
+
+        fetchVerifyJobStatusOnce(pending.jobId).then(({ response, payload }) => {
+            if (!response?.ok) return;
+            const display = getResultDisplay(payload);
+            if (!display.terminal) return;
+
+            const taskInfo = activeTasks.get(pending.jobId);
+            if (taskInfo?.timer) clearInterval(taskInfo.timer);
+            activeTasks.delete(pending.jobId);
+            clearPendingTask(pending.jobId);
+            updateResultItem(0, display.status, display.html, provider);
+            finishVerification({
+                outcome: display.success ? 'success' : 'error',
+                jobId: pending.jobId,
+                provider
+            });
+            loadHistory();
+        }).catch(() => {
+            // regular polling below keeps retrying.
+        });
 
         pollTask(pending.jobId, {
             index: 0,
@@ -3805,7 +4151,7 @@ ${fullModeMarkup}
         }
 
         const quotaShortage = apiCredits >= 0
-            ? findApiQuotaShortageForEntries(entries, buildQuotaSummary(apiCredits))
+            ? findChannelQuotaShortageForEntries(entries, provider)
             : null;
         if (quotaShortage) {
             showSingleResult(
@@ -3885,6 +4231,9 @@ ${fullModeMarkup}
                         markTerminal({ terminal: true, success: false }, entry);
                         continue;
                     }
+
+                    updateQuotaDisplay();
+                    updateProviderSwitcherUi();
 
                     const pollPromise = pollTask(submitted.jobId, { ...entry, provider })
                         .then((result) => {
@@ -4013,7 +4362,7 @@ ${fullModeMarkup}
 
         const requiredUses = getTaskTypeUsageCost(entry.taskType, provider);
         const quotaShortage = apiCredits >= 0
-            ? findApiQuotaShortageForEntries([entry], buildQuotaSummary(apiCredits))
+            ? findChannelQuotaShortageForEntries([entry], provider)
             : null;
         if (quotaShortage) {
             showSingleResult(
@@ -4155,25 +4504,7 @@ ${fullModeMarkup}
                 pollingRequestInFlight = true;
 
                 try {
-                    const headers = await getVerifyRequestHeaders();
-                    const statusEndpoints = buildVerifyStatusEndpoints(jobId);
-                    let res = null;
-                    let data = {};
-
-                    for (const endpoint of statusEndpoints) {
-                        try {
-                            const response = await fetch(endpoint, { headers, cache: 'no-store' });
-                            const payload = await response.json().catch(() => ({}));
-
-                            if (response.ok || !shouldFallbackVerifyEndpoint(response, payload)) {
-                                res = response;
-                                data = payload;
-                                break;
-                            }
-                        } catch (_) {
-                            // try the next endpoint
-                        }
-                    }
+                    const { response: res, payload: data } = await fetchVerifyJobStatusOnce(jobId);
 
                     if (!res) {
                         throw new Error(t('verify.connectionLost', '连接中断，请重试'));
@@ -4676,6 +5007,7 @@ ${fullModeMarkup}
         const container = document.getElementById(CONFIG.containerId);
         if (!container) return;
 
+        await waitForI18nReady();
         await loadConfig();
 
         let isLoggedIn = false;
@@ -4685,19 +5017,6 @@ ${fullModeMarkup}
             isLoggedIn = true;
         }
         hadOptimisticLogin = isLoggedIn;
-
-        if (!window.i18n || typeof window.i18n.t !== 'function') {
-            await new Promise((resolve) => {
-                let count = 0;
-                const check = setInterval(() => {
-                    count++;
-                    if ((window.i18n && typeof window.i18n.t === 'function') || count > 20) {
-                        clearInterval(check);
-                        resolve();
-                    }
-                }, 100);
-            });
-        }
 
         render(container, isLoggedIn);
         focusVerifyHelpHash();

@@ -43,6 +43,7 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('unlock_pricing', '{
     "default_points": 1,
     "vip_discount": 0.9,
+    "free_daily_limit": 3,
     "bulk_discounts": [
         {"min_count": 5, "discount": 0.8},
         {"min_count": 10, "discount": 0.7}

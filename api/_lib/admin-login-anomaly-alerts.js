@@ -10,23 +10,11 @@ const {
 const {
     notifyActiveAdmins
 } = require('./admin-notifications');
+const {
+    DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG
+} = require('./admin-login-anomaly-defaults');
 
 const ADMIN_ACCESS_AUDIT_ACTION = 'admin.access.session.issue';
-const DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG = Object.freeze({
-    enabled: true,
-    sweep_interval_ms: 10 * 60 * 1000,
-    recent_window_minutes: 30,
-    baseline_lookback_days: 30,
-    dedupe_window_minutes: 30,
-    ip_grouping_enabled: true,
-    ipv4_group_prefix_bits: 24,
-    ipv6_group_prefix_bits: 64,
-    recent_distinct_ip_group_threshold: 2,
-    user_agent_family_grouping_enabled: true,
-    recent_distinct_user_agent_family_threshold: 2,
-    page_size: 500,
-    max_pages: 10
-});
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -367,7 +355,13 @@ function getEventAdminLabel(row = {}) {
     return normalizeText(row.admin_email) || normalizeText(details.admin_email) || normalizeText(row.admin_id) || 'unknown-admin';
 }
 
-function buildReasonList({ isNewIpGroup, recentDistinctIpGroups, recentDistinctUserAgentFingerprints, config }) {
+function buildReasonList({
+    isNewIpGroup,
+    isNewUserAgentFingerprint,
+    recentDistinctIpGroups,
+    recentDistinctUserAgentFingerprints,
+    config
+}) {
     const reasons = [];
     const ipUnitLabel = config.ip_grouping_enabled ? ' IP 段' : ' IP';
     const ipGroupThreshold = Math.max(
@@ -379,8 +373,8 @@ function buildReasonList({ isNewIpGroup, recentDistinctIpGroups, recentDistinctU
         Math.round(Number(config.recent_distinct_user_agent_family_threshold || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_user_agent_family_threshold))
     );
 
-    if (isNewIpGroup) {
-        reasons.push(`管理员首次从该${ipUnitLabel}登录后台`);
+    if (isNewIpGroup && isNewUserAgentFingerprint) {
+        reasons.push(`管理员首次从新的${ipUnitLabel}和设备家族组合登录后台`);
     }
     if (recentDistinctIpGroups.length >= ipGroupThreshold) {
         reasons.push(`最近窗口内出现 ${recentDistinctIpGroups.length} 个登录${ipUnitLabel}`);
@@ -421,14 +415,21 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
 
             const previousIps = getDistinctValues(earlierRows, getEventIp);
             const previousIpGroups = getDistinctValues(earlierRows, (candidate) => buildIpGroup(getEventIp(candidate), config));
+            const previousUserAgentFingerprints = getDistinctValues(earlierRows, (candidate) => buildUserAgentFingerprint(getEventUserAgent(candidate), config));
             const recentDistinctIps = getDistinctValues(recentRows, getEventIp);
             const recentDistinctIpGroups = getDistinctValues(recentRows, (candidate) => buildIpGroup(getEventIp(candidate), config));
             const recentDistinctRawUserAgents = getDistinctValues(recentRows, getEventUserAgent);
             const recentDistinctUserAgentFingerprints = getDistinctValues(recentRows, (candidate) => buildUserAgentFingerprint(getEventUserAgent(candidate), config));
             const clientIpGroup = buildIpGroup(clientIp, config);
+            const userAgent = getEventUserAgent(row);
+            const userAgentFingerprint = buildUserAgentFingerprint(userAgent, config);
             const isNewIpGroup = previousIpGroups.length > 0 && clientIpGroup && !previousIpGroups.includes(clientIpGroup);
+            const isNewUserAgentFingerprint = previousUserAgentFingerprints.length > 0
+                && userAgentFingerprint
+                && !previousUserAgentFingerprints.includes(userAgentFingerprint);
             const reasons = buildReasonList({
                 isNewIpGroup,
+                isNewUserAgentFingerprint,
                 recentDistinctIpGroups,
                 recentDistinctUserAgentFingerprints,
                 config
@@ -446,8 +447,6 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
                 `登录 IP：${clientIp}`
             ];
 
-            const userAgent = getEventUserAgent(row);
-            const userAgentFingerprint = buildUserAgentFingerprint(userAgent, config);
             if (userAgent) {
                 lines.push(`设备指纹：${userAgent}`);
             }
@@ -484,9 +483,12 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
                     client_ip_group: clientIpGroup || null,
                     user_agent: userAgent || null,
                     user_agent_fingerprint: userAgentFingerprint || null,
+                    is_new_ip_group: isNewIpGroup,
+                    is_new_user_agent_fingerprint: isNewUserAgentFingerprint,
                     occurred_at: createdAt,
                     previous_ips: previousIps,
                     previous_ip_groups: previousIpGroups,
+                    previous_user_agent_fingerprints: previousUserAgentFingerprints,
                     recent_distinct_ip_count: recentDistinctIpGroups.length,
                     recent_distinct_raw_ip_count: recentDistinctIps.length,
                     recent_distinct_user_agent_count: recentDistinctUserAgentFingerprints.length,

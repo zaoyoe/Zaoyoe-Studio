@@ -70,7 +70,7 @@ function formatDiscountBenefitLabel(discount = {}) {
 
     if (discountType === 'percent') {
         const folded = discountValue / 10;
-        if (Number.isFinite(folded) && folded > 0) {
+        if (Number.isFinite(folded) && folded >= 0) {
             const display = Number.isInteger(folded)
                 ? String(folded)
                 : folded.toFixed(1).replace(/\.0$/, '');

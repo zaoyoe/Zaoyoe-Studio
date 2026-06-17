@@ -1,9 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
     createWalletHandlers
 } = require('../server/api-handlers/public/wallet');
+
+const walletHandlerPath = path.resolve(__dirname, '../server/api-handlers/public/wallet.js');
 
 function createMockResponse() {
     const state = {
@@ -305,7 +309,20 @@ test('wallet transactions handler returns browse payload with prompt title map',
                 id: 'shop-1',
                 user_id: 'user-wallet-1',
                 site: 'cn',
-                total_price: 9,
+                price_paid: 2,
+                total_price: 20,
+                discount_code: 'FREEONE',
+                discount_amount: 18,
+                discount_snapshot: {
+                    applied_discounts: [
+                        {
+                            code: 'FREEONE',
+                            discount_type: 'percent',
+                            discount_value: 10,
+                            discount_amount: 18
+                        }
+                    ]
+                },
                 item_count: 1,
                 status: 'completed',
                 created_at: '2026-04-16T09:10:00.000Z',
@@ -342,9 +359,40 @@ test('wallet transactions handler returns browse payload with prompt title map',
     assert.equal(res.statusCode, 200);
     assert.equal(payload.success, true);
     assert.equal(payload.shop_orders.length, 1);
+    assert.equal(payload.shop_orders[0].price_paid, 2);
+    assert.equal(payload.shop_orders[0].total_price, 20);
+    assert.equal(payload.shop_orders[0].discount_code, 'FREEONE');
+    assert.equal(payload.shop_orders[0].discount_amount, 18);
+    assert.equal(payload.shop_orders[0].discount_snapshot.applied_discounts[0].code, 'FREEONE');
     assert.equal(payload.ledger_entries.length, 1);
     assert.equal(payload.ledger_entries[0].amount, -3);
     assert.equal(payload.prompt_titles['prompt-1'], '高级提示词');
+});
+
+test('wallet transactions handler selects paid and gross shop order totals', () => {
+    const source = fs.readFileSync(walletHandlerPath, 'utf8');
+
+    const browseSource = source.slice(
+        source.indexOf('async function queryWalletBrowseData'),
+        source.indexOf('async function queryWalletSearchData')
+    );
+    const searchSource = source.slice(
+        source.indexOf('async function queryWalletSearchData'),
+        source.indexOf('async function findWalletVerifyLog')
+    );
+    const uuidSearchStart = searchSource.indexOf('if (isUuidQuery)');
+    const uuidSearchSource = searchSource.slice(
+        uuidSearchStart,
+        searchSource.indexOf('ledgerRequests.push(', uuidSearchStart)
+    );
+
+    assert.match(browseSource, /from\('shop_orders'\)[\s\S]*id,[\s\S]*price_paid,[\s\S]*total_price,[\s\S]*discount_code,[\s\S]*discount_amount,[\s\S]*discount_snapshot,/);
+    assert.match(searchSource, /from\('shop_orders'\)[\s\S]*id,[\s\S]*price_paid,[\s\S]*total_price,[\s\S]*discount_code,[\s\S]*discount_amount,[\s\S]*discount_snapshot,/);
+    assert.match(
+        uuidSearchSource,
+        /from\('shop_orders'\)[\s\S]*\.select\(`[\s\S]*price_paid,[\s\S]*total_price,[\s\S]*discount_code,[\s\S]*discount_amount,[\s\S]*discount_snapshot,[\s\S]*\.eq\('id', trimmedQuery\)/,
+        'uuid search fallback should select paid, gross, and discount fields'
+    );
 });
 
 test('wallet transactions handler search path expands prompt-title and verify-log related ledger matches', async () => {

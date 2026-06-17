@@ -126,7 +126,7 @@
 
 | alert_type | 场景 | 默认级别 | 默认通道 | 去重建议 | 关键字段 |
 | --- | --- | --- | --- | --- | --- |
-| `security_admin_login_anomaly` | 管理员异常登录 / 异地登录 | `critical` | TG + 飞书 + 站内 | 30 分钟 | 管理员、IP 段、设备家族、时间 |
+| `security_admin_login_anomaly` | 管理员异常登录 / 异地登录 | `critical` | TG + 飞书 + 站内 | 6 小时 | 管理员、IP 段、设备家族、时间 |
 | `security_rate_limit_spike` | 限流命中激增 | `warning` | 飞书 + 站内 | 30 分钟 | 接口、IP、数量 |
 | `security_secret_changed` | 高危密钥被更新 / 删除 | `critical` | TG + 飞书 + 站内 | 10 分钟 | 密钥名、操作人、时间 |
 | `security_mock_enabled` | 生产环境误开 mock 支付 | `critical` | TG + 飞书 + 站内 | 10 分钟 | 环境、到期时间、操作者 |

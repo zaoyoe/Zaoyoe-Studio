@@ -3374,6 +3374,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-shop-order-delivery-summary-enabled':
                 window.toggleOpsAlertShopOrderDeliverySummaryEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-admin-login-anomaly-enabled':
+                window.toggleOpsAlertAdminLoginAnomalyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-admin-login-anomaly-ip-grouping':
+                window.toggleOpsAlertAdminLoginAnomalyIpGroupingEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-admin-login-anomaly-ua-grouping':
+                window.toggleOpsAlertAdminLoginAnomalyUserAgentFamilyGroupingEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-verify-quota-enabled':
                 window.toggleOpsAlertVerifyQuotaEnabled?.();
                 break;
@@ -4524,6 +4533,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'users-open-user-modal':
                 window.openUserModal?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-change-page':
+                window.changeUsersPage?.(actionEl.dataset.usersPage);
                 break;
             case 'users-reload-affiliate':
                 window.reloadAffiliateModalData?.();
@@ -5880,6 +5892,7 @@ const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([
     { configId: 'ops-alerts-verify-failure', bucket: 'monitors-side' },
     { configId: 'ops-alerts-kvm4', bucket: 'monitors-side' },
     { configId: 'ops-alerts-shop-risk', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-admin-login-anomaly', bucket: 'monitors-main' },
     { configId: 'ops-alerts-monitor', bucket: 'workspace-main' },
     { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },
     { configId: 'ops-alerts-health', bucket: 'health-main' },
@@ -5944,6 +5957,8 @@ function switchView(viewName) {
         setAdminGalleryLoadingChrome(false);
     }
 }
+
+window.switchView = switchView;
 
 // Switch between Settings sub-views (Pricing / General)
 function switchSettingsView(viewName, options = {}) {
@@ -11221,6 +11236,8 @@ function resetForm() {
     syncGalleryEditModePanels('create');
     updateStatus('Ready', 'ready');
 }
+
+window.resetForm = resetForm;
 
 // ========================================
 // HYBRID SEARCH: Local first, AI fallback

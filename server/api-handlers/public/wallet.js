@@ -367,7 +367,11 @@ async function queryWalletBrowseData(client, { userId, site, limit }) {
             .from('shop_orders')
             .select(`
                 id,
+                price_paid,
                 total_price,
+                discount_code,
+                discount_amount,
+                discount_snapshot,
                 item_count,
                 status,
                 created_at,
@@ -433,7 +437,11 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
             .from('shop_orders')
             .select(`
                 id,
+                price_paid,
                 total_price,
+                discount_code,
+                discount_amount,
+                discount_snapshot,
                 item_count,
                 status,
                 created_at,
@@ -489,7 +497,11 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
                 .from('shop_orders')
                 .select(`
                     id,
+                    price_paid,
                     total_price,
+                    discount_code,
+                    discount_amount,
+                    discount_snapshot,
                     item_count,
                     status,
                     created_at,

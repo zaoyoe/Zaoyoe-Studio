@@ -306,7 +306,8 @@ test('system config handler preserves zero unlock pricing per writable site', as
                     config_key: 'unlock_pricing',
                     config_value: {
                         default_points: 1,
-                        vip_discount: 0.9
+                        vip_discount: 0.9,
+                        free_daily_limit: 3
                     }
                 }
             ]
@@ -322,7 +323,8 @@ test('system config handler preserves zero unlock pricing per writable site', as
                 site: 'cn',
                 value: {
                     default_points: 0,
-                    vip_discount: 0.9
+                    vip_discount: 0.9,
+                    free_daily_limit: 2
                 }
             }
         }, res);
@@ -331,11 +333,13 @@ test('system config handler preserves zero unlock pricing per writable site', as
         assert.equal(state.tables.system_config[0].config_value.__site_scoped, true);
         assert.deepEqual(state.tables.system_config[0].config_value.default, {
             default_points: 1,
-            vip_discount: 0.9
+            vip_discount: 0.9,
+            free_daily_limit: 3
         });
         assert.deepEqual(state.tables.system_config[0].config_value.sites.cn, {
             default_points: 0,
-            vip_discount: 0.9
+            vip_discount: 0.9,
+            free_daily_limit: 2
         });
     });
 });

@@ -7,7 +7,7 @@ const {
     fetchVerifyQuotaSnapshot
 } = require('./verify-quota-alerts');
 
-const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending']);
+const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned']);
 const DEFAULT_VERIFY_QUEUE_MONITOR_CONFIG = Object.freeze({
     enabled: true,
     sweep_interval_ms: 10 * 60 * 1000,
