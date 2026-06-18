@@ -25,6 +25,7 @@ Inspired by Framer.com design aesthetics
     /* Accent Colors */
     --accent-blue: #3B82F6;
     --accent-purple: #8B5CF6;
+    --admin-studio-blue: #6b9ece;
 
     /* Glassmorphism */
     --glass-blur: blur(10px);
@@ -5757,7 +5758,7 @@ body.site-layout-support-detail-open {
 }
 
 .dropdown-action:hover i {
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--admin-studio-blue, #6b9ece);
 }
 
 /* Theme Toggle Button */
@@ -6822,7 +6823,7 @@ html[data-theme="light"] .dropdown-action i {
 }
 
 html[data-theme="light"] .dropdown-action:hover i {
-    color: rgba(15, 23, 42, 0.86);
+    color: var(--admin-studio-blue, #6b9ece);
 }
 
 html[data-theme="light"] .lang-toggle-simple:hover {

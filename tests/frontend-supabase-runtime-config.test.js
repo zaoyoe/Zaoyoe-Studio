@@ -14529,7 +14529,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );

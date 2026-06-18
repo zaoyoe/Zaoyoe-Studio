@@ -50,11 +50,6 @@ onUnmounted(() => {
   height: calc(100vh - 64px - 4rem); /* 减去 header + lg:p-8 的上下padding */
 }
 
-.table-page-layout.mobile-mode {
-  @apply gap-3;
-  height: auto;
-}
-
 .layout-section-fixed {
   @apply flex-shrink-0;
 }

@@ -41,7 +41,7 @@
         >
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </button>
-        <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
+        <button @click="openCreateModal" class="btn btn-primary" data-tour="keys-create-btn">
           <Icon name="plus" size="md" class="mr-2" />
           {{ t('keys.createKey') }}
         </button>
@@ -366,7 +366,7 @@
               :title="t('keys.noKeysYet')"
               :description="t('keys.createFirstKey')"
               :action-text="t('keys.createKey')"
-              @action="showCreateModal = true"
+              @action="openCreateModal"
             />
           </template>
         </DataTable>
@@ -884,6 +884,82 @@
       </template>
     </BaseDialog>
 
+    <Teleport to="body">
+      <Transition name="api-key-confirmation-fade">
+        <div
+          v-if="showRegionalRestrictionModal"
+          class="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
+        >
+          <div class="w-full max-w-4xl rounded-xl border border-white/10 bg-[#17171c] px-8 py-8 text-white shadow-2xl sm:px-12">
+            <h2 class="text-3xl font-semibold leading-tight tracking-normal sm:text-4xl">
+              API Key Use Confirmation
+            </h2>
+            <p class="mt-6 text-xl leading-9 text-gray-300">
+              Before creating or managing API keys, please confirm that you will not use this service from a restricted region or for prohibited, abusive, or unlawful activity.
+            </p>
+
+            <ul class="mt-8 list-disc space-y-3 pl-8 text-lg leading-8 text-gray-300">
+              <li>The service is not offered to users located in restricted regions, including mainland China.</li>
+              <li>You must not evade regional, payment, provider, or legal restrictions.</li>
+              <li>You must comply with the Terms, Privacy Policy, Acceptable Use Policy, Refund and Suspension Policy, and Restricted Regions Notice.</li>
+            </ul>
+
+            <div class="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-lg font-medium text-primary-200">
+              <RouterLink to="/legal/terms" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+                Terms
+              </RouterLink>
+              <RouterLink to="/legal/privacy" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+                Privacy
+              </RouterLink>
+              <RouterLink to="/legal/acceptable-use" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+                Acceptable Use
+              </RouterLink>
+              <RouterLink to="/legal/refund" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+                Refund
+              </RouterLink>
+              <RouterLink to="/legal/restricted-regions" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+                Restricted Regions
+              </RouterLink>
+            </div>
+
+            <label class="mt-8 flex items-start gap-4 text-xl font-semibold leading-8 text-white">
+              <input
+                v-model="regionalRestrictionConfirmationChecked"
+                type="checkbox"
+                :disabled="regionalRestrictionBlocked"
+                class="mt-1 h-5 w-5 shrink-0 rounded border-gray-400 bg-white text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <span>
+                I confirm that I am eligible to continue and will not use this service from a restricted region or for prohibited activity.
+              </span>
+            </label>
+
+            <div class="mt-8 flex flex-wrap gap-4">
+              <button
+                type="button"
+                class="btn btn-primary btn-lg min-w-[10rem]"
+                :disabled="!regionalRestrictionConfirmationChecked || regionalRestrictionBlocked"
+                @click="acceptRegionalRestrictionConfirmation"
+              >
+                I Confirm
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary btn-lg border-white/10 bg-[#24242b] text-white hover:bg-[#2d2d35]"
+                @click="leaveApiKeyPage"
+              >
+                Back
+              </button>
+            </div>
+
+            <p class="mt-8 text-base leading-6 text-gray-400">
+              This soft confirmation is stored only in this browser. It does not create a server-side confirmation record or additional IP log.
+            </p>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Delete Confirmation Dialog -->
     <ConfirmDialog
       :show="showDeleteDialog"
@@ -1045,40 +1121,41 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
-	import { useI18n } from 'vue-i18n'
-	import { useAppStore } from '@/stores/app'
-	import { useOnboardingStore } from '@/stores/onboarding'
-	import { useClipboard } from '@/composables/useClipboard'
+import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { useAppStore } from '@/stores/app'
+import { useOnboardingStore } from '@/stores/onboarding'
+import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
-
-const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-	import DataTable from '@/components/common/DataTable.vue'
-	import Pagination from '@/components/common/Pagination.vue'
-	import BaseDialog from '@/components/common/BaseDialog.vue'
-	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-	import EmptyState from '@/components/common/EmptyState.vue'
-	import Select from '@/components/common/Select.vue'
-	import SearchInput from '@/components/common/SearchInput.vue'
-	import Icon from '@/components/icons/Icon.vue'
-	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
-	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
-	import GroupBadge from '@/components/common/GroupBadge.vue'
-	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Select from '@/components/common/Select.vue'
+import SearchInput from '@/components/common/SearchInput.vue'
+import Icon from '@/components/icons/Icon.vue'
+import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+import EndpointPopover from '@/components/keys/EndpointPopover.vue'
+import GroupBadge from '@/components/common/GroupBadge.vue'
+import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
+import type { RegionalRestrictionScope, RegionalRestrictionStatus } from '@/api/keys'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
-  resolveCcSwitchClaudeModelSlots,
-  type CcSwitchClaudeModelSlots,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
+
+const { t } = useI18n()
+const router = useRouter()
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1146,15 +1223,108 @@ const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
+const showRegionalRestrictionModal = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
+const regionalRestrictionStatus = ref<RegionalRestrictionStatus | null>(null)
+const regionalRestrictionConfirmationChecked = ref(false)
+const apiKeysLoaded = ref(false)
+const pendingRegionalRestrictionAction = ref<'create' | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
+
+const regionalRestrictionStorageKey = computed(() => {
+  const revision = regionalRestrictionStatus.value?.revision || publicSettings.value?.regional_restriction_confirmation_revision || ''
+  return `sub2api.regional-restriction-confirmed:${revision || 'default'}`
+})
+
+const regionalRestrictionBlocked = computed(() => regionalRestrictionStatus.value?.blocked === true)
+const regionalRestrictionConfirmationRequired = computed(() =>
+  regionalRestrictionStatus.value?.enabled === true &&
+  regionalRestrictionStatus.value?.confirmation_required === true &&
+  !regionalRestrictionBlocked.value
+)
+
+const loadRegionalRestrictionState = async (scope: RegionalRestrictionScope = 'api_key_page') => {
+  try {
+    regionalRestrictionStatus.value = await keysAPI.getRegionalRestrictionStatus(scope)
+  } catch (error) {
+    console.error('Failed to load regional restriction status:', error)
+    regionalRestrictionStatus.value = null
+  }
+}
+
+const hasAcceptedRegionalRestriction = () => {
+  const key = regionalRestrictionStorageKey.value
+  if (!key) return false
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return false
+    const parsed = JSON.parse(raw) as { revision?: string }
+    return parsed.revision === (regionalRestrictionStatus.value?.revision || publicSettings.value?.regional_restriction_confirmation_revision || '')
+  } catch {
+    return false
+  }
+}
+
+const openRegionalRestrictionModal = async (scope: RegionalRestrictionScope = 'api_key_page') => {
+  await loadRegionalRestrictionState(scope)
+  if (regionalRestrictionBlocked.value) {
+    regionalRestrictionConfirmationChecked.value = false
+    showRegionalRestrictionModal.value = true
+    return false
+  }
+  if (!regionalRestrictionConfirmationRequired.value) {
+    showRegionalRestrictionModal.value = false
+    return true
+  }
+  if (hasAcceptedRegionalRestriction()) {
+    showRegionalRestrictionModal.value = false
+    return true
+  }
+  regionalRestrictionConfirmationChecked.value = false
+  showRegionalRestrictionModal.value = true
+  return false
+}
+
+const acceptRegionalRestrictionConfirmation = () => {
+  if (!regionalRestrictionConfirmationChecked.value || regionalRestrictionBlocked.value) {
+    return
+  }
+  const revision = regionalRestrictionStatus.value?.revision || publicSettings.value?.regional_restriction_confirmation_revision || ''
+  if (revision) {
+    localStorage.setItem(
+      regionalRestrictionStorageKey.value,
+      JSON.stringify({
+        revision,
+        accepted_at: new Date().toISOString()
+      })
+    )
+  }
+  showRegionalRestrictionModal.value = false
+  if (!apiKeysLoaded.value) {
+    loadApiKeys()
+  }
+  if (pendingRegionalRestrictionAction.value === 'create') {
+    pendingRegionalRestrictionAction.value = null
+    showCreateModal.value = true
+  }
+}
+
+const leaveApiKeyPage = () => {
+  showRegionalRestrictionModal.value = false
+  pendingRegionalRestrictionAction.value = null
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/dashboard')
+  }
+}
 
 // Get the currently selected key for group change
 const selectedKeyForGroup = computed(() => {
@@ -1309,6 +1479,7 @@ const loadApiKeys = async () => {
     })
     if (signal.aborted) return
     apiKeys.value = response.items
+    apiKeysLoaded.value = true
     pagination.value.total = response.total
     pagination.value.pages = response.pages
 
@@ -1364,6 +1535,15 @@ const loadPublicSettings = async () => {
 const openUseKeyModal = (key: ApiKey) => {
   selectedKey.value = key
   showUseKeyModal.value = true
+}
+
+const openCreateModal = async () => {
+  const allowed = await openRegionalRestrictionModal('api_key_create')
+  if (allowed) {
+    showCreateModal.value = true
+  } else if (!regionalRestrictionBlocked.value) {
+    pendingRegionalRestrictionAction.value = 'create'
+  }
 }
 
 const closeUseKeyModal = () => {
@@ -1492,6 +1672,13 @@ const handleSubmit = async () => {
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
     return
+  }
+
+  if (!showEditModal.value) {
+    const allowed = await openRegionalRestrictionModal('api_key_create')
+    if (!allowed) {
+      return
+    }
   }
 
   // Validate custom key if enabled
@@ -1692,63 +1879,6 @@ const resetRateLimitUsage = async () => {
   }
 }
 
-const buildClaudeModelsUrl = (
-  baseUrl: string,
-  platform: GroupPlatform | undefined,
-  clientType: CcSwitchClientType
-) => {
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
-  if (platform === 'antigravity' && clientType === 'claude') {
-    return `${normalizedBaseUrl}/antigravity/v1/models`
-  }
-  return `${normalizedBaseUrl}/v1/models`
-}
-
-const fetchClaudeModelSlotsForCcs = async (
-  baseUrl: string,
-  platform: GroupPlatform | undefined,
-  clientType: CcSwitchClientType,
-  apiKey: string
-): Promise<CcSwitchClaudeModelSlots | undefined> => {
-  const normalizedPlatform = platform || 'anthropic'
-  if (
-    clientType !== 'claude' ||
-    (normalizedPlatform !== 'anthropic' && normalizedPlatform !== 'antigravity')
-  ) {
-    return undefined
-  }
-
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 3000)
-
-  try {
-    const response = await fetch(buildClaudeModelsUrl(baseUrl, platform, clientType), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      },
-      signal: controller.signal
-    })
-
-    if (!response.ok) return undefined
-
-    const payload = (await response.json()) as { data?: Array<{ id?: unknown }> }
-    const modelIds =
-      payload.data
-        ?.map((model) => (typeof model.id === 'string' ? model.id : ''))
-        .filter((modelId) => modelId.length > 0) || []
-
-    return resolveCcSwitchClaudeModelSlots(modelIds)
-  } catch (error: any) {
-    if (error?.name !== 'AbortError') {
-      console.warn('Failed to load Claude models for CC Switch import:', error)
-    }
-    return undefined
-  } finally {
-    window.clearTimeout(timeoutId)
-  }
-}
-
 const importToCcswitch = (row: ApiKey) => {
   const platform = row.group?.platform || 'anthropic'
 
@@ -1763,7 +1893,7 @@ const importToCcswitch = (row: ApiKey) => {
   executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
 }
 
-const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => {
+const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
@@ -1784,15 +1914,13 @@ const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => 
     }
   })`
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
-  const claudeModelSlots = await fetchClaudeModelSlotsForCcs(baseUrl, platform, clientType, row.key)
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
     platform,
     clientType,
     providerName,
     apiKey: row.key,
-    usageScript,
-    claudeModelSlots
+    usageScript
   })
 
   try {
@@ -1836,12 +1964,18 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
-  loadApiKeys()
+  loadPublicSettings()
   loadGroups()
   loadUserGroupRates()
-  loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
   resetTimer = setInterval(() => { now.value = new Date() }, 60000)
+  void openRegionalRestrictionModal().then((allowed) => {
+    if (allowed) {
+      loadApiKeys()
+    } else {
+      loading.value = false
+    }
+  })
 })
 
 onUnmounted(() => {
@@ -1849,3 +1983,28 @@ onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
+
+<style scoped>
+.api-key-confirmation-fade-enter-active,
+.api-key-confirmation-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.api-key-confirmation-fade-enter-from,
+.api-key-confirmation-fade-leave-to {
+  opacity: 0;
+}
+
+.api-key-confirmation-fade-enter-active > div,
+.api-key-confirmation-fade-leave-active > div {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.api-key-confirmation-fade-enter-from > div,
+.api-key-confirmation-fade-leave-to > div {
+  opacity: 0;
+  transform: translateY(8px) scale(0.99);
+}
+</style>

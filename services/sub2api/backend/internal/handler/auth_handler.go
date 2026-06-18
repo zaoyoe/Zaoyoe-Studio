@@ -164,6 +164,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := h.ensureRegionalRestrictionAllows(c, regionalRestrictionScopeRegistration); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	// Turnstile 验证（邮箱验证码注册场景避免重复校验一次性 token）
 	if err := h.authService.VerifyTurnstileForRegister(c.Request.Context(), req.TurnstileToken, ip.GetClientIP(c), req.VerifyCode); err != nil {
@@ -194,6 +198,10 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 	var req SendVerifyCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.ensureRegionalRestrictionAllows(c, regionalRestrictionScopeRegistration); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 

@@ -119,176 +119,190 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	}
 
 	payload := dto.SystemSettings{
-		RegistrationEnabled:                    settings.RegistrationEnabled,
-		EmailVerifyEnabled:                     settings.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist:       settings.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                       settings.PromoCodeEnabled,
-		PasswordResetEnabled:                   settings.PasswordResetEnabled,
-		FrontendURL:                            settings.FrontendURL,
-		InvitationCodeEnabled:                  settings.InvitationCodeEnabled,
-		TotpEnabled:                            settings.TotpEnabled,
-		TotpEncryptionKeyConfigured:            h.settingService.IsTotpEncryptionKeyConfigured(),
-		LoginAgreementEnabled:                  settings.LoginAgreementEnabled,
-		LoginAgreementMode:                     settings.LoginAgreementMode,
-		LoginAgreementUpdatedAt:                settings.LoginAgreementUpdatedAt,
-		LoginAgreementDocuments:                loginAgreementDocumentsToDTO(settings.LoginAgreementDocuments),
-		SMTPHost:                               settings.SMTPHost,
-		SMTPPort:                               settings.SMTPPort,
-		SMTPUsername:                           settings.SMTPUsername,
-		SMTPPasswordConfigured:                 settings.SMTPPasswordConfigured,
-		SMTPFrom:                               settings.SMTPFrom,
-		SMTPFromName:                           settings.SMTPFromName,
-		SMTPUseTLS:                             settings.SMTPUseTLS,
-		TurnstileEnabled:                       settings.TurnstileEnabled,
-		TurnstileSiteKey:                       settings.TurnstileSiteKey,
-		TurnstileSecretKeyConfigured:           settings.TurnstileSecretKeyConfigured,
-		APIKeyACLTrustForwardedIP:              settings.APIKeyACLTrustForwardedIP,
-		LinuxDoConnectEnabled:                  settings.LinuxDoConnectEnabled,
-		LinuxDoConnectClientID:                 settings.LinuxDoConnectClientID,
-		LinuxDoConnectClientSecretConfigured:   settings.LinuxDoConnectClientSecretConfigured,
-		LinuxDoConnectRedirectURL:              settings.LinuxDoConnectRedirectURL,
-		DingTalkConnectEnabled:                 settings.DingTalkConnectEnabled,
-		DingTalkConnectClientID:                settings.DingTalkConnectClientID,
-		DingTalkConnectClientSecretConfigured:  settings.DingTalkConnectClientSecretConfigured,
-		DingTalkConnectRedirectURL:             settings.DingTalkConnectRedirectURL,
-		DingTalkConnectCorpRestrictionPolicy:   settings.DingTalkConnectCorpRestrictionPolicy,
-		DingTalkConnectInternalCorpID:          settings.DingTalkConnectInternalCorpID,
-		DingTalkConnectBypassRegistration:      settings.DingTalkConnectBypassRegistration,
-		DingTalkConnectSyncCorpEmail:           settings.DingTalkConnectSyncCorpEmail,
-		DingTalkConnectSyncDisplayName:         settings.DingTalkConnectSyncDisplayName,
-		DingTalkConnectSyncDept:                settings.DingTalkConnectSyncDept,
-		DingTalkConnectSyncCorpEmailAttrKey:    settings.DingTalkConnectSyncCorpEmailAttrKey,
-		DingTalkConnectSyncDisplayNameAttrKey:  settings.DingTalkConnectSyncDisplayNameAttrKey,
-		DingTalkConnectSyncDeptAttrKey:         settings.DingTalkConnectSyncDeptAttrKey,
-		DingTalkConnectSyncCorpEmailAttrName:   settings.DingTalkConnectSyncCorpEmailAttrName,
-		DingTalkConnectSyncDisplayNameAttrName: settings.DingTalkConnectSyncDisplayNameAttrName,
-		DingTalkConnectSyncDeptAttrName:        settings.DingTalkConnectSyncDeptAttrName,
-		WeChatConnectEnabled:                   settings.WeChatConnectEnabled,
-		WeChatConnectAppID:                     settings.WeChatConnectAppID,
-		WeChatConnectAppSecretConfigured:       settings.WeChatConnectAppSecretConfigured,
-		WeChatConnectOpenAppID:                 settings.WeChatConnectOpenAppID,
-		WeChatConnectOpenAppSecretConfigured:   settings.WeChatConnectOpenAppSecretConfigured,
-		WeChatConnectMPAppID:                   settings.WeChatConnectMPAppID,
-		WeChatConnectMPAppSecretConfigured:     settings.WeChatConnectMPAppSecretConfigured,
-		WeChatConnectMobileAppID:               settings.WeChatConnectMobileAppID,
-		WeChatConnectMobileAppSecretConfigured: settings.WeChatConnectMobileAppSecretConfigured,
-		WeChatConnectOpenEnabled:               settings.WeChatConnectOpenEnabled,
-		WeChatConnectMPEnabled:                 settings.WeChatConnectMPEnabled,
-		WeChatConnectMobileEnabled:             settings.WeChatConnectMobileEnabled,
-		WeChatConnectMode:                      settings.WeChatConnectMode,
-		WeChatConnectScopes:                    settings.WeChatConnectScopes,
-		WeChatConnectRedirectURL:               settings.WeChatConnectRedirectURL,
-		WeChatConnectFrontendRedirectURL:       settings.WeChatConnectFrontendRedirectURL,
-		OIDCConnectEnabled:                     settings.OIDCConnectEnabled,
-		OIDCConnectProviderName:                settings.OIDCConnectProviderName,
-		OIDCConnectClientID:                    settings.OIDCConnectClientID,
-		OIDCConnectClientSecretConfigured:      settings.OIDCConnectClientSecretConfigured,
-		OIDCConnectIssuerURL:                   settings.OIDCConnectIssuerURL,
-		OIDCConnectDiscoveryURL:                settings.OIDCConnectDiscoveryURL,
-		OIDCConnectAuthorizeURL:                settings.OIDCConnectAuthorizeURL,
-		OIDCConnectTokenURL:                    settings.OIDCConnectTokenURL,
-		OIDCConnectUserInfoURL:                 settings.OIDCConnectUserInfoURL,
-		OIDCConnectJWKSURL:                     settings.OIDCConnectJWKSURL,
-		OIDCConnectScopes:                      settings.OIDCConnectScopes,
-		OIDCConnectRedirectURL:                 settings.OIDCConnectRedirectURL,
-		OIDCConnectFrontendRedirectURL:         settings.OIDCConnectFrontendRedirectURL,
-		OIDCConnectTokenAuthMethod:             settings.OIDCConnectTokenAuthMethod,
-		OIDCConnectUsePKCE:                     settings.OIDCConnectUsePKCE,
-		OIDCConnectValidateIDToken:             settings.OIDCConnectValidateIDToken,
-		OIDCConnectAllowedSigningAlgs:          settings.OIDCConnectAllowedSigningAlgs,
-		OIDCConnectClockSkewSeconds:            settings.OIDCConnectClockSkewSeconds,
-		OIDCConnectRequireEmailVerified:        settings.OIDCConnectRequireEmailVerified,
-		OIDCConnectUserInfoEmailPath:           settings.OIDCConnectUserInfoEmailPath,
-		OIDCConnectUserInfoIDPath:              settings.OIDCConnectUserInfoIDPath,
-		OIDCConnectUserInfoUsernamePath:        settings.OIDCConnectUserInfoUsernamePath,
-		GitHubOAuthEnabled:                     settings.GitHubOAuthEnabled,
-		GitHubOAuthClientID:                    settings.GitHubOAuthClientID,
-		GitHubOAuthClientSecretConfigured:      settings.GitHubOAuthClientSecretConfigured,
-		GitHubOAuthRedirectURL:                 settings.GitHubOAuthRedirectURL,
-		GitHubOAuthFrontendRedirectURL:         settings.GitHubOAuthFrontendRedirectURL,
-		GoogleOAuthEnabled:                     settings.GoogleOAuthEnabled,
-		GoogleOAuthClientID:                    settings.GoogleOAuthClientID,
-		GoogleOAuthClientSecretConfigured:      settings.GoogleOAuthClientSecretConfigured,
-		GoogleOAuthRedirectURL:                 settings.GoogleOAuthRedirectURL,
-		GoogleOAuthFrontendRedirectURL:         settings.GoogleOAuthFrontendRedirectURL,
-		SiteName:                               settings.SiteName,
-		SiteLogo:                               settings.SiteLogo,
-		SiteSubtitle:                           settings.SiteSubtitle,
-		APIBaseURL:                             settings.APIBaseURL,
-		ContactInfo:                            settings.ContactInfo,
-		DocURL:                                 settings.DocURL,
-		HomeContent:                            settings.HomeContent,
-		HideCcsImportButton:                    settings.HideCcsImportButton,
-		PurchaseSubscriptionEnabled:            settings.PurchaseSubscriptionEnabled,
-		PurchaseSubscriptionURL:                settings.PurchaseSubscriptionURL,
-		TableDefaultPageSize:                   settings.TableDefaultPageSize,
-		TablePageSizeOptions:                   settings.TablePageSizeOptions,
-		CustomMenuItems:                        dto.ParseCustomMenuItems(settings.CustomMenuItems),
-		CustomEndpoints:                        dto.ParseCustomEndpoints(settings.CustomEndpoints),
-		DefaultConcurrency:                     settings.DefaultConcurrency,
-		DefaultBalance:                         settings.DefaultBalance,
-		RiskControlEnabled:                     settings.RiskControlEnabled,
-		AffiliateRebateRate:                    settings.AffiliateRebateRate,
-		AffiliateRebateFreezeHours:             settings.AffiliateRebateFreezeHours,
-		AffiliateRebateDurationDays:            settings.AffiliateRebateDurationDays,
-		AffiliateRebatePerInviteeCap:           settings.AffiliateRebatePerInviteeCap,
-		DefaultUserRPMLimit:                    settings.DefaultUserRPMLimit,
-		DefaultSubscriptions:                   defaultSubscriptions,
-		EnableModelFallback:                    settings.EnableModelFallback,
-		FallbackModelAnthropic:                 settings.FallbackModelAnthropic,
-		FallbackModelOpenAI:                    settings.FallbackModelOpenAI,
-		FallbackModelGemini:                    settings.FallbackModelGemini,
-		FallbackModelAntigravity:               settings.FallbackModelAntigravity,
-		EnableIdentityPatch:                    settings.EnableIdentityPatch,
-		IdentityPatchPrompt:                    settings.IdentityPatchPrompt,
-		OpsMonitoringEnabled:                   opsEnabled && settings.OpsMonitoringEnabled,
-		OpsRealtimeMonitoringEnabled:           settings.OpsRealtimeMonitoringEnabled,
-		OpsQueryModeDefault:                    settings.OpsQueryModeDefault,
-		OpsMetricsIntervalSeconds:              settings.OpsMetricsIntervalSeconds,
-		MinClaudeCodeVersion:                   settings.MinClaudeCodeVersion,
-		MaxClaudeCodeVersion:                   settings.MaxClaudeCodeVersion,
-		AllowUngroupedKeyScheduling:            settings.AllowUngroupedKeyScheduling,
-		BackendModeEnabled:                     settings.BackendModeEnabled,
-		EnableFingerprintUnification:           settings.EnableFingerprintUnification,
-		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
-		EnableCCHSigning:                       settings.EnableCCHSigning,
-		EnableAnthropicCacheTTL1hInjection:     settings.EnableAnthropicCacheTTL1hInjection,
-		RewriteMessageCacheControl:             settings.RewriteMessageCacheControl,
-		AntigravityUserAgentVersion:            settings.AntigravityUserAgentVersion,
-		OpenAICodexUserAgent:                   settings.OpenAICodexUserAgent,
-		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
-		PaymentVisibleMethodAlipaySource:       settings.PaymentVisibleMethodAlipaySource,
-		PaymentVisibleMethodWxpaySource:        settings.PaymentVisibleMethodWxpaySource,
-		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
-		PaymentVisibleMethodWxpayEnabled:       settings.PaymentVisibleMethodWxpayEnabled,
-		OpenAIAdvancedSchedulerEnabled:         settings.OpenAIAdvancedSchedulerEnabled,
-		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
-		BalanceLowNotifyThreshold:              settings.BalanceLowNotifyThreshold,
-		BalanceLowNotifyRechargeURL:            settings.BalanceLowNotifyRechargeURL,
-		SubscriptionExpiryNotifyEnabled:        settings.SubscriptionExpiryNotifyEnabled,
-		AccountQuotaNotifyEnabled:              settings.AccountQuotaNotifyEnabled,
-		AccountQuotaNotifyEmails:               dto.NotifyEmailEntriesFromService(settings.AccountQuotaNotifyEmails),
-		PaymentEnabled:                         paymentCfg.Enabled,
-		PaymentMinAmount:                       paymentCfg.MinAmount,
-		PaymentMaxAmount:                       paymentCfg.MaxAmount,
-		PaymentDailyLimit:                      paymentCfg.DailyLimit,
-		PaymentOrderTimeoutMin:                 paymentCfg.OrderTimeoutMin,
-		PaymentMaxPendingOrders:                paymentCfg.MaxPendingOrders,
-		PaymentEnabledTypes:                    paymentCfg.EnabledTypes,
-		PaymentBalanceDisabled:                 paymentCfg.BalanceDisabled,
-		PaymentBalanceRechargeMultiplier:       paymentCfg.BalanceRechargeMultiplier,
-		PaymentRechargeFeeRate:                 paymentCfg.RechargeFeeRate,
-		PaymentLoadBalanceStrat:                paymentCfg.LoadBalanceStrategy,
-		PaymentProductNamePrefix:               paymentCfg.ProductNamePrefix,
-		PaymentProductNameSuffix:               paymentCfg.ProductNameSuffix,
-		PaymentHelpImageURL:                    paymentCfg.HelpImageURL,
-		PaymentHelpText:                        paymentCfg.HelpText,
-		PaymentCancelRateLimitEnabled:          paymentCfg.CancelRateLimitEnabled,
-		PaymentCancelRateLimitMax:              paymentCfg.CancelRateLimitMax,
-		PaymentCancelRateLimitWindow:           paymentCfg.CancelRateLimitWindow,
-		PaymentCancelRateLimitUnit:             paymentCfg.CancelRateLimitUnit,
-		PaymentCancelRateLimitMode:             paymentCfg.CancelRateLimitMode,
-		PaymentAlipayForceQRCode:               paymentCfg.AlipayForceQRCode,
+		RegistrationEnabled:                       settings.RegistrationEnabled,
+		EmailVerifyEnabled:                        settings.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:          settings.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                          settings.PromoCodeEnabled,
+		PasswordResetEnabled:                      settings.PasswordResetEnabled,
+		FrontendURL:                               settings.FrontendURL,
+		InvitationCodeEnabled:                     settings.InvitationCodeEnabled,
+		TotpEnabled:                               settings.TotpEnabled,
+		TotpEncryptionKeyConfigured:               h.settingService.IsTotpEncryptionKeyConfigured(),
+		LoginAgreementEnabled:                     settings.LoginAgreementEnabled,
+		LoginAgreementMode:                        settings.LoginAgreementMode,
+		LoginAgreementUpdatedAt:                   settings.LoginAgreementUpdatedAt,
+		LoginAgreementDocuments:                   loginAgreementDocumentsToDTO(settings.LoginAgreementDocuments),
+		RegionalRestrictionEnabled:                settings.RegionalRestrictionEnabled,
+		RegionalRestrictionRegistrationEnabled:    settings.RegionalRestrictionRegistrationEnabled,
+		RegionalRestrictionOAuthSignupEnabled:     settings.RegionalRestrictionOAuthSignupEnabled,
+		RegionalRestrictionAPIKeyPageConfirmation: settings.RegionalRestrictionAPIKeyPageConfirmation,
+		RegionalRestrictionAPIKeyCreateEnabled:    settings.RegionalRestrictionAPIKeyCreateEnabled,
+		RegionalRestrictionBlockedCountryCodes:    settings.RegionalRestrictionBlockedCountryCodes,
+		RegionalRestrictionUnknownRegionPolicy:    settings.RegionalRestrictionUnknownRegionPolicy,
+		RegionalRestrictionConfirmationRevision:   settings.RegionalRestrictionConfirmationRevision,
+		SMTPHost:                                  settings.SMTPHost,
+		SMTPPort:                                  settings.SMTPPort,
+		SMTPUsername:                              settings.SMTPUsername,
+		SMTPPasswordConfigured:                    settings.SMTPPasswordConfigured,
+		SMTPFrom:                                  settings.SMTPFrom,
+		SMTPFromName:                              settings.SMTPFromName,
+		SMTPUseTLS:                                settings.SMTPUseTLS,
+		TurnstileEnabled:                          settings.TurnstileEnabled,
+		TurnstileSiteKey:                          settings.TurnstileSiteKey,
+		TurnstileSecretKeyConfigured:              settings.TurnstileSecretKeyConfigured,
+		APIKeyACLTrustForwardedIP:                 settings.APIKeyACLTrustForwardedIP,
+		LinuxDoConnectEnabled:                     settings.LinuxDoConnectEnabled,
+		LinuxDoConnectClientID:                    settings.LinuxDoConnectClientID,
+		LinuxDoConnectClientSecretConfigured:      settings.LinuxDoConnectClientSecretConfigured,
+		LinuxDoConnectRedirectURL:                 settings.LinuxDoConnectRedirectURL,
+		DingTalkConnectEnabled:                    settings.DingTalkConnectEnabled,
+		DingTalkConnectClientID:                   settings.DingTalkConnectClientID,
+		DingTalkConnectClientSecretConfigured:     settings.DingTalkConnectClientSecretConfigured,
+		DingTalkConnectRedirectURL:                settings.DingTalkConnectRedirectURL,
+		DingTalkConnectCorpRestrictionPolicy:      settings.DingTalkConnectCorpRestrictionPolicy,
+		DingTalkConnectInternalCorpID:             settings.DingTalkConnectInternalCorpID,
+		DingTalkConnectBypassRegistration:         settings.DingTalkConnectBypassRegistration,
+		DingTalkConnectSyncCorpEmail:              settings.DingTalkConnectSyncCorpEmail,
+		DingTalkConnectSyncDisplayName:            settings.DingTalkConnectSyncDisplayName,
+		DingTalkConnectSyncDept:                   settings.DingTalkConnectSyncDept,
+		DingTalkConnectSyncCorpEmailAttrKey:       settings.DingTalkConnectSyncCorpEmailAttrKey,
+		DingTalkConnectSyncDisplayNameAttrKey:     settings.DingTalkConnectSyncDisplayNameAttrKey,
+		DingTalkConnectSyncDeptAttrKey:            settings.DingTalkConnectSyncDeptAttrKey,
+		DingTalkConnectSyncCorpEmailAttrName:      settings.DingTalkConnectSyncCorpEmailAttrName,
+		DingTalkConnectSyncDisplayNameAttrName:    settings.DingTalkConnectSyncDisplayNameAttrName,
+		DingTalkConnectSyncDeptAttrName:           settings.DingTalkConnectSyncDeptAttrName,
+		WeChatConnectEnabled:                      settings.WeChatConnectEnabled,
+		WeChatConnectAppID:                        settings.WeChatConnectAppID,
+		WeChatConnectAppSecretConfigured:          settings.WeChatConnectAppSecretConfigured,
+		WeChatConnectOpenAppID:                    settings.WeChatConnectOpenAppID,
+		WeChatConnectOpenAppSecretConfigured:      settings.WeChatConnectOpenAppSecretConfigured,
+		WeChatConnectMPAppID:                      settings.WeChatConnectMPAppID,
+		WeChatConnectMPAppSecretConfigured:        settings.WeChatConnectMPAppSecretConfigured,
+		WeChatConnectMobileAppID:                  settings.WeChatConnectMobileAppID,
+		WeChatConnectMobileAppSecretConfigured:    settings.WeChatConnectMobileAppSecretConfigured,
+		WeChatConnectOpenEnabled:                  settings.WeChatConnectOpenEnabled,
+		WeChatConnectMPEnabled:                    settings.WeChatConnectMPEnabled,
+		WeChatConnectMobileEnabled:                settings.WeChatConnectMobileEnabled,
+		WeChatConnectMode:                         settings.WeChatConnectMode,
+		WeChatConnectScopes:                       settings.WeChatConnectScopes,
+		WeChatConnectRedirectURL:                  settings.WeChatConnectRedirectURL,
+		WeChatConnectFrontendRedirectURL:          settings.WeChatConnectFrontendRedirectURL,
+		OIDCConnectEnabled:                        settings.OIDCConnectEnabled,
+		OIDCConnectProviderName:                   settings.OIDCConnectProviderName,
+		OIDCConnectClientID:                       settings.OIDCConnectClientID,
+		OIDCConnectClientSecretConfigured:         settings.OIDCConnectClientSecretConfigured,
+		OIDCConnectIssuerURL:                      settings.OIDCConnectIssuerURL,
+		OIDCConnectDiscoveryURL:                   settings.OIDCConnectDiscoveryURL,
+		OIDCConnectAuthorizeURL:                   settings.OIDCConnectAuthorizeURL,
+		OIDCConnectTokenURL:                       settings.OIDCConnectTokenURL,
+		OIDCConnectUserInfoURL:                    settings.OIDCConnectUserInfoURL,
+		OIDCConnectJWKSURL:                        settings.OIDCConnectJWKSURL,
+		OIDCConnectScopes:                         settings.OIDCConnectScopes,
+		OIDCConnectRedirectURL:                    settings.OIDCConnectRedirectURL,
+		OIDCConnectFrontendRedirectURL:            settings.OIDCConnectFrontendRedirectURL,
+		OIDCConnectTokenAuthMethod:                settings.OIDCConnectTokenAuthMethod,
+		OIDCConnectUsePKCE:                        settings.OIDCConnectUsePKCE,
+		OIDCConnectValidateIDToken:                settings.OIDCConnectValidateIDToken,
+		OIDCConnectAllowedSigningAlgs:             settings.OIDCConnectAllowedSigningAlgs,
+		OIDCConnectClockSkewSeconds:               settings.OIDCConnectClockSkewSeconds,
+		OIDCConnectRequireEmailVerified:           settings.OIDCConnectRequireEmailVerified,
+		OIDCConnectUserInfoEmailPath:              settings.OIDCConnectUserInfoEmailPath,
+		OIDCConnectUserInfoIDPath:                 settings.OIDCConnectUserInfoIDPath,
+		OIDCConnectUserInfoUsernamePath:           settings.OIDCConnectUserInfoUsernamePath,
+		GitHubOAuthEnabled:                        settings.GitHubOAuthEnabled,
+		GitHubOAuthClientID:                       settings.GitHubOAuthClientID,
+		GitHubOAuthClientSecretConfigured:         settings.GitHubOAuthClientSecretConfigured,
+		GitHubOAuthRedirectURL:                    settings.GitHubOAuthRedirectURL,
+		GitHubOAuthFrontendRedirectURL:            settings.GitHubOAuthFrontendRedirectURL,
+		GoogleOAuthEnabled:                        settings.GoogleOAuthEnabled,
+		GoogleOAuthClientID:                       settings.GoogleOAuthClientID,
+		GoogleOAuthClientSecretConfigured:         settings.GoogleOAuthClientSecretConfigured,
+		GoogleOAuthRedirectURL:                    settings.GoogleOAuthRedirectURL,
+		GoogleOAuthFrontendRedirectURL:            settings.GoogleOAuthFrontendRedirectURL,
+		SiteName:                                  settings.SiteName,
+		SiteLogo:                                  settings.SiteLogo,
+		SiteSubtitle:                              settings.SiteSubtitle,
+		APIBaseURL:                                settings.APIBaseURL,
+		ContactInfo:                               settings.ContactInfo,
+		DocURL:                                    settings.DocURL,
+		HomeContent:                               settings.HomeContent,
+		HideCcsImportButton:                       settings.HideCcsImportButton,
+		PurchaseSubscriptionEnabled:               settings.PurchaseSubscriptionEnabled,
+		PurchaseSubscriptionURL:                   settings.PurchaseSubscriptionURL,
+		TableDefaultPageSize:                      settings.TableDefaultPageSize,
+		TablePageSizeOptions:                      settings.TablePageSizeOptions,
+		CustomMenuItems:                           dto.ParseCustomMenuItems(settings.CustomMenuItems),
+		CustomEndpoints:                           dto.ParseCustomEndpoints(settings.CustomEndpoints),
+		DefaultConcurrency:                        settings.DefaultConcurrency,
+		DefaultBalance:                            settings.DefaultBalance,
+		RiskControlEnabled:                        settings.RiskControlEnabled,
+		CyberSessionBlockEnabled:                  settings.CyberSessionBlockEnabled,
+		CyberSessionBlockTTLSeconds:               settings.CyberSessionBlockTTLSeconds,
+		AffiliateRebateRate:                       settings.AffiliateRebateRate,
+		AffiliateRebateFreezeHours:                settings.AffiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:               settings.AffiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:              settings.AffiliateRebatePerInviteeCap,
+		DefaultUserRPMLimit:                       settings.DefaultUserRPMLimit,
+		DefaultSubscriptions:                      defaultSubscriptions,
+		EnableModelFallback:                       settings.EnableModelFallback,
+		FallbackModelAnthropic:                    settings.FallbackModelAnthropic,
+		FallbackModelOpenAI:                       settings.FallbackModelOpenAI,
+		FallbackModelGemini:                       settings.FallbackModelGemini,
+		FallbackModelAntigravity:                  settings.FallbackModelAntigravity,
+		EnableIdentityPatch:                       settings.EnableIdentityPatch,
+		IdentityPatchPrompt:                       settings.IdentityPatchPrompt,
+		OpsMonitoringEnabled:                      opsEnabled && settings.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled:              settings.OpsRealtimeMonitoringEnabled,
+		OpsQueryModeDefault:                       settings.OpsQueryModeDefault,
+		OpsMetricsIntervalSeconds:                 settings.OpsMetricsIntervalSeconds,
+		MinClaudeCodeVersion:                      settings.MinClaudeCodeVersion,
+		MaxClaudeCodeVersion:                      settings.MaxClaudeCodeVersion,
+		AllowUngroupedKeyScheduling:               settings.AllowUngroupedKeyScheduling,
+		BackendModeEnabled:                        settings.BackendModeEnabled,
+		EnableFingerprintUnification:              settings.EnableFingerprintUnification,
+		EnableMetadataPassthrough:                 settings.EnableMetadataPassthrough,
+		EnableCCHSigning:                          settings.EnableCCHSigning,
+		EnableClaudeOAuthSystemPromptInjection:    settings.EnableClaudeOAuthSystemPromptInjection,
+		ClaudeOAuthSystemPrompt:                   settings.ClaudeOAuthSystemPrompt,
+		ClaudeOAuthSystemPromptBlocks:             settings.ClaudeOAuthSystemPromptBlocks,
+		EnableAnthropicCacheTTL1hInjection:        settings.EnableAnthropicCacheTTL1hInjection,
+		RewriteMessageCacheControl:                settings.RewriteMessageCacheControl,
+		AntigravityUserAgentVersion:               settings.AntigravityUserAgentVersion,
+		OpenAICodexUserAgent:                      settings.OpenAICodexUserAgent,
+		OpenAIAllowClaudeCodeCodexPlugin:          settings.OpenAIAllowClaudeCodeCodexPlugin,
+		WebSearchEmulationEnabled:                 settings.WebSearchEmulationEnabled,
+		PaymentVisibleMethodAlipaySource:          settings.PaymentVisibleMethodAlipaySource,
+		PaymentVisibleMethodWxpaySource:           settings.PaymentVisibleMethodWxpaySource,
+		PaymentVisibleMethodAlipayEnabled:         settings.PaymentVisibleMethodAlipayEnabled,
+		PaymentVisibleMethodWxpayEnabled:          settings.PaymentVisibleMethodWxpayEnabled,
+		OpenAIAdvancedSchedulerEnabled:            settings.OpenAIAdvancedSchedulerEnabled,
+		BalanceLowNotifyEnabled:                   settings.BalanceLowNotifyEnabled,
+		BalanceLowNotifyThreshold:                 settings.BalanceLowNotifyThreshold,
+		BalanceLowNotifyRechargeURL:               settings.BalanceLowNotifyRechargeURL,
+		SubscriptionExpiryNotifyEnabled:           settings.SubscriptionExpiryNotifyEnabled,
+		AccountQuotaNotifyEnabled:                 settings.AccountQuotaNotifyEnabled,
+		AccountQuotaNotifyEmails:                  dto.NotifyEmailEntriesFromService(settings.AccountQuotaNotifyEmails),
+		PaymentEnabled:                            paymentCfg.Enabled,
+		PaymentMinAmount:                          paymentCfg.MinAmount,
+		PaymentMaxAmount:                          paymentCfg.MaxAmount,
+		PaymentDailyLimit:                         paymentCfg.DailyLimit,
+		PaymentOrderTimeoutMin:                    paymentCfg.OrderTimeoutMin,
+		PaymentMaxPendingOrders:                   paymentCfg.MaxPendingOrders,
+		PaymentEnabledTypes:                       paymentCfg.EnabledTypes,
+		PaymentBalanceDisabled:                    paymentCfg.BalanceDisabled,
+		PaymentBalanceRechargeMultiplier:          paymentCfg.BalanceRechargeMultiplier,
+		PaymentRechargeFeeRate:                    paymentCfg.RechargeFeeRate,
+		PaymentLoadBalanceStrat:                   paymentCfg.LoadBalanceStrategy,
+		PaymentProductNamePrefix:                  paymentCfg.ProductNamePrefix,
+		PaymentProductNameSuffix:                  paymentCfg.ProductNameSuffix,
+		PaymentHelpImageURL:                       paymentCfg.HelpImageURL,
+		PaymentHelpText:                           paymentCfg.HelpText,
+		PaymentCancelRateLimitEnabled:             paymentCfg.CancelRateLimitEnabled,
+		PaymentCancelRateLimitMax:                 paymentCfg.CancelRateLimitMax,
+		PaymentCancelRateLimitWindow:              paymentCfg.CancelRateLimitWindow,
+		PaymentCancelRateLimitUnit:                paymentCfg.CancelRateLimitUnit,
+		PaymentCancelRateLimitMode:                paymentCfg.CancelRateLimitMode,
+		PaymentAlipayForceQRCode:                  paymentCfg.AlipayForceQRCode,
 
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
@@ -296,6 +310,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 
 		AffiliateEnabled: settings.AffiliateEnabled,
+
+		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	}
 
 	// OpenAI fast policy (stored under a dedicated setting key)
@@ -381,18 +397,26 @@ func loginAgreementDocumentsToService(items []dto.LoginAgreementDocument) []serv
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
 	// 注册设置
-	RegistrationEnabled              bool                         `json:"registration_enabled"`
-	EmailVerifyEnabled               bool                         `json:"email_verify_enabled"`
-	RegistrationEmailSuffixWhitelist []string                     `json:"registration_email_suffix_whitelist"`
-	PromoCodeEnabled                 bool                         `json:"promo_code_enabled"`
-	PasswordResetEnabled             bool                         `json:"password_reset_enabled"`
-	FrontendURL                      string                       `json:"frontend_url"`
-	InvitationCodeEnabled            bool                         `json:"invitation_code_enabled"`
-	TotpEnabled                      bool                         `json:"totp_enabled"` // TOTP 双因素认证
-	LoginAgreementEnabled            bool                         `json:"login_agreement_enabled"`
-	LoginAgreementMode               string                       `json:"login_agreement_mode"`
-	LoginAgreementUpdatedAt          string                       `json:"login_agreement_updated_at"`
-	LoginAgreementDocuments          []dto.LoginAgreementDocument `json:"login_agreement_documents"`
+	RegistrationEnabled                       bool                         `json:"registration_enabled"`
+	EmailVerifyEnabled                        bool                         `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist          []string                     `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                          bool                         `json:"promo_code_enabled"`
+	PasswordResetEnabled                      bool                         `json:"password_reset_enabled"`
+	FrontendURL                               string                       `json:"frontend_url"`
+	InvitationCodeEnabled                     bool                         `json:"invitation_code_enabled"`
+	TotpEnabled                               bool                         `json:"totp_enabled"` // TOTP 双因素认证
+	LoginAgreementEnabled                     bool                         `json:"login_agreement_enabled"`
+	LoginAgreementMode                        string                       `json:"login_agreement_mode"`
+	LoginAgreementUpdatedAt                   string                       `json:"login_agreement_updated_at"`
+	LoginAgreementDocuments                   []dto.LoginAgreementDocument `json:"login_agreement_documents"`
+	RegionalRestrictionEnabled                *bool                        `json:"regional_restriction_enabled"`
+	RegionalRestrictionRegistrationEnabled    *bool                        `json:"regional_restriction_registration_enabled"`
+	RegionalRestrictionOAuthSignupEnabled     *bool                        `json:"regional_restriction_oauth_signup_enabled"`
+	RegionalRestrictionAPIKeyPageConfirmation *bool                        `json:"regional_restriction_api_key_page_confirmation_enabled"`
+	RegionalRestrictionAPIKeyCreateEnabled    *bool                        `json:"regional_restriction_api_key_create_enabled"`
+	RegionalRestrictionBlockedCountryCodes    []string                     `json:"regional_restriction_blocked_country_codes"`
+	RegionalRestrictionUnknownRegionPolicy    string                       `json:"regional_restriction_unknown_region_policy"`
+	RegionalRestrictionConfirmationRevision   string                       `json:"regional_restriction_confirmation_revision"`
 
 	// 邮件服务设置
 	SMTPHost     string `json:"smtp_host"`
@@ -577,13 +601,17 @@ type UpdateSettingsRequest struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification       *bool   `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough          *bool   `json:"enable_metadata_passthrough"`
-	EnableCCHSigning                   *bool   `json:"enable_cch_signing"`
-	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
-	RewriteMessageCacheControl         *bool   `json:"rewrite_message_cache_control"`
-	AntigravityUserAgentVersion        *string `json:"antigravity_user_agent_version"`
-	OpenAICodexUserAgent               *string `json:"openai_codex_user_agent"`
+	EnableFingerprintUnification           *bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough              *bool   `json:"enable_metadata_passthrough"`
+	EnableCCHSigning                       *bool   `json:"enable_cch_signing"`
+	EnableClaudeOAuthSystemPromptInjection *bool   `json:"enable_claude_oauth_system_prompt_injection"`
+	ClaudeOAuthSystemPrompt                *string `json:"claude_oauth_system_prompt"`
+	ClaudeOAuthSystemPromptBlocks          *string `json:"claude_oauth_system_prompt_blocks"`
+	EnableAnthropicCacheTTL1hInjection     *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
+	RewriteMessageCacheControl             *bool   `json:"rewrite_message_cache_control"`
+	AntigravityUserAgentVersion            *string `json:"antigravity_user_agent_version"`
+	OpenAICodexUserAgent                   *string `json:"openai_codex_user_agent"`
+	OpenAIAllowClaudeCodeCodexPlugin       *bool   `json:"openai_allow_claude_code_codex_plugin"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -642,6 +670,10 @@ type UpdateSettingsRequest struct {
 	// 风控中心功能开关
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
 
+	// cyber 会话屏蔽开关 + TTL
+	CyberSessionBlockEnabled    *bool `json:"cyber_session_block_enabled"`
+	CyberSessionBlockTTLSeconds *int  `json:"cyber_session_block_ttl_seconds"`
+
 	// OpenAI fast/flex policy (optional, only updated when provided)
 	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
@@ -656,6 +688,8 @@ type UpdateSettingsRequest struct {
 	AuthSourceGitHubPlatformQuotas   map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_github_platform_quotas"`
 	AuthSourceGooglePlatformQuotas   map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_google_platform_quotas"`
 	AuthSourceDingTalkPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_dingtalk_platform_quotas"`
+
+	AllowUserViewErrorRequests *bool `json:"allow_user_view_error_requests"`
 }
 
 // UpdateSettings 更新系统设置
@@ -828,6 +862,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.LoginAgreementEnabled && len(loginAgreementDocuments) == 0 {
 		response.BadRequest(c, "Login agreement documents are required when enabled")
 		return
+	}
+	regionalRestrictionBlockedCountryCodes := previousSettings.RegionalRestrictionBlockedCountryCodes
+	if req.RegionalRestrictionBlockedCountryCodes != nil {
+		regionalRestrictionBlockedCountryCodes = service.NormalizeRegionalRestrictionCountryCodes(req.RegionalRestrictionBlockedCountryCodes)
+	}
+	regionalRestrictionUnknownRegionPolicy := previousSettings.RegionalRestrictionUnknownRegionPolicy
+	if strings.TrimSpace(req.RegionalRestrictionUnknownRegionPolicy) != "" {
+		regionalRestrictionUnknownRegionPolicy = service.NormalizeRegionalRestrictionUnknownRegionPolicy(req.RegionalRestrictionUnknownRegionPolicy)
+	}
+	regionalRestrictionConfirmationRevision := previousSettings.RegionalRestrictionConfirmationRevision
+	if strings.TrimSpace(req.RegionalRestrictionConfirmationRevision) != "" {
+		regionalRestrictionConfirmationRevision = service.NormalizeRegionalRestrictionConfirmationRevision(req.RegionalRestrictionConfirmationRevision)
 	}
 
 	// LinuxDo Connect 参数验证
@@ -1456,32 +1502,46 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// cyber 会话屏蔽 TTL 校验：提供时必须 > 0
+	if req.CyberSessionBlockTTLSeconds != nil && *req.CyberSessionBlockTTLSeconds <= 0 {
+		response.BadRequest(c, "cyber_session_block_ttl_seconds must be > 0")
+		return
+	}
+
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
 		DefaultPlatformQuotas: req.DefaultPlatformQuotas,
 
-		RegistrationEnabled:              req.RegistrationEnabled,
-		EmailVerifyEnabled:               req.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: req.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 req.PromoCodeEnabled,
-		PasswordResetEnabled:             req.PasswordResetEnabled,
-		FrontendURL:                      req.FrontendURL,
-		InvitationCodeEnabled:            req.InvitationCodeEnabled,
-		TotpEnabled:                      req.TotpEnabled,
-		LoginAgreementEnabled:            req.LoginAgreementEnabled,
-		LoginAgreementMode:               loginAgreementMode,
-		LoginAgreementUpdatedAt:          loginAgreementUpdatedAt,
-		LoginAgreementDocuments:          loginAgreementDocuments,
-		SMTPHost:                         req.SMTPHost,
-		SMTPPort:                         req.SMTPPort,
-		SMTPUsername:                     req.SMTPUsername,
-		SMTPPassword:                     req.SMTPPassword,
-		SMTPFrom:                         req.SMTPFrom,
-		SMTPFromName:                     req.SMTPFromName,
-		SMTPUseTLS:                       req.SMTPUseTLS,
-		TurnstileEnabled:                 req.TurnstileEnabled,
-		TurnstileSiteKey:                 req.TurnstileSiteKey,
-		TurnstileSecretKey:               req.TurnstileSecretKey,
+		RegistrationEnabled:                       req.RegistrationEnabled,
+		EmailVerifyEnabled:                        req.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:          req.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                          req.PromoCodeEnabled,
+		PasswordResetEnabled:                      req.PasswordResetEnabled,
+		FrontendURL:                               req.FrontendURL,
+		InvitationCodeEnabled:                     req.InvitationCodeEnabled,
+		TotpEnabled:                               req.TotpEnabled,
+		LoginAgreementEnabled:                     req.LoginAgreementEnabled,
+		LoginAgreementMode:                        loginAgreementMode,
+		LoginAgreementUpdatedAt:                   loginAgreementUpdatedAt,
+		LoginAgreementDocuments:                   loginAgreementDocuments,
+		RegionalRestrictionEnabled:                boolValueOrDefault(req.RegionalRestrictionEnabled, previousSettings.RegionalRestrictionEnabled),
+		RegionalRestrictionRegistrationEnabled:    boolValueOrDefault(req.RegionalRestrictionRegistrationEnabled, previousSettings.RegionalRestrictionRegistrationEnabled),
+		RegionalRestrictionOAuthSignupEnabled:     boolValueOrDefault(req.RegionalRestrictionOAuthSignupEnabled, previousSettings.RegionalRestrictionOAuthSignupEnabled),
+		RegionalRestrictionAPIKeyPageConfirmation: boolValueOrDefault(req.RegionalRestrictionAPIKeyPageConfirmation, previousSettings.RegionalRestrictionAPIKeyPageConfirmation),
+		RegionalRestrictionAPIKeyCreateEnabled:    boolValueOrDefault(req.RegionalRestrictionAPIKeyCreateEnabled, previousSettings.RegionalRestrictionAPIKeyCreateEnabled),
+		RegionalRestrictionBlockedCountryCodes:    regionalRestrictionBlockedCountryCodes,
+		RegionalRestrictionUnknownRegionPolicy:    regionalRestrictionUnknownRegionPolicy,
+		RegionalRestrictionConfirmationRevision:   regionalRestrictionConfirmationRevision,
+		SMTPHost:                                  req.SMTPHost,
+		SMTPPort:                                  req.SMTPPort,
+		SMTPUsername:                              req.SMTPUsername,
+		SMTPPassword:                              req.SMTPPassword,
+		SMTPFrom:                                  req.SMTPFrom,
+		SMTPFromName:                              req.SMTPFromName,
+		SMTPUseTLS:                                req.SMTPUseTLS,
+		TurnstileEnabled:                          req.TurnstileEnabled,
+		TurnstileSiteKey:                          req.TurnstileSiteKey,
+		TurnstileSecretKey:                        req.TurnstileSecretKey,
 		APIKeyACLTrustForwardedIP: func() bool {
 			if req.APIKeyACLTrustForwardedIP != nil {
 				return *req.APIKeyACLTrustForwardedIP
@@ -1589,6 +1649,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		MaxClaudeCodeVersion:                   req.MaxClaudeCodeVersion,
 		AllowUngroupedKeyScheduling:            req.AllowUngroupedKeyScheduling,
 		BackendModeEnabled:                     req.BackendModeEnabled,
+		AllowUserViewErrorRequests: func() bool {
+			if req.AllowUserViewErrorRequests != nil {
+				return *req.AllowUserViewErrorRequests
+			}
+			return previousSettings.AllowUserViewErrorRequests
+		}(),
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -1631,6 +1697,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		EnableClaudeOAuthSystemPromptInjection: func() bool {
+			if req.EnableClaudeOAuthSystemPromptInjection != nil {
+				return *req.EnableClaudeOAuthSystemPromptInjection
+			}
+			return previousSettings.EnableClaudeOAuthSystemPromptInjection
+		}(),
+		ClaudeOAuthSystemPrompt: func() string {
+			if req.ClaudeOAuthSystemPrompt != nil {
+				return *req.ClaudeOAuthSystemPrompt
+			}
+			return previousSettings.ClaudeOAuthSystemPrompt
+		}(),
+		ClaudeOAuthSystemPromptBlocks: func() string {
+			if req.ClaudeOAuthSystemPromptBlocks != nil {
+				return *req.ClaudeOAuthSystemPromptBlocks
+			}
+			return previousSettings.ClaudeOAuthSystemPromptBlocks
+		}(),
 		EnableAnthropicCacheTTL1hInjection: func() bool {
 			if req.EnableAnthropicCacheTTL1hInjection != nil {
 				return *req.EnableAnthropicCacheTTL1hInjection
@@ -1654,6 +1738,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.OpenAICodexUserAgent
 			}
 			return previousSettings.OpenAICodexUserAgent
+		}(),
+		OpenAIAllowClaudeCodeCodexPlugin: func() bool {
+			if req.OpenAIAllowClaudeCodeCodexPlugin != nil {
+				return *req.OpenAIAllowClaudeCodeCodexPlugin
+			}
+			return previousSettings.OpenAIAllowClaudeCodeCodexPlugin
 		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
@@ -1750,6 +1840,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.RiskControlEnabled
 			}
 			return previousSettings.RiskControlEnabled
+		}(),
+		CyberSessionBlockEnabled: func() bool {
+			if req.CyberSessionBlockEnabled != nil {
+				return *req.CyberSessionBlockEnabled
+			}
+			return previousSettings.CyberSessionBlockEnabled
+		}(),
+		CyberSessionBlockTTLSeconds: func() int {
+			if req.CyberSessionBlockTTLSeconds != nil {
+				return *req.CyberSessionBlockTTLSeconds
+			}
+			return previousSettings.CyberSessionBlockTTLSeconds
 		}(),
 	}
 
@@ -1895,174 +1997,186 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	payload := dto.SystemSettings{
-		RegistrationEnabled:                    updatedSettings.RegistrationEnabled,
-		EmailVerifyEnabled:                     updatedSettings.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist:       updatedSettings.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                       updatedSettings.PromoCodeEnabled,
-		PasswordResetEnabled:                   updatedSettings.PasswordResetEnabled,
-		FrontendURL:                            updatedSettings.FrontendURL,
-		InvitationCodeEnabled:                  updatedSettings.InvitationCodeEnabled,
-		TotpEnabled:                            updatedSettings.TotpEnabled,
-		TotpEncryptionKeyConfigured:            h.settingService.IsTotpEncryptionKeyConfigured(),
-		LoginAgreementEnabled:                  updatedSettings.LoginAgreementEnabled,
-		LoginAgreementMode:                     updatedSettings.LoginAgreementMode,
-		LoginAgreementUpdatedAt:                updatedSettings.LoginAgreementUpdatedAt,
-		LoginAgreementDocuments:                loginAgreementDocumentsToDTO(updatedSettings.LoginAgreementDocuments),
-		SMTPHost:                               updatedSettings.SMTPHost,
-		SMTPPort:                               updatedSettings.SMTPPort,
-		SMTPUsername:                           updatedSettings.SMTPUsername,
-		SMTPPasswordConfigured:                 updatedSettings.SMTPPasswordConfigured,
-		SMTPFrom:                               updatedSettings.SMTPFrom,
-		SMTPFromName:                           updatedSettings.SMTPFromName,
-		SMTPUseTLS:                             updatedSettings.SMTPUseTLS,
-		TurnstileEnabled:                       updatedSettings.TurnstileEnabled,
-		TurnstileSiteKey:                       updatedSettings.TurnstileSiteKey,
-		TurnstileSecretKeyConfigured:           updatedSettings.TurnstileSecretKeyConfigured,
-		APIKeyACLTrustForwardedIP:              updatedSettings.APIKeyACLTrustForwardedIP,
-		LinuxDoConnectEnabled:                  updatedSettings.LinuxDoConnectEnabled,
-		LinuxDoConnectClientID:                 updatedSettings.LinuxDoConnectClientID,
-		LinuxDoConnectClientSecretConfigured:   updatedSettings.LinuxDoConnectClientSecretConfigured,
-		LinuxDoConnectRedirectURL:              updatedSettings.LinuxDoConnectRedirectURL,
-		DingTalkConnectEnabled:                 updatedSettings.DingTalkConnectEnabled,
-		DingTalkConnectClientID:                updatedSettings.DingTalkConnectClientID,
-		DingTalkConnectClientSecretConfigured:  updatedSettings.DingTalkConnectClientSecretConfigured,
-		DingTalkConnectRedirectURL:             updatedSettings.DingTalkConnectRedirectURL,
-		DingTalkConnectCorpRestrictionPolicy:   updatedSettings.DingTalkConnectCorpRestrictionPolicy,
-		DingTalkConnectInternalCorpID:          updatedSettings.DingTalkConnectInternalCorpID,
-		DingTalkConnectBypassRegistration:      updatedSettings.DingTalkConnectBypassRegistration,
-		DingTalkConnectSyncCorpEmail:           updatedSettings.DingTalkConnectSyncCorpEmail,
-		DingTalkConnectSyncDisplayName:         updatedSettings.DingTalkConnectSyncDisplayName,
-		DingTalkConnectSyncDept:                updatedSettings.DingTalkConnectSyncDept,
-		DingTalkConnectSyncCorpEmailAttrKey:    updatedSettings.DingTalkConnectSyncCorpEmailAttrKey,
-		DingTalkConnectSyncDisplayNameAttrKey:  updatedSettings.DingTalkConnectSyncDisplayNameAttrKey,
-		DingTalkConnectSyncDeptAttrKey:         updatedSettings.DingTalkConnectSyncDeptAttrKey,
-		DingTalkConnectSyncCorpEmailAttrName:   updatedSettings.DingTalkConnectSyncCorpEmailAttrName,
-		DingTalkConnectSyncDisplayNameAttrName: updatedSettings.DingTalkConnectSyncDisplayNameAttrName,
-		DingTalkConnectSyncDeptAttrName:        updatedSettings.DingTalkConnectSyncDeptAttrName,
-		WeChatConnectEnabled:                   updatedSettings.WeChatConnectEnabled,
-		WeChatConnectAppID:                     updatedSettings.WeChatConnectAppID,
-		WeChatConnectAppSecretConfigured:       updatedSettings.WeChatConnectAppSecretConfigured,
-		WeChatConnectOpenAppID:                 updatedSettings.WeChatConnectOpenAppID,
-		WeChatConnectOpenAppSecretConfigured:   updatedSettings.WeChatConnectOpenAppSecretConfigured,
-		WeChatConnectMPAppID:                   updatedSettings.WeChatConnectMPAppID,
-		WeChatConnectMPAppSecretConfigured:     updatedSettings.WeChatConnectMPAppSecretConfigured,
-		WeChatConnectMobileAppID:               updatedSettings.WeChatConnectMobileAppID,
-		WeChatConnectMobileAppSecretConfigured: updatedSettings.WeChatConnectMobileAppSecretConfigured,
-		WeChatConnectOpenEnabled:               updatedSettings.WeChatConnectOpenEnabled,
-		WeChatConnectMPEnabled:                 updatedSettings.WeChatConnectMPEnabled,
-		WeChatConnectMobileEnabled:             updatedSettings.WeChatConnectMobileEnabled,
-		WeChatConnectMode:                      updatedSettings.WeChatConnectMode,
-		WeChatConnectScopes:                    updatedSettings.WeChatConnectScopes,
-		WeChatConnectRedirectURL:               updatedSettings.WeChatConnectRedirectURL,
-		WeChatConnectFrontendRedirectURL:       updatedSettings.WeChatConnectFrontendRedirectURL,
-		OIDCConnectEnabled:                     updatedSettings.OIDCConnectEnabled,
-		OIDCConnectProviderName:                updatedSettings.OIDCConnectProviderName,
-		OIDCConnectClientID:                    updatedSettings.OIDCConnectClientID,
-		OIDCConnectClientSecretConfigured:      updatedSettings.OIDCConnectClientSecretConfigured,
-		OIDCConnectIssuerURL:                   updatedSettings.OIDCConnectIssuerURL,
-		OIDCConnectDiscoveryURL:                updatedSettings.OIDCConnectDiscoveryURL,
-		OIDCConnectAuthorizeURL:                updatedSettings.OIDCConnectAuthorizeURL,
-		OIDCConnectTokenURL:                    updatedSettings.OIDCConnectTokenURL,
-		OIDCConnectUserInfoURL:                 updatedSettings.OIDCConnectUserInfoURL,
-		OIDCConnectJWKSURL:                     updatedSettings.OIDCConnectJWKSURL,
-		OIDCConnectScopes:                      updatedSettings.OIDCConnectScopes,
-		OIDCConnectRedirectURL:                 updatedSettings.OIDCConnectRedirectURL,
-		OIDCConnectFrontendRedirectURL:         updatedSettings.OIDCConnectFrontendRedirectURL,
-		OIDCConnectTokenAuthMethod:             updatedSettings.OIDCConnectTokenAuthMethod,
-		OIDCConnectUsePKCE:                     updatedSettings.OIDCConnectUsePKCE,
-		OIDCConnectValidateIDToken:             updatedSettings.OIDCConnectValidateIDToken,
-		OIDCConnectAllowedSigningAlgs:          updatedSettings.OIDCConnectAllowedSigningAlgs,
-		OIDCConnectClockSkewSeconds:            updatedSettings.OIDCConnectClockSkewSeconds,
-		OIDCConnectRequireEmailVerified:        updatedSettings.OIDCConnectRequireEmailVerified,
-		OIDCConnectUserInfoEmailPath:           updatedSettings.OIDCConnectUserInfoEmailPath,
-		OIDCConnectUserInfoIDPath:              updatedSettings.OIDCConnectUserInfoIDPath,
-		OIDCConnectUserInfoUsernamePath:        updatedSettings.OIDCConnectUserInfoUsernamePath,
-		GitHubOAuthEnabled:                     updatedSettings.GitHubOAuthEnabled,
-		GitHubOAuthClientID:                    updatedSettings.GitHubOAuthClientID,
-		GitHubOAuthClientSecretConfigured:      updatedSettings.GitHubOAuthClientSecretConfigured,
-		GitHubOAuthRedirectURL:                 updatedSettings.GitHubOAuthRedirectURL,
-		GitHubOAuthFrontendRedirectURL:         updatedSettings.GitHubOAuthFrontendRedirectURL,
-		GoogleOAuthEnabled:                     updatedSettings.GoogleOAuthEnabled,
-		GoogleOAuthClientID:                    updatedSettings.GoogleOAuthClientID,
-		GoogleOAuthClientSecretConfigured:      updatedSettings.GoogleOAuthClientSecretConfigured,
-		GoogleOAuthRedirectURL:                 updatedSettings.GoogleOAuthRedirectURL,
-		GoogleOAuthFrontendRedirectURL:         updatedSettings.GoogleOAuthFrontendRedirectURL,
-		SiteName:                               updatedSettings.SiteName,
-		SiteLogo:                               updatedSettings.SiteLogo,
-		SiteSubtitle:                           updatedSettings.SiteSubtitle,
-		APIBaseURL:                             updatedSettings.APIBaseURL,
-		ContactInfo:                            updatedSettings.ContactInfo,
-		DocURL:                                 updatedSettings.DocURL,
-		HomeContent:                            updatedSettings.HomeContent,
-		HideCcsImportButton:                    updatedSettings.HideCcsImportButton,
-		PurchaseSubscriptionEnabled:            updatedSettings.PurchaseSubscriptionEnabled,
-		PurchaseSubscriptionURL:                updatedSettings.PurchaseSubscriptionURL,
-		TableDefaultPageSize:                   updatedSettings.TableDefaultPageSize,
-		TablePageSizeOptions:                   updatedSettings.TablePageSizeOptions,
-		CustomMenuItems:                        dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
-		CustomEndpoints:                        dto.ParseCustomEndpoints(updatedSettings.CustomEndpoints),
-		DefaultConcurrency:                     updatedSettings.DefaultConcurrency,
-		DefaultBalance:                         updatedSettings.DefaultBalance,
-		AffiliateRebateRate:                    updatedSettings.AffiliateRebateRate,
-		AffiliateRebateFreezeHours:             updatedSettings.AffiliateRebateFreezeHours,
-		AffiliateRebateDurationDays:            updatedSettings.AffiliateRebateDurationDays,
-		AffiliateRebatePerInviteeCap:           updatedSettings.AffiliateRebatePerInviteeCap,
-		DefaultUserRPMLimit:                    updatedSettings.DefaultUserRPMLimit,
-		DefaultSubscriptions:                   updatedDefaultSubscriptions,
-		EnableModelFallback:                    updatedSettings.EnableModelFallback,
-		FallbackModelAnthropic:                 updatedSettings.FallbackModelAnthropic,
-		FallbackModelOpenAI:                    updatedSettings.FallbackModelOpenAI,
-		FallbackModelGemini:                    updatedSettings.FallbackModelGemini,
-		FallbackModelAntigravity:               updatedSettings.FallbackModelAntigravity,
-		EnableIdentityPatch:                    updatedSettings.EnableIdentityPatch,
-		IdentityPatchPrompt:                    updatedSettings.IdentityPatchPrompt,
-		OpsMonitoringEnabled:                   updatedSettings.OpsMonitoringEnabled,
-		OpsRealtimeMonitoringEnabled:           updatedSettings.OpsRealtimeMonitoringEnabled,
-		OpsQueryModeDefault:                    updatedSettings.OpsQueryModeDefault,
-		OpsMetricsIntervalSeconds:              updatedSettings.OpsMetricsIntervalSeconds,
-		MinClaudeCodeVersion:                   updatedSettings.MinClaudeCodeVersion,
-		MaxClaudeCodeVersion:                   updatedSettings.MaxClaudeCodeVersion,
-		AllowUngroupedKeyScheduling:            updatedSettings.AllowUngroupedKeyScheduling,
-		BackendModeEnabled:                     updatedSettings.BackendModeEnabled,
-		EnableFingerprintUnification:           updatedSettings.EnableFingerprintUnification,
-		EnableMetadataPassthrough:              updatedSettings.EnableMetadataPassthrough,
-		EnableCCHSigning:                       updatedSettings.EnableCCHSigning,
-		EnableAnthropicCacheTTL1hInjection:     updatedSettings.EnableAnthropicCacheTTL1hInjection,
-		RewriteMessageCacheControl:             updatedSettings.RewriteMessageCacheControl,
-		AntigravityUserAgentVersion:            updatedSettings.AntigravityUserAgentVersion,
-		OpenAICodexUserAgent:                   updatedSettings.OpenAICodexUserAgent,
-		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
-		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
-		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
-		PaymentVisibleMethodWxpayEnabled:       updatedSettings.PaymentVisibleMethodWxpayEnabled,
-		OpenAIAdvancedSchedulerEnabled:         updatedSettings.OpenAIAdvancedSchedulerEnabled,
-		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
-		BalanceLowNotifyThreshold:              updatedSettings.BalanceLowNotifyThreshold,
-		BalanceLowNotifyRechargeURL:            updatedSettings.BalanceLowNotifyRechargeURL,
-		SubscriptionExpiryNotifyEnabled:        updatedSettings.SubscriptionExpiryNotifyEnabled,
-		AccountQuotaNotifyEnabled:              updatedSettings.AccountQuotaNotifyEnabled,
-		AccountQuotaNotifyEmails:               dto.NotifyEmailEntriesFromService(updatedSettings.AccountQuotaNotifyEmails),
-		PaymentEnabled:                         updatedPaymentCfg.Enabled,
-		PaymentMinAmount:                       updatedPaymentCfg.MinAmount,
-		PaymentMaxAmount:                       updatedPaymentCfg.MaxAmount,
-		PaymentDailyLimit:                      updatedPaymentCfg.DailyLimit,
-		PaymentOrderTimeoutMin:                 updatedPaymentCfg.OrderTimeoutMin,
-		PaymentMaxPendingOrders:                updatedPaymentCfg.MaxPendingOrders,
-		PaymentEnabledTypes:                    updatedPaymentCfg.EnabledTypes,
-		PaymentBalanceDisabled:                 updatedPaymentCfg.BalanceDisabled,
-		PaymentBalanceRechargeMultiplier:       updatedPaymentCfg.BalanceRechargeMultiplier,
-		PaymentRechargeFeeRate:                 updatedPaymentCfg.RechargeFeeRate,
-		PaymentLoadBalanceStrat:                updatedPaymentCfg.LoadBalanceStrategy,
-		PaymentProductNamePrefix:               updatedPaymentCfg.ProductNamePrefix,
-		PaymentProductNameSuffix:               updatedPaymentCfg.ProductNameSuffix,
-		PaymentHelpImageURL:                    updatedPaymentCfg.HelpImageURL,
-		PaymentHelpText:                        updatedPaymentCfg.HelpText,
-		PaymentCancelRateLimitEnabled:          updatedPaymentCfg.CancelRateLimitEnabled,
-		PaymentCancelRateLimitMax:              updatedPaymentCfg.CancelRateLimitMax,
-		PaymentCancelRateLimitWindow:           updatedPaymentCfg.CancelRateLimitWindow,
-		PaymentCancelRateLimitUnit:             updatedPaymentCfg.CancelRateLimitUnit,
-		PaymentCancelRateLimitMode:             updatedPaymentCfg.CancelRateLimitMode,
-		PaymentAlipayForceQRCode:               updatedPaymentCfg.AlipayForceQRCode,
+		RegistrationEnabled:                       updatedSettings.RegistrationEnabled,
+		EmailVerifyEnabled:                        updatedSettings.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:          updatedSettings.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                          updatedSettings.PromoCodeEnabled,
+		PasswordResetEnabled:                      updatedSettings.PasswordResetEnabled,
+		FrontendURL:                               updatedSettings.FrontendURL,
+		InvitationCodeEnabled:                     updatedSettings.InvitationCodeEnabled,
+		TotpEnabled:                               updatedSettings.TotpEnabled,
+		TotpEncryptionKeyConfigured:               h.settingService.IsTotpEncryptionKeyConfigured(),
+		LoginAgreementEnabled:                     updatedSettings.LoginAgreementEnabled,
+		LoginAgreementMode:                        updatedSettings.LoginAgreementMode,
+		LoginAgreementUpdatedAt:                   updatedSettings.LoginAgreementUpdatedAt,
+		LoginAgreementDocuments:                   loginAgreementDocumentsToDTO(updatedSettings.LoginAgreementDocuments),
+		RegionalRestrictionEnabled:                updatedSettings.RegionalRestrictionEnabled,
+		RegionalRestrictionRegistrationEnabled:    updatedSettings.RegionalRestrictionRegistrationEnabled,
+		RegionalRestrictionOAuthSignupEnabled:     updatedSettings.RegionalRestrictionOAuthSignupEnabled,
+		RegionalRestrictionAPIKeyPageConfirmation: updatedSettings.RegionalRestrictionAPIKeyPageConfirmation,
+		RegionalRestrictionAPIKeyCreateEnabled:    updatedSettings.RegionalRestrictionAPIKeyCreateEnabled,
+		RegionalRestrictionBlockedCountryCodes:    updatedSettings.RegionalRestrictionBlockedCountryCodes,
+		RegionalRestrictionUnknownRegionPolicy:    updatedSettings.RegionalRestrictionUnknownRegionPolicy,
+		RegionalRestrictionConfirmationRevision:   updatedSettings.RegionalRestrictionConfirmationRevision,
+		SMTPHost:                                  updatedSettings.SMTPHost,
+		SMTPPort:                                  updatedSettings.SMTPPort,
+		SMTPUsername:                              updatedSettings.SMTPUsername,
+		SMTPPasswordConfigured:                    updatedSettings.SMTPPasswordConfigured,
+		SMTPFrom:                                  updatedSettings.SMTPFrom,
+		SMTPFromName:                              updatedSettings.SMTPFromName,
+		SMTPUseTLS:                                updatedSettings.SMTPUseTLS,
+		TurnstileEnabled:                          updatedSettings.TurnstileEnabled,
+		TurnstileSiteKey:                          updatedSettings.TurnstileSiteKey,
+		TurnstileSecretKeyConfigured:              updatedSettings.TurnstileSecretKeyConfigured,
+		APIKeyACLTrustForwardedIP:                 updatedSettings.APIKeyACLTrustForwardedIP,
+		LinuxDoConnectEnabled:                     updatedSettings.LinuxDoConnectEnabled,
+		LinuxDoConnectClientID:                    updatedSettings.LinuxDoConnectClientID,
+		LinuxDoConnectClientSecretConfigured:      updatedSettings.LinuxDoConnectClientSecretConfigured,
+		LinuxDoConnectRedirectURL:                 updatedSettings.LinuxDoConnectRedirectURL,
+		DingTalkConnectEnabled:                    updatedSettings.DingTalkConnectEnabled,
+		DingTalkConnectClientID:                   updatedSettings.DingTalkConnectClientID,
+		DingTalkConnectClientSecretConfigured:     updatedSettings.DingTalkConnectClientSecretConfigured,
+		DingTalkConnectRedirectURL:                updatedSettings.DingTalkConnectRedirectURL,
+		DingTalkConnectCorpRestrictionPolicy:      updatedSettings.DingTalkConnectCorpRestrictionPolicy,
+		DingTalkConnectInternalCorpID:             updatedSettings.DingTalkConnectInternalCorpID,
+		DingTalkConnectBypassRegistration:         updatedSettings.DingTalkConnectBypassRegistration,
+		DingTalkConnectSyncCorpEmail:              updatedSettings.DingTalkConnectSyncCorpEmail,
+		DingTalkConnectSyncDisplayName:            updatedSettings.DingTalkConnectSyncDisplayName,
+		DingTalkConnectSyncDept:                   updatedSettings.DingTalkConnectSyncDept,
+		DingTalkConnectSyncCorpEmailAttrKey:       updatedSettings.DingTalkConnectSyncCorpEmailAttrKey,
+		DingTalkConnectSyncDisplayNameAttrKey:     updatedSettings.DingTalkConnectSyncDisplayNameAttrKey,
+		DingTalkConnectSyncDeptAttrKey:            updatedSettings.DingTalkConnectSyncDeptAttrKey,
+		DingTalkConnectSyncCorpEmailAttrName:      updatedSettings.DingTalkConnectSyncCorpEmailAttrName,
+		DingTalkConnectSyncDisplayNameAttrName:    updatedSettings.DingTalkConnectSyncDisplayNameAttrName,
+		DingTalkConnectSyncDeptAttrName:           updatedSettings.DingTalkConnectSyncDeptAttrName,
+		WeChatConnectEnabled:                      updatedSettings.WeChatConnectEnabled,
+		WeChatConnectAppID:                        updatedSettings.WeChatConnectAppID,
+		WeChatConnectAppSecretConfigured:          updatedSettings.WeChatConnectAppSecretConfigured,
+		WeChatConnectOpenAppID:                    updatedSettings.WeChatConnectOpenAppID,
+		WeChatConnectOpenAppSecretConfigured:      updatedSettings.WeChatConnectOpenAppSecretConfigured,
+		WeChatConnectMPAppID:                      updatedSettings.WeChatConnectMPAppID,
+		WeChatConnectMPAppSecretConfigured:        updatedSettings.WeChatConnectMPAppSecretConfigured,
+		WeChatConnectMobileAppID:                  updatedSettings.WeChatConnectMobileAppID,
+		WeChatConnectMobileAppSecretConfigured:    updatedSettings.WeChatConnectMobileAppSecretConfigured,
+		WeChatConnectOpenEnabled:                  updatedSettings.WeChatConnectOpenEnabled,
+		WeChatConnectMPEnabled:                    updatedSettings.WeChatConnectMPEnabled,
+		WeChatConnectMobileEnabled:                updatedSettings.WeChatConnectMobileEnabled,
+		WeChatConnectMode:                         updatedSettings.WeChatConnectMode,
+		WeChatConnectScopes:                       updatedSettings.WeChatConnectScopes,
+		WeChatConnectRedirectURL:                  updatedSettings.WeChatConnectRedirectURL,
+		WeChatConnectFrontendRedirectURL:          updatedSettings.WeChatConnectFrontendRedirectURL,
+		OIDCConnectEnabled:                        updatedSettings.OIDCConnectEnabled,
+		OIDCConnectProviderName:                   updatedSettings.OIDCConnectProviderName,
+		OIDCConnectClientID:                       updatedSettings.OIDCConnectClientID,
+		OIDCConnectClientSecretConfigured:         updatedSettings.OIDCConnectClientSecretConfigured,
+		OIDCConnectIssuerURL:                      updatedSettings.OIDCConnectIssuerURL,
+		OIDCConnectDiscoveryURL:                   updatedSettings.OIDCConnectDiscoveryURL,
+		OIDCConnectAuthorizeURL:                   updatedSettings.OIDCConnectAuthorizeURL,
+		OIDCConnectTokenURL:                       updatedSettings.OIDCConnectTokenURL,
+		OIDCConnectUserInfoURL:                    updatedSettings.OIDCConnectUserInfoURL,
+		OIDCConnectJWKSURL:                        updatedSettings.OIDCConnectJWKSURL,
+		OIDCConnectScopes:                         updatedSettings.OIDCConnectScopes,
+		OIDCConnectRedirectURL:                    updatedSettings.OIDCConnectRedirectURL,
+		OIDCConnectFrontendRedirectURL:            updatedSettings.OIDCConnectFrontendRedirectURL,
+		OIDCConnectTokenAuthMethod:                updatedSettings.OIDCConnectTokenAuthMethod,
+		OIDCConnectUsePKCE:                        updatedSettings.OIDCConnectUsePKCE,
+		OIDCConnectValidateIDToken:                updatedSettings.OIDCConnectValidateIDToken,
+		OIDCConnectAllowedSigningAlgs:             updatedSettings.OIDCConnectAllowedSigningAlgs,
+		OIDCConnectClockSkewSeconds:               updatedSettings.OIDCConnectClockSkewSeconds,
+		OIDCConnectRequireEmailVerified:           updatedSettings.OIDCConnectRequireEmailVerified,
+		OIDCConnectUserInfoEmailPath:              updatedSettings.OIDCConnectUserInfoEmailPath,
+		OIDCConnectUserInfoIDPath:                 updatedSettings.OIDCConnectUserInfoIDPath,
+		OIDCConnectUserInfoUsernamePath:           updatedSettings.OIDCConnectUserInfoUsernamePath,
+		GitHubOAuthEnabled:                        updatedSettings.GitHubOAuthEnabled,
+		GitHubOAuthClientID:                       updatedSettings.GitHubOAuthClientID,
+		GitHubOAuthClientSecretConfigured:         updatedSettings.GitHubOAuthClientSecretConfigured,
+		GitHubOAuthRedirectURL:                    updatedSettings.GitHubOAuthRedirectURL,
+		GitHubOAuthFrontendRedirectURL:            updatedSettings.GitHubOAuthFrontendRedirectURL,
+		GoogleOAuthEnabled:                        updatedSettings.GoogleOAuthEnabled,
+		GoogleOAuthClientID:                       updatedSettings.GoogleOAuthClientID,
+		GoogleOAuthClientSecretConfigured:         updatedSettings.GoogleOAuthClientSecretConfigured,
+		GoogleOAuthRedirectURL:                    updatedSettings.GoogleOAuthRedirectURL,
+		GoogleOAuthFrontendRedirectURL:            updatedSettings.GoogleOAuthFrontendRedirectURL,
+		SiteName:                                  updatedSettings.SiteName,
+		SiteLogo:                                  updatedSettings.SiteLogo,
+		SiteSubtitle:                              updatedSettings.SiteSubtitle,
+		APIBaseURL:                                updatedSettings.APIBaseURL,
+		ContactInfo:                               updatedSettings.ContactInfo,
+		DocURL:                                    updatedSettings.DocURL,
+		HomeContent:                               updatedSettings.HomeContent,
+		HideCcsImportButton:                       updatedSettings.HideCcsImportButton,
+		PurchaseSubscriptionEnabled:               updatedSettings.PurchaseSubscriptionEnabled,
+		PurchaseSubscriptionURL:                   updatedSettings.PurchaseSubscriptionURL,
+		TableDefaultPageSize:                      updatedSettings.TableDefaultPageSize,
+		TablePageSizeOptions:                      updatedSettings.TablePageSizeOptions,
+		CustomMenuItems:                           dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
+		CustomEndpoints:                           dto.ParseCustomEndpoints(updatedSettings.CustomEndpoints),
+		DefaultConcurrency:                        updatedSettings.DefaultConcurrency,
+		DefaultBalance:                            updatedSettings.DefaultBalance,
+		AffiliateRebateRate:                       updatedSettings.AffiliateRebateRate,
+		AffiliateRebateFreezeHours:                updatedSettings.AffiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:               updatedSettings.AffiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:              updatedSettings.AffiliateRebatePerInviteeCap,
+		DefaultUserRPMLimit:                       updatedSettings.DefaultUserRPMLimit,
+		DefaultSubscriptions:                      updatedDefaultSubscriptions,
+		EnableModelFallback:                       updatedSettings.EnableModelFallback,
+		FallbackModelAnthropic:                    updatedSettings.FallbackModelAnthropic,
+		FallbackModelOpenAI:                       updatedSettings.FallbackModelOpenAI,
+		FallbackModelGemini:                       updatedSettings.FallbackModelGemini,
+		FallbackModelAntigravity:                  updatedSettings.FallbackModelAntigravity,
+		EnableIdentityPatch:                       updatedSettings.EnableIdentityPatch,
+		IdentityPatchPrompt:                       updatedSettings.IdentityPatchPrompt,
+		OpsMonitoringEnabled:                      updatedSettings.OpsMonitoringEnabled,
+		OpsRealtimeMonitoringEnabled:              updatedSettings.OpsRealtimeMonitoringEnabled,
+		OpsQueryModeDefault:                       updatedSettings.OpsQueryModeDefault,
+		OpsMetricsIntervalSeconds:                 updatedSettings.OpsMetricsIntervalSeconds,
+		MinClaudeCodeVersion:                      updatedSettings.MinClaudeCodeVersion,
+		MaxClaudeCodeVersion:                      updatedSettings.MaxClaudeCodeVersion,
+		AllowUngroupedKeyScheduling:               updatedSettings.AllowUngroupedKeyScheduling,
+		BackendModeEnabled:                        updatedSettings.BackendModeEnabled,
+		EnableFingerprintUnification:              updatedSettings.EnableFingerprintUnification,
+		EnableMetadataPassthrough:                 updatedSettings.EnableMetadataPassthrough,
+		EnableCCHSigning:                          updatedSettings.EnableCCHSigning,
+		EnableClaudeOAuthSystemPromptInjection:    updatedSettings.EnableClaudeOAuthSystemPromptInjection,
+		ClaudeOAuthSystemPrompt:                   updatedSettings.ClaudeOAuthSystemPrompt,
+		ClaudeOAuthSystemPromptBlocks:             updatedSettings.ClaudeOAuthSystemPromptBlocks,
+		EnableAnthropicCacheTTL1hInjection:        updatedSettings.EnableAnthropicCacheTTL1hInjection,
+		RewriteMessageCacheControl:                updatedSettings.RewriteMessageCacheControl,
+		AntigravityUserAgentVersion:               updatedSettings.AntigravityUserAgentVersion,
+		OpenAICodexUserAgent:                      updatedSettings.OpenAICodexUserAgent,
+		OpenAIAllowClaudeCodeCodexPlugin:          updatedSettings.OpenAIAllowClaudeCodeCodexPlugin,
+		PaymentVisibleMethodAlipaySource:          updatedSettings.PaymentVisibleMethodAlipaySource,
+		PaymentVisibleMethodWxpaySource:           updatedSettings.PaymentVisibleMethodWxpaySource,
+		PaymentVisibleMethodAlipayEnabled:         updatedSettings.PaymentVisibleMethodAlipayEnabled,
+		PaymentVisibleMethodWxpayEnabled:          updatedSettings.PaymentVisibleMethodWxpayEnabled,
+		OpenAIAdvancedSchedulerEnabled:            updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		BalanceLowNotifyEnabled:                   updatedSettings.BalanceLowNotifyEnabled,
+		BalanceLowNotifyThreshold:                 updatedSettings.BalanceLowNotifyThreshold,
+		BalanceLowNotifyRechargeURL:               updatedSettings.BalanceLowNotifyRechargeURL,
+		SubscriptionExpiryNotifyEnabled:           updatedSettings.SubscriptionExpiryNotifyEnabled,
+		AccountQuotaNotifyEnabled:                 updatedSettings.AccountQuotaNotifyEnabled,
+		AccountQuotaNotifyEmails:                  dto.NotifyEmailEntriesFromService(updatedSettings.AccountQuotaNotifyEmails),
+		PaymentEnabled:                            updatedPaymentCfg.Enabled,
+		PaymentMinAmount:                          updatedPaymentCfg.MinAmount,
+		PaymentMaxAmount:                          updatedPaymentCfg.MaxAmount,
+		PaymentDailyLimit:                         updatedPaymentCfg.DailyLimit,
+		PaymentOrderTimeoutMin:                    updatedPaymentCfg.OrderTimeoutMin,
+		PaymentMaxPendingOrders:                   updatedPaymentCfg.MaxPendingOrders,
+		PaymentEnabledTypes:                       updatedPaymentCfg.EnabledTypes,
+		PaymentBalanceDisabled:                    updatedPaymentCfg.BalanceDisabled,
+		PaymentBalanceRechargeMultiplier:          updatedPaymentCfg.BalanceRechargeMultiplier,
+		PaymentRechargeFeeRate:                    updatedPaymentCfg.RechargeFeeRate,
+		PaymentLoadBalanceStrat:                   updatedPaymentCfg.LoadBalanceStrategy,
+		PaymentProductNamePrefix:                  updatedPaymentCfg.ProductNamePrefix,
+		PaymentProductNameSuffix:                  updatedPaymentCfg.ProductNameSuffix,
+		PaymentHelpImageURL:                       updatedPaymentCfg.HelpImageURL,
+		PaymentHelpText:                           updatedPaymentCfg.HelpText,
+		PaymentCancelRateLimitEnabled:             updatedPaymentCfg.CancelRateLimitEnabled,
+		PaymentCancelRateLimitMax:                 updatedPaymentCfg.CancelRateLimitMax,
+		PaymentCancelRateLimitWindow:              updatedPaymentCfg.CancelRateLimitWindow,
+		PaymentCancelRateLimitUnit:                updatedPaymentCfg.CancelRateLimitUnit,
+		PaymentCancelRateLimitMode:                updatedPaymentCfg.CancelRateLimitMode,
+		PaymentAlipayForceQRCode:                  updatedPaymentCfg.AlipayForceQRCode,
 
 		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
@@ -2071,7 +2185,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 
-		RiskControlEnabled: updatedSettings.RiskControlEnabled,
+		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
+		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
+		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,
+		AllowUserViewErrorRequests:  updatedSettings.AllowUserViewErrorRequests,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
@@ -2488,6 +2605,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.EnableCCHSigning != after.EnableCCHSigning {
 		changed = append(changed, "enable_cch_signing")
 	}
+	if before.EnableClaudeOAuthSystemPromptInjection != after.EnableClaudeOAuthSystemPromptInjection {
+		changed = append(changed, "enable_claude_oauth_system_prompt_injection")
+	}
+	if before.ClaudeOAuthSystemPrompt != after.ClaudeOAuthSystemPrompt {
+		changed = append(changed, "claude_oauth_system_prompt")
+	}
+	if before.ClaudeOAuthSystemPromptBlocks != after.ClaudeOAuthSystemPromptBlocks {
+		changed = append(changed, "claude_oauth_system_prompt_blocks")
+	}
 	if before.EnableAnthropicCacheTTL1hInjection != after.EnableAnthropicCacheTTL1hInjection {
 		changed = append(changed, "enable_anthropic_cache_ttl_1h_injection")
 	}
@@ -2499,6 +2625,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAICodexUserAgent != after.OpenAICodexUserAgent {
 		changed = append(changed, "openai_codex_user_agent")
+	}
+	if before.OpenAIAllowClaudeCodeCodexPlugin != after.OpenAIAllowClaudeCodeCodexPlugin {
+		changed = append(changed, "openai_allow_claude_code_codex_plugin")
 	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")
@@ -2548,6 +2677,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.RiskControlEnabled != after.RiskControlEnabled {
 		changed = append(changed, "risk_control_enabled")
+	}
+	if before.CyberSessionBlockEnabled != after.CyberSessionBlockEnabled {
+		changed = append(changed, "cyber_session_block_enabled")
+	}
+	if before.CyberSessionBlockTTLSeconds != after.CyberSessionBlockTTLSeconds {
+		changed = append(changed, "cyber_session_block_ttl_seconds")
 	}
 	// Default platform quotas（JSON map，整体比较）
 	if !equalPlatformQuotaSettings(before.DefaultPlatformQuotas, after.DefaultPlatformQuotas) {

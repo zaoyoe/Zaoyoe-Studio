@@ -697,7 +697,7 @@ body.has-banner .home-btn {
 }
 
 [data-theme="dark"] .dropdown-action:hover i {
-    color: rgba(255, 255, 255, 0.95);
+    color: #6b9ece;
 }
 
 .dropdown-action i {
@@ -708,7 +708,7 @@ body.has-banner .home-btn {
 }
 
 .dropdown-action:hover i {
-    color: rgba(255, 255, 255, 0.95);
+    color: #6b9ece;
 }
 
 /* Back button dark mode */

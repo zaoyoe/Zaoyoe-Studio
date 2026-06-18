@@ -1,4 +1,4 @@
-:root{--bg-black:#000;--bg-nav:rgba(0,0,0,.65);--text-primary:#fff;--text-secondary:rgba(255,255,255,.6);--border-subtle:rgba(255,255,255,.1);--accent-blue:#3b82f6;--glass-blur:blur(10px);--spacing-sm:16px;--spacing-md:24px;--spacing-lg:48px;--spacing-xl:80px;--spacing-2xl:120px;--nav-vertical-padding:8px;--nav-auth-slot-size:44px;--nav-height:calc(var(--nav-auth-slot-size) + var(--nav-vertical-padding) + var(--nav-vertical-padding) + 1px);--font-display-zh:'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC',sans-serif;--font-display-en:Georgia,'Times New Roman',serif;--font-body:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;--transition-fast:.2s ease;--transition-medium:.3s ease;--transition-slow:.6s ease;--z-nav:1200;--z-mobile-menu:10020;}
+:root{--bg-black:#000;--bg-nav:rgba(0,0,0,.65);--text-primary:#fff;--text-secondary:rgba(255,255,255,.6);--border-subtle:rgba(255,255,255,.1);--accent-blue:#3b82f6;--admin-studio-blue:#6b9ece;--glass-blur:blur(10px);--spacing-sm:16px;--spacing-md:24px;--spacing-lg:48px;--spacing-xl:80px;--spacing-2xl:120px;--nav-vertical-padding:8px;--nav-auth-slot-size:44px;--nav-height:calc(var(--nav-auth-slot-size) + var(--nav-vertical-padding) + var(--nav-vertical-padding) + 1px);--font-display-zh:'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC',sans-serif;--font-display-en:Georgia,'Times New Roman',serif;--font-body:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;--transition-fast:.2s ease;--transition-medium:.3s ease;--transition-slow:.6s ease;--z-nav:1200;--z-mobile-menu:10020;}
 
 *{box-sizing:border-box;margin:0;padding:0;}
 html{width:100%;max-width:100%;overflow-x:hidden;overscroll-behavior-x:none;scrollbar-width:none;scrollbar-gutter:stable;-ms-overflow-style:none;}
@@ -356,6 +356,10 @@ a.nav-trigger.active {
 .dropdown-action i {
     width: 20px;
     text-align: center;
+}
+
+.dropdown-action:hover i {
+    color: var(--admin-studio-blue, #6b9ece);
 }
 
 .dropdown-notif-btn,

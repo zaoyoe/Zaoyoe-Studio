@@ -60,11 +60,8 @@
   },
   "pnpm": {
     "overrides": {
-      "js-cookie": "3.0.7"
-    },
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "vue-demi"
-    ]
+      "js-cookie": "3.0.7",
+      "form-data@<4.0.6": ">=4.0.6"
+    }
   }
 }
