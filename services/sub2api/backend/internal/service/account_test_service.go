@@ -496,7 +496,15 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	ctx := c.Request.Context()
 	mode = normalizeAccountTestMode(mode)
 
-	testModelID := resolveOpenAITestModel(account, modelID)
+	// Default to openai.DefaultTestModel for OpenAI testing
+	testModelID := modelID
+	if testModelID == "" {
+		testModelID = openai.DefaultTestModel
+	}
+
+	// Align test routing with gateway behavior: OpenAI accounts apply normal
+	// account model mapping, and compact mode applies compact-only mapping on top.
+	testModelID = account.GetMappedModel(testModelID)
 	if mode == AccountTestModeCompact {
 		testModelID = resolveOpenAICompactForwardModel(account, testModelID)
 		return s.testOpenAICompactConnection(c, account, testModelID)
@@ -621,25 +629,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// Process SSE stream
 	return s.processOpenAIStream(c, resp.Body)
-}
-
-func resolveOpenAITestModel(account *Account, modelID string) string {
-	testModelID := strings.TrimSpace(modelID)
-	if testModelID == "" {
-		// ChatGPT-backed passthrough relays often reject legacy Codex-only probe
-		// models even though standard GPT models remain healthy.
-		if account != nil && account.IsOpenAIApiKey() && account.IsOpenAIPassthroughEnabled() {
-			testModelID = "gpt-5.4"
-		} else {
-			testModelID = openai.DefaultTestModel
-		}
-	}
-
-	if account != nil && account.IsOpenAIApiKey() {
-		return account.GetMappedModel(testModelID)
-	}
-
-	return testModelID
 }
 
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account

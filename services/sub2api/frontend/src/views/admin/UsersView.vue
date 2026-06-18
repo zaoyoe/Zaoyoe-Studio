@@ -3,11 +3,11 @@
     <TablePageLayout>
       <!-- Single Row: Search, Filters, and Actions -->
       <template #filters>
-        <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
+        <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Active Filters -->
-          <div class="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:flex-wrap md:items-center md:gap-3">
+          <div class="flex flex-1 flex-wrap items-center gap-3">
             <!-- Search Box -->
-            <div class="relative w-full sm:col-span-2 md:w-64">
+            <div class="relative w-full md:w-64">
               <Icon
                 name="search"
                 size="md"
@@ -23,7 +23,7 @@
             </div>
 
             <!-- Role Filter (visible when enabled) -->
-            <div v-if="visibleFilters.has('role')" class="w-full md:w-32">
+            <div v-if="visibleFilters.has('role')" class="w-full sm:w-32">
               <Select
                 v-model="filters.role"
                 :options="[
@@ -36,7 +36,7 @@
             </div>
 
             <!-- Status Filter (visible when enabled) -->
-            <div v-if="visibleFilters.has('status')" class="w-full md:w-32">
+            <div v-if="visibleFilters.has('status')" class="w-full sm:w-32">
               <Select
                 v-model="filters.status"
                 :options="[
@@ -49,14 +49,25 @@
             </div>
 
             <!-- Group Filter (visible when enabled) -->
-            <div v-if="visibleFilters.has('group')" class="w-full md:w-44">
+            <div v-if="visibleFilters.has('group')" class="w-full sm:w-44">
               <Select
                 v-model="filters.group"
                 :options="groupFilterOptions"
                 searchable
                 creatable
                 :creatable-prefix="t('admin.users.fuzzySearch')"
-                :search-placeholder="t('admin.users.searchGroups')"
+                :search-placeholder="t('admin.users.searchAuthorizedGroups')"
+                @change="applyFilter"
+              />
+            </div>
+
+            <!-- API Key Group Filter (visible when enabled) -->
+            <div v-if="visibleFilters.has('apiKeyGroup')" class="w-full sm:w-44">
+              <Select
+                v-model="filters.apiKeyGroup"
+                :options="apiKeyGroupFilterOptions"
+                searchable
+                :search-placeholder="t('admin.users.searchApiKeyGroups')"
                 @change="applyFilter"
               />
             </div>
@@ -65,7 +76,7 @@
             <template v-for="(value, attrId) in activeAttributeFilters" :key="attrId">
               <div
                 v-if="visibleFilters.has(`attr_${attrId}`)"
-                class="relative w-full md:w-36"
+                class="relative w-full sm:w-36"
               >
                 <!-- Text/Email/URL/Textarea/Date type: styled input -->
                 <input
@@ -113,14 +124,14 @@
           </div>
 
           <!-- Right: Actions and Settings -->
-          <div class="flex w-full flex-wrap items-center justify-between gap-2 md:w-auto md:justify-end">
+          <div class="flex flex-wrap items-center justify-end gap-2">
             <!-- Mobile: Secondary buttons (icon only) -->
-            <div class="grid flex-1 grid-cols-4 gap-2 md:contents">
+            <div class="flex items-center gap-2 md:contents">
               <!-- Refresh Button -->
               <button
                 @click="loadUsers"
                 :disabled="loading"
-                class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
+                class="btn btn-secondary px-2 md:px-3"
                 :title="t('common.refresh')"
               >
                 <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
@@ -129,7 +140,7 @@
               <div class="relative" ref="filterDropdownRef">
                 <button
                   @click="showFilterDropdown = !showFilterDropdown"
-                  class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
+                  class="btn btn-secondary px-2 md:px-3"
                   :title="t('admin.users.filterSettings')"
                 >
                   <Icon name="filter" size="sm" class="md:mr-1.5" />
@@ -183,7 +194,7 @@
               <div class="relative" ref="columnDropdownRef">
                 <button
                   @click="showColumnDropdown = !showColumnDropdown"
-                  class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
+                  class="btn btn-secondary px-2 md:px-3"
                   :title="t('admin.users.columnSettings')"
                 >
                   <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -223,7 +234,7 @@
               <!-- Attributes Config Button -->
               <button
                 @click="showAttributesModal = true"
-                class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
+                class="btn btn-secondary px-2 md:px-3"
                 :title="t('admin.users.attributes.configButton')"
               >
                 <Icon name="cog" size="sm" class="md:mr-1.5" />
@@ -232,7 +243,7 @@
             </div>
 
             <!-- Create User Button (full width on mobile, auto width on desktop) -->
-            <button @click="showCreateModal = true" class="btn btn-primary w-full md:w-auto">
+            <button @click="showCreateModal = true" class="btn btn-primary flex-1 md:flex-initial">
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.users.createUser') }}
             </button>
@@ -251,19 +262,18 @@
           default-sort-key="created_at"
           default-sort-order="desc"
           :sort-storage-key="USER_SORT_STORAGE_KEY"
-          mobile-density="compact"
           @sort="handleSort"
         >
           <template #cell-email="{ value }">
-            <div class="ml-auto flex min-w-0 items-center justify-end gap-2 md:ml-0 md:justify-start">
+            <div class="flex items-center gap-2">
               <div
-                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30 md:h-8 md:w-8"
+                class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30"
               >
-                <span class="text-xs font-medium text-primary-700 dark:text-primary-300 md:text-sm">
+                <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
                   {{ value.charAt(0).toUpperCase() }}
                 </span>
               </div>
-              <span class="min-w-0 truncate font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
             </div>
           </template>
 
@@ -573,14 +583,14 @@
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="grid grid-cols-3 gap-1 md:flex md:items-center">
+            <div class="flex items-center gap-1">
               <!-- Edit Button -->
               <button
                 @click="handleEdit(row)"
-                class="flex min-w-0 flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
               >
                 <Icon name="edit" size="sm" />
-                <span class="truncate text-xs">{{ t('common.edit') }}</span>
+                <span class="text-xs">{{ t('common.edit') }}</span>
               </button>
 
               <!-- Toggle Status Button (not for admin) -->
@@ -588,7 +598,7 @@
                 v-if="row.role !== 'admin'"
                 @click="handleToggleStatus(row)"
                 :class="[
-                  'flex min-w-0 flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors',
+                  'flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors',
                   row.status === 'active'
                     ? 'hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
                     : 'hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
@@ -596,17 +606,17 @@
               >
                 <Icon v-if="row.status === 'active'" name="ban" size="sm" />
                 <Icon v-else name="checkCircle" size="sm" />
-                <span class="truncate text-xs">{{ row.status === 'active' ? t('admin.users.disable') : t('admin.users.enable') }}</span>
+                <span class="text-xs">{{ row.status === 'active' ? t('admin.users.disable') : t('admin.users.enable') }}</span>
               </button>
 
               <!-- More Actions Menu Trigger -->
               <button
                 @click="openActionMenu(row, $event)"
-                class="action-menu-trigger flex min-w-0 flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white"
+                class="action-menu-trigger flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white"
                 :class="{ 'bg-gray-100 text-gray-900 dark:bg-dark-700 dark:text-white': activeMenuId === row.id }"
               >
                 <Icon name="more" size="sm" />
-                <span class="truncate text-xs">{{ t('common.more') }}</span>
+                <span class="text-xs">{{ t('common.more') }}</span>
               </button>
             </div>
           </template>
@@ -752,6 +762,7 @@ import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
 import type { BatchUserUsageStats } from '@/api/admin/dashboard'
 import type { PlatformQuotaItem } from '@/api/admin/users'
 import type { Column } from '@/components/common/types'
+import type { SelectOption } from '@/components/common/Select.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -760,6 +771,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import Select from '@/components/common/Select.vue'
+import { buildApiKeyGroupFilterOptions } from './apiKeyGroupFilterOptions'
 import UserAttributesConfigModal from '@/components/user/UserAttributesConfigModal.vue'
 import UserConcurrencyCell from '@/components/user/UserConcurrencyCell.vue'
 import PlatformUsageBreakdown from '@/components/user/PlatformUsageBreakdown.vue'
@@ -1005,7 +1017,7 @@ const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' }
 }
 const sortState = reactive(loadInitialSortState())
 
-// Groups data for the groups column
+// Groups data for the groups column and the existing "authorised group" filter (active only)
 const allGroups = ref<AdminGroup[]>([])
 const loadAllGroups = async () => {
   if (allGroups.value.length > 0) return
@@ -1013,6 +1025,18 @@ const loadAllGroups = async () => {
     allGroups.value = await adminAPI.groups.getAll()
   } catch (e) {
     console.error('Failed to load groups:', e)
+  }
+}
+
+// Groups for the API Key group filter — includes disabled groups so admins can
+// filter users whose keys are still bound to a now-disabled group.
+const allGroupsForApiKeyFilter = ref<AdminGroup[]>([])
+const loadAllGroupsForApiKeyFilter = async () => {
+  if (allGroupsForApiKeyFilter.value.length > 0) return
+  try {
+    allGroupsForApiKeyFilter.value = await adminAPI.groups.getAllIncludingInactive()
+  } catch (e) {
+    console.error('Failed to load groups for API key filter:', e)
   }
 }
 // Resolve user's accessible groups: exclusive groups first, then public groups
@@ -1035,7 +1059,7 @@ const getUserGroups = (user: AdminUser) => {
 // Group filter options: "All Groups" + active exclusive groups (value = group name for fuzzy match)
 const groupFilterOptions = computed(() => {
   const options: { value: string; label: string }[] = [
-    { value: '', label: t('admin.users.allGroups') }
+    { value: '', label: t('admin.users.allAuthorizedGroups') }
   ]
   for (const g of allGroups.value) {
     if (g.status !== 'active' || !g.is_exclusive || g.subscription_type !== 'standard') continue
@@ -1044,11 +1068,24 @@ const groupFilterOptions = computed(() => {
   return options
 })
 
+// API Key group filter options: "All" + groups partitioned by type (value = group id).
+// Uses allGroupsForApiKeyFilter which includes disabled groups.
+const apiKeyGroupFilterOptions = computed(() =>
+  buildApiKeyGroupFilterOptions(allGroupsForApiKeyFilter.value, {
+    all: t('admin.users.allApiKeyGroups'),
+    exclusive: t('admin.users.apiKeyGroupExclusive'),
+    public: t('admin.users.apiKeyGroupPublic'),
+    subscription: t('admin.users.apiKeyGroupSubscription'),
+    disabled: t('admin.users.apiKeyGroupDisabled'),
+  }) as SelectOption[]
+)
+
 // Filter values (role, status, and custom attributes)
 const filters = reactive({
   role: '',
   status: '',
-  group: ''  // group name for fuzzy match, '' = all
+  group: '',  // group name for fuzzy match, '' = all
+  apiKeyGroup: null as number | null  // group id bound to the user's API keys, null = all
 })
 const activeAttributeFilters = reactive<Record<number, string>>({})
 
@@ -1077,7 +1114,8 @@ const filterableAttributes = computed(() =>
 const builtInFilters = computed(() => [
   { key: 'role', name: t('admin.users.columns.role'), type: 'select' as const },
   { key: 'status', name: t('admin.users.columns.status'), type: 'select' as const },
-  { key: 'group', name: t('admin.users.columns.groups'), type: 'select' as const }
+  { key: 'group', name: t('admin.users.authorizedGroupFilter'), type: 'select' as const },
+  { key: 'apiKeyGroup', name: t('admin.users.apiKeyGroupFilter'), type: 'select' as const }
 ])
 
 // Load saved filters from localStorage
@@ -1096,6 +1134,7 @@ const loadSavedFilters = () => {
       if (parsed.role) filters.role = parsed.role
       if (parsed.status) filters.status = parsed.status
       if (parsed.group) filters.group = parsed.group
+      if (typeof parsed.apiKeyGroup === 'number') filters.apiKeyGroup = parsed.apiKeyGroup
       if (parsed.attributes) {
         Object.assign(activeAttributeFilters, parsed.attributes)
       }
@@ -1115,6 +1154,7 @@ const saveFiltersToStorage = () => {
       role: filters.role,
       status: filters.status,
       group: filters.group,
+      apiKeyGroup: filters.apiKeyGroup,
       attributes: activeAttributeFilters
     }
     localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify(values))
@@ -1493,6 +1533,7 @@ const loadUsers = async () => {
         status: filters.status as any,
         search: searchQuery.value || undefined,
         group_name: filters.group || undefined,
+        api_key_group_id: filters.apiKeyGroup ?? undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
         include_subscriptions: true,
@@ -1577,9 +1618,11 @@ const toggleBuiltInFilter = (key: string) => {
     if (key === 'role') filters.role = ''
     if (key === 'status') filters.status = ''
     if (key === 'group') filters.group = ''
+    if (key === 'apiKeyGroup') filters.apiKeyGroup = null
   } else {
     visibleFilters.add(key)
     if (key === 'group') loadAllGroups()
+    if (key === 'apiKeyGroup') loadAllGroupsForApiKeyFilter()
   }
   saveFiltersToStorage()
   pagination.page = 1
@@ -1740,6 +1783,9 @@ onMounted(async () => {
   loadUsers()
   if (hasVisibleGroupsColumn.value || visibleFilters.has('group')) {
     loadAllGroups()
+  }
+  if (visibleFilters.has('apiKeyGroup')) {
+    loadAllGroupsForApiKeyFilter()
   }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('scroll', handleScroll, true)

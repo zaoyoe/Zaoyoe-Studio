@@ -6,6 +6,18 @@
 import { apiClient } from './client'
 import type { ApiKey, CreateApiKeyRequest, UpdateApiKeyRequest, PaginatedResponse } from '@/types'
 
+export interface RegionalRestrictionStatus {
+  enabled: boolean
+  confirmation_required: boolean
+  blocked: boolean
+  country_code: string
+  unknown_region: boolean
+  revision: string
+  message?: string
+}
+
+export type RegionalRestrictionScope = 'api_key_page' | 'api_key_create'
+
 /**
  * List all API keys for current user
  * @param page - Page number (default: 1)
@@ -42,6 +54,15 @@ export async function list(
  */
 export async function getById(id: number): Promise<ApiKey> {
   const { data } = await apiClient.get<ApiKey>(`/keys/${id}`)
+  return data
+}
+
+export async function getRegionalRestrictionStatus(
+  scope: RegionalRestrictionScope = 'api_key_page'
+): Promise<RegionalRestrictionStatus> {
+  const { data } = await apiClient.get<RegionalRestrictionStatus>('/keys/regional-restriction', {
+    params: { scope }
+  })
   return data
 }
 
@@ -134,6 +155,7 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
 export const keysAPI = {
   list,
   getById,
+  getRegionalRestrictionStatus,
   create,
   update,
   delete: deleteKey,

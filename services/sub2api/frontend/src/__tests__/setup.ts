@@ -30,53 +30,17 @@ function createMemoryStorage(): Storage {
   }
 }
 
-function hasUsableStorage(value: unknown): value is Storage {
-  const storage = value as Partial<Storage> | null | undefined
-  return !!storage
-    && typeof storage.clear === 'function'
-    && typeof storage.getItem === 'function'
-    && typeof storage.setItem === 'function'
-    && typeof storage.removeItem === 'function'
-}
-
-function installStorage(name: 'localStorage' | 'sessionStorage') {
-  if (hasUsableStorage(globalThis[name])) {
-    return
-  }
-
-  const storage = createMemoryStorage()
-  Object.defineProperty(globalThis, name, {
+if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.getItem !== 'function') {
+  Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
-    writable: true,
-    value: storage
+    value: createMemoryStorage()
   })
-
-  if (typeof window !== 'undefined') {
-    Object.defineProperty(window, name, {
-      configurable: true,
-      writable: true,
-      value: storage
-    })
-  }
 }
 
-installStorage('localStorage')
-installStorage('sessionStorage')
-
-if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
-  Object.defineProperty(window, 'matchMedia', {
-    value: (query: string): MediaQueryList => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false
-    }),
+if (typeof window !== 'undefined' && typeof window.localStorage.getItem !== 'function') {
+  Object.defineProperty(window, 'localStorage', {
     configurable: true,
-    writable: true
+    value: globalThis.localStorage
   })
 }
 

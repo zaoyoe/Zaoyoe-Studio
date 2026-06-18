@@ -298,6 +298,14 @@ const baseSettingsResponse = {
   password_reset_enabled: false,
   totp_enabled: false,
   totp_encryption_key_configured: false,
+  regional_restriction_enabled: false,
+  regional_restriction_registration_enabled: false,
+  regional_restriction_oauth_signup_enabled: false,
+  regional_restriction_api_key_page_confirmation_enabled: false,
+  regional_restriction_api_key_create_enabled: false,
+  regional_restriction_blocked_country_codes: ["CN"],
+  regional_restriction_unknown_region_policy: "allow",
+  regional_restriction_confirmation_revision: "2026-06-17",
   default_balance: 0,
   default_concurrency: 1,
   default_subscriptions: [],
@@ -378,6 +386,9 @@ const baseSettingsResponse = {
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
+  enable_claude_oauth_system_prompt_injection: true,
+  claude_oauth_system_prompt: "",
+  claude_oauth_system_prompt_blocks: "",
   enable_anthropic_cache_ttl_1h_injection: false,
   rewrite_message_cache_control: false,
   antigravity_user_agent_version: "",
@@ -642,6 +653,42 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("submits Claude OAuth system prompt injection gateway settings", async () => {
+    const blocks = `[{"type":"text","text":"custom block","cache_control":true}]`;
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      enable_claude_oauth_system_prompt_injection: false,
+      claude_oauth_system_prompt_blocks: blocks,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enable_claude_oauth_system_prompt_injection: false,
+      }),
+    );
+    const payload = updateSettings.mock.calls[0][0] as {
+      claude_oauth_system_prompt_blocks: string;
+    };
+    expect(JSON.parse(payload.claude_oauth_system_prompt_blocks)).toEqual([
+      {
+        enabled: true,
+        type: "text",
+        text: "custom block",
+        cache_control: {
+          type: "ephemeral",
+          ttl: "5m",
+        },
+      },
+    ]);
+  });
+
   it("submits Antigravity user agent version gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
@@ -894,6 +941,55 @@ describe("admin SettingsView wechat connect controls", () => {
     expect(link.attributes("href")).toBe("https://github.com/settings/developers");
     expect(link.attributes("target")).toBe("_blank");
     expect(link.attributes("rel")).toContain("noopener");
+  });
+
+  it("saves regional restriction controls without making them site-wide", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper
+      .get('[data-testid="regional-restriction-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="regional-restriction-registration-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="regional-restriction-oauth-signup-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="regional-restriction-api-key-page-confirmation-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="regional-restriction-api-key-create-enabled"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="regional-restriction-country-codes"]')
+      .setValue("cn, hk, cn, invalid");
+    await wrapper
+      .get('[data-testid="regional-restriction-unknown-region-policy"]')
+      .setValue("allow");
+    await wrapper
+      .get('[data-testid="regional-restriction-confirmation-revision"]')
+      .setValue("2026-06-18");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        regional_restriction_enabled: true,
+        regional_restriction_registration_enabled: true,
+        regional_restriction_oauth_signup_enabled: true,
+        regional_restriction_api_key_page_confirmation_enabled: true,
+        regional_restriction_api_key_create_enabled: true,
+        regional_restriction_blocked_country_codes: ["CN", "HK"],
+        regional_restriction_unknown_region_policy: "allow",
+        regional_restriction_confirmation_revision: "2026-06-18",
+      }),
+    );
   });
 
   it("saves WeChat Connect fields using the backend contract and clears the secret after save", async () => {

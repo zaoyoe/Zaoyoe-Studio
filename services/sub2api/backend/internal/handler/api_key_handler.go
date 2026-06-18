@@ -18,13 +18,15 @@ import (
 
 // APIKeyHandler handles API key-related requests
 type APIKeyHandler struct {
-	apiKeyService *service.APIKeyService
+	apiKeyService  *service.APIKeyService
+	settingService *service.SettingService
 }
 
 // NewAPIKeyHandler creates a new APIKeyHandler
-func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
+func NewAPIKeyHandler(apiKeyService *service.APIKeyService, settingService *service.SettingService) *APIKeyHandler {
 	return &APIKeyHandler{
-		apiKeyService: apiKeyService,
+		apiKeyService:  apiKeyService,
+		settingService: settingService,
 	}
 }
 
@@ -131,7 +133,7 @@ func (h *APIKeyHandler) GetByID(c *gin.Context) {
 
 	// 验证所有权
 	if key.UserID != subject.UserID {
-		response.Forbidden(c, "Not authorized to access this key")
+		response.NotFound(c, "API key not found")
 		return
 	}
 
@@ -144,6 +146,10 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if _, err := evaluateRegionalRestriction(c.Request.Context(), c, h.settingService, regionalRestrictionScopeAPIKeyCreate); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 
@@ -181,6 +187,26 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 		}
 		return dto.APIKeyFromService(key), nil
 	})
+}
+
+// GetRegionalRestrictionStatus returns the API key module regional restriction status.
+// GET /api/v1/keys/regional-restriction
+func (h *APIKeyHandler) GetRegionalRestrictionStatus(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	scope := c.DefaultQuery("scope", regionalRestrictionScopeAPIKeyPage)
+	if scope != regionalRestrictionScopeAPIKeyPage && scope != regionalRestrictionScopeAPIKeyCreate {
+		scope = regionalRestrictionScopeAPIKeyPage
+	}
+	result, err := evaluateRegionalRestriction(c.Request.Context(), c, h.settingService, scope)
+	if err != nil && !isRegionalRestrictionError(err) {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
 }
 
 // Update handles updating an API key

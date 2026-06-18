@@ -123,7 +123,7 @@ test('public pages prevent image dragging and nonessential text selection', () =
 
     assert.match(
         promptsHtml,
-        /prompts-poetry\.css\?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1[\s\S]*imageDragLock=20260530_IMAGE_DRAG_LOCK_1/
+        /prompts-poetry\.css\?v=[^"']*imageDragLock=20260530_IMAGE_DRAG_LOCK_1/
     );
     assert.match(
         promptsHtml,

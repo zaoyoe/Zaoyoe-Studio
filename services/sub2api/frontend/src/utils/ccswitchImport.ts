@@ -10,12 +10,6 @@ export interface CcSwitchImportConfig {
   model?: string
 }
 
-export interface CcSwitchClaudeModelSlots {
-  haikuModel?: string
-  sonnetModel?: string
-  opusModel?: string
-}
-
 export interface CcSwitchImportDeeplinkInput {
   baseUrl: string
   platform?: GroupPlatform | null
@@ -23,7 +17,6 @@ export interface CcSwitchImportDeeplinkInput {
   providerName: string
   apiKey: string
   usageScript: string
-  claudeModelSlots?: CcSwitchClaudeModelSlots
 }
 
 export function resolveCcSwitchImportConfig(
@@ -75,35 +68,5 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
     entries.splice(2, 0, ['model', config.model])
   }
 
-  if (config.app === 'claude' && input.claudeModelSlots) {
-    const { haikuModel, sonnetModel, opusModel } = input.claudeModelSlots
-    if (haikuModel) entries.push(['haikuModel', haikuModel])
-    if (sonnetModel) entries.push(['sonnetModel', sonnetModel])
-    if (opusModel) entries.push(['opusModel', opusModel])
-  }
-
   return `ccswitch://v1/import?${new URLSearchParams(entries).toString()}`
-}
-
-export function resolveCcSwitchClaudeModelSlots(
-  modelIds: readonly string[]
-): CcSwitchClaudeModelSlots | undefined {
-  const models = Array.from(
-    new Set(modelIds.map((model) => model.trim()).filter((model) => model.length > 0))
-  )
-
-  if (models.length === 0) return undefined
-
-  const findByFamily = (family: string) =>
-    models.find((model) => model.toLowerCase().includes(family))
-
-  const opusModel = findByFamily('opus') || models[0]
-  const sonnetModel = findByFamily('sonnet') || opusModel || models[0]
-  const haikuModel = findByFamily('haiku') || sonnetModel || opusModel || models[0]
-
-  return {
-    haikuModel,
-    sonnetModel,
-    opusModel
-  }
 }

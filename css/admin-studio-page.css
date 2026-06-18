@@ -31,20 +31,26 @@ body.admin-access-pending,
             display: flex;
         }
 
+        /* 20260617_ADMIN_ACCESS_GATE_STABLE_FLAT_1 */
         .admin-access-card {
             width: min(100%, 520px);
-            padding: 36px 32px;
-            border-radius: 24px;
+            min-height: 278px;
+            position: relative;
+            box-sizing: border-box;
+            padding: 32px 32px 72px;
+            border-radius: 22px;
             border: 1px solid rgba(255, 255, 255, 0.08);
             background: rgba(14, 19, 34, 0.9);
-            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+            box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.2);
             text-align: center;
             color: #f3f4f6;
+            contain: layout paint;
         }
 
         .admin-access-icon {
             width: 68px;
             height: 68px;
+            flex: 0 0 68px;
             margin: 0 auto 18px;
             border-radius: 50%;
             display: inline-flex;
@@ -65,6 +71,8 @@ body.admin-access-pending,
             font-size: 30px;
             line-height: 1.15;
             font-family: "Playfair Display", serif;
+            min-height: 35px;
+            text-wrap: balance;
         }
 
         .admin-access-message {
@@ -72,12 +80,19 @@ body.admin-access-pending,
             color: rgba(243, 244, 246, 0.76);
             font-size: 15px;
             line-height: 1.7;
+            min-height: 26px;
+            text-wrap: balance;
         }
 
         /* 20260426_ADMIN_STUDIO_ACCESS_DOTS_HOME_LOGO_1 */
         .admin-access-spinner {
-            margin: 28px auto 0;
-            display: inline-flex;
+            position: absolute;
+            left: 32px;
+            right: 32px;
+            bottom: 30px;
+            min-height: 44px;
+            margin: 0 auto;
+            display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
@@ -207,19 +222,32 @@ body.admin-access-pending,
         }
 
         .admin-access-actions {
-            display: none;
+            position: absolute;
+            left: 32px;
+            right: 32px;
+            bottom: 30px;
+            min-height: 44px;
+            display: flex;
             justify-content: center;
+            align-items: center;
             gap: 12px;
-            margin-top: 24px;
+            margin-top: 0;
             flex-wrap: wrap;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
         }
 
         body.admin-access-denied .admin-access-actions {
-            display: flex;
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
         }
 
         body.admin-access-denied .admin-access-spinner {
-            display: none;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
         }
 
         .admin-access-btn {
@@ -245,6 +273,25 @@ body.admin-access-pending,
         .admin-access-btn.primary {
             background: linear-gradient(135deg, #5f8cff, #3b82f6);
             border-color: rgba(159, 195, 255, 0.6);
+        }
+
+        @media (max-width: 640px) {
+            .admin-access-card {
+                min-height: 268px;
+                padding: 28px 22px 68px;
+                border-radius: 20px;
+            }
+
+            .admin-access-spinner,
+            .admin-access-actions {
+                left: 22px;
+                right: 22px;
+                bottom: 24px;
+            }
+
+            .admin-access-title {
+                font-size: 26px;
+            }
         }
 
         @keyframes admin-access-pending-dots {
@@ -17435,16 +17482,16 @@ html:not([data-theme="dark"]) .mobile-menu-btn:hover {
 html[data-theme="light"] .admin-access-screen,
 html:not([data-theme="dark"]) .admin-access-screen {
     background:
-        radial-gradient(circle at top, rgba(118, 157, 202, 0.18), transparent 44%),
-        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(118, 157, 202, 0.99));
+        radial-gradient(circle at top, rgba(118, 157, 202, 0.08), transparent 42%),
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(248, 250, 252, 0.99));
 }
 
 html[data-theme="light"] .admin-access-card,
 html:not([data-theme="dark"]) .admin-access-card {
     background: rgba(255, 255, 255, 0.92);
-    border-color: rgba(15, 23, 42, 0.08);
+    border-color: rgba(15, 23, 42, 0.1);
     color: #0f172a;
-    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 html[data-theme="light"] .admin-access-message,
@@ -20227,7 +20274,7 @@ html[data-theme="light"] .admin-command-center {
 
 html[data-theme="light"] .admin-access-screen {
     background:
-        radial-gradient(circle at top, rgba(var(--admin-studio-ui-blue-rgb), 0.14), transparent 44%),
+        radial-gradient(circle at top, rgba(var(--admin-studio-ui-blue-rgb), 0.07), transparent 42%),
         linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(248, 250, 252, 0.99)) !important;
 }
 
@@ -20430,7 +20477,7 @@ html[data-theme="light"] :is(
     background: var(--admin-studio-ui-blue) !important;
     border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.58) !important;
     color: #ffffff !important;
-    box-shadow: 0 12px 26px rgba(var(--admin-studio-ui-blue-rgb), 0.2) !important;
+    box-shadow: 0 4px 12px rgba(var(--admin-studio-ui-blue-rgb), 0.14) !important;
 }
 
 html[data-theme="light"] :is(

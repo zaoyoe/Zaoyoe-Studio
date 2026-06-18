@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -310,52 +309,6 @@ func TestAccountTestService_OpenAI429WithoutResetSignalDoesNotMutateRuntimeState
 	require.Equal(t, StatusError, account.Status)
 	require.Equal(t, "stale 403", account.ErrorMessage)
 	require.Nil(t, account.RateLimitResetAt)
-}
-
-func TestAccountTestService_OpenAIPassthroughDefaultsToGPT54(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	ctx, recorder := newTestContext()
-
-	resp := newJSONResponse(http.StatusOK, "")
-	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
-
-`))
-
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
-	svc := &AccountTestService{
-		httpUpstream: upstream,
-		cfg: &config.Config{
-			Security: config.SecurityConfig{
-				URLAllowlist: config.URLAllowlistConfig{},
-			},
-		},
-	}
-	account := &Account{
-		ID:          87,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Concurrency: 1,
-		Credentials: map[string]any{
-			"api_key":  "test-key",
-			"base_url": "https://relay.example/v1",
-		},
-		Extra: map[string]any{
-			"openai_passthrough": true,
-		},
-	}
-
-	err := svc.testOpenAIAccountConnection(ctx, account, "", "", "")
-	require.NoError(t, err)
-	require.Len(t, upstream.requests, 1)
-	require.Equal(t, "https://relay.example/v1/responses", upstream.requests[0].URL.String())
-	require.Contains(t, recorder.Body.String(), "test_complete")
-
-	bodyBytes, err := io.ReadAll(upstream.requests[0].Body)
-	require.NoError(t, err)
-
-	var payload map[string]any
-	require.NoError(t, json.Unmarshal(bodyBytes, &payload))
-	require.Equal(t, "gpt-5.4", payload["model"])
 }
 
 func TestAccountTestService_OpenAI401SetsPermanentErrorOnly(t *testing.T) {

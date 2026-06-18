@@ -109,7 +109,7 @@ test('prompts mobile search input suppresses native tap flash inside the search 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1'),
         true,
         'prompts.html should cache-bust the mobile search tap highlight fix'
     );
@@ -146,7 +146,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1'),
         true,
         'prompts.html should cache-bust the mobile light comment mode stylesheet'
     );

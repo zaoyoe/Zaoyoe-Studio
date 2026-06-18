@@ -676,6 +676,36 @@ test('admin studio access gate, module loaders, and sidebar reuse the shared dot
         'admin studio access gate should animate the loader with the shared bouncing dot pattern'
     );
     assert.equal(
+        stylesSource.includes('20260617_ADMIN_ACCESS_GATE_STABLE_FLAT_1'),
+        true,
+        'admin studio access gate should include the stable low-shadow card layer'
+    );
+    assert.match(
+        stylesSource,
+        /\.admin-access-card\s*\{[\s\S]*min-height:\s*278px;[\s\S]*padding:\s*32px 32px 72px;[\s\S]*box-shadow:\s*0 12px 34px rgba\(0,\s*0,\s*0,\s*0\.28\),\s*0 1px 2px rgba\(0,\s*0,\s*0,\s*0\.2\);[\s\S]*contain:\s*layout paint;/,
+        'admin studio access card should keep a stable fixed footprint with reduced floating shadow'
+    );
+    assert.match(
+        stylesSource,
+        /\.admin-access-spinner\s*\{[\s\S]*position:\s*absolute;[\s\S]*bottom:\s*30px;[\s\S]*min-height:\s*44px;/,
+        'admin studio access pending dots should sit in a reserved bottom status slot'
+    );
+    assert.match(
+        stylesSource,
+        /\.admin-access-actions\s*\{[\s\S]*position:\s*absolute;[\s\S]*bottom:\s*30px;[\s\S]*min-height:\s*44px;[\s\S]*opacity:\s*0;[\s\S]*visibility:\s*hidden;/,
+        'admin studio denied actions should reuse the same reserved status slot instead of resizing the card'
+    );
+    assert.match(
+        stylesSource,
+        /html\[data-theme="light"\] \.admin-access-card,[\s\S]*html:not\(\[data-theme="dark"\]\) \.admin-access-card\s*\{[\s\S]*box-shadow:\s*0 10px 26px rgba\(15,\s*23,\s*42,\s*0\.08\),\s*0 1px 2px rgba\(15,\s*23,\s*42,\s*0\.05\);/,
+        'light theme access card should use a low grounded shadow'
+    );
+    assert.equal(
+        adminStudioHtml.includes('accessGateStable=20260617_ADMIN_ACCESS_GATE_STABLE_FLAT_1'),
+        true,
+        'admin studio should cache-bust the stable access gate stylesheet'
+    );
+    assert.equal(
         stylesSource.includes('.admin-module-loading-host.loading-text::before'),
         true,
         'admin studio loading bridge should disable legacy skeleton pseudo elements when the shared dot loader is active'
