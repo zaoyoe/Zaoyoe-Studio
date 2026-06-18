@@ -176,15 +176,54 @@
     <template v-if="!backendModeEnabled" #footer>
       <p class="text-gray-500 dark:text-dark-400">
         {{ t('auth.dontHaveAccount') }}
-        <router-link
-          to="/register"
+        <button
+          type="button"
           class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+          :disabled="checkingRegistrationRegion"
+          @click="handleRegisterLinkClick"
         >
-          {{ t('auth.signUp') }}
-        </router-link>
+          {{ checkingRegistrationRegion ? t('common.loading') : t('auth.signUp') }}
+        </button>
       </p>
     </template>
   </AuthLayout>
+
+  <div
+    v-if="showRegistrationRegionDialog"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+    role="dialog"
+    aria-modal="true"
+  >
+    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-dark-800">
+      <div class="flex items-start gap-3">
+        <div
+          class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300"
+        >
+          <Icon name="exclamationCircle" size="md" />
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            {{ registrationRegionDialogTitle }}
+          </h3>
+          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">
+            {{ registrationRegionDialogDescription }}
+          </p>
+          <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
+            {{ registrationRegionDialogReason }}
+          </p>
+        </div>
+      </div>
+      <div class="mt-6 flex justify-end">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          @click="showRegistrationRegionDialog = false"
+        >
+          {{ t('common.confirm') }}
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- 2FA Modal -->
   <TotpLoginModal
@@ -199,7 +238,7 @@
 
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
@@ -212,7 +251,12 @@ import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import { getPublicSettings, isTotp2FARequired, isWeChatWebOAuthEnabled } from '@/api/auth'
+import {
+  getPublicSettings,
+  getRegistrationRegionalRestrictionStatus,
+  isTotp2FARequired,
+  isWeChatWebOAuthEnabled
+} from '@/api/auth'
 import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
@@ -223,6 +267,7 @@ const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 // ==================== Router & Stores ====================
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
 
@@ -252,6 +297,9 @@ const loginAgreementRevision = ref<string>('')
 const loginAgreementDocuments = ref<LoginAgreementDocument[]>([])
 const agreementAccepted = ref<boolean>(false)
 const showAgreementModal = ref<boolean>(false)
+const checkingRegistrationRegion = ref<boolean>(false)
+const showRegistrationRegionDialog = ref<boolean>(false)
+const registrationRegionDialogMode = ref<'blocked' | 'check_failed'>('blocked')
 
 // Turnstile
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
@@ -286,6 +334,30 @@ const authActionDisabled = computed(
   () => isLoading.value || !publicSettingsLoaded.value || agreementGateActive.value
 )
 
+const registrationRegionDialogTitle = computed(() =>
+  t(
+    registrationRegionDialogMode.value === 'check_failed'
+      ? 'auth.registrationRegionCheckFailedTitle'
+      : 'auth.registrationRegionBlockedTitle'
+  )
+)
+
+const registrationRegionDialogDescription = computed(() =>
+  t(
+    registrationRegionDialogMode.value === 'check_failed'
+      ? 'auth.registrationRegionCheckFailedDescription'
+      : 'auth.registrationRegionBlockedDescription'
+  )
+)
+
+const registrationRegionDialogReason = computed(() =>
+  t(
+    registrationRegionDialogMode.value === 'check_failed'
+      ? 'auth.registrationRegionCheckFailedReason'
+      : 'auth.registrationRegionBlockedReason'
+  )
+)
+
 const showOAuthLogin = computed(
   () =>
     !backendModeEnabled.value &&
@@ -306,6 +378,11 @@ watch(validationToastMessage, (value, previousValue) => {
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
+  if (route.query.region_blocked === 'registration') {
+    registrationRegionDialogMode.value = 'blocked'
+    showRegistrationRegionDialog.value = true
+  }
+
   const expiredFlag = sessionStorage.getItem('auth_expired')
   if (expiredFlag) {
     sessionStorage.removeItem('auth_expired')
@@ -463,6 +540,29 @@ function validateForm(): boolean {
 }
 
 // ==================== Form Handlers ====================
+
+async function handleRegisterLinkClick(): Promise<void> {
+  if (checkingRegistrationRegion.value) {
+    return
+  }
+  checkingRegistrationRegion.value = true
+  try {
+    const status = await getRegistrationRegionalRestrictionStatus()
+    if (status.enabled && status.blocked) {
+      registrationRegionDialogMode.value = 'blocked'
+      showRegistrationRegionDialog.value = true
+      return
+    }
+  } catch (error) {
+    console.warn('Failed to check registration regional restriction:', error)
+    registrationRegionDialogMode.value = 'check_failed'
+    showRegistrationRegionDialog.value = true
+    return
+  } finally {
+    checkingRegistrationRegion.value = false
+  }
+  await router.push('/register')
+}
 
 async function handleLogin(): Promise<void> {
   // Clear previous error

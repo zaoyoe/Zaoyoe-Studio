@@ -259,6 +259,11 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import {
+  isRegistrationRegionalRestrictionApiError,
+  isRegistrationRegionalRestrictionFragment,
+  regionalRestrictionRegistrationPath
+} from '@/utils/regionalRestriction'
 
 const route = useRoute()
 const router = useRouter()
@@ -544,6 +549,13 @@ function getRequestErrorMessage(error: unknown, fallback: string): string {
   return err.response?.data?.detail || err.response?.data?.message || err.message || fallback
 }
 
+async function redirectRegistrationRegionalRestrictionError(error: unknown): Promise<boolean> {
+  if (!isRegistrationRegionalRestrictionApiError(error)) return false
+  clearPendingAuthSession()
+  await router.replace(regionalRestrictionRegistrationPath())
+  return true
+}
+
 function isCreateAccountRecoveryError(error: unknown): boolean {
   const data = (error as {
     response?: {
@@ -652,6 +664,7 @@ async function handleSubmitInvitation() {
     )
     await finalizePendingAccountResponse(completion)
   } catch (e: unknown) {
+    if (await redirectRegistrationRegionalRestrictionError(e)) return
     const err = e as { message?: string; response?: { data?: { message?: string } } }
     invitationError.value =
       err.response?.data?.message || err.message || t('auth.dingtalk.completeRegistrationFailed')
@@ -689,6 +702,7 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
     })
     await finalizePendingAccountResponse(data)
   } catch (e: unknown) {
+    if (await redirectRegistrationRegionalRestrictionError(e)) return
     if (isCreateAccountRecoveryError(e)) {
       switchToBindLoginMode(payload.email.trim())
       return
@@ -748,6 +762,11 @@ onMounted(async () => {
   const legacyPendingToken = params.get('pending_oauth_token')?.trim() || ''
   const error = params.get('error')
   const errorDesc = params.get('error_description') || params.get('error_message') || ''
+  if (isRegistrationRegionalRestrictionFragment(params)) {
+    await router.replace(regionalRestrictionRegistrationPath())
+    return
+  }
+
   const redirect = sanitizeRedirectPath(
     params.get('redirect') || (route.query.redirect as string | undefined) || '/dashboard'
   )
@@ -831,6 +850,7 @@ onMounted(async () => {
 
     await finalizeCompletion(completion, completionRedirect)
   } catch (e: unknown) {
+    if (await redirectRegistrationRegionalRestrictionError(e)) return
     clearPendingAuthSession()
     errorMessage.value = getRequestErrorMessage(e, t('auth.loginFailed'))
     isProcessing.value = false

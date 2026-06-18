@@ -458,6 +458,16 @@ export default {
     emailSuffixNotAllowed: '该邮箱域名不在允许注册范围内。',
     emailSuffixNotAllowedWithAllowed: '该邮箱域名不被允许。可用域名：{suffixes}',
     emailSuffixAllowedMore: '等 {count} 项',
+    registrationRegionBlockedTitle: '当前地区暂不开放注册',
+    registrationRegionBlockedDescription:
+      '根据服务可用性要求，Father Key Core Keys 暂不支持从当前请求地区创建新账号。',
+    registrationRegionBlockedReason:
+      '原因：此模块不向受限制地区（包括中国大陆）用户提供新账号注册。已有用户仍可从受支持的请求地区登录。',
+    registrationRegionCheckFailedTitle: '暂时无法确认注册地区',
+    registrationRegionCheckFailedDescription:
+      '系统暂时无法确认当前请求地区，因此没有打开 Father Key Core Keys 注册页面。',
+    registrationRegionCheckFailedReason:
+      '原因：注册前需要先完成地区可用性检查，避免用户稍后看到不清晰的验证码或账号创建失败。',
     loginSuccess: '登录成功！欢迎回来。',
     accountCreatedSuccess: '账户创建成功！欢迎使用 {siteName}。',
     reloginRequired: '会话已过期，请重新登录。',

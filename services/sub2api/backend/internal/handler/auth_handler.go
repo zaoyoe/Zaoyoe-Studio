@@ -192,6 +192,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	h.respondWithTokenPair(c, user)
 }
 
+// GetRegionalRestrictionRegistrationStatus returns the regional restriction status
+// for the public registration entry point without creating a user or sending email.
+// GET /api/v1/auth/regional-restriction/registration
+func (h *AuthHandler) GetRegionalRestrictionRegistrationStatus(c *gin.Context) {
+	result, err := evaluateRegionalRestriction(c.Request.Context(), c, h.settingSvc, regionalRestrictionScopeRegistration)
+	if err != nil && !isRegionalRestrictionError(err) {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // SendVerifyCode 发送邮箱验证码
 // POST /api/v1/auth/send-verify-code
 func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
