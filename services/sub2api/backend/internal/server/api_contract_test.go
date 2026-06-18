@@ -212,6 +212,45 @@ func TestAPIContracts(t *testing.T) {
 			}`,
 		},
 		{
+			name: "GET /api/v1/auth/regional-restriction/registration",
+			setup: func(t *testing.T, deps *contractDeps) {
+				t.Helper()
+				deps.settingRepo.SetAll(map[string]string{
+					service.SettingKeyRegionalRestrictionEnabled:                   "true",
+					service.SettingKeyRegionalRestrictionRegistrationEnabled:       "true",
+					service.SettingKeyRegionalRestrictionOAuthSignupEnabled:        "true",
+					service.SettingKeyRegionalRestrictionAPIKeyPageConfirmation:    "false",
+					service.SettingKeyRegionalRestrictionAPIKeyCreateEnabled:       "true",
+					service.SettingKeyRegionalRestrictionBlockedCountryCodes:       `["CN"]`,
+					service.SettingKeyRegionalRestrictionUnknownRegionPolicy:       "allow",
+					service.SettingKeyRegionalRestrictionConfirmationRevision:      "2026-06-17",
+					service.SettingKeyRegionalRestrictionConfirmationFrequency:     "once_per_revision",
+					service.SettingKeyRegionalRestrictionConfirmationIntervalHours: "24",
+				})
+			},
+			method: http.MethodGet,
+			path:   "/api/v1/auth/regional-restriction/registration",
+			headers: map[string]string{
+				"CF-IPCountry": "CN",
+			},
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"enabled": true,
+					"confirmation_required": false,
+					"blocked": true,
+					"country_code": "CN",
+					"unknown_region": false,
+					"revision": "2026-06-17",
+					"confirmation_frequency": "once_per_revision",
+					"confirmation_interval_hours": 24,
+					"message": "The service is not offered to users located in restricted regions, including mainland China."
+				}
+			}`,
+		},
+		{
 			name:   "POST /api/v1/keys",
 			method: http.MethodPost,
 			path:   "/api/v1/keys",
@@ -1347,6 +1386,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 	r := gin.New()
 
 	v1 := r.Group("/api/v1")
+
+	v1.GET("/auth/regional-restriction/registration", authHandler.GetRegionalRestrictionRegistrationStatus)
 
 	v1Auth := v1.Group("")
 	v1Auth.Use(jwtAuth)

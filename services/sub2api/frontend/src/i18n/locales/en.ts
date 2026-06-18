@@ -459,6 +459,17 @@ export default {
     emailSuffixNotAllowedWithAllowed:
       'This email domain is not allowed. Allowed domains: {suffixes}',
     emailSuffixAllowedMore: 'and {count} more',
+    registrationRegionBlockedTitle:
+      'Registration is not available in your region',
+    registrationRegionBlockedDescription:
+      'Based on service availability requirements, account registration for Father Key Core Keys is not available from your current request region.',
+    registrationRegionBlockedReason:
+      'Reason: this module is not offered to users located in restricted regions, including mainland China. Existing users can still sign in from supported request regions.',
+    registrationRegionCheckFailedTitle: 'Unable to confirm registration region',
+    registrationRegionCheckFailedDescription:
+      'The system could not confirm your current request region, so the Father Key Core Keys registration page was not opened.',
+    registrationRegionCheckFailedReason:
+      'Reason: registration requires a region availability check first, so users do not see an unclear verification-code or account-creation failure later.',
     loginSuccess: 'Login successful! Welcome back.',
     accountCreatedSuccess: 'Account created successfully! Welcome to {siteName}.',
     reloginRequired: 'Session expired. Please log in again.',

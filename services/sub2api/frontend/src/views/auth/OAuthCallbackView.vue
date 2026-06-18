@@ -162,6 +162,11 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import {
+  isRegistrationRegionalRestrictionApiError,
+  isRegistrationRegionalRestrictionFragment,
+  regionalRestrictionRegistrationPath
+} from '@/utils/regionalRestriction'
 
 const route = useRoute()
 const router = useRouter()
@@ -313,6 +318,10 @@ async function resumePendingEmailOAuth() {
 
     appStore.showError(completion.error || t('auth.loginFailed'))
   } catch (e: unknown) {
+    if (isRegistrationRegionalRestrictionApiError(e)) {
+      await router.replace(regionalRestrictionRegistrationPath())
+      return
+    }
     const err = e as { message?: string; response?: { data?: { message?: string } } }
     const message = err.response?.data?.message || err.message || t('auth.loginFailed')
     appStore.showError(message)
@@ -356,6 +365,10 @@ async function handleSubmitRegistration() {
     )
     await finalizeTokenResponse(data, redirectTo.value)
   } catch (e: unknown) {
+    if (isRegistrationRegionalRestrictionApiError(e)) {
+      await router.replace(regionalRestrictionRegistrationPath())
+      return
+    }
     const err = e as { message?: string; response?: { data?: { message?: string } } }
     registrationError.value =
       err.response?.data?.message || err.message || t('auth.oidc.completeRegistrationFailed')
@@ -370,6 +383,11 @@ onMounted(async () => {
   const fragmentError = params.get('error') || ''
   const fragmentErrorDescription =
     params.get('error_description') || params.get('error_message') || ''
+
+  if (isRegistrationRegionalRestrictionFragment(params)) {
+    await router.replace(regionalRestrictionRegistrationPath())
+    return
+  }
 
   if (fragmentError) {
     appStore.showError(fragmentErrorDescription || fragmentError)

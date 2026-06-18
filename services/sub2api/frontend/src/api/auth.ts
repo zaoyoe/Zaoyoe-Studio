@@ -217,6 +217,18 @@ export interface PendingOAuthSendVerifyCodeResponse extends SendVerifyCodeRespon
   redirect?: string
 }
 
+export interface RegionalRestrictionRegistrationStatus {
+  enabled: boolean
+  confirmation_required: boolean
+  blocked: boolean
+  country_code: string
+  unknown_region: boolean
+  revision: string
+  confirmation_frequency: 'once_per_revision' | 'always' | 'interval' | string
+  confirmation_interval_hours: number
+  message?: string
+}
+
 export type OAuthCompletionKind = 'login' | 'bind'
 
 export interface OAuthAdoptionDecision {
@@ -333,6 +345,13 @@ export function isAuthenticated(): boolean {
  */
 export async function getPublicSettings(): Promise<PublicSettings> {
   const { data } = await apiClient.get<PublicSettings>('/settings/public')
+  return data
+}
+
+export async function getRegistrationRegionalRestrictionStatus(): Promise<RegionalRestrictionRegistrationStatus> {
+  const { data } = await apiClient.get<RegionalRestrictionRegistrationStatus>(
+    '/auth/regional-restriction/registration'
+  )
   return data
 }
 
@@ -673,6 +692,7 @@ export const authAPI = {
   getTokenExpiresAt,
   clearAuthToken,
   getPublicSettings,
+  getRegistrationRegionalRestrictionStatus,
   sendVerifyCode,
   sendPendingOAuthVerifyCode,
   validatePromoCode,
