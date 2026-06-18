@@ -62,14 +62,16 @@ func newRegionalRestrictionTestContext(country string) *gin.Context {
 
 func newRegionalRestrictionSettingService(values map[string]string) *service.SettingService {
 	base := map[string]string{
-		service.SettingKeyRegionalRestrictionEnabled:                "true",
-		service.SettingKeyRegionalRestrictionRegistrationEnabled:    "true",
-		service.SettingKeyRegionalRestrictionOAuthSignupEnabled:     "true",
-		service.SettingKeyRegionalRestrictionAPIKeyPageConfirmation: "true",
-		service.SettingKeyRegionalRestrictionAPIKeyCreateEnabled:    "true",
-		service.SettingKeyRegionalRestrictionBlockedCountryCodes:    `["CN"]`,
-		service.SettingKeyRegionalRestrictionUnknownRegionPolicy:    "allow",
-		service.SettingKeyRegionalRestrictionConfirmationRevision:   "2026-06-17",
+		service.SettingKeyRegionalRestrictionEnabled:                   "true",
+		service.SettingKeyRegionalRestrictionRegistrationEnabled:       "true",
+		service.SettingKeyRegionalRestrictionOAuthSignupEnabled:        "true",
+		service.SettingKeyRegionalRestrictionAPIKeyPageConfirmation:    "true",
+		service.SettingKeyRegionalRestrictionAPIKeyCreateEnabled:       "true",
+		service.SettingKeyRegionalRestrictionBlockedCountryCodes:       `["CN"]`,
+		service.SettingKeyRegionalRestrictionUnknownRegionPolicy:       "allow",
+		service.SettingKeyRegionalRestrictionConfirmationRevision:      "2026-06-17",
+		service.SettingKeyRegionalRestrictionConfirmationFrequency:     "once_per_revision",
+		service.SettingKeyRegionalRestrictionConfirmationIntervalHours: "24",
 	}
 	for key, value := range values {
 		base[key] = value
@@ -87,6 +89,24 @@ func TestEvaluateRegionalRestrictionBlocksConfiguredCountryOnlyForEnabledScope(t
 	require.True(t, result.Enabled)
 	require.True(t, result.Blocked)
 	require.Equal(t, "CN", result.CountryCode)
+	require.Equal(t, "once_per_revision", result.ConfirmationFrequency)
+	require.Equal(t, 24, result.ConfirmationIntervalHours)
+}
+
+func TestEvaluateRegionalRestrictionReturnsPromptFrequencySettings(t *testing.T) {
+	settingSvc := newRegionalRestrictionSettingService(map[string]string{
+		service.SettingKeyRegionalRestrictionConfirmationFrequency:     "interval",
+		service.SettingKeyRegionalRestrictionConfirmationIntervalHours: "72",
+	})
+
+	result, err := evaluateRegionalRestriction(context.Background(), newRegionalRestrictionTestContext("US"), settingSvc, regionalRestrictionScopeAPIKeyPage)
+
+	require.NoError(t, err)
+	require.True(t, result.Enabled)
+	require.True(t, result.ConfirmationRequired)
+	require.False(t, result.Blocked)
+	require.Equal(t, "interval", result.ConfirmationFrequency)
+	require.Equal(t, 72, result.ConfirmationIntervalHours)
 }
 
 func TestEvaluateRegionalRestrictionAllowsVPNExitCountry(t *testing.T) {

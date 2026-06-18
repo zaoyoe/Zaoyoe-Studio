@@ -207,6 +207,8 @@ export interface PublicSettings {
   regional_restriction_blocked_country_codes?: string[]
   regional_restriction_unknown_region_policy?: 'allow' | 'deny' | string
   regional_restriction_confirmation_revision?: string
+  regional_restriction_confirmation_frequency?: 'once_per_revision' | 'always' | 'interval' | string
+  regional_restriction_confirmation_interval_hours?: number
   turnstile_enabled: boolean
   turnstile_site_key: string
   site_name: string

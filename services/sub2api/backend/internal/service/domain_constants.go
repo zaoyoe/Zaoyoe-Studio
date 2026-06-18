@@ -144,14 +144,16 @@ const (
 	SettingKeyLoginAgreementDocuments          = "login_agreement_documents"           // 条款文档列表（JSON，Markdown 内容）
 
 	// 区域限制设置（仅作用于注册和 API Key 管理，不做整站拦截）
-	SettingKeyRegionalRestrictionEnabled                = "regional_restriction_enabled"
-	SettingKeyRegionalRestrictionRegistrationEnabled    = "regional_restriction_registration_enabled"
-	SettingKeyRegionalRestrictionOAuthSignupEnabled     = "regional_restriction_oauth_signup_enabled"
-	SettingKeyRegionalRestrictionAPIKeyPageConfirmation = "regional_restriction_api_key_page_confirmation_enabled"
-	SettingKeyRegionalRestrictionAPIKeyCreateEnabled    = "regional_restriction_api_key_create_enabled"
-	SettingKeyRegionalRestrictionBlockedCountryCodes    = "regional_restriction_blocked_country_codes"
-	SettingKeyRegionalRestrictionUnknownRegionPolicy    = "regional_restriction_unknown_region_policy"
-	SettingKeyRegionalRestrictionConfirmationRevision   = "regional_restriction_confirmation_revision"
+	SettingKeyRegionalRestrictionEnabled                   = "regional_restriction_enabled"
+	SettingKeyRegionalRestrictionRegistrationEnabled       = "regional_restriction_registration_enabled"
+	SettingKeyRegionalRestrictionOAuthSignupEnabled        = "regional_restriction_oauth_signup_enabled"
+	SettingKeyRegionalRestrictionAPIKeyPageConfirmation    = "regional_restriction_api_key_page_confirmation_enabled"
+	SettingKeyRegionalRestrictionAPIKeyCreateEnabled       = "regional_restriction_api_key_create_enabled"
+	SettingKeyRegionalRestrictionBlockedCountryCodes       = "regional_restriction_blocked_country_codes"
+	SettingKeyRegionalRestrictionUnknownRegionPolicy       = "regional_restriction_unknown_region_policy"
+	SettingKeyRegionalRestrictionConfirmationRevision      = "regional_restriction_confirmation_revision"
+	SettingKeyRegionalRestrictionConfirmationFrequency     = "regional_restriction_confirmation_frequency"
+	SettingKeyRegionalRestrictionConfirmationIntervalHours = "regional_restriction_confirmation_interval_hours"
 
 	// 邮件服务设置
 	SettingKeySMTPHost     = "smtp_host"      // SMTP服务器地址

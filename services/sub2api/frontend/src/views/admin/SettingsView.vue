@@ -1709,6 +1709,51 @@
                   </p>
                 </div>
               </div>
+
+              <div class="grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 dark:border-dark-700 lg:grid-cols-2">
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ localText("弹窗频率", "Prompt frequency") }}
+                  </label>
+                  <select
+                    v-model="form.regional_restriction_confirmation_frequency"
+                    class="input"
+                    data-testid="regional-restriction-confirmation-frequency"
+                  >
+                    <option value="once_per_revision">
+                      {{ localText("同一确认版本只弹一次", "Once per confirmation revision") }}
+                    </option>
+                    <option value="always">
+                      {{ localText("每次访问 API 密钥页都弹", "Every API key page visit") }}
+                    </option>
+                    <option value="interval">
+                      {{ localText("间隔一段时间后再弹", "After an interval") }}
+                    </option>
+                  </select>
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ localText("默认保持现有逻辑：确认版本不变时不重复弹。", "Default keeps the current behavior: no repeat prompt while the revision is unchanged.") }}
+                  </p>
+                </div>
+
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ localText("间隔小时数", "Interval hours") }}
+                  </label>
+                  <input
+                    v-model.number="form.regional_restriction_confirmation_interval_hours"
+                    type="number"
+                    min="1"
+                    max="8760"
+                    step="1"
+                    class="input"
+                    :disabled="form.regional_restriction_confirmation_frequency !== 'interval'"
+                    data-testid="regional-restriction-confirmation-interval-hours"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ localText("仅在选择“间隔一段时间后再弹”时生效，可填 1 到 8760 小时。", "Only used by the interval mode. Allowed range is 1 to 8760 hours.") }}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -7185,6 +7230,22 @@ function normalizeRegionalRestrictionCountryCodes(input: unknown): string[] {
   return result.length > 0 ? result.sort() : ["CN"];
 }
 
+function normalizeRegionalRestrictionConfirmationFrequency(input: unknown): string {
+  const value = String(input || "").trim();
+  if (value === "always" || value === "interval") {
+    return value;
+  }
+  return "once_per_revision";
+}
+
+function normalizeRegionalRestrictionConfirmationIntervalHours(input: unknown): number {
+  const value = Math.trunc(Number(input));
+  if (!Number.isFinite(value) || value <= 0) {
+    return 24;
+  }
+  return Math.min(8760, value);
+}
+
 const paymentGuideHref = computed(() =>
   locale.value.startsWith("zh")
     ? "https://github.com/Wei-Shaw/sub2api/blob/main/docs/PAYMENT_CN.md"
@@ -7849,6 +7910,8 @@ const form = reactive<SettingsForm>({
   regional_restriction_blocked_country_codes: ["CN"],
   regional_restriction_unknown_region_policy: "allow",
   regional_restriction_confirmation_revision: "2026-06-17",
+  regional_restriction_confirmation_frequency: "once_per_revision",
+  regional_restriction_confirmation_interval_hours: 24,
   default_balance: 0,
   default_platform_quotas: normalizePlatformQuotasMap() as DefaultPlatformQuotasMap,
   affiliate_rebate_rate: 20,
@@ -8693,6 +8756,14 @@ async function loadSettings() {
         : "allow";
     form.regional_restriction_confirmation_revision =
       settings.regional_restriction_confirmation_revision || "2026-06-17";
+    form.regional_restriction_confirmation_frequency =
+      normalizeRegionalRestrictionConfirmationFrequency(
+        settings.regional_restriction_confirmation_frequency,
+      );
+    form.regional_restriction_confirmation_interval_hours =
+      normalizeRegionalRestrictionConfirmationIntervalHours(
+        settings.regional_restriction_confirmation_interval_hours,
+      );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         settings.registration_email_suffix_whitelist,
@@ -8911,6 +8982,14 @@ async function saveSettings() {
         : "allow";
     form.regional_restriction_confirmation_revision =
       form.regional_restriction_confirmation_revision?.trim() || "2026-06-17";
+    form.regional_restriction_confirmation_frequency =
+      normalizeRegionalRestrictionConfirmationFrequency(
+        form.regional_restriction_confirmation_frequency,
+      );
+    form.regional_restriction_confirmation_interval_hours =
+      normalizeRegionalRestrictionConfirmationIntervalHours(
+        form.regional_restriction_confirmation_interval_hours,
+      );
 
     const normalizedLoginAgreementDocuments =
       normalizeLoginAgreementDocumentsForSave();
@@ -9052,6 +9131,10 @@ async function saveSettings() {
         form.regional_restriction_unknown_region_policy,
       regional_restriction_confirmation_revision:
         form.regional_restriction_confirmation_revision,
+      regional_restriction_confirmation_frequency:
+        form.regional_restriction_confirmation_frequency,
+      regional_restriction_confirmation_interval_hours:
+        form.regional_restriction_confirmation_interval_hours,
       default_balance: form.default_balance,
       affiliate_rebate_rate: Math.min(
         100,
@@ -9310,6 +9393,14 @@ async function saveSettings() {
         : "allow";
     form.regional_restriction_confirmation_revision =
       updated.regional_restriction_confirmation_revision || "2026-06-17";
+    form.regional_restriction_confirmation_frequency =
+      normalizeRegionalRestrictionConfirmationFrequency(
+        updated.regional_restriction_confirmation_frequency,
+      );
+    form.regional_restriction_confirmation_interval_hours =
+      normalizeRegionalRestrictionConfirmationIntervalHours(
+        updated.regional_restriction_confirmation_interval_hours,
+      );
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         updated.registration_email_suffix_whitelist,

@@ -13,6 +13,8 @@ export interface RegionalRestrictionStatus {
   country_code: string
   unknown_region: boolean
   revision: string
+  confirmation_frequency: 'once_per_revision' | 'always' | 'interval' | string
+  confirmation_interval_hours: number
   message?: string
 }
 

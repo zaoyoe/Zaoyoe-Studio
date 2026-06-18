@@ -12,26 +12,28 @@ func firstNonEmpty(values ...string) string {
 }
 
 type SystemSettings struct {
-	RegistrationEnabled                       bool
-	EmailVerifyEnabled                        bool
-	RegistrationEmailSuffixWhitelist          []string
-	PromoCodeEnabled                          bool
-	PasswordResetEnabled                      bool
-	FrontendURL                               string
-	InvitationCodeEnabled                     bool
-	TotpEnabled                               bool // TOTP 双因素认证
-	LoginAgreementEnabled                     bool
-	LoginAgreementMode                        string
-	LoginAgreementUpdatedAt                   string
-	LoginAgreementDocuments                   []LoginAgreementDocument
-	RegionalRestrictionEnabled                bool
-	RegionalRestrictionRegistrationEnabled    bool
-	RegionalRestrictionOAuthSignupEnabled     bool
-	RegionalRestrictionAPIKeyPageConfirmation bool
-	RegionalRestrictionAPIKeyCreateEnabled    bool
-	RegionalRestrictionBlockedCountryCodes    []string
-	RegionalRestrictionUnknownRegionPolicy    string
-	RegionalRestrictionConfirmationRevision   string
+	RegistrationEnabled                          bool
+	EmailVerifyEnabled                           bool
+	RegistrationEmailSuffixWhitelist             []string
+	PromoCodeEnabled                             bool
+	PasswordResetEnabled                         bool
+	FrontendURL                                  string
+	InvitationCodeEnabled                        bool
+	TotpEnabled                                  bool // TOTP 双因素认证
+	LoginAgreementEnabled                        bool
+	LoginAgreementMode                           string
+	LoginAgreementUpdatedAt                      string
+	LoginAgreementDocuments                      []LoginAgreementDocument
+	RegionalRestrictionEnabled                   bool
+	RegionalRestrictionRegistrationEnabled       bool
+	RegionalRestrictionOAuthSignupEnabled        bool
+	RegionalRestrictionAPIKeyPageConfirmation    bool
+	RegionalRestrictionAPIKeyCreateEnabled       bool
+	RegionalRestrictionBlockedCountryCodes       []string
+	RegionalRestrictionUnknownRegionPolicy       string
+	RegionalRestrictionConfirmationRevision      string
+	RegionalRestrictionConfirmationFrequency     string
+	RegionalRestrictionConfirmationIntervalHours int
 
 	SMTPHost               string
 	SMTPPort               int
@@ -247,37 +249,39 @@ type DefaultSubscriptionSetting struct {
 }
 
 type PublicSettings struct {
-	RegistrationEnabled                       bool
-	EmailVerifyEnabled                        bool
-	ForceEmailOnThirdPartySignup              bool
-	RegistrationEmailSuffixWhitelist          []string
-	PromoCodeEnabled                          bool
-	PasswordResetEnabled                      bool
-	InvitationCodeEnabled                     bool
-	TotpEnabled                               bool // TOTP 双因素认证
-	LoginAgreementEnabled                     bool
-	LoginAgreementMode                        string
-	LoginAgreementUpdatedAt                   string
-	LoginAgreementRevision                    string
-	LoginAgreementDocuments                   []LoginAgreementDocument
-	RegionalRestrictionEnabled                bool
-	RegionalRestrictionRegistrationEnabled    bool
-	RegionalRestrictionOAuthSignupEnabled     bool
-	RegionalRestrictionAPIKeyPageConfirmation bool
-	RegionalRestrictionAPIKeyCreateEnabled    bool
-	RegionalRestrictionBlockedCountryCodes    []string
-	RegionalRestrictionUnknownRegionPolicy    string
-	RegionalRestrictionConfirmationRevision   string
-	TurnstileEnabled                          bool
-	TurnstileSiteKey                          string
-	SiteName                                  string
-	SiteLogo                                  string
-	SiteSubtitle                              string
-	APIBaseURL                                string
-	ContactInfo                               string
-	DocURL                                    string
-	HomeContent                               string
-	HideCcsImportButton                       bool
+	RegistrationEnabled                          bool
+	EmailVerifyEnabled                           bool
+	ForceEmailOnThirdPartySignup                 bool
+	RegistrationEmailSuffixWhitelist             []string
+	PromoCodeEnabled                             bool
+	PasswordResetEnabled                         bool
+	InvitationCodeEnabled                        bool
+	TotpEnabled                                  bool // TOTP 双因素认证
+	LoginAgreementEnabled                        bool
+	LoginAgreementMode                           string
+	LoginAgreementUpdatedAt                      string
+	LoginAgreementRevision                       string
+	LoginAgreementDocuments                      []LoginAgreementDocument
+	RegionalRestrictionEnabled                   bool
+	RegionalRestrictionRegistrationEnabled       bool
+	RegionalRestrictionOAuthSignupEnabled        bool
+	RegionalRestrictionAPIKeyPageConfirmation    bool
+	RegionalRestrictionAPIKeyCreateEnabled       bool
+	RegionalRestrictionBlockedCountryCodes       []string
+	RegionalRestrictionUnknownRegionPolicy       string
+	RegionalRestrictionConfirmationRevision      string
+	RegionalRestrictionConfirmationFrequency     string
+	RegionalRestrictionConfirmationIntervalHours int
+	TurnstileEnabled                             bool
+	TurnstileSiteKey                             string
+	SiteName                                     string
+	SiteLogo                                     string
+	SiteSubtitle                                 string
+	APIBaseURL                                   string
+	ContactInfo                                  string
+	DocURL                                       string
+	HomeContent                                  string
+	HideCcsImportButton                          bool
 
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string

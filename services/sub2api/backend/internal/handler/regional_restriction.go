@@ -24,19 +24,23 @@ const (
 )
 
 type regionalRestrictionEvaluation struct {
-	Enabled              bool   `json:"enabled"`
-	ConfirmationRequired bool   `json:"confirmation_required"`
-	Blocked              bool   `json:"blocked"`
-	CountryCode          string `json:"country_code"`
-	UnknownRegion        bool   `json:"unknown_region"`
-	Revision             string `json:"revision"`
-	Message              string `json:"message,omitempty"`
+	Enabled                   bool   `json:"enabled"`
+	ConfirmationRequired      bool   `json:"confirmation_required"`
+	Blocked                   bool   `json:"blocked"`
+	CountryCode               string `json:"country_code"`
+	UnknownRegion             bool   `json:"unknown_region"`
+	Revision                  string `json:"revision"`
+	ConfirmationFrequency     string `json:"confirmation_frequency"`
+	ConfirmationIntervalHours int    `json:"confirmation_interval_hours"`
+	Message                   string `json:"message,omitempty"`
 }
 
 func evaluateRegionalRestriction(ctx context.Context, c *gin.Context, settingSvc *service.SettingService, scope string) (regionalRestrictionEvaluation, error) {
 	result := regionalRestrictionEvaluation{
-		CountryCode: "UNKNOWN",
-		Revision:    service.NormalizeRegionalRestrictionConfirmationRevision(""),
+		CountryCode:               "UNKNOWN",
+		Revision:                  service.NormalizeRegionalRestrictionConfirmationRevision(""),
+		ConfirmationFrequency:     service.NormalizeRegionalRestrictionConfirmationFrequency(""),
+		ConfirmationIntervalHours: service.NormalizeRegionalRestrictionConfirmationIntervalHours(0),
 	}
 	if settingSvc == nil {
 		return result, nil
@@ -53,6 +57,8 @@ func evaluateRegionalRestriction(ctx context.Context, c *gin.Context, settingSvc
 	result.Enabled = settings.RegionalRestrictionEnabled
 	result.ConfirmationRequired = settings.RegionalRestrictionEnabled && settings.RegionalRestrictionAPIKeyPageConfirmation
 	result.Revision = service.NormalizeRegionalRestrictionConfirmationRevision(settings.RegionalRestrictionConfirmationRevision)
+	result.ConfirmationFrequency = service.NormalizeRegionalRestrictionConfirmationFrequency(settings.RegionalRestrictionConfirmationFrequency)
+	result.ConfirmationIntervalHours = service.NormalizeRegionalRestrictionConfirmationIntervalHours(settings.RegionalRestrictionConfirmationIntervalHours)
 	if !settings.RegionalRestrictionEnabled || !regionalRestrictionScopeEnabled(settings, scope) {
 		return result, nil
 	}
