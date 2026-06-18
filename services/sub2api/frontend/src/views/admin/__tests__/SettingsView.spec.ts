@@ -306,6 +306,8 @@ const baseSettingsResponse = {
   regional_restriction_blocked_country_codes: ["CN"],
   regional_restriction_unknown_region_policy: "allow",
   regional_restriction_confirmation_revision: "2026-06-17",
+  regional_restriction_confirmation_frequency: "once_per_revision",
+  regional_restriction_confirmation_interval_hours: 24,
   default_balance: 0,
   default_concurrency: 1,
   default_subscriptions: [],
@@ -973,6 +975,12 @@ describe("admin SettingsView wechat connect controls", () => {
     await wrapper
       .get('[data-testid="regional-restriction-confirmation-revision"]')
       .setValue("2026-06-18");
+    await wrapper
+      .get('[data-testid="regional-restriction-confirmation-frequency"]')
+      .setValue("interval");
+    await wrapper
+      .get('[data-testid="regional-restriction-confirmation-interval-hours"]')
+      .setValue(72);
 
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
@@ -988,6 +996,8 @@ describe("admin SettingsView wechat connect controls", () => {
         regional_restriction_blocked_country_codes: ["CN", "HK"],
         regional_restriction_unknown_region_policy: "allow",
         regional_restriction_confirmation_revision: "2026-06-18",
+        regional_restriction_confirmation_frequency: "interval",
+        regional_restriction_confirmation_interval_hours: 72,
       }),
     );
   });

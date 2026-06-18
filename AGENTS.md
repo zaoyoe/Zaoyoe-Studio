@@ -49,6 +49,18 @@ VPN users must remain allowed when their current request IP is not detected as a
 blocked country. Unknown region policy should remain configurable and default to
 allow unless the admin setting explicitly changes it.
 
+Sub2API upstream updates must also preserve local Father Key product
+customizations. The sidebar brand/logo and public home logo must link back to
+the main site: `https://www.fatherkey.com/` for the China/domestic site and
+`https://www.zaoyoe.xyz/` for the international site. Regular users should keep
+the sidebar brand hint `返回主站充值` / `Recharge on main site`. Preserve CC Switch
+Claude model slot import parameters (`haikuModel`, `sonnetModel`, `opusModel`),
+and keep request error detail modals defaulting to `all` while upstream error
+detail modals default to `errors`. Sub2API deploy templates should keep the
+local image `zaoyoe/sub2api:local` and URL allowlist default enabled (`true`);
+production KVM4 deploys must continue using the repository-level
+`deploy/kvm4/docker-compose.sub2api.yml`.
+
 After every Sub2API upstream update, verify these local files or equivalent
 logic still exist before deploy:
 
@@ -71,9 +83,18 @@ logic still exist before deploy:
 - `services/sub2api/backend/internal/handler/dto/settings.go`
 - `services/sub2api/frontend/src/views/admin/SettingsView.vue`
 - `services/sub2api/frontend/src/views/user/KeysView.vue`
+- `services/sub2api/frontend/src/views/HomeView.vue`
+- `services/sub2api/frontend/src/components/layout/AppSidebar.vue`
+- `services/sub2api/frontend/src/views/admin/ops/components/OpsErrorDetailsModal.vue`
+- `services/sub2api/frontend/src/utils/ccswitchImport.ts`
+- `services/sub2api/frontend/src/utils/__tests__/ccswitchImport.spec.ts`
+- `services/sub2api/frontend/src/i18n/locales/en.ts`
+- `services/sub2api/frontend/src/i18n/locales/zh.ts`
 - `services/sub2api/frontend/src/api/keys.ts`
 - `services/sub2api/frontend/src/api/admin/settings.ts`
 - `services/sub2api/frontend/src/types/index.ts`
+- `services/sub2api/deploy/docker-compose.local.yml`
+- `services/sub2api/deploy/docker-compose.yml`
 
 The API key page confirmation copy should remain the original English wording,
 including `API Key Use Confirmation` and the restricted-regions notice. Run the

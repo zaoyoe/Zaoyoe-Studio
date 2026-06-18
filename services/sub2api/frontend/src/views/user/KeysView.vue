@@ -890,35 +890,35 @@
           v-if="showRegionalRestrictionModal"
           class="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
         >
-          <div class="w-full max-w-4xl rounded-xl border border-white/10 bg-[#17171c] px-8 py-8 text-white shadow-2xl sm:px-12">
+          <div class="relative w-full max-w-4xl rounded-xl border border-white/10 bg-[#17171c] px-8 py-8 text-white shadow-2xl sm:px-12">
             <h2 class="text-3xl font-semibold leading-tight tracking-normal sm:text-4xl">
-              API Key Use Confirmation
+              {{ regionalRestrictionModalCopy.title }}
             </h2>
             <p class="mt-6 text-xl leading-9 text-gray-300">
-              Before creating or managing API keys, please confirm that you will not use this service from a restricted region or for prohibited, abusive, or unlawful activity.
+              {{ regionalRestrictionModalCopy.description }}
             </p>
 
             <ul class="mt-8 list-disc space-y-3 pl-8 text-lg leading-8 text-gray-300">
-              <li>The service is not offered to users located in restricted regions, including mainland China.</li>
-              <li>You must not evade regional, payment, provider, or legal restrictions.</li>
-              <li>You must comply with the Terms, Privacy Policy, Acceptable Use Policy, Refund and Suspension Policy, and Restricted Regions Notice.</li>
+              <li v-for="item in regionalRestrictionModalCopy.bullets" :key="item">
+                {{ item }}
+              </li>
             </ul>
 
             <div class="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-lg font-medium text-primary-200">
               <RouterLink to="/legal/terms" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
-                Terms
+                {{ regionalRestrictionModalCopy.links.terms }}
               </RouterLink>
               <RouterLink to="/legal/privacy" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
-                Privacy
+                {{ regionalRestrictionModalCopy.links.privacy }}
               </RouterLink>
               <RouterLink to="/legal/acceptable-use" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
-                Acceptable Use
+                {{ regionalRestrictionModalCopy.links.acceptableUse }}
               </RouterLink>
               <RouterLink to="/legal/refund" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
-                Refund
+                {{ regionalRestrictionModalCopy.links.refund }}
               </RouterLink>
               <RouterLink to="/legal/restricted-regions" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
-                Restricted Regions
+                {{ regionalRestrictionModalCopy.links.restrictedRegions }}
               </RouterLink>
             </div>
 
@@ -930,7 +930,7 @@
                 class="mt-1 h-5 w-5 shrink-0 rounded border-gray-400 bg-white text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <span>
-                I confirm that I am eligible to continue and will not use this service from a restricted region or for prohibited activity.
+                {{ regionalRestrictionModalCopy.confirmation }}
               </span>
             </label>
 
@@ -941,20 +941,31 @@
                 :disabled="!regionalRestrictionConfirmationChecked || regionalRestrictionBlocked"
                 @click="acceptRegionalRestrictionConfirmation"
               >
-                I Confirm
+                {{ regionalRestrictionModalCopy.confirmButton }}
               </button>
               <button
                 type="button"
                 class="btn btn-secondary btn-lg border-white/10 bg-[#24242b] text-white hover:bg-[#2d2d35]"
                 @click="leaveApiKeyPage"
               >
-                Back
+                {{ regionalRestrictionModalCopy.backButton }}
               </button>
             </div>
 
-            <p class="mt-8 text-base leading-6 text-gray-400">
-              This soft confirmation is stored only in this browser. It does not create a server-side confirmation record or additional IP log.
+            <p class="mt-8 pr-0 text-base leading-6 text-gray-400 sm:pr-40">
+              {{ regionalRestrictionModalCopy.storageNotice }}
             </p>
+
+            <button
+              type="button"
+              class="absolute bottom-6 right-6 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-primary-100 shadow-lg shadow-black/10 transition hover:border-primary-300/40 hover:bg-primary-400/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
+              :aria-pressed="regionalRestrictionTranslationMode === 'zh'"
+              :title="regionalRestrictionTranslationMode === 'en' ? '显示中文翻译' : 'Show English original'"
+              @click="toggleRegionalRestrictionTranslation"
+            >
+              <Icon name="globe" size="sm" />
+              <span>{{ regionalRestrictionModalCopy.translateButton }}</span>
+            </button>
           </div>
         </div>
       </Transition>
@@ -1151,6 +1162,8 @@ import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
+  resolveCcSwitchClaudeModelSlots,
+  type CcSwitchClaudeModelSlots,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
 
@@ -1231,8 +1244,10 @@ const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
 const regionalRestrictionStatus = ref<RegionalRestrictionStatus | null>(null)
 const regionalRestrictionConfirmationChecked = ref(false)
+const regionalRestrictionTranslationMode = ref<'en' | 'zh'>('en')
 const apiKeysLoaded = ref(false)
 const pendingRegionalRestrictionAction = ref<'create' | null>(null)
+const regionalRestrictionAcceptedThisVisit = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
@@ -1243,12 +1258,95 @@ const regionalRestrictionStorageKey = computed(() => {
   return `sub2api.regional-restriction-confirmed:${revision || 'default'}`
 })
 
+const regionalRestrictionConfirmationFrequency = computed(() => {
+  const value =
+    regionalRestrictionStatus.value?.confirmation_frequency ||
+    publicSettings.value?.regional_restriction_confirmation_frequency ||
+    'once_per_revision'
+  if (value === 'always' || value === 'interval') {
+    return value
+  }
+  return 'once_per_revision'
+})
+
+const regionalRestrictionConfirmationIntervalHours = computed(() => {
+  const raw =
+    regionalRestrictionStatus.value?.confirmation_interval_hours ||
+    publicSettings.value?.regional_restriction_confirmation_interval_hours ||
+    24
+  const value = Math.trunc(Number(raw))
+  if (!Number.isFinite(value) || value <= 0) {
+    return 24
+  }
+  return Math.min(8760, value)
+})
+
 const regionalRestrictionBlocked = computed(() => regionalRestrictionStatus.value?.blocked === true)
 const regionalRestrictionConfirmationRequired = computed(() =>
   regionalRestrictionStatus.value?.enabled === true &&
   regionalRestrictionStatus.value?.confirmation_required === true &&
   !regionalRestrictionBlocked.value
 )
+
+const regionalRestrictionModalCopies = {
+  en: {
+    title: 'API Key Use Confirmation',
+    description:
+      'Before creating or managing API keys, please confirm that you will not use this service from a restricted region or for prohibited, abusive, or unlawful activity.',
+    bullets: [
+      'The service is not offered to users located in restricted regions, including mainland China.',
+      'You must not evade regional, payment, provider, or legal restrictions.',
+      'You must comply with the Terms, Privacy Policy, Acceptable Use Policy, Refund and Suspension Policy, and Restricted Regions Notice.'
+    ],
+    links: {
+      terms: 'Terms',
+      privacy: 'Privacy',
+      acceptableUse: 'Acceptable Use',
+      refund: 'Refund',
+      restrictedRegions: 'Restricted Regions'
+    },
+    confirmation:
+      'I confirm that I am eligible to continue and will not use this service from a restricted region or for prohibited activity.',
+    confirmButton: 'I Confirm',
+    backButton: 'Back',
+    storageNotice:
+      'This soft confirmation is stored only in this browser. It does not create a server-side confirmation record or additional IP log.',
+    translateButton: '中文'
+  },
+  zh: {
+    title: 'API 密钥使用确认',
+    description:
+      '在创建或管理 API 密钥前，请确认你不会在受限制地区使用本服务，也不会将本服务用于被禁止、滥用或违法的活动。',
+    bullets: [
+      '本服务不向位于受限制地区的用户提供，包括中国大陆。',
+      '你不得规避地区、支付、服务提供方或法律限制。',
+      '你必须遵守服务条款、隐私政策、可接受使用政策、退款与暂停政策，以及受限制地区说明。'
+    ],
+    links: {
+      terms: '服务条款',
+      privacy: '隐私政策',
+      acceptableUse: '可接受使用',
+      refund: '退款政策',
+      restrictedRegions: '受限制地区'
+    },
+    confirmation:
+      '我确认自己符合继续使用资格，并且不会在受限制地区使用本服务，也不会用于被禁止的活动。',
+    confirmButton: '我确认',
+    backButton: '返回',
+    storageNotice:
+      '此软确认仅保存在当前浏览器中，不会创建服务器端确认记录，也不会产生额外 IP 日志。',
+    translateButton: 'English'
+  }
+} as const
+
+const regionalRestrictionModalCopy = computed(
+  () => regionalRestrictionModalCopies[regionalRestrictionTranslationMode.value]
+)
+
+const toggleRegionalRestrictionTranslation = () => {
+  regionalRestrictionTranslationMode.value =
+    regionalRestrictionTranslationMode.value === 'en' ? 'zh' : 'en'
+}
 
 const loadRegionalRestrictionState = async (scope: RegionalRestrictionScope = 'api_key_page') => {
   try {
@@ -1260,13 +1358,28 @@ const loadRegionalRestrictionState = async (scope: RegionalRestrictionScope = 'a
 }
 
 const hasAcceptedRegionalRestriction = () => {
+  if (regionalRestrictionConfirmationFrequency.value === 'always') {
+    return regionalRestrictionAcceptedThisVisit.value
+  }
   const key = regionalRestrictionStorageKey.value
   if (!key) return false
   try {
     const raw = localStorage.getItem(key)
     if (!raw) return false
-    const parsed = JSON.parse(raw) as { revision?: string }
-    return parsed.revision === (regionalRestrictionStatus.value?.revision || publicSettings.value?.regional_restriction_confirmation_revision || '')
+    const parsed = JSON.parse(raw) as { revision?: string; accepted_at?: string }
+    const revision = regionalRestrictionStatus.value?.revision || publicSettings.value?.regional_restriction_confirmation_revision || ''
+    if (parsed.revision !== revision) {
+      return false
+    }
+    if (regionalRestrictionConfirmationFrequency.value !== 'interval') {
+      return true
+    }
+    const acceptedAt = Date.parse(parsed.accepted_at || '')
+    if (!Number.isFinite(acceptedAt)) {
+      return false
+    }
+    const elapsedHours = (Date.now() - acceptedAt) / (60 * 60 * 1000)
+    return elapsedHours < regionalRestrictionConfirmationIntervalHours.value
   } catch {
     return false
   }
@@ -1306,6 +1419,7 @@ const acceptRegionalRestrictionConfirmation = () => {
       })
     )
   }
+  regionalRestrictionAcceptedThisVisit.value = true
   showRegionalRestrictionModal.value = false
   if (!apiKeysLoaded.value) {
     loadApiKeys()
@@ -1893,7 +2007,64 @@ const importToCcswitch = (row: ApiKey) => {
   executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
 }
 
-const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
+const buildClaudeModelsUrl = (
+  baseUrl: string,
+  platform: GroupPlatform | undefined,
+  clientType: CcSwitchClientType
+) => {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  if (platform === 'antigravity' && clientType === 'claude') {
+    return `${normalizedBaseUrl}/antigravity/v1/models`
+  }
+  return `${normalizedBaseUrl}/v1/models`
+}
+
+const fetchClaudeModelSlotsForCcs = async (
+  baseUrl: string,
+  platform: GroupPlatform | undefined,
+  clientType: CcSwitchClientType,
+  apiKey: string
+): Promise<CcSwitchClaudeModelSlots | undefined> => {
+  const normalizedPlatform = platform || 'anthropic'
+  if (
+    clientType !== 'claude' ||
+    (normalizedPlatform !== 'anthropic' && normalizedPlatform !== 'antigravity')
+  ) {
+    return undefined
+  }
+
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 3000)
+
+  try {
+    const response = await fetch(buildClaudeModelsUrl(baseUrl, platform, clientType), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      signal: controller.signal
+    })
+
+    if (!response.ok) return undefined
+
+    const payload = (await response.json()) as { data?: Array<{ id?: unknown }> }
+    const modelIds =
+      payload.data
+        ?.map((model) => (typeof model.id === 'string' ? model.id : ''))
+        .filter((modelId) => modelId.length > 0) || []
+
+    return resolveCcSwitchClaudeModelSlots(modelIds)
+  } catch (error: any) {
+    if (error?.name !== 'AbortError') {
+      console.warn('Failed to load Claude models for CC Switch import:', error)
+    }
+    return undefined
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
+const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
@@ -1912,15 +2083,17 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
         unit
       };
     }
-  })`
+	  })`
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
+  const claudeModelSlots = await fetchClaudeModelSlotsForCcs(baseUrl, platform, clientType, row.key)
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
     platform,
     clientType,
     providerName,
     apiKey: row.key,
-    usageScript
+    usageScript,
+    claudeModelSlots
   })
 
   try {

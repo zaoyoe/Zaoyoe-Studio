@@ -378,6 +378,8 @@ export interface SystemSettings {
   regional_restriction_blocked_country_codes: string[];
   regional_restriction_unknown_region_policy: "allow" | "deny" | string;
   regional_restriction_confirmation_revision: string;
+  regional_restriction_confirmation_frequency: "once_per_revision" | "always" | "interval" | string;
+  regional_restriction_confirmation_interval_hours: number;
   // Default settings
   default_balance: number;
   affiliate_rebate_rate: number;
@@ -654,6 +656,8 @@ export interface UpdateSettingsRequest {
   regional_restriction_blocked_country_codes?: string[];
   regional_restriction_unknown_region_policy?: "allow" | "deny" | string;
   regional_restriction_confirmation_revision?: string;
+  regional_restriction_confirmation_frequency?: "once_per_revision" | "always" | "interval" | string;
+  regional_restriction_confirmation_interval_hours?: number;
   default_balance?: number;
   affiliate_rebate_rate?: number;
   affiliate_rebate_freeze_hours?: number;

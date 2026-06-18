@@ -20,6 +20,13 @@ describe('AppSidebar custom SVG styles', () => {
 })
 
 describe('AppSidebar header styles', () => {
+  it('links the sidebar brand back to the main site', () => {
+    expect(componentSource).toContain(':href="brandHomeUrl"')
+    expect(componentSource).toContain('https://www.fatherkey.com/')
+    expect(componentSource).toContain('https://www.zaoyoe.xyz/')
+    expect(componentSource).toContain("t('home.brand.returnToRecharge')")
+  })
+
   it('does not clip the version badge dropdown', () => {
     const sidebarHeaderBlockMatch = styleSource.match(/\.sidebar-header\s*\{[\s\S]*?\n {2}\}/)
     const sidebarBrandBlockMatch = componentSource.match(/\.sidebar-brand\s*\{[\s\S]*?\n\}/)

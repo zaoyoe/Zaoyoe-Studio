@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   OPENAI_CC_SWITCH_CODEX_MODEL,
-  buildCcSwitchImportDeeplink
+  buildCcSwitchImportDeeplink,
+  resolveCcSwitchClaudeModelSlots
 } from '@/utils/ccswitchImport'
 import type { GroupPlatform } from '@/types'
 
@@ -63,5 +64,37 @@ describe('ccswitchImport utils', () => {
     expect(params.get('app')).toBe('gemini')
     expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
     expect(params.has('model')).toBe(false)
+  })
+
+  it('adds Claude model slots when provided for Claude imports', () => {
+    const params = paramsFromDeeplink(
+      buildCcSwitchImportDeeplink({
+        ...baseInput,
+        platform: 'anthropic',
+        clientType: 'claude',
+        claudeModelSlots: {
+          haikuModel: 'claude-3-5-haiku',
+          sonnetModel: 'claude-sonnet-4-6',
+          opusModel: 'claude-opus-4-6'
+        }
+      })
+    )
+
+    expect(params.get('app')).toBe('claude')
+    expect(params.get('haikuModel')).toBe('claude-3-5-haiku')
+    expect(params.get('sonnetModel')).toBe('claude-sonnet-4-6')
+    expect(params.get('opusModel')).toBe('claude-opus-4-6')
+  })
+
+  it('resolves Claude model slots from available model ids', () => {
+    expect(resolveCcSwitchClaudeModelSlots([
+      'claude-sonnet-4-6',
+      'claude-opus-4-6',
+      'claude-3-5-haiku'
+    ])).toEqual({
+      haikuModel: 'claude-3-5-haiku',
+      sonnetModel: 'claude-sonnet-4-6',
+      opusModel: 'claude-opus-4-6'
+    })
   })
 })

@@ -33,7 +33,8 @@ const q = ref('')
 const statusCode = ref<number | 'other' | null>(null)
 const phase = ref<string>('')
 const errorOwner = ref<string>('')
-const viewMode = ref<'errors' | 'excluded' | 'all'>('errors')
+const defaultViewMode = () => (props.errorType === 'request' ? 'all' : 'errors')
+const viewMode = ref<'errors' | 'excluded' | 'all'>(defaultViewMode())
 
 
 const modalTitle = computed(() => {
@@ -130,7 +131,7 @@ async function fetchErrorLogs() {
     statusCode.value = null
     phase.value = props.errorType === 'upstream' ? 'upstream' : ''
     errorOwner.value = ''
-    viewMode.value = 'errors'
+    viewMode.value = defaultViewMode()
     page.value = 1
     fetchErrorLogs()
   }
