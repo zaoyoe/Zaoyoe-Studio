@@ -41,29 +41,34 @@ function readRepoFile(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
-test('Sub2API regional restriction stays scoped away from existing login and sessions', () => {
-  const combinedSource = walkFiles(sub2apiRoot)
-    .map((filePath) => fs.readFileSync(filePath, 'utf8'))
-    .join('\n');
+test('Sub2API regional restriction blocks token issuance without blocking the whole login page', () => {
+  const regionalRestrictionSource = readRepoFile(
+    'services/sub2api/backend/internal/handler/regional_restriction.go'
+  );
+  const authHandlerSource = readRepoFile(
+    'services/sub2api/backend/internal/handler/auth_handler.go'
+  );
+  const authRoutesSource = readRepoFile(
+    'services/sub2api/backend/internal/server/routes/auth.go'
+  );
+  const loginViewSource = readRepoFile(
+    'services/sub2api/frontend/src/views/auth/LoginView.vue'
+  );
+  const apiClientSource = readRepoFile(
+    'services/sub2api/frontend/src/api/client.ts'
+  );
 
-  const forbiddenMarkers = [
-    'regionalRestrictionScopeLogin',
-    'regional_restriction_login_enabled',
-    'GetRegionalRestrictionLoginStatus',
-    '/regional-restriction/login',
-    'region_blocked=login',
-    'loginRegionBlocked',
-    'Login is not available in your region',
-    '当前地区暂不开放登录',
-  ];
-
-  for (const marker of forbiddenMarkers) {
-    assert.equal(
-      combinedSource.includes(marker),
-      false,
-      `regional restriction must not block login/session access via ${marker}`
-    );
-  }
+  assert.match(regionalRestrictionSource, /regionalRestrictionScopeLogin\s+= "login"/);
+  assert.match(regionalRestrictionSource, /RegionalRestrictionLoginEnabled/);
+  assert.match(authHandlerSource, /GetRegionalRestrictionLoginStatus/);
+  assert.match(authRoutesSource, /\/regional-restriction\/login/);
+  assert.match(authHandlerSource, /func \(h \*AuthHandler\) Login\(c \*gin\.Context\)[\s\S]*regionalRestrictionScopeLogin/);
+  assert.match(authHandlerSource, /func \(h \*AuthHandler\) Login2FA\(c \*gin\.Context\)[\s\S]*regionalRestrictionScopeLogin/);
+  assert.match(authHandlerSource, /func \(h \*AuthHandler\) RefreshToken\(c \*gin\.Context\)[\s\S]*regionalRestrictionScopeLogin/);
+  assert.match(loginViewSource, /@submit\.prevent="handleLogin"/);
+  assert.match(loginViewSource, /getLoginRegionalRestrictionStatus/);
+  assert.match(loginViewSource, /loginRegionBlocked/);
+  assert.match(apiClientSource, /region_blocked=login/);
 });
 
 test('Sub2API regional restriction keeps only the approved entry points enabled', () => {
@@ -84,12 +89,15 @@ test('Sub2API regional restriction keeps only the approved entry points enabled'
   );
 
   assert.match(regionalRestrictionSource, /regionalRestrictionScopeRegistration\s+= "registration"/);
+  assert.match(regionalRestrictionSource, /regionalRestrictionScopeLogin\s+= "login"/);
   assert.match(regionalRestrictionSource, /regionalRestrictionScopeOAuthSignup\s+= "oauth_signup"/);
   assert.match(regionalRestrictionSource, /regionalRestrictionScopeAPIKeyPage\s+= "api_key_page"/);
   assert.match(regionalRestrictionSource, /regionalRestrictionScopeAPIKeyCreate\s+= "api_key_create"/);
 
   assert.match(authHandlerSource, /GetRegionalRestrictionRegistrationStatus/);
+  assert.match(authHandlerSource, /GetRegionalRestrictionLoginStatus/);
   assert.match(authRoutesSource, /\/regional-restriction\/registration/);
+  assert.match(authRoutesSource, /\/regional-restriction\/login/);
   assert.match(userRoutesSource, /authenticated\.Group\("\/keys"\)/);
   assert.match(userRoutesSource, /keys\.GET\("\/regional-restriction", h\.APIKey\.GetRegionalRestrictionStatus\)/);
   assert.match(keysViewSource, /API Key Use Confirmation/);
