@@ -229,6 +229,60 @@ describe('API Client', () => {
         writable: true,
       })
     })
+
+    it('refresh_token 被区域限制拒绝时跳转到登录页区域限制提示', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+      localStorage.setItem('refresh_token', 'refresh-token')
+
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { ...originalLocation, pathname: '/dashboard', href: '/dashboard' },
+        writable: true,
+      })
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'TOKEN_EXPIRED', message: 'Token expired' },
+        },
+        config: {
+          url: '/user/profile',
+          headers: { Authorization: 'Bearer expired-token' },
+        },
+        code: 'ERR_BAD_REQUEST',
+      })
+      apiClient.defaults.adapter = adapter
+
+      vi.spyOn(axios, 'post').mockRejectedValue({
+        response: {
+          data: {
+            code: 403,
+            reason: 'REGION_RESTRICTED',
+            message: 'Login is not available in your region.',
+            metadata: { scope: 'login' },
+          },
+        },
+      })
+
+      await expect(apiClient.get('/user/profile')).rejects.toEqual(
+        expect.objectContaining({
+          status: 403,
+          code: 'REGION_RESTRICTED',
+          reason: 'REGION_RESTRICTED',
+          metadata: { scope: 'login' },
+        })
+      )
+
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(sessionStorage.getItem('auth_expired')).toBeNull()
+      expect(window.location.href).toBe('/login?region_blocked=login')
+
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
   })
 
   // --- 网络错误 ---

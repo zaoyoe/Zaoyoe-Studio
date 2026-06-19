@@ -12,23 +12,25 @@ describe('LoginView regional restriction entry points', () => {
     expect(componentSource).toContain('getRegistrationRegionalRestrictionStatus')
     expect(componentSource).toContain('handleRegisterLinkClick')
     expect(componentSource).toContain('status.enabled && status.blocked')
-    expect(componentSource).toContain("registrationRegionDialogMode.value = 'blocked'")
+    expect(componentSource).toContain("registrationRegionDialogMode.value = 'registration_blocked'")
     expect(componentSource).toContain('showRegistrationRegionDialog.value = true')
     expect(componentSource).toMatch(/router\.push\(['"]\/register['"]\)/)
     expect(componentSource).not.toContain('to="/register"')
   })
 
-  it('keeps the login form available and avoids adding a login region block', () => {
-    const blockedLoginQuery = ['region_blocked', 'login'].join('=')
-    const regionBlockedKey = ['login', 'Region', 'Blocked'].join('')
-    const loginScopeConstant = ['regionalRestrictionScope', 'Login'].join('')
-
+  it('checks region before issuing login tokens while keeping the login page reachable', () => {
     expect(componentSource).toContain('@submit.prevent="handleLogin"')
+    expect(componentSource).toContain('getLoginRegionalRestrictionStatus')
+    expect(componentSource).toContain('handleLoginRegionPrecheck')
+    expect(componentSource).toContain('if (await handleLoginRegionPrecheck())')
+    expect(componentSource).toContain('region_blocked')
+    expect(componentSource).toContain('loginRegionBlockedTitle')
+    expect(componentSource).toContain('loginRegionBlockedDescription')
+    expect(componentSource).toContain('loginRegionBlockedReason')
+    expect(componentSource).toContain("registrationRegionDialogMode.value = 'login_blocked'")
+    expect(componentSource).toContain("extractApiErrorCode(error) === 'REGION_RESTRICTED'")
     expect(componentSource).toContain('handle2FAVerify')
-    expect(componentSource).not.toContain(blockedLoginQuery)
-    expect(componentSource).not.toContain(regionBlockedKey)
-    expect(componentSource).not.toContain("registrationRegionDialogMode.value = 'login_blocked'")
-    expect(componentSource).not.toContain(loginScopeConstant)
+    expect(componentSource).toContain('show2FAModal.value = false')
   })
 
   it('does not fall through to registration when the region check fails', () => {

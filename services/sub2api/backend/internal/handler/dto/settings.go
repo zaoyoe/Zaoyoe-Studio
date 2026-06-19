@@ -42,6 +42,7 @@ type SystemSettings struct {
 	LoginAgreementDocuments                      []LoginAgreementDocument `json:"login_agreement_documents"`
 	RegionalRestrictionEnabled                   bool                     `json:"regional_restriction_enabled"`
 	RegionalRestrictionRegistrationEnabled       bool                     `json:"regional_restriction_registration_enabled"`
+	RegionalRestrictionLoginEnabled              bool                     `json:"regional_restriction_login_enabled"`
 	RegionalRestrictionOAuthSignupEnabled        bool                     `json:"regional_restriction_oauth_signup_enabled"`
 	RegionalRestrictionAPIKeyPageConfirmation    bool                     `json:"regional_restriction_api_key_page_confirmation_enabled"`
 	RegionalRestrictionAPIKeyCreateEnabled       bool                     `json:"regional_restriction_api_key_create_enabled"`
@@ -295,6 +296,7 @@ type PublicSettings struct {
 	LoginAgreementDocuments                      []LoginAgreementDocument `json:"login_agreement_documents"`
 	RegionalRestrictionEnabled                   bool                     `json:"regional_restriction_enabled"`
 	RegionalRestrictionRegistrationEnabled       bool                     `json:"regional_restriction_registration_enabled"`
+	RegionalRestrictionLoginEnabled              bool                     `json:"regional_restriction_login_enabled"`
 	RegionalRestrictionOAuthSignupEnabled        bool                     `json:"regional_restriction_oauth_signup_enabled"`
 	RegionalRestrictionAPIKeyPageConfirmation    bool                     `json:"regional_restriction_api_key_page_confirmation_enabled"`
 	RegionalRestrictionAPIKeyCreateEnabled       bool                     `json:"regional_restriction_api_key_create_enabled"`

@@ -460,14 +460,19 @@ export default {
     emailSuffixAllowedMore: '等 {count} 项',
     registrationRegionBlockedTitle: '当前地区暂不开放注册',
     registrationRegionBlockedDescription:
-      '根据服务可用性要求，Father Key Core Keys 暂不支持从当前请求地区创建新账号。',
+      '根据服务可用地区要求，当前请求所在地区暂不支持注册 Father Key 核心秘钥账户。',
     registrationRegionBlockedReason:
-      '原因：此模块不向受限制地区（包括中国大陆）用户提供新账号注册。已有用户仍可从受支持的请求地区登录。',
+      '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。受限制地区不能注册或登录 Father Key 核心秘钥账户。',
+    loginRegionBlockedTitle: '当前地区暂不开放登录',
+    loginRegionBlockedDescription:
+      '根据服务可用地区要求，当前请求所在地区暂不支持登录 Father Key 核心秘钥账户。',
+    loginRegionBlockedReason:
+      '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。请在受支持地区或通过合规的非受限地区网络环境访问。',
     registrationRegionCheckFailedTitle: '暂时无法确认注册地区',
     registrationRegionCheckFailedDescription:
-      '系统暂时无法确认当前请求地区，因此没有打开 Father Key Core Keys 注册页面。',
+      '系统未能确认当前请求所在地区，暂不进入 Father Key 核心秘钥账户注册页面。',
     registrationRegionCheckFailedReason:
-      '原因：注册前需要先完成地区可用性检查，避免用户稍后看到不清晰的验证码或账号创建失败。',
+      '原因：注册前需要完成地区可用性检查，以避免后续验证码或创建账户阶段出现不明确的失败。',
     loginSuccess: '登录成功！欢迎回来。',
     accountCreatedSuccess: '账户创建成功！欢迎使用 {siteName}。',
     reloginRequired: '会话已过期，请重新登录。',

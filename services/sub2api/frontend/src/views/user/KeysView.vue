@@ -888,84 +888,113 @@
       <Transition name="api-key-confirmation-fade">
         <div
           v-if="showRegionalRestrictionModal"
-          class="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
+          class="fixed inset-0 z-[150] flex items-center justify-center overflow-y-auto bg-gray-950/45 p-3 backdrop-blur-sm dark:bg-black/70 sm:p-4"
+          role="dialog"
+          aria-modal="true"
         >
-          <div class="relative w-full max-w-4xl rounded-xl border border-white/10 bg-[#17171c] px-8 py-8 text-white shadow-2xl sm:px-12">
-            <h2 class="text-3xl font-semibold leading-tight tracking-normal sm:text-4xl">
-              {{ regionalRestrictionModalCopy.title }}
-            </h2>
-            <p class="mt-6 text-xl leading-9 text-gray-300">
-              {{ regionalRestrictionModalCopy.description }}
-            </p>
+          <div
+            class="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white px-5 py-5 text-gray-900 shadow-2xl dark:border-white/10 dark:bg-[#17171c] dark:text-white sm:max-h-[calc(100dvh-2rem)] sm:px-6 sm:py-6"
+          >
+            <div class="flex items-start gap-3">
+              <div
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                :class="
+                  regionalRestrictionBlocked
+                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-200'
+                    : 'bg-primary-50 text-primary-700 dark:bg-primary-400/15 dark:text-primary-100'
+                "
+              >
+                <Icon :name="regionalRestrictionBlocked ? 'exclamationCircle' : 'globe'" size="md" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-xl font-semibold leading-7 tracking-normal text-gray-950 dark:text-white sm:text-2xl">
+                  {{ regionalRestrictionModalCopy.title }}
+                </h2>
+                <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base sm:leading-7">
+                  {{
+                    regionalRestrictionBlocked
+                      ? regionalRestrictionModalCopy.blockedNotice
+                      : regionalRestrictionModalCopy.description
+                  }}
+                </p>
+              </div>
+            </div>
 
-            <ul class="mt-8 list-disc space-y-3 pl-8 text-lg leading-8 text-gray-300">
+            <ul
+              class="mt-5 list-disc space-y-2 pl-6 text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base sm:leading-7"
+            >
               <li v-for="item in regionalRestrictionModalCopy.bullets" :key="item">
                 {{ item }}
               </li>
             </ul>
 
-            <div class="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-lg font-medium text-primary-200">
-              <RouterLink to="/legal/terms" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+            <div class="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-primary-700 dark:text-primary-200">
+              <RouterLink to="/legal/terms" target="_blank" rel="noopener noreferrer" class="hover:text-primary-600 hover:underline dark:hover:text-primary-100">
                 {{ regionalRestrictionModalCopy.links.terms }}
               </RouterLink>
-              <RouterLink to="/legal/privacy" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+              <RouterLink to="/legal/privacy" target="_blank" rel="noopener noreferrer" class="hover:text-primary-600 hover:underline dark:hover:text-primary-100">
                 {{ regionalRestrictionModalCopy.links.privacy }}
               </RouterLink>
-              <RouterLink to="/legal/acceptable-use" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+              <RouterLink to="/legal/acceptable-use" target="_blank" rel="noopener noreferrer" class="hover:text-primary-600 hover:underline dark:hover:text-primary-100">
                 {{ regionalRestrictionModalCopy.links.acceptableUse }}
               </RouterLink>
-              <RouterLink to="/legal/refund" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+              <RouterLink to="/legal/refund" target="_blank" rel="noopener noreferrer" class="hover:text-primary-600 hover:underline dark:hover:text-primary-100">
                 {{ regionalRestrictionModalCopy.links.refund }}
               </RouterLink>
-              <RouterLink to="/legal/restricted-regions" target="_blank" rel="noopener noreferrer" class="hover:text-primary-100 hover:underline">
+              <RouterLink to="/legal/restricted-regions" target="_blank" rel="noopener noreferrer" class="hover:text-primary-600 hover:underline dark:hover:text-primary-100">
                 {{ regionalRestrictionModalCopy.links.restrictedRegions }}
               </RouterLink>
             </div>
 
-            <label class="mt-8 flex items-start gap-4 text-xl font-semibold leading-8 text-white">
+            <label
+              v-if="!regionalRestrictionBlocked"
+              class="mt-6 flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm font-semibold leading-6 text-gray-900 dark:border-white/10 dark:bg-white/5 dark:text-white sm:text-base sm:leading-7"
+            >
               <input
                 v-model="regionalRestrictionConfirmationChecked"
                 type="checkbox"
-                :disabled="regionalRestrictionBlocked"
-                class="mt-1 h-5 w-5 shrink-0 rounded border-gray-400 bg-white text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+                class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 bg-white text-primary-600 focus:ring-primary-500 dark:border-gray-500"
               />
               <span>
                 {{ regionalRestrictionModalCopy.confirmation }}
               </span>
             </label>
 
-            <div class="mt-8 flex flex-wrap gap-4">
+            <div class="mt-6 flex flex-wrap gap-3">
               <button
+                v-if="!regionalRestrictionBlocked"
                 type="button"
-                class="btn btn-primary btn-lg min-w-[10rem]"
-                :disabled="!regionalRestrictionConfirmationChecked || regionalRestrictionBlocked"
+                class="btn btn-primary min-w-[8rem]"
+                :disabled="!regionalRestrictionConfirmationChecked"
                 @click="acceptRegionalRestrictionConfirmation"
               >
                 {{ regionalRestrictionModalCopy.confirmButton }}
               </button>
               <button
                 type="button"
-                class="btn btn-secondary btn-lg border-white/10 bg-[#24242b] text-white hover:bg-[#2d2d35]"
+                class="btn btn-secondary min-w-[7rem]"
                 @click="leaveApiKeyPage"
               >
                 {{ regionalRestrictionModalCopy.backButton }}
               </button>
             </div>
 
-            <p class="mt-8 pr-0 text-base leading-6 text-gray-400 sm:pr-40">
-              {{ regionalRestrictionModalCopy.storageNotice }}
-            </p>
+            <div class="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+              <p v-if="!regionalRestrictionBlocked" class="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                {{ regionalRestrictionModalCopy.storageNotice }}
+              </p>
 
-            <button
-              type="button"
-              class="absolute bottom-6 right-6 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-primary-100 shadow-lg shadow-black/10 transition hover:border-primary-300/40 hover:bg-primary-400/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
-              :aria-pressed="regionalRestrictionTranslationMode === 'zh'"
-              :title="regionalRestrictionTranslationMode === 'en' ? '显示中文翻译' : 'Show English original'"
-              @click="toggleRegionalRestrictionTranslation"
-            >
-              <Icon name="globe" size="sm" />
-              <span>{{ regionalRestrictionModalCopy.translateButton }}</span>
-            </button>
+              <button
+                type="button"
+                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-primary-700 shadow-sm transition hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:border-white/10 dark:bg-white/5 dark:text-primary-100 dark:hover:border-primary-300/40 dark:hover:bg-primary-400/10"
+                :aria-pressed="regionalRestrictionTranslationMode === 'zh'"
+                :title="regionalRestrictionTranslationMode === 'en' ? '显示中文翻译' : 'Show English original'"
+                @click="toggleRegionalRestrictionTranslation"
+              >
+                <Icon name="globe" size="sm" />
+                <span>{{ regionalRestrictionModalCopy.translateButton }}</span>
+              </button>
+            </div>
           </div>
         </div>
       </Transition>
@@ -1293,6 +1322,8 @@ const regionalRestrictionModalCopies = {
     title: 'API Key Use Confirmation',
     description:
       'Before creating or managing API keys, please confirm that you will not use this service from a restricted region or for prohibited, abusive, or unlawful activity.',
+    blockedNotice:
+      'This request is from a restricted region, so API key creation and management are not available.',
     bullets: [
       'The service is not offered to users located in restricted regions, including mainland China.',
       'You must not evade regional, payment, provider, or legal restrictions.',
@@ -1317,6 +1348,8 @@ const regionalRestrictionModalCopies = {
     title: 'API 密钥使用确认',
     description:
       '在创建或管理 API 密钥前，请确认你不会在受限制地区使用本服务，也不会将本服务用于被禁止、滥用或违法的活动。',
+    blockedNotice:
+      '当前请求所在地区属于受限制地区，因此无法继续创建或管理 API 密钥。',
     bullets: [
       '本服务不向位于受限制地区的用户提供，包括中国大陆。',
       '你不得规避地区、支付、服务提供方或法律限制。',

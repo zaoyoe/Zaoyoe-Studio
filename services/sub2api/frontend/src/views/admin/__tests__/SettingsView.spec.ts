@@ -300,6 +300,7 @@ const baseSettingsResponse = {
   totp_encryption_key_configured: false,
   regional_restriction_enabled: false,
   regional_restriction_registration_enabled: false,
+  regional_restriction_login_enabled: true,
   regional_restriction_oauth_signup_enabled: false,
   regional_restriction_api_key_page_confirmation_enabled: false,
   regional_restriction_api_key_create_enabled: false,
