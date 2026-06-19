@@ -31,5 +31,7 @@ describe('KeysView regional restriction confirmation modal', () => {
     expect(componentSource).toContain('regionalRestrictionModalCopy.translateAriaLabel')
     expect(componentSource).not.toContain("regionalRestrictionBlocked ? 'exclamationCircle' : 'globe'")
     expect(componentSource).not.toContain('regionalRestrictionModalCopy.translateButton')
+    expect(componentSource).not.toContain('py-5 pr-14')
+    expect(componentSource).not.toContain('sm:py-6 sm:pr-16')
   })
 })

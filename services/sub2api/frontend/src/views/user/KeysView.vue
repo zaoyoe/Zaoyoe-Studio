@@ -893,7 +893,7 @@
           aria-modal="true"
         >
           <div
-            class="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white px-5 py-5 pr-14 text-gray-900 shadow-2xl dark:border-white/10 dark:bg-[#17171c] dark:text-white sm:max-h-[calc(100dvh-2rem)] sm:px-6 sm:py-6 sm:pr-16"
+            class="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white px-5 py-5 text-gray-900 shadow-2xl dark:border-white/10 dark:bg-[#17171c] dark:text-white sm:max-h-[calc(100dvh-2rem)] sm:px-6 sm:py-6"
           >
             <button
               type="button"
@@ -905,7 +905,7 @@
               <Icon name="globe" size="sm" />
             </button>
 
-            <h2 class="text-xl font-semibold leading-7 tracking-normal text-gray-950 dark:text-white sm:text-2xl">
+            <h2 class="pr-12 text-xl font-semibold leading-7 tracking-normal text-gray-950 dark:text-white sm:text-2xl">
               {{ regionalRestrictionModalCopy.title }}
             </h2>
             <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base sm:leading-7">
