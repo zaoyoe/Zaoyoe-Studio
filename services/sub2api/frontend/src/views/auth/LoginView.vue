@@ -221,7 +221,7 @@
           class="btn btn-primary btn-sm"
           @click="showRegistrationRegionDialog = false"
         >
-          {{ t('common.confirm') }}
+          {{ registrationRegionDialogConfirmLabel }}
         </button>
       </div>
     </div>
@@ -253,7 +253,6 @@ import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import { setLocale } from '@/i18n'
 import {
   getLoginRegionalRestrictionStatus,
   getPublicSettings,
@@ -265,7 +264,7 @@ import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
 import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 // ==================== Router & Stores ====================
@@ -304,6 +303,57 @@ const showAgreementModal = ref<boolean>(false)
 const checkingRegistrationRegion = ref<boolean>(false)
 const showRegistrationRegionDialog = ref<boolean>(false)
 const registrationRegionDialogMode = ref<'registration_blocked' | 'login_blocked' | 'check_failed'>('registration_blocked')
+const registrationRegionDialogLanguage = ref<'en' | 'zh'>('en')
+const registrationRegionDialogCopy = {
+  en: {
+    registration_blocked: {
+      title: 'Registration is not available in your region',
+      description:
+        'Based on service availability requirements, account registration for Father Key Core Keys is not available from your current request region.',
+      reason:
+        'Reason: this module is not offered to users located in restricted regions, including mainland China. Users in restricted regions cannot register or log in to Father Key Core Keys accounts.'
+    },
+    login_blocked: {
+      title: 'Login is not available in your region',
+      description:
+        'Based on service availability requirements, Father Key Core Keys account login is not available from your current request region.',
+      reason:
+        'Reason: this module is not offered to users located in restricted regions, including mainland China. Please access from a supported region or a compliant non-restricted network environment.'
+    },
+    check_failed: {
+      title: 'Unable to confirm registration region',
+      description:
+        'The system could not confirm your current request region, so the Father Key Core Keys registration page was not opened.',
+      reason:
+        'Reason: registration requires a region availability check first, so users do not see an unclear verification-code or account-creation failure later.'
+    },
+    confirm: 'Confirm'
+  },
+  zh: {
+    registration_blocked: {
+      title: '当前地区暂不开放注册',
+      description:
+        '根据服务可用地区要求，当前请求所在地区暂不支持注册 Father Key 核心秘钥账户。',
+      reason:
+        '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。受限制地区不能注册或登录 Father Key 核心秘钥账户。'
+    },
+    login_blocked: {
+      title: '当前地区暂不开放登录',
+      description:
+        '根据服务可用地区要求，当前请求所在地区暂不支持登录 Father Key 核心秘钥账户。',
+      reason:
+        '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。请在受支持地区或通过合规的非受限地区网络环境访问。'
+    },
+    check_failed: {
+      title: '暂时无法确认注册地区',
+      description:
+        '系统未能确认当前请求所在地区，暂不进入 Father Key 核心秘钥账户注册页面。',
+      reason:
+        '原因：注册前需要完成地区可用性检查，以避免后续验证码或创建账户阶段出现不明确的失败。'
+    },
+    confirm: '确认'
+  }
+} as const
 
 // Turnstile
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
@@ -339,37 +389,23 @@ const authActionDisabled = computed(
 )
 
 const registrationRegionDialogTitle = computed(() =>
-  t(
-    registrationRegionDialogMode.value === 'check_failed'
-      ? 'auth.registrationRegionCheckFailedTitle'
-      : registrationRegionDialogMode.value === 'login_blocked'
-        ? 'auth.loginRegionBlockedTitle'
-      : 'auth.registrationRegionBlockedTitle'
-  )
+  registrationRegionDialogCopy[registrationRegionDialogLanguage.value][registrationRegionDialogMode.value].title
 )
 
 const registrationRegionDialogDescription = computed(() =>
-  t(
-    registrationRegionDialogMode.value === 'check_failed'
-      ? 'auth.registrationRegionCheckFailedDescription'
-      : registrationRegionDialogMode.value === 'login_blocked'
-        ? 'auth.loginRegionBlockedDescription'
-      : 'auth.registrationRegionBlockedDescription'
-  )
+  registrationRegionDialogCopy[registrationRegionDialogLanguage.value][registrationRegionDialogMode.value].description
 )
 
 const registrationRegionDialogReason = computed(() =>
-  t(
-    registrationRegionDialogMode.value === 'check_failed'
-      ? 'auth.registrationRegionCheckFailedReason'
-      : registrationRegionDialogMode.value === 'login_blocked'
-        ? 'auth.loginRegionBlockedReason'
-      : 'auth.registrationRegionBlockedReason'
-  )
+  registrationRegionDialogCopy[registrationRegionDialogLanguage.value][registrationRegionDialogMode.value].reason
+)
+
+const registrationRegionDialogConfirmLabel = computed(() =>
+  registrationRegionDialogCopy[registrationRegionDialogLanguage.value].confirm
 )
 
 const regionalRestrictionLanguageButtonLabel = computed(() =>
-  String(locale.value).startsWith('zh') ? 'Show English' : '显示中文'
+  registrationRegionDialogLanguage.value === 'zh' ? 'Show English' : '显示中文'
 )
 
 const showOAuthLogin = computed(
@@ -384,7 +420,16 @@ const showOAuthLogin = computed(
 )
 
 async function toggleRegionalRestrictionDialogLanguage(): Promise<void> {
-  await setLocale(String(locale.value).startsWith('zh') ? 'en' : 'zh')
+  registrationRegionDialogLanguage.value =
+    registrationRegionDialogLanguage.value === 'en' ? 'zh' : 'en'
+}
+
+function openRegistrationRegionDialog(
+  mode: 'registration_blocked' | 'login_blocked' | 'check_failed'
+): void {
+  registrationRegionDialogMode.value = mode
+  registrationRegionDialogLanguage.value = 'en'
+  showRegistrationRegionDialog.value = true
 }
 
 watch(validationToastMessage, (value, previousValue) => {
@@ -397,9 +442,9 @@ watch(validationToastMessage, (value, previousValue) => {
 
 onMounted(async () => {
   if (route.query.region_blocked === 'login' || route.query.region_blocked === 'registration') {
-    registrationRegionDialogMode.value =
+    openRegistrationRegionDialog(
       route.query.region_blocked === 'login' ? 'login_blocked' : 'registration_blocked'
-    showRegistrationRegionDialog.value = true
+    )
   }
 
   const expiredFlag = sessionStorage.getItem('auth_expired')
@@ -568,14 +613,12 @@ async function handleRegisterLinkClick(): Promise<void> {
   try {
     const status = await getRegistrationRegionalRestrictionStatus()
     if (status.enabled && status.blocked) {
-      registrationRegionDialogMode.value = 'registration_blocked'
-      showRegistrationRegionDialog.value = true
+      openRegistrationRegionDialog('registration_blocked')
       return
     }
   } catch (error) {
     console.warn('Failed to check registration regional restriction:', error)
-    registrationRegionDialogMode.value = 'check_failed'
-    showRegistrationRegionDialog.value = true
+    openRegistrationRegionDialog('check_failed')
     return
   } finally {
     checkingRegistrationRegion.value = false
@@ -587,8 +630,7 @@ async function handleLoginRegionPrecheck(): Promise<boolean> {
   try {
     const status = await getLoginRegionalRestrictionStatus()
     if (status.enabled && status.blocked) {
-      registrationRegionDialogMode.value = 'login_blocked'
-      showRegistrationRegionDialog.value = true
+      openRegistrationRegionDialog('login_blocked')
       errorMessage.value = ''
       return true
     }
@@ -646,8 +688,7 @@ async function handleLogin(): Promise<void> {
     }
 
     if (extractApiErrorCode(error) === 'REGION_RESTRICTED') {
-      registrationRegionDialogMode.value = 'login_blocked'
-      showRegistrationRegionDialog.value = true
+      openRegistrationRegionDialog('login_blocked')
       errorMessage.value = ''
       return
     }
@@ -681,8 +722,7 @@ async function handle2FAVerify(code: string): Promise<void> {
     await router.push(redirectTo)
   } catch (error: unknown) {
     if (extractApiErrorCode(error) === 'REGION_RESTRICTED') {
-      registrationRegionDialogMode.value = 'login_blocked'
-      showRegistrationRegionDialog.value = true
+      openRegistrationRegionDialog('login_blocked')
       show2FAModal.value = false
       totpTempToken.value = ''
       totpUserEmailMasked.value = ''

@@ -67,7 +67,8 @@ test('Sub2API regional restriction blocks token issuance without blocking the wh
   assert.match(authHandlerSource, /func \(h \*AuthHandler\) RefreshToken\(c \*gin\.Context\)[\s\S]*regionalRestrictionScopeLogin/);
   assert.match(loginViewSource, /@submit\.prevent="handleLogin"/);
   assert.match(loginViewSource, /getLoginRegionalRestrictionStatus/);
-  assert.match(loginViewSource, /loginRegionBlocked/);
+  assert.match(loginViewSource, /openRegistrationRegionDialog\('login_blocked'\)/);
+  assert.match(loginViewSource, /Login is not available in your region/);
   assert.match(apiClientSource, /region_blocked=login/);
 });
 
