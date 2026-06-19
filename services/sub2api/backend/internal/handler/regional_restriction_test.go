@@ -64,6 +64,7 @@ func newRegionalRestrictionSettingService(values map[string]string) *service.Set
 	base := map[string]string{
 		service.SettingKeyRegionalRestrictionEnabled:                   "true",
 		service.SettingKeyRegionalRestrictionRegistrationEnabled:       "true",
+		service.SettingKeyRegionalRestrictionLoginEnabled:              "true",
 		service.SettingKeyRegionalRestrictionOAuthSignupEnabled:        "true",
 		service.SettingKeyRegionalRestrictionAPIKeyPageConfirmation:    "true",
 		service.SettingKeyRegionalRestrictionAPIKeyCreateEnabled:       "true",
@@ -77,6 +78,44 @@ func newRegionalRestrictionSettingService(values map[string]string) *service.Set
 		base[key] = value
 	}
 	return service.NewSettingService(&regionalRestrictionSettingRepoStub{values: base}, &config.Config{})
+}
+
+func TestEvaluateRegionalRestrictionBlocksLoginWhenLoginScopeEnabled(t *testing.T) {
+	settingSvc := newRegionalRestrictionSettingService(nil)
+
+	result, err := evaluateRegionalRestriction(context.Background(), newRegionalRestrictionTestContext("CN"), settingSvc, regionalRestrictionScopeLogin)
+
+	require.Error(t, err)
+	require.Equal(t, regionalRestrictionReason, infraerrors.Reason(err))
+	require.True(t, result.Enabled)
+	require.True(t, result.Blocked)
+	require.Equal(t, "CN", result.CountryCode)
+}
+
+func TestEvaluateRegionalRestrictionDefaultsLoginScopeToEnabledWhenSettingMissing(t *testing.T) {
+	settingSvc := newRegionalRestrictionSettingService(map[string]string{
+		service.SettingKeyRegionalRestrictionLoginEnabled: "",
+	})
+
+	result, err := evaluateRegionalRestriction(context.Background(), newRegionalRestrictionTestContext("CN"), settingSvc, regionalRestrictionScopeLogin)
+
+	require.Error(t, err)
+	require.Equal(t, regionalRestrictionReason, infraerrors.Reason(err))
+	require.True(t, result.Enabled)
+	require.True(t, result.Blocked)
+	require.Equal(t, "CN", result.CountryCode)
+}
+
+func TestEvaluateRegionalRestrictionAllowsLoginWhenScopeExplicitlyDisabled(t *testing.T) {
+	settingSvc := newRegionalRestrictionSettingService(map[string]string{
+		service.SettingKeyRegionalRestrictionLoginEnabled: "false",
+	})
+
+	result, err := evaluateRegionalRestriction(context.Background(), newRegionalRestrictionTestContext("CN"), settingSvc, regionalRestrictionScopeLogin)
+
+	require.NoError(t, err)
+	require.True(t, result.Enabled)
+	require.False(t, result.Blocked)
 }
 
 func TestEvaluateRegionalRestrictionBlocksConfiguredCountryOnlyForEnabledScope(t *testing.T) {

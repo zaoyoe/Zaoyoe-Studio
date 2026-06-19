@@ -146,6 +146,7 @@ const (
 	// 区域限制设置（仅作用于注册和 API Key 管理，不做整站拦截）
 	SettingKeyRegionalRestrictionEnabled                   = "regional_restriction_enabled"
 	SettingKeyRegionalRestrictionRegistrationEnabled       = "regional_restriction_registration_enabled"
+	SettingKeyRegionalRestrictionLoginEnabled              = "regional_restriction_login_enabled"
 	SettingKeyRegionalRestrictionOAuthSignupEnabled        = "regional_restriction_oauth_signup_enabled"
 	SettingKeyRegionalRestrictionAPIKeyPageConfirmation    = "regional_restriction_api_key_page_confirmation_enabled"
 	SettingKeyRegionalRestrictionAPIKeyCreateEnabled       = "regional_restriction_api_key_create_enabled"

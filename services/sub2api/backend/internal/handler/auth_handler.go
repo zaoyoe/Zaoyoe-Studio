@@ -204,6 +204,18 @@ func (h *AuthHandler) GetRegionalRestrictionRegistrationStatus(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// GetRegionalRestrictionLoginStatus returns the regional restriction status
+// for the public login entry point without validating credentials.
+// GET /api/v1/auth/regional-restriction/login
+func (h *AuthHandler) GetRegionalRestrictionLoginStatus(c *gin.Context) {
+	result, err := evaluateRegionalRestriction(c.Request.Context(), c, h.settingSvc, regionalRestrictionScopeLogin)
+	if err != nil && !isRegionalRestrictionError(err) {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // SendVerifyCode 发送邮箱验证码
 // POST /api/v1/auth/send-verify-code
 func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
@@ -241,6 +253,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.ensureRegionalRestrictionAllows(c, regionalRestrictionScopeLogin); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 
@@ -349,6 +365,10 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 	}
 
 	if err := h.ensureBackendModeAllowsUser(c.Request.Context(), user); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if err := h.ensureRegionalRestrictionAllows(c, regionalRestrictionScopeLogin); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -685,6 +705,10 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.ensureRegionalRestrictionAllows(c, regionalRestrictionScopeLogin); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 

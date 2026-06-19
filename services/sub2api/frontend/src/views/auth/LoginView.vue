@@ -252,13 +252,14 @@ import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
+  getLoginRegionalRestrictionStatus,
   getPublicSettings,
   getRegistrationRegionalRestrictionStatus,
   isTotp2FARequired,
   isWeChatWebOAuthEnabled
 } from '@/api/auth'
 import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
-import { extractI18nErrorMessage } from '@/utils/apiError'
+import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
 
 const { t } = useI18n()
@@ -299,7 +300,7 @@ const agreementAccepted = ref<boolean>(false)
 const showAgreementModal = ref<boolean>(false)
 const checkingRegistrationRegion = ref<boolean>(false)
 const showRegistrationRegionDialog = ref<boolean>(false)
-const registrationRegionDialogMode = ref<'blocked' | 'check_failed'>('blocked')
+const registrationRegionDialogMode = ref<'registration_blocked' | 'login_blocked' | 'check_failed'>('registration_blocked')
 
 // Turnstile
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
@@ -338,6 +339,8 @@ const registrationRegionDialogTitle = computed(() =>
   t(
     registrationRegionDialogMode.value === 'check_failed'
       ? 'auth.registrationRegionCheckFailedTitle'
+      : registrationRegionDialogMode.value === 'login_blocked'
+        ? 'auth.loginRegionBlockedTitle'
       : 'auth.registrationRegionBlockedTitle'
   )
 )
@@ -346,6 +349,8 @@ const registrationRegionDialogDescription = computed(() =>
   t(
     registrationRegionDialogMode.value === 'check_failed'
       ? 'auth.registrationRegionCheckFailedDescription'
+      : registrationRegionDialogMode.value === 'login_blocked'
+        ? 'auth.loginRegionBlockedDescription'
       : 'auth.registrationRegionBlockedDescription'
   )
 )
@@ -354,6 +359,8 @@ const registrationRegionDialogReason = computed(() =>
   t(
     registrationRegionDialogMode.value === 'check_failed'
       ? 'auth.registrationRegionCheckFailedReason'
+      : registrationRegionDialogMode.value === 'login_blocked'
+        ? 'auth.loginRegionBlockedReason'
       : 'auth.registrationRegionBlockedReason'
   )
 )
@@ -378,8 +385,9 @@ watch(validationToastMessage, (value, previousValue) => {
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
-  if (route.query.region_blocked === 'registration') {
-    registrationRegionDialogMode.value = 'blocked'
+  if (route.query.region_blocked === 'login' || route.query.region_blocked === 'registration') {
+    registrationRegionDialogMode.value =
+      route.query.region_blocked === 'login' ? 'login_blocked' : 'registration_blocked'
     showRegistrationRegionDialog.value = true
   }
 
@@ -549,7 +557,7 @@ async function handleRegisterLinkClick(): Promise<void> {
   try {
     const status = await getRegistrationRegionalRestrictionStatus()
     if (status.enabled && status.blocked) {
-      registrationRegionDialogMode.value = 'blocked'
+      registrationRegionDialogMode.value = 'registration_blocked'
       showRegistrationRegionDialog.value = true
       return
     }
@@ -564,12 +572,31 @@ async function handleRegisterLinkClick(): Promise<void> {
   await router.push('/register')
 }
 
+async function handleLoginRegionPrecheck(): Promise<boolean> {
+  try {
+    const status = await getLoginRegionalRestrictionStatus()
+    if (status.enabled && status.blocked) {
+      registrationRegionDialogMode.value = 'login_blocked'
+      showRegistrationRegionDialog.value = true
+      errorMessage.value = ''
+      return true
+    }
+  } catch (error) {
+    console.warn('Failed to check login regional restriction:', error)
+  }
+  return false
+}
+
 async function handleLogin(): Promise<void> {
   // Clear previous error
   errorMessage.value = ''
 
   // Validate form
   if (!validateForm()) {
+    return
+  }
+
+  if (await handleLoginRegionPrecheck()) {
     return
   }
 
@@ -607,6 +634,13 @@ async function handleLogin(): Promise<void> {
       turnstileToken.value = ''
     }
 
+    if (extractApiErrorCode(error) === 'REGION_RESTRICTED') {
+      registrationRegionDialogMode.value = 'login_blocked'
+      showRegistrationRegionDialog.value = true
+      errorMessage.value = ''
+      return
+    }
+
     errorMessage.value = extractI18nErrorMessage(error, t, 'auth.errors', t('auth.loginFailed'))
 
     // Also show error toast
@@ -635,6 +669,15 @@ async function handle2FAVerify(code: string): Promise<void> {
     const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
     await router.push(redirectTo)
   } catch (error: unknown) {
+    if (extractApiErrorCode(error) === 'REGION_RESTRICTED') {
+      registrationRegionDialogMode.value = 'login_blocked'
+      showRegistrationRegionDialog.value = true
+      show2FAModal.value = false
+      totpTempToken.value = ''
+      totpUserEmailMasked.value = ''
+      return
+    }
+
     const err = error as { message?: string; response?: { data?: { message?: string } } }
     const message = err.response?.data?.message || err.message || t('profile.totp.loginFailed')
 

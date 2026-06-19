@@ -251,6 +251,42 @@ func TestAPIContracts(t *testing.T) {
 			}`,
 		},
 		{
+			name: "GET /api/v1/auth/regional-restriction/login",
+			setup: func(t *testing.T, deps *contractDeps) {
+				t.Helper()
+				deps.settingRepo.SetAll(map[string]string{
+					service.SettingKeyRegionalRestrictionEnabled:                   "true",
+					service.SettingKeyRegionalRestrictionLoginEnabled:              "true",
+					service.SettingKeyRegionalRestrictionBlockedCountryCodes:       `["CN"]`,
+					service.SettingKeyRegionalRestrictionUnknownRegionPolicy:       "allow",
+					service.SettingKeyRegionalRestrictionConfirmationRevision:      "2026-06-17",
+					service.SettingKeyRegionalRestrictionConfirmationFrequency:     "once_per_revision",
+					service.SettingKeyRegionalRestrictionConfirmationIntervalHours: "24",
+				})
+			},
+			method: http.MethodGet,
+			path:   "/api/v1/auth/regional-restriction/login",
+			headers: map[string]string{
+				"CF-IPCountry": "CN",
+			},
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": {
+					"enabled": true,
+					"confirmation_required": false,
+					"blocked": true,
+					"country_code": "CN",
+					"unknown_region": false,
+					"revision": "2026-06-17",
+					"confirmation_frequency": "once_per_revision",
+					"confirmation_interval_hours": 24,
+					"message": "The service is not offered to users located in restricted regions, including mainland China."
+				}
+			}`,
+		},
+		{
 			name:   "POST /api/v1/keys",
 			method: http.MethodPost,
 			path:   "/api/v1/keys",
@@ -736,6 +772,7 @@ func TestAPIContracts(t *testing.T) {
 						],
 						"regional_restriction_enabled": false,
 						"regional_restriction_registration_enabled": false,
+						"regional_restriction_login_enabled": true,
 						"regional_restriction_oauth_signup_enabled": false,
 						"regional_restriction_api_key_page_confirmation_enabled": false,
 						"regional_restriction_api_key_create_enabled": false,
@@ -1028,6 +1065,7 @@ func TestAPIContracts(t *testing.T) {
 						],
 						"regional_restriction_enabled": false,
 						"regional_restriction_registration_enabled": false,
+						"regional_restriction_login_enabled": true,
 						"regional_restriction_oauth_signup_enabled": false,
 						"regional_restriction_api_key_page_confirmation_enabled": false,
 						"regional_restriction_api_key_create_enabled": false,
@@ -1388,6 +1426,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1 := r.Group("/api/v1")
 
 	v1.GET("/auth/regional-restriction/registration", authHandler.GetRegionalRestrictionRegistrationStatus)
+	v1.GET("/auth/regional-restriction/login", authHandler.GetRegionalRestrictionLoginStatus)
 
 	v1Auth := v1.Group("")
 	v1Auth.Use(jwtAuth)

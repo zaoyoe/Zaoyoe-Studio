@@ -134,6 +134,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		LoginAgreementDocuments:                      loginAgreementDocumentsToDTO(settings.LoginAgreementDocuments),
 		RegionalRestrictionEnabled:                   settings.RegionalRestrictionEnabled,
 		RegionalRestrictionRegistrationEnabled:       settings.RegionalRestrictionRegistrationEnabled,
+		RegionalRestrictionLoginEnabled:              settings.RegionalRestrictionLoginEnabled,
 		RegionalRestrictionOAuthSignupEnabled:        settings.RegionalRestrictionOAuthSignupEnabled,
 		RegionalRestrictionAPIKeyPageConfirmation:    settings.RegionalRestrictionAPIKeyPageConfirmation,
 		RegionalRestrictionAPIKeyCreateEnabled:       settings.RegionalRestrictionAPIKeyCreateEnabled,
@@ -413,6 +414,7 @@ type UpdateSettingsRequest struct {
 	LoginAgreementDocuments                      []dto.LoginAgreementDocument `json:"login_agreement_documents"`
 	RegionalRestrictionEnabled                   *bool                        `json:"regional_restriction_enabled"`
 	RegionalRestrictionRegistrationEnabled       *bool                        `json:"regional_restriction_registration_enabled"`
+	RegionalRestrictionLoginEnabled              *bool                        `json:"regional_restriction_login_enabled"`
 	RegionalRestrictionOAuthSignupEnabled        *bool                        `json:"regional_restriction_oauth_signup_enabled"`
 	RegionalRestrictionAPIKeyPageConfirmation    *bool                        `json:"regional_restriction_api_key_page_confirmation_enabled"`
 	RegionalRestrictionAPIKeyCreateEnabled       *bool                        `json:"regional_restriction_api_key_create_enabled"`
@@ -1538,6 +1540,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LoginAgreementDocuments:                      loginAgreementDocuments,
 		RegionalRestrictionEnabled:                   boolValueOrDefault(req.RegionalRestrictionEnabled, previousSettings.RegionalRestrictionEnabled),
 		RegionalRestrictionRegistrationEnabled:       boolValueOrDefault(req.RegionalRestrictionRegistrationEnabled, previousSettings.RegionalRestrictionRegistrationEnabled),
+		RegionalRestrictionLoginEnabled:              boolValueOrDefault(req.RegionalRestrictionLoginEnabled, previousSettings.RegionalRestrictionLoginEnabled),
 		RegionalRestrictionOAuthSignupEnabled:        boolValueOrDefault(req.RegionalRestrictionOAuthSignupEnabled, previousSettings.RegionalRestrictionOAuthSignupEnabled),
 		RegionalRestrictionAPIKeyPageConfirmation:    boolValueOrDefault(req.RegionalRestrictionAPIKeyPageConfirmation, previousSettings.RegionalRestrictionAPIKeyPageConfirmation),
 		RegionalRestrictionAPIKeyCreateEnabled:       boolValueOrDefault(req.RegionalRestrictionAPIKeyCreateEnabled, previousSettings.RegionalRestrictionAPIKeyCreateEnabled),
@@ -2026,6 +2029,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LoginAgreementDocuments:                      loginAgreementDocumentsToDTO(updatedSettings.LoginAgreementDocuments),
 		RegionalRestrictionEnabled:                   updatedSettings.RegionalRestrictionEnabled,
 		RegionalRestrictionRegistrationEnabled:       updatedSettings.RegionalRestrictionRegistrationEnabled,
+		RegionalRestrictionLoginEnabled:              updatedSettings.RegionalRestrictionLoginEnabled,
 		RegionalRestrictionOAuthSignupEnabled:        updatedSettings.RegionalRestrictionOAuthSignupEnabled,
 		RegionalRestrictionAPIKeyPageConfirmation:    updatedSettings.RegionalRestrictionAPIKeyPageConfirmation,
 		RegionalRestrictionAPIKeyCreateEnabled:       updatedSettings.RegionalRestrictionAPIKeyCreateEnabled,
