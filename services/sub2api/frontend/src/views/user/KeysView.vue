@@ -893,32 +893,28 @@
           aria-modal="true"
         >
           <div
-            class="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white px-5 py-5 text-gray-900 shadow-2xl dark:border-white/10 dark:bg-[#17171c] dark:text-white sm:max-h-[calc(100dvh-2rem)] sm:px-6 sm:py-6"
+            class="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white px-5 py-5 pr-14 text-gray-900 shadow-2xl dark:border-white/10 dark:bg-[#17171c] dark:text-white sm:max-h-[calc(100dvh-2rem)] sm:px-6 sm:py-6 sm:pr-16"
           >
-            <div class="flex items-start gap-3">
-              <div
-                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                :class="
-                  regionalRestrictionBlocked
-                    ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-200'
-                    : 'bg-primary-50 text-primary-700 dark:bg-primary-400/15 dark:text-primary-100'
-                "
-              >
-                <Icon :name="regionalRestrictionBlocked ? 'exclamationCircle' : 'globe'" size="md" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <h2 class="text-xl font-semibold leading-7 tracking-normal text-gray-950 dark:text-white sm:text-2xl">
-                  {{ regionalRestrictionModalCopy.title }}
-                </h2>
-                <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base sm:leading-7">
-                  {{
-                    regionalRestrictionBlocked
-                      ? regionalRestrictionModalCopy.blockedNotice
-                      : regionalRestrictionModalCopy.description
-                  }}
-                </p>
-              </div>
-            </div>
+            <button
+              type="button"
+              class="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-primary-700 shadow-sm transition hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:border-white/10 dark:bg-white/5 dark:text-primary-100 dark:hover:border-primary-300/40 dark:hover:bg-primary-400/10"
+              :aria-pressed="regionalRestrictionTranslationMode === 'zh'"
+              :aria-label="regionalRestrictionModalCopy.translateAriaLabel"
+              @click="toggleRegionalRestrictionTranslation"
+            >
+              <Icon name="globe" size="sm" />
+            </button>
+
+            <h2 class="text-xl font-semibold leading-7 tracking-normal text-gray-950 dark:text-white sm:text-2xl">
+              {{ regionalRestrictionModalCopy.title }}
+            </h2>
+            <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base sm:leading-7">
+              {{
+                regionalRestrictionBlocked
+                  ? regionalRestrictionModalCopy.blockedNotice
+                  : regionalRestrictionModalCopy.description
+              }}
+            </p>
 
             <ul
               class="mt-5 list-disc space-y-2 pl-6 text-sm leading-6 text-gray-600 dark:text-gray-300 sm:text-base sm:leading-7"
@@ -979,21 +975,10 @@
               </button>
             </div>
 
-            <div class="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+            <div v-if="!regionalRestrictionBlocked" class="mt-6 border-t border-gray-200 pt-4 dark:border-white/10">
               <p v-if="!regionalRestrictionBlocked" class="text-xs leading-5 text-gray-500 dark:text-gray-400">
                 {{ regionalRestrictionModalCopy.storageNotice }}
               </p>
-
-              <button
-                type="button"
-                class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-primary-700 shadow-sm transition hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:border-white/10 dark:bg-white/5 dark:text-primary-100 dark:hover:border-primary-300/40 dark:hover:bg-primary-400/10"
-                :aria-pressed="regionalRestrictionTranslationMode === 'zh'"
-                :title="regionalRestrictionTranslationMode === 'en' ? '显示中文翻译' : 'Show English original'"
-                @click="toggleRegionalRestrictionTranslation"
-              >
-                <Icon name="globe" size="sm" />
-                <span>{{ regionalRestrictionModalCopy.translateButton }}</span>
-              </button>
             </div>
           </div>
         </div>
@@ -1342,7 +1327,7 @@ const regionalRestrictionModalCopies = {
     backButton: 'Back',
     storageNotice:
       'This soft confirmation is stored only in this browser. It does not create a server-side confirmation record or additional IP log.',
-    translateButton: '中文'
+    translateAriaLabel: 'Show Chinese translation'
   },
   zh: {
     title: 'API 密钥使用确认',
@@ -1368,7 +1353,7 @@ const regionalRestrictionModalCopies = {
     backButton: '返回',
     storageNotice:
       '此软确认仅保存在当前浏览器中，不会创建服务器端确认记录，也不会产生额外 IP 日志。',
-    translateButton: 'English'
+    translateAriaLabel: '显示英文原文'
   }
 } as const
 
