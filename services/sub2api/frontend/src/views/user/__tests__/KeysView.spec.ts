@@ -15,6 +15,8 @@ describe('KeysView regional restriction confirmation modal', () => {
     expect(componentSource).toContain('toggleRegionalRestrictionTranslation')
     expect(componentSource).toContain("regionalRestrictionTranslationMode.value === 'en' ? 'zh' : 'en'")
     expect(componentSource).toContain("regionalRestrictionTranslationMode = ref<'en' | 'zh'>('en')")
+    expect(componentSource).toContain('translateAriaLabel')
+    expect(componentSource).not.toContain('translateButton')
   })
 
   it('supports configurable prompt frequency without changing the default behavior', () => {
@@ -23,5 +25,11 @@ describe('KeysView regional restriction confirmation modal', () => {
     expect(componentSource).toContain("regionalRestrictionConfirmationIntervalHours")
     expect(componentSource).toContain("regionalRestrictionAcceptedThisVisit")
     expect(componentSource).toContain("elapsedHours < regionalRestrictionConfirmationIntervalHours.value")
+  })
+
+  it('keeps the dialog content left aligned without a leading warning icon', () => {
+    expect(componentSource).toContain('regionalRestrictionModalCopy.translateAriaLabel')
+    expect(componentSource).not.toContain("regionalRestrictionBlocked ? 'exclamationCircle' : 'globe'")
+    expect(componentSource).not.toContain('regionalRestrictionModalCopy.translateButton')
   })
 })

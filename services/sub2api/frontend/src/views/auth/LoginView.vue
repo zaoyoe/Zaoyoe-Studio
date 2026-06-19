@@ -194,24 +194,26 @@
     role="dialog"
     aria-modal="true"
   >
-    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-dark-800">
-      <div class="flex items-start gap-3">
-        <div
-          class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300"
-        >
-          <Icon name="exclamationCircle" size="md" />
-        </div>
-        <div>
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ registrationRegionDialogTitle }}
-          </h3>
-          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">
-            {{ registrationRegionDialogDescription }}
-          </p>
-          <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
-            {{ registrationRegionDialogReason }}
-          </p>
-        </div>
+    <div class="relative w-full max-w-md rounded-xl bg-white p-6 pr-14 shadow-xl dark:bg-dark-800 sm:pr-16">
+      <button
+        type="button"
+        class="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-primary-700 shadow-sm transition hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 dark:border-white/10 dark:bg-white/5 dark:text-primary-100 dark:hover:border-primary-300/40 dark:hover:bg-primary-400/10"
+        :aria-label="regionalRestrictionLanguageButtonLabel"
+        @click="toggleRegionalRestrictionDialogLanguage"
+      >
+        <Icon name="globe" size="sm" />
+      </button>
+
+      <div>
+        <h3 class="text-lg font-semibold leading-7 text-gray-900 dark:text-white">
+          {{ registrationRegionDialogTitle }}
+        </h3>
+        <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-dark-300">
+          {{ registrationRegionDialogDescription }}
+        </p>
+        <p class="mt-2 text-sm leading-6 text-gray-500 dark:text-dark-400">
+          {{ registrationRegionDialogReason }}
+        </p>
       </div>
       <div class="mt-6 flex justify-end">
         <button
@@ -251,6 +253,7 @@ import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
+import { setLocale } from '@/i18n'
 import {
   getLoginRegionalRestrictionStatus,
   getPublicSettings,
@@ -262,7 +265,7 @@ import type { LoginAgreementDocument, TotpLoginResponse } from '@/types'
 import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 // ==================== Router & Stores ====================
@@ -365,6 +368,10 @@ const registrationRegionDialogReason = computed(() =>
   )
 )
 
+const regionalRestrictionLanguageButtonLabel = computed(() =>
+  String(locale.value).startsWith('zh') ? 'Show English' : '显示中文'
+)
+
 const showOAuthLogin = computed(
   () =>
     !backendModeEnabled.value &&
@@ -375,6 +382,10 @@ const showOAuthLogin = computed(
       githubOAuthEnabled.value ||
       googleOAuthEnabled.value)
 )
+
+async function toggleRegionalRestrictionDialogLanguage(): Promise<void> {
+  await setLocale(String(locale.value).startsWith('zh') ? 'en' : 'zh')
+}
 
 watch(validationToastMessage, (value, previousValue) => {
   if (value && value !== previousValue) {
