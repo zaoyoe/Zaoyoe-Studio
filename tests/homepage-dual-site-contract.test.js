@@ -134,7 +134,7 @@ test('public nav shop dropdown only exposes current-site priced categories', () 
     assert.match(framerSource, /return Array\.isArray\(categories\) \? categories : \[\];/);
     assert.doesNotMatch(framerSource, /'全部商品', 'API密钥', '会员服务', '资源包'/);
 
-    assert.match(indexSource, /js\/framer_home\.js\?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1/);
+    assert.match(indexSource, /js\/framer_home\.js\?v=20260620_HOME_SHOP_RENDER_SIGNATURE_1/);
     navSubpageSources.forEach((source) => {
         assert.match(source, /js\/framer-nav-runtime\.js\?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1/);
     });

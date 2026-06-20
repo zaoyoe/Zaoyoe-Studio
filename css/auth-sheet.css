@@ -9,6 +9,7 @@
 }
 
 /* 20260512_NAV_AUTH_SESSION_MATCH_1 */
+/* 20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1 */
 :root {
     --app-modal-backdrop: rgba(34, 41, 52, 0.48);
     --app-modal-backdrop-filter: blur(6px) saturate(106%);
@@ -374,7 +375,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-overlay.active .auth-sheet-tabs:not([hidden]) {
-    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.13s backwards;
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.16s backwards;
 }
 
 .auth-sheet-overlay.active .auth-sheet-message:not([hidden]) {
@@ -419,6 +420,34 @@ body.auth-sheet-open {
 
 .auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(5) {
     animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.44s backwards;
+}
+
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active > .auth-sheet-login-stack:nth-child(n) {
+    animation: none;
+}
+
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-login-stack > .auth-sheet-google-btn {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.24s backwards;
+}
+
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-login-fields-stack > .auth-sheet-divider {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s backwards;
+}
+
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-form > :nth-child(1) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.36s backwards;
+}
+
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-form > :nth-child(2) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.42s backwards;
+}
+
+.auth-sheet-overlay.active #loginView.auth-sheet-view.is-active .auth-sheet-inline-row--spread {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.48s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active > .auth-sheet-submit:nth-child(n) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.54s backwards;
 }
 
 .auth-sheet-drag-zone {

@@ -817,7 +817,15 @@ const PROMPT_BILINGUAL_FIELD_KEYS = Object.freeze([
     'prompt_text_en'
 ]);
 
+const PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS = Object.freeze([
+    'source_url',
+    'source_author_name',
+    'source_author_handle',
+    'source_author_avatar_url'
+]);
+
 const PROMPT_BILINGUAL_SQL_GUIDE = 'supabase/migrations/add_bilingual_prompts_fields.sql';
+const PROMPT_SOURCE_ATTRIBUTION_SQL_GUIDE = 'supabase/migrations/20260619_add_prompt_source_attribution.sql';
 const PROMPT_BILINGUAL_VERIFY_SELECT_FIELDS = [
     'id',
     'title',
@@ -828,14 +836,15 @@ const PROMPT_BILINGUAL_VERIFY_SELECT_FIELDS = [
     'created_at',
     'dominant_colors',
     'ai_tags',
+    ...PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS,
     ...PROMPT_BILINGUAL_FIELD_KEYS
 ].join(', ');
 
-function getPromptMissingPersistedBilingualFields(attemptedPayload = {}, savedRow = {}) {
+function getPromptMissingPersistedFields(attemptedPayload = {}, savedRow = {}, fieldNames = []) {
     const safeAttemptedPayload = attemptedPayload && typeof attemptedPayload === 'object' ? attemptedPayload : {};
     const safeSavedRow = savedRow && typeof savedRow === 'object' ? savedRow : {};
 
-    return PROMPT_BILINGUAL_FIELD_KEYS.filter((fieldName) => {
+    return (Array.isArray(fieldNames) ? fieldNames : []).filter((fieldName) => {
         const attemptedValue = String(safeAttemptedPayload[fieldName] || '').trim();
         if (!attemptedValue) {
             return false;
@@ -844,6 +853,14 @@ function getPromptMissingPersistedBilingualFields(attemptedPayload = {}, savedRo
         const persistedValue = String(safeSavedRow[fieldName] || '').trim();
         return persistedValue !== attemptedValue;
     });
+}
+
+function getPromptMissingPersistedBilingualFields(attemptedPayload = {}, savedRow = {}) {
+    return getPromptMissingPersistedFields(attemptedPayload, savedRow, PROMPT_BILINGUAL_FIELD_KEYS);
+}
+
+function getPromptMissingPersistedSourceAttributionFields(attemptedPayload = {}, savedRow = {}) {
+    return getPromptMissingPersistedFields(attemptedPayload, savedRow, PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS);
 }
 
 function isMissingPromptBilingualSchemaCacheError(error = null) {
@@ -864,6 +881,35 @@ function isMissingPromptBilingualSchemaCacheError(error = null) {
     ));
 
     if (!mentionsPromptField) {
+        return false;
+    }
+
+    return (
+        message.includes('schema cache')
+        || message.includes('does not exist')
+        || message.includes(`column of 'prompts'`)
+        || message.includes(`column of "prompts"`)
+    );
+}
+
+function isMissingPromptSourceAttributionSchemaCacheError(error = null) {
+    const message = String(error?.message || '').toLowerCase();
+    if (!message) {
+        return false;
+    }
+
+    if (message.includes('prompt 引用原作者字段') && message.includes('schema cache')) {
+        return true;
+    }
+
+    const mentionsSourceField = PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS.some((fieldName) => (
+        message.includes(`column ${fieldName}`)
+        || message.includes(`prompts.${fieldName}`)
+        || message.includes(`"${fieldName}"`)
+        || message.includes(`'${fieldName}'`)
+    ));
+
+    if (!mentionsSourceField) {
         return false;
     }
 
@@ -942,6 +988,17 @@ function buildPromptBilingualPersistencePayload(attemptedPayload = {}) {
     }, {});
 }
 
+function buildPromptSourceAttributionPersistencePayload(attemptedPayload = {}) {
+    const safeAttemptedPayload = attemptedPayload && typeof attemptedPayload === 'object' ? attemptedPayload : {};
+    return PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS.reduce((nextPayload, fieldName) => {
+        const nextValue = String(safeAttemptedPayload[fieldName] || '').trim();
+        if (nextValue) {
+            nextPayload[fieldName] = nextValue;
+        }
+        return nextPayload;
+    }, {});
+}
+
 function promptHasAnyBilingualCopy(prompt = {}) {
     return PROMPT_BILINGUAL_FIELD_KEYS.some((fieldName) => promptHasVisibleCopy(prompt?.[fieldName]));
 }
@@ -953,6 +1010,26 @@ async function persistPromptBilingualFieldsViaSupabase(promptId = '', attemptedP
     }
 
     const persistencePayload = buildPromptBilingualPersistencePayload(attemptedPayload);
+    if (!Object.keys(persistencePayload).length) {
+        return null;
+    }
+
+    const payload = await mutateAdminPrompt({
+        action: 'patch',
+        site: getAdminPromptsReadSite(),
+        id: normalizedPromptId,
+        payload: persistencePayload
+    });
+    return payload?.row && typeof payload.row === 'object' ? payload.row : null;
+}
+
+async function persistPromptSourceAttributionFieldsViaSupabase(promptId = '', attemptedPayload = {}) {
+    const normalizedPromptId = String(promptId || '').trim();
+    if (!normalizedPromptId) {
+        return null;
+    }
+
+    const persistencePayload = buildPromptSourceAttributionPersistencePayload(attemptedPayload);
     if (!Object.keys(persistencePayload).length) {
         return null;
     }
@@ -1078,6 +1155,91 @@ function buildPromptBilingualPersistenceWarningMessage(missingFields = []) {
     }
 
     return 'Prompt 已保存，但仍有双语字段未写回；请刷新后复查。';
+}
+
+async function verifyPromptPersistedSourceAttributionFields(promptId = '', attemptedPayload = {}, savedRow = {}) {
+    const initialMissingFields = getPromptMissingPersistedSourceAttributionFields(attemptedPayload, savedRow);
+    if (!initialMissingFields.length) {
+        return {
+            row: savedRow,
+            missingFields: [],
+            schemaMissing: false,
+            verificationError: null
+        };
+    }
+
+    let lastVerificationError = null;
+    try {
+        const verifiedRow = await fetchPromptBilingualVerificationRow(promptId);
+        const mergedRow = verifiedRow
+            ? {
+                ...(savedRow && typeof savedRow === 'object' ? savedRow : {}),
+                ...verifiedRow
+            }
+            : savedRow;
+        const missingFieldsAfterVerification = getPromptMissingPersistedSourceAttributionFields(attemptedPayload, mergedRow);
+        if (!missingFieldsAfterVerification.length) {
+            return {
+                row: mergedRow,
+                missingFields: [],
+                schemaMissing: false,
+                verificationError: null
+            };
+        }
+
+        savedRow = mergedRow;
+        lastVerificationError = new Error(`Prompt source attribution fields still missing after verification: ${missingFieldsAfterVerification.join(', ')}`);
+    } catch (error) {
+        lastVerificationError = error;
+        if (isMissingPromptSourceAttributionSchemaCacheError(error)) {
+            return {
+                row: savedRow,
+                missingFields: initialMissingFields,
+                schemaMissing: true,
+                verificationError: error
+            };
+        }
+    }
+
+    try {
+        const persistedRow = await persistPromptSourceAttributionFieldsViaSupabase(promptId, attemptedPayload);
+        const mergedRow = persistedRow
+            ? {
+                ...(savedRow && typeof savedRow === 'object' ? savedRow : {}),
+                ...persistedRow
+            }
+            : savedRow;
+        return {
+            row: mergedRow,
+            missingFields: getPromptMissingPersistedSourceAttributionFields(attemptedPayload, mergedRow),
+            schemaMissing: false,
+            verificationError: null
+        };
+    } catch (error) {
+        return {
+            row: savedRow,
+            missingFields: initialMissingFields,
+            schemaMissing: isMissingPromptSourceAttributionSchemaCacheError(error),
+            verificationError: error || lastVerificationError
+        };
+    }
+}
+
+function buildPromptSourceAttributionPersistenceWarningMessage(missingFields = []) {
+    if (!Array.isArray(missingFields) || missingFields.length === 0) {
+        return '';
+    }
+
+    const options = arguments[1] && typeof arguments[1] === 'object' ? arguments[1] : {};
+    if (options.schemaMissing) {
+        return `当前 API / schema cache 还没识别到 Prompt 引用原作者字段；如果你已执行 ${PROMPT_SOURCE_ATTRIBUTION_SQL_GUIDE}，请再执行 select pg_notify('pgrst', 'reload schema');`;
+    }
+
+    if (options.verificationError) {
+        return 'Prompt 已保存，但引用原作者字段暂未确认写入；请刷新后复查。';
+    }
+
+    return 'Prompt 已保存，但引用原作者字段仍未写回；请刷新后复查。';
 }
 
 function normalizeBatchPromptFailureMessage(error, prompt = {}) {
@@ -7990,6 +8152,9 @@ async function editPrompt(id) {
             description_en: data.description_en || '',
             prompt_text_zh: data.prompt_text_zh || '',
             prompt_text_en: data.prompt_text_en || '',
+            source_url: data.source_url || '',
+            source_author_name: data.source_author_name || '',
+            source_author_handle: data.source_author_handle || '',
             opsStatus: promptOpsData.status,
             opsNote: promptOpsData.note,
             objects: data.ai_tags?.objects,
@@ -9827,6 +9992,36 @@ function resetPromptBilingualFields() {
     setPromptBilingualFieldsOpen(false);
 }
 
+function normalizePromptSourceAuthorHandle(value = '') {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) {
+        return '';
+    }
+    return trimmed.startsWith('@') ? trimmed : `@${trimmed}`;
+}
+
+function populatePromptSourceFields(data = {}) {
+    const sourceUrlInput = document.getElementById('promptSourceUrl');
+    const authorNameInput = document.getElementById('promptSourceAuthorName');
+    const authorHandleInput = document.getElementById('promptSourceAuthorHandle');
+
+    if (sourceUrlInput) sourceUrlInput.value = data.source_url || data.sourceUrl || '';
+    if (authorNameInput) authorNameInput.value = data.source_author_name || data.sourceAuthorName || '';
+    if (authorHandleInput) authorHandleInput.value = data.source_author_handle || data.sourceAuthorHandle || '';
+}
+
+function collectPromptSourceFieldValues() {
+    return {
+        source_url: document.getElementById('promptSourceUrl')?.value.trim() || '',
+        source_author_name: document.getElementById('promptSourceAuthorName')?.value.trim() || '',
+        source_author_handle: normalizePromptSourceAuthorHandle(document.getElementById('promptSourceAuthorHandle')?.value || '')
+    };
+}
+
+function resetPromptSourceFields() {
+    populatePromptSourceFields({});
+}
+
 function populatePromptOpsFields(data = {}) {
     setCustomDropdownValue('promptOpsStatusDropdown', data.status || '');
     const noteInput = document.getElementById('promptOpsNote');
@@ -10053,6 +10248,7 @@ function getPromptFormSnapshot() {
         description: document.getElementById('promptDescription')?.value.trim() || '',
         opsStatus: document.getElementById('promptOpsStatus')?.value || '',
         opsNote: document.getElementById('promptOpsNote')?.value || '',
+        source: collectPromptSourceFieldValues(),
         bilingual: collectPromptBilingualFieldValues()
     };
 }
@@ -10140,6 +10336,17 @@ function populateForm(data, options = {}) {
 
     populatePromptBilingualFields(nextBilingualValues);
     setPromptBilingualFieldsOpen(hasPromptBilingualContent(nextBilingualValues));
+    populatePromptSourceFields({
+        source_url: preserveExisting && promptHasVisibleCopy(currentForm?.source?.source_url)
+            ? currentForm.source.source_url
+            : (data.source_url || ''),
+        source_author_name: preserveExisting && promptHasVisibleCopy(currentForm?.source?.source_author_name)
+            ? currentForm.source.source_author_name
+            : (data.source_author_name || ''),
+        source_author_handle: preserveExisting && promptHasVisibleCopy(currentForm?.source?.source_author_handle)
+            ? currentForm.source.source_author_handle
+            : (data.source_author_handle || '')
+    });
     populatePromptOpsFields({
         status: preserveExisting && currentForm?.opsStatus ? currentForm.opsStatus : (data.opsStatus || ''),
         note: preserveExisting && currentForm?.opsNote ? currentForm.opsNote : (data.opsNote || '')
@@ -10306,6 +10513,7 @@ async function savePrompt(e) {
         const promptText = formValues.prompt;
         const description = resolvedPrimaryFields.description;
         const bilingualValues = collectPromptBilingualFieldValues();
+        const sourceValues = collectPromptSourceFieldValues();
         const promptOps = collectPromptOpsFieldValues();
 
         if (title && document.getElementById('promptTitle').value.trim() !== title) {
@@ -10377,6 +10585,7 @@ async function savePrompt(e) {
             prompt: promptText,
             images: imageUrls,
             image_assets: imageAssets,
+            ...sourceValues,
             ...bilingualValues
         };
 
@@ -10466,7 +10675,14 @@ async function savePrompt(e) {
         // Always save to Supabase database (storage availability doesn't matter for DB save)
         let savedRow = null;
         let missingPersistedBilingualFields = [];
+        let missingPersistedSourceAttributionFields = [];
         let bilingualPersistenceState = {
+            row: null,
+            missingFields: [],
+            schemaMissing: false,
+            verificationError: null
+        };
+        let sourceAttributionPersistenceState = {
             row: null,
             missingFields: [],
             schemaMissing: false,
@@ -10482,7 +10698,10 @@ async function savePrompt(e) {
             description_en: promptData.description_en || '',
             description_zh: promptData.description_zh || '',
             prompt_text_en: promptData.prompt_text_en || '',
-            prompt_text_zh: promptData.prompt_text_zh || ''
+            prompt_text_zh: promptData.prompt_text_zh || '',
+            source_url: promptData.source_url || '',
+            source_author_name: promptData.source_author_name || '',
+            source_author_handle: promptData.source_author_handle || ''
         };
 
         if (storageAvailable) {
@@ -10529,6 +10748,9 @@ async function savePrompt(e) {
         bilingualPersistenceState = await verifyPromptPersistedBilingualFields(savedPromptId, promptPayload, savedRow);
         savedRow = bilingualPersistenceState.row || savedRow;
         missingPersistedBilingualFields = bilingualPersistenceState.missingFields;
+        sourceAttributionPersistenceState = await verifyPromptPersistedSourceAttributionFields(savedPromptId, promptPayload, savedRow);
+        savedRow = sourceAttributionPersistenceState.row || savedRow;
+        missingPersistedSourceAttributionFields = sourceAttributionPersistenceState.missingFields;
 
         if (savedPromptId) {
             queueAdminGalleryPromptFocus(savedPromptId);
@@ -10555,6 +10777,14 @@ async function savePrompt(e) {
             showAdminStudioToast(bilingualPersistenceWarning, 'warning');
         } else if (!savedCoverage.zh || !savedCoverage.en || translationSoftFailed) {
             showAdminStudioToast('Prompt 已保存，但双语仍未补全。可在高级语言字段中继续校对补齐。', 'warning');
+        }
+
+        const sourceAttributionPersistenceWarning = buildPromptSourceAttributionPersistenceWarningMessage(
+            missingPersistedSourceAttributionFields,
+            sourceAttributionPersistenceState
+        );
+        if (sourceAttributionPersistenceWarning) {
+            showAdminStudioToast(sourceAttributionPersistenceWarning, 'warning');
         }
 
         // Reset edit mode
@@ -11215,6 +11445,7 @@ function resetForm() {
     setAdminStudioVisibility(document.getElementById('promptForm'), false);
     document.getElementById('promptForm').reset();
     resetPromptBilingualFields();
+    resetPromptSourceFields();
     resetPromptOpsFields();
     document.getElementById('tagObjects').innerHTML = '';
     document.getElementById('tagScenes').innerHTML = '';
@@ -12814,6 +13045,9 @@ function buildSearchIndex() {
         if (p.prompt_text) addToIndex(p.prompt_text);
         if (p.prompt_text_zh) addToIndex(p.prompt_text_zh);
         if (p.prompt_text_en) addToIndex(p.prompt_text_en);
+        if (p.source_url) addToIndex(p.source_url);
+        if (p.source_author_name) addToIndex(p.source_author_name);
+        if (p.source_author_handle) addToIndex(p.source_author_handle);
         if (p.id) addToIndex(String(p.id));
 
         // Index tags
@@ -12973,6 +13207,9 @@ function performLocalSearch(query, searchingForColor) {
                 p.prompt_text || '',
                 p.prompt_text_zh || '',
                 p.prompt_text_en || '',
+                p.source_url || '',
+                p.source_author_name || '',
+                p.source_author_handle || '',
                 (p.tags || []).join(' ')
             ].join(' ').toLowerCase();
 

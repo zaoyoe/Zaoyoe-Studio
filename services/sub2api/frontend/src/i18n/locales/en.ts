@@ -464,12 +464,7 @@ export default {
     registrationRegionBlockedDescription:
       'Based on service availability requirements, account registration for Father Key Core Keys is not available from your current request region.',
     registrationRegionBlockedReason:
-      'Reason: this module is not offered to users located in restricted regions, including mainland China. Users in restricted regions cannot register or log in to Father Key Core Keys accounts.',
-    loginRegionBlockedTitle: 'Login is not available in your region',
-    loginRegionBlockedDescription:
-      'Based on service availability requirements, Father Key Core Keys account login is not available from your current request region.',
-    loginRegionBlockedReason:
-      'Reason: this module is not offered to users located in restricted regions, including mainland China. Please access from a supported region or a compliant non-restricted network environment.',
+      'Reason: this module is not offered to users located in restricted regions, including mainland China. Users in restricted regions cannot register new Father Key Core Keys accounts.',
     registrationRegionCheckFailedTitle: 'Unable to confirm registration region',
     registrationRegionCheckFailedDescription:
       'The system could not confirm your current request region, so the Father Key Core Keys registration page was not opened.',

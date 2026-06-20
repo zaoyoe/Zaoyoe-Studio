@@ -7466,16 +7466,14 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage a * {
     text-underline-offset: 3px;
 }
 
-html[data-theme="dark"] body.shop-page .shop-cart-item__panel--notice :not(a),
-html[data-theme="dark"] body.shop-page .shop-cart-item__panel--usage :not(a) {
+html[data-theme="dark"] body.shop-page .shop-cart-item__panel--notice :not(a):not([data-shop-rich-color]),
+html[data-theme="dark"] body.shop-page .shop-cart-item__panel--usage :not(a):not([data-shop-rich-color]) {
     color: inherit !important;
     -webkit-text-fill-color: currentColor !important;
 }
 
-html[data-theme="dark"] body.shop-page .shop-cart-item__panel--notice a,
-html[data-theme="dark"] body.shop-page .shop-cart-item__panel--notice a *,
-html[data-theme="dark"] body.shop-page .shop-cart-item__panel--usage a,
-html[data-theme="dark"] body.shop-page .shop-cart-item__panel--usage a * {
+html[data-theme="dark"] body.shop-page .shop-cart-item__panel--notice a:not([data-shop-rich-color]),
+html[data-theme="dark"] body.shop-page .shop-cart-item__panel--usage a:not([data-shop-rich-color]) {
     color: #93c5fd !important;
     -webkit-text-fill-color: #93c5fd !important;
     font-weight: 650;
@@ -7953,35 +7951,57 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageCa
 }
 
 html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent :not(a),
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent :not(a) {
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent {
     color: rgba(23, 32, 51, 0.74) !important;
     -webkit-text-fill-color: rgba(23, 32, 51, 0.74) !important;
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent a,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent a *,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent a,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent a * {
+body.shop-page #shopPurchaseModal #purchaseNotesContent :not(a):not([data-shop-rich-color]),
+body.shop-page #shopPurchaseModal #purchaseUsageContent :not(a):not([data-shop-rich-color]) {
+    -webkit-text-fill-color: currentColor !important;
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent a:not([data-shop-rich-color]),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent a:not([data-shop-rich-color]) {
     color: #31506f !important;
     -webkit-text-fill-color: #31506f !important;
 }
 
 html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseNotesContent,
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseNotesContent :not(a),
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent,
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent :not(a) {
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent {
     color: rgba(226, 232, 240, 0.82) !important;
     -webkit-text-fill-color: rgba(226, 232, 240, 0.82) !important;
 }
 
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseNotesContent a,
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseNotesContent a *,
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent a,
-html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent a * {
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseNotesContent a:not([data-shop-rich-color]),
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent a:not([data-shop-rich-color]) {
     color: #93c5fd !important;
     -webkit-text-fill-color: #93c5fd !important;
+}
+
+body.shop-page .shop-cart-item__panel [data-shop-rich-color],
+body.shop-page .shop-guidance-panel-content [data-shop-rich-color],
+body.shop-page #shopPurchaseModal #purchaseNotesContent [data-shop-rich-color],
+body.shop-page #shopPurchaseModal #purchaseUsageContent [data-shop-rich-color] {
+    -webkit-text-fill-color: currentColor !important;
+}
+
+body.shop-page .shop-cart-item__panel [data-shop-rich-color] *,
+body.shop-page .shop-guidance-panel-content [data-shop-rich-color] *,
+body.shop-page #shopPurchaseModal #purchaseNotesContent [data-shop-rich-color] *,
+body.shop-page #shopPurchaseModal #purchaseUsageContent [data-shop-rich-color] * {
+    color: inherit !important;
+    -webkit-text-fill-color: currentColor !important;
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent [data-shop-rich-color] a,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent [data-shop-rich-color] a,
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseNotesContent [data-shop-rich-color] a,
+html[data-theme="dark"] body.shop-page #shopPurchaseModal #purchaseUsageContent [data-shop-rich-color] a,
+html[data-theme="dark"] body.shop-page .shop-cart-item__panel--notice [data-shop-rich-color] a,
+html[data-theme="dark"] body.shop-page .shop-cart-item__panel--usage [data-shop-rich-color] a {
+    color: inherit !important;
+    -webkit-text-fill-color: currentColor !important;
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-discount-assets-group__title,

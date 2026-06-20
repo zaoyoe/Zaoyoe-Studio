@@ -188,6 +188,9 @@ function loadGalleryPopulateFormRuntime() {
         promptDescriptionEn: createFakeField(),
         promptTextZh: createFakeField(),
         promptTextEn: createFakeField(),
+        promptSourceUrl: createFakeField(),
+        promptSourceAuthorName: createFakeField(),
+        promptSourceAuthorHandle: createFakeField(),
         promptOpsStatus: createFakeField(),
         promptOpsNote: createFakeField(),
         promptOpsStatusDropdown: createFakeField()
@@ -206,6 +209,9 @@ function loadGalleryPopulateFormRuntime() {
         extractFunction(adminSource, 'hasPromptBilingualContent'),
         extractFunction(adminSource, 'populatePromptBilingualFields'),
         extractFunction(adminSource, 'collectPromptBilingualFieldValues'),
+        extractFunction(adminSource, 'normalizePromptSourceAuthorHandle'),
+        extractFunction(adminSource, 'populatePromptSourceFields'),
+        extractFunction(adminSource, 'collectPromptSourceFieldValues'),
         extractFunction(adminSource, 'getPromptFormSnapshot'),
         extractFunction(adminSource, 'resolvePromptPrimaryFields'),
         extractFunction(adminSource, 'populatePromptOpsFields'),
@@ -554,6 +560,9 @@ test('gallery populateForm keeps prompt fields manual for analysis results and p
         description: 'Smoke analysis description.',
         description_en: 'Smoke analysis description.',
         description_zh: '烟雾分析描述。',
+        source_url: 'https://example.com/original',
+        source_author_name: 'Original Artist',
+        source_author_handle: '@original_artist',
         prompt_suggestion_en: 'This prompt suggestion should stay manual.',
         prompt_suggestion_zh: '这个提示词建议应该保持手动填写。'
     }, {
@@ -571,6 +580,9 @@ test('gallery populateForm keeps prompt fields manual for analysis results and p
     assert.equal(elements.promptDescriptionEn.value, 'Smoke analysis description.');
     assert.equal(elements.promptTextZh.value, '');
     assert.equal(elements.promptTextEn.value, '');
+    assert.equal(elements.promptSourceUrl.value, 'https://example.com/original');
+    assert.equal(elements.promptSourceAuthorName.value, 'Original Artist');
+    assert.equal(elements.promptSourceAuthorHandle.value, '@original_artist');
     assert.equal(bilingualOpenStates.at(-1), true);
 
     elements.promptTitle.value = '';
@@ -579,6 +591,9 @@ test('gallery populateForm keeps prompt fields manual for analysis results and p
     elements.promptText.value = 'Manual primary prompt';
     elements.promptTextZh.value = '手动中文提示词';
     elements.promptTextEn.value = 'Manual English prompt';
+    elements.promptSourceUrl.value = 'https://example.com/manual';
+    elements.promptSourceAuthorName.value = 'Manual Artist';
+    elements.promptSourceAuthorHandle.value = '@manual_artist';
 
     exports.populateForm({
         title: 'Fresh Analysis Title',
@@ -588,6 +603,9 @@ test('gallery populateForm keeps prompt fields manual for analysis results and p
         description: 'Fresh analysis description.',
         description_en: 'Fresh analysis description.',
         description_zh: '新的分析描述。',
+        source_url: '',
+        source_author_name: '',
+        source_author_handle: '',
         prompt_suggestion_en: 'New prompt suggestion that should not overwrite manual prompt.',
         prompt_suggestion_zh: '新的提示词建议，不应覆盖手动提示词。'
     }, {
@@ -601,6 +619,9 @@ test('gallery populateForm keeps prompt fields manual for analysis results and p
     assert.equal(elements.promptText.value, 'Manual primary prompt');
     assert.equal(elements.promptTextZh.value, '手动中文提示词');
     assert.equal(elements.promptTextEn.value, 'Manual English prompt');
+    assert.equal(elements.promptSourceUrl.value, 'https://example.com/manual');
+    assert.equal(elements.promptSourceAuthorName.value, 'Manual Artist');
+    assert.equal(elements.promptSourceAuthorHandle.value, '@manual_artist');
 
     elements.promptTitle.value = 'Old title';
     elements.promptCategory.value = 'Photography';

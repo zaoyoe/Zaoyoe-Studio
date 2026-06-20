@@ -31,6 +31,13 @@ function createMockResponse() {
     };
 }
 
+const DEFAULT_PROMPT_SOURCE_FIELDS = Object.freeze({
+    source_url: '',
+    source_author_name: '',
+    source_author_handle: '',
+    source_author_avatar_url: ''
+});
+
 async function withPromptsManageHandler(options, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/prompts/manage.js');
     const originalLoad = Module._load;
@@ -252,7 +259,15 @@ async function withPromptsManageHandler(options, callback) {
 test('prompts manage handler lists prompt rows for reads', async () => {
     await withPromptsManageHandler({
         rows: [
-            { id: 'prompt-1', title: 'Prompt One', tags: ['Photography'] }
+            {
+                id: 'prompt-1',
+                title: 'Prompt One',
+                tags: ['Photography'],
+                source_url: 'https://x.com/creator/status/123',
+                source_author_name: 'Creator',
+                source_author_handle: '@creator',
+                source_author_avatar_url: 'https://cdn.example.com/avatar.jpg'
+            }
         ],
         unlockRows: [
             { prompt_id: 'prompt-1', site: 'cn' },
@@ -288,6 +303,10 @@ test('prompts manage handler lists prompt rows for reads', async () => {
             description_zh: '',
             prompt_text_en: '',
             prompt_text_zh: '',
+            source_url: 'https://x.com/creator/status/123',
+            source_author_name: 'Creator',
+            source_author_handle: '@creator',
+            source_author_avatar_url: 'https://cdn.example.com/avatar.jpg',
             site_metrics: {
                 cn: { unlock_count: 2, comment_count: 1 },
                 intl: { unlock_count: 1, comment_count: 0 },
@@ -495,6 +514,7 @@ test('prompts manage handler falls back to legacy select fields when bilingual c
             description_zh: '',
             prompt_text_en: '',
             prompt_text_zh: '',
+            ...DEFAULT_PROMPT_SOURCE_FIELDS,
             site_metrics: {
                 cn: { unlock_count: 0, comment_count: 0 },
                 intl: { unlock_count: 0, comment_count: 0 },
@@ -566,6 +586,7 @@ test('prompts manage handler keeps listing rows when prompt metric site columns 
             description_zh: '',
             prompt_text_en: '',
             prompt_text_zh: '',
+            ...DEFAULT_PROMPT_SOURCE_FIELDS,
             site_metrics: {
                 cn: { unlock_count: 2, comment_count: 1 },
                 intl: { unlock_count: 0, comment_count: 0 },
@@ -616,6 +637,7 @@ test('prompts manage handler falls back when quality_score column is unavailable
             description_zh: '',
             prompt_text_en: '',
             prompt_text_zh: '',
+            ...DEFAULT_PROMPT_SOURCE_FIELDS,
             site_metrics: {
                 cn: { unlock_count: 0, comment_count: 0 },
                 intl: { unlock_count: 0, comment_count: 0 },
@@ -666,6 +688,7 @@ test('prompts manage handler falls back when updated_at column is unavailable', 
             description_zh: '',
             prompt_text_en: '',
             prompt_text_zh: '',
+            ...DEFAULT_PROMPT_SOURCE_FIELDS,
             site_metrics: {
                 cn: { unlock_count: 0, comment_count: 0 },
                 intl: { unlock_count: 0, comment_count: 0 },
@@ -732,6 +755,46 @@ test('prompts manage handler updates prompt rows with explicit id filter and aud
         assert.equal(typeof state.updatePayload.updated_at, 'string');
         assert.equal(state.auditEntries[0]?.site, 'intl');
         assert.equal(state.auditEntries[0]?.module, 'prompts');
+    });
+});
+
+test('prompts manage handler updates source attribution fields', async () => {
+    await withPromptsManageHandler({
+        row: {
+            id: 'prompt-source-1',
+            title: 'Prompt With Source',
+            tags: ['Photography'],
+            source_url: 'https://x.com/creator/status/123',
+            source_author_name: 'Creator',
+            source_author_handle: '@creator',
+            source_author_avatar_url: 'https://cdn.example.com/avatar.jpg'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update',
+                id: 'prompt-source-1',
+                site: 'cn',
+                title: 'Prompt With Source',
+                tags: ['Photography'],
+                source_url: 'https://x.com/creator/status/123',
+                source_author_name: 'Creator',
+                source_author_handle: '@creator',
+                source_author_avatar_url: 'https://cdn.example.com/avatar.jpg'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(state.updatePayload.source_url, 'https://x.com/creator/status/123');
+        assert.equal(state.updatePayload.source_author_name, 'Creator');
+        assert.equal(state.updatePayload.source_author_handle, '@creator');
+        assert.equal(state.updatePayload.source_author_avatar_url, 'https://cdn.example.com/avatar.jpg');
+        assert.equal(typeof state.updatePayload.updated_at, 'string');
     });
 });
 
@@ -824,6 +887,46 @@ test('prompts manage handler returns a schema reload hint when bilingual prompt 
         assert.equal(res.statusCode, 409);
         assert.match(res.json().message, /reload schema/i);
         assert.match(res.json().message, /pg_notify/i);
+    });
+});
+
+test('prompts manage handler returns a schema reload hint when source attribution fields are unavailable in api schema cache', async () => {
+    await withPromptsManageHandler({
+        row: {
+            id: 'prompt-source-cache',
+            title: 'Prompt source cache',
+            tags: ['Creative'],
+            description: 'desc'
+        },
+        updateResponses: [
+            {
+                data: null,
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'source_url' column of 'prompts' in the schema cache"
+                }
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'patch',
+                id: 'prompt-source-cache',
+                site: 'cn',
+                source_url: 'https://x.com/creator/status/123',
+                source_author_name: 'Creator'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 409);
+        assert.match(res.json().message, /Prompt 引用原作者字段尚未被 API schema cache 识别/);
+        assert.match(res.json().message, /20260619_add_prompt_source_attribution/);
+        assert.match(res.json().message, /pg_notify/i);
+        assert.equal(state.updatePayloads.length, 1);
     });
 });
 

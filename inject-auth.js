@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&authStagger=20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -2460,6 +2460,9 @@
         localStorage.setItem('theme', nextTheme);
         window.applySiteThemeChrome?.(nextTheme);
         window.syntheticThemeChromeMenuTap?.(nextTheme);
+        window.dispatchEvent(new CustomEvent('zaoyoe:themechange', {
+            detail: { theme: nextTheme, source: 'auth-dropdown' }
+        }));
     };
 
     window.toggleLanguage = function (event) {

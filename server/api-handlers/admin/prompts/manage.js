@@ -22,7 +22,18 @@ const PROMPT_OPTIONAL_SELECT_FIELDS = [
     'ai_tags',
     'image_assets',
     'quality_score',
+    'source_url',
+    'source_author_name',
+    'source_author_handle',
+    'source_author_avatar_url',
     'updated_at'
+];
+
+const PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS = [
+    'source_url',
+    'source_author_name',
+    'source_author_handle',
+    'source_author_avatar_url'
 ];
 
 const PROMPT_BILINGUAL_SELECT_FIELDS = [
@@ -312,6 +323,12 @@ function applyPromptFieldFallbacks(row = {}) {
         safeRow.image_assets = [];
     }
 
+    for (const fieldName of ['source_url', 'source_author_name', 'source_author_handle', 'source_author_avatar_url']) {
+        if (!Object.prototype.hasOwnProperty.call(safeRow, fieldName)) {
+            safeRow[fieldName] = '';
+        }
+    }
+
     for (const fieldName of PROMPT_BILINGUAL_SELECT_FIELDS) {
         if (!Object.prototype.hasOwnProperty.call(safeRow, fieldName)) {
             safeRow[fieldName] = '';
@@ -321,9 +338,13 @@ function applyPromptFieldFallbacks(row = {}) {
     return safeRow;
 }
 
-function payloadHasVisibleBilingualFields(payload = {}, fieldNames = PROMPT_BILINGUAL_SELECT_FIELDS) {
+function payloadHasVisiblePromptFields(payload = {}, fieldNames = []) {
     const safePayload = payload && typeof payload === 'object' ? payload : {};
     return (Array.isArray(fieldNames) ? fieldNames : []).some((fieldName) => String(safePayload[fieldName] || '').trim());
+}
+
+function payloadHasVisibleBilingualFields(payload = {}, fieldNames = PROMPT_BILINGUAL_SELECT_FIELDS) {
+    return payloadHasVisiblePromptFields(payload, fieldNames);
 }
 
 function stripUnsupportedPromptPayloadFields(payload = {}, fieldsToStrip = OPTIONAL_PROMPT_MUTATION_FIELDS) {
@@ -386,7 +407,11 @@ function buildPromptMutationPayload(body, { action = 'create' } = {}) {
         'description_en',
         'description_zh',
         'prompt_text_en',
-        'prompt_text_zh'
+        'prompt_text_zh',
+        'source_url',
+        'source_author_name',
+        'source_author_handle',
+        'source_author_avatar_url'
     ];
 
     for (const fieldName of textFields) {
@@ -922,6 +947,13 @@ async function executePromptMutationWithFallback(executor, payload = {}) {
         const missingBilingualFields = missingFields.filter((field) => PROMPT_BILINGUAL_SELECT_FIELDS.includes(field));
         if (missingBilingualFields.length > 0 && payloadHasVisibleBilingualFields(attemptedPayload, missingBilingualFields)) {
             const error = new Error(`Prompt 双语字段尚未被 API schema cache 识别。若你已执行加列 SQL，请再执行 ${PROMPT_SCHEMA_RELOAD_SQL}`);
+            error.statusCode = 409;
+            return { data: null, error };
+        }
+
+        const missingSourceFields = missingFields.filter((field) => PROMPT_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field));
+        if (missingSourceFields.length > 0 && payloadHasVisiblePromptFields(attemptedPayload, missingSourceFields)) {
+            const error = new Error(`Prompt 引用原作者字段尚未被 API schema cache 识别。若你已执行 supabase/migrations/20260619_add_prompt_source_attribution.sql，请再执行 ${PROMPT_SCHEMA_RELOAD_SQL}`);
             error.statusCode = 409;
             return { data: null, error };
         }

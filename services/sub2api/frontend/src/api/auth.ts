@@ -229,8 +229,6 @@ export interface RegionalRestrictionRegistrationStatus {
   message?: string
 }
 
-export interface RegionalRestrictionLoginStatus extends RegionalRestrictionRegistrationStatus {}
-
 export type OAuthCompletionKind = 'login' | 'bind'
 
 export interface OAuthAdoptionDecision {
@@ -353,13 +351,6 @@ export async function getPublicSettings(): Promise<PublicSettings> {
 export async function getRegistrationRegionalRestrictionStatus(): Promise<RegionalRestrictionRegistrationStatus> {
   const { data } = await apiClient.get<RegionalRestrictionRegistrationStatus>(
     '/auth/regional-restriction/registration'
-  )
-  return data
-}
-
-export async function getLoginRegionalRestrictionStatus(): Promise<RegionalRestrictionLoginStatus> {
-  const { data } = await apiClient.get<RegionalRestrictionLoginStatus>(
-    '/auth/regional-restriction/login'
   )
   return data
 }
@@ -702,7 +693,6 @@ export const authAPI = {
   clearAuthToken,
   getPublicSettings,
   getRegistrationRegionalRestrictionStatus,
-  getLoginRegionalRestrictionStatus,
   sendVerifyCode,
   sendPendingOAuthVerifyCode,
   validatePromoCode,

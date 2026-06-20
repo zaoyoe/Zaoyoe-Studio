@@ -63,11 +63,11 @@ test('prompts mobile cards open detail on first tap while desktop keeps hover af
     );
     assert.match(
         promptsStyles,
-        /\.card-fav-btn\s*\{[\s\S]*pointer-events: none;/
+        /\.card-fav-btn\s*\{[\s\S]*pointer-events: auto;/
     );
     assert.match(
-        hoverMediaBlock,
-        /\.prompt-card:hover \.card-fav-btn\s*\{[\s\S]*pointer-events: auto;/
+        promptsStyles,
+        /\.card-source-actions\s*\{[\s\S]*pointer-events: auto;/
     );
 
     assert.equal(

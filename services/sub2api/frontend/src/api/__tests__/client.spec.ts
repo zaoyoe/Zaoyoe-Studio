@@ -230,7 +230,7 @@ describe('API Client', () => {
       })
     })
 
-    it('refresh_token 被区域限制拒绝时跳转到登录页区域限制提示', async () => {
+    it('refresh_token 失败时不再跳转到登录页区域限制提示', async () => {
       localStorage.setItem('auth_token', 'expired-token')
       localStorage.setItem('refresh_token', 'refresh-token')
 
@@ -258,7 +258,7 @@ describe('API Client', () => {
           data: {
             code: 403,
             reason: 'REGION_RESTRICTED',
-            message: 'Login is not available in your region.',
+            message: 'Token refresh failed.',
             metadata: { scope: 'login' },
           },
         },
@@ -266,17 +266,15 @@ describe('API Client', () => {
 
       await expect(apiClient.get('/user/profile')).rejects.toEqual(
         expect.objectContaining({
-          status: 403,
-          code: 'REGION_RESTRICTED',
-          reason: 'REGION_RESTRICTED',
-          metadata: { scope: 'login' },
+          status: 401,
+          code: 'TOKEN_REFRESH_FAILED',
         })
       )
 
       expect(localStorage.getItem('auth_token')).toBeNull()
       expect(localStorage.getItem('refresh_token')).toBeNull()
-      expect(sessionStorage.getItem('auth_expired')).toBeNull()
-      expect(window.location.href).toBe('/login?region_blocked=login')
+      expect(sessionStorage.getItem('auth_expired')).toBe('1')
+      expect(window.location.href).toBe('/login')
 
       Object.defineProperty(window, 'location', {
         value: originalLocation,

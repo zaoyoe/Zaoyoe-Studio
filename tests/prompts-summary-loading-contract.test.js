@@ -107,6 +107,16 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         'starry sky animation should be lazy-loaded after the prompts first paint path'
     );
     assert.equal(
+        promptsSource.includes('function bindPromptThemeStarryLoader()'),
+        true,
+        'prompts should bind a theme-change starry loader for shared auth dropdown theme toggles'
+    );
+    assert.equal(
+        promptsSource.includes("window.addEventListener('zaoyoe:themechange', loadPromptStarrySkyRuntimeForTheme);"),
+        true,
+        'prompts should load starry sky when the shared theme toggle switches into dark mode'
+    );
+    assert.equal(
         promptsSource.includes("schedulePromptIdleTask('comment-count-prefetch'"),
         true,
         'comment count prefetch should be scheduled as a late idle task'

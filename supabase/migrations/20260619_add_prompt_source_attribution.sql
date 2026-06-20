@@ -1,41 +1,9 @@
--- Admin Gallery Manage list RPC
--- Returns one paginated page of prompt cards with derived language/status/engagement data.
+-- Add source attribution fields for prompt gallery cards.
 
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS title_zh TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS title_en TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS description_zh TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS description_en TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS prompt_text_zh TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS prompt_text_en TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS dominant_colors TEXT[] DEFAULT '{}';
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS ai_tags JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS image_assets JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS quality_score FLOAT;
 ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS source_url TEXT;
 ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS source_author_name TEXT;
 ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS source_author_handle TEXT;
 ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS source_author_avatar_url TEXT;
-ALTER TABLE public.prompts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-ALTER TABLE public.prompt_unlocks ADD COLUMN IF NOT EXISTS site VARCHAR(10) DEFAULT 'cn' NOT NULL;
-ALTER TABLE public.prompt_comments ADD COLUMN IF NOT EXISTS site VARCHAR(10) DEFAULT 'cn' NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_prompts_created_at_desc
-    ON public.prompts(created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_prompts_updated_at_desc
-    ON public.prompts(updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_prompts_tags_gin
-    ON public.prompts USING GIN(tags);
-
-CREATE INDEX IF NOT EXISTS idx_prompts_ai_tags_gin
-    ON public.prompts USING GIN(ai_tags);
-
-CREATE INDEX IF NOT EXISTS idx_prompt_unlocks_prompt_site
-    ON public.prompt_unlocks(prompt_id, site);
-
-CREATE INDEX IF NOT EXISTS idx_prompt_comments_prompt_site
-    ON public.prompt_comments(prompt_id, site);
 
 CREATE OR REPLACE FUNCTION public.fn_admin_gallery_prompt_manage_list(
     p_site TEXT DEFAULT 'all',

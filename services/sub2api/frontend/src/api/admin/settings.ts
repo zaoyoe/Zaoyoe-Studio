@@ -372,7 +372,6 @@ export interface SystemSettings {
   login_agreement_documents: LoginAgreementDocument[];
   regional_restriction_enabled: boolean;
   regional_restriction_registration_enabled: boolean;
-  regional_restriction_login_enabled: boolean;
   regional_restriction_oauth_signup_enabled: boolean;
   regional_restriction_api_key_page_confirmation_enabled: boolean;
   regional_restriction_api_key_create_enabled: boolean;
@@ -651,7 +650,6 @@ export interface UpdateSettingsRequest {
   login_agreement_documents?: LoginAgreementDocument[];
   regional_restriction_enabled?: boolean;
   regional_restriction_registration_enabled?: boolean;
-  regional_restriction_login_enabled?: boolean;
   regional_restriction_oauth_signup_enabled?: boolean;
   regional_restriction_api_key_page_confirmation_enabled?: boolean;
   regional_restriction_api_key_create_enabled?: boolean;

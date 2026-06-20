@@ -18,7 +18,6 @@ const (
 	regionalRestrictionMessage = "The service is not offered to users located in restricted regions, including mainland China."
 
 	regionalRestrictionScopeRegistration = "registration"
-	regionalRestrictionScopeLogin        = "login"
 	regionalRestrictionScopeOAuthSignup  = "oauth_signup"
 	regionalRestrictionScopeAPIKeyPage   = "api_key_page"
 	regionalRestrictionScopeAPIKeyCreate = "api_key_create"
@@ -92,8 +91,6 @@ func regionalRestrictionScopeEnabled(settings *service.SystemSettings, scope str
 	switch scope {
 	case regionalRestrictionScopeRegistration:
 		return settings.RegionalRestrictionRegistrationEnabled
-	case regionalRestrictionScopeLogin:
-		return settings.RegionalRestrictionLoginEnabled
 	case regionalRestrictionScopeOAuthSignup:
 		return settings.RegionalRestrictionOAuthSignupEnabled
 	case regionalRestrictionScopeAPIKeyPage:

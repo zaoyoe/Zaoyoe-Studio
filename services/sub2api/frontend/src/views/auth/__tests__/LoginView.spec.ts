@@ -18,19 +18,19 @@ describe('LoginView regional restriction entry points', () => {
     expect(componentSource).not.toContain('to="/register"')
   })
 
-  it('checks region before issuing login tokens while keeping the login page reachable', () => {
+  it('does not region-check existing-account login or session completion', () => {
     expect(componentSource).toContain('@submit.prevent="handleLogin"')
-    expect(componentSource).toContain('getLoginRegionalRestrictionStatus')
-    expect(componentSource).toContain('handleLoginRegionPrecheck')
-    expect(componentSource).toContain('if (await handleLoginRegionPrecheck())')
-    expect(componentSource).toContain('region_blocked')
-    expect(componentSource).toContain("title: 'Login is not available in your region'")
-    expect(componentSource).toContain('Father Key Core Keys account login is not available')
-    expect(componentSource).toContain('Please access from a supported region')
-    expect(componentSource).toContain("openRegistrationRegionDialog('login_blocked')")
-    expect(componentSource).toContain("extractApiErrorCode(error) === 'REGION_RESTRICTED'")
+    expect(componentSource).not.toContain('getLoginRegionalRestrictionStatus')
+    expect(componentSource).not.toContain('handleLoginRegionPrecheck')
+    expect(componentSource).not.toContain('if (await handleLoginRegionPrecheck())')
+    expect(componentSource).not.toContain("region_blocked === 'login'")
+    expect(componentSource).not.toContain('region_blocked=login')
+    expect(componentSource).not.toContain("title: 'Login is not available in your region'")
+    expect(componentSource).not.toContain('Father Key Core Keys account login is not available')
+    expect(componentSource).not.toContain('Please access from a supported region')
+    expect(componentSource).not.toContain("openRegistrationRegionDialog('login_blocked')")
+    expect(componentSource).not.toContain("extractApiErrorCode(error) === 'REGION_RESTRICTED'")
     expect(componentSource).toContain('handle2FAVerify')
-    expect(componentSource).toContain('show2FAModal.value = false')
   })
 
   it('does not fall through to registration when the region check fails', () => {
@@ -46,7 +46,7 @@ describe('LoginView regional restriction entry points', () => {
   it('defaults the regional restriction dialog to English without changing the page locale', () => {
     expect(componentSource).toContain("const registrationRegionDialogLanguage = ref<'en' | 'zh'>('en')")
     expect(componentSource).toContain("registrationRegionDialogLanguage.value = 'en'")
-    expect(componentSource).toContain("title: 'Login is not available in your region'")
+    expect(componentSource).toContain("title: 'Registration is not available in your region'")
     expect(componentSource).toContain("confirm: 'Confirm'")
     expect(componentSource).toContain('toggleRegionalRestrictionDialogLanguage')
     expect(componentSource).not.toContain("setLocale(String(locale.value).startsWith('zh') ? 'en' : 'zh')")
