@@ -1616,25 +1616,10 @@
                 <div class="flex items-center justify-between gap-4 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
                   <div>
                     <label class="text-sm font-medium text-gray-900 dark:text-white">
-                      {{ localText("已有账号登录", "Existing account login") }}
-                    </label>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ localText("限制邮箱登录、2FA 完成登录和第三方已有账号登录；登录页仍可打开。", "Restrict email login, 2FA completion, and existing OAuth account login; the login page remains accessible.") }}
-                    </p>
-                  </div>
-                  <Toggle
-                    v-model="form.regional_restriction_login_enabled"
-                    data-testid="regional-restriction-login-enabled"
-                  />
-                </div>
-
-                <div class="flex items-center justify-between gap-4 rounded-lg border border-gray-200 p-4 dark:border-dark-700">
-                  <div>
-                    <label class="text-sm font-medium text-gray-900 dark:text-white">
                       {{ localText("第三方新账号", "New OAuth accounts") }}
                     </label>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                      {{ localText("只限制第三方登录首次创建账号；已有账号登录由上方开关控制。", "Only first-time OAuth account creation is restricted; existing-account login is controlled by the toggle above.") }}
+                      {{ localText("只限制第三方登录首次创建账号；不影响已有账号登录。", "Only first-time OAuth account creation is restricted; existing-account login remains allowed.") }}
                     </p>
                   </div>
                   <Toggle
@@ -7919,7 +7904,6 @@ const form = reactive<SettingsForm>({
   login_agreement_documents: defaultLoginAgreementDocuments(),
   regional_restriction_enabled: false,
   regional_restriction_registration_enabled: false,
-  regional_restriction_login_enabled: true,
   regional_restriction_oauth_signup_enabled: false,
   regional_restriction_api_key_page_confirmation_enabled: false,
   regional_restriction_api_key_create_enabled: false,
@@ -8760,8 +8744,6 @@ async function loadSettings() {
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
     );
-    form.regional_restriction_login_enabled =
-      settings.regional_restriction_login_enabled === true;
     form.regional_restriction_blocked_country_codes =
       normalizeRegionalRestrictionCountryCodes(
         settings.regional_restriction_blocked_country_codes,
@@ -9137,8 +9119,6 @@ async function saveSettings() {
       regional_restriction_enabled: form.regional_restriction_enabled,
       regional_restriction_registration_enabled:
         form.regional_restriction_registration_enabled,
-      regional_restriction_login_enabled:
-        form.regional_restriction_login_enabled,
       regional_restriction_oauth_signup_enabled:
         form.regional_restriction_oauth_signup_enabled,
       regional_restriction_api_key_page_confirmation_enabled:
@@ -9401,8 +9381,6 @@ async function saveSettings() {
     }
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
-    form.regional_restriction_login_enabled =
-      updated.regional_restriction_login_enabled === true;
     form.regional_restriction_blocked_country_codes =
       normalizeRegionalRestrictionCountryCodes(
         updated.regional_restriction_blocked_country_codes,

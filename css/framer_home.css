@@ -1849,6 +1849,14 @@ html[data-theme="dark"] body.home-page .hero-carousel .entry-card-ui {
     margin-bottom: var(--spacing-xl);
 }
 
+/* 20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1 */
+@media (max-width: 767px) {
+    body.home-page #shop-section>.section-header,
+    body.home-page #shop-section .home-section-shell__header {
+        width: 100%;
+    }
+}
+
 /* ========== Grid Layouts =========== */
 .grid-2 {
     display: grid;

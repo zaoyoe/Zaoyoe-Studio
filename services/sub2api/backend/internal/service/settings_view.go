@@ -26,7 +26,6 @@ type SystemSettings struct {
 	LoginAgreementDocuments                      []LoginAgreementDocument
 	RegionalRestrictionEnabled                   bool
 	RegionalRestrictionRegistrationEnabled       bool
-	RegionalRestrictionLoginEnabled              bool
 	RegionalRestrictionOAuthSignupEnabled        bool
 	RegionalRestrictionAPIKeyPageConfirmation    bool
 	RegionalRestrictionAPIKeyCreateEnabled       bool
@@ -265,7 +264,6 @@ type PublicSettings struct {
 	LoginAgreementDocuments                      []LoginAgreementDocument
 	RegionalRestrictionEnabled                   bool
 	RegionalRestrictionRegistrationEnabled       bool
-	RegionalRestrictionLoginEnabled              bool
 	RegionalRestrictionOAuthSignupEnabled        bool
 	RegionalRestrictionAPIKeyPageConfirmation    bool
 	RegionalRestrictionAPIKeyCreateEnabled       bool

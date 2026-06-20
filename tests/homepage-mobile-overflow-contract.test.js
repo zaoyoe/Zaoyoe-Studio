@@ -34,8 +34,35 @@ test('homepage mobile shell prevents document-level horizontal dragging', () => 
     assert.match(mainContentRule, /overflow-x:\s*hidden;/);
     assert.match(
         homepage,
-        /css\/framer_home\.css\?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1/,
+        /css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1/,
         'homepage should bust cached framer_home.css after mobile overflow fix'
+    );
+});
+
+test('homepage mobile shop header is centered inside the visible content column', () => {
+    const styles = readRepoFile('css/framer_home.css');
+    const criticalStyles = readRepoFile('css/framer_home_critical.css');
+    const homepage = readRepoFile('index.html');
+
+    assert.equal(
+        styles.includes('20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1'),
+        true,
+        'full homepage CSS should carry the mobile shop header centering guard'
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 767px\)\s*\{[\s\S]*body\.home-page #shop-section>\.section-header,\s*body\.home-page #shop-section \.home-section-shell__header\s*\{[\s\S]*width:\s*100%;/,
+        'mobile shop static and runtime headers should not use an 88vw width inside a padded section'
+    );
+    assert.match(
+        criticalStyles,
+        /#shop-section>\.section-header,body\.home-page #shop-section \.home-section-shell__header\{width:100%\}/,
+        'critical homepage CSS should center the shop header before deferred styles load'
+    );
+    assert.match(
+        homepage,
+        /framer_home_critical\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1[\s\S]*framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1/,
+        'homepage should cache-bust both critical and deferred homepage styles for the mobile shop header fix'
     );
 });
 

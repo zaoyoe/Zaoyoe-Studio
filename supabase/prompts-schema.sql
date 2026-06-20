@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS prompts (
     dominant_colors TEXT[] DEFAULT '{}',
     ai_tags JSONB,
     quality_score FLOAT,
+    source_url TEXT,
+    source_author_name TEXT,
+    source_author_handle TEXT,
+    source_author_avatar_url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

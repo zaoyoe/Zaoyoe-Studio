@@ -2486,7 +2486,7 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         'inject-auth.js should lock sheet body scrolling while the auth sheet height is animating'
     );
     assert.equal(
-        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';"),
+        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&authStagger=20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1';"),
         true,
         'inject-auth.js should cache-bust the auth sheet stylesheet for shop staggered auth entry'
     );
@@ -2524,6 +2524,46 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         authSheetStyles,
         /\.auth-sheet-overlay\.active \.auth-sheet-header \{[\s\S]*?animation:\s*authSheetStaggeredRise/,
         'css/auth-sheet.css should keep the shared staggered auth header rise animation'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active \.auth-sheet-tabs:not\(\[hidden\]\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.16s backwards;/,
+        'css/auth-sheet.css should show the login/register segmented control right after the title'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active > \.auth-sheet-login-stack:nth-child\(n\) \{[\s\S]*?animation:\s*none;/,
+        'css/auth-sheet.css should not animate the whole login content stack ahead of its children'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-login-stack > \.auth-sheet-google-btn \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.24s backwards;/,
+        'css/auth-sheet.css should show Google login after the segmented control'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-login-fields-stack > \.auth-sheet-divider \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.3s backwards;/,
+        'css/auth-sheet.css should show the divider after Google login'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-form > :nth-child\(1\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.36s backwards;/,
+        'css/auth-sheet.css should show the email field after the divider'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-form > :nth-child\(2\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.42s backwards;/,
+        'css/auth-sheet.css should show the password field after the email field'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active #loginView\.auth-sheet-view\.is-active \.auth-sheet-inline-row--spread \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.48s backwards;/,
+        'css/auth-sheet.css should show remember and forgot controls after the password field'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active \.auth-sheet-view\.is-active > \.auth-sheet-submit:nth-child\(n\) \{[\s\S]*?animation:\s*authSheetStaggeredRise 0\.6s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) 0\.54s backwards;/,
+        'css/auth-sheet.css should keep the primary submit action last in the auth sheet stagger'
     );
     assert.match(
         authSheetStyles,
@@ -2689,7 +2729,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260528_AVATAR_CANONICAL_CDN_1/,
+            /inject-auth\.js\?v=20260620_THEME_STARRY_EVENT_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -3103,6 +3143,11 @@ test('theme bootstraps default first visits to light instead of system dark', ()
         /const theme = savedTheme === 'dark' \? 'dark' : 'light';/,
         'injected auth runtime should not switch first visits back to dark after the page loads'
     );
+    assert.equal(
+        injectAuthSource.includes("window.dispatchEvent(new CustomEvent('zaoyoe:themechange'"),
+        true,
+        'injected auth runtime should notify page-level dark-mode effects after shared theme toggles'
+    );
 
     const adminStudioSource = readRepoFile('admin-studio.js');
     assert.match(
@@ -3170,7 +3215,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260528_AVATAR_CANONICAL_CDN_1'),
+            source.includes('inject-auth.js?v=20260620_THEME_STARRY_EVENT_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
@@ -4022,6 +4067,16 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
         /loadShopStarrySkyRuntime:\s*function \(options = \{\}\) \{[\s\S]*?script\.src = SHOP_STARRY_SKY_RUNTIME_SRC;[\s\S]*?script\.dataset\.shopStarrySky = '1';/,
         'shop should load starry-sky.js lazily from the runtime instead of an eager script tag'
     );
+    assert.equal(
+        shopClientSource.includes("window.addEventListener('zaoyoe:themechange', loadForDarkTheme);"),
+        true,
+        'shop should load starry sky after the shared auth dropdown switches the site into dark mode'
+    );
+    assert.equal(
+        shopClientSource.includes('shopThemeStarryEventBound: false'),
+        true,
+        'shop should bind the shared theme-change starry listener only once'
+    );
 });
 
 test('shop purchase quantity focus highlights only the input border in light theme', () => {
@@ -4232,6 +4287,16 @@ test('shop success item delivery content expands with animated panel state', () 
         shopCssSource,
         /\.shop-guidance-panel-content\s*\{[\s\S]*?max-height:\s*calc\(min\(34vh, 260px\) - 18px\);[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?padding-right:\s*38px;/,
         'success notes and usage body text should scroll inside the content body below the fixed copy button'
+    );
+    assert.match(
+        shopClientSource,
+        /hasExplicitRichTextColor\(safeStyle\)[\s\S]*child\.setAttribute\('data-shop-rich-color', '1'\);/,
+        'shop rich-text sanitizer should mark explicit admin text colors so storefront theme defaults do not overwrite them'
+    );
+    assert.match(
+        shopCssSource,
+        /body\.shop-page \.shop-cart-item__panel \[data-shop-rich-color\],[\s\S]*body\.shop-page #shopPurchaseModal #purchaseUsageContent \[data-shop-rich-color\] \{[\s\S]*-webkit-text-fill-color: currentColor !important;[\s\S]*body\.shop-page \.shop-cart-item__panel \[data-shop-rich-color\] \*,[\s\S]*color: inherit !important;/,
+        'shop guidance CSS should preserve explicit admin rich-text colors in purchase, cart, and success panels'
     );
     assert.match(
         shopClientSource,
@@ -4503,7 +4568,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260620_HOME_SHOP_RENDER_SIGNATURE_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -17918,6 +17983,21 @@ test('unlock pricing accepts zero points across admin and prompt runtime', () =>
         'prompt unlock runtime should normalize raw RPC errors before showing them to users'
     );
     assert.equal(
+        promptsSource.includes("function resetPromptUnlockButton(btn = document.getElementById('unlockPromptBtn'), fallbackHTML = '')"),
+        true,
+        'prompt unlock runtime should centralize resetting the unlock button loading state'
+    );
+    assert.match(
+        promptsSource,
+        /if \(!window\.supabaseClient\) \{\s*alert\('数据库未连接'\);\s*resetPromptUnlockButton\(btn, originalHTML\);\s*return;\s*\}/,
+        'prompt unlock runtime should stop the spinner when the database client is unavailable'
+    );
+    assert.match(
+        promptsSource,
+        /if \(!user\) \{\s*resetPromptUnlockButton\(btn, originalHTML\);\s*showLoginModal\(\);\s*return;\s*\}/,
+        'prompt unlock runtime should stop the spinner before opening auth for guest users'
+    );
+    assert.equal(
         promptsSource.includes('解锁服务刚刚更新中，请刷新页面后再试一次。'),
         true,
         'prompt unlock runtime should replace overload-resolution errors with human-readable copy'
@@ -17933,9 +18013,9 @@ test('unlock pricing accepts zero points across admin and prompt runtime', () =>
         'prompts.html should cache-bust the unlock pricing runtime'
     );
     assert.equal(
-        promptsHtml.includes('freeUnlockLimit=20260617_FREE_UNLOCK_DAILY_LIMIT_1'),
+        promptsHtml.includes('freeUnlockLimit=20260617_FREE_UNLOCK_DAILY_LIMIT_1&unlockAuthReset=20260619_PROMPT_UNLOCK_AUTH_RESET_1'),
         true,
-        'prompts.html should cache-bust the free daily unlock limit runtime'
+        'prompts.html should cache-bust the prompt unlock auth reset runtime'
     );
     assert.equal(
         adminStudioHtml.includes('unlockPricingZero=20260616_UNLOCK_PRICING_ZERO_1'),

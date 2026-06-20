@@ -22,6 +22,16 @@ test('homepage shop carousel script repeats products into measured loop groups',
     assert.match(script, /--home-shop-cycle-width/);
 });
 
+test('homepage shop supplemental refresh keeps the carousel DOM when products are unchanged', () => {
+    const script = fs.readFileSync(framerHomeScriptPath, 'utf8');
+
+    assert.match(script, /function buildHomepageShopRenderSignature\(products = \[\], config = \{\}, speedValue = ''\)/);
+    assert.match(script, /const previousShopRenderSignature = buildHomepageShopRenderSignature\(/);
+    assert.match(script, /const nextShopRenderSignature = buildHomepageShopRenderSignature\(/);
+    assert.match(script, /const shouldRenderShop = previousShopRenderSignature !== nextShopRenderSignature[\s\S]*document\.querySelector\('#shop-section \[data-home-shop-id\]'\)/);
+    assert.match(script, /if \(shouldRenderShop\) \{\s*this\.renderShop\(\);\s*\}/);
+});
+
 test('homepage shop carousel styles animate by measured cycle width', () => {
     const styles = fs.readFileSync(framerHomeStylesPath, 'utf8');
 

@@ -256,19 +256,24 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'shop.html should cache-bust storefront guidance theme text assets'
     );
     assert.match(
+        shopHtmlSource,
+        /richTextGuidanceStyle=20260619_SHOP_RICH_TEXT_GUIDANCE_STYLE_1/,
+        'shop.html should cache-bust storefront guidance rich-text style parity assets'
+    );
+    assert.match(
         shopClientSource,
         /const allowedColorValue = \/\^\(#[\s\S]*rgba\?[\s\S]*const sanitizeColor = \(colorText = ''\) => \{[\s\S]*lowContrastYellowPattern[\s\S]*allowedColorValue\.test\(normalized\) \? normalized : '';/,
         'storefront rich-text sanitizer should allow only safe stored admin color values'
     );
     assert.match(
         shopClientSource,
-        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);[\s\S]*if \(prop === 'text-align' && allowedTextAlign\.test\(value\)\)[\s\S]*if \(prop === 'font-size' && allowedFontSize\.test\(value\)\)[\s\S]*if \(prop === 'color'\) \{[\s\S]*safeRules\.push\(`color: \$\{safeColor\}`\);/s,
+        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);[\s\S]*if \(prop === 'text-align' && allowedTextAlign\.test\(value\)\)[\s\S]*if \(prop === 'font-size' && allowedFontSize\.test\(value\)\)[\s\S]*if \(prop === 'color'\) \{[\s\S]*safeRules\.push\(`color: \$\{safeColor\}`\);[\s\S]*hasExplicitRichTextColor\(safeStyle\)[\s\S]*child\.setAttribute\('data-shop-rich-color', '1'\);/s,
         'storefront rich-text sanitizer should preserve safe structure, alignment, sizing, and admin text color'
     );
     assert.match(
         shopClientSource,
-        /if \(child\.tagName === 'FONT'\) \{[\s\S]*const safeFontColor = sanitizeColor\(attrs\.color \|\| ''\);[\s\S]*child\.setAttribute\('style', \[currentStyle, `color: \$\{safeFontColor\}`\]\.filter\(Boolean\)\.join\('; '\)\);/s,
-        'storefront rich-text sanitizer should also preserve legacy font color attributes as safe inline color'
+        /if \(child\.tagName === 'FONT'\) \{[\s\S]*const safeFontColor = sanitizeColor\(attrs\.color \|\| ''\);[\s\S]*child\.setAttribute\('style', \[currentStyle, `color: \$\{safeFontColor\}`\]\.filter\(Boolean\)\.join\('; '\)\);[\s\S]*child\.setAttribute\('data-shop-rich-color', '1'\);/s,
+        'storefront rich-text sanitizer should also preserve legacy font color attributes as safe inline color with the rich-color marker'
     );
     assert.match(
         shopCssSource,
@@ -290,18 +295,23 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent :not\(a\) \{[\s\S]*color: rgba\(23, 32, 51, 0\.74\) !important;[\s\S]*-webkit-text-fill-color: rgba\(23, 32, 51, 0\.74\) !important;/s,
-        'light-theme purchase guidance should keep its dedicated readable theme copy color'
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent \{[\s\S]*color: rgba\(23, 32, 51, 0\.74\) !important;[\s\S]*-webkit-text-fill-color: rgba\(23, 32, 51, 0\.74\) !important;[\s\S]*body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(a\):not\(\[data-shop-rich-color\]\),[\s\S]*-webkit-text-fill-color: currentColor !important;/s,
+        'light-theme purchase guidance should keep readable default copy color without overriding explicit admin rich-text colors'
     );
     assert.match(
         shopCssSource,
-        /html\[data-theme="dark"\] body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent :not\(a\) \{[\s\S]*color: rgba\(226, 232, 240, 0\.82\) !important;[\s\S]*-webkit-text-fill-color: rgba\(226, 232, 240, 0\.82\) !important;/s,
-        'dark-theme purchase guidance should keep its dedicated readable theme copy color'
+        /html\[data-theme="dark"\] body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent \{[\s\S]*color: rgba\(226, 232, 240, 0\.82\) !important;[\s\S]*-webkit-text-fill-color: rgba\(226, 232, 240, 0\.82\) !important;/s,
+        'dark-theme purchase guidance should keep readable default copy color without overriding explicit admin rich-text colors'
     );
     assert.match(
         shopCssSource,
-        /html\[data-theme="dark"\] body\.shop-page \.shop-cart-item__panel--notice :not\(a\),[\s\S]*\.shop-cart-item__panel--usage :not\(a\) \{[\s\S]*-webkit-text-fill-color: currentColor !important;[\s\S]*html\[data-theme="dark"\] body\.shop-page \.shop-cart-item__panel--notice a,[\s\S]*color: #93c5fd !important;/s,
+        /html\[data-theme="dark"\] body\.shop-page \.shop-cart-item__panel--notice :not\(a\):not\(\[data-shop-rich-color\]\),[\s\S]*\.shop-cart-item__panel--usage :not\(a\):not\(\[data-shop-rich-color\]\) \{[\s\S]*-webkit-text-fill-color: currentColor !important;[\s\S]*html\[data-theme="dark"\] body\.shop-page \.shop-cart-item__panel--notice a:not\(\[data-shop-rich-color\]\),[\s\S]*color: #93c5fd !important;/s,
         'dark-theme cart guidance panels should keep copied notes readable while preserving link affordance'
+    );
+    assert.match(
+        shopCssSource,
+        /body\.shop-page \.shop-cart-item__panel \[data-shop-rich-color\],[\s\S]*body\.shop-page #shopPurchaseModal #purchaseUsageContent \[data-shop-rich-color\] \{[\s\S]*-webkit-text-fill-color: currentColor !important;[\s\S]*body\.shop-page \.shop-cart-item__panel \[data-shop-rich-color\] \*,[\s\S]*color: inherit !important;[\s\S]*-webkit-text-fill-color: currentColor !important;/s,
+        'storefront guidance panels should let explicit admin rich-text colors win over theme fallback colors'
     );
     assert.match(
         shopClientSource,

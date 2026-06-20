@@ -462,12 +462,7 @@ export default {
     registrationRegionBlockedDescription:
       '根据服务可用地区要求，当前请求所在地区暂不支持注册 Father Key 核心秘钥账户。',
     registrationRegionBlockedReason:
-      '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。受限制地区不能注册或登录 Father Key 核心秘钥账户。',
-    loginRegionBlockedTitle: '当前地区暂不开放登录',
-    loginRegionBlockedDescription:
-      '根据服务可用地区要求，当前请求所在地区暂不支持登录 Father Key 核心秘钥账户。',
-    loginRegionBlockedReason:
-      '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。请在受支持地区或通过合规的非受限地区网络环境访问。',
+      '原因：本模块不向位于受限制地区的用户提供，包括中国大陆。受限制地区不能注册新的 Father Key 核心秘钥账户。',
     registrationRegionCheckFailedTitle: '暂时无法确认注册地区',
     registrationRegionCheckFailedDescription:
       '系统未能确认当前请求所在地区，暂不进入 Father Key 核心秘钥账户注册页面。',

@@ -900,7 +900,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyLoginAgreementDocuments,
 		SettingKeyRegionalRestrictionEnabled,
 		SettingKeyRegionalRestrictionRegistrationEnabled,
-		SettingKeyRegionalRestrictionLoginEnabled,
 		SettingKeyRegionalRestrictionOAuthSignupEnabled,
 		SettingKeyRegionalRestrictionAPIKeyPageConfirmation,
 		SettingKeyRegionalRestrictionAPIKeyCreateEnabled,
@@ -1037,7 +1036,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		LoginAgreementDocuments:                      loginAgreementDocuments,
 		RegionalRestrictionEnabled:                   settings[SettingKeyRegionalRestrictionEnabled] == "true",
 		RegionalRestrictionRegistrationEnabled:       settings[SettingKeyRegionalRestrictionRegistrationEnabled] == "true",
-		RegionalRestrictionLoginEnabled:              boolSettingOrDefault(settings, SettingKeyRegionalRestrictionLoginEnabled, true),
 		RegionalRestrictionOAuthSignupEnabled:        settings[SettingKeyRegionalRestrictionOAuthSignupEnabled] == "true",
 		RegionalRestrictionAPIKeyPageConfirmation:    settings[SettingKeyRegionalRestrictionAPIKeyPageConfirmation] == "true",
 		RegionalRestrictionAPIKeyCreateEnabled:       settings[SettingKeyRegionalRestrictionAPIKeyCreateEnabled] == "true",
@@ -1362,7 +1360,6 @@ type PublicSettingsInjectionPayload struct {
 	LoginAgreementDocuments                      []LoginAgreementDocument `json:"login_agreement_documents"`
 	RegionalRestrictionEnabled                   bool                     `json:"regional_restriction_enabled"`
 	RegionalRestrictionRegistrationEnabled       bool                     `json:"regional_restriction_registration_enabled"`
-	RegionalRestrictionLoginEnabled              bool                     `json:"regional_restriction_login_enabled"`
 	RegionalRestrictionOAuthSignupEnabled        bool                     `json:"regional_restriction_oauth_signup_enabled"`
 	RegionalRestrictionAPIKeyPageConfirmation    bool                     `json:"regional_restriction_api_key_page_confirmation_enabled"`
 	RegionalRestrictionAPIKeyCreateEnabled       bool                     `json:"regional_restriction_api_key_create_enabled"`
@@ -1439,7 +1436,6 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		LoginAgreementDocuments:                      settings.LoginAgreementDocuments,
 		RegionalRestrictionEnabled:                   settings.RegionalRestrictionEnabled,
 		RegionalRestrictionRegistrationEnabled:       settings.RegionalRestrictionRegistrationEnabled,
-		RegionalRestrictionLoginEnabled:              settings.RegionalRestrictionLoginEnabled,
 		RegionalRestrictionOAuthSignupEnabled:        settings.RegionalRestrictionOAuthSignupEnabled,
 		RegionalRestrictionAPIKeyPageConfirmation:    settings.RegionalRestrictionAPIKeyPageConfirmation,
 		RegionalRestrictionAPIKeyCreateEnabled:       settings.RegionalRestrictionAPIKeyCreateEnabled,
@@ -1937,7 +1933,6 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyRegionalRestrictionEnabled] = strconv.FormatBool(settings.RegionalRestrictionEnabled)
 	updates[SettingKeyRegionalRestrictionRegistrationEnabled] = strconv.FormatBool(settings.RegionalRestrictionRegistrationEnabled)
-	updates[SettingKeyRegionalRestrictionLoginEnabled] = strconv.FormatBool(settings.RegionalRestrictionLoginEnabled)
 	updates[SettingKeyRegionalRestrictionOAuthSignupEnabled] = strconv.FormatBool(settings.RegionalRestrictionOAuthSignupEnabled)
 	updates[SettingKeyRegionalRestrictionAPIKeyPageConfirmation] = strconv.FormatBool(settings.RegionalRestrictionAPIKeyPageConfirmation)
 	updates[SettingKeyRegionalRestrictionAPIKeyCreateEnabled] = strconv.FormatBool(settings.RegionalRestrictionAPIKeyCreateEnabled)
@@ -2990,7 +2985,6 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyLoginAgreementDocuments:                      loginAgreementDocumentsJSON,
 		SettingKeyRegionalRestrictionEnabled:                   "false",
 		SettingKeyRegionalRestrictionRegistrationEnabled:       "false",
-		SettingKeyRegionalRestrictionLoginEnabled:              "true",
 		SettingKeyRegionalRestrictionOAuthSignupEnabled:        "false",
 		SettingKeyRegionalRestrictionAPIKeyPageConfirmation:    "false",
 		SettingKeyRegionalRestrictionAPIKeyCreateEnabled:       "false",
@@ -3186,7 +3180,6 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		LoginAgreementDocuments:                      loginAgreementDocuments,
 		RegionalRestrictionEnabled:                   settings[SettingKeyRegionalRestrictionEnabled] == "true",
 		RegionalRestrictionRegistrationEnabled:       settings[SettingKeyRegionalRestrictionRegistrationEnabled] == "true",
-		RegionalRestrictionLoginEnabled:              boolSettingOrDefault(settings, SettingKeyRegionalRestrictionLoginEnabled, true),
 		RegionalRestrictionOAuthSignupEnabled:        settings[SettingKeyRegionalRestrictionOAuthSignupEnabled] == "true",
 		RegionalRestrictionAPIKeyPageConfirmation:    settings[SettingKeyRegionalRestrictionAPIKeyPageConfirmation] == "true",
 		RegionalRestrictionAPIKeyCreateEnabled:       settings[SettingKeyRegionalRestrictionAPIKeyCreateEnabled] == "true",

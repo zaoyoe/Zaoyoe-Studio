@@ -678,6 +678,57 @@ function writeHomepagePrefetchCache(payload, site = getHomepageRuntimeSite()) {
   sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
 }
 
+function normalizeHomepageShopSignatureValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalizeHomepageShopSignatureValue).join(',');
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = normalizeHomepageShopSignatureValue(value[key]);
+      return acc;
+    }, {}));
+  }
+  return String(value).trim();
+}
+
+function buildHomepageShopItemSignature(product = {}) {
+  return [
+    product?.id,
+    product?.name,
+    product?.name_zh,
+    product?.name_en,
+    product?.description,
+    product?.description_zh,
+    product?.description_en,
+    product?.icon_url,
+    product?.category,
+    product?.stock_count,
+    product?.manual_delivery,
+    product?.homepage_badge,
+    product?.homepage_curated,
+    product?.homepage_missing,
+    product?.image_assets,
+    product?.updated_at
+  ].map(normalizeHomepageShopSignatureValue).join('|');
+}
+
+function buildHomepageShopRenderSignature(products = [], config = {}, speedValue = '') {
+  return JSON.stringify({
+    lang: getHomepageRuntimeLanguage(),
+    title: normalizeHomepageShopSignatureValue(config?.section_title),
+    titleZh: normalizeHomepageShopSignatureValue(config?.section_title_zh),
+    titleEn: normalizeHomepageShopSignatureValue(config?.section_title_en),
+    subtitle: normalizeHomepageShopSignatureValue(config?.section_subtitle),
+    subtitleZh: normalizeHomepageShopSignatureValue(config?.section_subtitle_zh),
+    subtitleEn: normalizeHomepageShopSignatureValue(config?.section_subtitle_en),
+    speed: normalizeHomepageShopSignatureValue(speedValue),
+    products: (Array.isArray(products) ? products : []).map(buildHomepageShopItemSignature)
+  });
+}
+
 function escapeHomeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -2495,11 +2546,23 @@ const FramerHome = {
     this.supplementalDataPromise = new Promise((resolve) => {
       const kickoff = async () => {
         try {
+          const previousShopRenderSignature = buildHomepageShopRenderSignature(
+            this.cachedData?.shop || [],
+            this.config?.shop || {},
+            this.config?.ticker?.shop_scroll_speed || 30
+          );
           const [shop, guestbook, shopCategories] = await Promise.all([
             this.aggregateShop(this.config.shop || {}),
             this.aggregateGuestbook(this.config.guestbook || {}),
             this.fetchShopCategories()
           ]);
+          const nextShopRenderSignature = buildHomepageShopRenderSignature(
+            shop,
+            this.config?.shop || {},
+            this.config?.ticker?.shop_scroll_speed || 30
+          );
+          const shouldRenderShop = previousShopRenderSignature !== nextShopRenderSignature
+            || !document.querySelector('#shop-section [data-home-shop-id]');
 
           this.cachedData = this.cachedData || {};
           this.cachedData.shop = shop;
@@ -2508,7 +2571,9 @@ const FramerHome = {
           this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
           this.supplementalDataLoaded = true;
 
-          this.renderShop();
+          if (shouldRenderShop) {
+            this.renderShop();
+          }
           this.renderGuestbook();
           this.renderTicker();
           this.scheduleScrollAnimationsInit();

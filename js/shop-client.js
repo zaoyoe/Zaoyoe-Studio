@@ -638,6 +638,7 @@ const ShopClient = {
     shopCardBreatheTimers: new WeakMap(),
     shopStarrySkyRuntimePromise: null,
     shopThemeObserver: null,
+    shopThemeStarryEventBound: false,
     pendingProductSpotlight: null,
     productSpotlightTimer: null,
     postRenderEnhancementHandle: null,
@@ -8352,21 +8353,26 @@ const ShopClient = {
     },
 
     bindShopThemeStarryLoader: function () {
-        if (this.shopThemeObserver || typeof MutationObserver !== 'function') {
-            return;
-        }
-
-        this.shopThemeObserver = new MutationObserver(() => {
+        const loadForDarkTheme = () => {
             if (this.shouldLoadShopStarrySkyRuntime()) {
                 void this.loadShopStarrySkyRuntime({ force: true }).catch((error) => {
                     console.warn('[Shop] Starry sky runtime failed to load after theme switch:', error?.message || error);
                 });
             }
-        });
-        this.shopThemeObserver.observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ['data-theme']
-        });
+        };
+
+        if (!this.shopThemeObserver && typeof MutationObserver === 'function') {
+            this.shopThemeObserver = new MutationObserver(loadForDarkTheme);
+            this.shopThemeObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['data-theme']
+            });
+        }
+
+        if (!this.shopThemeStarryEventBound) {
+            this.shopThemeStarryEventBound = true;
+            window.addEventListener('zaoyoe:themechange', loadForDarkTheme);
+        }
     },
 
     schedulePostRenderEnhancements: function ({ products = [], requestToken = 0 } = {}) {
@@ -15086,6 +15092,8 @@ const ShopClient = {
             return safeRules.join('; ');
         };
 
+        const hasExplicitRichTextColor = (styleText = '') => /(?:^|;\s*)color\s*:/i.test(styleText);
+
         const sanitizeHref = (href = '') => {
             const value = href.trim();
             return /^https?:\/\//i.test(value) ? value : '';
@@ -15121,6 +15129,9 @@ const ShopClient = {
                     const safeStyle = sanitizeStyle(attrs.style || '');
                     if (safeStyle) {
                         child.setAttribute('style', safeStyle);
+                        if (hasExplicitRichTextColor(safeStyle)) {
+                            child.setAttribute('data-shop-rich-color', '1');
+                        }
                     }
                 }
 
@@ -15133,6 +15144,7 @@ const ShopClient = {
                     if (safeFontColor) {
                         const currentStyle = child.getAttribute('style') || '';
                         child.setAttribute('style', [currentStyle, `color: ${safeFontColor}`].filter(Boolean).join('; '));
+                        child.setAttribute('data-shop-rich-color', '1');
                     }
                 }
 
