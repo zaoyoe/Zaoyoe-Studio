@@ -18,6 +18,8 @@ const SITE_SCOPED_SYSTEM_CONFIG_KEYS = new Set([
     'notifications',
     'verify_settings',
     'ops_alerts',
+    'ai_image_guardrails',
+    'ai_image_storage_policy',
     'engagement_asset_style_center',
     'engagement_support_entry_center',
     'engagement_page_scenes',

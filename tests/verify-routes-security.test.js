@@ -222,7 +222,7 @@ function createSupabaseStub(state = {}) {
                 return createRpcResult(afdianProcessPaymentResult, afdianProcessPaymentError);
             }
 
-            if (name === 'fn_deduct_points_admin_site') {
+            if (name === 'fn_deduct_points_admin_site_with_breakdown' || name === 'fn_deduct_points_admin_site') {
                 state.metrics.deductCalls += 1;
                 pointsLedger.push({
                     id: `ledger-${pointsLedger.length + 1}`,

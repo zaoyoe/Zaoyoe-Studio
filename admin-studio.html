@@ -990,6 +990,9 @@
                     <button class="admin-tab" data-settings-view="google-one" data-admin-action="switch-settings-view">
                         Google One API
                     </button>
+                    <button class="admin-tab" data-settings-view="ai-image" data-admin-action="switch-settings-view">
+                        AI 图片
+                    </button>
                     <button class="admin-tab" data-settings-view="affiliate" data-admin-action="switch-settings-view">
                         推广返现
                     </button>
@@ -6587,6 +6590,398 @@
 
                                 <div class="affiliate-poster-template-grid" id="affiliatePosterTemplateGrid"></div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI IMAGE VIEW -->
+                <div id="settings-view-ai-image" class="view-section">
+                    <div class="module-content ai-image-admin-layout">
+                        <section class="settings-section ai-image-admin-hero">
+                            <div class="ai-image-admin-hero__copy">
+                                <h3><i class="fas fa-wand-magic-sparkles"></i> AI 图片工作台</h3>
+                                <p>管理生图积分价格、便利智能体和后台队列执行。模型 Key 与 R2 存储通过环境变量或安全配置接入，用户端只负责提交任务。</p>
+                            </div>
+                            <div class="ai-image-admin-hero__actions">
+                                <button class="btn-add-config btn-add-config--compact" type="button"
+                                    data-admin-action="settings-refresh-ai-image-config">
+                                    <i class="fas fa-rotate"></i> 刷新
+                                </button>
+                                <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                    data-admin-action="settings-run-ai-image-worker-once">
+                                    <i class="fas fa-play"></i> 执行队列
+                                </button>
+                            </div>
+                        </section>
+
+                        <div class="ai-image-admin-grid">
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-runtime">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-server"></i>
+                                        <span>运行状态</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-runtime" id="aiImageRuntimeStatus">
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>模型执行器</span>
+                                            <strong data-ai-image-runtime="model">待检测</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>图片存储</span>
+                                            <strong data-ai-image-runtime="storage">待检测</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>队列概览</span>
+                                            <strong data-ai-image-runtime="queue">待检测</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item ai-image-admin-runtime__item--wide">
+                                            <span>最近失败</span>
+                                            <strong data-ai-image-runtime="failure">暂无</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>Worker 命令</span>
+                                            <code>npm run ai-image:worker</code>
+                                        </div>
+                                    </div>
+                                    <p class="settings-status" id="aiImageWorkerStatus">
+                                        <span class="status-dot"></span>
+                                        <span>尚未执行队列检查</span>
+                                    </p>
+                                </div>
+                            </section>
+
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-model">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-plug-circle-bolt"></i>
+                                        <span>模型供应商</span>
+                                    </div>
+                                    <span class="api-relay-config-panel__badge" id="aiImageModelConfigSourceBadge">待配置</span>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-form ai-image-admin-form--model">
+                                        <input id="aiImageModelProviderIdInput" type="hidden" value="default">
+                                        <input id="aiImageModelNameInput" type="hidden" value="">
+                                        <input id="aiImageModelGroupInput" type="hidden" value="both">
+                                        <input id="aiImageModelAliasesInput" type="hidden" value="">
+                                        <input id="aiImageChatModelAliasesInput" type="hidden" value="">
+                                        <input id="aiImageVideoModelAliasesInput" type="hidden" value="">
+                                        <input id="aiImageDetectedImageModelsInput" type="hidden" value="">
+                                        <input id="aiImageDetectedChatModelsInput" type="hidden" value="">
+                                        <input id="aiImageDetectedVideoModelsInput" type="hidden" value="">
+                                        <input id="aiImageDetectedUnknownModelsInput" type="hidden" value="">
+                                        <input id="aiImageVisionModelsInput" type="hidden" value="">
+                                        <label class="api-relay-config-field" for="aiImageModelProviderLabelInput">
+                                            <span>上游名称</span>
+                                            <input class="config-input" id="aiImageModelProviderLabelInput" type="text"
+                                                placeholder="Gemini / ChatGPT / FLUX" autocomplete="off" spellcheck="false"
+                                                data-admin-input-action="settings-edit-ai-image-model-provider">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageModelVendorInput">
+                                            <span>模型厂商 <button class="ai-image-admin-info" type="button" aria-label="模型厂商说明" data-ai-image-tooltip="用于前台按 Gemini、ChatGPT、Claude 等品牌分组展示。">i</button></span>
+                                            <div class="custom-select ai-image-admin-select" id="aiImageModelVendorDropdown">
+                                                <input type="hidden" id="aiImageModelVendorInput" value="openai">
+                                                <div class="select-display" role="button" aria-haspopup="listbox" aria-label="模型厂商">
+                                                    <span class="select-text">ChatGPT</span>
+                                                    <i class="fas fa-chevron-down select-arrow"></i>
+                                                </div>
+                                                <div class="select-options" role="listbox">
+                                                    <div class="select-option selected" data-value="openai">ChatGPT</div>
+                                                    <div class="select-option" data-value="gemini">Gemini</div>
+                                                    <div class="select-option" data-value="anthropic">Claude</div>
+                                                    <div class="select-option" data-value="flux">FLUX</div>
+                                                    <div class="select-option" data-value="other">其它</div>
+                                                </div>
+                                            </div>
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageModelProtocolInput">
+                                            <span>接口协议 <button class="ai-image-admin-info" type="button" aria-label="接口协议说明" data-ai-image-tooltip="如果上游是 OpenAI 兼容服务，选择 OpenAI 兼容；Gemini 官方接口可选择 Gemini 原生。">i</button></span>
+                                            <div class="custom-select ai-image-admin-select" id="aiImageModelProtocolDropdown">
+                                                <input type="hidden" id="aiImageModelProtocolInput" value="openai-compatible">
+                                                <div class="select-display" role="button" aria-haspopup="listbox" aria-label="接口协议">
+                                                    <span class="select-text">OpenAI 兼容</span>
+                                                    <i class="fas fa-chevron-down select-arrow"></i>
+                                                </div>
+                                                <div class="select-options" role="listbox">
+                                                    <div class="select-option selected" data-value="openai-compatible">OpenAI 兼容</div>
+                                                    <div class="select-option" data-value="gemini-native">Gemini 原生</div>
+                                                    <div class="select-option" data-value="anthropic-native">Anthropic 原生</div>
+                                                    <div class="select-option" data-value="custom">自定义适配</div>
+                                                </div>
+                                            </div>
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageModelBaseUrlInput">
+                                            <span>Base URL</span>
+                                            <input class="config-input" id="aiImageModelBaseUrlInput" type="url"
+                                                placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false"
+                                                data-admin-input-action="settings-edit-ai-image-model-provider">
+                                        </label>
+                                    </div>
+                                    <div class="ai-image-admin-model-actions">
+                                        <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                            data-admin-action="settings-create-ai-image-model-provider">
+                                            <i class="fas fa-plus"></i> 新增上游
+                                        </button>
+                                        <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                            data-admin-action="settings-prompt-ai-image-model-key">
+                                            <i class="fas fa-key"></i> 录入 / 更新 Key
+                                        </button>
+                                        <button class="btn-add-config btn-add-config--compact" type="button"
+                                            data-admin-action="settings-save-ai-image-model-config">
+                                            <i class="fas fa-save"></i> 保存前台可见模型
+                                        </button>
+                                    </div>
+                                    <p class="settings-status ai-image-admin-model-status" id="aiImageModelConfigStatus">
+                                        <span class="status-dot"></span>
+                                        <span>检测中...</span>
+                                    </p>
+                                    <div class="ai-image-admin-list ai-image-admin-scroll-list ai-image-admin-model-provider-list" id="aiImageModelProviderList"></div>
+                                </div>
+                            </section>
+
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-api-base">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-shield-halved"></i>
+                                        <span>用户 API 白名单</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-form ai-image-admin-form--api-base">
+                                        <input class="config-input" id="aiImageApiBaseLabelInput" type="text" placeholder="名称，例如 FatherKey Sub2API">
+                                        <input class="config-input" id="aiImageApiBaseUrlInput" type="url" placeholder="https://sub2api.fatherkey.com/v1" autocomplete="off" spellcheck="false">
+                                        <div class="custom-select ai-image-admin-select" id="aiImageApiBaseSiteDropdown">
+                                            <input type="hidden" id="aiImageApiBaseSiteInput" value="all">
+                                            <div class="select-display" role="button" aria-haspopup="listbox" aria-label="适用站点">
+                                                <span class="select-text">全部站点</span>
+                                                <i class="fas fa-chevron-down select-arrow"></i>
+                                            </div>
+                                            <div class="select-options" role="listbox">
+                                                <div class="select-option selected" data-value="all">全部站点</div>
+                                                <div class="select-option" data-value="cn">国内站</div>
+                                                <div class="select-option" data-value="intl">国际站</div>
+                                            </div>
+                                        </div>
+                                        <button class="btn-add-config btn-add-config--compact" type="button"
+                                            data-admin-action="settings-save-ai-image-api-base">
+                                            <i class="fas fa-save"></i> 保存地址
+                                        </button>
+                                    </div>
+                                    <div class="ai-image-admin-list" id="aiImageApiBaseList">
+                                        <p class="loading-text">加载用户 API 白名单...</p>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-guardrails">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-gauge-high"></i>
+                                        <span>风控 / 成本防火墙</span>
+                                    </div>
+                                    <span class="api-relay-config-panel__badge">按分钟</span>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-guardrail-grid">
+                                        <label class="api-relay-config-field" for="aiImageGuardSubmitUserInput">
+                                            <span>用户提交 <button class="ai-image-admin-info" type="button" aria-label="用户提交说明" data-ai-image-tooltip="单个登录用户每分钟最多可提交的 AI 图片任务数。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardSubmitUserInput" type="number" min="1" step="1" placeholder="12">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardSubmitIpInput">
+                                            <span>IP 提交 <button class="ai-image-admin-info" type="button" aria-label="IP 提交说明" data-ai-image-tooltip="同一个 IP 每分钟最多可提交的 AI 图片任务数，用于挡脚本刷接口。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardSubmitIpInput" type="number" min="1" step="1" placeholder="30">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardSubmitHeavyInput">
+                                            <span>重型提交 <button class="ai-image-admin-info" type="button" aria-label="重型提交说明" data-ai-image-tooltip="高成本任务的用户级限额，例如 4K、多张图或带参考图续作。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardSubmitHeavyInput" type="number" min="1" step="1" placeholder="4">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardSubmitModelInput">
+                                            <span>模型组合 <button class="ai-image-admin-info" type="button" aria-label="模型组合说明" data-ai-image-tooltip="同一站点、模型、分辨率、模式组合每分钟最多提交数，防止单一上游被打满。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardSubmitModelInput" type="number" min="1" step="1" placeholder="6">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardUploadUserInput">
+                                            <span>用户上传 <button class="ai-image-admin-info" type="button" aria-label="用户上传说明" data-ai-image-tooltip="单个用户每分钟最多上传的参考图数量。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardUploadUserInput" type="number" min="1" step="1" placeholder="18">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardDownloadUserInput">
+                                            <span>用户下载 <button class="ai-image-admin-info" type="button" aria-label="用户下载说明" data-ai-image-tooltip="单个用户每分钟最多请求高清原图下载的次数。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardDownloadUserInput" type="number" min="1" step="1" placeholder="120">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardRunningInput">
+                                            <span>运行中任务 <button class="ai-image-admin-info" type="button" aria-label="运行中任务说明" data-ai-image-tooltip="单个用户同时处于运行中的任务上限，保护上游成本。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardRunningInput" type="number" min="1" step="1" placeholder="2">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardQueuedInput">
+                                            <span>排队任务 <button class="ai-image-admin-info" type="button" aria-label="排队任务说明" data-ai-image-tooltip="单个用户最多允许排队等待的任务数量。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardQueuedInput" type="number" min="1" step="1" placeholder="5">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageGuardActiveInput">
+                                            <span>活跃任务总量 <button class="ai-image-admin-info" type="button" aria-label="活跃任务总量说明" data-ai-image-tooltip="单个用户运行中加排队任务的总上限。">i</button></span>
+                                            <input class="config-input" id="aiImageGuardActiveInput" type="number" min="1" step="1" placeholder="6">
+                                        </label>
+                                    </div>
+                                    <div class="ai-image-admin-guardrail-actions">
+                                        <p class="settings-status" id="aiImageGuardrailStatus">
+                                            <span class="status-dot ready"></span>
+                                            <span>默认防护已启用</span>
+                                        </p>
+                                        <button class="btn-add-config btn-add-config--compact" type="button"
+                                            data-admin-action="settings-save-ai-image-guardrails">
+                                            <i class="fas fa-save"></i> 保存防火墙
+                                        </button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-storage">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-hard-drive"></i>
+                                        <span>R2 用量 / 生命周期</span>
+                                    </div>
+                                    <span class="api-relay-config-panel__badge" id="aiImageStoragePolicyBadge">仅监控</span>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-storage-usage" id="aiImageStorageUsage">
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>估算用量</span>
+                                            <strong data-ai-image-storage="total">待检测</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>预览 / 原图</span>
+                                            <strong data-ai-image-storage="objects">待检测</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>待转存原图</span>
+                                            <strong data-ai-image-storage="pending">待检测</strong>
+                                        </div>
+                                        <div class="ai-image-admin-runtime__item">
+                                            <span>未知体积</span>
+                                            <strong data-ai-image-storage="unknown">待检测</strong>
+                                        </div>
+                                    </div>
+                                    <div class="ai-image-admin-guardrail-grid ai-image-admin-storage-policy-grid">
+                                        <label class="api-relay-config-field" for="aiImageStoragePreviewRetentionInput">
+                                            <span>预览保留天数</span>
+                                            <input class="config-input" id="aiImageStoragePreviewRetentionInput" type="number" min="7" step="1" placeholder="180">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageStorageOriginalRetentionInput">
+                                            <span>原图保留天数</span>
+                                            <input class="config-input" id="aiImageStorageOriginalRetentionInput" type="number" min="7" step="1" placeholder="365">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageStorageFailedRetentionInput">
+                                            <span>失败记录保留</span>
+                                            <input class="config-input" id="aiImageStorageFailedRetentionInput" type="number" min="1" step="1" placeholder="30">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageStorageWarnGbInput">
+                                            <span>告警 GB</span>
+                                            <input class="config-input" id="aiImageStorageWarnGbInput" type="number" min="0.1" step="0.1" placeholder="8">
+                                        </label>
+                                        <label class="api-relay-config-field" for="aiImageStorageStopGbInput">
+                                            <span>熔断 GB</span>
+                                            <input class="config-input" id="aiImageStorageStopGbInput" type="number" min="0.1" step="0.1" placeholder="10">
+                                        </label>
+                                    </div>
+                                    <div class="ai-image-admin-guardrail-actions">
+                                        <p class="settings-status" id="aiImageStorageStatus">
+                                            <span class="status-dot ready"></span>
+                                            <span>生命周期清理默认关闭，先用于监控和告警</span>
+                                        </p>
+                                        <button class="btn-add-config btn-add-config--compact" type="button"
+                                            data-admin-action="settings-save-ai-image-storage-policy">
+                                            <i class="fas fa-save"></i> 保存策略
+                                        </button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-pricing">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-coins"></i>
+                                        <span>价格规则</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-form ai-image-admin-form--pricing">
+                                        <input class="config-input" id="aiImagePricingModelInput" type="text" placeholder="模型，例如 gpt-image-2">
+                                        <div class="custom-select ai-image-admin-select" id="aiImagePricingModeDropdown">
+                                            <input type="hidden" id="aiImagePricingModeInput" value="text">
+                                            <div class="select-display" role="button" aria-haspopup="listbox" aria-label="计费模式">
+                                                <span class="select-text">文生图</span>
+                                                <i class="fas fa-chevron-down select-arrow"></i>
+                                            </div>
+                                            <div class="select-options" role="listbox">
+                                                <div class="select-option selected" data-value="text">文生图</div>
+                                                <div class="select-option" data-value="image">图片拓展</div>
+                                                <div class="select-option" data-value="reverse">反推提示词</div>
+                                                <div class="select-option" data-value="agent">智能体</div>
+                                            </div>
+                                        </div>
+                                        <div class="custom-select ai-image-admin-select" id="aiImagePricingResolutionDropdown">
+                                            <input type="hidden" id="aiImagePricingResolutionInput" value="1k">
+                                            <div class="select-display" role="button" aria-haspopup="listbox" aria-label="分辨率">
+                                                <span class="select-text">1k</span>
+                                                <i class="fas fa-chevron-down select-arrow"></i>
+                                            </div>
+                                            <div class="select-options" role="listbox">
+                                                <div class="select-option selected" data-value="1k">1k</div>
+                                                <div class="select-option" data-value="2k">2k</div>
+                                                <div class="select-option" data-value="4k">4k</div>
+                                                <div class="select-option" data-value="*">全部</div>
+                                            </div>
+                                        </div>
+                                        <div class="custom-select ai-image-admin-select" id="aiImagePricingRatioDropdown">
+                                            <input type="hidden" id="aiImagePricingRatioInput" value="*">
+                                            <div class="select-display" role="button" aria-haspopup="listbox" aria-label="图片比例">
+                                                <span class="select-text">全部比例</span>
+                                                <i class="fas fa-chevron-down select-arrow"></i>
+                                            </div>
+                                            <div class="select-options" role="listbox">
+                                                <div class="select-option selected" data-value="*">全部比例</div>
+                                                <div class="select-option" data-value="1:1">1:1</div>
+                                                <div class="select-option" data-value="3:2">3:2</div>
+                                                <div class="select-option" data-value="2:3">2:3</div>
+                                                <div class="select-option" data-value="16:9">16:9</div>
+                                                <div class="select-option" data-value="9:16">9:16</div>
+                                            </div>
+                                        </div>
+                                        <input class="config-input" id="aiImagePricingPointsInput" type="number" min="0" step="0.01" placeholder="积分">
+                                        <button class="btn-add-config btn-add-config--compact" type="button"
+                                            data-admin-action="settings-save-ai-image-pricing">
+                                            <i class="fas fa-save"></i> 保存价格
+                                        </button>
+                                    </div>
+                                    <div class="ai-image-admin-list ai-image-admin-scroll-list ai-image-admin-pricing-list" id="aiImagePricingList">
+                                        <p class="loading-text">加载价格规则...</p>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="config-card ai-image-admin-card" data-config="ai-image-agents">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-toolbox"></i>
+                                        <span>便利智能体</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ai-image-admin-form ai-image-admin-form--agent">
+                                        <input class="config-input" id="aiImageAgentNameInput" type="text" placeholder="名称，例如 高清修复">
+                                        <input class="config-input" id="aiImageAgentSlugInput" type="text" placeholder="slug，例如 hd-restore">
+                                        <textarea class="config-input" id="aiImageAgentPromptInput" rows="3" placeholder="系统情景，例如：严格执行高清修复，不改变主体身份和构图。"></textarea>
+                                        <button class="btn-add-config btn-add-config--compact" type="button"
+                                            data-admin-action="settings-save-ai-image-agent">
+                                            <i class="fas fa-plus"></i> 新增智能体
+                                        </button>
+                                    </div>
+                                    <div class="ai-image-admin-list" id="aiImageAgentList">
+                                        <p class="loading-text">加载智能体...</p>
+                                    </div>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </div>
@@ -12656,7 +13051,7 @@
     <script src="js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1&ticketsMobileLabels=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1" data-cache-bust-ticket-mobile="js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1"></script>
     <script src="js/admin-access.js?v=20260608_ADMIN_STUDIO_SESSION_REFRESH_RETRY_1"></script>
     <script src="js/admin-engagement.js?v=20260506_ENGAGEMENT_SCHEDULE_VISIBLE_SOURCE_2&siteSwitchGuard=20260513_ADMIN_SITE_SWITCH_STALE_GUARD_1"></script>
-	<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&largeModalClose=20260428_ADMIN_STUDIO_LARGE_MODAL_CLOSE_MOBILE_10&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&largeModalCloseTouch=20260430_ADMIN_STUDIO_LARGE_MODAL_CLOSE_TOUCH_1&lightboxCloseTouch=20260430_ADMIN_STUDIO_LIGHTBOX_CLOSE_TOUCH_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&promptUploadVariants=20260501_PROMPT_UPLOAD_FEATURED_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&delegatedDeleteFeedback=20260501_ADMIN_DELEGATED_DELETE_FEEDBACK_1&toolbarActionFeedback=20260501_ADMIN_TOOLBAR_ACTION_FEEDBACK_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1&galleryPageLoad=20260503_ADMIN_GALLERY_PAGE_LOAD_2&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&overlayDismissGuard=20260531_ADMIN_OVERLAY_DISMISS_POINTER_GUARD_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1&shopProfitOrderLink=20260606_ADMIN_STUDIO_SHOP_PROFIT_ORDER_LINK_2&usersListPagination=20260617_ADMIN_USERS_LIST_PAGINATION_1&sourceAttribution=20260619_PROMPT_SOURCE_ATTRIBUTION_16"></script>
+		<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&largeModalClose=20260428_ADMIN_STUDIO_LARGE_MODAL_CLOSE_MOBILE_10&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&largeModalCloseTouch=20260430_ADMIN_STUDIO_LARGE_MODAL_CLOSE_TOUCH_1&lightboxCloseTouch=20260430_ADMIN_STUDIO_LIGHTBOX_CLOSE_TOUCH_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&promptUploadVariants=20260501_PROMPT_UPLOAD_FEATURED_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&delegatedDeleteFeedback=20260501_ADMIN_DELEGATED_DELETE_FEEDBACK_1&toolbarActionFeedback=20260501_ADMIN_TOOLBAR_ACTION_FEEDBACK_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1&galleryPageLoad=20260503_ADMIN_GALLERY_PAGE_LOAD_2&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&overlayDismissGuard=20260531_ADMIN_OVERLAY_DISMISS_POINTER_GUARD_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1&shopProfitOrderLink=20260606_ADMIN_STUDIO_SHOP_PROFIT_ORDER_LINK_2&usersListPagination=20260617_ADMIN_USERS_LIST_PAGINATION_1&sourceAttribution=20260619_PROMPT_SOURCE_ATTRIBUTION_16&promptImageCanonical=20260621_PROMPT_IMAGE_CANONICAL_1"></script>
     <script src="js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1"></script>
     <script src="js/shop-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1"></script>
     <script src="js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1&adminPriceBadges=20260513_ADMIN_SHOP_PRICE_BADGES_1&siteMarketingPricing=20260513_ADMIN_SHOP_SITE_MARKETING_PRICING_1&productFilterMobile=20260428_ADMIN_SHOP_PRODUCT_FILTER_MOBILE_1&productImageCardVariants=20260430_PRODUCT_IMAGE_CARD_VARIANTS_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&shopActivation=20260530_SHOP_MODULE_ACTIVATION_RECOVERY_2&shopOverlayDismiss=20260531_SHOP_MODAL_BACKDROP_POINTER_GUARD_1&productImageUploadStatus=20260531_SHOP_PRODUCT_IMAGE_UPLOAD_STATUS_1&sharedSkuInventory=20260604_SHARED_SKU_INVENTORY_POOL_LINK_1&skuManualDelivery=20260605_SHOP_SKU_MANUAL_DELIVERY_1&inventoryProductClip=20260606_ADMIN_SHOP_INVENTORY_PRODUCT_CLIP_1&ordersNullUser=20260606_ADMIN_SHOP_ORDERS_NULL_USER_1&procurementSources=20260606_ADMIN_SHOP_PROCUREMENT_SOURCES_1&inventoryDetailNoClose=20260606_ADMIN_SHOP_INVENTORY_DETAIL_NO_CLOSE_1&inventoryDetailSourceTags=20260606_ADMIN_SHOP_INVENTORY_DETAIL_SOURCE_TAGS_1&procurementOverview=20260606_ADMIN_SHOP_PROCUREMENT_OVERVIEW_8&importSourceDateTime=20260606_ADMIN_SHOP_IMPORT_SOURCE_DATETIME_1&orderProfitAttribution=20260606_ADMIN_SHOP_ORDER_PROFIT_ATTRIBUTION_1&pointsSpendBreakdown=20260606_ADMIN_SHOP_ORDER_POINTS_SPEND_BREAKDOWN_1&pointSourceTraceability=20260606_ADMIN_SHOP_POINT_SOURCE_TRACEABILITY_1&reusableInventory=20260612_ADMIN_SHOP_REUSABLE_INVENTORY_1&skuPriceCopy=20260615_ADMIN_SKU_PRICE_COPY_1"></script>

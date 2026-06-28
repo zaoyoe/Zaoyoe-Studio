@@ -6,6 +6,22 @@ function normalizeSite(site = 'cn') {
     return normalizeSiteValue(site);
 }
 
+function isMissingDeductWithBreakdownRpc(error) {
+    const code = String(error?.code || '').trim().toUpperCase();
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return code === '42883'
+        || code === 'PGRST202'
+        || message.includes('fn_deduct_points_admin_site_with_breakdown')
+        || message.includes('schema cache')
+        || message.includes('could not find the function')
+        || message.includes('invalid input syntax for type integer');
+}
+
 async function getUserBalance({
     supabase,
     userId,
@@ -35,9 +51,13 @@ async function deductPointsForService({
         p_site: normalizeSite(site)
     };
 
-    let { data, error } = await supabase.rpc('fn_deduct_points_admin_site', adminSiteRpcParams);
+    let { data, error } = await supabase.rpc('fn_deduct_points_admin_site_with_breakdown', adminSiteRpcParams);
 
-    if (error) {
+    if (error && isMissingDeductWithBreakdownRpc(error)) {
+        ({ data, error } = await supabase.rpc('fn_deduct_points_admin_site', adminSiteRpcParams));
+    }
+
+    if (error && isMissingDeductWithBreakdownRpc(error)) {
         ({ data, error } = await supabase.rpc('fn_deduct_points', {
             p_target_user_id: userId,
             p_amount: amount,
@@ -168,6 +188,7 @@ module.exports = {
     deductPointsForService,
     finalizeAfdianCustomPayment,
     getUserBalance,
+    isMissingDeductWithBreakdownRpc,
     processAfdianPayment,
     rechargePointsForPayment
 };

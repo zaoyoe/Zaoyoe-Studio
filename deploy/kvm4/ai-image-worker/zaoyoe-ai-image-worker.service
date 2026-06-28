@@ -1,0 +1,27 @@
+[Unit]
+Description=Zaoyoe AI image queue worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zaoyoe-verify-server/current
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/zaoyoe-verify-server/.env
+ExecStart=/usr/bin/env npm run ai-image:worker -- --env-file /opt/zaoyoe-verify-server/.env --limit 8 --concurrency 4 --interval-ms 3000
+Restart=always
+RestartSec=8
+TimeoutStopSec=30
+KillSignal=SIGTERM
+Nice=5
+
+# Keep task concurrency bounded; raise gradually after upstream and R2 metrics are stable.
+MemoryMax=768M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/zaoyoe-verify-server
+
+[Install]
+WantedBy=multi-user.target

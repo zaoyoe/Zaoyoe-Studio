@@ -6,6 +6,9 @@ import (
 	"strings"
 )
 
+const codexGPT51IdentityLine = "You are GPT-5.1 running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful."
+const codexGPT52IdentityLine = "You are GPT-5.2 running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful."
+
 // Model represents an OpenAI model
 type Model struct {
 	ID          string `json:"id"`
@@ -57,11 +60,9 @@ var instructionsGPT51 string
 //go:embed instructions_gpt5_2.txt
 var instructionsGPT52 string
 
-// CodexBaseInstructionsForModel 按模型返回最匹配的真实 Codex base instructions：
-//   - 含 "codex" 的模型（gpt-5-codex / gpt-5.x-codex / codex-max / spark 等）→ GPT-5-Codex prompt
-//   - gpt-5.2 系非 codex 模型 → GPT-5.2 prompt
-//   - gpt-5.1 / gpt-5 系非 codex 模型 → GPT-5.1 prompt
-//   - 其它 → 回退到 GPT-5-Codex prompt
+// CodexBaseInstructionsForModel 按模型返回最匹配的真实 Codex base instructions。
+// 非 codex 的 gpt-5.x 模型会保留相近版本的行为提示，但第一句身份必须使用
+// 实际请求模型，避免把 gpt-5.4/gpt-5.5 等虚报为 GPT-5.1。
 //
 // 任一专用 prompt 意外为空时回退到 DefaultInstructions，保证返回非空。
 func CodexBaseInstructionsForModel(model string) string {
@@ -71,12 +72,62 @@ func CodexBaseInstructionsForModel(model string) string {
 		return DefaultInstructions
 	case strings.HasPrefix(m, "gpt-5.2"):
 		if v := strings.TrimSpace(instructionsGPT52); v != "" {
-			return instructionsGPT52
+			return withActualGPTModelIdentity(instructionsGPT52, model, codexGPT52IdentityLine)
 		}
 	case strings.HasPrefix(m, "gpt-5.1"), strings.HasPrefix(m, "gpt-5"):
 		if v := strings.TrimSpace(instructionsGPT51); v != "" {
-			return instructionsGPT51
+			return withActualGPTModelIdentity(instructionsGPT51, model, codexGPT51IdentityLine)
 		}
 	}
 	return DefaultInstructions
+}
+
+func withActualGPTModelIdentity(instructions, model, oldIdentityLine string) string {
+	actual := gptModelDisplayName(model)
+	if actual == "" {
+		return instructions
+	}
+	newIdentityLine := "You are " + actual + " running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful."
+	if strings.HasPrefix(instructions, oldIdentityLine) {
+		return newIdentityLine + strings.TrimPrefix(instructions, oldIdentityLine)
+	}
+	lines := strings.SplitN(instructions, "\n", 2)
+	if len(lines) == 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), "You are GPT-") {
+		return newIdentityLine + "\n" + lines[1]
+	}
+	return instructions
+}
+
+func gptModelDisplayName(model string) string {
+	m := strings.ToLower(strings.TrimSpace(model))
+	if m == "" {
+		return ""
+	}
+	if strings.Contains(m, "/") {
+		parts := strings.Split(m, "/")
+		m = parts[len(parts)-1]
+	}
+	m = strings.TrimSuffix(m, "-openai-compact")
+	if !strings.HasPrefix(m, "gpt-") {
+		return ""
+	}
+	parts := strings.Split(m, "-")
+	if len(parts) < 2 {
+		return ""
+	}
+	version := parts[1]
+	if version == "" {
+		return ""
+	}
+	nameParts := []string{"GPT-" + version}
+	for _, part := range parts[2:] {
+		if part == "" {
+			continue
+		}
+		if part == "codex" {
+			return ""
+		}
+		nameParts = append(nameParts, strings.ToUpper(part[:1])+part[1:])
+	}
+	return strings.Join(nameParts, " ")
 }

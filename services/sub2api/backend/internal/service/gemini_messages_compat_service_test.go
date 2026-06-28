@@ -686,6 +686,75 @@ func TestExtractGeminiUsage(t *testing.T) {
 	}
 }
 
+func TestExtractGeminiImageURLBridgeItems(t *testing.T) {
+	payload := map[string]any{
+		"candidates": []any{
+			map[string]any{
+				"content": map[string]any{
+					"parts": []any{
+						map[string]any{"text": "已生成一只拿钥匙的橙色小猫。"},
+						map[string]any{
+							"inlineData": map[string]any{
+								"mimeType": "image/png",
+								"data":     "aW1hZ2UtYnl0ZXM=",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	items := extractGeminiImageURLBridgeItems(payload)
+	require.Len(t, items, 1)
+	require.Equal(t, "aW1hZ2UtYnl0ZXM=", items[0].Data)
+	require.Equal(t, "image/png", items[0].MimeType)
+	require.Equal(t, "已生成一只拿钥匙的橙色小猫。", items[0].RevisedPrompt)
+}
+
+func TestGeminiImageURLBridgeFallbackPayload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	payload := map[string]any{
+		"candidates": []any{
+			map[string]any{
+				"content": map[string]any{
+					"parts": []any{
+						map[string]any{
+							"inlineData": map[string]any{
+								"mimeType": "image/png",
+								"data":     "aW1hZ2UtYnl0ZXM=",
+							},
+						},
+					},
+				},
+			},
+		},
+		"usageMetadata": map[string]any{
+			"promptTokenCount":     10,
+			"candidatesTokenCount": 2,
+		},
+	}
+
+	result := (&GeminiMessagesCompatService{}).writeGeminiImageURLBridgeFallbackPayload(c, payload, "store_failed")
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 10, result.usage.InputTokens)
+	require.Equal(t, 2, result.usage.OutputTokens)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "fallback", rec.Header().Get(geminiImageURLBridgeHeader))
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	bridge, ok := body["zaoyoe_image_url_bridge"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, bridge["fallback_used"])
+	require.Equal(t, "store_failed", bridge["reason"])
+	require.Contains(t, body, "candidates")
+}
+
 // ---------------------------------------------------------------------------
 // Task 8.2 — estimateGeminiCountTokens 测试
 // ---------------------------------------------------------------------------

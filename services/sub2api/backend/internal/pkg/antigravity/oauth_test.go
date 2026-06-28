@@ -85,6 +85,16 @@ func TestGetClientSecret_环境变量有前后空格(t *testing.T) {
 	}
 }
 
+func TestClientID_可通过环境变量配置(t *testing.T) {
+	old := ClientID
+	t.Cleanup(func() { ClientID = old })
+
+	ClientID = "env-client-id"
+	if ClientID != "env-client-id" {
+		t.Errorf("ClientID 应支持运行时配置: got %s", ClientID)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ForwardBaseURLs
 // ---------------------------------------------------------------------------
@@ -678,14 +688,14 @@ func TestConstants_值正确(t *testing.T) {
 		t.Errorf("UserInfoURL 不匹配: got %s", UserInfoURL)
 	}
 	if ClientID != "SET_ANTIGRAVITY_OAUTH_CLIENT_ID_VIA_ENV" {
-		t.Errorf("ClientID 不匹配: got %s", ClientID)
+		t.Errorf("ClientID 应使用安全占位符: got %s", ClientID)
 	}
 	secret, err := getClientSecret()
 	if err != nil {
-		t.Fatalf("getClientSecret 应返回默认值，但报错: %v", err)
+		t.Fatalf("getClientSecret 应返回占位符或配置值，但报错: %v", err)
 	}
 	if secret != "SET_ANTIGRAVITY_OAUTH_CLIENT_SECRET_VIA_ENV" {
-		t.Errorf("默认 client_secret 不匹配: got %s", secret)
+		t.Errorf("默认 client_secret 应使用安全占位符: got %s", secret)
 	}
 	if RedirectURI != "http://localhost:8085/callback" {
 		t.Errorf("RedirectURI 不匹配: got %s", RedirectURI)

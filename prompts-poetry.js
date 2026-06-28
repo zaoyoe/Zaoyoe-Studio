@@ -87,6 +87,9 @@ function bindPromptImageDragLock() {
     document.querySelectorAll('img').forEach(disablePromptImageDrag);
 }
 
+const PROMPT_IMAGE_ASSET_KEYS = Object.freeze(['original', 'thumb', 'featured', 'card', 'home']);
+const PROMPT_IMAGE_CDN_VARIANT_PATHS = new Set(['thumb', 'featured', 'card', 'home']);
+
 function getPromptAssetCdnOrigin({ canonical = false } = {}) {
     if (canonical) {
         return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.fatherkey.com').replace(/\/+$/, '');
@@ -206,10 +209,91 @@ function getPromptResponsiveImageVariantUrl(url, variant = '') {
     return getPromptResponsiveR2VariantUrl(normalizedUrl, normalizedVariant);
 }
 
+function getPromptImageCdnVariantInfo(url) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) {
+        return { original: '', variant: '' };
+    }
+
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)
+            || parsed.hostname.endsWith('.r2.dev');
+
+        if (
+            isPromptCdnHost
+            && parts.length === 3
+            && parts[0] === 'prompts'
+            && PROMPT_IMAGE_CDN_VARIANT_PATHS.has(parts[1])
+        ) {
+            parsed.pathname = `/prompts/${parts[2]}`;
+            parsed.search = '';
+            parsed.hash = '';
+            return {
+                original: parsed.toString(),
+                variant: parts[1]
+            };
+        }
+    } catch (error) {
+        return { original: trimmed, variant: '' };
+    }
+
+    return { original: trimmed, variant: '' };
+}
+
+function getPromptImageCanonicalOriginalUrl(url) {
+    return getPromptImageCdnVariantInfo(url).original;
+}
+
+function getPromptImageCanonicalDedupeKey(url) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) return '';
+
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)
+            || parsed.hostname.endsWith('.r2.dev');
+        if (isPromptCdnHost && parts[0] === 'prompts') {
+            const filename = parts.length === 3 && PROMPT_IMAGE_CDN_VARIANT_PATHS.has(parts[1])
+                ? parts[2]
+                : (parts.length === 2 ? parts[1] : '');
+            if (filename) {
+                return `prompts/${decodeURIComponent(filename)}`;
+            }
+        }
+    } catch (error) {
+        return trimmed;
+    }
+
+    return getPromptImageCanonicalOriginalUrl(trimmed) || trimmed;
+}
+
+function assignPromptImageAssetUrl(asset, key, url) {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return;
+
+    const variantInfo = getPromptImageCdnVariantInfo(safeUrl);
+    const normalizedKey = PROMPT_IMAGE_ASSET_KEYS.includes(key) ? key : 'original';
+    const impliedVariant = variantInfo.variant || '';
+
+    if (normalizedKey === 'original' && impliedVariant) {
+        asset[impliedVariant] = asset[impliedVariant] || safeUrl;
+    } else {
+        asset[normalizedKey] = safeUrl;
+    }
+
+    if (!asset.original && variantInfo.original) {
+        asset.original = variantInfo.original;
+    }
+}
+
 function normalizePromptImageAsset(value) {
     if (typeof value === 'string') {
-        const original = value.trim();
-        return original ? { original } : null;
+        const asset = {};
+        assignPromptImageAssetUrl(asset, 'original', value);
+        return asset.original ? asset : null;
     }
 
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -221,16 +305,13 @@ function normalizePromptImageAsset(value) {
         : {};
     const asset = {};
 
-    for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
-        const url = String(value[key] || variants[key] || '').trim();
-        if (url) {
-            asset[key] = url;
-        }
+    for (const key of PROMPT_IMAGE_ASSET_KEYS) {
+        assignPromptImageAssetUrl(asset, key, value[key] || variants[key]);
     }
 
-    const fallbackOriginal = String(value.url || value.src || value.image || '').trim();
+    const fallbackOriginal = value.url || value.src || value.image;
     if (!asset.original && fallbackOriginal) {
-        asset.original = fallbackOriginal;
+        assignPromptImageAssetUrl(asset, 'original', fallbackOriginal);
     }
 
     return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
@@ -259,15 +340,26 @@ function normalizePromptImageAssetsFromRecord(record = {}) {
         : (Array.isArray(record?.image_assets) ? record.image_assets : []);
     const legacyImages = Array.isArray(record?.images) ? record.images : [];
     const assets = [];
-    const seen = new Set();
+    const seen = new Map();
 
     for (const source of [...explicitAssets, ...legacyImages]) {
         const asset = normalizePromptImageAsset(source);
         if (!asset) continue;
 
-        const key = getPromptImageAssetOriginalUrl(asset);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
+        const key = getPromptImageCanonicalDedupeKey(getPromptImageAssetOriginalUrl(asset));
+        if (!key) continue;
+        if (seen.has(key)) {
+            const existing = seen.get(key);
+            existing.original = asset.original || existing.original;
+            for (const assetKey of PROMPT_IMAGE_ASSET_KEYS) {
+                if (!existing[assetKey] && asset[assetKey]) {
+                    existing[assetKey] = asset[assetKey];
+                }
+            }
+            continue;
+        }
+
+        seen.set(key, asset);
         assets.push(asset);
     }
 
@@ -2723,6 +2815,7 @@ window.addEventListener('languageChanged', () => {
     void renderFeaturedBanner();
     renderGallery(currentFilter, false);
     syncPromptSourceActionLabels();
+    syncPromptRelatedTriggerLabel();
 });
 
 // Handle hash changes when page is already loaded (e.g., from admin "View Context" button)
@@ -4922,6 +5015,15 @@ function setPromptRelatedTriggerActive(active = false) {
     triggerBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
 }
 
+function syncPromptRelatedTriggerLabel() {
+    const triggerBtn = document.getElementById('relatedTriggerBtn');
+    if (!triggerBtn) return;
+
+    const label = getPromptRelatedActionLabel();
+    triggerBtn.setAttribute('aria-label', label);
+    triggerBtn.setAttribute('data-tooltip', label);
+}
+
 function resetPromptDetailSideModeButtons() {
     setPromptCommentTriggerActive(false);
     setPromptRelatedTriggerActive(false);
@@ -6701,6 +6803,7 @@ function initializePromptStaticControls() {
     document.getElementById('relatedTriggerBtn')?.addEventListener('click', () => {
         toggleRelatedMode();
     });
+    syncPromptRelatedTriggerLabel();
 
     window.__promptStaticControlsBound = true;
 }

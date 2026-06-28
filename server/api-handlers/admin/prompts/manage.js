@@ -63,6 +63,8 @@ const OPTIONAL_PROMPT_MUTATION_FIELDS = new Set([
 const PROMPT_SCHEMA_RELOAD_SQL = "select pg_notify('pgrst', 'reload schema');";
 const DEFAULT_PROMPT_PAGE_SIZE = 10;
 const MAX_PROMPT_PAGE_SIZE = 100;
+const PROMPT_IMAGE_ASSET_KEYS = Object.freeze(['original', 'thumb', 'featured', 'card', 'home']);
+const PROMPT_IMAGE_CDN_VARIANT_PATHS = new Set(['thumb', 'featured', 'card', 'home']);
 const PROMPT_SORT_VALUES = new Set([
     'updated-desc',
     'created-desc',
@@ -257,10 +259,91 @@ function normalizeOptionalObject(value, fieldName) {
     return value;
 }
 
+function getPromptImageCdnVariantInfo(url) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) {
+        return { original: '', variant: '' };
+    }
+
+    try {
+        const parsed = new URL(trimmed);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)
+            || parsed.hostname.endsWith('.r2.dev');
+
+        if (
+            isPromptCdnHost
+            && parts.length === 3
+            && parts[0] === 'prompts'
+            && PROMPT_IMAGE_CDN_VARIANT_PATHS.has(parts[1])
+        ) {
+            parsed.pathname = `/prompts/${parts[2]}`;
+            parsed.search = '';
+            parsed.hash = '';
+            return {
+                original: parsed.toString(),
+                variant: parts[1]
+            };
+        }
+    } catch (error) {
+        return { original: trimmed, variant: '' };
+    }
+
+    return { original: trimmed, variant: '' };
+}
+
+function getPromptImageCanonicalOriginalUrl(url) {
+    return getPromptImageCdnVariantInfo(url).original;
+}
+
+function getPromptImageCanonicalDedupeKey(url) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) return '';
+
+    try {
+        const parsed = new URL(trimmed);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)
+            || parsed.hostname.endsWith('.r2.dev');
+        if (isPromptCdnHost && parts[0] === 'prompts') {
+            const filename = parts.length === 3 && PROMPT_IMAGE_CDN_VARIANT_PATHS.has(parts[1])
+                ? parts[2]
+                : (parts.length === 2 ? parts[1] : '');
+            if (filename) {
+                return `prompts/${decodeURIComponent(filename)}`;
+            }
+        }
+    } catch (error) {
+        return trimmed;
+    }
+
+    return getPromptImageCanonicalOriginalUrl(trimmed) || trimmed;
+}
+
+function assignPromptImageAssetUrl(asset, key, url) {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return;
+
+    const variantInfo = getPromptImageCdnVariantInfo(safeUrl);
+    const normalizedKey = PROMPT_IMAGE_ASSET_KEYS.includes(key) ? key : 'original';
+    const impliedVariant = variantInfo.variant || '';
+
+    if (normalizedKey === 'original' && impliedVariant) {
+        asset[impliedVariant] = asset[impliedVariant] || safeUrl;
+    } else {
+        asset[normalizedKey] = safeUrl;
+    }
+
+    if (!asset.original && variantInfo.original) {
+        asset.original = variantInfo.original;
+    }
+}
+
 function normalizePromptImageAsset(value) {
     if (typeof value === 'string') {
-        const original = value.trim();
-        return original ? { original } : null;
+        const asset = {};
+        assignPromptImageAssetUrl(asset, 'original', value);
+        return asset.original ? asset : null;
     }
 
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -272,19 +355,51 @@ function normalizePromptImageAsset(value) {
         : {};
     const asset = {};
 
-    for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
-        const url = String(value[key] || variants[key] || '').trim();
-        if (url) {
-            asset[key] = url;
-        }
+    for (const key of PROMPT_IMAGE_ASSET_KEYS) {
+        assignPromptImageAssetUrl(asset, key, value[key] || variants[key]);
     }
 
-    const fallbackOriginal = String(value.url || value.src || value.image || '').trim();
+    const fallbackOriginal = value.url || value.src || value.image;
     if (!asset.original && fallbackOriginal) {
-        asset.original = fallbackOriginal;
+        assignPromptImageAssetUrl(asset, 'original', fallbackOriginal);
     }
 
     return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
+}
+
+function dedupePromptImageAssets(assets = []) {
+    const seen = new Map();
+    return (Array.isArray(assets) ? assets : [])
+        .map(normalizePromptImageAsset)
+        .filter((asset) => {
+            if (!asset) return false;
+            const key = getPromptImageCanonicalDedupeKey(asset.original || asset.featured || asset.card || asset.home || asset.thumb || '');
+            if (!key) return false;
+            if (seen.has(key)) {
+                const existing = seen.get(key);
+                existing.original = asset.original || existing.original;
+                for (const assetKey of PROMPT_IMAGE_ASSET_KEYS) {
+                    if (!existing[assetKey] && asset[assetKey]) {
+                        existing[assetKey] = asset[assetKey];
+                    }
+                }
+                return false;
+            }
+            seen.set(key, asset);
+            return true;
+        });
+}
+
+function normalizePromptImagePayload(images, imageAssets) {
+    const assets = dedupePromptImageAssets([
+        ...(Array.isArray(imageAssets) ? imageAssets : []),
+        ...(Array.isArray(images) ? images : [])
+    ]);
+
+    return {
+        images: assets.map((asset) => asset.original).filter(Boolean),
+        image_assets: assets
+    };
 }
 
 function normalizeOptionalImageAssets(value, fieldName) {
@@ -299,9 +414,7 @@ function normalizeOptionalImageAssets(value, fieldName) {
         throw error;
     }
 
-    return values
-        .map(normalizePromptImageAsset)
-        .filter(Boolean);
+    return dedupePromptImageAssets(values);
 }
 
 function applyPromptFieldFallbacks(row = {}) {
@@ -419,11 +532,16 @@ function buildPromptMutationPayload(body, { action = 'create' } = {}) {
         payload[fieldName] = normalizeOptionalText(body[fieldName]) || '';
     }
 
+    const hasImages = Object.prototype.hasOwnProperty.call(body, 'images');
+    const hasImageAssets = Object.prototype.hasOwnProperty.call(body, 'image_assets')
+        || Object.prototype.hasOwnProperty.call(body, 'imageAssets');
     const images = normalizeOptionalStringArray(body.images, 'images');
-    if (images !== undefined) payload.images = images;
-
     const imageAssets = normalizeOptionalImageAssets(body.image_assets ?? body.imageAssets, 'image_assets');
-    if (imageAssets !== undefined) payload.image_assets = imageAssets;
+    if (hasImages || hasImageAssets) {
+        const normalizedImages = normalizePromptImagePayload(images || [], imageAssets || []);
+        payload.images = normalizedImages.images;
+        payload.image_assets = normalizedImages.image_assets;
+    }
 
     const dominantColors = normalizeOptionalStringArray(body.dominant_colors ?? body.dominantColors, 'dominant_colors');
     if (dominantColors !== undefined) payload.dominant_colors = dominantColors;

@@ -7,6 +7,7 @@
 // CONFIGURATION
 // ========================================
 const DEFAULT_ADMIN_VISION_MODEL = 'gemini-2.5-flash';
+const ADMIN_AI_IMAGE_DEFAULT_MODEL = 'gpt-image-2';
 const ADMIN_VISION_ANALYSIS_TIMEOUT_MS = 45000;
 const ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS = 2048;
 const PROMPT_UPLOAD_ORIGINAL_MAX_WIDTH = 2048;
@@ -29,6 +30,8 @@ const ADMIN_GALLERY_HOMEPAGE_WARM_TIMEOUT_MS = 5000;
 let allPrompts = []; // Cache all prompts for local search
 const ADMIN_GALLERY_PAGE_SIZE = 10;
 const ADMIN_GALLERY_EAGER_IMAGE_COUNT = 4;
+const PROMPT_IMAGE_ASSET_KEYS = Object.freeze(['original', 'thumb', 'featured', 'card', 'home']);
+const PROMPT_IMAGE_CDN_VARIANT_PATHS = new Set(['thumb', 'featured', 'card', 'home']);
 const adminGalleryPrefetchState = {
     site: '',
     loaded: false,
@@ -110,11 +113,16 @@ const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
 ].join(', ');
 
 function dedupePromptImageUrls(urls = []) {
-    return [...new Set(
-        (Array.isArray(urls) ? urls : [])
-            .map((url) => String(url || '').trim())
-            .filter(Boolean)
-    )];
+    const seen = new Set();
+    const result = [];
+    for (const value of (Array.isArray(urls) ? urls : [])) {
+        const original = getPromptImageCanonicalOriginalUrl(value);
+        const key = getPromptImageCanonicalDedupeKey(original || value);
+        if (!original || !key || seen.has(key)) continue;
+        seen.add(key);
+        result.push(original);
+    }
+    return result;
 }
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.select-options',
@@ -508,14 +516,95 @@ function sanitizeImageUrl(url) {
     return '';
 }
 
+function getPromptImageCdnVariantInfo(url) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) {
+        return { original: '', variant: '' };
+    }
+
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)
+            || parsed.hostname.endsWith('.r2.dev');
+
+        if (
+            isPromptCdnHost
+            && parts.length === 3
+            && parts[0] === 'prompts'
+            && PROMPT_IMAGE_CDN_VARIANT_PATHS.has(parts[1])
+        ) {
+            parsed.pathname = `/prompts/${parts[2]}`;
+            parsed.search = '';
+            parsed.hash = '';
+            return {
+                original: parsed.toString(),
+                variant: parts[1]
+            };
+        }
+    } catch (err) {
+        return { original: trimmed, variant: '' };
+    }
+
+    return { original: trimmed, variant: '' };
+}
+
+function getPromptImageCanonicalOriginalUrl(url) {
+    return getPromptImageCdnVariantInfo(url).original;
+}
+
+function getPromptImageCanonicalDedupeKey(url) {
+    const trimmed = String(url || '').trim();
+    if (!trimmed) return '';
+
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)
+            || parsed.hostname.endsWith('.r2.dev');
+        if (isPromptCdnHost && parts[0] === 'prompts') {
+            const filename = parts.length === 3 && PROMPT_IMAGE_CDN_VARIANT_PATHS.has(parts[1])
+                ? parts[2]
+                : (parts.length === 2 ? parts[1] : '');
+            if (filename) {
+                return `prompts/${decodeURIComponent(filename)}`;
+            }
+        }
+    } catch (err) {
+        return trimmed;
+    }
+
+    return getPromptImageCanonicalOriginalUrl(trimmed) || trimmed;
+}
+
+function assignPromptImageAssetUrl(asset, key, url) {
+    const safeUrl = sanitizeImageUrl(url);
+    if (!safeUrl) return;
+
+    const variantInfo = getPromptImageCdnVariantInfo(safeUrl);
+    const normalizedKey = PROMPT_IMAGE_ASSET_KEYS.includes(key) ? key : 'original';
+    const impliedVariant = variantInfo.variant || '';
+
+    if (normalizedKey === 'original' && impliedVariant) {
+        asset[impliedVariant] = asset[impliedVariant] || safeUrl;
+    } else {
+        asset[normalizedKey] = safeUrl;
+    }
+
+    if (!asset.original && variantInfo.original) {
+        asset.original = variantInfo.original;
+    }
+}
+
 function isSupabaseStorageImageUrl(url) {
     return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
 }
 
 function normalizePromptImageAsset(value) {
     if (typeof value === 'string') {
-        const original = sanitizeImageUrl(value);
-        return original ? { original } : null;
+        const asset = {};
+        assignPromptImageAssetUrl(asset, 'original', value);
+        return asset.original ? asset : null;
     }
 
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -527,16 +616,13 @@ function normalizePromptImageAsset(value) {
         : {};
     const asset = {};
 
-    for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
-        const url = sanitizeImageUrl(value[key] || variants[key]);
-        if (url) {
-            asset[key] = url;
-        }
+    for (const key of PROMPT_IMAGE_ASSET_KEYS) {
+        assignPromptImageAssetUrl(asset, key, value[key] || variants[key]);
     }
 
-    const fallbackOriginal = sanitizeImageUrl(value.url || value.src || value.image);
+    const fallbackOriginal = value.url || value.src || value.image;
     if (!asset.original && fallbackOriginal) {
-        asset.original = fallbackOriginal;
+        assignPromptImageAssetUrl(asset, 'original', fallbackOriginal);
     }
 
     return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
@@ -548,30 +634,55 @@ function normalizePromptImageAssetsFromRecord(prompt = {}) {
         : (Array.isArray(prompt?.imageAssets) ? prompt.imageAssets : []);
     const legacyImages = Array.isArray(prompt?.images) ? prompt.images : [];
 
-    const assets = explicitAssets
-        .map(normalizePromptImageAsset)
-        .filter(Boolean);
-    const seenOriginals = new Set(assets.map((asset) => String(asset.original || '').trim()).filter(Boolean));
+    const assets = dedupePromptImageAssets(explicitAssets);
+    const assetsByKey = new Map(
+        assets
+            .map((asset) => [
+                getPromptImageCanonicalDedupeKey(asset.original || asset.featured || asset.card || asset.home || asset.thumb || ''),
+                asset
+            ])
+            .filter(([key]) => Boolean(key))
+    );
 
     for (const imageUrl of legacyImages) {
         const asset = normalizePromptImageAsset(imageUrl);
-        if (!asset?.original || seenOriginals.has(asset.original)) continue;
+        if (!asset?.original) continue;
+        const key = getPromptImageCanonicalDedupeKey(asset.original);
+        if (assetsByKey.has(key)) {
+            const existing = assetsByKey.get(key);
+            existing.original = asset.original || existing.original;
+            for (const assetKey of PROMPT_IMAGE_ASSET_KEYS) {
+                if (!existing[assetKey] && asset[assetKey]) {
+                    existing[assetKey] = asset[assetKey];
+                }
+            }
+            continue;
+        }
         assets.push(asset);
-        seenOriginals.add(asset.original);
+        assetsByKey.set(key, asset);
     }
 
     return assets;
 }
 
 function dedupePromptImageAssets(assets = []) {
-    const seen = new Set();
+    const seen = new Map();
     return (Array.isArray(assets) ? assets : [])
         .map(normalizePromptImageAsset)
         .filter((asset) => {
             if (!asset) return false;
-            const key = asset.original || asset.featured || asset.card || asset.home || asset.thumb || '';
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
+            const key = getPromptImageCanonicalDedupeKey(asset.original || asset.featured || asset.card || asset.home || asset.thumb || '');
+            if (!key) return false;
+            if (seen.has(key)) {
+                const existing = seen.get(key);
+                for (const assetKey of PROMPT_IMAGE_ASSET_KEYS) {
+                    if (!existing[assetKey] && asset[assetKey]) {
+                        existing[assetKey] = asset[assetKey];
+                    }
+                }
+                return false;
+            }
+            seen.set(key, asset);
             return true;
         });
 }
@@ -3441,6 +3552,159 @@ function bindAdminStudioDelegatedControls() {
                     silentErrors: true
                 });
                 break;
+            case 'settings-prompt-ai-image-model-key':
+                window.promptForAiImageModelKey?.();
+                break;
+            case 'settings-save-ai-image-model-config':
+                runAdminStudioActionFeedback(actionEl, () => window.saveAiImageModelConfig?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-test-ai-image-model-provider-full':
+                runAdminStudioActionFeedback(actionEl, () => window.testAiImageModelConfig?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || ''), {
+                    loadingText: '自检中...',
+                    successText: '自检通过',
+                    errorText: '自检失败',
+                    restoreOnNull: true,
+                    silentErrors: true,
+                    compact: true
+                });
+                break;
+            case 'settings-discover-ai-image-model-provider':
+                runAdminStudioActionFeedback(actionEl, () => window.discoverAiImageModelConfig?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || ''), {
+                    loadingText: '检测中...',
+                    successText: '已更新模型列表',
+                    errorText: '检测失败',
+                    restoreOnNull: true,
+                    silentErrors: true,
+                    compact: true
+                });
+                break;
+            case 'settings-create-ai-image-model-provider':
+                window.createAiImageModelProviderDraft?.();
+                break;
+            case 'settings-save-ai-image-api-base':
+                runAdminStudioActionFeedback(actionEl, () => window.saveAiImageApiBaseUrl?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-save-ai-image-guardrails':
+                runAdminStudioActionFeedback(actionEl, () => window.saveAiImageGuardrails?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-save-ai-image-storage-policy':
+                runAdminStudioActionFeedback(actionEl, () => window.saveAiImageStoragePolicy?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-delete-ai-image-model-config':
+                runAdminStudioActionFeedback(actionEl, () => window.deleteAiImageModelConfig?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || ''), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-select-ai-image-model-provider':
+                window.selectAiImageModelProvider?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || '');
+                break;
+            case 'settings-toggle-ai-image-provider-models':
+                window.toggleAiImageModelProviderModels?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || '');
+                break;
+            case 'settings-clone-ai-image-model-provider':
+                window.cloneAiImageModelProvider?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || '');
+                break;
+            case 'settings-apply-ai-image-discovered-model':
+                window.applyAiImageDiscoveredModel?.(actionEl.dataset.model || '', actionEl.dataset.modelGroup || actionEl.dataset.model_group || '', actionEl.dataset.providerId || actionEl.dataset.provider_id || '');
+                break;
+            case 'settings-classify-ai-image-unknown-model':
+                window.classifyAiImageUnknownModel?.(actionEl.dataset.model || '', actionEl.dataset.modelGroup || actionEl.dataset.model_group || '', actionEl.dataset.providerId || actionEl.dataset.provider_id || '');
+                break;
+            case 'settings-toggle-ai-image-visible-model':
+                window.toggleAiImageVisibleModel?.(actionEl.dataset.model || '', actionEl.dataset.modelGroup || actionEl.dataset.model_group || '', actionEl.dataset.providerId || actionEl.dataset.provider_id || '');
+                break;
+            case 'settings-disable-ai-image-api-base':
+                runAdminStudioActionFeedback(actionEl, () => window.disableAiImageApiBaseUrl?.(actionEl.dataset.aiImageApiBaseId), {
+                    loadingText: '停用中...',
+                    successText: '已停用',
+                    errorText: '停用失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-refresh-ai-image-config':
+                runAdminStudioActionFeedback(actionEl, () => window.fetchAiImageAdminConfig?.({ force: true }), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-run-ai-image-worker-once':
+                runAdminStudioActionFeedback(actionEl, () => window.runAiImageWorkerOnce?.(), {
+                    loadingText: '执行中...',
+                    successText: '已执行',
+                    errorText: '执行失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-save-ai-image-pricing':
+                runAdminStudioActionFeedback(actionEl, () => window.saveAiImagePricingRule?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-save-ai-image-agent':
+                runAdminStudioActionFeedback(actionEl, () => window.saveAiImageAgent?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-disable-ai-image-pricing':
+            case 'settings-delete-ai-image-pricing':
+                runAdminStudioActionFeedback(actionEl, () => window.deleteAiImagePricingRule?.(actionEl.dataset.aiImagePricingId), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
+            case 'settings-disable-ai-image-agent':
+                runAdminStudioActionFeedback(actionEl, () => window.disableAiImageAgent?.(actionEl.dataset.aiImageAgentId), {
+                    loadingText: '停用中...',
+                    successText: '已停用',
+                    errorText: '停用失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
+                break;
             case 'settings-toggle-ops-alerts-enabled':
                 window.toggleOpsAlertsEnabled?.();
                 break;
@@ -5400,6 +5664,9 @@ function bindAdminStudioDelegatedControls() {
 
         const actionEl = target.closest('[data-admin-change-action]');
         if (!actionEl) {
+            if (target.id === 'aiImageModelVendorInput' || target.id === 'aiImageModelProtocolInput') {
+                window.handleAiImageModelProviderDraftInput?.(target);
+            }
             return;
         }
 
@@ -5601,6 +5868,9 @@ function bindAdminStudioDelegatedControls() {
                     actionEl.dataset.mappingIndex,
                     actionEl.value
                 );
+                break;
+            case 'settings-edit-ai-image-model-provider':
+                window.handleAiImageModelProviderDraftInput?.(actionEl);
                 break;
             default:
                 break;
@@ -6152,6 +6422,13 @@ function switchSettingsView(viewName, options = {}) {
     // Load API keys when switching to general
     if (normalizedViewName === 'general') {
         renderApiKeySelector();
+    }
+
+    if (normalizedViewName === 'ai-image') {
+        renderAiImageAdminPanel();
+        if (!adminAiImageState.loaded || options?.force === true) {
+            void fetchAiImageAdminConfig({ force: options?.force === true });
+        }
     }
 
     if (options?.warm !== false) {
@@ -8604,6 +8881,2778 @@ async function getAdminApiHeaders() {
     return window.AdminAI.getAuthHeaders();
 }
 
+const adminAiImageState = {
+    loaded: false,
+    loading: false,
+    agents: [],
+    pricing: [],
+    apiBaseUrls: [],
+    guardrails: null,
+    storagePolicy: null,
+    storageUsage: null,
+    warnings: {},
+    runtime: null,
+    modelConfig: null,
+    selectedModelProviderId: 'default',
+    modelProviderPanelState: Object.create(null),
+    modelProviderDraft: null,
+    modelProbes: Object.create(null),
+    modelProbe: null,
+    lastRun: null
+};
+
+const DEFAULT_AI_IMAGE_MODEL_CONFIG = Object.freeze({
+    configured: false,
+    source: 'missing',
+    providerId: 'default',
+    label: '新上游',
+    vendor: 'openai',
+    protocol: 'openai-compatible',
+    modelGroup: 'both',
+    baseUrl: '',
+    model: '',
+    models: [],
+    imageModels: [],
+    chatModels: [],
+    videoModels: [],
+    visionModels: [],
+    detectedImageModels: [],
+    detectedChatModels: [],
+    detectedVideoModels: [],
+    detectedUnknownModels: [],
+    providers: [],
+    decryptErrorMessage: ''
+});
+
+const DEFAULT_AI_IMAGE_GUARDRAILS = Object.freeze({
+    submit: Object.freeze({
+        global: Object.freeze({ limit: 180, windowMs: 60000 }),
+        ip: Object.freeze({ limit: 30, windowMs: 60000 }),
+        user: Object.freeze({ limit: 12, windowMs: 60000 }),
+        heavyUser: Object.freeze({ limit: 4, windowMs: 60000 }),
+        model: Object.freeze({ limit: 6, windowMs: 60000 })
+    }),
+    upload: Object.freeze({
+        global: Object.freeze({ limit: 420, windowMs: 60000 }),
+        ip: Object.freeze({ limit: 36, windowMs: 60000 }),
+        user: Object.freeze({ limit: 18, windowMs: 60000 })
+    }),
+    download: Object.freeze({
+        global: Object.freeze({ limit: 1200, windowMs: 60000 }),
+        ip: Object.freeze({ limit: 180, windowMs: 60000 }),
+        user: Object.freeze({ limit: 120, windowMs: 60000 }),
+        resource: Object.freeze({ limit: 24, windowMs: 60000 })
+    }),
+    tasks: Object.freeze({
+        running: 2,
+        queued: 5,
+        active: 6
+    })
+});
+
+const DEFAULT_AI_IMAGE_STORAGE_POLICY = Object.freeze({
+    previewRetentionDays: 180,
+    originalRetentionDays: 365,
+    failedRetentionDays: 30,
+    warnStorageGb: 8,
+    stopStorageGb: 10,
+    lifecycleEnabled: false
+});
+
+function normalizeAdminAiImageSite() {
+    return 'all';
+}
+
+function normalizeAiImageModelBaseUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    try {
+        const url = new URL(raw);
+        url.hash = '';
+        url.search = '';
+        url.pathname = url.pathname.replace(/\/+$/, '') || '/v1';
+        if (url.pathname === '/') {
+            url.pathname = '/v1';
+        }
+        if (!/\/v\d+(?:\/.*)?$/i.test(url.pathname)) {
+            url.pathname = `${url.pathname}/v1`.replace(/\/{2,}/g, '/');
+        }
+        return url.toString().replace(/\/+$/, '');
+    } catch (_) {
+        return raw.replace(/\/+$/, '');
+    }
+}
+
+function normalizeAiImageModelName(value) {
+    const model = String(value || '').trim();
+    return model && model !== 'gpt-image' && model !== 'gpt-image-api'
+        ? model
+        : ADMIN_AI_IMAGE_DEFAULT_MODEL;
+}
+
+function normalizeAiImageOptionalModelName(value) {
+    const model = String(value || '').trim();
+    if (!model || model === 'gpt-image' || model === 'gpt-image-api') return '';
+    return model;
+}
+
+function normalizeAiImageProviderId(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80) || 'default';
+}
+
+function normalizeAiImageModelsList(value, fallbackModel = '') {
+    const rawItems = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[,\n]/);
+    const models = [];
+    const seen = new Set();
+    rawItems.forEach((item) => {
+        const rawModel = String(item || '').trim();
+        if (!rawModel) return;
+        const model = normalizeAiImageModelName(rawModel);
+        const key = model.toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        models.push(model);
+    });
+    const fallback = String(fallbackModel || '').trim() ? normalizeAiImageModelName(fallbackModel) : '';
+    if (fallback && !seen.has(fallback.toLowerCase())) {
+        models.unshift(fallback);
+    }
+    return models;
+}
+
+function mergeAiImageModelsList(existing = '', model = '') {
+    return normalizeAiImageModelsList([
+        ...normalizeAiImageModelsList(existing, ''),
+        model
+    ], '');
+}
+
+function setAiImageModelsInputValue(input, models = []) {
+    if (!input) return;
+    input.value = normalizeAiImageModelsList(models, '').join(', ');
+}
+
+function getAiImageModelCountLabel(count = 0, label = '模型') {
+    const total = Number(count || 0);
+    return total > 0 ? `${label} ${total} 个` : `${label} 0 个`;
+}
+
+function getAiImageVendorLabel(value = '') {
+    const normalized = normalizeAiImageModelVendor(value, 'openai');
+    const labels = {
+        openai: 'ChatGPT',
+        gemini: 'Gemini',
+        anthropic: 'Claude',
+        flux: 'FLUX',
+        sub2api: 'Sub2API',
+        other: '其它'
+    };
+    return labels[normalized] || normalized;
+}
+
+function mergeAiImageModelCandidates(...lists) {
+    return normalizeAiImageModelsList(lists.flatMap((list) => normalizeAiImageModelsList(list, '')), '');
+}
+
+function removeAiImageModelCandidate(list = [], model = '') {
+    const normalizedModel = normalizeAiImageOptionalModelName(model).toLowerCase();
+    if (!normalizedModel) return normalizeAiImageModelsList(list, '');
+    return normalizeAiImageModelsList(list, '').filter((item) => item.toLowerCase() !== normalizedModel);
+}
+
+function createEmptyAiImageModelProviderDraft() {
+    const providers = getAiImageModelProviders(getAiImageModelConfig());
+    const existingIds = new Set(providers.map((item) => item.providerId));
+    let index = providers.length + 1;
+    let providerId = normalizeAiImageProviderId(`provider-${index}`);
+    while (existingIds.has(providerId)) {
+        index += 1;
+        providerId = normalizeAiImageProviderId(`provider-${index}`);
+    }
+    return normalizeAiImageModelProvider({
+        ...DEFAULT_AI_IMAGE_MODEL_CONFIG,
+        providerId,
+        label: '新上游',
+        configured: false,
+        source: 'missing',
+        modelGroup: 'both',
+        model: '',
+        models: [],
+        imageModels: [],
+        chatModels: [],
+        videoModels: [],
+        visionModels: [],
+        detectedImageModels: [],
+        detectedChatModels: [],
+        detectedVideoModels: [],
+        detectedUnknownModels: []
+    });
+}
+
+function getAiImageEditingModelProvider(config = getAiImageModelConfig()) {
+    return adminAiImageState.modelProviderDraft
+        ? normalizeAiImageModelProvider(adminAiImageState.modelProviderDraft)
+        : getSelectedAiImageModelProvider(config);
+}
+
+function setAiImageEditingModelProviderDraft(updates = {}) {
+    const base = getAiImageEditingModelProvider(getAiImageModelConfig());
+    adminAiImageState.modelProviderDraft = normalizeAiImageModelProvider({
+        ...base,
+        ...(updates && typeof updates === 'object' ? updates : {})
+    });
+    return adminAiImageState.modelProviderDraft;
+}
+
+function clearAiImageEditingModelProviderDraft() {
+    adminAiImageState.modelProviderDraft = null;
+}
+
+function setAiImageHiddenModelInputValues(provider = {}) {
+    setAiImageModelsInputValue(document.getElementById('aiImageModelAliasesInput'), provider.imageModels || provider.image_models || provider.models || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageChatModelAliasesInput'), provider.chatModels || provider.chat_models || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageVideoModelAliasesInput'), provider.videoModels || provider.video_models || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageDetectedImageModelsInput'), provider.detectedImageModels || provider.detected_image_models || provider.imageModels || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageDetectedChatModelsInput'), provider.detectedChatModels || provider.detected_chat_models || provider.chatModels || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageDetectedVideoModelsInput'), provider.detectedVideoModels || provider.detected_video_models || provider.videoModels || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageDetectedUnknownModelsInput'), provider.detectedUnknownModels || provider.detected_unknown_models || []);
+    setAiImageModelsInputValue(document.getElementById('aiImageVisionModelsInput'), provider.visionModels || provider.vision_models || provider.chatVisionModels || provider.chat_vision_models || []);
+    const modelInput = document.getElementById('aiImageModelNameInput');
+    if (modelInput) {
+        modelInput.value = provider.model || provider.imageModels?.[0] || provider.chatModels?.[0] || provider.videoModels?.[0] || '';
+    }
+    const modelGroupInput = document.getElementById('aiImageModelGroupInput');
+    if (modelGroupInput) {
+        modelGroupInput.value = inferAiImageModelGroupFromLists(provider.imageModels || [], provider.chatModels || [], provider.videoModels || []);
+    }
+}
+
+function renderAiImageVisibleModelPill(model = '', group = 'image', selectedModels = [], providerId = '') {
+    const label = String(model || '').trim();
+    if (!label) return '';
+    const selectedSet = new Set(normalizeAiImageModelsList(selectedModels, '').map((item) => item.toLowerCase()));
+    const isSelected = selectedSet.has(label.toLowerCase());
+    return `
+        <button class="ai-image-admin-visible-model-pill ${isSelected ? 'is-selected' : ''}" type="button"
+            data-admin-action="settings-toggle-ai-image-visible-model"
+            data-model="${escapeHtml(label)}"
+            data-model-group="${escapeHtml(group)}"
+            data-provider-id="${escapeHtml(providerId || '')}"
+            aria-pressed="${isSelected ? 'true' : 'false'}">
+            <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
+            <span>${escapeHtml(label)}</span>
+        </button>
+    `;
+}
+
+function renderAiImageUnknownModelClassifier(model = '', providerId = '') {
+    const label = String(model || '').trim();
+    if (!label) return '';
+    return `
+        <span class="ai-image-admin-visible-model-classifier">
+            <span class="ai-image-admin-visible-model-classifier__name">${escapeHtml(label)}</span>
+            <button type="button"
+                data-admin-action="settings-classify-ai-image-unknown-model"
+                data-model="${escapeHtml(label)}"
+                data-model-group="chat"
+                data-provider-id="${escapeHtml(providerId || '')}">
+                设为文本
+            </button>
+            <button type="button"
+                data-admin-action="settings-classify-ai-image-unknown-model"
+                data-model="${escapeHtml(label)}"
+                data-model-group="image"
+                data-provider-id="${escapeHtml(providerId || '')}">
+                设为生图
+            </button>
+            <button type="button"
+                data-admin-action="settings-classify-ai-image-unknown-model"
+                data-model="${escapeHtml(label)}"
+                data-model-group="video"
+                data-provider-id="${escapeHtml(providerId || '')}">
+                设为视频
+            </button>
+        </span>
+    `;
+}
+
+function renderAiImageVisibleModelSection({
+    title = '',
+    description = '',
+    emptyText = '',
+    group = 'image',
+    detectedModels = [],
+    selectedModels = [],
+    providerId = ''
+} = {}) {
+    const detected = mergeAiImageModelCandidates(detectedModels, selectedModels);
+    const selectedCount = normalizeAiImageModelsList(selectedModels, '').length;
+    const pills = detected.map((model) => renderAiImageVisibleModelPill(model, group, selectedModels, providerId)).join('');
+    return `
+        <div class="ai-image-admin-visible-model-section" data-model-picker-section="${escapeHtml(group)}">
+            <div class="ai-image-admin-visible-model-section__header">
+                <div>
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml(description)}</span>
+                </div>
+                <em>${escapeHtml(getAiImageModelCountLabel(selectedCount, '已选'))}</em>
+            </div>
+            <div class="ai-image-admin-visible-model-pills">
+                ${pills || `<span class="ai-image-admin-visible-model-empty">${escapeHtml(emptyText)}</span>`}
+            </div>
+        </div>
+    `;
+}
+
+function renderAiImageProviderVisibleModelSection(provider = {}) {
+    const imageModels = normalizeAiImageModelsList(provider.imageModels || provider.image_models || provider.models, '');
+    const chatModels = normalizeAiImageModelsList(provider.chatModels || provider.chat_models, '');
+    const videoModels = normalizeAiImageModelsList(provider.videoModels || provider.video_models, '');
+    const detectedImageModels = mergeAiImageModelCandidates(provider.detectedImageModels, provider.detected_image_models, imageModels);
+    const detectedChatModels = mergeAiImageModelCandidates(provider.detectedChatModels, provider.detected_chat_models, chatModels);
+    const detectedVideoModels = mergeAiImageModelCandidates(provider.detectedVideoModels, provider.detected_video_models, videoModels);
+    const detectedUnknownModels = mergeAiImageModelCandidates(provider.detectedUnknownModels, provider.detected_unknown_models)
+        .filter((model) => ![...imageModels, ...chatModels, ...videoModels].some((selected) => selected.toLowerCase() === model.toLowerCase()));
+    const totalDetected = detectedImageModels.length + detectedChatModels.length + detectedVideoModels.length + detectedUnknownModels.length;
+    return `
+        <div class="ai-image-admin-visible-models__header">
+            <div>
+                <strong>前台可见模型</strong>
+                <span>检测后勾选这个上游在前台可见的文本 / 图片 / 视频模型。</span>
+            </div>
+            <em>${escapeHtml(totalDetected ? `已检测 ${totalDetected} 个` : '等待检测')}</em>
+        </div>
+        <div class="ai-image-admin-visible-models__grid">
+            ${renderAiImageVisibleModelSection({
+                title: '文本对话',
+                description: '只进入文本对话输入框的模型下拉菜单',
+                emptyText: '未检测到文本对话模型；保存后前台文本模型下拉留空。',
+                group: 'chat',
+                detectedModels: detectedChatModels,
+                selectedModels: chatModels,
+                providerId: provider.providerId || ''
+            })}
+            ${renderAiImageVisibleModelSection({
+                title: '生成图片',
+                description: '只进入生成图片输入框的模型下拉菜单',
+                emptyText: '未检测到图片生成模型；保存后前台生图模型下拉留空。',
+                group: 'image',
+                detectedModels: detectedImageModels,
+                selectedModels: imageModels,
+                providerId: provider.providerId || ''
+            })}
+            ${renderAiImageVisibleModelSection({
+                title: '生成视频',
+                description: '只进入生成视频输入框的模型下拉菜单',
+                emptyText: '未检测到视频生成模型；保存后前台视频模型下拉留空。',
+                group: 'video',
+                detectedModels: detectedVideoModels,
+                selectedModels: videoModels,
+                providerId: provider.providerId || ''
+            })}
+        </div>
+        ${detectedUnknownModels.length ? `
+            <div class="ai-image-admin-visible-model-section ai-image-admin-visible-model-section--unknown">
+                <div class="ai-image-admin-visible-model-section__header">
+                    <div>
+                        <strong>未分类模型</strong>
+                        <span>系统无法可靠判断用途，默认不进入前台；确认能力后可手动设为文本、生图或视频。</span>
+                    </div>
+                    <em>${escapeHtml(`${detectedUnknownModels.length} 个`)}</em>
+                </div>
+                <div class="ai-image-admin-visible-model-pills">
+                    ${detectedUnknownModels.map((model) => renderAiImageUnknownModelClassifier(model, provider.providerId || '')).join('')}
+                </div>
+            </div>
+        ` : ''}
+    `;
+}
+
+function inferAiImageModelGroupFromLists(imageModels = [], chatModels = [], videoModels = []) {
+    const hasImageModels = normalizeAiImageModelsList(imageModels, '').length > 0;
+    const hasChatModels = normalizeAiImageModelsList(chatModels, '').length > 0;
+    const hasVideoModels = normalizeAiImageModelsList(videoModels, '').length > 0;
+    if (hasVideoModels && !hasImageModels && !hasChatModels) return 'video';
+    if (hasImageModels && hasChatModels) return 'both';
+    if (hasChatModels) return 'chat';
+    return 'image';
+}
+
+function getAiImageProbeModeLabel(mode = '') {
+    const normalized = String(mode || '').trim().toLowerCase();
+    if (normalized === 'image') return '续作编辑';
+    if (normalized === 'chat') return '对话';
+    if (normalized === 'vision') return '视觉反推';
+    if (normalized === 'video') return '生成视频';
+    return '文生图';
+}
+
+function getAiImageProbeDiscoveryGroups(discovery = {}, provider = {}) {
+    if (!discovery || typeof discovery !== 'object' || discovery.ok === false) {
+        return [];
+    }
+    const selectedModelSet = new Set([
+        ...normalizeAiImageModelsList(provider.imageModels || provider.image_models || provider.models, ''),
+        ...normalizeAiImageModelsList(provider.chatModels || provider.chat_models, ''),
+        ...normalizeAiImageModelsList(provider.videoModels || provider.video_models, '')
+    ].map((model) => model.toLowerCase()));
+    const imageModels = normalizeAiImageModelsList(discovery.imageModels || discovery.image_models, '').slice(0, 8);
+    const chatModels = normalizeAiImageModelsList(discovery.chatModels || discovery.chat_models, '').slice(0, 8);
+    const videoModels = normalizeAiImageModelsList(discovery.videoModels || discovery.video_models, '').slice(0, 8);
+    const unknownModels = normalizeAiImageModelsList(discovery.unknownModels || discovery.unknown_models, '')
+        .filter((model) => !selectedModelSet.has(model.toLowerCase()))
+        .slice(0, 6);
+    return [
+        imageModels.length ? { group: 'image', label: '生图候选', models: imageModels } : null,
+        chatModels.length ? { group: 'chat', label: '对话候选', models: chatModels } : null,
+        videoModels.length ? { group: 'video', label: '视频候选', models: videoModels } : null,
+        unknownModels.length ? { group: 'unknown', label: '未分类', models: unknownModels } : null
+    ].filter(Boolean);
+}
+
+function getAiImageProbeUpstreamText(upstream = {}) {
+    if (!upstream || typeof upstream !== 'object') return '';
+    return [
+        upstream.channelName ? `通道：${upstream.channelName}` : '',
+        upstream.channelId ? `通道 ID：${upstream.channelId}` : '',
+        upstream.upstreamProvider ? `上游：${upstream.upstreamProvider}` : '',
+        upstream.upstreamModel ? `实际模型：${upstream.upstreamModel}` : '',
+        upstream.requestId ? `请求 ID：${upstream.requestId}` : ''
+    ].filter(Boolean).join(' · ');
+}
+
+function setAiImageModelProbe(probe = null) {
+    if (!probe || typeof probe !== 'object') {
+        adminAiImageState.modelProbe = null;
+        return null;
+    }
+
+    if (!adminAiImageState.modelProbes || typeof adminAiImageState.modelProbes !== 'object') {
+        adminAiImageState.modelProbes = Object.create(null);
+    }
+
+    const providerId = normalizeAiImageProviderId(probe.providerId || probe.provider_id || '');
+    const normalizedProbe = {
+        ...probe,
+        ...(providerId ? { providerId, provider_id: providerId } : {})
+    };
+    adminAiImageState.modelProbe = normalizedProbe;
+    if (providerId) {
+        adminAiImageState.modelProbes[providerId] = normalizedProbe;
+        adminAiImageState.modelProviderPanelState[providerId] = true;
+    }
+    return normalizedProbe;
+}
+
+function getAiImageProviderProbe(providerId = '') {
+    const normalizedProviderId = normalizeAiImageProviderId(providerId);
+    if (!normalizedProviderId) return null;
+    const scopedProbe = adminAiImageState.modelProbes?.[normalizedProviderId] || null;
+    if (scopedProbe) return scopedProbe;
+    const lastProbeProviderId = normalizeAiImageProviderId(adminAiImageState.modelProbe?.providerId || adminAiImageState.modelProbe?.provider_id || '');
+    return lastProbeProviderId === normalizedProviderId ? adminAiImageState.modelProbe : null;
+}
+
+function getAiImageProviderProbeStatus(probe = null, provider = {}) {
+    const providerLabel = provider.label || provider.providerId || '当前上游';
+    if (!probe) {
+        return {
+            tone: '',
+            text: `尚未检测：可在「${providerLabel}」内运行模型自检或检测上游支持模型`
+        };
+    }
+
+    const isDiscoveryProbe = probe.discoveryOnly === true;
+    if (probe.pending) {
+        return {
+            tone: 'loading',
+            text: isDiscoveryProbe
+                ? `正在检测「${probe.providerLabel || providerLabel}」上游支持模型...`
+                : `正在运行「${probe.providerLabel || providerLabel}」模型可用性自检...`
+        };
+    }
+
+    if (probe.ok) {
+        if (isDiscoveryProbe) {
+            return {
+                tone: 'ready',
+                text: `检测完成：${Number(probe.imageModels?.length || 0)} 个生图模型，${Number(probe.chatModels?.length || 0)} 个对话模型，${Number(probe.videoModels?.length || 0)} 个视频模型`
+            };
+        }
+        if (Array.isArray(probe.checks) && probe.checks.length) {
+            return {
+                tone: 'ready',
+                text: `模型自检通过：${probe.passed || probe.checks.length}/${probe.total || probe.checks.length} 项可用`
+            };
+        }
+        const seconds = Number(probe.latencyMs || 0)
+            ? `${(Number(probe.latencyMs) / 1000).toFixed(1)} 秒`
+            : '已返回';
+        return {
+            tone: 'ready',
+            text: `模型自检通过：${probe.model || provider.model || providerLabel} · ${probe.resultType || '结果'} · ${seconds}`
+        };
+    }
+
+    if (isDiscoveryProbe) {
+        return {
+            tone: 'error',
+            text: `检测失败：${probe.message || '未发现可用模型'}`
+        };
+    }
+    if (Array.isArray(probe.checks) && probe.checks.length) {
+        return {
+            tone: 'error',
+            text: `模型自检完成：${probe.passed || 0}/${probe.total || probe.checks.length} 项通过，${probe.failed || 0} 项失败`
+        };
+    }
+    return {
+        tone: 'error',
+        text: `模型自检失败：${probe.message || '上游模型不可用'}`
+    };
+}
+
+function renderAiImageDiscoveredModelButton(model = '', group = 'unknown', providerId = '') {
+    const label = String(model || '').trim();
+    if (!label) return '';
+    const normalizedGroup = String(group || '').trim().toLowerCase();
+    if (normalizedGroup === 'unknown') {
+        return renderAiImageUnknownModelClassifier(label, providerId);
+    }
+    const safeGroup = ['chat', 'image', 'video'].includes(normalizedGroup) ? normalizedGroup : 'image';
+    return `
+        <button class="ai-image-admin-model-chip" type="button"
+            data-admin-action="settings-apply-ai-image-discovered-model"
+            data-model="${escapeHtml(label)}"
+            data-model-group="${escapeHtml(safeGroup)}"
+            data-provider-id="${escapeHtml(providerId || '')}">
+            ${escapeHtml(label)}
+        </button>
+    `;
+}
+
+function renderAiImageProbeGridHtml(probe = null, provider = {}) {
+    if (!probe || probe.pending) return '';
+    const isDiscoveryProbe = probe.discoveryOnly === true;
+    const checks = Array.isArray(probe.checks) ? probe.checks : [];
+    const discovery = probe.discovery && typeof probe.discovery === 'object' ? probe.discovery : null;
+    const modelPresence = probe.modelPresence && typeof probe.modelPresence === 'object' ? probe.modelPresence : null;
+    const discoveryGroups = getAiImageProbeDiscoveryGroups(discovery, provider);
+    const discoveryHtml = discovery ? `
+        <div class="ai-image-admin-probe-discovery ${discovery.ok ? 'is-ok' : 'is-error'}">
+            <strong>${escapeHtml(isDiscoveryProbe && probe.ok
+                ? `已更新上游候选模型：生图 ${Number(probe.imageModels?.length || 0)} 个，对话 ${Number(probe.chatModels?.length || 0)} 个，视频 ${Number(probe.videoModels?.length || 0)} 个`
+                : (discovery.ok ? `发现上游模型 ${Number(discovery.total || discovery.models?.length || 0)} 个` : '上游模型发现失败'))}</strong>
+            <span>${escapeHtml(discovery.ok ? `${discovery.endpoint || 'models'} · ${(Number(discovery.latencyMs || 0) / 1000).toFixed(1)}s` : `${discovery.code || 'model_discovery_failed'} · ${discovery.message || '无法读取 /models'}`)}</span>
+            ${getAiImageProbeUpstreamText(discovery.upstream) ? `<em>${escapeHtml(getAiImageProbeUpstreamText(discovery.upstream))}</em>` : ''}
+            ${modelPresence?.chat?.missing?.length ? `<em>对话模型未在列表中：${escapeHtml(modelPresence.chat.missing.join(' / '))}</em>` : ''}
+            ${modelPresence?.image?.missing?.length ? `<em>生图模型未在列表中：${escapeHtml(modelPresence.image.missing.join(' / '))}</em>` : ''}
+            ${modelPresence?.video?.missing?.length ? `<em>视频模型未在列表中：${escapeHtml(modelPresence.video.missing.join(' / '))}</em>` : ''}
+            ${discoveryGroups.length ? `
+                <div class="ai-image-admin-model-chip-groups">
+                    ${discoveryGroups.map((group) => `
+                        <div class="ai-image-admin-model-chip-group">
+                            <span>${escapeHtml(group.label)}</span>
+                            <div>${group.models.map((model) => renderAiImageDiscoveredModelButton(model, group.group, provider.providerId || '')).join('')}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </div>
+    ` : '';
+    const checksHtml = checks.length ? checks.map((item) => {
+        const modeLabel = getAiImageProbeModeLabel(item.mode);
+        const latency = Number(item.latencyMs || 0)
+            ? `${(Number(item.latencyMs) / 1000).toFixed(1)}s`
+            : '-';
+        const statusLabel = item.ok ? '可用' : '失败';
+        const upstreamText = getAiImageProbeUpstreamText(item.upstream);
+        const detail = item.ok
+            ? `${item.model || ''} · ${item.endpoint || ''} · ${item.size || ''} · ${item.resultType || '结果'} · ${latency}${upstreamText ? ` · ${upstreamText}` : ''}`
+            : `${item.code || 'probe_failed'} · ${item.message || '上游不可用'}${upstreamText ? ` · ${upstreamText}` : ''}`;
+        return `
+            <div class="ai-image-admin-probe-item ${item.ok ? 'is-ok' : 'is-error'}">
+                <strong>${escapeHtml([modeLabel, String(item.resolution || '').toUpperCase()].filter(Boolean).join(' · '))}</strong>
+                <span>${escapeHtml(statusLabel)}</span>
+                <em>${escapeHtml(detail)}</em>
+            </div>
+        `;
+    }).join('') : '';
+    return `${discoveryHtml}${checksHtml}`;
+}
+
+function renderAiImageProviderProbePanel(provider = {}) {
+    const probe = getAiImageProviderProbe(provider.providerId || '');
+    const status = getAiImageProviderProbeStatus(probe, provider);
+    const gridHtml = renderAiImageProbeGridHtml(probe, provider);
+    return `
+        <div class="ai-image-admin-provider-probe" data-provider-probe="${escapeHtml(provider.providerId || '')}">
+            <p class="settings-status ai-image-admin-model-status ai-image-admin-provider-probe__status">
+                <span class="status-dot ${escapeHtml(status.tone || '')}"></span>
+                <span>${escapeHtml(status.text)}</span>
+            </p>
+            ${gridHtml ? `<div class="ai-image-admin-probe-grid">${gridHtml}</div>` : ''}
+        </div>
+    `;
+}
+
+function hasAiImageModelsListValue(...values) {
+    return values.some((value) => {
+        if (Array.isArray(value)) {
+            return value.some((item) => String(item || '').trim());
+        }
+        return String(value || '').trim();
+    });
+}
+
+function normalizeAiImageModelGroup(value, fallback = 'image') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['image', 'chat', 'video', 'both'].includes(normalized)) return normalized;
+    return ['image', 'chat', 'video', 'both'].includes(fallback) ? fallback : 'image';
+}
+
+function hasExplicitAiImageModelGroup(value) {
+    return ['image', 'chat', 'video', 'both'].includes(String(value || '').trim().toLowerCase());
+}
+
+function inferAiImageModelGroup(value, imageModels = [], chatModels = [], videoModels = [], fallback = 'image') {
+    const normalized = normalizeAiImageModelGroup(value, fallback);
+    const hasImageModels = normalizeAiImageModelsList(imageModels, '').length > 0;
+    const hasChatModels = normalizeAiImageModelsList(chatModels, '').length > 0;
+    const hasVideoModels = normalizeAiImageModelsList(videoModels, '').length > 0;
+    if (hasVideoModels && !hasImageModels && !hasChatModels) return 'video';
+    if (hasImageModels && hasChatModels) return 'both';
+    if (hasChatModels && normalized === 'image') return 'chat';
+    if (hasImageModels && normalized === 'chat') return 'image';
+    return normalized;
+}
+
+function scopeAiImageModelsByGroup(modelGroup = 'image', imageModels = [], chatModels = [], videoModels = []) {
+    const group = normalizeAiImageModelGroup(modelGroup, 'image');
+    return {
+        modelGroup: group,
+        imageModels: group === 'chat' || group === 'video' ? [] : normalizeAiImageModelsList(imageModels, ''),
+        chatModels: group === 'image' || group === 'video' ? [] : normalizeAiImageModelsList(chatModels, ''),
+        videoModels: normalizeAiImageModelsList(videoModels, '')
+    };
+}
+
+function normalizeAiImageModelVendor(value, fallback = 'openai') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['openai', 'gemini', 'anthropic', 'flux', 'sub2api', 'other'].includes(normalized) ? normalized : fallback;
+}
+
+function normalizeAiImageModelProtocol(value, fallback = 'openai-compatible') {
+    const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+    return ['openai-compatible', 'gemini-native', 'anthropic-native', 'custom'].includes(normalized) ? normalized : fallback;
+}
+
+function normalizeAiImageModelProvider(provider = {}) {
+    const providerId = normalizeAiImageProviderId(provider.providerId || provider.provider_id || provider.id);
+    const model = normalizeAiImageOptionalModelName(provider.model);
+    const models = normalizeAiImageModelsList(provider.models || provider.modelAliases || provider.model_aliases, '');
+    const chatModels = normalizeAiImageModelsList(provider.chatModels || provider.chat_models || provider.chatModelAliases || provider.chat_model_aliases, '');
+    const videoModels = normalizeAiImageModelsList(provider.videoModels || provider.video_models || provider.videoModelAliases || provider.video_model_aliases, '');
+    const rawModelGroup = provider.modelGroup || provider.model_group;
+    const configuredModelGroup = normalizeAiImageModelGroup(rawModelGroup, videoModels.length && !chatModels.length ? 'video' : (chatModels.length && models.length ? 'both' : (chatModels.length ? 'chat' : 'image')));
+    const hasExplicitImageModels = hasAiImageModelsListValue(
+        provider.imageModels,
+        provider.image_models,
+        provider.imageModelAliases,
+        provider.image_model_aliases
+    );
+    const imageModels = configuredModelGroup === 'chat' && !hasExplicitImageModels
+        ? []
+        : normalizeAiImageModelsList(provider.imageModels || provider.image_models || provider.imageModelAliases || provider.image_model_aliases || provider.models || models, '');
+    const modelGroup = hasExplicitAiImageModelGroup(rawModelGroup)
+        ? configuredModelGroup
+        : inferAiImageModelGroup(configuredModelGroup, imageModels, chatModels, videoModels, videoModels.length && !chatModels.length ? 'video' : (chatModels.length ? 'both' : 'image'));
+    const scopedModels = scopeAiImageModelsByGroup(modelGroup, imageModels, chatModels, videoModels);
+    const detectedImageModels = mergeAiImageModelCandidates(
+        provider.detectedImageModels,
+        provider.detected_image_models,
+        provider.discoveredImageModels,
+        provider.discovered_image_models,
+        scopedModels.imageModels
+    );
+    const detectedChatModels = mergeAiImageModelCandidates(
+        provider.detectedChatModels,
+        provider.detected_chat_models,
+        provider.discoveredChatModels,
+        provider.discovered_chat_models,
+        scopedModels.chatModels
+    );
+    const detectedVideoModels = mergeAiImageModelCandidates(
+        provider.detectedVideoModels,
+        provider.detected_video_models,
+        provider.discoveredVideoModels,
+        provider.discovered_video_models,
+        scopedModels.videoModels
+    );
+    const detectedUnknownModels = mergeAiImageModelCandidates(
+        provider.detectedUnknownModels,
+        provider.detected_unknown_models,
+        provider.discoveredUnknownModels,
+        provider.discovered_unknown_models,
+        provider.unknownModels,
+        provider.unknown_models
+    );
+    const visionModels = mergeAiImageModelCandidates(
+        provider.visionModels,
+        provider.vision_models,
+        provider.chatVisionModels,
+        provider.chat_vision_models
+    );
+    return {
+        providerId,
+        provider_id: providerId,
+        label: String(provider.label || provider.name || providerId).trim().slice(0, 120) || providerId,
+        configured: Boolean(provider.configured),
+        source: provider.source || 'missing',
+        baseUrl: normalizeAiImageModelBaseUrl(provider.baseUrl || provider.base_url || DEFAULT_AI_IMAGE_MODEL_CONFIG.baseUrl),
+        vendor: normalizeAiImageModelVendor(provider.vendor || provider.provider, DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor),
+        protocol: normalizeAiImageModelProtocol(provider.protocol || provider.adapter, DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol),
+        modelGroup,
+        model_group: modelGroup,
+        model,
+        models: scopedModels.imageModels,
+        imageModels: scopedModels.imageModels,
+        image_models: scopedModels.imageModels,
+        chatModels: scopedModels.chatModels,
+        chat_models: scopedModels.chatModels,
+        videoModels: scopedModels.videoModels,
+        video_models: scopedModels.videoModels,
+        detectedImageModels,
+        detected_image_models: detectedImageModels,
+        detectedChatModels,
+        detected_chat_models: detectedChatModels,
+        detectedVideoModels,
+        detected_video_models: detectedVideoModels,
+        detectedUnknownModels,
+        detected_unknown_models: detectedUnknownModels,
+        visionModels,
+        vision_models: visionModels,
+        isActive: provider.isActive !== false && provider.is_active !== false,
+        displayOrder: Number(provider.displayOrder ?? provider.display_order ?? 0) || 0,
+        updatedAt: provider.updatedAt || provider.updated_at || null,
+        decryptErrorMessage: String(provider.decryptErrorMessage || '').trim()
+    };
+}
+
+function getAiImageModelProviders(config = getAiImageModelConfig()) {
+    const providers = Array.isArray(config.providers)
+        ? config.providers.map(normalizeAiImageModelProvider)
+        : [];
+    if (providers.length) return providers;
+    return [normalizeAiImageModelProvider(config)];
+}
+
+function getSelectedAiImageModelProvider(config = getAiImageModelConfig()) {
+    const providers = getAiImageModelProviders(config);
+    const selectedId = normalizeAiImageProviderId(adminAiImageState.selectedModelProviderId || config.providerId || 'default');
+    return providers.find((provider) => provider.providerId === selectedId) || providers[0] || normalizeAiImageModelProvider(config);
+}
+
+function getAiImageModelConfig() {
+    const current = adminAiImageState.modelConfig;
+    const providers = Array.isArray(current?.providers)
+        ? current.providers.map(normalizeAiImageModelProvider)
+        : [];
+    const fallbackProvider = normalizeAiImageModelProvider({
+        ...DEFAULT_AI_IMAGE_MODEL_CONFIG,
+        ...(current && typeof current === 'object' && !Array.isArray(current) ? current : {})
+    });
+    const mergedProviders = providers.length ? providers : [fallbackProvider];
+    const selected = mergedProviders.find((provider) => provider.providerId === normalizeAiImageProviderId(adminAiImageState.selectedModelProviderId))
+        || mergedProviders[0]
+        || fallbackProvider;
+    const modelGroup = normalizeAiImageModelGroup(
+        selected.modelGroup || selected.model_group || current?.modelGroup || current?.model_group,
+        DEFAULT_AI_IMAGE_MODEL_CONFIG.modelGroup
+    );
+    const scopedModels = scopeAiImageModelsByGroup(
+        modelGroup,
+        normalizeAiImageModelsList(
+            selected.imageModels || selected.image_models || current?.imageModels || current?.image_models || selected.models || current?.models,
+            ''
+        ),
+        normalizeAiImageModelsList(selected.chatModels || selected.chat_models || current?.chatModels || current?.chat_models, ''),
+        normalizeAiImageModelsList(selected.videoModels || selected.video_models || current?.videoModels || current?.video_models, '')
+    );
+    const detectedImageModels = mergeAiImageModelCandidates(
+        selected.detectedImageModels,
+        selected.detected_image_models,
+        current?.detectedImageModels,
+        current?.detected_image_models,
+        scopedModels.imageModels
+    );
+    const detectedChatModels = mergeAiImageModelCandidates(
+        selected.detectedChatModels,
+        selected.detected_chat_models,
+        current?.detectedChatModels,
+        current?.detected_chat_models,
+        scopedModels.chatModels
+    );
+    const detectedVideoModels = mergeAiImageModelCandidates(
+        selected.detectedVideoModels,
+        selected.detected_video_models,
+        current?.detectedVideoModels,
+        current?.detected_video_models,
+        scopedModels.videoModels
+    );
+    const detectedUnknownModels = mergeAiImageModelCandidates(
+        selected.detectedUnknownModels,
+        selected.detected_unknown_models,
+        current?.detectedUnknownModels,
+        current?.detected_unknown_models
+    );
+    const visionModels = mergeAiImageModelCandidates(
+        selected.visionModels,
+        selected.vision_models,
+        current?.visionModels,
+        current?.vision_models
+    );
+    return {
+        ...DEFAULT_AI_IMAGE_MODEL_CONFIG,
+        ...(current && typeof current === 'object' && !Array.isArray(current) ? current : {}),
+        providerId: selected.providerId,
+        provider_id: selected.providerId,
+        label: selected.label,
+        configured: Boolean(selected.configured || current?.configured),
+        source: selected.source || current?.source || DEFAULT_AI_IMAGE_MODEL_CONFIG.source,
+        vendor: selected.vendor || current?.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor,
+        protocol: selected.protocol || current?.protocol || DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol,
+        modelGroup: scopedModels.modelGroup,
+        model_group: scopedModels.modelGroup,
+        baseUrl: normalizeAiImageModelBaseUrl(selected.baseUrl || current?.baseUrl || DEFAULT_AI_IMAGE_MODEL_CONFIG.baseUrl),
+        model: normalizeAiImageOptionalModelName(selected.model || current?.model || scopedModels.imageModels[0] || scopedModels.chatModels[0] || scopedModels.videoModels[0] || ''),
+        models: scopedModels.imageModels,
+        imageModels: scopedModels.imageModels,
+        chatModels: scopedModels.chatModels,
+        videoModels: scopedModels.videoModels,
+        detectedImageModels,
+        detectedChatModels,
+        detectedVideoModels,
+        detectedUnknownModels,
+        visionModels,
+        providers: mergedProviders,
+        decryptErrorMessage: String(current?.decryptErrorMessage || '').trim()
+    };
+}
+
+function setAiImageModelConfig(payload = {}) {
+    const normalizedPayload = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const providers = Array.isArray(normalizedPayload.providers)
+        ? normalizedPayload.providers.map(normalizeAiImageModelProvider)
+        : undefined;
+    adminAiImageState.modelConfig = {
+        ...getAiImageModelConfig(),
+        ...normalizedPayload,
+        ...(providers ? { providers } : {})
+    };
+    if (normalizedPayload.providerId || normalizedPayload.provider_id) {
+        adminAiImageState.selectedModelProviderId = normalizeAiImageProviderId(normalizedPayload.providerId || normalizedPayload.provider_id);
+    } else if (!adminAiImageState.selectedModelProviderId && providers?.[0]) {
+        adminAiImageState.selectedModelProviderId = providers[0].providerId;
+    }
+    return getAiImageModelConfig();
+}
+
+function getAiImageModelSourceMeta(config = getAiImageModelConfig()) {
+    const decryptErrorMessage = String(config.decryptErrorMessage || '').trim();
+    if (decryptErrorMessage) {
+        return {
+            source: 'missing',
+            badge: '需重录',
+            statusText: decryptErrorMessage
+        };
+    }
+
+    if (config.source === 'stored') {
+        return {
+            source: 'stored',
+            badge: '后台托管',
+            statusText: `AI 图片模型已托管 · ${config.baseUrl} · ${config.model}`
+        };
+    }
+
+    if (config.source === 'environment') {
+        return {
+            source: 'environment',
+            badge: '环境变量',
+            statusText: `AI 图片模型当前由环境变量托管 · ${config.baseUrl} · ${config.model}`
+        };
+    }
+
+    return {
+        source: 'missing',
+        badge: '待配置',
+        statusText: '未配置 AI 图片上游，请录入 Key、填写 Base URL，并检测上游支持模型'
+    };
+}
+
+function normalizeAiImageGuardrailInt(value, fallback = 1, { min = 1, max = 100000 } = {}) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+}
+
+function normalizeAiImageGuardrailWindow(value = {}, fallback = {}, options = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    return {
+        limit: normalizeAiImageGuardrailInt(source.limit ?? source.max ?? source.limit_value, fallback.limit, {
+            min: options.minLimit || 1,
+            max: options.maxLimit || 100000
+        }),
+        windowMs: normalizeAiImageGuardrailInt(source.windowMs ?? source.window_ms ?? source.window, fallback.windowMs, {
+            min: 1000,
+            max: 86400000
+        })
+    };
+}
+
+function normalizeAiImageGuardrails(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const defaults = DEFAULT_AI_IMAGE_GUARDRAILS;
+    return {
+        submit: {
+            global: normalizeAiImageGuardrailWindow(source.submit?.global, defaults.submit.global, { maxLimit: 10000 }),
+            ip: normalizeAiImageGuardrailWindow(source.submit?.ip, defaults.submit.ip, { maxLimit: 10000 }),
+            user: normalizeAiImageGuardrailWindow(source.submit?.user, defaults.submit.user, { maxLimit: 10000 }),
+            heavyUser: normalizeAiImageGuardrailWindow(source.submit?.heavyUser || source.submit?.heavy_user, defaults.submit.heavyUser, { maxLimit: 10000 }),
+            model: normalizeAiImageGuardrailWindow(source.submit?.model, defaults.submit.model, { maxLimit: 10000 })
+        },
+        upload: {
+            global: normalizeAiImageGuardrailWindow(source.upload?.global, defaults.upload.global, { maxLimit: 10000 }),
+            ip: normalizeAiImageGuardrailWindow(source.upload?.ip, defaults.upload.ip, { maxLimit: 10000 }),
+            user: normalizeAiImageGuardrailWindow(source.upload?.user, defaults.upload.user, { maxLimit: 10000 })
+        },
+        download: {
+            global: normalizeAiImageGuardrailWindow(source.download?.global, defaults.download.global, { maxLimit: 100000 }),
+            ip: normalizeAiImageGuardrailWindow(source.download?.ip, defaults.download.ip, { maxLimit: 100000 }),
+            user: normalizeAiImageGuardrailWindow(source.download?.user, defaults.download.user, { maxLimit: 100000 }),
+            resource: normalizeAiImageGuardrailWindow(source.download?.resource, defaults.download.resource, { maxLimit: 100000 })
+        },
+        tasks: {
+            running: normalizeAiImageGuardrailInt(source.tasks?.running ?? source.tasks?.runningLimit, defaults.tasks.running, { min: 1, max: 20 }),
+            queued: normalizeAiImageGuardrailInt(source.tasks?.queued ?? source.tasks?.queuedLimit, defaults.tasks.queued, { min: 1, max: 100 }),
+            active: normalizeAiImageGuardrailInt(source.tasks?.active ?? source.tasks?.activeLimit, defaults.tasks.active, { min: 1, max: 100 })
+        }
+    };
+}
+
+function getAiImageGuardrails() {
+    return normalizeAiImageGuardrails(adminAiImageState.guardrails || DEFAULT_AI_IMAGE_GUARDRAILS);
+}
+
+function normalizeAiImageStorageNumber(value, fallback = 0, { min = 0, max = 100000 } = {}) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(parsed * 100) / 100));
+}
+
+function normalizeAiImageStorageInt(value, fallback = 30, { min = 1, max = 3650 } = {}) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+}
+
+function normalizeAiImageStoragePolicy(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const policy = {
+        previewRetentionDays: normalizeAiImageStorageInt(
+            source.previewRetentionDays ?? source.preview_retention_days,
+            DEFAULT_AI_IMAGE_STORAGE_POLICY.previewRetentionDays,
+            { min: 7, max: 3650 }
+        ),
+        originalRetentionDays: normalizeAiImageStorageInt(
+            source.originalRetentionDays ?? source.original_retention_days,
+            DEFAULT_AI_IMAGE_STORAGE_POLICY.originalRetentionDays,
+            { min: 7, max: 3650 }
+        ),
+        failedRetentionDays: normalizeAiImageStorageInt(
+            source.failedRetentionDays ?? source.failed_retention_days,
+            DEFAULT_AI_IMAGE_STORAGE_POLICY.failedRetentionDays,
+            { min: 1, max: 3650 }
+        ),
+        warnStorageGb: normalizeAiImageStorageNumber(
+            source.warnStorageGb ?? source.warn_storage_gb,
+            DEFAULT_AI_IMAGE_STORAGE_POLICY.warnStorageGb,
+            { min: 0.1, max: 100000 }
+        ),
+        stopStorageGb: normalizeAiImageStorageNumber(
+            source.stopStorageGb ?? source.stop_storage_gb,
+            DEFAULT_AI_IMAGE_STORAGE_POLICY.stopStorageGb,
+            { min: 0.1, max: 100000 }
+        ),
+        lifecycleEnabled: Boolean(source.lifecycleEnabled ?? source.lifecycle_enabled ?? DEFAULT_AI_IMAGE_STORAGE_POLICY.lifecycleEnabled)
+    };
+    if (policy.warnStorageGb > policy.stopStorageGb) {
+        policy.stopStorageGb = policy.warnStorageGb;
+    }
+    return policy;
+}
+
+function getAiImageStoragePolicy() {
+    return normalizeAiImageStoragePolicy(adminAiImageState.storagePolicy || DEFAULT_AI_IMAGE_STORAGE_POLICY);
+}
+
+function getAiImageStorageUsage() {
+    const source = adminAiImageState.storageUsage && typeof adminAiImageState.storageUsage === 'object'
+        ? adminAiImageState.storageUsage
+        : {};
+    return {
+        sampledResults: Number(source.sampled_results ?? source.sampledResults ?? 0) || 0,
+        previewObjects: Number(source.preview_objects ?? source.previewObjects ?? 0) || 0,
+        originalObjects: Number(source.original_objects ?? source.originalObjects ?? 0) || 0,
+        previewBytes: Number(source.preview_bytes ?? source.previewBytes ?? 0) || 0,
+        originalBytes: Number(source.original_bytes ?? source.originalBytes ?? 0) || 0,
+        totalBytes: Number(source.total_bytes ?? source.totalBytes ?? 0) || 0,
+        estimatedTotalGb: Number(source.estimated_total_gb ?? source.estimatedTotalGb ?? 0) || 0,
+        unknownPreviewObjects: Number(source.unknown_preview_objects ?? source.unknownPreviewObjects ?? 0) || 0,
+        unknownOriginalObjects: Number(source.unknown_original_objects ?? source.unknownOriginalObjects ?? 0) || 0,
+        pendingOriginals: Number(source.pending_originals ?? source.pendingOriginals ?? 0) || 0,
+        failedOriginals: Number(source.failed_originals ?? source.failedOriginals ?? 0) || 0,
+        tone: String(source.tone || 'ready'),
+        errorMessage: String(source.error_message || source.errorMessage || '').trim()
+    };
+}
+
+function getAiImageConfigUrl(params = {}) {
+    const searchParams = new URLSearchParams({
+        route: 'ai-image/config',
+        site: normalizeAdminAiImageSite()
+    });
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).trim()) {
+            searchParams.set(key, String(value));
+        }
+    });
+
+    return `/api/admin?${searchParams.toString()}`;
+}
+
+function getAiImageModelConfigUrl() {
+    return '/api/admin?route=ai-image/model-config';
+}
+
+async function fetchAiImageModelConfig(options = {}) {
+    try {
+        const headers = await getAdminApiHeaders();
+        const response = await (window.AdminApi?.fetch || fetch)(getAiImageModelConfigUrl(), {
+            method: 'GET',
+            headers
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '读取 AI 图片模型配置失败');
+        }
+        setAiImageModelConfig(payload);
+        if (options.render !== false) {
+            renderAiImageModelConfigPanel();
+        }
+        return payload;
+    } catch (err) {
+        console.warn('Failed to load AI image model config:', err);
+        if (options.silent !== true) {
+            showAdminStudioToast(err.message || '读取 AI 图片模型配置失败', 'error');
+        }
+        return null;
+    }
+}
+
+async function fetchAiImageAdminConfig(options = {}) {
+    if (adminAiImageState.loading && !options.force) return null;
+    adminAiImageState.loading = true;
+    renderAiImageAdminPanel();
+
+    try {
+        const headers = await getAdminApiHeaders();
+        const response = await (window.AdminApi?.fetch || fetch)(getAiImageConfigUrl(), {
+            method: 'GET',
+            headers
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '读取 AI 图片配置失败');
+        }
+
+        adminAiImageState.agents = Array.isArray(payload.agents) ? payload.agents : [];
+        adminAiImageState.pricing = Array.isArray(payload.pricing) ? payload.pricing : [];
+        adminAiImageState.apiBaseUrls = Array.isArray(payload.api_base_urls) ? payload.api_base_urls : [];
+        adminAiImageState.guardrails = normalizeAiImageGuardrails(payload.guardrails || {});
+        adminAiImageState.storagePolicy = normalizeAiImageStoragePolicy(payload.storage_policy || payload.storagePolicy || {});
+        adminAiImageState.storageUsage = payload.storage_usage || payload.storageUsage || null;
+        adminAiImageState.warnings = payload.warnings && typeof payload.warnings === 'object' ? payload.warnings : {};
+        adminAiImageState.runtime = payload.runtime && typeof payload.runtime === 'object' ? payload.runtime : null;
+        const runtimeModel = adminAiImageState.runtime?.model || null;
+        if (runtimeModel && !adminAiImageState.modelConfig) {
+            setAiImageModelConfig({
+                configured: Boolean(runtimeModel.configured),
+                source: runtimeModel.source === 'ai-image-stored'
+                    ? 'stored'
+                    : (runtimeModel.source === 'ai-image-env' ? 'environment' : 'missing'),
+                model: runtimeModel.model || ADMIN_AI_IMAGE_DEFAULT_MODEL,
+                baseUrl: ''
+            });
+        }
+        void fetchAiImageModelConfig({ silent: true, render: true });
+        adminAiImageState.loaded = true;
+        return payload;
+    } catch (err) {
+        console.error('Failed to load AI image config:', err);
+        showAdminStudioToast(err.message || '读取 AI 图片配置失败', 'error');
+        return null;
+    } finally {
+        adminAiImageState.loading = false;
+        renderAiImageAdminPanel();
+    }
+}
+
+function formatAiImageDateTime(value = '') {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function getAiImageRuntimeText(kind = '') {
+    const runtime = adminAiImageState.runtime || {};
+    const model = runtime.model || {};
+    const storage = runtime.storage || {};
+    const queue = runtime.queue || {};
+    const counts = queue.counts || {};
+
+    if (kind === 'model') {
+        if (!model.configured) return '未配置模型 Key';
+        const source = model.source_label || '已配置';
+        const tail = model.api_key_tail ? ` · ****${model.api_key_tail}` : '';
+        return `${model.model || ADMIN_AI_IMAGE_DEFAULT_MODEL} · ${source}${tail}`;
+    }
+
+    if (kind === 'storage') {
+        if (storage.configured) {
+            return `${storage.bucket || 'R2'} · ${storage.public_url || '公开地址已配置'}`;
+        }
+        if (storage.inline_data_urls_allowed) {
+            return '开发模式 inline data URL';
+        }
+        return '未配置 R2 存储';
+    }
+
+    if (kind === 'queue') {
+        if (queue.error_message) return `查询失败：${queue.error_message}`;
+        const queued = Number(counts.queued || 0);
+        const running = Number(counts.running || 0);
+        const failed = Number(counts.failed || 0);
+        const oldest = Number(queue.oldest_queued_minutes || 0);
+        return `排队 ${queued} · 运行 ${running} · 失败 ${failed}${oldest ? ` · 最久 ${oldest} 分钟` : ''}`;
+    }
+
+    if (kind === 'failure') {
+        const failure = queue.recent_failure || null;
+        if (!failure) return '暂无失败任务';
+        const time = formatAiImageDateTime(failure.failed_at);
+        const code = failure.error_code || 'ai_image_failed';
+        const message = failure.error_message || '无错误详情';
+        return `${time ? `${time} · ` : ''}${code} · ${message}`;
+    }
+
+    return '待检测';
+}
+
+function getAiImageRuntimeHealth() {
+    const runtime = adminAiImageState.runtime || {};
+    const model = runtime.model || {};
+    const storage = runtime.storage || {};
+    const queue = runtime.queue || {};
+    const counts = queue.counts || {};
+
+    if (adminAiImageState.loading) return 'loading';
+    if (!runtime || !adminAiImageState.loaded) return 'idle';
+    if (!model.configured || (!storage.configured && !storage.inline_data_urls_allowed) || queue.error_message) {
+        return 'error';
+    }
+    if (Number(counts.failed || 0) > 0 || Number(queue.oldest_queued_minutes || 0) >= 20 || model.warning) {
+        return 'warning';
+    }
+    return 'ready';
+}
+
+function renderAiImageRuntimeStatus() {
+    const modelEl = document.querySelector('[data-ai-image-runtime="model"]');
+    const storageEl = document.querySelector('[data-ai-image-runtime="storage"]');
+    const queueEl = document.querySelector('[data-ai-image-runtime="queue"]');
+    const failureEl = document.querySelector('[data-ai-image-runtime="failure"]');
+    const workerStatus = document.getElementById('aiImageWorkerStatus');
+
+    if (modelEl) {
+        modelEl.textContent = getAiImageRuntimeText('model');
+    }
+    if (storageEl) {
+        storageEl.textContent = getAiImageRuntimeText('storage');
+    }
+    if (queueEl) {
+        queueEl.textContent = getAiImageRuntimeText('queue');
+    }
+    if (failureEl) {
+        failureEl.textContent = getAiImageRuntimeText('failure');
+    }
+
+    if (workerStatus) {
+        const dot = workerStatus.querySelector('.status-dot');
+        const text = workerStatus.querySelector('span:last-child');
+        const run = adminAiImageState.lastRun;
+        if (run) {
+            const failed = Number(run.failed || 0);
+            dot.className = `status-dot ${failed ? 'error' : 'ready'}`;
+            text.textContent = `最近执行：处理 ${Number(run.processed || 0)} 个，成功 ${Number(run.succeeded || 0)} 个，失败 ${failed} 个`;
+        } else if (adminAiImageState.loading) {
+            dot.className = 'status-dot';
+            text.textContent = '正在加载 AI 图片配置和队列状态...';
+        } else {
+            const health = getAiImageRuntimeHealth();
+            dot.className = `status-dot ${health}`;
+            const runtime = adminAiImageState.runtime || {};
+            const model = runtime.model || {};
+            const storage = runtime.storage || {};
+            if (health === 'ready') {
+                text.textContent = '模型、存储和队列状态正常';
+            } else if (health === 'warning') {
+                text.textContent = model.warning || '队列存在失败任务或等待时间较长';
+            } else if (health === 'error') {
+                text.textContent = model.error_message
+                    || runtime.queue?.error_message
+                    || (!model.configured ? '模型 Key 或 Base URL 未配置' : 'R2 图片存储未配置');
+            } else {
+                text.textContent = '尚未执行队列检查';
+            }
+        }
+    }
+}
+
+function renderAiImageModelConfigPanel() {
+    const config = getAiImageModelConfig();
+    const meta = getAiImageModelSourceMeta(config);
+    const provider = getAiImageEditingModelProvider(config);
+    const providerIdInput = document.getElementById('aiImageModelProviderIdInput');
+    const providerLabelInput = document.getElementById('aiImageModelProviderLabelInput');
+    const vendorInput = document.getElementById('aiImageModelVendorInput');
+    const protocolInput = document.getElementById('aiImageModelProtocolInput');
+    const baseUrlInput = document.getElementById('aiImageModelBaseUrlInput');
+    const badge = document.getElementById('aiImageModelConfigSourceBadge');
+    const status = document.getElementById('aiImageModelConfigStatus');
+    const providerList = document.getElementById('aiImageModelProviderList');
+
+    if (providerIdInput) {
+        providerIdInput.value = provider.providerId || 'default';
+    }
+
+    if (providerLabelInput && document.activeElement !== providerLabelInput) {
+        providerLabelInput.value = provider.label || provider.providerId || '默认上游';
+    }
+
+    if (vendorInput && document.activeElement !== vendorInput) {
+        vendorInput.value = provider.vendor === 'sub2api'
+            ? 'other'
+            : (provider.vendor || config.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
+        if (typeof setCustomDropdownValue === 'function') {
+            setCustomDropdownValue('aiImageModelVendorDropdown', vendorInput.value);
+        }
+    }
+
+    if (protocolInput && document.activeElement !== protocolInput) {
+        protocolInput.value = provider.protocol || config.protocol || DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol;
+        if (typeof setCustomDropdownValue === 'function') {
+            setCustomDropdownValue('aiImageModelProtocolDropdown', protocolInput.value);
+        }
+    }
+
+    if (baseUrlInput && document.activeElement !== baseUrlInput) {
+        baseUrlInput.value = provider.baseUrl || config.baseUrl || DEFAULT_AI_IMAGE_MODEL_CONFIG.baseUrl;
+    }
+
+    setAiImageHiddenModelInputValues(provider);
+
+    if (badge) {
+        badge.textContent = `${provider.configured ? (provider.source === 'environment' ? '环境变量' : '后台托管') : '待配置'} · ${provider.label || provider.providerId}`;
+    }
+
+    if (status) {
+        const dot = status.querySelector('.status-dot');
+        const text = status.querySelector('span:last-child');
+        if (provider.configured) {
+            dot.className = provider.source === 'stored' || provider.source === 'environment'
+                ? 'status-dot ready'
+                : 'status-dot warning';
+            const visibleSummary = [
+                getAiImageModelCountLabel(provider.chatModels?.length || 0, '文本'),
+                getAiImageModelCountLabel(provider.imageModels?.length || 0, '生图'),
+                getAiImageModelCountLabel(provider.videoModels?.length || 0, '视频')
+            ].join(' · ');
+            text.textContent = `${provider.label || provider.providerId} 已配置 · ${provider.baseUrl || '未填写 Base URL'} · ${visibleSummary}`;
+        } else {
+            dot.className = 'status-dot error';
+            text.textContent = adminAiImageState.modelProviderDraft
+                ? '正在新增上游：先填写名称、Base URL 并录入 Key，再检测模型。'
+                : meta.statusText;
+        }
+    }
+
+    if (providerList) {
+        const providers = getAiImageModelProviders(config);
+        providerList.innerHTML = providers.map((item) => {
+            const active = item.providerId === provider.providerId;
+            const imageModels = (item.imageModels?.length ? item.imageModels : item.models || []).slice(0, 3).join(' / ');
+            const chatModels = (item.chatModels || []).slice(0, 3).join(' / ');
+            const videoModels = (item.videoModels || []).slice(0, 3).join(' / ');
+            const modelSummary = [
+                chatModels ? `文本：${chatModels}` : '文本：空',
+                imageModels ? `生图：${imageModels}` : '生图：空',
+                videoModels ? `视频：${videoModels}` : '视频：空'
+            ].filter(Boolean).join(' · ');
+            const canDelete = item.source === 'stored';
+            const canProbe = Boolean(item.configured);
+            const hasExpandedState = Object.prototype.hasOwnProperty.call(adminAiImageState.modelProviderPanelState, item.providerId);
+            const isExpanded = hasExpandedState
+                ? Boolean(adminAiImageState.modelProviderPanelState[item.providerId])
+                : active;
+            if (!hasExpandedState) {
+                adminAiImageState.modelProviderPanelState[item.providerId] = isExpanded;
+            }
+            return `
+                <section class="ai-image-admin-provider-card ai-image-admin-row ai-image-admin-row--model-provider ${active ? 'is-active' : ''} ${isExpanded ? 'is-expanded' : ''}" data-provider-id="${escapeHtml(item.providerId)}" data-expanded="${isExpanded ? 'true' : 'false'}">
+                    <button class="ai-image-admin-provider-card__header" type="button"
+                        data-admin-action="settings-toggle-ai-image-provider-models"
+                        data-provider-id="${escapeHtml(item.providerId)}"
+                        aria-expanded="${isExpanded ? 'true' : 'false'}">
+                        <div class="ai-image-admin-provider-main">
+                            <strong>${escapeHtml(item.label || item.providerId)}</strong>
+                            <span>${escapeHtml(item.baseUrl || '未配置 Base URL')}</span>
+                            <small>${escapeHtml(modelSummary)}</small>
+                        </div>
+                        <div class="ai-image-admin-provider-meta">
+                            <span>${escapeHtml(getAiImageVendorLabel(item.vendor || 'openai'))}</span>
+                            <span>${escapeHtml(getAiImageModelCountLabel(item.chatModels?.length || 0, '文本'))}</span>
+                            <span>${escapeHtml(getAiImageModelCountLabel(item.imageModels?.length || 0, '生图'))}</span>
+                            <span>${escapeHtml(getAiImageModelCountLabel(item.videoModels?.length || 0, '视频'))}</span>
+                            <span>${escapeHtml(item.protocol || 'openai-compatible')}</span>
+                        </div>
+                        <div class="ai-image-admin-provider-card__header-right">
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="ai-image-admin-provider-card__body" ${isExpanded ? '' : 'hidden'}>
+                        <div class="ai-image-admin-row__actions ai-image-admin-provider-card__actions">
+                            <span class="api-relay-config-panel__badge">${escapeHtml(item.configured ? (item.source === 'environment' ? '环境变量' : '后台托管') : '未配置')}</span>
+                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                data-admin-action="settings-select-ai-image-model-provider"
+                                data-provider-id="${escapeHtml(item.providerId)}"
+                                title="打开这一行到上方编辑器">
+                                <i class="fas fa-pen"></i> 编辑
+                            </button>
+                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                data-admin-action="settings-test-ai-image-model-provider-full"
+                                data-provider-id="${escapeHtml(item.providerId)}"
+                                title="${escapeHtml(canProbe ? '检测这个上游当前前台可见模型的可用性' : '请先录入并保存 API Key 后再运行模型自检')}"
+                                ${canProbe ? '' : 'disabled aria-disabled="true"'}>
+                                <i class="fas fa-stethoscope"></i> 模型自检
+                            </button>
+                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
+                                data-admin-action="settings-discover-ai-image-model-provider"
+                                data-provider-id="${escapeHtml(item.providerId)}"
+                                title="${escapeHtml(canProbe ? '检测这个上游支持的模型并刷新候选列表' : '请先录入并保存 API Key 后再检测模型')}"
+                                ${canProbe ? '' : 'disabled aria-disabled="true"'}>
+                                <i class="fas fa-magnifying-glass"></i> 检测上游支持模型
+                            </button>
+                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost ai-image-admin-delete-button" type="button"
+                                data-admin-action="settings-delete-ai-image-model-config"
+                                data-provider-id="${escapeHtml(item.providerId)}"
+                                ${canDelete ? '' : 'disabled aria-disabled="true" title="环境变量配置不可在这里删除"'}>
+                                <i class="fas fa-trash"></i> 删除
+                            </button>
+                        </div>
+                        ${renderAiImageProviderProbePanel(item)}
+                        <div class="ai-image-admin-provider-models">
+                            ${renderAiImageProviderVisibleModelSection(item)}
+                        </div>
+                    </div>
+                </section>
+            `;
+        }).join('');
+    }
+}
+
+function readAiImageModelDraftConfig() {
+    const current = getAiImageModelConfig();
+    const provider = getAiImageEditingModelProvider(current);
+    const providerIdInput = document.getElementById('aiImageModelProviderIdInput');
+    const providerLabelInput = document.getElementById('aiImageModelProviderLabelInput');
+    const vendorInput = document.getElementById('aiImageModelVendorInput');
+    const protocolInput = document.getElementById('aiImageModelProtocolInput');
+    const baseUrlInput = document.getElementById('aiImageModelBaseUrlInput');
+    const aliasesInput = document.getElementById('aiImageModelAliasesInput');
+    const chatAliasesInput = document.getElementById('aiImageChatModelAliasesInput');
+    const videoAliasesInput = document.getElementById('aiImageVideoModelAliasesInput');
+    const detectedImageModelsInput = document.getElementById('aiImageDetectedImageModelsInput');
+    const detectedChatModelsInput = document.getElementById('aiImageDetectedChatModelsInput');
+    const detectedVideoModelsInput = document.getElementById('aiImageDetectedVideoModelsInput');
+    const detectedUnknownModelsInput = document.getElementById('aiImageDetectedUnknownModelsInput');
+    const visionModelsInput = document.getElementById('aiImageVisionModelsInput');
+    const draftImageModels = normalizeAiImageModelsList(aliasesInput?.value || provider.imageModels || provider.image_models || provider.models || current.imageModels || current.models, '');
+    const draftChatModels = normalizeAiImageModelsList(chatAliasesInput?.value || provider.chatModels || provider.chat_models || current.chatModels, '');
+    const draftVideoModels = normalizeAiImageModelsList(videoAliasesInput?.value || provider.videoModels || provider.video_models || current.videoModels, '');
+    const model = normalizeAiImageOptionalModelName(provider.model || draftImageModels[0] || draftChatModels[0] || draftVideoModels[0] || '');
+    const selectedModelGroup = inferAiImageModelGroupFromLists(draftImageModels, draftChatModels, draftVideoModels);
+    const {
+        modelGroup,
+        imageModels,
+        chatModels,
+        videoModels
+    } = scopeAiImageModelsByGroup(selectedModelGroup, draftImageModels, draftChatModels, draftVideoModels);
+    const detectedImageModels = mergeAiImageModelCandidates(detectedImageModelsInput?.value, provider.detectedImageModels, imageModels);
+    const detectedChatModels = mergeAiImageModelCandidates(detectedChatModelsInput?.value, provider.detectedChatModels, chatModels);
+    const detectedVideoModels = mergeAiImageModelCandidates(detectedVideoModelsInput?.value, provider.detectedVideoModels, videoModels);
+    const detectedUnknownModels = mergeAiImageModelCandidates(detectedUnknownModelsInput?.value, provider.detectedUnknownModels);
+    const visionModels = mergeAiImageModelCandidates(visionModelsInput?.value, provider.visionModels, provider.vision_models);
+
+    return {
+        providerId: normalizeAiImageProviderId(providerIdInput?.value || provider.providerId || current.providerId || 'default'),
+        label: String(providerLabelInput?.value || provider.label || current.label || '').trim().slice(0, 120),
+        vendor: normalizeAiImageModelVendor(vendorInput?.value || provider.vendor || current.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor),
+        protocol: normalizeAiImageModelProtocol(protocolInput?.value || provider.protocol || current.protocol || DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol),
+        modelGroup,
+        model_group: modelGroup,
+        baseUrl: normalizeAiImageModelBaseUrl(baseUrlInput?.value || provider.baseUrl || current.baseUrl || DEFAULT_AI_IMAGE_MODEL_CONFIG.baseUrl),
+        model,
+        models: imageModels,
+        imageModels,
+        image_models: imageModels,
+        chatModels,
+        chat_models: chatModels,
+        videoModels,
+        video_models: videoModels,
+        detectedImageModels,
+        detected_image_models: detectedImageModels,
+        detectedChatModels,
+        detected_chat_models: detectedChatModels,
+        detectedVideoModels,
+        detected_video_models: detectedVideoModels,
+        detectedUnknownModels,
+        detected_unknown_models: detectedUnknownModels,
+        visionModels,
+        vision_models: visionModels
+    };
+}
+
+function validateAiImageModelDraftConfig(config = {}) {
+    const baseUrl = normalizeAiImageModelBaseUrl(config.baseUrl);
+
+    if (!/^https?:\/\//i.test(baseUrl)) {
+        return '请输入有效的 AI 图片 Base URL，例如 https://api.openai.com/v1';
+    }
+
+    if (!normalizeAiImageProviderId(config.providerId)) {
+        return '请输入有效的供应商 ID，例如 default、flux 或 eahe';
+    }
+
+    return '';
+}
+
+async function postAiImageModelConfig(payload = {}) {
+    const headers = await getAdminApiHeaders();
+    const response = await (window.AdminApi?.fetch || fetch)(getAiImageModelConfigUrl(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (payload?.matrix === true && data?.check && typeof data.check === 'object') {
+        return data;
+    }
+    if (!response.ok || !data.success) {
+        throw new Error(data.message || '保存 AI 图片模型配置失败');
+    }
+    return data;
+}
+
+function selectAiImageModelProvider(providerId = '') {
+    const normalizedProviderId = normalizeAiImageProviderId(providerId);
+    adminAiImageState.selectedModelProviderId = normalizedProviderId;
+    if (normalizedProviderId) {
+        adminAiImageState.modelProviderPanelState[normalizedProviderId] = true;
+    }
+    clearAiImageEditingModelProviderDraft();
+    renderAiImageModelConfigPanel();
+}
+
+function toggleAiImageModelProviderModels(providerId = '') {
+    const normalizedProviderId = normalizeAiImageProviderId(providerId);
+    const nextExpanded = !adminAiImageState.modelProviderPanelState[normalizedProviderId];
+    adminAiImageState.modelProviderPanelState[normalizedProviderId] = nextExpanded;
+    renderAiImageModelConfigPanel();
+    return true;
+}
+
+function createAiImageModelProviderDraft() {
+    adminAiImageState.selectedModelProviderId = '';
+    setAiImageModelProbe(null);
+    adminAiImageState.modelProviderDraft = createEmptyAiImageModelProviderDraft();
+    renderAiImageModelConfigPanel();
+    const labelInput = document.getElementById('aiImageModelProviderLabelInput');
+    if (labelInput && typeof labelInput.focus === 'function') {
+        labelInput.focus();
+        if (typeof labelInput.select === 'function') {
+            labelInput.select();
+        }
+    }
+    showAdminStudioToast('已新建上游草稿：填写名称、Base URL 并录入 Key 后即可检测模型。', 'info');
+    return adminAiImageState.modelProviderDraft;
+}
+
+function handleAiImageModelProviderDraftInput(target) {
+    if (!target) return false;
+    const updates = {};
+    if (target.id === 'aiImageModelProviderLabelInput') {
+        updates.label = String(target.value || '').trim().slice(0, 120);
+    } else if (target.id === 'aiImageModelBaseUrlInput') {
+        updates.baseUrl = normalizeAiImageModelBaseUrl(target.value || '');
+    } else if (target.id === 'aiImageModelVendorInput') {
+        updates.vendor = normalizeAiImageModelVendor(target.value || 'openai');
+    } else if (target.id === 'aiImageModelProtocolInput') {
+        updates.protocol = normalizeAiImageModelProtocol(target.value || 'openai-compatible');
+    } else {
+        return false;
+    }
+    setAiImageEditingModelProviderDraft(updates);
+    return true;
+}
+
+function toggleAiImageVisibleModel(model = '', group = 'image', providerId = '') {
+    const normalizedModel = normalizeAiImageOptionalModelName(model);
+    const rawGroup = String(group || '').trim().toLowerCase();
+    const normalizedGroup = ['chat', 'image', 'video'].includes(rawGroup) ? rawGroup : 'image';
+    if (!normalizedModel) return false;
+
+    const config = getAiImageModelConfig();
+    const providers = getAiImageModelProviders(config);
+    const normalizedProviderId = normalizeAiImageProviderId(providerId || adminAiImageState.selectedModelProviderId || config.providerId || 'default');
+    const hasDraft = adminAiImageState.modelProviderDraft
+        && normalizeAiImageProviderId(adminAiImageState.modelProviderDraft.providerId || adminAiImageState.modelProviderDraft.provider_id || '') === normalizedProviderId;
+    const provider = hasDraft
+        ? normalizeAiImageModelProvider(adminAiImageState.modelProviderDraft)
+        : (providers.find((item) => item.providerId === normalizedProviderId) || getAiImageEditingModelProvider(config));
+    const targetKey = normalizedGroup === 'chat' ? 'chatModels' : (normalizedGroup === 'video' ? 'videoModels' : 'imageModels');
+    const selected = normalizeAiImageModelsList(provider[targetKey], '');
+    const exists = selected.some((item) => item.toLowerCase() === normalizedModel.toLowerCase());
+    const nextSelected = exists
+        ? selected.filter((item) => item.toLowerCase() !== normalizedModel.toLowerCase())
+        : normalizeAiImageModelsList([...selected, normalizedModel], '');
+    const updates = {
+        [targetKey]: nextSelected,
+        [`${targetKey === 'chatModels' ? 'chat_models' : (targetKey === 'videoModels' ? 'video_models' : 'image_models')}`]: nextSelected
+    };
+    if (normalizedGroup === 'chat') {
+        updates.detectedChatModels = mergeAiImageModelCandidates(provider.detectedChatModels, normalizedModel);
+    } else if (normalizedGroup === 'video') {
+        updates.detectedVideoModels = mergeAiImageModelCandidates(provider.detectedVideoModels, normalizedModel);
+    } else {
+        updates.detectedImageModels = mergeAiImageModelCandidates(provider.detectedImageModels, normalizedModel);
+    }
+    updates.model = updates.imageModels?.[0] || provider.imageModels?.[0] || updates.chatModels?.[0] || provider.chatModels?.[0] || updates.videoModels?.[0] || provider.videoModels?.[0] || provider.model || '';
+    updates.modelGroup = inferAiImageModelGroupFromLists(
+        normalizedGroup === 'image' ? nextSelected : provider.imageModels,
+        normalizedGroup === 'chat' ? nextSelected : provider.chatModels,
+        normalizedGroup === 'video' ? nextSelected : provider.videoModels
+    );
+    updates.model_group = updates.modelGroup;
+    if (hasDraft) {
+        adminAiImageState.selectedModelProviderId = normalizedProviderId;
+        setAiImageEditingModelProviderDraft(updates);
+        setAiImageHiddenModelInputValues(adminAiImageState.modelProviderDraft);
+    } else {
+        const nextProvider = normalizeAiImageModelProvider({
+            ...provider,
+            ...updates
+        });
+        const nextProviders = providers.map((item) => item.providerId === normalizedProviderId ? nextProvider : item);
+        setAiImageModelConfig({
+            ...config,
+            providerId: normalizedProviderId,
+            providers: nextProviders
+        });
+        adminAiImageState.selectedModelProviderId = normalizedProviderId;
+    }
+    renderAiImageModelConfigPanel();
+    return true;
+}
+
+function cloneAiImageModelProvider(providerId = '') {
+    const config = getAiImageModelConfig();
+    const providers = getAiImageModelProviders(config);
+    const sourceProvider = providers.find((item) => item.providerId === normalizeAiImageProviderId(providerId))
+        || getSelectedAiImageModelProvider(config);
+    if (!sourceProvider) {
+        return false;
+    }
+
+    selectAiImageModelProvider(sourceProvider.providerId);
+
+    const providerIdInput = document.getElementById('aiImageModelProviderIdInput');
+    const suggestedProviderId = buildAiImageProviderIdSuggestion(sourceProvider.providerId, sourceProvider.modelGroup, providers);
+    if (providerIdInput) {
+        providerIdInput.value = suggestedProviderId;
+        providerIdInput.dataset.adminProviderIdDirty = '1';
+        if (typeof providerIdInput.focus === 'function') {
+            providerIdInput.focus();
+        }
+        if (typeof providerIdInput.select === 'function') {
+            providerIdInput.select();
+        }
+    }
+
+    showAdminStudioToast(`已生成新的供应商 ID：${suggestedProviderId}，保存后会作为独立上游。`, 'info');
+    return true;
+}
+
+function getAiImageProviderDraftForAction(providerId = '') {
+    const config = getAiImageModelConfig();
+    const normalizedProviderId = normalizeAiImageProviderId(providerId || adminAiImageState.selectedModelProviderId || config.providerId || 'default');
+    const provider = getAiImageModelProviders(config).find((item) => item.providerId === normalizedProviderId)
+        || getSelectedAiImageModelProvider(config);
+    const draft = provider?.providerId === normalizedProviderId
+        ? normalizeAiImageModelProvider(provider)
+        : readAiImageModelDraftConfig();
+    return {
+        config,
+        provider,
+        draft: {
+            ...draft,
+            providerId: normalizeAiImageProviderId(draft.providerId || draft.provider_id || normalizedProviderId),
+            provider_id: normalizeAiImageProviderId(draft.providerId || draft.provider_id || normalizedProviderId)
+        }
+    };
+}
+
+function updateAiImageModelProviderInConfig(providerId = '', updates = {}) {
+    const normalizedProviderId = normalizeAiImageProviderId(providerId);
+    const config = getAiImageModelConfig();
+    const providers = getAiImageModelProviders(config);
+    const nextProviders = providers.map((item) => {
+        if (item.providerId !== normalizedProviderId) return item;
+        return normalizeAiImageModelProvider({
+            ...item,
+            ...(updates && typeof updates === 'object' ? updates : {})
+        });
+    });
+    setAiImageModelConfig({
+        ...config,
+        providerId: normalizedProviderId,
+        providers: nextProviders
+    });
+    adminAiImageState.selectedModelProviderId = normalizedProviderId;
+    adminAiImageState.modelProviderPanelState[normalizedProviderId] = true;
+    return getAiImageModelProviders(getAiImageModelConfig()).find((item) => item.providerId === normalizedProviderId);
+}
+
+async function testAiImageModelConfig(providerId = '') {
+    const { draft, provider } = providerId
+        ? getAiImageProviderDraftForAction(providerId)
+        : { draft: readAiImageModelDraftConfig(), provider: null };
+    const validationMessage = validateAiImageModelDraftConfig(draft);
+    if (validationMessage) {
+        showAdminStudioToast(validationMessage, 'warning');
+        return false;
+    }
+    if (!normalizeAiImageModelsList(draft.imageModels || draft.image_models, '').length
+        && !normalizeAiImageModelsList(draft.chatModels || draft.chat_models, '').length
+        && !normalizeAiImageModelsList(draft.videoModels || draft.video_models, '').length) {
+        showAdminStudioToast('请先检测并勾选至少一个前台可见模型，再运行模型可用性自检。', 'warning');
+        return false;
+    }
+
+    const actionProvider = provider || getAiImageModelProviders(getAiImageModelConfig()).find((item) => item.providerId === draft.providerId);
+    if (!actionProvider?.configured) {
+        showAdminStudioToast('请先录入并保存 AI 图片 API Key，再运行模型自检。', 'warning');
+        setAiImageModelProbe({
+            ok: false,
+            providerId: draft.providerId,
+            providerLabel: draft.label || actionProvider?.label || draft.providerId,
+            message: '未配置后台模型 Key'
+        });
+        renderAiImageModelConfigPanel();
+        return false;
+    }
+
+    setAiImageModelProbe({
+        pending: true,
+        ok: false,
+        providerId: draft.providerId,
+        providerLabel: draft.label || actionProvider.label || draft.providerId,
+        model: draft.model
+    });
+    renderAiImageModelConfigPanel();
+
+    try {
+        const probeModes = draft.modelGroup === 'chat'
+            ? ['chat', 'vision']
+            : (draft.modelGroup === 'video' ? [] : (draft.modelGroup === 'both' ? ['text', 'image', 'chat', 'vision'] : ['text', 'image']));
+        showAdminStudioToast('正在运行 AI 图片模型可用性自检...', 'info');
+        const payload = await postAiImageModelConfig({
+            action: 'test-model',
+            matrix: true,
+            discoverModels: true,
+            modes: probeModes,
+            resolutions: ['1k', '2k', '4k'],
+            ...draft
+        });
+        const check = payload.check && typeof payload.check === 'object' ? payload.check : {};
+        const nextVisionModels = mergeAiImageModelCandidates(
+            draft.visionModels,
+            draft.vision_models,
+            check.visionModels,
+            check.vision_models
+        );
+        if (nextVisionModels.length) {
+            const nextDraft = {
+                ...draft,
+                visionModels: nextVisionModels,
+                vision_models: nextVisionModels
+            };
+            updateAiImageModelProviderInConfig(draft.providerId, nextDraft);
+            setAiImageHiddenModelInputValues(nextDraft);
+        }
+        setAiImageModelProbe({
+            ok: check.ok !== false,
+            providerId: draft.providerId,
+            providerLabel: draft.label || actionProvider.label || draft.providerId,
+            model: check.model || draft.model,
+            resultType: check.resultType || '',
+            latencyMs: check.latencyMs || 0,
+            passed: Number(check.passed || 0),
+            failed: Number(check.failed || 0),
+            total: Number(check.total || 0),
+            checks: Array.isArray(check.checks) ? check.checks : [],
+            visionModels: nextVisionModels,
+            vision_models: nextVisionModels,
+            discovery: check.discovery && typeof check.discovery === 'object' ? check.discovery : null,
+            modelPresence: check.modelPresence && typeof check.modelPresence === 'object' ? check.modelPresence : null
+        });
+        renderAiImageModelConfigPanel();
+        showAdminStudioToast(payload.message || 'AI 图片模型可用性自检完成', check.ok === false ? 'warning' : 'success');
+        return check.ok !== false;
+    } catch (err) {
+        console.error('AI image model availability check failed:', err);
+        setAiImageModelProbe({
+            ok: false,
+            providerId: draft.providerId,
+            providerLabel: draft.label || actionProvider?.label || draft.providerId,
+            model: draft.model,
+            message: err.message || '模型可用性自检失败'
+        });
+        renderAiImageModelConfigPanel();
+        showAdminStudioToast(err.message || 'AI 图片模型可用性自检失败', 'error');
+        return false;
+    }
+}
+
+async function discoverAiImageModelConfig(providerId = '') {
+    const action = providerId
+        ? getAiImageProviderDraftForAction(providerId)
+        : null;
+    const config = action?.config || getAiImageModelConfig();
+    const provider = action?.provider
+        || getAiImageModelProviders(config).find((item) => item.providerId === readAiImageModelDraftConfig().providerId)
+        || getSelectedAiImageModelProvider(config);
+    const draft = providerId
+        ? action.draft
+        : ensureAiImageProviderIdForDraft(readAiImageModelDraftConfig(), provider, config);
+    if (!draft) {
+        return false;
+    }
+
+    if (!normalizeAiImageModelBaseUrl(draft.baseUrl)) {
+        showAdminStudioToast('请先填写有效的 Base URL，再检测上游模型。', 'warning');
+        return false;
+    }
+
+    if (!provider?.configured) {
+        showAdminStudioToast('请先录入并保存 AI 图片 API Key，再检测上游支持模型。', 'warning');
+        setAiImageModelProbe({
+            ok: false,
+            discoveryOnly: true,
+            providerId: draft.providerId,
+            providerLabel: draft.label || provider?.label || draft.providerId,
+            baseUrl: draft.baseUrl,
+            message: '未配置后台模型 Key'
+        });
+        renderAiImageModelConfigPanel();
+        return false;
+    }
+
+    setAiImageModelProbe({
+        pending: true,
+        ok: false,
+        discoveryOnly: true,
+        providerId: draft.providerId,
+        providerLabel: draft.label || provider.label || draft.providerId,
+        baseUrl: draft.baseUrl,
+        model: draft.model
+    });
+    renderAiImageModelConfigPanel();
+
+    try {
+        showAdminStudioToast('正在检测上游支持的模型...', 'info');
+        const payload = await postAiImageModelConfig({
+            action: 'discover-models',
+            providerId: draft.providerId,
+            baseUrl: draft.baseUrl,
+            timeoutMs: 30000
+        });
+        const discovery = payload.discovery && typeof payload.discovery === 'object' ? payload.discovery : {};
+        const imageModels = normalizeAiImageModelsList(discovery.imageModels || discovery.image_models, '');
+        const chatModels = normalizeAiImageModelsList(discovery.chatModels || discovery.chat_models, '');
+        const videoModels = normalizeAiImageModelsList(discovery.videoModels || discovery.video_models, '');
+        const detectedCount = imageModels.length + chatModels.length + videoModels.length;
+        if (!detectedCount) {
+            setAiImageModelProbe({
+                ok: false,
+                discoveryOnly: true,
+                providerId: draft.providerId,
+                providerLabel: draft.label || provider.label || draft.providerId,
+                baseUrl: draft.baseUrl,
+                discovery,
+                message: '未发现可用于生图、对话或视频的模型'
+            });
+            renderAiImageModelConfigPanel();
+            showAdminStudioToast('检测完成，但没有发现可用于生图、对话或视频的模型。', 'warning');
+            return false;
+        }
+
+        const nextImageModels = imageModels;
+        const nextChatModels = chatModels;
+        const nextVideoModels = videoModels;
+        const nextModelGroup = inferAiImageModelGroupFromLists(nextImageModels, nextChatModels, nextVideoModels);
+        const nextModel = nextImageModels[0] || nextChatModels[0] || nextVideoModels[0] || '';
+        const nextDraft = {
+            ...draft,
+            modelGroup: nextModelGroup,
+            model_group: nextModelGroup,
+            model: nextModel,
+            models: nextImageModels,
+            imageModels: nextImageModels,
+            image_models: nextImageModels,
+            chatModels: nextChatModels,
+            chat_models: nextChatModels,
+            videoModels: nextVideoModels,
+            video_models: nextVideoModels,
+            detectedImageModels: nextImageModels,
+            detected_image_models: nextImageModels,
+            detectedChatModels: nextChatModels,
+            detected_chat_models: nextChatModels,
+            detectedVideoModels: nextVideoModels,
+            detected_video_models: nextVideoModels,
+            detectedUnknownModels: normalizeAiImageModelsList(discovery.unknownModels || discovery.unknown_models, ''),
+            detected_unknown_models: normalizeAiImageModelsList(discovery.unknownModels || discovery.unknown_models, '')
+        };
+        if (providerId) {
+            updateAiImageModelProviderInConfig(nextDraft.providerId, nextDraft);
+        } else {
+            setAiImageEditingModelProviderDraft(nextDraft);
+            adminAiImageState.selectedModelProviderId = nextDraft.providerId;
+        }
+        setAiImageModelProbe({
+            ok: true,
+            discoveryOnly: true,
+            providerId: nextDraft.providerId,
+            providerLabel: nextDraft.label || provider.label || nextDraft.providerId,
+            baseUrl: nextDraft.baseUrl,
+            model: nextDraft.model,
+            discovery,
+            imageModels: nextImageModels,
+            chatModels: nextChatModels,
+            videoModels: nextVideoModels
+        });
+        renderAiImageModelConfigPanel();
+        showAdminStudioToast(`已检测到 ${detectedCount} 个上游模型。请勾选前台可见模型并保存。`, 'success');
+        return true;
+    } catch (err) {
+        console.error('AI image model discovery failed:', err);
+        setAiImageModelProbe({
+            ok: false,
+            discoveryOnly: true,
+            providerId: draft.providerId,
+            providerLabel: draft.label || provider.label || draft.providerId,
+            baseUrl: draft.baseUrl,
+            model: draft.model,
+            message: err.message || '检测上游模型失败'
+        });
+        renderAiImageModelConfigPanel();
+        showAdminStudioToast(err.message || '检测上游模型失败', 'error');
+        return false;
+    }
+}
+
+function applyAiImageDiscoveredModel(model = '', group = 'unknown', providerId = '') {
+    const normalizedModel = normalizeAiImageModelName(model);
+    const rawGroup = String(group || '').trim().toLowerCase();
+    const normalizedGroup = ['chat', 'image', 'video', 'unknown'].includes(rawGroup) ? rawGroup : 'image';
+    if (!normalizedModel) return false;
+
+    return toggleAiImageVisibleModel(normalizedModel, normalizedGroup === 'unknown' ? 'image' : normalizedGroup, providerId);
+}
+
+function classifyAiImageUnknownModel(model = '', group = 'image', providerId = '') {
+    const normalizedModel = normalizeAiImageOptionalModelName(model);
+    const rawGroup = String(group || '').trim().toLowerCase();
+    const normalizedGroup = ['chat', 'image', 'video'].includes(rawGroup) ? rawGroup : 'image';
+    if (!normalizedModel) return false;
+
+    const config = getAiImageModelConfig();
+    const providers = getAiImageModelProviders(config);
+    const normalizedProviderId = normalizeAiImageProviderId(providerId || adminAiImageState.selectedModelProviderId || config.providerId || 'default');
+    const hasDraft = adminAiImageState.modelProviderDraft
+        && normalizeAiImageProviderId(adminAiImageState.modelProviderDraft.providerId || adminAiImageState.modelProviderDraft.provider_id || '') === normalizedProviderId;
+    const provider = hasDraft
+        ? normalizeAiImageModelProvider(adminAiImageState.modelProviderDraft)
+        : (providers.find((item) => item.providerId === normalizedProviderId) || getAiImageEditingModelProvider(config));
+    const nextImageModels = normalizedGroup === 'image'
+        ? mergeAiImageModelCandidates(provider.imageModels, normalizedModel)
+        : removeAiImageModelCandidate(provider.imageModels, normalizedModel);
+    const nextChatModels = normalizedGroup === 'chat'
+        ? mergeAiImageModelCandidates(provider.chatModels, normalizedModel)
+        : removeAiImageModelCandidate(provider.chatModels, normalizedModel);
+    const nextVideoModels = normalizedGroup === 'video'
+        ? mergeAiImageModelCandidates(provider.videoModels, normalizedModel)
+        : removeAiImageModelCandidate(provider.videoModels, normalizedModel);
+    const nextDetectedImageModels = normalizedGroup === 'image'
+        ? mergeAiImageModelCandidates(provider.detectedImageModels, normalizedModel)
+        : removeAiImageModelCandidate(provider.detectedImageModels, normalizedModel);
+    const nextDetectedChatModels = normalizedGroup === 'chat'
+        ? mergeAiImageModelCandidates(provider.detectedChatModels, normalizedModel)
+        : removeAiImageModelCandidate(provider.detectedChatModels, normalizedModel);
+    const nextDetectedVideoModels = normalizedGroup === 'video'
+        ? mergeAiImageModelCandidates(provider.detectedVideoModels, normalizedModel)
+        : removeAiImageModelCandidate(provider.detectedVideoModels, normalizedModel);
+    const nextDetectedUnknownModels = removeAiImageModelCandidate(provider.detectedUnknownModels || provider.detected_unknown_models, normalizedModel);
+    const nextModelGroup = inferAiImageModelGroupFromLists(nextImageModels, nextChatModels, nextVideoModels);
+    const updates = {
+        imageModels: nextImageModels,
+        image_models: nextImageModels,
+        models: nextImageModels,
+        chatModels: nextChatModels,
+        chat_models: nextChatModels,
+        videoModels: nextVideoModels,
+        video_models: nextVideoModels,
+        detectedImageModels: nextDetectedImageModels,
+        detected_image_models: nextDetectedImageModels,
+        detectedChatModels: nextDetectedChatModels,
+        detected_chat_models: nextDetectedChatModels,
+        detectedVideoModels: nextDetectedVideoModels,
+        detected_video_models: nextDetectedVideoModels,
+        detectedUnknownModels: nextDetectedUnknownModels,
+        detected_unknown_models: nextDetectedUnknownModels,
+        model: nextImageModels[0] || nextChatModels[0] || nextVideoModels[0] || provider.model || '',
+        modelGroup: nextModelGroup,
+        model_group: nextModelGroup
+    };
+
+    if (hasDraft) {
+        adminAiImageState.selectedModelProviderId = normalizedProviderId;
+        setAiImageEditingModelProviderDraft(updates);
+        setAiImageHiddenModelInputValues(adminAiImageState.modelProviderDraft);
+    } else {
+        const nextProvider = normalizeAiImageModelProvider({
+            ...provider,
+            ...updates
+        });
+        setAiImageModelConfig({
+            ...config,
+            providerId: normalizedProviderId,
+            providers: providers.map((item) => item.providerId === normalizedProviderId ? nextProvider : item)
+        });
+        adminAiImageState.selectedModelProviderId = normalizedProviderId;
+    }
+
+    renderAiImageModelConfigPanel();
+    const groupLabel = normalizedGroup === 'chat' ? '文本' : (normalizedGroup === 'video' ? '视频' : '生图');
+    showAdminStudioToast(`已将 ${normalizedModel} 设为${groupLabel}模型，保存后前台可见。`, 'success');
+    return true;
+}
+
+function buildAiImageProviderIdSuggestion(providerId = 'default', modelGroup = 'image', existingProviders = []) {
+    const baseId = normalizeAiImageProviderId(providerId || 'default');
+    const group = normalizeAiImageModelGroup(modelGroup, 'image');
+    const existingIds = new Set(
+        (Array.isArray(existingProviders) ? existingProviders : [])
+            .map((item) => normalizeAiImageProviderId(item?.providerId || item?.provider_id || item?.id))
+            .filter(Boolean)
+    );
+    const candidates = [];
+    if (baseId) {
+        candidates.push(`${baseId}-${group}`);
+        candidates.push(`${baseId}_${group}`);
+        candidates.push(`${group}-${baseId}`);
+    }
+    for (const candidate of candidates) {
+        const normalized = normalizeAiImageProviderId(candidate);
+        if (normalized && !existingIds.has(normalized)) {
+            return normalized;
+        }
+    }
+    let index = 2;
+    while (index < 100) {
+        const candidate = normalizeAiImageProviderId(`${baseId}-${group}-${index}`);
+        if (candidate && !existingIds.has(candidate)) {
+            return candidate;
+        }
+        index += 1;
+    }
+    return `${baseId}-${group}`;
+}
+
+function ensureAiImageProviderIdForDraft(draft = {}, provider = null, config = getAiImageModelConfig()) {
+    const normalizedDraft = draft && typeof draft === 'object' && !Array.isArray(draft) ? { ...draft } : {};
+    const currentProvider = provider && typeof provider === 'object' ? provider : null;
+    if (!currentProvider || (currentProvider.source || 'missing') !== 'stored') {
+        return normalizedDraft;
+    }
+
+    const currentGroup = normalizeAiImageModelGroup(currentProvider.modelGroup || currentProvider.model_group || '', 'image');
+    const nextGroup = normalizeAiImageModelGroup(normalizedDraft.modelGroup || normalizedDraft.model_group || currentGroup, currentGroup);
+    const currentProviderId = normalizeAiImageProviderId(currentProvider.providerId || currentProvider.provider_id || 'default');
+    const draftProviderId = normalizeAiImageProviderId(normalizedDraft.providerId || normalizedDraft.provider_id || currentProviderId);
+    if (currentProviderId !== draftProviderId || nextGroup === 'both' || currentGroup === nextGroup) {
+        normalizedDraft.providerId = draftProviderId;
+        normalizedDraft.provider_id = draftProviderId;
+        return normalizedDraft;
+    }
+
+    const suggestion = buildAiImageProviderIdSuggestion(draftProviderId, nextGroup, getAiImageModelProviders(config));
+    const nextProviderId = window.prompt(
+        `当前「${currentProvider.label || currentProviderId}」已保存为 ${currentGroup === 'chat' ? '对话 / 视觉模型' : '生图模型'}。为了避免覆盖现有配置，请输入新的供应商 ID：`,
+        suggestion
+    );
+    if (nextProviderId === null) {
+        return null;
+    }
+
+    const normalizedNextProviderId = normalizeAiImageProviderId(nextProviderId);
+    if (!normalizedNextProviderId) {
+        showAdminStudioToast('请输入有效的供应商 ID', 'warning');
+        return null;
+    }
+
+    normalizedDraft.providerId = normalizedNextProviderId;
+    normalizedDraft.provider_id = normalizedNextProviderId;
+
+    const providerIdInput = document.getElementById('aiImageModelProviderIdInput');
+    if (providerIdInput && document.activeElement !== providerIdInput) {
+        providerIdInput.value = normalizedNextProviderId;
+    }
+
+    return normalizedDraft;
+}
+
+async function promptForAiImageModelKey(options = {}) {
+    const provider = options.provider || getSelectedAiImageModelProvider(getAiImageModelConfig());
+    const draft = ensureAiImageProviderIdForDraft(
+        options.draft || readAiImageModelDraftConfig(),
+        provider,
+        getAiImageModelConfig()
+    );
+    if (!draft) {
+        return false;
+    }
+    const validationMessage = validateAiImageModelDraftConfig(draft);
+    if (validationMessage) {
+        showAdminStudioToast(validationMessage, 'warning');
+        return false;
+    }
+
+    const config = getAiImageModelConfig();
+    const targetProvider = getAiImageModelProviders(config).find((item) => item.providerId === draft.providerId)
+        || provider
+        || getSelectedAiImageModelProvider(config);
+    const meta = getAiImageModelSourceMeta(config);
+    const helperText = options.helperText || (
+        targetProvider.source === 'stored'
+            ? '输入新的 AI 图片 API Key 将覆盖当前后台安全存储的 Key。'
+            : (meta.source === 'environment'
+                ? '当前使用的是环境变量。录入后会优先使用后台安全存储版本。'
+                : '首次保存 AI 图片模型配置需要同时录入 API Key，提交后会由服务端加密保存。')
+    );
+    const input = window.prompt(`${helperText}\n\n请输入 AI 图片 / OpenAI 兼容 Images API Key：`, '');
+    if (input === null) return null;
+
+    const apiKey = String(input || '').trim();
+    if (!apiKey) {
+        showAdminStudioToast('未输入 AI 图片 API Key', 'warning');
+        return false;
+    }
+
+    try {
+        showAdminStudioToast('正在安全保存 AI 图片模型配置...', 'info');
+        const payload = await postAiImageModelConfig({
+            apiKey,
+            ...draft
+        });
+        setAiImageModelConfig(payload);
+        clearAiImageEditingModelProviderDraft();
+        renderAiImageModelConfigPanel();
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast(payload.message || 'AI 图片模型配置已安全保存。', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to save AI image model key:', err);
+        showAdminStudioToast(err.message || '保存 AI 图片模型配置失败', 'error');
+        return false;
+    }
+}
+
+async function saveAiImageModelConfig() {
+    const config = getAiImageModelConfig();
+    const draftConfig = readAiImageModelDraftConfig();
+    const provider = getAiImageModelProviders(config).find((item) => item.providerId === draftConfig.providerId)
+        || getAiImageEditingModelProvider(config);
+    const draft = ensureAiImageProviderIdForDraft(draftConfig, provider, config);
+    if (!draft) {
+        return false;
+    }
+    const validationMessage = validateAiImageModelDraftConfig(draft);
+    if (validationMessage) {
+        showAdminStudioToast(validationMessage, 'warning');
+        return false;
+    }
+
+    if ((provider.source || 'missing') !== 'stored') {
+        return promptForAiImageModelKey({
+            draft,
+            provider,
+            helperText: `首次固化「${provider.label || draft.label || draft.providerId}」供应商时，需要同时录入 API Key。后续只切换 Base URL 或模型名，可以直接保存配置。`
+        });
+    }
+
+    try {
+        showAdminStudioToast('正在保存 AI 图片模型配置...', 'info');
+        const payload = await postAiImageModelConfig(draft);
+        setAiImageModelConfig(payload);
+        clearAiImageEditingModelProviderDraft();
+        renderAiImageModelConfigPanel();
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast(payload.message || 'AI 图片模型配置已更新。', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to update AI image model config:', err);
+        showAdminStudioToast(err.message || '保存 AI 图片模型配置失败', 'error');
+        return false;
+    }
+}
+
+async function deleteAiImageModelConfig(providerId = '') {
+    const config = getAiImageModelConfig();
+    const normalizedProviderId = normalizeAiImageProviderId(providerId);
+    const providers = getAiImageModelProviders(config);
+    const provider = normalizedProviderId
+        ? (providers.find((item) => item.providerId === normalizedProviderId) || getSelectedAiImageModelProvider(config))
+        : getSelectedAiImageModelProvider(config);
+    if ((provider.source || 'missing') !== 'stored') {
+        showAdminStudioToast('当前没有可删除的后台存储 AI 图片模型配置。', 'info');
+        return null;
+    }
+
+    if (!confirm(`确定要删除「${provider.label || provider.providerId}」后台安全存储的 AI 图片模型配置吗？`)) {
+        return null;
+    }
+
+    try {
+        const headers = await getAdminApiHeaders();
+        const deleteUrl = `${getAiImageModelConfigUrl()}&providerId=${encodeURIComponent(provider.providerId)}`;
+        const response = await (window.AdminApi?.fetch || fetch)(deleteUrl, {
+            method: 'DELETE',
+            headers
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '删除 AI 图片模型配置失败');
+        }
+
+        setAiImageModelConfig(payload);
+        renderAiImageModelConfigPanel();
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast(payload.message || 'AI 图片模型配置已删除', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to delete AI image model config:', err);
+        showAdminStudioToast(err.message || '删除 AI 图片模型配置失败', 'error');
+        return false;
+    }
+}
+
+function renderAiImagePricingList() {
+    const list = document.getElementById('aiImagePricingList');
+    if (!list) return;
+
+    if (adminAiImageState.loading && !adminAiImageState.pricing.length) {
+        list.innerHTML = '<p class="loading-text">加载价格规则...</p>';
+        return;
+    }
+
+    const activePricing = adminAiImageState.pricing.filter((rule) => rule.is_active !== false);
+    if (!activePricing.length) {
+        list.innerHTML = '<div class="ai-image-admin-empty">暂无价格规则，先新增一条默认文生图价格。</div>';
+        return;
+    }
+
+    list.innerHTML = activePricing.slice(0, 120).map((rule) => `
+        <article class="ai-image-admin-row">
+            <div class="ai-image-admin-row__main">
+                <strong>${escapeHtml(rule.model || '*')}</strong>
+                <span>${escapeHtml(rule.mode || 'text')} · ${escapeHtml(rule.resolution || '*')} · ${escapeHtml(rule.ratio || '*')} · ${escapeHtml(rule.quantity || 1)} 张</span>
+            </div>
+            <div class="ai-image-admin-row__meta">
+                <span>${Number(rule.points || 0)} 积分</span>
+                <button class="btn-sm btn-secondary ai-image-admin-delete-button" type="button" data-admin-action="settings-delete-ai-image-pricing" data-ai-image-pricing-id="${escapeHtml(rule.id || '')}">
+                    <i class="fas fa-trash-alt"></i> 删除
+                </button>
+            </div>
+        </article>
+    `).join('');
+}
+
+function renderAiImageApiBaseUrlList() {
+    const list = document.getElementById('aiImageApiBaseList');
+    if (!list) return;
+
+    if (adminAiImageState.loading && !adminAiImageState.apiBaseUrls.length) {
+        list.innerHTML = '<p class="loading-text">加载用户 API 白名单...</p>';
+        return;
+    }
+
+    const apiBaseUrlWarning = String(adminAiImageState.warnings?.api_base_urls || '').trim();
+    if (apiBaseUrlWarning && !adminAiImageState.apiBaseUrls.length) {
+        list.innerHTML = `<div class="ai-image-admin-empty ai-image-admin-empty--warning">${escapeHtml(apiBaseUrlWarning)}</div>`;
+        return;
+    }
+
+    if (!adminAiImageState.apiBaseUrls.length) {
+        list.innerHTML = '<div class="ai-image-admin-empty">暂无用户 API 白名单。建议保留 FatherKey / Zaoyoe 的 Sub2API 地址。</div>';
+        return;
+    }
+
+    list.innerHTML = adminAiImageState.apiBaseUrls.slice(0, 50).map((item) => {
+        const baseUrl = item.base_url || item.baseUrl || '';
+        return `
+            <article class="ai-image-admin-row ${item.is_active === false ? 'is-disabled' : ''}">
+                <div class="ai-image-admin-row__main">
+                    <strong>${escapeHtml(item.label || 'Sub2API')}</strong>
+                    <span>${escapeHtml(baseUrl)} · ${escapeHtml(item.site || 'all')}</span>
+                </div>
+                <div class="ai-image-admin-row__meta">
+                    <span>${item.is_active === false ? '已停用' : '启用中'}</span>
+                    <button class="btn-sm btn-secondary" type="button" data-admin-action="settings-disable-ai-image-api-base" data-ai-image-api-base-id="${escapeHtml(item.id || '')}">
+                        停用
+                    </button>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function renderAiImageAgentList() {
+    const list = document.getElementById('aiImageAgentList');
+    if (!list) return;
+
+    if (adminAiImageState.loading && !adminAiImageState.agents.length) {
+        list.innerHTML = '<p class="loading-text">加载智能体...</p>';
+        return;
+    }
+
+    if (!adminAiImageState.agents.length) {
+        list.innerHTML = '<div class="ai-image-admin-empty">暂无智能体。建议先配置高清修复、抠人像、换背景、风格统一。</div>';
+        return;
+    }
+
+    list.innerHTML = adminAiImageState.agents.slice(0, 80).map((agent) => `
+        <article class="ai-image-admin-row ${agent.is_active === false ? 'is-disabled' : ''}">
+            <div class="ai-image-admin-row__main">
+                <strong>${escapeHtml(agent.name || agent.slug || '未命名智能体')}</strong>
+                <span>${escapeHtml(agent.slug || '')} · ${escapeHtml(agent.default_model || ADMIN_AI_IMAGE_DEFAULT_MODEL)} · ${escapeHtml(agent.default_resolution || '1k')}</span>
+            </div>
+            <div class="ai-image-admin-row__meta">
+                <span>${agent.is_active === false ? '已停用' : '启用中'}</span>
+                <button class="btn-sm btn-secondary" type="button" data-admin-action="settings-disable-ai-image-agent" data-ai-image-agent-id="${escapeHtml(agent.id || '')}">
+                    停用
+                </button>
+            </div>
+        </article>
+    `).join('');
+}
+
+function setAiImageGuardrailInputValue(id, value) {
+    const input = document.getElementById(id);
+    if (input && document.activeElement !== input) {
+        input.value = String(value ?? '');
+    }
+}
+
+function renderAiImageGuardrailsPanel() {
+    const guardrails = getAiImageGuardrails();
+    setAiImageGuardrailInputValue('aiImageGuardSubmitUserInput', guardrails.submit.user.limit);
+    setAiImageGuardrailInputValue('aiImageGuardSubmitIpInput', guardrails.submit.ip.limit);
+    setAiImageGuardrailInputValue('aiImageGuardSubmitHeavyInput', guardrails.submit.heavyUser.limit);
+    setAiImageGuardrailInputValue('aiImageGuardSubmitModelInput', guardrails.submit.model.limit);
+    setAiImageGuardrailInputValue('aiImageGuardUploadUserInput', guardrails.upload.user.limit);
+    setAiImageGuardrailInputValue('aiImageGuardDownloadUserInput', guardrails.download.user.limit);
+    setAiImageGuardrailInputValue('aiImageGuardRunningInput', guardrails.tasks.running);
+    setAiImageGuardrailInputValue('aiImageGuardQueuedInput', guardrails.tasks.queued);
+    setAiImageGuardrailInputValue('aiImageGuardActiveInput', guardrails.tasks.active);
+
+    const status = document.getElementById('aiImageGuardrailStatus');
+    if (status) {
+        const dot = status.querySelector('.status-dot');
+        const text = status.querySelector('span:last-child');
+        if (adminAiImageState.loading && !adminAiImageState.loaded) {
+            if (dot) dot.className = 'status-dot loading';
+            if (text) text.textContent = '正在读取成本防火墙配置...';
+        } else {
+            if (dot) dot.className = 'status-dot ready';
+            if (text) {
+                text.textContent = `用户 ${guardrails.submit.user.limit}/分钟 · IP ${guardrails.submit.ip.limit}/分钟 · 活跃 ${guardrails.tasks.active}`;
+            }
+        }
+    }
+}
+
+function formatAiImageBytes(bytes = 0) {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = value;
+    let index = 0;
+    while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index += 1;
+    }
+    const digits = index <= 1 ? 0 : 2;
+    return `${size.toFixed(digits)} ${units[index]}`;
+}
+
+function setAiImageStorageInputValue(id, value) {
+    const input = document.getElementById(id);
+    if (input && document.activeElement !== input) {
+        input.value = String(value ?? '');
+    }
+}
+
+function setAiImageStorageMetric(kind, text) {
+    const el = document.querySelector(`[data-ai-image-storage="${kind}"]`);
+    if (el) el.textContent = text;
+}
+
+function renderAiImageStoragePanel() {
+    const usage = getAiImageStorageUsage();
+    const policy = getAiImageStoragePolicy();
+
+    setAiImageStorageMetric('total', usage.errorMessage
+        ? '统计失败'
+        : `${formatAiImageBytes(usage.totalBytes)} · ${usage.estimatedTotalGb.toFixed(4)} GB`);
+    setAiImageStorageMetric('objects', `${usage.previewObjects} / ${usage.originalObjects}`);
+    setAiImageStorageMetric('pending', `${usage.pendingOriginals} 待转存 · ${usage.failedOriginals} 失败`);
+    setAiImageStorageMetric('unknown', `${usage.unknownPreviewObjects + usage.unknownOriginalObjects} 个对象`);
+
+    setAiImageStorageInputValue('aiImageStoragePreviewRetentionInput', policy.previewRetentionDays);
+    setAiImageStorageInputValue('aiImageStorageOriginalRetentionInput', policy.originalRetentionDays);
+    setAiImageStorageInputValue('aiImageStorageFailedRetentionInput', policy.failedRetentionDays);
+    setAiImageStorageInputValue('aiImageStorageWarnGbInput', policy.warnStorageGb);
+    setAiImageStorageInputValue('aiImageStorageStopGbInput', policy.stopStorageGb);
+
+    const badge = document.getElementById('aiImageStoragePolicyBadge');
+    if (badge) {
+        badge.textContent = policy.lifecycleEnabled ? '生命周期已启用' : '仅监控';
+    }
+
+    const status = document.getElementById('aiImageStorageStatus');
+    if (status) {
+        const dot = status.querySelector('.status-dot');
+        const text = status.querySelector('span:last-child');
+        if (adminAiImageState.loading && !adminAiImageState.loaded) {
+            if (dot) dot.className = 'status-dot loading';
+            if (text) text.textContent = '正在读取 R2 用量和生命周期策略...';
+        } else if (usage.errorMessage) {
+            if (dot) dot.className = 'status-dot warning';
+            if (text) text.textContent = `用量统计失败：${usage.errorMessage}`;
+        } else {
+            const tone = usage.tone === 'danger' ? 'error' : (usage.tone === 'warning' ? 'warning' : 'ready');
+            if (dot) dot.className = `status-dot ${tone}`;
+            if (text) {
+                text.textContent = policy.lifecycleEnabled
+                    ? `策略已启用：预览 ${policy.previewRetentionDays} 天，原图 ${policy.originalRetentionDays} 天`
+                    : `监控中：告警 ${policy.warnStorageGb} GB，熔断 ${policy.stopStorageGb} GB`;
+            }
+        }
+    }
+}
+
+function renderAiImageAdminPanel() {
+    initCustomDropdown?.();
+    bindAiImageAdminTooltips();
+    renderAiImageRuntimeStatus();
+    renderAiImageModelConfigPanel();
+    renderAiImageGuardrailsPanel();
+    renderAiImageStoragePanel();
+    renderAiImageApiBaseUrlList();
+    renderAiImagePricingList();
+    renderAiImageAgentList();
+}
+
+function readAiImagePricingDraft() {
+    return {
+        action: 'save-pricing',
+        site: 'all',
+        billing_mode: 'points',
+        model: String(document.getElementById('aiImagePricingModelInput')?.value || ADMIN_AI_IMAGE_DEFAULT_MODEL).trim() || ADMIN_AI_IMAGE_DEFAULT_MODEL,
+        mode: String(document.getElementById('aiImagePricingModeInput')?.value || 'text').trim() || 'text',
+        resolution: String(document.getElementById('aiImagePricingResolutionInput')?.value || '1k').trim() || '1k',
+        ratio: String(document.getElementById('aiImagePricingRatioInput')?.value || '*').trim() || '*',
+        quantity: 1,
+        points: Number(document.getElementById('aiImagePricingPointsInput')?.value || 0),
+        priority: 100,
+        metadata: {}
+    };
+}
+
+function readAiImageAgentDraft() {
+    const name = String(document.getElementById('aiImageAgentNameInput')?.value || '').trim();
+    const slug = String(document.getElementById('aiImageAgentSlugInput')?.value || '').trim();
+    const systemPrompt = String(document.getElementById('aiImageAgentPromptInput')?.value || '').trim();
+    return {
+        action: 'save-agent',
+        site: 'all',
+        name,
+        slug,
+        system_prompt: systemPrompt,
+        mode: 'agent',
+        default_model: ADMIN_AI_IMAGE_DEFAULT_MODEL,
+        default_resolution: '2k',
+        default_ratio: '1:1',
+        description: systemPrompt.slice(0, 180),
+        metadata: {}
+    };
+}
+
+function normalizeAdminAiImageApiBaseUrl(value = '') {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function readAiImageApiBaseUrlDraft() {
+    const label = String(document.getElementById('aiImageApiBaseLabelInput')?.value || '').trim();
+    const baseUrl = normalizeAdminAiImageApiBaseUrl(document.getElementById('aiImageApiBaseUrlInput')?.value || '');
+    const site = String(document.getElementById('aiImageApiBaseSiteInput')?.value || 'all').trim() || 'all';
+    return {
+        action: 'save-api-base-url',
+        site,
+        label,
+        base_url: baseUrl,
+        display_order: 100,
+        metadata: {}
+    };
+}
+
+function readAiImageGuardrailsDraft() {
+    const current = getAiImageGuardrails();
+    const readLimit = (id, fallback, max = 100000) => normalizeAiImageGuardrailInt(
+        document.getElementById(id)?.value,
+        fallback,
+        { min: 1, max }
+    );
+    const runningLimit = readLimit('aiImageGuardRunningInput', current.tasks.running, 20);
+    const queuedLimit = readLimit('aiImageGuardQueuedInput', current.tasks.queued, 100);
+    const activeLimit = readLimit('aiImageGuardActiveInput', current.tasks.active, 100);
+
+    return normalizeAiImageGuardrails({
+        ...current,
+        submit: {
+            ...current.submit,
+            user: {
+                ...current.submit.user,
+                limit: readLimit('aiImageGuardSubmitUserInput', current.submit.user.limit, 10000)
+            },
+            ip: {
+                ...current.submit.ip,
+                limit: readLimit('aiImageGuardSubmitIpInput', current.submit.ip.limit, 10000)
+            },
+            heavyUser: {
+                ...current.submit.heavyUser,
+                limit: readLimit('aiImageGuardSubmitHeavyInput', current.submit.heavyUser.limit, 10000)
+            },
+            model: {
+                ...current.submit.model,
+                limit: readLimit('aiImageGuardSubmitModelInput', current.submit.model.limit, 10000)
+            }
+        },
+        upload: {
+            ...current.upload,
+            user: {
+                ...current.upload.user,
+                limit: readLimit('aiImageGuardUploadUserInput', current.upload.user.limit, 10000)
+            }
+        },
+        download: {
+            ...current.download,
+            user: {
+                ...current.download.user,
+                limit: readLimit('aiImageGuardDownloadUserInput', current.download.user.limit, 100000)
+            }
+        },
+        tasks: {
+            ...current.tasks,
+            running: runningLimit,
+            queued: queuedLimit,
+            active: Math.max(activeLimit, runningLimit + queuedLimit)
+        }
+    });
+}
+
+function readAiImageStoragePolicyDraft() {
+    const current = getAiImageStoragePolicy();
+    const readInt = (id, fallback, min = 1) => normalizeAiImageStorageInt(
+        document.getElementById(id)?.value,
+        fallback,
+        { min, max: 3650 }
+    );
+    const readGb = (id, fallback) => normalizeAiImageStorageNumber(
+        document.getElementById(id)?.value,
+        fallback,
+        { min: 0.1, max: 100000 }
+    );
+    const policy = normalizeAiImageStoragePolicy({
+        previewRetentionDays: readInt('aiImageStoragePreviewRetentionInput', current.previewRetentionDays, 7),
+        originalRetentionDays: readInt('aiImageStorageOriginalRetentionInput', current.originalRetentionDays, 7),
+        failedRetentionDays: readInt('aiImageStorageFailedRetentionInput', current.failedRetentionDays, 1),
+        warnStorageGb: readGb('aiImageStorageWarnGbInput', current.warnStorageGb),
+        stopStorageGb: readGb('aiImageStorageStopGbInput', current.stopStorageGb),
+        lifecycleEnabled: current.lifecycleEnabled
+    });
+    if (policy.warnStorageGb > policy.stopStorageGb) {
+        policy.stopStorageGb = policy.warnStorageGb;
+    }
+    return policy;
+}
+
+async function postAiImageAdminConfig(payload = {}) {
+    const headers = await getAdminApiHeaders();
+    const response = await (window.AdminApi?.fetch || fetch)(getAiImageConfigUrl(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+        throw new Error(data.message || '保存 AI 图片配置失败');
+    }
+    return data;
+}
+
+async function saveAiImageGuardrails() {
+    const guardrails = readAiImageGuardrailsDraft();
+    try {
+        showAdminStudioToast('正在保存 AI 图片成本防火墙...', 'info');
+        await postAiImageAdminConfig({
+            action: 'save-guardrails',
+            site: normalizeAdminAiImageSite(),
+            guardrails
+        });
+        adminAiImageState.guardrails = guardrails;
+        renderAiImageGuardrailsPanel();
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('AI 图片成本防火墙已保存', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to save AI image guardrails:', err);
+        showAdminStudioToast(err.message || '保存 AI 图片成本防火墙失败', 'error');
+        return false;
+    }
+}
+
+async function saveAiImageStoragePolicy() {
+    const storagePolicy = readAiImageStoragePolicyDraft();
+    try {
+        showAdminStudioToast('正在保存 AI 图片 R2 生命周期策略...', 'info');
+        await postAiImageAdminConfig({
+            action: 'save-storage-policy',
+            site: normalizeAdminAiImageSite(),
+            storage_policy: storagePolicy
+        });
+        adminAiImageState.storagePolicy = storagePolicy;
+        renderAiImageStoragePanel();
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('AI 图片 R2 生命周期策略已保存', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to save AI image storage policy:', err);
+        showAdminStudioToast(err.message || '保存 AI 图片 R2 生命周期策略失败', 'error');
+        return false;
+    }
+}
+
+async function saveAiImagePricingRule() {
+    const draft = readAiImagePricingDraft();
+    if (!Number.isFinite(Number(draft.points)) || Number(draft.points) < 0) {
+        showAdminStudioToast('请输入有效的积分价格', 'warning');
+        return false;
+    }
+
+    try {
+        showAdminStudioToast('正在保存 AI 图片价格规则...', 'info');
+        await postAiImageAdminConfig(draft);
+        document.getElementById('aiImagePricingPointsInput').value = '';
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('AI 图片价格规则已保存', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to save AI image pricing:', err);
+        showAdminStudioToast(err.message || '保存 AI 图片价格失败', 'error');
+        return false;
+    }
+}
+
+async function saveAiImageAgent() {
+    const draft = readAiImageAgentDraft();
+    if (!draft.name || !draft.system_prompt) {
+        showAdminStudioToast('请填写智能体名称和系统情景', 'warning');
+        return false;
+    }
+
+    try {
+        showAdminStudioToast('正在保存 AI 图片智能体...', 'info');
+        await postAiImageAdminConfig(draft);
+        ['aiImageAgentNameInput', 'aiImageAgentSlugInput', 'aiImageAgentPromptInput'].forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) input.value = '';
+        });
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('AI 图片智能体已保存', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to save AI image agent:', err);
+        showAdminStudioToast(err.message || '保存 AI 图片智能体失败', 'error');
+        return false;
+    }
+}
+
+async function saveAiImageApiBaseUrl() {
+    const draft = readAiImageApiBaseUrlDraft();
+    if (!/^https?:\/\//i.test(draft.base_url)) {
+        showAdminStudioToast('请输入有效的 Sub2API Base URL', 'warning');
+        return false;
+    }
+
+    try {
+        showAdminStudioToast('正在保存用户 API 白名单...', 'info');
+        await postAiImageAdminConfig(draft);
+        ['aiImageApiBaseLabelInput', 'aiImageApiBaseUrlInput'].forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) input.value = '';
+        });
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('用户 API Base URL 已保存', 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to save AI image API base URL:', err);
+        showAdminStudioToast(err.message || '保存用户 API 白名单失败', 'error');
+        return false;
+    }
+}
+
+async function disableAiImageApiBaseUrl(id = '') {
+    if (!id) return false;
+    try {
+        await postAiImageAdminConfig({ action: 'disable-api-base-url', id });
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('用户 API Base URL 已停用', 'success');
+        return true;
+    } catch (err) {
+        showAdminStudioToast(err.message || '停用用户 API Base URL 失败', 'error');
+        return false;
+    }
+}
+
+async function deleteAiImagePricingRule(id = '') {
+    if (!id) return false;
+    try {
+        await postAiImageAdminConfig({ action: 'delete-pricing', id });
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('价格规则已删除', 'success');
+        return true;
+    } catch (err) {
+        showAdminStudioToast(err.message || '删除价格规则失败', 'error');
+        return false;
+    }
+}
+
+const disableAiImagePricingRule = deleteAiImagePricingRule;
+
+async function disableAiImageAgent(id = '') {
+    if (!id) return false;
+    try {
+        await postAiImageAdminConfig({ action: 'disable-agent', id });
+        await fetchAiImageAdminConfig({ force: true });
+        showAdminStudioToast('智能体已停用', 'success');
+        return true;
+    } catch (err) {
+        showAdminStudioToast(err.message || '停用智能体失败', 'error');
+        return false;
+    }
+}
+
+async function runAiImageWorkerOnce() {
+    try {
+        showAdminStudioToast('正在执行 AI 图片队列...', 'info');
+        const headers = await getAdminApiHeaders();
+        const response = await (window.AdminApi?.fetch || fetch)('/api/admin?route=ai-image/run', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                site: '',
+                limit: 3
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || 'AI 图片队列执行失败');
+        }
+
+        const results = Array.isArray(payload.results) ? payload.results : [];
+        adminAiImageState.lastRun = {
+            processed: Number(payload.processed || 0),
+            succeeded: results.filter((item) => item.status === 'succeeded').length,
+            failed: results.filter((item) => item.status === 'failed').length
+        };
+        renderAiImageRuntimeStatus();
+        showAdminStudioToast(`AI 图片队列执行完成：处理 ${adminAiImageState.lastRun.processed} 个`, 'success');
+        return true;
+    } catch (err) {
+        console.error('Failed to run AI image worker:', err);
+        showAdminStudioToast(err.message || 'AI 图片队列执行失败', 'error');
+        return false;
+    }
+}
+
 async function refreshCodexConfig() {
     try {
         const headers = await getAdminApiHeaders();
@@ -9198,6 +12247,95 @@ window.saveCodexConfig = saveCodexConfig;
 window.testCodexConnectivity = testCodexConnectivity;
 window.deleteCodexConfig = deleteCodexConfig;
 window.focusCodexConfigPanel = focusCodexConfigPanel;
+window.fetchAiImageAdminConfig = fetchAiImageAdminConfig;
+window.fetchAiImageModelConfig = fetchAiImageModelConfig;
+window.selectAiImageModelProvider = selectAiImageModelProvider;
+window.createAiImageModelProviderDraft = createAiImageModelProviderDraft;
+window.handleAiImageModelProviderDraftInput = handleAiImageModelProviderDraftInput;
+window.toggleAiImageVisibleModel = toggleAiImageVisibleModel;
+window.cloneAiImageModelProvider = cloneAiImageModelProvider;
+window.applyAiImageDiscoveredModel = applyAiImageDiscoveredModel;
+window.classifyAiImageUnknownModel = classifyAiImageUnknownModel;
+window.promptForAiImageModelKey = promptForAiImageModelKey;
+window.saveAiImageModelConfig = saveAiImageModelConfig;
+window.testAiImageModelConfig = testAiImageModelConfig;
+window.discoverAiImageModelConfig = discoverAiImageModelConfig;
+window.deleteAiImageModelConfig = deleteAiImageModelConfig;
+window.saveAiImageApiBaseUrl = saveAiImageApiBaseUrl;
+window.disableAiImageApiBaseUrl = disableAiImageApiBaseUrl;
+window.saveAiImageGuardrails = saveAiImageGuardrails;
+window.saveAiImageStoragePolicy = saveAiImageStoragePolicy;
+window.saveAiImagePricingRule = saveAiImagePricingRule;
+window.saveAiImageAgent = saveAiImageAgent;
+window.deleteAiImagePricingRule = deleteAiImagePricingRule;
+window.disableAiImagePricingRule = disableAiImagePricingRule;
+window.disableAiImageAgent = disableAiImageAgent;
+window.runAiImageWorkerOnce = runAiImageWorkerOnce;
+window.renderAiImageAdminPanel = renderAiImageAdminPanel;
+
+const aiImageAdminTooltipState = {
+    el: null,
+    target: null
+};
+
+function getAiImageAdminTooltip() {
+    if (aiImageAdminTooltipState.el?.isConnected) return aiImageAdminTooltipState.el;
+    const el = document.createElement('div');
+    el.className = 'ai-image-admin-floating-tooltip';
+    el.setAttribute('role', 'tooltip');
+    document.body.appendChild(el);
+    aiImageAdminTooltipState.el = el;
+    return el;
+}
+
+function positionAiImageAdminTooltip(target) {
+    const tooltip = aiImageAdminTooltipState.el;
+    if (!tooltip || !(target instanceof HTMLElement)) return;
+    const rect = target.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportPadding = 12;
+    let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipRect.width - viewportPadding));
+    const top = rect.top >= tooltipRect.height + 14
+        ? rect.top - tooltipRect.height - 8
+        : rect.bottom + 8;
+    tooltip.style.left = `${Math.round(left)}px`;
+    tooltip.style.top = `${Math.round(Math.max(viewportPadding, top))}px`;
+}
+
+function showAiImageAdminTooltip(target) {
+    const text = String(target?.dataset?.aiImageTooltip || '').trim();
+    if (!text) return;
+    const tooltip = getAiImageAdminTooltip();
+    aiImageAdminTooltipState.target = target;
+    tooltip.textContent = text;
+    tooltip.classList.add('is-visible');
+    positionAiImageAdminTooltip(target);
+}
+
+function hideAiImageAdminTooltip(target = null) {
+    if (target && aiImageAdminTooltipState.target && target !== aiImageAdminTooltipState.target) return;
+    aiImageAdminTooltipState.target = null;
+    aiImageAdminTooltipState.el?.classList.remove('is-visible');
+}
+
+function bindAiImageAdminTooltips() {
+    document.querySelectorAll('[data-ai-image-tooltip]').forEach((target) => {
+        if (!(target instanceof HTMLElement) || target.dataset.aiImageTooltipBound === '1') return;
+        target.dataset.aiImageTooltipBound = '1';
+        target.addEventListener('mouseenter', () => showAiImageAdminTooltip(target));
+        target.addEventListener('focus', () => showAiImageAdminTooltip(target));
+        target.addEventListener('mouseleave', () => hideAiImageAdminTooltip(target));
+        target.addEventListener('blur', () => hideAiImageAdminTooltip(target));
+    });
+}
+
+window.addEventListener('scroll', () => hideAiImageAdminTooltip(), true);
+window.addEventListener('resize', () => {
+    if (aiImageAdminTooltipState.target) {
+        positionAiImageAdminTooltip(aiImageAdminTooltipState.target);
+    }
+});
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
@@ -9265,7 +12403,8 @@ function setupCustomDropdown(dropdown, onChange) {
 
             // Trigger change event for filters
             if (oldValue !== value) {
-                hiddenInput.dispatchEvent(new Event('change'));
+                hiddenInput.dataset.adminDropdownDirty = '1';
+                hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
     });
@@ -9293,6 +12432,7 @@ function setCustomDropdownValue(dropdownId, value) {
     const options = dropdown.querySelectorAll('.select-option');
 
     hiddenInput.value = value;
+    delete hiddenInput.dataset.adminDropdownDirty;
 
     options.forEach(option => {
         option.classList.remove('selected');

@@ -51,6 +51,29 @@ func TestChatCompletionsToResponses_SystemMessage(t *testing.T) {
 	assert.Equal(t, "user", items[1].Role)
 }
 
+func TestChatCompletionsToResponses_InstructionsDoNotRequireDuplicatedSystem(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model:        "gpt-5.5",
+		Instructions: "You are FatherKey AI workbench assistant.",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"hello"`)},
+			{Role: "assistant", Content: json.RawMessage(`"hi"`)},
+			{Role: "user", Content: json.RawMessage(`"which model are you"`)},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, "gpt-5.5", resp.Model)
+	assert.Equal(t, "You are FatherKey AI workbench assistant.", resp.Instructions)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 3)
+	assert.Equal(t, []string{"user", "assistant", "user"}, responseInputItemRoles(items))
+}
+
 func TestChatCompletionsToResponses_ToolCalls(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model: "gpt-4o",
@@ -1554,4 +1577,12 @@ func TestBufferedResponseAccumulator_IgnoresNonFunctionCallItems(t *testing.T) {
 	})
 
 	assert.False(t, acc.HasContent())
+}
+
+func responseInputItemRoles(items []ResponsesInputItem) []string {
+	roles := make([]string, 0, len(items))
+	for _, item := range items {
+		roles = append(roles, item.Role)
+	}
+	return roles
 }

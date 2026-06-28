@@ -3654,7 +3654,8 @@ body.modal-open .prompt-card {
     flex: 0 0 auto;
 }
 
-.prompt-header-share-slot {
+.prompt-header-share-slot,
+.prompt-action-ai-image-slot {
     display: inline-flex;
     align-items: center;
 }

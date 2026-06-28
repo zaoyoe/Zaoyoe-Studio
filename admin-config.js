@@ -8973,6 +8973,7 @@ const SETTINGS_VIEW_DOMAIN_MAP = Object.freeze({
     notifications: ['governance'],
     content: ['governance'],
     'google-one': ['verify'],
+    'ai-image': [],
     affiliate: ['affiliate'],
     general: ['growth']
 });

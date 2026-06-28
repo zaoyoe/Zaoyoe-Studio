@@ -758,6 +758,62 @@ test('prompts manage handler updates prompt rows with explicit id filter and aud
     });
 });
 
+test('prompts manage handler canonicalizes prompt image variants before saving', async () => {
+    await withPromptsManageHandler({
+        row: {
+            id: 'prompt-images-1',
+            title: 'Prompt Images',
+            tags: ['Photography']
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update',
+                id: 'prompt-images-1',
+                site: 'cn',
+                title: 'Prompt Images',
+                tags: ['Photography'],
+                images: [
+                    'https://cdn.fatherkey.com/prompts/a.webp',
+                    'https://cdn.fatherkey.com/prompts/thumb/a.webp',
+                    'https://cdn.fatherkey.com/prompts/card/b.webp',
+                    'https://cdn.fatherkey.com/prompts/b.webp'
+                ],
+                image_assets: [
+                    {
+                        original: 'https://cdn.fatherkey.com/prompts/a.webp',
+                        featured: 'https://cdn.fatherkey.com/prompts/featured/a.webp'
+                    },
+                    'https://cdn.fatherkey.com/prompts/thumb/b.webp'
+                ]
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(state.updatePayload.images, [
+            'https://cdn.fatherkey.com/prompts/a.webp',
+            'https://cdn.fatherkey.com/prompts/b.webp'
+        ]);
+        assert.deepEqual(state.updatePayload.image_assets, [
+            {
+                original: 'https://cdn.fatherkey.com/prompts/a.webp',
+                featured: 'https://cdn.fatherkey.com/prompts/featured/a.webp',
+                thumb: 'https://cdn.fatherkey.com/prompts/thumb/a.webp'
+            },
+            {
+                thumb: 'https://cdn.fatherkey.com/prompts/thumb/b.webp',
+                original: 'https://cdn.fatherkey.com/prompts/b.webp',
+                card: 'https://cdn.fatherkey.com/prompts/card/b.webp'
+            }
+        ]);
+        assert.equal(typeof state.updatePayload.updated_at, 'string');
+    });
+});
+
 test('prompts manage handler updates source attribution fields', async () => {
     await withPromptsManageHandler({
         row: {
