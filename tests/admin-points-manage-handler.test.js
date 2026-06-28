@@ -255,7 +255,11 @@ function createSupabaseDouble(state, options = {}) {
                 };
             }
 
-            if (fn === 'fn_deduct_points_admin_site' || fn === 'fn_deduct_points') {
+            if (
+                fn === 'fn_deduct_points_admin_site_with_breakdown' ||
+                fn === 'fn_deduct_points_admin_site' ||
+                fn === 'fn_deduct_points'
+            ) {
                 return {
                     data: {
                         success: true,
@@ -538,9 +542,9 @@ test('points manage handler deletes scoped batches and revokes used codes before
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().success, true);
-        assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_deduct_points_admin_site' && call.args?.p_target_user_id === 'user-cn-1'), true);
+        assert.equal(state.rpcCalls.some((call) => call.fn.startsWith('fn_deduct_points') && call.args?.p_target_user_id === 'user-cn-1'), true);
         assert.equal(
-            state.rpcCalls.find((call) => call.fn === 'fn_deduct_points_admin_site')?.args?.p_reason,
+            state.rpcCalls.find((call) => call.fn.startsWith('fn_deduct_points'))?.args?.p_reason,
             '兑换码批次删除扣回: 批次删除-自动撤销（ZY-CN-USED）'
         );
         assert.equal(state.tables.redemption_batches.some((row) => row.id === 'batch-cn-1'), false);
@@ -626,7 +630,7 @@ test('points manage handler uses service revoke flow so ledger keeps the admin r
         assert.equal(res.json().success, true);
         assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_revoke_code'), false);
         assert.equal(
-            state.rpcCalls.find((call) => call.fn === 'fn_deduct_points_admin_site')?.args?.p_reason,
+            state.rpcCalls.find((call) => call.fn.startsWith('fn_deduct_points'))?.args?.p_reason,
             '兑换码撤销扣回: 客户退款（ZY-CN-USED）'
         );
         assert.equal(state.tables.redemption_codes.find((row) => row.id === 'code-cn-used')?.revoke_reason, '客户退款');
@@ -661,9 +665,9 @@ test('points manage handler falls back to service revoke flow when no request to
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().success, true);
         assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_revoke_code'), false);
-        assert.equal(state.rpcCalls.some((call) => call.fn === 'fn_deduct_points_admin_site' && call.args?.p_target_user_id === 'user-cn-1' && call.args?.p_amount === 120), true);
+        assert.equal(state.rpcCalls.some((call) => call.fn.startsWith('fn_deduct_points') && call.args?.p_target_user_id === 'user-cn-1' && call.args?.p_amount === 120), true);
         assert.equal(
-            state.rpcCalls.find((call) => call.fn === 'fn_deduct_points_admin_site')?.args?.p_reason,
+            state.rpcCalls.find((call) => call.fn.startsWith('fn_deduct_points'))?.args?.p_reason,
             '兑换码撤销扣回: 管理员撤销（ZY-CN-USED）'
         );
         assert.equal(state.tables.redemption_codes.find((row) => row.id === 'code-cn-used')?.status, 'revoked');
