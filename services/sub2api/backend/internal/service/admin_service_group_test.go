@@ -151,13 +151,14 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	price4K := 0.30
 
 	input := &CreateGroupInput{
-		Name:           "test-group",
-		Description:    "Test group",
-		Platform:       PlatformAntigravity,
-		RateMultiplier: 1.0,
-		ImagePrice1K:   &price1K,
-		ImagePrice2K:   &price2K,
-		ImagePrice4K:   &price4K,
+		Name:                 "test-group",
+		Description:          "Test group",
+		Platform:             PlatformAntigravity,
+		RateMultiplier:       1.0,
+		AllowVideoGeneration: true,
+		ImagePrice1K:         &price1K,
+		ImagePrice2K:         &price2K,
+		ImagePrice4K:         &price4K,
 	}
 
 	group, err := svc.CreateGroup(context.Background(), input)
@@ -166,6 +167,7 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 
 	// 验证 repo 收到了正确的字段
 	require.NotNil(t, repo.created)
+	require.True(t, repo.created.AllowVideoGeneration)
 	require.NotNil(t, repo.created.ImagePrice1K)
 	require.NotNil(t, repo.created.ImagePrice2K)
 	require.NotNil(t, repo.created.ImagePrice4K)
@@ -274,6 +276,7 @@ func TestAdminService_UpdateGroup_PreservesImageGenerationControlsWhenOmitted(t 
 		Platform:             PlatformOpenAI,
 		Status:               StatusActive,
 		AllowImageGeneration: true,
+		AllowVideoGeneration: true,
 		ImageRateIndependent: true,
 		ImageRateMultiplier:  imageMultiplier,
 	}
@@ -288,8 +291,32 @@ func TestAdminService_UpdateGroup_PreservesImageGenerationControlsWhenOmitted(t 
 	require.NotNil(t, group)
 	require.NotNil(t, repo.updated)
 	require.True(t, repo.updated.AllowImageGeneration)
+	require.True(t, repo.updated.AllowVideoGeneration)
 	require.True(t, repo.updated.ImageRateIndependent)
 	require.InDelta(t, 0.5, repo.updated.ImageRateMultiplier, 1e-12)
+}
+
+func TestAdminService_UpdateGroup_UpdatesVideoGenerationControl(t *testing.T) {
+	existingGroup := &Group{
+		ID:                   1,
+		Name:                 "existing-group",
+		Platform:             PlatformOpenAI,
+		Status:               StatusActive,
+		AllowImageGeneration: false,
+		AllowVideoGeneration: false,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	allowVideo := true
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		AllowVideoGeneration: &allowVideo,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.False(t, repo.updated.AllowImageGeneration)
+	require.True(t, repo.updated.AllowVideoGeneration)
 }
 
 func TestAdminService_UpdateGroup_ClearsDescriptionWhenEmptyString(t *testing.T) {
