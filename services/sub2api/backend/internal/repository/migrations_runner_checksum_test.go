@@ -153,6 +153,15 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		}
 	})
 
+	t.Run("154生产库已应用checksum可兼容当前区域限制迁移", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"154_regional_restriction_login_enabled_default.sql",
+			"d7d53a1294f5c8c040d6a537e2797c9993d9aa1665f9fda270f179eaddee1619",
+			"3596aff352b9d8df730714c7defb9b514f72b38146f9855e4dad76a5536daded",
+		)
+		require.True(t, ok)
+	})
+
 	t.Run("119未知checksum不兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"119_enforce_payment_orders_out_trade_no_unique.sql",
