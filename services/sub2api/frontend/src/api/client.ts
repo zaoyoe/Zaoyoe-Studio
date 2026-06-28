@@ -42,13 +42,6 @@ function onTokenRefreshed(token: string): void {
   refreshSubscribers = []
 }
 
-function redirectToLoginRegionBlocked(): void {
-  if (window.location.pathname.startsWith('/login')) {
-    return
-  }
-  window.location.href = '/login?region_blocked=login'
-}
-
 // ==================== Request Interceptor ====================
 
 // Get user's timezone
@@ -254,22 +247,6 @@ apiClient.interceptors.response.use(
             localStorage.removeItem('auth_user')
             localStorage.removeItem('token_expires_at')
             sessionStorage.setItem('auth_expired', '1')
-
-            const refreshApiError = refreshError as AxiosError<
-              ApiResponse<unknown> & { reason?: string; metadata?: Record<string, unknown> }
-            >
-            const refreshResponseData = refreshApiError.response?.data
-            if (refreshResponseData?.reason === 'REGION_RESTRICTED') {
-              sessionStorage.removeItem('auth_expired')
-              redirectToLoginRegionBlocked()
-              return Promise.reject({
-                status: 403,
-                code: 'REGION_RESTRICTED',
-                reason: 'REGION_RESTRICTED',
-                message: refreshResponseData.message || 'Login is not available in your region.',
-                metadata: refreshResponseData.metadata,
-              })
-            }
 
             if (!window.location.pathname.includes('/login')) {
               window.location.href = '/login'
