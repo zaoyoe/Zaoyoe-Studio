@@ -265,6 +265,7 @@ function isRouteNotFoundPayload(response = {}, payload = {}) {
         || message === '404 page not found'
         || message === 'page not found'
         || message === 'route not found'
+        || message.includes('invalid url')
         || message.includes('no route')
         || message.includes('cannot post');
 }

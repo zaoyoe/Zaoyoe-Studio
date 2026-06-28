@@ -18,6 +18,7 @@ import (
 )
 
 const openAIVideosGenerationsEndpoint = "/v1/videos/generations"
+const openAIVideosGenerationsFallbackEndpoint = "/v1/images/generations"
 
 type OpenAIVideosRequest struct {
 	Model  string
@@ -98,28 +99,13 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if err != nil {
 		return nil, fmt.Errorf("invalid base_url: %w", err)
 	}
-	targetURL := buildOpenAIVideosURL(validatedURL)
+	targetURLs := buildOpenAIVideosCandidateURLs(validatedURL, account)
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, targetURL, bytes.NewReader(upstreamBody))
+	upstreamReq, err := buildOpenAIVideosUpstreamRequest(upstreamCtx, c, account, targetURLs[0], apiKey, upstreamBody)
 	releaseUpstreamCtx()
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
-	}
-	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
-	upstreamReq.Header.Set("Content-Type", "application/json")
-	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
-	upstreamReq.Header.Set("Accept", "application/json")
-	for key, values := range c.Request.Header {
-		lowerKey := strings.ToLower(key)
-		if openaiCCRawAllowedHeaders[lowerKey] {
-			for _, v := range values {
-				upstreamReq.Header.Add(key, v)
-			}
-		}
-	}
-	if customUA := account.GetOpenAIUserAgent(); customUA != "" {
-		upstreamReq.Header.Set("User-Agent", customUA)
 	}
 
 	proxyURL := ""
@@ -128,7 +114,8 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	}
 	upstreamStart := time.Now()
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+	firstUpstreamLatencyMs := time.Since(upstreamStart).Milliseconds()
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, firstUpstreamLatencyMs)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")
@@ -144,8 +131,6 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		writeOpenAIVideosError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
@@ -153,6 +138,75 @@ func (s *OpenAIGatewayService) ForwardVideos(
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		if shouldFallbackOpenAIVideosEndpoint(resp.StatusCode, upstreamMsg) && len(targetURLs) > 1 {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  resp.Header.Get("x-request-id"),
+				UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+				Kind:               "endpoint_fallback",
+				Message:            upstreamMsg,
+			})
+
+			fallbackCtx, releaseFallbackCtx := detachUpstreamContext(ctx)
+			fallbackReq, fallbackErr := buildOpenAIVideosUpstreamRequest(fallbackCtx, c, account, targetURLs[1], apiKey, upstreamBody)
+			releaseFallbackCtx()
+			if fallbackErr != nil {
+				return nil, fmt.Errorf("build fallback upstream request: %w", fallbackErr)
+			}
+			fallbackStart := time.Now()
+			resp, err = s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
+			SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, firstUpstreamLatencyMs+time.Since(fallbackStart).Milliseconds())
+			if err != nil {
+				safeErr := sanitizeUpstreamErrorMessage(err.Error())
+				setOpsUpstreamError(c, 0, safeErr, "")
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: 0,
+					UpstreamURL:        safeUpstreamURL(fallbackReq.URL.String()),
+					Kind:               "request_error",
+					Message:            safeErr,
+				})
+				writeOpenAIVideosError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+				return nil, fmt.Errorf("fallback upstream request failed: %s", safeErr)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			upstreamReq = fallbackReq
+			if resp.StatusCode >= 400 {
+				respBody = s.readUpstreamErrorBody(resp)
+				_ = resp.Body.Close()
+				resp.Body = io.NopCloser(bytes.NewReader(respBody))
+				upstreamMsg = strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+				upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+			} else {
+				respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+				_ = resp.Body.Close()
+				if err != nil {
+					if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+						writeOpenAIVideosError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
+					}
+					return nil, fmt.Errorf("read fallback upstream body: %w", err)
+				}
+
+				writeOpenAIVideosUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
+
+				usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
+				return &OpenAIForwardResult{
+					RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
+					Usage:           usage,
+					Model:           requestModel,
+					BillingModel:    billingModel,
+					UpstreamModel:   upstreamModel,
+					Stream:          false,
+					ResponseHeaders: resp.Header.Clone(),
+					Duration:        time.Since(startTime),
+				}, nil
+			}
+		}
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
@@ -176,6 +230,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	}
 
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	_ = resp.Body.Close()
 	if err != nil {
 		if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
 			writeOpenAIVideosError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
@@ -200,6 +255,74 @@ func (s *OpenAIGatewayService) ForwardVideos(
 
 func buildOpenAIVideosURL(base string) string {
 	return buildOpenAIEndpointURL(base, openAIVideosGenerationsEndpoint)
+}
+
+func buildOpenAIVideosCandidateURLs(base string, account *Account) []string {
+	endpoint := openAIVideosGenerationsEndpoint
+	if account != nil {
+		endpoint = strings.TrimSpace(firstNonEmptyString(
+			account.GetCredential("video_endpoint"),
+			account.GetCredential("video_generation_endpoint"),
+		))
+		if endpoint == "" {
+			endpoint = openAIVideosGenerationsEndpoint
+		}
+	}
+	targets := []string{buildOpenAIVideosTargetURL(base, endpoint)}
+	fallback := buildOpenAIEndpointURL(base, openAIVideosGenerationsFallbackEndpoint)
+	if targets[0] != fallback {
+		targets = append(targets, fallback)
+	}
+	return targets
+}
+
+func buildOpenAIVideosTargetURL(base string, endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if strings.HasPrefix(strings.ToLower(endpoint), "http://") || strings.HasPrefix(strings.ToLower(endpoint), "https://") {
+		return endpoint
+	}
+	return buildOpenAIEndpointURL(base, endpoint)
+}
+
+func buildOpenAIVideosUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, targetURL string, apiKey string, body []byte) (*http.Request, error) {
+	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
+	upstreamReq.Header.Set("Content-Type", "application/json")
+	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
+	upstreamReq.Header.Set("Accept", "application/json")
+	if c != nil && c.Request != nil {
+		for key, values := range c.Request.Header {
+			lowerKey := strings.ToLower(key)
+			if openaiCCRawAllowedHeaders[lowerKey] {
+				for _, v := range values {
+					upstreamReq.Header.Add(key, v)
+				}
+			}
+		}
+	}
+	if account != nil {
+		if customUA := account.GetOpenAIUserAgent(); customUA != "" {
+			upstreamReq.Header.Set("User-Agent", customUA)
+		}
+	}
+	return upstreamReq, nil
+}
+
+func shouldFallbackOpenAIVideosEndpoint(statusCode int, upstreamMsg string) bool {
+	if statusCode != http.StatusNotFound {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	return msg == "" ||
+		strings.Contains(msg, "invalid url") ||
+		strings.Contains(msg, "404 page not found") ||
+		strings.Contains(msg, "page not found") ||
+		strings.Contains(msg, "route not found") ||
+		strings.Contains(msg, "no route") ||
+		strings.Contains(msg, "cannot post")
 }
 
 func writeOpenAIVideosUpstreamResponse(c *gin.Context, resp *http.Response, body []byte, filter *responseheaders.CompiledHeaderFilter) {
