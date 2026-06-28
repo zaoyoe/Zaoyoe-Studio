@@ -2336,9 +2336,10 @@ export default {
         noLimit: '无限制'
       },
       imagePricing: {
-        title: '图片生成计费',
-        description: '配置图片生成能力和图片基础单价，留空则使用默认价格',
+        title: '生成能力与图片计费',
+        description: '分别配置图片/视频生成能力。图片价格仅作用于生图，留空则使用默认价格。',
         allowImageGeneration: '允许当前分组生图',
+        allowVideoGeneration: '允许当前分组视频生成',
         independentMultiplier: '生图倍率独立',
         imageMultiplier: '生图独立倍率',
         modeHint: '默认关闭独立倍率时，图片费用 = 图片价格 × 当前分组有效倍率；开启独立倍率后，图片费用 = 图片价格 × 生图独立倍率。',

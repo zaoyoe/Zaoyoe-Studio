@@ -537,8 +537,9 @@ export interface Group {
   daily_limit_usd: number | null;
   weekly_limit_usd: number | null;
   monthly_limit_usd: number | null;
-  // 图片生成计费配置
+  // 生成能力与图片计费配置
   allow_image_generation: boolean;
+  allow_video_generation: boolean;
   image_rate_independent: boolean;
   image_rate_multiplier: number;
   image_price_1k: number | null;
@@ -657,6 +658,7 @@ export interface CreateGroupRequest {
   weekly_limit_usd?: number | null;
   monthly_limit_usd?: number | null;
   allow_image_generation?: boolean;
+  allow_video_generation?: boolean;
   image_rate_independent?: boolean;
   image_rate_multiplier?: number;
   image_price_1k?: number | null;
@@ -692,6 +694,7 @@ export interface UpdateGroupRequest {
   weekly_limit_usd?: number | null;
   monthly_limit_usd?: number | null;
   allow_image_generation?: boolean;
+  allow_video_generation?: boolean;
   image_rate_independent?: boolean;
   image_rate_multiplier?: number;
   image_price_1k?: number | null;

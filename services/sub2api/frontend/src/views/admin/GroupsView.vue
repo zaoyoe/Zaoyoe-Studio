@@ -749,7 +749,7 @@
           </div>
         </div>
 
-        <!-- 图片生成计费配置 -->
+        <!-- 生成能力与图片计费配置 -->
         <div
           v-if="
             createForm.platform === 'antigravity' ||
@@ -766,7 +766,7 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="createForm.allow_image_generation"
@@ -774,6 +774,14 @@
                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.allow_video_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowVideoGeneration") }}
             </label>
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -2037,7 +2045,7 @@
           </div>
         </div>
 
-        <!-- 图片生成计费配置 -->
+        <!-- 生成能力与图片计费配置 -->
         <div
           v-if="
             editForm.platform === 'antigravity' ||
@@ -2054,7 +2062,7 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
-          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
                 v-model="editForm.allow_image_generation"
@@ -2062,6 +2070,14 @@
                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.allow_video_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowVideoGeneration") }}
             </label>
             <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
               <input
@@ -3333,8 +3349,9 @@ const createForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
-  // 图片生成计费配置
+  // 生成能力与图片计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null as number | null,
@@ -3664,8 +3681,9 @@ const editForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
-  // 图片生成计费配置
+  // 生成能力与图片计费配置
   allow_image_generation: false,
+  allow_video_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
   image_price_1k: null as number | null,
@@ -3917,6 +3935,7 @@ const closeCreateModal = () => {
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
   createForm.allow_image_generation = false;
+  createForm.allow_video_generation = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
   createForm.image_price_1k = null;
@@ -4043,6 +4062,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
   editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.allow_video_generation = group.allow_video_generation ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
   editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
   editForm.image_price_1k = group.image_price_1k;
