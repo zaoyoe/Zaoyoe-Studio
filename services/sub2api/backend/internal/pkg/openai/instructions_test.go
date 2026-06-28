@@ -24,9 +24,12 @@ func TestCodexBaseInstructionsForModel(t *testing.T) {
 		{"gpt-5.3-codex-spark", "You are Codex, based on GPT-5"},
 		{"gpt-5.1-codex-max", "You are Codex, based on GPT-5"},
 		{"gpt-5.2-codex", "You are Codex, based on GPT-5"},
+		{"gpt-5.5", "You are GPT-5.5 running in the Codex CLI"},
+		{"gpt-5.4", "You are GPT-5.4 running in the Codex CLI"},
+		{"gpt-5.4-mini", "You are GPT-5.4 Mini running in the Codex CLI"},
 		{"gpt-5.2", "You are GPT-5.2 running in the Codex CLI"},
 		{"gpt-5.1", "You are GPT-5.1 running in the Codex CLI"},
-		{"gpt-5", "You are GPT-5.1 running in the Codex CLI"},
+		{"gpt-5", "You are GPT-5 running in the Codex CLI"},
 		{"", "You are Codex, based on GPT-5"}, // 回退
 	}
 	for _, c := range cases {
@@ -37,6 +40,9 @@ func TestCodexBaseInstructionsForModel(t *testing.T) {
 		}
 		if !strings.HasPrefix(got, c.wantHead) {
 			t.Errorf("model %q: got prefix %q, want %q", c.model, firstLine(got), c.wantHead)
+		}
+		if c.model != "gpt-5.1" && strings.HasPrefix(c.model, "gpt-5") && strings.Contains(got, "GPT-5.1 running in the Codex CLI") {
+			t.Errorf("model %q: should not use GPT-5.1 identity prompt", c.model)
 		}
 	}
 }

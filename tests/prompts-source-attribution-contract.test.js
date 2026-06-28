@@ -336,6 +336,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         '.prompt-content-header',
         '.prompt-header-actions',
         '.prompt-header-share-slot',
+        '.prompt-action-ai-image-slot',
         '.prompt-modal-source-actions',
         '.prompt-modal-card-source-actions',
         '.related-trigger-btn',
@@ -564,6 +565,11 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         /id="relatedTriggerBtn" class="related-trigger-btn"[\s\S]*aria-label="相同风格"[\s\S]*data-tooltip="相同风格"[\s\S]*?<i class="fas fa-diagram-project"><\/i>[\s\S]*?<\/button>/,
         'prompt modal should render a relationship-style same-style prompt icon trigger after the favorite/source/share actions'
     );
+    assert.match(
+        promptsHtml,
+        /id="relatedTriggerBtn"[\s\S]*?<\/button>\s*<span id="promptActionAiImageSlot" class="prompt-action-ai-image-slot"/,
+        'prompt modal should place AI image actions directly to the right of the same-style trigger'
+    );
     assert.doesNotMatch(
         promptsHtml,
         /id="relatedTriggerBtn"[\s\S]*?<span>(查看相关|相同风格)<\/span>/,
@@ -580,7 +586,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'same-style side panel should use localized same-style heading copy'
     );
     assert.equal(
-        (promptsHtml.match(/relatedPrompts=20260620_RELATED_PROMPTS_SHARE_3/g) || []).length,
+        (promptsHtml.match(/relatedPrompts=20260620_RELATED_PROMPTS_SHARE_4/g) || []).length,
         2,
         'prompts.html should cache-bust both related prompt CSS and runtime'
     );

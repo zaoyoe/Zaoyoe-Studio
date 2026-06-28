@@ -191,6 +191,19 @@ function createRouteHandlersForScope(scope) {
             })
         };
     }
+    case 'ai-image': {
+        const {
+            createAiImageHandlers
+        } = require('../server/api-handlers/public/ai-image');
+
+        return {
+            ...createAiImageHandlers({
+                admin,
+                env: process.env,
+                requestSecurity
+            })
+        };
+    }
     case 'wallet': {
         const site = require('./_lib/site');
         const {

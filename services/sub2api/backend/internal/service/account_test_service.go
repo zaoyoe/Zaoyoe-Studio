@@ -1109,8 +1109,11 @@ func createGeminiTestPayload(modelID string, prompt string) []byte {
 			},
 			"generationConfig": map[string]any{
 				"responseModalities": []string{"TEXT", "IMAGE"},
-				"imageConfig": map[string]any{
-					"aspectRatio": "1:1",
+				"responseFormat": map[string]any{
+					"image": map[string]any{
+						"aspectRatio": "1:1",
+						"imageSize":   "1K",
+					},
 				},
 			},
 		}

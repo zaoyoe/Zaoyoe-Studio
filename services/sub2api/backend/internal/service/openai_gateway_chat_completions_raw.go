@@ -40,6 +40,76 @@ var openaiCCRawAllowedHeaders = map[string]bool{
 	"user-agent":      true,
 }
 
+type rawChatCompletionsDiagnostics struct {
+	ThinkingType          string
+	ThinkingEnabled       bool
+	EnableThinking        bool
+	HasEnableThinking     bool
+	ReasoningEffort       string
+	ServiceTier           string
+	MaxTokens             int64
+	RequestMessages       int
+	RequestBodyBytes      int
+	RequestThinkingFields []string
+}
+
+func buildRawChatCompletionsDiagnostics(body []byte) rawChatCompletionsDiagnostics {
+	thinkingType := strings.TrimSpace(gjson.GetBytes(body, "thinking.type").String())
+	enableThinkingResult := gjson.GetBytes(body, "enable_thinking")
+	diagnostics := rawChatCompletionsDiagnostics{
+		ThinkingType:          thinkingType,
+		ThinkingEnabled:       thinkingType == "enabled" || thinkingType == "adaptive",
+		EnableThinking:        enableThinkingResult.Bool(),
+		HasEnableThinking:     enableThinkingResult.Exists(),
+		ReasoningEffort:       strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String()),
+		ServiceTier:           strings.TrimSpace(gjson.GetBytes(body, "service_tier").String()),
+		MaxTokens:             gjson.GetBytes(body, "max_tokens").Int(),
+		RequestMessages:       len(gjson.GetBytes(body, "messages").Array()),
+		RequestBodyBytes:      len(body),
+		RequestThinkingFields: make([]string, 0, 4),
+	}
+	if thinking := gjson.GetBytes(body, "thinking"); thinking.Exists() && thinking.IsObject() {
+		for key := range thinking.Map() {
+			diagnostics.RequestThinkingFields = append(diagnostics.RequestThinkingFields, key)
+		}
+	}
+	return diagnostics
+}
+
+func extractRawChatReasoningAndContentStats(payload string) (reasoningChars int, contentChars int, deltaKeys [][]string) {
+	choices := gjson.Get(payload, "choices")
+	if !choices.Exists() || !choices.IsArray() {
+		return 0, 0, nil
+	}
+	for _, choice := range choices.Array() {
+		delta := choice.Get("delta")
+		if !delta.Exists() || !delta.IsObject() {
+			delta = choice.Get("message")
+		}
+		if !delta.Exists() || !delta.IsObject() {
+			continue
+		}
+		keys := make([]string, 0, len(delta.Map()))
+		for key := range delta.Map() {
+			keys = append(keys, key)
+		}
+		if len(keys) > 0 {
+			deltaKeys = append(deltaKeys, keys)
+		}
+		for _, key := range []string{"reasoning_content", "reasoningContent", "reasoning", "thinking"} {
+			if value := delta.Get(key); value.Exists() && value.Type == gjson.String {
+				reasoningChars += len(value.String())
+			}
+		}
+		for _, key := range []string{"content", "text"} {
+			if value := delta.Get(key); value.Exists() && value.Type == gjson.String {
+				contentChars += len(value.String())
+			}
+		}
+	}
+	return reasoningChars, contentChars, deltaKeys
+}
+
 // forwardAsRawChatCompletions 直转客户端的 Chat Completions 请求到上游
 // `{base_url}/v1/chat/completions`，**不**做 CC↔Responses 协议转换。
 //
@@ -108,6 +178,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 			return nil, fmt.Errorf("enable stream usage: %w", usageErr)
 		}
 	}
+	diagnostics := buildRawChatCompletionsDiagnostics(upstreamBody)
 
 	logger.L().Debug("openai chat_completions raw: forwarding without protocol conversion",
 		zap.Int64("account_id", account.ID),
@@ -222,7 +293,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 
 	// 8. Forward response
 	if clientStream {
-		return s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
+		return s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body), diagnostics)
 	}
 	return s.bufferRawChatCompletions(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 }
@@ -244,8 +315,26 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	serviceTier *string,
 	startTime time.Time,
 	requestBodyLen int,
+	diagnostics rawChatCompletionsDiagnostics,
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	logger.L().Info("openai chat_completions raw: request diagnostics",
+		zap.Int64("account_id", account.ID),
+		zap.String("request_id", requestID),
+		zap.String("original_model", originalModel),
+		zap.String("billing_model", billingModel),
+		zap.String("upstream_model", upstreamModel),
+		zap.String("thinking_type", diagnostics.ThinkingType),
+		zap.Bool("thinking_enabled", diagnostics.ThinkingEnabled),
+		zap.Bool("has_enable_thinking", diagnostics.HasEnableThinking),
+		zap.Bool("enable_thinking", diagnostics.EnableThinking),
+		zap.String("reasoning_effort", diagnostics.ReasoningEffort),
+		zap.String("service_tier", diagnostics.ServiceTier),
+		zap.Int64("max_tokens", diagnostics.MaxTokens),
+		zap.Int("message_count", diagnostics.RequestMessages),
+		zap.Int("body_bytes", diagnostics.RequestBodyBytes),
+		zap.Strings("thinking_fields", diagnostics.RequestThinkingFields),
+	)
 
 	headersWritten := false
 	writeStreamHeaders := func() {
@@ -276,6 +365,12 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
+	sseDataLines := 0
+	reasoningPayloads := 0
+	reasoningCharsTotal := 0
+	contentPayloads := 0
+	contentCharsTotal := 0
+	deltaKeySamples := make([]string, 0, 8)
 
 	writeLine := func(line string) {
 		if clientDisconnected {
@@ -315,9 +410,25 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			if trimmedPayload != "[DONE]" {
+				sseDataLines++
 				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
+				}
+				reasoningChars, contentChars, deltaKeys := extractRawChatReasoningAndContentStats(payload)
+				if reasoningChars > 0 {
+					reasoningPayloads++
+					reasoningCharsTotal += reasoningChars
+				}
+				if contentChars > 0 {
+					contentPayloads++
+					contentCharsTotal += contentChars
+				}
+				for _, keys := range deltaKeys {
+					if len(deltaKeySamples) >= 8 {
+						break
+					}
+					deltaKeySamples = append(deltaKeySamples, strings.Join(keys, ","))
 				}
 				if firstTokenMs == nil && !usageOnlyChunk {
 					elapsed := int(time.Since(startTime).Milliseconds())
@@ -367,6 +478,26 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			}
 		}
 	}
+	logger.L().Info("openai chat_completions raw: stream diagnostics",
+		zap.Int64("account_id", account.ID),
+		zap.String("request_id", requestID),
+		zap.String("original_model", originalModel),
+		zap.String("billing_model", billingModel),
+		zap.String("upstream_model", upstreamModel),
+		zap.String("thinking_type", diagnostics.ThinkingType),
+		zap.Bool("thinking_enabled", diagnostics.ThinkingEnabled),
+		zap.Bool("has_enable_thinking", diagnostics.HasEnableThinking),
+		zap.Bool("enable_thinking", diagnostics.EnableThinking),
+		zap.Int("sse_data_lines", sseDataLines),
+		zap.Int("reasoning_payloads", reasoningPayloads),
+		zap.Int("reasoning_chars", reasoningCharsTotal),
+		zap.Int("content_payloads", contentPayloads),
+		zap.Int("content_chars", contentCharsTotal),
+		zap.Strings("delta_key_samples", deltaKeySamples),
+		zap.Bool("client_output_started", clientOutputStarted),
+		zap.Bool("client_disconnected", clientDisconnected),
+		zap.Duration("duration", time.Since(startTime)),
+	)
 
 	return &OpenAIForwardResult{
 		RequestID:       requestID,

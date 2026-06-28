@@ -57,6 +57,9 @@ const (
 	antigravityDailyBaseURL = "https://daily-cloudcode-pa.sandbox.googleapis.com"
 )
 
+// ClientID 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_ID 配置。
+var ClientID = "SET_ANTIGRAVITY_OAUTH_CLIENT_ID_VIA_ENV"
+
 var userAgentVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 // UserAgentVersionResolver 提供运行时 User-Agent 版本号覆盖能力。
@@ -68,9 +71,6 @@ var (
 	userAgentVersionMu       sync.RWMutex
 	userAgentVersionResolver UserAgentVersionResolver
 )
-
-// ClientID 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_ID 配置。
-var ClientID = "SET_ANTIGRAVITY_OAUTH_CLIENT_ID_VIA_ENV"
 
 // defaultClientSecret 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_SECRET 配置
 var defaultClientSecret = "SET_ANTIGRAVITY_OAUTH_CLIENT_SECRET_VIA_ENV"
@@ -84,7 +84,7 @@ func init() {
 	if clientID := os.Getenv(AntigravityOAuthClientIDEnv); clientID != "" {
 		ClientID = clientID
 	}
-	// 从环境变量读取 client_secret，未设置则使用默认值
+	// 从环境变量读取 client_secret，未设置则使用占位值
 	if secret := os.Getenv(AntigravityOAuthClientSecretEnv); secret != "" {
 		defaultClientSecret = secret
 	}

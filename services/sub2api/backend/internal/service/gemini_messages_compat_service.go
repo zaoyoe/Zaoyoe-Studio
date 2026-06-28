@@ -1142,6 +1142,11 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
 		mappedModel = account.GetMappedModel(originalModel)
 	}
+	if s.shouldBridgeGeminiImageURL(c, originalModel, action) {
+		if _, ok := readGeminiImageURLBridgeStorageConfig(); !ok {
+			return nil, s.writeGoogleError(c, http.StatusServiceUnavailable, "Gemini image URL bridge storage is not configured")
+		}
+	}
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1577,27 +1582,67 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	var firstTokenMs *int
 
 	if stream {
-		streamRes, err := s.handleNativeStreamingResponse(c, resp, startTime, isOAuth)
-		if err != nil {
-			return nil, err
+		if s.shouldBridgeGeminiImageURL(c, originalModel, action) {
+			bridgeRes, err := s.handleGeminiImageURLBridgeResponse(ctx, c, resp, originalModel, mappedModel, isOAuth)
+			if err != nil {
+				return nil, err
+			}
+			usage = bridgeRes.usage
+		} else {
+			streamRes, err := s.handleNativeStreamingResponse(c, resp, startTime, isOAuth)
+			if err != nil {
+				return nil, err
+			}
+			usage = streamRes.usage
+			firstTokenMs = streamRes.firstTokenMs
 		}
-		usage = streamRes.usage
-		firstTokenMs = streamRes.firstTokenMs
 	} else {
 		if useUpstreamStream {
 			collected, usageObj, err := collectGeminiSSE(resp.Body, isOAuth)
 			if err != nil {
 				return nil, s.writeGoogleError(c, http.StatusBadGateway, "Failed to read upstream stream")
 			}
-			b, _ := json.Marshal(collected)
-			c.Data(http.StatusOK, "application/json", b)
-			usage = usageObj
-		} else {
-			usageResp, err := s.handleNativeNonStreamingResponse(c, resp, isOAuth)
-			if err != nil {
-				return nil, err
+			if s.shouldBridgeGeminiImageURL(c, originalModel, action) {
+				bridgeRes, err := s.writeGeminiImageURLBridgePayload(ctx, c, collected, originalModel, mappedModel)
+				if err != nil {
+					return nil, err
+				}
+				usage = bridgeRes.usage
+				if usage == nil {
+					usage = usageObj
+				}
+			} else {
+				b, _ := json.Marshal(collected)
+				c.Data(http.StatusOK, "application/json", b)
+				usage = usageObj
 			}
-			usage = usageResp
+		} else {
+			if s.shouldBridgeGeminiImageURL(c, originalModel, action) {
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, s.writeGoogleError(c, http.StatusBadGateway, "Failed to read upstream response")
+				}
+				if isOAuth {
+					if unwrapped, unwrapErr := unwrapGeminiResponse(body); unwrapErr == nil && len(unwrapped) > 0 {
+						body = unwrapped
+					}
+				}
+				var payload map[string]any
+				if err := json.Unmarshal(body, &payload); err != nil {
+					return nil, s.writeGoogleError(c, http.StatusBadGateway, "Failed to parse upstream response")
+				}
+				bridgeRes, err := s.writeGeminiImageURLBridgePayload(ctx, c, payload, originalModel, mappedModel)
+				if err != nil {
+					return nil, err
+				}
+				usage = bridgeRes.usage
+			} else {
+				usageResp, err := s.handleNativeNonStreamingResponse(c, resp, isOAuth)
+				if err != nil {
+					return nil, err
+				}
+				usage = usageResp
+			}
 		}
 	}
 

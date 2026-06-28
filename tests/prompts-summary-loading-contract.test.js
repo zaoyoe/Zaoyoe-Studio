@@ -2,9 +2,132 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 function readRepoFile(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
+}
+
+function extractFunction(source, functionName) {
+    const marker = `function ${functionName}(`;
+    const start = source.indexOf(marker);
+    assert.notEqual(start, -1, `Expected to find ${marker}`);
+
+    const paramsStart = source.indexOf('(', start);
+    assert.notEqual(paramsStart, -1, `Expected to find parameter list for ${functionName}`);
+
+    let paramsDepth = 0;
+    let paramsEnd = -1;
+    let inSingle = false;
+    let inDouble = false;
+    let inTemplate = false;
+    let escaped = false;
+
+    for (let index = paramsStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (char === '\\') {
+            escaped = true;
+            continue;
+        }
+        if (inSingle) {
+            if (char === '\'') inSingle = false;
+            continue;
+        }
+        if (inDouble) {
+            if (char === '"') inDouble = false;
+            continue;
+        }
+        if (inTemplate) {
+            if (char === '`') inTemplate = false;
+            continue;
+        }
+        if (char === '\'') {
+            inSingle = true;
+            continue;
+        }
+        if (char === '"') {
+            inDouble = true;
+            continue;
+        }
+        if (char === '`') {
+            inTemplate = true;
+            continue;
+        }
+        if (char === '(') {
+            paramsDepth += 1;
+            continue;
+        }
+        if (char === ')') {
+            paramsDepth -= 1;
+            if (paramsDepth === 0) {
+                paramsEnd = index;
+                break;
+            }
+        }
+    }
+
+    assert.notEqual(paramsEnd, -1, `Expected to find parameter terminator for ${functionName}`);
+
+    const bodyStart = source.indexOf('{', paramsEnd);
+    assert.notEqual(bodyStart, -1, `Expected to find function body for ${functionName}`);
+
+    let depth = 0;
+    inSingle = false;
+    inDouble = false;
+    inTemplate = false;
+    escaped = false;
+
+    for (let index = bodyStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (char === '\\') {
+            escaped = true;
+            continue;
+        }
+        if (inSingle) {
+            if (char === '\'') inSingle = false;
+            continue;
+        }
+        if (inDouble) {
+            if (char === '"') inDouble = false;
+            continue;
+        }
+        if (inTemplate) {
+            if (char === '`') inTemplate = false;
+            continue;
+        }
+        if (char === '\'') {
+            inSingle = true;
+            continue;
+        }
+        if (char === '"') {
+            inDouble = true;
+            continue;
+        }
+        if (char === '`') {
+            inTemplate = true;
+            continue;
+        }
+        if (char === '{') {
+            depth += 1;
+            continue;
+        }
+        if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return source.slice(start, index + 1);
+            }
+        }
+    }
+
+    throw new Error(`Failed to extract function ${functionName}`);
 }
 
 test('prompts gallery first paint uses summary data and lazy prompt details', () => {
@@ -171,5 +294,76 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         summarySource.includes('prompt_text'),
         false,
         'summary data should not include prompt text fields'
+    );
+});
+
+test('prompts gallery folds CDN variant urls into one visible image per original', () => {
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const script = [
+        "const PROMPT_IMAGE_ASSET_KEYS = Object.freeze(['original', 'thumb', 'featured', 'card', 'home']);",
+        "const PROMPT_IMAGE_CDN_VARIANT_PATHS = new Set(['thumb', 'featured', 'card', 'home']);",
+        extractFunction(promptsSource, 'getPromptImageCdnVariantInfo'),
+        extractFunction(promptsSource, 'getPromptImageCanonicalOriginalUrl'),
+        extractFunction(promptsSource, 'getPromptImageCanonicalDedupeKey'),
+        extractFunction(promptsSource, 'assignPromptImageAssetUrl'),
+        extractFunction(promptsSource, 'normalizePromptImageAsset'),
+        extractFunction(promptsSource, 'getPromptImageAssetOriginalUrl'),
+        extractFunction(promptsSource, 'normalizePromptImageAssetsFromRecord'),
+        extractFunction(promptsSource, 'normalizeSupabasePromptSummary'),
+        'globalThis.__promptImageExports = { normalizeSupabasePromptSummary, normalizePromptImageAssetsFromRecord };'
+    ].join('\n\n');
+
+    const context = {
+        URL,
+        window: {
+            location: { origin: 'https://www.fatherkey.com' }
+        },
+        globalThis: null
+    };
+
+    context.globalThis = context;
+    vm.runInNewContext(script, context);
+
+    const row = {
+        id: 'prompt-variant-fold',
+        title: 'Variant Fold',
+        tags: ['Photography'],
+        image_assets: [
+            {
+                original: 'https://cdn.fatherkey.com/prompts/a.webp',
+                card: 'https://cdn.fatherkey.com/prompts/card/a.webp'
+            }
+        ],
+        images: [
+            'https://cdn.fatherkey.com/prompts/a.webp',
+            'https://cdn.fatherkey.com/prompts/thumb/a.webp',
+            'https://cdn.fatherkey.com/prompts/featured/b.webp',
+            'https://cdn.fatherkey.com/prompts/b.webp'
+        ]
+    };
+
+    const summary = context.__promptImageExports.normalizeSupabasePromptSummary(row, 0);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(summary.images)),
+        [
+            'https://cdn.fatherkey.com/prompts/a.webp',
+            'https://cdn.fatherkey.com/prompts/b.webp'
+        ],
+        'summary images should not double-count CDN thumbnail/card/featured variants'
+    );
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(summary.image_assets)),
+        [
+            {
+                original: 'https://cdn.fatherkey.com/prompts/a.webp',
+                card: 'https://cdn.fatherkey.com/prompts/card/a.webp',
+                thumb: 'https://cdn.fatherkey.com/prompts/thumb/a.webp'
+            },
+            {
+                featured: 'https://cdn.fatherkey.com/prompts/featured/b.webp',
+                original: 'https://cdn.fatherkey.com/prompts/b.webp'
+            }
+        ],
+        'summary image assets should retain variant urls under a single canonical original'
     );
 });

@@ -489,7 +489,10 @@ function toggleTheme() {
 // Initialize theme
 function initTheme() {
   const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark') {
+  if (
+    savedTheme === 'dark' ||
+    (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  ) {
     isDark.value = true
     document.documentElement.classList.add('dark')
   }

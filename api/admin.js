@@ -93,6 +93,9 @@ const ticketSummaryActionsHandler = require('../server/api-handlers/admin/ticket
 const ticketSummaryHistoryHandler = require('../server/api-handlers/admin/tickets/summary-history');
 const usersBlocksHandler = require('../server/api-handlers/admin/users/blocks');
 const usersManageHandler = require('../server/api-handlers/admin/users/manage');
+const aiImageConfigHandler = require('../server/api-handlers/admin/ai-image/config');
+const aiImageModelConfigHandler = require('../server/api-handlers/admin/ai-image/model-config');
+const aiImageRunHandler = require('../server/api-handlers/admin/ai-image/run');
 
 const ROUTE_HANDLERS = {
     'analytics/panel-support-bundle': analyticsPanelSupportBundleHandler,
@@ -108,6 +111,9 @@ const ROUTE_HANDLERS = {
     'analytics/product-health-bundle': analyticsProductHealthBundleHandler,
     'analytics/product-funnel-bundle': analyticsProductFunnelBundleHandler,
     'analytics/product-detail-bundle': analyticsProductDetailBundleHandler,
+    'ai-image/config': aiImageConfigHandler,
+    'ai-image/model-config': aiImageModelConfigHandler,
+    'ai-image/run': aiImageRunHandler,
     codex: codexHandler,
     gemini: geminiHandler,
     'comments/list': commentsListHandler,

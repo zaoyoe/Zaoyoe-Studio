@@ -62348,3 +62348,1056 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
     border-color: rgba(var(--hp-support-admin-blue-rgb), 0.2);
     color: var(--hp-support-admin-blue);
 }
+
+/* 20260621_AI_IMAGE_ADMIN_SETTINGS_1 */
+#module-settings #settings-view-ai-image .ai-image-admin-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-hero__copy h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 6px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-hero__copy p {
+    max-width: 780px;
+    margin: 0;
+    color: var(--admin-muted-text, #64748b);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.85fr) minmax(420px, 1.35fr);
+    gap: 16px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-card[data-config="ai-image-agents"] {
+    grid-column: 1 / -1;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-card[data-config="ai-image-model"] {
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-card,
+#module-settings #settings-view-ai-image .ai-image-admin-card .config-card-body {
+    max-height: none;
+    overflow: visible;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-card[data-config="ai-image-api-base"] {
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-card[data-config="ai-image-guardrails"] {
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-card[data-config="ai-image-storage"] {
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-guardrail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(118px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-storage-usage {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-storage-policy-grid {
+    grid-template-columns: repeat(5, minmax(92px, 1fr));
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-guardrail-grid .api-relay-config-field {
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-guardrail-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-guardrail-actions .settings-status {
+    min-width: 0;
+    margin: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-runtime {
+    display: grid;
+    gap: 10px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-runtime__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.03);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-runtime__item--wide {
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-runtime__item span {
+    color: var(--admin-muted-text, #64748b);
+    font-size: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-runtime__item strong,
+#module-settings #settings-view-ai-image .ai-image-admin-runtime__item code {
+    max-width: 100%;
+    color: var(--admin-text, #0f172a);
+    font-size: 12px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-runtime__item--wide strong {
+    text-align: left;
+}
+
+#module-settings #settings-view-ai-image .settings-status .status-dot.ready {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+}
+
+#module-settings #settings-view-ai-image .settings-status .status-dot.warning {
+    background: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+}
+
+#module-settings #settings-view-ai-image .settings-status .status-dot.error {
+    background: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+}
+
+#module-settings #settings-view-ai-image .settings-status .status-dot.loading {
+    background: #38bdf8;
+    animation: pulse 1.5s infinite;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+#module-settings #settings-view-ai-image .config-input,
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-display {
+    width: 100%;
+    min-height: 42px;
+    box-sizing: border-box;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 700;
+    outline: none;
+    box-shadow: none;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+#module-settings #settings-view-ai-image .config-input {
+    padding: 0 12px;
+}
+
+#module-settings #settings-view-ai-image textarea.config-input {
+    padding: 11px 12px;
+    line-height: 1.5;
+}
+
+#module-settings #settings-view-ai-image input[type="number"].config-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+    text-align: center;
+}
+
+#module-settings #settings-view-ai-image input[type="number"].config-input::-webkit-outer-spin-button,
+#module-settings #settings-view-ai-image input[type="number"].config-input::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+#module-settings #settings-view-ai-image .config-input:hover,
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-display:hover {
+    border-color: rgba(118, 157, 202, 0.44);
+    background: #ffffff;
+}
+
+#module-settings #settings-view-ai-image .config-input:focus,
+#module-settings #settings-view-ai-image .ai-image-admin-select.open .select-display,
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-display:focus-visible {
+    border-color: rgba(118, 157, 202, 0.66);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(118, 157, 202, 0.13);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-guardrail-grid .config-input {
+    width: 106px;
+    min-height: 42px;
+    font-size: 18px;
+    justify-self: start;
+}
+
+#module-settings #settings-view-ai-image .api-relay-config-field > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.25;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-info {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(118, 157, 202, 0.34);
+    border-radius: 999px;
+    background: rgba(118, 157, 202, 0.1);
+    color: rgba(57, 90, 128, 0.78);
+    font-family: ui-serif, Georgia, serif;
+    font-size: 11px;
+    font-style: italic;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    transform: translateY(-1px);
+    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-info:hover,
+#module-settings #settings-view-ai-image .ai-image-admin-info:focus-visible {
+    border-color: rgba(118, 157, 202, 0.68);
+    background: rgba(118, 157, 202, 0.2);
+    color: #245986;
+}
+
+.ai-image-admin-floating-tooltip {
+    position: fixed;
+    z-index: 2147483000;
+    max-width: min(320px, calc(100vw - 32px));
+    padding: 8px 10px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.96);
+    color: #ffffff;
+    box-shadow: 0 16px 42px rgba(15, 23, 42, 0.22);
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.45;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    white-space: normal;
+}
+
+.ai-image-admin-floating-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select {
+    position: relative;
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 12px;
+    cursor: pointer;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-arrow {
+    color: rgba(100, 116, 139, 0.82);
+    font-size: 11px;
+    transition: transform 0.18s ease, color 0.18s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select.open .select-arrow {
+    color: #245986;
+    transform: rotate(180deg);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-options {
+    position: absolute;
+    z-index: 50;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    display: grid;
+    max-height: 240px;
+    padding: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
+    opacity: 0;
+    overflow: auto;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select.open .select-options {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-option {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-radius: 7px;
+    color: rgba(51, 65, 85, 0.92);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-option:hover {
+    background: rgba(118, 157, 202, 0.12);
+    color: #245986;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-select .select-option.selected {
+    background: rgba(118, 157, 202, 0.16);
+    color: #245986;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form--pricing {
+    grid-template-columns: minmax(160px, 1.2fr) repeat(3, minmax(96px, 0.72fr)) minmax(90px, 0.55fr) auto;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form--model {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    margin-bottom: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form--model .api-relay-config-field--wide {
+    grid-column: span 4;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models {
+    display: grid;
+    gap: 12px;
+    margin: 4px 0 14px;
+    padding: 14px;
+    border: 1px solid rgba(118, 157, 202, 0.18);
+    border-radius: 14px;
+    background:
+        linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(239, 246, 255, 0.72)),
+        rgba(255, 255, 255, 0.88);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models__header > div,
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section__header > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models__header strong,
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section__header strong {
+    color: var(--admin-text, #0f172a);
+    font-size: 13px;
+    font-weight: 850;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models__header span,
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section__header span {
+    color: var(--admin-muted-text, #64748b);
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.45;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models__header em,
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section__header em {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    border-radius: 999px;
+    background: rgba(219, 234, 254, 0.72);
+    color: #245986;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 850;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-models__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section--unknown {
+    background: rgba(248, 250, 252, 0.82);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-section__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill:hover {
+    border-color: rgba(37, 99, 235, 0.26);
+    background: rgba(239, 246, 255, 0.92);
+    color: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill.is-selected {
+    border-color: rgba(34, 197, 94, 0.34);
+    background: rgba(240, 253, 244, 0.92);
+    color: #15803d;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill.is-muted {
+    border-style: dashed;
+    color: var(--admin-muted-text, #64748b);
+    cursor: default;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill.is-muted:hover {
+    border-color: rgba(148, 163, 184, 0.24);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--admin-muted-text, #64748b);
+    transform: none;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-pill i {
+    flex: 0 0 auto;
+    font-size: 10px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-classifier {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 5px;
+    padding: 5px;
+    border: 1px dashed rgba(148, 163, 184, 0.32);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.84);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-classifier__name {
+    min-width: 0;
+    max-width: 220px;
+    padding: 0 6px;
+    overflow: hidden;
+    color: var(--admin-muted-text, #64748b);
+    font-size: 12px;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-classifier button {
+    flex: 0 0 auto;
+    padding: 4px 7px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 999px;
+    background: rgba(239, 246, 255, 0.88);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+    cursor: pointer;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-classifier button:hover {
+    border-color: rgba(37, 99, 235, 0.34);
+    background: rgba(219, 234, 254, 0.95);
+    color: #1d4ed8;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-visible-model-empty {
+    width: 100%;
+    padding: 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.28);
+    border-radius: 10px;
+    color: var(--admin-muted-text, #64748b);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form--api-base {
+    grid-template-columns: minmax(150px, 0.7fr) minmax(220px, 1.15fr) minmax(110px, 0.48fr) auto;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form--agent {
+    grid-template-columns: minmax(160px, 0.8fr) minmax(160px, 0.8fr) minmax(260px, 1.4fr) auto;
+    align-items: start;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-probe {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-probe__status {
+    margin: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    padding: 9px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item.is-ok {
+    border-color: rgba(34, 197, 94, 0.24);
+    background: rgba(240, 253, 244, 0.82);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item.is-error {
+    border-color: rgba(239, 68, 68, 0.22);
+    background: rgba(254, 242, 242, 0.78);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery {
+    grid-column: 1 / -1;
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    border-radius: 8px;
+    background: rgba(239, 246, 255, 0.74);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery.is-error {
+    border-color: rgba(239, 68, 68, 0.2);
+    background: rgba(254, 242, 242, 0.7);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item strong,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item span,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item em,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery > strong,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery > span,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery > em {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item strong,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery > strong {
+    color: var(--admin-text, #0f172a);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item span,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery > span {
+    color: var(--admin-muted-text, #64748b);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item.is-ok span {
+    color: #15803d;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item.is-error span {
+    color: #b91c1c;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-probe-item em,
+#module-settings #settings-view-ai-image .ai-image-admin-probe-discovery > em {
+    color: var(--admin-muted-text, #64748b);
+    font-size: 11px;
+    font-style: normal;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-chip-groups {
+    display: grid;
+    gap: 6px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-chip-group {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-chip-group > span {
+    color: var(--admin-muted-text, #64748b);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-chip-group > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-chip {
+    min-width: 0;
+    max-width: 220px;
+    padding: 4px 8px;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.84);
+    color: var(--admin-text, #0f172a);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-chip:hover {
+    border-color: rgba(37, 99, 235, 0.32);
+    background: rgba(219, 234, 254, 0.88);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-form--agent textarea {
+    min-height: 78px;
+    resize: vertical;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-list {
+    display: grid;
+    gap: 8px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-scroll-list {
+    align-content: start;
+    min-height: 0;
+    padding-right: 3px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-model-provider-list {
+    max-height: clamp(120px, 24vh, 240px);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-pricing-list {
+    max-height: clamp(260px, 42vh, 520px);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-scroll-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-scroll-list::-webkit-scrollbar-track {
+    background: rgba(148, 163, 184, 0.12);
+    border-radius: 999px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-scroll-list::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(248, 250, 252, 0.92);
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.34);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row.is-disabled {
+    opacity: 0.55;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+    transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider.is-active {
+    border-color: rgba(59, 130, 246, 0.34);
+    background: rgba(239, 246, 255, 0.86);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider:is(:hover, :focus-within),
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider.is-expanded:is(:hover, :focus-within),
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider.is-active:is(:hover, :focus-within) {
+    border-color: rgba(59, 130, 246, 0.36) !important;
+    background: rgba(239, 246, 255, 0.9) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 0 0 2px rgba(59, 130, 246, 0.08) !important;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card {
+    display: grid;
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card__header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, auto) minmax(34px, auto);
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 11px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card__header:is(:hover, :focus-visible) {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card__header-right {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(226, 232, 240, 0.72);
+    color: #475569;
+    transition: transform 0.16s ease, background 0.16s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card.is-expanded .ai-image-admin-provider-card__header-right {
+    transform: rotate(180deg);
+    background: rgba(219, 234, 254, 0.88);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card__body {
+    display: grid;
+    gap: 12px;
+    padding: 0 12px 12px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-card__body[hidden] {
+    display: none !important;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models__toggle {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models__toggle > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models__toggle i {
+    flex: 0 0 auto;
+    transition: transform 0.16s ease;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models.is-expanded .ai-image-admin-provider-models__toggle i {
+    transform: rotate(180deg);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models__body {
+    display: grid;
+    gap: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-models--editor {
+    margin: 8px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(118, 157, 202, 0.18);
+    border-radius: 14px;
+    background:
+        linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(239, 246, 255, 0.72)),
+        rgba(255, 255, 255, 0.88);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-main {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 5px;
+    min-width: 0;
+    align-self: center;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider .ai-image-admin-row__actions {
+    min-width: 0;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider .btn-add-config--compact {
+    min-width: 86px;
+    justify-content: center;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-meta span {
+    max-width: 150px;
+    padding: 3px 7px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.74);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-provider-meta span:first-child {
+    font-weight: 700;
+    background: rgba(219, 234, 254, 0.82);
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider strong {
+    color: var(--admin-text, #0f172a);
+    font-size: 13px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider span,
+#module-settings #settings-view-ai-image .ai-image-admin-row--model-provider small {
+    overflow: hidden;
+    color: var(--admin-muted-text, #64748b);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row__actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row__main {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row__main strong {
+    overflow: hidden;
+    color: var(--admin-text, #0f172a);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row__main span,
+#module-settings #settings-view-ai-image .ai-image-admin-row__meta span {
+    color: var(--admin-muted-text, #64748b);
+    font-size: 12px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-row__meta {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-delete-button {
+    color: #b91c1c;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-delete-button:hover:not(:disabled) {
+    border-color: rgba(239, 68, 68, 0.24);
+    background: rgba(254, 242, 242, 0.9);
+    color: #991b1b;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-empty {
+    padding: 14px;
+    border: 1px dashed rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    color: var(--admin-muted-text, #64748b);
+    font-size: 13px;
+    text-align: center;
+}
+
+#module-settings #settings-view-ai-image .ai-image-admin-empty--warning {
+    border-color: rgba(245, 158, 11, 0.34);
+    background: rgba(255, 251, 235, 0.72);
+    color: #92400e;
+}
+
+@media (max-width: 1120px) {
+    #module-settings #settings-view-ai-image .ai-image-admin-grid,
+    #module-settings #settings-view-ai-image .ai-image-admin-form--model,
+    #module-settings #settings-view-ai-image .ai-image-admin-visible-models__grid,
+    #module-settings #settings-view-ai-image .ai-image-admin-form--api-base,
+    #module-settings #settings-view-ai-image .ai-image-admin-form--pricing,
+    #module-settings #settings-view-ai-image .ai-image-admin-form--agent,
+    #module-settings #settings-view-ai-image .ai-image-admin-guardrail-grid,
+    #module-settings #settings-view-ai-image .ai-image-admin-storage-usage {
+        grid-template-columns: 1fr;
+    }
+
+    #module-settings #settings-view-ai-image .ai-image-admin-hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    #module-settings #settings-view-ai-image .ai-image-admin-guardrail-actions {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

@@ -241,3 +241,80 @@ test('removeFile keeps edit-mode retained image urls in sync with preview remova
     );
     assert.equal(updateAnalyzeButtonCalls, 1, 'removeFile should still refresh analyze button state');
 });
+
+test('gallery image normalization folds CDN variants into original image assets', () => {
+    const adminSource = readRepoFile('admin-studio.js');
+    const script = [
+        "const PROMPT_IMAGE_ASSET_KEYS = Object.freeze(['original', 'thumb', 'featured', 'card', 'home']);",
+        "const PROMPT_IMAGE_CDN_VARIANT_PATHS = new Set(['thumb', 'featured', 'card', 'home']);",
+        extractFunction(adminSource, 'dedupePromptImageUrls'),
+        extractFunction(adminSource, 'sanitizeImageUrl'),
+        extractFunction(adminSource, 'getPromptImageCdnVariantInfo'),
+        extractFunction(adminSource, 'getPromptImageCanonicalOriginalUrl'),
+        extractFunction(adminSource, 'getPromptImageCanonicalDedupeKey'),
+        extractFunction(adminSource, 'assignPromptImageAssetUrl'),
+        extractFunction(adminSource, 'isSupabaseStorageImageUrl'),
+        extractFunction(adminSource, 'normalizePromptImageAsset'),
+        extractFunction(adminSource, 'normalizePromptImageAssetsFromRecord'),
+        extractFunction(adminSource, 'dedupePromptImageAssets'),
+        'globalThis.__imageExports = { dedupePromptImageUrls, normalizePromptImageAssetsFromRecord };'
+    ].join('\n\n');
+
+    const context = {
+        URL,
+        window: {
+            location: { origin: 'https://www.fatherkey.com' },
+            SiteConfig: {
+                normalizeAssetUrlForCurrentSite(url) {
+                    return url;
+                }
+            }
+        },
+        console,
+        globalThis: null
+    };
+
+    context.globalThis = context;
+    vm.runInNewContext(script, context);
+
+    const record = {
+        image_assets: [
+            {
+                original: 'https://cdn.fatherkey.com/prompts/a.webp',
+                thumb: 'https://cdn.fatherkey.com/prompts/thumb/a.webp'
+            },
+            'https://cdn.fatherkey.com/prompts/thumb/b.webp'
+        ],
+        images: [
+            'https://cdn.fatherkey.com/prompts/a.webp',
+            'https://cdn.fatherkey.com/prompts/thumb/a.webp',
+            'https://cdn.fatherkey.com/prompts/card/b.webp',
+            'https://cdn.fatherkey.com/prompts/b.webp'
+        ]
+    };
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(context.__imageExports.dedupePromptImageUrls(record.images))),
+        [
+            'https://cdn.fatherkey.com/prompts/a.webp',
+            'https://cdn.fatherkey.com/prompts/b.webp'
+        ],
+        'deduped image urls should count CDN variants as the same image'
+    );
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(context.__imageExports.normalizePromptImageAssetsFromRecord(record))),
+        [
+            {
+                original: 'https://cdn.fatherkey.com/prompts/a.webp',
+                thumb: 'https://cdn.fatherkey.com/prompts/thumb/a.webp'
+            },
+            {
+                thumb: 'https://cdn.fatherkey.com/prompts/thumb/b.webp',
+                original: 'https://cdn.fatherkey.com/prompts/b.webp',
+                card: 'https://cdn.fatherkey.com/prompts/card/b.webp'
+            }
+        ],
+        'edit previews should fold legacy images and image_assets variants into one asset per original'
+    );
+});

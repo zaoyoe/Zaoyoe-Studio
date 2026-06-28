@@ -24,9 +24,12 @@ func TestCreateGeminiTestPayload_ImageModel(t *testing.T) {
 		} `json:"contents"`
 		GenerationConfig struct {
 			ResponseModalities []string `json:"responseModalities"`
-			ImageConfig        struct {
-				AspectRatio string `json:"aspectRatio"`
-			} `json:"imageConfig"`
+			ResponseFormat     struct {
+				Image struct {
+					AspectRatio string `json:"aspectRatio"`
+					ImageSize   string `json:"imageSize"`
+				} `json:"image"`
+			} `json:"responseFormat"`
 		} `json:"generationConfig"`
 	}
 
@@ -35,7 +38,8 @@ func TestCreateGeminiTestPayload_ImageModel(t *testing.T) {
 	require.Len(t, parsed.Contents[0].Parts, 1)
 	require.Equal(t, "draw a tiny robot", parsed.Contents[0].Parts[0].Text)
 	require.Equal(t, []string{"TEXT", "IMAGE"}, parsed.GenerationConfig.ResponseModalities)
-	require.Equal(t, "1:1", parsed.GenerationConfig.ImageConfig.AspectRatio)
+	require.Equal(t, "1:1", parsed.GenerationConfig.ResponseFormat.Image.AspectRatio)
+	require.Equal(t, "1K", parsed.GenerationConfig.ResponseFormat.Image.ImageSize)
 }
 
 func TestProcessGeminiStream_EmitsImageEvent(t *testing.T) {

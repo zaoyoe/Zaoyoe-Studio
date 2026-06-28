@@ -125,6 +125,16 @@ describe('OAuthCallbackView', () => {
     expect(wrapper.find('.bg-red-50').exists()).toBe(false)
   })
 
+  it('redirects regional restriction fragment errors back to login with the explicit blocked dialog', async () => {
+    locationState.current.hash = '#error=login_blocked&error_message=REGION_RESTRICTED'
+
+    mount(OAuthCallbackView)
+    await vi.dynamicImportSettled()
+
+    expect(routerReplaceMock).toHaveBeenCalledWith('/login?region_blocked=login')
+    expect(showErrorMock).not.toHaveBeenCalled()
+  })
+
   it('does not render manual copy fields for direct email oauth callback visits', async () => {
     routeState.path = '/auth/oauth/callback'
     exchangePendingOAuthCompletionMock.mockRejectedValue(new Error('pending session not found'))
