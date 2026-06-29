@@ -16,13 +16,21 @@ test('AI image worker has a KVM4 systemd deployment contract', () => {
 
     assert.equal(packageJson.scripts['install:kvm4:ai-image-worker'], 'bash scripts/install-kvm4-ai-image-worker.sh');
     assert.match(service, /Description=Zaoyoe AI image queue worker/);
-    assert.match(service, /WorkingDirectory=\/opt\/zaoyoe-verify-server\/current/);
+    assert.match(service, /WorkingDirectory=\/opt\/zaoyoe-verify-server\/app/);
     assert.match(service, /EnvironmentFile=\/opt\/zaoyoe-verify-server\/\.env/);
     assert.match(service, /npm run ai-image:worker -- --env-file \/opt\/zaoyoe-verify-server\/\.env --limit 8 --concurrency 4 --interval-ms 3000/);
     assert.match(service, /Restart=always/);
     assert.match(installScript, /does not deploy app code or write/);
     assert.match(installScript, /systemctl enable "\$SERVICE_NAME"/);
     assert.match(installScript, /if \[\[ "\$\{START_NOW:-0\}" == "1" \]\]/);
+});
+
+test('KVM4 verify deploy restarts the AI image worker when installed', () => {
+    const deployScript = readText('scripts/deploy-kvm4-verify-server.sh');
+
+    assert.match(deployScript, /systemctl cat zaoyoe-ai-image-worker\.service/);
+    assert.match(deployScript, /systemctl restart zaoyoe-ai-image-worker\.service/);
+    assert.match(deployScript, /systemctl is-active --quiet zaoyoe-ai-image-worker\.service/);
 });
 
 test('AI image ops docs and env template include model and R2 requirements', () => {
