@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
@@ -17,7 +18,8 @@ import (
 )
 
 // Videos handles OpenAI-compatible video generation requests.
-// POST /v1/videos/generations
+// POST /v1/videos
+// POST /v1/videos/generations (legacy alias)
 func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
@@ -164,7 +166,7 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return h.gatewayService.ForwardVideos(c.Request.Context(), c, account, body, parsed, channelMapping.MappedModel)
+			return h.gatewayService.ForwardVideos(c.Request.Context(), c, account, apiKey.GroupID, body, parsed, channelMapping.MappedModel)
 		}()
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -252,5 +254,85 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			zap.Int("switch_count", switchCount),
 		)
 		return
+	}
+}
+
+// VideoTask handles OpenAI-compatible video task polling and content download.
+// GET /v1/videos/:task_id
+// GET /v1/videos/:task_id/content
+func (h *OpenAIGatewayHandler) VideoTask(c *gin.Context) {
+	streamStarted := false
+	defer h.recoverResponsesPanic(c, &streamStarted)
+	requestStart := time.Now()
+
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+
+	taskID := c.Param("task_id")
+	if taskID == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "task_id is required")
+		return
+	}
+
+	reqLog := requestLogger(
+		c,
+		"handler.openai_gateway.video_task",
+		zap.Int64("user_id", subject.UserID),
+		zap.Int64("api_key_id", apiKey.ID),
+		zap.Any("group_id", apiKey.GroupID),
+		zap.String("task_id", taskID),
+	)
+	if !h.ensureResponsesDependencies(c, reqLog) {
+		return
+	}
+
+	if !service.GroupAllowsVideoGeneration(apiKey.Group) {
+		h.errorResponse(c, http.StatusForbidden, "permission_error", service.VideoGenerationPermissionMessage())
+		return
+	}
+	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
+
+	account, err := h.gatewayService.ResolveOpenAIVideoTaskAccount(c.Request.Context(), apiKey.GroupID, taskID)
+	if err != nil {
+		reqLog.Warn("openai.video_task.resolve_failed", zap.Error(err))
+		h.errorResponse(c, http.StatusNotFound, "invalid_request_error", "Video task not found")
+		return
+	}
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+
+	forwardStart := time.Now()
+	content := strings.HasSuffix(strings.TrimRight(c.Request.URL.Path, "/"), "/content")
+	result, err := h.gatewayService.ForwardVideoTask(c.Request.Context(), c, account, taskID, content)
+	forwardDurationMs := time.Since(forwardStart).Milliseconds()
+	upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
+	responseLatencyMs := forwardDurationMs
+	if upstreamLatencyMs > 0 && forwardDurationMs > upstreamLatencyMs {
+		responseLatencyMs = forwardDurationMs - upstreamLatencyMs
+	}
+	service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
+	if err != nil {
+		if !c.Writer.Written() {
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+		}
+		reqLog.Warn("openai.video_task.forward_failed",
+			zap.Int64("account_id", account.ID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	if result != nil {
+		reqLog.Debug("openai.video_task.request_completed",
+			zap.Int64("account_id", account.ID),
+			zap.String("request_id", result.RequestID),
+		)
 	}
 }

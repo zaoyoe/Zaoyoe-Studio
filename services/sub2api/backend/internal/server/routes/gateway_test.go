@@ -82,10 +82,22 @@ func TestGatewayRoutesOpenAIVideosPathsAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 
 	for _, path := range []string{
+		"/v1/videos",
 		"/v1/videos/generations",
+		"/v1/videos/video-task-1",
+		"/v1/videos/video-task-1/content",
+		"/videos",
 		"/videos/generations",
+		"/videos/video-task-1",
+		"/videos/video-task-1/content",
 	} {
-		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"video-ds-2.0-fast","prompt":"make a dragon video"}`))
+		method := http.MethodPost
+		body := strings.NewReader(`{"model":"video-ds-2.0-fast","prompt":"make a dragon video"}`)
+		if strings.Contains(path, "video-task-1") {
+			method = http.MethodGet
+			body = strings.NewReader("")
+		}
+		req := httptest.NewRequest(method, path, body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
