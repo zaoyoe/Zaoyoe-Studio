@@ -23,10 +23,10 @@ func TestBuildOpenAIVideosURL(t *testing.T) {
 		base string
 		want string
 	}{
-		{"bare domain", "https://api.openai.com", "https://api.openai.com/v1/videos/generations"},
-		{"bare /v1", "https://api.openai.com/v1", "https://api.openai.com/v1/videos/generations"},
-		{"already videos", "https://api.openai.com/v1/videos/generations", "https://api.openai.com/v1/videos/generations"},
-		{"third-party versioned path", "https://ark.cn-beijing.volces.com/api/v3", "https://ark.cn-beijing.volces.com/api/v3/videos/generations"},
+		{"bare domain", "https://api.openai.com", "https://api.openai.com/v1/videos"},
+		{"bare /v1", "https://api.openai.com/v1", "https://api.openai.com/v1/videos"},
+		{"already videos", "https://api.openai.com/v1/videos", "https://api.openai.com/v1/videos"},
+		{"third-party versioned path", "https://ark.cn-beijing.volces.com/api/v3", "https://ark.cn-beijing.volces.com/api/v3/videos"},
 	}
 
 	for _, tt := range tests {
@@ -63,10 +63,12 @@ func TestForwardVideos_APIKeyPassthroughUsesVideosEndpoint(t *testing.T) {
 		cfg:          &config.Config{},
 		httpUpstream: upstream,
 	}
+	groupID := int64(9)
 	account := &Account{
 		ID:       42,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
+		GroupIDs: []int64{groupID},
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": "https://video.example.com/v1",
@@ -78,7 +80,7 @@ func TestForwardVideos_APIKeyPassthroughUsesVideosEndpoint(t *testing.T) {
 	parsed, err := svc.ParseOpenAIVideosRequest(reqBody)
 	require.NoError(t, err)
 
-	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, parsed, "")
+	result, err := svc.ForwardVideos(context.Background(), c, account, &groupID, reqBody, parsed, "")
 
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -87,14 +89,14 @@ func TestForwardVideos_APIKeyPassthroughUsesVideosEndpoint(t *testing.T) {
 	require.Equal(t, "video-ds-2.0-fast", result.Model)
 	require.Equal(t, "jimeng-video-upstream", result.BillingModel)
 	require.Equal(t, "jimeng-video-upstream", result.UpstreamModel)
-	require.Equal(t, "https://video.example.com/v1/videos/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video.example.com/v1/videos", upstream.lastReq.URL.String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/images/")
 	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "jimeng-video-upstream", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "dragon and qilin facing off", gjson.GetBytes(upstream.lastBody, "prompt").String())
 }
 
-func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamDoesNotSupportVideosRoute(t *testing.T) {
+func TestForwardVideos_FallsBackToLegacyVideosEndpointWhenUpstreamDoesNotSupportVideosRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	reqBody := []byte(`{
@@ -105,14 +107,14 @@ func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamDoesNotSupportVideos
 	}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(reqBody))
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
 		{
 			StatusCode: http.StatusNotFound,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid URL (POST /v1/videos/generations)","type":"invalid_request_error"}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Invalid URL (POST /v1/videos)","type":"invalid_request_error"}}`)),
 		},
 		{
 			StatusCode: http.StatusOK,
@@ -127,10 +129,12 @@ func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamDoesNotSupportVideos
 		cfg:          &config.Config{},
 		httpUpstream: upstream,
 	}
+	groupID := int64(9)
 	account := &Account{
 		ID:       70,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
+		GroupIDs: []int64{groupID},
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": "https://video.example.com/v1",
@@ -139,19 +143,19 @@ func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamDoesNotSupportVideos
 	parsed, err := svc.ParseOpenAIVideosRequest(reqBody)
 	require.NoError(t, err)
 
-	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, parsed, "")
+	result, err := svc.ForwardVideos(context.Background(), c, account, &groupID, reqBody, parsed, "")
 
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.NotNil(t, result)
 	require.Equal(t, "video-fallback-rid", result.RequestID)
 	require.Len(t, upstream.requests, 2)
-	require.Equal(t, "https://video.example.com/v1/videos/generations", upstream.requests[0].URL.String())
-	require.Equal(t, "https://video.example.com/v1/images/generations", upstream.requests[1].URL.String())
+	require.Equal(t, "https://video.example.com/v1/videos", upstream.requests[0].URL.String())
+	require.Equal(t, "https://video.example.com/v1/videos/generations", upstream.requests[1].URL.String())
 	require.Equal(t, "video-ds-2.0-fast", gjson.GetBytes(upstream.bodies[1], "model").String())
 }
 
-func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamReturnsBusiness404Envelope(t *testing.T) {
+func TestForwardVideos_FallsBackToLegacyVideosEndpointWhenUpstreamReturnsBusiness404Envelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	reqBody := []byte(`{
@@ -162,7 +166,7 @@ func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamReturnsBusiness404En
 	}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(reqBody))
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
@@ -184,10 +188,12 @@ func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamReturnsBusiness404En
 		cfg:          &config.Config{},
 		httpUpstream: upstream,
 	}
+	groupID := int64(9)
 	account := &Account{
 		ID:       70,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
+		GroupIDs: []int64{groupID},
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
 			"base_url": "https://video.example.com/v1",
@@ -196,15 +202,15 @@ func TestForwardVideos_FallsBackToImagesEndpointWhenUpstreamReturnsBusiness404En
 	parsed, err := svc.ParseOpenAIVideosRequest(reqBody)
 	require.NoError(t, err)
 
-	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, parsed, "")
+	result, err := svc.ForwardVideos(context.Background(), c, account, &groupID, reqBody, parsed, "")
 
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.NotNil(t, result)
 	require.Equal(t, "video-business-404-fallback-rid", result.RequestID)
 	require.Len(t, upstream.requests, 2)
-	require.Equal(t, "https://video.example.com/v1/videos/generations", upstream.requests[0].URL.String())
-	require.Equal(t, "https://video.example.com/v1/images/generations", upstream.requests[1].URL.String())
+	require.Equal(t, "https://video.example.com/v1/videos", upstream.requests[0].URL.String())
+	require.Equal(t, "https://video.example.com/v1/videos/generations", upstream.requests[1].URL.String())
 	require.Equal(t, "video-ds-2.0-fast", gjson.GetBytes(upstream.bodies[1], "model").String())
 	require.Contains(t, rec.Body.String(), "business-404-video.mp4")
 }
@@ -227,22 +233,109 @@ func TestForwardVideos_UsesConfiguredVideoEndpoint(t *testing.T) {
 		cfg:          &config.Config{},
 		httpUpstream: upstream,
 	}
+	groupID := int64(9)
 	account := &Account{
 		ID:       71,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
+		GroupIDs: []int64{groupID},
 		Credentials: map[string]any{
 			"api_key":        "sk-test",
 			"base_url":       "https://video.example.com/v1",
-			"video_endpoint": "/images/generations",
+			"video_endpoint": "/custom/videos",
 		},
 	}
 	parsed, err := svc.ParseOpenAIVideosRequest(reqBody)
 	require.NoError(t, err)
 
-	_, err = svc.ForwardVideos(context.Background(), c, account, reqBody, parsed, "")
+	_, err = svc.ForwardVideos(context.Background(), c, account, &groupID, reqBody, parsed, "")
 
 	require.NoError(t, err)
-	require.Equal(t, "https://video.example.com/v1/images/generations", upstream.lastReq.URL.String())
+	require.Equal(t, "https://video.example.com/v1/custom/videos", upstream.lastReq.URL.String())
 	require.Len(t, upstream.requests, 1)
+}
+
+func TestForwardVideoTask_UsesBoundVideoTaskAccountForStatusAndContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(9)
+	cache := &stubGatewayCache{}
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"task-123","status":"succeeded"}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"video/mp4"}},
+			Body:       io.NopCloser(strings.NewReader(`mp4-bytes`)),
+		},
+	}}
+	account := &Account{
+		ID:       88,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		GroupIDs: []int64{groupID},
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://video.example.com/v1",
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:  stubOpenAIAccountRepo{accounts: []Account{*account}},
+		cache:        cache,
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	require.NoError(t, svc.BindOpenAIVideoTask(context.Background(), &groupID, account, "task-123"))
+
+	resolved, err := svc.ResolveOpenAIVideoTaskAccount(context.Background(), &groupID, "task-123")
+	require.NoError(t, err)
+	require.Equal(t, int64(88), resolved.ID)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task-123", nil)
+	result, err := svc.ForwardVideoTask(context.Background(), c, resolved, "task-123", false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "https://video.example.com/v1/videos/task-123", upstream.requests[0].URL.String())
+	require.Equal(t, "Bearer sk-test", upstream.requests[0].Header.Get("Authorization"))
+
+	contentRec := httptest.NewRecorder()
+	contentCtx, _ := gin.CreateTestContext(contentRec)
+	contentCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/task-123/content", nil)
+	_, err = svc.ForwardVideoTask(context.Background(), contentCtx, resolved, "task-123", true)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, contentRec.Code)
+	require.Equal(t, "video/mp4", contentRec.Header().Get("Content-Type"))
+	require.Equal(t, "https://video.example.com/v1/videos/task-123/content", upstream.requests[1].URL.String())
+	require.Equal(t, "mp4-bytes", contentRec.Body.String())
+}
+
+func TestResolveOpenAIVideoTaskAccount_RejectsOtherGroup(t *testing.T) {
+	groupID := int64(9)
+	otherGroupID := int64(10)
+	cache := &stubGatewayCache{}
+	account := &Account{
+		ID:       88,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		GroupIDs: []int64{groupID},
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://video.example.com/v1",
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{accounts: []Account{*account}},
+		cache:       cache,
+		cfg:         &config.Config{},
+	}
+	require.NoError(t, svc.BindOpenAIVideoTask(context.Background(), &groupID, account, "task-123"))
+
+	_, err := svc.ResolveOpenAIVideoTaskAccount(context.Background(), &otherGroupID, "task-123")
+	require.Error(t, err)
 }

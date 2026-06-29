@@ -17,12 +17,20 @@ import (
 	"go.uber.org/zap"
 )
 
+const openAIVideosEndpoint = "/v1/videos"
 const openAIVideosGenerationsEndpoint = "/v1/videos/generations"
-const openAIVideosGenerationsFallbackEndpoint = "/v1/images/generations"
+const openAIVideoTaskCachePrefix = "openai-video-task:"
+const openAIVideoTaskBindingTTL = 24 * time.Hour
 
 type OpenAIVideosRequest struct {
 	Model  string
 	Prompt string
+}
+
+type OpenAIVideoTaskBinding struct {
+	TaskID    string
+	AccountID int64
+	GroupID   int64
 }
 
 func (s *OpenAIGatewayService) ParseOpenAIVideosRequest(body []byte) (*OpenAIVideosRequest, error) {
@@ -53,6 +61,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
+	groupID *int64,
 	body []byte,
 	parsed *OpenAIVideosRequest,
 	defaultMappedModel string,
@@ -192,19 +201,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 					return nil, fmt.Errorf("read fallback upstream body: %w", err)
 				}
 
-				writeOpenAIVideosUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
-
-				usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
-				return &OpenAIForwardResult{
-					RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
-					Usage:           usage,
-					Model:           requestModel,
-					BillingModel:    billingModel,
-					UpstreamModel:   upstreamModel,
-					Stream:          false,
-					ResponseHeaders: resp.Header.Clone(),
-					Duration:        time.Since(startTime),
-				}, nil
+				return s.writeOpenAIVideosSuccess(ctx, c, account, groupID, resp, respBody, requestModel, billingModel, upstreamModel, startTime)
 			}
 		}
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
@@ -314,40 +311,71 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		}
 	}
 
+	return s.writeOpenAIVideosSuccess(ctx, c, account, groupID, resp, respBody, requestModel, billingModel, upstreamModel, startTime)
+}
+
+func (s *OpenAIGatewayService) writeOpenAIVideosSuccess(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	groupID *int64,
+	resp *http.Response,
+	respBody []byte,
+	requestModel string,
+	billingModel string,
+	upstreamModel string,
+	startTime time.Time,
+) (*OpenAIForwardResult, error) {
 	writeOpenAIVideosUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 
+	if taskID := extractOpenAIVideoTaskID(respBody); taskID != "" {
+		if err := s.BindOpenAIVideoTask(ctx, groupID, account, taskID); err != nil {
+			logger.L().Warn("openai videos: bind task failed",
+				zap.Int64("account_id", account.ID),
+				zap.String("task_id", taskID),
+				zap.Error(err),
+			)
+		}
+	}
+
 	usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
+	requestID := ""
+	responseHeaders := http.Header{}
+	if resp != nil {
+		requestID = firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id"))
+		responseHeaders = resp.Header.Clone()
+	}
 	return &OpenAIForwardResult{
-		RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
+		RequestID:       requestID,
 		Usage:           usage,
 		Model:           requestModel,
 		BillingModel:    billingModel,
 		UpstreamModel:   upstreamModel,
 		Stream:          false,
-		ResponseHeaders: resp.Header.Clone(),
+		ResponseHeaders: responseHeaders,
 		Duration:        time.Since(startTime),
 	}, nil
 }
 
 func buildOpenAIVideosURL(base string) string {
-	return buildOpenAIEndpointURL(base, openAIVideosGenerationsEndpoint)
+	return buildOpenAIEndpointURL(base, openAIVideosEndpoint)
 }
 
 func buildOpenAIVideosCandidateURLs(base string, account *Account) []string {
-	endpoint := openAIVideosGenerationsEndpoint
+	endpoint := openAIVideosEndpoint
 	if account != nil {
 		endpoint = strings.TrimSpace(firstNonEmptyString(
 			account.GetCredential("video_endpoint"),
 			account.GetCredential("video_generation_endpoint"),
 		))
 		if endpoint == "" {
-			endpoint = openAIVideosGenerationsEndpoint
+			endpoint = openAIVideosEndpoint
 		}
 	}
 	targets := []string{buildOpenAIVideosTargetURL(base, endpoint)}
-	fallback := buildOpenAIEndpointURL(base, openAIVideosGenerationsFallbackEndpoint)
-	if targets[0] != fallback {
-		targets = append(targets, fallback)
+	legacy := buildOpenAIEndpointURL(base, openAIVideosGenerationsEndpoint)
+	if targets[0] != legacy {
+		targets = append(targets, legacy)
 	}
 	return targets
 }
@@ -369,6 +397,214 @@ func buildOpenAIVideosUpstreamRequest(ctx context.Context, c *gin.Context, accou
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	upstreamReq.Header.Set("Accept", "application/json")
+	if c != nil && c.Request != nil {
+		for key, values := range c.Request.Header {
+			lowerKey := strings.ToLower(key)
+			if openaiCCRawAllowedHeaders[lowerKey] {
+				for _, v := range values {
+					upstreamReq.Header.Add(key, v)
+				}
+			}
+		}
+	}
+	if account != nil {
+		if customUA := account.GetOpenAIUserAgent(); customUA != "" {
+			upstreamReq.Header.Set("User-Agent", customUA)
+		}
+	}
+	return upstreamReq, nil
+}
+
+func (s *OpenAIGatewayService) BindOpenAIVideoTask(ctx context.Context, groupID *int64, account *Account, taskID string) error {
+	if s == nil || s.cache == nil || account == nil || account.ID <= 0 {
+		return nil
+	}
+	cacheKey := openAIVideoTaskCacheKey(taskID)
+	if cacheKey == "" {
+		return nil
+	}
+	return s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), cacheKey, account.ID, openAIVideoTaskBindingTTL)
+}
+
+func (s *OpenAIGatewayService) ResolveOpenAIVideoTaskAccount(ctx context.Context, groupID *int64, taskID string) (*Account, error) {
+	if s == nil || s.cache == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("video task lookup is not available")
+	}
+	cacheKey := openAIVideoTaskCacheKey(taskID)
+	if cacheKey == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+	accountID, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), cacheKey)
+	if err != nil || accountID <= 0 {
+		return nil, fmt.Errorf("video task not found")
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil || account == nil {
+		if err == nil {
+			err = fmt.Errorf("account not found")
+		}
+		return nil, err
+	}
+	if account.Type != AccountTypeAPIKey || account.Platform != PlatformOpenAI {
+		return nil, fmt.Errorf("video task account is not OpenAI-compatible")
+	}
+	if !openAIStickyAccountMatchesGroup(account, groupID) {
+		return nil, fmt.Errorf("video task not found")
+	}
+	return account, nil
+}
+
+func (s *OpenAIGatewayService) ForwardVideoTask(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	taskID string,
+	content bool,
+) (*OpenAIForwardResult, error) {
+	startTime := time.Now()
+	if account == nil {
+		return nil, fmt.Errorf("account is nil")
+	}
+	if account.Type != AccountTypeAPIKey {
+		return nil, fmt.Errorf("videos endpoint requires an OpenAI-compatible API key account")
+	}
+	apiKey := account.GetOpenAIApiKey()
+	if apiKey == "" {
+		return nil, fmt.Errorf("account %d missing api_key", account.ID)
+	}
+	baseURL := account.GetOpenAIBaseURL()
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base_url: %w", err)
+	}
+	targetURL := buildOpenAIVideoTaskURL(validatedURL, account, taskID, content)
+
+	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	upstreamReq, err := buildOpenAIVideoTaskUpstreamRequest(upstreamCtx, c, account, targetURL, apiKey)
+	releaseUpstreamCtx()
+	if err != nil {
+		return nil, fmt.Errorf("build upstream request: %w", err)
+	}
+
+	proxyURL := ""
+	if account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	upstreamStart := time.Now()
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+	if err != nil {
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		writeOpenAIVideosError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	if err != nil {
+		if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+			writeOpenAIVideosError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
+		}
+		return nil, fmt.Errorf("read upstream body: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+			Kind:               "task_status",
+			Message:            upstreamMsg,
+		})
+	}
+
+	writeOpenAIVideosUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
+
+	usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
+	return &OpenAIForwardResult{
+		RequestID:       firstNonEmptyString(resp.Header.Get("x-request-id"), resp.Header.Get("request-id")),
+		Usage:           usage,
+		Model:           "",
+		BillingModel:    "",
+		UpstreamModel:   "",
+		Stream:          false,
+		ResponseHeaders: resp.Header.Clone(),
+		Duration:        time.Since(startTime),
+	}, nil
+}
+
+func openAIVideoTaskCacheKey(taskID string) string {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return ""
+	}
+	return openAIVideoTaskCachePrefix + taskID
+}
+
+func extractOpenAIVideoTaskID(body []byte) string {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return ""
+	}
+	return strings.TrimSpace(firstNonEmptyString(
+		gjson.GetBytes(body, "id").String(),
+		gjson.GetBytes(body, "task_id").String(),
+		gjson.GetBytes(body, "taskId").String(),
+		gjson.GetBytes(body, "provider_task_id").String(),
+		gjson.GetBytes(body, "providerTaskId").String(),
+		gjson.GetBytes(body, "data.id").String(),
+		gjson.GetBytes(body, "data.task_id").String(),
+		gjson.GetBytes(body, "result.id").String(),
+		gjson.GetBytes(body, "output.id").String(),
+	))
+}
+
+func buildOpenAIVideoTaskURL(base string, account *Account, taskID string, content bool) string {
+	taskID = strings.TrimSpace(taskID)
+	endpoint := openAIVideosEndpoint
+	if account != nil {
+		endpoint = strings.TrimSpace(firstNonEmptyString(
+			account.GetCredential("video_endpoint"),
+			account.GetCredential("video_generation_endpoint"),
+		))
+		if endpoint == "" {
+			endpoint = openAIVideosEndpoint
+		}
+	}
+	taskPath := joinOpenAIVideoEndpointPath(endpoint, taskID)
+	if content {
+		taskPath += "/content"
+	}
+	return buildOpenAIVideosTargetURL(base, taskPath)
+}
+
+func joinOpenAIVideoEndpointPath(endpoint string, taskID string) string {
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if endpoint == "" {
+		endpoint = openAIVideosEndpoint
+	}
+	if strings.HasSuffix(endpoint, "/generations") {
+		endpoint = strings.TrimSuffix(endpoint, "/generations")
+	}
+	return endpoint + "/" + taskID
+}
+
+func buildOpenAIVideoTaskUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, targetURL string, apiKey string) (*http.Request, error) {
+	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
+	upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
+	upstreamReq.Header.Set("Accept", "*/*")
 	if c != nil && c.Request != nil {
 		for key, values := range c.Request.Header {
 			lowerKey := strings.ToLower(key)
