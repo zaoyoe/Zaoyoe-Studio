@@ -31,7 +31,9 @@ test('KVM4 verify deploy restarts the AI image worker when installed', () => {
 
     assert.match(compose, /ai-image-worker:/);
     assert.match(compose, /container_name: zaoyoe-ai-image-worker/);
+    assert.match(compose, /env_file:\s*\n\s*- \.\/\.env/);
     assert.match(compose, /npm[\s\S]*run[\s\S]*ai-image:worker/);
+    assert.doesNotMatch(compose, /\/app\/\.env/);
     assert.match(deployScript, /docker compose up -d --build --force-recreate verify-server ai-image-worker/);
     assert.doesNotMatch(deployScript, /systemctl restart zaoyoe-ai-image-worker\.service/);
 });
