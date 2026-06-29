@@ -774,10 +774,10 @@ test('ai image runtime calls openai-compatible video generation endpoint and ret
     assert.equal(result.images[0].metadata.video_resolution, '720p');
 });
 
-test('ai video runtime uses Sub2API image generation endpoint by default to avoid paid route probing', async () => {
+test('ai video runtime uses Sub2API /v1/videos task protocol by default', async () => withFakeR2Client(async (uploadedObjects) => {
     const fetchCalls = [];
     const result = await executeOpenAiCompatibleVideoGeneration({
-        id: 'task-video-sub2api-default-image-endpoint',
+        id: 'task-video-sub2api-default-videos-endpoint',
         site: 'cn',
         user_id: 'user-1',
         mode: 'video',
@@ -788,6 +788,7 @@ test('ai video runtime uses Sub2API image generation endpoint by default to avoi
         resolution: '720p',
         quantity: 1,
         prompt: '飞龙在天，和麒麟对峙，压迫力十足，上水画卷',
+        reference_image_url: 'https://cdn.example.com/reference-dragon.png',
         estimated_points: 0,
         charged_points: 0,
         metadata: {
@@ -800,48 +801,87 @@ test('ai video runtime uses Sub2API image generation endpoint by default to avoi
         env: {
             AI_IMAGE_API_KEY: 'sk-video-test',
             AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
-            AI_IMAGE_MODEL: 'video-ds-2.0-fast'
+            AI_IMAGE_MODEL: 'video-ds-2.0-fast',
+            AI_IMAGE_R2_ENDPOINT: 'https://r2.example.com',
+            AI_IMAGE_R2_ACCESS_KEY_ID: 'r2-key',
+            AI_IMAGE_R2_SECRET_ACCESS_KEY: 'r2-secret',
+            AI_IMAGE_R2_BUCKET_NAME: 'zaoyoe-test',
+            AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.example.com'
         },
         fetchImpl: async (url, options = {}) => {
             fetchCalls.push({
                 url: String(url),
                 method: options.method,
-                body: JSON.parse(String(options.body || '{}'))
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(String(options.body || '{}')) : null
             });
-            if (String(url) === 'https://sub2api.fatherkey.com/v1/images/generations') {
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos') {
                 return {
                     ok: true,
                     status: 200,
                     text: async () => JSON.stringify({
                         id: 'sub2api-video-task-1',
-                        data: [{
-                            id: 'sub2api-video-result-1',
-                            video_url: 'https://cdn.example.com/sub2api-video.mp4',
-                            mime_type: 'video/mp4'
-                        }]
+                        status: 'pending'
                     })
+                };
+            }
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1') {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        id: 'sub2api-video-task-1',
+                        status: 'succeeded'
+                    })
+                };
+            }
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1/content') {
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: {
+                        get: (name) => String(name || '').toLowerCase() === 'content-type' ? 'video/mp4' : ''
+                    },
+                    arrayBuffer: async () => Buffer.from('sub2api-video-bytes').buffer
                 };
             }
             throw new Error(`Unexpected fetch ${url}`);
         }
     });
 
-    assert.equal(fetchCalls.length, 1);
-    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/images/generations');
+    assert.equal(fetchCalls.length, 3);
+    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos');
+    assert.equal(fetchCalls[0].method, 'POST');
     assert.equal(fetchCalls[0].body.model, 'video-ds-2.0-fast');
-    assert.equal(fetchCalls[0].body.ratio, '16:9');
+    assert.equal(fetchCalls[0].body.prompt.includes('飞龙在天'), true);
+    assert.equal(fetchCalls[0].body.seconds, 5);
+    assert.equal(fetchCalls[0].body.duration, 5);
+    assert.equal(fetchCalls[0].body.aspect_ratio, '16:9');
+    assert.deepEqual(fetchCalls[0].body.images, ['https://cdn.example.com/reference-dragon.png']);
+    assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1');
+    assert.equal(fetchCalls[1].method, 'GET');
+    assert.equal(fetchCalls[2].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1/content');
+    assert.equal(fetchCalls[2].headers.Authorization, 'Bearer sk-video-test');
     assert.equal(result.status, 'succeeded');
-    assert.equal(result.images[0].image_url, 'https://cdn.example.com/sub2api-video.mp4');
-    assert.equal(result.metadata.video_submit_endpoint, '/images/generations');
+    assert.equal(result.images[0].image_url.startsWith('https://cdn.example.com/ai-videos/'), true);
+    assert.equal(result.images[0].original_image_url, result.images[0].image_url);
+    assert.equal(result.images[0].metadata.provider_auth_required, true);
+    assert.equal(result.metadata.video_submit_endpoint, '/videos');
     assert.equal(result.metadata.video_submit_fallback_used, false);
-    assert.equal(result.metadata.provider_attempt_count, 1);
+    assert.equal(result.metadata.provider_attempt_count, 2);
     assert.equal(result.metadata.video_submit_attempts.length, 1);
     assert.equal(result.metadata.video_submit_attempts[0].route_not_found, false);
-});
+    assert.equal(result.metadata.async_poll_attempts, 1);
+    assert.equal(result.metadata.async_poll_path, '/videos/sub2api-video-task-1');
+    assert.equal(result.deferredOriginalUploads.length, 0);
+    assert.equal(uploadedObjects.length, 1);
+    assert.match(uploadedObjects[0].Key, /^ai-videos\/cn\/\d{4}\/\d{2}\/user-1\/task-video-sub2api-default-videos-endpoint-0-[a-f0-9]{16}-original\.mp4$/);
+    assert.equal(uploadedObjects[0].ContentType, 'video/mp4');
+}));
 
-test('ai video runtime honors explicit Sub2API video endpoint and still falls back on business 404 envelope', async () => {
+test('ai video runtime does not fallback to image endpoint after business 404 envelope', async () => {
     const fetchCalls = [];
-    const result = await executeOpenAiCompatibleVideoGeneration({
+    await assert.rejects(() => executeOpenAiCompatibleVideoGeneration({
         id: 'task-video-sub2api-business-404-fallback',
         site: 'cn',
         user_id: 'user-1',
@@ -885,32 +925,20 @@ test('ai video runtime honors explicit Sub2API video endpoint and still falls ba
                     })
                 };
             }
-            if (String(url) === 'https://sub2api.fatherkey.com/v1/images/generations') {
-                return {
-                    ok: true,
-                    status: 200,
-                    text: async () => JSON.stringify({
-                        id: 'sub2api-video-task-2',
-                        data: [{
-                            id: 'sub2api-video-result-2',
-                            video_url: 'https://cdn.example.com/sub2api-business-404-video.mp4',
-                            mime_type: 'video/mp4'
-                        }]
-                    })
-                };
-            }
             throw new Error(`Unexpected fetch ${url}`);
         }
+    }), (error) => {
+        assert.equal(error.code, '404');
+        assert.equal(error.statusCode, 502);
+        assert.equal(error.metadata.video_submit_endpoint, '/videos/generations');
+        assert.equal(error.metadata.video_submit_fallback_used, false);
+        assert.equal(error.metadata.video_submit_attempts.length, 1);
+        assert.equal(error.metadata.video_submit_attempts[0].route_not_found, true);
+        return true;
     });
 
-    assert.equal(fetchCalls.length, 2);
+    assert.equal(fetchCalls.length, 1);
     assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos/generations');
-    assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/images/generations');
-    assert.equal(result.status, 'succeeded');
-    assert.equal(result.images[0].image_url, 'https://cdn.example.com/sub2api-business-404-video.mp4');
-    assert.equal(result.metadata.video_submit_endpoint, '/images/generations');
-    assert.equal(result.metadata.video_submit_fallback_used, true);
-    assert.equal(result.metadata.video_submit_attempts[0].route_not_found, true);
 });
 
 test('ai video runtime honors configured video submit endpoint', async () => {
