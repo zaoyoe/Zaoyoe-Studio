@@ -224,11 +224,11 @@ install -o root -g root -m 0644 "$release_root/Dockerfile" "$KVM4_ROOT/Dockerfil
 install -o root -g root -m 0644 "$release_root/docker-compose.yml" "$KVM4_ROOT/docker-compose.yml"
 
 cd "$KVM4_ROOT"
-if ! docker compose up -d --build --force-recreate verify-server; then
+if ! docker compose up -d --build --force-recreate verify-server ai-image-worker; then
   if [[ -n "$previous_app" && -d "$previous_app" ]]; then
     echo "Build/start failed; rolling back to $previous_app" >&2
     ln -sfn "$previous_app" "$KVM4_ROOT/app"
-    docker compose up -d --build --force-recreate verify-server || true
+    docker compose up -d --build --force-recreate verify-server ai-image-worker || true
   fi
   exit 1
 fi
@@ -237,7 +237,7 @@ if ! healthcheck; then
   if [[ -n "$previous_app" && -d "$previous_app" ]]; then
     echo "Healthcheck failed; rolling back to $previous_app" >&2
     ln -sfn "$previous_app" "$KVM4_ROOT/app"
-    docker compose up -d --build --force-recreate verify-server || true
+    docker compose up -d --build --force-recreate verify-server ai-image-worker || true
     healthcheck || true
   fi
   exit 1
@@ -248,13 +248,7 @@ if [[ -n "$previous_app" ]]; then
   printf '%s\n' "$previous_app" > "$KVM4_ROOT/.previous-app"
 fi
 
-if command -v systemctl >/dev/null 2>&1 && systemctl cat zaoyoe-ai-image-worker.service >/dev/null 2>&1; then
-  echo "Restarting AI image worker for release $RELEASE_COMMIT"
-  systemctl restart zaoyoe-ai-image-worker.service
-  systemctl is-active --quiet zaoyoe-ai-image-worker.service || die "AI image worker failed to start"
-fi
-
-docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|zaoyoe-verify-server'
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|zaoyoe-verify-server|zaoyoe-ai-image-worker'
 curl -fsS http://127.0.0.1:3001/healthz
 REMOTE
 
