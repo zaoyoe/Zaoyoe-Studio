@@ -248,6 +248,12 @@ if [[ -n "$previous_app" ]]; then
   printf '%s\n' "$previous_app" > "$KVM4_ROOT/.previous-app"
 fi
 
+if command -v systemctl >/dev/null 2>&1 && systemctl cat zaoyoe-ai-image-worker.service >/dev/null 2>&1; then
+  echo "Restarting AI image worker for release $RELEASE_COMMIT"
+  systemctl restart zaoyoe-ai-image-worker.service
+  systemctl is-active --quiet zaoyoe-ai-image-worker.service || die "AI image worker failed to start"
+fi
+
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|zaoyoe-verify-server'
 curl -fsS http://127.0.0.1:3001/healthz
 REMOTE
