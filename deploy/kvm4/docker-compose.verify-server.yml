@@ -37,8 +37,6 @@ services:
       - run
       - ai-image:worker
       - --
-      - --env-file
-      - /app/.env
       - --site
       - cn
       - --limit
