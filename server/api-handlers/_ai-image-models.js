@@ -235,10 +235,18 @@ function normalizeEndpointsConfig(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function isSub2ApiGatewayBaseUrl(value = '') {
+    try {
+        const host = new URL(normalizeBaseUrl(value)).hostname.toLowerCase();
+        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+    } catch (_) {
+        return false;
+    }
+}
+
 function resolveVideoSubmitEndpoint(config = {}, fallback = '/videos/generations') {
     const endpoints = normalizeEndpointsConfig(config.endpoints);
-    return normalizeEndpointPath(
-        config.videoEndpoint
+    const configuredEndpoint = config.videoEndpoint
         || config.video_endpoint
         || config.videoGenerationEndpoint
         || config.video_generation_endpoint
@@ -246,7 +254,15 @@ function resolveVideoSubmitEndpoint(config = {}, fallback = '/videos/generations
         || endpoints.videoGeneration
         || endpoints.video_generation
         || endpoints.videos
-        || endpoints.submit,
+        || endpoints.submit;
+    if (configuredEndpoint) {
+        return normalizeEndpointPath(configuredEndpoint, fallback);
+    }
+    if (isSub2ApiGatewayBaseUrl(config.baseUrl)) {
+        return '/videos';
+    }
+    return normalizeEndpointPath(
+        configuredEndpoint,
         fallback
     );
 }
@@ -256,6 +272,41 @@ function buildProviderEndpointUrl(baseUrl = '', endpoint = '') {
     if (/^https?:\/\//i.test(normalizedEndpoint)) return normalizedEndpoint;
     const root = normalizeBaseUrl(baseUrl).replace(/\/+$/, '');
     return `${root}${normalizedEndpoint || '/'}`;
+}
+
+function isVideoTaskSubmitEndpoint(endpoint = '') {
+    const normalized = normalizeEndpointPath(endpoint).replace(/\/+$/, '');
+    return normalized === '/videos' || /\/videos$/i.test(normalized);
+}
+
+function buildProviderVideoContentEndpoint(providerTaskId = '') {
+    const taskId = encodeURIComponent(providerTaskId);
+    return `/videos/${taskId}/content`;
+}
+
+function buildProviderVideoContentItem(config = {}, providerTaskId = '') {
+    const taskId = normalizeText(providerTaskId, 240);
+    if (!taskId) return null;
+    return {
+        id: taskId,
+        url: buildProviderEndpointUrl(config.baseUrl, buildProviderVideoContentEndpoint(taskId)),
+        mime_type: 'video/mp4',
+        provider_auth_required: true,
+        provider_auth_headers: {
+            Authorization: `Bearer ${config.apiKey}`
+        },
+        provider_video_content_endpoint: buildProviderVideoContentEndpoint(taskId)
+    };
+}
+
+function isProviderVideoContentUrl(config = {}, videoUrl = '') {
+    try {
+        const expected = new URL(buildProviderEndpointUrl(config.baseUrl, buildProviderVideoContentEndpoint('task-id')));
+        const actual = new URL(videoUrl);
+        return actual.origin === expected.origin && /\/videos\/[^/]+\/content\/?$/i.test(actual.pathname);
+    } catch (_) {
+        return false;
+    }
 }
 
 function isRouteNotFoundPayload(response = {}, payload = {}) {
@@ -291,12 +342,7 @@ function shouldUseGeminiImageUrlBridge(env = {}, config = {}) {
     const explicit = String(env?.AI_IMAGE_GEMINI_URL_BRIDGE || '').trim();
     if (isDisabledFlag(explicit)) return false;
     if (isEnabledFlag(explicit)) return true;
-    try {
-        const host = new URL(normalizeBaseUrl(config.baseUrl)).hostname.toLowerCase();
-        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
-    } catch (_) {
-        return false;
-    }
+    return isSub2ApiGatewayBaseUrl(config.baseUrl);
 }
 
 function getResponseHeader(response, name = '') {
@@ -1306,6 +1352,7 @@ async function resolveAiImageRuntimeConfig({
     }
 
     const apiKey = envAiImageApiKey || storedAiImageConfig?.apiKey || sharedEnvApiKey || storedCodexConfig?.apiKey || '';
+    const envVideoEndpoint = readFirstEnv(env, ['AI_IMAGE_VIDEO_ENDPOINT', 'AI_VIDEO_ENDPOINT', 'AI_IMAGE_VIDEO_GENERATION_ENDPOINT']);
     const baseUrl = normalizeBaseUrl(
         readFirstEnv(env, ['AI_IMAGE_API_BASE_URL'])
         || storedAiImageConfig?.baseUrl
@@ -1337,8 +1384,8 @@ async function resolveAiImageRuntimeConfig({
         protocol: normalizeProviderProtocol(storedAiImageConfig?.protocol || storedAiImageConfig?.adapter),
         asyncResult: storedAiImageConfig?.asyncResult || storedAiImageConfig?.async_result || null,
         async_result: storedAiImageConfig?.asyncResult || storedAiImageConfig?.async_result || null,
-        videoEndpoint: normalizeEndpointPath(storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
-        video_endpoint: normalizeEndpointPath(storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
+        videoEndpoint: normalizeEndpointPath(envVideoEndpoint || storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
+        video_endpoint: normalizeEndpointPath(envVideoEndpoint || storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
         endpoints: normalizeEndpointsConfig(storedAiImageConfig?.endpoints),
         visionModels: normalizeModelsList(storedAiImageConfig?.visionModels || storedAiImageConfig?.vision_models || storedAiImageConfig?.chatVisionModels || storedAiImageConfig?.chat_vision_models),
         source: envAiImageApiKey
@@ -1531,6 +1578,12 @@ function isPendingProviderStatus(status = '') {
     );
 }
 
+function isSuccessProviderStatus(status = '') {
+    return ['succeeded', 'success', 'completed', 'complete', 'done', 'finished'].includes(
+        normalizeText(status, 80).toLowerCase()
+    );
+}
+
 function isTerminalFailureProviderStatus(status = '') {
     return ['failed', 'failure', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(
         normalizeText(status, 80).toLowerCase()
@@ -1573,6 +1626,10 @@ function normalizeProviderVideoItems(value) {
             const url = item.url
                 || item.video_url
                 || item.videoUrl
+                || item.content_url
+                || item.contentUrl
+                || item.download_url
+                || item.downloadUrl
                 || item.output_url
                 || item.outputUrl
                 || item.result_url
@@ -1622,13 +1679,25 @@ function extractProviderVideoData(payload = {}) {
         payload?.output?.video,
         payload?.output?.video_url,
         payload?.output?.videoUrl,
+        payload?.output?.content_url,
+        payload?.output?.contentUrl,
+        payload?.output?.download_url,
+        payload?.output?.downloadUrl,
         payload?.result,
         payload?.result?.videos,
         payload?.result?.video,
         payload?.result?.video_url,
         payload?.result?.videoUrl,
+        payload?.result?.content_url,
+        payload?.result?.contentUrl,
+        payload?.result?.download_url,
+        payload?.result?.downloadUrl,
         payload?.result_url,
         payload?.resultUrl,
+        payload?.content_url,
+        payload?.contentUrl,
+        payload?.download_url,
+        payload?.downloadUrl,
         payload?.url,
         payload?.video_url,
         payload?.videoUrl
@@ -1659,6 +1728,7 @@ function buildAsyncPollPathCandidates(providerTaskId = '', config = {}, mediaTyp
         ...(Array.isArray(config.paths) ? config.paths : [])
     ].filter(Boolean);
     const videoDefaults = [
+        `/videos/${taskId}`,
         `/videos/generations/${taskId}`,
         `/videos/tasks/${taskId}`,
         `/video/tasks/${taskId}`,
@@ -1872,6 +1942,19 @@ async function pollOpenAiCompatibleVideoResult({
                     attempts,
                     path
                 };
+            }
+
+            if (isSuccessProviderStatus(lastStatus)) {
+                const contentItem = buildProviderVideoContentItem(config, getProviderTaskIdFromPayload(payload) || providerTaskId);
+                if (contentItem) {
+                    return {
+                        data: [contentItem],
+                        payload,
+                        status: lastStatus,
+                        attempts,
+                        path
+                    };
+                }
             }
 
             if (isTerminalFailureProviderStatus(lastStatus)) {
@@ -2290,7 +2373,8 @@ async function fetchProviderVideoBuffer(videoUrl, {
     env,
     mimeType = 'video/mp4',
     fetchImpl = globalThis.fetch,
-    timing = null
+    timing = null,
+    headers = {}
 } = {}) {
     if (typeof fetchImpl !== 'function') {
         const error = new Error('Fetch runtime is unavailable');
@@ -2301,7 +2385,8 @@ async function fetchProviderVideoBuffer(videoUrl, {
 
     const requestStartedAt = nowMs();
     const response = await fetchProviderResponse(fetchImpl, videoUrl, {
-        method: 'GET'
+        method: 'GET',
+        headers
     }, {
         env,
         label: 'AI 视频结果下载'
@@ -2352,20 +2437,28 @@ function persistProviderVideoUrl(videoUrl, {
     index,
     mimeType = 'video/mp4',
     fetchImpl = globalThis.fetch,
-    timing = null
+    timing = null,
+    authHeaders = {},
+    requireServerCopy = false
 } = {}) {
     const normalizedMimeType = inferVideoMimeType(mimeType, 'video/mp4', videoUrl);
     const canDeferUpload = Boolean(videoUrl && resolveR2Config(env).configured);
+    const providerAuthHeaders = authHeaders && typeof authHeaders === 'object' && !Array.isArray(authHeaders)
+        ? authHeaders
+        : {};
+    const hasProviderAuthHeaders = Object.keys(providerAuthHeaders).length > 0;
+    const shouldHideProviderUrl = Boolean(requireServerCopy || hasProviderAuthHeaders);
     return {
         stored: {
-            image_url: videoUrl,
-            original_image_url: videoUrl,
+            image_url: shouldHideProviderUrl ? '' : videoUrl,
+            original_image_url: shouldHideProviderUrl ? '' : videoUrl,
             storage_path: '',
             original_storage_path: '',
             metadata: {
-                preview_status: 'upstream_url',
-                original_status: canDeferUpload ? 'pending' : 'upstream_url',
+                preview_status: shouldHideProviderUrl ? 'pending' : 'upstream_url',
+                original_status: canDeferUpload ? 'pending' : (shouldHideProviderUrl ? 'pending' : 'upstream_url'),
                 provider_video_url: videoUrl,
+                provider_auth_required: shouldHideProviderUrl,
                 original_mime_type: normalizedMimeType
             }
         },
@@ -2377,7 +2470,8 @@ function persistProviderVideoUrl(videoUrl, {
                     env,
                     mimeType: normalizedMimeType,
                     fetchImpl,
-                    timing: deferredTiming
+                    timing: deferredTiming,
+                    headers: providerAuthHeaders
                 });
                 const originalStored = await uploadVideoBufferToR2Object(providerVideo.buffer, {
                     env,
@@ -2482,6 +2576,65 @@ function getTaskReferenceImageUrls(task = {}) {
         seen.add(url);
         return true;
     }).slice(0, MAX_REFERENCE_IMAGE_INPUTS);
+}
+
+function normalizeReferenceMediaUrl(item) {
+    return normalizeText(
+        item?.url
+        || item?.imageUrl
+        || item?.image_url
+        || item?.image
+        || item?.videoUrl
+        || item?.video_url
+        || item?.video
+        || item?.audioUrl
+        || item?.audio_url
+        || item?.audio
+        || item,
+        4000
+    );
+}
+
+function getTaskReferenceVideoUrls(task = {}) {
+    const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
+        ? task.metadata
+        : {};
+    const extras = [
+        ...(Array.isArray(metadata.reference_videos) ? metadata.reference_videos : []),
+        ...(Array.isArray(metadata.referenceVideos) ? metadata.referenceVideos : []),
+        ...(Array.isArray(metadata.videos) ? metadata.videos : [])
+    ];
+    const urls = [
+        normalizeText(task.reference_video_url || metadata.reference_video_url || metadata.video_url || metadata.videoUrl, 4000),
+        ...extras.map(normalizeReferenceMediaUrl)
+    ];
+    const seen = new Set();
+    return urls.filter((url) => {
+        if (!url || seen.has(url)) return false;
+        seen.add(url);
+        return true;
+    }).slice(0, 8);
+}
+
+function getTaskReferenceAudioUrls(task = {}) {
+    const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
+        ? task.metadata
+        : {};
+    const extras = [
+        ...(Array.isArray(metadata.reference_audios) ? metadata.reference_audios : []),
+        ...(Array.isArray(metadata.referenceAudios) ? metadata.referenceAudios : []),
+        ...(Array.isArray(metadata.audios) ? metadata.audios : [])
+    ];
+    const urls = [
+        normalizeText(task.reference_audio_url || metadata.reference_audio_url || metadata.audio_url || metadata.audioUrl, 4000),
+        ...extras.map(normalizeReferenceMediaUrl)
+    ];
+    const seen = new Set();
+    return urls.filter((url) => {
+        if (!url || seen.has(url)) return false;
+        seen.add(url);
+        return true;
+    }).slice(0, 8);
 }
 
 async function fetchReferenceImagesForEdit(referenceImageUrls = [], {
@@ -2817,18 +2970,25 @@ async function requestOpenAiCompatibleVideos({
     const watermark = normalizeBooleanOption(metadata.watermark ?? metadata.video_watermark ?? env.AI_VIDEO_WATERMARK, false);
     const cameraFixed = normalizeBooleanOption(metadata.camera_fixed ?? metadata.video_camera_fixed ?? env.AI_VIDEO_CAMERA_FIXED, false);
     const referenceUrls = getTaskReferenceImageUrls(task);
+    const referenceVideoUrls = getTaskReferenceVideoUrls(task);
+    const referenceAudioUrls = getTaskReferenceAudioUrls(task);
+    const aspectRatio = videoRatio === 'adaptive' ? '16:9' : videoRatio;
     const requestBody = {
         model: config.model,
         prompt: buildImagePrompt(task),
         size: size.size,
         resolution: videoResolution,
         ratio: videoRatio,
-        aspect_ratio: videoRatio === 'adaptive' ? '16:9' : videoRatio,
+        aspect_ratio: aspectRatio,
+        seconds: duration,
         duration,
         generate_audio: generateAudio,
         watermark
     };
     if (cameraFixed) requestBody.camera_fixed = true;
+    if (referenceUrls.length) requestBody.images = referenceUrls;
+    if (referenceVideoUrls.length) requestBody.videos = referenceVideoUrls;
+    if (referenceAudioUrls.length) requestBody.audios = referenceAudioUrls;
     if (referenceUrls[0]) requestBody.image = referenceUrls[0];
     if (referenceUrls.length > 1) requestBody.reference_images = referenceUrls.slice(1, 5);
     const providerTaskIds = [];
@@ -2846,10 +3006,9 @@ async function requestOpenAiCompatibleVideos({
     let lastPayloadSummary = null;
     let tokenUsage = {};
     const submitEndpoint = resolveVideoSubmitEndpoint(config);
-    const fallbackSubmitEndpoint = normalizeEndpointPath('/images/generations');
     const submitAttempts = [];
     let submitEndpointPath = submitEndpoint;
-    let submitFallbackUsed = false;
+    const submitFallbackUsed = false;
 
     const submitVideoRequest = async (endpointPath) => {
         const requestStart = nowMs();
@@ -2890,20 +3049,11 @@ async function requestOpenAiCompatibleVideos({
         };
     };
 
-    let submitResult = await submitVideoRequest(submitEndpoint);
-    if (
-        isRouteNotFoundPayload(submitResult.response, submitResult.payload)
-        && normalizeEndpointPath(submitResult.endpoint) !== fallbackSubmitEndpoint
-    ) {
-        submitFallbackUsed = true;
-        submitResult = await submitVideoRequest(fallbackSubmitEndpoint);
-        submitEndpointPath = submitResult.endpoint;
-        attempts += 1;
-    }
+    const submitResult = await submitVideoRequest(submitEndpoint);
 
     const { response, payload } = submitResult;
 
-    if (!response.ok) {
+    if (!response.ok || isRouteNotFoundPayload(response, payload)) {
         const error = buildUpstreamError(response, payload);
         error.metadata = {
             executor: 'openai-compatible-videos',
@@ -2938,7 +3088,7 @@ async function requestOpenAiCompatibleVideos({
     }
 
     let data = extractProviderVideoData(payload);
-    if (!data.length && providerTaskId && isPendingProviderStatus(providerStatus)) {
+    if (!data.length && providerTaskId && !isTerminalFailureProviderStatus(providerStatus)) {
         const pollTiming = {};
         const pollResult = await pollOpenAiCompatibleVideoResult({
             task,
@@ -2968,6 +3118,11 @@ async function requestOpenAiCompatibleVideos({
         if (pollResult?.data?.length) {
             data = pollResult.data;
         }
+    }
+
+    if (!data.length && providerTaskId && isSuccessProviderStatus(providerStatus) && isVideoTaskSubmitEndpoint(submitEndpointPath)) {
+        const contentItem = buildProviderVideoContentItem(config, providerTaskId);
+        if (contentItem) data = [contentItem];
     }
 
     lastPayloadSummary = lastPayloadSummary || summarizeUpstreamPayload(payload);
@@ -3080,20 +3235,34 @@ async function normalizeGeneratedImageItem(item = {}, {
     };
 }
 
-function normalizeGeneratedVideoItem(item = {}, {
+async function normalizeGeneratedVideoItem(item = {}, {
     env,
     task,
     index,
     size,
     fetchImpl,
+    config = {},
     timing = null
 } = {}) {
     const mimeType = inferVideoMimeType(item.mime_type || item.mimeType || item.type || 'video/mp4', 'video/mp4', item.url || item.video_url || item.videoUrl);
     const providerVideoUrl = normalizeText(item.url || item.video_url || item.videoUrl, 4000);
+    const rawProviderAuthHeaders = item.provider_auth_headers && typeof item.provider_auth_headers === 'object' && !Array.isArray(item.provider_auth_headers)
+        ? item.provider_auth_headers
+        : {};
+    const providerAuthRequired = Boolean(item.provider_auth_required || Object.keys(rawProviderAuthHeaders).length > 0 || isProviderVideoContentUrl(config, providerVideoUrl));
+    const providerAuthHeaders = providerAuthRequired && !rawProviderAuthHeaders.Authorization && !rawProviderAuthHeaders.authorization && config.apiKey
+        ? { ...rawProviderAuthHeaders, Authorization: `Bearer ${config.apiKey}` }
+        : rawProviderAuthHeaders;
     if (!providerVideoUrl) {
         const error = new Error('AI 视频模型没有返回可展示的视频');
         error.statusCode = 502;
         error.code = 'ai_video_empty_result';
+        throw error;
+    }
+    if (providerAuthRequired && !resolveR2Config(env).configured) {
+        const error = new Error('AI 视频存储未配置，无法保存需要鉴权下载的视频结果');
+        error.statusCode = 503;
+        error.code = 'ai_video_storage_not_configured';
         throw error;
     }
     const persisted = persistProviderVideoUrl(providerVideoUrl, {
@@ -3102,9 +3271,29 @@ function normalizeGeneratedVideoItem(item = {}, {
         index,
         mimeType,
         fetchImpl,
-        timing
+        timing,
+        authHeaders: providerAuthHeaders,
+        requireServerCopy: providerAuthRequired
     });
-    const stored = persisted.stored || {};
+    let stored = persisted.stored || {};
+    let deferredOriginalUpload = persisted.deferredOriginalUpload || null;
+
+    if (providerAuthRequired && deferredOriginalUpload && typeof deferredOriginalUpload.run === 'function') {
+        const uploaded = await deferredOriginalUpload.run({ result: null, task });
+        stored = {
+            image_url: uploaded.image_url || '',
+            original_image_url: uploaded.original_image_url || uploaded.image_url || '',
+            storage_path: uploaded.storage_path || '',
+            original_storage_path: uploaded.original_storage_path || uploaded.storage_path || '',
+            metadata: {
+                ...(stored.metadata && typeof stored.metadata === 'object' && !Array.isArray(stored.metadata) ? stored.metadata : {}),
+                ...(uploaded.metadata && typeof uploaded.metadata === 'object' && !Array.isArray(uploaded.metadata) ? uploaded.metadata : {}),
+                preview_status: 'ready',
+                original_status: 'ready'
+            }
+        };
+        deferredOriginalUpload = null;
+    }
 
     return {
         image_url: stored.image_url || providerVideoUrl,
@@ -3120,12 +3309,13 @@ function normalizeGeneratedVideoItem(item = {}, {
         prompt: task.prompt || '',
         revised_prompt: normalizeText(item.revised_prompt || item.revisedPrompt || task.prompt, 8000),
         seed: normalizeText(item.seed || item.id, 120),
-        deferredOriginalUpload: persisted.deferredOriginalUpload || null,
+        deferredOriginalUpload,
         metadata: {
             ...(stored.metadata && typeof stored.metadata === 'object' && !Array.isArray(stored.metadata) ? stored.metadata : {}),
             provider: 'openai-compatible',
             provider_item_id: normalizeText(item.id, 160),
             provider_video_url: providerVideoUrl,
+            provider_auth_required: providerAuthRequired,
             media_type: 'video',
             size: size.size,
             video_ratio: task.ratio || size.ratio || 'adaptive',
@@ -3238,13 +3428,16 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
     }
 
     const postprocessStart = nowMs();
-    const images = data.map((item, index) => normalizeGeneratedVideoItem(item, {
+    const postprocessTiming = {};
+    const images = await Promise.all(data.map((item, index) => normalizeGeneratedVideoItem(item, {
         env,
         task,
         index,
         size,
-        fetchImpl
-    }));
+        fetchImpl,
+        config,
+        timing: postprocessTiming
+    })));
     if (typeof onImageResult === 'function') {
         for (let index = 0; index < images.length; index += 1) {
             const { deferredOriginalUpload, ...outputImage } = images[index];
@@ -3267,6 +3460,9 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
         async_poll_ms: upstream.asyncPollMs,
         async_poll_request_ms: upstream.asyncPollRequestMs,
         async_poll_response_ms: upstream.asyncPollResponseMs,
+        video_download_request_ms: Number(postprocessTiming.video_download_request_ms || 0) || 0,
+        video_download_body_ms: Number(postprocessTiming.video_download_body_ms || 0) || 0,
+        video_upload_ms: Number(postprocessTiming.deferred_original_upload_ms || 0) || 0,
         postprocess_ms: postprocessMs
     };
     timing.executor_ms = Number(timing.preflight_ms || 0) + Number(timing.upstream_ms || 0) + Number(timing.postprocess_ms || 0);
@@ -3303,6 +3499,9 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             async_poll_ms: upstream.asyncPollMs,
             async_poll_request_ms: upstream.asyncPollRequestMs,
             async_poll_response_ms: upstream.asyncPollResponseMs,
+            video_download_request_ms: Number(postprocessTiming.video_download_request_ms || 0) || 0,
+            video_download_body_ms: Number(postprocessTiming.video_download_body_ms || 0) || 0,
+            video_upload_ms: Number(postprocessTiming.deferred_original_upload_ms || 0) || 0,
             postprocess_ms: postprocessMs,
             executor_ms: timing.executor_ms,
             executor_unaccounted_ms: 0,
