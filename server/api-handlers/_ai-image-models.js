@@ -259,9 +259,18 @@ function buildProviderEndpointUrl(baseUrl = '', endpoint = '') {
 }
 
 function isRouteNotFoundPayload(response = {}, payload = {}) {
-    if (Number(response?.status || 0) !== 404) return false;
+    const httpStatus = Number(response?.status || 0);
+    const rawBusinessCode = payload?.error?.code ?? payload?.code ?? '';
+    const businessCode = normalizeText(String(rawBusinessCode), 80).toLowerCase();
+    if (httpStatus !== 404 && businessCode !== '404' && businessCode !== 'not_found') return false;
     const message = normalizeText(payload?.error?.message || payload?.message, 1000).toLowerCase();
+    const hasBusinessNotFoundShape = businessCode === '404' && (
+        !message
+        || payload?.data == null
+        || (Array.isArray(payload?.data) && payload.data.length === 0)
+    );
     return !message
+        || hasBusinessNotFoundShape
         || message === '404 page not found'
         || message === 'page not found'
         || message === 'route not found'
@@ -1458,7 +1467,7 @@ async function readUpstreamPayload(response, timing = null, {
 
 function buildUpstreamError(response, payload = {}) {
     const message = normalizeText(
-        payload?.error?.message || payload?.message || `AI image provider returned HTTP ${response.status}`,
+        payload?.error?.message || payload?.message || `AI image provider returned HTTP ${payload?.code || response.status}`,
         1000
     );
     const error = new Error(message);
@@ -2883,8 +2892,7 @@ async function requestOpenAiCompatibleVideos({
 
     let submitResult = await submitVideoRequest(submitEndpoint);
     if (
-        !submitResult.response.ok
-        && isRouteNotFoundPayload(submitResult.response, submitResult.payload)
+        isRouteNotFoundPayload(submitResult.response, submitResult.payload)
         && normalizeEndpointPath(submitResult.endpoint) !== fallbackSubmitEndpoint
     ) {
         submitFallbackUsed = true;
