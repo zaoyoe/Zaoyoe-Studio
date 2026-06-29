@@ -99,7 +99,7 @@ systemctl restart zaoyoe-ai-image-worker.service
 npm run ai-image:worker -- --env-file /opt/zaoyoe-verify-server/.env --limit 8 --concurrency 4 --interval-ms 3000
 ```
 
-Worker 使用 `/opt/zaoyoe-verify-server/app` 作为工作目录。KVM4 Verify Server 每次从 `main` 部署成功后，如果远端已安装 `zaoyoe-ai-image-worker.service`，部署脚本会自动重启 worker，避免旧进程继续领取队列任务。
+KVM4 生产环境通过 `deploy/kvm4/docker-compose.verify-server.yml` 中的 `ai-image-worker` 容器运行 worker，复用 Verify Server 同一份代码和 `.env`。Verify Server 每次从 `main` 部署成功后会同时重建并重启 `verify-server` 和 `ai-image-worker`，避免旧进程继续领取队列任务。
 
 `--limit` 是每轮最多领取的队列任务数，`--concurrency` 是同一时间执行的任务数。当前默认用 `--limit 8 --concurrency 4`，先把队列吞吐抬起来，后续再根据上游限速、R2 转存耗时和失败率微调。
 

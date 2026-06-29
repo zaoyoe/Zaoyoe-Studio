@@ -22,3 +22,31 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+  ai-image-worker:
+    build:
+      context: ./app
+      dockerfile: ../Dockerfile
+    container_name: zaoyoe-ai-image-worker
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+    command:
+      - npm
+      - run
+      - ai-image:worker
+      - --
+      - --env-file
+      - /app/.env
+      - --site
+      - cn
+      - --limit
+      - "8"
+      - --concurrency
+      - "4"
+      - --interval-ms
+      - "3000"
+    depends_on:
+      verify-server:
+        condition: service_healthy

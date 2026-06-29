@@ -27,10 +27,13 @@ test('AI image worker has a KVM4 systemd deployment contract', () => {
 
 test('KVM4 verify deploy restarts the AI image worker when installed', () => {
     const deployScript = readText('scripts/deploy-kvm4-verify-server.sh');
+    const compose = readText('deploy/kvm4/docker-compose.verify-server.yml');
 
-    assert.match(deployScript, /systemctl cat zaoyoe-ai-image-worker\.service/);
-    assert.match(deployScript, /systemctl restart zaoyoe-ai-image-worker\.service/);
-    assert.match(deployScript, /systemctl is-active --quiet zaoyoe-ai-image-worker\.service/);
+    assert.match(compose, /ai-image-worker:/);
+    assert.match(compose, /container_name: zaoyoe-ai-image-worker/);
+    assert.match(compose, /npm[\s\S]*run[\s\S]*ai-image:worker/);
+    assert.match(deployScript, /docker compose up -d --build --force-recreate verify-server ai-image-worker/);
+    assert.doesNotMatch(deployScript, /systemctl restart zaoyoe-ai-image-worker\.service/);
 });
 
 test('AI image ops docs and env template include model and R2 requirements', () => {
