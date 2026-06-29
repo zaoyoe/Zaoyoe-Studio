@@ -238,6 +238,82 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
 
+	if msg, ok := openAIVideosBusinessRouteNotFound(respBody); ok && len(targetURLs) > 1 {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+			Kind:               "endpoint_fallback",
+			Message:            msg,
+		})
+
+		fallbackCtx, releaseFallbackCtx := detachUpstreamContext(ctx)
+		fallbackReq, fallbackErr := buildOpenAIVideosUpstreamRequest(fallbackCtx, c, account, targetURLs[1], apiKey, upstreamBody)
+		releaseFallbackCtx()
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("build fallback upstream request: %w", fallbackErr)
+		}
+		fallbackStart := time.Now()
+		fallbackResp, fallbackErr := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, firstUpstreamLatencyMs+time.Since(fallbackStart).Milliseconds())
+		if fallbackErr != nil {
+			safeErr := sanitizeUpstreamErrorMessage(fallbackErr.Error())
+			setOpsUpstreamError(c, 0, safeErr, "")
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: 0,
+				UpstreamURL:        safeUpstreamURL(fallbackReq.URL.String()),
+				Kind:               "request_error",
+				Message:            safeErr,
+			})
+			writeOpenAIVideosError(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+			return nil, fmt.Errorf("fallback upstream request failed: %s", safeErr)
+		}
+		defer func() { _ = fallbackResp.Body.Close() }()
+		upstreamReq = fallbackReq
+		resp = fallbackResp
+		if fallbackResp.StatusCode >= 400 {
+			respBody = s.readUpstreamErrorBody(fallbackResp)
+			_ = fallbackResp.Body.Close()
+			fallbackResp.Body = io.NopCloser(bytes.NewReader(respBody))
+			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+			if s.shouldFailoverOpenAIUpstreamResponse(fallbackResp.StatusCode, upstreamMsg, respBody) {
+				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+					Platform:           account.Platform,
+					AccountID:          account.ID,
+					AccountName:        account.Name,
+					UpstreamStatusCode: fallbackResp.StatusCode,
+					UpstreamRequestID:  fallbackResp.Header.Get("x-request-id"),
+					UpstreamURL:        safeUpstreamURL(fallbackReq.URL.String()),
+					Kind:               "failover",
+					Message:            upstreamMsg,
+				})
+				s.handleFailoverSideEffects(ctx, fallbackResp, account, respBody, upstreamModel)
+				return nil, &UpstreamFailoverError{
+					StatusCode:             fallbackResp.StatusCode,
+					ResponseBody:           respBody,
+					RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(fallbackResp.StatusCode),
+				}
+			}
+			writeOpenAIVideosUpstreamResponse(c, fallbackResp, respBody, s.responseHeaderFilter)
+			return nil, fmt.Errorf("upstream returned status %d", fallbackResp.StatusCode)
+		}
+		respBody, err = ReadUpstreamResponseBody(fallbackResp.Body, s.cfg, c, openAITooLargeError)
+		_ = fallbackResp.Body.Close()
+		if err != nil {
+			if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+				writeOpenAIVideosError(c, http.StatusBadGateway, "api_error", "Failed to read upstream response")
+			}
+			return nil, fmt.Errorf("read fallback upstream body: %w", err)
+		}
+	}
+
 	writeOpenAIVideosUpstreamResponse(c, resp, respBody, s.responseHeaderFilter)
 
 	usage, _ := extractOpenAIUsageFromJSONBytes(respBody)
@@ -323,6 +399,38 @@ func shouldFallbackOpenAIVideosEndpoint(statusCode int, upstreamMsg string) bool
 		strings.Contains(msg, "route not found") ||
 		strings.Contains(msg, "no route") ||
 		strings.Contains(msg, "cannot post")
+}
+
+func openAIVideosBusinessRouteNotFound(body []byte) (string, bool) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return "", false
+	}
+	code := strings.ToLower(strings.TrimSpace(firstNonEmptyString(
+		gjson.GetBytes(body, "error.code").String(),
+		gjson.GetBytes(body, "code").String(),
+	)))
+	if code != "404" && code != "not_found" {
+		return "", false
+	}
+	msg := strings.TrimSpace(firstNonEmptyString(
+		gjson.GetBytes(body, "error.message").String(),
+		gjson.GetBytes(body, "message").String(),
+		gjson.GetBytes(body, "msg").String(),
+	))
+	lowerMsg := strings.ToLower(msg)
+	if msg == "" ||
+		lowerMsg == "404 page not found" ||
+		lowerMsg == "page not found" ||
+		strings.Contains(lowerMsg, "invalid url") ||
+		strings.Contains(lowerMsg, "route not found") ||
+		strings.Contains(lowerMsg, "no route") ||
+		strings.Contains(lowerMsg, "cannot post") {
+		if msg == "" {
+			msg = "business code 404"
+		}
+		return sanitizeUpstreamErrorMessage(msg), true
+	}
+	return "", false
 }
 
 func writeOpenAIVideosUpstreamResponse(c *gin.Context, resp *http.Response, body []byte, filter *responseheaders.CompiledHeaderFilter) {

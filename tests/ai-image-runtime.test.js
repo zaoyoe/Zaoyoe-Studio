@@ -847,6 +847,79 @@ test('ai video runtime falls back to Sub2API image generation endpoint when vide
     assert.equal(result.metadata.video_submit_attempts[0].route_not_found, true);
 });
 
+test('ai video runtime falls back when video route returns business 404 envelope', async () => {
+    const fetchCalls = [];
+    const result = await executeOpenAiCompatibleVideoGeneration({
+        id: 'task-video-sub2api-business-404-fallback',
+        site: 'cn',
+        user_id: 'user-1',
+        mode: 'video',
+        billing_mode: 'points',
+        status: 'queued',
+        model: 'video-ds-2.0-fast',
+        ratio: '16:9',
+        resolution: '720p',
+        quantity: 1,
+        prompt: '飞龙在天，和麒麟对峙，压迫力十足，上水画卷',
+        estimated_points: 0,
+        charged_points: 0,
+        metadata: {
+            duration: 5,
+            video_ratio: '16:9',
+            video_resolution: '720p'
+        },
+        created_at: '2026-06-28T09:00:00.000Z'
+    }, {
+        env: {
+            AI_IMAGE_API_KEY: 'sk-video-test',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_MODEL: 'video-ds-2.0-fast'
+        },
+        fetchImpl: async (url, options = {}) => {
+            fetchCalls.push({
+                url: String(url),
+                method: options.method,
+                body: JSON.parse(String(options.body || '{}'))
+            });
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos/generations') {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        code: 404,
+                        msg: '',
+                        data: null
+                    })
+                };
+            }
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/images/generations') {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        id: 'sub2api-video-task-2',
+                        data: [{
+                            id: 'sub2api-video-result-2',
+                            video_url: 'https://cdn.example.com/sub2api-business-404-video.mp4',
+                            mime_type: 'video/mp4'
+                        }]
+                    })
+                };
+            }
+            throw new Error(`Unexpected fetch ${url}`);
+        }
+    });
+
+    assert.equal(fetchCalls.length, 2);
+    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos/generations');
+    assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/images/generations');
+    assert.equal(result.status, 'succeeded');
+    assert.equal(result.images[0].image_url, 'https://cdn.example.com/sub2api-business-404-video.mp4');
+    assert.equal(result.metadata.video_submit_endpoint, '/images/generations');
+    assert.equal(result.metadata.video_submit_fallback_used, true);
+    assert.equal(result.metadata.video_submit_attempts[0].route_not_found, true);
+});
+
 test('ai video runtime honors configured video submit endpoint', async () => {
     const fetchCalls = [];
     const result = await executeOpenAiCompatibleVideoGeneration({
