@@ -235,10 +235,18 @@ function normalizeEndpointsConfig(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function isSub2ApiGatewayBaseUrl(value = '') {
+    try {
+        const host = new URL(normalizeBaseUrl(value)).hostname.toLowerCase();
+        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+    } catch (_) {
+        return false;
+    }
+}
+
 function resolveVideoSubmitEndpoint(config = {}, fallback = '/videos/generations') {
     const endpoints = normalizeEndpointsConfig(config.endpoints);
-    return normalizeEndpointPath(
-        config.videoEndpoint
+    const configuredEndpoint = config.videoEndpoint
         || config.video_endpoint
         || config.videoGenerationEndpoint
         || config.video_generation_endpoint
@@ -246,7 +254,15 @@ function resolveVideoSubmitEndpoint(config = {}, fallback = '/videos/generations
         || endpoints.videoGeneration
         || endpoints.video_generation
         || endpoints.videos
-        || endpoints.submit,
+        || endpoints.submit;
+    if (configuredEndpoint) {
+        return normalizeEndpointPath(configuredEndpoint, fallback);
+    }
+    if (isSub2ApiGatewayBaseUrl(config.baseUrl)) {
+        return '/images/generations';
+    }
+    return normalizeEndpointPath(
+        configuredEndpoint,
         fallback
     );
 }
@@ -291,12 +307,7 @@ function shouldUseGeminiImageUrlBridge(env = {}, config = {}) {
     const explicit = String(env?.AI_IMAGE_GEMINI_URL_BRIDGE || '').trim();
     if (isDisabledFlag(explicit)) return false;
     if (isEnabledFlag(explicit)) return true;
-    try {
-        const host = new URL(normalizeBaseUrl(config.baseUrl)).hostname.toLowerCase();
-        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
-    } catch (_) {
-        return false;
-    }
+    return isSub2ApiGatewayBaseUrl(config.baseUrl);
 }
 
 function getResponseHeader(response, name = '') {
@@ -1306,6 +1317,7 @@ async function resolveAiImageRuntimeConfig({
     }
 
     const apiKey = envAiImageApiKey || storedAiImageConfig?.apiKey || sharedEnvApiKey || storedCodexConfig?.apiKey || '';
+    const envVideoEndpoint = readFirstEnv(env, ['AI_IMAGE_VIDEO_ENDPOINT', 'AI_VIDEO_ENDPOINT', 'AI_IMAGE_VIDEO_GENERATION_ENDPOINT']);
     const baseUrl = normalizeBaseUrl(
         readFirstEnv(env, ['AI_IMAGE_API_BASE_URL'])
         || storedAiImageConfig?.baseUrl
@@ -1337,8 +1349,8 @@ async function resolveAiImageRuntimeConfig({
         protocol: normalizeProviderProtocol(storedAiImageConfig?.protocol || storedAiImageConfig?.adapter),
         asyncResult: storedAiImageConfig?.asyncResult || storedAiImageConfig?.async_result || null,
         async_result: storedAiImageConfig?.asyncResult || storedAiImageConfig?.async_result || null,
-        videoEndpoint: normalizeEndpointPath(storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
-        video_endpoint: normalizeEndpointPath(storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
+        videoEndpoint: normalizeEndpointPath(envVideoEndpoint || storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
+        video_endpoint: normalizeEndpointPath(envVideoEndpoint || storedAiImageConfig?.videoEndpoint || storedAiImageConfig?.video_endpoint || storedAiImageConfig?.videoGenerationEndpoint || storedAiImageConfig?.video_generation_endpoint),
         endpoints: normalizeEndpointsConfig(storedAiImageConfig?.endpoints),
         visionModels: normalizeModelsList(storedAiImageConfig?.visionModels || storedAiImageConfig?.vision_models || storedAiImageConfig?.chatVisionModels || storedAiImageConfig?.chat_vision_models),
         source: envAiImageApiKey

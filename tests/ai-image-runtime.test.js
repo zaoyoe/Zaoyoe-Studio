@@ -774,10 +774,10 @@ test('ai image runtime calls openai-compatible video generation endpoint and ret
     assert.equal(result.images[0].metadata.video_resolution, '720p');
 });
 
-test('ai video runtime falls back to Sub2API image generation endpoint when video route is unavailable', async () => {
+test('ai video runtime uses Sub2API image generation endpoint by default to avoid paid route probing', async () => {
     const fetchCalls = [];
     const result = await executeOpenAiCompatibleVideoGeneration({
-        id: 'task-video-sub2api-route-fallback',
+        id: 'task-video-sub2api-default-image-endpoint',
         site: 'cn',
         user_id: 'user-1',
         mode: 'video',
@@ -808,13 +808,6 @@ test('ai video runtime falls back to Sub2API image generation endpoint when vide
                 method: options.method,
                 body: JSON.parse(String(options.body || '{}'))
             });
-            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos/generations') {
-                return {
-                    ok: false,
-                    status: 404,
-                    text: async () => '404 page not found'
-                };
-            }
             if (String(url) === 'https://sub2api.fatherkey.com/v1/images/generations') {
                 return {
                     ok: true,
@@ -833,21 +826,20 @@ test('ai video runtime falls back to Sub2API image generation endpoint when vide
         }
     });
 
-    assert.equal(fetchCalls.length, 2);
-    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos/generations');
-    assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/images/generations');
-    assert.equal(fetchCalls[1].body.model, 'video-ds-2.0-fast');
-    assert.equal(fetchCalls[1].body.ratio, '16:9');
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/images/generations');
+    assert.equal(fetchCalls[0].body.model, 'video-ds-2.0-fast');
+    assert.equal(fetchCalls[0].body.ratio, '16:9');
     assert.equal(result.status, 'succeeded');
     assert.equal(result.images[0].image_url, 'https://cdn.example.com/sub2api-video.mp4');
     assert.equal(result.metadata.video_submit_endpoint, '/images/generations');
-    assert.equal(result.metadata.video_submit_fallback_used, true);
-    assert.equal(result.metadata.provider_attempt_count, 2);
-    assert.equal(result.metadata.video_submit_attempts.length, 2);
-    assert.equal(result.metadata.video_submit_attempts[0].route_not_found, true);
+    assert.equal(result.metadata.video_submit_fallback_used, false);
+    assert.equal(result.metadata.provider_attempt_count, 1);
+    assert.equal(result.metadata.video_submit_attempts.length, 1);
+    assert.equal(result.metadata.video_submit_attempts[0].route_not_found, false);
 });
 
-test('ai video runtime falls back when video route returns business 404 envelope', async () => {
+test('ai video runtime honors explicit Sub2API video endpoint and still falls back on business 404 envelope', async () => {
     const fetchCalls = [];
     const result = await executeOpenAiCompatibleVideoGeneration({
         id: 'task-video-sub2api-business-404-fallback',
@@ -873,7 +865,8 @@ test('ai video runtime falls back when video route returns business 404 envelope
         env: {
             AI_IMAGE_API_KEY: 'sk-video-test',
             AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
-            AI_IMAGE_MODEL: 'video-ds-2.0-fast'
+            AI_IMAGE_MODEL: 'video-ds-2.0-fast',
+            AI_IMAGE_VIDEO_ENDPOINT: '/videos/generations'
         },
         fetchImpl: async (url, options = {}) => {
             fetchCalls.push({
