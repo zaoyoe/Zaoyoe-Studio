@@ -879,6 +879,106 @@ test('ai video runtime uses Sub2API /v1/videos task protocol by default', async 
     assert.equal(uploadedObjects[0].ContentType, 'video/mp4');
 }));
 
+test('ai video runtime downloads Sub2API content when status payload has no video URL', async () => withFakeR2Client(async (uploadedObjects) => {
+    const fetchCalls = [];
+    const result = await executeOpenAiCompatibleVideoGeneration({
+        id: 'task-video-sub2api-content-fallback',
+        site: 'cn',
+        user_id: 'user-1',
+        mode: 'video',
+        billing_mode: 'points',
+        status: 'queued',
+        model: 'video-ds-2.0-fast',
+        ratio: '16:9',
+        resolution: '720p',
+        quantity: 1,
+        prompt: '飞龙在天，和麒麟对峙，压迫力十足，上水画卷',
+        estimated_points: 0,
+        charged_points: 0,
+        metadata: {
+            duration: 15,
+            video_ratio: '16:9',
+            video_resolution: '720p'
+        },
+        created_at: '2026-06-29T18:43:17.000Z'
+    }, {
+        env: {
+            AI_IMAGE_API_KEY: 'sk-video-test',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_MODEL: 'video-ds-2.0-fast',
+            AI_IMAGE_R2_ENDPOINT: 'https://r2.example.com',
+            AI_IMAGE_R2_ACCESS_KEY_ID: 'r2-key',
+            AI_IMAGE_R2_SECRET_ACCESS_KEY: 'r2-secret',
+            AI_IMAGE_R2_BUCKET_NAME: 'zaoyoe-test',
+            AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.example.com'
+        },
+        runtimeConfig: {
+            apiKey: 'sk-video-test',
+            baseUrl: 'https://sub2api.fatherkey.com/v1',
+            model: 'video-ds-2.0-fast',
+            source: 'test',
+            asyncResult: {
+                intervalMs: 1,
+                maxAttempts: 2
+            }
+        },
+        fetchImpl: async (url, options = {}) => {
+            fetchCalls.push({
+                url: String(url),
+                method: options.method,
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(String(options.body || '{}')) : null
+            });
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos') {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        id: 'task_content_only_1',
+                        status: 'pending'
+                    })
+                };
+            }
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1') {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        id: 'task_content_only_1',
+                        status: 'pending'
+                    })
+                };
+            }
+            if (String(url) === 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1/content') {
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: {
+                        get: (name) => String(name || '').toLowerCase() === 'content-type' ? 'video/mp4' : ''
+                    },
+                    arrayBuffer: async () => Buffer.from('content-only-video-bytes').buffer
+                };
+            }
+            throw new Error(`Unexpected fetch ${url}`);
+        }
+    });
+
+    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos');
+    assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1');
+    assert.equal(fetchCalls[2].url, 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1');
+    assert.equal(fetchCalls[3].url, 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1/content');
+    assert.equal(fetchCalls[3].headers.Authorization, 'Bearer sk-video-test');
+    assert.equal(result.status, 'succeeded');
+    assert.equal(result.images.length, 1);
+    assert.equal(result.images[0].image_url.startsWith('https://cdn.example.com/ai-videos/'), true);
+    assert.equal(result.images[0].metadata.provider_video_content_endpoint, '/videos/task_content_only_1/content');
+    assert.equal(result.metadata.provider_task_id, 'task_content_only_1');
+    assert.equal(result.metadata.async_poll_attempts, 2);
+    assert.equal(result.metadata.async_poll_path, '');
+    assert.equal(uploadedObjects.length, 1);
+    assert.equal(uploadedObjects[0].ContentType, 'video/mp4');
+}));
+
 test('ai video runtime does not fallback to image endpoint after business 404 envelope', async () => {
     const fetchCalls = [];
     await assert.rejects(() => executeOpenAiCompatibleVideoGeneration({

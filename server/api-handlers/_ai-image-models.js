@@ -10,6 +10,9 @@ const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 const DEFAULT_VIDEO_MODEL = 'default-video-model';
 const DEFAULT_PROVIDER_TIMEOUT_MS = 120000;
+const DEFAULT_VIDEO_POLL_INTERVAL_MS = 3000;
+const DEFAULT_VIDEO_POLL_MAX_ATTEMPTS = 160;
+const MAX_VIDEO_POLL_MAX_ATTEMPTS = 240;
 const IMAGE_GENERATION_MODES = Object.freeze(new Set(['text', 'image', 'agent']));
 const VIDEO_GENERATION_MODES = Object.freeze(new Set(['video']));
 const TEXT_VISION_MODES = Object.freeze(new Set(['reverse', 'chat']));
@@ -881,6 +884,22 @@ function normalizePositiveInt(value, fallback = 1, { min = 1, max = 8 } = {}) {
     return Math.min(max, Math.max(min, parsed));
 }
 
+function resolveDefaultVideoPollMaxAttempts({ duration = 15, resolution = '720p' } = {}) {
+    const seconds = Math.max(1, Number(duration) || 15);
+    let targetSeconds = 480;
+    if (seconds > 15) {
+        targetSeconds += Math.min(300, Math.ceil((seconds - 15) * 12));
+    }
+    const normalizedResolution = normalizeVideoResolution(resolution || '720p');
+    if (normalizedResolution === '1080p') targetSeconds += 120;
+    if (normalizedResolution === '4k') targetSeconds += 300;
+    return normalizePositiveInt(
+        Math.ceil(targetSeconds / (DEFAULT_VIDEO_POLL_INTERVAL_MS / 1000)),
+        DEFAULT_VIDEO_POLL_MAX_ATTEMPTS,
+        { min: DEFAULT_VIDEO_POLL_MAX_ATTEMPTS, max: MAX_VIDEO_POLL_MAX_ATTEMPTS }
+    );
+}
+
 function normalizeTimeoutMs(value, fallback = DEFAULT_PROVIDER_TIMEOUT_MS) {
     const parsed = Number.parseInt(String(value || '').trim(), 10);
     if (!Number.isFinite(parsed)) return fallback;
@@ -1579,7 +1598,7 @@ function isPendingProviderStatus(status = '') {
 }
 
 function isSuccessProviderStatus(status = '') {
-    return ['succeeded', 'success', 'completed', 'complete', 'done', 'finished'].includes(
+    return ['succeeded', 'success', 'completed', 'complete', 'done', 'finished', 'finish'].includes(
         normalizeText(status, 80).toLowerCase()
     );
 }
@@ -1709,15 +1728,18 @@ function extractProviderVideoData(payload = {}) {
     return [];
 }
 
-function normalizeAsyncResultConfig(value = {}) {
+function normalizeAsyncResultConfig(value = {}, defaults = {}) {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const defaultIntervalMs = normalizePositiveInt(defaults.intervalMs, 2500, { min: 500, max: 15000 });
+    const maxAttemptsMax = normalizePositiveInt(defaults.maxAttemptsMax, 120, { min: 1, max: 240 });
+    const defaultMaxAttempts = normalizePositiveInt(defaults.maxAttempts, 8, { min: 1, max: maxAttemptsMax });
     return {
         enabled: source.enabled !== false && source.enable !== false,
         method: normalizeText(source.method || 'GET', 12).toUpperCase() || 'GET',
         path: normalizeText(source.path || source.statusPath || source.status_path || source.resultPath || source.result_path, 500),
         paths: Array.isArray(source.paths) ? source.paths.map((item) => normalizeText(item, 500)).filter(Boolean) : [],
-        intervalMs: normalizePositiveInt(source.intervalMs || source.interval_ms, 2500, { min: 500, max: 15000 }),
-        maxAttempts: normalizePositiveInt(source.maxAttempts || source.max_attempts, 8, { min: 1, max: 60 })
+        intervalMs: normalizePositiveInt(source.intervalMs || source.interval_ms, defaultIntervalMs, { min: 500, max: 15000 }),
+        maxAttempts: normalizePositiveInt(source.maxAttempts || source.max_attempts, defaultMaxAttempts, { min: 1, max: maxAttemptsMax })
     };
 }
 
@@ -1889,7 +1911,17 @@ async function pollOpenAiCompatibleVideoResult({
     signal = null,
     timing = null
 } = {}) {
-    const asyncConfig = normalizeAsyncResultConfig(config.asyncResult || config.async_result || {});
+    const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata) ? task.metadata : {};
+    const videoResolution = normalizeVideoResolution(metadata.video_resolution || metadata.resolution || task.resolution || '720p');
+    const duration = normalizeVideoDuration(metadata.duration ?? metadata.video_duration ?? env.AI_VIDEO_DURATION_SECONDS, 15);
+    const asyncConfig = normalizeAsyncResultConfig(config.asyncResult || config.async_result || {}, {
+        intervalMs: DEFAULT_VIDEO_POLL_INTERVAL_MS,
+        maxAttempts: resolveDefaultVideoPollMaxAttempts({
+            duration,
+            resolution: videoResolution
+        }),
+        maxAttemptsMax: MAX_VIDEO_POLL_MAX_ATTEMPTS
+    });
     if (!asyncConfig.enabled || !providerTaskId || typeof fetchImpl !== 'function') {
         return null;
     }
@@ -3120,7 +3152,7 @@ async function requestOpenAiCompatibleVideos({
         }
     }
 
-    if (!data.length && providerTaskId && isSuccessProviderStatus(providerStatus) && isVideoTaskSubmitEndpoint(submitEndpointPath)) {
+    if (!data.length && providerTaskId && !isTerminalFailureProviderStatus(providerStatus) && isVideoTaskSubmitEndpoint(submitEndpointPath)) {
         const contentItem = buildProviderVideoContentItem(config, providerTaskId);
         if (contentItem) data = [contentItem];
     }
@@ -3315,6 +3347,7 @@ async function normalizeGeneratedVideoItem(item = {}, {
             provider: 'openai-compatible',
             provider_item_id: normalizeText(item.id, 160),
             provider_video_url: providerVideoUrl,
+            provider_video_content_endpoint: normalizeText(item.provider_video_content_endpoint, 500),
             provider_auth_required: providerAuthRequired,
             media_type: 'video',
             size: size.size,
@@ -3516,6 +3549,7 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             requested_video_count: upstream.requestedCount,
             delivered_video_count: outputImages.length,
             deferred_original_count: deferredOriginalUploads.length,
+            provider_task_id: normalizeText(upstream.providerTaskId, 240),
             provider_attempt_count: upstream.attempts,
             video_submit_endpoint: upstream.submitEndpoint,
             video_submit_fallback_used: upstream.submitFallbackUsed,
