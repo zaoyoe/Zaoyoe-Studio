@@ -73,6 +73,7 @@ describe('ccswitchImport utils', () => {
         platform: 'anthropic',
         clientType: 'claude',
         claudeModelSlots: {
+          fableModel: 'claude-fable-5',
           haikuModel: 'claude-3-5-haiku',
           sonnetModel: 'claude-sonnet-4-6',
           opusModel: 'claude-opus-4-6'
@@ -81,6 +82,7 @@ describe('ccswitchImport utils', () => {
     )
 
     expect(params.get('app')).toBe('claude')
+    expect(params.get('fableModel')).toBe('claude-fable-5')
     expect(params.get('haikuModel')).toBe('claude-3-5-haiku')
     expect(params.get('sonnetModel')).toBe('claude-sonnet-4-6')
     expect(params.get('opusModel')).toBe('claude-opus-4-6')
@@ -88,10 +90,12 @@ describe('ccswitchImport utils', () => {
 
   it('resolves Claude model slots from available model ids', () => {
     expect(resolveCcSwitchClaudeModelSlots([
+      'claude-fable-5',
       'claude-sonnet-4-6',
       'claude-opus-4-6',
       'claude-3-5-haiku'
     ])).toEqual({
+      fableModel: 'claude-fable-5',
       haikuModel: 'claude-3-5-haiku',
       sonnetModel: 'claude-sonnet-4-6',
       opusModel: 'claude-opus-4-6'

@@ -10,6 +10,8 @@
     const API_SCOPE_PATH = '/api/public?scope=ai-image';
     const API_REQUEST_TIMEOUT_MS = 45000;
     const ORIGINAL_READY_POLL_LIMIT = 80;
+    const VIDEO_LOAD_RETRY_DELAY_MS = 1000;
+    const VIDEO_ERROR_CONFIRMATION_MS = 30000;
     const MAX_REFERENCE_IMAGE_INPUTS = 16;
     const MAX_CHAT_ATTACHMENT_COUNT = 8;
     const MAX_CHAT_ATTACHMENT_TEXT_CHARS = 50000;
@@ -17,6 +19,8 @@
     const MAX_CHAT_ATTACHMENT_FILE_BYTES = 8 * 1024 * 1024;
     const CHAT_DOCUMENT_ACCEPT = '.txt,.md,.csv,.json,.html,.htm,.xml,.log,.pdf,text/*,application/pdf,application/json,text/markdown,text/csv,text/html,text/xml';
     const CHAT_ATTACHMENT_ACCEPT = `image/*,${CHAT_DOCUMENT_ACCEPT}`;
+    const CHAT_NAVIGATION_MIN_ITEMS = 3;
+    const CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX = 96;
     const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
     const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
     const MAX_LOCAL_TASKS = 40;
@@ -228,6 +232,7 @@
 	        { id: 'auto', label: '允许读图', shortLabel: '读图', hint: '模型支持视觉时，会把图片作为对话输入' },
 	        { id: 'off', label: '仅文字', shortLabel: '文字', hint: '只发送文字内容，不发送图片' }
 	    ]);
+    const CHAT_SETTINGS_CAPABILITY_IDS = Object.freeze(['thinking', 'reasoning', 'geminiThinking', 'claudeThinkingBudget']);
 
     const RATIO_META = Object.freeze({
         '1:1': { label: '1:1', aspect: '1 / 1' },
@@ -327,6 +332,10 @@
     let remotePollTimer = null;
     let liveElapsedTimer = null;
     let openSelect = '';
+    let openImageSettingsSection = 'ratio';
+    let openVideoSettingsSection = 'videoRatio';
+    let openChatSettingsSection = 'memory';
+    let openModelProvider = '';
     let sidebarView = '';
     let sidebarEnteredView = '';
     let historySelectionMode = false;
@@ -337,9 +346,21 @@
     let currentAuthSession = null;
     const loadedImageUrls = new Set();
     const failedImageUrls = new Set();
+    const loadedVideoUrls = new Set();
+    const failedVideoUrls = new Set();
+    const videoErrorTimersByKey = new Map();
+    const videoProgressByKey = new Map();
+    const warmedVideoOrigins = new Set();
     const stableImageUrlsByIdentity = new Map();
     let imagePreview = null;
     let imagePreviewLoadTimer = null;
+    let chatNavigationObserver = null;
+    let chatNavigationDragState = null;
+    let chatNavigationResizeObserver = null;
+    let chatNavigationScrollTarget = null;
+    let chatNavigationPositionFrame = 0;
+    let chatNavigationResizeBound = false;
+    let suppressNextChatNavigationClick = false;
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
     let lastBusyTaskCount = 0;
@@ -413,6 +434,188 @@
     function hasFailedImage(value = '') {
         const key = getImageLoadKey(value);
         return Boolean(key && failedImageUrls.has(key) && !loadedImageUrls.has(key));
+    }
+
+    function rememberVideoLoaded(value = '') {
+        const key = getImageLoadKey(value);
+        if (!key) return;
+        loadedVideoUrls.add(key);
+        failedVideoUrls.delete(key);
+        videoProgressByKey.set(key, 100);
+        const timer = videoErrorTimersByKey.get(key);
+        if (timer) {
+            global.clearTimeout?.(timer);
+            videoErrorTimersByKey.delete(key);
+        }
+    }
+
+    function rememberVideoFailed(value = '') {
+        const key = getImageLoadKey(value);
+        if (!key) return;
+        if (loadedVideoUrls.has(key)) return;
+        failedVideoUrls.add(key);
+        videoProgressByKey.delete(key);
+    }
+
+    function hasLoadedVideo(value = '') {
+        const key = getImageLoadKey(value);
+        return Boolean(key && loadedVideoUrls.has(key));
+    }
+
+    function hasFailedVideo(value = '') {
+        const key = getImageLoadKey(value);
+        return Boolean(key && failedVideoUrls.has(key) && !loadedVideoUrls.has(key));
+    }
+
+    function normalizeVideoProgressPercent(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return null;
+        return Math.max(0, Math.min(100, Math.round(number)));
+    }
+
+    function rememberVideoProgress(value = '', percent = null) {
+        const key = getImageLoadKey(value);
+        const normalized = normalizeVideoProgressPercent(percent);
+        if (!key || normalized === null) return;
+        videoProgressByKey.set(key, normalized);
+    }
+
+    function getStoredVideoProgress(value = '') {
+        const key = getImageLoadKey(value);
+        if (!key) return 0;
+        return normalizeVideoProgressPercent(videoProgressByKey.get(key)) || 0;
+    }
+
+    function getVideoProgressLabel(value = '') {
+        const percent = getStoredVideoProgress(value);
+        return percent > 0 ? `${percent}%` : '加载中';
+    }
+
+    function getVideoProgressCss(value = '') {
+        return `${getStoredVideoProgress(value)}%`;
+    }
+
+    function getVideoBufferedPercent(video) {
+        if (!(video instanceof HTMLVideoElement)) return null;
+        const duration = Number(video.duration);
+        const ranges = video.buffered;
+        if (!Number.isFinite(duration) || duration <= 0 || !ranges?.length) return null;
+        let bufferedEnd = 0;
+        try {
+            for (let index = 0; index < ranges.length; index += 1) {
+                bufferedEnd = Math.max(bufferedEnd, Number(ranges.end(index)) || 0);
+            }
+        } catch (_) {
+            return null;
+        }
+        if (!Number.isFinite(bufferedEnd) || bufferedEnd <= 0) return null;
+        return normalizeVideoProgressPercent((bufferedEnd / duration) * 100);
+    }
+
+    function updateVideoLoadingProgress(video, { forceComplete = false } = {}) {
+        if (!(video instanceof HTMLVideoElement)) return;
+        const videoSrc = video.currentSrc || video.src || video.getAttribute('src') || '';
+        if (!videoSrc) return;
+        const percent = forceComplete ? 100 : getVideoBufferedPercent(video);
+        if (percent !== null) rememberVideoProgress(videoSrc, percent);
+        const currentPercent = getStoredVideoProgress(videoSrc);
+        const label = getVideoProgressLabel(videoSrc);
+        const media = video.closest?.('.ai-image-result-media');
+        if (!media) return;
+        media.style.setProperty('--aiw-video-progress', `${currentPercent}%`);
+        media.setAttribute('data-aiw-video-progress-label', label);
+        const progress = media.querySelector?.('[data-aiw-video-progress]');
+        if (!progress) return;
+        progress.textContent = label;
+        progress.setAttribute('aria-label', currentPercent > 0 ? `视频已缓冲 ${label}` : '视频加载中');
+    }
+
+    function ensureVideoPreviewLoading(video) {
+        if (!(video instanceof HTMLVideoElement)) return;
+        updateVideoLoadingProgress(video);
+        if (video.readyState >= 2 || video.error) return;
+        video.preload = 'auto';
+        if (video.dataset.aiwVideoLoadPrimed !== 'true') {
+            video.dataset.aiwVideoLoadPrimed = 'true';
+            if (video.networkState === 0 || !video.currentSrc) {
+                try {
+                    video.load();
+                } catch (_) {
+                    // Some browsers throw if the media node is mid-detach.
+                }
+            }
+        }
+        if (video.dataset.aiwVideoPrimeRetried === 'true') return;
+        video.dataset.aiwVideoPrimeRetried = 'true';
+        global.setTimeout?.(() => {
+            if (!video.isConnected || video.readyState >= 2 || video.error) return;
+            if (![0, 1].includes(video.networkState)) return;
+            try {
+                video.load();
+            } catch (_) {
+                // Keep the preview quiet; the normal error path will surface failures.
+            }
+        }, VIDEO_LOAD_RETRY_DELAY_MS);
+    }
+
+    function scheduleVideoErrorConfirmation(video, videoSrc = '') {
+        if (!(video instanceof HTMLVideoElement)) return;
+        const key = getImageLoadKey(videoSrc || video.currentSrc || video.src || video.getAttribute('src') || '');
+        if (!key || loadedVideoUrls.has(key)) return;
+        const media = video.closest?.('.ai-image-result-media');
+        if (!media) return;
+        media.classList.add('is-video-loading');
+        media.classList.remove('is-video-broken', 'is-video-ready', 'is-image-broken', 'is-image-loaded');
+        updateVideoLoadingProgress(video);
+        video.removeAttribute('aria-hidden');
+        if (video.dataset.aiwVideoReloadTried !== 'true') {
+            video.dataset.aiwVideoReloadTried = 'true';
+            global.setTimeout?.(() => {
+                if (!video.isConnected || hasLoadedVideo(key) || video.readyState >= 2) return;
+                try {
+                    video.load();
+                } catch (_) {
+                    // Browser media reload can fail synchronously on detached nodes.
+                }
+            }, VIDEO_LOAD_RETRY_DELAY_MS);
+        }
+        if (videoErrorTimersByKey.has(key)) return;
+        const timer = global.setTimeout?.(() => {
+            videoErrorTimersByKey.delete(key);
+            if (!video.isConnected || hasLoadedVideo(key) || video.readyState >= 2) return;
+            const currentMedia = video.closest?.('.ai-image-result-media');
+            if (!currentMedia) return;
+            rememberVideoFailed(key);
+            currentMedia.classList.add('is-video-broken');
+            currentMedia.classList.remove('is-video-loading', 'is-video-ready', 'is-image-broken', 'is-image-loaded');
+            video.setAttribute('aria-hidden', 'true');
+            const downloadLink = currentMedia.querySelector('[data-aiw-download]');
+            if (downloadLink instanceof HTMLAnchorElement && downloadLink.href === key) {
+                downloadLink.setAttribute('aria-disabled', 'true');
+                downloadLink.classList.add('is-disabled');
+            }
+        }, VIDEO_ERROR_CONFIRMATION_MS);
+        if (timer) videoErrorTimersByKey.set(key, timer);
+    }
+
+    function warmVideoPreviewConnection(src = '') {
+        const raw = String(src || '').trim();
+        if (!raw || !document?.head) return;
+        let origin = '';
+        try {
+            origin = new URL(raw, global.location?.href || document.baseURI || '').origin;
+        } catch (_) {
+            return;
+        }
+        if (!origin || warmedVideoOrigins.has(origin)) return;
+        warmedVideoOrigins.add(origin);
+        ['preconnect', 'dns-prefetch'].forEach((rel) => {
+            const link = document.createElement('link');
+            link.rel = rel;
+            link.href = origin;
+            if (rel === 'preconnect') link.crossOrigin = 'anonymous';
+            document.head.appendChild(link);
+        });
     }
 
     function getImageIdentityKey({
@@ -1548,6 +1751,12 @@
         remoteHistoryPrefsLoaded = false;
         loadedImageUrls.clear();
         failedImageUrls.clear();
+        loadedVideoUrls.clear();
+        failedVideoUrls.clear();
+        videoProgressByKey.clear();
+        videoErrorTimersByKey.forEach((timer) => global.clearTimeout?.(timer));
+        videoErrorTimersByKey.clear();
+        warmedVideoOrigins.clear();
         stableImageUrlsByIdentity.clear();
         originalReadyPollCounts.clear();
         if (persistAfter) persistState();
@@ -2898,11 +3107,23 @@
         return rootTask?.mode === 'chat' ? rootTask : null;
     }
 
-    function shouldKeepChatStagePinnedToBottom() {
+    function getChatStageBottomDistance(stage = overlay?.querySelector?.('.ai-image-stage')) {
+        if (!stage) return Number.POSITIVE_INFINITY;
+        return Math.max(0, Number(stage.scrollHeight || 0) - Number(stage.clientHeight || 0) - Number(stage.scrollTop || 0));
+    }
+
+    function isChatStageNearBottom(stage = overlay?.querySelector?.('.ai-image-stage')) {
+        return getChatStageBottomDistance(stage) <= CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX;
+    }
+
+    function shouldKeepChatStagePinnedToBottom(renderSnapshot = null, { force = false } = {}) {
         if (!state.open) return false;
         const rootTask = getActiveChatThreadRoot();
         if (!rootTask) return false;
-        return getTaskThread(rootTask).some((task) => task.mode === 'chat' && isBusyTask(task));
+        const hasBusyChatTask = getTaskThread(rootTask).some((task) => task.mode === 'chat' && isBusyTask(task));
+        if (!hasBusyChatTask) return false;
+        if (force) return true;
+        return Boolean(renderSnapshot?.stage?.wasNearBottom ?? isChatStageNearBottom());
     }
 
     function getLastChatThreadTask(rootTask = getActiveChatThreadRoot()) {
@@ -3349,9 +3570,15 @@
         return 'image';
     }
 
-    function setWorkbenchToolMode(value = 'chat') {
+    function getCurrentWorkbenchToolMode(mode = inferWorkbenchMode()) {
+        if (isVideoMode(mode)) return 'video';
+        if (mode === 'chat') return 'chat';
+        return 'image';
+    }
+
+    function applyWorkbenchToolMode(value = 'chat', { allowUnavailableVideo = false } = {}) {
         const normalized = String(value || '').trim();
-        if (normalized === 'video' && getActiveModelOptions('video').length) {
+        if (normalized === 'video' && (allowUnavailableVideo || getActiveModelOptions('video').length)) {
             state.apiImageTool = true;
             state.mode = 'video';
             return;
@@ -3363,6 +3590,10 @@
         }
         state.apiImageTool = false;
         state.mode = 'chat';
+    }
+
+    function setWorkbenchToolMode(value = 'chat') {
+        applyWorkbenchToolMode(value);
     }
 
     function getCostEstimate(modeOverride = state.mode) {
@@ -3437,6 +3668,12 @@
         if (!state.billingMode) return '请选择计费方式';
         if (state.billingMode === 'api') return isTextVisionMode(mode) ? '消耗 API token' : (isVideoMode(mode) ? '消耗 API 视频额度' : '消耗 API 图片额度');
         return `预计 ${formatPoints(getCostEstimate(mode))} 积分`;
+    }
+
+    function getComposerCostValue(mode = inferWorkbenchMode()) {
+        if (!state.billingMode) return '选择计费';
+        if (state.billingMode === 'api') return isTextVisionMode(mode) ? 'API token' : (isVideoMode(mode) ? 'API 视频' : 'API 图片');
+        return `${formatPoints(getCostEstimate(mode))}积分`;
     }
 
     function estimateLocalQueueSeconds({
@@ -3862,7 +4099,15 @@
     }
 
     function getChatTaskQuestionText(task = {}) {
-        return String(task?.prompt || '').trim();
+        return String(
+            task?.prompt
+            || task?.metadata?.prompt
+            || task?.metadata?.user_prompt
+            || task?.metadata?.userPrompt
+            || task?.input
+            || task?.question
+            || ''
+        ).trim();
     }
 
     function getChatTaskAnswerText(task = {}) {
@@ -3988,7 +4233,9 @@
         loadRemoteRecords();
     }
 
-    function resetConversationDraft() {
+    function resetConversationDraft({ preserveToolMode = false } = {}) {
+        const preservedBillingMode = state.billingMode;
+        const preservedToolMode = preserveToolMode ? getCurrentWorkbenchToolMode() : '';
         state.prompt = '';
         state.referenceImage = '';
         state.referenceTitle = '';
@@ -3998,6 +4245,10 @@
         state.continuationImage = null;
         state.agent = '';
         state.mode = 'text';
+        if (preserveToolMode) {
+            state.billingMode = preservedBillingMode;
+            applyWorkbenchToolMode(preservedToolMode, { allowUnavailableVideo: true });
+        }
         state.activeTaskId = '';
         clearComposerError();
         sidebarView = '';
@@ -4130,11 +4381,26 @@
             render();
         });
         root.addEventListener('click', handleRootClick);
+        root.addEventListener('pointerover', handleRootPointerOver);
+        root.addEventListener('pointerout', handleRootPointerOut);
+        root.addEventListener('pointerdown', handleRootPointerDown);
+        root.addEventListener('pointermove', handleRootPointerMove);
+        root.addEventListener('pointerup', handleRootPointerUp);
+        root.addEventListener('pointercancel', handleRootPointerUp);
         root.addEventListener('input', handleRootInput);
         root.addEventListener('change', handleRootChange);
+        root.addEventListener('focusin', handleRootFocusIn);
+        root.addEventListener('focusout', handleRootFocusOut);
         root.addEventListener('keydown', handleRootKeydown);
         root.addEventListener('error', handleRootError, true);
         root.addEventListener('load', handleRootLoad, true);
+        root.addEventListener('loadedmetadata', handleRootVideoProgress, true);
+        root.addEventListener('durationchange', handleRootVideoProgress, true);
+        root.addEventListener('progress', handleRootVideoProgress, true);
+        root.addEventListener('loadeddata', handleRootVideoLoaded, true);
+        root.addEventListener('canplay', handleRootVideoLoaded, true);
+        root.addEventListener('canplaythrough', handleRootVideoLoaded, true);
+        window.addEventListener('resize', syncMobileComposerMenuAnchor, { passive: true });
 
         document.body.classList.add('ai-image-workbench-ready');
     }
@@ -4215,13 +4481,91 @@
             return;
         }
 
+        const chatNavButton = target.closest('[data-aiw-chat-nav-id]');
+        if (chatNavButton) {
+            event.preventDefault();
+            if (suppressNextChatNavigationClick) {
+                suppressNextChatNavigationClick = false;
+                return;
+            }
+            scrollToChatTurn(chatNavButton.getAttribute('data-aiw-chat-nav-id') || '');
+            return;
+        }
+
         const selectToggle = target.closest('[data-aiw-select-toggle]');
         if (selectToggle) {
             event.preventDefault();
             if (selectToggle instanceof HTMLButtonElement && selectToggle.disabled) return;
             const field = selectToggle.getAttribute('data-aiw-select-toggle') || '';
             openSelect = openSelect === field ? '' : field;
-            renderPreservingStageScroll();
+            const isComposerToggle = Boolean(selectToggle.closest('.ai-image-main-composer'));
+            if ((field === 'model' || field === 'apiModel') && openSelect === field) {
+                openModelProvider = getActiveModelProviderId(inferWorkbenchMode());
+            } else if (field === 'model' || field === 'apiModel') {
+                openModelProvider = '';
+            }
+            if (field === 'imageSettings' && openSelect === 'imageSettings' && !openImageSettingsSection) {
+                openImageSettingsSection = 'ratio';
+            }
+            if (field === 'videoSettings' && openSelect === 'videoSettings' && !openVideoSettingsSection) {
+                openVideoSettingsSection = 'videoRatio';
+            }
+            if (field === 'chatSettings' && openSelect === 'chatSettings' && !openChatSettingsSection) {
+                openChatSettingsSection = 'memory';
+            }
+            if (isComposerToggle && isComposerLocalSelectField(field)) {
+                renderMainComposerOnly();
+            } else {
+                renderPreservingStageScroll();
+            }
+            return;
+        }
+
+        const modelProviderToggle = target.closest('.ai-image-model-provider-trigger');
+        if (modelProviderToggle) {
+            const provider = modelProviderToggle.closest('[data-aiw-model-provider]');
+            const select = modelProviderToggle.closest('[data-aiw-select]');
+            if (provider && select) {
+                event.preventDefault();
+                openSelect = select.getAttribute('data-aiw-select') || openSelect;
+                const providerId = provider.getAttribute('data-aiw-model-provider') || '';
+                openModelProvider = openModelProvider === providerId ? '' : providerId;
+                if (modelProviderToggle.closest('.ai-image-main-composer')) {
+                    renderMainComposerOnly();
+                } else {
+                    renderPreservingStageScroll();
+                }
+                return;
+            }
+        }
+
+        const chatSettingsSectionToggle = target.closest('[data-aiw-chat-settings-section]');
+        if (chatSettingsSectionToggle) {
+            event.preventDefault();
+            const section = chatSettingsSectionToggle.getAttribute('data-aiw-chat-settings-section') || 'memory';
+            openSelect = 'chatSettings';
+            openChatSettingsSection = openChatSettingsSection === section ? '' : section;
+            renderMainComposerOnly();
+            return;
+        }
+
+        const imageSettingsSectionToggle = target.closest('[data-aiw-image-settings-section]');
+        if (imageSettingsSectionToggle) {
+            event.preventDefault();
+            const section = imageSettingsSectionToggle.getAttribute('data-aiw-image-settings-section') || 'ratio';
+            openSelect = 'imageSettings';
+            openImageSettingsSection = openImageSettingsSection === section ? '' : section;
+            renderMainComposerOnly();
+            return;
+        }
+
+        const videoSettingsSectionToggle = target.closest('[data-aiw-video-settings-section]');
+        if (videoSettingsSectionToggle) {
+            event.preventDefault();
+            const section = videoSettingsSectionToggle.getAttribute('data-aiw-video-settings-section') || 'videoRatio';
+            openSelect = 'videoSettings';
+            openVideoSettingsSection = openVideoSettingsSection === section ? '' : section;
+            renderMainComposerOnly();
             return;
         }
 
@@ -4248,6 +4592,7 @@
             clearComposerError();
             const field = selectOption.getAttribute('data-aiw-select-field') || '';
             const value = selectOption.getAttribute('data-aiw-select-value') || '';
+            const isComposerOption = Boolean(selectOption.closest('.ai-image-main-composer'));
             if (field === 'ratio' && RATIO_META[value]) state.ratio = value;
             if (field === 'resolution' && RESOLUTION_META[value]) state.resolution = value;
             if (field === 'videoRatio' && VIDEO_RATIO_META[value]) state.videoRatio = value;
@@ -4275,16 +4620,32 @@
                 if (!isTextVisionMode(activeMode) && !isVideoMode(activeMode) && activeModelOptions.some((model) => model.id === value)) state.apiImageModel = value;
                 if (isTextVisionMode(activeMode) && activeModelOptions.some((model) => model.id === value)) state.apiTextModel = value;
             }
-            openSelect = '';
-            renderPreservingStageScroll();
+            if (field === 'model' || field === 'apiModel') openModelProvider = '';
+            openSelect = target.closest('[data-aiw-image-settings]') ? 'imageSettings' : (target.closest('[data-aiw-video-settings]') ? 'videoSettings' : (target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : ''));
+            if (openSelect === 'imageSettings') {
+                openImageSettingsSection = field || openImageSettingsSection;
+            } else if (openSelect === 'videoSettings') {
+                openVideoSettingsSection = field || openVideoSettingsSection;
+            } else if (openSelect === 'chatSettings') {
+                openChatSettingsSection = field || openChatSettingsSection;
+            }
+            if (isComposerOption || openSelect === 'imageSettings' || openSelect === 'videoSettings' || openSelect === 'chatSettings') {
+                renderMainComposerOnly();
+            } else {
+                renderPreservingStageScroll();
+            }
             persistState();
             return;
         }
 
-	        const shouldCloseSelect = Boolean(openSelect && !target.closest('.ai-image-custom-select') && !target.closest('.ai-image-memory-control') && !target.closest('.ai-image-capability-control'));
+        const closingSelect = openSelect;
+        const shouldCloseSelectLocally = shouldCloseSelectFromComposer(closingSelect);
+	        const shouldCloseSelect = Boolean(openSelect && !target.closest('.ai-image-custom-select') && !target.closest('.ai-image-memory-control') && !target.closest('.ai-image-capability-control') && !target.closest('[data-aiw-image-settings]') && !target.closest('[data-aiw-video-settings]') && !target.closest('[data-aiw-chat-settings]'));
         if (shouldCloseSelect) {
             openSelect = '';
+            if (closingSelect === 'model' || closingSelect === 'apiModel') openModelProvider = '';
         }
+        const shouldCloseMobileSidebar = shouldCloseMobileSidebarFromBlankClick(target);
 
         const action = target.closest('[data-aiw-action]')?.getAttribute('data-aiw-action');
         if (action) {
@@ -4326,9 +4687,14 @@
 	            if (field === 'claudeThinkingBudget' && CLAUDE_THINKING_BUDGET_OPTIONS.some((option) => option.id === value)) state.chatClaudeThinkingBudget = value;
 	            if (field === 'serviceTier' && OPENAI_SERVICE_TIER_OPTIONS.some((option) => option.id === value)) state.chatServiceTier = value;
 	            if (field === 'thinking' && [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS].some((option) => option.id === value)) state.chatThinkingMode = value;
-	            if (field === 'imageInput' && OPENAI_IMAGE_INPUT_OPTIONS.some((option) => option.id === value)) state.chatImageInput = value;
-            openSelect = '';
-            render();
+            if (field === 'imageInput' && OPENAI_IMAGE_INPUT_OPTIONS.some((option) => option.id === value)) state.chatImageInput = value;
+            openSelect = target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : '';
+            if (openSelect === 'chatSettings') openChatSettingsSection = field || openChatSettingsSection;
+            if (openSelect === 'chatSettings') {
+                renderMainComposerOnly();
+            } else {
+                render();
+            }
             persistState();
             return;
         }
@@ -4345,17 +4711,122 @@
             state.activeTaskId = taskId;
             markTaskThreadSeen(taskId);
             openSelect = '';
-            render();
+            renderPreservingHistoryScroll(() => render({ preserveStageScroll: false, preservePromptFocus: false }));
             persistState();
             return;
         }
 
-        if (shouldCloseSelect) {
-            renderPreservingStageScroll();
+        if (shouldCloseSelect || shouldCloseMobileSidebar) {
+            if (shouldCloseMobileSidebar) {
+                sidebarView = '';
+                sidebarEnteredView = '';
+                renderSidebarTransition();
+            }
+            if (shouldCloseSelect) {
+                if (shouldCloseSelectLocally) {
+                    renderMainComposerOnly();
+                } else {
+                    renderPreservingStageScroll();
+                }
+            }
+        }
+    }
+
+    function handleRootPointerOver(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
+        if (!navButton) return;
+        showChatNavigationPreview(navButton);
+    }
+
+    function handleRootPointerOut(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
+        if (!navButton) return;
+        const relatedTarget = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+        if (relatedTarget?.closest?.('[data-aiw-chat-nav-id]') === navButton) return;
+        hideChatNavigationPreview();
+    }
+
+    function handleRootPointerDown(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || event.button !== 0) return;
+        const navButton = target.closest('[data-aiw-chat-nav-id]');
+        const rail = target.closest('[data-aiw-chat-nav-rail]');
+        if (!navButton || !rail) return;
+
+        const taskId = navButton.getAttribute('data-aiw-chat-nav-id') || '';
+        chatNavigationDragState = {
+            pointerId: event.pointerId,
+            startY: event.clientY,
+            lastTaskId: taskId,
+            moved: false,
+            captureTarget: navButton
+        };
+        rail.classList.add('is-dragging');
+        navButton.setPointerCapture?.(event.pointerId);
+    }
+
+    function handleRootPointerMove(event) {
+        const dragState = chatNavigationDragState;
+        if (!dragState || dragState.pointerId !== event.pointerId) return;
+        const rail = overlay?.querySelector?.('[data-aiw-chat-nav-rail]');
+        const navItems = Array.from(rail?.querySelectorAll?.('[data-aiw-chat-nav-id]') || []);
+        if (!rail || !navItems.length) return;
+        event.preventDefault();
+        if (Math.abs(event.clientY - dragState.startY) > 3) {
+            dragState.moved = true;
+        }
+
+        let closestButton = null;
+        let closestDistance = Infinity;
+        navItems.forEach((button) => {
+            const rect = button.getBoundingClientRect();
+            const distance = Math.abs(event.clientY - (rect.top + rect.height / 2));
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestButton = button;
+            }
+        });
+
+        const nextTaskId = closestButton?.getAttribute?.('data-aiw-chat-nav-id') || '';
+        if (nextTaskId && nextTaskId !== dragState.lastTaskId) {
+            dragState.lastTaskId = nextTaskId;
+            scrollToChatTurn(nextTaskId, { behavior: 'auto' });
+        }
+    }
+
+    function handleRootPointerUp(event) {
+        const dragState = chatNavigationDragState;
+        if (!dragState || dragState.pointerId !== event.pointerId) return;
+        chatNavigationDragState = null;
+        overlay?.querySelector?.('[data-aiw-chat-nav-rail]')?.classList.remove('is-dragging');
+        if (dragState.captureTarget?.hasPointerCapture?.(event.pointerId)) {
+            dragState.captureTarget.releasePointerCapture?.(event.pointerId);
+        }
+        suppressNextChatNavigationClick = Boolean(dragState.moved);
+        if (suppressNextChatNavigationClick) {
+            global.setTimeout?.(() => {
+                suppressNextChatNavigationClick = false;
+            }, 80);
         }
     }
 
     function handleRootError(event) {
+        const video = event.target instanceof HTMLVideoElement ? event.target : null;
+        if (video) {
+            const videoSrc = video.currentSrc || video.src || video.getAttribute('src') || '';
+            const media = video.closest('.ai-image-result-media');
+            if (!media) return;
+            if (hasLoadedVideo(videoSrc)) {
+                media.classList.add('is-video-ready', 'is-image-loaded');
+                media.classList.remove('is-video-loading', 'is-video-broken', 'is-image-broken');
+                return;
+            }
+            scheduleVideoErrorConfirmation(video, videoSrc);
+            return;
+        }
+
         const image = event.target instanceof HTMLImageElement ? event.target : null;
         if (!image) return;
         const imageSrc = image.currentSrc || image.src || '';
@@ -4406,6 +4877,25 @@
             downloadLink.setAttribute('aria-disabled', 'true');
             downloadLink.classList.add('is-disabled');
         }
+    }
+
+    function handleRootVideoLoaded(event) {
+        const video = event.target instanceof HTMLVideoElement ? event.target : null;
+        if (!video) return;
+        const videoSrc = video.currentSrc || video.src || video.getAttribute('src') || '';
+        updateVideoLoadingProgress(video, { forceComplete: true });
+        rememberVideoLoaded(videoSrc);
+        const media = video.closest?.('.ai-image-result-media');
+        if (media) {
+            media.classList.add('is-video-ready', 'is-image-loaded');
+            media.classList.remove('is-video-loading', 'is-video-broken', 'is-image-broken');
+        }
+    }
+
+    function handleRootVideoProgress(event) {
+        const video = event.target instanceof HTMLVideoElement ? event.target : null;
+        if (!video) return;
+        updateVideoLoadingProgress(video);
     }
 
     function handleRootLoad(event) {
@@ -4505,7 +4995,7 @@
             return;
         }
         if (action === 'new-chat') {
-            resetConversationDraft();
+            resetConversationDraft({ preserveToolMode: true });
             render();
             persistState();
             root?.querySelector?.('.ai-image-main-prompt')?.focus?.();
@@ -4697,8 +5187,6 @@
             return;
         }
 
-        const stageContent = layout.querySelector('.ai-image-stage-inner > *');
-        const previousStageRect = stageContent?.getBoundingClientRect?.();
         layout.className = getLayoutClasses();
         const sidebar = layout.querySelector('.ai-image-history-sidebar');
         if (sidebar) {
@@ -4712,7 +5200,7 @@
             }
         }
         sidebarEnteredView = '';
-        flipStageShift(stageContent, previousStageRect);
+        scheduleChatNavigationPosition();
     }
 
     function renderHistoryPanelOnly({ focusSearch = false } = {}) {
@@ -4761,28 +5249,13 @@
         container.innerHTML = renderHistoryResultsPanel(getHistoryThreadRows());
     }
 
-    function flipStageShift(stageContent, previousRect) {
-        if (!stageContent?.getBoundingClientRect || !previousRect) return;
-        window.requestAnimationFrame(() => {
-            const next = stageContent.getBoundingClientRect();
-            const deltaX = previousRect.left - next.left;
-            if (Math.abs(deltaX) < 2) return;
-            stageContent.animate([
-                { transform: `translateX(${deltaX}px)`, opacity: 0.96 },
-                { transform: 'translateX(0)', opacity: 1 }
-            ], {
-                duration: 340,
-                easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
-            });
-        });
-    }
-
     function handleRootInput(event) {
         const target = event.target;
         if (target instanceof HTMLTextAreaElement && target.matches('[data-aiw-prompt]')) {
             state.prompt = target.value.slice(0, 4000);
             clearComposerError();
             syncPromptTextareaHeight(target);
+            syncMobileComposerMenuAnchor();
             persistState();
             return;
         }
@@ -4795,6 +5268,24 @@
             renderHistoryResultsOnly();
             return;
         }
+    }
+
+    function handleRootFocusIn(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
+        if (!navButton) return;
+        showChatNavigationPreview(navButton);
+    }
+
+    function handleRootFocusOut(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
+        if (!navButton) return;
+        window.requestAnimationFrame(() => {
+            const activeElement = document.activeElement instanceof Element ? document.activeElement : null;
+            if (activeElement?.closest?.('[data-aiw-chat-nav-id]')) return;
+            hideChatNavigationPreview();
+        });
     }
 
     function handleRootKeydown(event) {
@@ -4814,6 +5305,12 @@
                     return;
                 }
             }
+            const chatNavButton = target.closest('[data-aiw-chat-nav-id]');
+            if (chatNavButton && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                scrollToChatTurn(chatNavButton.getAttribute('data-aiw-chat-nav-id') || '');
+                return;
+            }
             const taskRow = target.closest('[data-aiw-task-id]');
             if (taskRow && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
@@ -4826,7 +5323,7 @@
                 state.activeTaskId = taskId;
                 markTaskThreadSeen(taskId);
                 openSelect = '';
-                render();
+                renderPreservingHistoryScroll();
                 persistState();
                 return;
             }
@@ -5926,7 +6423,7 @@
             state.continuationImage = null;
         }
         render();
-        if (inferredMode === 'chat') scrollChatStageToBottom();
+        if (inferredMode === 'chat') scrollChatStageToBottom({ force: true });
         persistState();
         if (inferredMode === 'chat') {
             submitChatStreamTask(task, threadRoot, chatThreadMessages, draftChatAttachments);
@@ -6046,20 +6543,77 @@
         renderDock();
     }
 
-    function render() {
+    function getRenderContinuitySnapshot() {
+        const stage = overlay?.querySelector?.('.ai-image-stage');
+        const activeElement = document.activeElement instanceof Element ? document.activeElement : null;
+        const prompt = activeElement instanceof HTMLTextAreaElement && activeElement.matches('[data-aiw-prompt]')
+            ? activeElement
+            : null;
+        return {
+            stage: stage ? {
+                scrollTop: Number(stage.scrollTop || 0),
+                scrollLeft: Number(stage.scrollLeft || 0),
+                wasNearBottom: isChatStageNearBottom(stage)
+            } : null,
+            prompt: prompt ? {
+                focused: true,
+                value: prompt.value,
+                selectionStart: Number(prompt.selectionStart ?? prompt.value.length),
+                selectionEnd: Number(prompt.selectionEnd ?? prompt.value.length),
+                selectionDirection: prompt.selectionDirection || 'none'
+            } : null
+        };
+    }
+
+    function restoreRenderContinuity(snapshot = null, { preserveStageScroll = true, preservePromptFocus = true } = {}) {
+        if (!snapshot) return;
+        if (preserveStageScroll && snapshot.stage) {
+            const restoreStage = () => {
+                const nextStage = overlay?.querySelector?.('.ai-image-stage');
+                if (!nextStage) return;
+                nextStage.scrollTop = snapshot.stage.scrollTop;
+                nextStage.scrollLeft = snapshot.stage.scrollLeft;
+            };
+            restoreStage();
+            window.requestAnimationFrame(restoreStage);
+        }
+        if (preservePromptFocus && snapshot.prompt?.focused) {
+            const restorePrompt = () => {
+                const nextPrompt = root?.querySelector?.('[data-aiw-prompt]');
+                if (!(nextPrompt instanceof HTMLTextAreaElement)) return;
+                if (String(nextPrompt.value || '') !== String(snapshot.prompt.value || '')) return;
+                nextPrompt.focus({ preventScroll: true });
+                const max = nextPrompt.value.length;
+                const start = Math.min(Math.max(0, snapshot.prompt.selectionStart), max);
+                const end = Math.min(Math.max(start, snapshot.prompt.selectionEnd), max);
+                nextPrompt.setSelectionRange(start, end, snapshot.prompt.selectionDirection || 'none');
+            };
+            restorePrompt();
+            window.requestAnimationFrame(restorePrompt);
+        }
+    }
+
+    function render({ preserveStageScroll = true, preservePromptFocus = true, forceChatBottom = false } = {}) {
         if (!root) return;
+        const continuitySnapshot = getRenderContinuitySnapshot();
         const reusableImages = collectReusableRenderedImages();
+        const reusableVideos = collectReusableRenderedVideos();
         renderDock();
         renderOverlay();
         restoreReusableRenderedImages(reusableImages);
+        restoreReusableRenderedVideos(reusableVideos);
         syncRenderedImageLoadStates();
+        syncRenderedVideoLoadStates();
         syncMainPromptHeight();
+        syncMobileComposerMenuAnchor();
         syncRenderedProgressBars();
+        syncChatNavigationRail();
         syncLiveElapsedLabels();
         syncLiveElapsedTimer();
         injectPromptModalActions();
-        if (shouldKeepChatStagePinnedToBottom()) {
-            scrollChatStageToBottom();
+        restoreRenderContinuity(continuitySnapshot, { preserveStageScroll, preservePromptFocus });
+        if (shouldKeepChatStagePinnedToBottom(continuitySnapshot, { force: forceChatBottom })) {
+            scrollChatStageToBottom({ force: forceChatBottom, wasNearBottom: Boolean(continuitySnapshot?.stage?.wasNearBottom) });
         }
     }
 
@@ -6075,6 +6629,19 @@
         const identityKey = imageHost?.getAttribute?.('data-aiw-image-key') || '';
         if (identityKey) return identityKey;
         return getImageLoadKey(image.currentSrc || image.src || '');
+    }
+
+    function getRenderedVideoSrc(video) {
+        if (!(video instanceof HTMLVideoElement)) return '';
+        return video.currentSrc || video.src || video.getAttribute('src') || '';
+    }
+
+    function getRenderedVideoReuseKey(video) {
+        if (!(video instanceof HTMLVideoElement)) return '';
+        const mediaHost = video.closest?.('[data-aiw-image-key]');
+        const identityKey = mediaHost?.getAttribute?.('data-aiw-image-key') || '';
+        if (identityKey) return identityKey;
+        return getImageLoadKey(getRenderedVideoSrc(video));
     }
 
     function collectReusableRenderedImages() {
@@ -6111,24 +6678,103 @@
         });
     }
 
-    function renderPreservingStageScroll() {
-        const stage = overlay?.querySelector?.('.ai-image-stage');
-        const scrollTop = Number(stage?.scrollTop || 0);
-        const scrollLeft = Number(stage?.scrollLeft || 0);
-        render();
-        if (shouldKeepChatStagePinnedToBottom()) return;
-        if (!scrollTop && !scrollLeft) return;
-        window.requestAnimationFrame(() => {
-            const nextStage = overlay?.querySelector?.('.ai-image-stage');
-            if (!nextStage) return;
-            nextStage.scrollTop = scrollTop;
-            nextStage.scrollLeft = scrollLeft;
+    function collectReusableRenderedVideos() {
+        const reusableVideos = new Map();
+        if (!root?.querySelectorAll) return reusableVideos;
+        root.querySelectorAll('.ai-image-result-media video').forEach((video) => {
+            if (!(video instanceof HTMLVideoElement)) return;
+            const videoSrc = getRenderedVideoSrc(video);
+            if (!videoSrc || video.error) return;
+            updateVideoLoadingProgress(video);
+            if (video.readyState < 2 && !hasLoadedVideo(videoSrc)) return;
+            const key = getRenderedVideoReuseKey(video);
+            if (!key || reusableVideos.has(key)) return;
+            rememberVideoLoaded(videoSrc);
+            reusableVideos.set(key, video);
+        });
+        return reusableVideos;
+    }
+
+    function restoreReusableRenderedVideos(reusableVideos) {
+        if (!reusableVideos?.size || !root?.querySelectorAll) return;
+        root.querySelectorAll('.ai-image-result-media video').forEach((video) => {
+            if (!(video instanceof HTMLVideoElement)) return;
+            const key = getRenderedVideoReuseKey(video);
+            const reusableVideo = key ? reusableVideos.get(key) : null;
+            if (!reusableVideo || reusableVideo === video) return;
+            const reusableSrc = getRenderedVideoSrc(reusableVideo);
+            const nextSrc = getRenderedVideoSrc(video);
+            if (!reusableSrc || (nextSrc && getImageLoadKey(reusableSrc) !== getImageLoadKey(nextSrc))) return;
+            reusableVideo.controls = video.controls;
+            reusableVideo.preload = video.preload;
+            reusableVideo.playsInline = video.playsInline;
+            reusableVideo.removeAttribute('aria-hidden');
+            video.replaceWith(reusableVideo);
+            rememberVideoLoaded(reusableSrc);
+            const media = reusableVideo.closest?.('.ai-image-result-media');
+            media?.classList.add('is-video-ready', 'is-image-loaded');
+            media?.classList.remove('is-video-loading', 'is-video-broken', 'is-image-broken');
+            reusableVideos.delete(key);
         });
     }
 
-    function scrollChatStageToBottom() {
+    function renderPreservingStageScroll() {
+        render({ preserveStageScroll: true, preservePromptFocus: true });
+    }
+
+    function isComposerLocalSelectField(field = '') {
+        return ['model', 'apiModel', 'imageSettings', 'videoSettings', 'chatSettings'].includes(field);
+    }
+
+    function shouldCloseSelectFromComposer(field = '') {
+        return isComposerLocalSelectField(field)
+            && Boolean(overlay?.querySelector?.(`.ai-image-main-composer [data-aiw-select="${field}"], .ai-image-main-composer [data-aiw-${field === 'imageSettings' ? 'image' : field === 'videoSettings' ? 'video' : 'chat'}-settings]`));
+    }
+
+    function shouldCloseMobileSidebarFromBlankClick(target) {
+        if (!sidebarView) return false;
+        if (!window.matchMedia?.('(max-width: 820px)')?.matches) return false;
+        if (!(target instanceof Element)) return false;
+        if (target.closest('.ai-image-history-rail, .ai-image-history-expanded, [data-aiw-action], [data-aiw-task-id], input, button, a, textarea, select')) return false;
+        if (target.closest('.ai-image-main-composer')) return false;
+        return true;
+    }
+
+    function getActiveModelProviderId(mode = inferWorkbenchMode()) {
+        const groups = getRuntimeModelGroups(mode);
+        const selected = getActiveModelValue(mode);
+        return groups.find((group) => group.models.some((model) => model.id === selected))?.providerId
+            || groups[0]?.providerId
+            || '';
+    }
+
+    function renderMainComposerOnly() {
+        const composer = overlay?.querySelector?.('.ai-image-main-composer');
+        if (!composer) {
+            renderPreservingStageScroll();
+            return;
+        }
+        const continuitySnapshot = getRenderContinuitySnapshot();
+        const replacement = document.createElement('div');
+        replacement.innerHTML = renderMainComposer().trim();
+        const nextComposer = replacement.firstElementChild;
+        if (!nextComposer) return;
+        composer.replaceWith(nextComposer);
+        syncMainPromptHeight();
+        syncMobileComposerMenuAnchor();
+        syncLiveElapsedLabels();
+        syncLiveElapsedTimer();
+        restoreRenderContinuity(continuitySnapshot, {
+            preserveStageScroll: true,
+            preservePromptFocus: true
+        });
+    }
+
+    function scrollChatStageToBottom({ force = false, wasNearBottom = null } = {}) {
         const stage = overlay?.querySelector?.('.ai-image-stage');
         if (!stage) return;
+        const shouldScroll = force || (typeof wasNearBottom === 'boolean' ? wasNearBottom : isChatStageNearBottom(stage));
+        if (!shouldScroll) return;
         const pinToBottom = () => {
             const nextStage = overlay?.querySelector?.('.ai-image-stage');
             if (!nextStage) return;
@@ -6165,6 +6811,33 @@
                     taskThumb?.classList.add('is-image-loaded');
                     media?.classList.add('is-image-loaded');
                 }
+            }
+        });
+    }
+
+    function syncRenderedVideoLoadStates() {
+        if (!root?.querySelectorAll) return;
+        root.querySelectorAll('.ai-image-result-media video').forEach((video) => {
+            if (!(video instanceof HTMLVideoElement)) return;
+            const videoSrc = getRenderedVideoSrc(video);
+            const media = video.closest('.ai-image-result-media');
+            updateVideoLoadingProgress(video);
+            const loaded = video.readyState >= 2;
+            if (loaded) {
+                rememberVideoLoaded(videoSrc);
+                updateVideoLoadingProgress(video, { forceComplete: true });
+                media?.classList.add('is-video-ready', 'is-image-loaded');
+                media?.classList.remove('is-video-loading', 'is-video-broken', 'is-image-broken');
+            } else if (hasFailedVideo(videoSrc)) {
+                media?.classList.add('is-video-broken');
+                media?.classList.remove('is-video-loading', 'is-video-ready', 'is-image-broken', 'is-image-loaded');
+            } else if (hasLoadedVideo(videoSrc)) {
+                media?.classList.add('is-video-ready', 'is-image-loaded');
+                media?.classList.remove('is-video-loading', 'is-video-broken', 'is-image-broken');
+            } else {
+                media?.classList.add('is-video-loading');
+                media?.classList.remove('is-video-ready', 'is-video-broken', 'is-image-broken', 'is-image-loaded');
+                ensureVideoPreviewLoading(video);
             }
         });
     }
@@ -6218,6 +6891,21 @@
         }, 1000);
     }
 
+    function syncMobileComposerMenuAnchor() {
+        const shell = overlay?.querySelector?.('.ai-image-shell');
+        const composer = overlay?.querySelector?.('.ai-image-main-composer');
+        if (!shell || !composer) return;
+        if (!window.matchMedia?.('(max-width: 820px)')?.matches) {
+            shell.style.removeProperty('--aiw-mobile-composer-top');
+            return;
+        }
+        const shellRect = shell.getBoundingClientRect?.();
+        const composerRect = composer.getBoundingClientRect?.();
+        if (!shellRect || !composerRect) return;
+        const composerTop = Math.max(12, Math.round(composerRect.top - shellRect.top));
+        shell.style.setProperty('--aiw-mobile-composer-top', `${composerTop}px`);
+    }
+
     function syncRenderedProgressBars() {
         root?.querySelectorAll?.('.ai-image-progress[data-progress]')?.forEach((bar) => {
             const progress = clampNumber(bar.getAttribute('data-progress'), 0, 100, 0) / 100;
@@ -6237,6 +6925,259 @@
             if (key) progressVisualCache.set(key, progress);
             bar.setAttribute('data-previous-progress', String(Math.round(progress * 100)));
         });
+    }
+
+    function disconnectChatNavigationRail() {
+        if (chatNavigationObserver) {
+            chatNavigationObserver.disconnect();
+            chatNavigationObserver = null;
+        }
+        if (chatNavigationResizeObserver) {
+            chatNavigationResizeObserver.disconnect();
+            chatNavigationResizeObserver = null;
+        }
+        if (chatNavigationScrollTarget) {
+            chatNavigationScrollTarget.removeEventListener('scroll', scheduleChatNavigationPosition);
+            chatNavigationScrollTarget = null;
+        }
+        if (chatNavigationPositionFrame) {
+            window.cancelAnimationFrame(chatNavigationPositionFrame);
+            chatNavigationPositionFrame = 0;
+        }
+        hideChatNavigationPreview();
+    }
+
+    function setActiveChatNavigationItem(taskId = '') {
+        const normalizedTaskId = String(taskId || '').trim();
+        root?.querySelectorAll?.('[data-aiw-chat-nav-id]')?.forEach((button) => {
+            const active = Boolean(normalizedTaskId && button.getAttribute('data-aiw-chat-nav-id') === normalizedTaskId);
+            button.classList.toggle('is-active', active);
+            if (active) {
+                button.setAttribute('aria-current', 'true');
+            } else {
+                button.removeAttribute('aria-current');
+            }
+        });
+    }
+
+    function scheduleChatNavigationPosition() {
+        if (chatNavigationPositionFrame) return;
+        chatNavigationPositionFrame = window.requestAnimationFrame(() => {
+            chatNavigationPositionFrame = 0;
+            positionChatNavigationRail();
+            const activePreviewButton = overlay?.querySelector?.('[data-aiw-chat-nav-id].is-previewing');
+            if (activePreviewButton) positionChatNavigationPreview(activePreviewButton);
+        });
+    }
+
+    function ensureChatNavigationResizeListener() {
+        if (chatNavigationResizeBound) return;
+        chatNavigationResizeBound = true;
+        window.addEventListener('resize', scheduleChatNavigationPosition, { passive: true });
+    }
+
+    function observeChatNavigationLayout() {
+        if (typeof ResizeObserver === 'undefined') return;
+        if (chatNavigationResizeObserver) {
+            chatNavigationResizeObserver.disconnect();
+        }
+        chatNavigationResizeObserver = new ResizeObserver(scheduleChatNavigationPosition);
+        [
+            overlay?.querySelector?.('.ai-image-shell'),
+            overlay?.querySelector?.('.ai-image-stage'),
+            overlay?.querySelector?.('.ai-image-history-sidebar'),
+            overlay?.querySelector?.('.ai-image-result-view')
+        ].filter(Boolean).forEach((node) => chatNavigationResizeObserver.observe(node));
+    }
+
+    function positionChatNavigationRail() {
+        const shell = overlay?.querySelector?.('.ai-image-shell');
+        const stage = overlay?.querySelector?.('.ai-image-stage');
+        const canvas = overlay?.querySelector?.('.ai-image-canvas');
+        const chatView = overlay?.querySelector?.('.ai-image-result-view');
+        const rail = overlay?.querySelector?.('[data-aiw-chat-nav-rail]');
+        if (!shell || !stage || !canvas || !chatView || !rail) return false;
+        if (window.getComputedStyle?.(rail)?.display === 'none') {
+            shell.style.setProperty('--aiw-chat-nav-avoid-left', '0px');
+            shell.style.removeProperty('--aiw-chat-nav-composer-width');
+            shell.style.removeProperty('--aiw-chat-nav-composer-margin-left');
+            rail.classList.toggle('is-floating-ready', false);
+            return false;
+        }
+        if (window.matchMedia?.('(max-width: 820px)')?.matches) {
+            shell.style.setProperty('--aiw-chat-nav-avoid-left', '0px');
+            shell.style.removeProperty('--aiw-chat-nav-composer-width');
+            shell.style.removeProperty('--aiw-chat-nav-composer-margin-left');
+            rail.style.removeProperty('--aiw-chat-nav-left');
+            rail.style.removeProperty('--aiw-chat-nav-top');
+            rail.style.removeProperty('--aiw-chat-nav-max-height');
+            rail.classList.toggle('is-floating-ready', true);
+            return true;
+        }
+
+        const shellRect = shell.getBoundingClientRect();
+        const stageRect = stage.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const chatRect = chatView.getBoundingClientRect();
+        const sidebarRect = overlay?.querySelector?.('.ai-image-history-sidebar')?.getBoundingClientRect?.();
+        const railWidth = 64;
+        const sidebarRight = sidebarRect ? Math.max(0, sidebarRect.right - shellRect.left) : 0;
+        const chatLeft = chatRect.left - shellRect.left;
+        const railLeftOffset = 4;
+        const gapStart = sidebarRight + railLeftOffset;
+        const gapEnd = chatLeft - railWidth - 20;
+        const fallbackLeft = Math.max(sidebarRight + railLeftOffset, chatLeft - railWidth - 116);
+        const left = gapEnd >= gapStart ? gapStart : fallbackLeft;
+        const avoidOffset = Math.max(0, Math.ceil(left + railWidth + 18 - chatLeft));
+        const viewportTop = stageRect.top + stageRect.height / 2;
+        const top = Math.max(76, viewportTop - shellRect.top);
+        const maxHeight = Math.max(180, Math.min(stageRect.height - 144, 560));
+        const baseComposerWidth = Math.max(0, chatRect.width);
+        const composerWidth = Math.max(0, baseComposerWidth - avoidOffset);
+        const composerMarginLeft = Math.max(0, chatRect.left - canvasRect.left + avoidOffset);
+
+        rail.style.setProperty('--aiw-chat-nav-left', `${Math.round(left)}px`);
+        rail.style.setProperty('--aiw-chat-nav-top', `${Math.round(top)}px`);
+        rail.style.setProperty('--aiw-chat-nav-max-height', `${Math.round(maxHeight)}px`);
+        shell.style.setProperty('--aiw-chat-nav-avoid-left', `${avoidOffset}px`);
+        shell.style.setProperty('--aiw-chat-nav-composer-width', `${Math.round(composerWidth)}px`);
+        shell.style.setProperty('--aiw-chat-nav-composer-margin-left', `${Math.round(composerMarginLeft)}px`);
+        rail.classList.toggle('is-floating-ready', true);
+        return true;
+    }
+
+    function positionChatNavigationPreview(button) {
+        const shell = overlay?.querySelector?.('.ai-image-shell');
+        const rail = overlay?.querySelector?.('[data-aiw-chat-nav-rail]');
+        const preview = overlay?.querySelector?.('[data-aiw-chat-nav-preview]');
+        if (!shell || !rail || !preview || !button) return false;
+
+        const shellRect = shell.getBoundingClientRect();
+        const railRect = rail.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        const previewWidth = Math.min(360, Math.max(240, shellRect.width - 180));
+        const left = Math.min(shellRect.width - previewWidth - 18, Math.max(72, railRect.right - shellRect.left + 16));
+        const top = Math.min(shellRect.height - 104, Math.max(70, buttonRect.top + buttonRect.height / 2 - shellRect.top));
+
+        preview.style.setProperty('--aiw-chat-nav-preview-left', `${Math.round(left)}px`);
+        preview.style.setProperty('--aiw-chat-nav-preview-top', `${Math.round(top)}px`);
+        preview.style.setProperty('--aiw-chat-nav-preview-width', `${Math.round(previewWidth)}px`);
+        return true;
+    }
+
+    function syncChatNavigationProximity(button = null) {
+        const navItems = Array.from(overlay?.querySelectorAll?.('[data-aiw-chat-nav-id]') || []);
+        const rail = overlay?.querySelector?.('[data-aiw-chat-nav-rail]');
+        const activeIndex = button ? navItems.indexOf(button) : -1;
+        rail?.classList.toggle('is-previewing-rail', activeIndex >= 0);
+        navItems.forEach((item, index) => {
+            item.classList.remove('is-previewing', 'is-near-1', 'is-near-2', 'is-near-3');
+            if (activeIndex < 0) return;
+            const distance = Math.abs(index - activeIndex);
+            if (distance === 0) {
+                item.classList.add('is-previewing');
+            } else if (distance <= 3) {
+                item.classList.add(`is-near-${distance}`);
+            }
+        });
+    }
+
+    function showChatNavigationPreview(button) {
+        const preview = overlay?.querySelector?.('[data-aiw-chat-nav-preview]');
+        if (!preview || !button) return;
+        const title = button.getAttribute('data-aiw-chat-nav-title') || '';
+        const summary = button.getAttribute('data-aiw-chat-nav-summary') || '';
+        const meta = button.getAttribute('data-aiw-chat-nav-meta') || '';
+        preview.querySelector('[data-aiw-chat-nav-preview-title]').textContent = title;
+        const summaryNode = preview.querySelector('[data-aiw-chat-nav-preview-summary]');
+        summaryNode.textContent = summary;
+        summaryNode.hidden = !summary;
+        preview.querySelector('[data-aiw-chat-nav-preview-meta]').textContent = meta;
+        syncChatNavigationProximity(button);
+        positionChatNavigationPreview(button);
+        preview.hidden = false;
+        preview.classList.add('is-visible');
+    }
+
+    function hideChatNavigationPreview() {
+        const preview = overlay?.querySelector?.('[data-aiw-chat-nav-preview]');
+        syncChatNavigationProximity(null);
+        if (!preview) return;
+        preview.classList.remove('is-visible');
+        preview.hidden = true;
+    }
+
+    function syncChatNavigationRail() {
+        disconnectChatNavigationRail();
+        const stage = overlay?.querySelector?.('.ai-image-stage');
+        const rail = overlay?.querySelector?.('[data-aiw-chat-nav-rail]');
+        const turnNodes = Array.from(overlay?.querySelectorAll?.('[data-aiw-chat-turn-id]') || []);
+        if (!stage || !rail || !turnNodes.length) return;
+        ensureChatNavigationResizeListener();
+        positionChatNavigationRail();
+        observeChatNavigationLayout();
+        chatNavigationScrollTarget = stage;
+        chatNavigationScrollTarget.addEventListener('scroll', scheduleChatNavigationPosition, { passive: true });
+
+        const visibleIds = new Set();
+        const orderedIds = turnNodes
+            .map((node) => String(node.getAttribute('data-aiw-chat-turn-id') || '').trim())
+            .filter(Boolean);
+        const updateActive = () => {
+            const firstVisibleId = orderedIds.find((id) => visibleIds.has(id));
+            setActiveChatNavigationItem(firstVisibleId || orderedIds[orderedIds.length - 1] || '');
+        };
+
+        if (typeof IntersectionObserver === 'undefined') {
+            setActiveChatNavigationItem(orderedIds[orderedIds.length - 1] || '');
+            return;
+        }
+
+        chatNavigationObserver = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                const id = String(entry.target.getAttribute('data-aiw-chat-turn-id') || '').trim();
+                if (!id) return;
+                if (entry.isIntersecting) {
+                    visibleIds.add(id);
+                } else {
+                    visibleIds.delete(id);
+                }
+            });
+            updateActive();
+        }, {
+            root: stage,
+            rootMargin: '-16px 0px -42% 0px',
+            threshold: [0, 0.08, 0.24]
+        });
+
+        turnNodes.forEach((node) => chatNavigationObserver.observe(node));
+        window.requestAnimationFrame(updateActive);
+    }
+
+    function scrollToChatTurn(taskId = '', { behavior = 'smooth' } = {}) {
+        const normalizedTaskId = String(taskId || '').trim();
+        if (!normalizedTaskId) return false;
+        const escapedId = global.CSS?.escape
+            ? global.CSS.escape(normalizedTaskId)
+            : normalizedTaskId.replace(/"/g, '\\"');
+        const target = overlay?.querySelector?.(`[data-aiw-chat-turn-id="${escapedId}"]`);
+        if (!target) return false;
+        const stage = overlay?.querySelector?.('.ai-image-stage');
+        if (stage?.scrollTo && target.getBoundingClientRect && stage.getBoundingClientRect) {
+            const stageRect = stage.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const mobileOffset = window.matchMedia?.('(max-width: 820px)')?.matches ? 88 : 12;
+            const nextTop = stage.scrollTop + targetRect.top - stageRect.top - mobileOffset;
+            const maxTop = Math.max(0, Number(stage.scrollHeight || 0) - Number(stage.clientHeight || 0));
+            stage.scrollTo({ top: Math.min(maxTop, Math.max(0, nextTop)), behavior });
+        } else {
+            target.scrollIntoView?.({ behavior, block: 'start', inline: 'nearest' });
+        }
+        target.classList.remove('is-located');
+        void target.offsetWidth;
+        target.classList.add('is-located');
+        setActiveChatNavigationItem(normalizedTaskId);
+        return true;
     }
 
     function renderDock() {
@@ -6285,6 +7226,7 @@
             openSelect = '';
             clearImagePreviewLoadTimer();
             imagePreview = null;
+            disconnectChatNavigationRail();
             return;
         }
 
@@ -6294,6 +7236,7 @@
                     ${renderHistoryPanel()}
                     ${renderStage()}
                 </div>
+                ${renderChatNavigationLayer()}
             </section>
             ${renderImagePreview()}
         `;
@@ -6435,7 +7378,7 @@
 	        const activeOption = getChatMemoryOption();
 	        const isOpen = openSelect === 'memory';
         return `
-            <div class="ai-image-memory-control ${isOpen ? 'is-open' : ''}" aria-label="对话记忆范围">
+            <div class="ai-image-memory-control ${isOpen ? 'is-open' : ''}" data-aiw-chat-settings-source="memory" aria-label="对话记忆范围">
                 <button class="ai-image-memory-trigger" type="button" data-aiw-memory-toggle aria-haspopup="menu" aria-expanded="${isOpen ? 'true' : 'false'}">
                     <i class="fas fa-brain"></i>
                     <span>${escapeHtml(activeOption.shortLabel)}</span>
@@ -6456,8 +7399,11 @@
 	    function renderChatCapabilityControl({ id, icon, activeOption, options = [], ariaLabel = '' }) {
 	        if (!options.length) return '';
 	        const isOpen = openSelect === id;
+	        const settingsSourceAttribute = CHAT_SETTINGS_CAPABILITY_IDS.includes(id)
+	            ? ` data-aiw-chat-settings-source="${escapeHtml(id)}"`
+	            : '';
 	        return `
-	            <div class="ai-image-capability-control ${isOpen ? 'is-open' : ''}" aria-label="${escapeHtml(ariaLabel || activeOption.label || id)}">
+	            <div class="ai-image-capability-control ${isOpen ? 'is-open' : ''}"${settingsSourceAttribute} aria-label="${escapeHtml(ariaLabel || activeOption.label || id)}">
 	                <button class="ai-image-capability-trigger" type="button" data-aiw-capability-toggle="${escapeHtml(id)}" aria-haspopup="menu" aria-expanded="${isOpen ? 'true' : 'false'}">
 	                    <i class="fas ${escapeHtml(icon)}"></i>
 	                    <span>${escapeHtml(activeOption.shortLabel || activeOption.label || id)}</span>
@@ -6498,6 +7444,80 @@
 	                });
 	            }).join('')}
 	        `;
+    }
+
+    function getChatCapabilityControlValueById(id, fallbackValue = '') {
+        if (id === 'reasoning') return state.chatReasoningEffort;
+        if (id === 'geminiThinking') return state.chatGeminiThinkingLevel;
+        if (id === 'claudeThinkingBudget') return state.chatClaudeThinkingBudget;
+        if (id === 'thinking') return state.chatThinkingMode;
+        return fallbackValue;
+    }
+
+    function getChatSettingsSectionTitle(control = {}) {
+        if (control.id === 'memory') return '上下文强度';
+        if (control.id === 'thinking' || control.id === 'geminiThinking') return '思考展示';
+        if (control.id === 'reasoning' || control.id === 'claudeThinkingBudget') return '推理强度';
+        return control.label || '对话参数';
+    }
+
+    function getChatSettingsSections() {
+        const capabilities = getChatModelCapabilities(getActiveModelValue('chat'));
+        return [
+            {
+                title: getChatSettingsSectionTitle({ id: 'memory' }),
+                field: 'memory',
+                value: state.chatMemoryMode,
+                options: CHAT_MEMORY_OPTIONS.map((option) => ({
+                    value: option.id,
+                    label: option.label,
+                    summaryLabel: option.shortLabel || option.label
+                }))
+            },
+            ...capabilities.controls
+                .filter((control) => CHAT_SETTINGS_CAPABILITY_IDS.includes(control.id))
+                .map((control) => ({
+                    title: getChatSettingsSectionTitle(control),
+                    field: control.id,
+                    value: getChatCapabilityControlValueById(control.id, control.activeValue),
+                    options: control.options.map((option) => ({
+                        value: option.id,
+                        label: option.label || option.shortLabel || option.id,
+                        summaryLabel: option.shortLabel || option.label || option.id
+                    }))
+                }))
+        ];
+    }
+
+    function renderChatSettingsSummary() {
+        return getChatSettingsSections().map((section) => {
+            const selected = section.options.find((option) => String(option.value) === String(section.value)) || section.options[0];
+            return selected?.summaryLabel || selected?.label || section.value;
+        }).filter(Boolean).join(' / ');
+    }
+
+    function renderChatSettingsSelect() {
+        const isOpen = openSelect === 'chatSettings';
+        const sections = getChatSettingsSections();
+        const activeSection = openChatSettingsSection && sections.some((section) => section.field === openChatSettingsSection)
+            ? openChatSettingsSection
+            : '';
+
+        return `
+            <div class="ai-image-composer-settings-select ai-image-chat-settings-select ${isOpen ? 'is-open' : ''}" data-aiw-chat-settings>
+                <button class="ai-image-composer-settings-trigger ai-image-chat-settings-trigger" type="button" data-aiw-select-toggle="chatSettings" aria-haspopup="menu" aria-expanded="${isOpen ? 'true' : 'false'}">
+                    <i class="fas fa-sliders"></i>
+                    <span>对话参数</span>
+                    <em>${escapeHtml(renderChatSettingsSummary())}</em>
+                    <i class="fas fa-chevron-down ai-image-select-chevron"></i>
+                </button>
+                ${isOpen ? `
+                    <div class="ai-image-composer-settings-menu ai-image-chat-settings-menu" role="menu" aria-label="对话参数">
+                        ${sections.map((section) => renderComposerSettingsSection({ ...section, group: 'chat', openSection: activeSection, valueAttribute: 'data-aiw-chip' })).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
     }
 
     function renderComposerUploadButton(inferredMode = inferWorkbenchMode()) {
@@ -6617,6 +7637,158 @@
         `;
     }
 
+    function renderComposerSettingsSection({ title, field, options, value, group, openSection, valueAttribute = 'data-aiw-select-value' }) {
+        const normalizedValue = String(value);
+        const selected = options.find((option) => String(option.value) === normalizedValue) || options[0] || { value: '', label: '未设置' };
+        const isOpen = openSection === field;
+        const groupClass = ['image', 'video', 'chat'].includes(group) ? group : 'video';
+        return `
+            <section class="ai-image-composer-settings-section ai-image-${groupClass}-settings-section ${isOpen ? 'is-open' : ''}">
+                <button class="ai-image-composer-settings-section-head ai-image-${groupClass}-settings-section-head" type="button" data-aiw-${groupClass}-settings-section="${escapeHtml(field)}" aria-expanded="${isOpen ? 'true' : 'false'}">
+                    <span>${escapeHtml(title)}</span>
+                    <strong>${escapeHtml(selected.label)}</strong>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                ${isOpen ? `
+                    <div class="ai-image-composer-settings-options ai-image-${groupClass}-settings-options" role="group" aria-label="${escapeHtml(title)}">
+                        ${options.map((option) => {
+                            const optionValue = String(option.value);
+                            const isActive = optionValue === normalizedValue;
+                            const optionAttribute = valueAttribute === 'data-aiw-chip'
+                                ? `data-aiw-chip="${escapeHtml(`${field}:${optionValue}`)}"`
+                                : `data-aiw-select-option data-aiw-select-field="${escapeHtml(field)}" data-aiw-select-value="${escapeHtml(optionValue)}"`;
+                            return `
+                                <button class="ai-image-composer-settings-option ai-image-${groupClass}-settings-option ${isActive ? 'is-active' : ''}" type="button" role="menuitemradio" aria-checked="${isActive ? 'true' : 'false'}" ${optionAttribute}>
+                                    <span>${escapeHtml(option.label)}</span>
+                                    ${isActive ? '<i class="fas fa-check"></i>' : ''}
+                                </button>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+            </section>
+        `;
+    }
+
+    function renderImageSettingsSummary() {
+        return [
+            RATIO_META[state.ratio]?.label || state.ratio,
+            RESOLUTION_META[state.resolution]?.label || state.resolution,
+            `${clampNumber(state.quantity, 1, 4, 2)}张`
+        ].filter(Boolean).join(' / ');
+    }
+
+    function renderImageSettingsSelect() {
+        const isOpen = openSelect === 'imageSettings';
+        const sections = [
+            {
+                title: '比例',
+                field: 'ratio',
+                value: state.ratio,
+                options: Object.entries(RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+            },
+            {
+                title: '分辨率',
+                field: 'resolution',
+                value: state.resolution,
+                options: Object.entries(RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+            },
+            {
+                title: '张数',
+                field: 'quantity',
+                value: String(state.quantity),
+                options: [1, 2, 4].map((value) => ({ value: String(value), label: `${value} 张` }))
+            }
+        ];
+
+        return `
+            <div class="ai-image-composer-settings-select ai-image-image-settings-select ${isOpen ? 'is-open' : ''}" data-aiw-image-settings>
+                <button class="ai-image-composer-settings-trigger ai-image-image-settings-trigger" type="button" data-aiw-select-toggle="imageSettings" aria-haspopup="menu" aria-expanded="${isOpen ? 'true' : 'false'}">
+                    <i class="fas fa-sliders"></i>
+                    <span>图片参数</span>
+                    <em>${escapeHtml(renderImageSettingsSummary())}</em>
+                    <i class="fas fa-chevron-down ai-image-select-chevron"></i>
+                </button>
+                ${isOpen ? `
+                    <div class="ai-image-composer-settings-menu ai-image-image-settings-menu" role="menu" aria-label="图片参数">
+                        ${sections.map((section) => renderComposerSettingsSection({ ...section, group: 'image', openSection: openImageSettingsSection })).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function renderVideoSettingsSummary() {
+        const parts = [
+            VIDEO_RATIO_META[state.videoRatio]?.label || state.videoRatio,
+            VIDEO_RESOLUTION_META[state.videoResolution]?.label || state.videoResolution,
+            VIDEO_DURATION_META[String(state.videoDuration)]?.shortLabel || VIDEO_DURATION_META[String(state.videoDuration)]?.label || state.videoDuration,
+            VIDEO_AUDIO_META[String(state.videoAudio)]?.shortLabel || VIDEO_AUDIO_META[String(state.videoAudio)]?.label || '',
+            VIDEO_WATERMARK_META[String(state.videoWatermark)]?.shortLabel || VIDEO_WATERMARK_META[String(state.videoWatermark)]?.label || ''
+        ].filter(Boolean);
+        return parts.join(' / ');
+    }
+
+    function renderVideoSettingsSelect() {
+        const videoModelId = getActiveModelValue('video');
+        const showCameraFixed = supportsVideoCameraFixed(videoModelId);
+        const isOpen = openSelect === 'videoSettings';
+        const sections = [
+            {
+                title: '画面比例',
+                field: 'videoRatio',
+                value: state.videoRatio,
+                options: Object.entries(VIDEO_RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+            },
+            {
+                title: '分辨率',
+                field: 'videoResolution',
+                value: state.videoResolution,
+                options: Object.entries(VIDEO_RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+            },
+            {
+                title: '时长',
+                field: 'videoDuration',
+                value: state.videoDuration,
+                options: Object.entries(VIDEO_DURATION_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
+            },
+            {
+                title: '音频',
+                field: 'videoAudio',
+                value: state.videoAudio,
+                options: Object.entries(VIDEO_AUDIO_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
+            },
+            {
+                title: '水印',
+                field: 'videoWatermark',
+                value: state.videoWatermark,
+                options: Object.entries(VIDEO_WATERMARK_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
+            },
+            showCameraFixed ? {
+                title: '镜头',
+                field: 'videoCameraFixed',
+                value: state.videoCameraFixed,
+                options: Object.entries(VIDEO_CAMERA_FIXED_META).map(([id, meta]) => ({ value: id, label: meta.shortLabel || meta.label }))
+            } : null
+        ].filter(Boolean);
+
+        return `
+            <div class="ai-image-composer-settings-select ai-image-video-settings-select ${isOpen ? 'is-open' : ''}" data-aiw-video-settings>
+                <button class="ai-image-composer-settings-trigger ai-image-video-settings-trigger" type="button" data-aiw-select-toggle="videoSettings" aria-haspopup="menu" aria-expanded="${isOpen ? 'true' : 'false'}">
+                    <i class="fas fa-sliders"></i>
+                    <span>视频参数</span>
+                    <em>${escapeHtml(renderVideoSettingsSummary())}</em>
+                    <i class="fas fa-chevron-down ai-image-select-chevron"></i>
+                </button>
+                ${isOpen ? `
+                    <div class="ai-image-composer-settings-menu ai-image-video-settings-menu" role="menu" aria-label="视频参数">
+                        ${sections.map((section) => renderComposerSettingsSection({ ...section, group: 'video', openSection: openVideoSettingsSection })).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
     function renderModelProviderSelect({ field, label, icon, value, mode = inferWorkbenchMode(), disabled = false, wide = false }) {
         const groups = getRuntimeModelGroups(mode);
         const options = getRuntimeModelGroupOptions(mode);
@@ -6651,9 +7823,10 @@
                     <div class="ai-image-select-menu ai-image-model-menu" role="menu" aria-label="${escapeHtml(label)}">
                         ${groups.map((group, index) => {
                             const groupActive = group.providerId === selectedGroup?.providerId;
+                            const groupOpen = openModelProvider === group.providerId;
                             return `
-                                <div class="ai-image-model-provider ${groupActive ? 'is-active' : ''}" tabindex="0" role="menuitem" data-aiw-model-provider="${escapeHtml(group.providerId)}">
-                                    <button class="ai-image-model-provider-trigger" type="button" tabindex="-1">
+                                <div class="ai-image-model-provider ${groupActive ? 'is-active' : ''} ${groupOpen ? 'is-open' : ''}" tabindex="0" role="menuitem" data-aiw-model-provider="${escapeHtml(group.providerId)}">
+                                    <button class="ai-image-model-provider-trigger" type="button" tabindex="-1" aria-expanded="${groupOpen ? 'true' : 'false'}">
                                         <span>${escapeHtml(group.label)}</span>
                                         <i class="fas fa-chevron-right"></i>
                                     </button>
@@ -6754,12 +7927,20 @@
                     </div>
                 ` : ''}
                 <div class="ai-image-main-composer-input ${uploadButtonHtml ? '' : 'has-no-upload'}">
-                    ${uploadButtonHtml}
+                    <div class="ai-image-main-attach-action">
+                        ${uploadButtonHtml}
+                    </div>
                     <textarea class="ai-image-main-prompt" data-aiw-prompt rows="1" placeholder="${escapeHtml(promptPlaceholder)}">${escapeHtml(state.prompt)}</textarea>
+                    <div class="ai-image-main-submit-action">
+                        <button class="ai-image-main-submit ${canCancel ? 'is-cancel' : ''}" type="button" data-aiw-action="${canCancel ? 'cancel-task' : 'generate'}" data-task-id="${escapeHtml(busyTask?.id || '')}" aria-label="${escapeHtml(canCancel ? '取消生成' : submitLabel)}" ${canCancel || canSubmit ? '' : 'disabled'}>
+                            <i class="fas ${canCancel ? 'fa-stop' : 'fa-arrow-up'}"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="ai-image-main-tools">
                     <span class="ai-image-main-billing ${state.billingMode ? '' : 'is-missing'}" data-aiw-action="toggle-billing"><i class="fas fa-gem"></i>${escapeHtml(getActiveBillingLabel())}</span>
-                    ${isVideoMode(inferredMode) ? renderVideoComposerControls({ compactLabels: true }) : ''}
+                    ${isVideoMode(inferredMode) ? `${renderVideoComposerControls({ compactLabels: true })}${renderVideoSettingsSelect()}` : ''}
+                    ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderImageSettingsSelect() : ''}
                     ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
                         field: 'ratio',
                         label: '比例',
@@ -6789,12 +7970,10 @@
                         mode: inferredMode,
                         disabled: !modelOptions.length,
 	                    })}
-	                    ${inferredMode === 'chat' ? renderChatMemoryControl() : ''}
-	                    ${inferredMode === 'chat' ? renderChatModelCapabilityControls() : ''}
-                    <span class="ai-image-main-cost"${canCancel && busyTask?.id ? ` data-aiw-live-status-task-id="${escapeHtml(busyTask.id)}" data-aiw-live-status-kind="composer"` : ''}>${escapeHtml(canCancel ? (busyTask?.mode === 'chat' ? getComposerBusyLabel(busyTask) : getStatusLabel(busyTask)) : getMainCostCopy(inferredMode))}</span>
-                    <button class="ai-image-main-submit ${canCancel ? 'is-cancel' : ''}" type="button" data-aiw-action="${canCancel ? 'cancel-task' : 'generate'}" data-task-id="${escapeHtml(busyTask?.id || '')}" aria-label="${escapeHtml(canCancel ? '取消生成' : submitLabel)}" ${canCancel || canSubmit ? '' : 'disabled'}>
-                        <i class="fas ${canCancel ? 'fa-stop' : 'fa-arrow-up'}"></i>
-                    </button>
+                    ${inferredMode === 'chat' ? renderChatSettingsSelect() : ''}
+                    ${inferredMode === 'chat' ? renderChatMemoryControl() : ''}
+                    ${inferredMode === 'chat' ? renderChatModelCapabilityControls() : ''}
+                    <span class="ai-image-main-cost"${canCancel && busyTask?.id ? ` data-aiw-live-status-task-id="${escapeHtml(busyTask.id)}" data-aiw-live-status-kind="composer"` : ''}>${escapeHtml(canCancel ? (busyTask?.mode === 'chat' ? getComposerBusyLabel(busyTask) : getStatusLabel(busyTask)) : getComposerCostValue(inferredMode))}</span>
                 </div>
             </div>
         `;
@@ -6861,6 +8040,7 @@
         const showPendingPreview = !isStopped && task.status !== 'succeeded' && pendingPreviewCount > 0;
         const showStoppedPreview = isStopped && pendingPreviewCount > 0;
         const previewCardCount = partialImageEntries.length + (showPendingPreview || showStoppedPreview ? 1 : 0);
+        const resultGridModeClass = isVideoMode(task.mode) ? 'ai-image-result-grid--video' : '';
         return `
             <div class="ai-image-result-view ai-image-result-view--image">
                 <div class="ai-image-result-content">
@@ -6880,10 +8060,10 @@
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
-                <div class="ai-image-result-grid ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
-                        ${partialImageEntries.map((entry, index) => renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode))).join('')}
-                        ${showPendingPreview ? renderInlineTaskPreview(task, '生成中', { showPrompt: false }) : ''}
-                        ${showStoppedPreview ? renderInlineTaskPreview(task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false }) : ''}
+                <div class="ai-image-result-grid ${resultGridModeClass} ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
+                        ${partialImageEntries.map((entry, index) => renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode), { navigationAnchor: index === 0 })).join('')}
+                        ${showPendingPreview ? renderInlineTaskPreview(task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length }) : ''}
+                        ${showStoppedPreview ? renderInlineTaskPreview(task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length }) : ''}
                     </div>
                 </div>
             </div>
@@ -6906,9 +8086,9 @@
         `;
     }
 
-    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true } = {}) {
+    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false } = {}) {
         const aspect = getRatioAspect(task.ratio, task.mode);
-        const isBusy = ['queued', 'processing'].includes(task.status) || task.status === 'streaming';
+        const isBusy = forceBusy || ['queued', 'processing'].includes(task.status) || task.status === 'streaming';
         const isStopped = ['failed', 'cancelled'].includes(task.status);
         const isCancelled = task.status === 'cancelled';
         const stoppedReason = isStopped ? getTaskFailureReason(task) : '';
@@ -6919,8 +8099,11 @@
             { kind: 'image', text: getTaskCurrentImageLabel(task) },
             { kind: 'elapsed', text: getTaskElapsedLabel(task) }
         ];
+        const navigationAttrs = navigationAnchor && task?.id
+            ? ` data-task-id="${escapeHtml(task.id)}" data-aiw-chat-turn-id="${escapeHtml(task.id)}"`
+            : '';
         return `
-            <article class="ai-image-thread-step ${isBusy ? 'is-pending' : 'is-stopped'}">
+            <article class="ai-image-thread-step ${isBusy ? 'is-pending' : 'is-stopped'}"${navigationAttrs}>
                 ${showPrompt ? `<div class="ai-image-thread-prompt">
                     <span>${escapeHtml(label)}</span>
                     <p>${escapeHtml(getTaskPromptText(task))}</p>
@@ -6952,7 +8135,7 @@
         `;
     }
 
-    function renderTaskImageEntry(entry, index = 0, aspect = '1 / 1') {
+    function renderTaskImageEntry(entry, index = 0, aspect = '1 / 1', { navigationAnchor = false } = {}) {
         const previewTitle = getTaskTitle(entry.task);
         const isVideo = isVideoMode(entry.task?.mode) || isVideoResultImage(entry.image);
         const originalReady = isVideo || Boolean(entry.image?.originalReady && entry.originalSrc);
@@ -6965,12 +8148,18 @@
             context: 'result'
         });
         const previewSrc = isVideo ? entry.src : getStableImageUrl(imageIdentityKey, entry.src);
+        if (isVideo) warmVideoPreviewConnection(previewSrc);
         const previewMeta = [getTaskImageMeta(entry.task), isVideo ? '视频' : originalStatusLabel, formatGeneratedTime(entry.task.completedAt || entry.task.createdAt)].filter(Boolean).join(' · ');
         const mediaStateClass = [
-            isVideo ? 'is-video-result is-image-loaded' : '',
+            isVideo ? 'is-video-result' : '',
+            isVideo && hasLoadedVideo(previewSrc) ? 'is-video-ready is-image-loaded' : '',
+            isVideo && hasFailedVideo(previewSrc) ? 'is-video-broken' : '',
+            isVideo && !hasLoadedVideo(previewSrc) && !hasFailedVideo(previewSrc) ? 'is-video-loading' : '',
             !isVideo && hasLoadedImage(previewSrc) ? 'is-image-loaded' : '',
             !isVideo && hasFailedImage(previewSrc) ? 'is-image-broken' : ''
         ].filter(Boolean).join(' ');
+        const videoProgressLabel = isVideo ? getVideoProgressLabel(previewSrc) : '';
+        const videoProgressStyle = isVideo ? `--aiw-video-progress:${escapeHtml(getVideoProgressCss(previewSrc))};` : '';
         const downloadAttrs = originalReady
             ? `href="${escapeHtml(entry.originalSrc || previewSrc)}" download target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(isVideo ? '下载视频' : '下载原图')}" title="${escapeHtml(isVideo ? '下载视频' : '下载原图')}"`
             : `href="${escapeHtml(previewSrc)}" aria-disabled="true" class="ai-image-result-action is-disabled" aria-label="${escapeHtml(originalStatusLabel)}" title="${escapeHtml(originalStatusLabel)}"`;
@@ -6985,18 +8174,22 @@
                                             </em>
                                         </div>
             ` : '';
+        const navigationAttrs = navigationAnchor && entry.task?.id
+            ? ` data-task-id="${escapeHtml(entry.task.id)}" data-aiw-chat-turn-id="${escapeHtml(entry.task.id)}"`
+            : '';
         return `
-                                    <article class="ai-image-thread-step">
+                                    <article class="ai-image-thread-step"${navigationAttrs}>
                                         ${promptBlock}
                                         <div class="ai-image-result" style="--aiw-result-aspect:${escapeHtml(getRatioAspect(entry.task.ratio, entry.task.mode) || aspect)}">
                                             <div class="ai-image-result-main">
-                                                <div class="ai-image-result-media ${mediaStateClass}" ${isVideo ? '' : `role="button" tabindex="0" aria-label="打开全分辨率预览" title="${escapeHtml(originalReady ? '打开全分辨率预览' : '打开预览图，原图转存中')}" data-aiw-preview-open`} data-aiw-image-key="${escapeHtml(imageIdentityKey)}" data-aiw-preview-src="${escapeHtml(previewSrc)}" data-aiw-preview-thumb="${escapeHtml(previewSrc)}" data-aiw-preview-original-src="${escapeHtml(entry.originalSrc || '')}" data-aiw-original-ready="${originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(entry.image?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(previewTitle)}" data-aiw-preview-meta="${escapeHtml(previewMeta)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}">
-                                                    ${isVideo ? `<video src="${escapeHtml(previewSrc)}" controls playsinline preload="metadata"></video>` : `<img src="${escapeHtml(previewSrc)}" alt="生成结果 ${index + 1}" loading="eager" decoding="async">`}
+                                                <div class="ai-image-result-media ${mediaStateClass}" ${isVideo ? 'aria-label="生成视频预览"' : `role="button" tabindex="0" aria-label="打开全分辨率预览" title="${escapeHtml(originalReady ? '打开全分辨率预览' : '打开预览图，原图转存中')}" data-aiw-preview-open`} data-aiw-image-key="${escapeHtml(imageIdentityKey)}" data-aiw-preview-src="${escapeHtml(previewSrc)}" data-aiw-preview-thumb="${escapeHtml(previewSrc)}" data-aiw-preview-original-src="${escapeHtml(entry.originalSrc || '')}" data-aiw-original-ready="${originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(entry.image?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(previewTitle)}" data-aiw-preview-meta="${escapeHtml(previewMeta)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" style="${videoProgressStyle}">
+                                                    ${isVideo ? `<video src="${escapeHtml(previewSrc)}" data-aiw-video-src="${escapeHtml(previewSrc)}" controls playsinline preload="auto"></video>` : `<img src="${escapeHtml(previewSrc)}" alt="生成结果 ${index + 1}" loading="eager" decoding="async">`}
                                                         <div class="ai-image-result-broken" aria-hidden="true">
                                                             <i class="fas fa-triangle-exclamation"></i>
-                                                            <strong>预览图暂不可用</strong>
-                                                            <span>请重新生成或稍后再试</span>
+                                                            <strong>${escapeHtml(isVideo ? '视频暂不可用' : '预览图暂不可用')}</strong>
+                                                            <span>${escapeHtml(isVideo ? '请稍后刷新或重新生成' : '请重新生成或稍后再试')}</span>
                                                         </div>
+                                                        ${isVideo ? `<span class="ai-image-video-progress" data-aiw-video-progress aria-label="${escapeHtml(videoProgressLabel === '加载中' ? '视频加载中' : `视频已缓冲 ${videoProgressLabel}`)}">${escapeHtml(videoProgressLabel)}</span>` : ''}
                                                         ${isVideo ? '' : `<button class="ai-image-result-continue" type="button" data-aiw-action="continue-image" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" data-reference-image="${escapeHtml(entry.originalSrc || previewSrc)}" aria-label="基于这张图续作">
                                                                 <i class="fas fa-wand-magic-sparkles"></i>
                                                                 <span>续作</span>
@@ -7033,6 +8226,93 @@
         `;
     }
 
+    function getActiveChatNavigationTasks() {
+        const activeTask = getActiveTask();
+        if (!activeTask || activeTask.mode === 'reverse') return [];
+        const threadRoot = getTaskThreadRoot(activeTask) || activeTask;
+        return getTaskThread(threadRoot)
+            .filter((task) => {
+                if (!task?.id || task.mode === 'reverse') return false;
+                return activeTask.mode === 'chat'
+                    ? task.mode === 'chat'
+                    : task.mode !== 'chat';
+            })
+            .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    }
+
+    function renderChatNavigationLayer() {
+        const rail = renderChatNavigationRail(getActiveChatNavigationTasks());
+        if (!rail) return '';
+        return `
+            <div class="ai-image-chat-nav-layer" data-aiw-chat-nav-layer>
+                ${rail}
+                <div class="ai-image-chat-nav-preview" data-aiw-chat-nav-preview role="tooltip" hidden>
+                    <strong data-aiw-chat-nav-preview-title></strong>
+                    <span data-aiw-chat-nav-preview-summary></span>
+                    <em data-aiw-chat-nav-preview-meta></em>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderChatNavigationRail(chatTasks = []) {
+        const items = chatTasks.filter((task, index) => task?.id && getChatNavigationTitle(task, index));
+        if (items.length < CHAT_NAVIGATION_MIN_ITEMS) return '';
+        return `
+            <nav class="ai-image-chat-nav-rail" data-aiw-chat-nav-rail aria-label="工作台快速定位">
+                <div class="ai-image-chat-nav-list">
+                    ${items.map((task, index) => renderChatNavigationItem(task, index, items.length)).join('')}
+                </div>
+            </nav>
+        `;
+    }
+
+    function renderChatNavigationItem(task, index = 0, total = 0) {
+        const question = truncateText(getChatNavigationTitle(task, index), 96);
+        const answer = truncateText(getChatNavigationSummary(task), 170);
+        const meta = getChatNavigationMeta(task, index, total);
+        const unit = getChatNavigationUnit(task);
+        const fallbackTitle = task.mode === 'chat' ? `第 ${index + 1} 条提问` : `第 ${index + 1} 个生成`;
+        return `
+            <button class="ai-image-chat-nav-item" type="button" data-aiw-chat-nav-id="${escapeHtml(task.id)}" data-aiw-chat-nav-title="${escapeHtml(question || fallbackTitle)}" data-aiw-chat-nav-summary="${escapeHtml(answer)}" data-aiw-chat-nav-meta="${escapeHtml(meta)}" aria-label="${escapeHtml(`跳转到第 ${index + 1} ${unit}：${question || fallbackTitle}`)}">
+                <span class="ai-image-chat-nav-marker" aria-hidden="true"></span>
+            </button>
+        `;
+    }
+
+    function getChatNavigationTitle(task = {}, index = 0) {
+        if (task.mode === 'chat') return getChatTaskQuestionText(task);
+        return getTaskPromptText(task) || getTaskTitle(task) || `第 ${index + 1} 个生成`;
+    }
+
+    function getChatNavigationSummary(task = {}) {
+        if (task.mode === 'chat') {
+            return getChatTaskAnswerText(task) || getTaskProgressDetail(task);
+        }
+        if (task.status === 'failed' || task.status === 'cancelled') {
+            return getTaskFailureReason(task);
+        }
+        return [getTaskImageMeta(task), getStatusLabel(task)].filter(Boolean).join(' · ');
+    }
+
+    function getChatNavigationUnit(task = {}) {
+        if (task.mode === 'chat') return '条';
+        if (isVideoMode(task.mode)) return '段';
+        return '项';
+    }
+
+    function getChatNavigationMeta(task = {}, index = 0, total = 0) {
+        const status = getStatusLabel(task);
+        const timing = getTaskDurationMetaLabel(task);
+        const unit = getChatNavigationUnit(task);
+        const parts = [
+            `第 ${index + 1}/${Math.max(total, index + 1)} ${unit}`,
+            status,
+            timing
+        ].filter(Boolean);
+        return parts.join(' · ');
+    }
+
     function renderChatTurn(task, index = 0, { showDuration = false } = {}) {
         const statsItems = getChatTaskStatsItems(task, { showDuration });
         const questionText = getChatTaskQuestionText(task);
@@ -7041,7 +8321,7 @@
         const showLoadingDots = isBusyTask(task) && !outputText && !reasoningBlock;
         const showAnswerActions = Boolean(outputText);
         return `
-            <article class="ai-image-thread-step ai-image-chat-step ${isBusyTask(task) ? 'is-pending' : ''}" data-task-id="${escapeHtml(task.id)}">
+            <article class="ai-image-thread-step ai-image-chat-step ${isBusyTask(task) ? 'is-pending' : ''}" data-task-id="${escapeHtml(task.id)}" data-aiw-chat-turn-id="${escapeHtml(task.id)}">
                 ${questionText ? `
                     <div class="ai-image-chat-question">
                         <p>${escapeHtml(questionText)}</p>
@@ -7225,12 +8505,14 @@
             });
             if (!entries.length) {
                 taskSequenceMap.set(item.id, sequenceCursor + 1);
+                const awaitingVideoResult = isVideoMode(item.mode) && item.status === 'succeeded';
                 return [{
                     type: 'pending',
                     task: item,
                     taskIndex,
                     sequence: sequenceCursor + 1,
-                    baseSequence
+                    baseSequence,
+                    forceBusy: awaitingVideoResult
                 }];
             }
             entries.forEach((entry) => {
@@ -7240,9 +8522,11 @@
             return entries;
         });
         const imageCount = imageEntries.length;
+        const resultGridModeClass = threadTasks.some((item) => isVideoMode(item.mode)) ? 'ai-image-result-grid--video' : '';
+        const anchoredTaskIds = new Set();
         return `
             <div class="ai-image-result-view ai-image-result-view--image">
-		                <div class="ai-image-result-content">
+			                <div class="ai-image-result-content">
                     <div class="ai-image-live-copy">
                         <div>
                             <strong>${escapeHtml(getTaskTitle(task))}</strong><br>
@@ -7255,10 +8539,15 @@
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
-                    <div class="ai-image-result-grid ${imageCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasThreadChildren ? 'ai-image-result-grid--thread' : ''} ${imageEntries.some((entry) => entry.type === 'pending') ? 'ai-image-result-grid--partial' : ''}">
-                        ${imageEntries.map((entry, index) => entry.type === 'pending'
-            ? renderInlineTaskPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '生成预览')
-            : renderTaskImageEntry(entry, index, aspect)).join('')}
+                    <div class="ai-image-result-grid ${resultGridModeClass} ${imageCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasThreadChildren ? 'ai-image-result-grid--thread' : ''} ${imageEntries.some((entry) => entry.type === 'pending') ? 'ai-image-result-grid--partial' : ''}">
+                        ${imageEntries.map((entry, index) => {
+                            const taskId = String(entry.task?.id || '').trim();
+                            const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
+                            if (taskId) anchoredTaskIds.add(taskId);
+                            return entry.type === 'pending'
+                                ? renderInlineTaskPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '生成预览', { showPrompt: !isVideoMode(entry.task?.mode), forceBusy: Boolean(entry.forceBusy), navigationAnchor })
+                                : renderTaskImageEntry(entry, index, aspect, { navigationAnchor });
+                        }).join('')}
                     </div>
                 </div>
             </div>
@@ -7292,6 +8581,9 @@
                     <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" title="计费方式" data-rail-label="计费">
                         <i class="fas fa-gem"></i>
                     </button>
+                    <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭" data-rail-label="关闭">
+                        <i class="fas fa-xmark"></i>
+                    </button>
                 </div>
 
                 <div class="ai-image-history-expanded">
@@ -7318,9 +8610,7 @@
         const discoveryMessage = String(modelDiscoveryState.message || '').trim();
         const discoveryToneClass = modelDiscoveryState.tone ? ` is-${modelDiscoveryState.tone}` : '';
         const canDiscoverModels = apiBaseConfigured && (hasTypedApiKey || Boolean(storedApiKey));
-        const currentToolMode = isVideoMode(state.mode) && getActiveModelOptions('video').length
-            ? 'video'
-            : (state.apiImageTool ? 'image' : 'chat');
+        const currentToolMode = getCurrentWorkbenchToolMode();
         const toolChatCopy = state.billingMode === 'api'
             ? '使用当前 API Key 的对话模型，消耗 API token。'
             : '使用后台对话模型，按积分规则计费。';
