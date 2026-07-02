@@ -11,6 +11,7 @@ export interface CcSwitchImportConfig {
 }
 
 export interface CcSwitchClaudeModelSlots {
+  fableModel?: string
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
@@ -76,7 +77,8 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
   }
 
   if (config.app === 'claude' && input.claudeModelSlots) {
-    const { haikuModel, sonnetModel, opusModel } = input.claudeModelSlots
+    const { fableModel, haikuModel, sonnetModel, opusModel } = input.claudeModelSlots
+    if (fableModel) entries.push(['fableModel', fableModel])
     if (haikuModel) entries.push(['haikuModel', haikuModel])
     if (sonnetModel) entries.push(['sonnetModel', sonnetModel])
     if (opusModel) entries.push(['opusModel', opusModel])
@@ -97,11 +99,13 @@ export function resolveCcSwitchClaudeModelSlots(
   const findByFamily = (family: string) =>
     models.find((model) => model.toLowerCase().includes(family))
 
+  const fableModel = findByFamily('fable')
   const opusModel = findByFamily('opus') || models[0]
   const sonnetModel = findByFamily('sonnet') || opusModel || models[0]
   const haikuModel = findByFamily('haiku') || sonnetModel || opusModel || models[0]
 
   return {
+    fableModel,
     haikuModel,
     sonnetModel,
     opusModel

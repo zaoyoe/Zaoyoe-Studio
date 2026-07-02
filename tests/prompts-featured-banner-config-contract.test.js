@@ -137,6 +137,43 @@ test('prompts featured banner prefers homepage manual featured items before dail
     );
 });
 
+test('prompts page keeps the AI workbench mounted', () => {
+    const promptsHtml = readRepoFile('prompts.html');
+    const workbenchSource = readRepoFile(path.join('js', 'ai-image-workbench.js'));
+    const workbenchStyles = readRepoFile(path.join('css', 'ai-image-workbench.css'));
+
+    assert.equal(
+        promptsHtml.includes('css/ai-image-workbench.css'),
+        true,
+        'prompts.html should load the AI workbench stylesheet'
+    );
+    assert.equal(
+        promptsHtml.includes('js/ai-image-workbench.js'),
+        true,
+        'prompts.html should load the AI workbench runtime'
+    );
+    assert.equal(
+        promptsHtml.includes('id="promptActionAiImageSlot"'),
+        true,
+        'prompt detail modal should keep the AI workbench action slot'
+    );
+    assert.equal(
+        workbenchSource.includes("root.className = 'ai-image-workbench-root'"),
+        true,
+        'AI workbench runtime should create the floating workbench root'
+    );
+    assert.equal(
+        workbenchSource.includes("document.body.classList.add('ai-image-workbench-ready')"),
+        true,
+        'AI workbench runtime should mark the page ready after mounting'
+    );
+    assert.equal(
+        workbenchStyles.includes('.ai-image-workbench-root'),
+        true,
+        'AI workbench stylesheet should include the root surface styles'
+    );
+});
+
 test('prompts mobile search input suppresses native tap flash inside the search pill', () => {
     const promptsHtml = readRepoFile('prompts.html');
     const promptsCss = readRepoFile('prompts-poetry.css');
