@@ -3526,6 +3526,7 @@ body.modal-open .prompt-card {
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
     color: #1e293b;
     opacity: 0;
+    pointer-events: none;
     /* Hidden by default */
 }
 
@@ -3536,6 +3537,7 @@ body.modal-open .prompt-card {
 /* Show arrows on hover */
 .modal-image-col:hover .modal-img-nav {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .modal-img-nav.left {
@@ -3588,6 +3590,114 @@ body.modal-open .prompt-card {
 
 .modal-img-counter.is-visible {
     display: block;
+}
+
+.modal-img-thumbs {
+    display: none;
+}
+
+.modal-img-thumb-btn {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+@media (min-width: 769px) and (hover: hover) and (pointer: fine) {
+    .modal-image-col:hover .modal-img-nav {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .modal-image-col:hover .modal-img-nav.left {
+        transform: translateY(-50%) translateX(-10px);
+    }
+
+    .modal-image-col:hover .modal-img-nav.right {
+        transform: translateY(-50%) translateX(10px);
+    }
+
+    .modal-img-thumbs.is-visible {
+        position: absolute;
+        left: 50%;
+        bottom: 22px;
+        z-index: 12;
+        display: flex;
+        max-width: calc(100% - 48px);
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.32);
+        border-radius: 18px;
+        background: rgba(15, 23, 42, 0.28);
+        box-shadow: 0 18px 52px rgba(15, 23, 42, 0.22);
+        backdrop-filter: blur(18px) saturate(1.18);
+        -webkit-backdrop-filter: blur(18px) saturate(1.18);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        transform: translate3d(-50%, 10px, 0);
+        transition: opacity 0.22s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.22s ease;
+        scrollbar-width: none;
+    }
+
+    .modal-img-thumbs.is-visible::-webkit-scrollbar {
+        display: none;
+    }
+
+    .modal-image-col:hover .modal-img-thumbs.is-visible {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transform: translate3d(-50%, 0, 0);
+    }
+
+    .modal-img-thumb-btn {
+        position: relative;
+        flex: 0 0 auto;
+        width: 58px;
+        height: 72px;
+        border: 2px solid rgba(255, 255, 255, 0.78);
+        border-radius: 12px;
+        overflow: hidden;
+        background: rgba(248, 250, 252, 0.8);
+        box-shadow: 0 10px 26px rgba(2, 6, 23, 0.2);
+        transform: translateZ(0);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .modal-img-thumb-btn.is-current {
+        display: none;
+    }
+
+    .modal-img-thumb-btn:hover,
+    .modal-img-thumb-btn:focus-visible {
+        border-color: #fff;
+        box-shadow: 0 14px 34px rgba(2, 6, 23, 0.26);
+        transform: translateY(-2px);
+    }
+
+    .modal-img-thumb-btn img {
+        position: static;
+        width: 100%;
+        height: 100%;
+        max-width: none;
+        max-height: none;
+        display: block;
+        object-fit: cover;
+        opacity: 1;
+        filter: none;
+        transform: none;
+        transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: transform;
+    }
+
+    .modal-img-thumb-btn:hover img,
+    .modal-img-thumb-btn:focus-visible img {
+        transform: scale(1.05);
+    }
 }
 
 .modal-content-col {
@@ -5893,8 +6003,8 @@ body.modal-open .prompt-card {
     .close-modal-btn {
         top: 18px;
         right: 18px;
-        width: 54px;
-        height: 54px;
+        width: 44px;
+        height: 44px;
         background: rgba(7, 15, 30, 0.42);
         border-color: rgba(255, 255, 255, 0.14);
         color: rgba(255, 255, 255, 0.92);
@@ -6282,6 +6392,20 @@ body.modal-open .prompt-card {
         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.11);
     }
 
+    .modal-inner.related-mode .modal-image-col img,
+    html[data-theme="light"] .modal-inner.related-mode .modal-image-col img,
+    html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col img {
+        filter: none;
+        opacity: 0.74;
+        will-change: transform, opacity;
+        transition: opacity 0.24s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .modal-inner.related-mode .related-prompt-grid,
+    .modal-inner.related-mode .related-prompt-card {
+        contain: layout paint;
+    }
+
     /* 20260425_PROMPTS_COMMENT_LIGHT_CONTROLS_1 */
     html[data-theme="light"] .modal-inner.comment-mode .comment-header,
     html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-header {
@@ -6483,6 +6607,34 @@ body.modal-open .prompt-card {
             inset 0 0 0 1px rgba(255, 255, 255, 0.14),
             inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
         filter: none;
+    }
+}
+
+@media (max-width: 768px) and (hover: hover) and (pointer: fine) {
+    .modal-inner.comment-mode .close-modal-btn.is-back:hover,
+    .modal-inner.comment-mode .close-modal-btn.is-back:focus-visible {
+        background: #1e293b;
+        border-color: rgba(15, 23, 42, 0.18);
+        color: #fff;
+        transform: translateY(-1px) scale(1.04);
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.24);
+    }
+
+    .modal-inner.comment-mode .close-modal-btn.is-back:hover i,
+    .modal-inner.comment-mode .close-modal-btn.is-back:focus-visible i {
+        transform: translateX(-3px);
+    }
+
+    [data-theme="dark"] .modal-inner.comment-mode .close-modal-btn.is-back:hover,
+    [data-theme="dark"] .modal-inner.comment-mode .close-modal-btn.is-back:focus-visible {
+        background: rgba(255, 255, 255, 0.94);
+        border-color: rgba(255, 255, 255, 0.18);
+        color: #1e293b;
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+    }
+
+    .modal-inner.comment-mode .close-modal-btn.is-back:active {
+        transform: translateY(0) scale(0.98);
     }
 }
 

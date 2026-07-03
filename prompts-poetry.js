@@ -399,6 +399,25 @@ function getPromptModalImageUrl(url) {
     return displayUrl;
 }
 
+function getPromptModalThumbnailUrl(value) {
+    return getOptimizedImageUrl(value, { variant: 'thumb' })
+        || getOptimizedImageUrl(value, { variant: 'card' })
+        || getPromptModalImageUrl(value);
+}
+
+function getPromptModalImageEntries(item = {}) {
+    return getPromptImageAssets(item)
+        .map((asset) => {
+            const imageUrl = getPromptModalImageUrl(asset);
+            if (!imageUrl) return null;
+            return {
+                imageUrl,
+                thumbUrl: getPromptModalThumbnailUrl(asset) || imageUrl
+            };
+        })
+        .filter(Boolean);
+}
+
 function shouldForcePromptPageTop() {
     if (!window.__PROMPTS_FORCE_SCROLL_TOP__) return false;
 
@@ -4935,9 +4954,11 @@ function buildRelatedPromptCardMarkup(item = {}, index = 0) {
     const imageUrl = getRelatedPromptImageUrl(item);
     const aspectClass = ` ${getRelatedPromptCardLayout(index).className}`;
     const promptId = String(item.id ?? item.supabaseId ?? item.supabase_id ?? '').trim();
+    const imageLoading = index < 6 ? 'eager' : 'lazy';
+    const imagePriority = index < 6 ? ' fetchpriority="low"' : '';
     return `
         <button class="related-prompt-card${aspectClass}" type="button" data-related-prompt-id="${escapeHtml(promptId)}" aria-label="${escapeHtml(title)}">
-            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
+            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="${imageLoading}" decoding="async"${imagePriority} draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
             <span class="related-prompt-card__shade" aria-hidden="true"></span>
             <span class="related-prompt-card__title">${escapeHtml(title)}</span>
         </button>
@@ -4996,6 +5017,111 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
             }
         });
     });
+}
+
+function cancelScheduledRelatedPromptRender() {
+    if (promptRelatedRenderFrameId) {
+        cancelAnimationFrame(promptRelatedRenderFrameId);
+        promptRelatedRenderFrameId = null;
+    }
+    if (promptRelatedRenderTimerId) {
+        clearTimeout(promptRelatedRenderTimerId);
+        promptRelatedRenderTimerId = null;
+    }
+    promptRelatedRenderToken += 1;
+}
+
+function cancelRelatedPromptWarmup() {
+    if (promptRelatedWarmupIdleId && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(promptRelatedWarmupIdleId);
+    }
+    if (promptRelatedWarmupTimerId) {
+        clearTimeout(promptRelatedWarmupTimerId);
+    }
+    promptRelatedWarmupIdleId = null;
+    promptRelatedWarmupTimerId = null;
+}
+
+function cancelRelatedPromptWork() {
+    cancelScheduledRelatedPromptRender();
+    cancelRelatedPromptWarmup();
+}
+
+function scheduleRelatedPromptsRender(item = findPromptAnalyticsItem()) {
+    cancelRelatedPromptWarmup();
+    cancelScheduledRelatedPromptRender();
+    const token = promptRelatedRenderToken;
+    const shouldDelayFirstRender = isPromptModalMobileLayout() && !isRelatedPromptRenderReady(item);
+    const render = () => {
+        promptRelatedRenderTimerId = null;
+        if (token !== promptRelatedRenderToken || !isRelatedMode) return;
+        promptRelatedRenderFrameId = requestAnimationFrame(() => {
+            promptRelatedRenderFrameId = null;
+            if (token !== promptRelatedRenderToken || !isRelatedMode) return;
+            renderRelatedPrompts(item);
+        });
+    };
+
+    if (shouldDelayFirstRender) {
+        promptRelatedRenderTimerId = window.setTimeout(render, 90);
+        return;
+    }
+
+    promptRelatedRenderFrameId = requestAnimationFrame(render);
+}
+
+function isRelatedPromptRenderReady(item = findPromptAnalyticsItem()) {
+    const grid = document.getElementById('relatedPromptGrid');
+    const renderKey = getRelatedPromptRenderKey(item);
+    return Boolean(renderKey && grid?.children.length > 0 && renderKey === lastRenderedRelatedPromptKey);
+}
+
+function warmRelatedPromptImages(limit = 6) {
+    const grid = document.getElementById('relatedPromptGrid');
+    if (!grid) return;
+
+    Array.from(grid.querySelectorAll('img'))
+        .slice(0, limit)
+        .forEach((image) => {
+            const url = String(image.currentSrc || image.src || '').trim();
+            if (!url) return;
+            const warmImage = new Image();
+            warmImage.decoding = 'async';
+            warmImage.src = url;
+            if (typeof warmImage.decode === 'function') {
+                warmImage.decode().catch(() => {});
+            }
+        });
+}
+
+function warmRelatedPromptsForModal(item = findPromptAnalyticsItem()) {
+    const token = promptRelatedRenderToken;
+    requestAnimationFrame(() => {
+        if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
+        renderRelatedPrompts(item);
+        requestAnimationFrame(() => {
+            if (token !== promptRelatedRenderToken) return;
+            warmRelatedPromptImages();
+        });
+    });
+}
+
+function scheduleRelatedPromptWarmup(item = findPromptAnalyticsItem()) {
+    cancelRelatedPromptWarmup();
+    const token = promptRelatedRenderToken;
+    const run = () => {
+        promptRelatedWarmupIdleId = null;
+        promptRelatedWarmupTimerId = null;
+        if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
+        warmRelatedPromptsForModal(item);
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        promptRelatedWarmupIdleId = window.requestIdleCallback(run, { timeout: 320 });
+        return;
+    }
+
+    promptRelatedWarmupTimerId = window.setTimeout(run, 120);
 }
 
 function setPromptCommentTriggerActive(active = false) {
@@ -5101,6 +5227,7 @@ function animatePromptAreaFromDock() {
 function clearPromptDetailSideMode({ resetButtons = true, resetClasses = true } = {}) {
     isCommentMode = false;
     isRelatedMode = false;
+    cancelScheduledRelatedPromptRender();
     setCommentSortDropdownOpen(false);
     closePromptCommentComposer({ preserveModalDock: true });
     releasePromptModalCommentModeGeometry();
@@ -6456,9 +6583,18 @@ function applySearchResults(matchedIds, searchingForColor) {
 // --- Modal Logic ---
 let currentModalImageIndex = 0;
 let currentModalImages = [];
+let currentModalImageThumbs = [];
+let currentModalThumbRenderKey = '';
+let currentModalThumbWarmupIdleId = null;
+let currentModalThumbWarmupTimerId = null;
 let isCommentMode = false;
 let isRelatedMode = false;
 let promptCommentModeReturnTimer = null;
+let promptRelatedRenderFrameId = null;
+let promptRelatedRenderTimerId = null;
+let promptRelatedWarmupIdleId = null;
+let promptRelatedWarmupTimerId = null;
+let promptRelatedRenderToken = 0;
 let currentPromptId = null;
 
 function clearPromptCommentModeReturnState(modalInner = document.querySelector('#promptModal .modal-inner')) {
@@ -7700,6 +7836,7 @@ function openPromptModal(id) {
     releasePromptModalCommentModeGeometry();
 
     // Reset State
+    cancelRelatedPromptWork();
     isCommentMode = false;
     isRelatedMode = false;
     clearPromptCommentModeReturnState(modalInner);
@@ -7739,10 +7876,12 @@ function openPromptModal(id) {
     _copyInProgress = false;
 
     // Store images for navigation
-    currentModalImages = getPromptImageAssets(item)
-        .map(getPromptModalImageUrl)
-        .filter(Boolean);
+    const modalImageEntries = getPromptModalImageEntries(item);
+    currentModalImages = modalImageEntries.map((entry) => entry.imageUrl);
+    currentModalImageThumbs = modalImageEntries.map((entry) => entry.thumbUrl || entry.imageUrl);
     currentModalImageIndex = 0;
+    currentModalThumbRenderKey = '';
+    cancelModalImageThumbnailWarmup();
 
     // Reset Image Container - remove ALL images (including leftovers from transitions)
     const imgContainer = document.querySelector('.modal-image-col');
@@ -7777,7 +7916,9 @@ function openPromptModal(id) {
             applyPromptModalDetailContent(updatedItem);
             renderPromptModalSourceActions(updatedItem);
             if (isRelatedMode) {
-                renderRelatedPrompts(updatedItem);
+                scheduleRelatedPromptsRender(updatedItem);
+            } else {
+                scheduleRelatedPromptWarmup(updatedItem);
             }
             syncPromptModalUnlockPriceState();
         })
@@ -7792,22 +7933,7 @@ function openPromptModal(id) {
     const tagsContainer = document.getElementById('modalTags');
     tagsContainer.innerHTML = ''; // Hidden
 
-    // Show/hide navigation arrows and counter
-    const hasMultipleImages = currentModalImages.length > 1;
-    const leftArrow = document.getElementById('modalImgNavLeft');
-    const rightArrow = document.getElementById('modalImgNavRight');
-    const counter = document.getElementById('modalImgCounter');
-
-    if (hasMultipleImages) {
-        leftArrow.classList.add('is-visible');
-        rightArrow.classList.add('is-visible');
-        counter.classList.add('is-visible');
-        updateModalCounter();
-    } else {
-        leftArrow.classList.remove('is-visible');
-        rightArrow.classList.remove('is-visible');
-        counter.classList.remove('is-visible');
-    }
+    syncModalImageNavigationState();
 
     // Reset Comments
     const commentList = document.getElementById('commentList');
@@ -7817,6 +7943,11 @@ function openPromptModal(id) {
     }
     applyPromptCommentCount(currentPromptId, getCachedPromptCommentCount(currentPromptId));
     lastRenderedRelatedPromptKey = '';
+    const relatedGrid = document.getElementById('relatedPromptGrid');
+    if (relatedGrid) {
+        relatedGrid.classList.remove('related-prompt-grid--empty');
+        relatedGrid.innerHTML = '';
+    }
 
     // Check unlock status (if logged in)
     checkUnlockStatus(currentPromptId);
@@ -7840,6 +7971,7 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     modal.classList.add('modal-opening');
+    scheduleRelatedPromptWarmup(item);
     if (window.iOSScrollLock && modalInner) {
         window.iOSScrollLock.lockLight(modalInner);
     }
@@ -7917,7 +8049,7 @@ function openPromptDetailSideMode(mode) {
     if (isCommentMode) {
         fetchComments(currentPromptId);
     } else {
-        renderRelatedPrompts(findPromptAnalyticsItem());
+        scheduleRelatedPromptsRender(findPromptAnalyticsItem());
     }
 
     lockPromptModalCommentModeGeometry({ force: true, defer: true });
@@ -11236,7 +11368,7 @@ function updateModalImage(index) {
         isModalImageAnimating = false;
     };
 
-    updateModalCounter();
+    syncModalImageNavigationState();
 }
 
 function updateModalCounter() {
@@ -11244,6 +11376,142 @@ function updateModalCounter() {
     if (counter) {
         counter.textContent = `${currentModalImageIndex + 1} / ${currentModalImages.length}`;
     }
+}
+
+function getModalImagePreviewLabel(index) {
+    const isEnglish = getCurrentLanguage() === 'en';
+    return isEnglish ? `Show image ${index + 1}` : `查看第 ${index + 1} 张图片`;
+}
+
+function getModalImageThumbnailRenderKey() {
+    return currentModalImages
+        .map((url, index) => `${url}::${currentModalImageThumbs[index] || ''}`)
+        .join('|');
+}
+
+function cancelModalImageThumbnailWarmup() {
+    if (currentModalThumbWarmupIdleId && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(currentModalThumbWarmupIdleId);
+    }
+    if (currentModalThumbWarmupTimerId) {
+        clearTimeout(currentModalThumbWarmupTimerId);
+    }
+    currentModalThumbWarmupIdleId = null;
+    currentModalThumbWarmupTimerId = null;
+}
+
+function warmModalImageThumbnails(urls = currentModalImageThumbs) {
+    Array.from(new Set(urls.filter(Boolean))).forEach((url, index) => {
+        const image = new Image();
+        image.decoding = 'async';
+        if ('fetchPriority' in image) {
+            image.fetchPriority = index < 4 ? 'high' : 'low';
+        }
+        image.src = url;
+        if (typeof image.decode === 'function') {
+            image.decode().catch(() => {});
+        }
+    });
+}
+
+function scheduleModalImageThumbnailWarmup() {
+    cancelModalImageThumbnailWarmup();
+    if (currentModalImageThumbs.length <= 1) return;
+
+    const renderKey = getModalImageThumbnailRenderKey();
+    const urls = currentModalImageThumbs.slice();
+    const run = () => {
+        currentModalThumbWarmupIdleId = null;
+        currentModalThumbWarmupTimerId = null;
+        if (renderKey !== getModalImageThumbnailRenderKey()) return;
+        warmModalImageThumbnails(urls);
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        currentModalThumbWarmupIdleId = window.requestIdleCallback(run, { timeout: 180 });
+        return;
+    }
+
+    currentModalThumbWarmupTimerId = window.setTimeout(run, 60);
+}
+
+function syncModalImageThumbnailActiveState(thumbs = document.getElementById('modalImgThumbnails')) {
+    if (!thumbs) return;
+    thumbs.querySelectorAll('.modal-img-thumb-btn').forEach((button) => {
+        const index = Number(button.dataset.imageIndex);
+        const isCurrent = index === currentModalImageIndex;
+        button.classList.toggle('is-current', isCurrent);
+        button.setAttribute('aria-hidden', isCurrent ? 'true' : 'false');
+        button.tabIndex = isCurrent ? -1 : 0;
+    });
+}
+
+function renderModalImageThumbnails() {
+    const thumbs = document.getElementById('modalImgThumbnails');
+    if (!thumbs) return;
+
+    const hasMultipleImages = currentModalImages.length > 1;
+    thumbs.classList.toggle('is-visible', hasMultipleImages);
+
+    if (!hasMultipleImages) {
+        thumbs.innerHTML = '';
+        currentModalThumbRenderKey = '';
+        cancelModalImageThumbnailWarmup();
+        return;
+    }
+
+    const renderKey = getModalImageThumbnailRenderKey();
+    if (renderKey === currentModalThumbRenderKey) {
+        syncModalImageThumbnailActiveState(thumbs);
+        return;
+    }
+
+    thumbs.innerHTML = '';
+    currentModalImages.forEach((imageUrl, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'modal-img-thumb-btn';
+        button.dataset.imageIndex = String(index);
+        button.setAttribute('aria-label', getModalImagePreviewLabel(index));
+
+        const img = document.createElement('img');
+        img.src = currentModalImageThumbs[index] || imageUrl;
+        img.alt = '';
+        img.loading = 'eager';
+        img.decoding = 'async';
+        img.width = 116;
+        img.height = 144;
+        img.fetchPriority = index < 4 ? 'high' : 'low';
+        disablePromptImageDrag(img);
+
+        button.appendChild(img);
+        button.addEventListener('click', () => {
+            if (index !== currentModalImageIndex) {
+                updateModalImage(index);
+            }
+        });
+        thumbs.appendChild(button);
+    });
+
+    currentModalThumbRenderKey = renderKey;
+    syncModalImageThumbnailActiveState(thumbs);
+    scheduleModalImageThumbnailWarmup();
+}
+
+function syncModalImageNavigationState() {
+    const hasMultipleImages = currentModalImages.length > 1;
+    const leftArrow = document.getElementById('modalImgNavLeft');
+    const rightArrow = document.getElementById('modalImgNavRight');
+    const counter = document.getElementById('modalImgCounter');
+
+    leftArrow?.classList.toggle('is-visible', hasMultipleImages);
+    rightArrow?.classList.toggle('is-visible', hasMultipleImages);
+    counter?.classList.toggle('is-visible', hasMultipleImages);
+
+    if (hasMultipleImages) {
+        updateModalCounter();
+    }
+    renderModalImageThumbnails();
 }
 
 function navigateModalImage(direction) {
@@ -11313,6 +11581,8 @@ function closePromptModal() {
         clearPromptModalThemeColor({ restoreDelayMs: 320 });
     }
     hidePromptModalStatusBarShield({ immediate: true });
+    cancelRelatedPromptWork();
+    cancelModalImageThumbnailWarmup();
     closePromptCommentComposer({ clearDraft: true, preserveModalDock: true });
     setCommentSortDropdownOpen(false);
 

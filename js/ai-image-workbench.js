@@ -361,9 +361,28 @@
     let chatNavigationPositionFrame = 0;
     let chatNavigationResizeBound = false;
     let suppressNextChatNavigationClick = false;
+    let mobileWorkbenchLayoutHeight = 0;
+    let mobileViewportSyncFrame = 0;
+    let mobileComposerFocusLock = null;
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
     let lastBusyTaskCount = 0;
+    let lastDockTerminalSignature = '';
+    let dockAnimationRateFrame = 0;
+    let dockPopoverEnterTimer = 0;
+    let dockPopoverEnterActive = false;
+    let dockPopoverSessionActive = false;
+    let dockPopoverPointerInside = false;
+    let dockPopoverFocusInside = false;
+
+    const DOCK_STAGE_PROGRESS = Object.freeze({
+        idle: 0,
+        queued: 0.12,
+        generating: 0.60,
+        saving: 0.88,
+        complete: 1,
+        failed: 1
+    });
 
     function clampNumber(value, min, max, fallback) {
         const number = Number(value);
@@ -4222,10 +4241,123 @@
         }
     }
 
+    function isMobileWorkbenchViewport() {
+        return Boolean(global.matchMedia?.('(max-width: 820px)')?.matches);
+    }
+
+    function isMobileKeyboardDevice() {
+        const coarsePointer = Boolean(global.matchMedia?.('(any-pointer: coarse)')?.matches);
+        const touchPoints = Number(global.navigator?.maxTouchPoints || 0);
+        const userAgent = String(global.navigator?.userAgent || '');
+        const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+        return isMobileWorkbenchViewport() && (coarsePointer || touchPoints > 0 || mobileUserAgent);
+    }
+
+    function resetMobileViewportVars() {
+        mobileWorkbenchLayoutHeight = 0;
+        mobileComposerFocusLock = null;
+        setMobileKeyboardActive(false);
+        if (!root?.style) return;
+        root.style.removeProperty('--aiw-mobile-layout-height');
+        root.style.removeProperty('--aiw-mobile-keyboard-offset');
+        root.style.removeProperty('--aiw-mobile-composer-lift');
+        root.style.removeProperty('--aiw-mobile-composer-top');
+    }
+
+    function getMobileViewportSnapshot() {
+        const visualViewport = global.visualViewport || null;
+        const documentHeight = Number(document.documentElement?.clientHeight || 0);
+        const windowHeight = Number(global.innerHeight || 0);
+        const visualHeight = Number(visualViewport?.height || 0);
+        const visualOffsetTop = Math.max(0, Number(visualViewport?.offsetTop || 0));
+        const visualBottom = visualHeight ? visualHeight + visualOffsetTop : 0;
+        const measuredHeight = Math.round(Math.max(documentHeight, windowHeight, visualBottom, 0));
+        return {
+            measuredHeight,
+            visualBottom: Math.round(visualBottom || windowHeight || measuredHeight)
+        };
+    }
+
+    function isMainComposerPromptFocused() {
+        const activeElement = document.activeElement;
+        return activeElement instanceof HTMLTextAreaElement
+            && activeElement.matches('.ai-image-main-prompt[data-aiw-prompt]');
+    }
+
+    function setMobileKeyboardActive(active) {
+        const shouldActivate = Boolean(active && state.open && isMobileKeyboardDevice());
+        root?.classList?.toggle('is-mobile-keyboard-active', shouldActivate);
+    }
+
+    function scheduleMobileViewportSync() {
+        if (mobileViewportSyncFrame) return;
+        const sync = () => {
+            mobileViewportSyncFrame = 0;
+            syncMobileComposerMenuAnchor();
+        };
+        if (typeof global.requestAnimationFrame === 'function') {
+            mobileViewportSyncFrame = global.requestAnimationFrame(sync);
+        } else {
+            mobileViewportSyncFrame = global.setTimeout(sync, 16);
+        }
+    }
+
+    function getMobileComposerScrollSnapshot() {
+        const stage = overlay?.querySelector?.('.ai-image-stage');
+        return {
+            pageX: Number(global.scrollX || 0),
+            pageY: Number(global.scrollY || 0),
+            stageTop: Number(stage?.scrollTop || 0),
+            stageLeft: Number(stage?.scrollLeft || 0)
+        };
+    }
+
+    function restoreMobileComposerScroll(snapshot = null) {
+        if (!snapshot) return;
+        const stage = overlay?.querySelector?.('.ai-image-stage');
+        if (stage) {
+            stage.scrollTop = snapshot.stageTop;
+            stage.scrollLeft = snapshot.stageLeft;
+        }
+        if (Number(global.scrollX || 0) !== snapshot.pageX || Number(global.scrollY || 0) !== snapshot.pageY) {
+            global.scrollTo?.(snapshot.pageX, snapshot.pageY);
+        }
+        scheduleMobileViewportSync();
+    }
+
+    function lockMobileComposerScroll(snapshot = null) {
+        if (!isMobileWorkbenchViewport() || !state.open) return;
+        const lock = snapshot || getMobileComposerScrollSnapshot();
+        mobileComposerFocusLock = lock;
+        [0, 40, 90, 160, 260, 420].forEach((delay) => {
+            global.setTimeout?.(() => {
+                if (mobileComposerFocusLock !== lock) return;
+                restoreMobileComposerScroll(lock);
+            }, delay);
+        });
+    }
+
+    function focusMobileMainPrompt(textarea) {
+        if (!(textarea instanceof HTMLTextAreaElement)) return false;
+        if (!isMobileKeyboardDevice() || !state.open) return false;
+        setMobileKeyboardActive(true);
+        const snapshot = getMobileComposerScrollSnapshot();
+        lockMobileComposerScroll(snapshot);
+        try {
+            textarea.focus({ preventScroll: true });
+        } catch (_) {
+            textarea.focus();
+        }
+        restoreMobileComposerScroll(snapshot);
+        return true;
+    }
+
     function openWorkbench(payload = {}) {
+        const wasOpen = state.open;
         applyPayload(payload);
         openSelect = '';
         state.open = true;
+        if (!wasOpen) resetMobileViewportVars();
         render();
         setBodyOpenState(true);
         loadRemoteConfig();
@@ -4280,6 +4412,7 @@
         syncOverlayOpenState();
         renderDock();
         setBodyOpenState(false);
+        resetMobileViewportVars();
     }
 
     function toggleWorkbench() {
@@ -4349,13 +4482,22 @@
         wrap.className = 'ai-image-prompt-actions';
         wrap.innerHTML = `
             <button class="ai-image-prompt-action-btn" type="button" data-aiw-prompt-action="text">
-                <i class="fas fa-wand-magic-sparkles"></i>
+                <svg class="ai-image-wand-sparkles-icon" viewBox="0 0 576 512" aria-hidden="true" focusable="false">
+                    <path class="ai-image-wand-sparkles-icon__sparkles" fill="currentColor" d="M234.7 42.7L197 56.8c-3 1.1-5 4-5 7.2s2 6.1 5 7.2l37.7 14.1L248.8 123c1.1 3 4 5 7.2 5s6.1-2 7.2-5l14.1-37.7L315 71.2c3-1.1 5-4 5-7.2s-2-6.1-5-7.2L277.3 42.7 263.2 5c-1.1-3-4-5-7.2-5s-6.1 2-7.2 5L234.7 42.7zM7.5 117.2C3 118.9 0 123.2 0 128s3 9.1 7.5 10.8L64 160l21.2 56.5c1.7 4.5 6 7.5 10.8 7.5s9.1-3 10.8-7.5L128 160l56.5-21.2c4.5-1.7 7.5-6 7.5-10.8s-3-9.1-7.5-10.8L128 96 106.8 39.5C105.1 35 100.8 32 96 32s-9.1 3-10.8 7.5L64 96 7.5 117.2zm352 256c-4.5 1.7-7.5 6-7.5 10.8s3 9.1 7.5 10.8L416 416l21.2 56.5c1.7 4.5 6 7.5 10.8 7.5s9.1-3 10.8-7.5L480 416l56.5-21.2c4.5-1.7 7.5-6 7.5-10.8s-3-9.1-7.5-10.8L480 352l-21.2-56.5c-1.7-4.5-6-7.5-10.8-7.5s-9.1 3-10.8 7.5L416 352l-56.5 21.2z"></path>
+                    <path class="ai-image-wand-sparkles-icon__wand" fill="currentColor" d="M46.1 395.4c-18.7 18.7-18.7 49.1 0 67.9l34.6 34.6c18.7 18.7 49.1 18.7 67.9 0L529.9 116.5c18.7-18.7 18.7-49.1 0-67.9L495.3 14.1c-18.7-18.7-49.1-18.7-67.9 0L46.1 395.4zM484.6 82.6l-105 105-23.3-23.3 105-105 23.3 23.3z"></path>
+                </svg>
             </button>
             <button class="ai-image-prompt-action-btn" type="button" data-aiw-prompt-action="image">
-                <i class="fas fa-images"></i>
+                <svg class="ai-image-images-icon" viewBox="0 0 576 512" aria-hidden="true" focusable="false">
+                    <path class="ai-image-images-icon__front" fill="currentColor" d="M160 32c-35.3 0-64 28.7-64 64V320c0 35.3 28.7 64 64 64H512c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H160zM396 138.7l96 144c4.9 7.4 5.4 16.8 1.2 24.6S480.9 320 472 320H328 280 200c-9.2 0-17.6-5.3-21.6-13.6s-2.9-18.2 2.9-25.4l64-80c4.6-5.7 11.4-9 18.7-9s14.2 3.3 18.7 9l17.3 21.6 56-84C360.5 132 368 128 376 128s15.5 4 20 10.7zM192 128a32 32 0 1 1 64 0 32 32 0 1 1 -64 0z"></path>
+                    <path class="ai-image-images-icon__back" fill="currentColor" d="M48 120c0-13.3-10.7-24-24-24S0 106.7 0 120V344c0 75.1 60.9 136 136 136H456c13.3 0 24-10.7 24-24s-10.7-24-24-24H136c-48.6 0-88-39.4-88-88V120z"></path>
+                </svg>
             </button>
-            <button class="ai-image-prompt-action-btn" type="button" data-aiw-prompt-action="reverse">
-                <i class="fas fa-quote-left"></i>
+            <button class="ai-image-prompt-action-btn ai-image-prompt-action-btn--reverse" type="button" data-aiw-prompt-action="reverse">
+                <span class="ai-image-reverse-prompt-mark" aria-hidden="true">
+                    <span class="ai-image-reverse-prompt-mark__image"></span>
+                    <span class="ai-image-reverse-prompt-mark__lines"></span>
+                </span>
             </button>
         `;
         slot.appendChild(wrap);
@@ -4387,6 +4529,7 @@
         root.addEventListener('pointermove', handleRootPointerMove);
         root.addEventListener('pointerup', handleRootPointerUp);
         root.addEventListener('pointercancel', handleRootPointerUp);
+        root.addEventListener('touchstart', handleRootTouchStart, { passive: false });
         root.addEventListener('input', handleRootInput);
         root.addEventListener('change', handleRootChange);
         root.addEventListener('focusin', handleRootFocusIn);
@@ -4400,7 +4543,13 @@
         root.addEventListener('loadeddata', handleRootVideoLoaded, true);
         root.addEventListener('canplay', handleRootVideoLoaded, true);
         root.addEventListener('canplaythrough', handleRootVideoLoaded, true);
-        window.addEventListener('resize', syncMobileComposerMenuAnchor, { passive: true });
+        window.addEventListener('resize', scheduleMobileViewportSync, { passive: true });
+        window.addEventListener('orientationchange', () => {
+            resetMobileViewportVars();
+            scheduleMobileViewportSync();
+        }, { passive: true });
+        global.visualViewport?.addEventListener?.('resize', scheduleMobileViewportSync, { passive: true });
+        global.visualViewport?.addEventListener?.('scroll', scheduleMobileViewportSync, { passive: true });
 
         document.body.classList.add('ai-image-workbench-ready');
     }
@@ -4751,6 +4900,15 @@
     function handleRootPointerDown(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (!target || event.button !== 0) return;
+        const mainPrompt = target.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
+        if (mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
+            if (document.activeElement !== mainPrompt) {
+                event.preventDefault();
+                focusMobileMainPrompt(mainPrompt);
+                return;
+            }
+            lockMobileComposerScroll();
+        }
         const navButton = target.closest('[data-aiw-chat-nav-id]');
         const rail = target.closest('[data-aiw-chat-nav-rail]');
         if (!navButton || !rail) return;
@@ -4765,6 +4923,18 @@
         };
         rail.classList.add('is-dragging');
         navButton.setPointerCapture?.(event.pointerId);
+    }
+
+    function handleRootTouchStart(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const mainPrompt = target?.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
+        if (!(mainPrompt instanceof HTMLTextAreaElement) || !isMobileKeyboardDevice()) return;
+        if (document.activeElement !== mainPrompt) {
+            event.preventDefault();
+            focusMobileMainPrompt(mainPrompt);
+            return;
+        }
+        lockMobileComposerScroll();
     }
 
     function handleRootPointerMove(event) {
@@ -5272,6 +5442,13 @@
 
     function handleRootFocusIn(event) {
         const target = event.target instanceof Element ? event.target : null;
+        if (target?.matches?.('.ai-image-main-prompt[data-aiw-prompt]')) {
+            setMobileKeyboardActive(true);
+            lockMobileComposerScroll();
+            scheduleMobileViewportSync();
+            global.setTimeout?.(scheduleMobileViewportSync, 80);
+            global.setTimeout?.(scheduleMobileViewportSync, 260);
+        }
         const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
         if (!navButton) return;
         showChatNavigationPreview(navButton);
@@ -5279,6 +5456,16 @@
 
     function handleRootFocusOut(event) {
         const target = event.target instanceof Element ? event.target : null;
+        if (target?.matches?.('.ai-image-main-prompt[data-aiw-prompt]')) {
+            scheduleMobileViewportSync();
+            global.setTimeout?.(scheduleMobileViewportSync, 120);
+            global.setTimeout?.(() => {
+                if (!isMainComposerPromptFocused()) {
+                    mobileComposerFocusLock = null;
+                    setMobileKeyboardActive(false);
+                }
+            }, 180);
+        }
         const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
         if (!navButton) return;
         window.requestAnimationFrame(() => {
@@ -6350,7 +6537,7 @@
                 : (threadRoot?.id || explicitContinuationTaskId || ''),
             mode: inferredMode,
             status: inferredMode === 'chat' ? 'streaming' : 'queued',
-            progress: inferredMode === 'chat' ? 10 : 0,
+            progress: inferredMode === 'chat' ? 10 : (isVideoMode(inferredMode) ? 8 : 0),
             progressKnown: inferredMode === 'chat',
             prompt,
             referenceImage: imageContext.image,
@@ -6872,7 +7059,7 @@
     }
 
     function syncLiveElapsedTimer() {
-        const shouldRun = state.open && getBusyTasks().length > 0;
+        const shouldRun = getBusyTasks().length > 0 && Boolean(root?.querySelector?.('[data-aiw-live-status-task-id]'));
         if (!shouldRun) {
             if (liveElapsedTimer) {
                 global.clearInterval(liveElapsedTimer);
@@ -6882,7 +7069,7 @@
         }
         if (liveElapsedTimer) return;
         liveElapsedTimer = global.setInterval(() => {
-            if (!state.open || !getBusyTasks().length) {
+            if (!getBusyTasks().length || !root?.querySelector?.('[data-aiw-live-status-task-id]')) {
                 syncLiveElapsedTimer();
                 return;
             }
@@ -6895,15 +7082,47 @@
         const shell = overlay?.querySelector?.('.ai-image-shell');
         const composer = overlay?.querySelector?.('.ai-image-main-composer');
         if (!shell || !composer) return;
-        if (!window.matchMedia?.('(max-width: 820px)')?.matches) {
+        if (!isMobileWorkbenchViewport() || !state.open) {
             shell.style.removeProperty('--aiw-mobile-composer-top');
+            resetMobileViewportVars();
             return;
         }
+
+        const snapshot = getMobileViewportSnapshot();
+        if (!mobileWorkbenchLayoutHeight && snapshot.measuredHeight > 0) {
+            mobileWorkbenchLayoutHeight = snapshot.measuredHeight;
+        } else if (!isMainComposerPromptFocused() && snapshot.measuredHeight > mobileWorkbenchLayoutHeight) {
+            mobileWorkbenchLayoutHeight = snapshot.measuredHeight;
+        }
+
+        const layoutHeight = Math.max(
+            320,
+            Math.round(mobileWorkbenchLayoutHeight || snapshot.measuredHeight || global.innerHeight || 0)
+        );
+        const keyboardOffset = isMainComposerPromptFocused()
+            ? clampNumber(layoutHeight - snapshot.visualBottom, 0, Math.round(layoutHeight * 0.68), 0)
+            : 0;
+        setMobileKeyboardActive(isMainComposerPromptFocused() && keyboardOffset > 24);
+        root?.style?.setProperty('--aiw-mobile-layout-height', `${layoutHeight}px`);
+        root?.style?.setProperty('--aiw-mobile-keyboard-offset', `${Math.round(keyboardOffset)}px`);
+        root?.style?.setProperty('--aiw-mobile-composer-lift', `${Math.round(keyboardOffset)}px`);
+
+        const setComposerTopVar = () => {
+            const nextShellRect = shell.getBoundingClientRect?.();
+            const nextComposerRect = composer.getBoundingClientRect?.();
+            if (!nextShellRect || !nextComposerRect) return;
+            const nextComposerTop = Math.max(12, Math.round(nextComposerRect.top - nextShellRect.top));
+            root?.style?.setProperty('--aiw-mobile-composer-top', `${nextComposerTop}px`);
+            shell.style.setProperty('--aiw-mobile-composer-top', `${nextComposerTop}px`);
+        };
         const shellRect = shell.getBoundingClientRect?.();
         const composerRect = composer.getBoundingClientRect?.();
         if (!shellRect || !composerRect) return;
         const composerTop = Math.max(12, Math.round(composerRect.top - shellRect.top));
+        root?.style?.setProperty('--aiw-mobile-composer-top', `${composerTop}px`);
         shell.style.setProperty('--aiw-mobile-composer-top', `${composerTop}px`);
+        global.requestAnimationFrame?.(setComposerTopVar);
+        global.setTimeout?.(setComposerTopVar, 220);
     }
 
     function syncRenderedProgressBars() {
@@ -7180,44 +7399,503 @@
         return true;
     }
 
-    function renderDock() {
-        const busyCount = getBusyTasks().length;
-        const unreadCount = getCompletedUnreadTasks().length;
-        const activeTask = getActiveDisplayTask();
-        const fabClass = [
-            'ai-image-fab',
-            busyCount ? 'is-busy' : '',
-            unreadCount ? 'is-complete' : ''
-        ].filter(Boolean).join(' ');
-        const badgeValue = busyCount || unreadCount || '';
-        const fabTitle = busyCount ? `生成中 ${busyCount}` : (unreadCount ? `已完成 ${unreadCount}` : 'AI 生成');
-        const fabMeta = activeTask ? getStatusLabel(activeTask) : '打开图片工作台';
+    function isDockTerminalTask(task = {}) {
+        return ['succeeded', 'failed', 'cancelled'].includes(task?.status);
+    }
 
-        dock.innerHTML = `
-            <div class="${fabClass}" role="button" data-aiw-action="native-open" aria-label="打开 AI 图片工作台">
-                <input class="ai-image-native-hit" type="checkbox" data-aiw-native-hit aria-label="打开 AI 图片工作台" ${state.open ? 'checked' : ''}>
-                <span class="ai-image-fab-icon"><i class="fas fa-wand-magic-sparkles"></i></span>
-                <span class="ai-image-fab-copy">
-                    <strong>${escapeHtml(fabTitle)}</strong>
-                    <span>${escapeHtml(fabMeta)}</span>
+    function isDockVisibleTerminalTask(task = {}) {
+        if (!isDockTerminalTask(task) || isTaskSeen(task)) return false;
+        if (task.status === 'succeeded') return true;
+        const happenedAt = Number(task.completedAt || task.updatedAt || task.createdAt || 0);
+        return !happenedAt || Date.now() - happenedAt < 24 * 60 * 60 * 1000;
+    }
+
+    function getDockQueueTasks() {
+        const candidateTasks = [];
+        const addTask = (task) => {
+            if (!task?.id || candidateTasks.some((item) => item.id === task.id)) return;
+            if (isBusyTask(task) || isDockVisibleTerminalTask(task)) candidateTasks.push(task);
+        };
+        const activeTask = getActiveDisplayTask();
+        const activeRoot = getTaskThreadRoot(activeTask) || activeTask;
+        getTaskThread(activeRoot).forEach(addTask);
+        state.tasks.forEach(addTask);
+        return candidateTasks.sort((a, b) => {
+            const priority = (task) => {
+                if (task.status === 'processing' || task.status === 'streaming') return 0;
+                if (task.status === 'queued') return 1;
+                if (task.status === 'failed' || task.status === 'cancelled') return 2;
+                return 3;
+            };
+            const priorityDiff = priority(a) - priority(b);
+            if (priorityDiff) return priorityDiff;
+            return (b.createdAt || 0) - (a.createdAt || 0);
+        });
+    }
+
+    function getDockQueueProgress(tasks = []) {
+        return tasks.reduce((acc, task) => {
+            const count = getTaskGenerationCount(task);
+            const total = Math.max(1, Number(count.total || 1));
+            const completed = Math.min(total, Math.max(0, Number(count.completed || 0)));
+            acc.total += total;
+            acc.completed += isDockTerminalTask(task) ? Math.max(completed, total) : completed;
+            return acc;
+        }, { completed: 0, total: 0 });
+    }
+
+    function getDockTaskStage(task) {
+        if (!task) return 'idle';
+        if (task.status === 'queued') return 'queued';
+        if (task.status === 'succeeded') return 'complete';
+        if (task.status === 'failed' || task.status === 'cancelled') return 'failed';
+        if (task.status === 'processing' || task.status === 'streaming') {
+            const stepLabel = getTaskCurrentStepLabel(task);
+            if (/保存|整理/.test(stepLabel)) return 'saving';
+            const knownProgress = getTaskProgressPercent(task);
+            if (!isTextVisionTask(task) && knownProgress !== null && knownProgress >= 70) return 'saving';
+            return 'generating';
+        }
+        return 'idle';
+    }
+
+    function getDockEstimatedProgressByElapsed(task, { min = 12, max = 86, expectedSeconds = 90 } = {}) {
+        const seconds = getTaskElapsedSeconds(task);
+        const expected = Math.max(1, Number(expectedSeconds || 1));
+        const eased = 1 - Math.exp(-Math.max(0, seconds) / expected);
+        return Math.round(clampNumber(min + (max - min) * eased, min, max, min));
+    }
+
+    function getDockTextTaskProgressPercent(task, stage) {
+        const knownProgress = getTaskProgressPercent(task);
+        if (knownProgress !== null) {
+            return Math.round(clampNumber(knownProgress, stage === 'queued' ? 8 : 12, 96, 12));
+        }
+        if (stage === 'queued') return 10;
+        const receivedLength = String(task?.resultPrompt || '').length;
+        const reasoningLength = String(task?.reasoningText || '').length;
+        if (receivedLength > 0) {
+            return Math.round(clampNumber(26 + Math.sqrt(receivedLength) * 4.6, 28, 94, 42));
+        }
+        if (reasoningLength > 0) {
+            return Math.round(clampNumber(14 + Math.sqrt(reasoningLength) * 3.2, 16, 76, 28));
+        }
+        return getDockEstimatedProgressByElapsed(task, { min: 12, max: 48, expectedSeconds: 24 });
+    }
+
+    function getDockVideoTaskProgressPercent(task, stage) {
+        const knownProgress = getTaskProgressPercent(task);
+        if (knownProgress !== null) {
+            return Math.round(clampNumber(knownProgress, stage === 'queued' ? 8 : 12, 92, 12));
+        }
+        if (stage === 'queued') return 10;
+        const resolutionMultiplier = {
+            '480p': 0.72,
+            '720p': 1,
+            '1080p': 1.55,
+            '1k': 1,
+            '2k': 1.45,
+            '4k': 2.2
+        }[String(task?.resolution || '').toLowerCase()] || 1;
+        const durationMultiplier = Math.max(1, Number(task?.videoDuration || 5) / 5);
+        return getDockEstimatedProgressByElapsed(task, {
+            min: 14,
+            max: 86,
+            expectedSeconds: 120 * resolutionMultiplier * durationMultiplier
+        });
+    }
+
+    function getDockTaskProgressPercent(task, stage = getDockTaskStage(task)) {
+        if (!task) return 0;
+        if (stage === 'complete' || stage === 'failed') return 100;
+        if (isTextVisionTask(task)) return getDockTextTaskProgressPercent(task, stage);
+        if (isVideoMode(task?.mode)) return getDockVideoTaskProgressPercent(task, stage);
+        const knownProgress = getTaskProgressPercent(task);
+        if (knownProgress !== null && (stage === 'generating' || stage === 'saving')) {
+            return Math.round(clampNumber(knownProgress, 12, 88, DOCK_STAGE_PROGRESS[stage] * 100));
+        }
+        return Math.round((DOCK_STAGE_PROGRESS[stage] || 0) * 100);
+    }
+
+    function getDockStatusIcon(stage = 'idle') {
+        if (stage === 'queued') return 'fa-clock';
+        if (stage === 'saving') return 'fa-cloud-arrow-up';
+        if (stage === 'complete') return 'fa-check';
+        if (stage === 'failed') return 'fa-triangle-exclamation';
+        if (stage === 'generating') return 'fa-circle-notch fa-spin';
+        return 'fa-wand-magic-sparkles';
+    }
+
+    function getDockStageLabel(task, stage = getDockTaskStage(task)) {
+        if (stage === 'queued') return '排队中';
+        if (stage === 'saving') return '保存结果中';
+        if (stage === 'complete') return '全部完成';
+        if (stage === 'failed') return task?.status === 'cancelled' ? '已取消' : '生成失败';
+        if (stage === 'generating') return '生成中';
+        return 'AI 工作台';
+    }
+
+    function getDockTaskBadge(task) {
+        const stage = getDockTaskStage(task);
+        if (stage === 'failed') return task?.status === 'cancelled' ? '取消' : '失败';
+        if (stage === 'complete') return '完成';
+        return `${getDockTaskProgressPercent(task, stage)}%`;
+    }
+
+    function renderDockTaskBadge(task) {
+        const stage = getDockTaskStage(task);
+        if (stage === 'complete') {
+            return '<span class="ai-image-dock-task-badge is-icon" aria-label="完成" title="完成"><i class="fas fa-check"></i></span>';
+        }
+        return `<span class="ai-image-dock-task-badge">${escapeHtml(getDockTaskBadge(task))}</span>`;
+    }
+
+    function getDockTaskSummary(task) {
+        const stage = getDockTaskStage(task);
+        if (stage === 'complete') return getStatusLabel(task);
+        if (stage === 'failed') return task?.status === 'cancelled' ? '已取消 · 未扣费' : '生成失败 · 未扣费';
+        if (stage === 'queued') return getTaskQueueEstimateLabel(task) || '等待调度';
+        if (stage === 'saving') return '保存结果中';
+        return getTaskCurrentStepLabel(task);
+    }
+
+    function getDockTaskClass(task, activeTask) {
+        const stage = getDockTaskStage(task);
+        return [
+            'ai-image-dock-task',
+            isBusyTask(task) ? 'is-active' : '',
+            stage === 'complete' ? 'is-success' : '',
+            stage === 'failed' ? 'is-failed' : '',
+            activeTask?.id === task?.id || state.activeTaskId === task?.id ? 'is-current' : ''
+        ].filter(Boolean).join(' ');
+    }
+
+    function renderDockIcon() {
+        return `
+            <span class="ai-image-fab-core" aria-hidden="true">
+                <span class="ai-image-fab-particles">
+                    <span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span>
                 </span>
-                ${badgeValue ? `<span class="ai-image-fab-badge">${escapeHtml(badgeValue)}</span>` : '<span class="ai-image-fab-badge">AI</span>'}
+                <span class="ai-image-fab-depth"></span>
+                <span class="ai-image-fab-orbit"></span>
+                <span class="ai-image-fab-glass"></span>
+                <span class="ai-image-fab-core-inner">
+                    <span class="ai-image-fab-mark">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                    </span>
+                </span>
+            </span>
+        `;
+    }
+
+    function renderDockTaskList(tasks = [], activeTask = null, queueProgress = { completed: 0, total: 0 }, stage = getDockTaskStage(activeTask), progressPercent = 0) {
+        if (!tasks.length) return '';
+        const visibleTasks = tasks.slice(0, 4);
+        const queueTotal = Math.max(queueProgress.total || 0, queueProgress.completed || 0, 1);
+        const queueCompleted = Math.min(queueTotal, Math.max(0, Number(queueProgress.completed || 0)));
+        const queuePercent = Math.round((queueCompleted / queueTotal) * 100);
+        const summaryProgressPercent = isDockTerminalTask(activeTask)
+            ? queuePercent
+            : clampNumber(progressPercent, 0, 100, queuePercent);
+        const stageLabel = getDockStageLabel(activeTask, stage);
+        const elapsedMarkup = activeTask?.id && !isDockTerminalTask(activeTask)
+            ? ` · <span data-aiw-live-status-task-id="${escapeHtml(activeTask.id)}" data-aiw-live-status-kind="elapsed">${escapeHtml(getTaskElapsedLabel(activeTask))}</span>`
+            : '';
+        const summaryClass = [
+            'ai-image-dock-summary',
+            stage === 'complete' ? 'is-success' : '',
+            stage === 'failed' ? 'is-failed' : ''
+        ].filter(Boolean).join(' ');
+        return `
+            <div class="ai-image-dock-popover-head">
+                <span>任务队列</span>
+            </div>
+            <div class="${summaryClass}">
+                <div class="ai-image-dock-summary-main">
+                    <strong>队列 ${escapeHtml(queueCompleted)}/${escapeHtml(queueTotal)}</strong>
+                    <span>${escapeHtml(stageLabel)} · 当前任务 ${escapeHtml(progressPercent)}%${elapsedMarkup}</span>
+                </div>
+                <div class="ai-image-dock-summary-progress" style="--aiw-dock-summary-progress:${summaryProgressPercent / 100}" aria-hidden="true"></div>
+            </div>
+            <div class="ai-image-dock-task-list">
+                ${visibleTasks.map((task) => `
+                    <div class="ai-image-dock-task-enter">
+                        <div class="${getDockTaskClass(task, activeTask)}">
+                            <button class="ai-image-dock-task-main" type="button" data-aiw-dock-task-id="${escapeHtml(task.id)}" aria-label="${escapeHtml(`打开 ${getTaskTitle(task)}`)}">
+                                <span class="ai-image-dock-task-icon"><i class="fas ${escapeHtml(MODE_META[task.mode]?.icon || getStatusIcon(task))}"></i></span>
+                                <span class="ai-image-dock-task-copy">
+                                    <strong>${escapeHtml(getTaskTitle(task))}</strong>
+                                    <span>${escapeHtml(getDockTaskSummary(task))}</span>
+                                </span>
+                            </button>
+                            <span class="ai-image-dock-task-actions">
+                                ${renderDockTaskBadge(task)}
+                                ${isDockTerminalTask(task) ? `
+                                    <button class="ai-image-dock-task-dismiss" type="button" data-aiw-dock-dismiss-task-id="${escapeHtml(task.id)}" aria-label="${escapeHtml(`从队列移除 ${getTaskTitle(task)}`)}" title="从队列移除">
+                                        <i class="fas fa-xmark"></i>
+                                    </button>
+                                ` : ''}
+                            </span>
+                        </div>
+                    </div>
+                `).join('')}
             </div>
         `;
+    }
 
-        dock.querySelector('[data-aiw-native-hit]')?.addEventListener('change', (event) => {
+    function openDockTask(taskId = '') {
+        const task = state.tasks.find((item) => item.id === taskId);
+        if (!task) {
+            openWorkbench();
+            return;
+        }
+        state.activeTaskId = task.id;
+        markTaskThreadSeen(task.id);
+        openSelect = '';
+        openWorkbench();
+        persistState();
+        const locateTask = () => {
+            if (scrollToChatTurn(task.id)) return;
+            const rootTask = getTaskThreadRoot(task);
+            if (rootTask?.id && rootTask.id !== task.id) scrollToChatTurn(rootTask.id);
+        };
+        window.requestAnimationFrame(() => window.requestAnimationFrame(locateTask));
+    }
+
+    function dismissDockTask(taskId = '') {
+        const task = state.tasks.find((item) => item.id === taskId);
+        if (!task) return;
+        markTaskThreadSeen(task);
+        persistState();
+        render();
+    }
+
+    function setDockIconAnimationRate(fab, targetRate = 1, duration = 220) {
+        if (!fab?.getAnimations || typeof performance === 'undefined') return;
+        const animations = fab.getAnimations({ subtree: true }).filter((animation) => {
+            const target = animation?.effect?.target;
+            return target?.closest?.('.ai-image-fab-core');
+        });
+        if (!animations.length) return;
+        if (dockAnimationRateFrame) {
+            window.cancelAnimationFrame(dockAnimationRateFrame);
+            dockAnimationRateFrame = 0;
+        }
+        const start = performance.now();
+        const fromRates = animations.map((animation) => {
+            const currentRate = Number(animation.playbackRate);
+            return Number.isFinite(currentRate) && currentRate > 0 ? currentRate : 1;
+        });
+        const ease = (value) => 1 - Math.pow(1 - value, 3);
+        const step = (now) => {
+            const progress = duration > 0 ? clampNumber((now - start) / duration, 0, 1, 1) : 1;
+            const eased = ease(progress);
+            animations.forEach((animation, index) => {
+                if (!animation?.playbackRate && animation?.playbackRate !== 0) return;
+                animation.playbackRate = fromRates[index] + (targetRate - fromRates[index]) * eased;
+            });
+            if (progress < 1) {
+                dockAnimationRateFrame = window.requestAnimationFrame(step);
+            } else {
+                dockAnimationRateFrame = 0;
+            }
+        };
+        dockAnimationRateFrame = window.requestAnimationFrame(step);
+    }
+
+    function bindDockAnimationHover(fab) {
+        if (!fab) return;
+        if (fab.dataset.aiwAnimationHoverBound === '1') return;
+        fab.dataset.aiwAnimationHoverBound = '1';
+        const speedUp = () => setDockIconAnimationRate(fab, 2, 240);
+        const slowDown = () => setDockIconAnimationRate(fab, 1, 300);
+        fab.addEventListener('pointerenter', speedUp);
+        fab.addEventListener('pointerleave', slowDown);
+        fab.addEventListener('focusin', speedUp);
+        fab.addEventListener('focusout', slowDown);
+    }
+
+    function bindDockNativeHit(fab) {
+        const nativeHit = fab?.querySelector?.('[data-aiw-native-hit]');
+        if (!nativeHit || nativeHit.dataset.aiwNativeBound === '1') return;
+        nativeHit.dataset.aiwNativeBound = '1';
+        nativeHit.addEventListener('change', (event) => {
             state.open = Boolean(event.target.checked);
             setBodyOpenState(state.open);
             render();
         });
+    }
 
-        dock.querySelectorAll('[data-aiw-action]:not([data-aiw-action^="native-"])').forEach((button) => {
+    function bindDockTaskButtons() {
+        dock.querySelectorAll('[data-aiw-dock-task-id]').forEach((button) => {
+            if (button.dataset.aiwDockTaskBound === '1') return;
+            button.dataset.aiwDockTaskBound = '1';
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                handleAction(button.getAttribute('data-aiw-action') || '', button);
+                openDockTask(button.getAttribute('data-aiw-dock-task-id') || '');
             });
         });
+        dock.querySelectorAll('[data-aiw-dock-dismiss-task-id]').forEach((button) => {
+            if (button.dataset.aiwDockDismissBound === '1') return;
+            button.dataset.aiwDockDismissBound = '1';
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dismissDockTask(button.getAttribute('data-aiw-dock-dismiss-task-id') || '');
+            });
+        });
+    }
+
+    function playDockPopoverEnter() {
+        if (!dock || dockPopoverSessionActive) return;
+        dockPopoverSessionActive = true;
+        dockPopoverEnterActive = true;
+        dock.classList.add('is-popover-entering');
+        if (dockPopoverEnterTimer) window.clearTimeout(dockPopoverEnterTimer);
+        dockPopoverEnterTimer = window.setTimeout(() => {
+            dockPopoverEnterActive = false;
+            dock?.classList.remove('is-popover-entering');
+            dockPopoverEnterTimer = 0;
+        }, 520);
+    }
+
+    function clearDockPopoverEnter() {
+        dockPopoverEnterActive = false;
+        dockPopoverSessionActive = false;
+        if (dockPopoverEnterTimer) {
+            window.clearTimeout(dockPopoverEnterTimer);
+            dockPopoverEnterTimer = 0;
+        }
+        dock?.classList.remove('is-popover-entering');
+    }
+
+    function bindDockPopoverEnter() {
+        if (!dock || dock.dataset.aiwPopoverEnterBound === '1') return;
+        dock.dataset.aiwPopoverEnterBound = '1';
+        dock.addEventListener('pointerenter', () => {
+            dockPopoverPointerInside = true;
+            playDockPopoverEnter();
+        });
+        dock.addEventListener('pointerleave', () => {
+            dockPopoverPointerInside = false;
+            if (!dockPopoverFocusInside) clearDockPopoverEnter();
+        });
+        dock.addEventListener('focusin', () => {
+            dockPopoverFocusInside = true;
+            playDockPopoverEnter();
+        });
+        dock.addEventListener('focusout', (event) => {
+            if (event.currentTarget?.contains?.(event.relatedTarget)) return;
+            dockPopoverFocusInside = false;
+            if (!dockPopoverPointerInside) clearDockPopoverEnter();
+        });
+        dockPopoverPointerInside = dock.matches(':hover');
+        dockPopoverFocusInside = dock.matches(':focus-within');
+        if (dockPopoverPointerInside || dockPopoverFocusInside) playDockPopoverEnter();
+    }
+
+    function renderDockPopover(popoverMarkup = '') {
+        const existingPopover = dock.querySelector('.ai-image-dock-popover');
+        if (!popoverMarkup) {
+            existingPopover?.remove();
+            clearDockPopoverEnter();
+            return;
+        }
+        if (existingPopover) {
+            existingPopover.innerHTML = popoverMarkup;
+            return;
+        }
+        const wrapper = document.createElement('section');
+        wrapper.className = 'ai-image-dock-popover';
+        wrapper.setAttribute('aria-label', '生成任务快速定位');
+        wrapper.innerHTML = popoverMarkup;
+        const fab = dock.querySelector('.ai-image-fab');
+        if (fab) {
+            fab.insertAdjacentElement('beforebegin', wrapper);
+        } else {
+            dock.appendChild(wrapper);
+        }
+    }
+
+    function renderDock() {
+        const dockTasks = getDockQueueTasks();
+        const busyTasks = dockTasks.filter(isBusyTask);
+        const failedTasks = dockTasks.filter((task) => task.status === 'failed' || task.status === 'cancelled');
+        const completeTasks = dockTasks.filter((task) => task.status === 'succeeded');
+        const activeDisplayTask = getActiveDisplayTask();
+        const activeTask = busyTasks.find((task) => task.id === activeDisplayTask?.id)
+            || busyTasks[0]
+            || failedTasks[0]
+            || completeTasks[0]
+            || null;
+        const stage = getDockTaskStage(activeTask);
+        const progressPercent = getDockTaskProgressPercent(activeTask, stage);
+        const queueProgress = getDockQueueProgress(dockTasks);
+        const isIdle = !dockTasks.length;
+        const terminalSignature = !isIdle && (stage === 'complete' || stage === 'failed')
+            ? `${stage}:${dockTasks.map((task) => `${task.id}:${task.status}:${task.completedAt || ''}`).join('|')}`
+            : '';
+        const shouldFlashTerminal = Boolean(terminalSignature && terminalSignature !== lastDockTerminalSignature);
+        if (terminalSignature) lastDockTerminalSignature = terminalSignature;
+        if (!terminalSignature && (busyTasks.length || isIdle)) lastDockTerminalSignature = '';
+        const fabClass = [
+            'ai-image-fab',
+            'is-idle',
+            `is-${stage}`,
+            !isIdle ? 'has-status-dot' : '',
+            busyTasks.length ? 'is-busy' : '',
+            completeTasks.length && !busyTasks.length && !failedTasks.length ? 'is-complete' : '',
+            failedTasks.length && !busyTasks.length ? 'is-failed' : '',
+            shouldFlashTerminal ? 'is-terminal-flash' : ''
+        ].filter(Boolean).join(' ');
+        dock.className = [
+            'ai-image-dock',
+            `is-${stage}`,
+            isIdle ? 'is-idle' : '',
+            isIdle ? '' : 'has-tasks',
+            failedTasks.length && !busyTasks.length ? 'has-failed' : '',
+            completeTasks.length && !busyTasks.length && !failedTasks.length ? 'has-complete' : '',
+            dockPopoverEnterActive ? 'is-popover-entering' : ''
+        ].filter(Boolean).join(' ');
+
+        const popoverMarkup = renderDockTaskList(dockTasks, activeTask, queueProgress, stage, progressPercent);
+        let fab = dock.querySelector('.ai-image-fab');
+        if (!fab) {
+            dock.innerHTML = `
+                ${popoverMarkup ? `<section class="ai-image-dock-popover" aria-label="生成任务快速定位">${popoverMarkup}</section>` : ''}
+                <div class="${fabClass}" role="button" data-aiw-action="native-open" aria-label="打开 AI 图片工作台" style="--aiw-dock-progress:${progressPercent / 100}">
+                    <input class="ai-image-native-hit" type="checkbox" data-aiw-native-hit aria-label="打开 AI 图片工作台" ${state.open ? 'checked' : ''}>
+                    ${renderDockIcon()}
+                    ${isIdle ? '' : '<span class="ai-image-fab-status-dot" aria-hidden="true"></span>'}
+                </div>
+            `;
+            fab = dock.querySelector('.ai-image-fab');
+        } else {
+            renderDockPopover(popoverMarkup);
+            fab.className = fabClass;
+            fab.setAttribute('role', 'button');
+            fab.setAttribute('data-aiw-action', 'native-open');
+            fab.setAttribute('aria-label', '打开 AI 图片工作台');
+            fab.style.setProperty('--aiw-dock-progress', progressPercent / 100);
+            const nativeHit = fab.querySelector('[data-aiw-native-hit]');
+            if (nativeHit) nativeHit.checked = state.open;
+            const statusDot = fab.querySelector('.ai-image-fab-status-dot');
+            if (isIdle) {
+                statusDot?.remove();
+            } else if (!statusDot) {
+                fab.insertAdjacentHTML('beforeend', '<span class="ai-image-fab-status-dot" aria-hidden="true"></span>');
+            }
+        }
+
+        bindDockAnimationHover(fab);
+        bindDockPopoverEnter();
+        bindDockNativeHit(fab);
+        bindDockTaskButtons();
+        syncLiveElapsedTimer();
     }
 
     function renderOverlay() {
