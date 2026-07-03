@@ -690,7 +690,8 @@ test('ai image workbench exposes video generation only from configured video mod
     assert.match(source, /const shouldCloseMobileSidebar = shouldCloseMobileSidebarFromBlankClick\(target\)/);
     assert.match(source, /function syncMobileComposerMenuAnchor\(\)/);
     assert.match(source, /shell\.style\.setProperty\('--aiw-mobile-composer-top', `\$\{composerTop\}px`\)/);
-    assert.match(source, /window\.addEventListener\('resize', syncMobileComposerMenuAnchor, \{ passive: true \}\)/);
+    assert.match(source, /window\.addEventListener\('resize', scheduleMobileViewportSync, \{ passive: true \}\)/);
+    assert.match(source, /global\.visualViewport\?\.addEventListener\?\.\('resize', scheduleMobileViewportSync, \{ passive: true \}\)/);
     assert.match(source, /syncPromptTextareaHeight\(target\);\s*syncMobileComposerMenuAnchor\(\);/);
     assert.match(source, /openSelect = target\.closest\('\[data-aiw-image-settings\]'\) \? 'imageSettings' : \(target\.closest\('\[data-aiw-video-settings\]'\) \? 'videoSettings' : \(target\.closest\('\[data-aiw-chat-settings\]'\) \? 'chatSettings' : ''\)\)/);
     assert.match(source, /function renderVideoSettingsSelect\(\)/);
@@ -1159,11 +1160,11 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-main-cost\s*\{[\s\S]*order: 4;[\s\S]*flex: 0 0 auto;/);
     assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-rail-wallet\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-rail-close\s*\{[\s\S]*display: inline-flex;[\s\S]*margin-left: auto;/);
-    assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-menu,[\s\S]*\.ai-image-capability-menu\s*\{[\s\S]*position: fixed;[\s\S]*right: auto;[\s\S]*bottom: calc\(100dvh - var\(--aiw-mobile-composer-top, 168px\) \+ 6px\);[\s\S]*left: 50%;[\s\S]*width: min\(240px, calc\(100vw - 32px\)\);[\s\S]*box-shadow: 0 6px 16px rgba\(15, 23, 42, 0\.08\), 0 1px 2px rgba\(15, 23, 42, 0\.05\);[\s\S]*transform: translateX\(-50%\);/);
+    assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-menu,[\s\S]*\.ai-image-capability-menu\s*\{[\s\S]*position: fixed;[\s\S]*right: auto;[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 168px\) \+ 6px\);[\s\S]*left: 50%;[\s\S]*width: min\(240px, calc\(100vw - 32px\)\);[\s\S]*box-shadow: 0 6px 16px rgba\(15, 23, 42, 0\.08\), 0 1px 2px rgba\(15, 23, 42, 0\.05\);[\s\S]*transform: translateX\(-50%\);/);
     assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-model-menu\s*\{[\s\S]*width: min\(320px, calc\(100vw - 32px\)\);[\s\S]*min-width: min\(260px, calc\(100vw - 32px\)\);/);
-    assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-image-settings-menu,[\s\S]*\.ai-image-video-settings-menu,[\s\S]*\.ai-image-chat-settings-menu\s*\{[\s\S]*position: fixed;[\s\S]*bottom: calc\(100dvh - var\(--aiw-mobile-composer-top, 168px\) \+ 6px\);[\s\S]*width: min\(360px, calc\(100vw - 32px\)\);[\s\S]*overflow-y: auto;[\s\S]*touch-action: pan-y;[\s\S]*box-shadow: 0 6px 16px rgba\(15, 23, 42, 0\.08\), 0 1px 2px rgba\(15, 23, 42, 0\.05\);/);
-    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-menu,[\s\S]*\.ai-image-capability-menu\s*\{[\s\S]*bottom: calc\(100dvh - var\(--aiw-mobile-composer-top, 152px\) \+ 6px\);/);
-    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-image-settings-menu,[\s\S]*\.ai-image-video-settings-menu,[\s\S]*\.ai-image-chat-settings-menu\s*\{[\s\S]*bottom: calc\(100dvh - var\(--aiw-mobile-composer-top, 152px\) \+ 6px\);/);
+    assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-image-settings-menu,[\s\S]*\.ai-image-video-settings-menu,[\s\S]*\.ai-image-chat-settings-menu\s*\{[\s\S]*position: fixed;[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 168px\) \+ 6px\);[\s\S]*width: min\(360px, calc\(100vw - 32px\)\);[\s\S]*overflow-y: auto;[\s\S]*touch-action: pan-y;[\s\S]*box-shadow: 0 6px 16px rgba\(15, 23, 42, 0\.08\), 0 1px 2px rgba\(15, 23, 42, 0\.05\);/);
+    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-menu,[\s\S]*\.ai-image-capability-menu\s*\{[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 152px\) \+ 6px\);/);
+    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-image-settings-menu,[\s\S]*\.ai-image-video-settings-menu,[\s\S]*\.ai-image-chat-settings-menu\s*\{[\s\S]*bottom: calc\(var\(--aiw-mobile-layout-height, 100dvh\) - var\(--aiw-mobile-composer-top, 152px\) \+ 6px\);/);
     assert.doesNotMatch(cssSource, /bottom: calc\(84px \+ env\(safe-area-inset-bottom, 0px\)\);/);
     assert.doesNotMatch(cssSource, /bottom: calc\(78px \+ env\(safe-area-inset-bottom, 0px\)\);/);
     assert.match(cssSource, /@media \(max-width: 820px\) \{[\s\S]*\.ai-image-result-grid--video,[\s\S]*\.ai-image-result-grid--video\.ai-image-result-grid--thread\s*\{[\s\S]*grid-template-columns: minmax\(0, min\(360px, 100%\)\);/);
@@ -1172,7 +1173,7 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-history-sidebar\.is-collapsed:hover \.ai-image-rail-btn,[\s\S]*\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-btn\s*\{[\s\S]*width: 40px;[\s\S]*height: 40px;[\s\S]*justify-content: center;[\s\S]*gap: 0;[\s\S]*padding: 0;/);
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-history-sidebar\.is-collapsed:hover \.ai-image-rail-btn::after,[\s\S]*\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-btn::after\s*\{[\s\S]*max-width: 0;[\s\S]*opacity: 0;/);
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-canvas\s*\{[\s\S]*padding-top: 56px;/);
-    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-composer,[\s\S]*\.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-main-composer\s*\{[\s\S]*width: calc\(100% - 16px\);/);
+    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-composer,[\s\S]*\.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-main-composer\s*\{[\s\S]*right: 8px;[\s\S]*left: 8px;[\s\S]*width: auto;/);
 });
 
 test('ai image previews keep image cards compact while video cards are larger', () => {

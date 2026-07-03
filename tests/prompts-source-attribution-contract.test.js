@@ -107,7 +107,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'const promptId = String(item.id ?? item.supabaseId ?? item.supabase_id ?? \'\').trim();',
         'isRelatedMode = normalizedMode === \'related\';',
         'modalInner?.classList.toggle(\'related-mode\', isRelatedMode);',
-        'renderRelatedPrompts(updatedItem);',
+        'scheduleRelatedPromptsRender(updatedItem);',
         'function renderPromptModalSourceActions(item = {})',
         'function syncPromptModalUnlockPriceState()',
         'normalizePromptUnlockPrice(_unlockPrice, 1) === 0',
@@ -277,9 +277,9 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'related prompt profiles should be warmed during idle time to reduce click latency'
     );
     assert.equal(
-        promptsSource.includes('if (isRelatedMode) {\n                renderRelatedPrompts(updatedItem);\n            }'),
+        promptsSource.includes('if (isRelatedMode) {\n                scheduleRelatedPromptsRender(updatedItem);\n            } else {\n                scheduleRelatedPromptWarmup(updatedItem);\n            }'),
         true,
-        'prompt detail hydration should only rerender related prompts while the related panel is open'
+        'prompt detail hydration should only rerender related prompts while the related panel is open and warm them otherwise'
     );
     assert.equal(
         promptsSource.includes('href="${escapeHtml(attribution.sourceUrl)}"'),
