@@ -1196,10 +1196,13 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*min\(240px, 100%\)/);
     assert.match(source, /const resultGridModeClass = threadTasks\.some\(\(item\) => isVideoMode\(item\.mode\)\) \? 'ai-image-result-grid--video' : ''/);
     assert.match(source, /const awaitingVideoResult = isVideoMode\(item\.mode\) && item\.status === 'succeeded'/);
+    assert.match(source, /const awaitingImageReload = !awaitingVideoResult && item\.status === 'succeeded'/);
+    assert.match(source, /type: awaitingImageReload \? 'reloading' : 'pending'/);
     assert.match(source, /forceBusy: awaitingVideoResult/);
     assert.match(source, /const anchoredTaskIds = new Set\(\)/);
     assert.match(source, /const navigationAnchor = Boolean\(taskId && !anchoredTaskIds\.has\(taskId\)\)/);
     assert.match(source, /renderInlineTaskPreview\(entry\.task, entry\.baseSequence \? `基于序列 \$\{entry\.baseSequence\} 续作` : '生成预览', \{ showPrompt: !isVideoMode\(entry\.task\?\.mode\), forceBusy: Boolean\(entry\.forceBusy\), navigationAnchor \}\)/);
+    assert.match(source, /imageEntries\.some\(\(entry\) => entry\.type === 'pending' \|\| entry\.type === 'reloading'\)/);
     assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
 });
 
