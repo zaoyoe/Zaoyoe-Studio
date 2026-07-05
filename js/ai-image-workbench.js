@@ -2204,7 +2204,7 @@
             updatedAt,
             images: Array.isArray(serverImages) ? serverImages.slice(0, 4).map((image, index) => normalizeResultImage(image, index, task)).filter(Boolean) : [],
             deliveredImageCount: Number.isFinite(deliveredImageCount) && deliveredImageCount >= 0 ? deliveredImageCount : 0,
-            resultPrompt: String(task.resultPrompt || task.result_prompt || '').slice(0, 4000),
+            resultPrompt: String(task.resultPrompt || task.result_prompt || ''),
             reasoningText: String(task.reasoningText || task.reasoning_text || metadata.reasoning_content || metadata.reasoningContent || '').slice(0, 12000),
             metadata,
             errorCode,
@@ -3989,6 +3989,30 @@
         return Math.round(clampNumber(task.progress, 0, 99, 0));
     }
 
+    function getTaskStageProgressPercent(task) {
+        if (!task) return 0;
+        const knownProgress = getTaskProgressPercent(task);
+        if (knownProgress !== null) return knownProgress;
+        if (!isBusyTask(task)) return task.status === 'succeeded' ? 100 : 0;
+        if (isTextVisionTask(task) || isVideoMode(task?.mode)) {
+            return getDockTaskProgressPercent(task, getDockTaskStage(task));
+        }
+        if (task.status === 'queued') {
+            const queuedStep = getTaskQueuedStepLabel(task);
+            if (/排队|已受理/.test(queuedStep)) return 12;
+            if (/准备/.test(queuedStep)) return 22;
+            if (/生成/.test(queuedStep)) return 46;
+            if (/返回|等待/.test(queuedStep)) return 72;
+            return 12;
+        }
+        const step = getTaskCurrentStepLabel(task);
+        if (/请求|受理/.test(step)) return 24;
+        if (/模型|Gemini|生成/.test(step)) return 60;
+        if (/整理/.test(step)) return 82;
+        if (/保存/.test(step)) return 90;
+        return getDockTaskProgressPercent(task, getDockTaskStage(task));
+    }
+
     function getTaskProgressBadge(task) {
         const percent = getTaskProgressPercent(task);
         if (percent !== null) return `${percent}%`;
@@ -4617,9 +4641,17 @@
     function setBodyOpenState(open) {
         document.documentElement.classList.toggle('ai-image-workbench-open', open);
         document.body?.classList.toggle('ai-image-workbench-open', open);
+        if (!open) {
+            setBodyImagePreviewState(false);
+        }
         if (nativeToggle && nativeToggle.checked !== open) {
             nativeToggle.checked = open;
         }
+    }
+
+    function setBodyImagePreviewState(open) {
+        document.documentElement.classList.toggle('ai-image-preview-open', open);
+        document.body?.classList.toggle('ai-image-preview-open', open);
     }
 
     function isMobileWorkbenchViewport() {
@@ -4789,6 +4821,7 @@
         openSelect = '';
         clearImagePreviewLoadTimer();
         imagePreview = null;
+        setBodyImagePreviewState(false);
         state.open = false;
         syncOverlayOpenState();
         renderDock();
@@ -6446,6 +6479,7 @@
         } else {
             loadRemoteRecords({ force: true }).finally(scheduleRemoteRecordsPoll);
         }
+        setBodyImagePreviewState(true);
         render();
     }
 
@@ -6453,6 +6487,7 @@
         if (!imagePreview) return;
         clearImagePreviewLoadTimer();
         imagePreview = null;
+        setBodyImagePreviewState(false);
         render();
     }
 
@@ -8361,6 +8396,7 @@
             openSelect = '';
             clearImagePreviewLoadTimer();
             imagePreview = null;
+            setBodyImagePreviewState(false);
             disconnectChatNavigationRail();
             return;
         }
@@ -9258,8 +9294,7 @@
         const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
         const isCancelled = task.status === 'cancelled';
         const stoppedReason = isStopped ? getTaskFailureReason(task) : '';
-        const progress = Math.max(0, Math.min(100, task.progress || 0));
-        const progressClass = task.progressKnown ? '' : ' is-indeterminate';
+        const progress = getTaskStageProgressPercent(task);
         const statusItems = [
             { kind: 'step', text: getTaskCurrentStepLabel(task) },
             { kind: 'image', text: getTaskCurrentImageLabel(task) },
@@ -9292,7 +9327,7 @@
 		                                <div class="ai-image-result-pending-meta">
                                             ${statusItems.map((item, itemIndex) => `<span class="${itemIndex === 0 ? 'is-step' : ''}" data-aiw-live-status-task-id="${escapeHtml(task.id)}" data-aiw-live-status-kind="${escapeHtml(item.kind)}">${escapeHtml(item.text)}</span>`).join('')}
 		                                </div>
-		                                <div class="ai-image-progress${progressClass}" data-progress-key="inline-${escapeHtml(task.id)}" data-progress="${escapeHtml(Math.round(progress))}" style="--aiw-progress:${progress / 100}"><span></span></div>
+		                                <div class="ai-image-progress" data-progress-key="inline-${escapeHtml(task.id)}" data-progress="${escapeHtml(Math.round(progress))}" style="--aiw-progress:${progress / 100}"><span></span></div>
 		                            </div>` : (stoppedReason ? `<div class="ai-image-result-failure-reason">${escapeHtml(stoppedReason)}</div>` : '')}
 		                        </div>
                     </div>

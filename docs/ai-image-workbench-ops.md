@@ -30,7 +30,8 @@ AI_IMAGE_API_KEY=
 AI_IMAGE_API_BASE_URL=https://api.openai.com/v1
 AI_IMAGE_MODEL=gpt-image-2
 AI_IMAGE_CHAT_MODEL=gpt-4o-mini
-AI_IMAGE_CHAT_MAX_TOKENS=1600
+# Optional. Leave empty to avoid adding an app-side output cap for streaming chat.
+AI_IMAGE_CHAT_MAX_TOKENS=
 ```
 
 ## R2 存储环境变量

@@ -10,7 +10,7 @@ const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 const DEFAULT_VIDEO_MODEL = 'default-video-model';
 const DEFAULT_PROVIDER_TIMEOUT_MS = 120000;
-const DEFAULT_CHAT_MAX_TOKENS = 1600;
+const DEFAULT_REVERSE_MAX_TOKENS = 520;
 const DEFAULT_VIDEO_POLL_INTERVAL_MS = 3000;
 const DEFAULT_VIDEO_POLL_MAX_ATTEMPTS = 160;
 const MAX_VIDEO_POLL_MAX_ATTEMPTS = 240;
@@ -4872,15 +4872,23 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         throw error;
     }
 
-    const requestBody = {
-        model: config.model,
-        messages: buildOpenAiChatMessages(task),
-        stream: false,
-        max_tokens: normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, task.mode === 'reverse' ? 520 : DEFAULT_CHAT_MAX_TOKENS, {
+    const maxTokens = task.mode === 'reverse'
+        ? normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, DEFAULT_REVERSE_MAX_TOKENS, {
             min: 64,
             max: 16000
         })
+        : normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, 0, {
+            min: 64,
+            max: 64000
+        });
+    const requestBody = {
+        model: config.model,
+        messages: buildOpenAiChatMessages(task),
+        stream: false
     };
+    if (maxTokens > 0) {
+        requestBody.max_tokens = maxTokens;
+    }
     const preflightMs = elapsedMs(preflightStart);
 
     const sub2ApiClientRequestId = isSub2ApiGatewayBaseUrl(config.baseUrl)

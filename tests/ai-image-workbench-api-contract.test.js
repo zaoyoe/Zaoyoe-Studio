@@ -61,7 +61,8 @@ test('ai image workbench waits for server results instead of locally fabricating
     assert.doesNotMatch(source, /Math\.min\(92,/);
     assert.match(source, /scheduleRemoteRecordsPoll/);
     assert.match(source, /progressKnown/);
-    assert.match(source, /is-indeterminate/);
+    assert.match(source, /function getTaskStageProgressPercent\(task\)/);
+    assert.doesNotMatch(source, /is-indeterminate/);
 });
 
 test('ai image workbench recovers stuck busy cards by client task id', () => {
@@ -513,6 +514,7 @@ test('ai image workbench exposes preflight timing in task summaries', () => {
 
 test('ai image full preview keeps preview visible while original is preparing', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    const previewRule = getCssRuleBlock(cssSource, '.ai-image-full-preview');
     assert.match(source, /const ORIGINAL_READY_POLL_LIMIT = 80/);
     assert.match(source, /function syncImagePreviewFromTasks\(\)/);
     assert.match(source, /function getPreviewOriginalProgress/);
@@ -531,6 +533,11 @@ test('ai image full preview keeps preview visible while original is preparing', 
     assert.match(source, /src: imagePreview\.originalLoaded && originalReady \? originalSrc : \(previewSrc \|\| imagePreview\.src\)/);
     assert.match(cssSource, /\.ai-image-full-preview__body img\.is-preview-only/);
     assert.match(cssSource, /\.ai-image-full-preview__pending-bar span/);
+    assert.match(previewRule, /z-index: 100250;/);
+    assert.match(source, /function setBodyImagePreviewState\(open\)/);
+    assert.match(source, /setBodyImagePreviewState\(true\)/);
+    assert.match(source, /setBodyImagePreviewState\(false\)/);
+    assert.match(cssSource, /body\.ai-image-preview-open #promptModalTopBtn\s*\{[\s\S]*visibility: hidden !important;/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -681,6 +688,12 @@ test('ai image workbench treats legacy billing trace gaps as reloadable records'
     assert.match(cssSource, /\.ai-image-dock-task\.is-reloading/);
     assert.match(cssSource, /\.ai-image-reload-dot/);
     assert.match(cssSource, /\.ai-image-inline-reloading-visual/);
+    assert.match(cssSource, /\.ai-image-inline-reloading-visual span\s*\{[\s\S]*top: min\(78%, calc\(100% - 82px\)\);/);
+    assert.match(cssSource, /\.ai-image-inline-reloading-visual span\s*\{[\s\S]*transform: translate\(-50%, -50%\);/);
+    assert.match(cssSource, /\.ai-image-inline-reloading-visual span\s*\{[\s\S]*background|\.ai-image-inline-reloading-visual span\s*\{[\s\S]*text-shadow:/);
+    const inlineReloadCssMatch = cssSource.match(/\.ai-image-inline-reloading-visual span\s*\{[\s\S]*?\n\}/);
+    assert.ok(inlineReloadCssMatch, 'inline reload span CSS should be present');
+    assert.doesNotMatch(inlineReloadCssMatch[0], /box-shadow|backdrop-filter|border-radius: 999px|background:/);
     assert.doesNotMatch(cssSource, /\.ai-image-reload-dot i/);
     assert.doesNotMatch(cssSource, /\.ai-image-inline-reloading-visual i/);
 });
@@ -863,6 +876,8 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /function getChatThreadMessages/);
 	    assert.match(source, /role: 'user',\s*content: task\.prompt/);
 	    assert.match(source, /role: 'assistant',\s*content: task\.resultPrompt/);
+	    assert.match(source, /resultPrompt: String\(task\.resultPrompt \|\| task\.result_prompt \|\| ''\),/);
+	    assert.doesNotMatch(source, /resultPrompt: String\(task\.resultPrompt \|\| task\.result_prompt \|\| ''\)\.slice\(0, 4000\)/);
 	    const chatMessagesStart = source.indexOf('function getChatThreadMessages');
 	    const chatMessagesEnd = source.indexOf('function getHistoryThreadRows()', chatMessagesStart);
 	    assert.notEqual(chatMessagesStart, -1, 'getChatThreadMessages should be present');
@@ -1363,7 +1378,12 @@ test('ai image workbench stops inline progress visuals after task failure', () =
     assert.match(source, /const isBusy = forceBusy \|\| \['queued', 'processing'\]\.includes\(task\.status\) \|\| task\.status === 'streaming';/);
     assert.match(source, /const isStopped = \['failed', 'cancelled'\]\.includes\(task\.status\) && !isTaskReloadableBillingRecord\(task\)/);
     assert.match(source, /\$\{isBusy \? `<div class="ai-image-result-pending-overlay">/);
-    assert.match(source, /<div class="ai-image-progress\$\{progressClass\}"/);
+    assert.match(source, /const progress = getTaskStageProgressPercent\(task\)/);
+    assert.match(source, /<div class="ai-image-progress" data-progress-key="inline-\$\{escapeHtml\(task\.id\)\}"/);
+    assert.doesNotMatch(source, /progressClass/);
+    assert.doesNotMatch(cssSource, /aiw-progress-wait/);
+    assert.doesNotMatch(cssSource, /aiw-progress-energy/);
+    assert.doesNotMatch(cssSource, /\.ai-image-progress\.is-indeterminate/);
     assert.match(source, /ai-image-failure-dot/);
     assert.match(source, /\(task\.status === 'cancelled' \|\| task\.status === 'failed'\) && isTextVisionTask\(task\) && !isTaskReloadableBillingRecord\(task\)/);
     assert.match(source, /const showStoppedPreview = isStopped && pendingPreviewCount > 0/);
