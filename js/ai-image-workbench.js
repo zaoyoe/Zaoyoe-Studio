@@ -9230,7 +9230,6 @@
         return `
                 <div class="ai-image-result-view ai-image-result-view--centered">
                 <div class="ai-image-reload-dot" tabindex="0" aria-label="${escapeHtml(`记录重新加载中：${suggestion}`)}">
-                    <i class="fas fa-rotate-right"></i>
                     <span>记录重新加载中</span>
                 </div>
             </div>
@@ -9318,7 +9317,6 @@
                     <div class="ai-image-result-main">
                         <div class="ai-image-result-media">
                             <div class="ai-image-inline-reloading-visual">
-                                <i class="fas fa-rotate-right"></i>
                                 <span>记录重新加载中</span>
                             </div>
                             <span class="ai-image-result-resolution">${escapeHtml(getTaskResolutionLabel(task))}</span>
