@@ -13,6 +13,7 @@ const {
 const {
     decryptSecretValue,
     encryptSecretValue,
+    listStoredAiImageProviderPublicMetadata,
     listStoredAiImageProviderSecrets,
     isSecretDecryptAuthenticationError
 } = require('../../../api/_lib/secrets');
@@ -984,8 +985,11 @@ function buildDiscoveredModelsPayload(discovery = {}, { apiBaseUrl = '', source 
 }
 
 async function loadPublicModelProviders(supabase, { env = {} } = {}) {
-    const providers = typeof listStoredAiImageProviderSecrets === 'function'
-        ? await listStoredAiImageProviderSecrets(supabase, {
+    const loadProviderMetadata = typeof listStoredAiImageProviderPublicMetadata === 'function'
+        ? listStoredAiImageProviderPublicMetadata
+        : listStoredAiImageProviderSecrets;
+    const providers = typeof loadProviderMetadata === 'function'
+        ? await loadProviderMetadata(supabase, {
             env,
             allowDecryptFailure: true
         }).catch(() => [])
@@ -3701,6 +3705,32 @@ function createAiImageHandlers({
         };
     }
 
+    async function resolveOptionalAuthenticatedContext(req) {
+        let auth = null;
+        if (typeof requireAuthenticatedUser === 'function') {
+            try {
+                auth = await requireAuthenticatedUser(req);
+            } catch (_) {
+                auth = null;
+            }
+        }
+
+        const supabase = auth?.adminSupabase
+            || auth?.supabase
+            || (typeof getOptionalSupabaseAdmin === 'function' ? getOptionalSupabaseAdmin() : null);
+
+        if (!supabase?.from) {
+            const error = new Error('AI 图片工作台服务暂不可用');
+            error.statusCode = 503;
+            throw error;
+        }
+
+        return {
+            user: auth?.user?.id ? auth.user : null,
+            supabase
+        };
+    }
+
     async function resolveOptionalSupabase() {
         const supabase = typeof getOptionalSupabaseAdmin === 'function'
             ? getOptionalSupabaseAdmin()
@@ -5087,7 +5117,7 @@ function createAiImageHandlers({
         }
 
         try {
-            const { user, supabase } = await resolveAuthenticatedContext(req);
+            const { user, supabase } = await resolveOptionalAuthenticatedContext(req);
             const body = typeof parseJsonBody === 'function'
                 ? await parseJsonBody(req)
                 : (req.body && typeof req.body === 'object' ? req.body : {});
@@ -5697,26 +5727,56 @@ function createAiImageHandlers({
         }
 
         try {
-            const { user, supabase } = await resolveAuthenticatedContext(req);
+            const { user, supabase } = await resolveOptionalAuthenticatedContext(req);
             const url = new URL(req.url || '', 'http://localhost');
             const site = normalizeSite(url.searchParams.get('site') || req.query?.site);
+            const pricingStartedAt = Date.now();
+            const timing = {};
+            const measure = async (key, promise) => {
+                const startedAt = Date.now();
+                try {
+                    return await promise;
+                } finally {
+                    timing[key] = Math.max(0, Date.now() - startedAt);
+                }
+            };
 
-            const { data, error } = await supabase
+            const pricingRulesPromise = supabase
                 .from('ai_image_pricing_rules')
                 .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, metadata')
                 .in('site', [site, 'all'])
                 .eq('is_active', true)
                 .order('priority', { ascending: true })
                 .limit(200);
-
-            if (error) throw error;
-            const apiBaseUrls = await loadAllowedApiBaseUrls(supabase, { site, env });
-            const modelProviders = await loadPublicModelProviders(supabase, { env });
-            const storedApiKeys = await loadStoredUserApiKeyStatuses(supabase, {
-                userId: user.id,
-                site,
-                apiBaseUrls: apiBaseUrls.map((row) => row.baseUrl)
+            const apiBaseUrlsPromise = loadAllowedApiBaseUrls(supabase, { site, env });
+            const modelProvidersPromise = loadPublicModelProviders(supabase, { env });
+            const storedApiKeysPromise = loadStoredUserApiKeyStatuses(supabase, {
+                userId: user?.id || '',
+                site
             });
+            const [
+                { data, error },
+                apiBaseUrls,
+                modelProviders,
+                rawStoredApiKeys
+            ] = await Promise.all([
+                measure('pricing', pricingRulesPromise),
+                measure('baseUrls', apiBaseUrlsPromise),
+                measure('providers', modelProvidersPromise),
+                measure('keys', storedApiKeysPromise)
+            ]);
+            if (error) throw error;
+            const allowedApiBaseUrlSet = new Set(apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean));
+            const storedApiKeys = (Array.isArray(rawStoredApiKeys) ? rawStoredApiKeys : []).filter((row) => {
+                if (!allowedApiBaseUrlSet.size) return true;
+                return allowedApiBaseUrlSet.has(normalizeApiBaseUrl(row.apiBaseUrl || row.api_base_url));
+            });
+            timing.total = Math.max(0, Date.now() - pricingStartedAt);
+            if (typeof res.setHeader === 'function') {
+                res.setHeader('Server-Timing', Object.entries(timing)
+                    .map(([key, value]) => `${key};dur=${Math.round(value)}`)
+                    .join(', '));
+            }
 
             return sendJson(res, 200, {
                 success: true,

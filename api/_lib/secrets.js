@@ -33,6 +33,10 @@ const aiImageProviderSecretsCache = createTimedCloneCache({
     ttlMs: AI_IMAGE_SECRET_CACHE_TTL_MS,
     maxEntries: AI_IMAGE_SECRET_CACHE_MAX_ENTRIES
 });
+const aiImageProviderPublicMetadataCache = createTimedCloneCache({
+    ttlMs: AI_IMAGE_SECRET_CACHE_TTL_MS,
+    maxEntries: AI_IMAGE_SECRET_CACHE_MAX_ENTRIES
+});
 const aiImageProviderRuntimeConfigCache = createTimedCloneCache({
     ttlMs: AI_IMAGE_SECRET_CACHE_TTL_MS,
     maxEntries: AI_IMAGE_SECRET_CACHE_MAX_ENTRIES
@@ -181,6 +185,7 @@ function buildAiImageSecretCacheKey(kind, supabase, env = process.env, extra = {
 function clearAiImageSecretCaches() {
     aiImageRuntimeSecretConfigCache.clear();
     aiImageProviderSecretsCache.clear();
+    aiImageProviderPublicMetadataCache.clear();
     aiImageProviderRuntimeConfigCache.clear();
 }
 
@@ -909,6 +914,68 @@ async function listStoredAiImageProviderSecrets(supabase, options = {}) {
     return Array.isArray(cached.value) ? cached.value : [];
 }
 
+async function listStoredAiImageProviderPublicMetadata(supabase, options = {}) {
+    const env = options.env || process.env;
+    const cacheKey = buildAiImageSecretCacheKey('provider-public-metadata', supabase, env);
+
+    const cached = await aiImageProviderPublicMetadataCache.getOrLoad(cacheKey, async () => {
+        const rows = [];
+
+        if (supabase?.from) {
+            const { data, error } = await supabase
+                .from('admin_secret_store')
+                .select('secret_key, metadata, description, updated_at, updated_by')
+                .like('secret_key', `${AI_IMAGE_PROVIDER_SECRET_PREFIX}%`);
+
+            if (error) {
+                throw wrapSecretStoreError(error, 'Failed to load AI image provider metadata');
+            }
+
+            rows.push(...(Array.isArray(data) ? data : []).map((row) => ({
+                ...row,
+                value: 'configured',
+                decryptErrorMessage: ''
+            })));
+        }
+
+        const providers = rows
+            .map((row) => serializeAiImageProviderSecret(row))
+            .sort((left, right) => {
+                const order = Number(left.displayOrder || 0) - Number(right.displayOrder || 0);
+                if (order) return order;
+                return String(left.label || left.providerId).localeCompare(String(right.label || right.providerId));
+            });
+
+        const legacy = providers.length
+            ? null
+            : await resolveAiImageRuntimeSecretConfig(supabase, { env }).catch(() => null);
+        if (legacy?.configured) {
+            const legacyProvider = {
+                ...legacy,
+                apiKey: '',
+                source: legacy.source === 'stored' ? 'stored' : legacy.source,
+                secretKey: legacy.source === 'stored' ? AI_IMAGE_SECRET_KEY : '',
+                providerId: legacy.providerId || 'default',
+                label: legacy.label || (legacy.source === 'environment' ? '环境变量默认上游' : '默认上游'),
+                models: normalizeAiImageModelsList(legacy.models, legacy.model),
+                isActive: true,
+                displayOrder: -100
+            };
+            if (!providers.some((provider) => provider.providerId === legacyProvider.providerId)) {
+                providers.unshift(legacyProvider);
+            }
+        }
+
+        return providers.sort((left, right) => {
+            const order = Number(left.displayOrder || 0) - Number(right.displayOrder || 0);
+            if (order) return order;
+            return String(left.label || left.providerId).localeCompare(String(right.label || right.providerId));
+        });
+    });
+
+    return Array.isArray(cached.value) ? cached.value : [];
+}
+
 async function resolveAiImageProviderRuntimeConfig(supabase, options = {}) {
     const env = options.env || process.env;
     const task = options.task || {};
@@ -1031,6 +1098,7 @@ module.exports = {
     resolveAiImageRuntimeSecretConfig,
     resolveAiImageProviderRuntimeConfig,
     resolveGeminiRuntimeConfig,
+    listStoredAiImageProviderPublicMetadata,
     listStoredAiImageProviderSecrets,
     resolveStoredPaymentSecret,
     upsertStoredAdminSecret

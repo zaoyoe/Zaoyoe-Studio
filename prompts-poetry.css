@@ -211,6 +211,12 @@ html[data-theme="dark"] body.prompts-page.auth-sheet-open::after {
     box-shadow: 0 50px 100px rgba(0, 0, 0, 0.5);
 }
 
+[data-theme="dark"] .modal-content-col {
+    background: rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(12px) saturate(112%);
+    -webkit-backdrop-filter: blur(12px) saturate(112%);
+}
+
 [data-theme="dark"] .modal-meta span {
     border-color: rgba(255, 255, 255, 0.2) !important;
     color: var(--text-dim);

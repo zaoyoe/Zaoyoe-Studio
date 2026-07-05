@@ -614,6 +614,172 @@ test('ai image pricing config respects explicit image provider group when stale 
     }
 });
 
+test('ai image pricing config uses public provider metadata without decrypting provider secrets', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    let publicMetadataCalls = 0;
+    let secretDecryptListCalls = 0;
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderPublicMetadata() {
+                    publicMetadataCalls += 1;
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'fast-public-provider',
+                            label: 'Fast Public Provider',
+                            vendor: 'openai',
+                            protocol: 'openai-compatible',
+                            modelGroup: 'image',
+                            model: 'gpt-image-2',
+                            models: ['gpt-image-2'],
+                            imageModels: ['gpt-image-2'],
+                            chatModels: []
+                        }
+                    ];
+                },
+                async listStoredAiImageProviderSecrets() {
+                    secretDecryptListCalls += 1;
+                    throw new Error('public pricing must not decrypt provider secrets');
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {};
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            admin: {
+                async requireAuthenticatedUser() {
+                    return {
+                        user: { id: 'user-ai-1' },
+                        supabase,
+                        adminSupabase: supabase
+                    };
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers.pricing({ method: 'GET', url: '/api/public/ai-image/pricing?site=cn' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(publicMetadataCalls, 1);
+        assert.equal(secretDecryptListCalls, 0);
+        assert.deepEqual(payload.image_models.map((item) => item.id), ['gpt-image-2']);
+        assert.match(res.headers['server-timing'], /providers;dur=\d+/);
+        assert.match(res.headers['server-timing'], /total;dur=\d+/);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
+test('ai image pricing config is available without login but omits user key status', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    let publicMetadataCalls = 0;
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderPublicMetadata() {
+                    publicMetadataCalls += 1;
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'anonymous-public-provider',
+                            label: 'Anonymous Public Provider',
+                            vendor: 'openai',
+                            protocol: 'openai-compatible',
+                            modelGroup: 'image',
+                            model: 'gpt-image-2',
+                            models: ['gpt-image-2'],
+                            imageModels: ['gpt-image-2'],
+                            chatModels: []
+                        }
+                    ];
+                },
+                async listStoredAiImageProviderSecrets() {
+                    throw new Error('anonymous pricing must not decrypt provider secrets');
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {
+            userApiKeys: [
+                {
+                    id: 'key-should-not-leak',
+                    user_id: 'user-ai-1',
+                    site: 'cn',
+                    api_base_url: 'https://sub2api.fatherkey.com/v1',
+                    api_key_tail: 'leak1234',
+                    created_at: '2026-06-21T12:00:00.000Z',
+                    updated_at: '2026-06-21T12:00:00.000Z',
+                    metadata: {}
+                }
+            ]
+        };
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            admin: {
+                async requireAuthenticatedUser() {
+                    const error = new Error('Unauthorized');
+                    error.statusCode = 401;
+                    throw error;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers.pricing({ method: 'GET', url: '/api/public/ai-image/pricing?site=cn' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(publicMetadataCalls, 1);
+        assert.deepEqual(payload.image_models.map((item) => item.id), ['gpt-image-2']);
+        assert.deepEqual(payload.stored_api_keys, []);
+        assert.deepEqual(payload.storedApiKeys, []);
+        assert.equal(state.fromCalls.includes('ai_image_user_api_keys'), false);
+        assert.match(res.headers['server-timing'], /providers;dur=\d+/);
+        assert.match(res.headers['server-timing'], /total;dur=\d+/);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
 test('ai image API model discovery detects upstream models for current user key', async () => {
     const plaintextKey = 'sk-user-model-discovery-only-12345678';
     const fetchCalls = [];
@@ -835,6 +1001,27 @@ test('ai image submit requires authenticated user', async () => {
     const res = createMockResponse();
 
     await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 401);
+    assert.equal(payload.success, false);
+    assert.equal(payload.code, 'unauthorized');
+});
+
+test('ai image chat stream requires authenticated user', async () => {
+    const { handlers } = createHandlers({
+        userId: '',
+        body: {
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            prompt: '写一段短文',
+            model: 'gpt-5.5',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
 
     const payload = res.json();
     assert.equal(res.statusCode, 401);
@@ -3587,7 +3774,7 @@ test('api billing mode can execute image generation immediately and record image
     assert.equal(requests[1].url, 'https://cdn.example.com/generated-api.png');
 });
 
-test('api billing image generation honors requested quantity by retrying missing images', async () => {
+test('api billing image generation honors requested quantity with one request per image', async () => {
     const plaintextKey = 'sk-live-secret-value-two-images';
     const generationRequests = [];
     const { handlers, state } = createHandlers({
@@ -3656,7 +3843,7 @@ test('api billing image generation honors requested quantity by retrying missing
     assert.equal(state.apiUsage[0].image_count, 2);
     assert.equal(state.apiUsage[0].total_tokens, 40);
     assert.equal(generationRequests.length, 2);
-    assert.deepEqual(generationRequests.map((request) => request.n), [2, 1]);
+    assert.deepEqual(generationRequests.map((request) => request.n), [1, 1]);
 });
 
 test('api billing image generation preserves requested 1k resolution in provider size', async () => {
