@@ -2242,6 +2242,118 @@ test('gemini native image executor streams and saves as soon as inline image arr
     assert.equal(typeof execution.deferredOriginalUploads[0].run, 'function');
 });
 
+test('gemini native image executor retries missing multi-image slots', async () => {
+    const requests = [];
+    const uploaded = [];
+    const partial = [];
+    const task = {
+        id: 'task-gemini-image-retry',
+        site: 'cn',
+        user_id: 'user-1',
+        mode: 'text',
+        billing_mode: 'points',
+        status: 'running',
+        model: 'gemini-3.1-flash-image',
+        ratio: '1:1',
+        resolution: '1k',
+        quantity: 4,
+        prompt: '四张不同角度的产品图',
+        metadata: {}
+    };
+
+    const execution = await executeGeminiNativeImageGeneration(task, {
+        env: {
+            AI_IMAGE_GEMINI_URL_BRIDGE: 'false',
+            AI_IMAGE_MULTI_IMAGE_SLOT_RETRY_ATTEMPTS: '1'
+        },
+        runtimeConfig: {
+            apiKey: 'sk-sub2api',
+            baseUrl: 'https://sub2api.fatherkey.com/v1',
+            model: 'gemini-3.1-flash-image',
+            protocol: 'gemini-native',
+            source: 'ai-image-provider-stored'
+        },
+        fetchImpl: async (url, options = {}) => {
+            const requestIndex = requests.length;
+            requests.push({
+                url: String(url),
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (requestIndex === 3) {
+                const error = new Error('slot 4 upstream timeout');
+                error.code = 'slot_timeout';
+                throw error;
+            }
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
+                            candidates: [{
+                                content: {
+                                    parts: [
+                                        { text: '已生成产品图。' },
+                                        {
+                                            inlineData: {
+                                                mimeType: 'image/png',
+                                                data: Buffer.from(`gemini-retry-image-bytes-${requestIndex}`).toString('base64')
+                                            }
+                                        }
+                                    ]
+                                }
+                            }]
+                        })}\n\n`));
+                        controller.close();
+                    },
+                    cancel() {}
+                }),
+                text: async () => {
+                    throw new Error('stream path should not read full text body');
+                }
+            };
+        },
+        uploadImageBuffer: async (buffer, context = {}) => {
+            uploaded.push({
+                bytes: buffer.toString('utf8'),
+                index: context.index
+            });
+            return {
+                stored: {
+                    image_url: `https://cdn.example.com/persisted/gemini-retry-${context.index}.png`,
+                    original_image_url: '',
+                    storage_path: `generated/gemini-retry-preview-${context.index}.png`,
+                    original_storage_path: '',
+                    metadata: {
+                        preview_status: 'ready',
+                        original_status: 'pending'
+                    }
+                },
+                deferredOriginalUpload: {
+                    resultIndex: context.index,
+                    run: async () => ({})
+                }
+            };
+        },
+        onImageResult: async (image, detail) => {
+            partial.push({ image, detail });
+        }
+    });
+
+    assert.equal(requests.length, 5);
+    assert.deepEqual(uploaded.map((item) => item.index).sort((a, b) => a - b), [0, 1, 2, 3]);
+    assert.equal(uploaded.find((item) => item.index === 3)?.bytes, 'gemini-retry-image-bytes-4');
+    assert.equal(partial.length, 4);
+    assert.deepEqual(partial.map((item) => item.detail.index).sort((a, b) => a - b), [0, 1, 2, 3]);
+    assert.equal(execution.status, 'succeeded');
+    assert.deepEqual(execution.images.map((image) => image.result_index), [0, 1, 2, 3]);
+    assert.equal(execution.metadata.requested_image_count, 4);
+    assert.equal(execution.metadata.delivered_image_count, 4);
+    assert.equal(execution.metadata.provider_attempt_count, 5);
+    assert.equal(execution.metadata.batched_requests, 5);
+    assert.equal(execution.metadata.partial_error, null);
+});
+
 test('gemini native image executor sends continuation reference image bytes upstream', async () => {
     const requests = [];
     const task = {

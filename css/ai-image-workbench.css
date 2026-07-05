@@ -3620,19 +3620,19 @@ html[data-theme="dark"] .ai-image-history-search button:focus-visible {
 
 .ai-image-result-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), min(240px, 100%)));
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), min(220px, 100%)));
     align-items: start;
     justify-content: start;
-    gap: 18px;
+    gap: 14px;
     margin-top: 14px;
 }
 
 .ai-image-result-grid--single {
-    grid-template-columns: minmax(0, min(240px, 100%));
+    grid-template-columns: minmax(0, min(220px, 100%));
 }
 
 .ai-image-result-grid--thread {
-    grid-template-columns: minmax(0, min(240px, 100%));
+    grid-template-columns: minmax(0, min(220px, 100%));
 }
 
 .ai-image-result-grid--video {
