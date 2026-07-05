@@ -10,6 +10,7 @@ const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 const DEFAULT_VIDEO_MODEL = 'default-video-model';
 const DEFAULT_PROVIDER_TIMEOUT_MS = 120000;
+const DEFAULT_CHAT_MAX_TOKENS = 1600;
 const DEFAULT_VIDEO_POLL_INTERVAL_MS = 3000;
 const DEFAULT_VIDEO_POLL_MAX_ATTEMPTS = 160;
 const MAX_VIDEO_POLL_MAX_ATTEMPTS = 240;
@@ -523,6 +524,19 @@ function normalizeSub2ApiUsageLookupRecord(payload = {}, requestId = '') {
     const record = payload?.usage_record || payload?.usageRecord || payload?.record || payload?.data || payload;
     if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
     const recordRequestId = normalizeText(record.request_id || record.requestId, 260);
+    const hasCostField = [
+        record.actual_cost,
+        record.actualCost,
+        record.total_actual_cost,
+        record.totalActualCost,
+        record.user_cost,
+        record.userCost,
+        record.total_cost,
+        record.totalCost,
+        record.cost,
+        record.fee,
+        record.amount
+    ].some((value) => value !== undefined && value !== null && String(value).trim() !== '');
     const actual = extractSub2ApiActualCost({ usage_record: record });
     const fallbackCost = normalizeSub2ApiCost(
         record.total_cost
@@ -533,12 +547,12 @@ function normalizeSub2ApiUsageLookupRecord(payload = {}, requestId = '') {
         0
     );
     const billableCost = actual?.cost || fallbackCost;
-    if (billableCost <= 0) return null;
+    if (billableCost <= 0 && !hasCostField) return null;
     return {
         request_id: recordRequestId || requestId,
         lookup_request_id: requestId,
         actual_cost: billableCost,
-        actual_cost_source: actual?.cost > 0 ? 'actual_cost' : 'fallback_cost',
+        actual_cost_source: actual?.cost > 0 ? 'actual_cost' : (fallbackCost > 0 ? 'fallback_cost' : 'zero_cost'),
         total_cost: normalizeSub2ApiCost(record.total_cost ?? record.totalCost, 0),
         input_cost: normalizeSub2ApiCost(record.input_cost ?? record.inputCost, 0),
         output_cost: normalizeSub2ApiCost(record.output_cost ?? record.outputCost, 0),
@@ -4862,9 +4876,9 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         model: config.model,
         messages: buildOpenAiChatMessages(task),
         stream: false,
-        max_tokens: normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, task.mode === 'reverse' ? 520 : 420, {
+        max_tokens: normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, task.mode === 'reverse' ? 520 : DEFAULT_CHAT_MAX_TOKENS, {
             min: 64,
-            max: 2000
+            max: 16000
         })
     };
     const preflightMs = elapsedMs(preflightStart);

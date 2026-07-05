@@ -1697,6 +1697,93 @@ test('points chat stream charges Sub2API actual cost after stream closes', async
     assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.001075);
 });
 
+test('points chat stream settles zero-cost Sub2API usage without waiting forever', async () => {
+    const encoder = new TextEncoder();
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-zero-cost',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-zero-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'qwen3.7-max',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url) => {
+            if (String(url).includes('/usage')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'client:fatherkey-aiw-zero-stream',
+                            actual_cost: 0,
+                            total_cost: 0,
+                            input_cost: 0,
+                            output_cost: 0
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-sub2api-zero","model":"qwen3.7-max","choices":[{"delta":{"content":"零成本明细。"}}]}\n\n',
+                            'data: {"usage":{"prompt_tokens":352,"completion_tokens":422,"total_tokens":774},"choices":[{"delta":{}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证零成本 Sub2API 计费',
+            model: 'qwen3.7-max',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: done/);
+    assert.match(res.body, /"billingSyncStatus":"settled"/);
+    assert.equal(persistedTask.charged_points, 0);
+    assert.equal(persistedTask.metadata.sub2api_billing_sync.status, 'settled');
+    assert.equal(persistedTask.token_usage.sub2api.actual_cost, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+});
+
 test('points chat stream finalizes after upstream sends content but leaves SSE open', async () => {
     const requests = [];
     const encoder = new TextEncoder();
@@ -2541,6 +2628,7 @@ test('qwen chat stream forwards official enable_thinking flag and reasoning cont
     assert.match(res.body, /event: reasoning/);
     assert.match(res.body, /Qwen 先思考。/);
     assert.equal(requests[0].body.enable_thinking, true);
+    assert.equal(requests[0].body.max_tokens, 1600);
     assert.equal(Object.hasOwn(requests[0].body, 'thinking'), false);
     assert.equal(Object.hasOwn(requests[0].body, 'reasoning_effort'), false);
     const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
@@ -3930,6 +4018,88 @@ test('task list reconciles delayed Sub2API actual cost and deducts points once',
     assert.equal(state.tasks[0].metadata.pricing_charge.reconciled, true);
     assert.equal(deductCall.args.p_amount, 0.0002);
     assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
+});
+
+test('task list treats zero-cost Sub2API usage detail as settled billing', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-zero-sub2api-usage',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'qwen3.7-max',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '解释一下',
+            result_prompt: '半截回答',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 352,
+                output_tokens: 422,
+                total_tokens: 774
+            },
+            input_tokens: 352,
+            output_tokens: 422,
+            total_tokens: 774,
+            metadata: {
+                sub2api_client_request_id: 'fatherkey-aiw-task-zero-sub2api-usage',
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-zero-sub2api-chat',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                unit: 'sub2api_actual_cost_usd',
+                                cost_source: 'sub2api_usage_actual_cost',
+                                points_per_usd: 1
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-zero-sub2api-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                usage_record: {
+                    request_id: 'client:fatherkey-aiw-task-zero-sub2api-usage',
+                    actual_cost: 0,
+                    total_cost: 0,
+                    input_cost: 0,
+                    output_cost: 0
+                }
+            })
+        })
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'settled');
+    assert.equal(payload.tasks[0].billingSyncMessage, '扣费已同步');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.status, 'settled');
+    assert.equal(state.tasks[0].token_usage.sub2api.actual_cost, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
 });
 
 test('task list keeps returning when delayed Sub2API usage lookup hangs', { timeout: 1000 }, async () => {

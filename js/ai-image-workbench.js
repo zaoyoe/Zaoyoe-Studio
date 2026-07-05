@@ -24,6 +24,8 @@
     const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
     const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
     const MAX_LOCAL_TASKS = 40;
+    const BUSY_CLIENT_TASK_RECOVERY_DELAY_MS = 5000;
+    const BUSY_CLIENT_TASK_RECOVERY_INTERVAL_MS = 7000;
     const DEFAULT_API_BASE_PROFILES = Object.freeze([
         { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://sub2api.fatherkey.com/v1' },
         { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://sub2api.zaoyoe.xyz/v1' }
@@ -366,6 +368,7 @@
     let mobileComposerFocusLock = null;
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
+    const busyClientTaskRecoveryAt = new Map();
     let lastBusyTaskCount = 0;
     let lastDockTerminalSignature = '';
     let dockAnimationRateFrame = 0;
@@ -3067,6 +3070,55 @@
         }
     }
 
+    function getRecoverableClientTaskId(task = {}) {
+        const clientTaskId = String(task.clientTaskId || '').trim();
+        if (clientTaskId) return clientTaskId;
+        const localId = String(task.id || '').trim();
+        return localId.startsWith('aiw_') ? localId : '';
+    }
+
+    function shouldRecoverBusyTaskByClientId(task = {}) {
+        if (!isBusyTask(task)) return false;
+        const clientTaskId = getRecoverableClientTaskId(task);
+        if (!clientTaskId) return false;
+        const createdAt = Number(task.createdAt || task.startedAt || 0);
+        if (createdAt && Date.now() - createdAt < BUSY_CLIENT_TASK_RECOVERY_DELAY_MS) return false;
+        const previousRecoveryAt = Number(busyClientTaskRecoveryAt.get(clientTaskId) || 0);
+        return Date.now() - previousRecoveryAt >= BUSY_CLIENT_TASK_RECOVERY_INTERVAL_MS;
+    }
+
+    async function recoverBusyTasksByClientId({ limit = 4 } = {}) {
+        const candidates = getBusyTasks()
+            .filter(shouldRecoverBusyTaskByClientId)
+            .slice(0, limit);
+        if (!candidates.length) return false;
+
+        const recoveryStartedAt = Date.now();
+        candidates.forEach((task) => {
+            busyClientTaskRecoveryAt.set(getRecoverableClientTaskId(task), recoveryStartedAt);
+        });
+
+        const results = await Promise.allSettled(candidates.map((task) => recoverRemoteTaskByClientId(task)));
+        const recoveredTasks = results
+            .filter((result) => result.status === 'fulfilled' && result.value)
+            .map((result) => result.value);
+        recoveredTasks.forEach((task) => {
+            if (!isBusyTask(task)) {
+                const clientTaskId = getRecoverableClientTaskId(task);
+                if (clientTaskId) busyClientTaskRecoveryAt.delete(clientTaskId);
+            }
+        });
+        if (recoveredTasks.length) {
+            syncImagePreviewFromTasks();
+            persistState();
+            render();
+            if (state.open && getActiveTask()?.mode === 'chat') {
+                scrollChatStageToBottom();
+            }
+        }
+        return recoveredTasks.length > 0;
+    }
+
     async function recoverChatStreamTask(localTask = {}) {
         if (!localTask?.id) return null;
         try {
@@ -4379,6 +4431,7 @@
         if (status === 'not_found') return '未找到上游扣费明细';
         if (status === 'missing_request_id' || status === 'no_request_id') return '旧记录缺少扣费追踪ID';
         if (status === 'timeout' || status === 'unavailable') return '扣费暂未同步';
+        if (status === 'settled') return '扣费 0 积分';
         if (status === 'pending') return '扣费同步中';
         return '';
     }
@@ -6440,6 +6493,9 @@
         persistState();
         render();
         await loadRemoteRecords({ force: true });
+        if (getBusyTasks().length) {
+            await recoverBusyTasksByClientId();
+        }
         scheduleRemoteRecordsPoll();
     }
 
@@ -6962,7 +7018,7 @@
 
     function refreshBusyTasksNow() {
         if (!shouldPollRemoteRecords()) return;
-        loadRemoteRecords({ force: true }).finally(() => {
+        loadRemoteRecords({ force: true }).then(() => recoverBusyTasksByClientId()).finally(() => {
             if (shouldPollRemoteRecords()) {
                 scheduleRemoteRecordsPoll();
             }
@@ -6983,6 +7039,9 @@
             remotePollTimer = null;
             const beforeBusyCount = getBusyTasks().length;
             await loadRemoteRecords({ force: true });
+            if (getBusyTasks().length) {
+                await recoverBusyTasksByClientId();
+            }
             const afterBusyCount = getBusyTasks().length;
             if (shouldPollRemoteRecords()) {
                 scheduleRemoteRecordsPoll();
