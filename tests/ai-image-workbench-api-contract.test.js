@@ -90,8 +90,10 @@ test('ai image workbench renders partial images while a task is still running', 
     assert.match(source, /pendingPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, '生成中'/);
     assert.match(source, /slotSequence/);
     assert.match(source, /data-aiw-live-status-slot/);
+    assert.match(source, /INCOMPLETE_SUCCEEDED_IMAGE_RESULT_GRACE_MS = 5 \* 60 \* 1000/);
+    assert.match(source, /function shouldHoldIncompleteSucceededImageResult\(task = \{\}, visibleImageCount = 0\)/);
     assert.match(source, /const missingResultCount = Math\.max\(0, total - entries\.length\)/);
-    assert.match(source, /buildTaskPlaceholderEntries\(item, \{\s*type: 'reloading'/);
+    assert.match(source, /type: holdMissingResults \? 'pending' : 'reloading'/);
     assert.match(source, /const shouldPreserveLocalQuantity = Number\.isFinite\(localQuantity\)/);
     assert.match(source, /const keepLocalIncompleteRemoteSuccess = isBusyTask\(localTask\)/);
     assert.match(source, /ai-image-result-grid--partial/);
@@ -1216,7 +1218,7 @@ test('ai image workbench shows accepted state with queue ETA after submit', () =
 
 test('ai image pending overlay uses simple live status instead of repeating title', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
-    const renderInlineMatch = source.match(/function renderInlineTaskPreview\(task, label = '继续生成', \{ showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null \} = \{\}\) \{[\s\S]*?\n    \}/);
+    const renderInlineMatch = source.match(/function renderInlineTaskPreview\(task, label = '继续生成', \{ showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null, stepLabel = '' \} = \{\}\) \{[\s\S]*?\n    \}/);
     assert.ok(renderInlineMatch, 'renderInlineTaskPreview should be present');
     assert.match(renderInlineMatch[0], /getTaskCurrentStepLabel\(task\)/);
     assert.match(renderInlineMatch[0], /getTaskSlotImageLabel\(task, imageSlot\)/);
@@ -1226,6 +1228,7 @@ test('ai image pending overlay uses simple live status instead of repeating titl
     assert.match(renderInlineMatch[0], /data-aiw-chat-turn-id="\$\{escapeHtml\(task\.id\)\}"/);
     assert.match(source, /pendingPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, '生成中', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length && index === 0, imageSlot: entry\.slotSequence \}\)\)/);
     assert.match(source, /data-aiw-live-status-slot="\$\{escapeHtml\(item\.slotSequence\)\}"/);
+    assert.match(source, /data-aiw-live-status-step-label="\$\{escapeHtml\(item\.stepLabel\)\}"/);
     assert.match(source, /getTaskProgressBadge\(task\)/);
     assert.match(cssSource, /\.ai-image-result-pending-meta\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto auto/);
     assert.match(cssSource, /\.ai-image-result-pending-copy\s*\{[\s\S]*display: none/);
@@ -1243,15 +1246,18 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(source, /function renderTaskImageEntry\(entry, index = 0, aspect = '1 \/ 1', \{ navigationAnchor = false \} = \{\}\)/);
     assert.match(source, /ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-result-grid--single\s*\{[\s\S]*min\(220px, 100%\)/);
-    assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*min\(220px, 100%\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*repeat\(auto-fit, minmax\(min\(220px, 100%\), min\(220px, 100%\)\)\)/);
     assert.match(source, /const resultGridModeClass = threadTasks\.some\(\(item\) => isVideoMode\(item\.mode\)\) \? 'ai-image-result-grid--video' : ''/);
     assert.match(source, /const awaitingVideoResult = isVideoMode\(item\.mode\) && item\.status === 'succeeded'/);
     assert.match(source, /const awaitingImageReload = !awaitingVideoResult && item\.status === 'succeeded'/);
-    assert.match(source, /type: awaitingImageReload \? 'reloading' : 'pending'/);
-    assert.match(source, /forceBusy: awaitingVideoResult/);
+    assert.match(source, /const holdMissingResults = shouldHoldIncompleteSucceededImageResult\(item, entries\.length\)/);
+    assert.match(source, /type: holdMissingResults \? 'pending' : 'reloading'/);
+    assert.match(source, /const holdMissingResults = awaitingImageReload && shouldHoldIncompleteSucceededImageResult\(item, 0\)/);
+    assert.match(source, /type: holdMissingResults \? 'pending' : \(awaitingImageReload \? 'reloading' : 'pending'\)/);
+    assert.match(source, /forceBusy: awaitingVideoResult \|\| holdMissingResults/);
     assert.match(source, /const anchoredTaskIds = new Set\(\)/);
     assert.match(source, /const navigationAnchor = Boolean\(taskId && !anchoredTaskIds\.has\(taskId\)\)/);
-    assert.match(source, /renderInlineTaskPreview\(entry\.task, '生成中', \{ showPrompt: false, forceBusy: Boolean\(entry\.forceBusy\), navigationAnchor, imageSlot: entry\.slotSequence \}\)/);
+    assert.match(source, /stepLabel: entry\.forceBusy && entry\.task\?\.status === 'succeeded' \? '结果同步中' : ''/);
     assert.match(source, /renderInlineTaskReloadingPreview\(entry\.task, '记录重新加载中', \{ showPrompt: false, navigationAnchor \}\)/);
     assert.match(source, /imageEntries\.some\(\(entry\) => entry\.type === 'pending' \|\| entry\.type === 'reloading'\)/);
     assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
@@ -1434,7 +1440,7 @@ test('ai image workbench stops inline progress visuals after task failure', () =
     assert.match(cssSource, /\.ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-result-media:hover \.ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-thread-prompt::before/);
-    assert.match(cssSource, /\.ai-image-result-grid--thread \.ai-image-thread-step \+ \.ai-image-thread-step/);
+    assert.match(cssSource, /\.ai-image-result-grid--thread \.ai-image-thread-step \+ \.ai-image-thread-step\s*\{[\s\S]*margin-top: 0;/);
 });
 
 test('ai image result aspect uses video ratio metadata for video tasks', () => {
