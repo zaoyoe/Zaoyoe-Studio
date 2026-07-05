@@ -12,6 +12,7 @@
     const ORIGINAL_READY_POLL_LIMIT = 80;
     const VIDEO_LOAD_RETRY_DELAY_MS = 1000;
     const VIDEO_ERROR_CONFIRMATION_MS = 30000;
+    const RELOADABLE_BILLING_RECORD_MIN_AGE_MS = 5 * 60 * 1000;
     const MAX_REFERENCE_IMAGE_INPUTS = 16;
     const MAX_CHAT_ATTACHMENT_COUNT = 8;
     const MAX_CHAT_ATTACHMENT_TEXT_CHARS = 50000;
@@ -1619,10 +1620,12 @@
         const headers = body ? { 'Content-Type': 'application/json' } : {};
         if (auth) {
             const token = await getAuthToken();
-            if (!token) {
+            if (!token && auth !== 'optional') {
                 throw new Error('请先登录后使用 AI 图片工作台');
             }
-            headers.Authorization = `Bearer ${token}`;
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
+            }
         }
 
         const response = await withTimeout(fetch(`/api/public?${params.toString()}`, {
@@ -2014,6 +2017,9 @@
         if (/reference_image_requires_upload|请先上传参考图片/i.test(raw)) {
             return '续作底图仍是临时预览，系统会先上传为正式参考图后再提交。请重新发送一次。';
         }
+        if (/(generated images? (?:appear|appears|were|was|are|is) (?:to be )?unsafe|unsafe generated images?|safety (?:filter|system|policy)|content policy|policy violation|moderation|blocked by (?:the )?safety|violat(?:e|ed|ion).*policy|try modifying the prompts? or the seeds?)/i.test(raw)) {
+            return '上游安全审核未通过，请降低性感、暴露、真实人物相关描述后重试。';
+        }
         if (/^AI image request timeout$/i.test(raw) || /request timeout/i.test(raw)) {
             return '状态同步超时，任务可能仍在后台运行。请稍等片刻，系统会自动刷新结果；若最终失败，本次不会扣积分。';
         }
@@ -2288,11 +2294,29 @@
                 ? localProgress
                 : (progressKnown ? Math.max(localProgress, remoteProgress) : 0));
         const keepLocalRuntimeClock = Boolean(localTask.id && remoteTask.id && localTask.id !== remoteTask.id && localTask.clientTaskId);
+        const localQuantity = Number(localTask.quantity);
+        const remoteQuantity = Number(remoteTask.quantity);
+        const localDeliveredImageCount = Number(localTask.deliveredImageCount);
+        const remoteDeliveredImageCount = Number(remoteTask.deliveredImageCount);
+        const shouldPreserveLocalQuantity = Number.isFinite(localQuantity)
+            && Number.isFinite(remoteQuantity)
+            && localQuantity > remoteQuantity;
+        const nextQuantity = shouldPreserveLocalQuantity
+            ? clampNumber(localQuantity, 1, 4, remoteQuantity)
+            : remoteTask.quantity;
+        const nextDeliveredImageCount = Number.isFinite(localDeliveredImageCount) || Number.isFinite(remoteDeliveredImageCount)
+            ? Math.max(
+                Number.isFinite(localDeliveredImageCount) ? localDeliveredImageCount : 0,
+                Number.isFinite(remoteDeliveredImageCount) ? remoteDeliveredImageCount : 0
+            )
+            : remoteTask.deliveredImageCount;
 
         return {
             ...localTask,
             ...remoteTask,
             clientTaskId: remoteTask.clientTaskId || localTask.clientTaskId || '',
+            quantity: nextQuantity,
+            deliveredImageCount: nextDeliveredImageCount,
             createdAt: keepLocalRuntimeClock ? (localTask.createdAt || remoteTask.createdAt || 0) : (remoteTask.createdAt || localTask.createdAt || 0),
             startedAt: keepLocalRuntimeClock ? (localTask.startedAt || localTask.createdAt || remoteTask.startedAt || remoteTask.createdAt || 0) : (remoteTask.startedAt || localTask.startedAt || 0),
             status: finalStatus,
@@ -2853,7 +2877,7 @@
         if (remoteConfigLoaded) return;
         try {
             const site = getRuntimeSite();
-            const pricingPayload = await requestAiImage('pricing', { query: { site }, auth: true }).catch(() => null);
+            const pricingPayload = await requestAiImage('pricing', { query: { site }, auth: 'optional' }).catch(() => null);
             runtimePricingRules = Array.isArray(pricingPayload?.pricing) ? pricingPayload.pricing : runtimePricingRules;
             updateRuntimeApiBaseProfiles(pricingPayload?.api_base_urls || []);
             updateRuntimeApiModels(pricingPayload || {}, { target: 'admin' });
@@ -4543,6 +4567,12 @@
 
     function isTaskReloadableBillingRecord(task = {}) {
         if (!task || task.status !== 'failed') return false;
+        const createdAt = normalizeTimestamp(task.createdAt || task.created_at, 0);
+        const updatedAt = normalizeTimestamp(task.updatedAt || task.updated_at, 0);
+        const completedAt = normalizeTimestamp(task.completedAt || task.completed_at, 0);
+        const referenceAt = Math.max(createdAt, updatedAt, completedAt);
+        if (referenceAt && Date.now() - referenceAt < RELOADABLE_BILLING_RECORD_MIN_AGE_MS) return false;
+        if (String(task.clientTaskId || task.client_task_id || '').trim()) return false;
         const status = getTaskBillingSyncStatus(task);
         const reason = [
             status,
@@ -9238,7 +9268,21 @@
         const pendingPreviewCount = Math.max(0, total - partialImageEntries.length);
         const showPendingPreview = !isStopped && !isTaskReloadableBillingRecord(task) && task.status !== 'succeeded' && pendingPreviewCount > 0;
         const showStoppedPreview = isStopped && pendingPreviewCount > 0;
-        const previewCardCount = partialImageEntries.length + (showPendingPreview || showStoppedPreview ? 1 : 0);
+        const pendingPreviewEntries = showPendingPreview
+            ? buildTaskPlaceholderEntries(task, {
+                type: 'pending',
+                sequenceStart: partialImageEntries.length,
+                count: pendingPreviewCount
+            })
+            : [];
+        const stoppedPreviewEntries = showStoppedPreview
+            ? buildTaskPlaceholderEntries(task, {
+                type: 'pending',
+                sequenceStart: partialImageEntries.length,
+                count: pendingPreviewCount
+            })
+            : [];
+        const previewCardCount = partialImageEntries.length + pendingPreviewEntries.length + stoppedPreviewEntries.length;
         const resultGridModeClass = isVideoMode(task.mode) ? 'ai-image-result-grid--video' : '';
         return `
             <div class="ai-image-result-view ai-image-result-view--image">
@@ -9261,8 +9305,8 @@
                 </div>
                 <div class="ai-image-result-grid ${resultGridModeClass} ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
                         ${partialImageEntries.map((entry, index) => renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode), { navigationAnchor: index === 0 })).join('')}
-                        ${showPendingPreview ? renderInlineTaskPreview(task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length }) : ''}
-                        ${showStoppedPreview ? renderInlineTaskPreview(task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length }) : ''}
+                        ${pendingPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0 })).join('')}
+                        ${stoppedPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0 })).join('')}
                     </div>
                 </div>
             </div>
@@ -9613,6 +9657,27 @@
             .filter((entry) => entry.src);
     }
 
+    function buildTaskPlaceholderEntries(task = {}, {
+        type = 'pending',
+        taskIndex = 0,
+        sequenceStart = 0,
+        count = 0,
+        baseSequence = 0,
+        forceBusy = false
+    } = {}) {
+        return Array.from({ length: Math.max(0, Math.min(4, Math.round(Number(count) || 0))) }, (_, index) => {
+            const sequence = sequenceStart + index + 1;
+            return {
+                type,
+                task,
+                taskIndex,
+                sequence,
+                baseSequence: index === 0 ? baseSequence : sequence - 1,
+                forceBusy
+            };
+        });
+    }
+
     function renderTaskResult(task) {
         if (task.mode === 'chat') {
             const threadRoot = getTaskThreadRoot(task) || task;
@@ -9717,37 +9782,27 @@
                 }
                 const pendingSequence = sequenceCursor + imageEntriesForTask.length + 1;
                 const pendingBaseSequence = pendingSequence - 1;
-                taskSequenceMap.set(item.id, pendingSequence);
-                sequenceCursor = pendingSequence;
+                const placeholderEntries = buildTaskPlaceholderEntries(item, {
+                    type: isReloadingRecord ? 'reloading' : 'pending',
+                    taskIndex,
+                    sequenceStart: sequenceCursor + imageEntriesForTask.length,
+                    count: pendingEntryCount || 1,
+                    baseSequence: pendingBaseSequence
+                });
+                const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
+                taskSequenceMap.set(item.id, lastPlaceholder?.sequence || pendingSequence);
+                sequenceCursor = lastPlaceholder?.sequence || pendingSequence;
                 if (isReloadingRecord) {
                     return imageEntriesForTask.length
                         ? imageEntriesForTask
-                        : [{
-                            type: 'reloading',
-                            task: item,
-                            taskIndex,
-                            sequence: pendingSequence,
-                            baseSequence
-                        }];
+                        : placeholderEntries;
                 }
                 return imageEntriesForTask.length
                     ? [
                         ...imageEntriesForTask,
-                        {
-                            type: 'pending',
-                            task: item,
-                            taskIndex,
-                            sequence: pendingSequence,
-                            baseSequence: pendingBaseSequence
-                        }
+                        ...placeholderEntries
                     ]
-                    : [{
-                        type: 'pending',
-                        task: item,
-                        taskIndex,
-                        sequence: pendingSequence,
-                        baseSequence
-                    }];
+                    : placeholderEntries;
             }
 
             const entries = buildTaskImageEntries(item, {
@@ -9755,18 +9810,39 @@
                 sequenceStart: sequenceCursor,
                 baseSequence
             });
+            const { total } = getTaskGenerationCount(item);
+            const missingResultCount = Math.max(0, total - entries.length);
+            if (entries.length && missingResultCount > 0 && !isVideoMode(item.mode)) {
+                const placeholderEntries = buildTaskPlaceholderEntries(item, {
+                    type: 'reloading',
+                    taskIndex,
+                    sequenceStart: sequenceCursor + entries.length,
+                    count: missingResultCount,
+                    baseSequence: sequenceCursor + entries.length
+                });
+                const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
+                taskSequenceMap.set(item.id, lastPlaceholder?.sequence || entries[entries.length - 1].sequence);
+                sequenceCursor = lastPlaceholder?.sequence || entries[entries.length - 1].sequence;
+                return [
+                    ...entries,
+                    ...placeholderEntries
+                ];
+            }
             if (!entries.length) {
-                taskSequenceMap.set(item.id, sequenceCursor + 1);
                 const awaitingVideoResult = isVideoMode(item.mode) && item.status === 'succeeded';
                 const awaitingImageReload = !awaitingVideoResult && item.status === 'succeeded';
-                return [{
+                const placeholderEntries = buildTaskPlaceholderEntries(item, {
                     type: awaitingImageReload ? 'reloading' : 'pending',
-                    task: item,
                     taskIndex,
-                    sequence: sequenceCursor + 1,
+                    sequenceStart: sequenceCursor,
+                    count: awaitingImageReload ? Math.max(1, total) : 1,
                     baseSequence,
                     forceBusy: awaitingVideoResult
-                }];
+                });
+                const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
+                taskSequenceMap.set(item.id, lastPlaceholder?.sequence || sequenceCursor + 1);
+                sequenceCursor = lastPlaceholder?.sequence || sequenceCursor + 1;
+                return placeholderEntries;
             }
             entries.forEach((entry) => {
                 taskSequenceMap.set(item.id, entry.sequence);
@@ -9798,10 +9874,10 @@
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
                             if (taskId) anchoredTaskIds.add(taskId);
                             if (entry.type === 'pending') {
-                                return renderInlineTaskPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '生成预览', { showPrompt: !isVideoMode(entry.task?.mode), forceBusy: Boolean(entry.forceBusy), navigationAnchor });
+                                return renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, forceBusy: Boolean(entry.forceBusy), navigationAnchor });
                             }
                             if (entry.type === 'reloading') {
-                                return renderInlineTaskReloadingPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '记录重新加载中', { showPrompt: !isVideoMode(entry.task?.mode), navigationAnchor });
+                                return renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', { showPrompt: false, navigationAnchor });
                             }
                             return renderTaskImageEntry(entry, index, aspect, { navigationAnchor });
                         }).join('')}

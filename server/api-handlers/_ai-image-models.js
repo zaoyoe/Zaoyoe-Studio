@@ -123,6 +123,12 @@ function elapsedMs(startedAt) {
     return Math.max(0, Date.now() - Number(startedAt || Date.now()));
 }
 
+function normalizeTimingMs(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.round(parsed));
+}
+
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
@@ -3220,7 +3226,7 @@ async function requestOpenAiCompatibleImages({
     let responseFormatFallbackUsed = false;
     const captureSub2ApiBilling = shouldCaptureTaskSub2ApiBilling(task);
 
-    const runBatch = async (batchQuantity) => {
+    const runBatch = async (batchQuantity, { resultIndexOffset = payloads.length } = {}) => {
         attempts += 1;
         const batchStart = nowMs();
         const requestBatch = (nextResponseFormat = responseFormat) => requestOpenAiCompatibleImageBatch({
@@ -3314,6 +3320,12 @@ async function requestOpenAiCompatibleImages({
             asyncPollPath = pollResult?.path || asyncPollPath;
             attempts += Math.max(0, Number(pollResult?.attempts || 0));
         }
+        batchData = batchData
+            .slice(0, Math.max(1, Number(batchQuantity) || 1))
+            .map((item, index) => ({
+                ...(item && typeof item === 'object' && !Array.isArray(item) ? item : { url: item }),
+                result_index: resultIndexOffset + index
+            }));
         lastPayloadSummary = summarizeUpstreamPayload(payload);
         if (payload.revised_prompt && !revisedPrompt) {
             revisedPrompt = normalizeText(payload.revised_prompt, 8000);
@@ -3336,13 +3348,33 @@ async function requestOpenAiCompatibleImages({
         return batchData.length;
     };
 
-    await runBatch(requestedCount);
+    if (requestedCount > 1) {
+        const settled = await Promise.allSettled(Array.from({ length: requestedCount }, (_, index) => (
+            runBatch(1, { resultIndexOffset: index })
+        )));
+        const firstRejected = settled.find((item) => item.status === 'rejected');
+        if (!payloads.length && firstRejected?.status === 'rejected') {
+            throw firstRejected.reason;
+        }
+        if (firstRejected) {
+            partialError = {
+                code: normalizeText(firstRejected.reason?.code || 'ai_image_partial_generation_failed', 120),
+                message: normalizeText(firstRejected.reason?.message || '部分图片补发失败', 500)
+            };
+        }
+    } else {
+        await runBatch(requestedCount);
+    }
 
     while (payloads.length < requestedCount) {
-        const remaining = requestedCount - payloads.length;
+        const deliveredIndexes = new Set(payloads.map((item) => Number(item?.result_index)).filter((value) => Number.isFinite(value)));
+        const missingIndex = Array.from({ length: requestedCount }, (_, index) => index).find((index) => !deliveredIndexes.has(index));
+        const remaining = missingIndex === undefined ? requestedCount - payloads.length : 1;
         let delivered = 0;
         try {
-            delivered = await runBatch(remaining);
+            delivered = await runBatch(remaining, {
+                resultIndexOffset: missingIndex === undefined ? payloads.length : missingIndex
+            });
         } catch (error) {
             if (!payloads.length) throw error;
             partialError = {
@@ -3355,7 +3387,14 @@ async function requestOpenAiCompatibleImages({
     }
 
     return {
-        data: payloads.slice(0, requestedCount),
+        data: payloads
+            .slice()
+            .sort((left, right) => {
+                const leftIndex = Number.isFinite(Number(left?.result_index)) ? Number(left.result_index) : 0;
+                const rightIndex = Number.isFinite(Number(right?.result_index)) ? Number(right.result_index) : 0;
+                return leftIndex - rightIndex;
+            })
+            .slice(0, requestedCount),
         requestedCount,
         deliveredCount: Math.min(payloads.length, requestedCount),
         attempts,
@@ -4041,6 +4080,7 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
         ratio: task.ratio || '1:1',
         resolution: task.resolution || '1k'
     });
+    const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
     const quantity = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
     const quality = normalizeOpenAiImageQuality(task.metadata?.quality || env.AI_IMAGE_QUALITY);
     const isImageEdit = String(task.mode || '').trim() === 'image';
@@ -4123,13 +4163,16 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
     const images = [];
     const postprocessStart = nowMs();
     for (let index = 0; index < data.length; index += 1) {
+        const resultIndex = Number.isFinite(Number(data[index]?.result_index))
+            ? Number(data[index].result_index)
+            : index;
         // Keep upload order deterministic so result_index matches upstream order.
         const imageNormalizeStart = nowMs();
         // eslint-disable-next-line no-await-in-loop
         const image = await normalizeGeneratedImageItem(data[index], {
             env,
             task,
-            index,
+            index: resultIndex,
             size,
             fetchImpl,
             uploadImageBuffer,
@@ -4142,7 +4185,7 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
             const partialSaveStart = nowMs();
             // eslint-disable-next-line no-await-in-loop
             await onImageResult(outputImage, {
-                index,
+                index: resultIndex,
                 requestedCount: upstream.requestedCount || quantity
             });
             addTimingMs(executorTiming, 'partial_result_save_ms', elapsedMs(partialSaveStart));
@@ -4266,19 +4309,26 @@ async function finalizeGeminiNativeImages({
     upstreamResponseParseMs = 0,
     stream = false,
     urlBridge = false,
-    bridgeFallback = false
+    bridgeFallback = false,
+    requestedCountOverride = null,
+    resultIndexOffset = 0,
+    maxImages = null
 } = {}) {
     const images = [];
     const executorTiming = {};
     const deferredOriginalUploads = [];
+    const requestedCount = normalizePositiveInt(requestedCountOverride ?? task.quantity, 1, { min: 1, max: 8 });
+    const normalizedResultIndexOffset = normalizePositiveInt(resultIndexOffset, 0, { min: 0, max: 8 });
+    const dataItems = Array.isArray(data) ? data.slice(0, maxImages ? normalizePositiveInt(maxImages, 1, { min: 1, max: 8 }) : data.length) : [];
     const postprocessStart = nowMs();
-    for (let index = 0; index < data.length; index += 1) {
+    for (let index = 0; index < dataItems.length; index += 1) {
+        const resultIndex = normalizedResultIndexOffset + index;
         const imageNormalizeStart = nowMs();
         // eslint-disable-next-line no-await-in-loop
-        const image = await normalizeGeneratedImageItem(data[index], {
+        const image = await normalizeGeneratedImageItem(dataItems[index], {
             env,
             task,
-            index,
+            index: resultIndex,
             size,
             fetchImpl,
             uploadImageBuffer,
@@ -4286,7 +4336,10 @@ async function finalizeGeminiNativeImages({
         });
         addTimingMs(executorTiming, 'image_normalize_ms', elapsedMs(imageNormalizeStart));
         if (image?.deferredOriginalUpload && typeof image.deferredOriginalUpload.run === 'function') {
-            deferredOriginalUploads.push(image.deferredOriginalUpload);
+            deferredOriginalUploads.push({
+                ...image.deferredOriginalUpload,
+                resultIndex
+            });
         }
         images.push(image);
         if (typeof onImageResult === 'function') {
@@ -4300,8 +4353,8 @@ async function finalizeGeminiNativeImages({
                     provider: 'gemini-native'
                 }
             }, {
-                index,
-                requestedCount: data.length
+                index: resultIndex,
+                requestedCount
             });
             addTimingMs(executorTiming, 'partial_result_save_ms', elapsedMs(partialSaveStart));
         }
@@ -4331,7 +4384,7 @@ async function finalizeGeminiNativeImages({
 
     return {
         status: 'succeeded',
-        resultPrompt: normalizeText(data[0]?.revised_prompt || task.prompt, 8000),
+        resultPrompt: normalizeText(dataItems[0]?.revised_prompt || task.prompt, 8000),
         images: outputImages,
         deferredOriginalUploads,
         tokenUsage: normalizeTokenUsage(payload.usageMetadata || payload.usage_metadata || payload.usage),
@@ -4347,13 +4400,145 @@ async function finalizeGeminiNativeImages({
             provider_source: config.source,
             provider_size: size.size,
             reference_image_count: referenceImageCount,
-            requested_image_count: data.length,
+            requested_image_count: requestedCount,
             delivered_image_count: outputImages.length,
             stream: stream === true,
             url_bridge: urlBridge === true,
             bridge_fallback_used: bridgeFallback === true
         }
     };
+}
+
+function aggregateGeminiNativeImageExecutions({
+    task = {},
+    config = {},
+    executions = [],
+    requestedCount = 1,
+    partialError = null
+} = {}) {
+    const outputImages = [];
+    const deferredOriginalUploads = [];
+    const providerTaskIds = [];
+    const executorNames = new Set();
+    let tokenUsage = {};
+    let resultPrompt = '';
+    const timing = {};
+    const timingKeys = [
+        'preflight_ms',
+        'config_resolve_ms',
+        'reference_fetch_ms',
+        'upstream_ms',
+        'upstream_request_ms',
+        'upstream_response_ms',
+        'upstream_response_text_ms',
+        'upstream_response_parse_ms',
+        'postprocess_ms',
+        'image_normalize_ms',
+        'partial_result_save_ms',
+        'preview_build_ms',
+        'preview_upload_ms',
+        'original_upload_ms',
+        'executor_ms'
+    ];
+
+    executions.forEach((execution) => {
+        const metadata = safeObject(execution?.metadata);
+        const executionTiming = safeObject(metadata.timing);
+        outputImages.push(...(Array.isArray(execution?.images) ? execution.images : []));
+        deferredOriginalUploads.push(...(Array.isArray(execution?.deferredOriginalUploads) ? execution.deferredOriginalUploads : []));
+        tokenUsage = addTokenUsage(tokenUsage, execution?.tokenUsage || {});
+        if (!resultPrompt && execution?.resultPrompt) {
+            resultPrompt = normalizeText(execution.resultPrompt, 8000);
+        }
+        if (execution?.providerTaskId) {
+            providerTaskIds.push(...String(execution.providerTaskId).split(',').map((item) => normalizeText(item, 240)).filter(Boolean));
+        }
+        if (metadata.executor) {
+            executorNames.add(normalizeText(metadata.executor, 120));
+        }
+        timingKeys.forEach((key) => {
+            const value = metadata[key] ?? executionTiming[key];
+            timing[key] = normalizeTimingMs(timing[key]) + normalizeTimingMs(value);
+        });
+    });
+
+    timing.executor_unaccounted_ms = Math.max(0, normalizeTimingMs(timing.executor_ms) - (
+        normalizeTimingMs(timing.preflight_ms)
+        + normalizeTimingMs(timing.upstream_ms)
+        + normalizeTimingMs(timing.postprocess_ms)
+    ));
+
+    const deliveredCount = Math.min(outputImages.length, requestedCount);
+    const executor = executorNames.size === 1
+        ? `${[...executorNames][0]}-batch`
+        : 'gemini-native-images-batch';
+    const firstMetadata = safeObject(executions[0]?.metadata);
+
+    return {
+        status: 'succeeded',
+        resultPrompt: resultPrompt || normalizeText(task.prompt, 8000),
+        images: outputImages.slice(0, requestedCount),
+        deferredOriginalUploads: deferredOriginalUploads.slice(0, requestedCount),
+        tokenUsage: normalizeTokenUsage(tokenUsage),
+        providerTaskId: [...new Set(providerTaskIds)].join(','),
+        metadata: {
+            timing,
+            ...timing,
+            executor,
+            provider: 'gemini-native',
+            provider_model: firstMetadata.provider_model || config.model || task.model || '',
+            provider_source: firstMetadata.provider_source || config.source || '',
+            provider_size: firstMetadata.provider_size || '',
+            requested_image_count: requestedCount,
+            delivered_image_count: deliveredCount,
+            provider_attempt_count: executions.length,
+            partial_error: partialError,
+            batched_requests: executions.length,
+            batch_delivery_complete: deliveredCount >= requestedCount
+        }
+    };
+}
+
+async function executeGeminiNativeImageGenerationMulti(task = {}, options = {}) {
+    const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+    const settled = await Promise.allSettled(Array.from({ length: requestedCount }, (_, resultIndexOffset) => (
+        executeGeminiNativeImageGeneration(task, {
+            ...options,
+            geminiBatch: {
+                requestedCount,
+                resultIndexOffset,
+                maxImages: 1
+            }
+        })
+    )));
+    const executions = settled
+        .filter((item) => item.status === 'fulfilled' && Array.isArray(item.value?.images) && item.value.images.length)
+        .map((item) => item.value);
+    const failed = settled.find((item) => item.status === 'rejected')
+        || settled.find((item) => item.status === 'fulfilled' && (!Array.isArray(item.value?.images) || !item.value.images.length));
+
+    if (!executions.length) {
+        if (failed?.status === 'rejected') throw failed.reason;
+        const error = new Error('Gemini 图片模型返回为空');
+        error.statusCode = 502;
+        error.code = 'ai_image_empty_result';
+        throw error;
+    }
+
+    const partialError = executions.length < requestedCount
+        ? {
+            code: normalizeText(failed?.reason?.code || 'ai_image_gemini_partial_generation_failed', 120),
+            message: normalizeText(failed?.reason?.message || 'Gemini 部分图片补发失败', 500)
+        }
+        : null;
+
+    return aggregateGeminiNativeImageExecutions({
+        task,
+        config: options.runtimeConfig || {},
+        executions,
+        requestedCount,
+        partialError
+    });
 }
 
 async function executeGeminiNativeImageGeneration(task = {}, {
@@ -4364,8 +4549,23 @@ async function executeGeminiNativeImageGeneration(task = {}, {
     runtimeConfig,
     onImageResult,
     onDiagnostic,
-    signal = null
+    signal = null,
+    geminiBatch = null
 } = {}) {
+    const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+    if (!geminiBatch && requestedCount > 1) {
+        return executeGeminiNativeImageGenerationMulti(task, {
+            supabase,
+            env,
+            fetchImpl,
+            uploadImageBuffer,
+            runtimeConfig,
+            onImageResult,
+            onDiagnostic,
+            signal
+        });
+    }
+
     if (task.billing_mode === 'api' && !runtimeConfig) {
         const error = new Error('API 模式需要使用用户 Key 的即时执行通道，当前后台队列不会读取或保存明文 Key');
         error.statusCode = 409;
@@ -4610,7 +4810,10 @@ async function executeGeminiNativeImageGeneration(task = {}, {
                 upstreamResponseMs,
                 upstreamResponseTextMs: Number(timing.response_text_ms || 0) || upstreamResponseMs,
                 upstreamResponseParseMs: Number(timing.response_parse_ms || 0) || 0,
-                stream: true
+                stream: true,
+                requestedCountOverride: geminiBatch?.requestedCount,
+                resultIndexOffset: geminiBatch?.resultIndexOffset || 0,
+                maxImages: geminiBatch?.maxImages || null
             });
         }
         emitExecutorDiagnostic(onDiagnostic, 'ai_image_gemini_native_stream_no_image_fallback', {
@@ -4635,7 +4838,8 @@ async function executeGeminiNativeImageGeneration(task = {}, {
             runtimeConfig: config,
             onImageResult,
             onDiagnostic,
-            signal
+            signal,
+            geminiBatch
         });
     }
     emitExecutorDiagnostic(onDiagnostic, 'ai_image_gemini_native_response_body_start', {
@@ -4736,7 +4940,8 @@ async function executeGeminiNativeImageGeneration(task = {}, {
                 runtimeConfig: config,
                 onImageResult,
                 onDiagnostic,
-                signal
+                signal,
+                geminiBatch
             });
         }
         emitExecutorDiagnostic(onDiagnostic, 'ai_image_gemini_native_response_error', {
@@ -4775,7 +4980,7 @@ async function executeGeminiNativeImageGeneration(task = {}, {
             provider: 'gemini-native',
             provider_model: config.model,
             provider_source: config.source,
-            requested_image_count: 1,
+            requested_image_count: requestedCount,
             delivered_image_count: 0,
             url_bridge: urlBridgePayload,
             bridge_fallback_used: bridgeFallback
@@ -4818,7 +5023,10 @@ async function executeGeminiNativeImageGeneration(task = {}, {
         upstreamResponseParseMs,
         stream: false,
         urlBridge: urlBridgePayload,
-        bridgeFallback
+        bridgeFallback,
+        requestedCountOverride: geminiBatch?.requestedCount,
+        resultIndexOffset: geminiBatch?.resultIndexOffset || 0,
+        maxImages: geminiBatch?.maxImages || null
     });
 }
 

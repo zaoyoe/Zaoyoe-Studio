@@ -2121,7 +2121,7 @@ test('gemini native image executor streams and saves as soon as inline image arr
         model: 'gemini-3.1-flash-image',
         ratio: '1:1',
         resolution: '1k',
-        quantity: 1,
+        quantity: 4,
         prompt: '一只拿着钥匙的橙色小猫',
         metadata: {}
     };
@@ -2138,6 +2138,7 @@ test('gemini native image executor streams and saves as soon as inline image arr
             source: 'ai-image-provider-stored'
         },
         fetchImpl: async (url, options = {}) => {
+            const requestIndex = requests.length;
             requests.push({
                 url: String(url),
                 method: options.method || 'GET',
@@ -2157,7 +2158,7 @@ test('gemini native image executor streams and saves as soon as inline image arr
                                         {
                                             inlineData: {
                                                 mimeType: 'image/png',
-                                                data: Buffer.from('gemini-image-bytes').toString('base64')
+                                                data: Buffer.from(`gemini-image-bytes-${requestIndex}`).toString('base64')
                                             }
                                         }
                                     ]
@@ -2181,9 +2182,9 @@ test('gemini native image executor streams and saves as soon as inline image arr
             });
             return {
                 stored: {
-                    image_url: 'https://cdn.example.com/persisted/gemini.png',
+                    image_url: `https://cdn.example.com/persisted/gemini-${context.index}.png`,
                     original_image_url: '',
-                    storage_path: 'generated/gemini-preview.png',
+                    storage_path: `generated/gemini-preview-${context.index}.png`,
                     original_storage_path: '',
                     metadata: {
                         preview_status: 'ready',
@@ -2193,8 +2194,8 @@ test('gemini native image executor streams and saves as soon as inline image arr
                 deferredOriginalUpload: {
                     resultIndex: context.index,
                     run: async () => ({
-                        original_image_url: 'https://cdn.example.com/persisted/gemini-original.png',
-                        original_storage_path: 'generated/gemini-original.png'
+                        original_image_url: `https://cdn.example.com/persisted/gemini-original-${context.index}.png`,
+                        original_storage_path: `generated/gemini-original-${context.index}.png`
                     })
                 }
             };
@@ -2204,21 +2205,40 @@ test('gemini native image executor streams and saves as soon as inline image arr
         }
     });
 
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 4);
     assert.equal(requests[0].url, 'https://sub2api.fatherkey.com/v1beta/models/gemini-3.1-flash-image:streamGenerateContent?alt=sse');
+    assert.equal(requests.every((request) => request.url === requests[0].url), true);
     assert.equal(requests[0].method, 'POST');
     assert.equal(requests[0].headers.Authorization, 'Bearer sk-sub2api');
     assert.deepEqual(requests[0].body.generationConfig.responseModalities, ['TEXT', 'IMAGE']);
     assert.equal(requests[0].body.contents[0].parts[0].text.includes(task.prompt), true);
-    assert.equal(uploaded[0].bytes, 'gemini-image-bytes');
-    assert.equal(uploaded[0].mimeType, 'image/png');
-    assert.equal(partial.length, 1);
-    assert.equal(partial[0].image.image_url, 'https://cdn.example.com/persisted/gemini.png');
+    assert.deepEqual(uploaded.map((item) => item.bytes), [
+        'gemini-image-bytes-0',
+        'gemini-image-bytes-1',
+        'gemini-image-bytes-2',
+        'gemini-image-bytes-3'
+    ]);
+    assert.deepEqual(uploaded.map((item) => item.index), [0, 1, 2, 3]);
+    assert.equal(uploaded.every((item) => item.mimeType === 'image/png'), true);
+    assert.equal(partial.length, 4);
+    assert.deepEqual(partial.map((item) => item.image.image_url), [
+        'https://cdn.example.com/persisted/gemini-0.png',
+        'https://cdn.example.com/persisted/gemini-1.png',
+        'https://cdn.example.com/persisted/gemini-2.png',
+        'https://cdn.example.com/persisted/gemini-3.png'
+    ]);
+    assert.deepEqual(partial.map((item) => item.detail.index), [0, 1, 2, 3]);
+    assert.equal(partial[0].detail.requestedCount, 4);
     assert.equal(execution.status, 'succeeded');
-    assert.equal(execution.metadata.executor, 'gemini-native-images-stream');
+    assert.equal(execution.metadata.executor, 'gemini-native-images-stream-batch');
     assert.equal(execution.metadata.provider, 'gemini-native');
-    assert.equal(execution.images[0].image_url, 'https://cdn.example.com/persisted/gemini.png');
-    assert.equal(execution.deferredOriginalUploads.length, 1);
+    assert.equal(execution.metadata.requested_image_count, 4);
+    assert.equal(execution.metadata.delivered_image_count, 4);
+    assert.equal(execution.metadata.provider_attempt_count, 4);
+    assert.deepEqual(execution.images.map((image) => image.result_index), [0, 1, 2, 3]);
+    assert.equal(execution.images[0].image_url, 'https://cdn.example.com/persisted/gemini-0.png');
+    assert.equal(execution.deferredOriginalUploads.length, 4);
+    assert.deepEqual(execution.deferredOriginalUploads.map((item) => item.resultIndex), [0, 1, 2, 3]);
     assert.equal(typeof execution.deferredOriginalUploads[0].run, 'function');
 });
 
@@ -3852,7 +3872,7 @@ test('ai image runtime can complete with real image executor URL result and char
     assert.equal(state.rpcCalls.length, 1);
 });
 
-test('ai image openai-compatible executor retries missing image count until requested quantity is delivered', async () => {
+test('ai image openai-compatible executor sends one upstream request per requested image', async () => {
     const state = {
         tasks: [{
             id: 'task-real-two-images',
@@ -3926,7 +3946,7 @@ test('ai image openai-compatible executor retries missing image count until requ
     assert.equal(result.results.length, 2);
     assert.equal(result.task.charged_points, 16);
     assert.equal(generationRequests.length, 2);
-    assert.deepEqual(generationRequests.map((request) => request.n), [2, 1]);
+    assert.deepEqual(generationRequests.map((request) => request.n), [1, 1]);
     assert.equal(result.task.metadata.provider_attempt_count, 2);
     assert.equal(result.task.metadata.requested_image_count, 2);
     assert.equal(result.task.metadata.delivered_image_count, 2);

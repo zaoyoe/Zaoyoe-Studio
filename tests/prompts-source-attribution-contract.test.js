@@ -365,6 +365,11 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'prompt modal source actions should default to the same dim color as the comment button'
     );
     assert.equal(
+        /\[data-theme="dark"\] \.modal-content-col\s*\{[\s\S]*background:\s*rgba\(15,\s*23,\s*42,\s*0\.08\);[\s\S]*backdrop-filter:\s*blur\(12px\) saturate\(112%\);[\s\S]*-webkit-backdrop-filter:\s*blur\(12px\) saturate\(112%\);/.test(promptsStyles),
+        true,
+        'dark prompt detail right panel should keep a subtle frosted-glass blur'
+    );
+    assert.equal(
         /\.prompt-action-bar\s*\{[\s\S]*min-height:\s*30px;[\s\S]*margin-top:\s*12px;[\s\S]*padding-top:\s*10px;/.test(promptsStyles),
         true,
         'prompt detail action bar should stay compact so the bottom toolbar does not create excess empty height'
