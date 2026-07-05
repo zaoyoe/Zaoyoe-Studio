@@ -13,6 +13,7 @@
     const VIDEO_LOAD_RETRY_DELAY_MS = 1000;
     const VIDEO_ERROR_CONFIRMATION_MS = 30000;
     const RELOADABLE_BILLING_RECORD_MIN_AGE_MS = 5 * 60 * 1000;
+    const INCOMPLETE_SUCCEEDED_IMAGE_RESULT_GRACE_MS = 5 * 60 * 1000;
     const MAX_REFERENCE_IMAGE_INPUTS = 16;
     const MAX_CHAT_ATTACHMENT_COUNT = 8;
     const MAX_CHAT_ATTACHMENT_TEXT_CHARS = 50000;
@@ -4618,6 +4619,17 @@
         return !/^ai_image_provider|^ai_image_generation|^user_cancelled/.test(errorCode);
     }
 
+    function shouldHoldIncompleteSucceededImageResult(task = {}, visibleImageCount = 0) {
+        if (!task || task.status !== 'succeeded' || isTextVisionTask(task) || isVideoMode(task.mode)) return false;
+        const { total } = getTaskGenerationCount(task);
+        if (Number(visibleImageCount || 0) >= total) return false;
+        const createdAt = normalizeTimestamp(task.createdAt || task.created_at, 0);
+        const updatedAt = normalizeTimestamp(task.updatedAt || task.updated_at, 0);
+        const completedAt = normalizeTimestamp(task.completedAt || task.completed_at, 0);
+        const referenceAt = Math.max(createdAt, updatedAt, completedAt);
+        return !referenceAt || Date.now() - referenceAt < INCOMPLETE_SUCCEEDED_IMAGE_RESULT_GRACE_MS;
+    }
+
     function isSub2ApiActualCostTask(task = {}) {
         const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
             ? task.metadata
@@ -7571,6 +7583,7 @@
             const taskId = String(element.getAttribute('data-aiw-live-status-task-id') || '').trim();
             const kind = String(element.getAttribute('data-aiw-live-status-kind') || '').trim();
             const slotSequence = Number(element.getAttribute('data-aiw-live-status-slot') || '');
+            const fixedStepLabel = String(element.getAttribute('data-aiw-live-status-step-label') || '').trim();
             const task = state.tasks.find((item) => item.id === taskId);
             if (!task) return;
             let nextText = '';
@@ -7579,7 +7592,7 @@
             } else if (kind === 'generation') {
                 nextText = getTaskGenerationLabel(task);
             } else if (kind === 'step') {
-                nextText = getTaskCurrentStepLabel(task);
+                nextText = fixedStepLabel || getTaskCurrentStepLabel(task);
             } else if (kind === 'image') {
                 nextText = Number.isFinite(slotSequence) && slotSequence > 0
                     ? getTaskSlotImageLabel(task, slotSequence)
@@ -9369,7 +9382,7 @@
         `;
     }
 
-    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null } = {}) {
+    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null, stepLabel = '' } = {}) {
         const aspect = getRatioAspect(task.ratio, task.mode);
         const isBusy = forceBusy || ['queued', 'processing'].includes(task.status) || task.status === 'streaming';
         const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
@@ -9377,7 +9390,7 @@
         const stoppedReason = isStopped ? getTaskFailureReason(task) : '';
         const progress = getTaskStageProgressPercent(task);
         const statusItems = [
-            { kind: 'step', text: getTaskCurrentStepLabel(task) },
+            { kind: 'step', text: stepLabel || getTaskCurrentStepLabel(task), stepLabel },
             { kind: 'image', text: getTaskSlotImageLabel(task, imageSlot), slotSequence: imageSlot },
             { kind: 'elapsed', text: getTaskElapsedLabel(task) }
         ];
@@ -9406,7 +9419,7 @@
 		                            <span class="ai-image-result-resolution">${escapeHtml(getTaskResolutionLabel(task))}</span>
 		                            ${isBusy ? `<div class="ai-image-result-pending-overlay">
 		                                <div class="ai-image-result-pending-meta">
-                                            ${statusItems.map((item, itemIndex) => `<span class="${itemIndex === 0 ? 'is-step' : ''}" data-aiw-live-status-task-id="${escapeHtml(task.id)}" data-aiw-live-status-kind="${escapeHtml(item.kind)}"${Number.isFinite(Number(item.slotSequence)) && Number(item.slotSequence) > 0 ? ` data-aiw-live-status-slot="${escapeHtml(item.slotSequence)}"` : ''}>${escapeHtml(item.text)}</span>`).join('')}
+                                            ${statusItems.map((item, itemIndex) => `<span class="${itemIndex === 0 ? 'is-step' : ''}" data-aiw-live-status-task-id="${escapeHtml(task.id)}" data-aiw-live-status-kind="${escapeHtml(item.kind)}"${Number.isFinite(Number(item.slotSequence)) && Number(item.slotSequence) > 0 ? ` data-aiw-live-status-slot="${escapeHtml(item.slotSequence)}"` : ''}${item.stepLabel ? ` data-aiw-live-status-step-label="${escapeHtml(item.stepLabel)}"` : ''}>${escapeHtml(item.text)}</span>`).join('')}
 		                                </div>
 		                                <div class="ai-image-progress" data-progress-key="inline-${escapeHtml(task.id)}" data-progress="${escapeHtml(Math.round(progress))}" style="--aiw-progress:${progress / 100}"><span></span></div>
 		                            </div>` : (stoppedReason ? `<div class="ai-image-result-failure-reason">${escapeHtml(stoppedReason)}</div>` : '')}
@@ -9846,13 +9859,15 @@
             const { total } = getTaskGenerationCount(item);
             const missingResultCount = Math.max(0, total - entries.length);
             if (entries.length && missingResultCount > 0 && !isVideoMode(item.mode)) {
+                const holdMissingResults = shouldHoldIncompleteSucceededImageResult(item, entries.length);
                 const placeholderEntries = buildTaskPlaceholderEntries(item, {
-                    type: 'reloading',
+                    type: holdMissingResults ? 'pending' : 'reloading',
                     taskIndex,
                     sequenceStart: sequenceCursor + entries.length,
                     slotIndexStart: entries.length,
                     count: missingResultCount,
-                    baseSequence: sequenceCursor + entries.length
+                    baseSequence: sequenceCursor + entries.length,
+                    forceBusy: holdMissingResults
                 });
                 const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
                 taskSequenceMap.set(item.id, lastPlaceholder?.sequence || entries[entries.length - 1].sequence);
@@ -9865,14 +9880,15 @@
             if (!entries.length) {
                 const awaitingVideoResult = isVideoMode(item.mode) && item.status === 'succeeded';
                 const awaitingImageReload = !awaitingVideoResult && item.status === 'succeeded';
+                const holdMissingResults = awaitingImageReload && shouldHoldIncompleteSucceededImageResult(item, 0);
                 const placeholderEntries = buildTaskPlaceholderEntries(item, {
-                    type: awaitingImageReload ? 'reloading' : 'pending',
+                    type: holdMissingResults ? 'pending' : (awaitingImageReload ? 'reloading' : 'pending'),
                     taskIndex,
                     sequenceStart: sequenceCursor,
                     slotIndexStart: 0,
                     count: awaitingImageReload ? Math.max(1, total) : 1,
                     baseSequence,
-                    forceBusy: awaitingVideoResult
+                    forceBusy: awaitingVideoResult || holdMissingResults
                 });
                 const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
                 taskSequenceMap.set(item.id, lastPlaceholder?.sequence || sequenceCursor + 1);
@@ -9909,7 +9925,13 @@
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
                             if (taskId) anchoredTaskIds.add(taskId);
                             if (entry.type === 'pending') {
-                                return renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, forceBusy: Boolean(entry.forceBusy), navigationAnchor, imageSlot: entry.slotSequence });
+                                return renderInlineTaskPreview(entry.task, '生成中', {
+                                    showPrompt: false,
+                                    forceBusy: Boolean(entry.forceBusy),
+                                    navigationAnchor,
+                                    imageSlot: entry.slotSequence,
+                                    stepLabel: entry.forceBusy && entry.task?.status === 'succeeded' ? '结果同步中' : ''
+                                });
                             }
                             if (entry.type === 'reloading') {
                                 return renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', { showPrompt: false, navigationAnchor });

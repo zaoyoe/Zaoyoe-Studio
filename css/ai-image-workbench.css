@@ -3632,7 +3632,7 @@ html[data-theme="dark"] .ai-image-history-search button:focus-visible {
 }
 
 .ai-image-result-grid--thread {
-    grid-template-columns: minmax(0, min(220px, 100%));
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), min(220px, 100%)));
 }
 
 .ai-image-result-grid--video {
@@ -3658,7 +3658,7 @@ html[data-theme="dark"] .ai-image-history-search button:focus-visible {
 }
 
 .ai-image-result-grid--thread .ai-image-thread-step + .ai-image-thread-step {
-    margin-top: 10px;
+    margin-top: 0;
 }
 
 .ai-image-thread-prompt {
