@@ -423,8 +423,8 @@ test('ai image workbench handles expired result images without breaking the resu
     assert.match(source, /data-aiw-preview-thumb/);
     assert.match(source, /image\.dataset\.aiwFallbackTried/);
     assert.match(source, /rememberImageLoaded\(imageSrc\)/);
-    assert.match(source, /rememberImageFailed\(imageSrc\)/);
-    assert.match(source, /classList\.add\('is-image-broken'\)/);
+    assert.doesNotMatch(source, /rememberImageFailed\(imageSrc\)/);
+    assert.match(source, /classList\.add\('is-image-loading'\)/);
     assert.match(source, /function handleRootLoad\(event\)/);
     assert.match(source, /taskThumb\.classList\.add\('is-image-loaded'\)/);
     assert.match(source, /media\.classList\.add\('is-image-loaded'\)/);
@@ -458,8 +458,10 @@ test('ai image workbench handles expired result images without breaking the resu
     assert.match(source, /data-aiw-video-progress/);
     assert.match(source, /const previewSrc = isVideo \? entry\.src : getStableImageUrl\(imageIdentityKey, entry\.src\)/);
     assert.match(source, /hasLoadedImage\(previewSrc\) \? 'is-image-loaded' : ''/);
-    assert.match(source, /hasFailedImage\(previewSrc\) \? 'is-image-broken' : ''/);
+    assert.match(source, /hasFailedImage\(previewSrc\) \? 'is-image-loading' : ''/);
     assert.match(source, /data-aiw-image-key="\$\{escapeHtml\(imageIdentityKey\)\}"/);
+    assert.match(cssSource, /\.ai-image-result-media\.is-image-loading img/);
+    assert.match(cssSource, /\.ai-image-result-media\.is-image-loading::after/);
     assert.match(cssSource, /\.ai-image-result-media\.is-image-broken img/);
     assert.match(cssSource, /\.ai-image-result-media::before/);
     assert.match(cssSource, /\.ai-image-result-media\.is-video-broken video/);
@@ -627,7 +629,7 @@ test('ai image history rows show unread and failed states inline', () => {
     assert.match(source, /const thumbFallbackIcon = isVideoThumb \? 'fa-film' : \(MODE_META\[thumbTask\.mode\]\?\.icon \|\| MODE_META\[task\.mode\]\?\.icon \|\| 'fa-image'\)/);
     assert.match(source, /const thumbIdentityKey = thumb[\s\S]*getImageIdentityKey/);
     assert.match(source, /const thumbSrc = thumb \? getStableImageUrl\(thumbIdentityKey, thumb\) : ''/);
-    assert.match(source, /const thumbStateClass = thumbSrc[\s\S]*hasLoadedImage\(thumbSrc\) \? 'is-image-loaded' : ''[\s\S]*hasFailedImage\(thumbSrc\) \? 'is-image-broken' : ''/);
+    assert.match(source, /const thumbStateClass = thumbSrc[\s\S]*hasLoadedImage\(thumbSrc\) \? 'is-image-loaded' : ''[\s\S]*hasFailedImage\(thumbSrc\) \? 'is-image-loading' : ''/);
     assert.match(source, /data-aiw-image-key="\$\{escapeHtml\(thumbIdentityKey\)\}"/);
     assert.match(source, /loading="eager" decoding="async"/);
     assert.match(source, /hasUnreadSuccess \? 'is-unread' : ''/);
@@ -641,6 +643,7 @@ test('ai image history rows show unread and failed states inline', () => {
     assert.match(thumbImageRule, /object-fit: cover;/);
     assert.match(thumbImageRule, /transform: scale\(1\);/);
     assert.doesNotMatch(thumbImageRule, /opacity: 0;/);
+    assert.match(cssSource, /\.ai-image-task-thumb\.is-image-loading img/);
     assert.match(cssSource, /\.ai-image-task-thumb\.is-image-broken img/);
 });
 
@@ -731,6 +734,7 @@ test('ai image workbench exposes video generation only from configured video mod
 });
 
 test('ai image workbench keeps progress stable across polling and exposes cancel controls', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /const progressVisualCache = new Map\(\)/);
     assert.match(source, /let liveElapsedTimer = null/);
     assert.match(source, /function mergeTaskSnapshots\(localTask = \{\}, remoteTask = \{\}\)/);
@@ -756,6 +760,11 @@ test('ai image workbench keeps progress stable across polling and exposes cancel
     assert.match(source, /getTaskElapsedLabel\(task\)/);
     assert.match(source, /data-aiw-live-status-task-id=/);
     assert.match(source, /data-progress-key=/);
+    assert.match(source, /function renderDockTaskProgress\(task\)/);
+    assert.match(source, /--aiw-dock-task-progress:\$\{percent \/ 100\}/);
+    assert.match(source, /\$\{renderDockTaskProgress\(task\)\}/);
+    assert.match(cssSource, /\.ai-image-dock-task-progress\s*\{/);
+    assert.match(cssSource, /\.ai-image-dock-task-progress i\s*\{[\s\S]*transform: scaleX\(var\(--aiw-dock-task-progress, 0\)\)/);
     assert.match(source, /data-aiw-action="\$\{canCancel \? 'cancel-task' : 'generate'\}"/);
     assert.match(source, /function refreshBusyTasksNow\(\)/);
     assert.match(source, /visibilitychange/);

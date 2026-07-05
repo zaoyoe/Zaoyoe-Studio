@@ -120,6 +120,10 @@ html[data-theme="dark"] .ai-image-dock-summary-progress {
     background: rgba(255, 255, 255, 0.12);
 }
 
+html[data-theme="dark"] .ai-image-dock-task-progress {
+    background: rgba(255, 255, 255, 0.08);
+}
+
 html[data-theme="dark"] .ai-image-dock-task-copy strong,
 html[data-theme="dark"] .ai-image-fab-copy strong {
     color: rgba(255, 255, 255, 0.94);
@@ -561,6 +565,37 @@ body.chat-widget-open .ai-image-dock {
 
 .ai-image-dock-task-badge.is-icon i {
     font-size: 12px;
+}
+
+.ai-image-dock-task-progress {
+    grid-column: 1 / -1;
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.08);
+}
+
+.ai-image-dock-task-progress i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    display: block;
+    width: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #18b6d9, #27c790, #f2a93b);
+    transform: scaleX(var(--aiw-dock-task-progress, 0));
+    transform-origin: left center;
+    transition: transform 0.24s ease;
+}
+
+.ai-image-dock-task-progress.is-success i {
+    background: #10b981;
+}
+
+.ai-image-dock-task-progress.is-failed i {
+    background: #ef6274;
 }
 
 .ai-image-dock-task-actions {
@@ -3990,6 +4025,7 @@ html[data-theme="dark"] .ai-image-chat-copy {
     }
 }
 
+.ai-image-result-media.is-image-loading img,
 .ai-image-result-media.is-image-broken img,
 .ai-image-result-media.is-video-broken video {
     display: none;
@@ -4010,12 +4046,14 @@ html[data-theme="dark"] .ai-image-chat-copy {
 }
 
 .ai-image-result-media.is-image-loaded::before,
+.ai-image-result-media.is-image-loading::before,
 .ai-image-result-media.is-image-broken::before,
 .ai-image-result-media.is-video-ready::before,
 .ai-image-result-media.is-video-broken::before {
     display: none;
 }
 
+.ai-image-result-media.is-image-loading::after,
 .ai-image-result-media.is-video-loading::after {
     content: "\f03d";
     position: absolute;
@@ -4041,6 +4079,12 @@ html[data-theme="dark"] .ai-image-chat-copy {
     pointer-events: none;
 }
 
+.ai-image-result-media.is-image-loading::after {
+    content: "\f110";
+    animation: aiw-spin 1.05s linear infinite;
+}
+
+.ai-image-result-media.is-image-loaded::after,
 .ai-image-result-media.is-video-ready::after,
 .ai-image-result-media.is-video-broken::after {
     display: none;
@@ -5693,10 +5737,12 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
     opacity: 0;
 }
 
+.ai-image-task-thumb.is-image-loading img,
 .ai-image-task-thumb.is-image-broken img {
     display: none;
 }
 
+.ai-image-task-thumb.is-image-loading > i,
 .ai-image-task-thumb.is-image-broken > i {
     color: var(--aiw-muted);
     opacity: 0.9;

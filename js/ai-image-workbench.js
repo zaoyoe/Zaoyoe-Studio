@@ -5351,13 +5351,12 @@
         if (taskThumb) {
             if (hasLoadedImage(imageSrc)) {
                 taskThumb.classList.add('is-image-loaded');
-                taskThumb.classList.remove('is-image-broken');
+                taskThumb.classList.remove('is-image-loading', 'is-image-broken');
                 return;
             }
-            rememberImageFailed(imageSrc);
             forgetStableImageUrl(taskThumb.getAttribute('data-aiw-image-key') || '');
-            taskThumb.classList.add('is-image-broken');
-            taskThumb.classList.remove('is-image-loaded');
+            taskThumb.classList.add('is-image-loading');
+            taskThumb.classList.remove('is-image-loaded', 'is-image-broken');
             image.setAttribute('aria-hidden', 'true');
             return;
         }
@@ -5379,21 +5378,14 @@
 
         if (hasLoadedImage(imageSrc)) {
             media.classList.add('is-image-loaded');
-            media.classList.remove('is-image-broken');
+            media.classList.remove('is-image-loading', 'is-image-broken');
             return;
         }
-        rememberImageFailed(imageSrc);
         forgetStableImageUrl(media.getAttribute('data-aiw-image-key') || '');
-        media.classList.add('is-image-broken');
-        media.classList.remove('is-image-loaded');
+        media.classList.add('is-image-loading');
+        media.classList.remove('is-image-loaded', 'is-image-broken');
         image.alt = '';
         image.setAttribute('aria-hidden', 'true');
-
-        const downloadLink = media.querySelector('[data-aiw-download]');
-        if (downloadLink instanceof HTMLAnchorElement && downloadLink.href === imageSrc) {
-            downloadLink.setAttribute('aria-disabled', 'true');
-            downloadLink.classList.add('is-disabled');
-        }
     }
 
     function handleRootVideoLoaded(event) {
@@ -5424,13 +5416,15 @@
         if (taskThumb) {
             rememberStableImageUrl(taskThumb.getAttribute('data-aiw-image-key') || '', imageSrc);
             taskThumb.classList.add('is-image-loaded');
-            taskThumb.classList.remove('is-image-broken');
+            taskThumb.classList.remove('is-image-loading', 'is-image-broken');
+            image.removeAttribute('aria-hidden');
         }
         const media = image.closest?.('.ai-image-result-media');
         if (media) {
             rememberStableImageUrl(media.getAttribute('data-aiw-image-key') || '', imageSrc);
             media.classList.add('is-image-loaded');
-            media.classList.remove('is-image-broken');
+            media.classList.remove('is-image-loading', 'is-image-broken');
+            image.removeAttribute('aria-hidden');
         }
     }
 
@@ -7390,12 +7384,14 @@
                 rememberImageLoaded(imageSrc);
                 rememberStableImageUrl(identityKey, imageSrc);
                 taskThumb?.classList.add('is-image-loaded');
-                taskThumb?.classList.remove('is-image-broken');
+                taskThumb?.classList.remove('is-image-loading', 'is-image-broken');
                 media?.classList.add('is-image-loaded');
-                media?.classList.remove('is-image-broken');
+                media?.classList.remove('is-image-loading', 'is-image-broken');
             } else if (hasFailedImage(imageSrc)) {
-                taskThumb?.classList.add('is-image-broken');
-                media?.classList.add('is-image-broken');
+                taskThumb?.classList.add('is-image-loading');
+                taskThumb?.classList.remove('is-image-broken');
+                media?.classList.add('is-image-loading');
+                media?.classList.remove('is-image-broken');
             } else {
                 if (hasLoadedImage(imageSrc)) {
                     taskThumb?.classList.add('is-image-loaded');
@@ -7953,6 +7949,17 @@
         return `<span class="ai-image-dock-task-badge">${escapeHtml(getDockTaskBadge(task))}</span>`;
     }
 
+    function renderDockTaskProgress(task) {
+        const stage = getDockTaskStage(task);
+        const percent = getDockTaskProgressPercent(task, stage);
+        const className = [
+            'ai-image-dock-task-progress',
+            stage === 'complete' ? 'is-success' : '',
+            stage === 'failed' ? 'is-failed' : ''
+        ].filter(Boolean).join(' ');
+        return `<span class="${className}" style="--aiw-dock-task-progress:${percent / 100}" aria-label="${escapeHtml(`任务进度 ${percent}%`)}"><i></i></span>`;
+    }
+
     function getDockTaskSummary(task) {
         const stage = getDockTaskStage(task);
         if (stage === 'complete') return getStatusLabel(task);
@@ -8044,6 +8051,7 @@
                                     </button>
                                 ` : ''}
                             </span>
+                            ${renderDockTaskProgress(task)}
                         </div>
                     </div>
                 `).join('')}
@@ -9244,7 +9252,7 @@
             isVideo && hasFailedVideo(previewSrc) ? 'is-video-broken' : '',
             isVideo && !hasLoadedVideo(previewSrc) && !hasFailedVideo(previewSrc) ? 'is-video-loading' : '',
             !isVideo && hasLoadedImage(previewSrc) ? 'is-image-loaded' : '',
-            !isVideo && hasFailedImage(previewSrc) ? 'is-image-broken' : ''
+            !isVideo && hasFailedImage(previewSrc) ? 'is-image-loading' : ''
         ].filter(Boolean).join(' ');
         const videoProgressLabel = isVideo ? getVideoProgressLabel(previewSrc) : '';
         const videoProgressStyle = isVideo ? `--aiw-video-progress:${escapeHtml(getVideoProgressCss(previewSrc))};` : '';
@@ -9955,7 +9963,7 @@
         const thumbStateClass = thumbSrc
             ? [
                 hasLoadedImage(thumbSrc) ? 'is-image-loaded' : '',
-                hasFailedImage(thumbSrc) ? 'is-image-broken' : ''
+                hasFailedImage(thumbSrc) ? 'is-image-loading' : ''
             ].filter(Boolean).join(' ')
             : '';
         return `
