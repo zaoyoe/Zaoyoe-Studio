@@ -7950,12 +7950,11 @@
     }
 
     function renderDockTaskProgress(task) {
+        if (!isBusyTask(task)) return '';
         const stage = getDockTaskStage(task);
         const percent = getDockTaskProgressPercent(task, stage);
         const className = [
-            'ai-image-dock-task-progress',
-            stage === 'complete' ? 'is-success' : '',
-            stage === 'failed' ? 'is-failed' : ''
+            'ai-image-dock-task-progress'
         ].filter(Boolean).join(' ');
         return `<span class="${className}" style="--aiw-dock-task-progress:${percent / 100}" aria-label="${escapeHtml(`任务进度 ${percent}%`)}"><i></i></span>`;
     }
@@ -8009,13 +8008,15 @@
         const queueTotal = Math.max(queueProgress.total || 0, queueProgress.completed || 0, 1);
         const queueCompleted = Math.min(queueTotal, Math.max(0, Number(queueProgress.completed || 0)));
         const queuePercent = Math.round((queueCompleted / queueTotal) * 100);
-        const summaryProgressPercent = isDockTerminalTask(activeTask)
-            ? queuePercent
-            : clampNumber(progressPercent, 0, 100, queuePercent);
+        const showSummaryProgress = Boolean(activeTask && isBusyTask(activeTask));
+        const summaryProgressPercent = showSummaryProgress ? clampNumber(progressPercent, 0, 100, queuePercent) : 0;
         const stageLabel = getDockStageLabel(activeTask, stage);
         const elapsedMarkup = activeTask?.id && !isDockTerminalTask(activeTask)
             ? ` · <span data-aiw-live-status-task-id="${escapeHtml(activeTask.id)}" data-aiw-live-status-kind="elapsed">${escapeHtml(getTaskElapsedLabel(activeTask))}</span>`
             : '';
+        const summaryStatusMarkup = showSummaryProgress
+            ? `${escapeHtml(stageLabel)} · 当前任务 ${escapeHtml(progressPercent)}%${elapsedMarkup}`
+            : escapeHtml(stageLabel);
         const summaryClass = [
             'ai-image-dock-summary',
             stage === 'complete' ? 'is-success' : '',
@@ -8028,9 +8029,9 @@
             <div class="${summaryClass}">
                 <div class="ai-image-dock-summary-main">
                     <strong>队列 ${escapeHtml(queueCompleted)}/${escapeHtml(queueTotal)}</strong>
-                    <span>${escapeHtml(stageLabel)} · 当前任务 ${escapeHtml(progressPercent)}%${elapsedMarkup}</span>
+                    <span>${summaryStatusMarkup}</span>
                 </div>
-                <div class="ai-image-dock-summary-progress" style="--aiw-dock-summary-progress:${summaryProgressPercent / 100}" aria-hidden="true"></div>
+                ${showSummaryProgress ? `<div class="ai-image-dock-summary-progress" style="--aiw-dock-summary-progress:${summaryProgressPercent / 100}" aria-hidden="true"></div>` : ''}
             </div>
             <div class="ai-image-dock-task-list">
                 ${visibleTasks.map((task) => `

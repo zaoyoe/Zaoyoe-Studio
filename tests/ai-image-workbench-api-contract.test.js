@@ -462,7 +462,10 @@ test('ai image workbench handles expired result images without breaking the resu
     assert.match(source, /data-aiw-image-key="\$\{escapeHtml\(imageIdentityKey\)\}"/);
     assert.match(cssSource, /\.ai-image-result-media\.is-image-loading img/);
     assert.match(cssSource, /\.ai-image-result-media\.is-image-loading::after/);
+    assert.match(cssSource, /\.ai-image-result-media\.is-image-broken::after/);
     assert.match(cssSource, /\.ai-image-result-media\.is-image-broken img/);
+    assert.doesNotMatch(cssSource, /\.ai-image-result-media\.is-image-broken \.ai-image-result-broken\s*\{[\s\S]*display: grid;/);
+    assert.match(cssSource, /\.ai-image-result-media\.is-video-broken \.ai-image-result-broken\s*\{[\s\S]*display: grid;/);
     assert.match(cssSource, /\.ai-image-result-media::before/);
     assert.match(cssSource, /\.ai-image-result-media\.is-video-broken video/);
     assert.match(cssSource, /\.ai-image-result-media\.is-video-loading::after/);
@@ -761,6 +764,9 @@ test('ai image workbench keeps progress stable across polling and exposes cancel
     assert.match(source, /data-aiw-live-status-task-id=/);
     assert.match(source, /data-progress-key=/);
     assert.match(source, /function renderDockTaskProgress\(task\)/);
+    assert.match(source, /if \(!isBusyTask\(task\)\) return '';/);
+    assert.match(source, /const showSummaryProgress = Boolean\(activeTask && isBusyTask\(activeTask\)\)/);
+    assert.match(source, /showSummaryProgress \? `<div class="ai-image-dock-summary-progress"/);
     assert.match(source, /--aiw-dock-task-progress:\$\{percent \/ 100\}/);
     assert.match(source, /\$\{renderDockTaskProgress\(task\)\}/);
     assert.match(cssSource, /\.ai-image-dock-task-progress\s*\{/);
