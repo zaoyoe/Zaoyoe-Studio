@@ -1273,6 +1273,216 @@ test('points chat submit executes immediately and records upstream timing', asyn
     assert.equal(requests[0].body.model, 'kimi-k2.6');
 });
 
+test('points chat submit charges Sub2API-compatible token pricing from usage', async () => {
+    const requests = [];
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-chat-1',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-chat-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'kimi-k2.6'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url, headers: options.headers, body: options.body ? JSON.parse(options.body) : null });
+            if (String(url).includes('/usage/requests/')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        mode: 'request',
+                        request_id: 'client:fatherkey-chat-cost-1',
+                        usage_record: {
+                            request_id: 'upstream-chat-cost-1',
+                            actual_cost: 0.137502,
+                            total_cost: 0.137502,
+                            input_cost: 0.0123,
+                            output_cost: 0.125202
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-chat-cost-1'
+                            : '';
+                    }
+                },
+                text: async () => JSON.stringify({
+                    id: 'chatcmpl-sub2api-chat-1',
+                    usage: {
+                        prompt_tokens: 2000,
+                        completion_tokens: 1000,
+                        total_tokens: 3000,
+                        prompt_tokens_details: {
+                            cached_tokens: 500
+                        }
+                    },
+                    choices: [{
+                        message: {
+                            content: '已完成 Sub2API 组合计费验证。'
+                        }
+                    }]
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证组合计费',
+            model: 'kimi-k2.6',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.task.status, 'succeeded');
+    assert.equal(payload.task.estimatedPoints, 0);
+    assert.equal(payload.task.chargedPoints, 0.137502);
+    assert.equal(payload.task.tokenUsage.cache_read_tokens, 500);
+    const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
+    assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
+    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(deductCall.args.p_amount, 0.137502);
+    assert.equal(persistedTask.charged_points, 0.137502);
+    assert.equal(persistedTask.metadata.pricing_charge.source, 'sub2api_actual_cost');
+    assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.137502);
+    assert.equal(persistedTask.metadata.pricing_charge.pricing.breakdown.actual, 0.137502);
+});
+
+test('points chat submit falls back to Sub2API total cost when actual cost is delayed', async () => {
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-chat-total-cost-fallback',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-chat-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'claude-opus-4-8',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            if (String(url).includes('/usage/requests/')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'different-sub2api-request-id',
+                            actual_cost: 0,
+                            total_cost: 0.343305,
+                            input_cost: 0.12,
+                            output_cost: 0.223305
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-total-cost-fallback'
+                            : '';
+                    }
+                },
+                text: async () => JSON.stringify({
+                    id: 'chatcmpl-sub2api-chat-total-fallback',
+                    usage: {
+                        prompt_tokens: 7059,
+                        completion_tokens: 127,
+                        total_tokens: 7186
+                    },
+                    choices: [{
+                        message: {
+                            content: 'Sub2API total cost fallback.'
+                        }
+                    }]
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证 actual_cost 延迟时不会扣 0',
+            model: 'claude-opus-4-8',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.task.chargedPoints, 0.343305);
+    assert.equal(deductCall.args.p_amount, 0.343305);
+    assert.equal(persistedTask.charged_points, 0.343305);
+    assert.equal(persistedTask.metadata.pricing_charge.source, 'sub2api_actual_cost');
+    assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.343305);
+});
+
 test('points chat stream uses server provider key, streams deltas, and charges points', async () => {
     const requests = [];
     const logs = [];
@@ -1376,6 +1586,717 @@ test('points chat stream uses server provider key, streams deltas, and charges p
     } finally {
         console.info = originalInfo;
     }
+});
+
+test('points chat stream charges Sub2API actual cost after stream closes', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-chat-1',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-sub2api-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'kimi-k2.6',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (String(url).includes('/usage?request_id=')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'client:fatherkey-stream-cost-1',
+                            actual_cost: 0.001075,
+                            total_cost: 0.001075,
+                            input_cost: 0.000179,
+                            output_cost: 0.000896
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-stream-cost-1'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-sub2api-stream-1","model":"kimi-k2.6","choices":[{"delta":{"content":"已完成"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"流式计费。"}}]}\n\n',
+                            'data: {"usage":{"prompt_tokens":2000,"completion_tokens":1000,"total_tokens":3000},"choices":[{"delta":{}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证流式 Sub2API 计费',
+            model: 'kimi-k2.6',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: billing/);
+    assert.match(res.body, /event: done/);
+    assert.match(res.body, /"chargedPoints":0.001075/);
+    const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
+    assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
+    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(deductCall.args.p_amount, 0.001075);
+    assert.equal(persistedTask.status, 'succeeded');
+    assert.equal(persistedTask.charged_points, 0.001075);
+    assert.equal(persistedTask.metadata.sub2api_client_request_id, expectedClientRequestId);
+    assert.equal(persistedTask.metadata.pricing_charge.source, 'sub2api_actual_cost');
+    assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.001075);
+});
+
+test('points chat stream finalizes after upstream sends content but leaves SSE open', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-chat-idle',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-idle-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
+            AI_IMAGE_CHAT_STREAM_IDLE_TIMEOUT_MS: '10',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (String(url).includes('/usage?request_id=')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'client:fatherkey-stream-idle-1',
+                            actual_cost: 0.019876,
+                            total_cost: 0.019876
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-stream-idle-1'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(encoder.encode(
+                            'data: {"id":"chatcmpl-sub2api-stream-idle","model":"deepseek-v4-flash","choices":[{"delta":{"content":"你好"}}]}\n\n'
+                        ));
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '你好',
+            model: 'deepseek-v4-flash',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: billing/);
+    assert.match(res.body, /event: done/);
+    assert.match(res.body, /你好/);
+    assert.match(res.body, /"chargedPoints":0.019876/);
+    assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
+    assert.equal(deductCall.args.p_amount, 0.019876);
+    assert.equal(persistedTask.status, 'succeeded');
+    assert.equal(persistedTask.charged_points, 0.019876);
+    assert.equal(persistedTask.metadata.stream_idle_timed_out, true);
+});
+
+test('points chat stream finalizes after visible answer when hidden reasoning keeps streaming', { timeout: 1000 }, async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    let hiddenChunksSent = 0;
+    let streamCancelled = false;
+    let hiddenInterval = null;
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-hidden-reasoning',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-hidden-reasoning-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
+            AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS: '10',
+            AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS: '0',
+            AI_IMAGE_CHAT_STREAM_IDLE_TIMEOUT_MS: '500',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (String(url).includes('/usage?request_id=')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'client:fatherkey-stream-hidden-reasoning-1',
+                            actual_cost: 0.000221,
+                            total_cost: 0.000221
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-stream-hidden-reasoning-1'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(encoder.encode(
+                            'data: {"id":"chatcmpl-hidden-reasoning","model":"deepseek-v4-flash","choices":[{"delta":{"content":"你好"}}]}\n\n'
+                        ));
+                        hiddenInterval = setInterval(() => {
+                            hiddenChunksSent += 1;
+                            try {
+                                controller.enqueue(encoder.encode(
+                                    `data: {"choices":[{"delta":{"reasoning_content":"隐藏思考${hiddenChunksSent}"}}]}\n\n`
+                                ));
+                            } catch (_) {
+                                clearInterval(hiddenInterval);
+                            }
+                        }, 1);
+                    },
+                    cancel() {
+                        streamCancelled = true;
+                        if (hiddenInterval) clearInterval(hiddenInterval);
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '你好',
+            model: 'deepseek-v4-flash',
+            apiModelGroup: 'chat',
+            thinkingMode: 'disabled'
+        }
+    });
+    const res = createMockResponse();
+    const startedAt = Date.now();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const elapsedMs = Date.now() - startedAt;
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: billing/);
+    assert.match(res.body, /event: done/);
+    assert.match(res.body, /你好/);
+    assert.match(res.body, /"chargedPoints":0.000221/);
+    assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
+    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage?request_id=${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(deductCall.args.p_amount, 0.000221);
+    assert.equal(persistedTask.status, 'succeeded');
+    assert.equal(persistedTask.result_prompt, '你好');
+    assert.equal(persistedTask.charged_points, 0.000221);
+    assert.equal(persistedTask.metadata.stream_visible_idle_timed_out, true);
+    assert.equal(persistedTask.metadata.reasoning_diagnostic.visible_idle_timed_out, true);
+    assert.equal(streamCancelled, true);
+    assert.equal(hiddenChunksSent > 0, true);
+    assert.equal(elapsedMs < 500, true);
+});
+
+test('points chat stream does not truncate content after Sub2API usage is ready', { timeout: 1000 }, async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    let streamCancelled = false;
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-usage-ready',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-usage-ready-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
+            AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS: '10',
+            AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS: '0',
+            AI_IMAGE_CHAT_STREAM_IDLE_TIMEOUT_MS: '500',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (String(url).includes('/usage?request_id=')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'client:fatherkey-stream-usage-ready-1',
+                            actual_cost: 0.000273,
+                            total_cost: 0.000273
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-stream-usage-ready-1'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(encoder.encode(
+                            'data: {"id":"chatcmpl-usage-ready","model":"deepseek-v4-flash","choices":[{"delta":{"content":"你好"}}]}\n\n'
+                        ));
+                        setTimeout(() => {
+                            try {
+                                controller.enqueue(encoder.encode(
+                                    'data: {"choices":[{"delta":{"content":"，我是完整答案。"}}]}\n\n'
+                                ));
+                                controller.enqueue(encoder.encode(
+                                    'data: [DONE]\n\n'
+                                ));
+                                controller.close();
+                            } catch (_) {
+                                // Test stream may already be closed if the handler regresses and cancels it.
+                            }
+                        }, 20);
+                    },
+                    cancel() {
+                        streamCancelled = true;
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '你好',
+            model: 'deepseek-v4-flash',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+    const startedAt = Date.now();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const elapsedMs = Date.now() - startedAt;
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: billing/);
+    assert.match(res.body, /event: done/);
+    assert.match(res.body, /你好，我是完整答案。/);
+    assert.match(res.body, /"chargedPoints":0.000273/);
+    assert.equal(deductCall.args.p_amount, 0.000273);
+    assert.equal(persistedTask.status, 'succeeded');
+    assert.equal(persistedTask.result_prompt, '你好，我是完整答案。');
+    assert.equal(persistedTask.charged_points, 0.000273);
+    assert.equal(persistedTask.metadata.stream_usage_ready_finished, false);
+    assert.equal(persistedTask.metadata.reasoning_diagnostic.usage_ready_finished, false);
+    assert.equal(streamCancelled, false);
+    assert.equal(elapsedMs < 500, true);
+});
+
+test('points chat stream does not block each delta on delayed Sub2API usage lookup', { timeout: 1000 }, async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const chunks = Array.from({ length: 40 }, () => 'xy');
+    const expectedText = chunks.join('');
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-nonblocking-deltas',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-nonblocking-deltas-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
+            AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS: '100',
+            AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS: '1000',
+            AI_IMAGE_SUB2API_STREAM_LOOKUP_TIMEOUT_MS: '50',
+            AI_IMAGE_SUB2API_STREAM_FINAL_LOOKUP_TIMEOUT_MS: '50',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (String(url).includes('/usage?request_id=')) {
+                return new Promise(() => {});
+            }
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        chunks.forEach((delta, index) => {
+                            controller.enqueue(encoder.encode(
+                                `data: {"id":"chatcmpl-nonblocking-deltas","model":"deepseek-v4-flash","choices":[{"delta":{"content":"${delta}"}}],"usage":{"prompt_tokens":61,"completion_tokens":${index + 1},"total_tokens":${62 + index}}}\n\n`
+                            ));
+                        });
+                        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '你好',
+            model: 'deepseek-v4-flash',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+    const startedAt = Date.now();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const elapsedMs = Date.now() - startedAt;
+    const usageRequests = requests.filter((request) => request.url.includes('/usage?request_id='));
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: done/);
+    assert.match(res.body, new RegExp(expectedText));
+    assert.equal(persistedTask.result_prompt, expectedText);
+    assert.equal(usageRequests.length <= 4, true);
+    assert.equal(elapsedMs < 500, true);
+});
+
+test('chat stream appends missing tail from Responses output_text done events', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"resp-compatible","model":"deepseek-v4-flash","choices":[{"delta":{"content":"你好！我是Father"}}]}\n\n',
+                            'data: {"type":"response.output_text.done","text":"你好！我是FatherKey AI 工作台助手，可以继续帮你处理问题。"}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiKey: 'sk-user-key',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            prompt: '你好',
+            model: 'deepseek-v4-flash',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /你好！我是FatherKey AI 工作台助手/);
+    assert.equal(persistedTask.result_prompt, '你好！我是FatherKey AI 工作台助手，可以继续帮你处理问题。');
+    assert.equal(requests.length, 1);
+});
+
+test('points chat stream can resolve Sub2API usage by raw client request id fallback', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const state = {
+        pricingRules: [{
+            id: 'pricing-sub2api-stream-raw-client-id',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    unit: 'sub2api_actual_cost_usd',
+                    cost_source: 'sub2api_usage_actual_cost',
+                    points_per_usd: 1
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-stream-raw-id-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'claude-opus-4-8',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({
+                url: String(url),
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            if (String(url).includes('/usage?request_id=client%3Afatherkey-stream-raw-id')) {
+                return {
+                    ok: false,
+                    status: 404,
+                    text: async () => JSON.stringify({ error: { message: 'not found' } })
+                };
+            }
+            if (String(url).includes('/usage?request_id=fatherkey-stream-raw-id')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({
+                        usage_record: {
+                            request_id: 'fatherkey-stream-raw-id',
+                            actual_cost: 0.017165,
+                            total_cost: 0.343305
+                        }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-client-request-id'
+                            ? 'fatherkey-stream-raw-id'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-sub2api-stream-raw-id","model":"claude-opus-4-8","choices":[{"delta":{"content":"你好"}}]}\n\n',
+                            'data: {"usage":{"prompt_tokens":7065,"completion_tokens":11,"total_tokens":7076},"choices":[{"delta":{}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '你好',
+            model: 'claude-opus-4-8',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /"chargedPoints":0.017165/);
+    assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === `fatherkey-aiw-${state.insertedTasks[0].id}`), true);
+    assert.equal(requests.some((request) => request.url === 'https://sub2api.fatherkey.com/v1/usage?request_id=fatherkey-stream-raw-id'), true);
+    assert.equal(deductCall.args.p_amount, 0.017165);
+    assert.equal(persistedTask.charged_points, 0.017165);
+    assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.017165);
 });
 
 test('deepseek chat stream forwards official reasoning_content before final answer', async () => {
@@ -2888,6 +3809,206 @@ test('failed point tasks serialize as zero cost while preserving estimated point
     assert.equal(payload.tasks[0].cost, 0);
 });
 
+test('stopped point tasks serialize actual charged points when upstream billed usage', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-cancelled-charged',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'cancelled',
+            model: 'claude-opus-4-8',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '写一段文案',
+            result_prompt: '已经生成的部分回答',
+            estimated_points: 8,
+            charged_points: 0.37,
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:05.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({ state });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].status, 'cancelled');
+    assert.equal(payload.tasks[0].estimatedPoints, 8);
+    assert.equal(payload.tasks[0].chargedPoints, 0.37);
+    assert.equal(payload.tasks[0].cost, 0.37);
+    assert.equal(payload.tasks[0].resultPrompt, '已经生成的部分回答');
+});
+
+test('task list reconciles delayed Sub2API actual cost and deducts points once', async () => {
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: 'task-delayed-sub2api-usage',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好！有什么可以帮你的吗？',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 61,
+                output_tokens: 87,
+                total_tokens: 148
+            },
+            input_tokens: 61,
+            output_tokens: 87,
+            total_tokens: 148,
+            metadata: {
+                sub2api_client_request_id: 'fatherkey-aiw-task-delayed-sub2api-usage',
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-delayed-sub2api-chat',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                unit: 'sub2api_actual_cost_usd',
+                                cost_source: 'sub2api_usage_actual_cost',
+                                points_per_usd: 1
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    usage_record: {
+                        request_id: 'client:fatherkey-aiw-task-delayed-sub2api-usage',
+                        actual_cost: 0.0002,
+                        total_cost: 0.0002,
+                        input_cost: 0.000033,
+                        output_cost: 0.000167
+                    }
+                })
+            };
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].chargedPoints, 0.0002);
+    assert.equal(payload.tasks[0].cost, 0.0002);
+    assert.equal(state.tasks[0].charged_points, 0.0002);
+    assert.equal(state.tasks[0].metadata.pricing_charge.reconciled, true);
+    assert.equal(deductCall.args.p_amount, 0.0002);
+    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
+});
+
+test('task list keeps returning when delayed Sub2API usage lookup hangs', { timeout: 1000 }, async () => {
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: 'task-delayed-sub2api-timeout',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 61,
+                output_tokens: 87,
+                total_tokens: 148
+            },
+            input_tokens: 61,
+            output_tokens: 87,
+            total_tokens: 148,
+            metadata: {
+                sub2api_client_request_id: 'fatherkey-aiw-task-delayed-sub2api-timeout',
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-delayed-sub2api-timeout',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                unit: 'sub2api_actual_cost_usd',
+                                cost_source: 'sub2api_usage_actual_cost',
+                                points_per_usd: 1
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-timeout-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
+            AI_IMAGE_SUB2API_RECONCILE_TIMEOUT_MS: '50'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            return new Promise(() => {});
+        }
+    });
+    const res = createMockResponse();
+    const startedAt = Date.now();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const elapsedMs = Date.now() - startedAt;
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].status, 'succeeded');
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(state.tasks[0].charged_points, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.equal(requests.length > 0, true);
+    assert.equal(elapsedMs < 500, true);
+});
+
 test('running image tasks expose partial results without marking task succeeded', async () => {
     const state = {
         tasks: [{
@@ -2945,6 +4066,70 @@ test('running image tasks expose partial results without marking task succeeded'
     assert.equal(state.tasks[0].charged_points, 0);
 });
 
+test('running image tasks with complete stored results recover to succeeded on list', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-running-complete',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'text',
+            billing_mode: 'points',
+            status: 'running',
+            model: 'gpt-image-2',
+            ratio: '9:16',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '已经生成但状态未收口',
+            estimated_points: 8,
+            charged_points: 0,
+            created_at: '2026-06-21T11:00:00.000Z',
+            started_at: '2026-06-21T11:00:01.000Z',
+            updated_at: '2026-06-21T11:00:02.000Z',
+            metadata: {}
+        }],
+        results: [{
+            id: 'result-running-complete-0',
+            task_id: 'task-running-complete',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            result_index: 0,
+            image_url: 'https://cdn.example.com/complete-preview.webp',
+            original_image_url: 'https://cdn.example.com/complete-original.png',
+            storage_path: 'ai-images/complete-preview.webp',
+            original_storage_path: 'ai-images/complete-original.png',
+            mime_type: 'image/webp',
+            ratio: '9:16',
+            resolution: '1k',
+            prompt: '已经生成但状态未收口',
+            revised_prompt: '完整结果',
+            created_at: '2026-06-21T11:00:20.000Z',
+            metadata: {
+                original_status: 'ready'
+            }
+        }]
+    };
+    const { handlers } = createHandlers({ state });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].status, 'succeeded');
+    assert.equal(payload.tasks[0].chargedPoints, 8);
+    assert.equal(payload.tasks[0].cost, 8);
+    assert.equal(payload.tasks[0].images.length, 1);
+    assert.equal(payload.tasks[0].images[0].imageUrl, 'https://cdn.example.com/complete-preview.webp');
+    assert.equal(state.tasks[0].status, 'succeeded');
+    assert.equal(state.tasks[0].charged_points, 8);
+    assert.equal(state.tasks[0].metadata.recovery.previous_status, 'running');
+    assert.equal(state.tasks[0].metadata.delivery.delivered_image_count, 1);
+    assert.equal(deductCall.args.p_amount, 8);
+});
+
 test('points billing mode estimates image cost from active pricing rules', async () => {
     const state = {
         pricingRules: [{
@@ -2984,6 +4169,136 @@ test('points billing mode estimates image cost from active pricing rules', async
     assert.equal(payload.task.resolution, '2k');
     assert.equal(payload.task.ratio, '16:9');
     assert.equal(payload.task.quantity, 2);
+});
+
+test('points billing mode reuses image generation pricing for image edit tasks', async () => {
+    const state = {
+        pricingRules: [{
+            id: 'pricing-image-generation-shared',
+            site: 'cn',
+            mode: 'text',
+            billing_mode: 'points',
+            model: 'gpt-image-2',
+            resolution: '1k',
+            ratio: '1:1',
+            quantity: 1,
+            points: 12,
+            priority: 1,
+            is_active: true
+        }]
+    };
+    const { handlers, state: sharedState } = createHandlers({
+        state,
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            mode: 'image',
+            prompt: '把这张图改成海报风',
+            model: 'gpt-image-2',
+            apiModelGroup: 'image',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    const insertedTask = sharedState.insertedTasks[0];
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.task.mode, 'image');
+    assert.equal(payload.task.estimatedPoints, 12);
+    assert.equal(insertedTask.metadata.pricing.request.mode, 'image');
+    assert.equal(insertedTask.metadata.pricing.matched_rule.mode, 'text');
+});
+
+test('points billing mode matches pricing rules by concrete upstream provider', async () => {
+    const providerPricingId = 'pricing-provider-specific-gpt-image-2';
+    const state = {
+        pricingRules: [
+            {
+                id: 'pricing-wildcard-gpt-image-2',
+                site: 'cn',
+                mode: 'text',
+                billing_mode: 'points',
+                model: 'gpt-image-2',
+                resolution: '1k',
+                ratio: '1:1',
+                quantity: 1,
+                points: 20,
+                priority: 1,
+                is_active: true,
+                metadata: {
+                    provider_id: '*'
+                }
+            },
+            {
+                id: providerPricingId,
+                site: 'cn',
+                mode: 'text',
+                billing_mode: 'points',
+                model: '*',
+                resolution: '1k',
+                ratio: '1:1',
+                quantity: 1,
+                points: 7,
+                priority: 100,
+                is_active: true,
+                metadata: {
+                    provider_id: 'provider-alpha',
+                    provider_label: 'Provider Alpha'
+                }
+            },
+            {
+                id: 'pricing-other-provider-gpt-image-2',
+                site: 'cn',
+                mode: 'text',
+                billing_mode: 'points',
+                model: 'gpt-image-2',
+                resolution: '1k',
+                ratio: '1:1',
+                quantity: 1,
+                points: 99,
+                priority: 1,
+                is_active: true,
+                metadata: {
+                    provider_id: 'provider-beta',
+                    provider_label: 'Provider Beta'
+                }
+            }
+        ]
+    };
+    const { handlers, state: sharedState } = createHandlers({
+        state,
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '按具体上游计价',
+            model: 'gpt-image-2',
+            providerId: 'Provider Alpha',
+            apiModelGroup: 'image',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    const insertedTask = sharedState.insertedTasks[0];
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.task.estimatedPoints, 7);
+    assert.equal(payload.task.modelProviderId, 'provider-alpha');
+    assert.equal(insertedTask.metadata.provider_id, 'provider-alpha');
+    assert.equal(insertedTask.metadata.pricing.request.provider_id, 'provider-alpha');
+    assert.equal(insertedTask.metadata.pricing.matched_rule.id, providerPricingId);
+    assert.equal(insertedTask.metadata.pricing.matched_rule.model, '*');
 });
 
 test('ai image submit returns queue position and estimated wait for point tasks', async () => {
@@ -3672,6 +4987,57 @@ test('image submissions resolve transient continuation preview from persisted re
     assert.equal(state.insertedTasks[0].reference_image_url, 'https://cdn.example.com/original-base.png');
     assert.equal(state.insertedTasks[0].reference_image_storage_path, 'ai-images/original-base.png');
     assert.equal(state.insertedTasks[0].metadata.reference_image_count, 2);
+});
+
+test('image submissions resolve continuation preview from client task id fallback', async () => {
+    const { handlers, state } = createHandlers({
+        state: {
+            tasks: [{
+                id: '11111111-1111-4111-8111-111111111111',
+                site: 'cn',
+                user_id: 'user-ai-1',
+                client_task_id: 'aiw_local_base_task',
+                status: 'succeeded',
+                mode: 'text',
+                prompt: '原始生成图',
+                created_at: '2026-06-21T11:58:00.000Z',
+                updated_at: '2026-06-21T11:59:00.000Z'
+            }],
+            results: [{
+                id: '22222222-2222-4222-8222-222222222222',
+                task_id: '11111111-1111-4111-8111-111111111111',
+                site: 'cn',
+                user_id: 'user-ai-1',
+                result_index: 0,
+                image_url: 'https://cdn.example.com/preview-base.webp',
+                original_image_url: 'https://cdn.example.com/original-base.png',
+                storage_path: 'ai-images/preview-base.webp',
+                original_storage_path: 'ai-images/original-base.png',
+                mime_type: 'image/png',
+                prompt: '原始生成图',
+                metadata: { original_status: 'ready' },
+                created_at: '2026-06-21T12:00:00.000Z'
+            }]
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            mode: 'image',
+            prompt: '继续扩展画面',
+            referenceTaskId: 'aiw_local_base_task',
+            referenceResultIndex: 0,
+            referenceImageUrl: `data:image/png;base64,${Buffer.from('temporary-preview').toString('base64')}`
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(state.insertedTasks[0].reference_image_url, 'https://cdn.example.com/original-base.png');
+    assert.equal(state.insertedTasks[0].reference_image_storage_path, 'ai-images/original-base.png');
 });
 
 test('image submissions reject too many reference image inputs', async () => {

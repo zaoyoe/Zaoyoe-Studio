@@ -751,6 +751,9 @@ test('ai image workbench keeps progress stable across polling and exposes cancel
     assert.match(source, /global\.addEventListener\?\.\('focus', refreshBusyTasksNow\)/);
     assert.match(source, /function cancelRemoteTask\(task, clientTaskId = ''\)/);
     assert.match(source, /task\.status = 'cancelled'/);
+    assert.match(source, /task\.resultPrompt = task\.resultPrompt \|\| ''/);
+    assert.match(source, /cancelled_by_user: true/);
+    assert.doesNotMatch(source, /task\.resultPrompt\s*=\s*['"]已取消生成['"]/);
     assert.doesNotMatch(source, /MOCK_JOB_TICK_MS/);
     assert.doesNotMatch(source, /setInterval\(\(\) => \{[\s\S]*?render\(\);[\s\S]*?\}, 260\)/);
 });
@@ -818,6 +821,12 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /messages/);
 	    assert.match(source, /eventName === 'delta'/);
 	    assert.match(source, /eventName === 'reasoning'/);
+	    assert.match(source, /eventName === 'billing'/);
+	    assert.match(source, /currentTask\.cost = currentTask\.chargedPoints/);
+	    assert.match(source, /if \(remoteTask\.status !== 'cancelled'\) \{\s*remoteTask\.status = 'streaming';/);
+	    assert.match(source, /const wasCancelled = localTask\?\.status === 'cancelled'/);
+	    assert.match(source, /if \(!wasCancelled && remoteTask\.status !== 'cancelled'\) \{\s*remoteTask\.resultPrompt = payload\.text \|\| remoteTask\.resultPrompt \|\| receivedText;\s*remoteTask\.status = 'succeeded';/);
+	    assert.doesNotMatch(source, /if \(localTask\?\.status === 'cancelled'\) return;/);
 	    assert.match(source, /function shouldRecoverChatStreamError\(error\)/);
 	    assert.match(source, /async function recoverRemoteTaskByClientId\(localTask = \{\}\)/);
 	    assert.match(source, /async function recoverChatStreamTask\(localTask = \{\}\)/);
@@ -914,9 +923,13 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.doesNotMatch(source, /hint: '[^']*(?:true|false)[^']*'/);
 	    assert.doesNotMatch(source, /hint: '[^']*(?:thinking\.type|enable_thinking|budget_tokens)[^']*'/);
 	    assert.doesNotMatch(source, /选择推理强度|选择响应速度档位|选择思考过程展示|选择图片输入能力/);
+    assert.match(source, /const resultText = String\(task\?\.resultPrompt \|\| ''\)\.trim\(\);/);
+    assert.match(source, /if \(resultText\) return resultText;/);
     assert.match(source, /if \(task\?\.status === 'failed' \|\| task\?\.status === 'cancelled'\) return getTaskFailureReason\(task\)/);
     assert.match(source, /function getComposerBusyLabel\(task\)/);
     assert.match(source, /function renderChatLoadingDots\(\)/);
+    assert.match(source, /function renderChatCancelledNotice\(task = \{\}\)/);
+    assert.match(source, /ai-image-chat-cancelled-note/);
     assert.match(source, /return '';[\s\S]*function renderChatLoadingDots/);
     assert.match(source, /const explicitReason = getFriendlyTaskError\(task\.errorMessage \|\| task\.error_message \|\| task\.remoteError \|\| '', '', task\.mode\)/);
     assert.match(source, /if \(task\.mode === 'chat'\) return '这次没有扣积分。可以稍后重试，或切换更稳定的对话模型后再试。'/);
@@ -933,6 +946,14 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /模型 \$\{modelLabel\}/);
     assert.match(source, /输出 Token \$\{formatTokenCount\(tokenStats\.outputTokens\)\}/);
     assert.match(source, /输入 Token \$\{formatTokenCount\(tokenStats\.inputTokens\)\}/);
+    assert.match(source, /function formatBillingPoints\(value = 0\)/);
+    assert.match(source, /function getTaskChargeMetaLabel\(task = \{\}\)/);
+    assert.match(source, /function isSub2ApiActualCostTask\(task = \{\}\)/);
+    assert.match(source, /if \(chargedPoints > 0\) return `扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分`/);
+    assert.match(source, /return '扣费同步中'/);
+    assert.match(source, /扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分/);
+    assert.match(source, /const chargeLabel = getTaskChargeMetaLabel\(task\);/);
+    assert.match(source, /if \(chargeLabel\) items\.push\(\{ text: chargeLabel \}\);/);
     assert.doesNotMatch(source, /请求模型 \$\{modelStats\.requestedModel\}/);
     assert.doesNotMatch(source, /上游模型 \$\{modelStats\.upstreamModel\}/);
     assert.match(source, /tokenUsageRaw/);
@@ -1219,6 +1240,11 @@ test('ai image workbench supports explicit image continuation and extra referenc
     assert.match(source, /data-aiw-reference-preview="\$\{isImplicitContinuation \? 'continuation' : 'reference'\}"/);
     assert.match(source, /function scrollToResultImage\(taskId = '', resultId = '', resultIndex = ''\)/);
     assert.match(source, /target\.scrollIntoView\?\.\(\{ behavior: 'smooth', block: 'center', inline: 'nearest' \}\)/);
+    assert.match(source, /beforeContinuationImage = JSON\.stringify\(state\.continuationImage \|\| null\)/);
+    assert.match(source, /idReplacements\.has\(task\.referenceTaskId\)/);
+    assert.match(source, /state\.continuationImage = normalizeReferenceItem\(\{\s*\.\.\.state\.continuationImage,\s*taskId: idReplacements\.get\(state\.continuationImage\.taskId\)/);
+    assert.match(source, /if \(normalizedResultId && String\(item\?\.resultId \|\| ''\)\.trim\(\) === normalizedResultId\) return true;/);
+    assert.match(source, /const matched = getResultImageByIdentity\(\s*explicitContinuation\.taskId,\s*explicitContinuation\.resultId,\s*explicitContinuation\.resultIndex\s*\);/);
     assert.match(source, /function renderPreservingStageScroll\(\)/);
     assert.match(source, /render\(\{ preserveStageScroll: true, preservePromptFocus: true \}\)/);
     assert.match(source, /renderPreservingStageScroll\(\);[\s\S]*persistState\(\);[\s\S]*return;/);
@@ -1323,10 +1349,11 @@ test('ai image workbench renders persisted task timing beside result image meta'
     assert.doesNotMatch(cssSource, /\.ai-image-progress-caption--summary/);
 });
 
-test('ai image workbench shows failed point tasks as not charged', () => {
+test('ai image workbench preserves actual charges for stopped point tasks', () => {
     assert.match(source, /const chargedPoints = Number\(task\.chargedPoints \?\? task\.charged_points \?\? 0\)/);
-    assert.match(source, /\['failed', 'cancelled', 'refunded'\]\.includes\(status\)\s*\?\s*0/);
-    assert.match(source, /return '未扣积分'/);
+    assert.match(source, /\['failed', 'cancelled', 'refunded'\]\.includes\(status\)\s*\?\s*Math\.max\(0, chargedPoints\)/);
+    assert.match(source, /if \(chargedPoints > 0\) return `扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分`/);
+    assert.match(source, /if \(task\.status === 'failed' \|\| task\.status === 'cancelled'\) return getTaskChargeMetaLabel\(task\) \|\| '未扣费'/);
     assert.match(source, /return `已扣 \$\{formatPoints\(task\.chargedPoints \|\| task\.cost \|\| 0\)\} 积分`/);
     assert.match(source, /return `预计 \$\{formatPoints\(task\.estimatedPoints \|\| task\.cost \|\| 0\)\} 积分`/);
 });
@@ -1364,7 +1391,7 @@ test('ai image workbench uses admin provider models in points mode dropdowns', (
 test('ai image workbench logs submit intent before remote enqueue', () => {
     assert.match(source, /console\.info\('\[AIImageWorkbench\] Submit intent:', \{/);
     assert.match(source, /inferredMode,\s*stateMode: state\.mode,\s*billingMode: state\.billingMode,/);
-    assert.match(source, /model: activeModelValue,\s*apiModelGroup: activeModelGroup,\s*clientTaskId: task\.clientTaskId,/);
+    assert.match(source, /model: activeModelValue,\s*modelProviderId: activeModelProviderId,\s*apiModelGroup: activeModelGroup,\s*clientTaskId: task\.clientTaskId,/);
     assert.match(source, /activeTool,\s*promptLen: prompt\.length,\s*videoModelsCount: getActiveModelOptions\('video'\)\.length,/);
     assert.match(source, /textModelsCount: getActiveModelOptions\('chat'\)\.length,\s*imageModelsCount: getActiveModelOptions\('text'\)\.length,/);
 });
@@ -1396,10 +1423,22 @@ test('ai image workbench renders reverse prompt results as a left-aligned image 
 test('ai image workbench applies admin pricing rules to point estimates', () => {
     assert.match(source, /function findRuntimePricingRule\(/);
     assert.match(source, /normalizePricingModel\(model\)/);
+    assert.match(source, /function normalizePricingProviderId/);
+    assert.match(source, /function getPricingRuleProviderId\(rule = \{\}\)/);
+    assert.match(source, /providerId: normalizePricingProviderId\(providerId\)/);
+    assert.match(source, /ruleProviderId === '\*'/);
     assert.match(source, /ruleModel === '\*' \|\| ruleModel === request\.model/);
-    assert.match(source, /return normalizePoints\(\(Number\(matchedRule\.points\) \|\| 0\) \* quantity, 0\)/);
+    assert.match(source, /function getRuntimePricingRuleStrategy\(rule = \{\}\)/);
+    assert.match(source, /function getRuntimePricingRuleTokenEstimate\(rule = \{\}\)/);
+    assert.match(source, /function getRuntimePricingRuleEstimate\(rule = \{\}, quantity = 1\)/);
+    assert.match(source, /getRuntimePricingRuleEstimate\(matchedRule, quantity\)/);
+    assert.match(source, /const modeCost = MODE_META\[mode\]\?\.cost \?\? 8/);
+    assert.match(source, /return '实际扣费'/);
     assert.match(source, /formatPoints\(getCostEstimate\(mode\)\)/);
     assert.match(source, /estimatedPoints: estimatedCost/);
+    assert.match(source, /modelProviderId: providerId,\s*model_provider_id: providerId,\s*providerId,\s*provider_id: providerId/);
+    assert.match(source, /modelProviderId: activeModelProviderId,\s*providerId: activeModelProviderId/);
+    assert.match(source, /const selectedModel = selectedGroup\?\.models\?\.find\(\(model\) => model\.id === selected\)/);
 });
 
 test('ai image history supports multi-select delete pin and accent controls', () => {

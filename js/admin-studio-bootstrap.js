@@ -581,7 +581,7 @@
                     label: '设置',
                     icon: '⚙️',
                     description: '系统配置、安全策略与运维开关',
-                    modules: ['settings', 'xianyu-fulfillment']
+                    modules: ['settings', 'ai-creation', 'xianyu-fulfillment']
                 },
                 {
                     key: 'analytics.view',
@@ -609,6 +609,10 @@
         engagement: {
             label: '客服系统',
             anyOf: ['chat.manage', 'settings.manage']
+        },
+        'ai-creation': {
+            label: 'AI 创作',
+            anyOf: ['settings.manage']
         },
         shop: {
             label: '商城系统',
@@ -966,7 +970,7 @@
         }
     }
 
-    function baseSwitchModule(moduleId) {
+    function baseSwitchModule(moduleId, options = {}) {
         const normalizedRequestedModuleId = normalizeAdminModuleValue(moduleId);
         const analyticsConfig = resolveAdminAnalyticsModuleConfig(normalizedRequestedModuleId);
         const normalizedModuleId = analyticsConfig?.canonicalModuleId || normalizeAdminModuleId(normalizedRequestedModuleId);
@@ -1018,6 +1022,9 @@
             if (normalizedModuleId === 'xianyu-fulfillment') {
                 window.initSettingsModule?.({ bindListeners: true, loadConfig: false });
                 warmXianyuFulfillmentModuleData();
+            }
+            if (normalizedModuleId === 'ai-creation') {
+                window.initAiCreationModule?.({}, options);
             }
             if (normalizedModuleId === 'comments') {
                 window.initCommentsModule?.();
@@ -1161,7 +1168,7 @@
             });
         }
 
-        const switched = baseSwitchModule(requestedModuleName);
+        const switched = baseSwitchModule(requestedModuleName, options);
         if (!switched) {
             return false;
         }
@@ -1534,6 +1541,8 @@
                 return () => window.AdminPayments?.scheduleTabPrefetch?.(window.AdminPayments?.getActiveTab?.() || 'overview');
             case 'xianyu-fulfillment':
                 return () => window.loadMarketplaceChannelSettings?.();
+            case 'ai-creation':
+                return () => window.fetchAiImageAdminConfig?.({ force: false });
             case 'settings':
                 return () => window.prefetchSettingsModule?.();
             case 'ops-alerts':

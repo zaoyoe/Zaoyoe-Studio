@@ -9241,6 +9241,30 @@ function resolveSettingsModuleViewName(context = {}, options = {}) {
 async function activateSettingsModule(context = {}, options = {}) {
     const viewName = resolveSettingsModuleViewName(context, options);
 
+    if (viewName === 'ai-image') {
+        const switched = window.AdminShell?.activateModule
+            ? window.AdminShell.activateModule('ai-creation', {
+                aiCreationView: options.aiCreationView || 'overview',
+                deferContext: true,
+                fallback: false,
+                silentDenied: true,
+                reason: 'legacy-settings-ai-image'
+            })
+            : window.switchModule?.('ai-creation', {
+                aiCreationView: options.aiCreationView || 'overview',
+                fallback: false,
+                silentDenied: true,
+                reason: 'legacy-settings-ai-image'
+            });
+
+        if (switched === false) {
+            return false;
+        }
+
+        await Promise.resolve(window.initAiCreationModule?.(context, options));
+        return true;
+    }
+
     if (typeof window.switchSettingsView === 'function') {
         window.switchSettingsView(viewName, { warm: false });
     } else {

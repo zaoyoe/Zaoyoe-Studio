@@ -18,14 +18,17 @@ const {
     resolveSiteScopedSystemConfigForRead,
     upsertSiteScopedSystemConfigValue
 } = require('../../_site-scoped-system-config');
+const {
+    normalizeAiImagePricingMetadata
+} = require('../../_ai-image-pricing');
 
 const AI_IMAGE_STORAGE_POLICY_CONFIG_KEY = 'ai_image_storage_policy';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 const SITE_VALUES = Object.freeze(new Set(['all', 'cn', 'intl']));
 const TASK_SITE_VALUES = Object.freeze(new Set(['cn', 'intl']));
-const MODE_VALUES = Object.freeze(new Set(['text', 'image', 'reverse', 'chat', 'agent']));
+const MODE_VALUES = Object.freeze(new Set(['text', 'image', 'video', 'reverse', 'chat', 'agent']));
 const BILLING_MODE_VALUES = Object.freeze(new Set(['points', 'api']));
-const RESOLUTION_VALUES = Object.freeze(new Set(['*', '1k', '2k', '4k']));
+const RESOLUTION_VALUES = Object.freeze(new Set(['*', '1k', '2k', '4k', '480p', '720p', '1080p']));
 const RATIO_VALUES = Object.freeze(new Set([
     '*',
     '1:1',
@@ -355,7 +358,7 @@ function serializePricingRule(row = {}) {
         points: normalizePoints(row.points, 0),
         priority: normalizeInteger(row.priority, 100, { min: 0, max: 100000 }),
         is_active: row.is_active !== false,
-        metadata: normalizeJsonObject(row.metadata),
+        metadata: normalizeAiImagePricingMetadata(normalizeJsonObject(row.metadata)),
         created_by: sanitizeText(row.created_by, 160),
         updated_by: sanitizeText(row.updated_by, 160),
         created_at: sanitizeText(row.created_at, 120),
@@ -448,7 +451,7 @@ function buildPricingPayload(body = {}, user = {}) {
         points,
         priority: normalizeInteger(body.priority, 100, { min: 0, max: 100000 }),
         is_active: normalizeBoolean(body.is_active ?? body.isActive, true),
-        metadata: normalizeJsonObject(body.metadata, 'metadata'),
+        metadata: normalizeAiImagePricingMetadata(normalizeJsonObject(body.metadata, 'metadata')),
         updated_by: user.id || null
     };
 }

@@ -17,8 +17,19 @@ const {
     isSecretDecryptAuthenticationError
 } = require('../../../api/_lib/secrets');
 const {
+    deductPointsForService
+} = require('../../../api/_lib/payments/rpc');
+const {
     loadAiImageGuardrailsFromSystemConfig
 } = require('../_ai-image-guardrails');
+const {
+    estimateAiImageRulePoints,
+    calculateAiImageRuleChargePoints,
+    getAiImagePricingProviderId,
+    getAiImagePricingStrategy,
+    normalizeProviderId,
+    normalizeAiImagePricingMetadata
+} = require('../_ai-image-pricing');
 const {
     discoverGeminiNativeModels,
     discoverOpenAiCompatibleModels,
@@ -33,6 +44,11 @@ const SUPPORTED_MODES = Object.freeze(new Set(['text', 'image', 'video', 'revers
 const IMAGE_MODES = Object.freeze(new Set(['text', 'image', 'agent']));
 const VIDEO_MODES = Object.freeze(new Set(['video']));
 const TEXT_VISION_MODES = Object.freeze(new Set(['reverse', 'chat']));
+const PRICING_MODE_ALIASES = Object.freeze({
+    image: 'text',
+    agent: 'text',
+    reverse: 'chat'
+});
 const SUPPORTED_BILLING_MODES = Object.freeze(new Set(['points', 'api']));
 const SUPPORTED_RESOLUTIONS = Object.freeze(new Set(['1k', '2k', '4k']));
 const SUPPORTED_VIDEO_RESOLUTIONS = Object.freeze(new Set(['480p', '720p', '1080p', '4k']));
@@ -241,7 +257,309 @@ function normalizeNumber(value, fallback = 0) {
 }
 
 function normalizeBillablePoints(value, fallback = 0) {
-    return normalizeNumber(value, fallback);
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.round(parsed * 1000000) / 1000000);
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+async function fetchWithTimeout(fetchImpl, url, options = {}, timeoutMs = 0) {
+    const normalizedTimeoutMs = Math.max(0, Number(timeoutMs) || 0);
+    if (!normalizedTimeoutMs) {
+        return fetchImpl(url, options);
+    }
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    let timeoutId = null;
+    const request = Promise.resolve().then(() => fetchImpl(url, {
+        ...options,
+        ...(controller ? { signal: controller.signal } : {})
+    }));
+    request.catch(() => {});
+
+    try {
+        return await Promise.race([
+            request,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    if (controller) controller.abort();
+                    const error = new Error('Sub2API usage lookup timeout');
+                    error.code = 'sub2api_usage_lookup_timeout';
+                    reject(error);
+                }, normalizedTimeoutMs);
+            })
+        ]);
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
+}
+
+function getResponseHeader(response, name = '') {
+    const normalizedName = String(name || '').toLowerCase();
+    const headers = response?.headers;
+    if (!headers || !normalizedName) return '';
+    if (typeof headers.get === 'function') {
+        return normalizeText(headers.get(name) || headers.get(normalizedName), 1000);
+    }
+    if (typeof headers === 'object') {
+        return normalizeText(headers[name] || headers[normalizedName], 1000);
+    }
+    return '';
+}
+
+function isSub2ApiGatewayBaseUrl(value = '') {
+    try {
+        const host = new URL(normalizeApiBaseUrl(value)).hostname.toLowerCase();
+        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function normalizeSub2ApiCost(value, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.round(parsed * 1000000) / 1000000);
+}
+
+function buildSub2ApiClientRequestId(task = {}) {
+    const taskId = normalizeText(task.id, 120).replace(/[^a-z0-9._:-]/gi, '').slice(0, 96);
+    return taskId ? `fatherkey-aiw-${taskId}` : '';
+}
+
+function getSub2ApiUsageRequestIds(response = null, payload = {}) {
+    const responseClientRequestId = getResponseHeader(response, 'x-client-request-id');
+    const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+        ? payload.metadata
+        : {};
+    const pricingCharge = payload?.pricing_charge && typeof payload.pricing_charge === 'object' && !Array.isArray(payload.pricing_charge)
+        ? payload.pricing_charge
+        : (payload?.pricingCharge && typeof payload.pricingCharge === 'object' && !Array.isArray(payload.pricingCharge) ? payload.pricingCharge : {});
+    const sub2api = payload?.sub2api && typeof payload.sub2api === 'object' && !Array.isArray(payload.sub2api)
+        ? payload.sub2api
+        : {};
+    const clientRequestId = normalizeText(
+        payload?.client_request_id
+        || payload?.clientRequestId
+        || payload?.sub2api_client_request_id
+        || payload?.sub2apiClientRequestId
+        || metadata.sub2api_client_request_id
+        || metadata.sub2apiClientRequestId
+        || pricingCharge.client_request_id
+        || pricingCharge.clientRequestId
+        || sub2api.client_request_id
+        || sub2api.clientRequestId
+        || responseClientRequestId,
+        160
+    );
+    const upstreamRequestId = getResponseHeader(response, 'x-request-id') || getResponseHeader(response, 'request-id');
+    return {
+        clientRequestId,
+        upstreamRequestId,
+        requestIds: [...new Set([
+            clientRequestId ? `client:${clientRequestId}` : '',
+            clientRequestId,
+            responseClientRequestId ? `client:${responseClientRequestId}` : '',
+            responseClientRequestId,
+            upstreamRequestId,
+            payload?.id,
+            payload?.request_id,
+            payload?.requestId,
+            payload?.lookup_request_id,
+            payload?.lookupRequestId,
+            pricingCharge.request_id,
+            pricingCharge.requestId,
+            pricingCharge.lookup_request_id,
+            pricingCharge.lookupRequestId,
+            sub2api.request_id,
+            sub2api.requestId,
+            sub2api.lookup_request_id,
+            sub2api.lookupRequestId
+        ].map((item) => normalizeText(item, 240)).filter(Boolean))]
+    };
+}
+
+function normalizeSub2ApiUsageLookupRecord(payload = {}, requestId = '') {
+    const record = payload?.usage_record || payload?.usageRecord || payload?.record || payload?.data || payload;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+    const recordRequestId = normalizeText(record.request_id || record.requestId, 260);
+    const actualCost = normalizeSub2ApiCost(
+        record.actual_cost
+        ?? record.actualCost
+        ?? record.total_actual_cost
+        ?? record.totalActualCost
+        ?? record.user_cost
+        ?? record.userCost,
+        0
+    );
+    const fallbackCost = normalizeSub2ApiCost(
+        record.total_cost
+        ?? record.totalCost
+        ?? record.cost
+        ?? record.fee
+        ?? record.amount,
+        0
+    );
+    const billableCost = actualCost > 0 ? actualCost : fallbackCost;
+    if (billableCost <= 0) return null;
+    return {
+        request_id: recordRequestId || requestId,
+        lookup_request_id: requestId,
+        actual_cost: billableCost,
+        actual_cost_source: actualCost > 0 ? 'actual_cost' : 'fallback_cost',
+        total_cost: normalizeSub2ApiCost(record.total_cost ?? record.totalCost, 0),
+        input_cost: normalizeSub2ApiCost(record.input_cost ?? record.inputCost, 0),
+        output_cost: normalizeSub2ApiCost(record.output_cost ?? record.outputCost, 0),
+        cache_creation_cost: normalizeSub2ApiCost(record.cache_creation_cost ?? record.cacheCreationCost, 0),
+        cache_read_cost: normalizeSub2ApiCost(record.cache_read_cost ?? record.cacheReadCost, 0),
+        image_output_cost: normalizeSub2ApiCost(record.image_output_cost ?? record.imageOutputCost, 0)
+    };
+}
+
+async function readJsonPayloadFromResponse(response = null) {
+    if (!response) return {};
+    if (typeof response.json === 'function') {
+        try {
+            const payload = await response.json();
+            return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+        } catch (_) {
+            // Fall through to text parsing for lightweight test doubles and non-standard fetch implementations.
+        }
+    }
+    if (typeof response.text !== 'function') return {};
+    const text = await response.text().catch(() => '');
+    if (!text) return {};
+    try {
+        const payload = JSON.parse(text);
+        return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+async function fetchSub2ApiUsageRecord({
+    baseUrl = '',
+    apiKey = '',
+    response = null,
+    payload = {},
+    fetchImpl = globalThis.fetch,
+    env = process.env
+} = {}) {
+    if (!apiKey || !isSub2ApiGatewayBaseUrl(baseUrl) || typeof fetchImpl !== 'function') return null;
+    const headerCost = normalizeSub2ApiCost(
+        getResponseHeader(response, 'x-sub2api-actual-cost')
+        || getResponseHeader(response, 'x-sub2api-cost')
+        || getResponseHeader(response, 'x-actual-cost'),
+        0
+    );
+    const hints = getSub2ApiUsageRequestIds(response, payload);
+    if (headerCost > 0) {
+        return {
+            request_id: hints.requestIds[0] || '',
+            actual_cost: headerCost
+        };
+    }
+    if (!hints.requestIds.length) return null;
+    const attempts = readPositiveIntEnv(env, ['AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS'], 12, { min: 1, max: 20 });
+    const intervalMs = readPositiveIntEnv(env, ['AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS'], 500, { min: 0, max: 3000 });
+    const timeoutMs = readPositiveIntEnv(env, [
+        'AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS',
+        'AI_IMAGE_SUB2API_USAGE_FETCH_TIMEOUT_MS'
+    ], 1200, { min: 50, max: 30000 });
+    const root = normalizeApiBaseUrl(baseUrl).replace(/\/+$/, '');
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        for (const requestId of hints.requestIds) {
+            const usageLookupUrls = [
+                `${root}/usage/requests/${encodeURIComponent(requestId)}`,
+                `${root}/usage?request_id=${encodeURIComponent(requestId)}`
+            ];
+            for (const usageLookupUrl of usageLookupUrls) {
+                try {
+                    // eslint-disable-next-line no-await-in-loop
+                    const usageResponse = await fetchWithTimeout(fetchImpl, usageLookupUrl, {
+                        method: 'GET',
+                        headers: {
+                            Authorization: `Bearer ${apiKey}`,
+                            Accept: 'application/json'
+                        }
+                    }, timeoutMs);
+                    if (!usageResponse?.ok) continue;
+                    // eslint-disable-next-line no-await-in-loop
+                    const usagePayload = await readJsonPayloadFromResponse(usageResponse);
+                    const record = normalizeSub2ApiUsageLookupRecord(usagePayload, requestId);
+                    if (record) return record;
+                } catch (_) {
+                    // 使用记录回查失败时保持旧 token usage 计费路径。
+                }
+            }
+        }
+        if (attempt < attempts - 1 && intervalMs > 0) {
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(intervalMs);
+        }
+    }
+    return null;
+}
+
+function attachSub2ApiBillingToUsage(usage = {}, record = null, response = null, payload = {}) {
+    const source = usage && typeof usage === 'object' && !Array.isArray(usage) ? usage : {};
+    const directCost = normalizeSub2ApiCost(
+        source.actual_cost
+        ?? source.actualCost
+        ?? source.total_actual_cost
+        ?? source.totalActualCost
+        ?? source.user_cost
+        ?? source.userCost
+        ?? source.sub2api_actual_cost
+        ?? source.sub2apiActualCost
+        ?? source.sub2api?.actual_cost
+        ?? source.sub2api?.actualCost
+        ?? payload?.actual_cost
+        ?? payload?.actualCost,
+        0
+    );
+    const fallbackCost = normalizeSub2ApiCost(
+        source.total_cost
+        ?? source.totalCost
+        ?? source.cost
+        ?? source.fee
+        ?? source.amount
+        ?? source.sub2api?.total_cost
+        ?? source.sub2api?.totalCost
+        ?? payload?.total_cost
+        ?? payload?.totalCost
+        ?? payload?.cost,
+        0
+    );
+    const hints = getSub2ApiUsageRequestIds(response, payload);
+    const actualCost = record?.actual_cost || directCost || fallbackCost;
+    if (actualCost <= 0 && !record) return source;
+    return {
+        ...source,
+        actual_cost: actualCost,
+        actualCost: actualCost,
+        sub2api_actual_cost: actualCost,
+        sub2apiActualCost: actualCost,
+        sub2api: {
+            ...(source.sub2api && typeof source.sub2api === 'object' ? source.sub2api : {}),
+            actual_cost: actualCost,
+            actualCost: actualCost,
+            request_id: record?.request_id || hints.requestIds[0] || '',
+            requestId: record?.request_id || hints.requestIds[0] || '',
+            lookup_request_id: record?.lookup_request_id || hints.requestIds[0] || '',
+            lookupRequestId: record?.lookup_request_id || hints.requestIds[0] || '',
+            cost_source: record?.actual_cost_source || (directCost > 0 ? 'actual_cost' : 'fallback_cost'),
+            costSource: record?.actual_cost_source || (directCost > 0 ? 'actual_cost' : 'fallback_cost'),
+            client_request_id: hints.clientRequestId || '',
+            clientRequestId: hints.clientRequestId || '',
+            upstream_request_id: hints.upstreamRequestId || '',
+            upstreamRequestId: hints.upstreamRequestId || ''
+        }
+    };
 }
 
 function normalizeOptionalQueueNumber(value, fallback = null) {
@@ -521,6 +839,8 @@ function serializePublicModelProvider(provider = {}) {
         provider_id: providerId,
         label: normalizeText(provider.label || provider.name || providerId, 120) || providerId,
         vendor: normalizeText(provider.vendor || provider.provider || 'openai', 80).toLowerCase() || 'openai',
+        vendorLabel: normalizeText(provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name, 80),
+        vendor_label: normalizeText(provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name, 80),
         protocol: normalizeText(provider.protocol || provider.adapter || 'openai-compatible', 80).toLowerCase() || 'openai-compatible',
         modelGroup,
         model_group: modelGroup,
@@ -1163,6 +1483,12 @@ function resolveModelGroup({ body = {}, mode = 'text' } = {}) {
     return TEXT_VISION_MODES.has(mode) ? 'chat' : 'image';
 }
 
+function getAiImagePricingRuleModes(mode = 'text') {
+    const normalizedMode = normalizeText(mode, 40).toLowerCase();
+    const canonicalMode = PRICING_MODE_ALIASES[normalizedMode] || normalizedMode;
+    return [...new Set([normalizedMode, canonicalMode].filter(Boolean))];
+}
+
 function normalizeTokenUsage(value = {}) {
     const usage = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const inputTokens = normalizePositiveInt(usage.input_tokens || usage.inputTokens || usage.prompt_tokens || usage.promptTokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER });
@@ -1208,11 +1534,13 @@ function buildPricingEstimatePayload({
     mode = 'text',
     billingMode = 'points',
     model = '',
+    providerId = '',
     resolution = '1k',
     ratio = '1:1',
     quantity = 1,
     matchedRule = null
 } = {}) {
+    const normalizedProviderId = normalizeProviderId(providerId);
     const normalizedMatchedRule = matchedRule && typeof matchedRule === 'object' ? {
         id: normalizeText(matchedRule.id, 160),
         site: normalizeText(matchedRule.site || 'all', 20),
@@ -1223,7 +1551,8 @@ function buildPricingEstimatePayload({
         ratio: normalizeText(matchedRule.ratio || '*', 20).toLowerCase() || '*',
         quantity: normalizePositiveInt(matchedRule.quantity, 1, { min: 1, max: 8 }),
         points: normalizeNumber(matchedRule.points, 0),
-        priority: Number(matchedRule.priority || 100)
+        priority: Number(matchedRule.priority || 100),
+        metadata: normalizeAiImagePricingMetadata(matchedRule.metadata || {})
     } : null;
 
     return {
@@ -1235,6 +1564,8 @@ function buildPricingEstimatePayload({
                 mode,
                 billing_mode: billingMode,
                 model,
+                provider_id: normalizedProviderId,
+                providerId: normalizedProviderId,
                 resolution,
                 ratio,
                 quantity: normalizePositiveInt(quantity, 1, { min: 1, max: 8 })
@@ -1244,10 +1575,14 @@ function buildPricingEstimatePayload({
     };
 }
 
-function pricingRuleScore(rule = {}, { site, model, resolution, ratio, quantity } = {}) {
+function pricingRuleScore(rule = {}, { site, mode, model, providerId = '', resolution, ratio, quantity } = {}) {
     let score = 0;
+    const normalizedProviderId = normalizeProviderId(providerId);
+    if (rule.mode === mode) score += 64;
     if (rule.site === site) score += 32;
     if (rule.model === model) score += 16;
+    const ruleProviderId = getAiImagePricingProviderId(rule);
+    if (ruleProviderId && ruleProviderId !== '*' && ruleProviderId === normalizedProviderId) score += 24;
     if (rule.resolution === resolution) score += 8;
     if (rule.ratio === ratio) score += 4;
     if (Number(rule.quantity) === Number(quantity)) score += 2;
@@ -1260,6 +1595,7 @@ async function estimatePointsFromRules(supabase, {
     mode,
     billingMode,
     model,
+    providerId = '',
     resolution,
     ratio,
     quantity
@@ -1272,6 +1608,7 @@ async function estimatePointsFromRules(supabase, {
             mode,
             billingMode,
             model,
+            providerId,
             resolution,
             ratio,
             quantity
@@ -1279,11 +1616,12 @@ async function estimatePointsFromRules(supabase, {
     }
 
     try {
+        const pricingRuleModes = getAiImagePricingRuleModes(mode);
         const { data, error } = await supabase
             .from('ai_image_pricing_rules')
-            .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, is_active')
+            .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, metadata, is_active')
             .in('site', [site, 'all'])
-            .eq('mode', mode)
+            .in('mode', pricingRuleModes)
             .eq('billing_mode', billingMode)
             .eq('is_active', true)
             .order('priority', { ascending: true })
@@ -1293,26 +1631,34 @@ async function estimatePointsFromRules(supabase, {
 
         const candidates = (Array.isArray(data) ? data : []).filter((rule) => {
             const ruleModel = normalizeText(rule.model || '*', 120);
+            const ruleProviderId = getAiImagePricingProviderId(rule);
             const ruleResolution = normalizeText(rule.resolution || '*', 20).toLowerCase();
             const ruleRatio = normalizeText(rule.ratio || '*', 20).toLowerCase();
             const ruleQuantity = Number(rule.quantity || 1);
+            const normalizedProviderId = normalizeProviderId(providerId);
+            const providerMatches = !ruleProviderId
+                || ruleProviderId === '*'
+                || (normalizedProviderId && ruleProviderId === normalizedProviderId);
             return (ruleModel === '*' || ruleModel === model)
+                && providerMatches
                 && (ruleResolution === '*' || ruleResolution === resolution)
                 && (ruleRatio === '*' || ruleRatio === ratio)
                 && (ruleQuantity === 1 || ruleQuantity === Number(quantity));
         });
 
         const matched = candidates
-            .sort((left, right) => pricingRuleScore(right, { site, model, resolution, ratio, quantity }) - pricingRuleScore(left, { site, model, resolution, ratio, quantity }))[0];
+            .sort((left, right) => pricingRuleScore(right, { site, mode, model, providerId, resolution, ratio, quantity }) - pricingRuleScore(left, { site, mode, model, providerId, resolution, ratio, quantity }))[0];
 
         if (matched) {
+            const ruleEstimate = estimateAiImageRulePoints(matched, quantity);
             return buildPricingEstimatePayload({
-                estimatedPoints: normalizeNumber(matched.points, 0) * quantity,
+                estimatedPoints: ruleEstimate.estimatedPoints,
                 source: 'rule',
                 site,
                 mode,
                 billingMode,
                 model,
+                providerId,
                 resolution,
                 ratio,
                 quantity,
@@ -1332,6 +1678,7 @@ async function estimatePointsFromRules(supabase, {
         mode,
         billingMode,
         model,
+        providerId,
         resolution,
         ratio,
         quantity
@@ -1369,6 +1716,7 @@ function buildTaskPayload({
     apiBaseUrl,
     apiKeyTail,
     apiKeyFingerprint,
+    providerId = '',
     estimatedPoints,
     pricing = null
 }) {
@@ -1391,6 +1739,13 @@ function buildTaskPayload({
     const referenceImageStoragePath = normalizeText(body.referenceImageStoragePath || body.reference_image_storage_path || referenceImage.storagePath, 4000);
     const referenceImages = normalizeReferenceImages(body)
         .filter((item) => item.url !== referenceImageUrl);
+    const modelProviderId = normalizeProviderId(
+        providerId
+        || body.providerId
+        || body.provider_id
+        || body.modelProviderId
+        || body.model_provider_id
+    );
     const referenceImageCount = (referenceImageUrl ? 1 : 0) + referenceImages.length;
     if (referenceImageCount > MAX_REFERENCE_IMAGE_INPUTS) {
         const error = new Error(`参考图最多 ${MAX_REFERENCE_IMAGE_INPUTS} 张（包含续作基底图）`);
@@ -1442,6 +1797,10 @@ function buildTaskPayload({
             parentClientTaskId: isUuid(parentTaskInput) ? '' : parentTaskInput,
             rawMode: normalizeText(body.mode || body.taskMode || body.task_mode, 40),
             output: VIDEO_MODES.has(mode) ? 'video' : normalizeText(body.output || body.outputMode || body.output_mode, 40),
+            provider_id: modelProviderId,
+            providerId: modelProviderId,
+            model_provider_id: modelProviderId,
+            modelProviderId,
             ...(VIDEO_MODES.has(mode) ? {
                 video_ratio: videoSettings.ratio,
                 video_resolution: videoSettings.resolution,
@@ -1470,8 +1829,21 @@ async function resolveContinuationReferenceFromResult(supabase, {
     const rawResultId = normalizeText(body.referenceResultId || body.reference_result_id || body.resultId || body.result_id, 160);
     const rawTaskId = normalizeText(body.referenceTaskId || body.reference_task_id || body.parentTaskId || body.parent_task_id || body.taskId || body.task_id, 160);
     const resultId = isUuid(rawResultId) ? rawResultId : '';
-    const taskId = isUuid(rawTaskId) ? rawTaskId : '';
+    let taskId = isUuid(rawTaskId) ? rawTaskId : '';
     const resultIndex = normalizePositiveInt(body.referenceResultIndex ?? body.reference_result_index ?? body.resultIndex ?? body.result_index, 0, { min: 0, max: 99 });
+    if (!resultId && !taskId && rawTaskId) {
+        const { data: task, error: taskError } = await supabase
+            .from('ai_image_tasks')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('site', site)
+            .eq('client_task_id', rawTaskId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (taskError) throw taskError;
+        taskId = isUuid(task?.id) ? task.id : '';
+    }
     if (!resultId && !taskId) return null;
 
     let query = supabase
@@ -1646,8 +2018,9 @@ function serializeTask(row = {}, results = []) {
         null
     );
     const cost = ['failed', 'cancelled', 'refunded'].includes(status)
-        ? 0
+        ? Math.max(0, chargedPoints)
         : (status === 'succeeded' ? chargedPoints : estimatedPoints);
+    const serializedProviderId = normalizeProviderId(metadata.provider_id || metadata.providerId || metadata.model_provider_id || metadata.modelProviderId);
     return {
         id: row.id || '',
         taskId: row.id || '',
@@ -1674,6 +2047,10 @@ function serializeTask(row = {}, results = []) {
         model: row.model || '',
         apiModelGroup: row.api_model_group || '',
         api_model_group: row.api_model_group || '',
+        modelProviderId: serializedProviderId,
+        model_provider_id: serializedProviderId,
+        providerId: serializedProviderId,
+        provider_id: serializedProviderId,
         ratio: row.ratio || '',
         resolution: row.resolution || '',
         quantity: Number(row.quantity || 1),
@@ -1733,9 +2110,24 @@ function serializeTask(row = {}, results = []) {
     };
 }
 
+function getExpectedRecoverableResultCount(task = {}) {
+    const mode = normalizeText(task.mode, 40).toLowerCase();
+    if (mode === 'video') return 1;
+    if (!['text', 'image', 'agent'].includes(mode)) return 0;
+    return normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
+}
+
+function shouldRecoverRunningTaskWithResults(task = {}, results = []) {
+    const status = normalizeText(task.status, 40).toLowerCase();
+    if (status !== 'running' || !Array.isArray(results) || !results.length) return false;
+    const expectedCount = getExpectedRecoverableResultCount(task);
+    return expectedCount > 0 && results.length >= expectedCount;
+}
+
 async function maybeRecoverTaskWithResults(supabase, task = {}, results = []) {
     const status = normalizeText(task.status, 40).toLowerCase();
-    const recoverableStatus = status === 'failed' && normalizeText(task.error_code, 160).startsWith('ai_image_');
+    const recoverableStatus = shouldRecoverRunningTaskWithResults(task, results)
+        || (status === 'failed' && normalizeText(task.error_code, 160).startsWith('ai_image_'));
     if (!recoverableStatus || !Array.isArray(results) || !results.length) {
         return task;
     }
@@ -1743,7 +2135,9 @@ async function maybeRecoverTaskWithResults(supabase, task = {}, results = []) {
     try {
         const recovered = await recoverTaskFromExistingResults(supabase, task, {
             results,
-            errorCode: task.error_code || 'ai_image_public_result_recovery',
+            errorCode: task.error_code || (status === 'running'
+                ? 'ai_image_public_running_result_recovery'
+                : 'ai_image_public_result_recovery'),
             failOnRecoveryError: false
         });
         return recovered?.task || task;
@@ -2027,6 +2421,174 @@ function serializeDiagnosticError(error = {}) {
 
 function safeObject(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function shouldCaptureSub2ApiBillingForTask(task = {}) {
+    if (normalizeText(task.billing_mode || task.billingMode, 40) !== 'points') return false;
+    const pricing = safeObject(safeObject(task.metadata).pricing);
+    const matchedRule = safeObject(pricing.matched_rule || pricing.matchedRule);
+    return getAiImagePricingStrategy(matchedRule) === 'token_sub2api';
+}
+
+function buildSub2ApiUsageLookupPayloadFromTask(task = {}) {
+    const metadata = safeObject(task.metadata);
+    const pricingCharge = safeObject(metadata.pricing_charge || metadata.pricingCharge);
+    const sub2api = safeObject(pricingCharge.sub2api || metadata.sub2api);
+    const clientRequestId = normalizeText(
+        metadata.sub2api_client_request_id
+        || metadata.sub2apiClientRequestId
+        || pricingCharge.client_request_id
+        || pricingCharge.clientRequestId
+        || sub2api.client_request_id
+        || sub2api.clientRequestId
+        || buildSub2ApiClientRequestId(task),
+        160
+    );
+    return {
+        id: normalizeText(task.provider_task_id || task.providerTaskId || metadata.provider_task_id || metadata.providerTaskId, 240),
+        request_id: pricingCharge.request_id || pricingCharge.requestId || sub2api.request_id || sub2api.requestId || '',
+        requestId: pricingCharge.request_id || pricingCharge.requestId || sub2api.request_id || sub2api.requestId || '',
+        lookup_request_id: pricingCharge.lookup_request_id || pricingCharge.lookupRequestId || sub2api.lookup_request_id || sub2api.lookupRequestId || '',
+        lookupRequestId: pricingCharge.lookup_request_id || pricingCharge.lookupRequestId || sub2api.lookup_request_id || sub2api.lookupRequestId || '',
+        client_request_id: clientRequestId,
+        clientRequestId: clientRequestId,
+        sub2api_client_request_id: clientRequestId,
+        sub2apiClientRequestId: clientRequestId,
+        metadata,
+        pricing_charge: pricingCharge,
+        pricingCharge,
+        sub2api
+    };
+}
+
+async function findExistingTaskPointDeduction(supabase, task = {}) {
+    if (!supabase?.from || !task?.id || !task?.user_id) return 0;
+    try {
+        const { data, error } = await supabase
+            .from('points_ledger')
+            .select('amount')
+            .eq('user_id', task.user_id)
+            .eq('reference_id', task.id)
+            .lt('amount', 0)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        if (error) return 0;
+        const amount = Number(data?.[0]?.amount);
+        return Number.isFinite(amount) ? Math.abs(amount) : 0;
+    } catch (_) {
+        return 0;
+    }
+}
+
+async function deductReconciledTaskPoints(supabase, task = {}, amount = 0) {
+    const normalizedAmount = normalizeBillablePoints(amount, 0);
+    if (!supabase?.from || normalizedAmount <= 0 || !task?.id || !task?.user_id) {
+        return {
+            chargedPoints: 0,
+            referenceId: ''
+        };
+    }
+    const existingDeduction = await findExistingTaskPointDeduction(supabase, task);
+    if (existingDeduction > 0) {
+        return {
+            chargedPoints: existingDeduction,
+            referenceId: task.points_ledger_reference_id || task.id
+        };
+    }
+    const { data, error } = await deductPointsForService({
+        supabase,
+        userId: task.user_id,
+        amount: normalizedAmount,
+        reason: 'AI 图片生成',
+        referenceId: task.id,
+        site: task.site || 'cn'
+    });
+    if (error) throw error;
+    return {
+        chargedPoints: normalizeBillablePoints(data?.deducted, normalizedAmount) || normalizedAmount,
+        referenceId: task.id
+    };
+}
+
+async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
+    env = process.env,
+    fetchImpl = globalThis.fetch
+} = {}) {
+    if (!supabase?.from || !task?.id) return task;
+    if (!shouldCaptureSub2ApiBillingForTask(task)) return task;
+    if (normalizeBillablePoints(task.charged_points ?? task.chargedPoints, 0) > 0) return task;
+    const status = normalizeText(task.status, 40).toLowerCase();
+    if (['queued', 'running', 'processing'].includes(status)) return task;
+
+    let runtimeConfig = null;
+    try {
+        runtimeConfig = await resolveExecutorRuntimeConfig({ supabase, task, env });
+    } catch (_) {
+        return task;
+    }
+    if (!runtimeConfig?.configured) return task;
+
+    const lookupPayload = buildSub2ApiUsageLookupPayloadFromTask(task);
+    const reconcileLookupEnv = {
+        ...env,
+        AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: env.AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS
+            || env.AI_IMAGE_SUB2API_USAGE_RECONCILE_ATTEMPTS
+            || '1',
+        AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: env.AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS
+            || env.AI_IMAGE_SUB2API_USAGE_RECONCILE_INTERVAL_MS
+            || '0',
+        AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS: env.AI_IMAGE_SUB2API_RECONCILE_TIMEOUT_MS
+            || env.AI_IMAGE_SUB2API_USAGE_RECONCILE_TIMEOUT_MS
+            || env.AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS
+            || '300'
+    };
+    const usageRecord = await fetchSub2ApiUsageRecord({
+        baseUrl: runtimeConfig.baseUrl,
+        apiKey: runtimeConfig.apiKey,
+        payload: lookupPayload,
+        fetchImpl,
+        env: reconcileLookupEnv
+    });
+    if (!usageRecord?.actual_cost) return task;
+
+    const usageWithBilling = attachSub2ApiBillingToUsage(task.token_usage || {}, usageRecord, null, lookupPayload);
+    const chargeEstimate = calculateAiImageRuleChargePoints(task, usageWithBilling);
+    const expectedPoints = normalizeBillablePoints(chargeEstimate.points, 0);
+    if (expectedPoints <= 0) return task;
+    const deduction = await deductReconciledTaskPoints(supabase, task, expectedPoints);
+    const chargedPoints = normalizeBillablePoints(deduction.chargedPoints || expectedPoints, expectedPoints);
+    if (chargedPoints <= 0) return task;
+
+    const metadata = {
+        ...safeObject(task.metadata),
+        pricing_charge: {
+            ...safeObject(chargeEstimate.pricing),
+            reconciled: true,
+            reconciled_at: new Date().toISOString(),
+            sub2api: {
+                ...safeObject(usageWithBilling.sub2api),
+                request_id: usageRecord.request_id || usageWithBilling.sub2api?.request_id || '',
+                lookup_request_id: usageRecord.lookup_request_id || usageWithBilling.sub2api?.lookup_request_id || ''
+            }
+        }
+    };
+
+    const { data, error } = await supabase
+        .from('ai_image_tasks')
+        .update({
+            charged_points: chargedPoints,
+            points_ledger_reference_id: deduction.referenceId || task.points_ledger_reference_id || task.id,
+            token_usage: usageWithBilling,
+            input_tokens: normalizePositiveInt(usageWithBilling.input_tokens || usageWithBilling.inputTokens || task.input_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+            output_tokens: normalizePositiveInt(usageWithBilling.output_tokens || usageWithBilling.outputTokens || task.output_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+            total_tokens: normalizePositiveInt(usageWithBilling.total_tokens || usageWithBilling.totalTokens || task.total_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+            metadata
+        })
+        .eq('id', task.id)
+        .select(TASK_SELECT)
+        .maybeSingle();
+    if (error || !data) return task;
+    return data;
 }
 
 function estimateTextTokens(value = '') {
@@ -2561,6 +3123,32 @@ function extractChatDelta(payload = {}) {
     )).filter(Boolean).join('');
 }
 
+function extractChatFullOutputText(payload = {}) {
+    if (!payload || typeof payload !== 'object') return '';
+    const type = normalizeText(payload.type || payload.event_type, 120);
+    if (!/(?:done|completed|message)$|\.done$|\.completed$/.test(type)) return '';
+    const directText = normalizeText(payload.text || payload.output_text || payload.response?.output_text, 120000);
+    if (directText) return directText;
+
+    const collectContentText = (content) => {
+        if (typeof content === 'string') return content;
+        if (!Array.isArray(content)) return '';
+        return content.map((part) => normalizeText(
+            part?.text
+            || part?.output_text
+            || part?.content
+            || '',
+            120000
+        )).filter(Boolean).join('');
+    };
+    const outputItems = Array.isArray(payload.output)
+        ? payload.output
+        : (Array.isArray(payload.response?.output) ? payload.response.output : []);
+    const outputText = outputItems.map((item) => collectContentText(item?.content)).filter(Boolean).join('');
+    if (outputText) return outputText;
+    return collectContentText(payload.item?.content || payload.message?.content);
+}
+
 function extractGeminiTextDelta(payload = {}, { thoughts = false } = {}) {
     if (!payload || typeof payload !== 'object') return '';
     if (payload.event_type === 'step.delta') {
@@ -2704,6 +3292,66 @@ function writeSse(res, event, data = {}) {
     if (!res || typeof res.write !== 'function') return;
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function getChatStreamIdleTimeoutMs(env = {}) {
+    return normalizePositiveInt(env.AI_IMAGE_CHAT_STREAM_IDLE_TIMEOUT_MS, 15000, {
+        min: 10,
+        max: 120000
+    });
+}
+
+function getChatStreamVisibleIdleTimeoutMs(env = {}) {
+    return normalizePositiveInt(env.AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS, 1000, {
+        min: 10,
+        max: 30000
+    });
+}
+
+function getChatStreamUsageReadyProbeMs(env = {}) {
+    return normalizePositiveInt(env.AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS, 1000, {
+        min: 100,
+        max: 10000
+    });
+}
+
+function getChatStreamUsageReadyGraceMs(env = {}) {
+    return normalizePositiveInt(env.AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS, 1200, {
+        min: 0,
+        max: 30000
+    });
+}
+
+async function readChatStreamChunk(reader, {
+    idleTimeoutMs = 15000,
+    enableIdleTimeout = false
+} = {}) {
+    if (!enableIdleTimeout || idleTimeoutMs <= 0) {
+        return {
+            chunk: await reader.read(),
+            idleTimedOut: false
+        };
+    }
+
+    let timeoutId = null;
+    try {
+        return await Promise.race([
+            reader.read().then((chunk) => ({
+                chunk,
+                idleTimedOut: false
+            })),
+            new Promise((resolve) => {
+                timeoutId = setTimeout(() => {
+                    resolve({
+                        chunk: null,
+                        idleTimedOut: true
+                    });
+                }, idleTimeoutMs);
+            })
+        ]);
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
 }
 
 function writeSseError(res, error, task = null) {
@@ -3069,10 +3717,12 @@ function createAiImageHandlers({
             const mode = inferMode(body);
             const model = resolveModel({ body, mode });
             const modelGroup = resolveModelGroup({ body, mode });
+            const providerId = normalizeProviderId(body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id);
             Object.assign(submitDiagnostics, {
                 mode,
                 model,
                 modelGroup,
+                providerId,
                 ratio: normalizeText(body.ratio || body.aspectRatio || body.aspect_ratio || body.videoSettings?.ratio || body.videoSettings?.aspectRatio, 20),
                 resolution: normalizeText(body.resolution || body.size || body.videoSettings?.resolution, 20)
             });
@@ -3107,6 +3757,7 @@ function createAiImageHandlers({
                 apiBaseUrl,
                 apiKeyTail: resolvedUserApiKey.apiKeyTail,
                 apiKeyFingerprint: resolvedUserApiKey.apiKeyFingerprint,
+                providerId,
                 estimatedPoints: 0
             });
             validateTaskPayload(previewPayload);
@@ -3134,6 +3785,7 @@ function createAiImageHandlers({
                     mode,
                     billingMode,
                     model,
+                    providerId,
                     resolution: previewPayload.resolution || '1k',
                     ratio: previewPayload.ratio || '1:1',
                     quantity: previewPayload.quantity || 1
@@ -3145,6 +3797,7 @@ function createAiImageHandlers({
                     mode,
                     billingMode,
                     model,
+                    providerId,
                     resolution: previewPayload.resolution || '1k',
                     ratio: previewPayload.ratio || '1:1',
                     quantity: previewPayload.quantity || 1
@@ -3161,6 +3814,7 @@ function createAiImageHandlers({
                 apiBaseUrl,
                 apiKeyTail: resolvedUserApiKey.apiKeyTail,
                 apiKeyFingerprint: resolvedUserApiKey.apiKeyFingerprint,
+                providerId,
                 estimatedPoints,
                 pricing: pricingEstimate.pricing
             });
@@ -3326,10 +3980,12 @@ function createAiImageHandlers({
             const mode = 'chat';
             const model = resolveModel({ body, mode });
             const modelGroup = resolveModelGroup({ body, mode });
+            const providerId = normalizeProviderId(body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id);
             Object.assign(chatDiagnostics, {
                 mode,
                 model,
-                modelGroup
+                modelGroup,
+                providerId
             });
             logChatStreamDiagnostic('submit_received', chatDiagnostics);
             const apiBaseUrl = billingMode === 'api'
@@ -3356,6 +4012,7 @@ function createAiImageHandlers({
                     mode,
                     billingMode,
                     model,
+                    providerId,
                     resolution: '1k',
                     ratio: '1:1',
                     quantity: 1
@@ -3367,6 +4024,7 @@ function createAiImageHandlers({
                     mode,
                     billingMode,
                     model,
+                    providerId,
                     resolution: '1k',
                     ratio: '1:1',
                     quantity: 1
@@ -3385,6 +4043,7 @@ function createAiImageHandlers({
                     apiBaseUrl,
                     apiKeyTail: resolvedUserApiKey.apiKeyTail,
                     apiKeyFingerprint: resolvedUserApiKey.apiKeyFingerprint,
+                    providerId,
                     estimatedPoints: pricingEstimate.estimatedPoints,
                     pricing: pricingEstimate.pricing
                 }),
@@ -3501,12 +4160,18 @@ function createAiImageHandlers({
 	                : 0;
 	            const chatAttachmentSummary = summarizeChatAttachments(body.chatAttachments || body.chat_attachments || body.attachments || body.files);
 	            const chatAttachmentChars = chatAttachmentSummary.reduce((sum, item) => sum + (Number(item.chars || 0) || 0), 0);
-	            const promptCacheKey = buildChatPromptCacheKey({
+            const promptCacheKey = buildChatPromptCacheKey({
                 userId: user.id,
                 site,
                 model: upstreamRequestModel,
                 apiKeyTail: task.api_key_tail || getApiKeyTail(upstreamApiKey)
             });
+            const sub2ApiClientRequestId = isSub2ApiGatewayBaseUrl(upstreamBaseUrl)
+                ? buildSub2ApiClientRequestId(task)
+                : '';
+            const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
+                ? { 'X-Client-Request-ID': sub2ApiClientRequestId }
+                : {};
             const upstreamStartedAt = Date.now();
 	            const maxTokens = normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, 420, {
 	                min: 64,
@@ -3551,7 +4216,8 @@ function createAiImageHandlers({
 	                        headers: {
 	                            'Content-Type': 'application/json',
 	                            Accept: 'text/event-stream',
-	                            'x-goog-api-key': upstreamApiKey
+	                            'x-goog-api-key': upstreamApiKey,
+	                            ...sub2ApiClientRequestHeaders
 	                        }
 	                    };
 	                }
@@ -3568,7 +4234,8 @@ function createAiImageHandlers({
 	                        headers: {
 	                            Authorization: `Bearer ${upstreamApiKey}`,
 	                            'Content-Type': 'application/json',
-	                            Accept: 'text/event-stream'
+	                            Accept: 'text/event-stream',
+	                            ...sub2ApiClientRequestHeaders
 	                        }
 	                    };
 	                }
@@ -3586,7 +4253,8 @@ function createAiImageHandlers({
 	                            'x-api-key': upstreamApiKey,
 	                            'anthropic-version': env.ANTHROPIC_VERSION || '2023-06-01',
 	                            'Content-Type': 'application/json',
-	                            Accept: 'text/event-stream'
+	                            Accept: 'text/event-stream',
+	                            ...sub2ApiClientRequestHeaders
 	                        }
 	                    };
 	                }
@@ -3596,7 +4264,8 @@ function createAiImageHandlers({
 	                    headers: {
 	                        Authorization: `Bearer ${upstreamApiKey}`,
 	                        'Content-Type': 'application/json',
-	                        Accept: 'text/event-stream'
+	                        Accept: 'text/event-stream',
+	                        ...sub2ApiClientRequestHeaders
 	                    }
 	                };
 	            })();
@@ -3628,9 +4297,10 @@ function createAiImageHandlers({
                 max_tokens: requestBody.max_tokens,
                 message_count: messages.length,
                 memory_message_count: Math.max(0, messages.length - 2),
-                attached_image_count: attachedImageCount,
+	                attached_image_count: attachedImageCount,
                 attached_file_count: chatAttachmentSummary.length,
-                attached_file_chars: chatAttachmentChars
+                attached_file_chars: chatAttachmentChars,
+                sub2api_client_request_id: sub2ApiClientRequestId
             });
 	            const upstreamResponse = await fetchImpl(upstreamRequest.url, {
 	                method: 'POST',
@@ -3671,6 +4341,40 @@ function createAiImageHandlers({
             let upstreamContentPayloads = 0;
             let upstreamContentChars = 0;
             let firstReasoningMs = 0;
+            const streamIdleTimeoutMs = getChatStreamIdleTimeoutMs(env);
+            const streamVisibleIdleTimeoutMs = getChatStreamVisibleIdleTimeoutMs(env);
+            const streamUsageReadyProbeMs = getChatStreamUsageReadyProbeMs(env);
+            const streamUsageReadyGraceMs = getChatStreamUsageReadyGraceMs(env);
+            let streamIdleTimedOut = false;
+            let streamVisibleIdleTimedOut = false;
+            let streamUsageReadyFinished = false;
+            let lastUserVisibleAt = 0;
+            let sub2apiUsageProbeAt = 0;
+            let sub2apiUsageReadyAt = 0;
+            let sub2apiUsageLookupMissLogged = false;
+            const captureSub2ApiBilling = shouldCaptureSub2ApiBillingForTask(task);
+            let sub2apiUsageRecord = null;
+            const visibleIdleLookupEnv = {
+                ...env,
+                AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+                AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0',
+                AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS: env.AI_IMAGE_SUB2API_STREAM_LOOKUP_TIMEOUT_MS
+                    || env.AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS
+                    || '300'
+            };
+            const finalUsageLookupEnv = {
+                ...env,
+                AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: env.AI_IMAGE_SUB2API_STREAM_FINAL_LOOKUP_ATTEMPTS
+                    || env.AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS
+                    || '1',
+                AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: env.AI_IMAGE_SUB2API_STREAM_FINAL_LOOKUP_INTERVAL_MS
+                    || env.AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS
+                    || '0',
+                AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS: env.AI_IMAGE_SUB2API_STREAM_FINAL_LOOKUP_TIMEOUT_MS
+                    || env.AI_IMAGE_SUB2API_STREAM_LOOKUP_TIMEOUT_MS
+                    || env.AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS
+                    || '700'
+            };
             const upstreamDeltaKeySamples = [];
             const processLine = (line = '') => {
                 const trimmed = String(line || '').trim();
@@ -3733,23 +4437,33 @@ function createAiImageHandlers({
                 }
                 if (thinkingReasoningEnabled && upstreamReasoningDelta) {
                     reasoningText += upstreamReasoningDelta;
+                    lastUserVisibleAt = Date.now();
                     writeSse(res, 'reasoning', {
                         delta: upstreamReasoningDelta,
                         task_id: task.id
                     });
                 }
-	                const delta = geminiNativeCapable
+	                let delta = geminiNativeCapable
 	                    ? extractGeminiTextDelta(payload, { thoughts: false })
 	                    : (openAiNativeCapable
 	                        ? extractOpenAiResponsesDelta(payload, { thoughts: false })
 	                        : (claudeNativeCapable
 	                            ? extractClaudeMessagesDelta(payload, { thoughts: false })
 	                            : extractChatDelta(payload)));
+                if (!delta) {
+                    const fullOutputText = extractChatFullOutputText(payload);
+                    if (fullOutputText && fullOutputText !== outputText) {
+                        delta = fullOutputText.startsWith(outputText)
+                            ? fullOutputText.slice(outputText.length)
+                            : (outputText ? '' : fullOutputText);
+                    }
+                }
                 if (delta) {
                     upstreamContentPayloads += 1;
                     upstreamContentChars += delta.length;
                     if (!firstTokenMs) firstTokenMs = Date.now() - upstreamStartedAt;
                     outputText += delta;
+                    lastUserVisibleAt = Date.now();
                     writeSse(res, 'delta', {
                         delta,
                         task_id: task.id
@@ -3757,11 +4471,98 @@ function createAiImageHandlers({
                 }
                 return false;
             };
+            const lookupSub2ApiUsageOnce = async () => {
+                if (captureSub2ApiBilling && !sub2apiUsageRecord) {
+                    sub2apiUsageRecord = await fetchSub2ApiUsageRecord({
+                        baseUrl: upstreamBaseUrl,
+                        apiKey: upstreamApiKey,
+                        response: upstreamResponse,
+                        payload: {
+                            id: providerTaskId,
+                            client_request_id: sub2ApiClientRequestId,
+                            clientRequestId: sub2ApiClientRequestId
+                        },
+                        fetchImpl,
+                        env: visibleIdleLookupEnv
+                    });
+                    if (sub2apiUsageRecord?.actual_cost && !sub2apiUsageReadyAt) {
+                        sub2apiUsageReadyAt = Date.now();
+                    }
+                }
+                return sub2apiUsageRecord;
+            };
+            const logSub2ApiUsageLookupMiss = () => {
+                if (sub2apiUsageLookupMissLogged || !captureSub2ApiBilling) return;
+                sub2apiUsageLookupMissLogged = true;
+                const hints = getSub2ApiUsageRequestIds(upstreamResponse, {
+                    id: providerTaskId,
+                    client_request_id: sub2ApiClientRequestId,
+                    clientRequestId: sub2ApiClientRequestId
+                });
+                logChatStreamDiagnostic('sub2api_usage_lookup_miss', {
+                    task_id: task.id,
+                    provider_model: upstreamRequestModel,
+                    provider_task_id: providerTaskId,
+                    client_request_id: sub2ApiClientRequestId,
+                    candidate_request_ids: hints.requestIds.slice(0, 12),
+                    response_x_request_id: getResponseHeader(upstreamResponse, 'x-request-id') || getResponseHeader(upstreamResponse, 'X-Request-Id'),
+                    response_request_id: getResponseHeader(upstreamResponse, 'request-id'),
+                    response_x_client_request_id: getResponseHeader(upstreamResponse, 'x-client-request-id')
+                });
+            };
+            const maybeFinishAfterVisibleIdle = async () => {
+                if (!outputText || !lastUserVisibleAt) return false;
+                const visibleIdleMs = Date.now() - lastUserVisibleAt;
+                if (visibleIdleMs < streamVisibleIdleTimeoutMs) return false;
+                if (visibleIdleMs >= streamIdleTimeoutMs) {
+                    streamIdleTimedOut = true;
+                    streamVisibleIdleTimedOut = true;
+                    return true;
+                }
+
+                if (sub2apiUsageRecord?.actual_cost) {
+                    if (streamUsageReadyGraceMs > 0 && Date.now() - sub2apiUsageReadyAt < streamUsageReadyGraceMs) {
+                        return false;
+                    }
+                    streamIdleTimedOut = true;
+                    streamVisibleIdleTimedOut = true;
+                    streamUsageReadyFinished = true;
+                    return true;
+                }
+
+                if (captureSub2ApiBilling && !sub2apiUsageRecord) {
+                    const now = Date.now();
+                    if (!sub2apiUsageProbeAt || now - sub2apiUsageProbeAt >= streamVisibleIdleTimeoutMs) {
+                        sub2apiUsageProbeAt = now;
+                        // eslint-disable-next-line no-await-in-loop
+                        await lookupSub2ApiUsageOnce();
+                    }
+                    if (sub2apiUsageRecord?.actual_cost) {
+                        if (streamUsageReadyGraceMs > 0 && Date.now() - sub2apiUsageReadyAt < streamUsageReadyGraceMs) {
+                            return false;
+                        }
+                        streamIdleTimedOut = true;
+                        streamVisibleIdleTimedOut = true;
+                        streamUsageReadyFinished = true;
+                        return true;
+                    }
+                }
+
+                return false;
+            };
 
             let done = false;
             while (!done) {
                 // eslint-disable-next-line no-await-in-loop
-                const chunk = await reader.read();
+                const readResult = await readChatStreamChunk(reader, {
+                    idleTimeoutMs: streamIdleTimeoutMs,
+                    enableIdleTimeout: upstreamContentPayloads > 0 || Boolean(outputText)
+                });
+                if (readResult.idleTimedOut) {
+                    streamIdleTimedOut = true;
+                    break;
+                }
+                const chunk = readResult.chunk;
                 if (chunk.done) break;
                 buffer += decoder.decode(chunk.value, { stream: true });
                 const lines = buffer.split(/\r?\n/);
@@ -3771,13 +4572,49 @@ function createAiImageHandlers({
                         done = true;
                         break;
                     }
+                    // eslint-disable-next-line no-await-in-loop
+                    if (await maybeFinishAfterVisibleIdle()) {
+                        done = true;
+                        break;
+                    }
+                }
+                if (!done) {
+                    // eslint-disable-next-line no-await-in-loop
+                    if (await maybeFinishAfterVisibleIdle()) {
+                        done = true;
+                    }
                 }
             }
             if (buffer.trim()) {
                 processLine(buffer);
             }
+            if (streamIdleTimedOut || streamVisibleIdleTimedOut) {
+                await reader.cancel().catch(() => {});
+            }
 
-            const normalizedUsage = normalizeStreamUsage(usage, { messages, output: outputText });
+            if (captureSub2ApiBilling && !sub2apiUsageRecord) {
+                sub2apiUsageRecord = await fetchSub2ApiUsageRecord({
+                    baseUrl: upstreamBaseUrl,
+                    apiKey: upstreamApiKey,
+                    response: upstreamResponse,
+                    payload: {
+                        id: providerTaskId,
+                        client_request_id: sub2ApiClientRequestId,
+                        clientRequestId: sub2ApiClientRequestId
+                    },
+                    fetchImpl,
+                    env: finalUsageLookupEnv
+                });
+                if (!sub2apiUsageRecord) logSub2ApiUsageLookupMiss();
+            }
+            const usageWithBilling = captureSub2ApiBilling
+                ? attachSub2ApiBillingToUsage(usage, sub2apiUsageRecord, upstreamResponse, {
+                    id: providerTaskId,
+                    client_request_id: sub2ApiClientRequestId,
+                    clientRequestId: sub2ApiClientRequestId
+                })
+                : usage;
+            const normalizedUsage = normalizeStreamUsage(usageWithBilling, { messages, output: outputText });
             const existingMetadata = safeObject(task.metadata);
             const upstreamTotalMs = Math.max(0, Date.now() - upstreamStartedAt);
             const upstreamFirstResponseSafeMs = Math.max(0, upstreamFirstResponseMs);
@@ -3795,6 +4632,11 @@ function createAiImageHandlers({
                 content_chars: upstreamContentChars,
                 first_reasoning_ms: Math.max(0, firstReasoningMs),
                 first_content_ms: Math.max(0, firstTokenMs),
+                visible_idle_timed_out: streamVisibleIdleTimedOut,
+                visible_idle_timeout_ms: streamVisibleIdleTimeoutMs,
+                usage_ready_finished: streamUsageReadyFinished,
+                usage_ready_probe_ms: streamUsageReadyProbeMs,
+                usage_ready_grace_ms: streamUsageReadyGraceMs,
                 delta_key_samples: upstreamDeltaKeySamples.slice(0, 8)
             };
             logChatStreamDiagnostic('upstream_response', {
@@ -3810,6 +4652,14 @@ function createAiImageHandlers({
                 upstream_ms: upstreamTotalMs,
                 first_reasoning_ms: Math.max(0, firstReasoningMs),
                 first_content_ms: Math.max(0, firstTokenMs),
+                stream_idle_timed_out: streamIdleTimedOut,
+                stream_idle_timeout_ms: streamIdleTimeoutMs,
+                stream_visible_idle_timed_out: streamVisibleIdleTimedOut,
+                stream_visible_idle_timeout_ms: streamVisibleIdleTimeoutMs,
+                stream_usage_ready_finished: streamUsageReadyFinished,
+                stream_usage_ready_probe_ms: streamUsageReadyProbeMs,
+                stream_usage_ready_grace_ms: streamUsageReadyGraceMs,
+                sub2api_usage_found: Boolean(sub2apiUsageRecord?.actual_cost),
                 delta_key_samples: upstreamDeltaKeySamples.slice(0, 8)
             });
             const streamMetadata = {
@@ -3819,6 +4669,8 @@ function createAiImageHandlers({
                 provider_response_model: upstreamModel,
                 upstream_model: upstreamModel,
 	                provider_source: providerSource,
+                sub2api_client_request_id: sub2ApiClientRequestId,
+                sub2apiClientRequestId: sub2ApiClientRequestId,
 	                request_type: 'chat',
 	                service_tier: serviceTier,
 	                requested_service_tier: requestedServiceTier,
@@ -3855,18 +4707,32 @@ function createAiImageHandlers({
                 config_resolve_ms: 0,
                 upstream_ms: upstreamTotalMs,
                 upstream_request_ms: upstreamFirstResponseSafeMs,
-                upstream_response_ms: 0,
-                upstream_response_body_ms: 0,
-                upstream_response_text_ms: 0,
-                upstream_response_parse_ms: 0,
-                postprocess_ms: 0,
-                executor_ms: upstreamTotalMs,
+	                upstream_response_ms: 0,
+	                upstream_response_body_ms: 0,
+	                upstream_response_text_ms: 0,
+	                upstream_response_parse_ms: 0,
+	                postprocess_ms: 0,
+	                executor_ms: upstreamTotalMs,
+	                stream_idle_timed_out: streamIdleTimedOut,
+	                stream_idle_timeout_ms: streamIdleTimeoutMs,
+	                stream_visible_idle_timed_out: streamVisibleIdleTimedOut,
+	                stream_visible_idle_timeout_ms: streamVisibleIdleTimeoutMs,
+	                stream_usage_ready_finished: streamUsageReadyFinished,
+	                stream_usage_ready_probe_ms: streamUsageReadyProbeMs,
+	                stream_usage_ready_grace_ms: streamUsageReadyGraceMs,
                 timing: {
                     ...safeObject(existingMetadata.timing),
                     executor_ms: upstreamTotalMs,
                     upstream_request_ms: upstreamFirstResponseSafeMs,
                     first_token_ms: Math.max(0, firstTokenMs),
-                    upstream_ms: upstreamTotalMs
+                    upstream_ms: upstreamTotalMs,
+                    stream_idle_timed_out: streamIdleTimedOut,
+                    stream_idle_timeout_ms: streamIdleTimeoutMs,
+                    stream_visible_idle_timed_out: streamVisibleIdleTimedOut,
+                    stream_visible_idle_timeout_ms: streamVisibleIdleTimeoutMs,
+                    stream_usage_ready_finished: streamUsageReadyFinished,
+                    stream_usage_ready_probe_ms: streamUsageReadyProbeMs,
+                    stream_usage_ready_grace_ms: streamUsageReadyGraceMs
                 }
             };
 
@@ -3879,11 +4745,33 @@ function createAiImageHandlers({
                 metadata: streamMetadata
             });
             const updatedTask = completion.task;
+            const pricingCharge = safeObject(safeObject(updatedTask.metadata).pricing_charge);
+            const chargedPoints = normalizeBillablePoints(updatedTask.charged_points, 0);
+
+            writeSse(res, 'billing', {
+                success: true,
+                task_id: updatedTask.id,
+                taskId: updatedTask.id,
+                charged_points: chargedPoints,
+                chargedPoints,
+                pricing_charge: pricingCharge,
+                pricingCharge,
+                token_usage: {
+                    input_tokens: normalizedUsage.input_tokens,
+                    output_tokens: normalizedUsage.output_tokens,
+                    total_tokens: normalizedUsage.total_tokens,
+                    cached_tokens: normalizedUsage.cached_tokens
+                }
+            });
 
             writeSse(res, 'done', {
                 success: true,
                 task: serializeTask(updatedTask, []),
                 task_id: updatedTask.id,
+                charged_points: chargedPoints,
+                chargedPoints,
+                pricing_charge: pricingCharge,
+                pricingCharge,
                 text: outputText,
                 storedApiKey: resolvedUserApiKey.storedApiKey,
                 stored_api_key: resolvedUserApiKey.storedApiKey,
@@ -4162,7 +5050,9 @@ function createAiImageHandlers({
                 const rowResults = resultsByTaskId[row.id] || [];
                 // eslint-disable-next-line no-await-in-loop
                 const recoveredRow = await maybeRecoverTaskWithResults(supabase, row, rowResults);
-                recoveredRows.push({ row: recoveredRow, results: rowResults });
+                // eslint-disable-next-line no-await-in-loop
+                const reconciledRow = await maybeReconcileSub2ApiActualCostTask(supabase, recoveredRow, { env, fetchImpl });
+                recoveredRows.push({ row: reconciledRow, results: rowResults });
             }
             const queueEstimates = await estimateQueueForTasks(supabase, recoveredRows.map((item) => item.row), { site, env });
             for (const item of recoveredRows) {
@@ -4234,11 +5124,12 @@ function createAiImageHandlers({
             if (resultsError) throw resultsError;
             const normalizedResultRows = Array.isArray(resultRows) ? resultRows : [];
             const recoveredTask = await maybeRecoverTaskWithResults(supabase, data, normalizedResultRows);
-            const queueEstimate = await estimateQueueForTask(supabase, recoveredTask, { site, env });
+            const reconciledTask = await maybeReconcileSub2ApiActualCostTask(supabase, recoveredTask, { env, fetchImpl });
+            const queueEstimate = await estimateQueueForTask(supabase, reconciledTask, { site, env });
 
             return sendJson(res, 200, {
                 success: true,
-                task: serializeTask(attachQueueEstimateToTask(recoveredTask, queueEstimate), normalizedResultRows)
+                task: serializeTask(attachQueueEstimateToTask(reconciledTask, queueEstimate), normalizedResultRows)
             });
         } catch (error) {
             return sendError(sendJson, res, error);
@@ -4569,7 +5460,10 @@ function createAiImageHandlers({
 
             return sendJson(res, 200, {
                 success: true,
-                pricing: Array.isArray(data) ? data : [],
+                pricing: (Array.isArray(data) ? data : []).map((rule) => ({
+                    ...rule,
+                    metadata: normalizeAiImagePricingMetadata(rule.metadata || {})
+                })),
                 api_base_urls: apiBaseUrls,
                 allowed_api_base_urls: apiBaseUrls.map((row) => row.baseUrl),
                 storedApiKeys,
@@ -4583,6 +5477,8 @@ function createAiImageHandlers({
                         label: model,
                         providerId: provider.providerId,
                         providerLabel: provider.label,
+                        vendorLabel: provider.vendorLabel || provider.vendor_label || '',
+                        vendor_label: provider.vendorLabel || provider.vendor_label || '',
                         vendor: provider.vendor,
                         protocol: provider.protocol
                     }))),
@@ -4593,6 +5489,8 @@ function createAiImageHandlers({
                         label: model,
                         providerId: provider.providerId,
                         providerLabel: provider.label,
+                        vendorLabel: provider.vendorLabel || provider.vendor_label || '',
+                        vendor_label: provider.vendorLabel || provider.vendor_label || '',
                         vendor: provider.vendor,
                         protocol: provider.protocol,
                         ...(modelsListIncludesModel(provider.visionModels, model)
@@ -4609,6 +5507,8 @@ function createAiImageHandlers({
                         label: model,
                         providerId: provider.providerId,
                         providerLabel: provider.label,
+                        vendorLabel: provider.vendorLabel || provider.vendor_label || '',
+                        vendor_label: provider.vendorLabel || provider.vendor_label || '',
                         vendor: provider.vendor,
                         protocol: provider.protocol
                     })))

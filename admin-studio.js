@@ -3360,6 +3360,9 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
+            case 'switch-ai-creation-view':
+                window.switchAiCreationView?.(actionEl.dataset.aiCreationView);
+                break;
             case 'settings-open-points-catalog':
                 runAdminStudioActionFeedback(actionEl, async () => {
                     if (window.AdminShell?.openContext) {
@@ -3676,6 +3679,12 @@ function bindAdminStudioDelegatedControls() {
                     restoreOnNull: true,
                     silentErrors: true
                 });
+                break;
+            case 'settings-new-ai-image-pricing':
+                window.resetAiImagePricingEditor?.();
+                break;
+            case 'settings-select-ai-image-pricing':
+                window.selectAiImagePricingRule?.(actionEl.dataset.aiImagePricingId || '');
                 break;
             case 'settings-save-ai-image-agent':
                 runAdminStudioActionFeedback(actionEl, () => window.saveAiImageAgent?.(), {
@@ -6392,11 +6401,135 @@ function switchView(viewName) {
 
 window.switchView = switchView;
 
+const AI_CREATION_DEFAULT_VIEW = 'overview';
+const AI_CREATION_VIEW_NAMES = new Set([
+    'overview',
+    'models',
+    'user-api',
+    'pricing',
+    'guardrails',
+    'storage',
+    'agents'
+]);
+
+function normalizeAiCreationViewName(viewName = '') {
+    const normalized = String(viewName || '').trim().toLowerCase();
+    return AI_CREATION_VIEW_NAMES.has(normalized) ? normalized : AI_CREATION_DEFAULT_VIEW;
+}
+
+function resolveAiCreationViewName(context = {}, options = {}) {
+    const normalizedContext = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+    const payload = normalizedContext.payload && typeof normalizedContext.payload === 'object' ? normalizedContext.payload : {};
+    const raw = normalizedContext.raw && typeof normalizedContext.raw === 'object' ? normalizedContext.raw : {};
+    const requestedView = (
+        payload.view
+        || payload.defaultTab
+        || payload.tab
+        || raw.view
+        || raw.defaultTab
+        || raw.tab
+        || normalizedContext.view
+        || normalizedContext.defaultTab
+        || normalizedContext.tab
+        || options.viewName
+        || options.aiCreationView
+        || ''
+    );
+    return requestedView ? normalizeAiCreationViewName(requestedView) : '';
+}
+
+function ensureAiCreationPanelMounted() {
+    const mount = document.getElementById('aiCreationPanelMount');
+    const source = document.getElementById('aiCreationPanelSource');
+    if (!mount) return null;
+
+    const mountedPanel = mount.querySelector('.ai-image-admin-layout');
+    if (mountedPanel) return mountedPanel;
+
+    const sourcePanel = source?.querySelector?.('.ai-image-admin-layout');
+    if (!sourcePanel) return null;
+
+    mount.appendChild(sourcePanel);
+    if (source) {
+        source.hidden = true;
+    }
+    return sourcePanel;
+}
+
+function getActiveAiCreationViewName() {
+    const aiCreationModule = document.getElementById('module-ai-creation');
+    const activeTab = aiCreationModule?.querySelector('.admin-tab[data-ai-creation-view].active');
+    return normalizeAiCreationViewName(activeTab?.dataset?.aiCreationView);
+}
+
+function switchAiCreationView(viewName = AI_CREATION_DEFAULT_VIEW, options = {}) {
+    const normalizedView = normalizeAiCreationViewName(viewName);
+    const panel = ensureAiCreationPanelMounted();
+    const aiCreationModule = document.getElementById('module-ai-creation');
+    if (!panel || !aiCreationModule) return false;
+
+    aiCreationModule.querySelectorAll('.admin-tab[data-ai-creation-view]').forEach(tab => {
+        const isActive = tab.dataset.aiCreationView === normalizedView;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        if (isActive) {
+            updateAdminTabIndicator(tab);
+        }
+    });
+
+    panel.querySelectorAll('[data-ai-creation-panel]').forEach(card => {
+        const cardView = normalizeAiCreationViewName(card.dataset.aiCreationPanel);
+        const isActive = cardView === normalizedView;
+        card.toggleAttribute('hidden', !isActive);
+        card.classList.toggle('active', isActive);
+    });
+
+    if (options.render !== false) {
+        renderAiImageAdminPanel();
+    }
+    return true;
+}
+
+async function initAiCreationModule(context = {}, options = {}) {
+    const viewName = resolveAiCreationViewName(context, options) || getActiveAiCreationViewName();
+    ensureAiCreationPanelMounted();
+    switchAiCreationView(viewName, { render: false });
+    renderAiImageAdminPanel();
+
+    if (!adminAiImageState.loaded || options.force === true) {
+        await fetchAiImageAdminConfig({ force: options.force === true });
+    }
+
+    return true;
+}
+
+async function handleAiCreationShellContext(context = {}, options = {}) {
+    return initAiCreationModule(context, options);
+}
+
+async function handleAiCreationSiteChange() {
+    const moduleEl = document.getElementById('module-ai-creation');
+    if (!moduleEl?.classList.contains('active') || moduleEl.hidden) {
+        return false;
+    }
+    await fetchAiImageAdminConfig({ force: true });
+    return true;
+}
+
 // Switch between Settings sub-views (Pricing / General)
 function switchSettingsView(viewName, options = {}) {
     const normalizedViewName = typeof window.normalizeSettingsViewName === 'function'
         ? window.normalizeSettingsViewName(viewName)
         : String(viewName || '').trim().toLowerCase();
+
+    if (normalizedViewName === 'ai-image') {
+        window.switchModule?.('ai-creation', {
+            aiCreationView: options?.aiCreationView || AI_CREATION_DEFAULT_VIEW,
+            force: options?.force === true,
+            reason: 'legacy-ai-image-settings-view'
+        });
+        return;
+    }
 
     // Update active tab in settings module only
     const settingsModule = document.getElementById('module-settings');
@@ -6422,13 +6555,6 @@ function switchSettingsView(viewName, options = {}) {
     // Load API keys when switching to general
     if (normalizedViewName === 'general') {
         renderApiKeySelector();
-    }
-
-    if (normalizedViewName === 'ai-image') {
-        renderAiImageAdminPanel();
-        if (!adminAiImageState.loaded || options?.force === true) {
-            void fetchAiImageAdminConfig({ force: options?.force === true });
-        }
     }
 
     if (options?.warm !== false) {
@@ -8898,6 +9024,7 @@ const adminAiImageState = {
     modelProviderDraft: null,
     modelProbes: Object.create(null),
     modelProbe: null,
+    selectedPricingId: '',
     lastRun: null
 };
 
@@ -8907,6 +9034,7 @@ const DEFAULT_AI_IMAGE_MODEL_CONFIG = Object.freeze({
     providerId: 'default',
     label: '新上游',
     vendor: 'openai',
+    vendorLabel: '',
     protocol: 'openai-compatible',
     modelGroup: 'both',
     baseUrl: '',
@@ -8957,6 +9085,33 @@ const DEFAULT_AI_IMAGE_STORAGE_POLICY = Object.freeze({
     warnStorageGb: 8,
     stopStorageGb: 10,
     lifecycleEnabled: false
+});
+
+const AI_IMAGE_PRICING_MODE_LABELS = Object.freeze({
+    text: '图片生成',
+    video: '视频生成',
+    chat: '文本对话'
+});
+
+const AI_IMAGE_PRICING_MODE_ALIASES = Object.freeze({
+    image: 'text',
+    agent: 'text',
+    reverse: 'chat'
+});
+
+const AI_IMAGE_PRICING_STRATEGY_LABELS = Object.freeze({
+    per_request: '按次 / 张',
+    token_sub2api: 'Sub2API 实际扣费',
+    fixed_points: '固定积分兜底'
+});
+
+const AI_IMAGE_PRICING_DEFAULT_ESTIMATES = Object.freeze({
+    text: Object.freeze({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, image_output_tokens: 0 }),
+    image: Object.freeze({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, image_output_tokens: 0 }),
+    video: Object.freeze({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, image_output_tokens: 0 }),
+    reverse: Object.freeze({ input_tokens: 1200, output_tokens: 450, cache_write_tokens: 0, cache_read_tokens: 0, image_output_tokens: 0 }),
+    chat: Object.freeze({ input_tokens: 1800, output_tokens: 700, cache_write_tokens: 0, cache_read_tokens: 0, image_output_tokens: 0 }),
+    agent: Object.freeze({ input_tokens: 0, output_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, image_output_tokens: 0 })
 });
 
 function normalizeAdminAiImageSite() {
@@ -9045,15 +9200,27 @@ function getAiImageModelCountLabel(count = 0, label = '模型') {
     return total > 0 ? `${label} ${total} 个` : `${label} 0 个`;
 }
 
-function getAiImageVendorLabel(value = '') {
+function normalizeAiImageModelVendorLabel(value = '', fallback = '') {
+    return String(value || fallback || '').trim().slice(0, 80);
+}
+
+function isAiImageCustomVendor(value = '') {
+    return normalizeAiImageModelVendor(value, 'openai') === 'custom';
+}
+
+function getAiImageVendorLabel(value = '', customLabel = '') {
     const normalized = normalizeAiImageModelVendor(value, 'openai');
+    const normalizedCustomLabel = normalizeAiImageModelVendorLabel(customLabel);
+    if (normalized === 'custom' && normalizedCustomLabel) {
+        return normalizedCustomLabel;
+    }
     const labels = {
         openai: 'ChatGPT',
         gemini: 'Gemini',
         anthropic: 'Claude',
         flux: 'FLUX',
         sub2api: 'Sub2API',
-        other: '其它'
+        custom: '自定义'
     };
     return labels[normalized] || normalized;
 }
@@ -9221,44 +9388,48 @@ function renderAiImageProviderVisibleModelSection(provider = {}) {
     const detectedVideoModels = mergeAiImageModelCandidates(provider.detectedVideoModels, provider.detected_video_models, videoModels);
     const detectedUnknownModels = mergeAiImageModelCandidates(provider.detectedUnknownModels, provider.detected_unknown_models)
         .filter((model) => ![...imageModels, ...chatModels, ...videoModels].some((selected) => selected.toLowerCase() === model.toLowerCase()));
-    const totalDetected = detectedImageModels.length + detectedChatModels.length + detectedVideoModels.length + detectedUnknownModels.length;
+    const visibleModelGroups = [
+        {
+            title: '文本对话',
+            description: '只进入文本对话输入框的模型下拉菜单',
+            emptyText: '未检测到文本对话模型；保存后前台文本模型下拉留空。',
+            group: 'chat',
+            detectedModels: detectedChatModels,
+            selectedModels: chatModels
+        },
+        {
+            title: '生成图片',
+            description: '只进入生成图片输入框的模型下拉菜单',
+            emptyText: '未检测到图片生成模型；保存后前台生图模型下拉留空。',
+            group: 'image',
+            detectedModels: detectedImageModels,
+            selectedModels: imageModels
+        },
+        {
+            title: '生成视频',
+            description: '只进入生成视频输入框的模型下拉菜单',
+            emptyText: '未检测到视频生成模型；保存后前台视频模型下拉留空。',
+            group: 'video',
+            detectedModels: detectedVideoModels,
+            selectedModels: videoModels
+        }
+    ].filter((group) => mergeAiImageModelCandidates(group.detectedModels, group.selectedModels).length);
     return `
-        <div class="ai-image-admin-visible-models__header">
-            <div>
-                <strong>前台可见模型</strong>
-                <span>检测后勾选这个上游在前台可见的文本 / 图片 / 视频模型。</span>
+        <div class="ai-image-admin-visible-models__header ai-image-admin-visible-models__header--compact">
+            <strong>前台可见模型</strong>
+        </div>
+        ${visibleModelGroups.length ? `
+            <div class="ai-image-admin-visible-models__grid">
+                ${visibleModelGroups.map((group) => renderAiImageVisibleModelSection({
+                    ...group,
+                    providerId: provider.providerId || ''
+                })).join('')}
             </div>
-            <em>${escapeHtml(totalDetected ? `已检测 ${totalDetected} 个` : '等待检测')}</em>
-        </div>
-        <div class="ai-image-admin-visible-models__grid">
-            ${renderAiImageVisibleModelSection({
-                title: '文本对话',
-                description: '只进入文本对话输入框的模型下拉菜单',
-                emptyText: '未检测到文本对话模型；保存后前台文本模型下拉留空。',
-                group: 'chat',
-                detectedModels: detectedChatModels,
-                selectedModels: chatModels,
-                providerId: provider.providerId || ''
-            })}
-            ${renderAiImageVisibleModelSection({
-                title: '生成图片',
-                description: '只进入生成图片输入框的模型下拉菜单',
-                emptyText: '未检测到图片生成模型；保存后前台生图模型下拉留空。',
-                group: 'image',
-                detectedModels: detectedImageModels,
-                selectedModels: imageModels,
-                providerId: provider.providerId || ''
-            })}
-            ${renderAiImageVisibleModelSection({
-                title: '生成视频',
-                description: '只进入生成视频输入框的模型下拉菜单',
-                emptyText: '未检测到视频生成模型；保存后前台视频模型下拉留空。',
-                group: 'video',
-                detectedModels: detectedVideoModels,
-                selectedModels: videoModels,
-                providerId: provider.providerId || ''
-            })}
-        </div>
+        ` : `
+            <div class="ai-image-admin-visible-model-empty ai-image-admin-visible-model-empty--wide">
+                检测上游支持模型后，可在这里勾选前台可见的文本 / 图片 / 视频模型。
+            </div>
+        `}
         ${detectedUnknownModels.length ? `
             <div class="ai-image-admin-visible-model-section ai-image-admin-visible-model-section--unknown">
                 <div class="ai-image-admin-visible-model-section__header">
@@ -9547,7 +9718,12 @@ function scopeAiImageModelsByGroup(modelGroup = 'image', imageModels = [], chatM
 
 function normalizeAiImageModelVendor(value, fallback = 'openai') {
     const normalized = String(value || '').trim().toLowerCase();
-    return ['openai', 'gemini', 'anthropic', 'flux', 'sub2api', 'other'].includes(normalized) ? normalized : fallback;
+    if (normalized === 'other') return 'custom';
+    const normalizedFallback = String(fallback || 'openai').trim().toLowerCase();
+    const safeFallback = normalizedFallback === 'other' ? 'custom' : normalizedFallback;
+    return ['openai', 'gemini', 'anthropic', 'flux', 'sub2api', 'custom'].includes(normalized)
+        ? normalized
+        : (['openai', 'gemini', 'anthropic', 'flux', 'sub2api', 'custom'].includes(safeFallback) ? safeFallback : 'openai');
 }
 
 function normalizeAiImageModelProtocol(value, fallback = 'openai-compatible') {
@@ -9611,6 +9787,12 @@ function normalizeAiImageModelProvider(provider = {}) {
         provider.chatVisionModels,
         provider.chat_vision_models
     );
+    const rawVendor = provider.vendor || provider.provider;
+    const vendor = normalizeAiImageModelVendor(rawVendor, DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
+    const vendorLabel = normalizeAiImageModelVendorLabel(
+        provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name,
+        String(rawVendor || '').trim().toLowerCase() === 'sub2api' ? 'Sub2API' : ''
+    );
     return {
         providerId,
         provider_id: providerId,
@@ -9618,7 +9800,9 @@ function normalizeAiImageModelProvider(provider = {}) {
         configured: Boolean(provider.configured),
         source: provider.source || 'missing',
         baseUrl: normalizeAiImageModelBaseUrl(provider.baseUrl || provider.base_url || DEFAULT_AI_IMAGE_MODEL_CONFIG.baseUrl),
-        vendor: normalizeAiImageModelVendor(provider.vendor || provider.provider, DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor),
+        vendor,
+        vendorLabel,
+        vendor_label: vendorLabel,
         protocol: normalizeAiImageModelProtocol(provider.protocol || provider.adapter, DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol),
         modelGroup,
         model_group: modelGroup,
@@ -9729,6 +9913,8 @@ function getAiImageModelConfig() {
         configured: Boolean(selected.configured || current?.configured),
         source: selected.source || current?.source || DEFAULT_AI_IMAGE_MODEL_CONFIG.source,
         vendor: selected.vendor || current?.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor,
+        vendorLabel: selected.vendorLabel || selected.vendor_label || current?.vendorLabel || current?.vendor_label || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendorLabel,
+        vendor_label: selected.vendorLabel || selected.vendor_label || current?.vendorLabel || current?.vendor_label || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendorLabel,
         protocol: selected.protocol || current?.protocol || DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol,
         modelGroup: scopedModels.modelGroup,
         model_group: scopedModels.modelGroup,
@@ -10145,6 +10331,32 @@ function renderAiImageRuntimeStatus() {
     }
 }
 
+function getAiImageProviderSourceLabel(provider = {}) {
+    if (!provider.configured) return '未配置';
+    if (provider.source === 'environment') return '环境变量';
+    if (provider.source === 'stored') return '后台托管';
+    return '已配置';
+}
+
+function syncAiImageModelVendorCustomField(vendor = '', { focus = false } = {}) {
+    const vendorLabelInput = document.getElementById('aiImageModelVendorLabelInput');
+    if (!vendorLabelInput) return false;
+    const isCustom = isAiImageCustomVendor(vendor);
+    vendorLabelInput.hidden = !isCustom;
+    vendorLabelInput.required = isCustom;
+    vendorLabelInput.setAttribute('aria-hidden', isCustom ? 'false' : 'true');
+    if (!isCustom && document.activeElement !== vendorLabelInput) {
+        vendorLabelInput.value = '';
+    }
+    if (isCustom && focus && typeof vendorLabelInput.focus === 'function') {
+        vendorLabelInput.focus();
+        if (typeof vendorLabelInput.select === 'function') {
+            vendorLabelInput.select();
+        }
+    }
+    return isCustom;
+}
+
 function renderAiImageModelConfigPanel() {
     const config = getAiImageModelConfig();
     const meta = getAiImageModelSourceMeta(config);
@@ -10152,11 +10364,16 @@ function renderAiImageModelConfigPanel() {
     const providerIdInput = document.getElementById('aiImageModelProviderIdInput');
     const providerLabelInput = document.getElementById('aiImageModelProviderLabelInput');
     const vendorInput = document.getElementById('aiImageModelVendorInput');
+    const vendorLabelInput = document.getElementById('aiImageModelVendorLabelInput');
     const protocolInput = document.getElementById('aiImageModelProtocolInput');
     const baseUrlInput = document.getElementById('aiImageModelBaseUrlInput');
     const badge = document.getElementById('aiImageModelConfigSourceBadge');
     const status = document.getElementById('aiImageModelConfigStatus');
     const providerList = document.getElementById('aiImageModelProviderList');
+    const providerDetail = document.getElementById('aiImageModelProviderDetail');
+    const probeButton = document.getElementById('aiImageModelProbeButton');
+    const discoveryButton = document.getElementById('aiImageModelDiscoveryButton');
+    const deleteButton = document.getElementById('aiImageModelDeleteButton');
 
     if (providerIdInput) {
         providerIdInput.value = provider.providerId || 'default';
@@ -10166,14 +10383,19 @@ function renderAiImageModelConfigPanel() {
         providerLabelInput.value = provider.label || provider.providerId || '默认上游';
     }
 
+    const visibleVendor = provider.vendor === 'sub2api'
+        ? 'custom'
+        : normalizeAiImageModelVendor(provider.vendor || config.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
     if (vendorInput && document.activeElement !== vendorInput) {
-        vendorInput.value = provider.vendor === 'sub2api'
-            ? 'other'
-            : (provider.vendor || config.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
+        vendorInput.value = visibleVendor;
         if (typeof setCustomDropdownValue === 'function') {
             setCustomDropdownValue('aiImageModelVendorDropdown', vendorInput.value);
         }
     }
+    if (vendorLabelInput && document.activeElement !== vendorLabelInput) {
+        vendorLabelInput.value = normalizeAiImageModelVendorLabel(provider.vendorLabel || provider.vendor_label || config.vendorLabel || config.vendor_label);
+    }
+    syncAiImageModelVendorCustomField(visibleVendor);
 
     if (protocolInput && document.activeElement !== protocolInput) {
         protocolInput.value = provider.protocol || config.protocol || DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol;
@@ -10189,7 +10411,7 @@ function renderAiImageModelConfigPanel() {
     setAiImageHiddenModelInputValues(provider);
 
     if (badge) {
-        badge.textContent = `${provider.configured ? (provider.source === 'environment' ? '环境变量' : '后台托管') : '待配置'} · ${provider.label || provider.providerId}`;
+        badge.textContent = `${getAiImageProviderSourceLabel(provider)} · ${provider.label || provider.providerId}`;
     }
 
     if (status) {
@@ -10215,85 +10437,85 @@ function renderAiImageModelConfigPanel() {
 
     if (providerList) {
         const providers = getAiImageModelProviders(config);
-        providerList.innerHTML = providers.map((item) => {
-            const active = item.providerId === provider.providerId;
-            const imageModels = (item.imageModels?.length ? item.imageModels : item.models || []).slice(0, 3).join(' / ');
-            const chatModels = (item.chatModels || []).slice(0, 3).join(' / ');
-            const videoModels = (item.videoModels || []).slice(0, 3).join(' / ');
-            const modelSummary = [
-                chatModels ? `文本：${chatModels}` : '文本：空',
-                imageModels ? `生图：${imageModels}` : '生图：空',
-                videoModels ? `视频：${videoModels}` : '视频：空'
-            ].filter(Boolean).join(' · ');
-            const canDelete = item.source === 'stored';
-            const canProbe = Boolean(item.configured);
-            const hasExpandedState = Object.prototype.hasOwnProperty.call(adminAiImageState.modelProviderPanelState, item.providerId);
-            const isExpanded = hasExpandedState
-                ? Boolean(adminAiImageState.modelProviderPanelState[item.providerId])
-                : active;
-            if (!hasExpandedState) {
-                adminAiImageState.modelProviderPanelState[item.providerId] = isExpanded;
-            }
-            return `
-                <section class="ai-image-admin-provider-card ai-image-admin-row ai-image-admin-row--model-provider ${active ? 'is-active' : ''} ${isExpanded ? 'is-expanded' : ''}" data-provider-id="${escapeHtml(item.providerId)}" data-expanded="${isExpanded ? 'true' : 'false'}">
-                    <button class="ai-image-admin-provider-card__header" type="button"
-                        data-admin-action="settings-toggle-ai-image-provider-models"
+        const draftProvider = adminAiImageState.modelProviderDraft
+            ? normalizeAiImageModelProvider(adminAiImageState.modelProviderDraft)
+            : null;
+        const listProviders = draftProvider && !providers.some((item) => item.providerId === draftProvider.providerId)
+            ? [draftProvider, ...providers]
+            : providers;
+        const shouldShowLoading = adminAiImageState.loading && !adminAiImageState.modelConfig && !draftProvider;
+        if (shouldShowLoading) {
+            providerList.innerHTML = `
+                <div class="ai-image-admin-provider-list-loading" aria-live="polite">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+        } else {
+            providerList.innerHTML = listProviders.map((item) => {
+                const active = item.providerId === provider.providerId;
+                const imageModels = (item.imageModels?.length ? item.imageModels : item.models || []).slice(0, 3).join(' / ');
+                const chatModels = (item.chatModels || []).slice(0, 3).join(' / ');
+                const videoModels = (item.videoModels || []).slice(0, 3).join(' / ');
+                const modelSummary = [
+                    chatModels ? `文本：${chatModels}` : '文本：空',
+                    imageModels ? `生图：${imageModels}` : '生图：空',
+                    videoModels ? `视频：${videoModels}` : '视频：空'
+                ].filter(Boolean).join(' · ');
+                return `
+                    <button class="ai-image-admin-provider-list-item ${active ? 'is-active' : ''} ${item.source === 'missing' ? 'is-draft' : ''}" type="button"
+                        data-admin-action="settings-select-ai-image-model-provider"
                         data-provider-id="${escapeHtml(item.providerId)}"
-                        aria-expanded="${isExpanded ? 'true' : 'false'}">
-                        <div class="ai-image-admin-provider-main">
+                        aria-pressed="${active ? 'true' : 'false'}">
+                        <span class="ai-image-admin-provider-list-item__main">
                             <strong>${escapeHtml(item.label || item.providerId)}</strong>
                             <span>${escapeHtml(item.baseUrl || '未配置 Base URL')}</span>
                             <small>${escapeHtml(modelSummary)}</small>
-                        </div>
-                        <div class="ai-image-admin-provider-meta">
-                            <span>${escapeHtml(getAiImageVendorLabel(item.vendor || 'openai'))}</span>
-                            <span>${escapeHtml(getAiImageModelCountLabel(item.chatModels?.length || 0, '文本'))}</span>
-                            <span>${escapeHtml(getAiImageModelCountLabel(item.imageModels?.length || 0, '生图'))}</span>
-                            <span>${escapeHtml(getAiImageModelCountLabel(item.videoModels?.length || 0, '视频'))}</span>
-                            <span>${escapeHtml(item.protocol || 'openai-compatible')}</span>
-                        </div>
-                        <div class="ai-image-admin-provider-card__header-right">
-                            <i class="fas fa-chevron-down"></i>
-                        </div>
+                        </span>
                     </button>
-                    <div class="ai-image-admin-provider-card__body" ${isExpanded ? '' : 'hidden'}>
-                        <div class="ai-image-admin-row__actions ai-image-admin-provider-card__actions">
-                            <span class="api-relay-config-panel__badge">${escapeHtml(item.configured ? (item.source === 'environment' ? '环境变量' : '后台托管') : '未配置')}</span>
-                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
-                                data-admin-action="settings-select-ai-image-model-provider"
-                                data-provider-id="${escapeHtml(item.providerId)}"
-                                title="打开这一行到上方编辑器">
-                                <i class="fas fa-pen"></i> 编辑
-                            </button>
-                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
-                                data-admin-action="settings-test-ai-image-model-provider-full"
-                                data-provider-id="${escapeHtml(item.providerId)}"
-                                title="${escapeHtml(canProbe ? '检测这个上游当前前台可见模型的可用性' : '请先录入并保存 API Key 后再运行模型自检')}"
-                                ${canProbe ? '' : 'disabled aria-disabled="true"'}>
-                                <i class="fas fa-stethoscope"></i> 模型自检
-                            </button>
-                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost" type="button"
-                                data-admin-action="settings-discover-ai-image-model-provider"
-                                data-provider-id="${escapeHtml(item.providerId)}"
-                                title="${escapeHtml(canProbe ? '检测这个上游支持的模型并刷新候选列表' : '请先录入并保存 API Key 后再检测模型')}"
-                                ${canProbe ? '' : 'disabled aria-disabled="true"'}>
-                                <i class="fas fa-magnifying-glass"></i> 检测上游支持模型
-                            </button>
-                            <button class="btn-add-config btn-add-config--compact btn-add-config--ghost ai-image-admin-delete-button" type="button"
-                                data-admin-action="settings-delete-ai-image-model-config"
-                                data-provider-id="${escapeHtml(item.providerId)}"
-                                ${canDelete ? '' : 'disabled aria-disabled="true" title="环境变量配置不可在这里删除"'}>
-                                <i class="fas fa-trash"></i> 删除
-                            </button>
-                        </div>
-                        ${renderAiImageProviderProbePanel(item)}
-                        <div class="ai-image-admin-provider-models">
-                            ${renderAiImageProviderVisibleModelSection(item)}
-                        </div>
-                    </div>
-                </section>
-            `;
-        }).join('');
+                `;
+            }).join('');
+        }
+    }
+
+    const canProbe = Boolean(provider.configured);
+    const canDelete = provider.source === 'stored';
+    [
+        {
+            button: probeButton,
+            enabled: canProbe,
+            title: canProbe ? '检测当前上游的前台可见模型可用性' : '请先录入并保存 API Key 后再运行模型自检'
+        },
+        {
+            button: discoveryButton,
+            enabled: canProbe,
+            title: canProbe ? '检测当前上游支持的模型并刷新候选列表' : '请先录入并保存 API Key 后再检测模型'
+        },
+        {
+            button: deleteButton,
+            enabled: canDelete,
+            title: canDelete ? '删除当前上游后台安全存储配置' : '只有后台托管的上游可以在这里删除'
+        }
+    ].forEach(({ button, enabled, title }) => {
+        if (!button) return;
+        button.dataset.providerId = provider.providerId || '';
+        button.disabled = !enabled;
+        button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        button.title = title;
+    });
+
+    if (providerDetail) {
+        const probePanel = provider.configured || getAiImageProviderProbe(provider.providerId || '')
+            ? renderAiImageProviderProbePanel(provider)
+            : '';
+        providerDetail.innerHTML = `
+            ${provider.decryptErrorMessage ? `<div class="ai-image-admin-empty ai-image-admin-empty--warning">${escapeHtml(provider.decryptErrorMessage)}</div>` : ''}
+            ${probePanel}
+            <div class="ai-image-admin-provider-models ai-image-admin-provider-models--detail">
+                ${renderAiImageProviderVisibleModelSection(provider)}
+            </div>
+        `;
     }
 }
 
@@ -10303,6 +10525,7 @@ function readAiImageModelDraftConfig() {
     const providerIdInput = document.getElementById('aiImageModelProviderIdInput');
     const providerLabelInput = document.getElementById('aiImageModelProviderLabelInput');
     const vendorInput = document.getElementById('aiImageModelVendorInput');
+    const vendorLabelInput = document.getElementById('aiImageModelVendorLabelInput');
     const protocolInput = document.getElementById('aiImageModelProtocolInput');
     const baseUrlInput = document.getElementById('aiImageModelBaseUrlInput');
     const aliasesInput = document.getElementById('aiImageModelAliasesInput');
@@ -10329,11 +10552,17 @@ function readAiImageModelDraftConfig() {
     const detectedVideoModels = mergeAiImageModelCandidates(detectedVideoModelsInput?.value, provider.detectedVideoModels, videoModels);
     const detectedUnknownModels = mergeAiImageModelCandidates(detectedUnknownModelsInput?.value, provider.detectedUnknownModels);
     const visionModels = mergeAiImageModelCandidates(visionModelsInput?.value, provider.visionModels, provider.vision_models);
+    const vendor = normalizeAiImageModelVendor(vendorInput?.value || provider.vendor || current.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
+    const vendorLabel = isAiImageCustomVendor(vendor)
+        ? normalizeAiImageModelVendorLabel(vendorLabelInput?.value || provider.vendorLabel || provider.vendor_label || current.vendorLabel || current.vendor_label)
+        : '';
 
     return {
         providerId: normalizeAiImageProviderId(providerIdInput?.value || provider.providerId || current.providerId || 'default'),
         label: String(providerLabelInput?.value || provider.label || current.label || '').trim().slice(0, 120),
-        vendor: normalizeAiImageModelVendor(vendorInput?.value || provider.vendor || current.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor),
+        vendor,
+        vendorLabel,
+        vendor_label: vendorLabel,
         protocol: normalizeAiImageModelProtocol(protocolInput?.value || provider.protocol || current.protocol || DEFAULT_AI_IMAGE_MODEL_CONFIG.protocol),
         modelGroup,
         model_group: modelGroup,
@@ -10370,6 +10599,10 @@ function validateAiImageModelDraftConfig(config = {}) {
         return '请输入有效的供应商 ID，例如 default、flux 或 eahe';
     }
 
+    if (isAiImageCustomVendor(config.vendor) && !normalizeAiImageModelVendorLabel(config.vendorLabel || config.vendor_label)) {
+        return '请输入自定义模型厂商名称，例如 OpenRouter / 火山方舟';
+    }
+
     return '';
 }
 
@@ -10392,20 +10625,21 @@ async function postAiImageModelConfig(payload = {}) {
 
 function selectAiImageModelProvider(providerId = '') {
     const normalizedProviderId = normalizeAiImageProviderId(providerId);
+    const draftProviderId = normalizeAiImageProviderId(adminAiImageState.modelProviderDraft?.providerId || adminAiImageState.modelProviderDraft?.provider_id || '');
     adminAiImageState.selectedModelProviderId = normalizedProviderId;
     if (normalizedProviderId) {
         adminAiImageState.modelProviderPanelState[normalizedProviderId] = true;
     }
-    clearAiImageEditingModelProviderDraft();
+    if (!draftProviderId || draftProviderId !== normalizedProviderId) {
+        clearAiImageEditingModelProviderDraft();
+    }
     renderAiImageModelConfigPanel();
+    return true;
 }
 
 function toggleAiImageModelProviderModels(providerId = '') {
     const normalizedProviderId = normalizeAiImageProviderId(providerId);
-    const nextExpanded = !adminAiImageState.modelProviderPanelState[normalizedProviderId];
-    adminAiImageState.modelProviderPanelState[normalizedProviderId] = nextExpanded;
-    renderAiImageModelConfigPanel();
-    return true;
+    return selectAiImageModelProvider(normalizedProviderId);
 }
 
 function createAiImageModelProviderDraft() {
@@ -10433,6 +10667,19 @@ function handleAiImageModelProviderDraftInput(target) {
         updates.baseUrl = normalizeAiImageModelBaseUrl(target.value || '');
     } else if (target.id === 'aiImageModelVendorInput') {
         updates.vendor = normalizeAiImageModelVendor(target.value || 'openai');
+        if (isAiImageCustomVendor(updates.vendor)) {
+            const vendorLabelInput = document.getElementById('aiImageModelVendorLabelInput');
+            updates.vendorLabel = normalizeAiImageModelVendorLabel(vendorLabelInput?.value || '');
+            updates.vendor_label = updates.vendorLabel;
+            syncAiImageModelVendorCustomField(updates.vendor, { focus: true });
+        } else {
+            updates.vendorLabel = '';
+            updates.vendor_label = '';
+            syncAiImageModelVendorCustomField(updates.vendor);
+        }
+    } else if (target.id === 'aiImageModelVendorLabelInput') {
+        updates.vendorLabel = normalizeAiImageModelVendorLabel(target.value || '');
+        updates.vendor_label = updates.vendorLabel;
     } else if (target.id === 'aiImageModelProtocolInput') {
         updates.protocol = normalizeAiImageModelProtocol(target.value || 'openai-compatible');
     } else {
@@ -10534,9 +10781,13 @@ function getAiImageProviderDraftForAction(providerId = '') {
     const normalizedProviderId = normalizeAiImageProviderId(providerId || adminAiImageState.selectedModelProviderId || config.providerId || 'default');
     const provider = getAiImageModelProviders(config).find((item) => item.providerId === normalizedProviderId)
         || getSelectedAiImageModelProvider(config);
-    const draft = provider?.providerId === normalizedProviderId
+    const formDraft = readAiImageModelDraftConfig();
+    const formDraftProviderId = normalizeAiImageProviderId(formDraft.providerId || formDraft.provider_id || '');
+    const draft = formDraftProviderId === normalizedProviderId
+        ? formDraft
+        : (provider?.providerId === normalizedProviderId
         ? normalizeAiImageModelProvider(provider)
-        : readAiImageModelDraftConfig();
+        : formDraft);
     return {
         config,
         provider,
@@ -11103,34 +11354,658 @@ async function deleteAiImageModelConfig(providerId = '') {
     }
 }
 
+function normalizeAiImagePricingMode(value = 'text') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(AI_IMAGE_PRICING_MODE_ALIASES, normalized)) {
+        return AI_IMAGE_PRICING_MODE_ALIASES[normalized];
+    }
+    return Object.prototype.hasOwnProperty.call(AI_IMAGE_PRICING_MODE_LABELS, normalized) ? normalized : 'text';
+}
+
+function normalizeAiImagePricingStrategy(value = 'per_request') {
+    const normalized = String(value || '').trim().toLowerCase().replace(/-/g, '_');
+    return Object.prototype.hasOwnProperty.call(AI_IMAGE_PRICING_STRATEGY_LABELS, normalized) ? normalized : 'per_request';
+}
+
+function getAiImagePricingModeLabel(mode = 'text') {
+    return AI_IMAGE_PRICING_MODE_LABELS[normalizeAiImagePricingMode(mode)] || mode || '规则';
+}
+
+function getAiImagePricingStrategyLabel(strategy = 'per_request') {
+    return AI_IMAGE_PRICING_STRATEGY_LABELS[normalizeAiImagePricingStrategy(strategy)] || '按次 / 张';
+}
+
+function getAiImagePricingMetadata(rule = {}) {
+    return rule.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+        ? rule.metadata
+        : {};
+}
+
+function getAiImagePricingStrategy(rule = {}) {
+    const metadata = getAiImagePricingMetadata(rule);
+    return normalizeAiImagePricingStrategy(
+        metadata.billing_strategy
+        || metadata.billingStrategy
+        || metadata.pricing?.billing_strategy
+        || metadata.pricing?.billingStrategy
+        || (rule.mode === 'chat' || rule.mode === 'reverse' ? 'token_sub2api' : 'per_request')
+    );
+}
+
+function normalizeAiImagePricingProviderValue(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw === '*' || raw.toLowerCase() === 'all') return '*';
+    return normalizeAiImageProviderId(raw);
+}
+
+function getAiImagePricingProviderId(rule = {}) {
+    const metadata = getAiImagePricingMetadata(rule);
+    const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+        ? metadata.pricing
+        : {};
+    return normalizeAiImagePricingProviderValue(
+        metadata.provider_id
+        || metadata.providerId
+        || pricing.provider_id
+        || pricing.providerId
+        || rule.provider_id
+        || rule.providerId
+        || ''
+    );
+}
+
+function getAiImagePricingProviderLabel(providerId = '') {
+    const normalizedProviderId = normalizeAiImagePricingProviderValue(providerId);
+    if (normalizedProviderId === '*') return '全部上游';
+    const provider = getAiImageModelProviders(getAiImageModelConfig())
+        .find((item) => normalizeAiImageProviderId(item.providerId || item.provider_id || '') === normalizedProviderId);
+    return provider?.label || provider?.providerId || normalizedProviderId || '';
+}
+
+function normalizeAiImagePricingNumber(value, fallback = 0, { min = 0, max = Number.MAX_SAFE_INTEGER, precision = 6 } = {}) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    const factor = 10 ** Math.max(0, Number(precision) || 0);
+    return Math.min(max, Math.max(min, Math.round(parsed * factor) / factor));
+}
+
+function normalizeAiImagePricingInt(value, fallback = 0, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+}
+
+function getAiImagePricingEstimateDefaults(mode = 'text') {
+    return {
+        ...(AI_IMAGE_PRICING_DEFAULT_ESTIMATES[normalizeAiImagePricingMode(mode)] || AI_IMAGE_PRICING_DEFAULT_ESTIMATES.text)
+    };
+}
+
+function getAiImagePricingTokenConfigFromRule(rule = {}) {
+    const metadata = getAiImagePricingMetadata(rule);
+    const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+        ? metadata.pricing
+        : {};
+    const rates = pricing.rates && typeof pricing.rates === 'object' && !Array.isArray(pricing.rates)
+        ? pricing.rates
+        : {};
+    const estimates = pricing.estimate && typeof pricing.estimate === 'object' && !Array.isArray(pricing.estimate)
+        ? pricing.estimate
+        : {};
+    const defaultEstimates = getAiImagePricingEstimateDefaults(rule.mode);
+    return {
+        inputRate: normalizeAiImagePricingNumber(rates.input ?? rates.input_per_million ?? pricing.inputRate ?? pricing.input_rate, 0),
+        outputRate: normalizeAiImagePricingNumber(rates.output ?? rates.output_per_million ?? pricing.outputRate ?? pricing.output_rate, 0),
+        cacheWriteRate: normalizeAiImagePricingNumber(rates.cache_write ?? rates.cacheWrite ?? pricing.cacheWriteRate ?? pricing.cache_write_rate, 0),
+        cacheReadRate: normalizeAiImagePricingNumber(rates.cache_read ?? rates.cacheRead ?? pricing.cacheReadRate ?? pricing.cache_read_rate, 0),
+        imageOutputRate: normalizeAiImagePricingNumber(rates.image_output ?? rates.imageOutput ?? pricing.imageOutputRate ?? pricing.image_output_rate, 0),
+        requestBase: normalizeAiImagePricingNumber(pricing.request_base ?? pricing.requestBase ?? pricing.per_request ?? pricing.perRequest, 0, { precision: 2 }),
+        multiplier: normalizeAiImagePricingNumber(pricing.multiplier, 1, { min: 0, max: 1000, precision: 4 }) || 1,
+        estimateInputTokens: normalizeAiImagePricingInt(estimates.input_tokens ?? estimates.inputTokens, defaultEstimates.input_tokens),
+        estimateOutputTokens: normalizeAiImagePricingInt(estimates.output_tokens ?? estimates.outputTokens, defaultEstimates.output_tokens),
+        estimateCacheWriteTokens: normalizeAiImagePricingInt(estimates.cache_write_tokens ?? estimates.cacheWriteTokens, defaultEstimates.cache_write_tokens),
+        estimateCacheReadTokens: normalizeAiImagePricingInt(estimates.cache_read_tokens ?? estimates.cacheReadTokens, defaultEstimates.cache_read_tokens),
+        estimateImageOutputTokens: normalizeAiImagePricingInt(estimates.image_output_tokens ?? estimates.imageOutputTokens, defaultEstimates.image_output_tokens)
+    };
+}
+
+function calculateAiImagePricingTokenPoints(config = {}) {
+    const input = normalizeAiImagePricingInt(config.estimateInputTokens, 0);
+    const output = normalizeAiImagePricingInt(config.estimateOutputTokens, 0);
+    const cacheWrite = normalizeAiImagePricingInt(config.estimateCacheWriteTokens, 0);
+    const cacheRead = normalizeAiImagePricingInt(config.estimateCacheReadTokens, 0);
+    const imageOutput = normalizeAiImagePricingInt(config.estimateImageOutputTokens, 0);
+    const billableInput = Math.max(0, input - cacheRead);
+    const billableOutput = Math.max(0, output - imageOutput);
+    const base = normalizeAiImagePricingNumber(config.requestBase, 0, { precision: 6 });
+    const multiplier = normalizeAiImagePricingNumber(config.multiplier, 1, { min: 0, max: 1000, precision: 6 }) || 1;
+    const total = base
+        + (billableInput * normalizeAiImagePricingNumber(config.inputRate, 0) / 1000000)
+        + (billableOutput * normalizeAiImagePricingNumber(config.outputRate, 0) / 1000000)
+        + (cacheWrite * normalizeAiImagePricingNumber(config.cacheWriteRate, 0) / 1000000)
+        + (cacheRead * normalizeAiImagePricingNumber(config.cacheReadRate, 0) / 1000000)
+        + (imageOutput * normalizeAiImagePricingNumber(config.imageOutputRate, 0) / 1000000);
+    return normalizeAiImagePricingNumber(total * multiplier, 0, { precision: 6 });
+}
+
+function isAiImagePricingVisualMode(mode = 'text') {
+    return ['text', 'image', 'agent', 'video'].includes(normalizeAiImagePricingMode(mode));
+}
+
+function isAiImagePricingQuantityMode(mode = 'text') {
+    return ['text', 'image', 'agent'].includes(normalizeAiImagePricingMode(mode));
+}
+
+function isAiImagePricingImageOutputTokenMode(mode = 'text') {
+    return ['text', 'image', 'agent'].includes(normalizeAiImagePricingMode(mode));
+}
+
+function getAiImagePricingProviderModels(provider = {}, mode = '') {
+    const targetMode = normalizeAiImagePricingMode(mode);
+    if (targetMode === 'chat') {
+        return normalizeAiImageModelsList(provider.chatModels || provider.chat_models, '');
+    }
+    if (targetMode === 'reverse') {
+        return mergeAiImageModelCandidates(provider.visionModels || provider.vision_models, provider.chatModels || provider.chat_models);
+    }
+    if (targetMode === 'video') {
+        return normalizeAiImageModelsList(provider.videoModels || provider.video_models, '');
+    }
+    return normalizeAiImageModelsList(provider.imageModels || provider.image_models || provider.models, '');
+}
+
+function getAiImagePricingProviderOptions(mode = '') {
+    const targetMode = normalizeAiImagePricingMode(mode || document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    return getAiImageModelProviders(getAiImageModelConfig())
+        .filter((provider) => provider.isActive !== false && provider.is_active !== false)
+        .map((provider) => ({
+            provider,
+            providerId: normalizeAiImageProviderId(provider.providerId || provider.provider_id || ''),
+            label: provider.label || provider.providerId || '上游',
+            models: getAiImagePricingProviderModels(provider, targetMode)
+        }))
+        .filter((item) => item.models.length);
+}
+
+function getAiImagePricingModelSelectOptions(mode = '', providerId = '') {
+    const targetMode = normalizeAiImagePricingMode(mode || document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const normalizedProviderId = normalizeAiImagePricingProviderValue(providerId || document.getElementById('aiImagePricingProviderInput')?.value || '');
+    const providerOptions = getAiImagePricingProviderOptions(targetMode);
+    const targetProviders = normalizedProviderId && normalizedProviderId !== '*'
+        ? providerOptions.filter((item) => item.providerId === normalizedProviderId)
+        : providerOptions;
+    const seen = new Set();
+    const options = [];
+    targetProviders.forEach((item) => {
+        item.models.forEach((model) => {
+            const key = `${item.providerId}:${String(model || '').trim().toLowerCase()}`;
+            if (!model || seen.has(key)) return;
+            seen.add(key);
+            options.push({
+                value: model,
+                label: model,
+                providerId: item.providerId,
+                providerLabel: item.label
+            });
+        });
+    });
+    return options;
+}
+
+function getAiImagePricingModelOptions(mode = '') {
+    return getAiImagePricingModelSelectOptions(mode).map((item) => item.value);
+}
+
+function bindAiImagePricingDropdownOptions(dropdownId = '') {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+    const hiddenInput = dropdown.querySelector('input[type="hidden"]');
+    const displayText = dropdown.querySelector('.select-text');
+    const options = dropdown.querySelectorAll('.select-option');
+    options.forEach((option) => {
+        if (option.dataset.aiImagePricingOptionBound === '1') return;
+        option.dataset.aiImagePricingOptionBound = '1';
+        option.addEventListener('click', () => {
+            const value = option.dataset.value || '';
+            const oldValue = hiddenInput?.value || '';
+            if (hiddenInput) {
+                hiddenInput.value = value;
+                hiddenInput.dataset.adminDropdownDirty = '1';
+            }
+            if (displayText) {
+                displayText.textContent = option.textContent || value;
+            }
+            options.forEach((item) => item.classList.remove('selected'));
+            option.classList.add('selected');
+            dropdown.classList.remove('open');
+            if (hiddenInput && oldValue !== value) {
+                hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+    });
+}
+
+function setAiImagePricingDropdownOptions(dropdownId = '', options = [], selectedValue = '', emptyLabel = '暂无可选项') {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return '';
+    const list = dropdown.querySelector('.select-options');
+    const hiddenInput = dropdown.querySelector('input[type="hidden"]');
+    const displayText = dropdown.querySelector('.select-text');
+    const normalizedOptions = (Array.isArray(options) ? options : [])
+        .map((item) => ({
+            value: String(item.value || '').trim(),
+            label: String(item.label || item.value || '').trim(),
+            hint: String(item.hint || '').trim()
+        }))
+        .filter((item) => item.value && item.label);
+    const selected = normalizedOptions.find((item) => item.value === selectedValue) || normalizedOptions[0] || null;
+    if (list) {
+        list.innerHTML = normalizedOptions.length
+            ? normalizedOptions.map((item) => `
+                <div class="select-option ${selected?.value === item.value ? 'selected' : ''}" data-value="${escapeHtml(item.value)}">
+                    ${escapeHtml(item.label)}${item.hint ? ` · ${escapeHtml(item.hint)}` : ''}
+                </div>
+            `).join('')
+            : `<div class="select-option selected" data-value="">${escapeHtml(emptyLabel)}</div>`;
+    }
+    if (hiddenInput) {
+        hiddenInput.value = selected?.value || '';
+        delete hiddenInput.dataset.adminDropdownDirty;
+    }
+    if (displayText) {
+        displayText.textContent = selected?.label || emptyLabel;
+    }
+    bindAiImagePricingDropdownOptions(dropdownId);
+    return selected?.value || '';
+}
+
+function syncAiImagePricingProviderOptions(mode = '', desiredProviderId = '') {
+    const targetMode = normalizeAiImagePricingMode(mode || document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const normalizedDesiredProviderId = normalizeAiImagePricingProviderValue(desiredProviderId);
+    const providerOptions = getAiImagePricingProviderOptions(targetMode).map((item) => ({
+        value: item.providerId,
+        label: item.label,
+        hint: `${item.models.length} 个模型`
+    }));
+    if (normalizedDesiredProviderId === '*') {
+        providerOptions.unshift({
+            value: '*',
+            label: '全部上游',
+            hint: '旧规则'
+        });
+    }
+    return setAiImagePricingDropdownOptions(
+        'aiImagePricingProviderDropdown',
+        providerOptions,
+        normalizedDesiredProviderId,
+        `暂无${getAiImagePricingModeLabel(targetMode)}上游`
+    );
+}
+
+function syncAiImagePricingModelOptions(mode = '', providerId = '', desiredModel = '') {
+    const targetMode = normalizeAiImagePricingMode(mode || document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const normalizedProviderId = normalizeAiImagePricingProviderValue(providerId || document.getElementById('aiImagePricingProviderInput')?.value || '');
+    const options = getAiImagePricingModelSelectOptions(targetMode, normalizedProviderId)
+        .map((item) => ({
+            value: item.value,
+            label: item.label,
+            hint: item.providerLabel
+        }));
+    if (normalizedProviderId && normalizedProviderId !== '*') {
+        const providerLabel = getAiImagePricingProviderLabel(normalizedProviderId);
+        options.unshift({
+            value: '*',
+            label: '应用全部',
+            hint: providerLabel || '当前上游'
+        });
+    } else if (String(desiredModel || '').trim() === '*') {
+        options.unshift({
+            value: '*',
+            label: '全部模型',
+            hint: '旧规则'
+        });
+    }
+    const selected = setAiImagePricingDropdownOptions(
+        'aiImagePricingModelDropdown',
+        options,
+        String(desiredModel || '').trim(),
+        `暂无${getAiImagePricingModeLabel(targetMode)}模型`
+    );
+    const datalist = document.getElementById('aiImagePricingModelOptions');
+    if (datalist) {
+        datalist.innerHTML = options
+            .map((item) => `<option value="${escapeHtml(item.value)}"></option>`)
+            .join('');
+    }
+    return selected;
+}
+
+function updateAiImagePricingDeleteButton(ruleId = '') {
+    const button = document.getElementById('aiImagePricingDeleteButton');
+    if (!button) return;
+    const id = String(ruleId || '').trim();
+    button.dataset.aiImagePricingId = id;
+    button.disabled = !id;
+}
+
+function updateAiImagePricingStrategyVisibility() {
+    const strategy = normalizeAiImagePricingStrategy(document.getElementById('aiImagePricingStrategyInput')?.value || 'per_request');
+    const mode = normalizeAiImagePricingMode(document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const tokenPanel = document.getElementById('aiImagePricingTokenPanel');
+    const pointsLabel = document.getElementById('aiImagePricingPointsLabel');
+    const pointsField = document.querySelector('[data-ai-pricing-field="points"]');
+    const badge = document.getElementById('aiImagePricingStrategyBadge');
+    const summary = document.getElementById('aiImagePricingEditorSummary');
+    const manualTokenFields = document.querySelectorAll('[data-ai-pricing-token-manual]');
+    if (tokenPanel) {
+        tokenPanel.hidden = strategy !== 'token_sub2api';
+    }
+    manualTokenFields.forEach((el) => {
+        el.hidden = true;
+        el.setAttribute('aria-hidden', 'true');
+        el.querySelectorAll('input, select, textarea, button').forEach((input) => {
+            input.tabIndex = -1;
+        });
+    });
+    if (pointsLabel) {
+        pointsLabel.textContent = strategy === 'fixed_points' ? '固定积分' : '单次积分';
+    }
+    if (pointsField) {
+        pointsField.hidden = strategy === 'token_sub2api';
+    }
+    if (badge) {
+        badge.textContent = getAiImagePricingStrategyLabel(strategy);
+    }
+    if (summary) {
+        summary.textContent = strategy === 'token_sub2api'
+            ? '按 Sub2API 使用记录里的 actual_cost 扣费，$1 = 1 积分。'
+            : `${getAiImagePricingModeLabel(mode)} · ${getAiImagePricingStrategyLabel(strategy)}`;
+    }
+    const showVisualSpec = isAiImagePricingVisualMode(mode);
+    const showQuantity = isAiImagePricingQuantityMode(mode);
+    const showImageOutputTokens = false;
+    const fieldVisibility = {
+        resolution: showVisualSpec,
+        ratio: showVisualSpec,
+        quantity: showQuantity,
+        imageOutput: showImageOutputTokens
+    };
+    Object.entries(fieldVisibility).forEach(([field, visible]) => {
+        document.querySelectorAll(`[data-ai-pricing-field="${field}"]`).forEach((el) => {
+            el.hidden = !visible;
+        });
+    });
+    if (!showVisualSpec) {
+        setCustomDropdownValue?.('aiImagePricingResolutionDropdown', '*');
+        setCustomDropdownValue?.('aiImagePricingRatioDropdown', '*');
+    } else if (mode === 'video') {
+        const currentResolution = document.getElementById('aiImagePricingResolutionInput')?.value || '';
+        if (!['480p', '720p', '1080p', '4k', '*'].includes(currentResolution)) {
+            setCustomDropdownValue?.('aiImagePricingResolutionDropdown', '720p');
+        }
+    }
+    if (!showQuantity) {
+        const quantityInput = document.getElementById('aiImagePricingQuantityInput');
+        if (quantityInput) quantityInput.value = '1';
+    }
+    if (!showImageOutputTokens) {
+        ['aiImagePricingImageOutputRateInput', 'aiImagePricingEstimateImageOutputTokensInput'].forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) input.value = '';
+        });
+    }
+}
+
+function refreshAiImagePricingTokenPreview() {
+    const config = {
+        inputRate: document.getElementById('aiImagePricingInputRateInput')?.value,
+        outputRate: document.getElementById('aiImagePricingOutputRateInput')?.value,
+        cacheWriteRate: document.getElementById('aiImagePricingCacheWriteRateInput')?.value,
+        cacheReadRate: document.getElementById('aiImagePricingCacheReadRateInput')?.value,
+        imageOutputRate: document.getElementById('aiImagePricingImageOutputRateInput')?.value,
+        requestBase: document.getElementById('aiImagePricingRequestBaseInput')?.value,
+        multiplier: document.getElementById('aiImagePricingMultiplierInput')?.value,
+        estimateInputTokens: document.getElementById('aiImagePricingEstimateInputTokensInput')?.value,
+        estimateOutputTokens: document.getElementById('aiImagePricingEstimateOutputTokensInput')?.value,
+        estimateCacheWriteTokens: document.getElementById('aiImagePricingEstimateCacheWriteTokensInput')?.value,
+        estimateCacheReadTokens: document.getElementById('aiImagePricingEstimateCacheReadTokensInput')?.value,
+        estimateImageOutputTokens: document.getElementById('aiImagePricingEstimateImageOutputTokensInput')?.value
+    };
+    const points = calculateAiImagePricingTokenPoints(config);
+    const preview = document.getElementById('aiImagePricingPreviewText');
+    const strategy = normalizeAiImagePricingStrategy(document.getElementById('aiImagePricingStrategyInput')?.value || 'per_request');
+    if (preview) {
+        preview.textContent = strategy === 'token_sub2api'
+            ? '$1 = 1 积分'
+            : `预估 ${points} 积分`;
+    }
+    const pointsInput = document.getElementById('aiImagePricingPointsInput');
+    if (pointsInput && strategy === 'token_sub2api' && document.activeElement !== pointsInput) {
+        pointsInput.value = '';
+    }
+}
+
+function fillAiImagePricingEstimateDefaults(mode = '') {
+    const defaults = getAiImagePricingEstimateDefaults(mode);
+    const map = {
+        aiImagePricingEstimateInputTokensInput: defaults.input_tokens,
+        aiImagePricingEstimateOutputTokensInput: defaults.output_tokens,
+        aiImagePricingEstimateCacheWriteTokensInput: defaults.cache_write_tokens,
+        aiImagePricingEstimateCacheReadTokensInput: defaults.cache_read_tokens,
+        aiImagePricingEstimateImageOutputTokensInput: defaults.image_output_tokens
+    };
+    Object.entries(map).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input && !String(input.value || '').trim()) {
+            input.value = value ? String(value) : '';
+        }
+    });
+}
+
+function bindAiImagePricingEditorEvents() {
+    const editor = document.getElementById('aiImagePricingEditor');
+    if (!editor || editor.dataset.pricingEditorBound === '1') return;
+    editor.dataset.pricingEditorBound = '1';
+
+    ['aiImagePricingModeInput', 'aiImagePricingStrategyInput', 'aiImagePricingProviderInput'].forEach((id) => {
+        const input = document.getElementById(id);
+        input?.addEventListener('change', () => {
+            if (id === 'aiImagePricingModeInput') {
+                const providerId = syncAiImagePricingProviderOptions(input.value, '');
+                syncAiImagePricingModelOptions(input.value, providerId, '');
+                fillAiImagePricingEstimateDefaults(input.value);
+            } else if (id === 'aiImagePricingProviderInput') {
+                syncAiImagePricingModelOptions(document.getElementById('aiImagePricingModeInput')?.value || 'text', input.value, '');
+            }
+            updateAiImagePricingStrategyVisibility();
+            refreshAiImagePricingTokenPreview();
+        });
+    });
+
+    [
+        'aiImagePricingInputRateInput',
+        'aiImagePricingOutputRateInput',
+        'aiImagePricingCacheWriteRateInput',
+        'aiImagePricingCacheReadRateInput',
+        'aiImagePricingImageOutputRateInput',
+        'aiImagePricingRequestBaseInput',
+        'aiImagePricingMultiplierInput',
+        'aiImagePricingEstimateInputTokensInput',
+        'aiImagePricingEstimateOutputTokensInput',
+        'aiImagePricingEstimateCacheWriteTokensInput',
+        'aiImagePricingEstimateCacheReadTokensInput',
+        'aiImagePricingEstimateImageOutputTokensInput'
+    ].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', refreshAiImagePricingTokenPreview);
+    });
+}
+
+function setAiImagePricingEditorDraft(rule = null) {
+    const source = rule && typeof rule === 'object' ? rule : {};
+    const metadata = getAiImagePricingMetadata(source);
+    const strategy = getAiImagePricingStrategy(source);
+    const mode = normalizeAiImagePricingMode(source.mode || document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const providerId = getAiImagePricingProviderId(source);
+    const tokenConfig = getAiImagePricingTokenConfigFromRule({
+        ...source,
+        mode,
+        metadata
+    });
+    const title = document.getElementById('aiImagePricingEditorTitle');
+    const idInput = document.getElementById('aiImagePricingIdInput');
+    if (title) {
+        title.textContent = source.id ? '编辑价格规则' : '新增价格规则';
+    }
+    if (idInput) {
+        idInput.value = source.id || '';
+    }
+
+    setCustomDropdownValue?.('aiImagePricingModeDropdown', mode);
+    setCustomDropdownValue?.('aiImagePricingStrategyDropdown', strategy);
+    setCustomDropdownValue?.('aiImagePricingResolutionDropdown', String(source.resolution || (mode === 'video' ? '720p' : '1k')).toLowerCase());
+    setCustomDropdownValue?.('aiImagePricingRatioDropdown', source.ratio || '*');
+    const selectedProviderId = syncAiImagePricingProviderOptions(mode, providerId);
+    const selectedModel = syncAiImagePricingModelOptions(mode, selectedProviderId, source.model || '');
+
+    const fieldValues = {
+        aiImagePricingModelInput: selectedModel || source.model || '',
+        aiImagePricingQuantityInput: source.quantity || 1,
+        aiImagePricingPointsInput: source.points || '',
+        aiImagePricingInputRateInput: tokenConfig.inputRate || '',
+        aiImagePricingOutputRateInput: tokenConfig.outputRate || '',
+        aiImagePricingCacheWriteRateInput: tokenConfig.cacheWriteRate || '',
+        aiImagePricingCacheReadRateInput: tokenConfig.cacheReadRate || '',
+        aiImagePricingImageOutputRateInput: tokenConfig.imageOutputRate || '',
+        aiImagePricingRequestBaseInput: tokenConfig.requestBase || '',
+        aiImagePricingMultiplierInput: tokenConfig.multiplier || 1,
+        aiImagePricingEstimateInputTokensInput: tokenConfig.estimateInputTokens || '',
+        aiImagePricingEstimateOutputTokensInput: tokenConfig.estimateOutputTokens || '',
+        aiImagePricingEstimateCacheWriteTokensInput: tokenConfig.estimateCacheWriteTokens || '',
+        aiImagePricingEstimateCacheReadTokensInput: tokenConfig.estimateCacheReadTokens || '',
+        aiImagePricingEstimateImageOutputTokensInput: tokenConfig.estimateImageOutputTokens || ''
+    };
+    Object.entries(fieldValues).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(value ?? '');
+    });
+    fillAiImagePricingEstimateDefaults(mode);
+    updateAiImagePricingDeleteButton(source.id || '');
+    updateAiImagePricingStrategyVisibility();
+    refreshAiImagePricingTokenPreview();
+}
+
+function resetAiImagePricingEditor() {
+    adminAiImageState.selectedPricingId = '__new__';
+    setAiImagePricingEditorDraft({
+        mode: 'text',
+        model: '',
+        resolution: '1k',
+        ratio: '*',
+        quantity: 1,
+        points: '',
+        metadata: {
+            billing_strategy: 'per_request'
+        }
+    });
+    renderAiImagePricingList();
+}
+
+function selectAiImagePricingRule(id = '') {
+    const normalizedId = String(id || '').trim();
+    const rule = adminAiImageState.pricing.find((item) => String(item.id || '') === normalizedId);
+    if (!rule) return null;
+    adminAiImageState.selectedPricingId = normalizedId;
+    setAiImagePricingEditorDraft(rule);
+    renderAiImagePricingList();
+    return rule;
+}
+
+function getAiImagePricingRuleSummary(rule = {}) {
+    const strategy = getAiImagePricingStrategy(rule);
+    const metadata = getAiImagePricingMetadata(rule);
+    const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+        ? metadata.pricing
+        : {};
+    if (strategy === 'token_sub2api') {
+        return '按 actual_cost 扣费';
+    }
+    if (strategy === 'fixed_points') {
+        return `${Number(rule.points || 0)} 积分 / 次`;
+    }
+    return `${Number(rule.points || 0)} 积分${rule.quantity > 1 ? ` / ${rule.quantity} 张` : ' / 次'}`;
+}
+
 function renderAiImagePricingList() {
     const list = document.getElementById('aiImagePricingList');
     if (!list) return;
+    bindAiImagePricingEditorEvents();
+    const currentMode = normalizeAiImagePricingMode(document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const currentProviderId = document.getElementById('aiImagePricingProviderInput')?.value || '';
+    const selectedProviderId = syncAiImagePricingProviderOptions(currentMode, currentProviderId);
+    syncAiImagePricingModelOptions(currentMode, selectedProviderId, document.getElementById('aiImagePricingModelInput')?.value || '');
 
     if (adminAiImageState.loading && !adminAiImageState.pricing.length) {
-        list.innerHTML = '<p class="loading-text">加载价格规则...</p>';
+        list.innerHTML = '<div class="ai-image-admin-pricing-list-loading"><span></span><span></span><span></span></div>';
         return;
     }
 
     const activePricing = adminAiImageState.pricing.filter((rule) => rule.is_active !== false);
     if (!activePricing.length) {
-        list.innerHTML = '<div class="ai-image-admin-empty">暂无价格规则，先新增一条默认文生图价格。</div>';
+        list.innerHTML = '<div class="ai-image-admin-empty">暂无价格规则，先新增一条默认图片生成价格。</div>';
+        if (!adminAiImageState.selectedPricingId) {
+            setAiImagePricingEditorDraft(null);
+        }
         return;
     }
 
-    list.innerHTML = activePricing.slice(0, 120).map((rule) => `
-        <article class="ai-image-admin-row">
-            <div class="ai-image-admin-row__main">
-                <strong>${escapeHtml(rule.model || '*')}</strong>
-                <span>${escapeHtml(rule.mode || 'text')} · ${escapeHtml(rule.resolution || '*')} · ${escapeHtml(rule.ratio || '*')} · ${escapeHtml(rule.quantity || 1)} 张</span>
+    if (adminAiImageState.selectedPricingId && adminAiImageState.selectedPricingId !== '__new__' && !activePricing.some((rule) => String(rule.id || '') === adminAiImageState.selectedPricingId)) {
+        adminAiImageState.selectedPricingId = '';
+    }
+
+    const selectedId = adminAiImageState.selectedPricingId === '__new__'
+        ? ''
+        : (adminAiImageState.selectedPricingId || String(activePricing[0]?.id || ''));
+    if (!adminAiImageState.selectedPricingId && selectedId) {
+        adminAiImageState.selectedPricingId = selectedId;
+        setAiImagePricingEditorDraft(activePricing[0]);
+    }
+
+    const groups = activePricing.reduce((map, rule) => {
+        const mode = normalizeAiImagePricingMode(rule.mode);
+        if (!map.has(mode)) map.set(mode, []);
+        map.get(mode).push(rule);
+        return map;
+    }, new Map());
+
+    list.innerHTML = Array.from(groups.entries()).map(([mode, rules]) => `
+        <div class="ai-image-admin-pricing-group">
+            <div class="ai-image-admin-pricing-group__title">
+                <span>${escapeHtml(getAiImagePricingModeLabel(mode))}</span>
+                <em>${rules.length} 条</em>
             </div>
-            <div class="ai-image-admin-row__meta">
-                <span>${Number(rule.points || 0)} 积分</span>
-                <button class="btn-sm btn-secondary ai-image-admin-delete-button" type="button" data-admin-action="settings-delete-ai-image-pricing" data-ai-image-pricing-id="${escapeHtml(rule.id || '')}">
-                    <i class="fas fa-trash-alt"></i> 删除
-                </button>
+            <div class="ai-image-admin-pricing-group__rules">
+                ${rules.slice(0, 120).map((rule) => {
+                    const ruleId = String(rule.id || '');
+                    const strategy = getAiImagePricingStrategy(rule);
+                    const ruleModelLabel = String(rule.model || '*').trim() === '*' ? '应用全部' : (rule.model || '*');
+                    return `
+                        <button class="ai-image-admin-pricing-rule ${ruleId && ruleId === selectedId ? 'is-active' : ''}" type="button"
+                            data-admin-action="settings-select-ai-image-pricing"
+                            data-ai-image-pricing-id="${escapeHtml(ruleId)}">
+                            <span class="ai-image-admin-pricing-rule__main">
+                                <strong>${escapeHtml(ruleModelLabel)}</strong>
+                                <small>${escapeHtml([getAiImagePricingProviderLabel(getAiImagePricingProviderId(rule)) || '全部上游', rule.resolution || '*', rule.ratio || '*', `${rule.quantity || 1} 次`].join(' · '))}</small>
+                            </span>
+                            <span class="ai-image-admin-pricing-rule__meta">
+                                <em>${escapeHtml(getAiImagePricingStrategyLabel(strategy))}</em>
+                                <b>${escapeHtml(getAiImagePricingRuleSummary(rule))}</b>
+                            </span>
+                        </button>
+                    `;
+                }).join('')}
             </div>
-        </article>
+        </div>
     `).join('');
 }
 
@@ -11321,18 +12196,97 @@ function renderAiImageAdminPanel() {
 }
 
 function readAiImagePricingDraft() {
+    const strategy = normalizeAiImagePricingStrategy(document.getElementById('aiImagePricingStrategyInput')?.value || 'per_request');
+    const isSub2ApiActualCost = strategy === 'token_sub2api';
+    const mode = normalizeAiImagePricingMode(document.getElementById('aiImagePricingModeInput')?.value || 'text');
+    const providerId = normalizeAiImagePricingProviderValue(document.getElementById('aiImagePricingProviderInput')?.value || '');
+    const providerLabel = getAiImagePricingProviderLabel(providerId);
+    const model = String(document.getElementById('aiImagePricingModelInput')?.value || '').trim();
+    const isVisualMode = isAiImagePricingVisualMode(mode);
+    const supportsImageOutputTokens = isAiImagePricingImageOutputTokenMode(mode);
+    const quantity = isAiImagePricingQuantityMode(mode)
+        ? normalizeAiImagePricingInt(document.getElementById('aiImagePricingQuantityInput')?.value, 1, { min: 1, max: 8 })
+        : 1;
+    const tokenConfig = isSub2ApiActualCost
+        ? {
+            inputRate: 0,
+            outputRate: 0,
+            cacheWriteRate: 0,
+            cacheReadRate: 0,
+            imageOutputRate: 0,
+            requestBase: 0,
+            multiplier: 1,
+            estimateInputTokens: 0,
+            estimateOutputTokens: 0,
+            estimateCacheWriteTokens: 0,
+            estimateCacheReadTokens: 0,
+            estimateImageOutputTokens: 0
+        }
+        : {
+            inputRate: document.getElementById('aiImagePricingInputRateInput')?.value,
+            outputRate: document.getElementById('aiImagePricingOutputRateInput')?.value,
+            cacheWriteRate: document.getElementById('aiImagePricingCacheWriteRateInput')?.value,
+            cacheReadRate: document.getElementById('aiImagePricingCacheReadRateInput')?.value,
+            imageOutputRate: supportsImageOutputTokens ? document.getElementById('aiImagePricingImageOutputRateInput')?.value : 0,
+            requestBase: document.getElementById('aiImagePricingRequestBaseInput')?.value,
+            multiplier: document.getElementById('aiImagePricingMultiplierInput')?.value,
+            estimateInputTokens: document.getElementById('aiImagePricingEstimateInputTokensInput')?.value,
+            estimateOutputTokens: document.getElementById('aiImagePricingEstimateOutputTokensInput')?.value,
+            estimateCacheWriteTokens: document.getElementById('aiImagePricingEstimateCacheWriteTokensInput')?.value,
+            estimateCacheReadTokens: document.getElementById('aiImagePricingEstimateCacheReadTokensInput')?.value,
+            estimateImageOutputTokens: supportsImageOutputTokens ? document.getElementById('aiImagePricingEstimateImageOutputTokensInput')?.value : 0
+        };
+    const estimatedTokenPoints = isSub2ApiActualCost ? 0 : calculateAiImagePricingTokenPoints(tokenConfig);
+    const rawPoints = Number(document.getElementById('aiImagePricingPointsInput')?.value || 0);
+    const points = isSub2ApiActualCost ? 0 : rawPoints;
+    const id = String(document.getElementById('aiImagePricingIdInput')?.value || '').trim();
     return {
         action: 'save-pricing',
+        ...(id ? { id } : {}),
         site: 'all',
         billing_mode: 'points',
-        model: String(document.getElementById('aiImagePricingModelInput')?.value || ADMIN_AI_IMAGE_DEFAULT_MODEL).trim() || ADMIN_AI_IMAGE_DEFAULT_MODEL,
-        mode: String(document.getElementById('aiImagePricingModeInput')?.value || 'text').trim() || 'text',
-        resolution: String(document.getElementById('aiImagePricingResolutionInput')?.value || '1k').trim() || '1k',
-        ratio: String(document.getElementById('aiImagePricingRatioInput')?.value || '*').trim() || '*',
-        quantity: 1,
-        points: Number(document.getElementById('aiImagePricingPointsInput')?.value || 0),
+        model,
+        mode,
+        resolution: isVisualMode ? (String(document.getElementById('aiImagePricingResolutionInput')?.value || (mode === 'video' ? '720p' : '1k')).trim() || (mode === 'video' ? '720p' : '1k')) : '*',
+        ratio: isVisualMode ? (String(document.getElementById('aiImagePricingRatioInput')?.value || '*').trim() || '*') : '*',
+        quantity,
+        points,
         priority: 100,
-        metadata: {}
+        metadata: {
+            billing_strategy: strategy,
+            provider_id: providerId,
+            providerId,
+            provider_label: providerLabel,
+            providerLabel,
+            pricing: {
+                billing_strategy: strategy,
+                provider_id: providerId,
+                providerId,
+                provider_label: providerLabel,
+                providerLabel,
+                unit: isSub2ApiActualCost ? 'sub2api_actual_cost_usd' : 'points',
+                cost_source: isSub2ApiActualCost ? 'sub2api_usage_actual_cost' : '',
+                points_per_usd: isSub2ApiActualCost ? 1 : 0,
+                request_base: normalizeAiImagePricingNumber(tokenConfig.requestBase, 0, { precision: 2 }),
+                multiplier: normalizeAiImagePricingNumber(tokenConfig.multiplier, 1, { min: 0, max: 1000, precision: 4 }) || 1,
+                rates: {
+                    input: normalizeAiImagePricingNumber(tokenConfig.inputRate, 0),
+                    output: normalizeAiImagePricingNumber(tokenConfig.outputRate, 0),
+                    cache_write: normalizeAiImagePricingNumber(tokenConfig.cacheWriteRate, 0),
+                    cache_read: normalizeAiImagePricingNumber(tokenConfig.cacheReadRate, 0),
+                    image_output: normalizeAiImagePricingNumber(tokenConfig.imageOutputRate, 0)
+                },
+                estimate: {
+                    input_tokens: normalizeAiImagePricingInt(tokenConfig.estimateInputTokens, 0),
+                    output_tokens: normalizeAiImagePricingInt(tokenConfig.estimateOutputTokens, 0),
+                    cache_write_tokens: normalizeAiImagePricingInt(tokenConfig.estimateCacheWriteTokens, 0),
+                    cache_read_tokens: normalizeAiImagePricingInt(tokenConfig.estimateCacheReadTokens, 0),
+                    image_output_tokens: normalizeAiImagePricingInt(tokenConfig.estimateImageOutputTokens, 0),
+                    estimated_points: estimatedTokenPoints
+                },
+                sub2api_compatible: isSub2ApiActualCost
+            }
+        }
     };
 }
 
@@ -11512,16 +12466,28 @@ async function saveAiImageStoragePolicy() {
 
 async function saveAiImagePricingRule() {
     const draft = readAiImagePricingDraft();
-    if (!Number.isFinite(Number(draft.points)) || Number(draft.points) < 0) {
+    if (!draft.metadata?.provider_id || draft.metadata.provider_id === '*') {
+        showAdminStudioToast('请先选择具体上游', 'warning');
+        return false;
+    }
+    if (!draft.model) {
+        showAdminStudioToast('请先选择模型或应用全部', 'warning');
+        return false;
+    }
+    if (draft.metadata?.billing_strategy !== 'token_sub2api' && (!Number.isFinite(Number(draft.points)) || Number(draft.points) < 0)) {
         showAdminStudioToast('请输入有效的积分价格', 'warning');
         return false;
     }
 
     try {
         showAdminStudioToast('正在保存 AI 图片价格规则...', 'info');
-        await postAiImageAdminConfig(draft);
-        document.getElementById('aiImagePricingPointsInput').value = '';
+        const payload = await postAiImageAdminConfig(draft);
+        const savedId = payload?.pricing?.id || draft.id || '';
+        adminAiImageState.selectedPricingId = savedId || adminAiImageState.selectedPricingId;
         await fetchAiImageAdminConfig({ force: true });
+        if (savedId) {
+            selectAiImagePricingRule(savedId);
+        }
         showAdminStudioToast('AI 图片价格规则已保存', 'success');
         return true;
     } catch (err) {
@@ -11593,9 +12559,11 @@ async function disableAiImageApiBaseUrl(id = '') {
 }
 
 async function deleteAiImagePricingRule(id = '') {
-    if (!id) return false;
+    const targetId = String(id || document.getElementById('aiImagePricingIdInput')?.value || adminAiImageState.selectedPricingId || '').trim();
+    if (!targetId || targetId === '__new__') return false;
     try {
-        await postAiImageAdminConfig({ action: 'delete-pricing', id });
+        await postAiImageAdminConfig({ action: 'delete-pricing', id: targetId });
+        adminAiImageState.selectedPricingId = '';
         await fetchAiImageAdminConfig({ force: true });
         showAdminStudioToast('价格规则已删除', 'success');
         return true;
@@ -12267,11 +13235,24 @@ window.saveAiImageGuardrails = saveAiImageGuardrails;
 window.saveAiImageStoragePolicy = saveAiImageStoragePolicy;
 window.saveAiImagePricingRule = saveAiImagePricingRule;
 window.saveAiImageAgent = saveAiImageAgent;
+window.resetAiImagePricingEditor = resetAiImagePricingEditor;
+window.selectAiImagePricingRule = selectAiImagePricingRule;
 window.deleteAiImagePricingRule = deleteAiImagePricingRule;
 window.disableAiImagePricingRule = disableAiImagePricingRule;
 window.disableAiImageAgent = disableAiImageAgent;
 window.runAiImageWorkerOnce = runAiImageWorkerOnce;
 window.renderAiImageAdminPanel = renderAiImageAdminPanel;
+window.switchAiCreationView = switchAiCreationView;
+window.initAiCreationModule = initAiCreationModule;
+window.handleAiCreationSiteChange = handleAiCreationSiteChange;
+
+if (window.AdminShell?.registerModule) {
+    window.AdminShell.registerModule('ai-creation', {
+        activate: initAiCreationModule,
+        handleContext: handleAiCreationShellContext,
+        onSiteChange: handleAiCreationSiteChange
+    });
+}
 
 const aiImageAdminTooltipState = {
     el: null,
