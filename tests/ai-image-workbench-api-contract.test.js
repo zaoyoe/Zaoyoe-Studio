@@ -1110,7 +1110,13 @@ test('ai image workbench shows accepted state with queue ETA after submit', () =
     assert.match(source, /queuePosition/);
     assert.match(source, /estimatedWaitSeconds/);
     assert.match(source, /function getTaskQueueEstimateLabel\(task = \{\}\)/);
-    assert.match(source, /已受理 ·/);
+    assert.match(source, /function getTaskQueuedStepLabel\(task = \{\}\)/);
+    assert.match(source, /function getTaskQueuedDetailLabel\(task = \{\}\)/);
+    assert.match(source, /function getTaskQueuedBadgeLabel\(task = \{\}\)/);
+    assert.match(source, /Gemini 生成中/);
+    assert.match(source, /等待 Gemini 图片返回/);
+    assert.match(source, /return `\$\{step\} · \$\{getTaskQueuedDetailLabel\(task\) \|\| '等待调度'\}`/);
+    assert.match(source, /if \(stage === 'queued'\) return getTaskQueuedBadgeLabel\(task\)/);
     assert.match(source, /预计等待 \$\{formatSecondsDuration\(waitSeconds\)\}/);
     assert.match(source, /estimated_wait_seconds/);
     assert.match(source, /queue_eta_seconds/);
