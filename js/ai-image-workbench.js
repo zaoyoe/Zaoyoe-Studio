@@ -383,6 +383,7 @@
         queued: 0.12,
         generating: 0.60,
         saving: 0.88,
+        reloading: 1,
         complete: 1,
         failed: 1
     });
@@ -2183,6 +2184,8 @@
             outputTokens: clampNumber(outputTokens, 0, 9999999, 0),
             cachedTokens: clampNumber(cachedTokens, 0, 9999999, 0),
             tokenUsageRaw: rawTokenUsage && typeof rawTokenUsage === 'object' && !Array.isArray(rawTokenUsage) ? rawTokenUsage : {},
+            billingSyncStatus: String(task.billingSyncStatus || task.billing_sync_status || metadata.sub2api_billing_sync?.status || metadata.sub2apiBillingSync?.status || '').trim(),
+            billingSyncMessage: String(task.billingSyncMessage || task.billing_sync_message || metadata.sub2api_billing_sync?.message || metadata.sub2apiBillingSync?.message || '').trim(),
             quantity: clampNumber(
                 Number.isFinite(requestedImageCount) && requestedImageCount > 0 ? requestedImageCount : task.quantity,
                 1,
@@ -3941,6 +3944,7 @@
 
     function getStatusLabel(task) {
         if (!task) return '待开始';
+        if (isTaskReloadableBillingRecord(task)) return '记录重新加载中';
         if (task.status === 'queued') {
             const step = getTaskQueuedStepLabel(task);
             return `${step} · ${getTaskQueuedDetailLabel(task) || '等待调度'}`;
@@ -3991,6 +3995,7 @@
         if (task?.status === 'queued') return getTaskQueuedBadgeLabel(task);
         if (task?.status === 'processing' || task?.status === 'streaming') return getTaskCurrentStepLabel(task);
         if (task?.status === 'cancelled') return '已取消';
+        if (isTaskReloadableBillingRecord(task)) return '加载中';
         if (task?.status === 'failed') return '失败';
         return '待开始';
     }
@@ -4001,6 +4006,7 @@
             if (task?.status === 'queued') return getTaskQueuedStepLabel(task);
             if (task?.status === 'processing' || task?.status === 'streaming') return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
             if (task?.status === 'cancelled') return '已取消';
+            if (isTaskReloadableBillingRecord(task)) return '重新加载中';
             return '处理失败';
         }
         if (isVideoMode(task?.mode)) {
@@ -4051,6 +4057,7 @@
         }
         if (task.status === 'succeeded') return '生成完成';
         if (task.status === 'cancelled') return '已取消';
+        if (isTaskReloadableBillingRecord(task)) return '记录重新加载中';
         return '生成失败';
     }
 
@@ -4113,6 +4120,7 @@
     function getTaskFailureReason(task = {}) {
         if (!task || !['failed', 'cancelled'].includes(task.status)) return '';
         if (task.status === 'cancelled') return '已停止生成';
+        if (isTaskReloadableBillingRecord(task)) return '刷新后正在重新加载记录';
         const explicitReason = getFriendlyTaskError(task.errorMessage || task.error_message || task.remoteError || '', '', task.mode);
         if (explicitReason) return explicitReason;
         if (task.mode === 'chat') return '这次没有扣积分。可以稍后重试，或切换更稳定的对话模型后再试。';
@@ -4159,6 +4167,7 @@
         if (!task) return 'fa-circle';
         if (task.status === 'succeeded') return 'fa-check';
         if (task.status === 'cancelled') return 'fa-ban';
+        if (isTaskReloadableBillingRecord(task)) return 'fa-rotate-right';
         if (task.status === 'failed') return 'fa-triangle-exclamation';
         return 'fa-spinner';
     }
@@ -4469,13 +4478,7 @@
     }
 
     function getTaskBillingSyncMetaLabel(task = {}) {
-        const status = String(
-            task.billingSyncStatus
-            || task.billing_sync_status
-            || task.metadata?.sub2api_billing_sync?.status
-            || task.metadata?.sub2apiBillingSync?.status
-            || ''
-        ).trim().toLowerCase();
+        const status = getTaskBillingSyncStatus(task);
         const message = String(
             task.billingSyncMessage
             || task.billing_sync_message
@@ -4490,6 +4493,37 @@
         if (status === 'settled') return '扣费 0 积分';
         if (status === 'pending') return '扣费同步中';
         return '';
+    }
+
+    function getTaskBillingSyncStatus(task = {}) {
+        return String(
+            task.billingSyncStatus
+            || task.billing_sync_status
+            || task.metadata?.sub2api_billing_sync?.status
+            || task.metadata?.sub2apiBillingSync?.status
+            || ''
+        ).trim().toLowerCase();
+    }
+
+    function isTaskReloadableBillingRecord(task = {}) {
+        if (!task || task.status !== 'failed') return false;
+        const status = getTaskBillingSyncStatus(task);
+        const reason = [
+            status,
+            task.errorCode,
+            task.error_code,
+            task.errorMessage,
+            task.error_message,
+            task.remoteError,
+            task.billingSyncMessage,
+            task.billing_sync_message,
+            task.metadata?.sub2api_billing_sync?.message,
+            task.metadata?.sub2apiBillingSync?.message
+        ].map((value) => String(value || '').trim()).filter(Boolean).join(' ').toLowerCase();
+        const onlyBillingTraceMissing = /missing_request_id|no_request_id|旧记录缺少扣费追踪id/i.test(reason);
+        if (!onlyBillingTraceMissing) return false;
+        const errorCode = String(task.errorCode || task.error_code || '').trim().toLowerCase();
+        return !/^ai_image_provider|^ai_image_generation|^user_cancelled/.test(errorCode);
     }
 
     function isSub2ApiActualCostTask(task = {}) {
@@ -7823,7 +7857,8 @@
             const priority = (task) => {
                 if (task.status === 'processing' || task.status === 'streaming') return 0;
                 if (task.status === 'queued') return 1;
-                if (task.status === 'failed' || task.status === 'cancelled') return 2;
+                if (isTaskReloadableBillingRecord(task)) return 2;
+                if (task.status === 'failed' || task.status === 'cancelled') return 3;
                 return 3;
             };
             const priorityDiff = priority(a) - priority(b);
@@ -7847,6 +7882,7 @@
         if (!task) return 'idle';
         if (task.status === 'queued') return 'queued';
         if (task.status === 'succeeded') return 'complete';
+        if (isTaskReloadableBillingRecord(task)) return 'reloading';
         if (task.status === 'failed' || task.status === 'cancelled') return 'failed';
         if (task.status === 'processing' || task.status === 'streaming') {
             const stepLabel = getTaskCurrentStepLabel(task);
@@ -7920,6 +7956,7 @@
         if (stage === 'queued') return 'fa-clock';
         if (stage === 'saving') return 'fa-cloud-arrow-up';
         if (stage === 'complete') return 'fa-check';
+        if (stage === 'reloading') return 'fa-rotate-right';
         if (stage === 'failed') return 'fa-triangle-exclamation';
         if (stage === 'generating') return 'fa-circle-notch fa-spin';
         return 'fa-wand-magic-sparkles';
@@ -7929,6 +7966,7 @@
         if (stage === 'queued') return getTaskQueuedBadgeLabel(task);
         if (stage === 'saving') return '保存结果中';
         if (stage === 'complete') return '全部完成';
+        if (stage === 'reloading') return '重新加载中';
         if (stage === 'failed') return task?.status === 'cancelled' ? '已取消' : '生成失败';
         if (stage === 'generating') return '生成中';
         return 'AI 工作台';
@@ -7936,6 +7974,7 @@
 
     function getDockTaskBadge(task) {
         const stage = getDockTaskStage(task);
+        if (stage === 'reloading') return '加载';
         if (stage === 'failed') return task?.status === 'cancelled' ? '取消' : '失败';
         if (stage === 'complete') return '完成';
         return `${getDockTaskProgressPercent(task, stage)}%`;
@@ -7962,6 +8001,7 @@
     function getDockTaskSummary(task) {
         const stage = getDockTaskStage(task);
         if (stage === 'complete') return getStatusLabel(task);
+        if (stage === 'reloading') return '刷新后重新加载记录';
         if (stage === 'failed') return task?.status === 'cancelled'
             ? `已取消 · ${getTaskChargeMetaLabel(task) || '未扣费'}`
             : `生成失败 · ${getTaskChargeMetaLabel(task) || '未扣费'}`;
@@ -7976,6 +8016,7 @@
             'ai-image-dock-task',
             isBusyTask(task) ? 'is-active' : '',
             stage === 'complete' ? 'is-success' : '',
+            stage === 'reloading' ? 'is-reloading' : '',
             stage === 'failed' ? 'is-failed' : '',
             activeTask?.id === task?.id || state.activeTaskId === task?.id ? 'is-current' : ''
         ].filter(Boolean).join(' ');
@@ -8238,11 +8279,13 @@
     function renderDock() {
         const dockTasks = getDockQueueTasks();
         const busyTasks = dockTasks.filter(isBusyTask);
-        const failedTasks = dockTasks.filter((task) => task.status === 'failed' || task.status === 'cancelled');
+        const reloadingTasks = dockTasks.filter(isTaskReloadableBillingRecord);
+        const failedTasks = dockTasks.filter((task) => (task.status === 'failed' || task.status === 'cancelled') && !isTaskReloadableBillingRecord(task));
         const completeTasks = dockTasks.filter((task) => task.status === 'succeeded');
         const activeDisplayTask = getActiveDisplayTask();
         const activeTask = busyTasks.find((task) => task.id === activeDisplayTask?.id)
             || busyTasks[0]
+            || reloadingTasks[0]
             || failedTasks[0]
             || completeTasks[0]
             || null;
@@ -9101,14 +9144,29 @@
         `;
     }
 
+    function hasTaskDisplayableResult(task = {}) {
+        if (!task) return false;
+        if (task.mode === 'chat') {
+            return Boolean(String(task.resultPrompt || '').trim() || String(task.reasoningText || '').trim());
+        }
+        if (task.mode === 'reverse') {
+            return Boolean(String(task.resultPrompt || '').trim() || getTaskReferencePreviewImage(task));
+        }
+        return getTaskThread(getTaskThreadRoot(task) || task)
+            .some((item) => buildTaskImageEntries(item).length > 0);
+    }
+
     function renderTaskStage(task) {
+        if (isTaskReloadableBillingRecord(task) && !hasTaskDisplayableResult(task)) {
+            return renderTaskReloading(task);
+        }
         if (task.mode === 'chat') {
             return renderChatThread(task);
         }
-        if (task.status === 'succeeded') {
+        if (task.status === 'succeeded' || isTaskReloadableBillingRecord(task)) {
             return renderTaskResult(task);
         }
-        if ((task.status === 'cancelled' || task.status === 'failed') && isTextVisionTask(task)) {
+        if ((task.status === 'cancelled' || task.status === 'failed') && isTextVisionTask(task) && !isTaskReloadableBillingRecord(task)) {
             return renderTaskStopped(task);
         }
         if (isTextVisionTask(task)) {
@@ -9131,10 +9189,10 @@
         const progressBadgeClass = task.progressKnown ? '' : ' is-unknown';
         const partialImageEntries = buildTaskImageEntries(task);
         const hasPartialImages = partialImageEntries.length > 0;
-        const isStopped = ['failed', 'cancelled'].includes(task.status);
+        const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
         const { total } = getTaskGenerationCount(task);
         const pendingPreviewCount = Math.max(0, total - partialImageEntries.length);
-        const showPendingPreview = !isStopped && task.status !== 'succeeded' && pendingPreviewCount > 0;
+        const showPendingPreview = !isStopped && !isTaskReloadableBillingRecord(task) && task.status !== 'succeeded' && pendingPreviewCount > 0;
         const showStoppedPreview = isStopped && pendingPreviewCount > 0;
         const previewCardCount = partialImageEntries.length + (showPendingPreview || showStoppedPreview ? 1 : 0);
         const resultGridModeClass = isVideoMode(task.mode) ? 'ai-image-result-grid--video' : '';
@@ -9167,6 +9225,18 @@
         `;
     }
 
+    function renderTaskReloading(task) {
+        const suggestion = getTaskFailureReason(task) || '刷新后正在重新加载记录';
+        return `
+                <div class="ai-image-result-view ai-image-result-view--centered">
+                <div class="ai-image-reload-dot" tabindex="0" aria-label="${escapeHtml(`记录重新加载中：${suggestion}`)}">
+                    <i class="fas fa-rotate-right"></i>
+                    <span>记录重新加载中</span>
+                </div>
+            </div>
+        `;
+    }
+
     function renderTaskStopped(task) {
         const isCancelled = task.status === 'cancelled';
         const title = isCancelled ? '生成已取消' : '生成失败';
@@ -9186,7 +9256,7 @@
     function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false } = {}) {
         const aspect = getRatioAspect(task.ratio, task.mode);
         const isBusy = forceBusy || ['queued', 'processing'].includes(task.status) || task.status === 'streaming';
-        const isStopped = ['failed', 'cancelled'].includes(task.status);
+        const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
         const isCancelled = task.status === 'cancelled';
         const stoppedReason = isStopped ? getTaskFailureReason(task) : '';
         const progress = Math.max(0, Math.min(100, task.progress || 0));
@@ -9226,6 +9296,33 @@
 		                                <div class="ai-image-progress${progressClass}" data-progress-key="inline-${escapeHtml(task.id)}" data-progress="${escapeHtml(Math.round(progress))}" style="--aiw-progress:${progress / 100}"><span></span></div>
 		                            </div>` : (stoppedReason ? `<div class="ai-image-result-failure-reason">${escapeHtml(stoppedReason)}</div>` : '')}
 		                        </div>
+                    </div>
+                </div>
+            </article>
+        `;
+    }
+
+    function renderInlineTaskReloadingPreview(task, label = '记录重新加载中', { showPrompt = true, navigationAnchor = false } = {}) {
+        const aspect = getRatioAspect(task.ratio, task.mode);
+        const navigationAttrs = navigationAnchor && task?.id
+            ? ` data-task-id="${escapeHtml(task.id)}" data-aiw-chat-turn-id="${escapeHtml(task.id)}"`
+            : '';
+        return `
+            <article class="ai-image-thread-step is-reloading"${navigationAttrs}>
+                ${showPrompt ? `<div class="ai-image-thread-prompt">
+                    <span>${escapeHtml(label)}</span>
+                    <p>${escapeHtml(getTaskPromptText(task))}</p>
+                    <em>${escapeHtml(getTaskImageMeta(task))}</em>
+                </div>` : ''}
+                <div class="ai-image-result ai-image-result--reloading" style="--aiw-result-aspect:${escapeHtml(aspect)}">
+                    <div class="ai-image-result-main">
+                        <div class="ai-image-result-media">
+                            <div class="ai-image-inline-reloading-visual">
+                                <i class="fas fa-rotate-right"></i>
+                                <span>记录重新加载中</span>
+                            </div>
+                            <span class="ai-image-result-resolution">${escapeHtml(getTaskResolutionLabel(task))}</span>
+                        </div>
                     </div>
                 </div>
             </article>
@@ -9385,6 +9482,9 @@
     function getChatNavigationSummary(task = {}) {
         if (task.mode === 'chat') {
             return getChatTaskAnswerText(task) || getTaskProgressDetail(task);
+        }
+        if (isTaskReloadableBillingRecord(task)) {
+            return '记录重新加载中';
         }
         if (task.status === 'failed' || task.status === 'cancelled') {
             return getTaskFailureReason(task);
@@ -9560,6 +9660,7 @@
         const imageEntries = threadTasks.flatMap((item, taskIndex) => {
             const baseSequence = taskSequenceMap.get(item.parentTaskId) || 0;
             if (item.status !== 'succeeded') {
+                const isReloadingRecord = isTaskReloadableBillingRecord(item);
                 const imageEntriesForTask = buildTaskImageEntries(item, {
                     taskIndex,
                     sequenceStart: sequenceCursor,
@@ -9567,7 +9668,7 @@
                 });
                 const { total } = getTaskGenerationCount(item);
                 const pendingEntryCount = Math.max(0, total - imageEntriesForTask.length);
-                if (imageEntriesForTask.length && pendingEntryCount <= 0) {
+                if (imageEntriesForTask.length && (pendingEntryCount <= 0 || isReloadingRecord)) {
                     const lastEntry = imageEntriesForTask[imageEntriesForTask.length - 1];
                     taskSequenceMap.set(item.id, lastEntry.sequence);
                     sequenceCursor = lastEntry.sequence;
@@ -9577,6 +9678,17 @@
                 const pendingBaseSequence = pendingSequence - 1;
                 taskSequenceMap.set(item.id, pendingSequence);
                 sequenceCursor = pendingSequence;
+                if (isReloadingRecord) {
+                    return imageEntriesForTask.length
+                        ? imageEntriesForTask
+                        : [{
+                            type: 'reloading',
+                            task: item,
+                            taskIndex,
+                            sequence: pendingSequence,
+                            baseSequence
+                        }];
+                }
                 return imageEntriesForTask.length
                     ? [
                         ...imageEntriesForTask,
@@ -9643,9 +9755,13 @@
                             const taskId = String(entry.task?.id || '').trim();
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
                             if (taskId) anchoredTaskIds.add(taskId);
-                            return entry.type === 'pending'
-                                ? renderInlineTaskPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '生成预览', { showPrompt: !isVideoMode(entry.task?.mode), forceBusy: Boolean(entry.forceBusy), navigationAnchor })
-                                : renderTaskImageEntry(entry, index, aspect, { navigationAnchor });
+                            if (entry.type === 'pending') {
+                                return renderInlineTaskPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '生成预览', { showPrompt: !isVideoMode(entry.task?.mode), forceBusy: Boolean(entry.forceBusy), navigationAnchor });
+                            }
+                            if (entry.type === 'reloading') {
+                                return renderInlineTaskReloadingPreview(entry.task, entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '记录重新加载中', { showPrompt: !isVideoMode(entry.task?.mode), navigationAnchor });
+                            }
+                            return renderTaskImageEntry(entry, index, aspect, { navigationAnchor });
                         }).join('')}
                     </div>
                 </div>
@@ -9927,7 +10043,7 @@
         const threadTasks = row?.tasks || getTaskThread(rootTask || task);
         const latestTask = row?.latestTask || threadTasks.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || task;
         const hasUnreadSuccess = threadTasks.some((item) => item?.status === 'succeeded' && !isTaskSeen(item));
-        const hasFailedTask = latestTask?.status === 'failed';
+        const hasFailedTask = latestTask?.status === 'failed' && !isTaskReloadableBillingRecord(latestTask);
         const thumbTask = row?.imageTask || task;
         const thumbMedia = getTaskPrimaryMedia(thumbTask);
         const thumb = thumbMedia.isVideo ? '' : thumbMedia.src;
