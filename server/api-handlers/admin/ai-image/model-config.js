@@ -27,7 +27,7 @@ const MODEL_PROBE_SIZE_BY_RESOLUTION = Object.freeze({
 });
 const MODEL_GROUP_VALUES = Object.freeze(new Set(['image', 'chat', 'video', 'both']));
 const PROVIDER_PROTOCOL_VALUES = Object.freeze(new Set(['openai-compatible', 'gemini-native', 'anthropic-native', 'custom']));
-const PROVIDER_VENDOR_VALUES = Object.freeze(new Set(['openai', 'gemini', 'anthropic', 'flux', 'sub2api', 'other']));
+const PROVIDER_VENDOR_VALUES = Object.freeze(new Set(['openai', 'gemini', 'anthropic', 'flux', 'sub2api', 'custom']));
 const VIDEO_MODEL_HINT_PATTERN = /(?:^|[-_/\s])(video|vid|veo|sora|kling|runway|wan|hailuo|luma|pika|jimeng|seedance|即梦)(?:[-_/\s]|$)|generate-?video/i;
 const IMAGE_MODEL_HINT_PATTERN = /(?:^|[-_/\s])(image|img|imagen|nano-?banana|dall-?e|flux|kontext|imagine|stable|sdxl?|midjourney)(?:[-_/\s]|$)|gpt-image/i;
 const CHAT_MODEL_HINT_PATTERN = /(?:^|[-_/\s])(gpt|o\d|chat|claude|gemini|qwen|deepseek|grok|llama|mistral|kimi|moonshot|doubao|ernie|glm|yi)(?:[-_/\s]|$)/i;
@@ -170,7 +170,16 @@ function normalizeProviderProtocol(value = '', fallback = 'openai-compatible') {
 
 function normalizeProviderVendor(value = '', fallback = 'openai') {
     const normalized = String(value || '').trim().toLowerCase();
-    return PROVIDER_VENDOR_VALUES.has(normalized) ? normalized : fallback;
+    if (normalized === 'other') return 'custom';
+    const normalizedFallback = String(fallback || 'openai').trim().toLowerCase();
+    const safeFallback = normalizedFallback === 'other' ? 'custom' : normalizedFallback;
+    return PROVIDER_VENDOR_VALUES.has(normalized)
+        ? normalized
+        : (PROVIDER_VENDOR_VALUES.has(safeFallback) ? safeFallback : 'openai');
+}
+
+function normalizeProviderVendorLabel(value = '') {
+    return String(value || '').trim().slice(0, 80);
 }
 
 function normalizeEndpointPath(value = '') {
@@ -252,6 +261,12 @@ function serializeProvider(provider = {}) {
     const asyncResult = provider.asyncResult || provider.async_result || provider.polling || null;
     const videoEndpoint = normalizeEndpointPath(provider.videoEndpoint || provider.video_endpoint || provider.videoGenerationEndpoint || provider.video_generation_endpoint);
     const endpoints = normalizeEndpoints(provider.endpoints);
+    const rawVendor = provider.vendor || provider.provider;
+    const vendor = normalizeProviderVendor(rawVendor, 'openai');
+    const vendorLabel = normalizeProviderVendorLabel(
+        provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name
+        || (String(rawVendor || '').trim().toLowerCase() === 'sub2api' ? 'Sub2API' : '')
+    );
     const serialized = {
         providerId,
         provider_id: providerId,
@@ -308,7 +323,7 @@ function serializeProvider(provider = {}) {
         vision_models: normalizeModelsList(provider.visionModels || provider.vision_models || provider.chatVisionModels || provider.chat_vision_models, ''),
         modelGroup: scopedModels.modelGroup,
         model_group: scopedModels.modelGroup,
-        vendor: normalizeProviderVendor(provider.vendor || provider.provider, 'openai'),
+        vendor,
         protocol: normalizeProviderProtocol(provider.protocol || provider.adapter),
         provider: String(provider.provider || 'openai-compatible').trim().slice(0, 80) || 'openai-compatible',
         baseUrl: normalizeBaseUrl(provider.baseUrl || provider.base_url),
@@ -322,6 +337,10 @@ function serializeProvider(provider = {}) {
     if (asyncResult) {
         serialized.asyncResult = asyncResult;
         serialized.async_result = asyncResult;
+    }
+    if (vendorLabel) {
+        serialized.vendorLabel = vendorLabel;
+        serialized.vendor_label = vendorLabel;
     }
     if (videoEndpoint) {
         serialized.videoEndpoint = videoEndpoint;
@@ -387,6 +406,10 @@ function serializeConfig(config = {}, providers = []) {
         modelGroup: primary.modelGroup || primary.model_group || 'image',
         model_group: primary.modelGroup || primary.model_group || 'image',
         vendor: primary.vendor || 'openai',
+        ...(primary.vendorLabel || primary.vendor_label ? {
+            vendorLabel: primary.vendorLabel || primary.vendor_label,
+            vendor_label: primary.vendorLabel || primary.vendor_label
+        } : {}),
         protocol: primary.protocol || 'openai-compatible',
         baseUrl: normalizeBaseUrl(config.baseUrl || primary.baseUrl),
         providers: serializedProviders,
@@ -1498,6 +1521,11 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
         ''
     );
     const vendor = normalizeProviderVendor(body.vendor || existingProvider?.vendor || existingProvider?.provider, 'openai');
+    const vendorLabel = normalizeProviderVendorLabel(
+        body.vendorLabel || body.vendor_label || body.vendorName || body.vendor_name
+        || existingProvider?.vendorLabel || existingProvider?.vendor_label
+        || (String(existingProvider?.vendor || existingProvider?.provider || '').trim().toLowerCase() === 'sub2api' ? 'Sub2API' : '')
+    );
     const protocol = normalizeProviderProtocol(body.protocol || body.adapter || existingProvider?.protocol || existingProvider?.adapter);
     const asyncResult = body.asyncResult || body.async_result || body.polling || existingProvider?.asyncResult || existingProvider?.async_result || null;
     const videoEndpoint = normalizeEndpointPath(pickEndpointValue(
@@ -1519,6 +1547,12 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
 
     if (!baseUrl || !isValidHttpUrl(baseUrl)) {
         const error = new Error('请输入有效的 AI 图片 API Base URL');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (vendor === 'custom' && !vendorLabel) {
+        const error = new Error('请输入自定义模型厂商名称');
         error.statusCode = 400;
         throw error;
     }
@@ -1554,6 +1588,10 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
         displayOrder: normalizeInteger(body.displayOrder ?? body.display_order ?? existingProvider?.displayOrder, 0),
         saved_via: 'admin_studio'
     };
+    if (vendorLabel) {
+        metadata.vendorLabel = vendorLabel;
+        metadata.vendor_label = vendorLabel;
+    }
     if (asyncResult) {
         metadata.asyncResult = asyncResult;
         metadata.async_result = asyncResult;
@@ -1597,6 +1635,7 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
             visionModels,
             modelGroup,
             vendor,
+            vendorLabel,
             protocol
         }
     });

@@ -4936,6 +4936,11 @@ const RELATED_PROMPT_CARD_LAYOUTS = [
 ];
 const RELATED_PROMPT_CARD_GAP_WEIGHT = 0.12;
 const RELATED_PROMPT_COLUMN_STAGGER_WEIGHT = 0.18;
+const RELATED_MODE_MOBILE_RENDER_DELAY_MS = 180;
+let promptRelatedModeRenderTimerId = null;
+let promptRelatedModePendingItem = null;
+let promptRelatedGridEntryFrameId = null;
+let promptRelatedGridEntryTimerId = null;
 
 function getRelatedPromptCardLayout(index = 0) {
     return RELATED_PROMPT_CARD_LAYOUTS[index % RELATED_PROMPT_CARD_LAYOUTS.length] || RELATED_PROMPT_CARD_LAYOUTS[0];
@@ -4954,15 +4959,27 @@ function buildRelatedPromptCardMarkup(item = {}, index = 0) {
     const imageUrl = getRelatedPromptImageUrl(item);
     const aspectClass = ` ${getRelatedPromptCardLayout(index).className}`;
     const promptId = String(item.id ?? item.supabaseId ?? item.supabase_id ?? '').trim();
-    const imageLoading = index < 6 ? 'eager' : 'lazy';
-    const imagePriority = index < 6 ? ' fetchpriority="low"' : '';
     return `
         <button class="related-prompt-card${aspectClass}" type="button" data-related-prompt-id="${escapeHtml(promptId)}" aria-label="${escapeHtml(title)}">
-            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="${imageLoading}" decoding="async"${imagePriority} draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
+            ${imageUrl ? `<img class="related-prompt-card__image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
             <span class="related-prompt-card__shade" aria-hidden="true"></span>
             <span class="related-prompt-card__title">${escapeHtml(title)}</span>
         </button>
     `;
+}
+
+function prepareRelatedPromptCardImages(grid) {
+    if (!grid) return;
+
+    grid.querySelectorAll('.related-prompt-card img').forEach((image) => {
+        disablePromptImageDrag(image);
+        const revealImage = () => image.classList.add('is-loaded');
+        if (image.complete && image.naturalWidth > 0) {
+            revealImage();
+            return;
+        }
+        image.addEventListener('load', revealImage, { once: true });
+    });
 }
 
 function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
@@ -5001,7 +5018,7 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
             ${items.join('')}
         </div>
     `).join('');
-    grid.querySelectorAll('img').forEach(disablePromptImageDrag);
+    prepareRelatedPromptCardImages(grid);
     grid.querySelectorAll('.related-prompt-card').forEach((card) => {
         card.addEventListener('click', (event) => {
             event.preventDefault();
@@ -5017,6 +5034,18 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
             }
         });
     });
+}
+
+function clearRelatedPromptGridEntryAnimation() {
+    if (promptRelatedGridEntryFrameId) {
+        cancelAnimationFrame(promptRelatedGridEntryFrameId);
+        promptRelatedGridEntryFrameId = null;
+    }
+    if (promptRelatedGridEntryTimerId) {
+        clearTimeout(promptRelatedGridEntryTimerId);
+        promptRelatedGridEntryTimerId = null;
+    }
+    document.getElementById('relatedPromptGrid')?.classList.remove('related-prompt-grid--entering');
 }
 
 function cancelScheduledRelatedPromptRender() {
@@ -5045,6 +5074,7 @@ function cancelRelatedPromptWarmup() {
 function cancelRelatedPromptWork() {
     cancelScheduledRelatedPromptRender();
     cancelRelatedPromptWarmup();
+    clearRelatedModeDeferredRender();
 }
 
 function scheduleRelatedPromptsRender(item = findPromptAnalyticsItem()) {
@@ -5059,6 +5089,7 @@ function scheduleRelatedPromptsRender(item = findPromptAnalyticsItem()) {
             promptRelatedRenderFrameId = null;
             if (token !== promptRelatedRenderToken || !isRelatedMode) return;
             renderRelatedPrompts(item);
+            playRelatedPromptGridEntryAnimation();
         });
     };
 
@@ -5124,6 +5155,87 @@ function scheduleRelatedPromptWarmup(item = findPromptAnalyticsItem()) {
     promptRelatedWarmupTimerId = window.setTimeout(run, 120);
 }
 
+function playRelatedPromptGridEntryAnimation() {
+    const grid = document.getElementById('relatedPromptGrid');
+    if (!grid || grid.classList.contains('related-prompt-grid--empty')) return;
+
+    clearRelatedPromptGridEntryAnimation();
+    const columns = Array.from(grid.querySelectorAll('.related-prompt-column'));
+    columns.forEach((column, columnIndex) => {
+        Array.from(column.querySelectorAll('.related-prompt-card')).forEach((card, rowIndex) => {
+            const rowDelay = rowIndex * 32;
+            const columnDrift = columnIndex * 16;
+            const organicOffset = ((rowIndex + columnIndex) % 3) * 5;
+            const delay = Math.min(rowDelay + columnDrift + organicOffset, 220);
+            const yOffset = 7 + Math.min(rowIndex, 3);
+            card.style.setProperty('--related-card-enter-delay', `${delay}ms`);
+            card.style.setProperty('--related-card-enter-y', `${yOffset}px`);
+        });
+    });
+
+    promptRelatedGridEntryFrameId = requestAnimationFrame(() => {
+        promptRelatedGridEntryFrameId = null;
+        if (!grid.isConnected || !isRelatedMode) return;
+        grid.classList.add('related-prompt-grid--entering');
+        promptRelatedGridEntryTimerId = setTimeout(() => {
+            grid.classList.remove('related-prompt-grid--entering');
+            promptRelatedGridEntryTimerId = null;
+        }, 820);
+    });
+}
+
+function clearRelatedModeDeferredRender() {
+    if (promptRelatedModeRenderTimerId) {
+        clearTimeout(promptRelatedModeRenderTimerId);
+        promptRelatedModeRenderTimerId = null;
+    }
+    promptRelatedModePendingItem = null;
+    clearRelatedPromptGridEntryAnimation();
+    document.querySelector('#promptModal .modal-inner')?.classList.remove('related-mode-entering');
+}
+
+function renderRelatedPromptsForActiveMode(item = findPromptAnalyticsItem(), options = {}) {
+    if (!isRelatedMode) {
+        clearRelatedModeDeferredRender();
+        return;
+    }
+
+    const modalInner = document.querySelector('#promptModal .modal-inner');
+    const grid = document.getElementById('relatedPromptGrid');
+    const shouldDeferMobileRender = isPromptModalMobileLayout()
+        && (options.forceDefer || promptRelatedModeRenderTimerId || !grid?.children.length);
+
+    if (shouldDeferMobileRender) {
+        promptRelatedModePendingItem = item;
+        modalInner?.classList.add('related-mode-entering');
+        if (promptRelatedModeRenderTimerId) return;
+
+        promptRelatedModeRenderTimerId = setTimeout(() => {
+            const pendingItem = promptRelatedModePendingItem || item;
+            promptRelatedModeRenderTimerId = null;
+            promptRelatedModePendingItem = null;
+            if (!isRelatedMode) {
+                modalInner?.classList.remove('related-mode-entering');
+                return;
+            }
+            renderRelatedPrompts(pendingItem);
+            playRelatedPromptGridEntryAnimation();
+            requestAnimationFrame(() => {
+                if (isRelatedMode) {
+                    modalInner?.classList.remove('related-mode-entering');
+                }
+            });
+        }, RELATED_MODE_MOBILE_RENDER_DELAY_MS);
+        return;
+    }
+
+    clearRelatedModeDeferredRender();
+    renderRelatedPrompts(item);
+    if (options.animateEntry) {
+        playRelatedPromptGridEntryAnimation();
+    }
+}
+
 function setPromptCommentTriggerActive(active = false) {
     const triggerBtn = document.getElementById('commentTriggerBtn');
     if (!triggerBtn) return;
@@ -5159,12 +5271,37 @@ function movePromptAreaToDetailColumn() {
     const promptArea = document.getElementById('promptArea');
     const contentCol = document.querySelector('.modal-content-col');
     const commentSection = document.getElementById('commentSection');
-    if (!promptArea || !contentCol || promptArea.parentNode === contentCol) {
+    if (!promptArea || !contentCol) {
         return;
     }
 
     promptArea.classList.remove('docked');
-    contentCol.insertBefore(promptArea, commentSection);
+    setPromptsCssVars(promptArea, {
+        animation: null,
+        transition: null,
+        transform: null,
+        'transform-origin': null
+    });
+    if (promptArea.parentNode !== contentCol) {
+        contentCol.insertBefore(promptArea, commentSection);
+    }
+}
+
+function dockPromptAreaWithoutAnimation() {
+    const promptArea = document.getElementById('promptArea');
+    const dockTarget = document.getElementById('promptDockTarget');
+    if (!promptArea || !dockTarget || promptArea.parentNode === dockTarget) {
+        return;
+    }
+
+    setPromptsCssVars(promptArea, {
+        animation: 'none',
+        transition: 'none',
+        transform: null,
+        'transform-origin': null
+    });
+    dockTarget.appendChild(promptArea);
+    promptArea.classList.add('docked');
 }
 
 function animatePromptAreaToDock() {
@@ -5224,23 +5361,60 @@ function animatePromptAreaFromDock() {
     }, 500);
 }
 
-function clearPromptDetailSideMode({ resetButtons = true, resetClasses = true } = {}) {
+function clearPromptDetailSideMode({ resetButtons = true, resetClasses = true, releaseGeometry = true } = {}) {
     isCommentMode = false;
     isRelatedMode = false;
-    cancelScheduledRelatedPromptRender();
+    cancelRelatedPromptWork();
     setCommentSortDropdownOpen(false);
     closePromptCommentComposer({ preserveModalDock: true });
-    releasePromptModalCommentModeGeometry();
+    if (releaseGeometry) {
+        releasePromptModalCommentModeGeometry();
+    }
     resetPromptModalKeyboardDockIfNeeded(false);
     if (resetClasses) {
         const modalInner = document.querySelector('#promptModal .modal-inner');
         clearPromptCommentModeReturnState(modalInner);
-        modalInner?.classList.remove('comment-mode', 'related-mode');
+        modalInner?.classList.remove('comment-mode', 'related-mode', 'related-mode-entering');
     }
     if (resetButtons) {
         resetPromptDetailSideModeButtons();
     }
     syncPromptModalTopButtonState();
+}
+
+function syncPromptModalLayoutModeAfterBreakpointChange() {
+    promptModalLayoutSyncFrameId = null;
+
+    const modal = document.getElementById('promptModal');
+    const modalInner = modal?.querySelector('.modal-inner');
+    if (!modal?.classList.contains('active') || !modalInner || !isPromptDetailSideModeActive()) {
+        promptModalLayoutWasMobile = isPromptModalMobileLayout();
+        return;
+    }
+
+    const isMobileLayout = isPromptModalMobileLayout();
+    if (isMobileLayout) {
+        releasePromptModalCommentModeGeometry();
+        movePromptAreaToDetailColumn();
+        lockPromptModalCommentModeGeometry({ force: true, defer: true });
+        return;
+    }
+
+    releasePromptModalCommentModeGeometry();
+    dockPromptAreaWithoutAnimation();
+}
+
+function requestPromptModalLayoutModeSync() {
+    const isMobileLayout = isPromptModalMobileLayout();
+    if (promptModalLayoutWasMobile === null) {
+        promptModalLayoutWasMobile = isMobileLayout;
+        return;
+    }
+    if (promptModalLayoutWasMobile === isMobileLayout) return;
+
+    promptModalLayoutWasMobile = isMobileLayout;
+    if (promptModalLayoutSyncFrameId) return;
+    promptModalLayoutSyncFrameId = requestAnimationFrame(syncPromptModalLayoutModeAfterBreakpointChange);
 }
 
 function renderPromptModalSourceActions(item = {}) {
@@ -6595,15 +6769,96 @@ let promptRelatedRenderTimerId = null;
 let promptRelatedWarmupIdleId = null;
 let promptRelatedWarmupTimerId = null;
 let promptRelatedRenderToken = 0;
+let promptModalReturnImageFreezeFadeTimer = null;
+let promptModalReturnImageFreezeRemoveTimer = null;
+let promptModalLayoutWasMobile = null;
+let promptModalLayoutSyncFrameId = null;
 let currentPromptId = null;
+
+function getPromptModalImageColumnBackground(imageCol) {
+    if (document.documentElement?.getAttribute('data-theme') === 'dark') {
+        return '#222d3d';
+    }
+
+    const computedBackground = window.getComputedStyle?.(imageCol)?.backgroundColor || '';
+    if (computedBackground && computedBackground !== 'rgba(0, 0, 0, 0)' && computedBackground !== 'transparent') {
+        return computedBackground;
+    }
+
+    return '#f1f5f9';
+}
+
+function clearPromptModalReturnImageFreeze() {
+    if (promptModalReturnImageFreezeFadeTimer) {
+        clearTimeout(promptModalReturnImageFreezeFadeTimer);
+        promptModalReturnImageFreezeFadeTimer = null;
+    }
+    if (promptModalReturnImageFreezeRemoveTimer) {
+        clearTimeout(promptModalReturnImageFreezeRemoveTimer);
+        promptModalReturnImageFreezeRemoveTimer = null;
+    }
+    document.querySelectorAll('#promptModal .modal-return-image-freeze').forEach((image) => image.remove());
+    document.querySelector('#promptModal .modal-image-col')?.classList.remove('modal-image-col--return-settling');
+}
+
+function startPromptModalReturnImageFreeze() {
+    if (!isPromptModalMobileLayout()) return;
+
+    clearPromptModalReturnImageFreeze();
+    const imageCol = document.querySelector('#promptModal .modal-image-col');
+    const activeImage = document.getElementById('modalImg');
+    if (!imageCol || !activeImage?.src) return;
+    const imageColBackground = getPromptModalImageColumnBackground(imageCol);
+
+    const freezeImage = activeImage.cloneNode(false);
+    freezeImage.removeAttribute('id');
+    freezeImage.className = 'modal-return-image-freeze';
+    freezeImage.setAttribute('aria-hidden', 'true');
+    freezeImage.alt = '';
+    Object.entries({
+        position: 'absolute',
+        inset: 'auto',
+        top: '50%',
+        left: '50%',
+        width: '100%',
+        height: '100%',
+        'max-width': 'none',
+        'max-height': 'none',
+        'object-fit': 'contain',
+        'object-position': 'center',
+        transform: 'translate3d(-50%, -50%, 0)',
+        opacity: '1',
+        filter: 'none',
+        background: imageColBackground,
+        transition: 'opacity 0.24s ease, filter 0.34s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1)',
+        'pointer-events': 'none'
+    }).forEach(([property, value]) => {
+        freezeImage.style.setProperty(property, value, 'important');
+    });
+    disablePromptImageDrag(freezeImage);
+    imageCol.appendChild(freezeImage);
+    imageCol.classList.add('modal-image-col--return-settling');
+
+    promptModalReturnImageFreezeFadeTimer = setTimeout(() => {
+        promptModalReturnImageFreezeFadeTimer = null;
+        freezeImage.style.setProperty('opacity', '0', 'important');
+        freezeImage.style.setProperty('filter', 'blur(1.5px)', 'important');
+        freezeImage.classList.add('is-fading');
+        promptModalReturnImageFreezeRemoveTimer = setTimeout(() => {
+            freezeImage.remove();
+            imageCol.classList.remove('modal-image-col--return-settling');
+            promptModalReturnImageFreezeRemoveTimer = null;
+        }, 340);
+    }, 560);
+}
 
 function clearPromptCommentModeReturnState(modalInner = document.querySelector('#promptModal .modal-inner')) {
     if (promptCommentModeReturnTimer) {
         clearTimeout(promptCommentModeReturnTimer);
         promptCommentModeReturnTimer = null;
     }
-    modalInner?.classList.remove('comment-mode-returning');
-    modalInner?.classList.remove('comment-mode-title-revealing');
+    clearPromptModalReturnImageFreeze();
+    modalInner?.classList.remove('comment-mode-returning', 'comment-mode-title-revealing');
 }
 
 function isPromptDetailSideModeActive() {
@@ -7839,8 +8094,9 @@ function openPromptModal(id) {
     cancelRelatedPromptWork();
     isCommentMode = false;
     isRelatedMode = false;
+    promptModalLayoutWasMobile = isPromptModalMobileLayout();
     clearPromptCommentModeReturnState(modalInner);
-    modalInner?.classList.remove('comment-mode', 'related-mode');
+    modalInner?.classList.remove('comment-mode', 'related-mode', 'related-mode-entering');
     backdrop?.classList.add('visible');
 
     // Reset side panel button state to match
@@ -8003,13 +8259,26 @@ function openPromptModal(id) {
 
 function closePromptDetailSideMode() {
     const modalInner = document.querySelector('.modal-inner');
-    const wasDesktopDocked = !isPromptModalMobileLayout() && isPromptDetailSideModeActive();
+    const isMobileLayout = isPromptModalMobileLayout();
+    const wasSideModeActive = isPromptDetailSideModeActive();
+    const wasDesktopDocked = !isMobileLayout && wasSideModeActive;
 
-    clearPromptDetailSideMode({ resetButtons: true, resetClasses: false });
+    if (isMobileLayout && wasSideModeActive) {
+        lockPromptModalCommentModeGeometry({ force: true });
+    }
+    clearPromptDetailSideMode({ resetButtons: true, resetClasses: false, releaseGeometry: !isMobileLayout });
     clearPromptCommentModeReturnState(modalInner);
+    if (isMobileLayout && wasSideModeActive) {
+        startPromptModalReturnImageFreeze();
+    }
     if (modalInner) {
         modalInner.classList.add('comment-mode-returning');
-        modalInner.classList.remove('comment-mode', 'related-mode');
+        modalInner.classList.remove('comment-mode', 'related-mode', 'related-mode-entering');
+    }
+    if (isMobileLayout) {
+        requestAnimationFrame(() => {
+            releasePromptModalCommentModeGeometry();
+        });
     }
     requestAnimationFrame(() => {
         if (!modalInner?.classList.contains('comment-mode-returning')) return;
@@ -8020,7 +8289,7 @@ function closePromptDetailSideMode() {
             modalInner.classList.remove('comment-mode-returning', 'comment-mode-title-revealing');
         }
         promptCommentModeReturnTimer = null;
-    }, 560);
+    }, isMobileLayout ? 780 : 560);
     updateCommentSectionHeading();
 
     if (wasDesktopDocked) {
@@ -8049,10 +8318,12 @@ function openPromptDetailSideMode(mode) {
     if (isCommentMode) {
         fetchComments(currentPromptId);
     } else {
-        scheduleRelatedPromptsRender(findPromptAnalyticsItem());
+        renderRelatedPromptsForActiveMode(findPromptAnalyticsItem(), { forceDefer: isMobileLayout });
     }
 
-    lockPromptModalCommentModeGeometry({ force: true, defer: true });
+    if (!isMobileLayout || isCommentMode) {
+        lockPromptModalCommentModeGeometry({ force: true, defer: true });
+    }
 
     if (!isMobileLayout && !wasSideModeActive) {
         animatePromptAreaToDock();
@@ -11201,6 +11472,11 @@ function refreshCommentLanguageUI() {
 
 // Initialize sorting on load
 document.addEventListener('DOMContentLoaded', () => {
+    promptModalLayoutWasMobile = isPromptModalMobileLayout();
+    window.addEventListener('resize', requestPromptModalLayoutModeSync, { passive: true });
+    window.addEventListener('orientationchange', requestPromptModalLayoutModeSync, { passive: true });
+    window.visualViewport?.addEventListener('resize', requestPromptModalLayoutModeSync, { passive: true });
+
     setupCommentSorting();
 
     // Setup comment input listeners including iOS scroll stabiliser
@@ -11585,6 +11861,10 @@ function closePromptModal() {
     cancelModalImageThumbnailWarmup();
     closePromptCommentComposer({ clearDraft: true, preserveModalDock: true });
     setCommentSortDropdownOpen(false);
+    if (promptModalLayoutSyncFrameId) {
+        cancelAnimationFrame(promptModalLayoutSyncFrameId);
+        promptModalLayoutSyncFrameId = null;
+    }
 
     // If closing while a detail side panel is open, revert DOM first to prevent glitches next time.
     if (isPromptDetailSideModeActive()) {

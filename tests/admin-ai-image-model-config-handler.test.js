@@ -97,6 +97,8 @@ async function withAiImageModelConfigHandler(options, callback) {
                             visionModels: call.metadata.visionModels || call.metadata.vision_models || [],
                             modelGroup: call.metadata.modelGroup || call.metadata.model_group || 'image',
                             vendor: call.metadata.vendor || 'openai',
+                            vendorLabel: call.metadata.vendorLabel || call.metadata.vendor_label || '',
+                            vendor_label: call.metadata.vendorLabel || call.metadata.vendor_label || '',
                             protocol: call.metadata.protocol || 'openai-compatible',
                             provider: call.metadata.provider || 'openai-compatible',
                             isActive: call.metadata.isActive !== false,
@@ -374,6 +376,46 @@ test('ai image model config handler can add an additional provider without repla
         assert.equal(state.upsertCalls[0].metadata.modelGroup, 'image');
         assert.equal(payload.providers.some((provider) => provider.providerId === 'flux'), true);
         assert.equal(JSON.stringify(payload).includes('sk-flux-provider-key'), false);
+    });
+});
+
+test('ai image model config handler preserves custom vendor label', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-default-ai-image-key-1234567890',
+            baseUrl: 'https://default.example.com/v1',
+            model: 'gpt-image-2'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                providerId: 'openrouter',
+                label: 'OpenRouter 上游',
+                apiKey: 'sk-openrouter-provider-key-1234567890',
+                baseUrl: 'https://openrouter.ai/api/v1',
+                model: 'custom-creative-model',
+                modelGroup: 'chat',
+                vendor: 'custom',
+                vendorLabel: 'OpenRouter',
+                chatModels: 'custom-creative-model'
+            }
+        }, res);
+
+        const payload = res.json();
+        const savedProvider = payload.providers.find((provider) => provider.providerId === 'openrouter');
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.upsertCalls[0].metadata.vendor, 'custom');
+        assert.equal(state.upsertCalls[0].metadata.vendorLabel, 'OpenRouter');
+        assert.equal(state.upsertCalls[0].metadata.vendor_label, 'OpenRouter');
+        assert.equal(savedProvider.vendor, 'custom');
+        assert.equal(savedProvider.vendorLabel, 'OpenRouter');
+        assert.equal(savedProvider.vendor_label, 'OpenRouter');
     });
 });
 

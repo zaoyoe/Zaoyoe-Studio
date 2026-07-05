@@ -217,7 +217,8 @@ html[data-theme="dark"] body.prompts-page.auth-sheet-open::after {
 }
 
 [data-theme="dark"] .modal-image-col {
-    background: #222d3d;
+    --modal-img-bg: #222d3d;
+    background: var(--modal-img-bg);
 }
 
 [data-theme="dark"] .prompt-area {
@@ -3445,6 +3446,7 @@ body.modal-open .prompt-card {
 
 .modal-image-col {
     flex: 1;
+    --modal-img-bg: #f1f5f9;
     background: var(--modal-img-bg, #f1f5f9);
     position: relative;
     overflow: hidden;
@@ -3458,9 +3460,12 @@ body.modal-open .prompt-card {
 
 /* Ensure images stack correctly */
 .modal-image-col img {
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
     object-fit: contain;
+    object-position: center;
     position: absolute;
     /* Needed for stacking */
     top: 50%;
@@ -3471,6 +3476,45 @@ body.modal-open .prompt-card {
     filter: blur(0);
     will-change: top, transform, opacity, filter;
     backface-visibility: hidden;
+}
+
+.modal-return-image-freeze {
+    position: absolute !important;
+    inset: auto !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    transform: translate3d(-50%, -50%, 0) !important;
+    pointer-events: none !important;
+    z-index: 6 !important;
+    opacity: 1 !important;
+    filter: none !important;
+    background: var(--modal-img-bg, currentColor) !important;
+    transition: opacity 0.24s ease, filter 0.34s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1) !important;
+    will-change: opacity, filter, transform;
+}
+
+.modal-return-image-freeze.is-fading {
+    opacity: 0;
+}
+
+.modal-image-col.modal-image-col--return-settling img#modalImg {
+    top: 50% !important;
+    left: 50% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    transform: translate3d(-50%, -50%, 0) !important;
+    filter: none !important;
+    opacity: 1 !important;
 }
 
 .modal-header,
@@ -4541,6 +4585,18 @@ body.modal-open .prompt-card {
     transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
+@keyframes relatedPromptCardEnter {
+    from {
+        opacity: 0;
+        transform: translate3d(0, var(--related-card-enter-y, 8px), 0) scale(0.986);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
 .related-prompt-card--hero {
     aspect-ratio: 0.66;
 }
@@ -4565,7 +4621,15 @@ body.modal-open .prompt-card {
     height: 100%;
     object-fit: cover;
     display: block;
-    transition: transform 0.32s ease;
+    transition: opacity 0.28s ease, transform 0.32s ease;
+}
+
+.related-prompt-card img {
+    opacity: 0;
+}
+
+.related-prompt-card img.is-loaded {
+    opacity: 1;
 }
 
 .related-prompt-card__fallback {
@@ -5738,10 +5802,10 @@ body.modal-open .prompt-card {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.78);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(15, 23, 42, 0.08);
     color: #475569;
     display: flex;
     justify-content: center;
@@ -5749,7 +5813,9 @@ body.modal-open .prompt-card {
     cursor: pointer;
     z-index: 11050;
     transition: background 0.24s ease, color 0.24s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.24s ease, opacity 0.24s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow:
+        0 8px 20px rgba(15, 23, 42, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
 }
@@ -5761,7 +5827,9 @@ body.modal-open .prompt-card {
 .close-modal-btn.is-back {
     background: rgba(255, 255, 255, 0.78);
     color: #334155;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+    box-shadow:
+        0 8px 20px rgba(15, 23, 42, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 .close-modal-btn.is-back i {
@@ -5769,9 +5837,12 @@ body.modal-open .prompt-card {
 }
 
 [data-theme="dark"] .close-modal-btn {
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.42);
     border-color: rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 0.8);
+    box-shadow:
+        0 8px 22px rgba(0, 0, 0, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .close-modal-btn:active {
@@ -5782,12 +5853,14 @@ body.modal-open .prompt-card {
     .close-modal-btn:hover {
         background: #1e293b;
         color: white;
-        transform: scale(1.06);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        transform: scale(1.03);
+        box-shadow:
+            0 10px 24px rgba(15, 23, 42, 0.14),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
     .close-modal-btn.is-back:hover {
-        transform: translateY(-1px) scale(1.04);
+        transform: translateY(-1px) scale(1.03);
     }
 
     [data-theme="dark"] .close-modal-btn:hover {
@@ -5804,6 +5877,15 @@ body.modal-open .prompt-card {
 }
 
 /* Mobile Responsive */
+@media (max-width: 480px) and (hover: none) and (pointer: coarse) {
+    body.prompts-page .chat-widget-fab {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+}
+
 @media (max-width: 768px) {
 
     .gallery-container {
@@ -5996,6 +6078,15 @@ body.modal-open .prompt-card {
         overflow: hidden;
     }
 
+    .modal-inner:not(.comment-mode):not(.related-mode) .modal-content-col {
+        padding-bottom: 16px;
+    }
+
+    .modal-inner:not(.comment-mode):not(.related-mode) .prompt-area {
+        margin-top: auto;
+        margin-bottom: 0;
+    }
+
     .modal-title-large {
         font-size: 1.8rem;
     }
@@ -6005,10 +6096,12 @@ body.modal-open .prompt-card {
         right: 18px;
         width: 44px;
         height: 44px;
-        background: rgba(7, 15, 30, 0.42);
+        background: rgba(7, 15, 30, 0.34);
         border-color: rgba(255, 255, 255, 0.14);
         color: rgba(255, 255, 255, 0.92);
-        box-shadow: 0 18px 40px rgba(2, 6, 23, 0.26);
+        box-shadow:
+            0 8px 22px rgba(2, 6, 23, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.10);
     }
 
     .modal-inner.comment-mode .close-modal-btn {
@@ -6040,7 +6133,7 @@ body.modal-open .prompt-card {
         max-width: none;
         max-height: none;
         object-fit: cover;
-        transform: translate(-50%, -50%) scale(1.08) !important;
+        transform: translate3d(-50%, -50%, 0) scale(1.08) !important;
         filter: blur(10px) saturate(0.92) brightness(0.62);
     }
 
@@ -6111,6 +6204,12 @@ body.modal-open .prompt-card {
         animation: none;
     }
 
+    .modal-inner.related-mode-entering .related-prompt-grid {
+        visibility: hidden;
+        opacity: 0;
+        pointer-events: none;
+    }
+
     .modal-inner.related-mode .related-header {
         padding: 0 2px 12px;
     }
@@ -6141,8 +6240,20 @@ body.modal-open .prompt-card {
         box-shadow: 0 10px 26px rgba(2, 6, 23, 0.2);
     }
 
+    .modal-inner.related-mode .related-prompt-grid--entering .related-prompt-card {
+        animation: relatedPromptCardEnter 0.56s cubic-bezier(0.19, 0.92, 0.22, 1) both;
+        animation-delay: var(--related-card-enter-delay, 0ms);
+        will-change: opacity, transform;
+    }
+
     .modal-inner.related-mode .related-prompt-card__title {
         font-size: 0.74rem;
+    }
+
+    .modal-inner.comment-mode-returning.prompt-comment-geometry-locked:not(.keyboard-docked) {
+        height: var(--prompt-modal-comment-height, min(90svh, calc(100% - 128px)));
+        max-height: var(--prompt-modal-comment-height, min(90svh, calc(100% - 128px)));
+        overflow-anchor: none;
     }
 
     .modal-inner.comment-mode .comment-header {
@@ -6345,7 +6456,15 @@ body.modal-open .prompt-card {
 
     html[data-theme="light"] .modal-inner.comment-mode .modal-image-col,
     html:not([data-theme="dark"]) .modal-inner.comment-mode .modal-image-col {
+        --modal-img-bg: #f1f5f9;
         background: #f1f5f9;
+    }
+
+    html[data-theme="dark"] .modal-inner .modal-image-col,
+    html[data-theme="dark"] .modal-inner.comment-mode .modal-image-col,
+    html[data-theme="dark"] .modal-inner.related-mode .modal-image-col {
+        --modal-img-bg: #222d3d;
+        background: var(--modal-img-bg) !important;
     }
 
     html[data-theme="light"] .modal-inner.comment-mode .modal-image-col::after,
@@ -6397,8 +6516,8 @@ body.modal-open .prompt-card {
     html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col img {
         filter: none;
         opacity: 0.74;
-        will-change: transform, opacity;
         transition: opacity 0.24s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+        will-change: transform, opacity;
     }
 
     .modal-inner.related-mode .related-prompt-grid,
@@ -6516,7 +6635,9 @@ body.modal-open .prompt-card {
         background: rgba(255, 255, 255, 0.82);
         border-color: rgba(15, 23, 42, 0.08);
         color: #334155;
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+        box-shadow:
+            0 8px 20px rgba(15, 23, 42, 0.10),
+            inset 0 1px 0 rgba(255, 255, 255, 0.58);
     }
 
     html[data-theme="light"] .prompt-comment-composer-sheet,
@@ -6616,8 +6737,10 @@ body.modal-open .prompt-card {
         background: #1e293b;
         border-color: rgba(15, 23, 42, 0.18);
         color: #fff;
-        transform: translateY(-1px) scale(1.04);
-        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.24);
+        transform: translateY(-1px) scale(1.03);
+        box-shadow:
+            0 10px 24px rgba(15, 23, 42, 0.14),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
     .modal-inner.comment-mode .close-modal-btn.is-back:hover i,
@@ -6630,7 +6753,9 @@ body.modal-open .prompt-card {
         background: rgba(255, 255, 255, 0.94);
         border-color: rgba(255, 255, 255, 0.18);
         color: #1e293b;
-        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+        box-shadow:
+            0 10px 24px rgba(0, 0, 0, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.62);
     }
 
     .modal-inner.comment-mode .close-modal-btn.is-back:active {

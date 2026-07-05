@@ -1,6 +1,9 @@
 const {
     deductPointsForService
 } = require('../../api/_lib/payments/rpc');
+const {
+    calculateAiImageRuleChargePoints
+} = require('./_ai-image-pricing');
 
 const DEMO_RESULT_IMAGES = Object.freeze([
     'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1600&q=90',
@@ -84,11 +87,13 @@ function normalizeText(value, maxLength = 2000) {
 function normalizeNumber(value, fallback = 0) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
-    return Math.max(0, Math.round(parsed * 100) / 100);
+    return Math.max(0, Math.round(parsed * 1000000) / 1000000);
 }
 
 function normalizeBillablePoints(value, fallback = 0) {
-    return normalizeNumber(value, fallback);
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.round(parsed * 1000000) / 1000000);
 }
 
 function normalizePositiveInt(value, fallback = 1, { min = 1, max = 8 } = {}) {
@@ -647,7 +652,7 @@ async function findExistingDeduction(supabase, task = {}) {
     return Number.isFinite(amount) ? Math.abs(amount) : 0;
 }
 
-async function chargeTaskIfNeeded(supabase, task = {}) {
+async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
     if (task.billing_mode !== 'points') {
         return {
             chargedPoints: 0,
@@ -655,7 +660,8 @@ async function chargeTaskIfNeeded(supabase, task = {}) {
         };
     }
 
-    const expectedAmount = normalizeBillablePoints(task.estimated_points, 0);
+    const chargeEstimate = calculateAiImageRuleChargePoints(task, execution.tokenUsage || task.token_usage || {});
+    const expectedAmount = normalizeBillablePoints(chargeEstimate.points ?? task.estimated_points, 0);
     if (expectedAmount <= 0) {
         return {
             chargedPoints: 0,
@@ -667,7 +673,8 @@ async function chargeTaskIfNeeded(supabase, task = {}) {
     if (existingCharged > 0) {
         return {
             chargedPoints: existingCharged,
-            referenceId: task.points_ledger_reference_id || task.id
+            referenceId: task.points_ledger_reference_id || task.id,
+            pricing: chargeEstimate
         };
     }
 
@@ -675,7 +682,8 @@ async function chargeTaskIfNeeded(supabase, task = {}) {
     if (existingDeduction > 0) {
         return {
             chargedPoints: existingDeduction,
-            referenceId: task.id
+            referenceId: task.id,
+            pricing: chargeEstimate
         };
     }
 
@@ -691,7 +699,8 @@ async function chargeTaskIfNeeded(supabase, task = {}) {
 
     return {
         chargedPoints: normalizeBillablePoints(data?.deducted, expectedAmount) || expectedAmount,
-        referenceId: task.id
+        referenceId: task.id,
+        pricing: chargeEstimate
     };
 }
 
@@ -724,7 +733,14 @@ function buildChargeTaskForDeliveredResults(task = {}, deliveredCount = 0) {
         : 0;
     return {
         ...task,
-        estimated_points: adjustedEstimatedPoints
+        estimated_points: adjustedEstimatedPoints,
+        metadata: {
+            ...(task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata) ? task.metadata : {}),
+            delivery: {
+                ...(task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata) && task.metadata.delivery && typeof task.metadata.delivery === 'object' && !Array.isArray(task.metadata.delivery) ? task.metadata.delivery : {}),
+                charge_quantity: chargeQuantity
+            }
+        }
     };
 }
 
@@ -756,6 +772,7 @@ async function completeTaskFromExistingResults(supabase, task = {}, results = []
             result_count: sortedResults.length,
             error_code: normalizeText(errorCode, 120)
         },
+        pricing_charge: charge.pricing || {},
         delivery: {
             ...(safeObject(metadata.delivery)),
             requested_image_count: getExpectedImageCount(task),
@@ -865,7 +882,7 @@ async function completeTask(supabase, task = {}, execution = {}) {
     const chargeStart = nowMs();
     const deliveredImageCount = getDeliveredImageCount(results);
     const chargeTask = buildChargeTaskForDeliveredResults(task, deliveredImageCount);
-    const charge = await chargeTaskIfNeeded(supabase, chargeTask);
+    const charge = await chargeTaskIfNeeded(supabase, chargeTask, execution);
     const chargeMs = elapsedMs(chargeStart);
     const usageStart = nowMs();
     await recordApiUsage(supabase, task, {
@@ -913,6 +930,7 @@ async function completeTask(supabase, task = {}, execution = {}) {
             partial: Boolean(getExpectedImageCount(task) && deliveredImageCount < getExpectedImageCount(task)),
             charge_quantity: getTaskChargeQuantity(task, deliveredImageCount)
         },
+        pricing_charge: charge.pricing || {},
         timing: {
             ...baseTiming,
             queue_ms: queueMs,

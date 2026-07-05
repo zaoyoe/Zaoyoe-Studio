@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -24,7 +25,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -1190,6 +1193,10 @@ func (h *GatewayHandler) Usage(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	if requestID := strings.TrimSpace(c.Query("request_id")); requestID != "" {
+		h.usageByRequestID(c, ctx, apiKey, requestID)
+		return
+	}
 
 	// 解析可选的日期范围参数（用于 model_stats 查询）
 	startTime, endTime := h.parseUsageDateRange(c)
@@ -1220,6 +1227,65 @@ func (h *GatewayHandler) Usage(c *gin.Context) {
 	}
 
 	h.usageUnrestricted(c, ctx, apiKey, subject, usageData, dailyUsage, modelStats)
+}
+
+// UsageRequest returns a single usage record for the current gateway API key.
+// GET /v1/usage/requests/:request_id
+func (h *GatewayHandler) UsageRequest(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+
+	requestID := strings.TrimSpace(c.Param("request_id"))
+	if requestID == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "request_id is required")
+		return
+	}
+	h.usageByRequestID(c, c.Request.Context(), apiKey, requestID)
+}
+
+func (h *GatewayHandler) usageByRequestID(c *gin.Context, ctx context.Context, apiKey *service.APIKey, requestID string) {
+	if h.usageService == nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Usage service is unavailable")
+		return
+	}
+
+	records, _, err := h.usageService.ListWithFilters(ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  1,
+		SortBy:    "created_at",
+		SortOrder: pagination.SortOrderDesc,
+	}, usagestats.UsageLogFilters{
+		APIKeyID:   apiKey.ID,
+		RequestID:  requestID,
+		ExactTotal: true,
+	})
+	if err != nil {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to get usage record")
+		return
+	}
+	if len(records) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":       "not_found_error",
+				"message":    "Usage record not found",
+				"request_id": requestID,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"mode":         "request",
+		"request_id":   requestID,
+		"usage_record": dto.UsageLogFromService(&records[0]),
+	})
 }
 
 // parseUsageDateRange 解析 start_date / end_date query params，默认返回近 30 天范围

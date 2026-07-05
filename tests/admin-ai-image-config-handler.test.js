@@ -805,6 +805,59 @@ test('admin ai image config saves API billing rule with zero site points', async
     });
 });
 
+test('admin ai image config saves Sub2API-compatible token pricing metadata', async () => {
+    const state = {};
+
+    await withHandler({
+        state,
+        body: {
+            action: 'save-pricing',
+            site: 'all',
+            mode: 'chat',
+            billingMode: 'points',
+            model: 'gpt-5.4',
+            resolution: '1k',
+            ratio: '*',
+            quantity: 1,
+            points: 0.02,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    request_base: '0.01',
+                    multiplier: '1.5',
+                    rates: {
+                        input: '2',
+                        output: '8',
+                        cache_write: '0.4',
+                        cache_read: '0.2',
+                        image_output: '12'
+                    },
+                    estimate: {
+                        input_tokens: '1000',
+                        output_tokens: '500',
+                        cache_write_tokens: '20',
+                        cache_read_tokens: '100'
+                    }
+                }
+            }
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', url: '/api/admin/ai-image/config' }, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.pricing.mode, 'chat');
+        assert.equal(payload.pricing.metadata.billing_strategy, 'token_sub2api');
+        assert.equal(payload.pricing.metadata.pricing.rates.input, 2);
+        assert.equal(payload.pricing.metadata.pricing.rates.cache_write, 0.4);
+        assert.equal(payload.pricing.metadata.pricing.estimate.cache_write_tokens, 20);
+        assert.equal(payload.pricing.metadata.pricing.multiplier, 1.5);
+        assert.equal(state.inserted[0].payload.metadata.pricing.sub2api_compatible, true);
+    });
+});
+
 test('admin ai image config saves user API base URL allowlist entries', async () => {
     const state = {};
 

@@ -8,7 +8,7 @@ DROP FUNCTION IF EXISTS public.fn_deduct_points_admin_site_with_breakdown(UUID, 
 
 CREATE OR REPLACE FUNCTION public.fn_deduct_points_admin_site_with_breakdown(
     p_target_user_id UUID,
-    p_amount NUMERIC(12,2),
+    p_amount NUMERIC,
     p_reason TEXT DEFAULT 'Admin Deduction',
     p_reference_id TEXT DEFAULT NULL,
     p_site VARCHAR DEFAULT 'cn'
@@ -18,12 +18,12 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    current_bonus NUMERIC(12,2);
-    current_paid NUMERIC(12,2);
-    deduct_from_bonus NUMERIC(12,2) := 0;
-    deduct_from_paid NUMERIC(12,2) := 0;
-    actual_deducted NUMERIC(12,2) := 0;
-    existing_amount NUMERIC(12,2) := 0;
+    current_bonus NUMERIC(18,6);
+    current_paid NUMERIC(18,6);
+    deduct_from_bonus NUMERIC(18,6) := 0;
+    deduct_from_paid NUMERIC(18,6) := 0;
+    actual_deducted NUMERIC(18,6) := 0;
+    existing_amount NUMERIC(18,6) := 0;
 BEGIN
     IF COALESCE(auth.role(), '') <> 'service_role' THEN
         RAISE EXCEPTION 'Access denied';
@@ -76,7 +76,7 @@ BEGIN
         );
     END IF;
 
-    actual_deducted := ROUND(LEAST(ROUND(p_amount, 2), ROUND(current_bonus + current_paid, 2)), 2);
+    actual_deducted := ROUND(LEAST(ROUND(p_amount, 6), ROUND(current_bonus + current_paid, 6)), 6);
 
     IF actual_deducted <= 0 THEN
         RETURN jsonb_build_object(
@@ -98,8 +98,8 @@ BEGIN
     END IF;
 
     UPDATE public.points_balance
-    SET bonus_balance = ROUND(bonus_balance - deduct_from_bonus, 2),
-        paid_balance = ROUND(paid_balance - deduct_from_paid, 2),
+    SET bonus_balance = ROUND(bonus_balance - deduct_from_bonus, 6),
+        paid_balance = ROUND(paid_balance - deduct_from_paid, 6),
         updated_at = NOW(),
         version = version + 1
     WHERE user_id = p_target_user_id
@@ -113,7 +113,7 @@ BEGIN
         'deducted', actual_deducted,
         'deducted_paid', deduct_from_paid,
         'deducted_bonus', deduct_from_bonus,
-        'new_total', ROUND(current_bonus + current_paid - actual_deducted, 2),
+        'new_total', ROUND(current_bonus + current_paid - actual_deducted, 6),
         'site', p_site
     );
 END;

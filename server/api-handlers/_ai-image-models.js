@@ -71,6 +71,35 @@ function normalizeText(value, maxLength = 4000) {
     return normalized ? normalized.slice(0, maxLength) : '';
 }
 
+function safeObject(value = {}) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function normalizePricingBillingStrategy(value = '') {
+    const normalized = normalizeText(value, 80).toLowerCase().replace(/-/g, '_');
+    return normalized === 'token_sub2api' ? 'token_sub2api' : '';
+}
+
+function shouldCaptureTaskSub2ApiBilling(task = {}) {
+    if (normalizeText(task.billing_mode || task.billingMode, 40) !== 'points') return false;
+    const metadata = safeObject(task.metadata);
+    const pricing = safeObject(metadata.pricing);
+    const matchedRule = safeObject(pricing.matched_rule || pricing.matchedRule);
+    const ruleMetadata = safeObject(matchedRule.metadata);
+    const rulePricing = safeObject(ruleMetadata.pricing);
+    return normalizePricingBillingStrategy(
+        ruleMetadata.billing_strategy
+        || ruleMetadata.billingStrategy
+        || rulePricing.billing_strategy
+        || rulePricing.billingStrategy
+    ) === 'token_sub2api';
+}
+
+function buildSub2ApiClientRequestId(task = {}) {
+    const taskId = normalizeText(task.id, 120).replace(/[^a-z0-9._:-]/gi, '').slice(0, 96);
+    return taskId ? `fatherkey-aiw-${taskId}` : '';
+}
+
 function normalizeModelsList(value = []) {
     const raw = Array.isArray(value) ? value : String(value || '').split(/[,\n]/);
     const models = [];
@@ -359,6 +388,309 @@ function getResponseHeader(response, name = '') {
         return normalizeText(headers[name] || headers[normalizedName], 1000);
     }
     return '';
+}
+
+function normalizeSub2ApiCost(value, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.round(parsed * 1000000) / 1000000);
+}
+
+function pickObjectPath(source = {}, paths = []) {
+    for (const path of paths) {
+        let current = source;
+        for (const key of path) {
+            if (!current || typeof current !== 'object' || Array.isArray(current) || !(key in current)) {
+                current = undefined;
+                break;
+            }
+            current = current[key];
+        }
+        if (current !== undefined && current !== null && current !== '') {
+            return {
+                value: current,
+                path: path.join('.')
+            };
+        }
+    }
+    return null;
+}
+
+function extractSub2ApiActualCost(source = {}) {
+    const value = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+    const candidate = pickObjectPath(value, [
+        ['usage_record', 'actual_cost'],
+        ['usageRecord', 'actualCost'],
+        ['usage_record', 'total_actual_cost'],
+        ['usageRecord', 'totalActualCost'],
+        ['usage_record', 'user_cost'],
+        ['usageRecord', 'userCost'],
+        ['record', 'actual_cost'],
+        ['record', 'actualCost'],
+        ['record', 'total_actual_cost'],
+        ['record', 'totalActualCost'],
+        ['record', 'user_cost'],
+        ['record', 'userCost'],
+        ['data', 'actual_cost'],
+        ['data', 'actualCost'],
+        ['data', 'total_actual_cost'],
+        ['data', 'totalActualCost'],
+        ['data', 'user_cost'],
+        ['data', 'userCost'],
+        ['usage', 'actual_cost'],
+        ['usage', 'actualCost'],
+        ['usage', 'total_actual_cost'],
+        ['usage', 'totalActualCost'],
+        ['usage', 'user_cost'],
+        ['usage', 'userCost'],
+        ['sub2api', 'actual_cost'],
+        ['sub2api', 'actualCost'],
+        ['sub2api', 'total_actual_cost'],
+        ['sub2api', 'totalActualCost'],
+        ['sub2api', 'user_cost'],
+        ['sub2api', 'userCost'],
+        ['sub2api_usage', 'actual_cost'],
+        ['sub2apiUsage', 'actualCost'],
+        ['sub2api_usage', 'total_actual_cost'],
+        ['sub2apiUsage', 'totalActualCost'],
+        ['sub2api_usage', 'user_cost'],
+        ['sub2apiUsage', 'userCost'],
+        ['billing', 'actual_cost'],
+        ['billing', 'actualCost'],
+        ['billing', 'total_actual_cost'],
+        ['billing', 'totalActualCost'],
+        ['billing', 'user_cost'],
+        ['billing', 'userCost'],
+        ['actual_cost'],
+        ['actualCost'],
+        ['total_actual_cost'],
+        ['totalActualCost'],
+        ['user_cost'],
+        ['userCost'],
+        ['actual_cost_usd'],
+        ['actualCostUsd'],
+        ['sub2api_actual_cost'],
+        ['sub2apiActualCost']
+    ]);
+    if (!candidate) return null;
+    const cost = normalizeSub2ApiCost(candidate.value, 0);
+    return cost > 0 ? { cost, path: candidate.path } : null;
+}
+
+function getSub2ApiResponseBillingHints(payload = {}, response = null) {
+    const responseClientRequestId = getResponseHeader(response, 'x-client-request-id');
+    const clientRequestId = normalizeText(
+        payload?.client_request_id
+        || payload?.clientRequestId
+        || responseClientRequestId,
+        160
+    );
+    const upstreamRequestId = getResponseHeader(response, 'x-request-id') || getResponseHeader(response, 'request-id');
+    const headerCost = normalizeSub2ApiCost(
+        getResponseHeader(response, 'x-sub2api-actual-cost')
+        || getResponseHeader(response, 'x-sub2api-cost')
+        || getResponseHeader(response, 'x-actual-cost'),
+        0
+    );
+    const requestIds = [
+        clientRequestId ? `client:${clientRequestId}` : '',
+        clientRequestId,
+        responseClientRequestId ? `client:${responseClientRequestId}` : '',
+        responseClientRequestId,
+        upstreamRequestId,
+        payload?.client_request_id,
+        payload?.clientRequestId,
+        payload?.id,
+        payload?.request_id,
+        payload?.requestId,
+        payload?.response?.id,
+        payload?.response?.request_id,
+        payload?.response?.requestId,
+        payload?.task_id,
+        payload?.provider_task_id
+    ]
+        .map((item) => normalizeText(item, 240))
+        .filter(Boolean);
+    return {
+        clientRequestId,
+        upstreamRequestId,
+        requestIds: [...new Set(requestIds)],
+        headerCost
+    };
+}
+
+function normalizeSub2ApiUsageLookupRecord(payload = {}, requestId = '') {
+    const record = payload?.usage_record || payload?.usageRecord || payload?.record || payload?.data || payload;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+    const recordRequestId = normalizeText(record.request_id || record.requestId, 260);
+    const actual = extractSub2ApiActualCost({ usage_record: record });
+    const fallbackCost = normalizeSub2ApiCost(
+        record.total_cost
+        ?? record.totalCost
+        ?? record.cost
+        ?? record.fee
+        ?? record.amount,
+        0
+    );
+    const billableCost = actual?.cost || fallbackCost;
+    if (billableCost <= 0) return null;
+    return {
+        request_id: recordRequestId || requestId,
+        lookup_request_id: requestId,
+        actual_cost: billableCost,
+        actual_cost_source: actual?.cost > 0 ? 'actual_cost' : 'fallback_cost',
+        total_cost: normalizeSub2ApiCost(record.total_cost ?? record.totalCost, 0),
+        input_cost: normalizeSub2ApiCost(record.input_cost ?? record.inputCost, 0),
+        output_cost: normalizeSub2ApiCost(record.output_cost ?? record.outputCost, 0),
+        cache_creation_cost: normalizeSub2ApiCost(record.cache_creation_cost ?? record.cacheCreationCost, 0),
+        cache_read_cost: normalizeSub2ApiCost(record.cache_read_cost ?? record.cacheReadCost, 0),
+        image_output_cost: normalizeSub2ApiCost(record.image_output_cost ?? record.imageOutputCost, 0),
+        cost_field: actual?.path || 'usage_record.fallback_cost'
+    };
+}
+
+function resolveSub2ApiUsageLookupConfig(env = {}) {
+    return {
+        attempts: normalizePositiveInt(
+            readFirstEnv(env, ['AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS'], '12'),
+            12,
+            { min: 1, max: 20 }
+        ),
+        intervalMs: normalizePositiveInt(
+            readFirstEnv(env, ['AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS'], '500'),
+            500,
+            { min: 0, max: 3000 }
+        )
+    };
+}
+
+async function fetchSub2ApiUsageRecordForResponse({
+    config = {},
+    payload = {},
+    response = null,
+    fetchImpl = globalThis.fetch,
+    env = process.env,
+    signal = null
+} = {}) {
+    if (!config?.apiKey || !isSub2ApiGatewayBaseUrl(config.baseUrl) || typeof fetchImpl !== 'function') {
+        return null;
+    }
+    const hints = getSub2ApiResponseBillingHints(payload, response);
+    if (hints.headerCost > 0) {
+        return {
+            request_id: hints.requestIds[0] || '',
+            actual_cost: hints.headerCost,
+            cost_field: 'response_header'
+        };
+    }
+    if (!hints.requestIds.length) return null;
+    const lookup = resolveSub2ApiUsageLookupConfig(env);
+
+    for (let attempt = 0; attempt < lookup.attempts; attempt += 1) {
+        for (const requestId of hints.requestIds) {
+            const usageUrls = [
+                buildProviderEndpointUrl(config.baseUrl, `/usage/requests/${encodeURIComponent(requestId)}`),
+                buildProviderEndpointUrl(config.baseUrl, `/usage?request_id=${encodeURIComponent(requestId)}`)
+            ];
+            for (const usageUrl of usageUrls) {
+                try {
+                    // eslint-disable-next-line no-await-in-loop
+                    const usageResponse = await fetchProviderResponse(fetchImpl, usageUrl, {
+                        method: 'GET',
+                        headers: {
+                            Authorization: `Bearer ${config.apiKey}`,
+                            Accept: 'application/json'
+                        },
+                        ...(signal ? { signal } : {})
+                    }, {
+                        env,
+                        label: 'Sub2API 使用记录'
+                    });
+                    if (!usageResponse.ok) continue;
+                    const timing = {};
+                    // eslint-disable-next-line no-await-in-loop
+                    const usagePayload = await readUpstreamPayload(usageResponse, timing, { env, signal, label: 'Sub2API 使用记录响应体' });
+                    const record = normalizeSub2ApiUsageLookupRecord(usagePayload, requestId);
+                    if (record) return record;
+                } catch (_) {
+                    // 使用记录回查不能影响主生成链路，拿不到就回退到响应 usage/旧规则。
+                }
+            }
+        }
+        if (attempt < lookup.attempts - 1 && lookup.intervalMs > 0) {
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(lookup.intervalMs);
+        }
+    }
+    return null;
+}
+
+function attachSub2ApiBillingToUsage(usage = {}, payload = {}, response = null, record = null) {
+    const normalizedUsage = normalizeTokenUsage(usage);
+    const directCost = extractSub2ApiActualCost({
+        usage: normalizedUsage,
+        payload,
+        sub2api: payload?.sub2api,
+        billing: payload?.billing
+    });
+    const fallbackCost = normalizeSub2ApiCost(
+        payload?.total_cost
+        ?? payload?.totalCost
+        ?? payload?.cost
+        ?? payload?.fee
+        ?? payload?.amount
+        ?? payload?.usage?.total_cost
+        ?? payload?.usage?.totalCost
+        ?? payload?.sub2api?.total_cost
+        ?? payload?.sub2api?.totalCost,
+        0
+    );
+    const hints = getSub2ApiResponseBillingHints(payload, response);
+    const actualCost = record?.actual_cost || directCost?.cost || hints.headerCost || fallbackCost || 0;
+    if (actualCost <= 0 && !hints.requestIds.length && !record) return normalizedUsage;
+    return {
+        ...normalizedUsage,
+        actual_cost: actualCost || normalizedUsage.actual_cost,
+        actualCost: actualCost || normalizedUsage.actualCost,
+        sub2api_actual_cost: actualCost || normalizedUsage.sub2api_actual_cost,
+        sub2apiActualCost: actualCost || normalizedUsage.sub2apiActualCost,
+        sub2api: {
+            ...(normalizedUsage.sub2api && typeof normalizedUsage.sub2api === 'object' ? normalizedUsage.sub2api : {}),
+            actual_cost: actualCost || 0,
+            actualCost: actualCost || 0,
+            request_id: record?.request_id || hints.requestIds[0] || '',
+            requestId: record?.request_id || hints.requestIds[0] || '',
+            lookup_request_id: record?.lookup_request_id || hints.requestIds[0] || '',
+            lookupRequestId: record?.lookup_request_id || hints.requestIds[0] || '',
+            client_request_id: hints.clientRequestId || '',
+            clientRequestId: hints.clientRequestId || '',
+            upstream_request_id: hints.upstreamRequestId || '',
+            upstreamRequestId: hints.upstreamRequestId || '',
+            cost_source: record?.actual_cost_source || (directCost?.cost > 0 ? 'actual_cost' : (fallbackCost > 0 ? 'fallback_cost' : '')),
+            costSource: record?.actual_cost_source || (directCost?.cost > 0 ? 'actual_cost' : (fallbackCost > 0 ? 'fallback_cost' : '')),
+            cost_field: record?.cost_field || directCost?.path || (hints.headerCost > 0 ? 'response_header' : (fallbackCost > 0 ? 'payload.fallback_cost' : ''))
+        }
+    };
+}
+
+async function resolveTokenUsageWithSub2ApiBilling({
+    usage = {},
+    payload = {},
+    response = null,
+    config = {},
+    fetchImpl = globalThis.fetch,
+    env = process.env,
+    signal = null
+} = {}) {
+    const record = await fetchSub2ApiUsageRecordForResponse({
+        config,
+        payload,
+        response,
+        fetchImpl,
+        env,
+        signal
+    });
+    return attachSub2ApiBillingToUsage(usage, payload, response, record);
 }
 
 function isGeminiImageUrlBridgeJsonResponse(response) {
@@ -884,6 +1216,10 @@ function normalizePositiveInt(value, fallback = 1, { min = 1, max = 8 } = {}) {
     return Math.min(max, Math.max(min, parsed));
 }
 
+function safeUsageObject(value = {}) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function resolveDefaultVideoPollMaxAttempts({ duration = 15, resolution = '720p' } = {}) {
     const seconds = Math.max(1, Number(duration) || 15);
     let targetSeconds = 480;
@@ -925,6 +1261,9 @@ function resolveResponseBodyTimeoutMs(env = {}, fallback = DEFAULT_PROVIDER_TIME
 
 function normalizeTokenUsage(value = {}) {
     const usage = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const inputTokenDetails = safeUsageObject(usage.input_tokens_details || usage.inputTokenDetails || usage.prompt_tokens_details || usage.promptTokenDetails);
+    const outputTokenDetails = safeUsageObject(usage.output_tokens_details || usage.outputTokenDetails || usage.completion_tokens_details || usage.completionTokenDetails);
+    const cacheCreation = safeUsageObject(usage.cache_creation || usage.cacheCreation);
     const inputTokens = normalizePositiveInt(
         usage.input_tokens || usage.inputTokens || usage.prompt_tokens || usage.promptTokens,
         0,
@@ -940,21 +1279,64 @@ function normalizeTokenUsage(value = {}) {
         inputTokens + outputTokens,
         { min: 0, max: Number.MAX_SAFE_INTEGER }
     );
+    const cacheReadTokens = normalizePositiveInt(
+        usage.cache_read_tokens || usage.cacheReadTokens || usage.cache_read_input_tokens || usage.cacheReadInputTokens || inputTokenDetails.cached_tokens || inputTokenDetails.cachedTokens,
+        0,
+        { min: 0, max: Number.MAX_SAFE_INTEGER }
+    );
+    const cacheWriteTokens = normalizePositiveInt(
+        usage.cache_write_tokens || usage.cacheWriteTokens || usage.cache_creation_tokens || usage.cacheCreationTokens || usage.cache_creation_input_tokens || usage.cacheCreationInputTokens,
+        normalizePositiveInt(cacheCreation.ephemeral_5m_input_tokens || cacheCreation.ephemeral5mInputTokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER })
+            + normalizePositiveInt(cacheCreation.ephemeral_1h_input_tokens || cacheCreation.ephemeral1hInputTokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+        { min: 0, max: Number.MAX_SAFE_INTEGER }
+    );
+    const imageOutputTokens = normalizePositiveInt(
+        usage.image_output_tokens || usage.imageOutputTokens || outputTokenDetails.image_tokens || outputTokenDetails.imageTokens,
+        0,
+        { min: 0, max: Number.MAX_SAFE_INTEGER }
+    );
 
     return {
+        ...usage,
         input_tokens: inputTokens,
         output_tokens: outputTokens,
-        total_tokens: totalTokens
+        total_tokens: totalTokens,
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        cache_read_tokens: cacheReadTokens,
+        cacheReadTokens,
+        cache_write_tokens: cacheWriteTokens,
+        cacheWriteTokens,
+        image_output_tokens: imageOutputTokens,
+        imageOutputTokens
     };
 }
 
 function addTokenUsage(left = {}, right = {}) {
     const normalizedLeft = normalizeTokenUsage(left);
     const normalizedRight = normalizeTokenUsage(right);
+    const leftCost = normalizeSub2ApiCost(normalizedLeft.sub2api_actual_cost ?? normalizedLeft.actual_cost ?? normalizedLeft.sub2api?.actual_cost, 0);
+    const rightCost = normalizeSub2ApiCost(normalizedRight.sub2api_actual_cost ?? normalizedRight.actual_cost ?? normalizedRight.sub2api?.actual_cost, 0);
+    const actualCost = normalizeSub2ApiCost(leftCost + rightCost, 0);
     return {
         input_tokens: normalizedLeft.input_tokens + normalizedRight.input_tokens,
         output_tokens: normalizedLeft.output_tokens + normalizedRight.output_tokens,
-        total_tokens: normalizedLeft.total_tokens + normalizedRight.total_tokens
+        total_tokens: normalizedLeft.total_tokens + normalizedRight.total_tokens,
+        ...(actualCost > 0 ? {
+            actual_cost: actualCost,
+            actualCost,
+            sub2api_actual_cost: actualCost,
+            sub2apiActualCost: actualCost,
+            sub2api: {
+                actual_cost: actualCost,
+                actualCost,
+                records: [
+                    ...(Array.isArray(normalizedLeft.sub2api?.records) ? normalizedLeft.sub2api.records : (normalizedLeft.sub2api?.request_id ? [normalizedLeft.sub2api] : [])),
+                    ...(Array.isArray(normalizedRight.sub2api?.records) ? normalizedRight.sub2api.records : (normalizedRight.sub2api?.request_id ? [normalizedRight.sub2api] : []))
+                ].filter(Boolean)
+            }
+        } : {})
     };
 }
 
@@ -2822,6 +3204,7 @@ async function requestOpenAiCompatibleImages({
     let partialError = null;
     let lastPayloadSummary = null;
     let responseFormatFallbackUsed = false;
+    const captureSub2ApiBilling = shouldCaptureTaskSub2ApiBilling(task);
 
     const runBatch = async (batchQuantity) => {
         attempts += 1;
@@ -2921,8 +3304,19 @@ async function requestOpenAiCompatibleImages({
         if (payload.revised_prompt && !revisedPrompt) {
             revisedPrompt = normalizeText(payload.revised_prompt, 8000);
         }
-        if (payload.usage) {
-            tokenUsage = addTokenUsage(tokenUsage, payload.usage);
+        if (payload.usage || (captureSub2ApiBilling && isSub2ApiGatewayBaseUrl(config.baseUrl))) {
+            const batchUsage = captureSub2ApiBilling
+                ? await resolveTokenUsageWithSub2ApiBilling({
+                    usage: payload.usage || {},
+                    payload,
+                    response,
+                    config,
+                    fetchImpl,
+                    env,
+                    signal
+                })
+                : normalizeTokenUsage(payload.usage || {});
+            tokenUsage = addTokenUsage(tokenUsage, batchUsage);
         }
         payloads.push(...batchData);
         return batchData.length;
@@ -3041,6 +3435,7 @@ async function requestOpenAiCompatibleVideos({
     const submitAttempts = [];
     let submitEndpointPath = submitEndpoint;
     const submitFallbackUsed = false;
+    const captureSub2ApiBilling = shouldCaptureTaskSub2ApiBilling(task);
 
     const submitVideoRequest = async (endpointPath) => {
         const requestStart = nowMs();
@@ -3158,8 +3553,19 @@ async function requestOpenAiCompatibleVideos({
     }
 
     lastPayloadSummary = lastPayloadSummary || summarizeUpstreamPayload(payload);
-    if (payload.usage) {
-        tokenUsage = addTokenUsage(tokenUsage, payload.usage);
+    if (payload.usage || (captureSub2ApiBilling && isSub2ApiGatewayBaseUrl(config.baseUrl))) {
+        const resolvedUsage = captureSub2ApiBilling
+            ? await resolveTokenUsageWithSub2ApiBilling({
+                usage: payload.usage || {},
+                payload,
+                response,
+                config,
+                fetchImpl,
+                env,
+                signal
+            })
+            : normalizeTokenUsage(payload.usage || {});
+        tokenUsage = addTokenUsage(tokenUsage, resolvedUsage);
     }
 
     return {
@@ -4463,13 +4869,20 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
     };
     const preflightMs = elapsedMs(preflightStart);
 
+    const sub2ApiClientRequestId = isSub2ApiGatewayBaseUrl(config.baseUrl)
+        ? buildSub2ApiClientRequestId(task)
+        : '';
+    const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
+        ? { 'X-Client-Request-ID': sub2ApiClientRequestId }
+        : {};
     const timing = {};
     const upstreamStartedAt = nowMs();
     const response = await fetchProviderResponse(fetchImpl, `${config.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${config.apiKey}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...sub2ApiClientRequestHeaders
         },
         body: JSON.stringify(requestBody),
         ...(signal ? { signal } : {})
@@ -4496,11 +4909,27 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         throw error;
     }
 
-        return {
+    const tokenUsage = shouldCaptureTaskSub2ApiBilling(task)
+        ? await resolveTokenUsageWithSub2ApiBilling({
+            usage: payload.usage,
+            payload: {
+                ...payload,
+                client_request_id: sub2ApiClientRequestId,
+                clientRequestId: sub2ApiClientRequestId
+            },
+            response,
+            config,
+            fetchImpl,
+            env,
+            signal
+        })
+        : normalizeTokenUsage(payload.usage || {});
+
+    return {
         status: 'succeeded',
         resultPrompt: text,
         images: [],
-        tokenUsage: normalizeTokenUsage(payload.usage),
+        tokenUsage,
         providerTaskId: normalizeText(payload.id || payload.task_id || payload.provider_task_id, 240),
         metadata: {
             executor: 'openai-compatible-chat',
@@ -4517,6 +4946,7 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
             upstream_response_body_ms: upstreamResponseMs,
             upstream_response_text_ms: upstreamResponseTextMs,
             upstream_response_parse_ms: upstreamResponseParseMs,
+            sub2api_client_request_id: sub2ApiClientRequestId,
             timing: {
                 preflight_ms: preflightMs,
                 config_resolve_ms: configResolveMs,

@@ -64,6 +64,7 @@ func RegisterGatewayRoutes(
 			h.Gateway.CountTokens(c)
 		})
 		gateway.GET("/models", h.Gateway.Models)
+		gateway.GET("/usage/requests/:request_id", h.Gateway.UsageRequest)
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {

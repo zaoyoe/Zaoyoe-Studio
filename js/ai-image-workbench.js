@@ -406,10 +406,108 @@
         return model;
     }
 
+    function normalizePricingProviderId(value = '') {
+        const raw = normalizePricingText(value, 80);
+        if (!raw) return '';
+        if (raw === '*' || raw.toLowerCase() === 'all') return '*';
+        return raw
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
+
+    function getPricingRuleProviderId(rule = {}) {
+        const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+            ? rule.metadata
+            : {};
+        const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+            ? metadata.pricing
+            : {};
+        return normalizePricingProviderId(
+            metadata.provider_id
+            || metadata.providerId
+            || pricing.provider_id
+            || pricing.providerId
+            || rule.provider_id
+            || rule.providerId
+            || ''
+        );
+    }
+
+    function getRuntimePricingRuleStrategy(rule = {}) {
+        const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+            ? rule.metadata
+            : {};
+        const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+            ? metadata.pricing
+            : {};
+        const strategy = normalizePricingText(
+            metadata.billing_strategy
+            || metadata.billingStrategy
+            || pricing.billing_strategy
+            || pricing.billingStrategy
+            || '',
+            40
+        ).toLowerCase().replace(/-/g, '_');
+        if (['token_sub2api', 'fixed_points', 'per_request'].includes(strategy)) return strategy;
+        return rule.mode === 'chat' || rule.mode === 'reverse' ? 'token_sub2api' : 'per_request';
+    }
+
+    function getRuntimePricingRuleTokenEstimate(rule = {}) {
+        const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+            ? rule.metadata
+            : {};
+        const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+            ? metadata.pricing
+            : {};
+        const rates = pricing.rates && typeof pricing.rates === 'object' && !Array.isArray(pricing.rates)
+            ? pricing.rates
+            : {};
+        const estimate = pricing.estimate && typeof pricing.estimate === 'object' && !Array.isArray(pricing.estimate)
+            ? pricing.estimate
+            : {};
+        const inputTokens = Math.max(0, Math.round(Number(estimate.input_tokens ?? estimate.inputTokens ?? 0) || 0));
+        const outputTokens = Math.max(0, Math.round(Number(estimate.output_tokens ?? estimate.outputTokens ?? 0) || 0));
+        const cacheWriteTokens = Math.max(0, Math.round(Number(estimate.cache_write_tokens ?? estimate.cacheWriteTokens ?? 0) || 0));
+        const cacheReadTokens = Math.max(0, Math.round(Number(estimate.cache_read_tokens ?? estimate.cacheReadTokens ?? 0) || 0));
+        const imageOutputTokens = Math.max(0, Math.round(Number(estimate.image_output_tokens ?? estimate.imageOutputTokens ?? 0) || 0));
+        const explicitEstimate = Number(estimate.estimated_points ?? estimate.estimatedPoints ?? 0) || 0;
+        if (explicitEstimate > 0) return normalizePoints(explicitEstimate, 0);
+        const requestBase = Number(pricing.request_base ?? pricing.requestBase ?? pricing.per_request ?? pricing.perRequest ?? 0) || 0;
+        const multiplier = Number(pricing.multiplier ?? 1) || 1;
+        const pointsPerUsd = Number(pricing.points_per_usd ?? pricing.pointsPerUsd ?? 1) || 1;
+        const total = requestBase
+            + (Math.max(0, inputTokens - cacheReadTokens) * (Number(rates.input ?? rates.input_per_million ?? rates.inputPerMillion ?? 0) || 0) / 1000000)
+            + (Math.max(0, outputTokens - imageOutputTokens) * (Number(rates.output ?? rates.output_per_million ?? rates.outputPerMillion ?? 0) || 0) / 1000000)
+            + (cacheWriteTokens * (Number(rates.cache_write ?? rates.cacheWrite ?? 0) || 0) / 1000000)
+            + (cacheReadTokens * (Number(rates.cache_read ?? rates.cacheRead ?? 0) || 0) / 1000000)
+            + (imageOutputTokens * (Number(rates.image_output ?? rates.imageOutput ?? 0) || 0) / 1000000);
+        return normalizePoints(total * multiplier * pointsPerUsd, 0);
+    }
+
+    function getRuntimePricingRuleEstimate(rule = {}, quantity = 1) {
+        const strategy = getRuntimePricingRuleStrategy(rule);
+        if (strategy === 'token_sub2api') {
+            const tokenEstimate = getRuntimePricingRuleTokenEstimate(rule);
+            return tokenEstimate > 0 ? tokenEstimate : normalizePoints(rule.points, 0);
+        }
+        const points = normalizePoints(rule.points, 0);
+        const multiplier = strategy === 'fixed_points' ? 1 : clampNumber(quantity, 1, 8, 1);
+        return normalizePoints(points * multiplier, 0);
+    }
+
     function formatPoints(value = 0) {
         const points = normalizePoints(value, 0);
         if (Number.isInteger(points)) return String(points);
         return String(points).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+    }
+
+    function formatBillingPoints(value = 0) {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number <= 0) return '0';
+        const rounded = Math.round(number * 1000000) / 1000000;
+        if (Number.isInteger(rounded)) return String(rounded);
+        return String(rounded).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
     }
 
     function escapeHtml(value) {
@@ -832,6 +930,7 @@
             : String(item.id || item.model || item.name || item.value || '').trim();
         if (!id) return null;
         const providerLabel = String(item.providerLabel || item.provider_label || fallbackProvider.label || '').trim();
+        const vendorLabel = String(item.vendorLabel || item.vendor_label || fallbackProvider.vendorLabel || fallbackProvider.vendor_label || '').trim();
         const label = normalizeRuntimeModelLabel(String(item.label || item.displayName || item.display_name || id).trim());
         const providerId = String(item.providerId || item.provider_id || fallbackProvider.providerId || fallbackProvider.provider_id || '').trim();
         const rawSupportsImageInput = item.supportsImageInput ?? item.supports_image_input ?? item.vision ?? item.vision_input ?? null;
@@ -846,6 +945,7 @@
             label,
             providerId,
             providerLabel,
+            vendorLabel,
             supportsImageInput
         };
     }
@@ -925,7 +1025,7 @@
         (Array.isArray(providers) ? providers : []).forEach((provider) => {
             const models = isTextMode ? provider.chatModels : (isVideo ? provider.videoModels : provider.imageModels);
             (Array.isArray(models) ? models : []).forEach((model) => {
-                const familyLabel = inferModelFamilyLabel(model.id, provider.label);
+                const familyLabel = inferModelFamilyLabel(model.id, provider.vendorLabel || provider.label);
                 const familyId = familyLabel.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '') || 'models';
                 if (!familyMap.has(familyId)) {
                     familyMap.set(familyId, {
@@ -937,7 +1037,8 @@
                 familyMap.get(familyId).models.push({
                     ...model,
                     providerId: provider.providerId,
-                    providerLabel: provider.label
+                    providerLabel: provider.label,
+                    vendorLabel: provider.vendorLabel || ''
                 });
             });
         });
@@ -959,6 +1060,10 @@
             provider.label || provider.name || provider.providerLabel || provider.provider_label || providerId,
             fallbackLabel || providerId
         );
+        const vendorLabel = normalizeRuntimeProviderLabel(
+            provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name || '',
+            ''
+        );
         const modelGroup = String(provider.modelGroup || provider.model_group || '').trim().toLowerCase();
         const visionModelSet = new Set((Array.isArray(provider.visionModels || provider.vision_models || provider.chatVisionModels || provider.chat_vision_models)
             ? (provider.visionModels || provider.vision_models || provider.chatVisionModels || provider.chat_vision_models)
@@ -969,13 +1074,13 @@
             (Array.isArray(provider.imageModels || provider.image_models)
                 ? (provider.imageModels || provider.image_models)
                 : (Array.isArray(provider.models) ? provider.models : []))
-                .map((model) => normalizeRuntimeModelOption(model, { ...provider, providerId, label }))
+                .map((model) => normalizeRuntimeModelOption(model, { ...provider, providerId, label, vendorLabel }))
                 .filter(Boolean)
         ), 'image');
         const chatModels = modelGroup === 'image' || modelGroup === 'video' ? [] : filterRuntimeModelsByGroup(uniqueModelOptions(
             (Array.isArray(provider.chatModels || provider.chat_models) ? (provider.chatModels || provider.chat_models) : [])
                 .map((model) => {
-	                    const option = normalizeRuntimeModelOption(model, { ...provider, providerId, label });
+	                    const option = normalizeRuntimeModelOption(model, { ...provider, providerId, label, vendorLabel });
 	                    if (!option) return null;
 	                    if (option.supportsImageInput === null && visionModelSet.has(String(option.id || '').trim().toLowerCase())) {
 	                        option.supportsImageInput = true;
@@ -986,13 +1091,14 @@
         ), 'chat');
         const videoModels = uniqueModelOptions(
             (Array.isArray(provider.videoModels || provider.video_models) ? (provider.videoModels || provider.video_models) : [])
-                .map((model) => normalizeRuntimeModelOption(model, { ...provider, providerId, label }))
+                .map((model) => normalizeRuntimeModelOption(model, { ...provider, providerId, label, vendorLabel }))
                 .filter(Boolean)
         );
         if (!imageModels.length && !chatModels.length && !videoModels.length) return null;
         return {
             providerId,
             label,
+            vendorLabel,
             imageModels,
             chatModels,
             videoModels
@@ -1362,6 +1468,8 @@
         let score = 0;
         if (rule.site === request.site) score += 32;
         if (rule.model === request.model) score += 16;
+        const ruleProviderId = getPricingRuleProviderId(rule);
+        if (ruleProviderId && ruleProviderId !== '*' && ruleProviderId === request.providerId) score += 24;
         if (rule.resolution === request.resolution) score += 8;
         if (rule.ratio === request.ratio) score += 4;
         if (Number(rule.quantity) === Number(request.quantity)) score += 2;
@@ -1374,6 +1482,7 @@
         mode = state.mode,
         billingMode = state.billingMode,
         model = state.model,
+        providerId = getActiveModelProviderId(mode),
         resolution = state.resolution,
         ratio = state.ratio,
         quantity = state.quantity
@@ -1384,6 +1493,7 @@
             mode,
             billingMode,
             model: normalizePricingModel(model),
+            providerId: normalizePricingProviderId(providerId),
             resolution: normalizePricingText(resolution, 20).toLowerCase() || '1k',
             ratio: normalizePricingText(ratio, 20).toLowerCase() || '1:1',
             quantity: clampNumber(quantity, 1, 8, 1)
@@ -1395,13 +1505,18 @@
                 const ruleMode = normalizePricingText(rule.mode, 40).toLowerCase();
                 const ruleBillingMode = normalizePricingText(rule.billing_mode || rule.billingMode, 40).toLowerCase();
                 const ruleModel = normalizePricingModel(rule.model || '*') || '*';
+                const ruleProviderId = getPricingRuleProviderId(rule);
                 const ruleResolution = normalizePricingText(rule.resolution || '*', 20).toLowerCase() || '*';
                 const ruleRatio = normalizePricingText(rule.ratio || '*', 20).toLowerCase() || '*';
                 const ruleQuantity = Number(rule.quantity || 1);
+                const providerMatches = !ruleProviderId
+                    || ruleProviderId === '*'
+                    || (request.providerId && ruleProviderId === request.providerId);
                 return (ruleSite === request.site || ruleSite === 'all')
                     && ruleMode === request.mode
                     && ruleBillingMode === request.billingMode
                     && (ruleModel === '*' || ruleModel === request.model)
+                    && providerMatches
                     && (ruleResolution === '*' || ruleResolution === request.resolution)
                     && (ruleRatio === '*' || ruleRatio === request.ratio)
                     && (ruleQuantity === 1 || ruleQuantity === Number(request.quantity));
@@ -2000,7 +2115,7 @@
             ?? metadata.queueEtaSeconds
         );
         const cost = ['failed', 'cancelled', 'refunded'].includes(status)
-            ? 0
+            ? Math.max(0, chargedPoints)
             : (status === 'succeeded' ? chargedPoints : estimatedPoints);
         const rawTokenUsage = task.tokenUsage || task.token_usage || {};
         const tokenUsage = Number(
@@ -2019,6 +2134,7 @@
         const agentId = String(task.agent || task.agentSlug || task.agent_slug || '');
         const apiBaseUrl = normalizeApiBaseUrl(task.apiBaseUrl || task.api_base_url || '');
         const billingMode = task.billingMode || task.billing_mode;
+        const modelProviderId = normalizePricingProviderId(task.modelProviderId || task.model_provider_id || task.providerId || task.provider_id || metadata.provider_id || metadata.providerId || metadata.model_provider_id || metadata.modelProviderId);
         const errorCode = String(task.errorCode || task.error_code || '').trim();
         const errorMessage = getFriendlyTaskError(task.errorMessage || task.error_message || task.remoteError || '', '', mode);
         return {
@@ -2052,6 +2168,8 @@
                 ? String(metadata.camera_fixed ?? metadata.video_camera_fixed ?? task.videoCameraFixed ?? task.video_camera_fixed)
                 : DEFAULT_STATE.videoCameraFixed,
             model: String(task.model || 'gpt-image'),
+            modelProviderId,
+            providerId: modelProviderId,
             billingMode: ['points', 'api'].includes(billingMode) ? String(billingMode) : 'points',
             apiBaseUrl,
             apiProvider: getApiBaseProfile(apiBaseUrl)?.label || '',
@@ -2147,7 +2265,7 @@
     function mergeTaskSnapshots(localTask = {}, remoteTask = {}) {
         const remoteStatus = normalizeTaskStatus(remoteTask.status || localTask.status);
         const localStatus = normalizeTaskStatus(localTask.status);
-        const keepLocalCancel = localStatus === 'cancelled' && remoteStatus === 'queued';
+        const keepLocalCancel = localStatus === 'cancelled' && remoteStatus !== 'failed';
         const keepLocalStreaming = localStatus === 'streaming' && ['queued', 'processing'].includes(remoteStatus);
         const keepLocalProcessing = localStatus === 'processing' && remoteStatus === 'queued';
         const finalStatus = keepLocalCancel
@@ -2175,9 +2293,11 @@
             progress: nextProgress,
             progressKnown,
             images: remoteTask.images?.length ? remoteTask.images : (localTask.images || []),
-            resultPrompt: keepLocalStreaming
+            resultPrompt: keepLocalCancel
                 ? (localTask.resultPrompt || remoteTask.resultPrompt || '')
-                : (remoteTask.resultPrompt || localTask.resultPrompt || ''),
+                : (keepLocalStreaming
+                ? (localTask.resultPrompt || remoteTask.resultPrompt || '')
+                : (remoteTask.resultPrompt || localTask.resultPrompt || '')),
             reasoningText: remoteTask.reasoningText || localTask.reasoningText || '',
             metadata: {
                 ...(localTask.metadata || {}),
@@ -2641,6 +2761,7 @@
         const normalized = remoteTasks.map(normalizeTask).filter(Boolean);
         if (!normalized.length) return false;
         const beforeSignature = getTasksSnapshotSignature();
+        const beforeContinuationImage = JSON.stringify(state.continuationImage || null);
         const beforeActiveTaskId = state.activeTaskId || '';
         const byId = new Map(state.tasks.map((task) => [task.id, task]));
         const idReplacements = new Map();
@@ -2684,7 +2805,16 @@
                 if (idReplacements.has(task.parentTaskId)) {
                     task.parentTaskId = idReplacements.get(task.parentTaskId);
                 }
+                if (idReplacements.has(task.referenceTaskId)) {
+                    task.referenceTaskId = idReplacements.get(task.referenceTaskId);
+                }
             });
+            if (state.continuationImage?.taskId && idReplacements.has(state.continuationImage.taskId)) {
+                state.continuationImage = normalizeReferenceItem({
+                    ...state.continuationImage,
+                    taskId: idReplacements.get(state.continuationImage.taskId)
+                });
+            }
             idReplacements.forEach((toId, fromId) => {
                 if (migrateHistoryPrefsTaskId(fromId, toId)) {
                     migratedIds.push(toId);
@@ -2707,7 +2837,10 @@
         if (state.activeTaskId && !state.tasks.some((task) => task.id === state.activeTaskId)) {
             state.activeTaskId = '';
         }
-        return capabilityChanged || beforeSignature !== getTasksSnapshotSignature() || beforeActiveTaskId !== (state.activeTaskId || '');
+        return capabilityChanged
+            || beforeSignature !== getTasksSnapshotSignature()
+            || beforeContinuationImage !== JSON.stringify(state.continuationImage || null)
+            || beforeActiveTaskId !== (state.activeTaskId || '');
     }
 
     async function loadRemoteConfig() {
@@ -3000,9 +3133,9 @@
         const normalizedResultId = String(resultId || '').trim();
         const normalizedIndex = String(resultIndex ?? '').trim();
         for (const task of state.tasks) {
-            if (normalizedTaskId && task.id !== normalizedTaskId) continue;
             const image = (task.images || []).find((item) => {
                 if (normalizedResultId && String(item?.resultId || '').trim() === normalizedResultId) return true;
+                if (normalizedTaskId && task.id !== normalizedTaskId && String(item?.taskId || '').trim() !== normalizedTaskId) return false;
                 return normalizedIndex && String(item?.index ?? '').trim() === normalizedIndex;
             });
             if (image) return { task, image };
@@ -3471,7 +3604,12 @@
     function getCurrentImageContext() {
         const explicitContinuation = normalizeReferenceItem(state.continuationImage);
         if (explicitContinuation?.image) {
-            const sourceTask = state.tasks.find((task) => task.id === explicitContinuation.taskId) || null;
+            const matched = getResultImageByIdentity(
+                explicitContinuation.taskId,
+                explicitContinuation.resultId,
+                explicitContinuation.resultIndex
+            );
+            const sourceTask = matched?.task || state.tasks.find((task) => task.id === explicitContinuation.taskId) || null;
             return {
                 image: explicitContinuation.image,
                 title: explicitContinuation.title || '续作图片',
@@ -3630,9 +3768,9 @@
             quantity
         });
         if (matchedRule) {
-            return normalizePoints((Number(matchedRule.points) || 0) * quantity, 0);
+            return getRuntimePricingRuleEstimate(matchedRule, quantity);
         }
-        const modeCost = MODE_META[mode]?.cost || 8;
+        const modeCost = MODE_META[mode]?.cost ?? 8;
         const resolutionMultiplier = isVideoMode(mode)
             ? ({
                 '480p': 0.7,
@@ -3641,7 +3779,7 @@
                 '4k': 3.6
             }[String(resolution || '').toLowerCase()] || 1)
             : (RESOLUTION_META[state.resolution]?.multiplier || 1);
-        return normalizePoints(Math.max(1, modeCost * resolutionMultiplier * quantity), 0);
+        return normalizePoints(Math.max(modeCost > 0 ? 1 : 0, modeCost * resolutionMultiplier * quantity), 0);
     }
 
     function getModeLabel(mode = state.mode) {
@@ -3686,12 +3824,34 @@
     function getMainCostCopy(mode = inferWorkbenchMode()) {
         if (!state.billingMode) return '请选择计费方式';
         if (state.billingMode === 'api') return isTextVisionMode(mode) ? '消耗 API token' : (isVideoMode(mode) ? '消耗 API 视频额度' : '消耗 API 图片额度');
+        const matchedRule = findRuntimePricingRule({
+            mode,
+            billingMode: state.billingMode,
+            model: getActiveModelValue(mode),
+            resolution: getActiveResolution(mode),
+            ratio: getActiveRatio(mode),
+            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2)
+        });
+        if (matchedRule && getRuntimePricingRuleStrategy(matchedRule) === 'token_sub2api' && getRuntimePricingRuleEstimate(matchedRule, 1) <= 0) {
+            return '按实际用量扣费';
+        }
         return `预计 ${formatPoints(getCostEstimate(mode))} 积分`;
     }
 
     function getComposerCostValue(mode = inferWorkbenchMode()) {
         if (!state.billingMode) return '选择计费';
         if (state.billingMode === 'api') return isTextVisionMode(mode) ? 'API token' : (isVideoMode(mode) ? 'API 视频' : 'API 图片');
+        const matchedRule = findRuntimePricingRule({
+            mode,
+            billingMode: state.billingMode,
+            model: getActiveModelValue(mode),
+            resolution: getActiveResolution(mode),
+            ratio: getActiveRatio(mode),
+            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2)
+        });
+        if (matchedRule && getRuntimePricingRuleStrategy(matchedRule) === 'token_sub2api' && getRuntimePricingRuleEstimate(matchedRule, 1) <= 0) {
+            return '实际扣费';
+        }
         return `${formatPoints(getCostEstimate(mode))}积分`;
     }
 
@@ -3907,7 +4067,7 @@
         if (!task) return '从提示词画廊继续创作';
         const resolution = getResolutionLabel(task.resolution, task.mode);
         const billingText = (() => {
-            if (task.status === 'failed' || task.status === 'cancelled') return '未扣积分';
+            if (task.status === 'failed' || task.status === 'cancelled') return getTaskChargeMetaLabel(task) || '未扣费';
             if (task.status === 'succeeded') return `已扣 ${formatPoints(task.chargedPoints || task.cost || 0)} 积分`;
             return `预计 ${formatPoints(task.estimatedPoints || task.cost || 0)} 积分`;
         })();
@@ -4131,8 +4291,8 @@
 
     function getChatTaskAnswerText(task = {}) {
         const resultText = String(task?.resultPrompt || '').trim();
-        if (task?.status === 'failed' || task?.status === 'cancelled') return getTaskFailureReason(task);
         if (resultText) return resultText;
+        if (task?.status === 'failed' || task?.status === 'cancelled') return getTaskFailureReason(task);
         return '';
     }
 
@@ -4164,6 +4324,11 @@
         `;
     }
 
+    function renderChatCancelledNotice(task = {}) {
+        if (task?.status !== 'cancelled') return '';
+        return '<em class="ai-image-chat-cancelled-note">已取消生成</em>';
+    }
+
     function getChatTaskStatsItems(task = {}, { showDuration = false } = {}) {
         const items = [];
         const generatedDateTime = formatGeneratedDateTime(task.completedAt || task.createdAt);
@@ -4175,7 +4340,57 @@
         const tokenStats = getTaskTokenStats(task);
         if (tokenStats.outputTokens) items.push({ text: `输出 Token ${formatTokenCount(tokenStats.outputTokens)}` });
         if (tokenStats.inputTokens) items.push({ text: `输入 Token ${formatTokenCount(tokenStats.inputTokens)}` });
+        const chargeLabel = getTaskChargeMetaLabel(task);
+        if (chargeLabel) items.push({ text: chargeLabel });
         return items;
+    }
+
+    function getTaskChargeMetaLabel(task = {}) {
+        const billingMode = String(task.billingMode || task.billing_mode || '').trim();
+        if (billingMode === 'api') return task.status === 'succeeded' ? '本站扣费 0 积分' : '';
+        if (billingMode && billingMode !== 'points') return '';
+        const chargedPoints = Number(task.chargedPoints ?? task.charged_points ?? 0);
+        if (chargedPoints > 0) return `扣费 ${formatBillingPoints(chargedPoints)} 积分`;
+        if (task.status === 'failed' || task.status === 'cancelled' || task.status === 'refunded') {
+            if (isSub2ApiActualCostTask(task)) return '扣费同步中';
+            return '未扣费';
+        }
+        if (task.status !== 'succeeded') return '';
+        if (chargedPoints <= 0 && isSub2ApiActualCostTask(task)) return '扣费同步中';
+        return `扣费 ${formatBillingPoints(chargedPoints)} 积分`;
+    }
+
+    function isSub2ApiActualCostTask(task = {}) {
+        const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
+            ? task.metadata
+            : {};
+        const pricingCharge = metadata.pricing_charge && typeof metadata.pricing_charge === 'object' && !Array.isArray(metadata.pricing_charge)
+            ? metadata.pricing_charge
+            : {};
+        const pricing = metadata.pricing && typeof metadata.pricing === 'object' && !Array.isArray(metadata.pricing)
+            ? metadata.pricing
+            : {};
+        const matchedRule = pricing.matched_rule && typeof pricing.matched_rule === 'object' && !Array.isArray(pricing.matched_rule)
+            ? pricing.matched_rule
+            : {};
+        const matchedMetadata = matchedRule.metadata && typeof matchedRule.metadata === 'object' && !Array.isArray(matchedRule.metadata)
+            ? matchedRule.metadata
+            : {};
+        const matchedPricing = matchedMetadata.pricing && typeof matchedMetadata.pricing === 'object' && !Array.isArray(matchedMetadata.pricing)
+            ? matchedMetadata.pricing
+            : {};
+        const strategy = normalizePricingText(
+            pricingCharge.billing_strategy
+            || pricingCharge.billingStrategy
+            || pricingCharge.pricing?.billing_strategy
+            || pricingCharge.pricing?.billingStrategy
+            || matchedMetadata.billing_strategy
+            || matchedMetadata.billingStrategy
+            || matchedPricing.billing_strategy
+            || matchedPricing.billingStrategy,
+            40
+        ).toLowerCase().replace(/-/g, '_');
+        return strategy === 'token_sub2api';
     }
 
     function getTaskTimingSummary(task = {}) {
@@ -6082,6 +6297,7 @@
     }
 
 	    function buildSubmitPayload(task, { chatAttachments = [] } = {}) {
+	        const providerId = normalizePricingProviderId(task.modelProviderId || task.model_provider_id || task.providerId || task.provider_id || getActiveModelProviderId(task.mode));
 	        const chatCapabilities = getChatModelCapabilities(task.model || getActiveModelValue('chat'));
 	        const getCapabilityValue = (id, storedValue) => {
 	            const control = chatCapabilities.controls.find((item) => item.id === id);
@@ -6116,10 +6332,14 @@
             videoAudio: isVideoMode(task.mode) ? (task.videoAudio || DEFAULT_STATE.videoAudio) : '',
             videoWatermark: isVideoMode(task.mode) ? (task.videoWatermark || DEFAULT_STATE.videoWatermark) : '',
             videoCameraFixed: isVideoMode(task.mode) ? (task.videoCameraFixed || DEFAULT_STATE.videoCameraFixed) : '',
-            quantity: task.quantity,
-            model: task.model,
-	            apiModelGroup: task.apiModelGroup,
-	            memoryMode: state.chatMemoryMode,
+	            quantity: task.quantity,
+	            model: task.model,
+		            apiModelGroup: task.apiModelGroup,
+		            modelProviderId: providerId,
+		            model_provider_id: providerId,
+		            providerId,
+		            provider_id: providerId,
+		            memoryMode: state.chatMemoryMode,
 	            memoryMessageLimit: getChatMemoryOption().messageLimit,
 	            memoryTokenBudget: getChatMemoryOption().tokenBudget,
 	            clientTaskId: task.id,
@@ -6291,15 +6511,17 @@
                 },
                 auth: true,
                 onEvent(eventName, payload = {}) {
-        if (eventName === 'task' && payload.task) {
+                    if (eventName === 'task' && payload.task) {
                         const storedApiKeyChanged = applyStoredApiKeyFromPayload(payload);
                         const remoteTask = replaceTask(task.id, payload.task);
                         if (remoteTask) {
-                            remoteTask.status = 'streaming';
-                            remoteTask.resultPrompt = receivedText || remoteTask.resultPrompt || '';
+                            if (remoteTask.status !== 'cancelled') {
+                                remoteTask.status = 'streaming';
+                                remoteTask.resultPrompt = receivedText || remoteTask.resultPrompt || '';
+                            }
                             persistState();
                             render();
-                            scrollChatStageToBottom();
+                            if (remoteTask.status !== 'cancelled') scrollChatStageToBottom();
                         } else if (storedApiKeyChanged) {
                             persistState();
                             render();
@@ -6345,18 +6567,48 @@
                         }
                         return;
                     }
+                    if (eventName === 'billing') {
+                        if (!currentTask) return;
+                        const chargedPoints = Number(payload.chargedPoints ?? payload.charged_points);
+                        if (Number.isFinite(chargedPoints)) {
+                            currentTask.chargedPoints = Math.max(0, chargedPoints);
+                            currentTask.cost = currentTask.chargedPoints;
+                        }
+                        const pricingCharge = payload.pricingCharge || payload.pricing_charge;
+                        if (pricingCharge && typeof pricingCharge === 'object' && !Array.isArray(pricingCharge)) {
+                            currentTask.metadata = {
+                                ...(currentTask.metadata || {}),
+                                pricing_charge: pricingCharge
+                            };
+                        }
+                        const tokenUsage = payload.token_usage || payload.tokenUsage;
+                        if (tokenUsage && typeof tokenUsage === 'object' && !Array.isArray(tokenUsage)) {
+                            currentTask.tokenUsageRaw = {
+                                ...(currentTask.tokenUsageRaw || {}),
+                                ...tokenUsage
+                            };
+                            currentTask.inputTokens = Number(tokenUsage.input_tokens ?? tokenUsage.inputTokens ?? currentTask.inputTokens ?? 0) || 0;
+                            currentTask.outputTokens = Number(tokenUsage.output_tokens ?? tokenUsage.outputTokens ?? currentTask.outputTokens ?? 0) || 0;
+                            currentTask.tokenUsage = Number(tokenUsage.total_tokens ?? tokenUsage.totalTokens ?? currentTask.tokenUsage ?? 0) || 0;
+                        }
+                        persistState();
+                        render();
+                        return;
+                    }
                     if (eventName === 'done' && payload.task) {
                         finalTaskFromStream = payload.task;
                         const storedApiKeyChanged = applyStoredApiKeyFromPayload(payload);
                         const localTask = state.tasks.find((item) => item.id === task.id || item.clientTaskId === task.id || item.clientTaskId === task.clientTaskId);
-                        if (localTask?.status === 'cancelled') return;
+                        const wasCancelled = localTask?.status === 'cancelled';
                         const remoteTask = replaceTask(task.id, payload.task);
                         if (remoteTask) {
-                            remoteTask.resultPrompt = payload.text || remoteTask.resultPrompt || receivedText;
-                            remoteTask.status = 'succeeded';
+                            if (!wasCancelled && remoteTask.status !== 'cancelled') {
+                                remoteTask.resultPrompt = payload.text || remoteTask.resultPrompt || receivedText;
+                                remoteTask.status = 'succeeded';
+                            }
                             persistState();
                             render();
-                            scrollChatStageToBottom();
+                            if (!wasCancelled && remoteTask.status !== 'cancelled') scrollChatStageToBottom();
                         } else if (storedApiKeyChanged) {
                             persistState();
                             render();
@@ -6525,6 +6777,7 @@
         const submittedAt = Date.now();
         const taskId = getNowId('aiw');
         const activeModelValue = getActiveModelValue(inferredMode);
+        const activeModelProviderId = normalizePricingProviderId(getActiveModelProviderId(inferredMode));
         const activeModelGroup = isTextVisionMode(inferredMode) ? 'chat' : (isVideoMode(inferredMode) ? 'video' : (state.billingMode === 'api' ? 'image' : ''));
         const activeTool = isVideoMode(state.mode) && getActiveModelOptions('video').length
             ? 'video'
@@ -6553,6 +6806,8 @@
             videoWatermark: isVideoMode(inferredMode) ? state.videoWatermark : '',
             videoCameraFixed: isVideoMode(inferredMode) ? state.videoCameraFixed : '',
             model: activeModelValue,
+            modelProviderId: activeModelProviderId,
+            providerId: activeModelProviderId,
             billingMode: state.billingMode,
             apiBaseUrl: state.billingMode === 'api' ? normalizeApiBaseUrl(state.apiBaseUrl) : '',
             apiProvider: state.billingMode === 'api' ? (getApiBaseProfile()?.label || '') : '',
@@ -6585,6 +6840,7 @@
             stateMode: state.mode,
             billingMode: state.billingMode,
             model: activeModelValue,
+            modelProviderId: activeModelProviderId,
             apiModelGroup: activeModelGroup,
             clientTaskId: task.clientTaskId,
             activeTool,
@@ -6651,7 +6907,12 @@
         task.status = 'cancelled';
         task.progress = clampNumber(task.progress, 0, 100, 0);
         task.completedAt = Date.now();
-        task.resultPrompt = '已取消生成';
+        task.resultPrompt = task.resultPrompt || '';
+        task.metadata = {
+            ...(task.metadata || {}),
+            cancelled_by_user: true,
+            cancelled_at: new Date(task.completedAt).toISOString()
+        };
         task.remoteError = '';
         persistState();
         render();
@@ -6930,7 +7191,11 @@
     function getActiveModelProviderId(mode = inferWorkbenchMode()) {
         const groups = getRuntimeModelGroups(mode);
         const selected = getActiveModelValue(mode);
-        return groups.find((group) => group.models.some((model) => model.id === selected))?.providerId
+        const selectedGroup = groups.find((group) => group.models.some((model) => model.id === selected));
+        const selectedModel = selectedGroup?.models?.find((model) => model.id === selected);
+        return selectedModel?.providerId
+            || selectedGroup?.providerId
+            || groups[0]?.models?.[0]?.providerId
             || groups[0]?.providerId
             || '';
     }
@@ -7553,7 +7818,9 @@
     function getDockTaskSummary(task) {
         const stage = getDockTaskStage(task);
         if (stage === 'complete') return getStatusLabel(task);
-        if (stage === 'failed') return task?.status === 'cancelled' ? '已取消 · 未扣费' : '生成失败 · 未扣费';
+        if (stage === 'failed') return task?.status === 'cancelled'
+            ? `已取消 · ${getTaskChargeMetaLabel(task) || '未扣费'}`
+            : `生成失败 · ${getTaskChargeMetaLabel(task) || '未扣费'}`;
         if (stage === 'queued') return getTaskQueueEstimateLabel(task) || '等待调度';
         if (stage === 'saving') return '保存结果中';
         return getTaskCurrentStepLabel(task);
@@ -7910,6 +8177,9 @@
 
         overlay.innerHTML = `
             <section class="ai-image-shell" role="dialog" aria-modal="true" aria-label="AI 图片工作台">
+                <button class="ai-image-shell-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭">
+                    <i class="fas fa-times" aria-hidden="true"></i>
+                </button>
                 <div class="${getLayoutClasses()}">
                     ${renderHistoryPanel()}
                     ${renderStage()}
@@ -8675,9 +8945,11 @@
     function renderEmptyStage() {
         return `
             <div class="ai-image-empty-state">
-                <span class="ai-image-empty-icon"><i class="fas fa-sparkles"></i></span>
-                <h2>从当前灵感继续创作</h2>
-                <p>可以从提示词详情一键带入文字或图片，也可以在这里上传参考图。生成时最小化工作台，继续浏览画廊，完成后右下角会提醒。</p>
+                <span class="ai-image-empty-icon ai-image-fab is-idle">${renderDockIcon()}</span>
+                <p>
+                    <span class="ai-image-empty-copy-line">生成期间可关闭工作台</span>
+                    <span class="ai-image-empty-copy-line">系统将在后台继续工作，悬停于 AI 图标可预览生成进度</span>
+                </p>
             </div>
         `;
     }
@@ -9019,6 +9291,7 @@
                     <div class="ai-image-chat-output">
                         ${reasoningBlock}
                         ${showLoadingDots ? renderChatLoadingDots() : (outputText ? `<p>${escapeHtml(outputText)}</p>` : '')}
+                        ${renderChatCancelledNotice(task)}
                         ${showAnswerActions ? `
 	                            <div class="ai-image-chat-actions ai-image-chat-actions--answer">
 	                                <button class="ai-image-chat-copy ai-image-chat-copy--answer" type="button" data-aiw-action="copy-chat-text" data-task-id="${escapeHtml(task.id)}" data-copy-kind="answer" aria-label="复制回答" title="复制回答">
@@ -9086,6 +9359,7 @@
                         <div class="ai-image-chat-output">
                             ${reasoningBlock}
                             ${showLoadingDots ? renderChatLoadingDots() : (outputText ? `<p>${escapeHtml(outputText)}</p>` : '')}
+                            ${renderChatCancelledNotice(task)}
                             ${showAnswerActions ? `
 	                                <div class="ai-image-chat-actions ai-image-chat-actions--answer">
 	                                    <button class="ai-image-chat-copy ai-image-chat-copy--answer" type="button" data-aiw-action="copy-chat-text" data-task-id="${escapeHtml(task.id)}" data-copy-kind="answer" aria-label="复制回答" title="复制回答">
@@ -9244,11 +9518,6 @@
         return `
             <aside class="ai-image-history-sidebar ${sidebarView ? 'is-expanded' : 'is-collapsed'}" aria-label="${isBillingView ? '计费方式' : '生成记录'}">
                 <div class="ai-image-history-rail">
-                    <button class="ai-image-rail-brand ${sidebarView ? 'is-sidebar-open' : 'is-sidebar-closed'}" type="button" data-aiw-action="toggle-sidebar" aria-label="${sidebarView ? '关闭边栏' : '展开边栏'}">
-                        <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
-                        <span class="ai-image-sidebar-toggle-icon" aria-hidden="true"></span>
-                        <span class="ai-image-sidebar-toggle-tip" aria-hidden="true">${sidebarView ? '关闭边栏' : '展开边栏'}</span>
-                    </button>
                     <button class="ai-image-rail-btn ai-image-rail-btn--new" type="button" data-aiw-action="new-chat" aria-label="新建对话" title="新建对话" data-rail-label="新建">
                         <i class="fas fa-plus"></i>
                     </button>
