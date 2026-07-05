@@ -57,6 +57,7 @@ const MAX_REFERENCE_IMAGE_INPUTS = 16;
 const MAX_CHAT_ATTACHMENT_COUNT = 8;
 const MAX_CHAT_ATTACHMENT_TEXT_CHARS = 50000;
 const MAX_CHAT_ATTACHMENT_TOTAL_CHARS = 120000;
+const DEFAULT_CHAT_MAX_TOKENS = 1600;
 const SUPPORTED_REFERENCE_IMAGE_MIME_TYPES = Object.freeze(new Set([
     'image/jpeg',
     'image/png',
@@ -386,6 +387,19 @@ function normalizeSub2ApiUsageLookupRecord(payload = {}, requestId = '') {
     const record = payload?.usage_record || payload?.usageRecord || payload?.record || payload?.data || payload;
     if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
     const recordRequestId = normalizeText(record.request_id || record.requestId, 260);
+    const hasCostField = [
+        record.actual_cost,
+        record.actualCost,
+        record.total_actual_cost,
+        record.totalActualCost,
+        record.user_cost,
+        record.userCost,
+        record.total_cost,
+        record.totalCost,
+        record.cost,
+        record.fee,
+        record.amount
+    ].some((value) => value !== undefined && value !== null && String(value).trim() !== '');
     const actualCost = normalizeSub2ApiCost(
         record.actual_cost
         ?? record.actualCost
@@ -404,12 +418,12 @@ function normalizeSub2ApiUsageLookupRecord(payload = {}, requestId = '') {
         0
     );
     const billableCost = actualCost > 0 ? actualCost : fallbackCost;
-    if (billableCost <= 0) return null;
+    if (billableCost <= 0 && !hasCostField) return null;
     return {
         request_id: recordRequestId || requestId,
         lookup_request_id: requestId,
         actual_cost: billableCost,
-        actual_cost_source: actualCost > 0 ? 'actual_cost' : 'fallback_cost',
+        actual_cost_source: actualCost > 0 ? 'actual_cost' : (fallbackCost > 0 ? 'fallback_cost' : 'zero_cost'),
         total_cost: normalizeSub2ApiCost(record.total_cost ?? record.totalCost, 0),
         input_cost: normalizeSub2ApiCost(record.input_cost ?? record.inputCost, 0),
         output_cost: normalizeSub2ApiCost(record.output_cost ?? record.outputCost, 0),
@@ -2738,31 +2752,61 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
         returnLookupResult: true
     });
     const usageRecord = usageLookupResult?.record || null;
-    if (!usageRecord?.actual_cost) {
+    if (!usageRecord) {
         return markSub2ApiBillingSyncUnresolved(supabase, task, lookupPayload, usageLookupResult, { env });
     }
 
     const usageWithBilling = attachSub2ApiBillingToUsage(task.token_usage || {}, usageRecord, null, lookupPayload);
     const chargeEstimate = calculateAiImageRuleChargePoints(task, usageWithBilling);
     const expectedPoints = normalizeBillablePoints(chargeEstimate.points, 0);
-    if (expectedPoints <= 0) return task;
-    const deduction = await deductReconciledTaskPoints(supabase, task, expectedPoints);
-    const chargedPoints = normalizeBillablePoints(deduction.chargedPoints || expectedPoints, expectedPoints);
-    if (chargedPoints <= 0) return task;
-
-    const metadata = {
+    const reconciledAt = new Date().toISOString();
+    const buildReconciledMetadata = (extra = {}) => ({
         ...safeObject(task.metadata),
         pricing_charge: {
             ...safeObject(chargeEstimate.pricing),
             reconciled: true,
-            reconciled_at: new Date().toISOString(),
+            reconciled_at: reconciledAt,
             sub2api: {
                 ...safeObject(usageWithBilling.sub2api),
                 request_id: usageRecord.request_id || usageWithBilling.sub2api?.request_id || '',
                 lookup_request_id: usageRecord.lookup_request_id || usageWithBilling.sub2api?.lookup_request_id || ''
-            }
+            },
+            ...extra.pricingCharge
+        },
+        sub2api_billing_sync: {
+            status: 'settled',
+            message: '扣费已同步',
+            checked_at: reconciledAt,
+            actual_cost: normalizeSub2ApiCost(usageRecord.actual_cost, 0),
+            request_id: usageRecord.request_id || usageWithBilling.sub2api?.request_id || '',
+            lookup_request_id: usageRecord.lookup_request_id || usageWithBilling.sub2api?.lookup_request_id || '',
+            ...extra.billingSync
         }
-    };
+    });
+    if (expectedPoints <= 0) {
+        const { data, error } = await supabase
+            .from('ai_image_tasks')
+            .update({
+                charged_points: 0,
+                token_usage: usageWithBilling,
+                input_tokens: normalizePositiveInt(usageWithBilling.input_tokens || usageWithBilling.inputTokens || task.input_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+                output_tokens: normalizePositiveInt(usageWithBilling.output_tokens || usageWithBilling.outputTokens || task.output_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+                total_tokens: normalizePositiveInt(usageWithBilling.total_tokens || usageWithBilling.totalTokens || task.total_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
+                metadata: buildReconciledMetadata({
+                    pricingCharge: {
+                        charged_points: 0
+                    }
+                })
+            })
+            .eq('id', task.id)
+            .select(TASK_SELECT)
+            .maybeSingle();
+        if (error || !data) return task;
+        return data;
+    }
+    const deduction = await deductReconciledTaskPoints(supabase, task, expectedPoints);
+    const chargedPoints = normalizeBillablePoints(deduction.chargedPoints || expectedPoints, expectedPoints);
+    if (chargedPoints <= 0) return task;
 
     const { data, error } = await supabase
         .from('ai_image_tasks')
@@ -2773,7 +2817,11 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
             input_tokens: normalizePositiveInt(usageWithBilling.input_tokens || usageWithBilling.inputTokens || task.input_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
             output_tokens: normalizePositiveInt(usageWithBilling.output_tokens || usageWithBilling.outputTokens || task.output_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
             total_tokens: normalizePositiveInt(usageWithBilling.total_tokens || usageWithBilling.totalTokens || task.total_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
-            metadata
+            metadata: buildReconciledMetadata({
+                pricingCharge: {
+                    charged_points: chargedPoints
+                }
+            })
         })
         .eq('id', task.id)
         .select(TASK_SELECT)
@@ -4364,9 +4412,9 @@ function createAiImageHandlers({
                 ? { 'X-Client-Request-ID': sub2ApiClientRequestId }
                 : {};
             const upstreamStartedAt = Date.now();
-	            const maxTokens = normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, 420, {
+	            const maxTokens = normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS, {
 	                min: 64,
-	                max: kimiThinkingEnabled === true ? 64000 : 2000
+	                max: kimiThinkingEnabled === true ? 64000 : 16000
 	            });
             const requestBody = {
                 model: upstreamRequestModel,
@@ -4676,7 +4724,7 @@ function createAiImageHandlers({
                         fetchImpl,
                         env: visibleIdleLookupEnv
                     });
-                    if (sub2apiUsageRecord?.actual_cost && !sub2apiUsageReadyAt) {
+                    if (sub2apiUsageRecord && !sub2apiUsageReadyAt) {
                         sub2apiUsageReadyAt = Date.now();
                     }
                 }
@@ -4711,7 +4759,7 @@ function createAiImageHandlers({
                     return true;
                 }
 
-                if (sub2apiUsageRecord?.actual_cost) {
+                if (sub2apiUsageRecord) {
                     if (streamUsageReadyGraceMs > 0 && Date.now() - sub2apiUsageReadyAt < streamUsageReadyGraceMs) {
                         return false;
                     }
@@ -4728,7 +4776,7 @@ function createAiImageHandlers({
                         // eslint-disable-next-line no-await-in-loop
                         await lookupSub2ApiUsageOnce();
                     }
-                    if (sub2apiUsageRecord?.actual_cost) {
+                    if (sub2apiUsageRecord) {
                         if (streamUsageReadyGraceMs > 0 && Date.now() - sub2apiUsageReadyAt < streamUsageReadyGraceMs) {
                             return false;
                         }
@@ -4850,7 +4898,7 @@ function createAiImageHandlers({
                 stream_usage_ready_finished: streamUsageReadyFinished,
                 stream_usage_ready_probe_ms: streamUsageReadyProbeMs,
                 stream_usage_ready_grace_ms: streamUsageReadyGraceMs,
-                sub2api_usage_found: Boolean(sub2apiUsageRecord?.actual_cost),
+                sub2api_usage_found: Boolean(sub2apiUsageRecord),
                 delta_key_samples: upstreamDeltaKeySamples.slice(0, 8)
             });
             const streamMetadata = {
@@ -4926,6 +4974,17 @@ function createAiImageHandlers({
                     stream_usage_ready_grace_ms: streamUsageReadyGraceMs
                 }
             };
+            if (captureSub2ApiBilling && sub2apiUsageRecord) {
+                streamMetadata.sub2api_billing_sync = {
+                    status: 'settled',
+                    message: '扣费已同步',
+                    checked_at: new Date().toISOString(),
+                    actual_cost: normalizeSub2ApiCost(sub2apiUsageRecord.actual_cost, 0),
+                    request_id: sub2apiUsageRecord.request_id || normalizedUsage.raw?.sub2api?.request_id || '',
+                    lookup_request_id: sub2apiUsageRecord.lookup_request_id || normalizedUsage.raw?.sub2api?.lookup_request_id || '',
+                    client_request_id: sub2ApiClientRequestId
+                };
+            }
 
             const completion = await completeTask(supabase, task, {
                 status: 'succeeded',

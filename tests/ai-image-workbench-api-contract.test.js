@@ -64,6 +64,17 @@ test('ai image workbench waits for server results instead of locally fabricating
     assert.match(source, /is-indeterminate/);
 });
 
+test('ai image workbench recovers stuck busy cards by client task id', () => {
+    assert.match(source, /const BUSY_CLIENT_TASK_RECOVERY_DELAY_MS = 5000;/);
+    assert.match(source, /const BUSY_CLIENT_TASK_RECOVERY_INTERVAL_MS = 7000;/);
+    assert.match(source, /const busyClientTaskRecoveryAt = new Map\(\);/);
+    assert.match(source, /function getRecoverableClientTaskId\(task = \{\}\)/);
+    assert.match(source, /async function recoverBusyTasksByClientId\(\{ limit = 4 \} = \{\}\)/);
+    assert.match(source, /requestAiImage\('task'[\s\S]*clientTaskId/);
+    assert.match(source, /await loadRemoteRecords\(\{ force: true \}\);\n\s+if \(getBusyTasks\(\)\.length\) \{\n\s+await recoverBusyTasksByClientId\(\);/);
+    assert.match(source, /loadRemoteRecords\(\{ force: true \}\)\.then\(\(\) => recoverBusyTasksByClientId\(\)\)/);
+});
+
 test('ai image workbench renders partial images while a task is still running', () => {
     assert.match(source, /function buildTaskImageEntries\(task = \{\}/);
     assert.match(source, /const partialImageEntries = buildTaskImageEntries\(task\)/);
@@ -954,6 +965,7 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /getTaskBillingSyncMetaLabel\(task\) \|\| '扣费同步中'/);
     assert.match(source, /未找到上游扣费明细/);
     assert.match(source, /旧记录缺少扣费追踪ID/);
+    assert.match(source, /if \(status === 'settled'\) return '扣费 0 积分'/);
     assert.match(source, /扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分/);
     assert.match(source, /const chargeLabel = getTaskChargeMetaLabel\(task\);/);
     assert.match(source, /if \(chargeLabel\) items\.push\(\{ text: chargeLabel \}\);/);
