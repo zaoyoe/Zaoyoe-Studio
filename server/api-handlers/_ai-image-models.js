@@ -4414,10 +4414,11 @@ function aggregateGeminiNativeImageExecutions({
     config = {},
     executions = [],
     requestedCount = 1,
+    attemptedCount = executions.length,
     partialError = null
 } = {}) {
-    const outputImages = [];
-    const deferredOriginalUploads = [];
+    const outputImagesByIndex = new Map();
+    const deferredOriginalUploadsByIndex = new Map();
     const providerTaskIds = [];
     const executorNames = new Set();
     let tokenUsage = {};
@@ -4444,8 +4445,20 @@ function aggregateGeminiNativeImageExecutions({
     executions.forEach((execution) => {
         const metadata = safeObject(execution?.metadata);
         const executionTiming = safeObject(metadata.timing);
-        outputImages.push(...(Array.isArray(execution?.images) ? execution.images : []));
-        deferredOriginalUploads.push(...(Array.isArray(execution?.deferredOriginalUploads) ? execution.deferredOriginalUploads : []));
+        (Array.isArray(execution?.images) ? execution.images : []).forEach((image) => {
+            const resultIndex = Number(image?.result_index ?? image?.resultIndex);
+            const normalizedIndex = Number.isFinite(resultIndex) ? resultIndex : outputImagesByIndex.size;
+            if (!outputImagesByIndex.has(normalizedIndex)) {
+                outputImagesByIndex.set(normalizedIndex, image);
+            }
+        });
+        (Array.isArray(execution?.deferredOriginalUploads) ? execution.deferredOriginalUploads : []).forEach((upload) => {
+            const resultIndex = Number(upload?.resultIndex ?? upload?.result_index);
+            const normalizedIndex = Number.isFinite(resultIndex) ? resultIndex : deferredOriginalUploadsByIndex.size;
+            if (!deferredOriginalUploadsByIndex.has(normalizedIndex)) {
+                deferredOriginalUploadsByIndex.set(normalizedIndex, upload);
+            }
+        });
         tokenUsage = addTokenUsage(tokenUsage, execution?.tokenUsage || {});
         if (!resultPrompt && execution?.resultPrompt) {
             resultPrompt = normalizeText(execution.resultPrompt, 8000);
@@ -4468,7 +4481,15 @@ function aggregateGeminiNativeImageExecutions({
         + normalizeTimingMs(timing.postprocess_ms)
     ));
 
-    const deliveredCount = Math.min(outputImages.length, requestedCount);
+    const sortedOutputImages = [...outputImagesByIndex.entries()]
+        .sort((left, right) => left[0] - right[0])
+        .map(([, image]) => image)
+        .slice(0, requestedCount);
+    const sortedDeferredOriginalUploads = [...deferredOriginalUploadsByIndex.entries()]
+        .sort((left, right) => left[0] - right[0])
+        .map(([, upload]) => upload)
+        .slice(0, requestedCount);
+    const deliveredCount = Math.min(sortedOutputImages.length, requestedCount);
     const executor = executorNames.size === 1
         ? `${[...executorNames][0]}-batch`
         : 'gemini-native-images-batch';
@@ -4477,8 +4498,8 @@ function aggregateGeminiNativeImageExecutions({
     return {
         status: 'succeeded',
         resultPrompt: resultPrompt || normalizeText(task.prompt, 8000),
-        images: outputImages.slice(0, requestedCount),
-        deferredOriginalUploads: deferredOriginalUploads.slice(0, requestedCount),
+        images: sortedOutputImages,
+        deferredOriginalUploads: sortedDeferredOriginalUploads,
         tokenUsage: normalizeTokenUsage(tokenUsage),
         providerTaskId: [...new Set(providerTaskIds)].join(','),
         metadata: {
@@ -4491,9 +4512,9 @@ function aggregateGeminiNativeImageExecutions({
             provider_size: firstMetadata.provider_size || '',
             requested_image_count: requestedCount,
             delivered_image_count: deliveredCount,
-            provider_attempt_count: executions.length,
+            provider_attempt_count: attemptedCount,
             partial_error: partialError,
-            batched_requests: executions.length,
+            batched_requests: attemptedCount,
             batch_delivery_complete: deliveredCount >= requestedCount
         }
     };
@@ -4501,7 +4522,9 @@ function aggregateGeminiNativeImageExecutions({
 
 async function executeGeminiNativeImageGenerationMulti(task = {}, options = {}) {
     const requestedCount = normalizePositiveInt(task.quantity, 1, { min: 1, max: 8 });
-    const settled = await Promise.allSettled(Array.from({ length: requestedCount }, (_, resultIndexOffset) => (
+    const env = options.env || process.env;
+    const retryRounds = normalizePositiveInt(readFirstEnv(env, ['AI_IMAGE_MULTI_IMAGE_SLOT_RETRY_ATTEMPTS'], '1'), 1, { min: 0, max: 3 });
+    const runSlot = (resultIndexOffset) => (
         executeGeminiNativeImageGeneration(task, {
             ...options,
             geminiBatch: {
@@ -4510,12 +4533,38 @@ async function executeGeminiNativeImageGenerationMulti(task = {}, options = {}) 
                 maxImages: 1
             }
         })
-    )));
-    const executions = settled
-        .filter((item) => item.status === 'fulfilled' && Array.isArray(item.value?.images) && item.value.images.length)
-        .map((item) => item.value);
-    const failed = settled.find((item) => item.status === 'rejected')
-        || settled.find((item) => item.status === 'fulfilled' && (!Array.isArray(item.value?.images) || !item.value.images.length));
+    );
+    const executions = [];
+    const failures = [];
+    const successfulIndexes = new Set();
+    let attemptedCount = 0;
+    const collectSettled = (settled = []) => {
+        attemptedCount += settled.length;
+        settled.forEach((item) => {
+            if (item.status === 'fulfilled' && Array.isArray(item.value?.images) && item.value.images.length) {
+                executions.push(item.value);
+                item.value.images.forEach((image) => {
+                    const resultIndex = Number(image?.result_index ?? image?.resultIndex);
+                    if (Number.isFinite(resultIndex)) successfulIndexes.add(resultIndex);
+                });
+                return;
+            }
+            failures.push(item);
+        });
+    };
+    const getMissingIndexes = () => Array.from({ length: requestedCount }, (_, index) => index)
+        .filter((index) => !successfulIndexes.has(index));
+
+    collectSettled(await Promise.allSettled(Array.from({ length: requestedCount }, (_, resultIndexOffset) => runSlot(resultIndexOffset))));
+
+    for (let round = 0; round < retryRounds; round += 1) {
+        const missingIndexes = getMissingIndexes();
+        if (!missingIndexes.length) break;
+        // eslint-disable-next-line no-await-in-loop
+        collectSettled(await Promise.allSettled(missingIndexes.map((resultIndexOffset) => runSlot(resultIndexOffset))));
+    }
+    const failed = failures.find((item) => item.status === 'rejected')
+        || failures.find((item) => item.status === 'fulfilled' && (!Array.isArray(item.value?.images) || !item.value.images.length));
 
     if (!executions.length) {
         if (failed?.status === 'rejected') throw failed.reason;
@@ -4525,7 +4574,7 @@ async function executeGeminiNativeImageGenerationMulti(task = {}, options = {}) 
         throw error;
     }
 
-    const partialError = executions.length < requestedCount
+    const partialError = successfulIndexes.size < requestedCount
         ? {
             code: normalizeText(failed?.reason?.code || 'ai_image_gemini_partial_generation_failed', 120),
             message: normalizeText(failed?.reason?.message || 'Gemini 部分图片补发失败', 500)
@@ -4537,6 +4586,7 @@ async function executeGeminiNativeImageGenerationMulti(task = {}, options = {}) 
         config: options.runtimeConfig || {},
         executions,
         requestedCount,
+        attemptedCount,
         partialError
     });
 }

@@ -2280,30 +2280,43 @@
         const keepLocalCancel = localStatus === 'cancelled' && remoteStatus !== 'failed';
         const keepLocalStreaming = localStatus === 'streaming' && ['queued', 'processing'].includes(remoteStatus);
         const keepLocalProcessing = localStatus === 'processing' && remoteStatus === 'queued';
-        const finalStatus = keepLocalCancel
-            ? 'cancelled'
-            : (keepLocalStreaming ? 'streaming' : (keepLocalProcessing ? 'processing' : remoteStatus));
-        const localProgress = clampNumber(localTask.progress, 0, 100, 0);
-        const remoteProgress = clampNumber(remoteTask.progress, 0, 100, 0);
-        const progressKnown = finalStatus === 'succeeded'
-            || Boolean(remoteTask.progressKnown)
-            || (remoteTask.progress === undefined && Boolean(localTask.progressKnown));
-        const nextProgress = finalStatus === 'succeeded'
-            ? 100
-            : (finalStatus === 'cancelled' || finalStatus === 'failed'
-                ? localProgress
-                : (progressKnown ? Math.max(localProgress, remoteProgress) : 0));
-        const keepLocalRuntimeClock = Boolean(localTask.id && remoteTask.id && localTask.id !== remoteTask.id && localTask.clientTaskId);
         const localQuantity = Number(localTask.quantity);
         const remoteQuantity = Number(remoteTask.quantity);
         const localDeliveredImageCount = Number(localTask.deliveredImageCount);
         const remoteDeliveredImageCount = Number(remoteTask.deliveredImageCount);
+        const localImages = Array.isArray(localTask.images) ? localTask.images : [];
+        const remoteImages = Array.isArray(remoteTask.images) ? remoteTask.images : [];
         const shouldPreserveLocalQuantity = Number.isFinite(localQuantity)
             && Number.isFinite(remoteQuantity)
             && localQuantity > remoteQuantity;
         const nextQuantity = shouldPreserveLocalQuantity
             ? clampNumber(localQuantity, 1, 4, remoteQuantity)
-            : remoteTask.quantity;
+            : (remoteTask.quantity ?? localTask.quantity);
+        const expectedImageCount = clampNumber(nextQuantity, 1, 4, 1);
+        const mergedMode = remoteTask.mode || localTask.mode || '';
+        const keepLocalIncompleteRemoteSuccess = isBusyTask(localTask)
+            && remoteStatus === 'succeeded'
+            && !isTextVisionMode(mergedMode)
+            && !isVideoMode(mergedMode)
+            && remoteImages.length < expectedImageCount;
+        const finalStatus = keepLocalCancel
+            ? 'cancelled'
+            : (keepLocalStreaming
+                ? 'streaming'
+                : (keepLocalProcessing || keepLocalIncompleteRemoteSuccess ? 'processing' : remoteStatus));
+        const localProgress = clampNumber(localTask.progress, 0, 100, 0);
+        const remoteProgress = clampNumber(remoteTask.progress, 0, 100, 0);
+        const progressKnown = finalStatus === 'succeeded'
+            || (!keepLocalIncompleteRemoteSuccess && Boolean(remoteTask.progressKnown))
+            || (remoteTask.progress === undefined && Boolean(localTask.progressKnown));
+        const nextProgress = keepLocalIncompleteRemoteSuccess
+            ? localProgress
+            : (finalStatus === 'succeeded'
+                ? 100
+                : (finalStatus === 'cancelled' || finalStatus === 'failed'
+                    ? localProgress
+                    : (progressKnown ? Math.max(localProgress, remoteProgress) : 0)));
+        const keepLocalRuntimeClock = Boolean(localTask.id && remoteTask.id && localTask.id !== remoteTask.id && localTask.clientTaskId);
         const nextDeliveredImageCount = Number.isFinite(localDeliveredImageCount) || Number.isFinite(remoteDeliveredImageCount)
             ? Math.max(
                 Number.isFinite(localDeliveredImageCount) ? localDeliveredImageCount : 0,
@@ -2322,7 +2335,7 @@
             status: finalStatus,
             progress: nextProgress,
             progressKnown,
-            images: remoteTask.images?.length ? remoteTask.images : (localTask.images || []),
+            images: remoteImages.length ? remoteImages : localImages,
             resultPrompt: keepLocalCancel
                 ? (localTask.resultPrompt || remoteTask.resultPrompt || '')
                 : (keepLocalStreaming
@@ -4205,6 +4218,19 @@
             ? Math.min(total, Math.max(1, completed + 1))
             : completed;
         return `第 ${current}/${total} 张`;
+    }
+
+    function getTaskSlotImageLabel(task, slotSequence = null) {
+        if (isTextVisionTask(task)) return getTaskCurrentImageLabel(task);
+        const { total } = getTaskGenerationCount(task);
+        const parsed = Number(slotSequence);
+        const current = Number.isFinite(parsed) && parsed > 0
+            ? clampNumber(Math.round(parsed), 1, total, 1)
+            : Number.NaN;
+        if (!Number.isFinite(current)) return getTaskCurrentImageLabel(task);
+        return isVideoMode(task?.mode)
+            ? `第 ${current}/${total} 段`
+            : `第 ${current}/${total} 张`;
     }
 
     function getTaskProgressDetail(task) {
@@ -7544,6 +7570,7 @@
         root.querySelectorAll('[data-aiw-live-status-task-id]').forEach((element) => {
             const taskId = String(element.getAttribute('data-aiw-live-status-task-id') || '').trim();
             const kind = String(element.getAttribute('data-aiw-live-status-kind') || '').trim();
+            const slotSequence = Number(element.getAttribute('data-aiw-live-status-slot') || '');
             const task = state.tasks.find((item) => item.id === taskId);
             if (!task) return;
             let nextText = '';
@@ -7554,7 +7581,9 @@
             } else if (kind === 'step') {
                 nextText = getTaskCurrentStepLabel(task);
             } else if (kind === 'image') {
-                nextText = getTaskCurrentImageLabel(task);
+                nextText = Number.isFinite(slotSequence) && slotSequence > 0
+                    ? getTaskSlotImageLabel(task, slotSequence)
+                    : getTaskCurrentImageLabel(task);
             } else if (kind === 'elapsed') {
                 nextText = getTaskElapsedLabel(task);
             } else if (kind === 'detail') {
@@ -9305,8 +9334,8 @@
                 </div>
                 <div class="ai-image-result-grid ${resultGridModeClass} ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
                         ${partialImageEntries.map((entry, index) => renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode), { navigationAnchor: index === 0 })).join('')}
-                        ${pendingPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0 })).join('')}
-                        ${stoppedPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0 })).join('')}
+                        ${pendingPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0, imageSlot: entry.slotSequence })).join('')}
+                        ${stoppedPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0, imageSlot: entry.slotSequence })).join('')}
                     </div>
                 </div>
             </div>
@@ -9340,7 +9369,7 @@
         `;
     }
 
-    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false } = {}) {
+    function renderInlineTaskPreview(task, label = '继续生成', { showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null } = {}) {
         const aspect = getRatioAspect(task.ratio, task.mode);
         const isBusy = forceBusy || ['queued', 'processing'].includes(task.status) || task.status === 'streaming';
         const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
@@ -9349,7 +9378,7 @@
         const progress = getTaskStageProgressPercent(task);
         const statusItems = [
             { kind: 'step', text: getTaskCurrentStepLabel(task) },
-            { kind: 'image', text: getTaskCurrentImageLabel(task) },
+            { kind: 'image', text: getTaskSlotImageLabel(task, imageSlot), slotSequence: imageSlot },
             { kind: 'elapsed', text: getTaskElapsedLabel(task) }
         ];
         const navigationAttrs = navigationAnchor && task?.id
@@ -9377,7 +9406,7 @@
 		                            <span class="ai-image-result-resolution">${escapeHtml(getTaskResolutionLabel(task))}</span>
 		                            ${isBusy ? `<div class="ai-image-result-pending-overlay">
 		                                <div class="ai-image-result-pending-meta">
-                                            ${statusItems.map((item, itemIndex) => `<span class="${itemIndex === 0 ? 'is-step' : ''}" data-aiw-live-status-task-id="${escapeHtml(task.id)}" data-aiw-live-status-kind="${escapeHtml(item.kind)}">${escapeHtml(item.text)}</span>`).join('')}
+                                            ${statusItems.map((item, itemIndex) => `<span class="${itemIndex === 0 ? 'is-step' : ''}" data-aiw-live-status-task-id="${escapeHtml(task.id)}" data-aiw-live-status-kind="${escapeHtml(item.kind)}"${Number.isFinite(Number(item.slotSequence)) && Number(item.slotSequence) > 0 ? ` data-aiw-live-status-slot="${escapeHtml(item.slotSequence)}"` : ''}>${escapeHtml(item.text)}</span>`).join('')}
 		                                </div>
 		                                <div class="ai-image-progress" data-progress-key="inline-${escapeHtml(task.id)}" data-progress="${escapeHtml(Math.round(progress))}" style="--aiw-progress:${progress / 100}"><span></span></div>
 		                            </div>` : (stoppedReason ? `<div class="ai-image-result-failure-reason">${escapeHtml(stoppedReason)}</div>` : '')}
@@ -9661,17 +9690,20 @@
         type = 'pending',
         taskIndex = 0,
         sequenceStart = 0,
+        slotIndexStart = sequenceStart,
         count = 0,
         baseSequence = 0,
         forceBusy = false
     } = {}) {
         return Array.from({ length: Math.max(0, Math.min(4, Math.round(Number(count) || 0))) }, (_, index) => {
             const sequence = sequenceStart + index + 1;
+            const slotSequence = slotIndexStart + index + 1;
             return {
                 type,
                 task,
                 taskIndex,
                 sequence,
+                slotSequence,
                 baseSequence: index === 0 ? baseSequence : sequence - 1,
                 forceBusy
             };
@@ -9786,6 +9818,7 @@
                     type: isReloadingRecord ? 'reloading' : 'pending',
                     taskIndex,
                     sequenceStart: sequenceCursor + imageEntriesForTask.length,
+                    slotIndexStart: imageEntriesForTask.length,
                     count: pendingEntryCount || 1,
                     baseSequence: pendingBaseSequence
                 });
@@ -9817,6 +9850,7 @@
                     type: 'reloading',
                     taskIndex,
                     sequenceStart: sequenceCursor + entries.length,
+                    slotIndexStart: entries.length,
                     count: missingResultCount,
                     baseSequence: sequenceCursor + entries.length
                 });
@@ -9835,6 +9869,7 @@
                     type: awaitingImageReload ? 'reloading' : 'pending',
                     taskIndex,
                     sequenceStart: sequenceCursor,
+                    slotIndexStart: 0,
                     count: awaitingImageReload ? Math.max(1, total) : 1,
                     baseSequence,
                     forceBusy: awaitingVideoResult
@@ -9874,7 +9909,7 @@
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
                             if (taskId) anchoredTaskIds.add(taskId);
                             if (entry.type === 'pending') {
-                                return renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, forceBusy: Boolean(entry.forceBusy), navigationAnchor });
+                                return renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, forceBusy: Boolean(entry.forceBusy), navigationAnchor, imageSlot: entry.slotSequence });
                             }
                             if (entry.type === 'reloading') {
                                 return renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', { showPrompt: false, navigationAnchor });

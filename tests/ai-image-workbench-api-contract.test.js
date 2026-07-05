@@ -88,9 +88,12 @@ test('ai image workbench renders partial images while a task is still running', 
     assert.match(source, /function buildTaskPlaceholderEntries\(task = \{\}/);
     assert.match(source, /const pendingPreviewEntries = showPendingPreview/);
     assert.match(source, /pendingPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, '生成中'/);
+    assert.match(source, /slotSequence/);
+    assert.match(source, /data-aiw-live-status-slot/);
     assert.match(source, /const missingResultCount = Math\.max\(0, total - entries\.length\)/);
     assert.match(source, /buildTaskPlaceholderEntries\(item, \{\s*type: 'reloading'/);
     assert.match(source, /const shouldPreserveLocalQuantity = Number\.isFinite\(localQuantity\)/);
+    assert.match(source, /const keepLocalIncompleteRemoteSuccess = isBusyTask\(localTask\)/);
     assert.match(source, /ai-image-result-grid--partial/);
     assert.match(source, /partialImageEntries\.map\(\(entry, index\) => renderTaskImageEntry\(entry, index/);
     assert.doesNotMatch(source, /showPendingPreview \? renderInlineTaskPreview\(task, '生成中'/);
@@ -1213,15 +1216,16 @@ test('ai image workbench shows accepted state with queue ETA after submit', () =
 
 test('ai image pending overlay uses simple live status instead of repeating title', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
-    const renderInlineMatch = source.match(/function renderInlineTaskPreview\(task, label = '继续生成', \{ showPrompt = true, forceBusy = false, navigationAnchor = false \} = \{\}\) \{[\s\S]*?\n    \}/);
+    const renderInlineMatch = source.match(/function renderInlineTaskPreview\(task, label = '继续生成', \{ showPrompt = true, forceBusy = false, navigationAnchor = false, imageSlot = null \} = \{\}\) \{[\s\S]*?\n    \}/);
     assert.ok(renderInlineMatch, 'renderInlineTaskPreview should be present');
     assert.match(renderInlineMatch[0], /getTaskCurrentStepLabel\(task\)/);
-    assert.match(renderInlineMatch[0], /getTaskCurrentImageLabel\(task\)/);
+    assert.match(renderInlineMatch[0], /getTaskSlotImageLabel\(task, imageSlot\)/);
     assert.match(renderInlineMatch[0], /getTaskElapsedLabel\(task\)/);
     assert.doesNotMatch(renderInlineMatch[0], /getTaskTitle\(task\)/);
     assert.doesNotMatch(renderInlineMatch[0], /getTaskSubtitle\(task\)/);
     assert.match(renderInlineMatch[0], /data-aiw-chat-turn-id="\$\{escapeHtml\(task\.id\)\}"/);
-    assert.match(source, /pendingPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, '生成中', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length && index === 0 \}\)\)/);
+    assert.match(source, /pendingPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, '生成中', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length && index === 0, imageSlot: entry\.slotSequence \}\)\)/);
+    assert.match(source, /data-aiw-live-status-slot="\$\{escapeHtml\(item\.slotSequence\)\}"/);
     assert.match(source, /getTaskProgressBadge\(task\)/);
     assert.match(cssSource, /\.ai-image-result-pending-meta\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto auto/);
     assert.match(cssSource, /\.ai-image-result-pending-copy\s*\{[\s\S]*display: none/);
@@ -1238,8 +1242,8 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.doesNotMatch(resultSource, /基于序列 \$\{entry\.baseSequence\} 续作/);
     assert.match(source, /function renderTaskImageEntry\(entry, index = 0, aspect = '1 \/ 1', \{ navigationAnchor = false \} = \{\}\)/);
     assert.match(source, /ai-image-result-sequence/);
-    assert.match(cssSource, /\.ai-image-result-grid--single\s*\{[\s\S]*min\(240px, 100%\)/);
-    assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*min\(240px, 100%\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--single\s*\{[\s\S]*min\(220px, 100%\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*min\(220px, 100%\)/);
     assert.match(source, /const resultGridModeClass = threadTasks\.some\(\(item\) => isVideoMode\(item\.mode\)\) \? 'ai-image-result-grid--video' : ''/);
     assert.match(source, /const awaitingVideoResult = isVideoMode\(item\.mode\) && item\.status === 'succeeded'/);
     assert.match(source, /const awaitingImageReload = !awaitingVideoResult && item\.status === 'succeeded'/);
@@ -1247,7 +1251,7 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(source, /forceBusy: awaitingVideoResult/);
     assert.match(source, /const anchoredTaskIds = new Set\(\)/);
     assert.match(source, /const navigationAnchor = Boolean\(taskId && !anchoredTaskIds\.has\(taskId\)\)/);
-    assert.match(source, /renderInlineTaskPreview\(entry\.task, '生成中', \{ showPrompt: false, forceBusy: Boolean\(entry\.forceBusy\), navigationAnchor \}\)/);
+    assert.match(source, /renderInlineTaskPreview\(entry\.task, '生成中', \{ showPrompt: false, forceBusy: Boolean\(entry\.forceBusy\), navigationAnchor, imageSlot: entry\.slotSequence \}\)/);
     assert.match(source, /renderInlineTaskReloadingPreview\(entry\.task, '记录重新加载中', \{ showPrompt: false, navigationAnchor \}\)/);
     assert.match(source, /imageEntries\.some\(\(entry\) => entry\.type === 'pending' \|\| entry\.type === 'reloading'\)/);
     assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
@@ -1312,7 +1316,8 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
 
 test('ai image previews keep image cards compact while video cards are larger', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
-    assert.match(cssSource, /\.ai-image-result-grid\s*\{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(240px, 100%\), min\(240px, 100%\)\)\)/);
+    assert.match(cssSource, /\.ai-image-result-grid\s*\{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(220px, 100%\), min\(220px, 100%\)\)\)/);
+    assert.match(cssSource, /\.ai-image-result-grid\s*\{[\s\S]*gap: 14px/);
     assert.match(cssSource, /\.ai-image-result-grid\s*\{[\s\S]*justify-content: start/);
     assert.match(cssSource, /\.ai-image-result-grid--video\s*\{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(320px, 100%\), min\(320px, 100%\)\)\)/);
     assert.match(cssSource, /\.ai-image-result-grid--video\.ai-image-result-grid--single,\s*\n\.ai-image-result-grid--video\.ai-image-result-grid--thread\s*\{[\s\S]*min\(320px, 100%\)/);
@@ -1411,7 +1416,7 @@ test('ai image workbench stops inline progress visuals after task failure', () =
     assert.match(source, /ai-image-failure-dot/);
     assert.match(source, /\(task\.status === 'cancelled' \|\| task\.status === 'failed'\) && isTextVisionTask\(task\) && !isTaskReloadableBillingRecord\(task\)/);
     assert.match(source, /const showStoppedPreview = isStopped && pendingPreviewCount > 0/);
-    assert.match(source, /stoppedPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, task\.status === 'cancelled' \? '生成已取消' : '生成失败', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length && index === 0 \}\)\)/);
+    assert.match(source, /stoppedPreviewEntries\.map\(\(entry, index\) => renderInlineTaskPreview\(entry\.task, task\.status === 'cancelled' \? '生成已取消' : '生成失败', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length && index === 0, imageSlot: entry\.slotSequence \}\)\)/);
     assert.match(source, /<button class="ai-image-result-prompt-copy" type="button" data-aiw-action="copy-task-prompt" data-task-id="\$\{escapeHtml\(task\.id\)\}"/);
     assert.doesNotMatch(source, /ai-image-result-pending-overlay--stopped/);
     assert.doesNotMatch(source, /ai-image-inline-failure/);
