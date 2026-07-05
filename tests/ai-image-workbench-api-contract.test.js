@@ -949,8 +949,11 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /function formatBillingPoints\(value = 0\)/);
     assert.match(source, /function getTaskChargeMetaLabel\(task = \{\}\)/);
     assert.match(source, /function isSub2ApiActualCostTask\(task = \{\}\)/);
+    assert.match(source, /function getTaskBillingSyncMetaLabel\(task = \{\}\)/);
     assert.match(source, /if \(chargedPoints > 0\) return `扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分`/);
-    assert.match(source, /return '扣费同步中'/);
+    assert.match(source, /getTaskBillingSyncMetaLabel\(task\) \|\| '扣费同步中'/);
+    assert.match(source, /未找到上游扣费明细/);
+    assert.match(source, /旧记录缺少扣费追踪ID/);
     assert.match(source, /扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分/);
     assert.match(source, /const chargeLabel = getTaskChargeMetaLabel\(task\);/);
     assert.match(source, /if \(chargeLabel\) items\.push\(\{ text: chargeLabel \}\);/);

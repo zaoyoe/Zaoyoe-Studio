@@ -446,9 +446,21 @@ async function fetchSub2ApiUsageRecord({
     response = null,
     payload = {},
     fetchImpl = globalThis.fetch,
-    env = process.env
+    env = process.env,
+    returnLookupResult = false
 } = {}) {
-    if (!apiKey || !isSub2ApiGatewayBaseUrl(baseUrl) || typeof fetchImpl !== 'function') return null;
+    const finish = (record = null, status = 'not_found', extra = {}) => (
+        returnLookupResult
+            ? {
+                record,
+                status,
+                ...extra
+            }
+            : record
+    );
+    if (!apiKey || !isSub2ApiGatewayBaseUrl(baseUrl) || typeof fetchImpl !== 'function') {
+        return finish(null, 'unavailable');
+    }
     const headerCost = normalizeSub2ApiCost(
         getResponseHeader(response, 'x-sub2api-actual-cost')
         || getResponseHeader(response, 'x-sub2api-cost')
@@ -457,12 +469,12 @@ async function fetchSub2ApiUsageRecord({
     );
     const hints = getSub2ApiUsageRequestIds(response, payload);
     if (headerCost > 0) {
-        return {
+        return finish({
             request_id: hints.requestIds[0] || '',
             actual_cost: headerCost
-        };
+        }, 'found', { requestIds: hints.requestIds });
     }
-    if (!hints.requestIds.length) return null;
+    if (!hints.requestIds.length) return finish(null, 'no_request_id', { requestIds: [] });
     const attempts = readPositiveIntEnv(env, ['AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS'], 12, { min: 1, max: 20 });
     const intervalMs = readPositiveIntEnv(env, ['AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS'], 500, { min: 0, max: 3000 });
     const timeoutMs = readPositiveIntEnv(env, [
@@ -470,6 +482,9 @@ async function fetchSub2ApiUsageRecord({
         'AI_IMAGE_SUB2API_USAGE_FETCH_TIMEOUT_MS'
     ], 1200, { min: 50, max: 30000 });
     const root = normalizeApiBaseUrl(baseUrl).replace(/\/+$/, '');
+    let sawLookupError = false;
+    let sawLookupTimeout = false;
+    let sawLookupUnavailable = false;
 
     for (let attempt = 0; attempt < attempts; attempt += 1) {
         for (const requestId of hints.requestIds) {
@@ -487,12 +502,22 @@ async function fetchSub2ApiUsageRecord({
                             Accept: 'application/json'
                         }
                     }, timeoutMs);
-                    if (!usageResponse?.ok) continue;
+                    if (!usageResponse?.ok) {
+                        if (Number(usageResponse?.status || 0) !== 404) {
+                            sawLookupUnavailable = true;
+                        }
+                        continue;
+                    }
                     // eslint-disable-next-line no-await-in-loop
                     const usagePayload = await readJsonPayloadFromResponse(usageResponse);
                     const record = normalizeSub2ApiUsageLookupRecord(usagePayload, requestId);
-                    if (record) return record;
-                } catch (_) {
+                    if (record) return finish(record, 'found', { requestIds: hints.requestIds });
+                } catch (error) {
+                    if (error?.code === 'sub2api_usage_lookup_timeout') {
+                        sawLookupTimeout = true;
+                    } else {
+                        sawLookupError = true;
+                    }
                     // 使用记录回查失败时保持旧 token usage 计费路径。
                 }
             }
@@ -502,7 +527,9 @@ async function fetchSub2ApiUsageRecord({
             await sleep(intervalMs);
         }
     }
-    return null;
+    if (sawLookupTimeout) return finish(null, 'timeout', { requestIds: hints.requestIds });
+    if (sawLookupError || sawLookupUnavailable) return finish(null, 'unavailable', { requestIds: hints.requestIds });
+    return finish(null, 'not_found', { requestIds: hints.requestIds });
 }
 
 function attachSub2ApiBillingToUsage(usage = {}, record = null, response = null, payload = {}) {
@@ -1995,7 +2022,7 @@ function serializeResult(row = {}) {
     };
 }
 
-function serializeTask(row = {}, results = []) {
+function serializeTask(row = {}, results = [], { env = process.env } = {}) {
     const serializedResults = (Array.isArray(results) ? results : []).map(serializeResult);
     const status = row.status || 'queued';
     const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
@@ -2021,6 +2048,7 @@ function serializeTask(row = {}, results = []) {
         ? Math.max(0, chargedPoints)
         : (status === 'succeeded' ? chargedPoints : estimatedPoints);
     const serializedProviderId = normalizeProviderId(metadata.provider_id || metadata.providerId || metadata.model_provider_id || metadata.modelProviderId);
+    const billingSync = getSub2ApiBillingSyncState(row, env);
     return {
         id: row.id || '',
         taskId: row.id || '',
@@ -2071,6 +2099,12 @@ function serializeTask(row = {}, results = []) {
         estimated_points: estimatedPoints,
         chargedPoints,
         charged_points: chargedPoints,
+        billingSyncStatus: billingSync.status || '',
+        billing_sync_status: billingSync.status || '',
+        billingSyncMessage: billingSync.message || '',
+        billing_sync_message: billingSync.message || '',
+        billingSyncCheckedAt: billingSync.checkedAt || '',
+        billing_sync_checked_at: billingSync.checkedAt || '',
         queuePosition,
         queue_position: queuePosition,
         estimatedWaitSeconds,
@@ -2461,6 +2495,159 @@ function buildSub2ApiUsageLookupPayloadFromTask(task = {}) {
     };
 }
 
+function getExplicitSub2ApiClientRequestId(task = {}) {
+    const metadata = safeObject(task.metadata);
+    const pricingCharge = safeObject(metadata.pricing_charge || metadata.pricingCharge);
+    const sub2api = safeObject(pricingCharge.sub2api || metadata.sub2api);
+    return normalizeText(
+        metadata.sub2api_client_request_id
+        || metadata.sub2apiClientRequestId
+        || pricingCharge.client_request_id
+        || pricingCharge.clientRequestId
+        || sub2api.client_request_id
+        || sub2api.clientRequestId,
+        160
+    );
+}
+
+function getSub2ApiBillingSyncMetadata(task = {}) {
+    const metadata = safeObject(task.metadata);
+    const pricingCharge = safeObject(metadata.pricing_charge || metadata.pricingCharge);
+    return safeObject(
+        metadata.sub2api_billing_sync
+        || metadata.sub2apiBillingSync
+        || pricingCharge.sub2api_billing_sync
+        || pricingCharge.sub2apiBillingSync
+    );
+}
+
+function getTaskReferenceTimestampMs(task = {}) {
+    const candidates = [
+        task.completed_at,
+        task.completedAt,
+        task.updated_at,
+        task.updatedAt,
+        task.created_at,
+        task.createdAt
+    ];
+    for (const candidate of candidates) {
+        const parsed = Date.parse(candidate || '');
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
+}
+
+function getSub2ApiMissingUsageFinalizeMs(env = process.env) {
+    return readPositiveIntEnv(env, [
+        'AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS',
+        'AI_IMAGE_SUB2API_BILLING_SYNC_FINALIZE_AFTER_MS'
+    ], 5 * 60 * 1000, { min: 0, max: 24 * 60 * 60 * 1000 });
+}
+
+function shouldFinalizeMissingSub2ApiBilling(task = {}, env = process.env) {
+    const referenceMs = getTaskReferenceTimestampMs(task);
+    if (!referenceMs) return false;
+    const finalizeAfterMs = getSub2ApiMissingUsageFinalizeMs(env);
+    return Date.now() - referenceMs >= finalizeAfterMs;
+}
+
+function getSub2ApiBillingSyncMessage(status = '') {
+    const normalized = normalizeText(status, 80).toLowerCase();
+    if (normalized === 'not_found') return '未找到上游扣费明细';
+    if (normalized === 'missing_request_id' || normalized === 'no_request_id') return '旧记录缺少扣费追踪ID';
+    if (normalized === 'timeout' || normalized === 'unavailable') return '扣费暂未同步';
+    if (normalized === 'settled') return '扣费已同步';
+    return '扣费同步中';
+}
+
+function getSub2ApiBillingSyncState(task = {}, env = process.env) {
+    if (!shouldCaptureSub2ApiBillingForTask(task)) {
+        return {
+            status: '',
+            message: ''
+        };
+    }
+    const chargedPoints = normalizeBillablePoints(task.charged_points ?? task.chargedPoints, 0);
+    if (chargedPoints > 0) {
+        return {
+            status: 'settled',
+            message: getSub2ApiBillingSyncMessage('settled')
+        };
+    }
+    const taskStatus = normalizeText(task.status, 40).toLowerCase();
+    if (['queued', 'running', 'processing'].includes(taskStatus)) {
+        return {
+            status: 'pending',
+            message: getSub2ApiBillingSyncMessage('pending')
+        };
+    }
+    const syncMetadata = getSub2ApiBillingSyncMetadata(task);
+    const metadataStatus = normalizeText(syncMetadata.status || syncMetadata.reason, 80).toLowerCase();
+    if (metadataStatus) {
+        return {
+            status: metadataStatus,
+            message: normalizeText(syncMetadata.message, 200) || getSub2ApiBillingSyncMessage(metadataStatus),
+            checkedAt: syncMetadata.checked_at || syncMetadata.checkedAt || ''
+        };
+    }
+    if (!getExplicitSub2ApiClientRequestId(task) && shouldFinalizeMissingSub2ApiBilling(task, env)) {
+        return {
+            status: 'missing_request_id',
+            message: getSub2ApiBillingSyncMessage('missing_request_id')
+        };
+    }
+    return {
+        status: 'pending',
+        message: getSub2ApiBillingSyncMessage('pending')
+    };
+}
+
+async function markSub2ApiBillingSyncUnresolved(supabase, task = {}, lookupPayload = {}, lookupResult = {}, {
+    env = process.env
+} = {}) {
+    if (!supabase?.from || !task?.id) return task;
+    const lookupStatus = normalizeText(lookupResult?.status, 80).toLowerCase();
+    if (!['not_found', 'no_request_id'].includes(lookupStatus)) return task;
+    if (!shouldFinalizeMissingSub2ApiBilling(task, env)) return task;
+
+    const explicitClientRequestId = getExplicitSub2ApiClientRequestId(task);
+    const status = explicitClientRequestId ? 'not_found' : 'missing_request_id';
+    const syncMetadata = {
+        status,
+        reason: lookupStatus,
+        message: getSub2ApiBillingSyncMessage(status),
+        checked_at: new Date().toISOString(),
+        client_request_id: explicitClientRequestId || lookupPayload.client_request_id || '',
+        lookup_request_id: lookupPayload.lookup_request_id || lookupPayload.request_id || ''
+    };
+    const metadata = {
+        ...safeObject(task.metadata),
+        sub2api_billing_sync: syncMetadata
+    };
+
+    try {
+        const { data, error } = await supabase
+            .from('ai_image_tasks')
+            .update({ metadata })
+            .eq('id', task.id)
+            .select(TASK_SELECT)
+            .maybeSingle();
+        if (error) return {
+            ...task,
+            metadata
+        };
+        return data || {
+            ...task,
+            metadata
+        };
+    } catch (_) {
+        return {
+            ...task,
+            metadata
+        };
+    }
+}
+
 async function findExistingTaskPointDeduction(supabase, task = {}) {
     if (!supabase?.from || !task?.id || !task?.user_id) return 0;
     try {
@@ -2542,14 +2729,18 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
             || env.AI_IMAGE_SUB2API_USAGE_LOOKUP_TIMEOUT_MS
             || '300'
     };
-    const usageRecord = await fetchSub2ApiUsageRecord({
+    const usageLookupResult = await fetchSub2ApiUsageRecord({
         baseUrl: runtimeConfig.baseUrl,
         apiKey: runtimeConfig.apiKey,
         payload: lookupPayload,
         fetchImpl,
-        env: reconcileLookupEnv
+        env: reconcileLookupEnv,
+        returnLookupResult: true
     });
-    if (!usageRecord?.actual_cost) return task;
+    const usageRecord = usageLookupResult?.record || null;
+    if (!usageRecord?.actual_cost) {
+        return markSub2ApiBillingSyncUnresolved(supabase, task, lookupPayload, usageLookupResult, { env });
+    }
 
     const usageWithBilling = attachSub2ApiBillingToUsage(task.token_usage || {}, usageRecord, null, lookupPayload);
     const chargeEstimate = calculateAiImageRuleChargePoints(task, usageWithBilling);
@@ -5058,7 +5249,8 @@ function createAiImageHandlers({
             for (const item of recoveredRows) {
                 serializedRows.push(serializeTask(
                     attachQueueEstimateToTask(item.row, queueEstimates.get(item.row.id) || {}),
-                    item.results
+                    item.results,
+                    { env }
                 ));
             }
 
@@ -5129,7 +5321,7 @@ function createAiImageHandlers({
 
             return sendJson(res, 200, {
                 success: true,
-                task: serializeTask(attachQueueEstimateToTask(reconciledTask, queueEstimate), normalizedResultRows)
+                task: serializeTask(attachQueueEstimateToTask(reconciledTask, queueEstimate), normalizedResultRows, { env })
             });
         } catch (error) {
             return sendError(sendJson, res, error);
