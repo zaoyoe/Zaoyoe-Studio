@@ -3989,10 +3989,14 @@
         return Math.round(clampNumber(task.progress, 0, 99, 0));
     }
 
-    function getTaskStageProgressPercent(task) {
+    function getImageTaskStageProgressPercent(task, stage = getDockTaskStage(task)) {
         if (!task) return 0;
+        if (stage === 'complete' || stage === 'failed') return 100;
         const knownProgress = getTaskProgressPercent(task);
-        if (knownProgress !== null) return knownProgress;
+        if (knownProgress !== null) {
+            const fallback = Math.round((DOCK_STAGE_PROGRESS[stage] || 0) * 100);
+            return Math.round(clampNumber(knownProgress, stage === 'queued' ? 8 : 12, stage === 'saving' ? 92 : 88, fallback));
+        }
         if (!isBusyTask(task)) return task.status === 'succeeded' ? 100 : 0;
         if (isTextVisionTask(task) || isVideoMode(task?.mode)) {
             return getDockTaskProgressPercent(task, getDockTaskStage(task));
@@ -4010,7 +4014,15 @@
         if (/模型|Gemini|生成/.test(step)) return 60;
         if (/整理/.test(step)) return 82;
         if (/保存/.test(step)) return 90;
-        return getDockTaskProgressPercent(task, getDockTaskStage(task));
+        return Math.round((DOCK_STAGE_PROGRESS[stage] || 0) * 100);
+    }
+
+    function getTaskStageProgressPercent(task) {
+        if (!task) return 0;
+        if (isTextVisionTask(task) || isVideoMode(task?.mode)) {
+            return getDockTaskProgressPercent(task, getDockTaskStage(task));
+        }
+        return getImageTaskStageProgressPercent(task, getDockTaskStage(task));
     }
 
     function getTaskProgressBadge(task) {
@@ -7980,11 +7992,7 @@
         if (stage === 'complete' || stage === 'failed') return 100;
         if (isTextVisionTask(task)) return getDockTextTaskProgressPercent(task, stage);
         if (isVideoMode(task?.mode)) return getDockVideoTaskProgressPercent(task, stage);
-        const knownProgress = getTaskProgressPercent(task);
-        if (knownProgress !== null && (stage === 'generating' || stage === 'saving')) {
-            return Math.round(clampNumber(knownProgress, 12, 88, DOCK_STAGE_PROGRESS[stage] * 100));
-        }
-        return Math.round((DOCK_STAGE_PROGRESS[stage] || 0) * 100);
+        return getImageTaskStageProgressPercent(task, stage);
     }
 
     function getDockStatusIcon(stage = 'idle') {

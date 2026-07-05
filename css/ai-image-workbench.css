@@ -233,7 +233,7 @@ body.chat-widget-open .ai-image-dock {
     left: 50%;
     z-index: 0;
     width: 72px;
-    pointer-events: auto;
+    pointer-events: none;
     transform: translateX(-50%);
 }
 
@@ -288,8 +288,10 @@ body.chat-widget-open .ai-image-dock {
     height: 8px;
 }
 
-.ai-image-dock:hover .ai-image-dock-popover,
-.ai-image-dock:focus-within .ai-image-dock-popover {
+.ai-image-dock:has(.ai-image-fab:hover) .ai-image-dock-popover,
+.ai-image-dock:has(.ai-image-fab:focus-within) .ai-image-dock-popover,
+.ai-image-dock:has(.ai-image-dock-popover:hover) .ai-image-dock-popover,
+.ai-image-dock:has(.ai-image-dock-popover:focus-within) .ai-image-dock-popover {
     opacity: 1;
     filter: blur(0);
     pointer-events: auto;
