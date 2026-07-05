@@ -80,7 +80,7 @@ test('ai image workbench renders partial images while a task is still running', 
     assert.match(source, /const partialImageEntries = buildTaskImageEntries\(task\)/);
     assert.match(source, /const hasPartialImages = partialImageEntries\.length > 0/);
     assert.match(source, /const pendingPreviewCount = Math\.max\(0, total - partialImageEntries\.length\)/);
-    assert.match(source, /const showPendingPreview = !isStopped && task\.status !== 'succeeded' && pendingPreviewCount > 0/);
+    assert.match(source, /const showPendingPreview = !isStopped && !isTaskReloadableBillingRecord\(task\) && task\.status !== 'succeeded' && pendingPreviewCount > 0/);
     assert.match(source, /ai-image-result-grid--partial/);
     assert.match(source, /partialImageEntries\.map\(\(entry, index\) => renderTaskImageEntry\(entry, index/);
     assert.match(source, /showPendingPreview \? renderInlineTaskPreview\(task, '生成中', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length \}\) : ''/);
@@ -628,7 +628,7 @@ test('ai image history rows show unread and failed states inline', () => {
     assert.match(source, /if \(isHydratedRemoteHistory\) markTaskSeen\(remoteTask\)/);
     assert.match(source, /if \(seenTaskIds\.has\(fromId\)\) \{[\s\S]*seenTaskIds\.add\(toId\)/);
     assert.match(source, /const latestTask = row\?\.latestTask \|\| threadTasks\.slice\(\)\.sort\(\(a, b\) => \(b\.createdAt \|\| 0\) - \(a\.createdAt \|\| 0\)\)\[0\] \|\| task;/);
-    assert.match(source, /const hasFailedTask = latestTask\?\.status === 'failed'/);
+    assert.match(source, /const hasFailedTask = latestTask\?\.status === 'failed' && !isTaskReloadableBillingRecord\(latestTask\)/);
     assert.match(source, /const thumbFallbackIcon = isVideoThumb \? 'fa-film' : \(MODE_META\[thumbTask\.mode\]\?\.icon \|\| MODE_META\[task\.mode\]\?\.icon \|\| 'fa-image'\)/);
     assert.match(source, /const thumbIdentityKey = thumb[\s\S]*getImageIdentityKey/);
     assert.match(source, /const thumbSrc = thumb \? getStableImageUrl\(thumbIdentityKey, thumb\) : ''/);
@@ -648,6 +648,33 @@ test('ai image history rows show unread and failed states inline', () => {
     assert.doesNotMatch(thumbImageRule, /opacity: 0;/);
     assert.match(cssSource, /\.ai-image-task-thumb\.is-image-loading img/);
     assert.match(cssSource, /\.ai-image-task-thumb\.is-image-broken img/);
+});
+
+test('ai image workbench treats legacy billing trace gaps as reloadable records', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.equal(source.includes('function getTaskBillingSyncStatus(task = {})'), true);
+    assert.equal(source.includes('function isTaskReloadableBillingRecord(task = {})'), true);
+    assert.match(source, /billingSyncStatus: String\(task\.billingSyncStatus \|\| task\.billing_sync_status/);
+    assert.match(source, /billingSyncMessage: String\(task\.billingSyncMessage \|\| task\.billing_sync_message/);
+    assert.match(source, /if \(!task \|\| task\.status !== 'failed'\) return false;/);
+    assert.match(source, /missing_request_id\|no_request_id\|旧记录缺少扣费追踪id/);
+    assert.match(source, /if \(isTaskReloadableBillingRecord\(task\)\) return '记录重新加载中';/);
+    assert.match(source, /if \(isTaskReloadableBillingRecord\(task\)\) return 'reloading';/);
+    assert.match(source, /if \(stage === 'reloading'\) return '重新加载中';/);
+    assert.match(source, /if \(stage === 'reloading'\) return '加载';/);
+    assert.match(source, /const reloadingTasks = dockTasks\.filter\(isTaskReloadableBillingRecord\)/);
+    assert.match(source, /const failedTasks = dockTasks\.filter\(\(task\) => \(task\.status === 'failed' \|\| task\.status === 'cancelled'\) && !isTaskReloadableBillingRecord\(task\)\)/);
+    assert.match(source, /\|\| reloadingTasks\[0\]/);
+    assert.match(source, /const hasFailedTask = latestTask\?\.status === 'failed' && !isTaskReloadableBillingRecord\(latestTask\)/);
+    assert.match(source, /function hasTaskDisplayableResult\(task = \{\}\)/);
+    assert.match(source, /function renderTaskReloading\(task\)/);
+    assert.match(source, /function renderInlineTaskReloadingPreview\(task, label = '记录重新加载中'/);
+    assert.match(source, /entry\.type === 'reloading'/);
+    assert.match(source, /return renderInlineTaskReloadingPreview\(entry\.task/);
+    assert.match(source, /if \(isTaskReloadableBillingRecord\(task\) && !hasTaskDisplayableResult\(task\)\)/);
+    assert.match(cssSource, /\.ai-image-dock-task\.is-reloading/);
+    assert.match(cssSource, /\.ai-image-reload-dot/);
+    assert.match(cssSource, /\.ai-image-inline-reloading-visual/);
 });
 
 test('ai image workbench exposes video generation only from configured video models', () => {
@@ -1323,11 +1350,11 @@ test('ai image workbench keeps cancel action in the composer instead of duplicat
 test('ai image workbench stops inline progress visuals after task failure', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /const isBusy = forceBusy \|\| \['queued', 'processing'\]\.includes\(task\.status\) \|\| task\.status === 'streaming';/);
-    assert.match(source, /const isStopped = \['failed', 'cancelled'\]\.includes\(task\.status\)/);
+    assert.match(source, /const isStopped = \['failed', 'cancelled'\]\.includes\(task\.status\) && !isTaskReloadableBillingRecord\(task\)/);
     assert.match(source, /\$\{isBusy \? `<div class="ai-image-result-pending-overlay">/);
     assert.match(source, /<div class="ai-image-progress\$\{progressClass\}"/);
     assert.match(source, /ai-image-failure-dot/);
-    assert.match(source, /\(task\.status === 'cancelled' \|\| task\.status === 'failed'\) && isTextVisionTask\(task\)/);
+    assert.match(source, /\(task\.status === 'cancelled' \|\| task\.status === 'failed'\) && isTextVisionTask\(task\) && !isTaskReloadableBillingRecord\(task\)/);
     assert.match(source, /const showStoppedPreview = isStopped && pendingPreviewCount > 0/);
     assert.match(source, /showStoppedPreview \? renderInlineTaskPreview\(task, task\.status === 'cancelled' \? '生成已取消' : '生成失败', \{ showPrompt: false, navigationAnchor: !partialImageEntries\.length \}\) : ''/);
     assert.match(source, /<button class="ai-image-result-prompt-copy" type="button" data-aiw-action="copy-task-prompt" data-task-id="\$\{escapeHtml\(task\.id\)\}"/);
