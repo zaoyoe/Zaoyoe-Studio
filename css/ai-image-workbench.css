@@ -4054,6 +4054,7 @@ html[data-theme="dark"] .ai-image-chat-copy {
 }
 
 .ai-image-result-media.is-image-loading::after,
+.ai-image-result-media.is-image-broken::after,
 .ai-image-result-media.is-video-loading::after {
     content: "\f03d";
     position: absolute;
@@ -4079,7 +4080,8 @@ html[data-theme="dark"] .ai-image-chat-copy {
     pointer-events: none;
 }
 
-.ai-image-result-media.is-image-loading::after {
+.ai-image-result-media.is-image-loading::after,
+.ai-image-result-media.is-image-broken::after {
     content: "\f110";
     animation: aiw-spin 1.05s linear infinite;
 }
@@ -4167,7 +4169,7 @@ html[data-theme="dark"] .ai-image-chat-copy {
     text-align: center;
 }
 
-.ai-image-result-media.is-image-broken .ai-image-result-broken {
+.ai-image-result-media.is-video-broken .ai-image-result-broken {
     display: grid;
 }
 
