@@ -672,9 +672,17 @@ test('ai image workbench treats legacy billing trace gaps as reloadable records'
     assert.match(source, /entry\.type === 'reloading'/);
     assert.match(source, /return renderInlineTaskReloadingPreview\(entry\.task/);
     assert.match(source, /if \(isTaskReloadableBillingRecord\(task\) && !hasTaskDisplayableResult\(task\)\)/);
+    const reloadStageMatch = source.match(/function renderTaskReloading\(task\) \{[\s\S]*?\n    \}/);
+    const inlineReloadMatch = source.match(/function renderInlineTaskReloadingPreview\(task, label = '记录重新加载中'[\s\S]*?\n    \}/);
+    assert.ok(reloadStageMatch, 'renderTaskReloading should be present');
+    assert.ok(inlineReloadMatch, 'renderInlineTaskReloadingPreview should be present');
+    assert.doesNotMatch(reloadStageMatch[0], /fa-rotate-right|aiw-spin/);
+    assert.doesNotMatch(inlineReloadMatch[0], /fa-rotate-right|aiw-spin/);
     assert.match(cssSource, /\.ai-image-dock-task\.is-reloading/);
     assert.match(cssSource, /\.ai-image-reload-dot/);
     assert.match(cssSource, /\.ai-image-inline-reloading-visual/);
+    assert.doesNotMatch(cssSource, /\.ai-image-reload-dot i/);
+    assert.doesNotMatch(cssSource, /\.ai-image-inline-reloading-visual i/);
 });
 
 test('ai image workbench exposes video generation only from configured video models', () => {
