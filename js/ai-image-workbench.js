@@ -9717,8 +9717,9 @@
             if (!entries.length) {
                 taskSequenceMap.set(item.id, sequenceCursor + 1);
                 const awaitingVideoResult = isVideoMode(item.mode) && item.status === 'succeeded';
+                const awaitingImageReload = !awaitingVideoResult && item.status === 'succeeded';
                 return [{
-                    type: 'pending',
+                    type: awaitingImageReload ? 'reloading' : 'pending',
                     task: item,
                     taskIndex,
                     sequence: sequenceCursor + 1,
@@ -9750,7 +9751,7 @@
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
-                    <div class="ai-image-result-grid ${resultGridModeClass} ${imageCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasThreadChildren ? 'ai-image-result-grid--thread' : ''} ${imageEntries.some((entry) => entry.type === 'pending') ? 'ai-image-result-grid--partial' : ''}">
+                    <div class="ai-image-result-grid ${resultGridModeClass} ${imageCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasThreadChildren ? 'ai-image-result-grid--thread' : ''} ${imageEntries.some((entry) => entry.type === 'pending' || entry.type === 'reloading') ? 'ai-image-result-grid--partial' : ''}">
                         ${imageEntries.map((entry, index) => {
                             const taskId = String(entry.task?.id || '').trim();
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));
