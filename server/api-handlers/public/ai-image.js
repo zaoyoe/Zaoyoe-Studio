@@ -57,7 +57,7 @@ const MAX_REFERENCE_IMAGE_INPUTS = 16;
 const MAX_CHAT_ATTACHMENT_COUNT = 8;
 const MAX_CHAT_ATTACHMENT_TEXT_CHARS = 50000;
 const MAX_CHAT_ATTACHMENT_TOTAL_CHARS = 120000;
-const DEFAULT_CHAT_MAX_TOKENS = 1600;
+const DEFAULT_CHAT_MAX_TOKENS = 16000;
 const SUPPORTED_REFERENCE_IMAGE_MIME_TYPES = Object.freeze(new Set([
     'image/jpeg',
     'image/png',
@@ -3144,16 +3144,17 @@ function chatContentToGeminiInteractionContent(content = '') {
     return blocks;
 }
 
-function buildGeminiNativeChatRequest({ messages = [], thinkingLevel = '', includeThoughts = false, maxTokens = 420, model = '' } = {}) {
+function buildGeminiNativeChatRequest({ messages = [], thinkingLevel = '', includeThoughts = false, maxTokens = 0, model = '' } = {}) {
     const systemMessages = messages.filter((message) => message.role === 'system');
     const chatMessages = messages.filter((message) => message.role !== 'system');
     const input = chatMessages.map((message) => ({
         type: message.role === 'assistant' ? 'model_output' : 'user_input',
         content: chatContentToGeminiInteractionContent(message.content)
     })).filter((message) => message.content.length);
-    const generationConfig = {
-        max_output_tokens: maxTokens
-    };
+    const generationConfig = {};
+    if (Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0) {
+        generationConfig.max_output_tokens = Number(maxTokens);
+    }
     if (thinkingLevel && supportsGeminiThinkingLevel(model)) {
         generationConfig.thinking_level = thinkingLevel;
         if (includeThoughts) generationConfig.thinking_summaries = 'auto';
@@ -3204,7 +3205,7 @@ function chatContentToOpenAiResponseContent(content = '', { assistant = false } 
     return blocks;
 }
 
-function buildOpenAiResponsesRequest({ messages = [], reasoningEffort = '', serviceTier = '', maxTokens = 420, model = '' } = {}) {
+function buildOpenAiResponsesRequest({ messages = [], reasoningEffort = '', serviceTier = '', maxTokens = 0, model = '' } = {}) {
     const input = messages.map((message) => {
         const role = message.role === 'assistant' ? 'assistant' : (message.role === 'system' ? 'system' : 'user');
         return {
@@ -3215,9 +3216,11 @@ function buildOpenAiResponsesRequest({ messages = [], reasoningEffort = '', serv
     const body = {
         model,
         input,
-        stream: true,
-        max_output_tokens: maxTokens
+        stream: true
     };
+    if (Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0) {
+        body.max_output_tokens = Number(maxTokens);
+    }
     if (reasoningEffort) {
         body.reasoning = {
             effort: reasoningEffort,
@@ -3228,13 +3231,15 @@ function buildOpenAiResponsesRequest({ messages = [], reasoningEffort = '', serv
     return body;
 }
 
-function buildClaudeMessagesRequest({ messages = [], thinkingEnabled = false, thinkingBudget = 1024, maxTokens = 420, model = '' } = {}) {
+function buildClaudeMessagesRequest({ messages = [], thinkingEnabled = false, thinkingBudget = 1024, maxTokens = 0, model = '' } = {}) {
     const systemMessages = messages.filter((message) => message.role === 'system');
     const chatMessages = messages.filter((message) => message.role !== 'system');
     const normalizedBudget = Math.max(1024, normalizePositiveInt(thinkingBudget, 1024, { min: 1024, max: 128000 }));
+    const requestedMaxTokens = Number(maxTokens);
+    const effectiveMaxTokens = Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0 ? requestedMaxTokens : DEFAULT_CHAT_MAX_TOKENS;
     const body = {
         model,
-        max_tokens: thinkingEnabled ? Math.max(maxTokens, normalizedBudget + 1024) : maxTokens,
+        max_tokens: thinkingEnabled ? Math.max(effectiveMaxTokens, normalizedBudget + 1024) : effectiveMaxTokens,
         messages: chatMessages.map((message) => ({
             role: message.role === 'assistant' ? 'assistant' : 'user',
             content: getChatMessageContentText(message.content)
@@ -4412,10 +4417,12 @@ function createAiImageHandlers({
                 ? { 'X-Client-Request-ID': sub2ApiClientRequestId }
                 : {};
             const upstreamStartedAt = Date.now();
-	            const maxTokens = normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS, {
+	            const configuredMaxTokens = normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, 0, {
 	                min: 64,
-	                max: kimiThinkingEnabled === true ? 64000 : 16000
+	                max: 64000
 	            });
+	            const requiredMinMaxTokens = kimiThinkingEnabled === true ? 16000 : 0;
+	            const maxTokens = Math.max(configuredMaxTokens, requiredMinMaxTokens);
             const requestBody = {
                 model: upstreamRequestModel,
 		                messages,
@@ -4423,9 +4430,11 @@ function createAiImageHandlers({
 		                prompt_cache_key: promptCacheKey,
 	                stream_options: {
 	                    include_usage: true
-	                },
-	                max_tokens: kimiThinkingEnabled === true && maxTokens < 16000 ? 16000 : maxTokens
+	                }
 	            };
+	            if (maxTokens > 0) {
+	                requestBody.max_tokens = maxTokens;
+	            }
 		            if (upstreamReasoningEffort) {
 		                requestBody.reasoning_effort = upstreamReasoningEffort;
 		            }

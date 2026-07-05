@@ -2628,7 +2628,7 @@ test('qwen chat stream forwards official enable_thinking flag and reasoning cont
     assert.match(res.body, /event: reasoning/);
     assert.match(res.body, /Qwen 先思考。/);
     assert.equal(requests[0].body.enable_thinking, true);
-    assert.equal(requests[0].body.max_tokens, 1600);
+    assert.equal(Object.hasOwn(requests[0].body, 'max_tokens'), false);
     assert.equal(Object.hasOwn(requests[0].body, 'thinking'), false);
     assert.equal(Object.hasOwn(requests[0].body, 'reasoning_effort'), false);
     const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);

@@ -3514,6 +3514,7 @@ test('openai compatible text vision executor reverses an image prompt through ch
     assert.equal(requests[0].body.messages[0].content[1].type, 'image_url');
     assert.equal(requests[0].body.messages[0].content[1].image_url.url, 'https://cdn.example.com/reference.png');
     assert.match(requests[0].body.messages[0].content[0].text, /反推/);
+    assert.equal(requests[0].body.max_tokens, 520);
     assert.equal(execution.resultPrompt, 'A cinematic neon city poster, reflective rain street, bold commercial composition.');
     assert.equal(execution.images.length, 0);
     assert.equal(execution.tokenUsage.total_tokens, 200);
@@ -3572,6 +3573,7 @@ test('openai compatible text vision executor handles chat mode without image out
     assert.equal(requests[0].url, 'https://api.example.com/v1/chat/completions');
     assert.equal(requests[0].body.model, 'gpt-4o-mini');
     assert.equal(requests[0].body.messages[0].content, '帮我把这段提示词改得更商业化');
+    assert.equal(Object.hasOwn(requests[0].body, 'max_tokens'), false);
     assert.equal(execution.resultPrompt, '已优化：高端商业摄影质感，清晰主体，柔和棚拍光。');
     assert.equal(execution.images.length, 0);
     assert.equal(execution.tokenUsage.total_tokens, 50);
