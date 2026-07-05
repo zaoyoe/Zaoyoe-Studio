@@ -4009,6 +4009,153 @@ test('task list keeps returning when delayed Sub2API usage lookup hangs', { time
     assert.equal(elapsedMs < 500, true);
 });
 
+test('task list finalizes old Sub2API billing sync when usage detail is not found', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-old-sub2api-not-found',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 61,
+                output_tokens: 87,
+                total_tokens: 148
+            },
+            input_tokens: 61,
+            output_tokens: 87,
+            total_tokens: 148,
+            metadata: {
+                sub2api_client_request_id: 'fatherkey-aiw-task-old-sub2api-not-found',
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-old-sub2api-not-found',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                unit: 'sub2api_actual_cost_usd',
+                                cost_source: 'sub2api_usage_actual_cost',
+                                points_per_usd: 1
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-old-sub2api-not-found-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
+            AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS: '0'
+        },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 404,
+            text: async () => JSON.stringify({ error: { message: 'not found' } })
+        })
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'not_found');
+    assert.equal(payload.tasks[0].billingSyncMessage, '未找到上游扣费明细');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.status, 'not_found');
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+});
+
+test('task list marks old Sub2API billing sync missing request id when legacy task cannot be traced', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-old-sub2api-missing-request-id',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 61,
+                output_tokens: 87,
+                total_tokens: 148
+            },
+            input_tokens: 61,
+            output_tokens: 87,
+            total_tokens: 148,
+            metadata: {
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-old-sub2api-missing-request-id',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                unit: 'sub2api_actual_cost_usd',
+                                cost_source: 'sub2api_usage_actual_cost',
+                                points_per_usd: 1
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-old-sub2api-missing-request-id-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
+            AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS: '0'
+        },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 404,
+            text: async () => JSON.stringify({ error: { message: 'not found' } })
+        })
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'missing_request_id');
+    assert.equal(payload.tasks[0].billingSyncMessage, '旧记录缺少扣费追踪ID');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.status, 'missing_request_id');
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+});
+
 test('running image tasks expose partial results without marking task succeeded', async () => {
     const state = {
         tasks: [{

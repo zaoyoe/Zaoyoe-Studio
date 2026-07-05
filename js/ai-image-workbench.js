@@ -4352,12 +4352,35 @@
         const chargedPoints = Number(task.chargedPoints ?? task.charged_points ?? 0);
         if (chargedPoints > 0) return `扣费 ${formatBillingPoints(chargedPoints)} 积分`;
         if (task.status === 'failed' || task.status === 'cancelled' || task.status === 'refunded') {
-            if (isSub2ApiActualCostTask(task)) return '扣费同步中';
+            if (isSub2ApiActualCostTask(task)) return getTaskBillingSyncMetaLabel(task) || '扣费同步中';
             return '未扣费';
         }
         if (task.status !== 'succeeded') return '';
-        if (chargedPoints <= 0 && isSub2ApiActualCostTask(task)) return '扣费同步中';
+        if (chargedPoints <= 0 && isSub2ApiActualCostTask(task)) return getTaskBillingSyncMetaLabel(task) || '扣费同步中';
         return `扣费 ${formatBillingPoints(chargedPoints)} 积分`;
+    }
+
+    function getTaskBillingSyncMetaLabel(task = {}) {
+        const status = String(
+            task.billingSyncStatus
+            || task.billing_sync_status
+            || task.metadata?.sub2api_billing_sync?.status
+            || task.metadata?.sub2apiBillingSync?.status
+            || ''
+        ).trim().toLowerCase();
+        const message = String(
+            task.billingSyncMessage
+            || task.billing_sync_message
+            || task.metadata?.sub2api_billing_sync?.message
+            || task.metadata?.sub2apiBillingSync?.message
+            || ''
+        ).trim();
+        if (message && !['pending', 'settled'].includes(status)) return message;
+        if (status === 'not_found') return '未找到上游扣费明细';
+        if (status === 'missing_request_id' || status === 'no_request_id') return '旧记录缺少扣费追踪ID';
+        if (status === 'timeout' || status === 'unavailable') return '扣费暂未同步';
+        if (status === 'pending') return '扣费同步中';
+        return '';
     }
 
     function isSub2ApiActualCostTask(task = {}) {
