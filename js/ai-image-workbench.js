@@ -3942,8 +3942,8 @@
     function getStatusLabel(task) {
         if (!task) return '待开始';
         if (task.status === 'queued') {
-            const estimate = getTaskQueueEstimateLabel(task);
-            return estimate ? `已受理 · ${estimate}` : '已受理 · 排队中';
+            const step = getTaskQueuedStepLabel(task);
+            return `${step} · ${getTaskQueuedDetailLabel(task) || '等待调度'}`;
         }
         if (task.status === 'processing' || task.status === 'streaming') {
             if (task.mode === 'chat') return getTaskProgressDetail(task);
@@ -3988,8 +3988,8 @@
     function getTaskProgressBadge(task) {
         const percent = getTaskProgressPercent(task);
         if (percent !== null) return `${percent}%`;
-        if (task?.status === 'queued') return '已受理';
-            if (task?.status === 'processing' || task?.status === 'streaming') return getTaskCurrentStepLabel(task);
+        if (task?.status === 'queued') return getTaskQueuedBadgeLabel(task);
+        if (task?.status === 'processing' || task?.status === 'streaming') return getTaskCurrentStepLabel(task);
         if (task?.status === 'cancelled') return '已取消';
         if (task?.status === 'failed') return '失败';
         return '待开始';
@@ -3998,7 +3998,7 @@
     function getTaskGenerationLabel(task) {
         if (isTextVisionTask(task)) {
             if (task?.status === 'succeeded') return '文本完成';
-            if (task?.status === 'queued') return getTaskQueueEstimateLabel(task) || '等待模型';
+            if (task?.status === 'queued') return getTaskQueuedStepLabel(task);
             if (task?.status === 'processing' || task?.status === 'streaming') return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
             if (task?.status === 'cancelled') return '已取消';
             return '处理失败';
@@ -4032,7 +4032,7 @@
 
     function getTaskCurrentStepLabel(task) {
         if (!task) return '待开始';
-        if (task.status === 'queued') return '已受理';
+        if (task.status === 'queued') return getTaskQueuedStepLabel(task);
         if (task.status === 'processing' || task.status === 'streaming') {
             if (isTextVisionTask(task)) return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
             if (isVideoMode(task.mode)) return '视频生成中';
@@ -4052,6 +4052,62 @@
         if (task.status === 'succeeded') return '生成完成';
         if (task.status === 'cancelled') return '已取消';
         return '生成失败';
+    }
+
+    function isGeminiImageTask(task = {}) {
+        if (!task || isTextVisionTask(task) || isVideoMode(task.mode)) return false;
+        const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
+            ? task.metadata
+            : {};
+        const providerModel = metadata.provider_model || metadata.providerModel || metadata.upstream_model || metadata.upstreamModel;
+        const source = [
+            task.model,
+            task.modelProviderId,
+            task.providerId,
+            task.apiModelGroup,
+            providerModel
+        ].map((value) => String(value || '').toLowerCase()).join(' ');
+        return source.includes('gemini');
+    }
+
+    function getTaskQueuedStepLabel(task = {}) {
+        if (!task) return '已受理';
+        const position = Number(task.queuePosition);
+        if (Number.isFinite(position) && position > 1) return '排队等待中';
+        const elapsed = getTaskElapsedSeconds(task);
+        if (isTextVisionTask(task)) {
+            if (elapsed < 4) return '已受理';
+            return task.mode === 'reverse' ? '等待视觉模型响应' : '等待对话模型响应';
+        }
+        if (isVideoMode(task.mode)) {
+            if (elapsed < 4) return '已受理';
+            if (elapsed < 15) return '准备视频生成';
+            return '等待视频返回';
+        }
+        if (elapsed < 4) return '已受理';
+        if (elapsed < 10) return '准备图片生成';
+        if (elapsed < 30) return isGeminiImageTask(task) ? 'Gemini 生成中' : '模型生成中';
+        return isGeminiImageTask(task) ? '等待 Gemini 图片返回' : '等待图片返回';
+    }
+
+    function getTaskQueuedBadgeLabel(task = {}) {
+        const label = getTaskQueuedStepLabel(task);
+        if (label === '已受理') return '受理';
+        if (/排队/.test(label)) return '排队中';
+        if (/准备/.test(label)) return '准备中';
+        if (/返回|响应/.test(label)) return '等待返回';
+        if (/生成/.test(label)) return '生成中';
+        return label;
+    }
+
+    function getTaskQueuedDetailLabel(task = {}) {
+        const estimate = getTaskQueueEstimateLabel(task);
+        const step = getTaskQueuedStepLabel(task);
+        if (estimate && (estimate !== '即将开始' || step === '已受理' || /排队/.test(step))) {
+            return estimate;
+        }
+        if (isTextVisionTask(task)) return estimate || '等待模型';
+        return getTaskCurrentImageLabel(task);
     }
 
     function getTaskFailureReason(task = {}) {
@@ -4094,7 +4150,7 @@
             return parts.filter(Boolean).join(' · ');
         }
         if (task?.status === 'queued') {
-            return `${getTaskCurrentStepLabel(task)} · ${getTaskQueueEstimateLabel(task) || getTaskCurrentImageLabel(task)} · ${getTaskElapsedLabel(task)}`;
+            return `${getTaskCurrentStepLabel(task)} · ${getTaskQueuedDetailLabel(task) || getTaskCurrentImageLabel(task)} · ${getTaskElapsedLabel(task)}`;
         }
         return `${getTaskCurrentStepLabel(task)} · ${getTaskCurrentImageLabel(task)} · ${getTaskElapsedLabel(task)}`;
     }
@@ -7874,7 +7930,7 @@
     }
 
     function getDockStageLabel(task, stage = getDockTaskStage(task)) {
-        if (stage === 'queued') return '排队中';
+        if (stage === 'queued') return getTaskQueuedBadgeLabel(task);
         if (stage === 'saving') return '保存结果中';
         if (stage === 'complete') return '全部完成';
         if (stage === 'failed') return task?.status === 'cancelled' ? '已取消' : '生成失败';
@@ -7903,7 +7959,7 @@
         if (stage === 'failed') return task?.status === 'cancelled'
             ? `已取消 · ${getTaskChargeMetaLabel(task) || '未扣费'}`
             : `生成失败 · ${getTaskChargeMetaLabel(task) || '未扣费'}`;
-        if (stage === 'queued') return getTaskQueueEstimateLabel(task) || '等待调度';
+        if (stage === 'queued') return getTaskQueuedStepLabel(task);
         if (stage === 'saving') return '保存结果中';
         return getTaskCurrentStepLabel(task);
     }
