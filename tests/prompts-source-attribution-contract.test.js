@@ -586,7 +586,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'same-style side panel should use localized same-style heading copy'
     );
     assert.equal(
-        (promptsHtml.match(/relatedPrompts=20260620_RELATED_PROMPTS_SHARE_4/g) || []).length,
+        (promptsHtml.match(/relatedPrompts=20260620_RELATED_PROMPTS_SHARE_5/g) || []).length,
         2,
         'prompts.html should cache-bust both related prompt CSS and runtime'
     );

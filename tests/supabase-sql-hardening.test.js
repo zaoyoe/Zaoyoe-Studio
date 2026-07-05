@@ -44,8 +44,13 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
     );
     assert.match(
         reclaimSql,
-        /CREATE OR REPLACE FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(\s*p_target_user_id UUID,\s*p_amount NUMERIC\(12,2\),\s*p_reason TEXT DEFAULT 'Admin Deduction',\s*p_reference_id TEXT DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
-        'refund reclaim helper should expose the site-aware breakdown signature'
+        /CREATE OR REPLACE FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(\s*p_target_user_id UUID,\s*p_amount NUMERIC,\s*p_reason TEXT DEFAULT 'Admin Deduction',\s*p_reference_id TEXT DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
+        'refund reclaim helper should expose the site-aware micro-precision breakdown signature'
+    );
+    assert.doesNotMatch(
+        reclaimSql,
+        /p_amount NUMERIC\(12,2\)/,
+        'refund reclaim helper must not coerce Sub2API micro charges to two decimal places'
     );
     assert.match(
         reclaimSql,
@@ -88,6 +93,7 @@ test('database migrations retire the legacy redemption overload and formalize th
     const paymentSiteSql = readRepoFile(path.join('supabase', 'migrations', '20260322_constrain_payment_sites.sql'));
     const rateLimitSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_persistent_rate_limits.sql'));
     const refundReclaimSql = readRepoFile(path.join('supabase', 'migrations', '20260418_enable_decimal_refund_reclaim_rpc.sql'));
+    const aiImageMicroPrecisionSql = readRepoFile(path.join('supabase', 'migrations', '20260704_ai_image_micro_point_precision.sql'));
     const notificationScopeSql = readRepoFile(path.join('supabase', 'migrations', '20260330_add_system_notification_scopes.sql'));
     const notificationScopeHardeningSql = readRepoFile(path.join('supabase', 'migrations', '20260503_harden_system_notification_admin_scope.sql'));
     const adminExtensionsSql = readRepoFile(path.join('supabase', 'admin_extensions.sql'));
@@ -216,6 +222,26 @@ test('database migrations retire the legacy redemption overload and formalize th
         refundReclaimSql,
         /GRANT EXECUTE ON FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(UUID, NUMERIC, TEXT, TEXT, VARCHAR\) TO service_role;/,
         'refund reclaim migration should keep execution restricted to service_role'
+    );
+    assert.match(
+        aiImageMicroPrecisionSql,
+        /ALTER COLUMN charged_points TYPE NUMERIC\(18, 6\)/,
+        'AI image micro precision migration should store charged points below 0.01'
+    );
+    assert.match(
+        aiImageMicroPrecisionSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(\s*p_target_user_id UUID,\s*p_amount NUMERIC,\s*p_reason TEXT DEFAULT 'Admin Deduction',\s*p_reference_id TEXT DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
+        'AI image micro precision migration should accept micro point deductions'
+    );
+    assert.match(
+        aiImageMicroPrecisionSql,
+        /actual_deducted := ROUND\(LEAST\(ROUND\(p_amount, 6\), ROUND\(current_bonus \+ current_paid, 6\)\), 6\);/,
+        'AI image micro precision migration should round deductions to six decimal places'
+    );
+    assert.match(
+        aiImageMicroPrecisionSql,
+        /GRANT EXECUTE ON FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(UUID, NUMERIC, TEXT, TEXT, VARCHAR\) TO service_role;/,
+        'AI image micro precision migration should keep micro deduction execution restricted to service_role'
     );
     assert.match(
         notificationScopeSql,
