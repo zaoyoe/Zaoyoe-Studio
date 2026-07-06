@@ -2556,14 +2556,19 @@
                     : (keepLocalProcessing || keepLocalIncompleteRemoteSuccess ? 'processing' : remoteStatus);
         const localProgress = clampNumber(localTask.progress, 0, 100, 0);
         const remoteProgress = clampNumber(remoteTask.progress, 0, 100, 0);
+        const busyFinalStatus = isBusyTask({ status: finalStatus });
         const localVisualProgress = isBusyTask(localTask)
             ? clampNumber(getTaskStageProgressPercent(localTask), 0, 100, localProgress)
             : localProgress;
         const remoteVisualProgress = isBusyTask(remoteTask)
             ? clampNumber(getTaskStageProgressPercent(remoteTask), 0, 100, remoteProgress)
             : remoteProgress;
+        const keepLocalProgressKnown = busyFinalStatus
+            && Boolean(localTask.progressKnown)
+            && localProgress >= remoteProgress;
         const progressKnown = finalStatus === 'succeeded'
             || (!keepLocalIncompleteRemoteSuccess && Boolean(remoteTask.progressKnown))
+            || keepLocalProgressKnown
             || (remoteTask.progress === undefined && Boolean(localTask.progressKnown));
         const nextProgress = keepLocalIncompleteRemoteSuccess
             ? Math.max(localProgress, localVisualProgress)
@@ -2579,7 +2584,17 @@
                 Number.isFinite(remoteDeliveredImageCount) ? remoteDeliveredImageCount : 0
             )
             : remoteTask.deliveredImageCount;
-        const keepCannotCancelWarning = isBusyTask({ status: finalStatus })
+        const runtimeStarts = [
+            localTask.startedAt || localTask.createdAt || 0,
+            remoteTask.startedAt || remoteTask.createdAt || 0
+        ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+        const stableRuntimeStartedAt = runtimeStarts.length ? Math.min(...runtimeStarts) : 0;
+        const nextStartedAt = busyFinalStatus && stableRuntimeStartedAt
+            ? stableRuntimeStartedAt
+            : (keepLocalRuntimeClock
+                ? (localTask.startedAt || localTask.createdAt || remoteTask.startedAt || remoteTask.createdAt || 0)
+                : (remoteTask.startedAt || localTask.startedAt || 0));
+        const keepCannotCancelWarning = busyFinalStatus
             && (
                 isCannotCancelChargedMessage(localTask.remoteError)
                 || isCannotCancelChargedMessage(localTask.errorMessage)
@@ -2598,7 +2613,7 @@
             quantity: nextQuantity,
             deliveredImageCount: nextDeliveredImageCount,
             createdAt: keepLocalRuntimeClock ? (localTask.createdAt || remoteTask.createdAt || 0) : (remoteTask.createdAt || localTask.createdAt || 0),
-            startedAt: keepLocalRuntimeClock ? (localTask.startedAt || localTask.createdAt || remoteTask.startedAt || remoteTask.createdAt || 0) : (remoteTask.startedAt || localTask.startedAt || 0),
+            startedAt: nextStartedAt,
             completedAt: keepLocalSucceeded ? (localTask.completedAt || remoteTask.completedAt || 0) : (remoteTask.completedAt || localTask.completedAt || 0),
             updatedAt: Math.max(Number(localTask.updatedAt || 0), Number(remoteTask.updatedAt || 0)),
             status: finalStatus,
