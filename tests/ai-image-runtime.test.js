@@ -4476,6 +4476,86 @@ test('ai image runtime respects explicit default provider image group and drops 
     }
 });
 
+test('ai image public provider metadata includes legacy default with provider rows without decrypting', async () => {
+    const {
+        AI_IMAGE_SECRET_KEY,
+        buildAiImageProviderSecretKey,
+        listStoredAiImageProviderPublicMetadata,
+        upsertStoredAdminSecret
+    } = require('../api/_lib/secrets');
+    const supabase = createSupabaseStub({ adminSecrets: [] });
+    const previousAdminKey = process.env.ADMIN_CONFIG_ENCRYPTION_KEY;
+    const previousServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.ADMIN_CONFIG_ENCRYPTION_KEY = 'ai-image-public-metadata-source-key';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret';
+
+    try {
+        await upsertStoredAdminSecret({
+            supabase,
+            secretKey: AI_IMAGE_SECRET_KEY,
+            secretValue: 'sk-legacy-public-image-provider-1234567890',
+            adminId: 'admin-1',
+            metadata: {
+                providerId: 'image',
+                label: 'image',
+                baseUrl: 'https://www.geek2api.com/v1',
+                model: 'gpt-image-2',
+                imageModels: ['gpt-image-2'],
+                modelGroup: 'image',
+                vendor: 'openai',
+                protocol: 'openai-compatible',
+                isActive: true
+            }
+        });
+        await upsertStoredAdminSecret({
+            supabase,
+            secretKey: buildAiImageProviderSecretKey('banana-2'),
+            secretValue: 'sk-banana-public-provider-1234567890',
+            adminId: 'admin-1',
+            metadata: {
+                providerId: 'banana-2',
+                label: 'Banana 2',
+                baseUrl: 'https://sub2api.fatherkey.com/v1',
+                model: 'gemini-3.1-flash-image',
+                imageModels: ['gemini-3.1-flash-image'],
+                modelGroup: 'image',
+                vendor: 'gemini',
+                protocol: 'gemini-native',
+                isActive: true,
+                displayOrder: 10
+            }
+        });
+
+        const providers = await listStoredAiImageProviderPublicMetadata(supabase, {
+            env: {
+                ADMIN_CONFIG_ENCRYPTION_KEY: 'wrong-key-for-public-metadata'
+            }
+        });
+        const legacyProvider = providers.find((provider) => provider.providerId === 'image');
+        const bananaProvider = providers.find((provider) => provider.providerId === 'banana-2');
+
+        assert.equal(legacyProvider?.configured, true);
+        assert.equal(legacyProvider.apiKey, '');
+        assert.equal(legacyProvider.label, 'image');
+        assert.equal(legacyProvider.baseUrl, 'https://www.geek2api.com/v1');
+        assert.equal(legacyProvider.modelGroup, 'image');
+        assert.deepEqual(legacyProvider.imageModels, ['gpt-image-2']);
+        assert.equal(bananaProvider?.configured, true);
+        assert.deepEqual(bananaProvider.imageModels, ['gemini-3.1-flash-image']);
+    } finally {
+        if (previousAdminKey === undefined) {
+            delete process.env.ADMIN_CONFIG_ENCRYPTION_KEY;
+        } else {
+            process.env.ADMIN_CONFIG_ENCRYPTION_KEY = previousAdminKey;
+        }
+        if (previousServiceKey === undefined) {
+            delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        } else {
+            process.env.SUPABASE_SERVICE_ROLE_KEY = previousServiceKey;
+        }
+    }
+});
+
 test('ai image secret resolution caches the provider chain and invalidates after secret updates', async () => {
     const {
         AI_IMAGE_SECRET_KEY,
