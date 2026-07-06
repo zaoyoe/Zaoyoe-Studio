@@ -714,6 +714,40 @@
         return Boolean(key && failedVideoUrls.has(key) && !loadedVideoUrls.has(key));
     }
 
+    function isOriginalStatusPending(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        return !['ready', 'failed', 'missing', 'upstream_url'].includes(normalized);
+    }
+
+    function isVideoImageAwaitingReady(image = {}) {
+        if (!image) return false;
+        return !image.originalReady && isOriginalStatusPending(image.originalStatus);
+    }
+
+    function isMediaAwaitingVideoReady(media = null) {
+        if (typeof Element === 'undefined' || !(media instanceof Element)) return false;
+        if (media.getAttribute('data-aiw-media-type') !== 'video') return false;
+        if (media.getAttribute('data-aiw-original-ready') === 'true') return false;
+        return isOriginalStatusPending(media.getAttribute('data-aiw-original-status') || '');
+    }
+
+    function hasMediaVideoFileBytes(media = null) {
+        if (typeof Element === 'undefined' || !(media instanceof Element)) return false;
+        if (media.getAttribute('data-aiw-media-type') !== 'video') return false;
+        return Boolean(
+            normalizeByteCount(media.getAttribute('data-aiw-original-bytes'))
+            || normalizeByteCount(media.getAttribute('data-aiw-preview-bytes'))
+        );
+    }
+
+    function shouldKeepVideoLoadingAfterError(media = null) {
+        return isMediaAwaitingVideoReady(media) || hasMediaVideoFileBytes(media);
+    }
+
+    function getMediaVideoLoadingLabel(media = null, fallback = '加载中') {
+        return isMediaAwaitingVideoReady(media) ? '转存中' : fallback;
+    }
+
     function normalizeVideoProgressPercent(value) {
         const number = Number(value);
         if (!Number.isFinite(number)) return null;
@@ -766,15 +800,15 @@
         const percent = forceComplete ? 100 : getVideoBufferedPercent(video);
         if (percent !== null) rememberVideoProgress(videoSrc, percent);
         const currentPercent = getStoredVideoProgress(videoSrc);
-        const label = getVideoProgressLabel(videoSrc);
         const media = video.closest?.('.ai-image-result-media');
         if (!media) return;
+        const label = getMediaVideoLoadingLabel(media, getVideoProgressLabel(videoSrc));
         media.style.setProperty('--aiw-video-progress', `${currentPercent}%`);
         media.setAttribute('data-aiw-video-progress-label', label);
         const progress = media.querySelector?.('[data-aiw-video-progress]');
         if (!progress) return;
         progress.textContent = label;
-        progress.setAttribute('aria-label', currentPercent > 0 ? `视频已缓冲 ${label}` : '视频加载中');
+        progress.setAttribute('aria-label', label === '转存中' ? '视频转存中' : (currentPercent > 0 ? `视频已缓冲 ${label}` : '视频加载中'));
     }
 
     function ensureVideoPreviewLoading(video) {
@@ -832,6 +866,27 @@
             if (!video.isConnected || hasLoadedVideo(key) || video.readyState >= 2) return;
             const currentMedia = video.closest?.('.ai-image-result-media');
             if (!currentMedia) return;
+            if (shouldKeepVideoLoadingAfterError(currentMedia)) {
+                const label = getMediaVideoLoadingLabel(currentMedia);
+                currentMedia.classList.add('is-video-loading');
+                currentMedia.classList.remove('is-video-broken', 'is-video-ready', 'is-image-broken', 'is-image-loaded');
+                currentMedia.setAttribute('data-aiw-video-progress-label', label);
+                const progress = currentMedia.querySelector?.('[data-aiw-video-progress]');
+                if (progress) {
+                    progress.textContent = label;
+                    progress.setAttribute('aria-label', label === '转存中' ? '视频转存中' : '视频加载中');
+                }
+                global.setTimeout?.(() => {
+                    if (!video.isConnected || hasLoadedVideo(key) || video.readyState >= 2) return;
+                    try {
+                        video.load();
+                    } catch (_) {
+                        // Keep the card in a recoverable loading state for playable server files.
+                    }
+                }, VIDEO_LOAD_RETRY_DELAY_MS * 3);
+                loadRemoteRecords({ force: true }).finally(scheduleRemoteRecordsPoll);
+                return;
+            }
             rememberVideoFailed(key);
             currentMedia.classList.add('is-video-broken');
             currentMedia.classList.remove('is-video-loading', 'is-video-ready', 'is-image-broken', 'is-image-loaded');
@@ -912,6 +967,32 @@
         if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)}MB`;
         if (size >= 1024) return `${Math.round(size / 1024)}KB`;
         return `${size}B`;
+    }
+
+    function normalizeByteCount(value = 0) {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes <= 0) return 0;
+        return Math.round(bytes);
+    }
+
+    function getResultImagePreviewBytes(image = {}) {
+        const metadata = image?.metadata && typeof image.metadata === 'object' && !Array.isArray(image.metadata)
+            ? image.metadata
+            : {};
+        return normalizeByteCount(image?.previewBytes ?? image?.preview_bytes ?? metadata.preview_bytes ?? metadata.previewBytes);
+    }
+
+    function getResultImageOriginalBytes(image = {}) {
+        const metadata = image?.metadata && typeof image.metadata === 'object' && !Array.isArray(image.metadata)
+            ? image.metadata
+            : {};
+        return normalizeByteCount(image?.originalBytes ?? image?.original_bytes ?? metadata.original_bytes ?? metadata.originalBytes);
+    }
+
+    function formatPreviewFileSize(bytes = 0) {
+        const size = normalizeByteCount(bytes);
+        if (!size) return '';
+        return `体积 ${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 1 : 2)} MB`;
     }
 
     function normalizeReferenceItem(value = null) {
@@ -2181,6 +2262,8 @@
                 originalStatus: 'ready',
                 mimeType: '',
                 mediaType: '',
+                previewBytes: 0,
+                originalBytes: 0,
                 resultId: '',
                 taskId: String(task.id || task.taskId || task.task_id || ''),
                 index
@@ -2197,6 +2280,8 @@
         const originalStatus = String(value.originalStatus || value.original_status || metadata.original_status || '').trim().toLowerCase()
             || (original ? 'ready' : 'pending');
         const originalReady = Boolean(value.originalReady ?? value.original_ready ?? (originalStatus === 'ready' && original));
+        const previewBytes = normalizeByteCount(value.previewBytes ?? value.preview_bytes ?? metadata.preview_bytes ?? metadata.previewBytes);
+        const originalBytes = normalizeByteCount(value.originalBytes ?? value.original_bytes ?? metadata.original_bytes ?? metadata.originalBytes);
         if (!original && !imageUrl) return null;
         return {
             src: imageUrl || original,
@@ -2206,6 +2291,8 @@
             originalStatus,
             mimeType,
             mediaType,
+            previewBytes,
+            originalBytes,
             metadata,
             resultId: String(value.id || value.resultId || value.result_id || '').trim(),
             taskId: String(value.taskId || value.task_id || task.id || task.taskId || task.task_id || '').trim(),
@@ -2693,6 +2780,8 @@
                 preview: image?.preview || '',
                 originalReady: Boolean(image?.originalReady),
                 originalStatus: image?.originalStatus || '',
+                previewBytes: normalizeByteCount(image?.previewBytes),
+                originalBytes: normalizeByteCount(image?.originalBytes),
                 resultId: image?.resultId || '',
                 taskId: image?.taskId || '',
                 index: image?.index ?? ''
@@ -3428,6 +3517,8 @@
             originalStatus: String(image?.originalStatus || '').trim(),
             title: taskTitle,
             meta: previewMeta,
+            previewBytes: getResultImagePreviewBytes(image),
+            originalBytes: getResultImageOriginalBytes(image),
             taskId: String(image?.taskId || task?.id || '').trim(),
             resultId: String(image?.resultId || '').trim(),
             resultIndex: String(image?.index ?? '').trim()
@@ -3468,6 +3559,8 @@
             originalReady,
             originalStatus,
             originalSrc,
+            previewBytes: getResultImagePreviewBytes(matched.image) || imagePreview.previewBytes || 0,
+            originalBytes: getResultImageOriginalBytes(matched.image) || imagePreview.originalBytes || 0,
             meta: [getTaskImageMeta(matched.task), getImageOriginalStatusLabel(matched.image), formatGeneratedTime(matched.task.completedAt || matched.task.createdAt)].filter(Boolean).join(' · ') || imagePreview.meta
         };
         return true;
@@ -3953,6 +4046,21 @@
     function getRatioAspect(ratio = '1:1', mode = '') {
         if (isVideoMode(mode)) return VIDEO_RATIO_META[ratio]?.aspect || VIDEO_RATIO_META[DEFAULT_STATE.videoRatio]?.aspect || '16 / 9';
         return RATIO_META[ratio]?.aspect || '1 / 1';
+    }
+
+    function getAspectRatioValue(aspect = '1 / 1') {
+        const match = String(aspect || '').match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+        if (!match) return 1;
+        const width = Number(match[1]);
+        const height = Number(match[2]);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) return 1;
+        return width / height;
+    }
+
+    function getResultGridRatioClass(task = {}) {
+        if (isVideoMode(task?.mode)) return '';
+        const aspectValue = getAspectRatioValue(getRatioAspect(task?.ratio, task?.mode));
+        return aspectValue >= 1.9 ? 'ai-image-result-grid--wide' : '';
     }
 
     function getResolutionLabel(resolution = '', mode = '') {
@@ -5321,7 +5429,9 @@
                 originalReady: composerReferencePreview.getAttribute('data-aiw-original-ready') === 'true',
                 originalStatus: composerReferencePreview.getAttribute('data-aiw-original-status') || '',
                 title: composerReferencePreview.getAttribute('data-aiw-preview-title') || '参考图片',
-                meta: composerReferencePreview.getAttribute('data-aiw-preview-meta') || '参考图片'
+                meta: composerReferencePreview.getAttribute('data-aiw-preview-meta') || '参考图片',
+                previewBytes: normalizeByteCount(composerReferencePreview.getAttribute('data-aiw-preview-bytes')),
+                originalBytes: normalizeByteCount(composerReferencePreview.getAttribute('data-aiw-original-bytes'))
             });
             return;
         }
@@ -6744,6 +6854,12 @@
         const originalReady = isElement
             ? elementOrPayload.getAttribute('data-aiw-original-ready') === 'true'
             : Boolean(elementOrPayload.originalReady && originalSrc);
+        const previewBytes = isElement
+            ? normalizeByteCount(elementOrPayload.getAttribute('data-aiw-preview-bytes'))
+            : normalizeByteCount(elementOrPayload.previewBytes ?? elementOrPayload.preview_bytes);
+        const originalBytes = isElement
+            ? normalizeByteCount(elementOrPayload.getAttribute('data-aiw-original-bytes'))
+            : normalizeByteCount(elementOrPayload.originalBytes ?? elementOrPayload.original_bytes);
         clearImagePreviewLoadTimer();
         imagePreview = {
             src: previewSrc || originalSrc,
@@ -6753,6 +6869,8 @@
             originalReady,
             originalStatus: String(isElement ? elementOrPayload.getAttribute('data-aiw-original-status') : elementOrPayload.originalStatus || '').trim(),
             originalSrc: originalReady ? originalSrc : '',
+            previewBytes,
+            originalBytes,
             originalLoaded: false,
             openedAt: Date.now(),
             loadToken: '',
@@ -7815,12 +7933,13 @@
             const media = video.closest('.ai-image-result-media');
             updateVideoLoadingProgress(video);
             const loaded = video.readyState >= 2;
+            const awaitingReady = isMediaAwaitingVideoReady(media);
             if (loaded) {
                 rememberVideoLoaded(videoSrc);
                 updateVideoLoadingProgress(video, { forceComplete: true });
                 media?.classList.add('is-video-ready', 'is-image-loaded');
                 media?.classList.remove('is-video-loading', 'is-video-broken', 'is-image-broken');
-            } else if (hasFailedVideo(videoSrc)) {
+            } else if (hasFailedVideo(videoSrc) && !awaitingReady) {
                 media?.classList.add('is-video-broken');
                 media?.classList.remove('is-video-loading', 'is-video-ready', 'is-image-broken', 'is-image-loaded');
             } else if (hasLoadedVideo(videoSrc)) {
@@ -8763,9 +8882,14 @@
     function renderImagePreview() {
         if (!imagePreview?.src) return '';
         const title = imagePreview.title || '生成图片';
-        const meta = imagePreview.meta || '高清原图';
         const originalAvailable = imagePreview.originalReady !== false && Boolean(imagePreview.originalSrc);
         const originalLoaded = originalAvailable && Boolean(imagePreview.originalLoaded);
+        const sizeLabel = formatPreviewFileSize(
+            (originalAvailable && imagePreview.originalBytes)
+                ? imagePreview.originalBytes
+                : (imagePreview.previewBytes || imagePreview.originalBytes)
+        );
+        const meta = [imagePreview.meta || '高清原图', sizeLabel].filter(Boolean).join(' · ');
         const originalStatus = String(imagePreview.originalStatus || '').trim().toLowerCase();
         const originalFailed = originalStatus === 'failed' || originalStatus === 'missing';
         const originalProgress = getPreviewOriginalProgress(imagePreview);
@@ -9416,7 +9540,7 @@
                 ${hasImage || extraReferences.length || chatAttachments.length ? `
                     <div class="ai-image-main-attachments">
                         ${hasImage ? `
-                            <div class="ai-image-main-reference ${isImplicitContinuation ? 'is-implicit' : ''}" role="button" tabindex="0" data-aiw-reference-preview="${isImplicitContinuation ? 'continuation' : 'reference'}" data-aiw-preview-src="${escapeHtml(continuationPreview?.previewSrc || imageContext.image)}" data-aiw-preview-original-src="${escapeHtml(continuationPreview?.originalSrc || imageContext.image)}" data-aiw-original-ready="${continuationPreview?.originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(continuationPreview?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(continuationPreview?.title || imageContext.title || '参考图片')}" data-aiw-preview-meta="${escapeHtml(continuationPreview?.meta || '参考图片')}" data-task-id="${escapeHtml(imageContext.sourceTask?.id || state.continuationImage?.taskId || '')}" data-result-id="${escapeHtml(imageContext.resultId || state.continuationImage?.resultId || '')}" data-result-index="${escapeHtml(imageContext.resultIndex || state.continuationImage?.resultIndex || '')}" aria-label="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}" title="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}">
+                            <div class="ai-image-main-reference ${isImplicitContinuation ? 'is-implicit' : ''}" role="button" tabindex="0" data-aiw-reference-preview="${isImplicitContinuation ? 'continuation' : 'reference'}" data-aiw-preview-src="${escapeHtml(continuationPreview?.previewSrc || imageContext.image)}" data-aiw-preview-original-src="${escapeHtml(continuationPreview?.originalSrc || imageContext.image)}" data-aiw-preview-bytes="${escapeHtml(continuationPreview?.previewBytes || 0)}" data-aiw-original-bytes="${escapeHtml(continuationPreview?.originalBytes || 0)}" data-aiw-original-ready="${continuationPreview?.originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(continuationPreview?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(continuationPreview?.title || imageContext.title || '参考图片')}" data-aiw-preview-meta="${escapeHtml(continuationPreview?.meta || '参考图片')}" data-task-id="${escapeHtml(imageContext.sourceTask?.id || state.continuationImage?.taskId || '')}" data-result-id="${escapeHtml(imageContext.resultId || state.continuationImage?.resultId || '')}" data-result-index="${escapeHtml(imageContext.resultIndex || state.continuationImage?.resultIndex || '')}" aria-label="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}" title="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}">
                                 <span><img src="${escapeHtml(imageContext.image)}" alt="参考图片"></span>
                                 ${isImplicitContinuation ? '' : `<strong>${escapeHtml(isVariationReference ? '图像发散' : (imageContext.title || '参考图片'))}</strong>`}
                                 ${isImplicitContinuation ? '<em>自动续作</em>' : '<button type="button" data-aiw-action="clear-reference" aria-label="清除参考图片"><i class="fas fa-xmark"></i></button>'}
@@ -9590,6 +9714,7 @@
             : [];
         const previewCardCount = partialImageEntries.length + pendingPreviewEntries.length + stoppedPreviewEntries.length;
         const resultGridModeClass = isVideoMode(task.mode) ? 'ai-image-result-grid--video' : '';
+        const resultGridRatioClass = getResultGridRatioClass(task);
         return `
             <div class="ai-image-result-view ai-image-result-view--image">
                 <div class="ai-image-result-content">
@@ -9609,7 +9734,7 @@
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
-                <div class="ai-image-result-grid ${resultGridModeClass} ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
+                <div class="ai-image-result-grid ${resultGridModeClass} ${resultGridRatioClass} ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
                         ${partialImageEntries.map((entry, index) => renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode), { navigationAnchor: index === 0 })).join('')}
                         ${pendingPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0, imageSlot: entry.slotSequence })).join('')}
                         ${stoppedPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0, imageSlot: entry.slotSequence })).join('')}
@@ -9740,8 +9865,13 @@
     function renderTaskImageEntry(entry, index = 0, aspect = '1 / 1', { navigationAnchor = false, imageLoading = 'eager', imageFetchPriority = 'high' } = {}) {
         const previewTitle = getTaskTitle(entry.task);
         const isVideo = isVideoMode(entry.task?.mode) || isVideoResultImage(entry.image);
-        const originalReady = isVideo || Boolean(entry.image?.originalReady && entry.originalSrc);
-        const originalStatusLabel = getImageOriginalStatusLabel(entry.image);
+        const videoAwaitingReady = isVideo && isVideoImageAwaitingReady(entry.image);
+        const originalReady = isVideo
+            ? (!videoAwaitingReady && Boolean(entry.originalSrc || entry.src))
+            : Boolean(entry.image?.originalReady && entry.originalSrc);
+        const originalStatusLabel = isVideo
+            ? (videoAwaitingReady ? '视频转存中' : '视频')
+            : getImageOriginalStatusLabel(entry.image);
         const imageIdentityKey = getImageIdentityKey({
             taskId: entry.image?.taskId || entry.task.id,
             resultId: entry.image?.resultId || '',
@@ -9752,15 +9882,16 @@
         const previewSrc = isVideo ? entry.src : getStableImageUrl(imageIdentityKey, entry.src);
         if (isVideo) warmVideoPreviewConnection(previewSrc);
         const previewMeta = [getTaskImageMeta(entry.task), isVideo ? '视频' : originalStatusLabel, formatGeneratedTime(entry.task.completedAt || entry.task.createdAt)].filter(Boolean).join(' · ');
+        const videoFailed = isVideo && !videoAwaitingReady && hasFailedVideo(previewSrc);
         const mediaStateClass = [
             isVideo ? 'is-video-result' : '',
             isVideo && hasLoadedVideo(previewSrc) ? 'is-video-ready is-image-loaded' : '',
-            isVideo && hasFailedVideo(previewSrc) ? 'is-video-broken' : '',
-            isVideo && !hasLoadedVideo(previewSrc) && !hasFailedVideo(previewSrc) ? 'is-video-loading' : '',
+            videoFailed ? 'is-video-broken' : '',
+            isVideo && !hasLoadedVideo(previewSrc) && !videoFailed ? 'is-video-loading' : '',
             !isVideo && hasLoadedImage(previewSrc) ? 'is-image-loaded' : '',
             !isVideo && hasFailedImage(previewSrc) ? 'is-image-loading' : ''
         ].filter(Boolean).join(' ');
-        const videoProgressLabel = isVideo ? getVideoProgressLabel(previewSrc) : '';
+        const videoProgressLabel = isVideo ? (videoAwaitingReady ? '转存中' : getVideoProgressLabel(previewSrc)) : '';
         const videoProgressStyle = isVideo ? `--aiw-video-progress:${escapeHtml(getVideoProgressCss(previewSrc))};` : '';
         const downloadAttrs = originalReady
             ? `href="${escapeHtml(entry.originalSrc || previewSrc)}" download target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(isVideo ? '下载视频' : '下载原图')}" title="${escapeHtml(isVideo ? '下载视频' : '下载原图')}"`
@@ -9774,14 +9905,14 @@
                                     <article class="ai-image-thread-step"${navigationAttrs}>
                                         <div class="ai-image-result" style="--aiw-result-aspect:${escapeHtml(getRatioAspect(entry.task.ratio, entry.task.mode) || aspect)}">
                                             <div class="ai-image-result-main">
-                                                <div class="ai-image-result-media ${mediaStateClass}" ${isVideo ? 'aria-label="生成视频预览"' : `role="button" tabindex="0" aria-label="打开全分辨率预览" title="${escapeHtml(originalReady ? '打开全分辨率预览' : '打开预览图，原图转存中')}" data-aiw-preview-open`} data-aiw-image-key="${escapeHtml(imageIdentityKey)}" data-aiw-preview-src="${escapeHtml(previewSrc)}" data-aiw-preview-thumb="${escapeHtml(previewSrc)}" data-aiw-preview-original-src="${escapeHtml(entry.originalSrc || '')}" data-aiw-original-ready="${originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(entry.image?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(previewTitle)}" data-aiw-preview-meta="${escapeHtml(previewMeta)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" style="${videoProgressStyle}">
+                                                <div class="ai-image-result-media ${mediaStateClass}" ${isVideo ? 'aria-label="生成视频预览"' : `role="button" tabindex="0" aria-label="打开全分辨率预览" title="${escapeHtml(originalReady ? '打开全分辨率预览' : '打开预览图，原图转存中')}" data-aiw-preview-open`} data-aiw-media-type="${escapeHtml(isVideo ? 'video' : 'image')}" data-aiw-image-key="${escapeHtml(imageIdentityKey)}" data-aiw-preview-src="${escapeHtml(previewSrc)}" data-aiw-preview-thumb="${escapeHtml(previewSrc)}" data-aiw-preview-original-src="${escapeHtml(entry.originalSrc || '')}" data-aiw-preview-bytes="${escapeHtml(getResultImagePreviewBytes(entry.image))}" data-aiw-original-bytes="${escapeHtml(getResultImageOriginalBytes(entry.image))}" data-aiw-original-ready="${originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(entry.image?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(previewTitle)}" data-aiw-preview-meta="${escapeHtml(previewMeta)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" style="${videoProgressStyle}">
                                                     ${isVideo ? `<video src="${escapeHtml(previewSrc)}" data-aiw-video-src="${escapeHtml(previewSrc)}" controls playsinline preload="auto"></video>` : `<img src="${escapeHtml(previewSrc)}" alt="生成结果 ${index + 1}" loading="${escapeHtml(imageLoading)}" fetchpriority="${escapeHtml(imageFetchPriority)}" decoding="async">`}
                                                         <div class="ai-image-result-broken" aria-hidden="true">
                                                             <i class="fas fa-triangle-exclamation"></i>
                                                             <strong>${escapeHtml(isVideo ? '视频暂不可用' : '预览图暂不可用')}</strong>
                                                             <span>${escapeHtml(isVideo ? '请稍后刷新或重新生成' : '请重新生成或稍后再试')}</span>
                                                         </div>
-                                                        ${isVideo ? `<span class="ai-image-video-progress" data-aiw-video-progress aria-label="${escapeHtml(videoProgressLabel === '加载中' ? '视频加载中' : `视频已缓冲 ${videoProgressLabel}`)}">${escapeHtml(videoProgressLabel)}</span>` : ''}
+                                                        ${isVideo ? `<span class="ai-image-video-progress" data-aiw-video-progress aria-label="${escapeHtml(videoProgressLabel === '转存中' ? '视频转存中' : (videoProgressLabel === '加载中' ? '视频加载中' : `视频已缓冲 ${videoProgressLabel}`))}">${escapeHtml(videoProgressLabel)}</span>` : ''}
                                                         ${isVideo ? '' : `<button class="ai-image-result-continue" type="button" data-aiw-action="continue-image" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" data-reference-image="${escapeHtml(entry.originalSrc || previewSrc)}" aria-label="基于这张图续作">
                                                                 <i class="fas fa-wand-magic-sparkles"></i>
                                                                 <span>续作</span>
@@ -10174,6 +10305,7 @@
         });
         const imageCount = imageEntries.length;
         const resultGridModeClass = threadTasks.some((item) => isVideoMode(item.mode)) ? 'ai-image-result-grid--video' : '';
+        const resultGridRatioClass = threadTasks.some((item) => getResultGridRatioClass(item) === 'ai-image-result-grid--wide') ? 'ai-image-result-grid--wide' : '';
         const anchoredTaskIds = new Set();
         return `
             <div class="ai-image-result-view ai-image-result-view--image">
@@ -10190,7 +10322,7 @@
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
-                    <div class="ai-image-result-grid ${resultGridModeClass} ${imageCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasThreadChildren ? 'ai-image-result-grid--thread' : ''} ${imageEntries.some((entry) => entry.type === 'pending' || entry.type === 'reloading') ? 'ai-image-result-grid--partial' : ''}">
+                    <div class="ai-image-result-grid ${resultGridModeClass} ${resultGridRatioClass} ${imageCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasThreadChildren ? 'ai-image-result-grid--thread' : ''} ${imageEntries.some((entry) => entry.type === 'pending' || entry.type === 'reloading') ? 'ai-image-result-grid--partial' : ''}">
                         ${imageEntries.map((entry, index) => {
                             const taskId = String(entry.task?.id || '').trim();
                             const navigationAnchor = Boolean(taskId && !anchoredTaskIds.has(taskId));

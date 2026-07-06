@@ -4551,7 +4551,8 @@ test('running image tasks expose partial results without marking task succeeded'
             resolution: '2k',
             created_at: '2026-06-21T11:00:20.000Z',
             metadata: {
-                original_status: 'pending'
+                original_status: 'pending',
+                preview_bytes: 123456
             }
         }]
     };
@@ -4568,6 +4569,9 @@ test('running image tasks expose partial results without marking task succeeded'
     assert.equal(payload.tasks[0].images.length, 1);
     assert.equal(payload.tasks[0].images[0].imageUrl, 'https://cdn.example.com/partial-preview.webp');
     assert.equal(payload.tasks[0].images[0].originalReady, false);
+    assert.equal(payload.tasks[0].images[0].previewBytes, 123456);
+    assert.equal(payload.tasks[0].images[0].preview_bytes, 123456);
+    assert.equal(payload.tasks[0].images[0].originalBytes, 0);
     assert.equal(state.tasks[0].status, 'running');
     assert.equal(state.tasks[0].charged_points, 0);
 });
@@ -4610,7 +4614,9 @@ test('running image tasks with complete stored results recover to succeeded on l
             revised_prompt: '完整结果',
             created_at: '2026-06-21T11:00:20.000Z',
             metadata: {
-                original_status: 'ready'
+                original_status: 'ready',
+                preview_bytes: 234567,
+                original_bytes: 3456789
             }
         }]
     };
@@ -4629,6 +4635,8 @@ test('running image tasks with complete stored results recover to succeeded on l
     assert.equal(payload.tasks[0].cost, 8);
     assert.equal(payload.tasks[0].images.length, 1);
     assert.equal(payload.tasks[0].images[0].imageUrl, 'https://cdn.example.com/complete-preview.webp');
+    assert.equal(payload.tasks[0].images[0].previewBytes, 234567);
+    assert.equal(payload.tasks[0].images[0].originalBytes, 3456789);
     assert.equal(state.tasks[0].status, 'succeeded');
     assert.equal(state.tasks[0].charged_points, 8);
     assert.equal(state.tasks[0].metadata.recovery.previous_status, 'running');

@@ -475,7 +475,10 @@ test('ai image workbench handles expired result images without breaking the resu
     assert.match(source, /aria-disabled', 'true'/);
     assert.match(source, /ai-image-result-broken/);
     assert.match(source, /const mediaStateClass = \[/);
-    assert.match(source, /const videoProgressLabel = isVideo \? getVideoProgressLabel\(previewSrc\) : ''/);
+    assert.match(source, /function isVideoImageAwaitingReady\(image = \{\}\)/);
+    assert.match(source, /function isMediaAwaitingVideoReady\(media = null\)/);
+    assert.match(source, /function shouldKeepVideoLoadingAfterError\(media = null\)/);
+    assert.match(source, /const videoProgressLabel = isVideo \? \(videoAwaitingReady \? '转存中' : getVideoProgressLabel\(previewSrc\)\) : ''/);
     assert.match(source, /data-aiw-video-progress/);
     assert.match(source, /const previewSrc = isVideo \? entry\.src : getStableImageUrl\(imageIdentityKey, entry\.src\)/);
     assert.match(source, /hasLoadedImage\(previewSrc\) \? 'is-image-loaded' : ''/);
@@ -566,6 +569,10 @@ test('ai image result cards always render compressed preview instead of original
     assert.match(source, /data-aiw-preview-src="\$\{escapeHtml\(previewSrc\)\}"/);
     assert.match(source, /data-aiw-preview-thumb="\$\{escapeHtml\(previewSrc\)\}"/);
     assert.match(source, /data-aiw-preview-original-src="\$\{escapeHtml\(entry\.originalSrc \|\| ''\)\}"/);
+    assert.match(source, /data-aiw-preview-bytes="\$\{escapeHtml\(getResultImagePreviewBytes\(entry\.image\)\)\}"/);
+    assert.match(source, /data-aiw-original-bytes="\$\{escapeHtml\(getResultImageOriginalBytes\(entry\.image\)\)\}"/);
+    assert.match(source, /function formatPreviewFileSize\(bytes = 0\)/);
+    assert.match(source, /const meta = \[imagePreview\.meta \|\| '高清原图', sizeLabel\]\.filter\(Boolean\)\.join\(' · '\)/);
     assert.doesNotMatch(source, /const displaySrc = originalReady \? entry\.originalSrc : entry\.src/);
 });
 
@@ -813,7 +820,8 @@ test('ai image workbench exposes video generation only from configured video mod
     assert.match(source, /<video src="\$\{escapeHtml\(previewSrc\)\}" data-aiw-video-src="\$\{escapeHtml\(previewSrc\)\}" controls playsinline preload="auto"><\/video>/);
     assert.match(source, /if \(isVideo\) warmVideoPreviewConnection\(previewSrc\)/);
     assert.match(source, /isVideo && hasLoadedVideo\(previewSrc\) \? 'is-video-ready is-image-loaded' : ''/);
-    assert.match(source, /isVideo && hasFailedVideo\(previewSrc\) \? 'is-video-broken' : ''/);
+    assert.match(source, /const videoFailed = isVideo && !videoAwaitingReady && hasFailedVideo\(previewSrc\)/);
+    assert.match(source, /videoFailed \? 'is-video-broken' : ''/);
     assert.match(source, /视频暂不可用/);
     assert.match(source, /isVideoThumb \? '<i class="fas fa-film"><\/i><em>视频<\/em>'/);
     assert.match(source, /isVideoThumb \? 'is-video-thread' : ''/);
@@ -1292,8 +1300,10 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(source, /function renderTaskImageEntry\(entry, index = 0, aspect = '1 \/ 1', \{ navigationAnchor = false, imageLoading = 'eager', imageFetchPriority = 'high' \} = \{\}\)/);
     assert.match(source, /ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-result-grid--single\s*\{[\s\S]*min\(220px, 100%\)/);
+    assert.match(cssSource, /\.ai-image-result-grid--single\.ai-image-result-grid--wide\s*\{[\s\S]*min\(560px, 100%\)/);
     assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*repeat\(auto-fit, minmax\(min\(220px, 100%\), min\(220px, 100%\)\)\)/);
     assert.match(source, /const resultGridModeClass = threadTasks\.some\(\(item\) => isVideoMode\(item\.mode\)\) \? 'ai-image-result-grid--video' : ''/);
+    assert.match(source, /const resultGridRatioClass = threadTasks\.some\(\(item\) => getResultGridRatioClass\(item\) === 'ai-image-result-grid--wide'\) \? 'ai-image-result-grid--wide' : ''/);
     assert.match(source, /const awaitingVideoResult = isVideoMode\(item\.mode\) && item\.status === 'succeeded'/);
     assert.match(source, /const awaitingImageReload = !awaitingVideoResult && item\.status === 'succeeded'/);
     assert.match(source, /const holdMissingResults = shouldHoldIncompleteSucceededImageResult\(item, entries\.length\)/);
@@ -1374,6 +1384,8 @@ test('ai image previews keep image cards compact while video cards are larger', 
     assert.match(cssSource, /\.ai-image-result-grid--video\s*\{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(320px, 100%\), min\(320px, 100%\)\)\)/);
     assert.match(cssSource, /\.ai-image-result-grid--video\.ai-image-result-grid--single,\s*\n\.ai-image-result-grid--video\.ai-image-result-grid--thread\s*\{[\s\S]*min\(320px, 100%\)/);
     assert.match(source, /const resultGridModeClass = isVideoMode\(task\.mode\) \? 'ai-image-result-grid--video' : ''/);
+    assert.match(source, /const resultGridRatioClass = getResultGridRatioClass\(task\)/);
+    assert.match(source, /function getResultGridRatioClass\(task = \{\}\)/);
 });
 
 test('ai image workbench avoids duplicate completion and download notices', () => {
