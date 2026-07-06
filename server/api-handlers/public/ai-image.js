@@ -2003,6 +2003,11 @@ function getResultOriginalStatus(row = {}) {
 function serializeResult(row = {}) {
     const originalStatus = getResultOriginalStatus(row);
     const originalReady = originalStatus === 'ready' && Boolean(normalizeText(row.original_image_url, 4000));
+    const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+        ? row.metadata
+        : {};
+    const previewBytes = normalizeInteger(metadata.preview_bytes ?? metadata.previewBytes, 0, { min: 0, max: Number.MAX_SAFE_INTEGER });
+    const originalBytes = normalizeInteger(metadata.original_bytes ?? metadata.originalBytes, 0, { min: 0, max: Number.MAX_SAFE_INTEGER });
     return {
         id: row.id || '',
         taskId: row.task_id || '',
@@ -2034,7 +2039,11 @@ function serializeResult(row = {}) {
         revisedPrompt: row.revised_prompt || '',
         revised_prompt: row.revised_prompt || '',
         seed: row.seed || '',
-        metadata: row.metadata || {},
+        previewBytes,
+        preview_bytes: previewBytes,
+        originalBytes,
+        original_bytes: originalBytes,
+        metadata,
         createdAt: row.created_at || '',
         created_at: row.created_at || ''
     };

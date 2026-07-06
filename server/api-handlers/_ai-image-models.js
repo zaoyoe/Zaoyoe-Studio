@@ -2808,6 +2808,161 @@ function inferVideoMimeType(value = '', fallback = 'video/mp4', sourceUrl = '') 
     return fallback;
 }
 
+function readMp4Uint64AsNumber(buffer, offset) {
+    if (!Buffer.isBuffer(buffer) || offset < 0 || offset + 8 > buffer.length) return null;
+    const high = buffer.readUInt32BE(offset);
+    const low = buffer.readUInt32BE(offset + 4);
+    const value = high * 0x100000000 + low;
+    return Number.isSafeInteger(value) ? value : null;
+}
+
+function readMp4BoxHeader(buffer, offset = 0, end = buffer?.length || 0) {
+    if (!Buffer.isBuffer(buffer) || offset < 0 || offset + 8 > end) return null;
+    const size32 = buffer.readUInt32BE(offset);
+    const type = buffer.toString('latin1', offset + 4, offset + 8);
+    let size = size32;
+    let headerSize = 8;
+    if (size32 === 1) {
+        const size64 = readMp4Uint64AsNumber(buffer, offset + 8);
+        if (!size64) return null;
+        size = size64;
+        headerSize = 16;
+    } else if (size32 === 0) {
+        size = end - offset;
+    }
+    if (!size || size < headerSize || offset + size > end) return null;
+    return {
+        type,
+        start: offset,
+        end: offset + size,
+        size,
+        headerSize
+    };
+}
+
+function parseTopLevelMp4Boxes(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 8) return null;
+    const boxes = [];
+    let offset = 0;
+    while (offset < buffer.length) {
+        const box = readMp4BoxHeader(buffer, offset, buffer.length);
+        if (!box) return null;
+        boxes.push(box);
+        offset = box.end;
+    }
+    return offset === buffer.length ? boxes : null;
+}
+
+const MP4_CONTAINER_BOX_TYPES = new Set([
+    'moov',
+    'trak',
+    'mdia',
+    'minf',
+    'stbl',
+    'edts',
+    'dinf',
+    'udta',
+    'mvex',
+    'moof',
+    'traf',
+    'mfra'
+]);
+
+function adjustStcoOffsets(buffer, box, delta) {
+    const payloadStart = box.start + box.headerSize;
+    if (payloadStart + 8 > box.end) return { ok: false, updated: 0 };
+    const entryCount = buffer.readUInt32BE(payloadStart + 4);
+    const entriesStart = payloadStart + 8;
+    if (entriesStart + entryCount * 4 > box.end) return { ok: false, updated: 0 };
+    for (let index = 0; index < entryCount; index += 1) {
+        const offset = entriesStart + index * 4;
+        const nextValue = buffer.readUInt32BE(offset) + delta;
+        if (nextValue > 0xffffffff) return { ok: false, updated: 0 };
+        buffer.writeUInt32BE(nextValue, offset);
+    }
+    return { ok: true, updated: entryCount };
+}
+
+function adjustCo64Offsets(buffer, box, delta) {
+    const payloadStart = box.start + box.headerSize;
+    if (payloadStart + 8 > box.end) return { ok: false, updated: 0 };
+    const entryCount = buffer.readUInt32BE(payloadStart + 4);
+    const entriesStart = payloadStart + 8;
+    if (entriesStart + entryCount * 8 > box.end) return { ok: false, updated: 0 };
+    const deltaBig = BigInt(delta);
+    for (let index = 0; index < entryCount; index += 1) {
+        const offset = entriesStart + index * 8;
+        buffer.writeBigUInt64BE(buffer.readBigUInt64BE(offset) + deltaBig, offset);
+    }
+    return { ok: true, updated: entryCount };
+}
+
+function adjustMp4ChunkOffsets(buffer, delta, start = 0, end = buffer?.length || 0) {
+    let offset = start;
+    let updated = 0;
+    while (offset < end) {
+        const box = readMp4BoxHeader(buffer, offset, end);
+        if (!box) return { ok: false, updated };
+        if (box.type === 'stco') {
+            const result = adjustStcoOffsets(buffer, box, delta);
+            if (!result.ok) return { ok: false, updated };
+            updated += result.updated;
+        } else if (box.type === 'co64') {
+            const result = adjustCo64Offsets(buffer, box, delta);
+            if (!result.ok) return { ok: false, updated };
+            updated += result.updated;
+        } else if (MP4_CONTAINER_BOX_TYPES.has(box.type)) {
+            const result = adjustMp4ChunkOffsets(buffer, delta, box.start + box.headerSize, box.end);
+            if (!result.ok) return { ok: false, updated };
+            updated += result.updated;
+        }
+        offset = box.end;
+    }
+    return { ok: offset === end, updated };
+}
+
+function optimizeMp4ForStreaming(buffer, mimeType = 'video/mp4') {
+    if (!Buffer.isBuffer(buffer) || !buffer.length || inferVideoMimeType(mimeType, '').toLowerCase() !== 'video/mp4') {
+        return { buffer, optimized: false, fastStart: false, reason: 'not_mp4' };
+    }
+    const boxes = parseTopLevelMp4Boxes(buffer);
+    if (!boxes?.length) return { buffer, optimized: false, fastStart: false, reason: 'parse_failed' };
+    const moovIndex = boxes.findIndex((box) => box.type === 'moov');
+    const firstMdatIndex = boxes.findIndex((box) => box.type === 'mdat');
+    if (moovIndex < 0 || firstMdatIndex < 0) {
+        return { buffer, optimized: false, fastStart: false, reason: 'missing_boxes' };
+    }
+    if (moovIndex < firstMdatIndex) {
+        return { buffer, optimized: false, fastStart: true, reason: 'already_fast_start' };
+    }
+
+    const moov = boxes[moovIndex];
+    const moovBuffer = Buffer.from(buffer.subarray(moov.start, moov.end));
+    const adjusted = adjustMp4ChunkOffsets(moovBuffer, moov.size, moov.headerSize, moovBuffer.length);
+    if (!adjusted.ok || adjusted.updated <= 0) {
+        return { buffer, optimized: false, fastStart: false, reason: adjusted.ok ? 'no_chunk_offsets' : 'offset_adjust_failed' };
+    }
+
+    const ftypIndex = boxes.findIndex((box) => box.type === 'ftyp');
+    const insertIndex = ftypIndex >= 0 ? ftypIndex + 1 : firstMdatIndex;
+    const parts = [];
+    boxes.forEach((box, index) => {
+        if (index === insertIndex) parts.push(moovBuffer);
+        if (index !== moovIndex) parts.push(buffer.subarray(box.start, box.end));
+    });
+    if (insertIndex >= boxes.length) parts.push(moovBuffer);
+
+    return {
+        buffer: Buffer.concat(parts),
+        optimized: true,
+        fastStart: true,
+        reason: 'optimized',
+        updatedChunkOffsets: adjusted.updated,
+        originalMoovOffset: moov.start,
+        originalMdatOffset: boxes[firstMdatIndex].start
+    };
+}
+
 async function fetchProviderVideoBuffer(videoUrl, {
     env,
     mimeType = 'video/mp4',
@@ -2864,9 +3019,17 @@ async function fetchProviderVideoBuffer(videoUrl, {
         throw error;
     }
 
+    const fastStartStartedAt = nowMs();
+    const streamingVideo = optimizeMp4ForStreaming(buffer, responseMimeType);
+    addTimingMs(timing, 'video_fast_start_ms', elapsedMs(fastStartStartedAt));
+
     return {
-        buffer,
-        mimeType: responseMimeType
+        buffer: streamingVideo.buffer,
+        mimeType: responseMimeType,
+        sourceBytes: buffer.length,
+        mp4FastStart: Boolean(streamingVideo.fastStart),
+        mp4FastStartOptimized: Boolean(streamingVideo.optimized),
+        mp4FastStartReason: streamingVideo.reason || ''
     };
 }
 
@@ -2935,8 +3098,13 @@ function persistProviderVideoUrl(videoUrl, {
                         provider_video_url: videoUrl,
                         original_mime_type: providerVideo.mimeType,
                         original_bytes: providerVideo.buffer.length,
+                        source_video_bytes: providerVideo.sourceBytes || providerVideo.buffer.length,
+                        mp4_fast_start: Boolean(providerVideo.mp4FastStart),
+                        mp4_fast_start_optimized: Boolean(providerVideo.mp4FastStartOptimized),
+                        mp4_fast_start_reason: providerVideo.mp4FastStartReason || '',
                         video_download_request_ms: Number(deferredTiming.video_download_request_ms || 0) || 0,
                         video_download_body_ms: Number(deferredTiming.video_download_body_ms || 0) || 0,
+                        video_fast_start_ms: Number(deferredTiming.video_fast_start_ms || 0) || 0,
                         deferred_original_upload_ms: Number(deferredTiming.deferred_original_upload_ms || 0) || 0,
                         media_type: 'video'
                     }
@@ -3985,6 +4153,7 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
         async_poll_response_ms: upstream.asyncPollResponseMs,
         video_download_request_ms: Number(postprocessTiming.video_download_request_ms || 0) || 0,
         video_download_body_ms: Number(postprocessTiming.video_download_body_ms || 0) || 0,
+        video_fast_start_ms: Number(postprocessTiming.video_fast_start_ms || 0) || 0,
         video_upload_ms: Number(postprocessTiming.deferred_original_upload_ms || 0) || 0,
         postprocess_ms: postprocessMs
     };
@@ -4024,6 +4193,7 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             async_poll_response_ms: upstream.asyncPollResponseMs,
             video_download_request_ms: Number(postprocessTiming.video_download_request_ms || 0) || 0,
             video_download_body_ms: Number(postprocessTiming.video_download_body_ms || 0) || 0,
+            video_fast_start_ms: Number(postprocessTiming.video_fast_start_ms || 0) || 0,
             video_upload_ms: Number(postprocessTiming.deferred_original_upload_ms || 0) || 0,
             postprocess_ms: postprocessMs,
             executor_ms: timing.executor_ms,
@@ -5340,6 +5510,7 @@ module.exports = {
     normalizeChatModel,
     normalizeImageModel,
     normalizeVideoModel,
+    optimizeMp4ForStreaming,
     resolveAiImageRuntimeConfig,
     resolveExecutorRuntimeConfig,
     resolveOpenAiImageSize,

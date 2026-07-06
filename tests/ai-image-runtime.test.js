@@ -20,12 +20,86 @@ const {
     resolveOpenAiVideoSize,
     resolveAiImageRuntimeConfig,
     resolveResponseBodyTimeoutMs,
+    optimizeMp4ForStreaming,
     uploadGeneratedImageBufferPreviewFirst
 } = require('../server/api-handlers/_ai-image-models');
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
+
+function buildMp4Box(type, ...payloads) {
+    const body = Buffer.concat(payloads.map((payload) => Buffer.isBuffer(payload) ? payload : Buffer.from(payload || [])));
+    const header = Buffer.alloc(8);
+    header.writeUInt32BE(8 + body.length, 0);
+    header.write(type, 4, 4, 'latin1');
+    return Buffer.concat([header, body]);
+}
+
+function buildStcoBox(offsets = []) {
+    const payload = Buffer.alloc(8 + offsets.length * 4);
+    payload.writeUInt32BE(offsets.length, 4);
+    offsets.forEach((offset, index) => payload.writeUInt32BE(offset, 8 + index * 4));
+    return buildMp4Box('stco', payload);
+}
+
+function findBoxTypeOrder(buffer) {
+    const order = [];
+    let offset = 0;
+    while (offset + 8 <= buffer.length) {
+        const size = buffer.readUInt32BE(offset);
+        order.push(buffer.toString('latin1', offset + 4, offset + 8));
+        offset += size;
+    }
+    return order;
+}
+
+test('optimizeMp4ForStreaming moves moov before mdat and adjusts stco offsets', () => {
+    const ftyp = buildMp4Box('ftyp', Buffer.from('isom0000', 'latin1'));
+    const mdat = buildMp4Box('mdat', Buffer.alloc(16, 7));
+    const originalChunkOffset = ftyp.length + 8;
+    const moov = buildMp4Box('moov',
+        buildMp4Box('trak',
+            buildMp4Box('mdia',
+                buildMp4Box('minf',
+                    buildMp4Box('stbl', buildStcoBox([originalChunkOffset]))
+                )
+            )
+        )
+    );
+    const original = Buffer.concat([ftyp, mdat, moov]);
+
+    const result = optimizeMp4ForStreaming(original, 'video/mp4');
+
+    assert.equal(result.optimized, true);
+    assert.equal(result.fastStart, true);
+    assert.deepEqual(findBoxTypeOrder(result.buffer), ['ftyp', 'moov', 'mdat']);
+    const stcoIndex = result.buffer.indexOf('stco', 0, 'latin1') - 4;
+    assert.ok(stcoIndex >= 0);
+    const updatedChunkOffset = result.buffer.readUInt32BE(stcoIndex + 16);
+    assert.equal(updatedChunkOffset, originalChunkOffset + moov.length);
+});
+
+test('optimizeMp4ForStreaming keeps already fast-start MP4 unchanged', () => {
+    const ftyp = buildMp4Box('ftyp', Buffer.from('isom0000', 'latin1'));
+    const moov = buildMp4Box('moov',
+        buildMp4Box('trak',
+            buildMp4Box('mdia',
+                buildMp4Box('minf',
+                    buildMp4Box('stbl', buildStcoBox([64]))
+                )
+            )
+        )
+    );
+    const mdat = buildMp4Box('mdat', Buffer.alloc(16, 7));
+    const original = Buffer.concat([ftyp, moov, mdat]);
+
+    const result = optimizeMp4ForStreaming(original, 'video/mp4');
+
+    assert.equal(result.optimized, false);
+    assert.equal(result.fastStart, true);
+    assert.equal(result.buffer, original);
+});
 
 function createQueryBuilder(executor) {
     const state = {

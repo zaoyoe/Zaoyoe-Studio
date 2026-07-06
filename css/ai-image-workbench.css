@@ -3631,6 +3631,10 @@ html[data-theme="dark"] .ai-image-history-search button:focus-visible {
     grid-template-columns: minmax(0, min(220px, 100%));
 }
 
+.ai-image-result-grid--single.ai-image-result-grid--wide {
+    grid-template-columns: minmax(0, min(560px, 100%));
+}
+
 .ai-image-result-grid--thread {
     grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), min(220px, 100%)));
 }
