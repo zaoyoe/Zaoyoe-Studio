@@ -914,6 +914,139 @@ async function listStoredAiImageProviderSecrets(supabase, options = {}) {
     return Array.isArray(cached.value) ? cached.value : [];
 }
 
+async function resolveAiImageRuntimePublicMetadata(supabase, options = {}) {
+    const env = options.env || process.env;
+    const envApiKey = String(env.AI_IMAGE_API_KEY || '').trim();
+    const envBaseUrl = normalizeOptionalUrl(
+        env.AI_IMAGE_API_BASE_URL
+        || env.OPENAI_IMAGE_API_BASE_URL
+    );
+    const envModel = String(env.AI_IMAGE_MODEL || env.OPENAI_IMAGE_MODEL || '').trim();
+
+    if (envApiKey) {
+        const metadata = normalizeAiImageProviderMetadata({
+            providerId: 'default',
+            label: '环境变量默认上游',
+            baseUrl: envBaseUrl || 'https://api.openai.com/v1',
+            model: envModel || 'gpt-image-2',
+            imageModels: envModel || 'gpt-image-2',
+            modelGroup: 'image',
+            isActive: true,
+            displayOrder: -100
+        }, {
+            providerId: 'default',
+            model: 'gpt-image-2',
+            baseUrl: 'https://api.openai.com/v1'
+        });
+        return {
+            configured: Boolean(metadata.baseUrl),
+            source: 'environment',
+            secretKey: '',
+            providerId: metadata.providerId,
+            label: metadata.label,
+            baseUrl: metadata.baseUrl,
+            model: metadata.model,
+            models: metadata.models,
+            imageModels: metadata.imageModels,
+            image_models: metadata.imageModels,
+            chatModels: metadata.chatModels,
+            chat_models: metadata.chatModels,
+            videoModels: metadata.videoModels,
+            video_models: metadata.videoModels,
+            detectedImageModels: metadata.detectedImageModels,
+            detected_image_models: metadata.detectedImageModels,
+            detectedChatModels: metadata.detectedChatModels,
+            detected_chat_models: metadata.detectedChatModels,
+            detectedVideoModels: metadata.detectedVideoModels,
+            detected_video_models: metadata.detectedVideoModels,
+            detectedUnknownModels: metadata.detectedUnknownModels,
+            detected_unknown_models: metadata.detectedUnknownModels,
+            modelGroup: metadata.modelGroup,
+            model_group: metadata.modelGroup,
+            vendor: metadata.vendor,
+            protocol: metadata.protocol,
+            provider: metadata.provider,
+            asyncResult: metadata.asyncResult,
+            async_result: metadata.asyncResult,
+            videoEndpoint: metadata.videoEndpoint,
+            video_endpoint: metadata.videoEndpoint,
+            endpoints: metadata.endpoints,
+            isActive: metadata.isActive,
+            displayOrder: -100,
+            apiKey: '',
+            updatedAt: null,
+            updatedBy: null,
+            decryptErrorMessage: ''
+        };
+    }
+
+    if (!supabase?.from) return null;
+
+    const { data, error } = await supabase
+        .from('admin_secret_store')
+        .select('secret_key, encrypted_value, metadata, description, updated_at, updated_by')
+        .eq('secret_key', AI_IMAGE_SECRET_KEY);
+
+    if (error) {
+        throw wrapSecretStoreError(error, 'Failed to load AI image runtime metadata');
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+
+    const metadata = normalizeAiImageProviderMetadata(row.metadata, {
+        providerId: 'default',
+        label: '默认上游',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-image-2',
+        imageModels: ['gpt-image-2'],
+        modelGroup: 'image',
+        isActive: true,
+        displayOrder: -100
+    });
+
+    return {
+        configured: Boolean(row.encrypted_value && metadata.baseUrl),
+        source: 'stored',
+        secretKey: AI_IMAGE_SECRET_KEY,
+        providerId: metadata.providerId,
+        label: metadata.label,
+        baseUrl: metadata.baseUrl,
+        model: metadata.model,
+        models: metadata.models,
+        imageModels: metadata.imageModels,
+        image_models: metadata.imageModels,
+        chatModels: metadata.chatModels,
+        chat_models: metadata.chatModels,
+        videoModels: metadata.videoModels,
+        video_models: metadata.videoModels,
+        detectedImageModels: metadata.detectedImageModels,
+        detected_image_models: metadata.detectedImageModels,
+        detectedChatModels: metadata.detectedChatModels,
+        detected_chat_models: metadata.detectedChatModels,
+        detectedVideoModels: metadata.detectedVideoModels,
+        detected_video_models: metadata.detectedVideoModels,
+        detectedUnknownModels: metadata.detectedUnknownModels,
+        detected_unknown_models: metadata.detectedUnknownModels,
+        modelGroup: metadata.modelGroup,
+        model_group: metadata.modelGroup,
+        vendor: metadata.vendor,
+        protocol: metadata.protocol,
+        provider: metadata.provider,
+        asyncResult: metadata.asyncResult,
+        async_result: metadata.asyncResult,
+        videoEndpoint: metadata.videoEndpoint,
+        video_endpoint: metadata.videoEndpoint,
+        endpoints: metadata.endpoints,
+        isActive: metadata.isActive,
+        displayOrder: -100,
+        apiKey: '',
+        updatedAt: row.updated_at || null,
+        updatedBy: row.updated_by || null,
+        decryptErrorMessage: ''
+    };
+}
+
 async function listStoredAiImageProviderPublicMetadata(supabase, options = {}) {
     const env = options.env || process.env;
     const cacheKey = buildAiImageSecretCacheKey('provider-public-metadata', supabase, env);
@@ -946,9 +1079,7 @@ async function listStoredAiImageProviderPublicMetadata(supabase, options = {}) {
                 return String(left.label || left.providerId).localeCompare(String(right.label || right.providerId));
             });
 
-        const legacy = providers.length
-            ? null
-            : await resolveAiImageRuntimeSecretConfig(supabase, { env }).catch(() => null);
+        const legacy = await resolveAiImageRuntimePublicMetadata(supabase, { env }).catch(() => null);
         if (legacy?.configured) {
             const legacyProvider = {
                 ...legacy,
