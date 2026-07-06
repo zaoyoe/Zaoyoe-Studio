@@ -852,12 +852,18 @@ test('ai video runtime uses Sub2API /v1/videos task protocol by default', async 
     assert.equal(fetchCalls.length, 3);
     assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos');
     assert.equal(fetchCalls[0].method, 'POST');
+    assert.deepEqual(Object.keys(fetchCalls[0].body).sort(), ['aspect_ratio', 'model', 'prompt', 'seconds']);
     assert.equal(fetchCalls[0].body.model, 'video-ds-2.0-fast');
     assert.equal(fetchCalls[0].body.prompt.includes('飞龙在天'), true);
-    assert.equal(fetchCalls[0].body.seconds, 5);
-    assert.equal(fetchCalls[0].body.duration, 5);
+    assert.equal(fetchCalls[0].body.seconds, '5');
     assert.equal(fetchCalls[0].body.aspect_ratio, '16:9');
-    assert.deepEqual(fetchCalls[0].body.images, ['https://cdn.example.com/reference-dragon.png']);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'duration'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'size'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'width'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'height'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'images'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'model_name'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'req_key'), false);
     assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1');
     assert.equal(fetchCalls[1].method, 'GET');
     assert.equal(fetchCalls[2].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1/content');
@@ -964,6 +970,9 @@ test('ai video runtime downloads Sub2API content when status payload has no vide
     });
 
     assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos');
+    assert.equal(fetchCalls[0].body.seconds, '15');
+    assert.equal(fetchCalls[0].body.aspect_ratio, '16:9');
+    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'duration'), false);
     assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1');
     assert.equal(fetchCalls[2].url, 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1');
     assert.equal(fetchCalls[3].url, 'https://sub2api.fatherkey.com/v1/videos/task_content_only_1/content');

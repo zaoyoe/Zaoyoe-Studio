@@ -3657,6 +3657,11 @@ html[data-theme="dark"] .ai-image-history-search button:focus-visible {
     scroll-margin-top: 24px;
 }
 
+.ai-image-thread-step--prompt {
+    grid-column: 1 / -1;
+    margin: 0 0 -2px;
+}
+
 .ai-image-result-grid--thread .ai-image-thread-step + .ai-image-thread-step {
     margin-top: 0;
 }
@@ -3679,6 +3684,10 @@ html[data-theme="dark"] .ai-image-history-search button:focus-visible {
     width: 2px;
     border-radius: 999px;
     background: rgba(95, 143, 188, 0.22);
+}
+
+.ai-image-thread-step--prompt .ai-image-thread-prompt {
+    max-width: min(560px, 100%);
 }
 
 .ai-image-thread-prompt span,

@@ -9,6 +9,7 @@
     const USER_STORAGE_PREFIX = `${STORAGE_KEY}:user:`;
     const API_SCOPE_PATH = '/api/public?scope=ai-image';
     const API_REQUEST_TIMEOUT_MS = 45000;
+    const CANNOT_CANCEL_CHARGED_MESSAGE = '任务已进入上游生成阶段，可能已产生扣费，无法取消。';
     const ORIGINAL_READY_POLL_LIMIT = 80;
     const VIDEO_LOAD_RETRY_DELAY_MS = 1000;
     const VIDEO_ERROR_CONFIRMATION_MS = 30000;
@@ -28,6 +29,8 @@
     const MAX_LOCAL_TASKS = 40;
     const BUSY_CLIENT_TASK_RECOVERY_DELAY_MS = 5000;
     const BUSY_CLIENT_TASK_RECOVERY_INTERVAL_MS = 7000;
+    const DEFERRED_IMAGE_BATCH_SIZE = 2;
+    const DEFERRED_IMAGE_BATCH_DELAY_MS = 520;
     const DEFAULT_API_BASE_PROFILES = Object.freeze([
         { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://sub2api.fatherkey.com/v1' },
         { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://sub2api.zaoyoe.xyz/v1' }
@@ -71,6 +74,11 @@
 
     function isBusyTask(task = {}) {
         return ['queued', 'processing', 'streaming'].includes(task?.status);
+    }
+
+    function isTaskPastCancelableGenerationStage(task = {}) {
+        if (!task || isTextVisionTask(task)) return false;
+        return normalizeTaskStatus(task.status) === 'processing';
     }
 
     function getDefaultApiProfile() {
@@ -335,6 +343,7 @@
     let nativeToggle = null;
     let remotePollTimer = null;
     let liveElapsedTimer = null;
+    let deferredImageLoadTimer = null;
     let openSelect = '';
     let openImageSettingsSection = 'ratio';
     let openVideoSettingsSection = 'videoRatio';
@@ -356,6 +365,7 @@
     const videoProgressByKey = new Map();
     const warmedVideoOrigins = new Set();
     const stableImageUrlsByIdentity = new Map();
+    const backgroundPrefetchedImageUrls = new Set();
     let imagePreview = null;
     let imagePreviewLoadTimer = null;
     let chatNavigationObserver = null;
@@ -557,6 +567,120 @@
     function hasFailedImage(value = '') {
         const key = getImageLoadKey(value);
         return Boolean(key && failedImageUrls.has(key) && !loadedImageUrls.has(key));
+    }
+
+    function getTaskPreviewImageUrls(task = {}) {
+        return (Array.isArray(task.images) ? task.images : [])
+            .map((image) => getImagePreviewUrl(image) || getImageUrl(image))
+            .map((url) => String(url || '').trim())
+            .filter(Boolean);
+    }
+
+    function getActiveThreadTaskIds() {
+        const activeTask = getActiveTask();
+        const rootTask = getTaskThreadRoot(activeTask) || activeTask;
+        if (!rootTask) return new Set();
+        return new Set(getTaskThread(rootTask).map((task) => task?.id).filter(Boolean));
+    }
+
+    function getActiveThreadImageUrls() {
+        const activeTask = getActiveTask();
+        const rootTask = getTaskThreadRoot(activeTask) || activeTask;
+        if (!rootTask) return [];
+        const seen = new Set();
+        return getTaskThread(rootTask)
+            .flatMap(getTaskPreviewImageUrls)
+            .filter((url) => {
+                const key = getImageLoadKey(url);
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }
+
+    function hasPendingActiveThreadImages() {
+        if (!state.open) return false;
+        return getActiveThreadImageUrls().some((url) => !hasLoadedImage(url) && !hasFailedImage(url));
+    }
+
+    function shouldDeferHistoryThumbnail(row = {}, src = '', deferHistoryImages = hasPendingActiveThreadImages()) {
+        if (!src || hasLoadedImage(src) || hasFailedImage(src)) return false;
+        if (!state.open || row?.isActive) return false;
+        return Boolean(deferHistoryImages);
+    }
+
+    function clearDeferredImageLoadTimer() {
+        if (!deferredImageLoadTimer) return;
+        global.clearTimeout?.(deferredImageLoadTimer);
+        deferredImageLoadTimer = null;
+    }
+
+    function scheduleDeferredImageLoading(delayMs = DEFERRED_IMAGE_BATCH_DELAY_MS) {
+        if (deferredImageLoadTimer || !state.open) return;
+        deferredImageLoadTimer = global.setTimeout?.(() => {
+            deferredImageLoadTimer = null;
+            syncDeferredImageLoading();
+        }, Math.max(0, Number(delayMs) || 0)) || null;
+    }
+
+    function activateDeferredImage(image) {
+        if (!(image instanceof HTMLImageElement)) return false;
+        const src = String(image.dataset.aiwDeferredSrc || '').trim();
+        if (!src || image.getAttribute('src')) return false;
+        const key = getImageLoadKey(src);
+        if (key) backgroundPrefetchedImageUrls.add(key);
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.setAttribute('fetchpriority', 'low');
+        image.setAttribute('src', src);
+        image.removeAttribute('data-aiw-deferred-src');
+        return true;
+    }
+
+    function getBackgroundImagePrefetchCandidates() {
+        const activeThreadIds = getActiveThreadTaskIds();
+        const seen = new Set();
+        return state.tasks
+            .filter((task) => task?.id && !activeThreadIds.has(task.id))
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .flatMap(getTaskPreviewImageUrls)
+            .filter((url) => {
+                const key = getImageLoadKey(url);
+                if (!key || seen.has(key) || backgroundPrefetchedImageUrls.has(key)) return false;
+                if (hasLoadedImage(key) || hasFailedImage(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }
+
+    function prefetchBackgroundImage(url = '') {
+        const key = getImageLoadKey(url);
+        if (!key || backgroundPrefetchedImageUrls.has(key) || hasLoadedImage(key) || hasFailedImage(key)) return false;
+        backgroundPrefetchedImageUrls.add(key);
+        const loader = new Image();
+        loader.decoding = 'async';
+        loader.loading = 'lazy';
+        loader.onload = () => rememberImageLoaded(url);
+        loader.onerror = () => rememberImageFailed(url);
+        loader.src = url;
+        return true;
+    }
+
+    function syncDeferredImageLoading() {
+        if (!root?.querySelectorAll || !state.open) return;
+        if (hasPendingActiveThreadImages()) {
+            scheduleDeferredImageLoading();
+            return;
+        }
+        const deferredImages = Array.from(root.querySelectorAll('img[data-aiw-deferred-src]'));
+        const activated = deferredImages.slice(0, DEFERRED_IMAGE_BATCH_SIZE).filter(activateDeferredImage).length;
+        if (deferredImages.length > DEFERRED_IMAGE_BATCH_SIZE || activated) {
+            scheduleDeferredImageLoading();
+            return;
+        }
+        const candidates = getBackgroundImagePrefetchCandidates().slice(0, DEFERRED_IMAGE_BATCH_SIZE);
+        candidates.forEach(prefetchBackgroundImage);
+        if (candidates.length) scheduleDeferredImageLoading(DEFERRED_IMAGE_BATCH_DELAY_MS * 2);
     }
 
     function rememberVideoLoaded(value = '') {
@@ -1893,6 +2017,7 @@
         remoteHistoryPrefsLoaded = false;
         loadedImageUrls.clear();
         failedImageUrls.clear();
+        backgroundPrefetchedImageUrls.clear();
         loadedVideoUrls.clear();
         failedVideoUrls.clear();
         videoProgressByKey.clear();
@@ -1900,6 +2025,7 @@
         videoErrorTimersByKey.clear();
         warmedVideoOrigins.clear();
         stableImageUrlsByIdentity.clear();
+        clearDeferredImageLoadTimer();
         originalReadyPollCounts.clear();
         if (persistAfter) persistState();
         if (renderAfter) render();
@@ -2015,6 +2141,9 @@
         const raw = String(value || '').trim();
         if (!raw) return fallback;
         const normalizedMode = String(mode || '').trim();
+        if (/task_not_cancellable|已开始调用模型|已开始处理|已进入上游生成|已产生扣费|无法取消/i.test(raw)) {
+            return CANNOT_CANCEL_CHARGED_MESSAGE;
+        }
         if (/reference_image_requires_upload|请先上传参考图片/i.test(raw)) {
             return '续作底图仍是临时预览，系统会先上传为正式参考图后再提交。请重新发送一次。';
         }
@@ -4899,6 +5028,7 @@
 
     function closeWorkbench() {
         openSelect = '';
+        clearDeferredImageLoadTimer();
         clearImagePreviewLoadTimer();
         imagePreview = null;
         setBodyImagePreviewState(false);
@@ -5501,10 +5631,12 @@
                 taskThumb.classList.remove('is-image-loading', 'is-image-broken');
                 return;
             }
+            rememberImageFailed(imageSrc);
             forgetStableImageUrl(taskThumb.getAttribute('data-aiw-image-key') || '');
             taskThumb.classList.add('is-image-loading');
             taskThumb.classList.remove('is-image-loaded', 'is-image-broken');
             image.setAttribute('aria-hidden', 'true');
+            syncDeferredImageLoading();
             return;
         }
         const media = image.closest('.ai-image-result-media');
@@ -5528,11 +5660,13 @@
             media.classList.remove('is-image-loading', 'is-image-broken');
             return;
         }
+        rememberImageFailed(imageSrc);
         forgetStableImageUrl(media.getAttribute('data-aiw-image-key') || '');
         media.classList.add('is-image-loading');
         media.classList.remove('is-image-loaded', 'is-image-broken');
         image.alt = '';
         image.setAttribute('aria-hidden', 'true');
+        syncDeferredImageLoading();
     }
 
     function handleRootVideoLoaded(event) {
@@ -5573,6 +5707,7 @@
             media.classList.remove('is-image-loading', 'is-image-broken');
             image.removeAttribute('aria-hidden');
         }
+        syncDeferredImageLoading();
     }
 
     function handleDocumentWorkbenchClick(event) {
@@ -6700,25 +6835,30 @@
 
     async function submitRemoteTask(localTask) {
         try {
-            const localWasCancelled = state.tasks.find((item) => item.id === localTask.id)?.status === 'cancelled';
+            const localWasCancelledBeforeSubmit = state.tasks.find((item) => item.id === localTask.id)?.status === 'cancelled';
             const payload = await requestAiImage('submit', {
                 method: 'POST',
                 body: buildSubmitPayload(localTask),
                 auth: true,
                 allowTaskOnFailure: true
             });
+            const localWasCancelled = localWasCancelledBeforeSubmit
+                || state.tasks.find((item) => item.id === localTask.id || item.clientTaskId === localTask.id)?.status === 'cancelled';
             const storedApiKeyChanged = applyStoredApiKeyFromPayload(payload);
             const remoteTask = replaceTask(localTask.id, payload.task);
             if (remoteTask) {
                 persistState();
                 render();
-                if (localWasCancelled && isBusyTask(remoteTask)) {
-                    cancelRemoteTask(remoteTask, localTask.id)
+                if (localWasCancelled) {
+                    cancelRemoteTask(remoteTask, localTask.clientTaskId || localTask.id)
                         .then((cancelPayload) => {
-                            if (cancelPayload?.task) replaceTask(remoteTask.id, cancelPayload.task);
+                            if (cancelPayload?.task) applyCancelResponse(remoteTask.id, cancelPayload);
                         })
                         .catch((error) => {
-                            remoteTask.remoteError = getFriendlyTaskError(error?.message || error || '', '', remoteTask.mode).slice(0, 240);
+                            const restoredTask = error?.payload?.task ? applyCancelResponse(remoteTask.id, error.payload) : null;
+                            const targetTask = restoredTask || remoteTask;
+                            targetTask.remoteError = getFriendlyTaskError(error?.message || error || '', '', targetTask.mode).slice(0, 240);
+                            if (error?.code === 'task_not_cancellable') setComposerError(CANNOT_CANCEL_CHARGED_MESSAGE);
                         })
                         .finally(() => {
                             persistState();
@@ -7166,21 +7306,58 @@
 
     async function cancelRemoteTask(task, clientTaskId = '') {
         if (!task?.id) return null;
+        const fallbackClientTaskId = String(clientTaskId || task.clientTaskId || (String(task.id || '').startsWith('aiw_') ? task.id : '') || '').trim();
         return requestAiImage('cancel', {
             method: 'POST',
             body: {
                 site: getRuntimeSite(),
                 taskId: task.id,
-                clientTaskId
+                clientTaskId: fallbackClientTaskId
             },
             auth: true,
             allowTaskOnFailure: true
         });
     }
 
+    function applyCancelResponse(taskId = '', payload = {}) {
+        if (payload?.task) {
+            const remoteTask = normalizeTask(payload.task);
+            const isNotCancellable = payload.success === false && payload.code === 'task_not_cancellable';
+            if (isNotCancellable) {
+                const localTask = state.tasks.find((item) => (
+                    item.id === taskId
+                    || item.id === remoteTask.id
+                    || item.clientTaskId === remoteTask.clientTaskId
+                    || item.clientTaskId === taskId
+                ));
+                if (localTask) {
+                    localTask.status = remoteTask.status || 'processing';
+                    localTask.completedAt = 0;
+                }
+            }
+            const nextTask = replaceTask(taskId || remoteTask.id, {
+                ...remoteTask,
+                ...(isNotCancellable ? { remoteError: CANNOT_CANCEL_CHARGED_MESSAGE } : {})
+            });
+            if (isNotCancellable) {
+                setComposerError(CANNOT_CANCEL_CHARGED_MESSAGE);
+            }
+            return nextTask;
+        }
+        return null;
+    }
+
     async function cancelTask(taskId = '') {
         const task = findTaskByIdOrActive(taskId);
         if (!task || !isBusyTask(task)) return;
+
+        if (isTaskPastCancelableGenerationStage(task)) {
+            task.remoteError = CANNOT_CANCEL_CHARGED_MESSAGE;
+            setComposerError(CANNOT_CANCEL_CHARGED_MESSAGE);
+            persistState();
+            render();
+            return;
+        }
 
         task.status = 'cancelled';
         task.progress = clampNumber(task.progress, 0, 100, 0);
@@ -7196,14 +7373,17 @@
         render();
 
         try {
-            const payload = await cancelRemoteTask(task);
+            const payload = await cancelRemoteTask(task, task.clientTaskId || task.id);
             if (payload?.task) {
-                replaceTask(task.id, payload.task);
+                applyCancelResponse(task.id, payload);
                 persistState();
                 render();
             }
         } catch (error) {
-            task.remoteError = getFriendlyTaskError(error?.message || error || '', '', task.mode).slice(0, 240);
+            const remoteTask = error?.payload?.task ? applyCancelResponse(task.id, error.payload) : null;
+            const targetTask = remoteTask || task;
+            targetTask.remoteError = getFriendlyTaskError(error?.message || error || '', '', targetTask.mode).slice(0, 240);
+            if (error?.code === 'task_not_cancellable') setComposerError(CANNOT_CANCEL_CHARGED_MESSAGE);
             persistState();
             render();
         }
@@ -7339,6 +7519,7 @@
         syncChatNavigationRail();
         syncLiveElapsedLabels();
         syncLiveElapsedTimer();
+        syncDeferredImageLoading();
         injectPromptModalActions();
         restoreRenderContinuity(continuitySnapshot, { preserveStageScroll, preservePromptFocus });
         if (shouldKeepChatStagePinnedToBottom(continuitySnapshot, { force: forceChatBottom })) {
@@ -9456,7 +9637,24 @@
         `;
     }
 
-    function renderTaskImageEntry(entry, index = 0, aspect = '1 / 1', { navigationAnchor = false } = {}) {
+    function renderTaskContinuationPrompt(entry, { navigationAnchor = false } = {}) {
+        const navigationAttrs = navigationAnchor && entry.task?.id
+            ? ` data-task-id="${escapeHtml(entry.task.id)}" data-aiw-chat-turn-id="${escapeHtml(entry.task.id)}"`
+            : '';
+        return `
+                                    <article class="ai-image-thread-step ai-image-thread-step--prompt"${navigationAttrs}>
+                                        <div class="ai-image-thread-prompt">
+                                            <span>${escapeHtml(entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '续作提示词')}</span>
+                                            <p>${escapeHtml(getTaskPromptText(entry.task))}</p>
+                                            <em class="ai-image-thread-meta">
+                                                <span>${escapeHtml(getTaskImageMeta(entry.task))}</span>
+                                            </em>
+                                        </div>
+                                    </article>
+                        `;
+    }
+
+    function renderTaskImageEntry(entry, index = 0, aspect = '1 / 1', { navigationAnchor = false, imageLoading = 'eager', imageFetchPriority = 'high' } = {}) {
         const previewTitle = getTaskTitle(entry.task);
         const isVideo = isVideoMode(entry.task?.mode) || isVideoResultImage(entry.image);
         const originalReady = isVideo || Boolean(entry.image?.originalReady && entry.originalSrc);
@@ -9486,25 +9684,15 @@
             : `href="${escapeHtml(previewSrc)}" aria-disabled="true" class="ai-image-result-action is-disabled" aria-label="${escapeHtml(originalStatusLabel)}" title="${escapeHtml(originalStatusLabel)}"`;
         const downloadClass = originalReady ? 'ai-image-result-action' : '';
         const downloadIcon = originalReady ? 'fa-download' : 'fa-clock';
-        const promptBlock = entry.taskIndex ? `
-                                        <div class="ai-image-thread-prompt">
-                                            <span>${escapeHtml(entry.baseSequence ? `基于序列 ${entry.baseSequence} 续作` : '续作提示词')}</span>
-                                            <p>${escapeHtml(getTaskPromptText(entry.task))}</p>
-                                            <em class="ai-image-thread-meta">
-                                                <span>${escapeHtml(getTaskImageMeta(entry.task))}</span>
-                                            </em>
-                                        </div>
-            ` : '';
         const navigationAttrs = navigationAnchor && entry.task?.id
             ? ` data-task-id="${escapeHtml(entry.task.id)}" data-aiw-chat-turn-id="${escapeHtml(entry.task.id)}"`
             : '';
         return `
                                     <article class="ai-image-thread-step"${navigationAttrs}>
-                                        ${promptBlock}
                                         <div class="ai-image-result" style="--aiw-result-aspect:${escapeHtml(getRatioAspect(entry.task.ratio, entry.task.mode) || aspect)}">
                                             <div class="ai-image-result-main">
                                                 <div class="ai-image-result-media ${mediaStateClass}" ${isVideo ? 'aria-label="生成视频预览"' : `role="button" tabindex="0" aria-label="打开全分辨率预览" title="${escapeHtml(originalReady ? '打开全分辨率预览' : '打开预览图，原图转存中')}" data-aiw-preview-open`} data-aiw-image-key="${escapeHtml(imageIdentityKey)}" data-aiw-preview-src="${escapeHtml(previewSrc)}" data-aiw-preview-thumb="${escapeHtml(previewSrc)}" data-aiw-preview-original-src="${escapeHtml(entry.originalSrc || '')}" data-aiw-original-ready="${originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(entry.image?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(previewTitle)}" data-aiw-preview-meta="${escapeHtml(previewMeta)}" data-result-id="${escapeHtml(entry.image?.resultId || '')}" data-task-id="${escapeHtml(entry.image?.taskId || entry.task.id)}" data-result-index="${escapeHtml(entry.image?.index ?? entry.imageIndex)}" style="${videoProgressStyle}">
-                                                    ${isVideo ? `<video src="${escapeHtml(previewSrc)}" data-aiw-video-src="${escapeHtml(previewSrc)}" controls playsinline preload="auto"></video>` : `<img src="${escapeHtml(previewSrc)}" alt="生成结果 ${index + 1}" loading="eager" decoding="async">`}
+                                                    ${isVideo ? `<video src="${escapeHtml(previewSrc)}" data-aiw-video-src="${escapeHtml(previewSrc)}" controls playsinline preload="auto"></video>` : `<img src="${escapeHtml(previewSrc)}" alt="生成结果 ${index + 1}" loading="${escapeHtml(imageLoading)}" fetchpriority="${escapeHtml(imageFetchPriority)}" decoding="async">`}
                                                         <div class="ai-image-result-broken" aria-hidden="true">
                                                             <i class="fas fa-triangle-exclamation"></i>
                                                             <strong>${escapeHtml(isVideo ? '视频暂不可用' : '预览图暂不可用')}</strong>
@@ -9936,6 +10124,12 @@
                             if (entry.type === 'reloading') {
                                 return renderInlineTaskReloadingPreview(entry.task, '记录重新加载中', { showPrompt: false, navigationAnchor });
                             }
+                            if (entry.taskIndex && navigationAnchor) {
+                                return [
+                                    renderTaskContinuationPrompt(entry, { navigationAnchor }),
+                                    renderTaskImageEntry(entry, index, aspect, { navigationAnchor: false })
+                                ].join('');
+                            }
                             return renderTaskImageEntry(entry, index, aspect, { navigationAnchor });
                         }).join('')}
                     </div>
@@ -10127,6 +10321,7 @@
 
     function renderHistoryResultsPanel(historyRows = getHistoryThreadRows()) {
         const { totalRows, filteredRows, hasSearch } = getHistorySearchViewState(historyRows);
+        const deferHistoryImages = hasPendingActiveThreadImages();
         return `
             <div class="ai-image-activity-summary" aria-label="AI 图片活动摘要">
                 <span><strong>${escapeHtml(formatCompactNumber(hasSearch ? filteredRows.length : totalRows.length))}</strong><em>${hasSearch ? '结果' : '对话'}</em></span>
@@ -10134,7 +10329,7 @@
                 <span><strong>${escapeHtml(formatCompactNumber(activitySummary.downloads))}</strong><em>下载</em></span>
             </div>
             <div class="ai-image-history">
-                ${filteredRows.length ? filteredRows.map(renderTaskRow).join('') : `<div class="ai-image-empty-list">${hasSearch ? '没有匹配的对话' : '还没有生成记录'}</div>`}
+                ${filteredRows.length ? filteredRows.map((row) => renderTaskRow(row, { deferHistoryImages })).join('') : `<div class="ai-image-empty-list">${hasSearch ? '没有匹配的对话' : '还没有生成记录'}</div>`}
             </div>
         `;
     }
@@ -10211,7 +10406,7 @@
         `;
     }
 
-    function renderTaskRow(row) {
+    function renderTaskRow(row, { deferHistoryImages = false } = {}) {
         const task = row?.displayTask || row || {};
         const rootTask = row?.rootTask || getTaskThreadRoot(task) || task;
         const rootId = rootTask.id || task.id || '';
@@ -10258,10 +10453,16 @@
                 hasFailedImage(thumbSrc) ? 'is-image-loading' : ''
             ].filter(Boolean).join(' ')
             : '';
+        const deferThumb = shouldDeferHistoryThumbnail(row, thumbSrc, deferHistoryImages);
+        const thumbLoading = row?.isActive ? 'eager' : 'lazy';
+        const thumbPriority = row?.isActive ? 'high' : 'low';
+        const thumbImageMarkup = thumbSrc
+            ? `<i class="fas ${escapeHtml(thumbFallbackIcon)}" aria-hidden="true"></i><img ${deferThumb ? `data-aiw-deferred-src="${escapeHtml(thumbSrc)}" data-aiw-deferred-kind="history-thumb" aria-hidden="true"` : `src="${escapeHtml(thumbSrc)}"`} alt="" loading="${escapeHtml(thumbLoading)}" fetchpriority="${escapeHtml(thumbPriority)}" decoding="async">`
+            : '';
         return `
             <div class="${rowClasses}" role="button" tabindex="0" data-aiw-task-id="${escapeHtml(rootId)}" data-status="${escapeHtml(task.status)}">
                 <span class="ai-image-task-thumb ${thumbStateClass}" ${thumbIdentityKey ? `data-aiw-image-key="${escapeHtml(thumbIdentityKey)}"` : ''}>
-                    ${hasFailedTask ? '<i class="fas fa-triangle-exclamation"></i>' : (isVideoThumb ? '<i class="fas fa-film"></i><em>视频</em>' : (thumbSrc ? `<i class="fas ${escapeHtml(thumbFallbackIcon)}" aria-hidden="true"></i><img src="${escapeHtml(thumbSrc)}" alt="" loading="eager" decoding="async">` : `<i class="fas ${escapeHtml(MODE_META[task.mode]?.icon || 'fa-image')}"></i>`))}
+                    ${hasFailedTask ? '<i class="fas fa-triangle-exclamation"></i>' : (isVideoThumb ? '<i class="fas fa-film"></i><em>视频</em>' : (thumbImageMarkup || `<i class="fas ${escapeHtml(MODE_META[task.mode]?.icon || 'fa-image')}"></i>`))}
                 </span>
                 <span class="ai-image-task-copy">
                     <strong>${row?.isPinned ? '<i class="fas fa-thumbtack"></i>' : ''}${escapeHtml(getTaskTitle(task || rootTask))}</strong>

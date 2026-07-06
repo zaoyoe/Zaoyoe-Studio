@@ -28,6 +28,12 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
     assert.match(source, /if \(token\) \{\s*headers\.Authorization = `Bearer \$\{token\}`;\s*\}/);
 });
 
+test('prompts page loads ai image workbench assets', () => {
+    const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
+    assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
+    assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
+});
+
 test('ai image workbench removes toolbox and agent shortcuts from the user flow', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.doesNotMatch(source, /data-aiw-action="toggle-toolbox"/);
@@ -438,7 +444,7 @@ test('ai image workbench handles expired result images without breaking the resu
     assert.match(source, /data-aiw-preview-thumb/);
     assert.match(source, /image\.dataset\.aiwFallbackTried/);
     assert.match(source, /rememberImageLoaded\(imageSrc\)/);
-    assert.doesNotMatch(source, /rememberImageFailed\(imageSrc\)/);
+    assert.match(source, /rememberImageFailed\(imageSrc\)/);
     assert.match(source, /classList\.add\('is-image-loading'\)/);
     assert.match(source, /function handleRootLoad\(event\)/);
     assert.match(source, /taskThumb\.classList\.add\('is-image-loaded'\)/);
@@ -556,7 +562,7 @@ test('ai image full preview keeps preview visible while original is preparing', 
 
 test('ai image result cards always render compressed preview instead of original source', () => {
     assert.match(source, /const previewSrc = isVideo \? entry\.src : getStableImageUrl\(imageIdentityKey, entry\.src\)/);
-    assert.match(source, /<img src="\$\{escapeHtml\(previewSrc\)\}" alt="生成结果 \$\{index \+ 1\}" loading="eager" decoding="async">/);
+    assert.match(source, /<img src="\$\{escapeHtml\(previewSrc\)\}" alt="生成结果 \$\{index \+ 1\}" loading="\$\{escapeHtml\(imageLoading\)\}" fetchpriority="\$\{escapeHtml\(imageFetchPriority\)\}" decoding="async">/);
     assert.match(source, /data-aiw-preview-src="\$\{escapeHtml\(previewSrc\)\}"/);
     assert.match(source, /data-aiw-preview-thumb="\$\{escapeHtml\(previewSrc\)\}"/);
     assert.match(source, /data-aiw-preview-original-src="\$\{escapeHtml\(entry\.originalSrc \|\| ''\)\}"/);
@@ -578,7 +584,8 @@ test('ai image workbench groups continuations into one history conversation row'
     assert.match(source, /while \(current\?\.parentTaskId\)/);
     assert.match(source, /getTaskThreadRoot\(task\)\?\.id === rootTask\.id/);
     assert.match(source, /function renderHistoryListPanel\(statusText, historyRows = getHistoryThreadRows\(\)\)/);
-    assert.match(source, /filteredRows\.length \? filteredRows\.map\(renderTaskRow\)\.join\(''\)/);
+    assert.match(source, /const deferHistoryImages = hasPendingActiveThreadImages\(\)/);
+    assert.match(source, /filteredRows\.length \? filteredRows\.map\(\(row\) => renderTaskRow\(row, \{ deferHistoryImages \}\)\)\.join\(''\)/);
     assert.match(source, /formatCompactNumber\(hasSearch \? filteredRows\.length : totalRows\.length\)/);
     assert.match(source, /ai-image-task-thread-count/);
     assert.match(cssSource, /\.ai-image-task-meta/);
@@ -655,7 +662,8 @@ test('ai image history rows show unread and failed states inline', () => {
     assert.match(source, /const thumbSrc = thumb \? getStableImageUrl\(thumbIdentityKey, thumb\) : ''/);
     assert.match(source, /const thumbStateClass = thumbSrc[\s\S]*hasLoadedImage\(thumbSrc\) \? 'is-image-loaded' : ''[\s\S]*hasFailedImage\(thumbSrc\) \? 'is-image-loading' : ''/);
     assert.match(source, /data-aiw-image-key="\$\{escapeHtml\(thumbIdentityKey\)\}"/);
-    assert.match(source, /loading="eager" decoding="async"/);
+    assert.match(source, /data-aiw-deferred-src="\$\{escapeHtml\(thumbSrc\)\}"/);
+    assert.match(source, /loading="\$\{escapeHtml\(thumbLoading\)\}" fetchpriority="\$\{escapeHtml\(thumbPriority\)\}" decoding="async"/);
     assert.match(source, /hasUnreadSuccess \? 'is-unread' : ''/);
     assert.match(source, /hasFailedTask \? 'is-failed-thread' : ''/);
     assert.match(source, /ai-image-task-unread-dot/);
@@ -669,6 +677,22 @@ test('ai image history rows show unread and failed states inline', () => {
     assert.doesNotMatch(thumbImageRule, /opacity: 0;/);
     assert.match(cssSource, /\.ai-image-task-thumb\.is-image-loading img/);
     assert.match(cssSource, /\.ai-image-task-thumb\.is-image-broken img/);
+});
+
+test('ai image workbench prioritizes active conversation image loading after refresh', () => {
+    assert.match(source, /const DEFERRED_IMAGE_BATCH_SIZE = 2/);
+    assert.match(source, /let deferredImageLoadTimer = null/);
+    assert.match(source, /const backgroundPrefetchedImageUrls = new Set\(\)/);
+    assert.match(source, /function getActiveThreadImageUrls\(\)/);
+    assert.match(source, /function hasPendingActiveThreadImages\(\)/);
+    assert.match(source, /function shouldDeferHistoryThumbnail\(row = \{\}, src = '', deferHistoryImages = hasPendingActiveThreadImages\(\)\)/);
+    assert.match(source, /data-aiw-deferred-src="\$\{escapeHtml\(thumbSrc\)\}"/);
+    assert.match(source, /function syncDeferredImageLoading\(\)/);
+    assert.match(source, /if \(hasPendingActiveThreadImages\(\)\) \{[\s\S]*scheduleDeferredImageLoading\(\);[\s\S]*return;/);
+    assert.match(source, /root\.querySelectorAll\('img\[data-aiw-deferred-src\]'\)/);
+    assert.match(source, /deferredImages\.slice\(0, DEFERRED_IMAGE_BATCH_SIZE\)\.filter\(activateDeferredImage\)/);
+    assert.match(source, /getBackgroundImagePrefetchCandidates\(\)\.slice\(0, DEFERRED_IMAGE_BATCH_SIZE\)/);
+    assert.match(source, /syncDeferredImageLoading\(\);[\s\S]*injectPromptModalActions\(\);/);
 });
 
 test('ai image workbench treats legacy billing trace gaps as reloadable records', () => {
@@ -849,6 +873,12 @@ test('ai image workbench keeps progress stable across polling and exposes cancel
     assert.match(source, /visibilitychange/);
     assert.match(source, /global\.addEventListener\?\.\('focus', refreshBusyTasksNow\)/);
     assert.match(source, /function cancelRemoteTask\(task, clientTaskId = ''\)/);
+    assert.match(source, /const CANNOT_CANCEL_CHARGED_MESSAGE = '任务已进入上游生成阶段，可能已产生扣费，无法取消。'/);
+    assert.match(source, /function isTaskPastCancelableGenerationStage\(task = \{\}\)/);
+    assert.match(source, /if \(isTaskPastCancelableGenerationStage\(task\)\) \{[\s\S]*setComposerError\(CANNOT_CANCEL_CHARGED_MESSAGE\);/);
+    assert.match(source, /function applyCancelResponse\(taskId = '', payload = \{\}\)/);
+    assert.match(source, /payload\.success === false && payload\.code === 'task_not_cancellable'/);
+    assert.match(source, /setComposerError\(CANNOT_CANCEL_CHARGED_MESSAGE\)/);
     assert.match(source, /task\.status = 'cancelled'/);
     assert.match(source, /task\.resultPrompt = task\.resultPrompt \|\| ''/);
     assert.match(source, /cancelled_by_user: true/);
@@ -1243,7 +1273,7 @@ test('ai image result thread does not repeat original prompt above the first ima
     const resultSource = source.slice(startIndex, endIndex);
     assert.doesNotMatch(resultSource, /原始提示词/);
     assert.doesNotMatch(resultSource, /基于序列 \$\{entry\.baseSequence\} 续作/);
-    assert.match(source, /function renderTaskImageEntry\(entry, index = 0, aspect = '1 \/ 1', \{ navigationAnchor = false \} = \{\}\)/);
+    assert.match(source, /function renderTaskImageEntry\(entry, index = 0, aspect = '1 \/ 1', \{ navigationAnchor = false, imageLoading = 'eager', imageFetchPriority = 'high' \} = \{\}\)/);
     assert.match(source, /ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-result-grid--single\s*\{[\s\S]*min\(220px, 100%\)/);
     assert.match(cssSource, /\.ai-image-result-grid--thread\s*\{[\s\S]*repeat\(auto-fit, minmax\(min\(220px, 100%\), min\(220px, 100%\)\)\)/);
@@ -1408,6 +1438,16 @@ test('ai image workbench keeps cancel action in the composer instead of duplicat
     assert.doesNotMatch(cssSource, /ai-image-inline-cancel/);
 });
 
+test('ai image workbench cancels in-flight local submissions by stable client task id', () => {
+    assert.match(source, /const localWasCancelledBeforeSubmit = state\.tasks\.find\(\(item\) => item\.id === localTask\.id\)\?\.status === 'cancelled'/);
+    assert.match(source, /const localWasCancelled = localWasCancelledBeforeSubmit\s*\|\|\s*state\.tasks\.find\(\(item\) => item\.id === localTask\.id \|\| item\.clientTaskId === localTask\.id\)\?\.status === 'cancelled'/);
+    assert.match(source, /if \(localWasCancelled\) \{\s*cancelRemoteTask\(remoteTask, localTask\.clientTaskId \|\| localTask\.id\)/);
+    assert.match(source, /const fallbackClientTaskId = String\(clientTaskId \|\| task\.clientTaskId \|\| \(String\(task\.id \|\| ''\)\.startsWith\('aiw_'\) \? task\.id : ''\) \|\| ''\)\.trim\(\);/);
+    assert.match(source, /clientTaskId: fallbackClientTaskId/);
+    assert.match(source, /const payload = await cancelRemoteTask\(task, task\.clientTaskId \|\| task\.id\)/);
+    assert.doesNotMatch(source, /localWasCancelled && isBusyTask\(remoteTask\)/);
+});
+
 test('ai image workbench stops inline progress visuals after task failure', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /const isBusy = forceBusy \|\| \['queued', 'processing'\]\.includes\(task\.status\) \|\| task\.status === 'streaming';/);
@@ -1441,6 +1481,17 @@ test('ai image workbench stops inline progress visuals after task failure', () =
     assert.match(cssSource, /\.ai-image-result-media:hover \.ai-image-result-sequence/);
     assert.match(cssSource, /\.ai-image-thread-prompt::before/);
     assert.match(cssSource, /\.ai-image-result-grid--thread \.ai-image-thread-step \+ \.ai-image-thread-step\s*\{[\s\S]*margin-top: 0;/);
+});
+
+test('ai image workbench shows one continuation prompt for multi-image continuation tasks', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(source, /function renderTaskContinuationPrompt\(entry, \{ navigationAnchor = false \} = \{\}\)/);
+    assert.match(source, /if \(entry\.taskIndex && navigationAnchor\) \{\s*return \[\s*renderTaskContinuationPrompt\(entry, \{ navigationAnchor \}\),\s*renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor: false \}\)\s*\]\.join\(''\);/);
+    assert.doesNotMatch(source, /const promptBlock = entry\.taskIndex/);
+    assert.match(source, /const navigationAnchor = Boolean\(taskId && !anchoredTaskIds\.has\(taskId\)\)/);
+    assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
+    assert.match(cssSource, /\.ai-image-thread-step--prompt\s*\{[\s\S]*grid-column: 1 \/ -1;/);
+    assert.match(cssSource, /\.ai-image-thread-step--prompt \.ai-image-thread-prompt\s*\{[\s\S]*max-width: min\(560px, 100%\);/);
 });
 
 test('ai image result aspect uses video ratio metadata for video tasks', () => {

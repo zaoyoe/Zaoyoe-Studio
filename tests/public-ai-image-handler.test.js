@@ -801,7 +801,8 @@ test('ai image API model discovery detects upstream models for current user key'
                     data: [
                         { id: 'gpt-4.1', object: 'model' },
                         { id: 'claude-sonnet-4', object: 'model' },
-                        { id: 'gpt-image-2', object: 'model' }
+                        { id: 'gpt-image-2', object: 'model' },
+                        { id: 'video-ds-2.0-fast', object: 'model' }
                     ]
                 })
             };
@@ -818,6 +819,7 @@ test('ai image API model discovery detects upstream models for current user key'
     assert.equal(fetchCalls[0].authorization, `Bearer ${plaintextKey}`);
     assert.deepEqual(payload.chat_models.map((item) => item.id), ['gpt-4.1', 'claude-sonnet-4']);
     assert.deepEqual(payload.image_models.map((item) => item.id), ['gpt-image-2']);
+    assert.deepEqual(payload.video_models.map((item) => item.id), ['video-ds-2.0-fast']);
     assert.equal(payload.model_providers[0].providerId, 'detected-upstream');
     assert.equal(JSON.stringify(payload).includes(plaintextKey), false);
 });
@@ -5089,6 +5091,7 @@ test('ai image cancel refuses running tasks to protect already-started provider 
     assert.equal(res.statusCode, 409);
     assert.equal(payload.success, false);
     assert.equal(payload.code, 'task_not_cancellable');
+    assert.equal(payload.message, '任务已进入上游生成阶段，可能已产生扣费，无法取消');
     assert.equal(payload.task.status, 'running');
     assert.equal(state.tasks[0].status, 'running');
 });
