@@ -1082,6 +1082,9 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /generated images\?/);
     assert.match(source, /content policy\|policy violation\|moderation/);
     assert.match(source, /上游安全审核未通过，请降低性感、暴露、真实人物相关描述后重试。/);
+    assert.match(source, /providerTaskId: String\(task\.providerTaskId \|\| task\.provider_task_id \|\| metadata\.provider_task_id/);
+    assert.match(source, /function taskChargeMayHaveOccurred\(task = \{\}\)/);
+    assert.match(source, /if \(taskChargeMayHaveOccurred\(task\)\) return '上游任务已受理，可能已产生扣费；请稍后刷新生成记录，系统会按上游明细同步。'/);
     assert.match(source, /if \(normalizedMode === 'chat'\) return '上游对话超时，未扣积分。请稍后重试，或切换更稳定的对话模型后再试。'/);
     assert.match(source, /normalizedMode === 'chat' && \/降低分辨率\|减少参考图\|分辨率、张数\|张数后再试\/i\.test\(raw\)/);
     assert.match(source, /getFriendlyTaskError\(task\.errorMessage \|\| task\.error_message \|\| task\.remoteError \|\| '', '', mode\)/);
@@ -1098,6 +1101,7 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /function getTaskBillingSyncMetaLabel\(task = \{\}\)/);
     assert.match(source, /if \(chargedPoints > 0\) return `扣费 \$\{formatBillingPoints\(chargedPoints\)\} 积分`/);
     assert.match(source, /getTaskBillingSyncMetaLabel\(task\) \|\| '扣费同步中'/);
+    assert.match(source, /if \(taskChargeMayHaveOccurred\(task\)\) return '扣费待确认'/);
     assert.match(source, /未找到上游扣费明细/);
     assert.match(source, /旧记录缺少扣费追踪ID/);
     assert.match(source, /if \(status === 'settled'\) return '扣费 0 积分'/);

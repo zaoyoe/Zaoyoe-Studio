@@ -295,7 +295,15 @@ async function runWorkerLoop(options = {}) {
                 }),
                 taskTimeoutMs: readPositiveIntEnv(envValues, ['AI_IMAGE_TASK_TIMEOUT_MS'], 150000, {
                     min: 60 * 1000,
-                    max: 10 * 60 * 1000
+                    max: 30 * 60 * 1000
+                }),
+                videoTaskTimeoutMs: readPositiveIntEnv(envValues, ['AI_IMAGE_VIDEO_TASK_TIMEOUT_MS', 'AI_VIDEO_TASK_TIMEOUT_MS'], 12 * 60 * 1000, {
+                    min: 60 * 1000,
+                    max: 30 * 60 * 1000
+                }),
+                videoStaleRunningTimeoutMs: readPositiveIntEnv(envValues, ['AI_IMAGE_VIDEO_STALE_RUNNING_TIMEOUT_MS', 'AI_VIDEO_STALE_RUNNING_TIMEOUT_MS'], 14 * 60 * 1000, {
+                    min: 60 * 1000,
+                    max: 40 * 60 * 1000
                 })
             }), {
                 onRetry: ({ attempt, attempts, error }) => {

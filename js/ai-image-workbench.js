@@ -2322,6 +2322,7 @@
             tokenUsageRaw: rawTokenUsage && typeof rawTokenUsage === 'object' && !Array.isArray(rawTokenUsage) ? rawTokenUsage : {},
             billingSyncStatus: String(task.billingSyncStatus || task.billing_sync_status || metadata.sub2api_billing_sync?.status || metadata.sub2apiBillingSync?.status || '').trim(),
             billingSyncMessage: String(task.billingSyncMessage || task.billing_sync_message || metadata.sub2api_billing_sync?.message || metadata.sub2apiBillingSync?.message || '').trim(),
+            providerTaskId: String(task.providerTaskId || task.provider_task_id || metadata.provider_task_id || metadata.providerTaskId || metadata.provider_async?.provider_task_id || metadata.providerAsync?.providerTaskId || '').trim(),
             quantity: clampNumber(
                 Number.isFinite(requestedImageCount) && requestedImageCount > 0 ? requestedImageCount : task.quantity,
                 1,
@@ -4368,6 +4369,7 @@
         if (!task || !['failed', 'cancelled'].includes(task.status)) return '';
         if (task.status === 'cancelled') return '已停止生成';
         if (isTaskReloadableBillingRecord(task)) return '刷新后正在重新加载记录';
+        if (taskChargeMayHaveOccurred(task)) return '上游任务已受理，可能已产生扣费；请稍后刷新生成记录，系统会按上游明细同步。';
         const explicitReason = getFriendlyTaskError(task.errorMessage || task.error_message || task.remoteError || '', '', task.mode);
         if (explicitReason) return explicitReason;
         if (task.mode === 'chat') return '这次没有扣积分。可以稍后重试，或切换更稳定的对话模型后再试。';
@@ -4730,6 +4732,7 @@
         if (chargedPoints > 0) return `扣费 ${formatBillingPoints(chargedPoints)} 积分`;
         if (task.status === 'failed' || task.status === 'cancelled' || task.status === 'refunded') {
             if (isSub2ApiActualCostTask(task)) return getTaskBillingSyncMetaLabel(task) || '扣费同步中';
+            if (taskChargeMayHaveOccurred(task)) return '扣费待确认';
             return '未扣费';
         }
         if (task.status !== 'succeeded') return '';
@@ -4753,6 +4756,31 @@
         if (status === 'settled') return '扣费 0 积分';
         if (status === 'pending') return '扣费同步中';
         return '';
+    }
+
+    function taskChargeMayHaveOccurred(task = {}) {
+        const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
+            ? task.metadata
+            : {};
+        const providerAsync = metadata.provider_async && typeof metadata.provider_async === 'object' && !Array.isArray(metadata.provider_async)
+            ? metadata.provider_async
+            : {};
+        const providerTaskId = String(
+            task.providerTaskId
+            || task.provider_task_id
+            || metadata.provider_task_id
+            || metadata.providerTaskId
+            || providerAsync.provider_task_id
+            || providerAsync.providerTaskId
+            || ''
+        ).trim();
+        const mediaType = String(metadata.media_type || metadata.mediaType || metadata.output || task.mode || '').trim().toLowerCase();
+        const errorCode = String(task.errorCode || task.error_code || metadata.error_code || '').trim().toLowerCase();
+        const message = String(task.errorMessage || task.error_message || task.remoteError || metadata.error_message || '').trim();
+        if (metadata.charge_may_have_occurred === true || metadata.chargeMayHaveOccurred === true) return true;
+        if (errorCode === 'ai_video_task_timeout_after_provider_accept') return true;
+        if (providerTaskId && (mediaType === 'video' || isVideoMode(task.mode))) return true;
+        return /上游任务已受理|可能已产生扣费|可能已扣费/.test(message);
     }
 
     function getTaskBillingSyncStatus(task = {}) {
