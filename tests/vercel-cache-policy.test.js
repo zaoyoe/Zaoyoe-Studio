@@ -80,5 +80,11 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
 
     assert.ok(globalRule, 'vercel.json should keep the global security headers rule');
     assert.equal(getHeaderValue(globalRule, 'Cache-Control'), '', 'Global catch-all security headers should not force a cache policy');
-    assert.equal(getHeaderValue(globalRule, 'Content-Security-Policy').includes("default-src 'self'"), true);
+    const contentSecurityPolicy = getHeaderValue(globalRule, 'Content-Security-Policy');
+    assert.equal(contentSecurityPolicy.includes("default-src 'self'"), true);
+    assert.equal(
+        contentSecurityPolicy.includes("media-src 'self' data: blob: https:"),
+        true,
+        'CSP should allow AI workbench videos to load from HTTPS/CDN media URLs'
+    );
 });
