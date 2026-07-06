@@ -66,6 +66,8 @@ const SUPPORTED_GEMINI_IMAGE_ASPECT_RATIOS = Object.freeze(new Set([
 ]));
 const URL_RESPONSE_FORMAT_UNSUPPORTED_RE = /response[_ -]?format|b64_json|url|unknown parameter|unsupported|not supported|invalid.*format|invalid.*parameter|unrecognized.*parameter/i;
 const GEMINI_IMAGE_URL_BRIDGE_HEADER = 'X-Zaoyoe-Gemini-Image-Url-Bridge';
+const GEMINI_IMAGE_URL_BRIDGE_UNAVAILABLE_TTL_MS = 10 * 60 * 1000;
+const geminiImageUrlBridgeUnavailableUntil = new Map();
 
 function normalizeText(value, maxLength = 4000) {
     const normalized = String(value || '').trim();
@@ -382,6 +384,38 @@ function shouldUseGeminiImageUrlBridge(env = {}, config = {}) {
     if (isDisabledFlag(explicit)) return false;
     if (isEnabledFlag(explicit)) return true;
     return isSub2ApiGatewayBaseUrl(config.baseUrl);
+}
+
+function getGeminiImageUrlBridgeCacheKey(config = {}) {
+    const baseUrl = normalizeBaseUrl(config.baseUrl || '').toLowerCase();
+    const model = normalizeText(config.model, 160).toLowerCase();
+    return baseUrl && model ? `${baseUrl}|${model}` : '';
+}
+
+function getGeminiImageUrlBridgeUnavailableTtlMs(env = {}) {
+    return normalizePositiveInt(
+        env?.AI_IMAGE_GEMINI_URL_BRIDGE_UNAVAILABLE_TTL_MS,
+        GEMINI_IMAGE_URL_BRIDGE_UNAVAILABLE_TTL_MS,
+        { min: 1000, max: 60 * 60 * 1000 }
+    );
+}
+
+function isGeminiImageUrlBridgeMarkedUnavailable(config = {}, now = nowMs()) {
+    const key = getGeminiImageUrlBridgeCacheKey(config);
+    if (!key) return false;
+    const unavailableUntil = Number(geminiImageUrlBridgeUnavailableUntil.get(key) || 0);
+    if (!unavailableUntil) return false;
+    if (unavailableUntil <= now) {
+        geminiImageUrlBridgeUnavailableUntil.delete(key);
+        return false;
+    }
+    return true;
+}
+
+function markGeminiImageUrlBridgeUnavailable(config = {}, env = {}, now = nowMs()) {
+    const key = getGeminiImageUrlBridgeCacheKey(config);
+    if (!key) return;
+    geminiImageUrlBridgeUnavailableUntil.set(key, now + getGeminiImageUrlBridgeUnavailableTtlMs(env));
 }
 
 function getResponseHeader(response, name = '') {
@@ -4878,7 +4912,10 @@ async function executeGeminiNativeImageGeneration(task = {}, {
     const timing = {};
     const upstreamStartedAt = nowMs();
     const preferStream = String(env.AI_IMAGE_GEMINI_STREAM || '').trim().toLowerCase() !== 'false';
-    const preferUrlBridge = shouldUseGeminiImageUrlBridge(env, config);
+    const forceUrlBridge = isEnabledFlag(env.AI_IMAGE_GEMINI_URL_BRIDGE);
+    const requestedUrlBridge = shouldUseGeminiImageUrlBridge(env, config);
+    const urlBridgeSkippedByCache = requestedUrlBridge && !forceUrlBridge && isGeminiImageUrlBridgeMarkedUnavailable(config, upstreamStartedAt);
+    const preferUrlBridge = requestedUrlBridge && !urlBridgeSkippedByCache;
     const upstreamUrl = preferStream
         ? buildGeminiNativeStreamGenerateContentUrl(config)
         : buildGeminiNativeGenerateContentUrl(config);
@@ -4895,6 +4932,7 @@ async function executeGeminiNativeImageGeneration(task = {}, {
         pathname: upstreamUrlSummary.pathname,
         stream: preferStream,
         urlBridge: preferUrlBridge,
+        urlBridgeSkippedByCache,
         mode: task.mode || '',
         resolution: task.resolution || '',
         ratio: task.ratio || '',
@@ -5171,6 +5209,7 @@ async function executeGeminiNativeImageGeneration(task = {}, {
 
     if (!response.ok) {
         if (preferUrlBridge && isGeminiImageUrlBridgeStorageNotConfigured(response, payload)) {
+            markGeminiImageUrlBridgeUnavailable(config, env);
             emitExecutorDiagnostic(onDiagnostic, 'ai_image_gemini_native_url_bridge_unavailable_fallback', {
                 taskId: task.id || '',
                 provider: 'gemini-native',
