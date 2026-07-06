@@ -9757,24 +9757,32 @@
         const hasPartialImages = partialImageEntries.length > 0;
         const isStopped = ['failed', 'cancelled'].includes(task.status) && !isTaskReloadableBillingRecord(task);
         const { total } = getTaskGenerationCount(task);
-        const pendingPreviewCount = Math.max(0, total - partialImageEntries.length);
+        const missingPreviewSlots = getMissingResultSlotIndexes(partialImageEntries, total);
+        const pendingPreviewCount = missingPreviewSlots.length;
         const showPendingPreview = !isStopped && !isTaskReloadableBillingRecord(task) && task.status !== 'succeeded' && pendingPreviewCount > 0;
         const showStoppedPreview = isStopped && pendingPreviewCount > 0;
         const pendingPreviewEntries = showPendingPreview
             ? buildTaskPlaceholderEntries(task, {
                 type: 'pending',
-                sequenceStart: partialImageEntries.length,
+                sequenceStart: 0,
+                slotIndexes: missingPreviewSlots,
                 count: pendingPreviewCount
             })
             : [];
         const stoppedPreviewEntries = showStoppedPreview
             ? buildTaskPlaceholderEntries(task, {
-                type: 'pending',
-                sequenceStart: partialImageEntries.length,
+                type: 'stopped',
+                sequenceStart: 0,
+                slotIndexes: missingPreviewSlots,
                 count: pendingPreviewCount
             })
             : [];
-        const previewCardCount = partialImageEntries.length + pendingPreviewEntries.length + stoppedPreviewEntries.length;
+        const previewEntries = sortTaskPreviewEntries([
+            ...partialImageEntries,
+            ...pendingPreviewEntries,
+            ...stoppedPreviewEntries
+        ]);
+        const previewCardCount = previewEntries.length;
         const resultGridModeClass = isVideoMode(task.mode) ? 'ai-image-result-grid--video' : '';
         const resultGridRatioClass = getResultGridRatioClass(task);
         return `
@@ -9797,9 +9805,10 @@
                     </button>
                 </div>
                 <div class="ai-image-result-grid ${resultGridModeClass} ${resultGridRatioClass} ${previewCardCount === 1 ? 'ai-image-result-grid--single' : ''} ${hasPartialImages ? 'ai-image-result-grid--partial' : ''}">
-                        ${partialImageEntries.map((entry, index) => renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode), { navigationAnchor: index === 0 })).join('')}
-                        ${pendingPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, '生成中', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0, imageSlot: entry.slotSequence })).join('')}
-                        ${stoppedPreviewEntries.map((entry, index) => renderInlineTaskPreview(entry.task, task.status === 'cancelled' ? '生成已取消' : '生成失败', { showPrompt: false, navigationAnchor: !partialImageEntries.length && index === 0, imageSlot: entry.slotSequence })).join('')}
+                        ${previewEntries.map((entry, index) => entry.type === 'image'
+                            ? renderTaskImageEntry(entry, index, getRatioAspect(task.ratio, task.mode), { navigationAnchor: index === 0 })
+                            : renderInlineTaskPreview(entry.task, entry.type === 'stopped' ? (task.status === 'cancelled' ? '生成已取消' : '生成失败') : '生成中', { showPrompt: false, navigationAnchor: index === 0, imageSlot: entry.slotSequence })
+                        ).join('')}
                     </div>
                 </div>
             </div>
@@ -10149,18 +10158,51 @@
         baseSequence = 0
     } = {}) {
         return (task.images || [])
-            .map((image, imageIndex) => ({
-                type: 'image',
-                task,
-                image,
-                src: getImagePreviewUrl(image) || getImageUrl(image),
-                originalSrc: getImageUrl(image),
-                imageIndex,
-                taskIndex,
-                sequence: sequenceStart + imageIndex + 1,
-                baseSequence
-            }))
-            .filter((entry) => entry.src);
+            .map((image, imageIndex) => {
+                const slotIndex = getResultSlotIndex(image, imageIndex);
+                return {
+                    type: 'image',
+                    task,
+                    image,
+                    src: getImagePreviewUrl(image) || getImageUrl(image),
+                    originalSrc: getImageUrl(image),
+                    imageIndex,
+                    slotIndex,
+                    slotSequence: slotIndex + 1,
+                    taskIndex,
+                    sequence: sequenceStart + slotIndex + 1,
+                    baseSequence
+                };
+            })
+            .filter((entry) => entry.src)
+            .sort(compareTaskPreviewEntries);
+    }
+
+    function getResultSlotIndex(image = {}, fallbackIndex = 0) {
+        const parsed = Number(image?.index ?? image?.resultIndex ?? image?.result_index ?? fallbackIndex);
+        return Number.isFinite(parsed) && parsed >= 0
+            ? Math.max(0, Math.min(3, Math.round(parsed)))
+            : Math.max(0, Math.min(3, Math.round(Number(fallbackIndex) || 0)));
+    }
+
+    function compareTaskPreviewEntries(left = {}, right = {}) {
+        const leftSequence = Number(left.sequence || 0);
+        const rightSequence = Number(right.sequence || 0);
+        if (leftSequence !== rightSequence) return leftSequence - rightSequence;
+        if (left.type !== right.type) return left.type === 'image' ? -1 : 1;
+        return Number(left.imageIndex || 0) - Number(right.imageIndex || 0);
+    }
+
+    function sortTaskPreviewEntries(entries = []) {
+        return (Array.isArray(entries) ? entries : []).slice().sort(compareTaskPreviewEntries);
+    }
+
+    function getMissingResultSlotIndexes(entries = [], total = 1) {
+        const normalizedTotal = Math.max(0, Math.min(4, Math.round(Number(total) || 0)));
+        const usedSlots = new Set((Array.isArray(entries) ? entries : [])
+            .map((entry) => Number(entry.slotIndex))
+            .filter((slotIndex) => Number.isFinite(slotIndex) && slotIndex >= 0 && slotIndex < normalizedTotal));
+        return Array.from({ length: normalizedTotal }, (_, index) => index).filter((index) => !usedSlots.has(index));
     }
 
     function buildTaskPlaceholderEntries(task = {}, {
@@ -10168,23 +10210,32 @@
         taskIndex = 0,
         sequenceStart = 0,
         slotIndexStart = sequenceStart,
+        slotIndexes = null,
         count = 0,
         baseSequence = 0,
         forceBusy = false
     } = {}) {
-        return Array.from({ length: Math.max(0, Math.min(4, Math.round(Number(count) || 0))) }, (_, index) => {
-            const sequence = sequenceStart + index + 1;
-            const slotSequence = slotIndexStart + index + 1;
+        const explicitSlotIndexes = Array.isArray(slotIndexes)
+            ? slotIndexes.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value >= 0).slice(0, 4)
+            : null;
+        const length = explicitSlotIndexes
+            ? explicitSlotIndexes.length
+            : Math.max(0, Math.min(4, Math.round(Number(count) || 0)));
+        return Array.from({ length }, (_, index) => {
+            const slotIndex = explicitSlotIndexes ? Math.max(0, Math.min(3, Math.round(explicitSlotIndexes[index]))) : slotIndexStart + index;
+            const sequence = explicitSlotIndexes ? sequenceStart + slotIndex + 1 : sequenceStart + index + 1;
+            const slotSequence = slotIndex + 1;
             return {
                 type,
                 task,
                 taskIndex,
+                slotIndex,
                 sequence,
                 slotSequence,
                 baseSequence: index === 0 ? baseSequence : sequence - 1,
                 forceBusy
             };
-        });
+        }).sort(compareTaskPreviewEntries);
     }
 
     function renderTaskResult(task) {
@@ -10282,24 +10333,29 @@
                     baseSequence
                 });
                 const { total } = getTaskGenerationCount(item);
-                const pendingEntryCount = Math.max(0, total - imageEntriesForTask.length);
+                const missingSlotIndexes = getMissingResultSlotIndexes(imageEntriesForTask, total);
+                const pendingEntryCount = missingSlotIndexes.length;
                 if (imageEntriesForTask.length && (pendingEntryCount <= 0 || isReloadingRecord)) {
                     const lastEntry = imageEntriesForTask[imageEntriesForTask.length - 1];
                     taskSequenceMap.set(item.id, lastEntry.sequence);
                     sequenceCursor = lastEntry.sequence;
                     return imageEntriesForTask;
                 }
-                const pendingSequence = sequenceCursor + imageEntriesForTask.length + 1;
+                const pendingSequence = sequenceCursor + (missingSlotIndexes[0] ?? imageEntriesForTask.length) + 1;
                 const pendingBaseSequence = pendingSequence - 1;
                 const placeholderEntries = buildTaskPlaceholderEntries(item, {
                     type: isReloadingRecord ? 'reloading' : 'pending',
                     taskIndex,
-                    sequenceStart: sequenceCursor + imageEntriesForTask.length,
-                    slotIndexStart: imageEntriesForTask.length,
+                    sequenceStart: sequenceCursor,
+                    slotIndexes: pendingEntryCount ? missingSlotIndexes : [imageEntriesForTask.length],
                     count: pendingEntryCount || 1,
                     baseSequence: pendingBaseSequence
                 });
-                const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
+                const combinedEntries = sortTaskPreviewEntries([
+                    ...imageEntriesForTask,
+                    ...placeholderEntries
+                ]);
+                const lastPlaceholder = combinedEntries[combinedEntries.length - 1];
                 taskSequenceMap.set(item.id, lastPlaceholder?.sequence || pendingSequence);
                 sequenceCursor = lastPlaceholder?.sequence || pendingSequence;
                 if (isReloadingRecord) {
@@ -10307,12 +10363,7 @@
                         ? imageEntriesForTask
                         : placeholderEntries;
                 }
-                return imageEntriesForTask.length
-                    ? [
-                        ...imageEntriesForTask,
-                        ...placeholderEntries
-                    ]
-                    : placeholderEntries;
+                return combinedEntries;
             }
 
             const entries = buildTaskImageEntries(item, {
@@ -10321,35 +10372,38 @@
                 baseSequence
             });
             const { total } = getTaskGenerationCount(item);
-            const missingResultCount = Math.max(0, total - entries.length);
+            const missingSlotIndexes = getMissingResultSlotIndexes(entries, total);
+            const missingResultCount = missingSlotIndexes.length;
             if (entries.length && missingResultCount > 0 && !isVideoMode(item.mode)) {
                 const holdMissingResults = shouldHoldIncompleteSucceededImageResult(item, entries.length);
                 const placeholderEntries = buildTaskPlaceholderEntries(item, {
                     type: holdMissingResults ? 'pending' : 'reloading',
                     taskIndex,
-                    sequenceStart: sequenceCursor + entries.length,
-                    slotIndexStart: entries.length,
+                    sequenceStart: sequenceCursor,
+                    slotIndexes: missingSlotIndexes,
                     count: missingResultCount,
-                    baseSequence: sequenceCursor + entries.length,
+                    baseSequence: sequenceCursor + (missingSlotIndexes[0] ?? entries.length),
                     forceBusy: holdMissingResults
                 });
-                const lastPlaceholder = placeholderEntries[placeholderEntries.length - 1];
-                taskSequenceMap.set(item.id, lastPlaceholder?.sequence || entries[entries.length - 1].sequence);
-                sequenceCursor = lastPlaceholder?.sequence || entries[entries.length - 1].sequence;
-                return [
+                const combinedEntries = sortTaskPreviewEntries([
                     ...entries,
                     ...placeholderEntries
-                ];
+                ]);
+                const lastPlaceholder = combinedEntries[combinedEntries.length - 1];
+                taskSequenceMap.set(item.id, lastPlaceholder?.sequence || entries[entries.length - 1].sequence);
+                sequenceCursor = lastPlaceholder?.sequence || entries[entries.length - 1].sequence;
+                return combinedEntries;
             }
             if (!entries.length) {
                 const awaitingVideoResult = isVideoMode(item.mode) && item.status === 'succeeded';
                 const awaitingImageReload = !awaitingVideoResult && item.status === 'succeeded';
                 const holdMissingResults = awaitingImageReload && shouldHoldIncompleteSucceededImageResult(item, 0);
+                const missingIndexes = getMissingResultSlotIndexes([], awaitingImageReload ? Math.max(1, total) : 1);
                 const placeholderEntries = buildTaskPlaceholderEntries(item, {
                     type: holdMissingResults ? 'pending' : (awaitingImageReload ? 'reloading' : 'pending'),
                     taskIndex,
                     sequenceStart: sequenceCursor,
-                    slotIndexStart: 0,
+                    slotIndexes: missingIndexes,
                     count: awaitingImageReload ? Math.max(1, total) : 1,
                     baseSequence,
                     forceBusy: awaitingVideoResult || holdMissingResults

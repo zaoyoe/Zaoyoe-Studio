@@ -2696,6 +2696,8 @@ test('gemini native image executor uses Sub2API URL bridge when available', asyn
 test('gemini native image executor falls back before model spend when URL bridge storage is missing', async () => {
     const requests = [];
     const uploaded = [];
+    const cachedRequests = [];
+    const cachedDiagnostics = [];
     const task = {
         id: 'task-gemini-url-bridge-unconfigured',
         site: 'cn',
@@ -2790,6 +2792,64 @@ test('gemini native image executor falls back before model spend when URL bridge
     assert.equal(execution.metadata.executor, 'gemini-native-images-stream');
     assert.equal(execution.metadata.url_bridge, false);
     assert.equal(execution.images[0].image_url, 'https://cdn.example.com/persisted/gemini.png');
+
+    const cachedExecution = await executeGeminiNativeImageGeneration({
+        ...task,
+        id: 'task-gemini-url-bridge-unconfigured-cached'
+    }, {
+        runtimeConfig: {
+            apiKey: 'sk-sub2api',
+            baseUrl: 'https://sub2api.fatherkey.com/v1',
+            model: 'gemini-3.1-flash-image',
+            protocol: 'gemini-native',
+            source: 'ai-image-provider-stored'
+        },
+        fetchImpl: async (url, options = {}) => {
+            cachedRequests.push({
+                url: String(url),
+                method: options.method || 'GET',
+                headers: options.headers || {},
+                body: options.body ? JSON.parse(options.body) : null
+            });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
+                            candidates: [{
+                                content: {
+                                    parts: [{
+                                        inlineData: {
+                                            mimeType: 'image/png',
+                                            data: Buffer.from('gemini-cached-image-bytes').toString('base64')
+                                        }
+                                    }]
+                                }
+                            }]
+                        })}\n\n`));
+                        controller.close();
+                    }
+                }),
+                text: async () => {
+                    throw new Error('cached bridge skip should keep using the stream path');
+                }
+            };
+        },
+        uploadImageBuffer: async (buffer, context = {}) => ({
+            image_url: `https://cdn.example.com/persisted/${context.task.id}.png`,
+            original_image_url: `https://cdn.example.com/persisted/${context.task.id}.png`,
+            storage_path: `generated/${context.task.id}.png`,
+            original_storage_path: `generated/${context.task.id}.png`
+        }),
+        onDiagnostic: (event, detail) => cachedDiagnostics.push({ event, detail })
+    });
+
+    assert.equal(cachedRequests.length, 1);
+    assert.equal(cachedRequests[0].headers['X-Zaoyoe-Gemini-Image-Url-Bridge'], undefined);
+    assert.equal(cachedExecution.status, 'succeeded');
+    assert.equal(cachedExecution.metadata.url_bridge, false);
+    assert.equal(cachedDiagnostics.some((item) => item.event === 'ai_image_gemini_native_request_start' && item.detail.urlBridgeSkippedByCache === true), true);
 });
 
 test('gemini native image executor can use non-stream generateContent fallback', async () => {
