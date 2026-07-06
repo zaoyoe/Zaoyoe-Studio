@@ -13,6 +13,9 @@ const DEMO_RESULT_IMAGES = Object.freeze([
 ]);
 
 const DEFAULT_TASK_TIMEOUT_MS = 150000;
+const DEFAULT_VIDEO_TASK_TIMEOUT_MS = 12 * 60 * 1000;
+const MAX_TASK_TIMEOUT_MS = 30 * 60 * 1000;
+const VIDEO_STALE_RUNNING_GRACE_MS = 2 * 60 * 1000;
 
 const TASK_SELECT = [
     'id',
@@ -114,6 +117,92 @@ function normalizeTaskStatus(value = '') {
     if (['succeeded', 'success', 'completed'].includes(normalized)) return 'succeeded';
     if (['failed', 'cancelled', 'refunded'].includes(normalized)) return normalized;
     return 'queued';
+}
+
+function isVideoTask(task = {}) {
+    return String(task.mode || task.api_model_group || task.output || '').trim().toLowerCase() === 'video'
+        || String(safeObject(task.metadata).output || '').trim().toLowerCase() === 'video';
+}
+
+function getTaskProviderTaskId(task = {}) {
+    const metadata = safeObject(task.metadata);
+    const providerAsync = safeObject(metadata.provider_async || metadata.providerAsync);
+    return normalizeText(
+        task.provider_task_id
+        || task.providerTaskId
+        || metadata.provider_task_id
+        || metadata.providerTaskId
+        || providerAsync.provider_task_id
+        || providerAsync.providerTaskId,
+        240
+    );
+}
+
+function formatTimeoutDuration(timeoutMs = 0) {
+    const seconds = Math.max(1, Math.ceil(Number(timeoutMs || 0) / 1000));
+    if (seconds >= 60 && seconds % 60 === 0) {
+        return `${seconds / 60} 分钟`;
+    }
+    return `${seconds} 秒`;
+}
+
+function resolveTaskTimeoutMs(task = {}, {
+    taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+    videoTaskTimeoutMs = DEFAULT_VIDEO_TASK_TIMEOUT_MS
+} = {}) {
+    const video = isVideoTask(task);
+    return normalizeTimeoutMs(
+        video ? videoTaskTimeoutMs : taskTimeoutMs,
+        video ? DEFAULT_VIDEO_TASK_TIMEOUT_MS : DEFAULT_TASK_TIMEOUT_MS,
+        {
+            min: 10,
+            max: MAX_TASK_TIMEOUT_MS
+        }
+    );
+}
+
+function resolveVideoStaleRunningTimeoutMs(staleRunningTimeoutMs, videoTaskTimeoutMs, explicitVideoStaleRunningTimeoutMs) {
+    const normalizedVideoTaskTimeoutMs = normalizeTimeoutMs(videoTaskTimeoutMs, DEFAULT_VIDEO_TASK_TIMEOUT_MS, {
+        min: 10,
+        max: MAX_TASK_TIMEOUT_MS
+    });
+    const fallback = Math.max(
+        normalizeTimeoutMs(staleRunningTimeoutMs, 3 * 60 * 1000),
+        normalizedVideoTaskTimeoutMs + VIDEO_STALE_RUNNING_GRACE_MS
+    );
+    return normalizeTimeoutMs(explicitVideoStaleRunningTimeoutMs, fallback, {
+        min: 60 * 1000,
+        max: MAX_TASK_TIMEOUT_MS + 10 * 60 * 1000
+    });
+}
+
+function getTaskUpdatedAtMs(task = {}) {
+    const candidates = [
+        task.updated_at,
+        task.updatedAt,
+        task.started_at,
+        task.startedAt,
+        task.created_at,
+        task.createdAt
+    ];
+    for (const candidate of candidates) {
+        const parsed = Date.parse(candidate || '');
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
+}
+
+function isRunningTaskStale(task = {}, {
+    staleAfterMs = 3 * 60 * 1000,
+    videoStaleAfterMs = DEFAULT_VIDEO_TASK_TIMEOUT_MS + VIDEO_STALE_RUNNING_GRACE_MS
+} = {}) {
+    if (normalizeTaskStatus(task.status) !== 'running') return false;
+    const updatedAtMs = getTaskUpdatedAtMs(task);
+    if (!updatedAtMs) return true;
+    const timeoutMs = isVideoTask(task)
+        ? normalizeTimeoutMs(videoStaleAfterMs, DEFAULT_VIDEO_TASK_TIMEOUT_MS + VIDEO_STALE_RUNNING_GRACE_MS)
+        : normalizeTimeoutMs(staleAfterMs, 3 * 60 * 1000);
+    return Date.now() - updatedAtMs >= timeoutMs;
 }
 
 function compareQueuedTaskPriority(left = {}, right = {}) {
@@ -1102,13 +1191,26 @@ function sleep(ms) {
 }
 
 function buildTaskTimeoutError(task = {}, timeoutMs = DEFAULT_TASK_TIMEOUT_MS, executorMs = 0) {
-    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-    const error = new Error(`AI 图片任务处理超时（${seconds} 秒），已自动停止且未扣费。请重新提交生成。`);
+    const video = isVideoTask(task);
+    const providerTaskId = getTaskProviderTaskId(task);
+    const duration = formatTimeoutDuration(timeoutMs);
+    const label = video ? 'AI 视频任务' : 'AI 图片任务';
+    const message = video
+        ? (providerTaskId
+            ? `${label}等待上游结果超时（${duration}），上游任务已受理，可能已产生扣费；请稍后刷新生成记录，系统会按上游明细同步扣费。`
+            : `${label}处理超时（${duration}），未确认上游生成结果，请稍后重试或查看上游明细。`)
+        : `${label}处理超时（${duration}），已自动停止且未扣费。请重新提交生成。`;
+    const error = new Error(message);
     error.statusCode = 504;
-    error.code = 'ai_image_task_timeout';
+    error.code = video
+        ? (providerTaskId ? 'ai_video_task_timeout_after_provider_accept' : 'ai_video_task_timeout')
+        : 'ai_image_task_timeout';
     error.metadata = {
         timeout_ms: timeoutMs,
         timeout_stage: 'task',
+        media_type: video ? 'video' : 'image',
+        provider_task_id: providerTaskId,
+        charge_may_have_occurred: Boolean(video && providerTaskId),
         provider_model: normalizeText(task.model, 160),
         executor_ms: normalizeTimingMs(executorMs),
         timing: {
@@ -1126,7 +1228,7 @@ async function runTaskOperationWithTimeout(operation, {
 } = {}) {
     const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs, DEFAULT_TASK_TIMEOUT_MS, {
         min: 10,
-        max: 10 * 60 * 1000
+        max: MAX_TASK_TIMEOUT_MS
     });
     const controller = typeof AbortController === 'function'
         ? new AbortController()
@@ -1210,10 +1312,18 @@ async function recoverTaskFromExistingResults(supabase, task = {}, {
     }
 }
 
-async function failStaleRunningTasks(supabase, { site = '', limit = 5, staleAfterMs = 3 * 60 * 1000 } = {}) {
+async function failStaleRunningTasks(supabase, {
+    site = '',
+    limit = 5,
+    staleAfterMs = 3 * 60 * 1000,
+    videoStaleAfterMs = DEFAULT_VIDEO_TASK_TIMEOUT_MS + VIDEO_STALE_RUNNING_GRACE_MS
+} = {}) {
     const staleTasks = await loadStaleRunningTasks(supabase, { site, limit, staleAfterMs });
     const results = [];
     for (const task of staleTasks) {
+        if (!isRunningTaskStale(task, { staleAfterMs, videoStaleAfterMs })) {
+            continue;
+        }
         // eslint-disable-next-line no-await-in-loop
         const recovered = await recoverTaskFromExistingResults(supabase, task, {
             errorCode: 'ai_image_worker_stale_running',
@@ -1257,8 +1367,16 @@ async function executeAiImageTask({
     executor = buildPlaceholderExecutionResult,
     taskTimeoutMs = normalizeTimeoutMs(process.env.AI_IMAGE_TASK_TIMEOUT_MS, DEFAULT_TASK_TIMEOUT_MS, {
         min: 10,
-        max: 10 * 60 * 1000
-    })
+        max: MAX_TASK_TIMEOUT_MS
+    }),
+    videoTaskTimeoutMs = normalizeTimeoutMs(
+        process.env.AI_IMAGE_VIDEO_TASK_TIMEOUT_MS || process.env.AI_VIDEO_TASK_TIMEOUT_MS,
+        DEFAULT_VIDEO_TASK_TIMEOUT_MS,
+        {
+            min: 10,
+            max: MAX_TASK_TIMEOUT_MS
+        }
+    )
 } = {}) {
     if (!supabase?.from) {
         const error = new Error('Supabase client is required');
@@ -1285,6 +1403,10 @@ async function executeAiImageTask({
         diagnosticLogger = buildExecutorDiagnosticLogger(runningTask);
         const markRunningMs = elapsedMs(taskStart);
         executorStart = nowMs();
+        const effectiveTaskTimeoutMs = resolveTaskTimeoutMs(runningTask, {
+            taskTimeoutMs,
+            videoTaskTimeoutMs
+        });
         const execution = await runTaskOperationWithTimeout(({ signal } = {}) => executor(runningTask, {
             supabase,
             signal,
@@ -1316,7 +1438,7 @@ async function executeAiImageTask({
             }
         }), {
             task: runningTask,
-            timeoutMs: taskTimeoutMs,
+            timeoutMs: effectiveTaskTimeoutMs,
             getExecutorMs: () => elapsedMs(executorStart)
         });
         const executorMs = elapsedMs(executorStart);
@@ -1417,15 +1539,29 @@ async function runAiImageTaskBatch({
     staleRunningTimeoutMs = normalizeTimeoutMs(process.env.AI_IMAGE_STALE_RUNNING_TIMEOUT_MS, 3 * 60 * 1000),
     taskTimeoutMs = normalizeTimeoutMs(process.env.AI_IMAGE_TASK_TIMEOUT_MS, DEFAULT_TASK_TIMEOUT_MS, {
         min: 10,
-        max: 10 * 60 * 1000
-    })
+        max: MAX_TASK_TIMEOUT_MS
+    }),
+    videoTaskTimeoutMs = normalizeTimeoutMs(
+        process.env.AI_IMAGE_VIDEO_TASK_TIMEOUT_MS || process.env.AI_VIDEO_TASK_TIMEOUT_MS,
+        DEFAULT_VIDEO_TASK_TIMEOUT_MS,
+        {
+            min: 10,
+            max: MAX_TASK_TIMEOUT_MS
+        }
+    ),
+    videoStaleRunningTimeoutMs = resolveVideoStaleRunningTimeoutMs(
+        staleRunningTimeoutMs,
+        videoTaskTimeoutMs,
+        process.env.AI_IMAGE_VIDEO_STALE_RUNNING_TIMEOUT_MS || process.env.AI_VIDEO_STALE_RUNNING_TIMEOUT_MS
+    )
 } = {}) {
     const staleResults = taskId
         ? []
         : await failStaleRunningTasks(supabase, {
             site,
             limit,
-            staleAfterMs: staleRunningTimeoutMs
+            staleAfterMs: staleRunningTimeoutMs,
+            videoStaleAfterMs: videoStaleRunningTimeoutMs
         });
     const tasks = taskId
         ? [await loadTaskById(supabase, taskId)].filter(Boolean)
@@ -1438,7 +1574,8 @@ async function runAiImageTaskBatch({
                 supabase,
                 task,
                 executor,
-                taskTimeoutMs
+                taskTimeoutMs,
+                videoTaskTimeoutMs
             });
         } catch (error) {
             return {

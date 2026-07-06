@@ -2177,10 +2177,15 @@ async function updateProviderTaskHandle(supabase, task = {}, providerTaskId = ''
     const currentMetadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
         ? task.metadata
         : {};
+    const sub2ApiClientRequestId = normalizeText(metadata.sub2api_client_request_id || metadata.sub2ApiClientRequestId, 160);
     const nextMetadata = {
         ...currentMetadata,
         provider_task_id: providerTaskId,
         providerTaskId: providerTaskId,
+        ...(sub2ApiClientRequestId ? {
+            sub2api_client_request_id: sub2ApiClientRequestId,
+            sub2apiClientRequestId: sub2ApiClientRequestId
+        } : {}),
         provider_async: {
             ...(currentMetadata.provider_async && typeof currentMetadata.provider_async === 'object' && !Array.isArray(currentMetadata.provider_async) ? currentMetadata.provider_async : {}),
             ...metadata,
@@ -3500,6 +3505,12 @@ async function requestOpenAiCompatibleVideos({
     let submitEndpointPath = submitEndpoint;
     const submitFallbackUsed = false;
     const captureSub2ApiBilling = shouldCaptureTaskSub2ApiBilling(task);
+    const sub2ApiClientRequestId = captureSub2ApiBilling && isSub2ApiGatewayBaseUrl(config.baseUrl)
+        ? buildSub2ApiClientRequestId(task)
+        : '';
+    const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
+        ? { 'X-Client-Request-ID': sub2ApiClientRequestId }
+        : {};
 
     const submitVideoRequest = async (endpointPath) => {
         const requestStart = nowMs();
@@ -3508,7 +3519,8 @@ async function requestOpenAiCompatibleVideos({
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${config.apiKey}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                ...sub2ApiClientRequestHeaders
             },
             body: JSON.stringify(requestBody),
             ...(signal ? { signal } : {})
@@ -3573,7 +3585,8 @@ async function requestOpenAiCompatibleVideos({
             await onProviderTask({
                 providerTaskId,
                 status: providerStatus,
-                payloadSummary: summarizeUpstreamPayload(payload)
+                payloadSummary: summarizeUpstreamPayload(payload),
+                sub2ApiClientRequestId
             });
         }
     }
@@ -3621,7 +3634,11 @@ async function requestOpenAiCompatibleVideos({
         const resolvedUsage = captureSub2ApiBilling
             ? await resolveTokenUsageWithSub2ApiBilling({
                 usage: payload.usage || {},
-                payload,
+                payload: {
+                    ...payload,
+                    client_request_id: sub2ApiClientRequestId,
+                    clientRequestId: sub2ApiClientRequestId
+                },
                 response,
                 config,
                 fetchImpl,
@@ -3651,6 +3668,7 @@ async function requestOpenAiCompatibleVideos({
         revisedPrompt: normalizeText(payload.revised_prompt || payload.revisedPrompt || payload.prompt || task.prompt, 8000),
         tokenUsage,
         providerTaskId: [...new Set(providerTaskIds.filter(Boolean))].join(','),
+        sub2ApiClientRequestId,
         submitEndpoint: submitEndpointPath,
         submitFallbackUsed,
         submitAttempts
@@ -3883,10 +3901,11 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
         fetchImpl,
         env,
         signal,
-        onProviderTask: async ({ providerTaskId, status, payloadSummary } = {}) => {
+        onProviderTask: async ({ providerTaskId, status, payloadSummary, sub2ApiClientRequestId } = {}) => {
             await updateProviderTaskHandle(supabase, task, providerTaskId, {
                 status,
                 payload_summary: payloadSummary,
+                sub2api_client_request_id: normalizeText(sub2ApiClientRequestId, 160),
                 source: 'openai-compatible-videos'
             });
         }
@@ -3919,6 +3938,7 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             video_resolution: task.resolution || size.resolution || '720p',
             requested_video_count: upstream.requestedCount,
             delivered_video_count: 0,
+            sub2api_client_request_id: upstream.sub2ApiClientRequestId || '',
             provider_attempt_count: upstream.attempts,
             video_submit_endpoint: upstream.submitEndpoint,
             video_submit_fallback_used: upstream.submitFallbackUsed,
@@ -4020,6 +4040,7 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             delivered_video_count: outputImages.length,
             deferred_original_count: deferredOriginalUploads.length,
             provider_task_id: normalizeText(upstream.providerTaskId, 240),
+            sub2api_client_request_id: upstream.sub2ApiClientRequestId || '',
             provider_attempt_count: upstream.attempts,
             video_submit_endpoint: upstream.submitEndpoint,
             video_submit_fallback_used: upstream.submitFallbackUsed,

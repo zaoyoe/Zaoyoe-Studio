@@ -41,6 +41,7 @@ test('KVM4 verify deploy restarts the AI image worker when installed', () => {
 test('AI image ops docs and env template include model and R2 requirements', () => {
     const docs = readText('docs/ai-image-workbench-ops.md');
     const envExample = readText('server/.env.production.example');
+    const worker = readText('scripts/ai-image-worker.js');
 
     assert.match(docs, /AI_IMAGE_R2_ENDPOINT/);
     assert.match(docs, /AI_IMAGE_API_KEY/);
@@ -54,9 +55,13 @@ test('AI image ops docs and env template include model and R2 requirements', () 
     assert.match(envExample, /AI_IMAGE_PROVIDER_TIMEOUT_MS=120000/);
     assert.match(envExample, /AI_IMAGE_RESPONSE_BODY_TIMEOUT_MS=120000/);
     assert.match(envExample, /AI_IMAGE_TASK_TIMEOUT_MS=150000/);
+    assert.match(envExample, /AI_IMAGE_VIDEO_TASK_TIMEOUT_MS=720000/);
     assert.match(envExample, /AI_IMAGE_STALE_RUNNING_TIMEOUT_MS=180000/);
+    assert.match(envExample, /AI_IMAGE_VIDEO_STALE_RUNNING_TIMEOUT_MS=840000/);
     assert.match(envExample, /AI_IMAGE_R2_SECRET_ACCESS_KEY=/);
     assert.match(envExample, /AI_IMAGE_ALLOW_INLINE_DATA_URLS=false/);
+    assert.match(worker, /videoTaskTimeoutMs:\s*readPositiveIntEnv\(envValues, \['AI_IMAGE_VIDEO_TASK_TIMEOUT_MS', 'AI_VIDEO_TASK_TIMEOUT_MS'\]/);
+    assert.match(worker, /videoStaleRunningTimeoutMs:\s*readPositiveIntEnv\(envValues, \['AI_IMAGE_VIDEO_STALE_RUNNING_TIMEOUT_MS', 'AI_VIDEO_STALE_RUNNING_TIMEOUT_MS'\]/);
 });
 
 test('AI image ops docs include real configuration simulation checklist', () => {

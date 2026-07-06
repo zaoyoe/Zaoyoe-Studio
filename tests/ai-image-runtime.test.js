@@ -794,7 +794,18 @@ test('ai video runtime uses Sub2API /v1/videos task protocol by default', async 
         metadata: {
             duration: 5,
             video_ratio: '16:9',
-            video_resolution: '720p'
+            video_resolution: '720p',
+            pricing: {
+                matched_rule: {
+                    id: 'video-sub2api-rule',
+                    metadata: {
+                        billing_strategy: 'token_sub2api',
+                        pricing: {
+                            points_per_usd: 1
+                        }
+                    }
+                }
+            }
         },
         created_at: '2026-06-28T09:00:00.000Z'
     }, {
@@ -806,7 +817,9 @@ test('ai video runtime uses Sub2API /v1/videos task protocol by default', async 
             AI_IMAGE_R2_ACCESS_KEY_ID: 'r2-key',
             AI_IMAGE_R2_SECRET_ACCESS_KEY: 'r2-secret',
             AI_IMAGE_R2_BUCKET_NAME: 'zaoyoe-test',
-            AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.example.com'
+            AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.example.com',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
         },
         fetchImpl: async (url, options = {}) => {
             fetchCalls.push({
@@ -845,35 +858,46 @@ test('ai video runtime uses Sub2API /v1/videos task protocol by default', async 
                     arrayBuffer: async () => Buffer.from('sub2api-video-bytes').buffer
                 };
             }
+            if (String(url).startsWith('https://sub2api.fatherkey.com/v1/usage')) {
+                return {
+                    ok: false,
+                    status: 404,
+                    text: async () => JSON.stringify({ error: { message: 'not found' } })
+                };
+            }
             throw new Error(`Unexpected fetch ${url}`);
         }
     });
 
-    assert.equal(fetchCalls.length, 3);
-    assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos');
-    assert.equal(fetchCalls[0].method, 'POST');
-    assert.deepEqual(Object.keys(fetchCalls[0].body).sort(), ['aspect_ratio', 'model', 'prompt', 'seconds']);
-    assert.equal(fetchCalls[0].body.model, 'video-ds-2.0-fast');
-    assert.equal(fetchCalls[0].body.prompt.includes('飞龙在天'), true);
-    assert.equal(fetchCalls[0].body.seconds, '5');
-    assert.equal(fetchCalls[0].body.aspect_ratio, '16:9');
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'duration'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'size'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'width'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'height'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'images'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'model_name'), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(fetchCalls[0].body, 'req_key'), false);
-    assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1');
-    assert.equal(fetchCalls[1].method, 'GET');
-    assert.equal(fetchCalls[2].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1/content');
-    assert.equal(fetchCalls[2].headers.Authorization, 'Bearer sk-video-test');
+    const videoCalls = fetchCalls.filter((call) => !call.url.includes('/usage'));
+    assert.equal(videoCalls.length, 3);
+    assert.equal(videoCalls[0].url, 'https://sub2api.fatherkey.com/v1/videos');
+    assert.equal(videoCalls[0].method, 'POST');
+    assert.deepEqual(Object.keys(videoCalls[0].body).sort(), ['aspect_ratio', 'model', 'prompt', 'seconds']);
+    assert.equal(videoCalls[0].body.model, 'video-ds-2.0-fast');
+    assert.equal(videoCalls[0].body.prompt.includes('飞龙在天'), true);
+    assert.equal(videoCalls[0].body.seconds, '5');
+    assert.equal(videoCalls[0].body.aspect_ratio, '16:9');
+    assert.equal(videoCalls[0].headers['X-Client-Request-ID'], 'fatherkey-aiw-task-video-sub2api-default-videos-endpoint');
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'duration'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'size'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'width'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'height'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'images'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'model_name'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(videoCalls[0].body, 'req_key'), false);
+    assert.equal(videoCalls[1].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1');
+    assert.equal(videoCalls[1].method, 'GET');
+    assert.equal(videoCalls[2].url, 'https://sub2api.fatherkey.com/v1/videos/sub2api-video-task-1/content');
+    assert.equal(videoCalls[2].headers.Authorization, 'Bearer sk-video-test');
+    assert.equal(fetchCalls.some((call) => call.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-video-sub2api-default-videos-endpoint')}`), true);
     assert.equal(result.status, 'succeeded');
     assert.equal(result.images[0].image_url.startsWith('https://cdn.example.com/ai-videos/'), true);
     assert.equal(result.images[0].original_image_url, result.images[0].image_url);
     assert.equal(result.images[0].metadata.provider_auth_required, true);
     assert.equal(result.metadata.video_submit_endpoint, '/videos');
     assert.equal(result.metadata.video_submit_fallback_used, false);
+    assert.equal(result.metadata.sub2api_client_request_id, 'fatherkey-aiw-task-video-sub2api-default-videos-endpoint');
     assert.equal(result.metadata.provider_attempt_count, 2);
     assert.equal(result.metadata.video_submit_attempts.length, 1);
     assert.equal(result.metadata.video_submit_attempts[0].route_not_found, false);
@@ -1959,6 +1983,60 @@ test('ai image runtime fails stuck tasks at task timeout and aborts executor sig
     assert.equal(state.tasks[0].charged_points, 0);
     assert.equal(state.tasks[0].metadata.timeout_stage, 'task');
     assert.equal(state.tasks[0].metadata.timing.task_timeout_ms, 60);
+    assert.equal(aborted, true);
+});
+
+test('ai image runtime uses video task timeout and avoids unpaid copy after provider accepts', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-video-timeout-provider-accepted',
+            site: 'cn',
+            user_id: 'user-1',
+            mode: 'video',
+            billing_mode: 'points',
+            status: 'queued',
+            model: 'video-ds-2.0',
+            ratio: 'adaptive',
+            resolution: '720p',
+            quantity: 1,
+            prompt: '视频任务已经进入上游生成阶段',
+            estimated_points: 5,
+            charged_points: 0,
+            provider_task_id: 'provider-video-task-accepted',
+            metadata: {
+                output: 'video',
+                provider_task_id: 'provider-video-task-accepted'
+            },
+            created_at: '2026-07-06T04:56:45.000Z'
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+    let aborted = false;
+
+    const result = await runAiImageTaskBatch({
+        supabase,
+        limit: 1,
+        taskTimeoutMs: 60,
+        videoTaskTimeoutMs: 90,
+        executor(_task, runtimeOptions = {}) {
+            runtimeOptions.signal?.addEventListener('abort', () => {
+                aborted = true;
+            });
+            return new Promise(() => {});
+        }
+    });
+
+    assert.equal(result.processed, 1);
+    assert.equal(result.results[0].task.status, 'failed');
+    assert.equal(result.results[0].error.code, 'ai_video_task_timeout_after_provider_accept');
+    assert.equal(state.tasks[0].error_code, 'ai_video_task_timeout_after_provider_accept');
+    assert.match(state.tasks[0].error_message, /可能已产生扣费/);
+    assert.doesNotMatch(state.tasks[0].error_message, /未扣费/);
+    assert.equal(state.tasks[0].metadata.timeout_stage, 'task');
+    assert.equal(state.tasks[0].metadata.media_type, 'video');
+    assert.equal(state.tasks[0].metadata.provider_task_id, 'provider-video-task-accepted');
+    assert.equal(state.tasks[0].metadata.charge_may_have_occurred, true);
+    assert.equal(state.tasks[0].metadata.timing.task_timeout_ms, 90);
     assert.equal(aborted, true);
 });
 
