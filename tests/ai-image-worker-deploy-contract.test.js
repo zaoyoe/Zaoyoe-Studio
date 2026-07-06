@@ -18,7 +18,7 @@ test('AI image worker has a KVM4 systemd deployment contract', () => {
     assert.match(service, /Description=Zaoyoe AI image queue worker/);
     assert.match(service, /WorkingDirectory=\/opt\/zaoyoe-verify-server\/app/);
     assert.match(service, /EnvironmentFile=\/opt\/zaoyoe-verify-server\/\.env/);
-    assert.match(service, /npm run ai-image:worker -- --env-file \/opt\/zaoyoe-verify-server\/\.env --limit 8 --concurrency 4 --interval-ms 3000/);
+    assert.match(service, /npm run ai-image:worker -- --env-file \/opt\/zaoyoe-verify-server\/\.env --limit 8 --concurrency 4 --interval-ms 1000/);
     assert.match(service, /Restart=always/);
     assert.match(installScript, /does not deploy app code or write/);
     assert.match(installScript, /systemctl enable "\$SERVICE_NAME"/);

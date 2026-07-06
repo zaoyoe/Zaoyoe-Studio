@@ -40,6 +40,7 @@ test('ai image worker defaults to continuous preview-first batch mode', () => {
     assert.equal(parsed.limit, 8);
     assert.equal(parsed.concurrency, DEFAULT_CONCURRENCY);
     assert.equal(parsed.concurrencyFromCli, false);
+    assert.equal(DEFAULT_INTERVAL_MS, 1000);
     assert.equal(parsed.intervalMs, DEFAULT_INTERVAL_MS);
     assert.equal(parsed.once, false);
     assert.equal(parsed.json, false);

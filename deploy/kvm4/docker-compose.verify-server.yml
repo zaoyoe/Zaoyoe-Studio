@@ -44,7 +44,7 @@ services:
       - --concurrency
       - "4"
       - --interval-ms
-      - "3000"
+      - "1000"
     depends_on:
       verify-server:
         condition: service_healthy
