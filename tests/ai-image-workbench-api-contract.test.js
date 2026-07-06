@@ -71,6 +71,12 @@ test('ai image workbench waits for server results instead of locally fabricating
     assert.match(source, /scheduleRemoteRecordsPoll/);
     assert.match(source, /progressKnown/);
     assert.match(source, /function getTaskStageProgressPercent\(task\)/);
+    assert.match(source, /function getImageTaskProcessingStepLabel\(task = \{\}\)/);
+    assert.match(source, /if \(completed > 0 && completed < total\) return '等待剩余结果'/);
+    assert.match(source, /return getImageTaskWaitingResultLabel\(task\)/);
+    assert.match(source, /if \(\/返回\|剩余\/\.test\(step\)\) return 72/);
+    assert.doesNotMatch(source, /结果整理中/);
+    assert.doesNotMatch(source, /knownProgress !== null && knownProgress >= 70\) return 'saving'/);
     assert.doesNotMatch(source, /is-indeterminate/);
 });
 
