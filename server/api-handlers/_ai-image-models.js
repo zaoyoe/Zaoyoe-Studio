@@ -3452,24 +3452,36 @@ async function requestOpenAiCompatibleVideos({
     const referenceVideoUrls = getTaskReferenceVideoUrls(task);
     const referenceAudioUrls = getTaskReferenceAudioUrls(task);
     const aspectRatio = videoRatio === 'adaptive' ? '16:9' : videoRatio;
-    const requestBody = {
-        model: config.model,
-        prompt: buildImagePrompt(task),
-        size: size.size,
-        resolution: videoResolution,
-        ratio: videoRatio,
-        aspect_ratio: aspectRatio,
-        seconds: duration,
-        duration,
-        generate_audio: generateAudio,
-        watermark
-    };
-    if (cameraFixed) requestBody.camera_fixed = true;
-    if (referenceUrls.length) requestBody.images = referenceUrls;
-    if (referenceVideoUrls.length) requestBody.videos = referenceVideoUrls;
-    if (referenceAudioUrls.length) requestBody.audios = referenceAudioUrls;
-    if (referenceUrls[0]) requestBody.image = referenceUrls[0];
-    if (referenceUrls.length > 1) requestBody.reference_images = referenceUrls.slice(1, 5);
+    const submitEndpoint = resolveVideoSubmitEndpoint(config);
+    const usesTaskVideoEndpoint = isVideoTaskSubmitEndpoint(submitEndpoint);
+    const strictVideoSeconds = String(duration > 0 ? duration : 5);
+    const requestBody = usesTaskVideoEndpoint
+        ? {
+            model: config.model,
+            prompt: buildImagePrompt(task),
+            seconds: strictVideoSeconds,
+            aspect_ratio: aspectRatio
+        }
+        : {
+            model: config.model,
+            prompt: buildImagePrompt(task),
+            size: size.size,
+            resolution: videoResolution,
+            ratio: videoRatio,
+            aspect_ratio: aspectRatio,
+            seconds: duration,
+            duration,
+            generate_audio: generateAudio,
+            watermark
+        };
+    if (!usesTaskVideoEndpoint) {
+        if (cameraFixed) requestBody.camera_fixed = true;
+        if (referenceUrls.length) requestBody.images = referenceUrls;
+        if (referenceVideoUrls.length) requestBody.videos = referenceVideoUrls;
+        if (referenceAudioUrls.length) requestBody.audios = referenceAudioUrls;
+        if (referenceUrls[0]) requestBody.image = referenceUrls[0];
+        if (referenceUrls.length > 1) requestBody.reference_images = referenceUrls.slice(1, 5);
+    }
     const providerTaskIds = [];
     let upstreamMs = 0;
     let upstreamRequestMs = 0;
@@ -3484,7 +3496,6 @@ async function requestOpenAiCompatibleVideos({
     let attempts = 1;
     let lastPayloadSummary = null;
     let tokenUsage = {};
-    const submitEndpoint = resolveVideoSubmitEndpoint(config);
     const submitAttempts = [];
     let submitEndpointPath = submitEndpoint;
     const submitFallbackUsed = false;

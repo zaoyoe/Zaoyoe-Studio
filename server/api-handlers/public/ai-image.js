@@ -5485,7 +5485,7 @@ function createAiImageHandlers({
                 return sendJson(res, 409, {
                     success: false,
                     message: task.status === 'running'
-                        ? '任务已开始调用模型，无法取消'
+                        ? '任务已进入上游生成阶段，可能已产生扣费，无法取消'
                         : '当前任务状态无法取消',
                     code: 'task_not_cancellable',
                     task: serializeTask(task, [])
@@ -5511,7 +5511,7 @@ function createAiImageHandlers({
             if (!cancelledTask) {
                 return sendJson(res, 409, {
                     success: false,
-                    message: '任务已开始处理，无法取消',
+                    message: '任务已进入上游生成阶段，可能已产生扣费，无法取消',
                     code: 'task_not_cancellable',
                     task: serializeTask(task, [])
                 });
