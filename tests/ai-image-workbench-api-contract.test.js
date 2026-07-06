@@ -74,6 +74,25 @@ test('ai image workbench waits for server results instead of locally fabricating
     assert.doesNotMatch(source, /is-indeterminate/);
 });
 
+test('ai image workbench fast-polls image generation records without high-frequency usage fetches', () => {
+    assert.match(source, /const REMOTE_RECORDS_POLL_DEFAULT_MS = 2200;/);
+    assert.match(source, /const REMOTE_RECORDS_POLL_FAST_MS = 700;/);
+    assert.match(source, /const REMOTE_RECORDS_POLL_WARM_MS = 1200;/);
+    assert.match(source, /const REMOTE_RECORDS_FAST_POLL_ROUNDS = 48;/);
+    assert.match(source, /const REMOTE_RECORDS_FAST_POLL_FAST_ROUNDS = 6;/);
+    assert.match(source, /function isImageGenerationMode\(mode = ''\)/);
+    assert.match(source, /function requestFastRemoteRecordsPoll\(rounds = REMOTE_RECORDS_FAST_POLL_ROUNDS\)/);
+    assert.match(source, /function getRemoteRecordsPollDelayMs\(\{ consume = false \} = \{\}\)/);
+    assert.match(source, /function shouldIncludeUsageForRemotePoll\(delayMs = REMOTE_RECORDS_POLL_DEFAULT_MS\)/);
+    assert.match(source, /async function loadRemoteRecords\(\{ force = false, includeUsage = true \} = \{\}\)/);
+    assert.match(source, /includeUsage \? requestAiImage\('usage'/);
+    assert.match(source, /if \(isImageGenerationMode\(remoteTask\.mode\)\) \{\s*requestFastRemoteRecordsPoll\(\);\s*\}/);
+    assert.match(source, /loadRemoteRecords\(\{ force: true, includeUsage: !isImageGenerationMode\(remoteTask\.mode\) \}\)\.finally\(scheduleRemoteRecordsPoll\)/);
+    assert.match(source, /if \(isImageGenerationMode\(inferredMode\)\) \{\s*requestFastRemoteRecordsPoll\(\);\s*\}/);
+    assert.match(source, /const scheduledDelayMs = getRemoteRecordsPollDelayMs\(\{ consume: true \}\)/);
+    assert.match(source, /shouldIncludeUsageForRemotePoll\(scheduledDelayMs\)/);
+});
+
 test('ai image workbench recovers stuck busy cards by client task id', () => {
     assert.match(source, /const BUSY_CLIENT_TASK_RECOVERY_DELAY_MS = 5000;/);
     assert.match(source, /const BUSY_CLIENT_TASK_RECOVERY_INTERVAL_MS = 7000;/);

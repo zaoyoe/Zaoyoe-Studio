@@ -31,6 +31,11 @@
     const BUSY_CLIENT_TASK_RECOVERY_INTERVAL_MS = 7000;
     const DEFERRED_IMAGE_BATCH_SIZE = 2;
     const DEFERRED_IMAGE_BATCH_DELAY_MS = 520;
+    const REMOTE_RECORDS_POLL_DEFAULT_MS = 2200;
+    const REMOTE_RECORDS_POLL_FAST_MS = 700;
+    const REMOTE_RECORDS_POLL_WARM_MS = 1200;
+    const REMOTE_RECORDS_FAST_POLL_ROUNDS = 48;
+    const REMOTE_RECORDS_FAST_POLL_FAST_ROUNDS = 6;
     const DEFAULT_API_BASE_PROFILES = Object.freeze([
         { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://sub2api.fatherkey.com/v1' },
         { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://sub2api.zaoyoe.xyz/v1' }
@@ -66,6 +71,10 @@
 
     function isVideoMode(mode = '') {
         return mode === 'video';
+    }
+
+    function isImageGenerationMode(mode = '') {
+        return mode === 'text' || mode === 'image';
     }
 
     function isTextVisionTask(task = {}) {
@@ -342,6 +351,8 @@
     let dock = null;
     let nativeToggle = null;
     let remotePollTimer = null;
+    let remotePollDueAt = 0;
+    let remoteFastPollsRemaining = 0;
     let liveElapsedTimer = null;
     let deferredImageLoadTimer = null;
     let openSelect = '';
@@ -2741,6 +2752,38 @@
         return getBusyTasks().length > 0 || getPendingOriginalTasks().length > 0;
     }
 
+    function getBusyImageGenerationTasks() {
+        return state.tasks.filter((task) => isBusyTask(task) && isImageGenerationMode(task.mode));
+    }
+
+    function requestFastRemoteRecordsPoll(rounds = REMOTE_RECORDS_FAST_POLL_ROUNDS) {
+        if (!Number.isFinite(rounds) || rounds <= 0) return;
+        remoteFastPollsRemaining = Math.max(remoteFastPollsRemaining, Math.floor(rounds));
+    }
+
+    function getRemoteRecordsPollDelayMs({ consume = false } = {}) {
+        const hasBusyImageTasks = getBusyImageGenerationTasks().length > 0;
+        if (!hasBusyImageTasks) {
+            remoteFastPollsRemaining = 0;
+            return REMOTE_RECORDS_POLL_DEFAULT_MS;
+        }
+        if (remoteFastPollsRemaining <= 0) return REMOTE_RECORDS_POLL_DEFAULT_MS;
+
+        const warmThreshold = Math.max(0, REMOTE_RECORDS_FAST_POLL_ROUNDS - REMOTE_RECORDS_FAST_POLL_FAST_ROUNDS);
+        const delayMs = remoteFastPollsRemaining > warmThreshold
+            ? REMOTE_RECORDS_POLL_FAST_MS
+            : REMOTE_RECORDS_POLL_WARM_MS;
+        if (consume) {
+            remoteFastPollsRemaining = Math.max(0, remoteFastPollsRemaining - 1);
+        }
+        return delayMs;
+    }
+
+    function shouldIncludeUsageForRemotePoll(delayMs = REMOTE_RECORDS_POLL_DEFAULT_MS) {
+        if (delayMs >= REMOTE_RECORDS_POLL_DEFAULT_MS) return true;
+        return remoteFastPollsRemaining % 6 === 0;
+    }
+
     function getTaskSnapshotSignature(task = {}) {
         return JSON.stringify({
             id: task.id || '',
@@ -3287,7 +3330,7 @@
         }
     }
 
-    async function loadRemoteRecords({ force = false } = {}) {
+    async function loadRemoteRecords({ force = false, includeUsage = true } = {}) {
         if (remoteRecordsLoaded && !force) return;
         try {
             const beforeActivitySignature = getActivitySummarySignature();
@@ -3300,13 +3343,13 @@
                     },
                     auth: true
                 }),
-                requestAiImage('usage', {
+                includeUsage ? requestAiImage('usage', {
                     query: {
                         site: getRuntimeSite(),
                         limit: MAX_LOCAL_TASKS
                     },
                     auth: true
-                }).catch(() => null)
+                }).catch(() => null) : Promise.resolve(null)
             ]);
             if (usagePayload) {
                 updateActivitySummary(usagePayload);
@@ -7060,7 +7103,10 @@
                         });
                     return;
                 }
-                loadRemoteRecords({ force: true });
+                if (isImageGenerationMode(remoteTask.mode)) {
+                    requestFastRemoteRecordsPoll();
+                }
+                loadRemoteRecords({ force: true, includeUsage: !isImageGenerationMode(remoteTask.mode) }).finally(scheduleRemoteRecordsPoll);
             } else if (storedApiKeyChanged) {
                 persistState();
                 render();
@@ -7484,6 +7530,9 @@
             submitChatStreamTask(task, threadRoot, chatThreadMessages, draftChatAttachments);
             return;
         }
+        if (isImageGenerationMode(inferredMode)) {
+            requestFastRemoteRecordsPoll();
+        }
         scheduleRemoteRecordsPoll();
         submitRemoteTask(task);
     }
@@ -7604,14 +7653,27 @@
             const count = originalReadyPollCounts.get(task.id) || 0;
             return count < ORIGINAL_READY_POLL_LIMIT;
         });
-        if (remotePollTimer || (!getBusyTasks().length && !shouldContinueOriginalPolling)) return;
+        if (!getBusyTasks().length && !shouldContinueOriginalPolling) return;
+        const nextDelayMs = getRemoteRecordsPollDelayMs();
+        const nextDueAt = Date.now() + nextDelayMs;
+        if (remotePollTimer) {
+            if (!remotePollDueAt || remotePollDueAt <= nextDueAt + 25) return;
+            global.clearTimeout(remotePollTimer);
+            remotePollTimer = null;
+        }
+        const scheduledDelayMs = getRemoteRecordsPollDelayMs({ consume: true });
+        remotePollDueAt = Date.now() + scheduledDelayMs;
         pendingOriginals.forEach((task) => {
             originalReadyPollCounts.set(task.id, (originalReadyPollCounts.get(task.id) || 0) + 1);
         });
         remotePollTimer = global.setTimeout(async () => {
             remotePollTimer = null;
+            remotePollDueAt = 0;
             const beforeBusyCount = getBusyTasks().length;
-            await loadRemoteRecords({ force: true });
+            await loadRemoteRecords({
+                force: true,
+                includeUsage: shouldIncludeUsageForRemotePoll(scheduledDelayMs)
+            });
             if (getBusyTasks().length) {
                 await recoverBusyTasksByClientId();
             }
@@ -7626,7 +7688,7 @@
                     render();
                 }
             }
-        }, 2200);
+        }, scheduledDelayMs);
     }
 
     function buildChatResponse(task) {

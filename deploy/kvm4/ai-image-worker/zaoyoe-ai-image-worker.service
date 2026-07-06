@@ -8,7 +8,7 @@ Type=simple
 WorkingDirectory=/opt/zaoyoe-verify-server/app
 Environment=NODE_ENV=production
 EnvironmentFile=/opt/zaoyoe-verify-server/.env
-ExecStart=/usr/bin/env npm run ai-image:worker -- --env-file /opt/zaoyoe-verify-server/.env --limit 8 --concurrency 4 --interval-ms 3000
+ExecStart=/usr/bin/env npm run ai-image:worker -- --env-file /opt/zaoyoe-verify-server/.env --limit 8 --concurrency 4 --interval-ms 1000
 Restart=always
 RestartSec=8
 TimeoutStopSec=30

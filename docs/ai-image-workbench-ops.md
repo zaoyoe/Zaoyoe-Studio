@@ -97,7 +97,7 @@ systemctl restart zaoyoe-ai-image-worker.service
 默认启动命令：
 
 ```bash
-npm run ai-image:worker -- --env-file /opt/zaoyoe-verify-server/.env --limit 8 --concurrency 4 --interval-ms 3000
+npm run ai-image:worker -- --env-file /opt/zaoyoe-verify-server/.env --limit 8 --concurrency 4 --interval-ms 1000
 ```
 
 KVM4 生产环境通过 `deploy/kvm4/docker-compose.verify-server.yml` 中的 `ai-image-worker` 容器运行 worker，复用 Verify Server 同一份代码和 `.env`。Verify Server 每次从 `main` 部署成功后会同时重建并重启 `verify-server` 和 `ai-image-worker`，避免旧进程继续领取队列任务。

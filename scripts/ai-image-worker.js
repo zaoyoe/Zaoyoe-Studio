@@ -12,7 +12,7 @@ const {
 } = require('../server/api-handlers/_ai-image-models');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
-const DEFAULT_INTERVAL_MS = 3000;
+const DEFAULT_INTERVAL_MS = 1000;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_BATCH_RETRY_ATTEMPTS = 2;
 
