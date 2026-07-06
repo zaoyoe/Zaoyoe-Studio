@@ -4375,7 +4375,8 @@
         const step = getTaskCurrentStepLabel(task);
         if (/请求|受理/.test(step)) return 24;
         if (/模型|Gemini|生成/.test(step)) return 60;
-        if (/整理/.test(step)) return 82;
+        if (/返回|剩余/.test(step)) return 72;
+        if (/同步/.test(step)) return 88;
         if (/保存/.test(step)) return 90;
         return Math.round((DOCK_STAGE_PROGRESS[stage] || 0) * 100);
     }
@@ -4435,31 +4436,6 @@
         return `已耗时 ${minutes}分${String(restSeconds).padStart(2, '0')}秒`;
     }
 
-    function getTaskCurrentStepLabel(task) {
-        if (!task) return '待开始';
-        if (task.status === 'queued') return getTaskQueuedStepLabel(task);
-        if (task.status === 'processing' || task.status === 'streaming') {
-            if (isTextVisionTask(task)) return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
-            if (isVideoMode(task.mode)) return '视频生成中';
-            const progress = Number(task.progress || 0);
-            if (task.progressKnown) {
-                if (progress < 12) return '请求上游中';
-                if (progress < 70) return '模型生成中';
-                if (progress < 92) return '结果整理中';
-                return '保存结果中';
-            }
-            const elapsed = getTaskElapsedSeconds(task);
-            if (elapsed < 20) return '请求上游中';
-            if (elapsed < 60) return '模型生成中';
-            if (elapsed < 120) return '结果整理中';
-            return '保存结果中';
-        }
-        if (task.status === 'succeeded') return '生成完成';
-        if (task.status === 'cancelled') return '已取消';
-        if (isTaskReloadableBillingRecord(task)) return '记录重新加载中';
-        return '生成失败';
-    }
-
     function isGeminiImageTask(task = {}) {
         if (!task || isTextVisionTask(task) || isVideoMode(task.mode)) return false;
         const metadata = task.metadata && typeof task.metadata === 'object' && !Array.isArray(task.metadata)
@@ -4474,6 +4450,40 @@
             providerModel
         ].map((value) => String(value || '').toLowerCase()).join(' ');
         return source.includes('gemini');
+    }
+
+    function getImageTaskWaitingResultLabel(task = {}) {
+        return isGeminiImageTask(task) ? '等待 Gemini 图片返回' : '等待上游返回';
+    }
+
+    function getImageTaskProcessingStepLabel(task = {}) {
+        const { completed, total } = getTaskGenerationCount(task);
+        if (completed >= total && total > 0) return '结果同步中';
+        if (completed > 0 && completed < total) return '等待剩余结果';
+        const progress = Number(task.progress || 0);
+        if (task.progressKnown) {
+            if (progress < 12) return '请求上游中';
+            if (progress < 70) return '模型生成中';
+            return getImageTaskWaitingResultLabel(task);
+        }
+        const elapsed = getTaskElapsedSeconds(task);
+        if (elapsed < 20) return '请求上游中';
+        if (elapsed < 60) return '模型生成中';
+        return getImageTaskWaitingResultLabel(task);
+    }
+
+    function getTaskCurrentStepLabel(task) {
+        if (!task) return '待开始';
+        if (task.status === 'queued') return getTaskQueuedStepLabel(task);
+        if (task.status === 'processing' || task.status === 'streaming') {
+            if (isTextVisionTask(task)) return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
+            if (isVideoMode(task.mode)) return '视频生成中';
+            return getImageTaskProcessingStepLabel(task);
+        }
+        if (task.status === 'succeeded') return '生成完成';
+        if (task.status === 'cancelled') return '已取消';
+        if (isTaskReloadableBillingRecord(task)) return '记录重新加载中';
+        return '生成失败';
     }
 
     function getTaskQueuedStepLabel(task = {}) {
@@ -8450,9 +8460,7 @@
         if (task.status === 'failed' || task.status === 'cancelled') return 'failed';
         if (task.status === 'processing' || task.status === 'streaming') {
             const stepLabel = getTaskCurrentStepLabel(task);
-            if (/保存|整理/.test(stepLabel)) return 'saving';
-            const knownProgress = getTaskProgressPercent(task);
-            if (!isTextVisionTask(task) && knownProgress !== null && knownProgress >= 70) return 'saving';
+            if (/保存|同步/.test(stepLabel)) return 'saving';
             return 'generating';
         }
         return 'idle';
