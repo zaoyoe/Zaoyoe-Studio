@@ -2367,6 +2367,24 @@
         setComposerError('');
     }
 
+    function isCannotCancelChargedMessage(value = '') {
+        return String(value || '').trim() === CANNOT_CANCEL_CHARGED_MESSAGE;
+    }
+
+    function syncCannotCancelComposerWarning() {
+        if (!isCannotCancelChargedMessage(state.composerError)) return false;
+        const hasActiveCannotCancelTask = state.tasks.some((task) => (
+            isBusyTask(task)
+            && (
+                isCannotCancelChargedMessage(task.remoteError)
+                || isCannotCancelChargedMessage(task.errorMessage)
+            )
+        ));
+        if (hasActiveCannotCancelTask) return false;
+        clearComposerError();
+        return true;
+    }
+
     function clearComposerReferences() {
         state.referenceImage = '';
         state.referenceTitle = '';
@@ -2407,6 +2425,7 @@
     function mergeTaskSnapshots(localTask = {}, remoteTask = {}) {
         const remoteStatus = normalizeTaskStatus(remoteTask.status || localTask.status);
         const localStatus = normalizeTaskStatus(localTask.status);
+        const keepLocalSucceeded = localStatus === 'succeeded' && remoteStatus !== 'succeeded';
         const keepLocalCancel = localStatus === 'cancelled' && remoteStatus !== 'failed';
         const keepLocalStreaming = localStatus === 'streaming' && ['queued', 'processing'].includes(remoteStatus);
         const keepLocalProcessing = localStatus === 'processing' && remoteStatus === 'queued';
@@ -2429,23 +2448,31 @@
             && !isTextVisionMode(mergedMode)
             && !isVideoMode(mergedMode)
             && remoteImages.length < expectedImageCount;
-        const finalStatus = keepLocalCancel
-            ? 'cancelled'
-            : (keepLocalStreaming
-                ? 'streaming'
-                : (keepLocalProcessing || keepLocalIncompleteRemoteSuccess ? 'processing' : remoteStatus));
+        const finalStatus = keepLocalSucceeded
+            ? 'succeeded'
+            : keepLocalCancel
+                ? 'cancelled'
+                : keepLocalStreaming
+                    ? 'streaming'
+                    : (keepLocalProcessing || keepLocalIncompleteRemoteSuccess ? 'processing' : remoteStatus);
         const localProgress = clampNumber(localTask.progress, 0, 100, 0);
         const remoteProgress = clampNumber(remoteTask.progress, 0, 100, 0);
+        const localVisualProgress = isBusyTask(localTask)
+            ? clampNumber(getTaskStageProgressPercent(localTask), 0, 100, localProgress)
+            : localProgress;
+        const remoteVisualProgress = isBusyTask(remoteTask)
+            ? clampNumber(getTaskStageProgressPercent(remoteTask), 0, 100, remoteProgress)
+            : remoteProgress;
         const progressKnown = finalStatus === 'succeeded'
             || (!keepLocalIncompleteRemoteSuccess && Boolean(remoteTask.progressKnown))
             || (remoteTask.progress === undefined && Boolean(localTask.progressKnown));
         const nextProgress = keepLocalIncompleteRemoteSuccess
-            ? localProgress
+            ? Math.max(localProgress, localVisualProgress)
             : (finalStatus === 'succeeded'
                 ? 100
                 : (finalStatus === 'cancelled' || finalStatus === 'failed'
                     ? localProgress
-                    : (progressKnown ? Math.max(localProgress, remoteProgress) : 0)));
+                    : (progressKnown ? Math.max(localProgress, remoteProgress, localVisualProgress, remoteVisualProgress) : 0)));
         const keepLocalRuntimeClock = Boolean(localTask.id && remoteTask.id && localTask.id !== remoteTask.id && localTask.clientTaskId);
         const nextDeliveredImageCount = Number.isFinite(localDeliveredImageCount) || Number.isFinite(remoteDeliveredImageCount)
             ? Math.max(
@@ -2453,6 +2480,17 @@
                 Number.isFinite(remoteDeliveredImageCount) ? remoteDeliveredImageCount : 0
             )
             : remoteTask.deliveredImageCount;
+        const keepCannotCancelWarning = isBusyTask({ status: finalStatus })
+            && (
+                isCannotCancelChargedMessage(localTask.remoteError)
+                || isCannotCancelChargedMessage(localTask.errorMessage)
+            );
+        const nextErrorMessage = finalStatus === 'succeeded'
+            ? ''
+            : (keepCannotCancelWarning ? CANNOT_CANCEL_CHARGED_MESSAGE : (remoteTask.errorMessage || localTask.errorMessage || ''));
+        const nextRemoteError = finalStatus === 'succeeded'
+            ? ''
+            : (keepCannotCancelWarning ? CANNOT_CANCEL_CHARGED_MESSAGE : (remoteTask.remoteError || localTask.remoteError || ''));
 
         return {
             ...localTask,
@@ -2462,10 +2500,14 @@
             deliveredImageCount: nextDeliveredImageCount,
             createdAt: keepLocalRuntimeClock ? (localTask.createdAt || remoteTask.createdAt || 0) : (remoteTask.createdAt || localTask.createdAt || 0),
             startedAt: keepLocalRuntimeClock ? (localTask.startedAt || localTask.createdAt || remoteTask.startedAt || remoteTask.createdAt || 0) : (remoteTask.startedAt || localTask.startedAt || 0),
+            completedAt: keepLocalSucceeded ? (localTask.completedAt || remoteTask.completedAt || 0) : (remoteTask.completedAt || localTask.completedAt || 0),
+            updatedAt: Math.max(Number(localTask.updatedAt || 0), Number(remoteTask.updatedAt || 0)),
             status: finalStatus,
             progress: nextProgress,
             progressKnown,
             images: remoteImages.length ? remoteImages : localImages,
+            errorMessage: nextErrorMessage,
+            remoteError: nextRemoteError,
             resultPrompt: keepLocalCancel
                 ? (localTask.resultPrompt || remoteTask.resultPrompt || '')
                 : (keepLocalStreaming
@@ -3010,10 +3052,12 @@
         if (state.activeTaskId && !state.tasks.some((task) => task.id === state.activeTaskId)) {
             state.activeTaskId = '';
         }
+        const composerWarningChanged = syncCannotCancelComposerWarning();
         return capabilityChanged
             || beforeSignature !== getTasksSnapshotSignature()
             || beforeContinuationImage !== JSON.stringify(state.continuationImage || null)
-            || beforeActiveTaskId !== (state.activeTaskId || '');
+            || beforeActiveTaskId !== (state.activeTaskId || '')
+            || composerWarningChanged;
     }
 
     async function loadRemoteConfig() {
@@ -6812,7 +6856,11 @@
         state.tasks.forEach((task) => {
             if (task.parentTaskId === localTaskId) task.parentTaskId = nextTask.id;
         });
-        if (clearedComposerReferences) clearComposerError();
+        if (clearedComposerReferences) {
+            clearComposerError();
+        } else {
+            syncCannotCancelComposerWarning();
+        }
         return nextTask;
     }
 
@@ -7860,11 +7908,18 @@
 
     function syncRenderedProgressBars() {
         root?.querySelectorAll?.('.ai-image-progress[data-progress]')?.forEach((bar) => {
-            const progress = clampNumber(bar.getAttribute('data-progress'), 0, 100, 0) / 100;
+            const renderedProgress = clampNumber(bar.getAttribute('data-progress'), 0, 100, 0) / 100;
             const key = String(bar.getAttribute('data-progress-key') || '').trim();
             const fill = bar.querySelector('span');
             if (!fill) return;
             const cachedProgress = key ? progressVisualCache.get(key) : null;
+            const progress = Number.isFinite(cachedProgress)
+                ? Math.max(renderedProgress, cachedProgress)
+                : renderedProgress;
+            if (progress > renderedProgress) {
+                bar.style.setProperty('--aiw-progress', progress);
+                bar.setAttribute('data-progress', String(Math.round(progress * 100)));
+            }
             const previous = Number.isFinite(cachedProgress)
                 ? cachedProgress
                 : (clampNumber(bar.getAttribute('data-previous-progress'), 0, 100, Math.max(0, progress * 100 - 6)) / 100);
