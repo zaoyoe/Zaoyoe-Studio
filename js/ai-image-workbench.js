@@ -391,6 +391,9 @@
     let mobileWorkbenchLayoutHeight = 0;
     let mobileViewportSyncFrame = 0;
     let mobileComposerFocusLock = null;
+    let mobileComposerPendingFocusSnapshot = null;
+    let mobilePromptTouchScrollState = null;
+    let mobileWorkbenchTouchGuardState = null;
     let bodyScrollLockState = null;
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
@@ -5110,19 +5113,35 @@
     function lockWorkbenchPageScroll() {
         const body = document.body;
         if (!body || bodyScrollLockState) return;
+        const doc = document.documentElement;
         const scroll = getCurrentWindowScroll();
+        const useFixedBodyLock = !isMobileWorkbenchViewport();
         bodyScrollLockState = {
             x: scroll.x,
             y: scroll.y,
+            mode: useFixedBodyLock ? 'fixed-body' : 'overflow-only',
             style: {
+                docOverflow: doc?.style?.overflow || '',
+                docOverscrollBehavior: doc?.style?.overscrollBehavior || '',
                 position: body.style.position,
                 top: body.style.top,
                 left: body.style.left,
                 right: body.style.right,
                 width: body.style.width,
-                overflow: body.style.overflow
+                overflow: body.style.overflow,
+                overscrollBehavior: body.style.overscrollBehavior
             }
         };
+        if (!useFixedBodyLock) {
+            if (doc?.style) {
+                doc.style.overflow = 'hidden';
+                doc.style.overscrollBehavior = 'none';
+            }
+            body.style.overflow = 'hidden';
+            body.style.overscrollBehavior = 'none';
+            body.style.width = '100%';
+            return;
+        }
         body.style.position = 'fixed';
         body.style.top = `-${scroll.y}px`;
         body.style.left = scroll.x ? `-${scroll.x}px` : '0';
@@ -5135,6 +5154,11 @@
         const lock = bodyScrollLockState;
         bodyScrollLockState = null;
         if (!lock) return;
+        const doc = document.documentElement;
+        if (doc?.style) {
+            doc.style.overflow = lock.style.docOverflow;
+            doc.style.overscrollBehavior = lock.style.docOverscrollBehavior;
+        }
         const body = document.body;
         if (body) {
             body.style.position = lock.style.position;
@@ -5143,6 +5167,7 @@
             body.style.right = lock.style.right;
             body.style.width = lock.style.width;
             body.style.overflow = lock.style.overflow;
+            body.style.overscrollBehavior = lock.style.overscrollBehavior;
         }
         global.scrollTo?.(lock.x, lock.y);
     }
@@ -5181,6 +5206,9 @@
     function resetMobileViewportVars() {
         mobileWorkbenchLayoutHeight = 0;
         mobileComposerFocusLock = null;
+        mobileComposerPendingFocusSnapshot = null;
+        mobilePromptTouchScrollState = null;
+        mobileWorkbenchTouchGuardState = null;
         setMobileKeyboardActive(false);
         if (!root?.style) return;
         root.style.removeProperty('--aiw-mobile-layout-height');
@@ -5263,18 +5291,18 @@
         });
     }
 
-    function focusMobileMainPrompt(textarea) {
+    function focusMobileMainPrompt(textarea, snapshot = null) {
         if (!(textarea instanceof HTMLTextAreaElement)) return false;
         if (!isMobileKeyboardDevice() || !state.open) return false;
         setMobileKeyboardActive(true);
-        const snapshot = getMobileComposerScrollSnapshot();
-        lockMobileComposerScroll(snapshot);
+        const focusSnapshot = snapshot || getMobileComposerScrollSnapshot();
+        lockMobileComposerScroll(focusSnapshot);
         try {
             textarea.focus({ preventScroll: true });
         } catch (_) {
             textarea.focus();
         }
-        restoreMobileComposerScroll(snapshot);
+        restoreMobileComposerScroll(focusSnapshot);
         return true;
     }
 
@@ -5458,6 +5486,9 @@
         root.addEventListener('pointerup', handleRootPointerUp);
         root.addEventListener('pointercancel', handleRootPointerUp);
         root.addEventListener('touchstart', handleRootTouchStart, { passive: false });
+        root.addEventListener('touchmove', handleRootTouchMove, { passive: false });
+        root.addEventListener('touchend', handleRootTouchEnd, { passive: false });
+        root.addEventListener('touchcancel', handleRootTouchEnd, { passive: true });
         root.addEventListener('wheel', handleRootWheel, { passive: false });
         root.addEventListener('input', handleRootInput);
         root.addEventListener('change', handleRootChange);
@@ -5483,10 +5514,27 @@
         document.body.classList.add('ai-image-workbench-ready');
     }
 
+    function getCssPixelValue(value, fallback = 0) {
+        const number = Number.parseFloat(String(value || ''));
+        return Number.isFinite(number) ? number : fallback;
+    }
+
     function syncPromptTextareaHeight(textarea) {
         if (!(textarea instanceof HTMLTextAreaElement)) return;
+        const styles = global.getComputedStyle?.(textarea);
+        const minHeight = getCssPixelValue(styles?.minHeight, 34);
+        const maxHeight = getCssPixelValue(styles?.maxHeight, 132);
+        const lineHeight = getCssPixelValue(styles?.lineHeight, 20);
+        const hasExplicitLineBreak = /\n/.test(String(textarea.value || ''));
         textarea.style.height = 'auto';
-        textarea.style.height = `${Math.min(132, Math.max(34, textarea.scrollHeight))}px`;
+        const scrollHeight = Math.ceil(Number(textarea.scrollHeight || 0));
+        const shouldGrow = hasExplicitLineBreak || scrollHeight > minHeight + Math.max(4, Math.round(lineHeight * 0.45));
+        if (!shouldGrow) {
+            textarea.style.height = '';
+            textarea.scrollTop = 0;
+            return;
+        }
+        textarea.style.height = `${Math.min(maxHeight, Math.max(minHeight, scrollHeight))}px`;
     }
 
     function syncMainPromptHeight() {
@@ -5861,11 +5909,9 @@
         const mainPrompt = target.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
         if (mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
             if (document.activeElement !== mainPrompt) {
-                event.preventDefault();
-                focusMobileMainPrompt(mainPrompt);
-                return;
+                mobileComposerPendingFocusSnapshot = getMobileComposerScrollSnapshot();
             }
-            lockMobileComposerScroll();
+            return;
         }
         const navButton = target.closest('[data-aiw-chat-nav-id]');
         const rail = target.closest('[data-aiw-chat-nav-rail]');
@@ -5883,16 +5929,143 @@
         navButton.setPointerCapture?.(event.pointerId);
     }
 
-    function handleRootTouchStart(event) {
-        const target = event.target instanceof Element ? event.target : null;
-        const mainPrompt = target?.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
-        if (!(mainPrompt instanceof HTMLTextAreaElement) || !isMobileKeyboardDevice()) return;
-        if (document.activeElement !== mainPrompt) {
-            event.preventDefault();
-            focusMobileMainPrompt(mainPrompt);
+    function isScrollableWorkbenchElement(element, axis) {
+        if (!(element instanceof Element)) return false;
+        const maxScroll = axis === 'x'
+            ? Number(element.scrollWidth || 0) - Number(element.clientWidth || 0)
+            : Number(element.scrollHeight || 0) - Number(element.clientHeight || 0);
+        if (maxScroll <= 1) return false;
+        const styles = global.getComputedStyle?.(element);
+        const overflow = axis === 'x'
+            ? String(styles?.overflowX || '')
+            : String(styles?.overflowY || '');
+        return /auto|scroll|overlay/i.test(overflow);
+    }
+
+    function canScrollWorkbenchElementInDirection(element, deltaX, deltaY) {
+        const vertical = Math.abs(deltaY) >= Math.abs(deltaX);
+        const axis = vertical ? 'y' : 'x';
+        if (!isScrollableWorkbenchElement(element, axis)) return false;
+        const maxScroll = vertical
+            ? Number(element.scrollHeight || 0) - Number(element.clientHeight || 0)
+            : Number(element.scrollWidth || 0) - Number(element.clientWidth || 0);
+        const currentScroll = vertical ? Number(element.scrollTop || 0) : Number(element.scrollLeft || 0);
+        const delta = vertical ? deltaY : deltaX;
+        if (delta > 0) return currentScroll > 0;
+        if (delta < 0) return currentScroll < maxScroll - 1;
+        return true;
+    }
+
+    function findScrollableWorkbenchElement(target, deltaX, deltaY) {
+        if (!(target instanceof Element) || !overlay?.contains?.(target)) return null;
+        let current = target;
+        while (current instanceof Element && overlay.contains(current)) {
+            if (canScrollWorkbenchElementInDirection(current, deltaX, deltaY)) return current;
+            current = current.parentElement;
+        }
+        return null;
+    }
+
+    function handleMobileWorkbenchTouchGuardStart(event, target) {
+        if (!state.open || !isMobileWorkbenchViewport() || !(target instanceof Element) || !overlay?.contains?.(target)) {
+            mobileWorkbenchTouchGuardState = null;
             return;
         }
-        lockMobileComposerScroll();
+        const touch = event.touches?.[0] || null;
+        mobileWorkbenchTouchGuardState = touch
+            ? { target, startX: touch.clientX, startY: touch.clientY, moved: false }
+            : null;
+    }
+
+    function handleMobileWorkbenchTouchGuardMove(event) {
+        const guardState = mobileWorkbenchTouchGuardState;
+        if (!guardState || !state.open || !isMobileWorkbenchViewport()) return false;
+        const touch = event.touches?.[0] || null;
+        if (!touch) {
+            mobileWorkbenchTouchGuardState = null;
+            return false;
+        }
+        const deltaX = Number(touch.clientX || 0) - Number(guardState.startX || 0);
+        const deltaY = Number(touch.clientY || 0) - Number(guardState.startY || 0);
+        if (!guardState.moved && Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 3) return false;
+        guardState.moved = true;
+
+        if (findScrollableWorkbenchElement(guardState.target, deltaX, deltaY)) return false;
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
+
+    function handleRootTouchStart(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        handleMobileWorkbenchTouchGuardStart(event, target);
+        const mainPrompt = target?.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
+        if (!(mainPrompt instanceof HTMLTextAreaElement) || !isMobileKeyboardDevice()) return;
+        const wasFocused = document.activeElement === mainPrompt;
+        const touch = event.touches?.[0] || null;
+        if (touch) {
+            mobilePromptTouchScrollState = {
+                textarea: mainPrompt,
+                startX: touch.clientX,
+                startY: touch.clientY,
+                startScrollTop: Number(mainPrompt.scrollTop || 0),
+                moved: false,
+                wasFocused
+            };
+        } else {
+            mobilePromptTouchScrollState = null;
+        }
+        if (!wasFocused) {
+            mobileComposerPendingFocusSnapshot = mobileComposerPendingFocusSnapshot || getMobileComposerScrollSnapshot();
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }
+
+    function handleRootTouchMove(event) {
+        const scrollState = mobilePromptTouchScrollState;
+        if (scrollState && isMobileKeyboardDevice()) {
+            const touch = event.touches?.[0] || null;
+            const textarea = scrollState.textarea;
+            if (!touch || !(textarea instanceof HTMLTextAreaElement)) {
+                mobilePromptTouchScrollState = null;
+                return;
+            }
+
+            const deltaX = Number(touch.clientX || 0) - Number(scrollState.startX || 0);
+            const deltaY = Number(touch.clientY || 0) - Number(scrollState.startY || 0);
+            if (!scrollState.moved && Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 3) return;
+
+            scrollState.moved = true;
+            const maxScrollTop = Math.max(0, Number(textarea.scrollHeight || 0) - Number(textarea.clientHeight || 0));
+            if (Math.abs(deltaY) < Math.abs(deltaX)) return;
+
+            if (maxScrollTop > 1) {
+                textarea.scrollTop = Math.min(maxScrollTop, Math.max(0, Number(scrollState.startScrollTop || 0) - deltaY));
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        handleMobileWorkbenchTouchGuardMove(event);
+    }
+
+    function handleRootTouchEnd(event) {
+        const scrollState = mobilePromptTouchScrollState;
+        if (
+            scrollState
+            && !scrollState.moved
+            && scrollState.textarea instanceof HTMLTextAreaElement
+            && document.activeElement !== scrollState.textarea
+            && isMobileKeyboardDevice()
+        ) {
+            const focusSnapshot = mobileComposerPendingFocusSnapshot || getMobileComposerScrollSnapshot();
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            focusMobileMainPrompt(scrollState.textarea, focusSnapshot);
+        }
+        mobilePromptTouchScrollState = null;
+        mobileWorkbenchTouchGuardState = null;
     }
 
     function handleRootPointerMove(event) {
@@ -6474,8 +6647,10 @@
     function handleRootFocusIn(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (target?.matches?.('.ai-image-main-prompt[data-aiw-prompt]')) {
+            const focusSnapshot = mobileComposerPendingFocusSnapshot || getMobileComposerScrollSnapshot();
+            mobileComposerPendingFocusSnapshot = null;
             setMobileKeyboardActive(true);
-            lockMobileComposerScroll();
+            lockMobileComposerScroll(focusSnapshot);
             scheduleMobileViewportSync();
             global.setTimeout?.(scheduleMobileViewportSync, 80);
             global.setTimeout?.(scheduleMobileViewportSync, 260);
@@ -6498,6 +6673,7 @@
             global.setTimeout?.(() => {
                 if (!isMainComposerPromptFocused()) {
                     mobileComposerFocusLock = null;
+                    mobileComposerPendingFocusSnapshot = null;
                     setMobileKeyboardActive(false);
                 }
             }, 180);
