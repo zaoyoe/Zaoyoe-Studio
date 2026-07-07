@@ -2930,7 +2930,4 @@
 
     window.__PROMPTS_SUMMARY__ = prompts;
     window.__PROMPTS_SUMMARY_READY__ = true;
-    if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
-        window.PROMPTS = prompts;
-    }
 }());

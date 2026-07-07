@@ -6708,8 +6708,7 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
         grid-template-columns: 1fr;
     }
 
-    .ai-image-layout.is-history-open .ai-image-stage,
-    .ai-image-layout.is-history-open .ai-image-main-composer {
+    .ai-image-layout.is-history-open .ai-image-stage {
         filter: blur(8px) saturate(0.88);
         opacity: 0.58;
         pointer-events: none;
@@ -6717,12 +6716,7 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
         transform-origin: center center;
     }
 
-    .ai-image-layout.is-history-open .ai-image-main-composer {
-        transform-origin: center bottom;
-    }
-
-    html[data-theme="dark"] .ai-image-layout.is-history-open .ai-image-stage,
-    html[data-theme="dark"] .ai-image-layout.is-history-open .ai-image-main-composer {
+    html[data-theme="dark"] .ai-image-layout.is-history-open .ai-image-stage {
         opacity: 0.48;
     }
 
@@ -6754,7 +6748,9 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
 
     .ai-image-history-sidebar.is-expanded {
         height: auto;
-        max-height: min(68dvh, 560px);
+        max-height: var(--aiw-mobile-history-panel-max-height, min(68dvh, 560px));
+        overflow: hidden;
+        border-radius: 0 0 14px 14px;
         background: var(--aiw-surface-strong);
         box-shadow: 0 12px 30px rgba(15, 23, 42, 0.10);
     }
@@ -6799,6 +6795,11 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
         color: var(--aiw-muted);
         background: rgba(102, 112, 133, 0.08);
         box-shadow: none;
+    }
+
+    .ai-image-history-sidebar.is-expanded .ai-image-rail-brand {
+        order: 20;
+        margin-left: auto;
     }
 
     .ai-image-sidebar-toggle-chevron--wide {
@@ -6876,9 +6877,13 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
         display: inline-flex;
     }
 
+    .ai-image-history-sidebar.is-expanded .ai-image-rail-close {
+        display: none;
+    }
+
     .ai-image-history-expanded {
         min-height: 0;
-        max-height: calc(min(68dvh, 560px) - 60px);
+        max-height: calc(var(--aiw-mobile-history-panel-max-height, min(68dvh, 560px)) - 60px);
         overflow: auto;
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
@@ -7091,16 +7096,16 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
 
     .ai-image-main-composer {
         position: absolute;
-        right: 12px;
-        bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + var(--aiw-mobile-composer-lift, 0px));
-        left: 12px;
+        right: 0;
+        bottom: var(--aiw-mobile-composer-lift, 0px);
+        left: 0;
         z-index: 80;
         width: auto;
         max-height: calc(var(--aiw-mobile-layout-height, 100dvh) - var(--aiw-mobile-keyboard-offset, 0px) - 76px);
         margin: 0;
         overflow: visible;
         padding: 10px;
-        border-radius: 20px;
+        border-radius: 20px 20px 0 0;
         box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.08), 0 8px 26px rgba(15, 23, 42, 0.08);
         transition: bottom 0.18s ease;
     }
@@ -7151,7 +7156,10 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
     }
 
     .ai-image-main-prompt::placeholder {
-        font: inherit;
+        color: color-mix(in srgb, var(--aiw-faint) 72%, transparent);
+        font-size: 11px;
+        font-weight: 450;
+        line-height: 1.5;
     }
 
     .ai-image-main-submit:disabled {
@@ -7435,7 +7443,7 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
 
     .ai-image-history-sidebar.is-expanded {
         height: auto;
-        max-height: min(72dvh, 520px);
+        max-height: var(--aiw-mobile-history-panel-max-height, min(72dvh, 520px));
     }
 
     .ai-image-history-rail {
@@ -7468,7 +7476,7 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
     }
 
     .ai-image-history-expanded {
-        max-height: calc(min(72dvh, 520px) - 56px);
+        max-height: calc(var(--aiw-mobile-history-panel-max-height, min(72dvh, 520px)) - 56px);
     }
 
     .ai-image-canvas {
@@ -7491,13 +7499,13 @@ html[data-theme="dark"] .ai-image-task-row:focus-visible {
 
     .ai-image-main-composer,
     .ai-image-shell:has(.ai-image-chat-nav-layer) .ai-image-main-composer {
-        right: 8px;
-        bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + var(--aiw-mobile-composer-lift, 0px));
-        left: 8px;
+        right: 0;
+        bottom: var(--aiw-mobile-composer-lift, 0px);
+        left: 0;
         width: auto;
         margin: 0;
         padding: 9px;
-        border-radius: 18px;
+        border-radius: 18px 18px 0 0;
     }
 
     .ai-image-main-tools .ai-image-select-trigger,

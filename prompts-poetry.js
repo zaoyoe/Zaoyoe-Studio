@@ -1646,6 +1646,8 @@ initTheme();
 const PROMPT_GALLERY_SKELETON_COUNT = 8;
 const PROMPT_NAV_SKELETON_COUNT = 8;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
+const PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS = 12000;
+const PROMPT_SUPABASE_RETRY_DELAY_MS = 2800;
 const promptGalleryImageWarmCache = new Set();
 
 function getPromptAdminVisibilityStatus(prompt = {}) {
@@ -1731,7 +1733,6 @@ async function waitForPromptSupabaseClientReady(timeoutMs = 2200) {
     });
 }
 
-const STATIC_PROMPTS_SUMMARY_SRC = 'js/prompts-summary-data.js?v=20260501_PROMPTS_SUMMARY_DATA_1';
 const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=20260302_G_AUTH';
 const PROMPTS_SUPABASE_SUMMARY_SELECT = [
     'id',
@@ -1810,11 +1811,12 @@ const PROMPTS_SUPABASE_SEARCH_DETAIL_LEGACY_SELECT = PROMPTS_SUPABASE_SEARCH_DET
     .split(',')
     .filter((field) => !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
     .join(',');
-let staticPromptsFallbackPromise = null;
 let staticPromptDetailPromise = null;
 let promptSearchDetailHydrationPromise = null;
 let promptSearchDetailsHydrated = false;
 const promptDetailLoadPromises = new Map();
+let promptPageInitialRenderStarted = false;
+let promptLiveDataRetryTimer = null;
 
 function isMissingPromptImageAssetsColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
@@ -1941,56 +1943,6 @@ function normalizeSupabasePromptSearchDetail(item = {}) {
         promptDetailLoaded: true,
         detailSource: 'supabase'
     };
-}
-
-function getPromptStaticSummaryDataset() {
-    if (Array.isArray(window.__PROMPTS_SUMMARY__) && window.__PROMPTS_SUMMARY__.length > 0) {
-        return window.__PROMPTS_SUMMARY__;
-    }
-    if (Array.isArray(window.__STATIC_PROMPTS__) && window.__STATIC_PROMPTS__.length > 0) {
-        return window.__STATIC_PROMPTS__;
-    }
-    return [];
-}
-
-async function loadStaticPromptFallbackData() {
-    const existingDataset = getPromptStaticSummaryDataset();
-    if (existingDataset.length > 0) {
-        return replacePromptDataset(existingDataset);
-    }
-
-    if (staticPromptsFallbackPromise) {
-        return staticPromptsFallbackPromise;
-    }
-
-    staticPromptsFallbackPromise = new Promise((resolve, reject) => {
-        const existingScript = document.querySelector('script[data-prompt-static-summary="1"]');
-        if (existingScript) {
-            existingScript.addEventListener('load', () => {
-                resolve(replacePromptDataset(getPromptStaticSummaryDataset()));
-            }, { once: true });
-            existingScript.addEventListener('error', reject, { once: true });
-            return;
-        }
-
-        const script = document.createElement('script');
-        script.src = STATIC_PROMPTS_SUMMARY_SRC;
-        script.async = true;
-        script.dataset.promptStaticSummary = '1';
-        script.addEventListener('load', () => {
-            resolve(replacePromptDataset(getPromptStaticSummaryDataset()));
-        }, { once: true });
-        script.addEventListener('error', () => {
-            reject(new Error('Failed to load static prompts summary fallback'));
-        }, { once: true });
-        document.head.appendChild(script);
-    }).catch((error) => {
-        staticPromptsFallbackPromise = null;
-        console.warn('Static prompts summary unavailable, falling back to detail data:', error?.message || error);
-        return loadStaticPromptDetailData().then((detailPrompts) => replacePromptDataset(detailPrompts));
-    });
-
-    return staticPromptsFallbackPromise;
 }
 
 function getPromptDetailLookupKeys(item = {}) {
@@ -2262,23 +2214,23 @@ async function ensurePromptDetailLoaded(item = {}) {
     return loadPromise;
 }
 
-async function loadPromptsFromSupabase() {
+async function loadPromptsFromSupabase(options = {}) {
+    const clientReadyTimeoutMs = Number.isFinite(options.clientReadyTimeoutMs)
+        ? options.clientReadyTimeoutMs
+        : PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS;
+
     if (!window.supabaseClient) {
-        const runtimeReady = await waitForPromptSupabaseClientReady();
+        const runtimeReady = await waitForPromptSupabaseClientReady(clientReadyTimeoutMs);
         if (!runtimeReady || !window.supabaseClient) {
-            console.log('Supabase client not available, loading static fallback data');
-            await loadStaticPromptFallbackData().catch((fallbackError) => {
-                console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
-            });
+            console.warn('Supabase client not available; keeping prompt gallery loading instead of showing static snapshots');
+            replacePromptDataset([]);
             return false;
         }
     }
 
     if (!window.supabaseClient) {
-        console.log('Supabase client not available, loading static fallback data');
-        await loadStaticPromptFallbackData().catch((fallbackError) => {
-            console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
-        });
+        console.warn('Supabase client not available; keeping prompt gallery loading instead of showing static snapshots');
+        replacePromptDataset([]);
         return false;
     }
 
@@ -2303,9 +2255,7 @@ async function loadPromptsFromSupabase() {
 
         if (error) {
             console.error('Supabase fetch error:', error);
-            await loadStaticPromptFallbackData().catch((fallbackError) => {
-                console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
-            });
+            replacePromptDataset([]);
             return false;
         }
 
@@ -2319,12 +2269,12 @@ async function loadPromptsFromSupabase() {
             return true;
         }
 
-        return false;
+        replacePromptDataset([]);
+        console.log('Loaded 0 visible prompts from Supabase');
+        return true;
     } catch (err) {
         console.error('Error loading from Supabase:', err);
-        await loadStaticPromptFallbackData().catch((fallbackError) => {
-            console.warn('Failed to load static prompts fallback:', fallbackError?.message || fallbackError);
-        });
+        replacePromptDataset([]);
         return false;
     }
 }
@@ -2749,17 +2699,25 @@ function schedulePromptsDeferredEnhancements() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-    bindPromptImageDragLock();
-    bindPromptThemeStarryLoader();
-    initializePromptStaticControls();
-    syncPromptNavOffset();
-    renderPromptNavSkeletons();
-    renderFeaturedBannerSkeleton();
-    renderPromptGallerySkeletons();
+function getPromptInitialFilterFromLocation() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tagParam = urlParams.get('tag');
+    return {
+        tagParam,
+        initialFilter: tagParam || 'all'
+    };
+}
 
-    // Try to load from Supabase first
-    await loadPromptsFromSupabase();
+async function completePromptPageInitialRender(initialFilter = 'all', tagParam = '') {
+    if (promptPageInitialRenderStarted) {
+        return;
+    }
+    promptPageInitialRenderStarted = true;
+
+    if (promptLiveDataRetryTimer) {
+        window.clearTimeout(promptLiveDataRetryTimer);
+        promptLiveDataRetryTimer = null;
+    }
 
     if (Array.isArray(PROMPTS) && PROMPTS.length > 0) {
         const visiblePrompts = filterVisiblePromptsForPromptsPage(PROMPTS);
@@ -2777,11 +2735,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     generateDynamicNav(); // New: AI-driven navigation
     const featuredFirstPaintPromise = renderFeaturedBanner({ waitForFirstImage: true });
     const galleryConfigPromise = loadGalleryConfigForFirstRender();
-
-    // Read URL parameters to set initial tag filter
-    const urlParams = new URLSearchParams(window.location.search);
-    const tagParam = urlParams.get('tag');
-    const initialFilter = tagParam || 'all';
 
     if (tagParam) {
         console.log(`🏷️ URL tag parameter found: ${tagParam}`);
@@ -2822,6 +2775,48 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Check for URL parameter to open specific prompt
     handleUrlPromptParam();
+}
+
+function schedulePromptLiveDataRetry(initialFilter = 'all', tagParam = '') {
+    if (promptPageInitialRenderStarted || promptLiveDataRetryTimer) {
+        return;
+    }
+
+    promptLiveDataRetryTimer = window.setTimeout(async () => {
+        promptLiveDataRetryTimer = null;
+        const loaded = await loadPromptsFromSupabase({
+            clientReadyTimeoutMs: PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS
+        });
+
+        if (loaded) {
+            await completePromptPageInitialRender(initialFilter, tagParam);
+            return;
+        }
+
+        schedulePromptLiveDataRetry(initialFilter, tagParam);
+    }, PROMPT_SUPABASE_RETRY_DELAY_MS);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    bindPromptImageDragLock();
+    bindPromptThemeStarryLoader();
+    initializePromptStaticControls();
+    syncPromptNavOffset();
+    renderPromptNavSkeletons();
+    renderFeaturedBannerSkeleton();
+    renderPromptGallerySkeletons();
+
+    const { tagParam, initialFilter } = getPromptInitialFilterFromLocation();
+
+    // Try to load from Supabase first. If it is slow or temporarily unavailable,
+    // keep the skeletons instead of showing deleted cards from an old static snapshot.
+    const loaded = await loadPromptsFromSupabase();
+    if (!loaded) {
+        schedulePromptLiveDataRetry(initialFilter, tagParam);
+        return;
+    }
+
+    await completePromptPageInitialRender(initialFilter, tagParam);
 });
 
 window.addEventListener('languageChanged', () => {
