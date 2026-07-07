@@ -551,6 +551,53 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'comment mode docked prompt card should keep its original bottom position'
     );
     assert.equal(
+        /\.modal-inner\.related-mode \.modal-img-thumbs\.is-visible\s*\{[\s\S]*bottom:\s*var\(--modal-img-thumbs-related-bottom, 188px\);/.test(promptsStyles),
+        true,
+        'related mode image thumbnails should lift above the docked prompt card instead of covering actions'
+    );
+    assert.equal(
+        /\.modal-image-col:has\(> img:hover\) \.modal-img-thumbs\.is-visible,[\s\S]*\.modal-img-thumbs\.is-visible:hover,[\s\S]*\.modal-img-thumbs\.is-visible:focus-within\s*\{/.test(promptsStyles),
+        true,
+        'desktop thumbnail hover target should be narrowed to the image or thumbnails, not the whole left column'
+    );
+    assert.equal(
+        /\.modal-img-thumb-btn > img\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*100%;[\s\S]*object-fit:\s*cover;/.test(promptsStyles),
+        true,
+        'modal image thumbnails should fill their thumbnail button instead of inheriting main image sizing'
+    );
+    assert.equal(
+        /\.modal-image-col \.modal-img-thumbs \.modal-img-thumb-btn > img,[\s\S]*\.modal-inner\.related-mode \.modal-image-col \.modal-img-thumbs \.modal-img-thumb-btn > img,[\s\S]*html\[data-theme="light"\] \.modal-inner\.related-mode \.modal-image-col \.modal-img-thumbs \.modal-img-thumb-btn > img,[\s\S]*html:not\(\[data-theme="dark"\]\) \.modal-inner\.related-mode \.modal-image-col \.modal-img-thumbs \.modal-img-thumb-btn > img\s*\{[\s\S]*position:\s*absolute !important;[\s\S]*inset:\s*0 !important;[\s\S]*top:\s*0 !important;[\s\S]*object-fit:\s*cover !important;[\s\S]*transform:\s*var\(--modal-img-thumb-transform, none\) !important;/.test(promptsStyles),
+        true,
+        'modal image thumbnail images should have a high-specificity fill rule that wins over main modal image styles'
+    );
+    assert.equal(
+        /\.modal-inner\.related-mode \.modal-image-col > img,[\s\S]*html\[data-theme="light"\] \.modal-inner\.related-mode \.modal-image-col > img,[\s\S]*html:not\(\[data-theme="dark"\]\) \.modal-inner\.related-mode \.modal-image-col > img\s*\{/.test(promptsStyles),
+        true,
+        'related-mode main image styling should only target direct modal images, not thumbnail images'
+    );
+    assert.equal(
+        promptsSource.includes('function syncModalImageThumbnailPlacement()')
+            && promptsSource.includes("modalInner?.classList.contains('related-mode')")
+            && promptsSource.includes("--modal-img-thumbs-related-bottom"),
+        true,
+        'runtime should measure the docked prompt card height for related-mode thumbnail placement'
+    );
+    assert.equal(
+        /function getPromptModalThumbnailUrl\(value\)\s*\{\s*return getPromptModalImageUrl\(value\);\s*\}/.test(promptsSource),
+        true,
+        'prompt detail modal thumbnails should use the original modal image URL instead of potentially stale responsive thumbnail variants'
+    );
+    assert.equal(
+        promptsHtml.includes('modalThumbFill=20260707_PROMPT_MODAL_THUMBS_FILL_3'),
+        true,
+        'prompts.html should cache-bust the prompt modal thumbnail fill styles'
+    );
+    assert.equal(
+        promptsHtml.includes('modalThumbSource=20260707_PROMPT_MODAL_THUMBS_ORIGINAL_1'),
+        true,
+        'prompts.html should cache-bust prompt modal thumbnail source selection logic'
+    );
+    assert.equal(
         (promptsHtml.match(/detailActionBar=20260619_PROMPT_DETAIL_ACTION_BAR_COMPACT_5/g) || []).length,
         1,
         'prompts.html should cache-bust the compact prompt detail action bar stylesheet'
