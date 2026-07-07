@@ -592,6 +592,19 @@ test('ai image full preview keeps preview visible while original is preparing', 
     assert.match(cssSource, /body\.ai-image-preview-open #promptModalTopBtn\s*\{[\s\S]*visibility: hidden !important;/);
 });
 
+test('ai image workbench locks page scroll while the modal is open', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(source, /let bodyScrollLockState = null/);
+    assert.match(source, /function getCurrentWindowScroll\(\)/);
+    assert.match(source, /function lockWorkbenchPageScroll\(\)/);
+    assert.match(source, /body\.style\.position = 'fixed'/);
+    assert.match(source, /body\.style\.top = `-\$\{scroll\.y\}px`/);
+    assert.match(source, /function unlockWorkbenchPageScroll\(\)/);
+    assert.match(source, /global\.scrollTo\?\.\(lock\.x, lock\.y\)/);
+    assert.match(source, /if \(open\) \{\s*lockWorkbenchPageScroll\(\);\s*\} else \{\s*unlockWorkbenchPageScroll\(\);/);
+    assert.match(cssSource, /\.ai-image-overlay\s*\{[\s\S]*overscroll-behavior: contain;/);
+});
+
 test('ai image result cards always render compressed preview instead of original source', () => {
     assert.match(source, /const previewSrc = isVideo \? entry\.src : getStableImageUrl\(imageIdentityKey, entry\.src\)/);
     assert.match(source, /<img src="\$\{escapeHtml\(previewSrc\)\}" alt="生成结果 \$\{index \+ 1\}" loading="\$\{escapeHtml\(imageLoading\)\}" fetchpriority="\$\{escapeHtml\(imageFetchPriority\)\}" decoding="async">/);

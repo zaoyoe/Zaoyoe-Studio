@@ -400,9 +400,7 @@ function getPromptModalImageUrl(url) {
 }
 
 function getPromptModalThumbnailUrl(value) {
-    return getOptimizedImageUrl(value, { variant: 'thumb' })
-        || getOptimizedImageUrl(value, { variant: 'card' })
-        || getPromptModalImageUrl(value);
+    return getPromptModalImageUrl(value);
 }
 
 function getPromptModalImageEntries(item = {}) {
@@ -5276,6 +5274,7 @@ function movePromptAreaToDetailColumn() {
     }
 
     promptArea.classList.remove('docked');
+    syncModalImageThumbnailPlacement();
     setPromptsCssVars(promptArea, {
         animation: null,
         transition: null,
@@ -5302,6 +5301,7 @@ function dockPromptAreaWithoutAnimation() {
     });
     dockTarget.appendChild(promptArea);
     promptArea.classList.add('docked');
+    scheduleModalImageThumbnailPlacementSync();
 }
 
 function animatePromptAreaToDock() {
@@ -5312,6 +5312,7 @@ function animatePromptAreaToDock() {
     const first = promptArea.getBoundingClientRect();
     dockTarget.appendChild(promptArea);
     promptArea.classList.add('docked');
+    scheduleModalImageThumbnailPlacementSync();
 
     const last = promptArea.getBoundingClientRect();
     const dx = first.left - last.left;
@@ -5337,6 +5338,7 @@ function animatePromptAreaToDock() {
                 transition: null
             });
             if (img) img.classList.remove('blur-motion');
+            scheduleModalImageThumbnailPlacementSync();
         }, 500);
     });
 }
@@ -5346,6 +5348,7 @@ function animatePromptAreaFromDock() {
     if (!promptArea) return;
 
     promptArea.classList.remove('docked');
+    syncModalImageThumbnailPlacement();
     movePromptAreaToDetailColumn();
 
     promptArea.classList.remove('returning');
@@ -5375,6 +5378,7 @@ function clearPromptDetailSideMode({ resetButtons = true, resetClasses = true, r
         const modalInner = document.querySelector('#promptModal .modal-inner');
         clearPromptCommentModeReturnState(modalInner);
         modalInner?.classList.remove('comment-mode', 'related-mode', 'related-mode-entering');
+        syncModalImageThumbnailPlacement();
     }
     if (resetButtons) {
         resetPromptDetailSideModeButtons();
@@ -8310,6 +8314,7 @@ function openPromptDetailSideMode(mode) {
     isRelatedMode = normalizedMode === 'related';
     modalInner?.classList.add('comment-mode');
     modalInner?.classList.toggle('related-mode', isRelatedMode);
+    scheduleModalImageThumbnailPlacementSync();
     setPromptCommentTriggerActive(isCommentMode);
     setPromptRelatedTriggerActive(isRelatedMode);
     updateCommentSectionHeading();
@@ -11722,12 +11727,42 @@ function syncModalImageThumbnailActiveState(thumbs = document.getElementById('mo
     });
 }
 
+function syncModalImageThumbnailPlacement() {
+    const imageCol = document.querySelector('#promptModal .modal-image-col');
+    const modalInner = document.querySelector('#promptModal .modal-inner');
+    if (!imageCol) return;
+
+    const promptArea = document.getElementById('promptArea');
+    const shouldLiftAboveDockedPrompt = Boolean(
+        modalInner?.classList.contains('related-mode')
+        && promptArea?.classList.contains('docked')
+        && promptArea.parentElement?.id === 'promptDockTarget'
+    );
+
+    if (!shouldLiftAboveDockedPrompt) {
+        imageCol.style.removeProperty('--modal-img-thumbs-related-bottom');
+        return;
+    }
+
+    const promptHeight = Math.ceil(promptArea.getBoundingClientRect().height || promptArea.offsetHeight || 0);
+    const dockBottom = 16;
+    const visualGap = 14;
+    imageCol.style.setProperty('--modal-img-thumbs-related-bottom', `${Math.max(140, promptHeight + dockBottom + visualGap)}px`);
+}
+
+function scheduleModalImageThumbnailPlacementSync() {
+    requestAnimationFrame(() => {
+        syncModalImageThumbnailPlacement();
+    });
+}
+
 function renderModalImageThumbnails() {
     const thumbs = document.getElementById('modalImgThumbnails');
     if (!thumbs) return;
 
     const hasMultipleImages = currentModalImages.length > 1;
     thumbs.classList.toggle('is-visible', hasMultipleImages);
+    scheduleModalImageThumbnailPlacementSync();
 
     if (!hasMultipleImages) {
         thumbs.innerHTML = '';
@@ -11739,6 +11774,7 @@ function renderModalImageThumbnails() {
     const renderKey = getModalImageThumbnailRenderKey();
     if (renderKey === currentModalThumbRenderKey) {
         syncModalImageThumbnailActiveState(thumbs);
+        scheduleModalImageThumbnailPlacementSync();
         return;
     }
 
@@ -11772,6 +11808,7 @@ function renderModalImageThumbnails() {
     currentModalThumbRenderKey = renderKey;
     syncModalImageThumbnailActiveState(thumbs);
     scheduleModalImageThumbnailWarmup();
+    scheduleModalImageThumbnailPlacementSync();
 }
 
 function syncModalImageNavigationState() {

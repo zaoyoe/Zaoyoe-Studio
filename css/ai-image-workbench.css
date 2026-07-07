@@ -1347,6 +1347,7 @@ body.chat-widget-open .ai-image-dock {
     background: var(--app-modal-backdrop, rgba(24, 32, 43, 0.42));
     backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(112%));
     -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(112%));
+    overscroll-behavior: contain;
     pointer-events: auto;
 }
 

@@ -389,6 +389,7 @@
     let mobileWorkbenchLayoutHeight = 0;
     let mobileViewportSyncFrame = 0;
     let mobileComposerFocusLock = null;
+    let bodyScrollLockState = null;
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
     const busyClientTaskRecoveryAt = new Map();
@@ -5095,10 +5096,62 @@
         return `${day} ${time}`;
     }
 
+    function getCurrentWindowScroll() {
+        const doc = document.documentElement;
+        const body = document.body;
+        return {
+            x: Number(global.scrollX || global.pageXOffset || doc?.scrollLeft || body?.scrollLeft || 0) || 0,
+            y: Number(global.scrollY || global.pageYOffset || doc?.scrollTop || body?.scrollTop || 0) || 0
+        };
+    }
+
+    function lockWorkbenchPageScroll() {
+        const body = document.body;
+        if (!body || bodyScrollLockState) return;
+        const scroll = getCurrentWindowScroll();
+        bodyScrollLockState = {
+            x: scroll.x,
+            y: scroll.y,
+            style: {
+                position: body.style.position,
+                top: body.style.top,
+                left: body.style.left,
+                right: body.style.right,
+                width: body.style.width,
+                overflow: body.style.overflow
+            }
+        };
+        body.style.position = 'fixed';
+        body.style.top = `-${scroll.y}px`;
+        body.style.left = scroll.x ? `-${scroll.x}px` : '0';
+        body.style.right = '0';
+        body.style.width = '100%';
+        body.style.overflow = 'hidden';
+    }
+
+    function unlockWorkbenchPageScroll() {
+        const lock = bodyScrollLockState;
+        bodyScrollLockState = null;
+        if (!lock) return;
+        const body = document.body;
+        if (body) {
+            body.style.position = lock.style.position;
+            body.style.top = lock.style.top;
+            body.style.left = lock.style.left;
+            body.style.right = lock.style.right;
+            body.style.width = lock.style.width;
+            body.style.overflow = lock.style.overflow;
+        }
+        global.scrollTo?.(lock.x, lock.y);
+    }
+
     function setBodyOpenState(open) {
         document.documentElement.classList.toggle('ai-image-workbench-open', open);
         document.body?.classList.toggle('ai-image-workbench-open', open);
-        if (!open) {
+        if (open) {
+            lockWorkbenchPageScroll();
+        } else {
+            unlockWorkbenchPageScroll();
             setBodyImagePreviewState(false);
         }
         if (nativeToggle && nativeToggle.checked !== open) {

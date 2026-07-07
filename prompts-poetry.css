@@ -3647,11 +3647,31 @@ body.modal-open .prompt-card {
 }
 
 .modal-img-thumb-btn {
+    position: relative;
+    flex: 0 0 auto;
+    width: 58px;
+    height: 72px;
     border: 0;
+    border-radius: 12px;
     padding: 0;
+    overflow: hidden;
     background: transparent;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+}
+
+.modal-img-thumb-btn > img {
+    position: static;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    display: block;
+    object-fit: cover;
+    opacity: 1;
+    filter: none;
+    transform: none;
 }
 
 @media (min-width: 769px) and (hover: hover) and (pointer: fine) {
@@ -3693,11 +3713,18 @@ body.modal-open .prompt-card {
         scrollbar-width: none;
     }
 
+    .modal-inner.related-mode .modal-img-thumbs.is-visible {
+        bottom: var(--modal-img-thumbs-related-bottom, 188px);
+        max-width: min(340px, calc(100% - 48px));
+    }
+
     .modal-img-thumbs.is-visible::-webkit-scrollbar {
         display: none;
     }
 
-    .modal-image-col:hover .modal-img-thumbs.is-visible {
+    .modal-image-col:has(> img:hover) .modal-img-thumbs.is-visible,
+    .modal-img-thumbs.is-visible:hover,
+    .modal-img-thumbs.is-visible:focus-within {
         opacity: 1;
         visibility: visible;
         pointer-events: auto;
@@ -3729,8 +3756,9 @@ body.modal-open .prompt-card {
         transform: translateY(-2px);
     }
 
-    .modal-img-thumb-btn img {
+    .modal-img-thumb-btn > img {
         position: static;
+        inset: auto;
         width: 100%;
         height: 100%;
         max-width: none;
@@ -3744,10 +3772,37 @@ body.modal-open .prompt-card {
         will-change: transform;
     }
 
-    .modal-img-thumb-btn:hover img,
-    .modal-img-thumb-btn:focus-visible img {
+    .modal-img-thumb-btn:hover > img,
+    .modal-img-thumb-btn:focus-visible > img {
         transform: scale(1.05);
     }
+}
+
+.modal-image-col .modal-img-thumbs .modal-img-thumb-btn > img,
+.modal-inner.related-mode .modal-image-col .modal-img-thumbs .modal-img-thumb-btn > img,
+html[data-theme="light"] .modal-inner.related-mode .modal-image-col .modal-img-thumbs .modal-img-thumb-btn > img,
+html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-img-thumbs .modal-img-thumb-btn > img {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    display: block;
+    object-fit: cover !important;
+    object-position: center !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transform: var(--modal-img-thumb-transform, none) !important;
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+
+.modal-image-col .modal-img-thumbs .modal-img-thumb-btn:hover > img,
+.modal-image-col .modal-img-thumbs .modal-img-thumb-btn:focus-visible > img {
+    --modal-img-thumb-transform: scale(1.05);
 }
 
 .modal-content-col {
@@ -6517,9 +6572,9 @@ body.modal-open .prompt-card {
         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.11);
     }
 
-    .modal-inner.related-mode .modal-image-col img,
-    html[data-theme="light"] .modal-inner.related-mode .modal-image-col img,
-    html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col img {
+    .modal-inner.related-mode .modal-image-col > img,
+    html[data-theme="light"] .modal-inner.related-mode .modal-image-col > img,
+    html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col > img {
         filter: none;
         opacity: 0.74;
         transition: opacity 0.24s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
