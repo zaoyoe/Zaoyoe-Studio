@@ -25,6 +25,7 @@
     const WORKBENCH_NARROW_QUERY = '(max-width: 1120px)';
     const CHAT_NAVIGATION_MIN_ITEMS = 2;
     const CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX = 96;
+    const MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX = 12;
     const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
     const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
     const MAX_LOCAL_TASKS = 40;
@@ -5186,6 +5187,7 @@
         root.style.removeProperty('--aiw-mobile-keyboard-offset');
         root.style.removeProperty('--aiw-mobile-composer-lift');
         root.style.removeProperty('--aiw-mobile-composer-top');
+        root.style.removeProperty('--aiw-mobile-history-panel-max-height');
     }
 
     function getMobileViewportSnapshot() {
@@ -8275,6 +8277,7 @@
         if (!shell || !composer) return;
         if (!isMobileWorkbenchViewport() || !state.open) {
             shell.style.removeProperty('--aiw-mobile-composer-top');
+            shell.style.removeProperty('--aiw-mobile-history-panel-max-height');
             resetMobileViewportVars();
             return;
         }
@@ -8303,15 +8306,21 @@
             const nextComposerRect = composer.getBoundingClientRect?.();
             if (!nextShellRect || !nextComposerRect) return;
             const nextComposerTop = Math.max(12, Math.round(nextComposerRect.top - nextShellRect.top));
+            const nextHistoryPanelMaxHeight = Math.max(60, nextComposerTop - MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX);
             root?.style?.setProperty('--aiw-mobile-composer-top', `${nextComposerTop}px`);
             shell.style.setProperty('--aiw-mobile-composer-top', `${nextComposerTop}px`);
+            root?.style?.setProperty('--aiw-mobile-history-panel-max-height', `${nextHistoryPanelMaxHeight}px`);
+            shell.style.setProperty('--aiw-mobile-history-panel-max-height', `${nextHistoryPanelMaxHeight}px`);
         };
         const shellRect = shell.getBoundingClientRect?.();
         const composerRect = composer.getBoundingClientRect?.();
         if (!shellRect || !composerRect) return;
         const composerTop = Math.max(12, Math.round(composerRect.top - shellRect.top));
+        const historyPanelMaxHeight = Math.max(60, composerTop - MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX);
         root?.style?.setProperty('--aiw-mobile-composer-top', `${composerTop}px`);
         shell.style.setProperty('--aiw-mobile-composer-top', `${composerTop}px`);
+        root?.style?.setProperty('--aiw-mobile-history-panel-max-height', `${historyPanelMaxHeight}px`);
+        shell.style.setProperty('--aiw-mobile-history-panel-max-height', `${historyPanelMaxHeight}px`);
         global.requestAnimationFrame?.(setComposerTopVar);
         global.setTimeout?.(setComposerTopVar, 220);
     }

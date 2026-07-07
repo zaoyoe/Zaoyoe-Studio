@@ -133,12 +133,23 @@ function extractFunction(source, functionName) {
 test('prompts gallery first paint uses summary data and lazy prompt details', () => {
     const promptsSource = readRepoFile('prompts-poetry.js');
     const summarySource = readRepoFile('js/prompts-summary-data.js');
+    const promptDataSource = readRepoFile('prompts-data.js');
     const promptsHtml = readRepoFile('prompts.html');
 
     assert.equal(
-        promptsSource.includes("const STATIC_PROMPTS_SUMMARY_SRC = 'js/prompts-summary-data.js?v=20260501_PROMPTS_SUMMARY_DATA_1';"),
+        promptsSource.includes('STATIC_PROMPTS_SUMMARY_SRC'),
+        false,
+        'prompts runtime should not load static summary snapshots as gallery fallback data'
+    );
+    assert.equal(
+        promptsSource.includes('loadStaticPromptFallbackData'),
+        false,
+        'prompts runtime should not hydrate the gallery from stale static prompt snapshots'
+    );
+    assert.equal(
+        promptsSource.includes('keeping prompt gallery loading instead of showing static snapshots'),
         true,
-        'prompts runtime should load the lightweight static summary fallback'
+        'slow Supabase loads should keep skeletons instead of showing deleted static cards'
     );
     assert.equal(
         promptsSource.includes("const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=20260302_G_AUTH';"),
@@ -284,6 +295,16 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         summarySource.includes('window.__PROMPTS_SUMMARY__ = prompts;'),
         true,
         'summary data should expose the lightweight prompt summary array'
+    );
+    assert.equal(
+        summarySource.includes('window.PROMPTS = prompts'),
+        false,
+        'summary data should not seed the live prompt gallery with stale snapshots'
+    );
+    assert.equal(
+        promptDataSource.includes('window.PROMPTS = window.__STATIC_PROMPTS__'),
+        false,
+        'detail fallback data should not seed the live prompt gallery with stale snapshots'
     );
     assert.equal(
         summarySource.includes('"prompt":'),

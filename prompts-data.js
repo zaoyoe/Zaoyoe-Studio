@@ -2571,6 +2571,3 @@ window.__STATIC_PROMPTS__ = [
 ];
 
 window.__STATIC_PROMPTS_READY__ = true;
-if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
-    window.PROMPTS = window.__STATIC_PROMPTS__;
-}
