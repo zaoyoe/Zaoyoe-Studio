@@ -27,9 +27,9 @@
     --chat-panel-border: rgba(255, 255, 255, 0.12);
     --chat-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     --chat-frost-border: rgba(255, 255, 255, 0.12);
-    --chat-input-bg: rgba(0, 0, 0, 0.2);
-    --chat-input-bg-focus: rgba(0, 0, 0, 0.4);
-    --chat-input-border: rgba(255, 255, 255, 0.1);
+    --chat-input-bg: rgba(31, 31, 31, 0.94);
+    --chat-input-bg-focus: rgba(42, 42, 42, 0.98);
+    --chat-input-border: rgba(255, 255, 255, 0.12);
     --chat-accent-blue: #6b9ece;
     --chat-accent-blue-soft: rgba(107, 158, 206, 0.14);
     --chat-avatar-bg: rgba(255, 255, 255, 0.1);
@@ -2977,7 +2977,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     }
 }
 
-/* 20260609_CHAT_ADMIN_SEARCH_ZOOM_1 */
+/* 20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1 */
 @media (max-width: 1180px) and (hover: hover) and (pointer: fine) {
     body.shop-page .chat-widget-fab,
     body.shop-page .chat-widget-fab:hover,

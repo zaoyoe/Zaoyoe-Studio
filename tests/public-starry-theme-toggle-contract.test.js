@@ -55,3 +55,24 @@ test('shared theme toggle wakes dark-mode starry sky on prompts and shop pages',
         );
     }
 });
+
+test('prompts auth sheet does not paint dark chrome shields behind the login modal', () => {
+    const promptsCss = readRepoFile('prompts-poetry.css');
+    const promptsHtml = readRepoFile('prompts.html');
+
+    assert.match(
+        promptsCss,
+        /html\[data-theme="dark"\] body\.prompts-page\.auth-sheet-open::before,\s*\nhtml\[data-theme="dark"\] body\.prompts-page\.auth-sheet-open::after \{\s*\n\s*content:\s*none !important;\s*\n\s*display:\s*none !important;/,
+        'dark prompts auth sheet should not create top or bottom black pseudo-element shields behind the login modal'
+    );
+    assert.doesNotMatch(
+        promptsCss,
+        /body\.prompts-page\.auth-sheet-open::after \{[\s\S]*?background:\s*linear-gradient\([^}]*#000000/,
+        'dark prompts auth sheet should not paint a black bottom rectangle while the login sheet opens'
+    );
+    assert.equal(
+        promptsHtml.includes('authSheetChrome=20260707_PROMPT_AUTH_SHEET_NO_CHROME_SHIELD_1'),
+        true,
+        'prompts.html should cache-bust the prompt auth sheet chrome shield fix'
+    );
+});

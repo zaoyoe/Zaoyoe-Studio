@@ -488,7 +488,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1')) {
+        if (!source.includes('css/chat-widget.css?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -518,7 +518,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260609_CHAT_ADMIN_SEARCH_ZOOM_1';",
+        "const VERSION = '20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -547,7 +547,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -994,9 +994,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';",
+        "const VERSION = '20260707_WALLET_MODAL_DARK_INPUT_GRAY_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1403,7 +1403,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1'),
         true,
         'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
@@ -2103,7 +2103,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1'),
+            source.includes('js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2272,10 +2272,10 @@ test('public auth entry pages defer profile modal runtime through the shared pro
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
-        "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
+        "const VERSION = '20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1';",
+        "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1';",
         "const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
-        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';",
+        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';",
         'function ensureProfileModalStyles() {',
         'return ensureProfileModalStyles().then(() => true);',
         'function ensureProfileModalReady() {',
@@ -2296,8 +2296,8 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 
     assert.equal(verifySource.includes('js/profile-modal-loader.js'), true, 'verify.html should load the shared profile modal bootstrap');
     assert.equal(indexSource.includes('js/profile-modal-loader.js'), true, 'index.html should load the shared profile modal bootstrap');
-    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'), true, 'index.html should load the latest profile modal bootstrap version');
-    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'), true, 'verify.html should load the latest profile modal bootstrap version');
+    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1'), true, 'index.html should load the latest profile modal bootstrap version');
+    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1'), true, 'verify.html should load the latest profile modal bootstrap version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
@@ -2416,7 +2416,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
     }
 });
 
-test('login auth sheet uses natural height while preserving smooth resize transitions between login and register', () => {
+test('login auth sheet preserves smooth resize transitions between auth views', () => {
     const injectSource = readRepoFile('inject-auth.js');
     const authSheetStyles = readRepoFile('css/auth-sheet.css');
 
@@ -4876,6 +4876,8 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         'html[data-theme="light"] body.guestbook-page .comment-item--nested.comment-item--clickable:hover > .comment-row',
         'html[data-theme="light"] #guestbookModal .guestbook-composer-sheet',
         'html[data-theme="light"] #commentModal .comment-composer-sheet',
+        'width: 95vw !important;',
+        'max-width: 1000px !important;',
         '.message-item .action-btn.is-processing',
         '.message-item .action-btn i.like-icon-bounce'
     ];
@@ -4885,7 +4887,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260512_GUESTBOOK_COMMENT_EXPAND_ANIM_1'),
+        guestbookHtml.includes('style.css?v=20260707_GUESTBOOK_COMPOSER_WIDTH_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -5042,6 +5044,8 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         '--guestbook-modal-viewport-top: 0px;',
         'top: var(--guestbook-modal-viewport-top) !important;',
         'width: var(--guestbook-modal-viewport-width) !important;',
+        'width: 95vw !important;',
+        'max-width: 1000px !important;',
         '#guestbookModal.guestbook-modal-interactive',
         '.guestbook-modal-viewport-probe',
         'height: var(--guestbook-modal-card-height, 420px);',
@@ -5055,7 +5059,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     }
 
     assert.equal(
-        indexSource.includes('css/homepage-overlays.css?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1'),
+        indexSource.includes('css/homepage-overlays.css?v=20260707_HOME_GUESTBOOK_COMPOSER_WIDTH_1'),
         true,
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
@@ -5065,7 +5069,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook intent loader version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260512_GUESTBOOK_COMMENT_EXPAND_ANIM_1'),
+        guestbookHtml.includes('style.css?v=20260707_GUESTBOOK_COMPOSER_WIDTH_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -14508,14 +14512,34 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'function refreshPromptsTextareaCaret(input) {',
         'function stabilizePromptModalCaretDuringMotion(duration = 250) {',
         'function stabilizePromptCommentComposerCaretDuringMotion(duration = 250) {',
+        'function preparePromptCommentComposerForInputFocus() {',
         "activeInner.classList.add('prompt-comment-geometry-locked')",
         "modal.classList.add('prompt-caret-stabilizing')",
         "overlay.classList.add('composer-caret-stabilizing')",
+        "overlay.classList.toggle('keyboard-settling', Boolean(active));",
         'let promptCommentComposerScrollLockMode = null;',
+        'let promptCommentComposerKeyboardSettleTimer = null;',
+        'let promptCommentComposerKeyboardSettlingUntil = 0;',
         'const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;',
+        'const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 520;',
+        'const PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS = 260;',
+        'const PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS = 160;',
+        'function isPromptCommentComposerKeyboardSettling() {',
+        'function resetPromptCommentComposerKeyboardCycle() {',
+        'function schedulePromptCommentComposerKeyboardCycleReset(delay = PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS) {',
         'function getPromptCommentComposerStableViewportHeight() {',
-        "window.iOSScrollLock.lockLight(sheet, { restoreScrollDuringViewport: true });",
+        'function getPromptCommentComposerNativeViewportFrame() {',
+        'function freezePromptCommentComposerUnderlay() {',
+        'function restorePromptCommentComposerUnderlay() {',
+        'function capturePromptCommentComposerOverlayFrame(force = false) {',
+        "window.iOSScrollLock.lockLight(overlay, { restoreScrollDuringViewport: false });",
         "window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: true });",
+        "'--prompt-comment-composer-overlay-height': `${overlayHeight}px`",
+        'const shouldPreserveKeyboardBase = isActive && baseHeight > 0;',
+        "document.body.classList.add('prompt-comment-composer-underlay-frozen');",
+        'capturePromptCommentComposerViewportBase();',
+        "overlay.classList.add('ios-focus-lock');",
+        'detachPromptModalKeyboardDock();',
         'const targetBottom = Math.max(40, Math.round(keyboardTop - keyboardClearance));',
         'const zeroBottom = Math.round(overlayTop + (sheet.offsetTop || 0) + dockHeight);',
         'const deltaY = Math.max(-520, Math.min(520, Math.round(targetBottom - zeroBottom)));',
@@ -14566,8 +14590,14 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompt-status-bar-shield.prompt-status-bar-shield--visible',
         '.prompt-comment-composer.keyboard-docked-active.active .prompt-comment-composer-sheet',
         '.prompt-comment-composer-sheet.composer-animating',
+        '--prompt-comment-composer-overlay-height: 100dvh;',
+        'top: var(--prompt-comment-composer-viewport-top) !important;',
+        'body.prompt-comment-composer-underlay-frozen #promptModal',
+        '.prompt-comment-composer.ios-focus-lock .prompt-comment-composer-sheet',
         '.poetry-modal.prompt-caret-stabilizing #commentInput',
         '.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput',
+        '.prompt-comment-composer.keyboard-settling #promptCommentComposerInput',
+        'width: 95vw;',
         '.prompts-caret-repaint',
         '.prompts-theme-particle--spark',
         '.prompts-theme-particle--rain',
@@ -14603,6 +14633,11 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
+        promptsHtml.includes('commentComposerViewport=20260707_PROMPT_COMMENT_COMPOSER_WIDTH_1'),
+        true,
+        'prompts.html should cache-bust the prompt comment composer mobile width styles'
+    );
+    assert.equal(
         promptsHtml.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
         true,
         'prompts.html should load the shared user event tracker'
@@ -14611,6 +14646,11 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         promptsHtml.includes('prompts-poetry.js?v=20260507_REPLY_REALTIME_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
+    );
+    assert.equal(
+        promptsHtml.includes('commentComposerFocus=20260707_PROMPT_COMMENT_COMPOSER_FOCUS_LOCK_1'),
+        true,
+        'prompts.html should cache-bust the prompt comment composer keyboard-cycle reset fix'
     );
     assert.equal(
         promptsHtml.includes('data-load-announcement="1"'),
@@ -14751,7 +14791,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260608_ORDER_GUIDANCE_COPY_3'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -17891,12 +17931,12 @@ test('public modal backdrops route through the shared app modal material tokens'
     }
 
     assert.equal(
-        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
+        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1'),
         true,
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

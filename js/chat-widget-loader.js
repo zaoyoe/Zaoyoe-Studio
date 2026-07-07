@@ -6,11 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260609_CHAT_ADMIN_SEARCH_ZOOM_1';
+    const VERSION = '20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -555,7 +555,7 @@ body.chat-widget-bootstrap-scroll-locked {
     }
 }
 
-/* 20260609_CHAT_ADMIN_SEARCH_ZOOM_1 */
+/* 20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1 */
 @media (max-width: 1180px) and (hover: hover) and (pointer: fine) {
     body.shop-page .chat-widget-fab,
     body.shop-page .chat-widget-fab:hover,
@@ -1034,8 +1034,8 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     flex: 1 1 auto;
     min-width: 0;
     border-radius: 20px;
-    border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.1));
-    background: var(--chat-input-bg, rgba(0, 0, 0, 0.2));
+    border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.12));
+    background: var(--chat-input-bg, rgba(31, 31, 31, 0.94));
     color: var(--chat-text, rgba(255, 255, 255, 0.96));
     padding: 10px 15px;
     font-size: 14px;

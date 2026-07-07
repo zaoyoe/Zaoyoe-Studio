@@ -20,7 +20,9 @@ test('prompts mobile cards open detail on first tap while desktop keeps hover af
         'isPromptCardInteractiveTarget(event.target)',
         'suppressPromptCardFollowupClick(card);',
         'openPromptModal(promptId);',
-        'bindPromptCardActivation(card, item.id);'
+        'const promptOpenId = getPromptStableOpenId(item);',
+        'card.dataset.promptId = promptOpenId;',
+        'bindPromptCardActivation(card, promptOpenId);'
     ].forEach((marker) => {
         assert.equal(promptsSource.includes(marker), true, `prompts-poetry.js should include ${marker}`);
     });

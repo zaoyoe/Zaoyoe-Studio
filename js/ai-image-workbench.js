@@ -395,6 +395,7 @@
     let mobilePromptTouchScrollState = null;
     let mobileWorkbenchTouchGuardState = null;
     let bodyScrollLockState = null;
+    let viewportScaleLockState = null;
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
     const busyClientTaskRecoveryAt = new Map();
@@ -5110,6 +5111,62 @@
         };
     }
 
+    function buildWorkbenchNoScaleViewportContent(content = '') {
+        const existingParts = String(content || '')
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean);
+        const lockedParts = [];
+        existingParts.forEach((part) => {
+            const key = String(part.split('=')[0] || '').trim().toLowerCase();
+            if (!key || key === 'maximum-scale' || key === 'user-scalable') return;
+            lockedParts.push(part);
+        });
+        if (!lockedParts.some((part) => /^width\s*=/i.test(part))) {
+            lockedParts.unshift('width=device-width');
+        }
+        if (!lockedParts.some((part) => /^initial-scale\s*=/i.test(part))) {
+            lockedParts.push('initial-scale=1.0');
+        }
+        lockedParts.push('maximum-scale=1', 'user-scalable=no');
+        return lockedParts.join(', ');
+    }
+
+    function lockWorkbenchViewportScale() {
+        if (viewportScaleLockState || !isMobileWorkbenchViewport()) return;
+        let meta = document.querySelector('meta[name="viewport"]');
+        let created = false;
+        if (!meta && document.head) {
+            meta = document.createElement('meta');
+            meta.setAttribute('name', 'viewport');
+            document.head.appendChild(meta);
+            created = true;
+        }
+        if (!meta) return;
+        const content = meta.getAttribute('content') || '';
+        viewportScaleLockState = { meta, content, created };
+        meta.setAttribute('content', buildWorkbenchNoScaleViewportContent(content));
+    }
+
+    function unlockWorkbenchViewportScale() {
+        const lock = viewportScaleLockState;
+        viewportScaleLockState = null;
+        if (!lock?.meta) return;
+        if (lock.created && lock.meta.parentNode) {
+            lock.meta.remove();
+            return;
+        }
+        lock.meta.setAttribute('content', lock.content || '');
+    }
+
+    function syncWorkbenchViewportScaleLock() {
+        if (state.open && isMobileWorkbenchViewport()) {
+            lockWorkbenchViewportScale();
+        } else {
+            unlockWorkbenchViewportScale();
+        }
+    }
+
     function lockWorkbenchPageScroll() {
         const body = document.body;
         if (!body || bodyScrollLockState) return;
@@ -5177,7 +5234,9 @@
         document.body?.classList.toggle('ai-image-workbench-open', open);
         if (open) {
             lockWorkbenchPageScroll();
+            syncWorkbenchViewportScaleLock();
         } else {
+            syncWorkbenchViewportScaleLock();
             unlockWorkbenchPageScroll();
             setBodyImagePreviewState(false);
         }
@@ -5244,6 +5303,7 @@
     }
 
     function scheduleMobileViewportSync() {
+        syncWorkbenchViewportScaleLock();
         if (mobileViewportSyncFrame) return;
         const sync = () => {
             mobileViewportSyncFrame = 0;
@@ -5489,6 +5549,8 @@
         root.addEventListener('touchmove', handleRootTouchMove, { passive: false });
         root.addEventListener('touchend', handleRootTouchEnd, { passive: false });
         root.addEventListener('touchcancel', handleRootTouchEnd, { passive: true });
+        root.addEventListener('touchstart', handleWorkbenchViewportGesture, { passive: false });
+        root.addEventListener('touchmove', handleWorkbenchViewportGesture, { passive: false });
         root.addEventListener('wheel', handleRootWheel, { passive: false });
         root.addEventListener('input', handleRootInput);
         root.addEventListener('change', handleRootChange);
@@ -5510,8 +5572,22 @@
         }, { passive: true });
         global.visualViewport?.addEventListener?.('resize', scheduleMobileViewportSync, { passive: true });
         global.visualViewport?.addEventListener?.('scroll', scheduleMobileViewportSync, { passive: true });
+        document.addEventListener('touchstart', handleWorkbenchViewportGesture, { passive: false });
+        document.addEventListener('touchmove', handleWorkbenchViewportGesture, { passive: false });
+        global.addEventListener?.('gesturestart', handleWorkbenchViewportGesture, { passive: false });
+        global.addEventListener?.('gesturechange', handleWorkbenchViewportGesture, { passive: false });
+        global.addEventListener?.('gestureend', handleWorkbenchViewportGesture, { passive: false });
 
         document.body.classList.add('ai-image-workbench-ready');
+    }
+
+    function handleWorkbenchViewportGesture(event) {
+        if (!state.open || !isMobileWorkbenchViewport()) return;
+        const eventType = String(event?.type || '');
+        const isGestureEvent = /^gesture/i.test(eventType);
+        const touchCount = Number(event?.touches?.length || 0);
+        if (!isGestureEvent && touchCount < 2) return;
+        event.preventDefault?.();
     }
 
     function getCssPixelValue(value, fallback = 0) {

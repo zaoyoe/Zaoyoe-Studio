@@ -10147,11 +10147,15 @@ class ChatWidget {
                 width: 100%;
                 padding: 8px 12px;
                 border-radius: 10px;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.12));
+                background: var(--chat-input-bg, rgba(31, 31, 31, 0.94));
                 color: white;
                 font-size: 13px;
                 box-sizing: border-box;
+            }
+            .chat-window.admin-mode-layout .chat-input {
+                background: var(--chat-input-bg, rgba(31, 31, 31, 0.94)) !important;
+                border-color: var(--chat-input-border, rgba(255, 255, 255, 0.12)) !important;
             }
             .chat-window.admin-mode-layout .admin-search input:focus,
             .chat-window.admin-mode-layout .admin-search input:focus-visible,
@@ -10159,7 +10163,7 @@ class ChatWidget {
             .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus-visible {
                 outline: none;
                 border-color: #6b9ece !important;
-                background: rgba(255, 255, 255, 0.042) !important;
+                background: var(--chat-input-bg-focus, rgba(42, 42, 42, 0.98)) !important;
                 box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14) !important;
                 caret-color: #6b9ece !important;
             }
@@ -10168,7 +10172,7 @@ class ChatWidget {
             .admin-mode-layout .chat-input:-webkit-autofill:focus,
             .admin-mode-layout .chat-input:-webkit-autofill:focus-visible {
                 border-color: #6b9ece !important;
-                background: rgba(255, 255, 255, 0.042) !important;
+                background: var(--chat-input-bg-focus, rgba(42, 42, 42, 0.98)) !important;
                 box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14) !important;
                 outline: none !important;
                 caret-color: #6b9ece !important;
@@ -21385,14 +21389,14 @@ class ChatWidget {
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input {
-                background: var(--chat-input-bg, rgba(0, 0, 0, 0.2)) !important;
+                background: var(--chat-input-bg, rgba(31, 31, 31, 0.94)) !important;
                 background-image: none !important;
-                border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.1)) !important;
+                border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.12)) !important;
                 box-shadow: none !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
-                background: var(--chat-input-bg-focus, rgba(0, 0, 0, 0.4)) !important;
+                background: var(--chat-input-bg-focus, rgba(42, 42, 42, 0.98)) !important;
                 border-color: var(--chat-accent-blue, rgba(107, 158, 206, 0.96)) !important;
                 box-shadow: 0 0 0 3px var(--chat-accent-blue-soft, rgba(107, 158, 206, 0.12)) !important;
             }

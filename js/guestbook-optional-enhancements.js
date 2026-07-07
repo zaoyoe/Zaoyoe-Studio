@@ -70,8 +70,8 @@
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1');
-            loadScript('js/components/ChatWidget.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1', initChatWidgetIfReady);
+            loadStylesheet('css/chat-widget.css?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1');
+            loadScript('js/components/ChatWidget.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1', initChatWidgetIfReady);
         }, 2200);
     }
 

@@ -9560,7 +9560,7 @@ body {
     }
 
     #guestbookModal {
-        padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 0 calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
         box-sizing: border-box !important;
         height: var(--guestbook-modal-overlay-height, 100dvh) !important;
         min-height: var(--guestbook-modal-overlay-height, 100dvh) !important;
@@ -9577,8 +9577,8 @@ body {
     #guestbookModal.active .guestbook-composer-sheet,
     #guestbookModal.active:focus-within .guestbook-composer-sheet,
     #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
-        width: calc(100vw - 40px) !important;
-        max-width: 620px !important;
+        width: 95vw !important;
+        max-width: 1000px !important;
         height: var(--guestbook-modal-card-height, min(400px, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)));
         min-height: 300px;
         max-height: var(--guestbook-modal-card-max-height, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));

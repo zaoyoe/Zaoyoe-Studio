@@ -15,9 +15,20 @@ test('shop profile security reuses the homepage light-theme profile modal contra
     const shopSource = readRepoFile('shop.html');
 
     assert.equal(
-        profileModalStyles.includes('20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
+        profileModalStyles.includes('20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1'),
         true,
-        'profile modal stylesheet should carry the shop security light-theme marker'
+        'profile modal stylesheet should carry the dark input gray cache marker'
+    );
+
+    assert.match(
+        profileModalStyles,
+        /#profileModal \.profile-mobile-inline-input,[\s\S]*#profileModal \.security-input\.glass-input \{[\s\S]*border: 1px solid rgba\(255, 255, 255, 0\.12\);[\s\S]*background: rgba\(31, 31, 31, 0\.94\) !important;/s,
+        'dark profile inputs should use the shared gray-black base'
+    );
+    assert.match(
+        profileModalStyles,
+        /#profileModal \.profile-mobile-inline-input:focus,[\s\S]*#profileModal \.security-input\.glass-input:focus \{[\s\S]*background: rgba\(42, 42, 42, 0\.98\) !important;/s,
+        'focused dark profile inputs should stay in the gray family'
     );
 
     for (const selector of [
@@ -55,12 +66,12 @@ test('shop profile security reuses the homepage light-theme profile modal contra
     );
 
     assert.equal(
-        loaderSource.includes('css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
+        loaderSource.includes('css/profile-modal.css?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1'),
         true,
         'profile modal loader should cache-bust the light-theme security stylesheet'
     );
     assert.equal(
-        shopSource.includes('./js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
+        shopSource.includes('./js/profile-modal-loader.js?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1'),
         true,
         'shop.html should load the updated shared profile modal bootstrap'
     );

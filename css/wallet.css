@@ -18,6 +18,9 @@
     --wallet-sheet-link-accent: var(--auth-sheet-link-accent, #9fcaff);
     --wallet-sheet-blue-soft: var(--auth-sheet-blue-soft, rgba(107, 158, 206, 0.12));
     --wallet-sheet-blue-border: var(--auth-sheet-blue-border, rgba(107, 158, 206, 0.34));
+    --wallet-input-bg: rgba(31, 31, 31, 0.94);
+    --wallet-input-bg-focus: rgba(42, 42, 42, 0.98);
+    --wallet-input-border: rgba(255, 255, 255, 0.12);
     --wallet-scrollbar-thumb: var(--auth-sheet-scrollbar-thumb, rgba(139, 184, 232, 0.34));
     --wallet-scrollbar-thumb-hover: var(--auth-sheet-scrollbar-thumb-hover, rgba(159, 202, 255, 0.48));
 }
@@ -644,8 +647,8 @@ body.wallet-modal-lock {
     padding: 8px;
     padding-left: 16px;
     border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(4, 7, 12, 0.54);
+    border: 1px solid var(--wallet-input-border);
+    background: var(--wallet-input-bg);
     position: relative;
     z-index: 1;
 }
@@ -2750,8 +2753,8 @@ body.wallet-modal-lock {
     width: 100%;
     padding: 12px 14px;
     border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--wallet-input-border);
+    background: var(--wallet-input-bg);
     color: #fff;
     font-size: 15px;
     outline: none;
@@ -2760,6 +2763,7 @@ body.wallet-modal-lock {
 
 .custom-recharge-input:focus {
     border-color: rgba(251, 191, 36, 0.5);
+    background: var(--wallet-input-bg-focus);
     box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.12);
 }
 
@@ -3227,8 +3231,8 @@ body.wallet-modal-lock {
 .redeem-input-row input {
     flex: 1;
     padding: 12px 14px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--wallet-input-bg);
+    border: 1px solid var(--wallet-input-border);
     border-radius: 10px;
     color: white;
     font-size: 14px;
@@ -3246,6 +3250,7 @@ body.wallet-modal-lock {
 .redeem-input-row input:focus {
     outline: none;
     border-color: rgba(255, 215, 0, 0.5);
+    background: var(--wallet-input-bg-focus);
 }
 
 .redeem-btn {
@@ -3327,8 +3332,8 @@ body.wallet-modal-lock {
 .afdian-input-row input {
     flex: 1;
     padding: 10px 14px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--wallet-input-bg);
+    border: 1px solid var(--wallet-input-border);
     border-radius: 8px;
     color: white;
     font-size: 13px;
@@ -3337,6 +3342,7 @@ body.wallet-modal-lock {
 .afdian-input-row input:focus {
     outline: none;
     border-color: rgba(255, 107, 129, 0.5);
+    background: var(--wallet-input-bg-focus);
 }
 
 .afdian-query-btn {
@@ -3590,8 +3596,8 @@ body.wallet-modal-lock {
     height: 30px;
     padding: 0 34px 0 32px;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--wallet-input-border);
+    background: var(--wallet-input-bg);
     color: var(--wallet-sheet-text);
     font-size: 12px;
     outline: none;
@@ -3620,7 +3626,7 @@ body.wallet-modal-lock {
 
 .history-search-input:focus {
     border-color: rgba(107, 158, 206, 0.55);
-    background: rgba(255, 255, 255, 0.09);
+    background: var(--wallet-input-bg-focus);
     box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14);
 }
 
@@ -3810,8 +3816,8 @@ body.wallet-modal-lock {
 .date-picker-row input[type="date"] {
     width: 100%;
     padding: 12px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--wallet-input-bg);
+    border: 1px solid var(--wallet-input-border);
     border-radius: 10px;
     color: white;
     font-size: 14px;
@@ -3821,6 +3827,7 @@ body.wallet-modal-lock {
 .date-picker-row input[type="date"]:focus {
     outline: none;
     border-color: rgba(255, 215, 0, 0.5);
+    background: var(--wallet-input-bg-focus);
 }
 
 .date-picker-actions {
@@ -5539,8 +5546,8 @@ body.wallet-modal-lock {
 .wallet-date-input {
     width: 100%;
     padding: 12px 14px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--wallet-input-bg);
+    border: 1px solid var(--wallet-input-border);
     border-radius: 10px;
     color: white;
     font-size: 14px;
