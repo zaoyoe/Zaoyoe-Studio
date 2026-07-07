@@ -22,7 +22,8 @@
     const MAX_CHAT_ATTACHMENT_FILE_BYTES = 8 * 1024 * 1024;
     const CHAT_DOCUMENT_ACCEPT = '.txt,.md,.csv,.json,.html,.htm,.xml,.log,.pdf,text/*,application/pdf,application/json,text/markdown,text/csv,text/html,text/xml';
     const CHAT_ATTACHMENT_ACCEPT = `image/*,${CHAT_DOCUMENT_ACCEPT}`;
-    const CHAT_NAVIGATION_MIN_ITEMS = 3;
+    const WORKBENCH_NARROW_QUERY = '(max-width: 1120px)';
+    const CHAT_NAVIGATION_MIN_ITEMS = 2;
     const CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX = 96;
     const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
     const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
@@ -5165,7 +5166,7 @@
     }
 
     function isMobileWorkbenchViewport() {
-        return Boolean(global.matchMedia?.('(max-width: 820px)')?.matches);
+        return Boolean(global.matchMedia?.(WORKBENCH_NARROW_QUERY)?.matches);
     }
 
     function isMobileKeyboardDevice() {
@@ -5455,6 +5456,7 @@
         root.addEventListener('pointerup', handleRootPointerUp);
         root.addEventListener('pointercancel', handleRootPointerUp);
         root.addEventListener('touchstart', handleRootTouchStart, { passive: false });
+        root.addEventListener('wheel', handleRootWheel, { passive: false });
         root.addEventListener('input', handleRootInput);
         root.addEventListener('change', handleRootChange);
         root.addEventListener('focusin', handleRootFocusIn);
@@ -5554,6 +5556,13 @@
                 previewBytes: normalizeByteCount(composerReferencePreview.getAttribute('data-aiw-preview-bytes')),
                 originalBytes: normalizeByteCount(composerReferencePreview.getAttribute('data-aiw-original-bytes'))
             });
+            return;
+        }
+
+        const historyNavButton = target.closest('[data-aiw-history-nav-id]');
+        if (historyNavButton) {
+            event.preventDefault();
+            scrollToHistoryRow(historyNavButton.getAttribute('data-aiw-history-nav-id') || '');
             return;
         }
 
@@ -5781,7 +5790,7 @@
             const taskId = taskButton.getAttribute('data-aiw-task-id') || '';
             if (historySelectionMode || target.closest('[data-aiw-history-select]')) {
                 toggleHistorySelection(taskId);
-                renderPreservingHistoryScroll(renderHistoryPanelOnly);
+                syncHistorySelectionUi();
                 return;
             }
             state.activeTaskId = taskId;
@@ -5810,6 +5819,11 @@
 
     function handleRootPointerOver(event) {
         const target = event.target instanceof Element ? event.target : null;
+        const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
+        if (historyNavButton) {
+            showHistoryLocatorPreview(historyNavButton);
+            return;
+        }
         const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
         if (!navButton) return;
         showChatNavigationPreview(navButton);
@@ -5817,6 +5831,21 @@
 
     function handleRootPointerOut(event) {
         const target = event.target instanceof Element ? event.target : null;
+        const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
+        if (historyNavButton) {
+            const relatedTarget = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+            if (relatedTarget?.closest?.('[data-aiw-history-locator]') === historyNavButton.closest('[data-aiw-history-locator]')) return;
+            hideHistoryLocatorPreview();
+            return;
+        }
+        const historyLocator = target?.closest?.('[data-aiw-history-locator]');
+        if (historyLocator) {
+            const relatedTarget = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+            if (relatedTarget?.closest?.('[data-aiw-history-locator]') !== historyLocator) {
+                hideHistoryLocatorPreview();
+            }
+            return;
+        }
         const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
         if (!navButton) return;
         const relatedTarget = event.relatedTarget instanceof Element ? event.relatedTarget : null;
@@ -5890,6 +5919,39 @@
         if (nextTaskId && nextTaskId !== dragState.lastTaskId) {
             dragState.lastTaskId = nextTaskId;
             scrollToChatTurn(nextTaskId, { behavior: 'auto' });
+        }
+    }
+
+    function handleRootWheel(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const historyLocator = target?.closest?.('[data-aiw-history-locator]');
+        if (historyLocator) {
+            const track = historyLocator.querySelector('[data-aiw-history-locator-track]');
+            if (!track) return;
+            const delta = Math.abs(event.deltaY || 0) >= Math.abs(event.deltaX || 0)
+                ? event.deltaY
+                : event.deltaX;
+            if (!delta) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (track.scrollWidth > track.clientWidth) {
+                track.scrollLeft += delta;
+            }
+            return;
+        }
+
+        const chatRail = target?.closest?.('[data-aiw-chat-nav-rail]');
+        if (!chatRail || !isMobileWorkbenchViewport()) return;
+        const list = chatRail.querySelector('.ai-image-chat-nav-list');
+        if (!list) return;
+        const delta = Math.abs(event.deltaY || 0) >= Math.abs(event.deltaX || 0)
+            ? event.deltaY
+            : event.deltaX;
+        if (!delta) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (list.scrollWidth > list.clientWidth) {
+            list.scrollLeft += delta;
         }
     }
 
@@ -6345,6 +6407,47 @@
         container.innerHTML = renderHistoryResultsPanel(getHistoryThreadRows());
     }
 
+    function syncHistorySelectionUi() {
+        const sidebar = overlay?.querySelector?.('.ai-image-history-sidebar');
+        if (!sidebar) return;
+        const historyRows = getHistoryThreadRows();
+        const { filteredRows } = getHistorySearchViewState(historyRows);
+        const selectedCount = getSelectedHistoryIds().length;
+        const allSelected = Boolean(filteredRows.length && filteredRows.every((row) => selectedHistoryTaskIds.has(row.id)));
+
+        const summary = sidebar.querySelector('[data-aiw-history-selection-summary]');
+        if (summary) {
+            const busyCount = getBusyTasks().length;
+            const statusText = busyCount ? `${busyCount} 个生成中` : (historyRows.length ? `${historyRows.length} 个对话` : '还没有记录');
+            summary.textContent = historySelectionMode ? `已选择 ${selectedCount} 个` : statusText;
+        }
+
+        sidebar.querySelectorAll('[data-aiw-task-id]').forEach((row) => {
+            const taskId = row.getAttribute('data-aiw-task-id') || '';
+            const selected = selectedHistoryTaskIds.has(taskId);
+            row.classList.toggle('is-selected', selected);
+            const selectButton = row.querySelector('[data-aiw-history-select]');
+            if (selectButton) {
+                const title = row.querySelector('.ai-image-task-copy strong')?.textContent?.trim() || '记录';
+                selectButton.setAttribute('aria-label', `${selected ? '取消选择' : '选择'} ${title}`);
+            }
+        });
+
+        const selectAll = sidebar.querySelector('[data-aiw-action="select-all-history"]');
+        if (selectAll) {
+            const icon = selectAll.querySelector('i');
+            const label = selectAll.querySelector('span');
+            if (icon) icon.className = `fas ${allSelected ? 'fa-square-check' : 'fa-check-double'}`;
+            if (label) label.textContent = allSelected ? '取消全选' : '全选';
+        }
+
+        sidebar.querySelectorAll('[data-aiw-action="pin-history-selection"], [data-aiw-action="unpin-history-selection"], [data-aiw-action="toggle-history-accent-menu"], [data-aiw-action="delete-history-selection"]').forEach((button) => {
+            if (button instanceof HTMLButtonElement) {
+                button.disabled = !selectedCount;
+            }
+        });
+    }
+
     function handleRootInput(event) {
         const target = event.target;
         if (target instanceof HTMLTextAreaElement && target.matches('[data-aiw-prompt]')) {
@@ -6375,6 +6478,11 @@
             global.setTimeout?.(scheduleMobileViewportSync, 80);
             global.setTimeout?.(scheduleMobileViewportSync, 260);
         }
+        const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
+        if (historyNavButton) {
+            showHistoryLocatorPreview(historyNavButton);
+            return;
+        }
         const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
         if (!navButton) return;
         showChatNavigationPreview(navButton);
@@ -6391,6 +6499,15 @@
                     setMobileKeyboardActive(false);
                 }
             }, 180);
+        }
+        const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
+        if (historyNavButton) {
+            window.requestAnimationFrame(() => {
+                const activeElement = document.activeElement instanceof Element ? document.activeElement : null;
+                if (activeElement?.closest?.('[data-aiw-history-nav-id]')) return;
+                hideHistoryLocatorPreview();
+            });
+            return;
         }
         const navButton = target?.closest?.('[data-aiw-chat-nav-id]');
         if (!navButton) return;
@@ -6424,13 +6541,19 @@
                 scrollToChatTurn(chatNavButton.getAttribute('data-aiw-chat-nav-id') || '');
                 return;
             }
+            const historyNavButton = target.closest('[data-aiw-history-nav-id]');
+            if (historyNavButton && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                scrollToHistoryRow(historyNavButton.getAttribute('data-aiw-history-nav-id') || '');
+                return;
+            }
             const taskRow = target.closest('[data-aiw-task-id]');
             if (taskRow && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
                 const taskId = taskRow.getAttribute('data-aiw-task-id') || '';
                 if (historySelectionMode) {
                     toggleHistorySelection(taskId);
-                    renderPreservingHistoryScroll(renderHistoryPanelOnly);
+                    syncHistorySelectionUi();
                     return;
                 }
                 state.activeTaskId = taskId;
@@ -7977,7 +8100,7 @@
 
     function shouldCloseMobileSidebarFromBlankClick(target) {
         if (!sidebarView) return false;
-        if (!window.matchMedia?.('(max-width: 820px)')?.matches) return false;
+        if (!isMobileWorkbenchViewport()) return false;
         if (!(target instanceof Element)) return false;
         if (target.closest('.ai-image-history-rail, .ai-image-history-expanded, [data-aiw-action], [data-aiw-task-id], input, button, a, textarea, select')) return false;
         if (target.closest('.ai-image-main-composer')) return false;
@@ -8298,7 +8421,7 @@
             rail.classList.toggle('is-floating-ready', false);
             return false;
         }
-        if (window.matchMedia?.('(max-width: 820px)')?.matches) {
+        if (isMobileWorkbenchViewport()) {
             shell.style.setProperty('--aiw-chat-nav-avoid-left', '0px');
             shell.style.removeProperty('--aiw-chat-nav-composer-width');
             shell.style.removeProperty('--aiw-chat-nav-composer-margin-left');
@@ -8460,7 +8583,7 @@
         if (stage?.scrollTo && target.getBoundingClientRect && stage.getBoundingClientRect) {
             const stageRect = stage.getBoundingClientRect();
             const targetRect = target.getBoundingClientRect();
-            const mobileOffset = window.matchMedia?.('(max-width: 820px)')?.matches ? 88 : 12;
+            const mobileOffset = isMobileWorkbenchViewport() ? 88 : 12;
             const nextTop = stage.scrollTop + targetRect.top - stageRect.top - mobileOffset;
             const maxTop = Math.max(0, Number(stage.scrollHeight || 0) - Number(stage.clientHeight || 0));
             stage.scrollTo({ top: Math.min(maxTop, Math.max(0, nextTop)), behavior });
@@ -8471,6 +8594,66 @@
         void target.offsetWidth;
         target.classList.add('is-located');
         setActiveChatNavigationItem(normalizedTaskId);
+        return true;
+    }
+
+    function setActiveHistoryLocatorItem(taskId = '') {
+        const normalizedTaskId = String(taskId || '').trim();
+        root?.querySelectorAll?.('[data-aiw-history-nav-id]')?.forEach((button) => {
+            const active = Boolean(normalizedTaskId && button.getAttribute('data-aiw-history-nav-id') === normalizedTaskId);
+            button.classList.toggle('is-active', active);
+        });
+    }
+
+    function showHistoryLocatorPreview(button) {
+        const locator = button?.closest?.('[data-aiw-history-locator]');
+        const preview = locator?.querySelector?.('[data-aiw-history-locator-preview]');
+        if (!preview) return;
+        const title = button.getAttribute('data-aiw-history-nav-title') || '';
+        const meta = button.getAttribute('data-aiw-history-nav-meta') || '';
+        const titleNode = preview.querySelector('[data-aiw-history-locator-title]');
+        const metaNode = preview.querySelector('[data-aiw-history-locator-meta]');
+        if (titleNode) titleNode.textContent = title;
+        if (metaNode) metaNode.textContent = meta;
+        locator.querySelectorAll('[data-aiw-history-nav-id]').forEach((item) => {
+            item.classList.toggle('is-previewing', item === button);
+        });
+        preview.setAttribute('aria-hidden', 'false');
+        preview.classList.add('is-visible');
+    }
+
+    function hideHistoryLocatorPreview() {
+        const locator = overlay?.querySelector?.('[data-aiw-history-locator]');
+        const preview = locator?.querySelector?.('[data-aiw-history-locator-preview]');
+        locator?.querySelectorAll?.('[data-aiw-history-nav-id]')?.forEach((item) => item.classList.remove('is-previewing'));
+        if (!preview) return;
+        preview.classList.remove('is-visible');
+        preview.setAttribute('aria-hidden', 'true');
+    }
+
+    function scrollToHistoryRow(taskId = '') {
+        const normalizedTaskId = String(taskId || '').trim();
+        if (!normalizedTaskId) return false;
+        const escapedId = global.CSS?.escape
+            ? global.CSS.escape(normalizedTaskId)
+            : normalizedTaskId.replace(/"/g, '\\"');
+        const target = overlay?.querySelector?.(`.ai-image-history [data-aiw-task-id="${escapedId}"]`);
+        if (!target) return false;
+        const scroller = target.closest?.('.ai-image-history-scroll');
+        if (scroller?.scrollTo && target.getBoundingClientRect && scroller.getBoundingClientRect) {
+            const scrollerRect = scroller.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            const nextTop = scroller.scrollTop + targetRect.top - scrollerRect.top - 152;
+            const maxTop = Math.max(0, Number(scroller.scrollHeight || 0) - Number(scroller.clientHeight || 0));
+            scroller.scrollTo({ top: Math.min(maxTop, Math.max(0, nextTop)), behavior: 'smooth' });
+        } else {
+            target.scrollIntoView?.({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+        target.classList.remove('is-located');
+        void target.offsetWidth;
+        target.classList.add('is-located');
+        global.setTimeout?.(() => target.classList.remove('is-located'), 1300);
+        setActiveHistoryLocatorItem(normalizedTaskId);
         return true;
     }
 
@@ -10557,6 +10740,13 @@
         return `
             <aside class="ai-image-history-sidebar ${sidebarView ? 'is-expanded' : 'is-collapsed'}" aria-label="${isBillingView ? '计费方式' : '生成记录'}">
                 <div class="ai-image-history-rail">
+                    ${sidebarView ? `
+                        <button class="ai-image-rail-brand is-sidebar-open" type="button" data-aiw-action="toggle-sidebar" aria-label="收起生成记录" title="收起">
+                            <i class="fas fa-chevron-left ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--wide" aria-hidden="true"></i>
+                            <i class="fas fa-chevron-up ai-image-sidebar-toggle-chevron ai-image-sidebar-toggle-chevron--narrow" aria-hidden="true"></i>
+                            <span class="ai-image-sidebar-toggle-tip" aria-hidden="true">收起</span>
+                        </button>
+                    ` : ''}
                     <button class="ai-image-rail-btn ai-image-rail-btn--new" type="button" data-aiw-action="new-chat" aria-label="新建对话" title="新建对话" data-rail-label="新建">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -10735,8 +10925,53 @@
                 <span><strong>${escapeHtml(formatCompactNumber(activitySummary.apiTokens))}</strong><em>tokens</em></span>
                 <span><strong>${escapeHtml(formatCompactNumber(activitySummary.downloads))}</strong><em>下载</em></span>
             </div>
+            ${renderHistoryLocator(filteredRows)}
             <div class="ai-image-history">
                 ${filteredRows.length ? filteredRows.map((row) => renderTaskRow(row, { deferHistoryImages })).join('') : `<div class="ai-image-empty-list">${hasSearch ? '没有匹配的对话' : '还没有生成记录'}</div>`}
+            </div>
+        `;
+    }
+
+    function getHistoryLocatorTask(row = {}) {
+        const tasks = (row.tasks || []).filter(Boolean);
+        return tasks.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))[0]
+            || row.rootTask
+            || row.displayTask
+            || {};
+    }
+
+    function getHistoryLocatorTitle(row = {}, index = 0) {
+        const task = getHistoryLocatorTask(row);
+        return truncateText(getTaskPromptText(task) || getTaskTitle(task) || `第 ${index + 1} 个对话`, 70);
+    }
+
+    function getHistoryLocatorMeta(row = {}, index = 0, total = 0) {
+        const task = getHistoryLocatorTask(row);
+        const happenedAt = Number(task.completedAt || task.updatedAt || task.createdAt || 0);
+        const generatedTime = happenedAt ? formatGeneratedTime(happenedAt) : '';
+        return [`${index + 1}/${total}`, generatedTime].filter(Boolean).join(' · ');
+    }
+
+    function renderHistoryLocator(historyRows = []) {
+        const items = historyRows.filter((row) => row?.id);
+        if (items.length < CHAT_NAVIGATION_MIN_ITEMS) return '';
+        return `
+            <div class="ai-image-history-locator" data-aiw-history-locator aria-label="生成记录快速定位">
+                <div class="ai-image-history-locator-track" data-aiw-history-locator-track>
+                    ${items.map((row, index) => {
+                        const title = getHistoryLocatorTitle(row, index);
+                        const meta = getHistoryLocatorMeta(row, index, items.length);
+                        return `
+                            <button class="ai-image-history-locator-item ${row.isActive ? 'is-active' : ''}" type="button" data-aiw-history-nav-id="${escapeHtml(row.id)}" data-aiw-history-nav-title="${escapeHtml(title)}" data-aiw-history-nav-meta="${escapeHtml(meta)}" aria-label="${escapeHtml(`定位到第 ${index + 1} 个对话：${title}`)}">
+                                <span class="ai-image-history-locator-marker" aria-hidden="true"></span>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="ai-image-history-locator-preview" data-aiw-history-locator-preview role="tooltip" aria-hidden="true">
+                    <strong data-aiw-history-locator-title></strong>
+                    <em data-aiw-history-locator-meta></em>
+                </div>
             </div>
         `;
     }
@@ -10751,7 +10986,7 @@
                     <span class="ai-image-history-head-icon"><i class="fas fa-clock-rotate-left"></i></span>
                     <span class="ai-image-history-head-copy">
                         <strong>生成记录</strong>
-                        <span>${escapeHtml(historySelectionMode ? `已选择 ${selectedCount} 个` : statusText)}</span>
+                        <span data-aiw-history-selection-summary>${escapeHtml(historySelectionMode ? `已选择 ${selectedCount} 个` : statusText)}</span>
                     </span>
                     <button class="ai-image-icon-btn ${historySelectionMode ? 'is-active' : ''}" type="button" data-aiw-action="toggle-history-selection" aria-label="${historySelectionMode ? '退出多选' : '多选记录'}" title="${historySelectionMode ? '退出多选' : '多选'}">
                         <i class="fas ${historySelectionMode ? 'fa-xmark' : 'fa-list-check'}"></i>
