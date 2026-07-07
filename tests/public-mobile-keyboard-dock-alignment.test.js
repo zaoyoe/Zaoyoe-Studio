@@ -77,10 +77,43 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;/);
     assert.match(promptsPoetry, /const keyboardClearance = PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE;[\s\S]*const targetBottom = Math\.max\(40, Math\.round\(keyboardTop - keyboardClearance\)\);/);
     assert.match(promptsPoetry, /function getPromptCommentComposerStableViewportHeight\(\) \{/);
+    assert.match(promptsPoetry, /function getPromptCommentComposerNativeViewportFrame\(\) \{/);
+    assert.match(promptsPoetry, /function freezePromptCommentComposerUnderlay\(\) \{/);
+    assert.match(promptsPoetry, /function restorePromptCommentComposerUnderlay\(\) \{/);
+    assert.match(promptsPoetry, /function capturePromptCommentComposerOverlayFrame\(force = false\) \{/);
+    assert.match(promptsPoetry, /'--prompt-comment-composer-viewport-top': `\$\{baseFrame\.top\}px`,[\s\S]*'--prompt-comment-composer-overlay-height': `\$\{overlayHeight\}px`/);
+    assert.match(promptsPoetry, /window\.iOSScrollLock\.lockLight\(overlay, \{ restoreScrollDuringViewport: false \}\);/);
+    assert.doesNotMatch(promptsPoetry, /promptCommentComposerScrollClampCleanup\s*=\s*clampPromptModalPageScroll/);
+    assert.doesNotMatch(promptsPoetry, /function clampPromptModalPageScroll/);
+    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 520;/);
+    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS = 260;/);
+    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS = 160;/);
+    assert.match(promptsPoetry, /function isPromptCommentComposerKeyboardSettling\(\) \{/);
+    assert.match(promptsPoetry, /function resetPromptCommentComposerKeyboardCycle\(\) \{/);
+    assert.match(promptsPoetry, /function schedulePromptCommentComposerKeyboardCycleReset\(delay = PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS\) \{/);
+    assert.match(promptsPoetry, /input\.addEventListener\('touchstart', \(\) => \{[\s\S]*preparePromptCommentComposerForInputFocus\(\);[\s\S]*focusPromptCommentComposerInputWithoutScroll\(input\);[\s\S]*\}, \{ passive: true \}\);/);
+    assert.doesNotMatch(promptsPoetry, /isStaleFocusedHiddenKeyboard/);
+    assert.doesNotMatch(promptsPoetry, /schedulePromptCommentComposerHiddenFocusDetach/);
+    assert.doesNotMatch(promptsPoetry, /input\.blur\(\);/);
+    assert.match(promptsPoetry, /function preparePromptCommentComposerForInputFocus\(\) \{[\s\S]*sheet\?\.classList\.remove\('composer-animating'\);[\s\S]*resetPromptCommentComposerKeyboardCycle\(\);[\s\S]*clearPromptCommentComposerKeyboardCycleResetTimer\(\);/);
+    assert.match(promptsPoetry, /promptCommentComposerBaseViewportHeight = 0;[\s\S]*promptCommentComposerBaseVisualHeight = 0;[\s\S]*promptCommentComposerBaseSheetHeight = 0;[\s\S]*promptCommentComposerOverlayBaseHeight = 0;/);
+    assert.match(promptsPoetry, /function resetPromptCommentComposerKeyboardCycle\(\) \{[\s\S]*promptCommentComposerOverlayBaseFrame = null;[\s\S]*capturePromptCommentComposerViewportBase\(\);[\s\S]*\}/);
+    assert.doesNotMatch(promptsPoetry, /function resetPromptCommentComposerKeyboardCycle\(\) \{[\s\S]*restorePromptCommentComposerUnderlay\(\);[\s\S]*\}/);
+    assert.match(promptsPoetry, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*promptCommentComposerPendingInset = previousInset;[\s\S]*return;[\s\S]*\}/);
+    assert.match(promptsPoetry, /if \(promptCommentComposerDocked && nextInset < previousInset\) \{[\s\S]*return;[\s\S]*\}/);
+    assert.doesNotMatch(promptsPoetry, /const handleInputBlur = \(\) => \{[\s\S]*releasePromptCommentComposerDock\(true\);[\s\S]*\};/);
+    assert.match(promptsPoetry, /const shouldPreserveKeyboardBase = isActive && baseHeight > 0;/);
     assert.match(promptsPoetry, /const zeroBottom = Math\.round\(overlayTop \+ \(sheet\.offsetTop \|\| 0\) \+ dockHeight\);/);
     assert.match(promptsPoetry, /Math\.round\(targetBottom - zeroBottom\)/);
+    assert.match(promptsPoetry, /function preparePromptCommentComposerForInputFocus\(\) \{[\s\S]*finishPromptCommentComposerEnterAnimation\(\);[\s\S]*capturePromptCommentComposerViewportBase\(\);[\s\S]*lockPromptCommentComposerPage\(\);[\s\S]*setPromptCommentComposerKeyboardSettling\(true\);/);
+    assert.match(promptsPoetry, /function focusPromptCommentComposerInputWithoutScroll\(input\) \{[\s\S]*preparePromptCommentComposerForInputFocus\(\);[\s\S]*input\.focus\(\{ preventScroll: true \}\);/);
+    assert.match(promptsPoetry, /detachPromptModalKeyboardDock\(\);[\s\S]*freezePromptCommentComposerOverlay\(\);[\s\S]*capturePromptCommentComposerViewportBase\(\);/);
+    assert.match(promptsPoetry, /overlay\.classList\.add\('ios-focus-lock'\);/);
     assert.match(promptsPoetry, /setTimeout\(handleViewportChange, 60\);[\s\S]*setTimeout\(handleViewportChange, 120\);[\s\S]*setTimeout\(handleViewportChange, 260\);/);
+    assert.match(promptsPoetry, /if \(!isFocused && bottomInset <= 8\) \{[\s\S]*resetPromptCommentComposerKeyboardCycle\(\);[\s\S]*\}/);
+    assert.match(promptsPoetry, /const handleInputBlur = \(\) => \{[\s\S]*schedulePromptCommentComposerKeyboardCycleReset\(240\);[\s\S]*\};/);
     assert.match(promptsPoetry, /function schedulePromptCommentComposerSettleSync\(\) \{/);
+    const promptComposerInsetDropBlock = promptsPoetry.match(/if \(isInsetDroppingWhileFocused\) \{[\s\S]*?\n    \}/)?.[0] || '';
 
     assert.match(adminChat, /classList\.add\('admin-chat-keyboard-docked'\)/);
     assert.match(adminChat, /const targetBottom = Math\.max\(40, keyboardTop - 12\);/);
@@ -96,7 +129,7 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     assert.match(homepageGuestbookModal, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*guestbookModalKeyboardState\.pendingInset = 0;[\s\S]*applyGuestbookModalKeyboardDock\(nextInset, false\);[\s\S]*return;/);
     assert.match(guestbook, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*commentModalKeyboardState\.pendingInset = 0;[\s\S]*applyCommentModalKeyboardDock\(nextInset, false\);[\s\S]*return;/);
     assert.match(shopClient, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*this\.purchaseModalKeyboardPendingInset = 0;[\s\S]*this\.applyPurchaseModalKeyboardDock\(nextInset, false\);[\s\S]*return;/);
-    assert.match(promptsPoetry, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*promptCommentComposerPendingInset = 0;[\s\S]*applyPromptCommentComposerDock\(nextInset, false\);[\s\S]*return;/);
+    assert.doesNotMatch(promptComposerInsetDropBlock, /applyPromptCommentComposerDock\(nextInset, false\);/);
     assert.match(adminChat, /getAdminChatFocusKeyboardInset\(metrics = this\.getAdminChatKeyboardMetrics\(\)\) \{/);
     assert.match(adminChat, /getAdminChatKeyboardStableViewportProbe\(\) \{/);
     assert.match(adminChat, /dockTarget\.style\.setProperty\('--admin-chat-keyboard-dock-height', `\$\{dockHeight\}px`\);/);
@@ -177,6 +210,12 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(styleCss, /--comment-modal-translate-y: 0px;/);
     assert.match(styleCss, /#guestbookModal \{[\s\S]*--guestbook-modal-viewport-top: 0px;[\s\S]*top: var\(--guestbook-modal-viewport-top\) !important;[\s\S]*width: var\(--guestbook-modal-viewport-width\) !important;/);
     assert.match(homepageOverlayCss, /#guestbookModal \{[\s\S]*--guestbook-modal-viewport-top: 0px;[\s\S]*top: var\(--guestbook-modal-viewport-top\) !important;[\s\S]*width: var\(--guestbook-modal-viewport-width\) !important;/);
+    assert.match(promptsCss, /\.prompt-comment-composer \{[\s\S]*--prompt-comment-composer-viewport-top: 0px;[\s\S]*top: var\(--prompt-comment-composer-viewport-top\) !important;[\s\S]*width: var\(--prompt-comment-composer-viewport-width\) !important;[\s\S]*height: var\(--prompt-comment-composer-overlay-height\) !important;/);
+    assert.match(styleCss, /#guestbookModal \.guestbook-composer-sheet,[\s\S]*width: 95vw !important;[\s\S]*max-width: 1000px !important;/);
+    assert.match(homepageOverlayCss, /#guestbookModal \.guestbook-composer-sheet,[\s\S]*width: 95vw !important;[\s\S]*max-width: 1000px !important;/);
+    assert.match(promptsCss, /\.prompt-comment-composer-sheet \{[\s\S]*width: 95vw;[\s\S]*max-width: 1000px;/);
+    assert.match(promptsCss, /body\.prompt-comment-composer-underlay-frozen #promptModal,[\s\S]*body\.prompt-comment-composer-underlay-frozen \.poetry-modal-backdrop,[\s\S]*body\.prompt-comment-composer-underlay-frozen #promptModal \.modal-inner \{[\s\S]*transition: none !important;[\s\S]*overflow: hidden !important;/);
+    assert.match(promptsCss, /\.prompt-comment-composer\.ios-focus-lock \.prompt-comment-composer-sheet,[\s\S]*\.prompt-comment-composer\.keyboard-docked-active\.active \.prompt-comment-composer-sheet \{[\s\S]*transform: translate3d\(0, var\(--composer-translate-y, 0px\), 0\) scale\(1\) !important;[\s\S]*animation: none !important;/);
     assert.match(styleCss, /#commentModal\.keyboard-docked \.comment-composer-sheet/);
     assert.match(profileCss, /--profile-modal-dock-height:/);
     assert.match(profileCss, /#profileModal\.active\.keyboard-active \.modal-content\.profile-modal/);
@@ -203,6 +242,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     const promptModalAnimatingRule = promptsCss.match(/\.poetry-modal\.active:focus-within \.modal-inner\.prompt-modal-animating,[\s\S]*?\.poetry-modal\.keyboard-docked \.modal-inner\.prompt-modal-animating \{[\s\S]*?\n\}/)?.[0] || '';
     const promptComposerAnimatingRule = promptsCss.match(/\.prompt-comment-composer-sheet\.composer-animating \{[\s\S]*?\n\}/)?.[0] || '';
     const promptCaretStabilizingRule = promptsCss.match(/\.poetry-modal\.prompt-caret-stabilizing #commentInput,[\s\S]*?#promptCommentComposerInput:focus \{[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(promptsCss, /\.prompt-comment-composer\.keyboard-settling #promptCommentComposerInput/);
 
     for (const [label, rule] of [
         ['chat widget', chatKeyboardAnimatingRule],
@@ -266,7 +306,13 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260609_CHAT_ADMIN_SEARCH_ZOOM_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1';/);
+    assert.match(chatWidgetCss, /--chat-input-bg: rgba\(31, 31, 31, 0\.94\);/);
+    assert.match(chatWidgetCss, /--chat-input-bg-focus: rgba\(42, 42, 42, 0\.98\);/);
+    assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-input \{[\s\S]*background: var\(--chat-input-bg, rgba\(31, 31, 31, 0\.94\)\);/);
+    assert.match(chatWidget, /\.admin-search input \{[\s\S]*background: var\(--chat-input-bg, rgba\(31, 31, 31, 0\.94\)\);/);
+    assert.match(chatWidget, /\.chat-window\.admin-mode-layout \.chat-input \{[\s\S]*background: var\(--chat-input-bg, rgba\(31, 31, 31, 0\.94\)\) !important;/);
+    assert.match(chatWidget, /\.chat-window:not\(\.admin-mode-layout\) \.chat-input \{[\s\S]*background: var\(--chat-input-bg, rgba\(31, 31, 31, 0\.94\)\) !important;/);
     assert.match(
         chatWidgetLoader,
         /@media \(max-width: 700px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*--chat-base-translate-y: -50%;[\s\S]*width: min\(460px, max\(97vw, calc\(100vw - 16px\)\)\) !important;[\s\S]*height: 70vh !important;[\s\S]*top: 50% !important;[\s\S]*transform-origin: center center !important;[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\)\.active \{[\s\S]*transform: translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\) scale\(1\) !important;/,
@@ -384,5 +430,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*animation: none;/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translate3d\(0, -2px, 0\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';/);
+    assert.match(walletLoader, /const VERSION = '20260707_WALLET_MODAL_DARK_INPUT_GRAY_1';/);
 });

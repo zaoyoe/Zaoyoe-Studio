@@ -228,6 +228,20 @@ body.modal-open .ai-image-dock {
     z-index: 9999;
 }
 
+body.auth-sheet-open .ai-image-dock {
+    z-index: 12030;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transition: none !important;
+}
+
+body.auth-sheet-open .ai-image-dock > * {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
 html.chat-widget-open .ai-image-dock,
 body.chat-widget-open .ai-image-dock {
     z-index: 9996;

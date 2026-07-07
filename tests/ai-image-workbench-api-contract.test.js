@@ -31,7 +31,23 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260707_AI_IMAGE_WORKBENCH_AUTH_LAYER_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
+});
+
+test('ai image dock drops behind the auth sheet while login is open', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    const authDockRule = getCssRuleBlock(cssSource, 'body.auth-sheet-open .ai-image-dock');
+    const authDockChildrenRule = getCssRuleBlock(cssSource, 'body.auth-sheet-open .ai-image-dock > *');
+
+    assert.match(authDockRule, /z-index:\s*12030;/);
+    assert.match(authDockRule, /opacity:\s*0 !important;/);
+    assert.match(authDockRule, /visibility:\s*hidden !important;/);
+    assert.match(authDockRule, /pointer-events:\s*none !important;/);
+    assert.match(authDockRule, /transition:\s*none !important;/);
+    assert.match(authDockChildrenRule, /opacity:\s*0 !important;/);
+    assert.match(authDockChildrenRule, /visibility:\s*hidden !important;/);
+    assert.match(authDockChildrenRule, /pointer-events:\s*none !important;/);
 });
 
 test('ai image workbench removes toolbox and agent shortcuts from the user flow', () => {
@@ -596,6 +612,7 @@ test('ai image full preview keeps preview visible while original is preparing', 
 test('ai image workbench locks page scroll while the modal is open', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     assert.match(source, /let bodyScrollLockState = null/);
+    assert.match(source, /let viewportScaleLockState = null/);
     assert.match(source, /function getCurrentWindowScroll\(\)/);
     assert.match(source, /function lockWorkbenchPageScroll\(\)/);
     assert.match(source, /const useFixedBodyLock = !isMobileWorkbenchViewport\(\);/);
@@ -606,10 +623,36 @@ test('ai image workbench locks page scroll while the modal is open', () => {
     assert.match(source, /function unlockWorkbenchPageScroll\(\)/);
     assert.match(source, /doc\.style\.overflow = lock\.style\.docOverflow/);
     assert.match(source, /global\.scrollTo\?\.\(lock\.x, lock\.y\)/);
-    assert.match(source, /if \(open\) \{\s*lockWorkbenchPageScroll\(\);\s*\} else \{\s*unlockWorkbenchPageScroll\(\);/);
+    assert.match(source, /if \(open\) \{\s*lockWorkbenchPageScroll\(\);\s*syncWorkbenchViewportScaleLock\(\);\s*\} else \{\s*syncWorkbenchViewportScaleLock\(\);\s*unlockWorkbenchPageScroll\(\);/);
     assert.match(cssSource, /\.ai-image-overlay\s*\{[\s\S]*overscroll-behavior: contain;/);
     assert.match(cssSource, /html\[data-theme="dark"\]\.ai-image-workbench-open,\s*\nhtml\[data-theme="dark"\] body\.ai-image-workbench-open\s*\{[\s\S]*background: var\(--aiw-surface-strong\) !important;[\s\S]*color-scheme: dark;/);
     assert.match(cssSource, /html\[data-theme="dark"\] \.ai-image-overlay,\s*\nhtml\[data-theme="dark"\] \.ai-image-workbench-root\s*\{[\s\S]*background: var\(--aiw-surface-strong\);/);
+});
+
+test('ai image workbench disables mobile pinch zoom only while open', () => {
+    const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
+    assert.match(source, /function buildWorkbenchNoScaleViewportContent\(content = ''\)/);
+    assert.match(source, /key === 'maximum-scale' \|\| key === 'user-scalable'/);
+    assert.match(source, /lockedParts\.push\('maximum-scale=1', 'user-scalable=no'\)/);
+    assert.match(source, /function lockWorkbenchViewportScale\(\)/);
+    assert.match(source, /document\.querySelector\('meta\[name="viewport"\]'\)/);
+    assert.match(source, /viewportScaleLockState = \{ meta, content, created \}/);
+    assert.match(source, /meta\.setAttribute\('content', buildWorkbenchNoScaleViewportContent\(content\)\)/);
+    assert.match(source, /function unlockWorkbenchViewportScale\(\)/);
+    assert.match(source, /lock\.meta\.setAttribute\('content', lock\.content \|\| ''\)/);
+    assert.match(source, /function syncWorkbenchViewportScaleLock\(\)/);
+    assert.match(source, /state\.open && isMobileWorkbenchViewport\(\)/);
+    assert.match(source, /function handleWorkbenchViewportGesture\(event\)/);
+    assert.match(source, /const isGestureEvent = \/\^gesture\/i\.test\(eventType\)/);
+    assert.match(source, /const touchCount = Number\(event\?\.touches\?\.length \|\| 0\)/);
+    assert.match(source, /if \(!isGestureEvent && touchCount < 2\) return;/);
+    assert.match(source, /event\.preventDefault\?\.\(\)/);
+    assert.match(source, /document\.addEventListener\('touchstart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
+    assert.match(source, /document\.addEventListener\('touchmove', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
+    assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
+    assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
+    assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260707_AI_IMAGE_WORKBENCH_NO_PINCH_1/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {

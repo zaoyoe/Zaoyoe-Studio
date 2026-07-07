@@ -1237,12 +1237,12 @@ test('public robot engagement feed is routed and consumed by ChatWidget', () => 
     assert.match(chatWidget, /this\.initEngagementRuntime\(\);\s*\n\s*\}/);
     assert.doesNotMatch(chatWidget, /initEngagementRuntime\(\) \{\s*if \(this\.isAdmin\) return;/);
     assert.doesNotMatch(chatWidget, /if \(this\.isAdmin \|\| this\.isOpen\) return;/);
-    assert.match(chatWidgetLoader, /20260609_CHAT_ADMIN_SEARCH_ZOOM_1/);
-    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1/);
+    assert.match(chatWidgetLoader, /20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1/);
+    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1/);
     assert.match(chatWidgetLoader, /scheduleEngagementRuntimeWarm/);
     assert.match(chatWidgetLoader, /ensureChatWidgetReady\(\{ open: false \}\)/);
-    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1/);
-    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1/);
+    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1/);
+    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1/);
     assert.match(chatWidget, /renderEngagementContentHtml/);
     assert.match(chatWidget, /engagement-preview__path-link/);
     assert.match(chatWidget, /ZaoyoeWalletModalBootstrap\?\.open/);
@@ -1502,7 +1502,7 @@ test('customer robot reply actions reuse prompt comment focus on the current pro
 
     assert.match(prompts, /function focusPromptCommentFromEngagement\(target = \{\}\)/);
     assert.match(prompts, /findPromptForEngagementTarget\(promptId\)/);
-    assert.match(prompts, /openPromptModal\(prompt\.id\)/);
+    assert.match(prompts, /openPromptModal\(getPromptStableOpenId\(prompt\)\)/);
     assert.match(prompts, /toggleCommentMode\(\)/);
     assert.match(prompts, /scrollToComment\(commentId\)/);
     assert.match(prompts, /window\.ZaoyoePromptsFocusCommentFromEngagement = focusPromptCommentFromEngagement/);
@@ -1837,7 +1837,7 @@ test('shop discount assets can surface as robot engagement bubbles', () => {
     assert.match(shopClient, /shop_product_discount_assets/);
     assert.match(shopClient, /\/shop\.html\?productId=/);
     assert.match(shopClient, /this\.maybeShowShopDiscountEngagement\(\)/);
-    assert.match(shopHtml, /20260608_ORDER_GUIDANCE_COPY_3/);
+    assert.match(shopHtml, /20260707_WALLET_MODAL_DARK_INPUT_GRAY_1/);
 });
 
 test('business terminal events automatically maintain engagement user tags', () => {

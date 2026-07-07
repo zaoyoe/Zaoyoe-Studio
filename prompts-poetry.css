@@ -186,24 +186,8 @@ html[data-theme="dark"] body.prompts-page.auth-sheet-open #starryCanvas {
 
 html[data-theme="dark"] body.prompts-page.auth-sheet-open::before,
 html[data-theme="dark"] body.prompts-page.auth-sheet-open::after {
-    content: "";
-    position: fixed;
-    left: 0;
-    right: 0;
-    pointer-events: none;
-    z-index: 12040;
-}
-
-html[data-theme="dark"] body.prompts-page.auth-sheet-open::before {
-    top: calc(-1 * env(safe-area-inset-top, 0px));
-    height: var(--prompt-auth-top-bar-shield);
-    background: linear-gradient(180deg, #000000 0%, #000000 74%, rgba(0, 0, 0, 0.94) 100%);
-}
-
-html[data-theme="dark"] body.prompts-page.auth-sheet-open::after {
-    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
-    height: var(--prompt-auth-bottom-bar-shield);
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0%, #000000 26px, #000000 100%);
+    content: none !important;
+    display: none !important;
 }
 
 [data-theme="dark"] .modal-inner {
@@ -3450,6 +3434,15 @@ body.modal-open .prompt-card {
     will-change: transform !important;
 }
 
+body.prompt-comment-composer-underlay-frozen #promptModal,
+body.prompt-comment-composer-underlay-frozen .poetry-modal-backdrop,
+body.prompt-comment-composer-underlay-frozen #promptModal .modal-inner {
+    animation: none !important;
+    transition: none !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+}
+
 .modal-image-col {
     flex: 1;
     --modal-img-bg: #f1f5f9;
@@ -5360,7 +5353,9 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 .poetry-modal.prompt-caret-stabilizing #commentInput,
 .poetry-modal.prompt-caret-stabilizing #commentInput:focus,
 .prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput,
-.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput:focus {
+.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput:focus,
+.prompt-comment-composer.keyboard-settling #promptCommentComposerInput,
+.prompt-comment-composer.keyboard-settling #promptCommentComposerInput:focus {
     caret-color: transparent !important;
 }
 
@@ -5399,8 +5394,18 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 }
 
 .prompt-comment-composer {
+    --prompt-comment-composer-overlay-height: 100dvh;
+    --prompt-comment-composer-viewport-top: 0px;
+    --prompt-comment-composer-viewport-left: 0px;
+    --prompt-comment-composer-viewport-width: 100vw;
     position: fixed;
-    inset: 0;
+    top: var(--prompt-comment-composer-viewport-top) !important;
+    left: var(--prompt-comment-composer-viewport-left) !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: var(--prompt-comment-composer-viewport-width) !important;
+    height: var(--prompt-comment-composer-overlay-height) !important;
+    min-height: var(--prompt-comment-composer-overlay-height) !important;
     display: none;
     align-items: center;
     justify-content: center;
@@ -5413,6 +5418,11 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     padding: 24px 18px 18px;
     box-sizing: border-box;
     pointer-events: none;
+    overflow: hidden;
+    overscroll-behavior: none;
+    transform: none;
+    will-change: opacity;
+    isolation: isolate;
 }
 
 .prompt-comment-composer-viewport-probe {
@@ -5460,7 +5470,11 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     animation: composerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+.prompt-comment-composer.active:focus-within .prompt-comment-composer-sheet,
+.prompt-comment-composer.ios-focus-lock .prompt-comment-composer-sheet,
 .prompt-comment-composer.keyboard-docked-active.active .prompt-comment-composer-sheet {
+    opacity: 1 !important;
+    transform: translate3d(0, var(--composer-translate-y, 0px), 0) scale(1) !important;
     animation: none !important;
 }
 
@@ -5769,11 +5783,12 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 
 @media (max-width: 768px) {
     .prompt-comment-composer {
-        padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px);
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
     }
 
     .prompt-comment-composer-sheet {
-        width: 100%;
+        width: 95vw;
+        max-width: 1000px;
         /* 不再在 sheet 的 height / max-height / padding 上叠加 env(safe-area-inset-bottom)。
            外层 .prompt-comment-composer overlay 的 padding-bottom 已经处理了
            home indicator 安全区。iOS Chrome 在页面滚动到中间时会把

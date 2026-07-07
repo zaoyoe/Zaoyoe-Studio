@@ -12,9 +12,9 @@ test('wallet loader and auth runtime prewarm the wallet shell before modal open'
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';",
+        "const VERSION = '20260707_WALLET_MODAL_DARK_INPUT_GRAY_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'function warmWalletRuntime() {',
@@ -44,6 +44,36 @@ test('wallet loader and auth runtime prewarm the wallet shell before modal open'
     for (const marker of authMarkers) {
         assert.equal(authSource.includes(marker), true, `supabase-auth-functions.js should contain ${marker}`);
     }
+});
+
+test('wallet modal dark inputs use the neutral gray input base', () => {
+    const walletCss = readRepoFile('css/wallet.css');
+
+    [
+        '--wallet-input-bg: rgba(31, 31, 31, 0.94);',
+        '--wallet-input-bg-focus: rgba(42, 42, 42, 0.98);',
+        '--wallet-input-border: rgba(255, 255, 255, 0.12);'
+    ].forEach((marker) => {
+        assert.equal(walletCss.includes(marker), true, `css/wallet.css should define ${marker}`);
+    });
+
+    [
+        /\.wallet-affiliate-link-row \{[\s\S]*background: var\(--wallet-input-bg\);/,
+        /\.custom-recharge-input \{[\s\S]*background: var\(--wallet-input-bg\);/,
+        /\.redeem-input-row input \{[\s\S]*background: var\(--wallet-input-bg\);/,
+        /\.afdian-input-row input \{[\s\S]*background: var\(--wallet-input-bg\);/,
+        /\.history-search-input \{[\s\S]*background: var\(--wallet-input-bg\);/,
+        /\.date-picker-row input\[type="date"\] \{[\s\S]*background: var\(--wallet-input-bg\);/,
+        /\.wallet-date-input \{[\s\S]*background: var\(--wallet-input-bg\);/
+    ].forEach((pattern) => {
+        assert.match(walletCss, pattern);
+    });
+
+    assert.match(
+        walletCss,
+        /\[data-theme="light"\] \.redeem-input-row input,[\s\S]*\[data-theme="light"\] \.date-picker-row input\[type="date"\] \{[\s\S]*background: #ffffff;/,
+        'light wallet inputs should keep their white base'
+    );
 });
 
 test('wallet sidebar highlight keeps mobile tabs instant while preserving desktop indicator', () => {

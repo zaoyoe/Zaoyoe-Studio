@@ -104,7 +104,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'columnHeights[targetColumnIndex] += getRelatedPromptCardAspectWeight(index) + RELATED_PROMPT_CARD_GAP_WEIGHT;',
         'class="related-prompt-column related-prompt-column--${index === 0 ? \'left\' : \'right\'}"',
         'button.dataset.tooltip = relatedLabel;',
-        'const promptId = String(item.id ?? item.supabaseId ?? item.supabase_id ?? \'\').trim();',
+        'const promptId = getPromptStableOpenId(item);',
         'isRelatedMode = normalizedMode === \'related\';',
         'modalInner?.classList.toggle(\'related-mode\', isRelatedMode);',
         'scheduleRelatedPromptsRender(updatedItem);',

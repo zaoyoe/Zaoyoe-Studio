@@ -239,9 +239,9 @@ test('shared public overlays prevent nonessential component text selection', () 
         /20260530_PUBLIC_COMPONENT_SELECT_GUARD_1[\s\S]*\.chat-window :where\(\.chat-header,[\s\S]*\.chat-input-area,[\s\S]*\.message-time-separator,[\s\S]*-webkit-user-select: none;[\s\S]*\.chat-window :where\(\.message,[\s\S]*\.chat-input,[\s\S]*\.chat-support-ticket-copy/
     );
     [
-        'css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
-        'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
-        'css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
+        'css/profile-modal.css?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
+        'js/components/WalletModal.js?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
+        'css/wallet.css?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
     ].forEach((markerText) => {
         assert.equal(
             profileLoader.includes(markerText) || walletLoader.includes(markerText) || walletModal.includes(markerText),

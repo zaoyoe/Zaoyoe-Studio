@@ -70,15 +70,15 @@ test('subpage Supabase and shared runtime chains are deferred in dependency orde
 test('heavy page runtimes and engagement chrome load without blocking first paint', () => {
     const expectations = {
         'index.html': [
-            'js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
+            'js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
         ],
         'shop.html': [
-            'js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
+            'js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
         ],
         'verify.html': [
             './starry-sky.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
             './verify-widget.js?v=20260614_VERIFY_RESET_TEXT_ONLY_1&dualChannel=20260615_VERIFY_DUAL_CHANNEL_1&channelOps=20260615_VERIFY_CHANNEL_OPS_1&providerHeader=20260616_VERIFY_PROVIDER_HEADER_1&priceRow=20260616_VERIFY_PRICE_ROW_CLEAN_1&remainingTone=20260616_VERIFY_REMAINING_TONE_1&historyProvider=20260616_VERIFY_HISTORY_PROVIDER_META_1&historyProviderTone=20260616_VERIFY_HISTORY_PROVIDER_TONE_1&queueCount=20260616_VERIFY_QUEUE_COUNT_1&batchCompat=20260616_VERIFY_BATCH_COMPAT_1&quotaReserve=20260616_VERIFY_QUOTA_RESERVE_1&queuePosition=20260616_VERIFY_QUEUE_POSITION_1&historyActiveRepair=20260616_VERIFY_HISTORY_REPAIR_ACTIVE_1&historySuccessText=20260616_VERIFY_HISTORY_SUCCESS_TEXT_1&i18nHistory=20260616_VERIFY_I18N_HISTORY_TEXT_1&upstreamMessage=20260616_VERIFY_UPSTREAM_MESSAGE_I18N_1&modeQuota=20260616_VERIFY_MODE_QUOTA_COUNT_2&singleProviderBar=20260616_VERIFY_SINGLE_PROVIDER_BAR_2&defaultProvider=20260617_VERIFY_DEFAULT_PROVIDER_AIDONE_2',
-            'js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
+            'js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
         ],
         'prompts.html': [
             'vendor/dayjs/1.11.13/dayjs.min.js?v=20260519_VENDOR_PUBLIC_1',
@@ -88,11 +88,11 @@ test('heavy page runtimes and engagement chrome load without blocking first pain
             './js/prompts-dataset-bootstrap.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
             './js/prompt-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1',
             'js/heartbeat.js?v=20260404_PHASE3_EVENT_TRACKER_1',
-            'js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
+            'js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
         ],
         'guestbook.html': [
             './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
-            'js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
+            'js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
             './js/guestbook-optional-enhancements.js?v=20260503_GUESTBOOK_DARK_STARRY_BG_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
         ]
     };
@@ -147,7 +147,7 @@ test('subpage chat and notification styles are deferred until their loaders need
         );
         assert.match(
             source,
-            /<link rel="stylesheet" href="css\/chat-widget\.css\?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="public-chat">/,
+            /<link rel="stylesheet" href="css\/chat-widget\.css\?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="public-chat">/,
             `${relativePath} should defer chat widget styles`
         );
     });

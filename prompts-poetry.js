@@ -1832,7 +1832,8 @@ function replacePromptDataset(nextPrompts = []) {
     const visiblePrompts = filterVisiblePromptsForPromptsPage(nextPrompts).map((prompt, index) => ({
         ...prompt,
         id: index,
-        supabaseId: prompt?.supabaseId || prompt?.id || null
+        supabaseId: prompt?.supabaseId || prompt?.supabase_id || prompt?.id || null,
+        supabase_id: prompt?.supabase_id || prompt?.supabaseId || prompt?.id || null
     }));
 
     while (PROMPTS.length > 0) {
@@ -1852,6 +1853,7 @@ function normalizeSupabasePromptSummary(item = {}, index = 0) {
     return {
         id: index,
         supabaseId: item.id,
+        supabase_id: item.id,
         title: item.title || '',
         title_en: item.title_en || '',
         title_zh: item.title_zh || '',
@@ -1883,6 +1885,7 @@ function normalizeSupabasePromptDetail(item = {}) {
     const imageAssets = normalizePromptImageAssetsFromRecord(item);
     return {
         supabaseId: item.id,
+        supabase_id: item.id,
         title: item.title || '',
         title_en: item.title_en || '',
         title_zh: item.title_zh || '',
@@ -1917,6 +1920,7 @@ function normalizeSupabasePromptDetail(item = {}) {
 function normalizeSupabasePromptSearchDetail(item = {}) {
     return {
         supabaseId: item.id,
+        supabase_id: item.id,
         title: item.title || '',
         title_en: item.title_en || '',
         title_zh: item.title_zh || '',
@@ -1948,6 +1952,7 @@ function normalizeSupabasePromptSearchDetail(item = {}) {
 function getPromptDetailLookupKeys(item = {}) {
     return [
         item?.supabaseId,
+        item?.supabase_id,
         item?.sourceId,
         item?.staticId,
         item?.originalId,
@@ -1974,6 +1979,16 @@ function hasPromptDetailBody(item = {}) {
         item?.prompt_text_en,
         item?.prompt_text_zh
     ].some((value) => hasPromptPageVisibleCopy(value));
+}
+
+function getPromptStableOpenId(item = {}) {
+    return String(
+        item?.supabaseId
+        ?? item?.supabase_id
+        ?? item?.prompt_id
+        ?? item?.id
+        ?? ''
+    ).trim();
 }
 
 function mergePromptDetailIntoItem(item = {}, detail = {}) {
@@ -2897,18 +2912,7 @@ function handleUrlPromptParam() {
     console.log('🔍 搜索 prompt，id:', targetIdStr, '(解析后数字:', targetIdNum, ')');
     console.log('🔍 PROMPTS 数量:', PROMPTS.length);
 
-    // 按 supabaseId 查找（先尝试字符串，再尝试数字）
-    let prompt = PROMPTS.find(p => String(p.supabaseId) === targetIdStr);
-
-    // 如果字符串匹配失败，尝试数字比较
-    if (!prompt && !isNaN(targetIdNum)) {
-        prompt = PROMPTS.find(p => p.supabaseId === targetIdNum);
-    }
-
-    // 如果还是没找到，尝试按数组索引 id 查找
-    if (!prompt) {
-        prompt = PROMPTS.find(p => p.id === targetIdNum);
-    }
+    const prompt = findPromptForModalOpen(targetIdStr);
 
     if (prompt) {
         console.log('✅ 找到 prompt:', prompt.title, '索引:', prompt.id);
@@ -2918,7 +2922,7 @@ function handleUrlPromptParam() {
 
         // 稍微延迟以确保 Gallery 渲染完成
         setTimeout(() => {
-            openPromptModal(prompt.id);
+            openPromptModal(getPromptStableOpenId(prompt));
 
             // 如果 comments=1，自动打开评论模式
             if (showComments === '1') {
@@ -3044,7 +3048,7 @@ function findPromptForEngagementTarget(promptId) {
 
     const targetIdNum = Number.parseInt(targetId, 10);
     return PROMPTS.find(p => String(p.supabaseId) === targetId)
-        || (!Number.isNaN(targetIdNum) ? PROMPTS.find(p => p.supabaseId === targetIdNum) : null)
+        || PROMPTS.find(p => String(p.supabase_id) === targetId)
         || (!Number.isNaN(targetIdNum) ? PROMPTS.find(p => p.id === targetIdNum) : null)
         || null;
 }
@@ -3078,7 +3082,7 @@ function focusPromptCommentFromEngagement(target = {}) {
                 return;
             }
 
-            openPromptModal(prompt.id);
+            openPromptModal(getPromptStableOpenId(prompt));
             if (!commentId) {
                 setTimeout(() => resolve(true), 320);
                 return;
@@ -3768,15 +3772,16 @@ function getFeaturedBannerModalPromptId(featured = {}) {
     const supabaseId = String(featured?.supabaseId ?? featured?.supabase_id ?? '').trim();
     if (Array.isArray(PROMPTS)) {
         const prompt = PROMPTS.find((item) => (
-            String(item?.id ?? '').trim() === directId
-            || String(item?.supabaseId ?? item?.supabase_id ?? '').trim() === directId
+            String(item?.supabaseId ?? item?.supabase_id ?? '').trim() === directId
             || (supabaseId && String(item?.supabaseId ?? item?.supabase_id ?? '').trim() === supabaseId)
+            || String(item?.id ?? '').trim() === directId
         ));
-        if (prompt?.id !== undefined && prompt?.id !== null) {
-            return prompt.id;
+        const stablePromptId = getPromptStableOpenId(prompt);
+        if (stablePromptId) {
+            return stablePromptId;
         }
     }
-    return featured?.id ?? featured?.supabaseId ?? featured?.supabase_id ?? '';
+    return featured?.supabaseId ?? featured?.supabase_id ?? featured?.id ?? '';
 }
 
 function applyFeaturedBannerPrompt(featured = null) {
@@ -4908,7 +4913,7 @@ function getRelatedPrompts(currentItem = {}, limit = 12) {
 let lastRenderedRelatedPromptKey = '';
 
 function getRelatedPromptRenderKey(item = findPromptAnalyticsItem()) {
-    const promptId = String(item?.id ?? item?.supabaseId ?? item?.supabase_id ?? currentPromptId ?? '').trim();
+    const promptId = getPromptStableOpenId(item) || String(currentPromptId ?? '').trim();
     const detailState = item?.promptDetailLoaded ? 'detail' : 'summary';
     return `${promptId}:${detailState}`;
 }
@@ -4951,7 +4956,7 @@ function buildRelatedPromptCardMarkup(item = {}, index = 0) {
     const title = getLocalizedField(item, 'title') || item.title || '';
     const imageUrl = getRelatedPromptImageUrl(item);
     const aspectClass = ` ${getRelatedPromptCardLayout(index).className}`;
-    const promptId = String(item.id ?? item.supabaseId ?? item.supabase_id ?? '').trim();
+    const promptId = getPromptStableOpenId(item);
     return `
         <button class="related-prompt-card${aspectClass}" type="button" data-related-prompt-id="${escapeHtml(promptId)}" aria-label="${escapeHtml(title)}">
             ${imageUrl ? `<img class="related-prompt-card__image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
@@ -5018,12 +5023,12 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
             event.stopPropagation();
             const relatedId = card.dataset.relatedPromptId;
             const relatedPrompt = PROMPTS.find((prompt) => (
-                String(prompt?.id ?? '').trim() === relatedId
-                || String(prompt?.supabaseId ?? '').trim() === relatedId
+                String(prompt?.supabaseId ?? '').trim() === relatedId
                 || String(prompt?.supabase_id ?? '').trim() === relatedId
+                || String(prompt?.id ?? '').trim() === relatedId
             ));
             if (relatedPrompt) {
-                openPromptModal(relatedPrompt.id);
+                openPromptModal(getPromptStableOpenId(relatedPrompt));
             }
         });
     });
@@ -5704,12 +5709,14 @@ function renderCurrentPage() {
         const imageAssets = getPromptImageAssets(item);
         const primaryImageAsset = imageAssets[0] || null;
         const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
+        const promptOpenId = getPromptStableOpenId(item);
         const card = document.createElement('div');
         card.className = 'prompt-card card-enter prompt-card--loading';
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
+        card.dataset.promptId = promptOpenId;
         card.dataset.images = JSON.stringify(imageAssets); // Store all images
-        bindPromptCardActivation(card, item.id);
+        bindPromptCardActivation(card, promptOpenId);
         setPromptCardStaggerClass(card, index);
 
         // Generate image indicator dots if multiple images
@@ -8040,9 +8047,10 @@ function findPromptForModalOpen(id) {
     if (!normalizedId || !Array.isArray(PROMPTS)) return null;
 
     return PROMPTS.find((prompt) => (
-        String(prompt?.id ?? '').trim() === normalizedId
-        || String(prompt?.supabaseId ?? prompt?.supabase_id ?? '').trim() === normalizedId
-    )) || null;
+        String(prompt?.supabaseId ?? prompt?.supabase_id ?? '').trim() === normalizedId
+    ))
+        || PROMPTS.find((prompt) => String(prompt?.id ?? '').trim() === normalizedId)
+        || null;
 }
 
 function openPromptModal(id) {
@@ -8052,7 +8060,7 @@ function openPromptModal(id) {
 
     promptModalBaseScrollY = window.scrollY || window.pageYOffset || 0;
 
-    currentPromptId = item.supabaseId || item.id; // Prefer persistent UUID if available
+    currentPromptId = getPromptStableOpenId(item);
     const modalPromptId = String(currentPromptId || '').trim();
     console.log('[DEBUG] openPromptModal opening:', {
         localId: id,
@@ -8716,8 +8724,7 @@ function setPromptUnlocked() {
 
     // 🔓 SECURITY FIX: Inject real text now (with i18n support)
     const promptId = currentPromptId; // Global variable set in openPromptModal
-    // Find prompt in PROMPTS (supabaseId or id match)
-    const promptItem = PROMPTS.find(p => p.supabaseId === promptId || p.id === promptId);
+    const promptItem = findPromptForModalOpen(promptId);
     if (promptItem) {
         if (hasPromptDetailBody(promptItem)) {
             setPromptDetailTextState(promptText, getPromptModalPromptText(promptItem));
@@ -8835,21 +8842,29 @@ let promptCommentComposerSettleSyncTimers = [];
 let promptCommentComposerLastBottomInset = 0;
 let promptCommentComposerInsetDropTimer = null;
 let promptCommentComposerPendingInset = 0;
+let promptCommentComposerOverlayBaseHeight = 0;
+let promptCommentComposerOverlayBaseFrame = null;
 let promptCommentComposerDocked = false;
 let promptCommentComposerBlurUndocking = false;
 let promptCommentComposerFocusedReleaseTimer = null;
 let promptCommentComposerInitialDockTimer = null;
 let promptCommentComposerBaseSheetHeight = 0;
+let promptCommentComposerUnderlayFreeze = null;
 let promptCommentComposerOwnsScrollLock = false;
 let promptCommentComposerScrollLockMode = null;
-let promptCommentComposerScrollClampCleanup = null;
 let promptCommentComposerAuthAlertTimer = null;
 let promptCommentComposerLoginModalTimer = null;
 let promptCommentComposerCaretStabilizeTimer = null;
 let promptCommentComposerEnterAnimationTimer = null;
+let promptCommentComposerKeyboardSettleTimer = null;
+let promptCommentComposerKeyboardSettlingUntil = 0;
+let promptCommentComposerKeyboardCycleResetTimer = null;
 const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;
 const PROMPT_COMMENT_COMPOSER_AUTH_ALERT_DURATION_MS = 1080;
 const PROMPT_COMMENT_COMPOSER_ENTER_ANIMATION_MS = 420;
+const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 520;
+const PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS = 260;
+const PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS = 160;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -8889,6 +8904,7 @@ function syncPromptCommentComposerEmptyState() {
 
 function focusPromptCommentComposerInputWithoutScroll(input) {
     if (!input) return;
+    preparePromptCommentComposerForInputFocus();
     try {
         input.focus({ preventScroll: true });
     } catch (_) {
@@ -8901,8 +8917,7 @@ function bindPromptCommentComposerInputFocusStabilizer(input) {
 
     input.addEventListener('touchstart', () => {
         if (!isPromptCommentComposerEnabled()) return;
-        capturePromptCommentComposerViewportBase();
-        lockPromptCommentComposerPage();
+        preparePromptCommentComposerForInputFocus();
         if (document.activeElement !== input) {
             focusPromptCommentComposerInputWithoutScroll(input);
         }
@@ -9079,10 +9094,6 @@ function detachPromptCommentComposerViewportSync() {
 }
 
 function unlockPromptCommentComposerPage() {
-    if (typeof promptCommentComposerScrollClampCleanup === 'function') {
-        promptCommentComposerScrollClampCleanup();
-        promptCommentComposerScrollClampCleanup = null;
-    }
     if (promptCommentComposerOwnsScrollLock && window.iOSScrollLock) {
         const modalInner = document.querySelector('#promptModal .modal-inner');
         const modal = document.getElementById('promptModal');
@@ -9106,9 +9117,8 @@ function unlockPromptCommentComposerPage() {
 
 function lockPromptCommentComposerPage() {
     const { overlay } = getPromptCommentComposerElements();
-    const sheet = overlay?.querySelector('.prompt-comment-composer-sheet');
-    if (window.iOSScrollLock && sheet) {
-        window.iOSScrollLock.lockLight(sheet, { restoreScrollDuringViewport: true });
+    if (window.iOSScrollLock && overlay) {
+        window.iOSScrollLock.lockLight(overlay, { restoreScrollDuringViewport: false });
         promptCommentComposerOwnsScrollLock = true;
         promptCommentComposerScrollLockMode = 'light';
     }
@@ -9130,6 +9140,225 @@ function getPromptCommentComposerStableViewportProbe() {
 function getPromptCommentComposerStableViewportHeight() {
     const probe = getPromptCommentComposerStableViewportProbe();
     return Math.max(0, Math.round(probe?.getBoundingClientRect().height || probe?.offsetHeight || 0));
+}
+
+function getPromptCommentComposerNativeViewportFrame() {
+    const vv = window.visualViewport;
+    const visualTop = Math.max(0, vv?.offsetTop || 0);
+    const visualLeft = Math.max(0, vv?.offsetLeft || 0);
+    const visualWidth = Math.max(320, Math.round(vv?.width || window.innerWidth || document.documentElement.clientWidth || 0));
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = visualTop + visualHeight;
+    const overlayHeight = Math.max(320, Math.round(
+        visualHeight
+        || visualBottom
+        || window.innerHeight
+        || document.documentElement.clientHeight
+        || 0
+    ));
+
+    return {
+        top: Math.round(visualTop),
+        left: Math.round(visualLeft),
+        width: visualWidth,
+        overlayHeight,
+        visualHeight,
+        visualBottom
+    };
+}
+
+function snapshotPromptCommentComposerInlineStyles(target, properties) {
+    if (!target || !Array.isArray(properties)) return null;
+    const styleDecl = target.style;
+    if (!styleDecl) return null;
+
+    return {
+        target,
+        properties: properties.map((property) => ({
+            property,
+            value: styleDecl.getPropertyValue(property),
+            priority: styleDecl.getPropertyPriority(property)
+        }))
+    };
+}
+
+function restorePromptCommentComposerInlineStyles(snapshot) {
+    if (!snapshot?.target?.isConnected || !Array.isArray(snapshot.properties)) return;
+    const styleDecl = snapshot.target.style;
+    snapshot.properties.forEach(({ property, value, priority }) => {
+        if (value) {
+            styleDecl.setProperty(property, value, priority || '');
+        } else {
+            styleDecl.removeProperty(property);
+        }
+    });
+}
+
+function freezePromptCommentComposerUnderlay() {
+    if (!isPromptModalIOSMobile() || promptCommentComposerUnderlayFreeze) return;
+    const modal = document.getElementById('promptModal');
+    const modalInner = modal?.querySelector('.modal-inner');
+    const backdrop = document.getElementById('promptModalBackdrop');
+    if (!modal?.classList.contains('active') || !modalInner) return;
+
+    const vv = window.visualViewport;
+    const layoutHeight = Math.max(320, Math.round(
+        promptModalKeyboardDock.baseViewportHeight
+        || promptCommentComposerBaseViewportHeight
+        || window.innerHeight
+        || document.documentElement.clientHeight
+        || ((vv?.height || 0) + (vv?.offsetTop || 0))
+        || getPromptCommentComposerStableViewportHeight()
+        || 0
+    ));
+    const layoutWidth = Math.max(320, Math.round(window.innerWidth || document.documentElement.clientWidth || vv?.width || 0));
+    const innerRect = modalInner.getBoundingClientRect();
+    const innerWidth = Math.max(280, Math.round(innerRect.width || modalInner.offsetWidth || 0));
+    const innerHeight = Math.max(280, Math.round(innerRect.height || modalInner.offsetHeight || 0));
+    const innerTransform = window.getComputedStyle(modalInner).transform;
+
+    promptCommentComposerUnderlayFreeze = {
+        modal: snapshotPromptCommentComposerInlineStyles(modal, [
+            'position',
+            'top',
+            'left',
+            'right',
+            'bottom',
+            'width',
+            'height',
+            'min-height',
+            'max-height',
+            'overflow',
+            'transform',
+            'will-change'
+        ]),
+        backdrop: snapshotPromptCommentComposerInlineStyles(backdrop, [
+            'position',
+            'top',
+            'left',
+            'right',
+            'bottom',
+            'width',
+            'height',
+            'min-height',
+            'max-height',
+            'transform',
+            'will-change'
+        ]),
+        modalInner: snapshotPromptCommentComposerInlineStyles(modalInner, [
+            'width',
+            'max-width',
+            'height',
+            'max-height',
+            'transform',
+            'transition',
+            'will-change',
+            '--prompt-modal-scale',
+            '--prompt-modal-translate-y'
+        ])
+    };
+
+    document.body.classList.add('prompt-comment-composer-underlay-frozen');
+    setPromptsCssVars(modal, {
+        position: 'fixed',
+        top: '0px',
+        left: '0px',
+        right: 'auto',
+        bottom: 'auto',
+        width: `${layoutWidth}px`,
+        height: `${layoutHeight}px`,
+        'min-height': `${layoutHeight}px`,
+        'max-height': `${layoutHeight}px`,
+        overflow: 'hidden',
+        transform: 'translate3d(0, 0, 0)',
+        'will-change': 'transform'
+    });
+    if (backdrop) {
+        setPromptsCssVars(backdrop, {
+            position: 'fixed',
+            top: '0px',
+            left: '0px',
+            right: 'auto',
+            bottom: 'auto',
+            width: `${layoutWidth}px`,
+            height: `${layoutHeight}px`,
+            'min-height': `${layoutHeight}px`,
+            'max-height': `${layoutHeight}px`,
+            transform: 'translate3d(0, 0, 0)',
+            'will-change': 'transform'
+        });
+    }
+    setPromptsCssVars(modalInner, {
+        width: `${innerWidth}px`,
+        'max-width': `${innerWidth}px`,
+        height: `${innerHeight}px`,
+        'max-height': `${innerHeight}px`,
+        '--prompt-modal-scale': '1',
+        '--prompt-modal-translate-y': '0px',
+        transform: innerTransform && innerTransform !== 'none' ? innerTransform : 'translate3d(0, 0, 0) scale(1)',
+        transition: 'none',
+        'will-change': 'auto'
+    });
+}
+
+function restorePromptCommentComposerUnderlay() {
+    if (!promptCommentComposerUnderlayFreeze) {
+        document.body.classList.remove('prompt-comment-composer-underlay-frozen');
+        return;
+    }
+
+    restorePromptCommentComposerInlineStyles(promptCommentComposerUnderlayFreeze.modal);
+    restorePromptCommentComposerInlineStyles(promptCommentComposerUnderlayFreeze.backdrop);
+    restorePromptCommentComposerInlineStyles(promptCommentComposerUnderlayFreeze.modalInner);
+    document.body.classList.remove('prompt-comment-composer-underlay-frozen');
+    promptCommentComposerUnderlayFreeze = null;
+}
+
+function capturePromptCommentComposerOverlayFrame(force = false) {
+    const { overlay } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    const frame = getPromptCommentComposerNativeViewportFrame();
+    const stableViewportHeight = getPromptCommentComposerStableViewportHeight();
+    const fallbackHeight = Math.max(
+        Math.round(window.innerHeight || 0),
+        Math.round(document.documentElement.clientHeight || 0),
+        Math.round(frame.visualBottom || 0),
+        Math.round(frame.visualHeight || 0)
+    );
+    const measuredHeight = Math.max(0, Math.round(
+        frame.overlayHeight
+        || frame.visualBottom
+        || stableViewportHeight
+        || fallbackHeight
+    ));
+
+    if (!measuredHeight) return;
+
+    const isActive = overlay.classList.contains('active');
+    if (!isActive || !promptCommentComposerOverlayBaseFrame) {
+        promptCommentComposerOverlayBaseFrame = {
+            top: frame.top,
+            left: frame.left,
+            width: frame.width
+        };
+    }
+    const baseFrame = promptCommentComposerOverlayBaseFrame;
+    const baseHeight = Math.round(promptCommentComposerOverlayBaseHeight || 0);
+    const shouldPreserveKeyboardBase = isActive && baseHeight > 0;
+    const overlayHeight = shouldPreserveKeyboardBase ? baseHeight : measuredHeight;
+
+    setPromptsCssVars(overlay, {
+        '--prompt-comment-composer-viewport-top': `${baseFrame.top}px`,
+        '--prompt-comment-composer-viewport-left': `${baseFrame.left}px`,
+        '--prompt-comment-composer-viewport-width': `${baseFrame.width}px`,
+        '--prompt-comment-composer-overlay-height': `${overlayHeight}px`
+    });
+
+    if (shouldPreserveKeyboardBase) return;
+    if (!force && baseHeight >= measuredHeight) return;
+
+    promptCommentComposerOverlayBaseHeight = measuredHeight;
 }
 
 function clearPromptCommentComposerCaretStabilizer(refreshCaret = false) {
@@ -9183,6 +9412,77 @@ function clearPromptCommentComposerSettleSyncTimers() {
     promptCommentComposerSettleSyncTimers = [];
 }
 
+function clearPromptCommentComposerKeyboardSettleTimer() {
+    if (promptCommentComposerKeyboardSettleTimer) {
+        clearTimeout(promptCommentComposerKeyboardSettleTimer);
+        promptCommentComposerKeyboardSettleTimer = null;
+    }
+}
+
+function clearPromptCommentComposerKeyboardCycleResetTimer() {
+    if (promptCommentComposerKeyboardCycleResetTimer) {
+        clearTimeout(promptCommentComposerKeyboardCycleResetTimer);
+        promptCommentComposerKeyboardCycleResetTimer = null;
+    }
+}
+
+function isPromptCommentComposerKeyboardSettling() {
+    const { overlay } = getPromptCommentComposerElements();
+    return Boolean(overlay?.classList.contains('keyboard-settling')) ||
+        (promptCommentComposerKeyboardSettlingUntil > 0 && Date.now() < promptCommentComposerKeyboardSettlingUntil);
+}
+
+function setPromptCommentComposerKeyboardSettling(active) {
+    const { overlay } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    clearPromptCommentComposerKeyboardSettleTimer();
+    overlay.classList.toggle('keyboard-settling', Boolean(active));
+    promptCommentComposerKeyboardSettlingUntil = active
+        ? Date.now() + PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS
+        : 0;
+    if (!active) return;
+
+    promptCommentComposerKeyboardSettleTimer = setTimeout(() => {
+        const { overlay: activeOverlay } = getPromptCommentComposerElements();
+        activeOverlay?.classList.remove('keyboard-settling');
+        promptCommentComposerKeyboardSettlingUntil = 0;
+        promptCommentComposerKeyboardSettleTimer = null;
+    }, PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS);
+}
+
+function preparePromptCommentComposerForInputFocus() {
+    const { overlay, sheet, input } = getPromptCommentComposerElements();
+    if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
+
+    // Own the light lock before focus, but let Safari's keyboard animation own
+    // root-scroll timing. Forcing scroll restoration here makes the underlay
+    // visibly recoil on the first iOS keyboard lift.
+    finishPromptCommentComposerEnterAnimation();
+    sheet?.classList.remove('composer-animating');
+    resetPromptCommentComposerKeyboardCycle();
+    if (window.promptCommentComposerAnimRafId) {
+        clearTimeout(window.promptCommentComposerAnimRafId);
+        window.promptCommentComposerAnimRafId = null;
+    }
+    clearPromptCommentComposerKeyboardCycleResetTimer();
+    clearPromptCommentComposerFocusedReleaseTimer();
+    if (promptCommentComposerInitialDockTimer) {
+        clearTimeout(promptCommentComposerInitialDockTimer);
+        promptCommentComposerInitialDockTimer = null;
+    }
+    if (promptCommentComposerInsetDropTimer) {
+        clearTimeout(promptCommentComposerInsetDropTimer);
+        promptCommentComposerInsetDropTimer = null;
+    }
+    promptCommentComposerPendingInset = 0;
+    promptCommentComposerBlurUndocking = false;
+    capturePromptCommentComposerViewportBase();
+    lockPromptCommentComposerPage();
+    setPromptCommentComposerKeyboardSettling(true);
+    schedulePromptCommentComposerSettleSync();
+}
+
 function schedulePromptCommentComposerSettleSync() {
     clearPromptCommentComposerSettleSyncTimers();
     promptCommentComposerSettleSyncTimers = [90, 180, 320, 520].map((delay) => setTimeout(() => {
@@ -9207,9 +9507,10 @@ function schedulePromptCommentComposerFocusedRelease() {
 
         const liveMetrics = getPromptCommentComposerViewportMetrics();
         if (liveMetrics.bottomInset <= 24) {
-            releasePromptCommentComposerDock(true);
+            releasePromptCommentComposerDock(false);
+            schedulePromptCommentComposerKeyboardCycleReset();
         }
-    }, 48);
+    }, PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS);
 }
 
 function stabilizePromptCommentComposerCaretDuringMotion(duration = 250) {
@@ -9229,6 +9530,7 @@ function resetPromptCommentComposerViewportStyles() {
     clearPromptCommentComposerCaretStabilizer(false);
     finishPromptCommentComposerEnterAnimation();
     clearPromptCommentComposerFocusedReleaseTimer();
+    clearPromptCommentComposerKeyboardCycleResetTimer();
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
         window.promptCommentComposerAnimRafId = null;
@@ -9245,6 +9547,9 @@ function resetPromptCommentComposerViewportStyles() {
     });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
+    overlay.classList.remove('keyboard-settling');
+    clearPromptCommentComposerKeyboardSettleTimer();
+    promptCommentComposerKeyboardSettlingUntil = 0;
     setPromptsCssVars(input, {
         'max-height': null
     });
@@ -9255,6 +9560,8 @@ function resetPromptCommentComposerViewportStyles() {
     promptCommentComposerDocked = false;
     promptCommentComposerBlurUndocking = false;
     promptCommentComposerLastBottomInset = 0;
+    promptCommentComposerOverlayBaseHeight = 0;
+    promptCommentComposerOverlayBaseFrame = null;
     promptCommentComposerOwnsScrollLock = false;
     promptCommentComposerScrollLockMode = null;
     if (promptCommentComposerInitialDockTimer) {
@@ -9266,13 +9573,73 @@ function resetPromptCommentComposerViewportStyles() {
         promptCommentComposerInsetDropTimer = null;
     }
     promptCommentComposerPendingInset = 0;
-    if (typeof promptCommentComposerScrollClampCleanup === 'function') {
-        promptCommentComposerScrollClampCleanup();
-        promptCommentComposerScrollClampCleanup = null;
+    restorePromptCommentComposerUnderlay();
+}
+
+function resetPromptCommentComposerKeyboardCycle() {
+    const { overlay, sheet } = getPromptCommentComposerElements();
+    if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
+
+    const metrics = getPromptCommentComposerViewportMetrics();
+    if (metrics.bottomInset > 24) return;
+
+    clearPromptCommentComposerFocusedReleaseTimer();
+    clearPromptCommentComposerKeyboardSettleTimer();
+    clearPromptCommentComposerKeyboardCycleResetTimer();
+    clearPromptCommentComposerCaretStabilizer(false);
+    if (window.promptCommentComposerAnimRafId) {
+        clearTimeout(window.promptCommentComposerAnimRafId);
+        window.promptCommentComposerAnimRafId = null;
     }
+    if (promptCommentComposerInitialDockTimer) {
+        clearTimeout(promptCommentComposerInitialDockTimer);
+        promptCommentComposerInitialDockTimer = null;
+    }
+    if (promptCommentComposerInsetDropTimer) {
+        clearTimeout(promptCommentComposerInsetDropTimer);
+        promptCommentComposerInsetDropTimer = null;
+    }
+
+    promptCommentComposerDocked = false;
+    promptCommentComposerBlurUndocking = false;
+    promptCommentComposerPendingInset = 0;
+    promptCommentComposerLastBottomInset = 0;
+    promptCommentComposerKeyboardSettlingUntil = 0;
+    promptCommentComposerBaseViewportHeight = 0;
+    promptCommentComposerBaseVisualHeight = 0;
+    promptCommentComposerBaseSheetHeight = 0;
+    promptCommentComposerOverlayBaseHeight = 0;
+    promptCommentComposerOverlayBaseFrame = null;
+
+    overlay.classList.remove('keyboard-active', 'keyboard-docked-active', 'keyboard-settling');
+    sheet?.classList.remove('composer-animating');
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null,
+        '--composer-translate-y': '0px'
+    });
+
+    // The underlay belongs to the composer lifetime, not to one keyboard
+    // cycle. Keeping it frozen while the composer stays open prevents the
+    // prompt detail modal and the composer from fighting during a second
+    // keyboard lift after the first keyboard was dismissed.
+    capturePromptCommentComposerViewportBase();
+}
+
+function schedulePromptCommentComposerKeyboardCycleReset(delay = PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS) {
+    clearPromptCommentComposerKeyboardCycleResetTimer();
+    promptCommentComposerKeyboardCycleResetTimer = setTimeout(() => {
+        promptCommentComposerKeyboardCycleResetTimer = null;
+        resetPromptCommentComposerKeyboardCycle();
+    }, Math.max(0, delay));
 }
 
 function capturePromptCommentComposerViewportBase() {
+    capturePromptCommentComposerOverlayFrame(true);
+    freezePromptCommentComposerUnderlay();
     const vv = window.visualViewport;
     const visualTop = Math.max(0, vv?.offsetTop || 0);
     const visualHeight = Math.max(0, vv?.height || 0);
@@ -9306,13 +9673,16 @@ function capturePromptCommentComposerViewportBase() {
 function freezePromptCommentComposerOverlay() {
     const { overlay } = getPromptCommentComposerElements();
     if (!overlay) return;
+    capturePromptCommentComposerOverlayFrame(true);
     setPromptsCssVars(overlay, {
         position: 'fixed',
-        top: '0',
-        left: '0',
-        right: '0',
-        bottom: '0',
-        width: '100%'
+        top: 'var(--prompt-comment-composer-viewport-top)',
+        left: 'var(--prompt-comment-composer-viewport-left)',
+        right: 'auto',
+        bottom: 'auto',
+        width: 'var(--prompt-comment-composer-viewport-width)',
+        height: 'var(--prompt-comment-composer-overlay-height)',
+        'min-height': 'var(--prompt-comment-composer-overlay-height)'
     });
 }
 
@@ -9326,8 +9696,15 @@ function restorePromptCommentComposerOverlay() {
         right: null,
         bottom: null,
         width: null,
-        height: null
+        height: null,
+        'min-height': null,
+        '--prompt-comment-composer-viewport-top': null,
+        '--prompt-comment-composer-viewport-left': null,
+        '--prompt-comment-composer-viewport-width': null,
+        '--prompt-comment-composer-overlay-height': null
     });
+    promptCommentComposerOverlayBaseHeight = 0;
+    promptCommentComposerOverlayBaseFrame = null;
 }
 
 function getPromptCommentComposerViewportMetrics() {
@@ -9422,28 +9799,16 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
     promptCommentComposerLastBottomInset = Math.max(0, bottomInset);
 }
 
-function clampPromptModalPageScroll(duration = 420) {
-    const targetY = getPromptModalBaseScrollY();
-    const scrollClamp = () => {
-        if ((window.scrollY || window.pageYOffset || 0) !== targetY || window.scrollX !== 0) {
-            window.scrollTo(0, targetY);
-        }
-    };
-
-    window.addEventListener('scroll', scrollClamp, { passive: true });
-    window.scrollTo(0, targetY);
-
-    return () => {
-        window.removeEventListener('scroll', scrollClamp);
-        window.scrollTo(0, targetY);
-    };
-}
-
 function releasePromptCommentComposerDock(animate = false) {
     const { overlay, sheet } = getPromptCommentComposerElements();
     if (!overlay || !sheet) return;
     finishPromptCommentComposerEnterAnimation();
     clearPromptCommentComposerFocusedReleaseTimer();
+    if (promptCommentComposerInsetDropTimer) {
+        clearTimeout(promptCommentComposerInsetDropTimer);
+        promptCommentComposerInsetDropTimer = null;
+    }
+    promptCommentComposerPendingInset = 0;
 
     setPromptsCssVars(overlay, {
         '--composer-keyboard-offset': '0px'
@@ -9499,6 +9864,7 @@ function syncPromptCommentComposerViewport() {
     const bottomInset = metrics.bottomInset;
     const isFocused = input === document.activeElement;
     if (!sheet) return;
+    capturePromptCommentComposerOverlayFrame();
 
     if (!isFocused && bottomInset <= 8) {
         promptCommentComposerBlurUndocking = false;
@@ -9507,6 +9873,7 @@ function syncPromptCommentComposerViewport() {
             clearTimeout(promptCommentComposerInsetDropTimer);
             promptCommentComposerInsetDropTimer = null;
         }
+        resetPromptCommentComposerKeyboardCycle();
     }
 
     const shouldDock = isFocused &&
@@ -9514,6 +9881,7 @@ function syncPromptCommentComposerViewport() {
         (promptCommentComposerDocked ? bottomInset > 8 : bottomInset > 24);
     const nextInset = shouldDock ? bottomInset : 0;
     const previousInset = promptCommentComposerLastBottomInset;
+    const keyboardSettling = isFocused && isPromptCommentComposerKeyboardSettling();
     const isInsetDroppingWhileFocused = promptCommentComposerDocked && isFocused && nextInset > 24 && nextInset + 24 < previousInset;
 
     if (!promptCommentComposerDocked && shouldDock) {
@@ -9543,17 +9911,25 @@ function syncPromptCommentComposerViewport() {
     }
 
     if (isInsetDroppingWhileFocused) {
-        promptCommentComposerPendingInset = 0;
-        applyPromptCommentComposerDock(nextInset, false);
+        // iOS can report a short lower visualViewport height while reopening
+        // the keyboard. Treat focused inset drops as noise; only a sustained
+        // near-zero inset below releases the dock.
+        promptCommentComposerPendingInset = previousInset;
         return;
     }
 
     if (promptCommentComposerDocked && isFocused && nextInset <= 24) {
+        if (keyboardSettling) {
+            return;
+        }
         schedulePromptCommentComposerFocusedRelease();
         return;
     }
 
     if (nextInset > 24) {
+        if (promptCommentComposerDocked && nextInset < previousInset) {
+            return;
+        }
         applyPromptCommentComposerDock(nextInset, false);
         return;
     }
@@ -9593,21 +9969,19 @@ function attachPromptCommentComposerViewportSync() {
         });
     };
     const handleInputFocus = () => {
-        promptCommentComposerBlurUndocking = false;
-        capturePromptCommentComposerViewportBase();
-        lockPromptCommentComposerPage();
+        preparePromptCommentComposerForInputFocus();
         handleViewportChange();
         setTimeout(handleViewportChange, 60);
         setTimeout(handleViewportChange, 120);
         setTimeout(handleViewportChange, 260);
-        schedulePromptCommentComposerSettleSync();
     };
     const handleInputBlur = () => {
         promptCommentComposerBlurUndocking = true;
-        if (promptCommentComposerDocked) {
-            releasePromptCommentComposerDock(true);
-        }
+        setPromptCommentComposerKeyboardSettling(false);
         handleViewportChange();
+        setTimeout(handleViewportChange, 80);
+        setTimeout(handleViewportChange, 180);
+        schedulePromptCommentComposerKeyboardCycleReset(240);
     };
 
     vv.addEventListener('resize', handleViewportChange, { passive: true });
@@ -9685,8 +10059,19 @@ function ensurePromptCommentComposer() {
         syncPromptCommentComposerTrigger();
     });
     input?.addEventListener('keydown', handleCommentKeydown);
-    input?.addEventListener('focus', () => syncPromptCommentComposerEmptyState());
-    input?.addEventListener('blur', () => syncPromptCommentComposerEmptyState());
+    input?.addEventListener('focus', () => {
+        overlay.classList.add('ios-focus-lock');
+        syncPromptCommentComposerEmptyState();
+    });
+    input?.addEventListener('blur', () => {
+        setTimeout(() => {
+            const active = document.activeElement;
+            if (!overlay.contains(active) || !/^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName || '')) {
+                overlay.classList.remove('ios-focus-lock');
+            }
+        }, 150);
+        syncPromptCommentComposerEmptyState();
+    });
     bindPromptCommentComposerInputFocusStabilizer(input);
 
     return getPromptCommentComposerElements();
@@ -9757,11 +10142,16 @@ function openPromptCommentComposer(options = {}) {
     }
 
     // If we're reopening while it was still closing, instantly clear the closing state
+    const shouldFocusComposer = options.focus !== false;
+    const shouldPrelockMobileFocus = shouldFocusComposer && isPromptModalIOSMobile();
     detachPromptCommentComposerViewportSync();
     resetPromptCommentComposerViewportStyles();
     composer.overlay.classList.remove('composer-closing');
-    startPromptCommentComposerEnterAnimation(composer.overlay);
+    if (!shouldPrelockMobileFocus) {
+        startPromptCommentComposerEnterAnimation(composer.overlay);
+    }
     composer.overlay.classList.add('active');
+    detachPromptModalKeyboardDock();
     freezePromptCommentComposerOverlay();
     capturePromptCommentComposerViewportBase();
     autoExpandPromptCommentComposerInput(composer.input);
@@ -9769,12 +10159,18 @@ function openPromptCommentComposer(options = {}) {
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
     attachPromptCommentComposerViewportSync();
-    resetPromptModalKeyboardDockIfNeeded(false);
     syncPromptModalTopButtonState();
     initCommentImageUpload();
 
-    if (options.focus !== false) {
+    if (shouldPrelockMobileFocus) {
+        preparePromptCommentComposerForInputFocus();
+    }
+
+    if (shouldFocusComposer) {
         requestAnimationFrame(() => {
+            if (!shouldPrelockMobileFocus) {
+                preparePromptCommentComposerForInputFocus();
+            }
             focusPromptCommentComposerInputWithoutScroll(composer.input);
             schedulePromptCommentComposerSettleSync();
         });
@@ -9813,11 +10209,15 @@ function closePromptCommentComposer(options = {}) {
         if (!overlay.classList.contains('composer-closing')) return;
 
         restorePromptCommentComposerOverlay();
-        overlay.classList.remove('active', 'composer-closing');
+        overlay.classList.remove('active', 'composer-closing', 'keyboard-settling');
+        clearPromptCommentComposerKeyboardSettleTimer();
+        clearPromptCommentComposerKeyboardCycleResetTimer();
+        promptCommentComposerKeyboardSettlingUntil = 0;
         resetPromptCommentComposerViewportStyles();
         promptCommentComposerBaseViewportHeight = 0;
         promptCommentComposerBaseVisualHeight = 0;
         promptCommentComposerBaseSheetHeight = 0;
+        promptCommentComposerOverlayBaseHeight = 0;
         promptCommentComposerDocked = false;
         promptCommentComposerLastBottomInset = 0;
         syncPromptCommentComposerEmptyState();
@@ -10295,8 +10695,9 @@ async function updateCommentCountForPrompt(promptId) {
     // Update count in gallery card if visible
     const cards = document.querySelectorAll('.gallery-card');
     cards.forEach(card => {
-        const item = PROMPTS.find(p => (p.supabaseId || p.id) === promptId);
-        if (item && card.dataset.promptId == item.id) {
+        const item = findPromptForModalOpen(promptId);
+        const stablePromptId = getPromptStableOpenId(item);
+        if (item && (card.dataset.promptId === stablePromptId || String(card.dataset.id || '') === String(item.id ?? ''))) {
             const countEl = card.querySelector('.comment-count');
             if (countEl) countEl.textContent = count || 0;
         }
