@@ -3353,6 +3353,33 @@ body.modal-open .prompt-card {
     animation-play-state: paused !important;
 }
 
+body.prompt-comment-composer-underlay-frozen #promptModal,
+body.prompt-comment-composer-underlay-frozen .poetry-modal-backdrop {
+    position: fixed !important;
+    top: var(--prompt-comment-composer-viewport-top, 0px) !important;
+    left: var(--prompt-comment-composer-viewport-left, 0px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: var(--prompt-comment-composer-viewport-width, 100vw) !important;
+    height: var(--prompt-comment-composer-overlay-height, 100svh) !important;
+    min-height: var(--prompt-comment-composer-overlay-height, 100svh) !important;
+    max-height: none !important;
+    animation: none !important;
+    transition: none !important;
+    transform: translate3d(0, 0, 0) !important;
+    -webkit-transform: translate3d(0, 0, 0) !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    overflow-anchor: none !important;
+}
+
+body.prompt-comment-composer-underlay-frozen #promptModal .modal-inner {
+    animation: none !important;
+    transition: none !important;
+    transform: translate3d(0, 0, 0) scale(1) translateZ(0) !important;
+    overflow-anchor: none !important;
+}
+
 
 
 
@@ -3432,15 +3459,6 @@ body.modal-open .prompt-card {
 .poetry-modal.keyboard-docked .modal-inner.prompt-modal-animating {
     transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1) !important;
     will-change: transform !important;
-}
-
-body.prompt-comment-composer-underlay-frozen #promptModal,
-body.prompt-comment-composer-underlay-frozen .poetry-modal-backdrop,
-body.prompt-comment-composer-underlay-frozen #promptModal .modal-inner {
-    animation: none !important;
-    transition: none !important;
-    overflow: hidden !important;
-    overscroll-behavior: none !important;
 }
 
 .modal-image-col {
@@ -5407,15 +5425,13 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     height: var(--prompt-comment-composer-overlay-height) !important;
     min-height: var(--prompt-comment-composer-overlay-height) !important;
     display: none;
-    align-items: center;
-    justify-content: center;
     --composer-keyboard-offset: 0px;
-    --composer-translate-y: 0px;
+    --composer-sheet-top: max(12px, calc((var(--prompt-comment-composer-overlay-height, 100dvh) - 400px) / 2));
     background: var(--app-modal-backdrop);
     backdrop-filter: var(--app-modal-backdrop-filter);
     -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 10030;
-    padding: 24px 18px 18px;
+    padding: 0;
     box-sizing: border-box;
     pointer-events: none;
     overflow: hidden;
@@ -5451,17 +5467,17 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 @keyframes composerSheetFadeIn {
     from {
         opacity: 0;
-        transform: translate3d(0, 20px, 0) scale(0.98);
+        transform: translate3d(-50%, 20px, 0) scale(0.98);
     }
 
     to {
         opacity: 1;
-        transform: translate3d(0, var(--composer-translate-y, 0px), 0) scale(1);
+        transform: translate3d(-50%, 0, 0) scale(1);
     }
 }
 
 .prompt-comment-composer.active {
-    display: flex;
+    display: block;
     pointer-events: auto;
     animation: composerOverlayFadeIn 0.3s ease forwards;
 }
@@ -5472,9 +5488,11 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 
 .prompt-comment-composer.active:focus-within .prompt-comment-composer-sheet,
 .prompt-comment-composer.ios-focus-lock .prompt-comment-composer-sheet,
-.prompt-comment-composer.keyboard-docked-active.active .prompt-comment-composer-sheet {
+.prompt-comment-composer.keyboard-docked .prompt-comment-composer-sheet,
+.prompt-comment-composer.keyboard-docked.active .prompt-comment-composer-sheet,
+.prompt-comment-composer.keyboard-docked.active:focus-within .prompt-comment-composer-sheet {
     opacity: 1 !important;
-    transform: translate3d(0, var(--composer-translate-y, 0px), 0) scale(1) !important;
+    transform: translate3d(-50%, 0, 0) scale(1) !important;
     animation: none !important;
 }
 
@@ -5485,9 +5503,9 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 }
 
 .prompt-comment-composer.composer-closing .prompt-comment-composer-sheet {
-    transform: translate3d(0, calc(var(--composer-translate-y, 0px) + 20px), 0) scale(0.98) !important;
+    transform: translate3d(-50%, 20px, 0) scale(0.98) !important;
     opacity: 0 !important;
-    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease !important;
+    transition: top 0.25s cubic-bezier(0.22, 1, 0.36, 1), transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease !important;
 }
 
 .prompt-comment-composer-sheet {
@@ -5502,12 +5520,10 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     box-shadow:
         0 26px 70px rgba(0, 0, 0, 0.28),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    /* NOTE: do NOT add env(safe-area-inset-bottom) here. The overlay's outer
-       padding (.prompt-comment-composer) already accounts for the home
-       indicator. On iOS Chrome `env(safe-area-inset-bottom)` toggles between
-       0 and ~34px as the bottom toolbar collapses on scroll — adding it here
-       would double-count it and surface as blank space below the send button
-       whenever the page is mid-scrolled. */
+    /* NOTE: keep safe-area padding out of the sheet. The sheet is positioned
+       from a stable layout-height snapshot; reading env(safe-area-inset-bottom)
+       here can change while iOS toolbars/keyboard settle and create a visible
+       jump below the send button. */
     padding: 14px 18px 18px;
     box-sizing: border-box;
     display: flex;
@@ -5515,14 +5531,17 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     gap: 12px;
     pointer-events: auto;
     overflow: hidden;
-    position: relative;
-    margin: 0 auto;
-    transform: translate3d(0, var(--composer-translate-y, 0px), 0);
-    will-change: transform, height;
+    position: absolute;
+    top: var(--composer-sheet-top, 24px);
+    left: 50%;
+    margin: 0;
+    transform: translate3d(-50%, 0, 0);
+    backface-visibility: hidden;
+    will-change: top, transform;
 }
 
 .prompt-comment-composer-sheet.composer-animating {
-    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    transition: top 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
@@ -5783,15 +5802,15 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 
 @media (max-width: 768px) {
     .prompt-comment-composer {
-        padding: calc(env(safe-area-inset-top, 0px) + 12px) 0 calc(env(safe-area-inset-bottom, 0px) + 12px);
+        padding: 0;
     }
 
     .prompt-comment-composer-sheet {
         width: 95vw;
         max-width: 1000px;
         /* 不再在 sheet 的 height / max-height / padding 上叠加 env(safe-area-inset-bottom)。
-           外层 .prompt-comment-composer overlay 的 padding-bottom 已经处理了
-           home indicator 安全区。iOS Chrome 在页面滚动到中间时会把
+           sheet 的 top 由稳定视口快照计算，home indicator 安全区只影响
+           键盘激活时的 visualViewport。iOS Chrome 在页面滚动到中间时会把
            env(safe-area-inset-bottom) 从 0 变成 ~34px（底部工具栏折叠时
            home indicator 暴露），如果在 sheet 内部也读取这个值，会导致
            弹窗的 padding-bottom 跟随滚动突变，发送按钮下方出现一条空白。 */
@@ -6468,8 +6487,8 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
         -webkit-appearance: none;
         resize: none;
         overflow: hidden;
-        pointer-events: auto;
-        touch-action: manipulation;
+        pointer-events: none;
+        touch-action: none;
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui {
@@ -6482,7 +6501,9 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
         align-items: center;
         justify-content: center;
         gap: 0;
-        pointer-events: none;
+        pointer-events: auto;
+        touch-action: manipulation;
+        cursor: pointer;
         z-index: 2;
         opacity: 1;
         transform: none;
@@ -6517,7 +6538,7 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     }
 
     .prompt-comment-composer {
-        padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+        padding: 0;
     }
 }
 

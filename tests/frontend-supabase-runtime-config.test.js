@@ -14501,6 +14501,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'function forceHidePromptModalDuringClose()',
         'function releasePromptModalForceHidden()',
         "clearPromptModalThemeColor({ restoreDelayMs: 320 });",
+        'function suspendPromptModalKeyboardDockForCommentComposer() {',
         'const PROMPTS_DEFERRED_COMMENT_COUNT_DELAY_MS = 4200;',
         'const PROMPTS_DEFERRED_SEARCH_INDEX_DELAY_MS = 5200;',
         'function schedulePromptIdleTask(taskName, task, options = {}) {',
@@ -14512,38 +14513,103 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'function refreshPromptsTextareaCaret(input) {',
         'function stabilizePromptModalCaretDuringMotion(duration = 250) {',
         'function stabilizePromptCommentComposerCaretDuringMotion(duration = 250) {',
-        'function preparePromptCommentComposerForInputFocus() {',
+        'function preparePromptCommentComposerForInputFocus(focusSnapshot = null) {',
         "activeInner.classList.add('prompt-comment-geometry-locked')",
         "modal.classList.add('prompt-caret-stabilizing')",
         "overlay.classList.add('composer-caret-stabilizing')",
         "overlay.classList.toggle('keyboard-settling', Boolean(active));",
-        'let promptCommentComposerScrollLockMode = null;',
         'let promptCommentComposerKeyboardSettleTimer = null;',
-        'let promptCommentComposerKeyboardSettlingUntil = 0;',
+        'let promptCommentComposerSheetAnimationTimer = null;',
         'const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;',
-        'const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 520;',
-        'const PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS = 260;',
-        'const PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS = 160;',
-        'function isPromptCommentComposerKeyboardSettling() {',
-        'function resetPromptCommentComposerKeyboardCycle() {',
-        'function schedulePromptCommentComposerKeyboardCycleReset(delay = PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS) {',
+        'const PROMPT_COMMENT_COMPOSER_SHEET_ANIMATION_MS = 290;',
+        'const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 420;',
+        'const PROMPT_COMMENT_COMPOSER_AUTH_FLASH_MS = 1080;',
+        'const PROMPT_COMMENT_COMPOSER_AUTH_GATE_DELAY_MS = 320;',
+        'const PROMPT_COMMENT_COMPOSER_BACKDROP_CLOSE_GUARD_MS = 260;',
+        'const PROMPT_COMMENT_COMPOSER_BACKDROP_TAP_MOVE_PX = 14;',
+        'const PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_RESTORE_DELAYS = [0, 40, 90, 160, 260, 420, 620, 860, 1120, 1460];',
+        'const PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_FOLLOWUP_DELAYS = [48, 120, 240, 420, 680, 960, 1280];',
+        'const PROMPT_COMMENT_COMPOSER_VIEWPORT_SETTLE_DELAYS = [80, 160, 280, 420, 620, 860, 1120, 1460];',
+        'const PROMPT_COMMENT_COMPOSER_FRESH_SAMPLE_MS = 900;',
+        'const PROMPT_COMMENT_COMPOSER_MAX_KEYBOARD_RATIO = 0.62;',
+        'const PROMPT_COMMENT_COMPOSER_MIN_TOP = 12;',
+        'const PROMPT_COMMENT_COMPOSER_BASE_SHEET_HEIGHT = 400;',
+        'let promptCommentComposerLayoutHeight = 0;',
+        'let promptCommentComposerKeyboardOffset = 0;',
+        'let promptCommentComposerDeferredFocusRafId = null;',
+        'let promptCommentComposerViewportSettleTimers = [];',
+        'let promptCommentComposerLoginGateTimer = null;',
+        'let promptCommentComposerAuthGateActive = false;',
+        'let promptCommentComposerOpenedAt = 0;',
+        'let promptCommentComposerBackdropTouch = null;',
+        'function clearPromptCommentComposerKeyboardTimers() {',
+        'function clearPromptCommentComposerLoginGate() {',
+        'function openPromptCommentComposerLoginGate() {',
+        'function resetPromptCommentComposerKeyboardState() {',
+        'function togglePromptCommentComposerSheetAnimation(sheet, animate) {',
+        'function getPromptCommentComposerFocusScrollSnapshot() {',
+        'function hardRestorePromptCommentComposerPageScroll() {',
+        'function restorePromptCommentComposerFocusScroll(snapshot = promptCommentComposerFocusScrollLock) {',
+        'function lockPromptCommentComposerFocusScroll(snapshot = null) {',
+        'function settlePromptCommentComposerParentFrame() {',
+        'function schedulePromptCommentComposerViewportSettleSync() {',
+        'function schedulePromptCommentComposerSettledFocus(input, snapshot = null) {',
+        'function canClosePromptCommentComposerFromBackdrop() {',
+        'function closePromptCommentComposerFromBackdrop() {',
+        'function getPromptCommentComposerTouchPoint(event, changed = false) {',
         'function getPromptCommentComposerStableViewportHeight() {',
-        'function getPromptCommentComposerNativeViewportFrame() {',
-        'function freezePromptCommentComposerUnderlay() {',
-        'function restorePromptCommentComposerUnderlay() {',
+        'function getPromptCommentComposerViewportSnapshot() {',
         'function capturePromptCommentComposerOverlayFrame(force = false) {',
-        "window.iOSScrollLock.lockLight(overlay, { restoreScrollDuringViewport: false });",
-        "window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: true });",
-        "'--prompt-comment-composer-overlay-height': `${overlayHeight}px`",
-        'const shouldPreserveKeyboardBase = isActive && baseHeight > 0;',
-        "document.body.classList.add('prompt-comment-composer-underlay-frozen');",
-        'capturePromptCommentComposerViewportBase();',
+        'function getPromptCommentComposerSheetLayout(sheet, snapshot, keyboardOffset) {',
+        'window.iOSScrollLock.lockLight(overlay, { restoreScrollDuringViewport: true });',
+        'window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: true });',
+        "'--prompt-comment-composer-overlay-height': `${layoutHeight}px`",
+        "'--prompt-comment-composer-viewport-top': '0px'",
+        "'--prompt-comment-composer-viewport-width': `${snapshot.layoutWidth}px`",
+        'promptCommentComposerLayoutHeight = Math.max(PROMPT_COMMENT_COMPOSER_MIN_TOP, snapshot.measuredHeight);',
+        'const keyboardTop = Math.max(0, layoutHeight - Math.max(0, keyboardOffset));',
+        'const maxRestingTop = Math.max(',
+        'Math.min(maxRestingTop, Math.round((layoutHeight - sheetHeight) / 2))',
+        'const rawKeyboardOffset = Math.max(0, Math.round((snapshot?.layoutHeight || 0) - (snapshot?.visualBottom || 0)));',
+        'Date.now() - promptCommentComposerOpenedAt < PROMPT_COMMENT_COMPOSER_FRESH_SAMPLE_MS;',
+        'if (isFreshKeyboardSample && maxKeyboardOffset > 0 && rawKeyboardOffset > maxKeyboardOffset) {',
+        "'--composer-keyboard-offset': `${keyboardOffset}px`",
+        "'--composer-sheet-top': `${sheetLayout.sheetTop}px`",
         "overlay.classList.add('ios-focus-lock');",
-        'detachPromptModalKeyboardDock();',
-        'const targetBottom = Math.max(40, Math.round(keyboardTop - keyboardClearance));',
-        'const zeroBottom = Math.round(overlayTop + (sheet.offsetTop || 0) + dockHeight);',
-        'const deltaY = Math.max(-520, Math.min(520, Math.round(targetBottom - zeroBottom)));',
-        'applyPromptCommentComposerDock(liveMetrics.bottomInset, true);',
+        'lockPromptCommentComposerFocusScroll(focusSnapshot);',
+        'lockPromptCommentComposerFocusScroll(openingScrollSnapshot);',
+        'restorePromptCommentComposerFocusScroll(openingScrollSnapshot);',
+        'promptCommentComposerOpenedAt = Date.now();',
+        'promptCommentComposerBackdropTouch = null;',
+        'capturePromptCommentComposerOverlayFrame(!promptCommentComposerLayoutHeight);',
+        "submitComment({ source: 'prompt-comment-composer-send' });",
+        "submitComment({ source: 'keyboard' });",
+        "if (isPromptCommentComposerEnabled() && e.target?.id === 'promptCommentComposerInput') {",
+        'async function submitComment(options = {}) {',
+        'if (!content && !selectedCommentImage) {',
+        "if (options.source === 'prompt-comment-composer-send') {",
+        'openPromptCommentComposerLoginGate();',
+        'const isAlreadyActive = composer.overlay.classList.contains(\'active\') &&',
+        'const handleBackdropClick = (e) => {',
+        'const handleBackdropTouchStart = (e) => {',
+        'const handleBackdropTouchMove = (e) => {',
+        'const handleBackdropTouchEnd = (e) => {',
+        "overlay.addEventListener('touchend', handleBackdropTouchEnd, { passive: false });",
+        "commentInput.addEventListener('focus', (e) => launchComposer(e));",
+        'syncPromptCommentComposerViewport({ animate: true });',
+        'syncPromptCommentComposerViewport({ animate: false });',
+        "window.addEventListener('scroll', handleRootScroll, { passive: true });",
+        'suspendPromptModalKeyboardDockForCommentComposer();',
+        'freezePromptCommentComposerUnderlay();',
+        'releasePromptCommentComposerUnderlayFreeze();',
+        'syncPromptCommentComposerUnderlayFreeze();',
+        'requestPromptCommentComposerUnderlayFreezeSync();',
+        'hardRestorePromptCommentComposerPageScroll();',
+        "commentInput.setAttribute('inputmode', 'none');",
+        "commentInput.setAttribute('tabindex', '-1');",
+        "commentInputProxy?.addEventListener('touchstart', (e) => launchComposer(e), { passive: false });",
+        "overlay.classList.toggle('keyboard-docked', keyboardActive);",
+        "overlay?.classList.remove('keyboard-docked', 'keyboard-active');",
         'setPromptsCssVars(modalInner, {',
         'setPromptsCssVars(backdrop, {',
         'setPromptsCssVars(modal, {',
@@ -14560,6 +14626,51 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     for (const marker of runtimeMarkers) {
         assert.equal(promptsSource.includes(marker), true, `prompts-poetry.js should contain ${marker}`);
     }
+
+    [
+        'function applyPromptCommentComposerDock(',
+        'function releasePromptCommentComposerDock(',
+        'function getPromptCommentComposerDockGeometry(',
+        'function getPromptCommentComposerViewportMetrics()',
+        'function schedulePromptCommentComposerFocusedRelease()',
+        'PROMPT_COMMENT_COMPOSER_DOCK_NOISE_PX',
+        'PROMPT_COMMENT_COMPOSER_DOCK_SETTLE_MS',
+        'PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS',
+        'PROMPT_COMMENT_COMPOSER_REST_BOTTOM',
+        'PROMPT_COMMENT_COMPOSER_AUTH_ALERT_DURATION_MS',
+        'queuePromptCommentComposerLoginModal',
+        'promptCommentComposerLoginModalTimer',
+        'promptCommentComposerDocked',
+        'promptCommentComposerLastBottomInset'
+    ].forEach((legacyMarker) => {
+        assert.equal(promptsSource.includes(legacyMarker), false, `prompts-poetry.js should not contain ${legacyMarker}`);
+    });
+
+    assert.equal(
+        promptsSource.includes("commentInput.blur();\n                openPromptCommentComposer({ focus: true });"),
+        false,
+        'readonly prompt comment proxy focus should not prime the parent modal before opening the composer'
+    );
+    assert.equal(
+        promptsSource.includes("if (document.activeElement === commentInput) {\n                    commentInput.blur();\n                }"),
+        true,
+        'readonly prompt comment proxy should blur only after the composer opener has frozen the underlay'
+    );
+    assert.equal(
+        /if \(e\.target === overlay\) \{[\s\S]*closePromptCommentComposer\(\);[\s\S]*\}/.test(promptsSource),
+        false,
+        'prompt comment composer backdrop taps should not close the composer during viewport settle'
+    );
+    assert.match(
+        promptsSource,
+        /async function submitComment\(options = \{\}\) \{[\s\S]*if \(!content && !selectedCommentImage\) \{[\s\S]*return;[\s\S]*\}[\s\S]*window\.supabaseClient\.auth\.getUser\(\);/,
+        'prompt comment submit should ignore empty keyboard submissions before auth checks'
+    );
+    assert.match(
+        promptsSource,
+        /function openPromptCommentComposerLoginGate\(\) \{[\s\S]*closePromptCommentComposer\(\{ preserveModalDock: true \}\);[\s\S]*showLoginModal\(\);/,
+        'prompt comment auth gate should close the composer before opening the login modal'
+    );
 
     const styleMarkers = [
         '.gallery-toast',
@@ -14588,15 +14699,19 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompt-card.card-visible.prompt-card-stagger-11',
         '.prompt-status-bar-shield',
         '.prompt-status-bar-shield.prompt-status-bar-shield--visible',
-        '.prompt-comment-composer.keyboard-docked-active.active .prompt-comment-composer-sheet',
+        '.prompt-comment-composer.keyboard-docked .prompt-comment-composer-sheet',
+        '.prompt-comment-composer.keyboard-docked.active .prompt-comment-composer-sheet',
         '.prompt-comment-composer-sheet.composer-animating',
         '--prompt-comment-composer-overlay-height: 100dvh;',
         'top: var(--prompt-comment-composer-viewport-top) !important;',
-        'body.prompt-comment-composer-underlay-frozen #promptModal',
         '.prompt-comment-composer.ios-focus-lock .prompt-comment-composer-sheet',
         '.poetry-modal.prompt-caret-stabilizing #commentInput',
         '.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput',
         '.prompt-comment-composer.keyboard-settling #promptCommentComposerInput',
+        'body.prompt-comment-composer-underlay-frozen #promptModal',
+        'pointer-events: none;',
+        'touch-action: none;',
+        '--composer-sheet-top: max(12px, calc((var(--prompt-comment-composer-overlay-height, 100dvh) - 400px) / 2));',
         'width: 95vw;',
         '.prompts-caret-repaint',
         '.prompts-theme-particle--spark',
@@ -14633,9 +14748,9 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('commentComposerViewport=20260707_PROMPT_COMMENT_COMPOSER_WIDTH_1'),
+        promptsHtml.includes('commentComposerViewport=20260708_PROMPT_COMMENT_COMPOSER_COLD_ANCHOR_1'),
         true,
-        'prompts.html should cache-bust the prompt comment composer mobile width styles'
+        'prompts.html should cache-bust the prompt comment composer underlay freeze styles'
     );
     assert.equal(
         promptsHtml.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
@@ -14648,9 +14763,9 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery runtime version'
     );
     assert.equal(
-        promptsHtml.includes('commentComposerFocus=20260707_PROMPT_COMMENT_COMPOSER_FOCUS_LOCK_1'),
+        promptsHtml.includes('commentComposerFocus=20260708_PROMPT_COMMENT_COMPOSER_COLD_ANCHOR_1'),
         true,
-        'prompts.html should cache-bust the prompt comment composer keyboard-cycle reset fix'
+        'prompts.html should cache-bust the prompt comment composer fixed-backdrop dock fix'
     );
     assert.equal(
         promptsHtml.includes('data-load-announcement="1"'),
