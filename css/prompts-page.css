@@ -49,7 +49,6 @@ body.loaded .gallery-container {
 }
 
 .prompts-announcement-banner-hidden,
-.prompts-search-suggestions-hidden,
 .prompts-comment-image-upload-hidden {
     display: none;
 }

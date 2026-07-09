@@ -14473,7 +14473,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "navContainer.classList.add('nav-items--hydrated');",
         'warmPromptGalleryLeadImages(itemsToLoad);',
         "card.className = 'prompt-card card-enter prompt-card--loading';",
-        'const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;',
+        'const shouldLoadImageEagerly = itemIndex < PROMPT_GALLERY_EAGER_IMAGE_COUNT;',
         "card.classList.add('prompt-card--loaded');",
         "cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';",
         'setPromptCardImageSource(cardImage, primaryImageAsset);',
@@ -14492,8 +14492,8 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "comment.classList.toggle('hidden-collapsed', shouldHide)",
         'class="prompts-comment-image-upload-hidden"',
         'hidePromptCard(card, true)',
-        'showPromptCard(card, visibleIndex)',
-        'setPromptCardStaggerClass(card, index)',
+        'showPromptCard(card, batchIndex)',
+        'setPromptCardStaggerClass(card, batchIndex)',
         "shield.classList.add('prompt-status-bar-shield--active')",
         "const PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-prompt-modal-theme-restore';",
         'function lockPromptModalThemeColor()',
@@ -14619,7 +14619,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "setPromptsPageOverflow('hidden')",
         'applyPromptsTextareaAutoHeight(textarea, maxHeight)',
         'resetPromptsTextareaAutoHeight(input)',
-        "setPromptsCssVars(container, {",
+        'Disabled: the cursor-following nav spotlight reads as a gray smudge near search.',
         "setPromptsCssVars(card, {"
     ];
 

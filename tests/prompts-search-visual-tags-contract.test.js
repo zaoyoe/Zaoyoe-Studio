@@ -52,7 +52,11 @@ test('prompts search uses visual ai tags across the full gallery dataset', () =>
         'currentFilter = \'search\';',
         'allFilteredItems = PROMPTS.filter((item, index) => {',
         'renderCurrentPage();',
-        'aiTags: p.aiTags || p.ai_tags'
+        'aiTags: p.aiTags || p.ai_tags',
+        'function setupSearch() {',
+        "const searchInput = document.getElementById('gallerySearch');",
+        "searchInput.addEventListener('input', (e) => {",
+        'filterBySearch(query.toLowerCase());'
     ];
 
     for (const marker of requiredMarkers) {
@@ -101,6 +105,21 @@ test('prompts search uses visual ai tags across the full gallery dataset', () =>
         promptsHtml.includes('prompts-poetry.js?v=20260507_REPLY_REALTIME_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
         true,
         'prompts.html should cache-bust the visual-tag search runtime'
+    );
+    assert.equal(
+        promptsHtml.includes('searchSuggest=20260709_PROMPTS_SEARCH_SUGGESTIONS_REMOVED_1'),
+        true,
+        'prompts.html should cache-bust the removed search suggestion dropdown'
+    );
+    assert.equal(
+        promptsHtml.includes('id="searchDropdown"') || promptsHtml.includes('id="searchSuggestions"') || promptsHtml.includes('id="searchHotTags"'),
+        false,
+        'prompts.html should not render a search suggestion dropdown'
+    );
+    assert.equal(
+        promptsSource.includes('showSuggestions(') || promptsSource.includes('showDropdown(') || promptsSource.includes('searchDropdown'),
+        false,
+        'prompts runtime should not open or populate a search suggestion dropdown'
     );
 });
 

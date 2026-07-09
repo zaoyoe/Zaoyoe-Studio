@@ -327,6 +327,8 @@ test('prompts gallery folds CDN variant urls into one visible image per original
         extractFunction(promptsSource, 'getPromptImageCanonicalOriginalUrl'),
         extractFunction(promptsSource, 'getPromptImageCanonicalDedupeKey'),
         extractFunction(promptsSource, 'assignPromptImageAssetUrl'),
+        extractFunction(promptsSource, 'getPromptImageAssetPositiveNumber'),
+        extractFunction(promptsSource, 'assignPromptImageAssetDimensions'),
         extractFunction(promptsSource, 'normalizePromptImageAsset'),
         extractFunction(promptsSource, 'getPromptImageAssetOriginalUrl'),
         extractFunction(promptsSource, 'normalizePromptImageAssetsFromRecord'),
