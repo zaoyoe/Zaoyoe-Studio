@@ -152,7 +152,7 @@ test('public pages prevent image dragging and nonessential text selection', () =
     );
     assert.match(
         promptsCss,
-        /body\.prompts-page \.framer-nav,[\s\S]*body\.prompts-page \.search-dropdown,[\s\S]*body\.prompts-page \.sort-option \* \{\s+-webkit-user-select: none;\s+user-select: none;\s+\}/
+        /body\.prompts-page \.framer-nav,[\s\S]*body\.prompts-page \.nav-dropdown-portal \*,[\s\S]*body\.prompts-page \.sort-option \* \{\s+-webkit-user-select: none;\s+user-select: none;\s+\}/
     );
     assert.match(
         promptsCss,
@@ -169,8 +169,6 @@ test('public pages prevent image dragging and nonessential text selection', () =
     [
         'const PROMPTS_NON_SELECTABLE_UI_SELECTOR = [',
         '\'.framer-nav\'',
-        '\'.search-dropdown\'',
-        '\'.inline-hot-tag\'',
         '\'.sort-option\'',
         'event.target.closest(PROMPTS_NON_SELECTABLE_UI_SELECTOR)'
     ].forEach((marker) => {

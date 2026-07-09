@@ -177,8 +177,17 @@ test('prompts page keeps the AI workbench mounted', () => {
 test('prompts mobile search input suppresses native tap flash inside the search pill', () => {
     const promptsHtml = readRepoFile('prompts.html');
     const promptsCss = readRepoFile('prompts-poetry.css');
+    const promptsSource = readRepoFile('prompts-poetry.js');
 
     const requiredStyleMarkers = [
+        '.spotlight-overlay {',
+        'display: none;',
+        'background: none;',
+        '.poetry-nav-container:hover .spotlight-overlay',
+        '--mood-color: rgba(93, 159, 216, 0.5);',
+        '.nav-search:focus-within {',
+        'border-color: rgba(93, 159, 216, 0.45);',
+        '0 0 0 1px rgba(93, 159, 216, 0.25)',
         '.nav-search input {',
         'background-color: transparent !important;',
         'background-image: none !important;',
@@ -197,9 +206,24 @@ test('prompts mobile search input suppresses native tap flash inside the search 
     }
 
     assert.equal(
+        promptsSource.includes('Disabled: the cursor-following nav spotlight reads as a gray smudge near search.'),
+        true,
+        'prompts-poetry.js should not bind the cursor-following search/nav spotlight'
+    );
+    assert.equal(
+        promptsSource.includes("container.addEventListener('mousemove'"),
+        false,
+        'prompts-poetry.js should not update a cursor-following spotlight on mousemove'
+    );
+    assert.equal(
         promptsHtml.includes('prompts-poetry.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1'),
         true,
         'prompts.html should cache-bust the mobile search tap highlight fix'
+    );
+    assert.equal(
+        promptsHtml.includes('searchFocus=20260709_PROMPTS_SEARCH_BLUE_NO_SPOTLIGHT_1'),
+        true,
+        'prompts.html should cache-bust the search focus blue and spotlight removal change'
     );
 });
 

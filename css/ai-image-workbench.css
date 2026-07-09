@@ -848,7 +848,7 @@ body.chat-widget-open .ai-image-dock {
     border-radius: 999px;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.18s ease;
+    transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ai-image-fab.is-idle .ai-image-fab-core::before {
@@ -1144,7 +1144,7 @@ body.chat-widget-open .ai-image-dock {
 
 .ai-image-fab:hover .ai-image-fab-depth,
 .ai-image-fab:focus-visible .ai-image-fab-depth {
-    opacity: 0.78;
+    opacity: 0.86;
 }
 
 .ai-image-fab-orbit {

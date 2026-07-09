@@ -43,10 +43,6 @@ const PROMPTS_NON_SELECTABLE_UI_SELECTOR = [
     '.mobile-menu',
     '.nav-dropdown',
     '.nav-dropdown-portal',
-    '.search-dropdown',
-    '.hot-tag',
-    '.inline-hot-tag',
-    '.suggestion-item',
     '.sort-trigger',
     '.sort-dropdown',
     '.sort-option'
@@ -289,6 +285,61 @@ function assignPromptImageAssetUrl(asset, key, url) {
     }
 }
 
+function getPromptImageAssetPositiveNumber(...values) {
+    for (const value of values) {
+        const numberValue = Number(value);
+        if (Number.isFinite(numberValue) && numberValue > 0) {
+            return numberValue;
+        }
+    }
+    return 0;
+}
+
+function assignPromptImageAssetDimensions(asset, value = {}) {
+    if (!asset || !value || typeof value !== 'object' || Array.isArray(value)) return;
+
+    const metadata = value.metadata && typeof value.metadata === 'object' && !Array.isArray(value.metadata)
+        ? value.metadata
+        : {};
+    const original = value.original && typeof value.original === 'object' && !Array.isArray(value.original)
+        ? value.original
+        : {};
+
+    const width = getPromptImageAssetPositiveNumber(
+        value.width,
+        value.w,
+        value.originalWidth,
+        value.original_width,
+        value.naturalWidth,
+        value.natural_width,
+        metadata.width,
+        metadata.w,
+        metadata.originalWidth,
+        metadata.original_width,
+        original.width,
+        original.w
+    );
+    const height = getPromptImageAssetPositiveNumber(
+        value.height,
+        value.h,
+        value.originalHeight,
+        value.original_height,
+        value.naturalHeight,
+        value.natural_height,
+        metadata.height,
+        metadata.h,
+        metadata.originalHeight,
+        metadata.original_height,
+        original.height,
+        original.h
+    );
+
+    if (width && height) {
+        asset.width = width;
+        asset.height = height;
+    }
+}
+
 function normalizePromptImageAsset(value) {
     if (typeof value === 'string') {
         const asset = {};
@@ -313,6 +364,8 @@ function normalizePromptImageAsset(value) {
     if (!asset.original && fallbackOriginal) {
         assignPromptImageAssetUrl(asset, 'original', fallbackOriginal);
     }
+
+    assignPromptImageAssetDimensions(asset, value);
 
     return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
 }
@@ -351,6 +404,8 @@ function normalizePromptImageAssetsFromRecord(record = {}) {
         if (seen.has(key)) {
             const existing = seen.get(key);
             existing.original = asset.original || existing.original;
+            existing.width = existing.width || asset.width;
+            existing.height = existing.height || asset.height;
             for (const assetKey of PROMPT_IMAGE_ASSET_KEYS) {
                 if (!existing[assetKey] && asset[assetKey]) {
                     existing[assetKey] = asset[assetKey];
@@ -368,6 +423,44 @@ function normalizePromptImageAssetsFromRecord(record = {}) {
 
 function getPromptImageAssets(item = {}) {
     return normalizePromptImageAssetsFromRecord(item);
+}
+
+function getPromptImageAssetAspectRatio(value) {
+    const asset = normalizePromptImageAsset(value);
+    if (!asset) return 0;
+
+    const width = getPromptImageAssetPositiveNumber(asset.width);
+    const height = getPromptImageAssetPositiveNumber(asset.height);
+    if (!width || !height) return 0;
+    return width / height;
+}
+
+function formatPromptImageAspectRatio(aspectRatio) {
+    const ratio = Number(aspectRatio);
+    if (!Number.isFinite(ratio) || ratio <= 0) return '';
+    return String(Math.round(ratio * 10000) / 10000);
+}
+
+function applyPromptCardImageAspectRatio(card, aspectRatio) {
+    if (!card) return 0;
+
+    const formattedRatio = formatPromptImageAspectRatio(aspectRatio);
+    if (!formattedRatio) return 0;
+
+    card.dataset.imageAspectRatio = formattedRatio;
+    setPromptsCssVars(card, {
+        '--prompt-card-masonry-aspect-ratio': formattedRatio
+    });
+    return Number(formattedRatio);
+}
+
+function applyPromptCardImageAssetAspectRatio(card, imageAsset) {
+    return applyPromptCardImageAspectRatio(card, getPromptImageAssetAspectRatio(imageAsset));
+}
+
+function applyPromptCardNaturalImageAspectRatio(card, cardImage) {
+    if (!card || !cardImage?.naturalWidth || !cardImage?.naturalHeight) return 0;
+    return applyPromptCardImageAspectRatio(card, cardImage.naturalWidth / cardImage.naturalHeight);
 }
 
 function getPromptPrimaryImageAsset(item = {}) {
@@ -1646,9 +1739,28 @@ initTheme();
 const PROMPT_GALLERY_SKELETON_COUNT = 8;
 const PROMPT_NAV_SKELETON_COUNT = 8;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
+const PROMPT_GALLERY_MOBILE_MASONRY_QUERY = '(max-width: 768px)';
+const PROMPT_GALLERY_MASONRY_MIN_COLUMN_WIDTH_PX = 280;
+const PROMPT_GALLERY_MASONRY_MAX_COLUMN_COUNT = 5;
+const PROMPT_GALLERY_MOBILE_MASONRY_COLUMN_COUNT = 2;
+const PROMPT_GALLERY_MASONRY_CARD_LAYOUTS = [
+    { className: 'prompt-card--mobile-hero', aspectRatio: 0.66, heightWeight: 1.52 },
+    { className: 'prompt-card--mobile-wide', aspectRatio: 1.28, heightWeight: 0.78 },
+    { className: 'prompt-card--mobile-portrait', aspectRatio: 0.78, heightWeight: 1.28 },
+    { className: 'prompt-card--mobile-square', aspectRatio: 1, heightWeight: 1 }
+];
+const PROMPT_GALLERY_MASONRY_LAYOUT_CLASS_NAMES = PROMPT_GALLERY_MASONRY_CARD_LAYOUTS.map((layout) => layout.className);
+const PROMPT_GALLERY_MASONRY_CARD_GAP_WEIGHT = 0.12;
+const PROMPT_GALLERY_MASONRY_RESIZE_DEBOUNCE_MS = 520;
+const PROMPT_GALLERY_RESIZE_PRELOAD_IDLE_MS = 620;
+const PROMPT_GALLERY_RESIZE_LIGHT_MODE_MS = 680;
+const PROMPT_GALLERY_RESIZE_LIGHT_MODE_CLASS = 'prompt-gallery-resizing';
 const PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS = 12000;
 const PROMPT_SUPABASE_RETRY_DELAY_MS = 2800;
 const promptGalleryImageWarmCache = new Set();
+let promptGalleryMasonrySignature = null;
+let promptGalleryMasonryResizeTimerId = null;
+let promptGalleryResizeLightModeTimerId = null;
 
 function getPromptAdminVisibilityStatus(prompt = {}) {
     const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
@@ -2382,21 +2494,202 @@ function warmPromptGalleryLeadImages(items = []) {
     });
 }
 
+function isPromptGalleryMobileMasonryLayout() {
+    if (typeof window === 'undefined') return false;
+    if (typeof window.matchMedia === 'function') {
+        return window.matchMedia(PROMPT_GALLERY_MOBILE_MASONRY_QUERY).matches;
+    }
+    return (window.innerWidth || document.documentElement?.clientWidth || 0) <= 768;
+}
+
+function getPromptGalleryMasonryColumnCount(grid = null) {
+    if (isPromptGalleryMobileMasonryLayout()) {
+        return PROMPT_GALLERY_MOBILE_MASONRY_COLUMN_COUNT;
+    }
+
+    const galleryWidth = Math.max(
+        0,
+        Math.round(
+            grid?.clientWidth
+            || grid?.getBoundingClientRect?.().width
+            || window.innerWidth
+            || document.documentElement?.clientWidth
+            || 0
+        )
+    );
+    const minColumnWidth = PROMPT_GALLERY_MASONRY_MIN_COLUMN_WIDTH_PX;
+    const gap = 24;
+    const estimatedCount = Math.floor((galleryWidth + gap) / (minColumnWidth + gap));
+
+    return Math.min(
+        PROMPT_GALLERY_MASONRY_MAX_COLUMN_COUNT,
+        Math.max(PROMPT_GALLERY_MOBILE_MASONRY_COLUMN_COUNT, estimatedCount || PROMPT_GALLERY_MOBILE_MASONRY_COLUMN_COUNT)
+    );
+}
+
+function getPromptGalleryMasonrySignature(grid = null) {
+    return `${isPromptGalleryMobileMasonryLayout() ? 'mobile' : 'desktop'}:${getPromptGalleryMasonryColumnCount(grid)}`;
+}
+
+function getPromptGalleryMasonryCardLayout(index = 0) {
+    const safeIndex = Math.max(0, Number.parseInt(index, 10) || 0);
+    return PROMPT_GALLERY_MASONRY_CARD_LAYOUTS[safeIndex % PROMPT_GALLERY_MASONRY_CARD_LAYOUTS.length]
+        || PROMPT_GALLERY_MASONRY_CARD_LAYOUTS[0];
+}
+
+function getPromptGalleryMasonryCardAspectWeight(card, index = 0) {
+    const imageAspectRatio = Number.parseFloat(card?.dataset?.imageAspectRatio || '');
+    if (Number.isFinite(imageAspectRatio) && imageAspectRatio > 0) {
+        return 1 / imageAspectRatio;
+    }
+    return getPromptGalleryMasonryCardLayout(index).heightWeight;
+}
+
+function getPromptGalleryMasonryTargetColumnIndex(columnHeights = []) {
+    if (!columnHeights.length) return 0;
+    return columnHeights.reduce((targetIndex, height, index) => (
+        height < columnHeights[targetIndex] ? index : targetIndex
+    ), 0);
+}
+
+function applyPromptGalleryMasonryCardLayout(card, index = 0) {
+    if (!card) return;
+    card.classList.remove(...PROMPT_GALLERY_MASONRY_LAYOUT_CLASS_NAMES);
+    const layout = getPromptGalleryMasonryCardLayout(index);
+    card.classList.add(layout.className);
+    setPromptsCssVars(card, {
+        '--prompt-card-masonry-fallback-aspect-ratio': layout.aspectRatio
+    });
+}
+
+function createPromptGalleryMasonryState(grid) {
+    if (!grid) return null;
+
+    const isMobileMasonry = isPromptGalleryMobileMasonryLayout();
+    const columnCount = getPromptGalleryMasonryColumnCount(grid);
+
+    grid.classList.remove('gallery-container--standard');
+    grid.classList.add('gallery-container--masonry');
+    grid.classList.toggle('gallery-container--mobile-masonry', isMobileMasonry);
+    grid.classList.toggle('gallery-container--desktop-masonry', !isMobileMasonry);
+    grid.innerHTML = Array.from({ length: columnCount }, (_, index) => {
+        const positionClass = index === 0
+            ? 'prompt-gallery-column--left'
+            : (index === 1 ? 'prompt-gallery-column--right' : 'prompt-gallery-column--middle');
+        return `<div class="prompt-gallery-column ${positionClass}" data-gallery-column="${index}"></div>`;
+    }).join('');
+
+    return {
+        columns: Array.from(grid.querySelectorAll('.prompt-gallery-column')),
+        columnHeights: Array.from({ length: columnCount }, () => 0),
+        columnCount
+    };
+}
+
+function preparePromptGalleryContainer(grid) {
+    promptGalleryMasonrySignature = getPromptGalleryMasonrySignature(grid);
+    return createPromptGalleryMasonryState(grid);
+}
+
+function appendPromptGalleryCard(grid, card, index = 0, masonryState = null) {
+    if (!grid || !card) return;
+
+    applyPromptGalleryMasonryCardLayout(card, index);
+
+    if (!masonryState?.columns?.length) {
+        grid.appendChild(card);
+        return;
+    }
+
+    const targetColumnIndex = getPromptGalleryMasonryTargetColumnIndex(masonryState.columnHeights);
+    const targetColumn = masonryState.columns[targetColumnIndex] || masonryState.columns[0];
+    targetColumn.appendChild(card);
+    masonryState.columnHeights[targetColumnIndex] += getPromptGalleryMasonryCardAspectWeight(card, index) + PROMPT_GALLERY_MASONRY_CARD_GAP_WEIGHT;
+}
+
+function setPromptGalleryResizeLightMode() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+
+    document.documentElement.classList.add(PROMPT_GALLERY_RESIZE_LIGHT_MODE_CLASS);
+    if (promptGalleryResizeLightModeTimerId) {
+        window.clearTimeout(promptGalleryResizeLightModeTimerId);
+    }
+
+    promptGalleryResizeLightModeTimerId = window.setTimeout(() => {
+        promptGalleryResizeLightModeTimerId = null;
+        document.documentElement.classList.remove(PROMPT_GALLERY_RESIZE_LIGHT_MODE_CLASS);
+    }, PROMPT_GALLERY_RESIZE_LIGHT_MODE_MS);
+}
+
+function syncPromptGalleryMasonryLayout() {
+    const grid = document.querySelector('.gallery-container');
+    const nextSignature = getPromptGalleryMasonrySignature(grid);
+    if (promptGalleryMasonrySignature === null) {
+        promptGalleryMasonrySignature = nextSignature;
+        return;
+    }
+    if (promptGalleryMasonrySignature === nextSignature) return;
+
+    promptGalleryMasonrySignature = nextSignature;
+
+    if (promptGalleryHasRendered) {
+        renderCurrentPage({ preserveScroll: true });
+        return;
+    }
+
+    renderPromptGallerySkeletons();
+}
+
+function schedulePromptGalleryMasonrySync() {
+    setPromptGalleryResizeLightMode();
+
+    if (promptGalleryMasonryResizeTimerId) {
+        window.clearTimeout(promptGalleryMasonryResizeTimerId);
+    }
+
+    promptGalleryMasonryResizeTimerId = window.setTimeout(() => {
+        promptGalleryMasonryResizeTimerId = null;
+        syncPromptGalleryMasonryLayout();
+    }, PROMPT_GALLERY_MASONRY_RESIZE_DEBOUNCE_MS);
+}
+
+function bindPromptGalleryMasonryWatcher() {
+    if (window.__promptGalleryMasonryWatcherBound) return;
+    window.__promptGalleryMasonryWatcherBound = true;
+
+    window.addEventListener('resize', schedulePromptGalleryMasonrySync, { passive: true });
+    window.addEventListener('orientationchange', schedulePromptGalleryMasonrySync, { passive: true });
+
+    if (typeof window.matchMedia === 'function') {
+        const mediaQueryList = window.matchMedia(PROMPT_GALLERY_MOBILE_MASONRY_QUERY);
+        if (typeof mediaQueryList.addEventListener === 'function') {
+            mediaQueryList.addEventListener('change', schedulePromptGalleryMasonrySync);
+        } else if (typeof mediaQueryList.addListener === 'function') {
+            mediaQueryList.addListener(schedulePromptGalleryMasonrySync);
+        }
+    }
+}
+
 function renderPromptGallerySkeletons(count = PROMPT_GALLERY_SKELETON_COUNT) {
     const grid = document.querySelector('.gallery-container');
     if (!grid) return;
 
     const safeCount = Math.min(Math.max(Number.parseInt(count, 10) || PROMPT_GALLERY_SKELETON_COUNT, 4), 12);
     grid.classList.add('visible');
-    grid.innerHTML = Array.from({ length: safeCount }, (_, index) => `
-        <div class="prompt-card prompt-card--skeleton" aria-hidden="true" data-skeleton-index="${index}">
-            ${buildPromptCardSkeletonMarkup(index)}
-        </div>
-    `).join('');
+    const masonryState = preparePromptGalleryContainer(grid);
+    Array.from({ length: safeCount }).forEach((_, index) => {
+        const card = document.createElement('div');
+        card.className = 'prompt-card prompt-card--skeleton';
+        card.setAttribute('aria-hidden', 'true');
+        card.dataset.skeletonIndex = String(index);
+        card.innerHTML = buildPromptCardSkeletonMarkup(index);
+        appendPromptGalleryCard(grid, card, index, masonryState);
+    });
 }
 
 function markPromptCardImageReady(card, cardImage) {
     if (!card) return;
+    applyPromptCardNaturalImageAspectRatio(card, cardImage);
     card.classList.remove('prompt-card--loading');
     card.classList.add('prompt-card--loaded');
     cardImage?.classList.add('loaded');
@@ -2404,6 +2697,8 @@ function markPromptCardImageReady(card, cardImage) {
 
 function setPromptCardImageSource(cardImage, imageAsset) {
     if (!cardImage || !imageAsset) return;
+    const card = cardImage.closest?.('.prompt-card') || null;
+    applyPromptCardImageAssetAspectRatio(card, imageAsset);
 
     const rawOriginalUrl = getPromptImageAssetOriginalUrl(imageAsset);
     if (isSupabaseStorageImageUrl(rawOriginalUrl)) {
@@ -2817,6 +3112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     bindPromptThemeStarryLoader();
     initializePromptStaticControls();
     syncPromptNavOffset();
+    bindPromptGalleryMasonryWatcher();
     renderPromptNavSkeletons();
     renderFeaturedBannerSkeleton();
     renderPromptGallerySkeletons();
@@ -3457,14 +3753,26 @@ function initAmbientLight() {
     const ctx = canvas.getContext('2d');
     let animationId;
     let blobs = [];
+    let canvasResizeFrameId = null;
 
-    // Resize canvas
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    function applyCanvasSize() {
+        const nextWidth = Math.max(1, Math.round(window.innerWidth || document.documentElement?.clientWidth || 1));
+        const nextHeight = Math.max(1, Math.round(window.innerHeight || document.documentElement?.clientHeight || 1));
+        if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
     }
-    resize();
-    window.addEventListener('resize', resize);
+
+    function scheduleCanvasResize() {
+        if (canvasResizeFrameId) return;
+        canvasResizeFrameId = requestAnimationFrame(() => {
+            canvasResizeFrameId = null;
+            applyCanvasSize();
+        });
+    }
+
+    applyCanvasSize();
+    window.addEventListener('resize', scheduleCanvasResize, { passive: true });
 
     // Color extraction from visible cards
     function getVisibleCardColors() {
@@ -3908,30 +4216,34 @@ function setupScrollReveal() {
 
 // --- Spotlight Effect ---
 function initSpotlight() {
-    const container = document.querySelector('.poetry-nav-container');
-    if (!container) return;
-
-    container.addEventListener('mousemove', (e) => {
-        const rect = container.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        setPromptsCssVars(container, {
-            '--cursor-x': `${x}px`,
-            '--cursor-y': `${y}px`
-        });
-    });
+    // Disabled: the cursor-following nav spotlight reads as a gray smudge near search.
 }
 
-// --- Pagination State ---
-let CARDS_PER_PAGE = 20; // Default: 5 rows * 4 columns
-let currentPage = 1;
+// --- Infinite Gallery State ---
+let CARDS_PER_PAGE = 20; // Default initial/incremental render batch size.
 let currentFilter = 'all';
 let isLoading = false;
 let allFilteredItems = [];
-let allCardsRendered = false; // Track if all cards have been rendered
+let allCardsRendered = false; // Track if all filtered cards have been rendered.
 let promptGalleryHasRendered = false;
 let renderedCards = new Map(); // Cache rendered cards by id
+let promptGalleryRenderedCount = 0;
+let promptGalleryMasonryState = null;
+let promptGalleryLastScrollY = 0;
+let promptGalleryLastScrollDirection = 'down';
+let promptGalleryLastScrollAt = 0;
+let promptGalleryScrollIdleTimerId = null;
+let promptGalleryScrollLoadFrameId = null;
+let promptGalleryPendingScrollLoadCount = 0;
+let promptGalleryInfiniteScrollBound = false;
+let promptGalleryTouchLastY = 0;
+let promptGalleryTouchLastAt = 0;
+const PROMPT_GALLERY_SCROLL_PRELOAD_COUNT = 12;
+const PROMPT_GALLERY_SCROLL_IDLE_MS = 160;
+const PROMPT_GALLERY_BOTTOM_LOAD_MARGIN_PX = 900;
+const PROMPT_GALLERY_SCROLL_LOAD_MAX_COUNT = 72;
+const PROMPT_GALLERY_SCROLL_DISTANCE_PER_CARD_PX = 260;
+const PROMPT_GALLERY_SCROLL_VELOCITY_MULTIPLIER = 10;
 
 // Load gallery config from system_config
 let DEFAULT_SORT = 'newest'; // Default sort order
@@ -5638,10 +5950,7 @@ function renderGallery(filter, reset = true) {
 
     currentFilter = filter;
 
-    // Reset pagination state when filtering
     if (reset) {
-        currentPage = 1; // Start at page 1 for standard pagination
-        // Filter items based on current filter
         if (filter === 'favorites') {
             allFilteredItems = isPromptFavoriteUserAuthenticated()
                 ? PROMPTS.filter(p => isPromptFavoriteSaved(p.id))
@@ -5681,275 +5990,448 @@ function renderGallery(filter, reset = true) {
     document.documentElement.classList.remove('prompts-gallery-pending');
 }
 
-function renderCurrentPage() {
+function getPromptGalleryBatchSize() {
+    return Math.max(1, Number.parseInt(CARDS_PER_PAGE, 10) || 20);
+}
+
+function resetPromptGalleryInfiniteState() {
+    promptGalleryRenderedCount = 0;
+    promptGalleryMasonryState = null;
+    allCardsRendered = false;
+    isLoading = false;
+    renderedCards = new Map();
+    removePromptGalleryPaginationControls();
+}
+
+function removePromptGalleryPaginationControls() {
+    document.querySelectorAll('.prompts-pagination-nav').forEach((nav) => nav.remove());
+}
+
+function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
+    const imageAssets = getPromptImageAssets(item);
+    const primaryImageAsset = imageAssets[0] || null;
+    const shouldLoadImageEagerly = itemIndex < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
+    const promptOpenId = getPromptStableOpenId(item);
+    const card = document.createElement('div');
+    card.className = 'prompt-card card-enter prompt-card--loading';
+    card.dataset.tags = Array.isArray(item.tags) ? item.tags.join(',') : '';
+    card.dataset.id = item.id;
+    card.dataset.promptId = promptOpenId;
+    card.dataset.galleryIndex = String(itemIndex);
+    card.dataset.images = JSON.stringify(imageAssets);
+    bindPromptCardActivation(card, promptOpenId);
+    setPromptCardStaggerClass(card, batchIndex);
+
+    const hasMultiple = imageAssets.length > 1;
+    const indicators = hasMultiple
+        ? `<div class="card-indicators">${imageAssets.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
+        : '';
+
+    const promptFavoriteId = normalizePromptFavoriteId(item.id);
+    const promptSourceActionsMarkup = `
+        ${buildPromptSourceLinkMarkup(item)}
+        ${buildPromptFavoriteClusterMarkup(item, { favoriteId: promptFavoriteId })}
+    `;
+
+    const breatheDelay = (Math.random() * 4).toFixed(2);
+    setPromptsCssVars(card, {
+        '--breathe-delay': `${breatheDelay}s`
+    });
+    applyPromptCardImageAssetAspectRatio(card, primaryImageAsset);
+
+    card.innerHTML = `
+        ${buildPromptCardSkeletonMarkup(itemIndex)}
+        <img class="card-image" loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}" decoding="async" alt="${getLocalizedField(item, 'title')}" draggable="false">
+        <div class="card-overlay">
+            ${indicators}
+            <div class="card-overlay-bottom">
+                ${buildPromptSourceAttributionMarkup(item)}
+                <div class="card-source-actions">
+                    ${promptSourceActionsMarkup}
+                </div>
+            </div>
+        </div>
+    `;
+
+    bindPromptSourceActionEvents(card, promptFavoriteId);
+
+    const cardImage = card.querySelector('.card-image');
+    if (cardImage) {
+        disablePromptImageDrag(cardImage);
+        cardImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';
+        cardImage.decoding = 'async';
+        cardImage.setAttribute('fetchpriority', shouldLoadImageEagerly ? 'high' : 'auto');
+        if ('fetchPriority' in cardImage) {
+            cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
+        }
+        setPromptCardImageSource(cardImage, primaryImageAsset);
+    }
+    cardImage?.addEventListener('load', () => {
+        markPromptCardImageReady(card, cardImage);
+    });
+    cardImage?.addEventListener('error', () => {
+        const transformFallbackSrc = cardImage.dataset.transformFallbackSrc;
+        const originalSrc = cardImage.dataset.originalSrc || getPromptImageAssetOriginalUrl(primaryImageAsset);
+
+        if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
+            cardImage.dataset.fallbackStage = 'transform';
+            cardImage.src = transformFallbackSrc;
+            return;
+        }
+
+        if (
+            cardImage.dataset.fallbackStage !== 'original'
+            && originalSrc
+            && !isSupabaseStorageImageUrl(originalSrc)
+            && cardImage.src !== originalSrc
+        ) {
+            cardImage.dataset.fallbackStage = 'original';
+            cardImage.src = originalSrc;
+            return;
+        }
+
+        markPromptCardImageReady(card, cardImage);
+    });
+    if (cardImage?.complete && cardImage.naturalWidth > 0) {
+        markPromptCardImageReady(card, cardImage);
+    }
+
+    if (hasMultiple) {
+        let hoverInterval = null;
+        let currentIndex = 0;
+
+        card.addEventListener('mouseenter', () => {
+            const img = card.querySelector('.card-image');
+            const dots = card.querySelectorAll('.indicator-dot');
+            const images = JSON.parse(card.dataset.images);
+
+            hoverInterval = setInterval(() => {
+                currentIndex = (currentIndex + 1) % images.length;
+                setPromptCardImageSource(img, images[currentIndex]);
+                dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
+            }, 1500);
+        });
+
+        card.addEventListener('mouseleave', () => {
+            clearInterval(hoverInterval);
+            currentIndex = 0;
+            const img = card.querySelector('.card-image');
+            const dots = card.querySelectorAll('.indicator-dot');
+            const images = JSON.parse(card.dataset.images);
+            setPromptCardImageSource(img, images[0]);
+            dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
+        });
+    }
+
+    renderedCards.set(promptOpenId || String(itemIndex), card);
+    return card;
+}
+
+function renderPromptGalleryRange(startIndex = 0, endIndex = 0, options = {}) {
     const grid = document.querySelector('.gallery-container');
-    if (!grid) return;
+    if (!grid || isLoading) return 0;
 
-    // Clear grid for standard pagination
-    grid.innerHTML = '';
-    window.scrollTo({ top: 0, behavior: shouldForcePromptPageTop() ? 'auto' : 'smooth' });
-
-    const totalItems = allFilteredItems.length;
-    const totalPages = Math.ceil(totalItems / CARDS_PER_PAGE);
-
-    // Ensure currentPage is valid
-    if (currentPage < 1) currentPage = 1;
-    if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
-
-    const startIndex = (currentPage - 1) * CARDS_PER_PAGE;
-    const endIndex = Math.min(startIndex + CARDS_PER_PAGE, totalItems);
-    const itemsToLoad = allFilteredItems.slice(startIndex, endIndex);
-
-    if (itemsToLoad.length === 0 && totalItems > 0) return;
+    const safeStart = Math.max(0, Math.min(Number.parseInt(startIndex, 10) || 0, allFilteredItems.length));
+    const safeEnd = Math.max(safeStart, Math.min(Number.parseInt(endIndex, 10) || 0, allFilteredItems.length));
+    const itemsToLoad = allFilteredItems.slice(safeStart, safeEnd);
+    if (!itemsToLoad.length) {
+        allCardsRendered = promptGalleryRenderedCount >= allFilteredItems.length;
+        return 0;
+    }
 
     isLoading = true;
     warmPromptGalleryLeadImages(itemsToLoad);
 
-    itemsToLoad.forEach((item, index) => {
-        const imageAssets = getPromptImageAssets(item);
-        const primaryImageAsset = imageAssets[0] || null;
-        const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
-        const promptOpenId = getPromptStableOpenId(item);
-        const card = document.createElement('div');
-        card.className = 'prompt-card card-enter prompt-card--loading';
-        card.dataset.tags = item.tags.join(','); // For CSS filtering
-        card.dataset.id = item.id;
-        card.dataset.promptId = promptOpenId;
-        card.dataset.images = JSON.stringify(imageAssets); // Store all images
-        bindPromptCardActivation(card, promptOpenId);
-        setPromptCardStaggerClass(card, index);
+    itemsToLoad.forEach((item, offset) => {
+        const itemIndex = safeStart + offset;
+        const batchIndex = offset;
+        const card = createPromptGalleryCard(item, itemIndex, batchIndex);
+        appendPromptGalleryCard(grid, card, itemIndex, promptGalleryMasonryState);
 
-        // Generate image indicator dots if multiple images
-        const hasMultiple = imageAssets.length > 1;
-        const indicators = hasMultiple
-            ? `<div class="card-indicators">${imageAssets.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
-            : '';
-
-        // Check if item is already saved
-        const promptFavoriteId = normalizePromptFavoriteId(item.id);
-        const promptSourceActionsMarkup = `
-            ${buildPromptSourceLinkMarkup(item)}
-            ${buildPromptFavoriteClusterMarkup(item, { favoriteId: promptFavoriteId })}
-        `;
-
-        // Random breathing delay for organic feel (0-4 seconds)
-        const breatheDelay = (Math.random() * 4).toFixed(2);
-        setPromptsCssVars(card, {
-            '--breathe-delay': `${breatheDelay}s`
-        });
-
-        card.innerHTML = `
-            ${buildPromptCardSkeletonMarkup(index)}
-            <img class="card-image" loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}" decoding="async" alt="${getLocalizedField(item, 'title')}" draggable="false">
-            <div class="card-overlay">
-                ${indicators}
-                <div class="card-overlay-bottom">
-                    ${buildPromptSourceAttributionMarkup(item)}
-                    <div class="card-source-actions">
-                        ${promptSourceActionsMarkup}
-                    </div>
-                </div>
-            </div>
-        `;
-
-        bindPromptSourceActionEvents(card, promptFavoriteId);
-
-        const cardImage = card.querySelector('.card-image');
-        if (cardImage) {
-            disablePromptImageDrag(cardImage);
-            cardImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';
-            cardImage.decoding = 'async';
-            cardImage.setAttribute('fetchpriority', shouldLoadImageEagerly ? 'high' : 'auto');
-            if ('fetchPriority' in cardImage) {
-                cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
-            }
-            setPromptCardImageSource(cardImage, primaryImageAsset);
-        }
-        cardImage?.addEventListener('load', () => {
-            markPromptCardImageReady(card, cardImage);
-        });
-        cardImage?.addEventListener('error', () => {
-            const transformFallbackSrc = cardImage.dataset.transformFallbackSrc;
-            const originalSrc = cardImage.dataset.originalSrc || getPromptImageAssetOriginalUrl(primaryImageAsset);
-
-            if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
-                cardImage.dataset.fallbackStage = 'transform';
-                cardImage.src = transformFallbackSrc;
-                return;
-            }
-
-            if (
-                cardImage.dataset.fallbackStage !== 'original'
-                && originalSrc
-                && !isSupabaseStorageImageUrl(originalSrc)
-                && cardImage.src !== originalSrc
-            ) {
-                cardImage.dataset.fallbackStage = 'original';
-                cardImage.src = originalSrc;
-                return;
-            }
-
-            markPromptCardImageReady(card, cardImage);
-        });
-        if (cardImage?.complete && cardImage.naturalWidth > 0) {
-            markPromptCardImageReady(card, cardImage);
-        }
-
-        // Add hover carousel for cards with multiple images
-        if (hasMultiple) {
-            let hoverInterval = null;
-            let currentIndex = 0;
-
-            card.addEventListener('mouseenter', () => {
-                const img = card.querySelector('.card-image');
-                const dots = card.querySelectorAll('.indicator-dot');
-                const images = JSON.parse(card.dataset.images);
-
-                hoverInterval = setInterval(() => {
-                    currentIndex = (currentIndex + 1) % images.length;
-                    setPromptCardImageSource(img, images[currentIndex]);
-                    dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
-                }, 1500);
-            });
-
-            card.addEventListener('mouseleave', () => {
-                clearInterval(hoverInterval);
-                currentIndex = 0;
-                const img = card.querySelector('.card-image');
-                const dots = card.querySelectorAll('.indicator-dot');
-                const images = JSON.parse(card.dataset.images);
-                setPromptCardImageSource(img, images[0]);
-                dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
-            });
-        }
-
-            grid.appendChild(card);
-
-            // Trigger animation with stagger delay
-            const staggerDelay = index * 50;
-            const visibleIndex = index;
+        const staggerDelay = options.skipEntranceDelay ? 0 : batchIndex * 50;
+        setTimeout(() => {
+            showPromptCard(card, batchIndex);
             setTimeout(() => {
-	            showPromptCard(card, visibleIndex);
-	            setTimeout(() => {
-	                card.classList.add('breathing');
-	            }, 850);
-	        }, staggerDelay);
+                card.classList.add('breathing');
+            }, 850);
+        }, staggerDelay);
     });
 
+    promptGalleryRenderedCount = Math.max(promptGalleryRenderedCount, safeEnd);
+    allCardsRendered = promptGalleryRenderedCount >= allFilteredItems.length;
     isLoading = false;
-
-    // Show container
-    requestAnimationFrame(() => {
-        grid.classList.add('visible');
-        forcePromptPageTop();
-    });
-
-    // Render Pagination Controls
-    renderPaginationControls(totalPages);
+    return itemsToLoad.length;
 }
 
-function renderPaginationControls(totalPages) {
-    const existingNav = document.querySelector('.pagination-nav');
-    if (existingNav) existingNav.remove();
-
+function renderCurrentPage(options = {}) {
     const grid = document.querySelector('.gallery-container');
-    if (!grid || totalPages <= 1) return;
+    if (!grid) return;
 
-    const nav = document.createElement('div');
-    nav.className = 'pagination-nav prompts-pagination-nav';
+    const preserveScroll = options.preserveScroll === true;
+    const preservedScrollY = preserveScroll ? window.scrollY : 0;
+    const previousRenderedCount = promptGalleryRenderedCount;
+    resetPromptGalleryInfiniteState();
+    promptGalleryMasonryState = preparePromptGalleryContainer(grid);
 
-    // Helper to create button
-    const createBtn = (text, page, isActive = false, isDisabled = false) => {
-        const btn = document.createElement('button');
-        btn.textContent = text;
-        btn.className = `pagination-btn${isActive ? ' active' : ''}`;
-        if (isDisabled) btn.disabled = true;
-
-        if (!isDisabled && !isActive) {
-            btn.addEventListener('click', () => {
-                currentPage = page;
-                renderCurrentPage();
-            });
-        }
-        return btn;
-    };
-
-    // Prev Button
-    nav.appendChild(createBtn('← Prev', currentPage - 1, false, currentPage === 1));
-
-    // Page Numbers
-    // Simple logic: Show first, last, and around current
-    // Pattern: 1 ... 4 5 6 ... 10
-    const range = [];
-
-    if (totalPages <= 7) {
-        for (let i = 1; i <= totalPages; i++) range.push(i);
-    } else {
-        range.push(1);
-        if (currentPage > 3) range.push('...');
-
-        let start = Math.max(2, currentPage - 1);
-        let end = Math.min(totalPages - 1, currentPage + 1);
-
-        if (currentPage === 1) end = 3;
-        if (currentPage === totalPages) start = totalPages - 2;
-
-        for (let i = start; i <= end; i++) range.push(i);
-
-        if (currentPage < totalPages - 2) range.push('...');
-        range.push(totalPages);
+    if (!preserveScroll) {
+        window.scrollTo({ top: 0, behavior: shouldForcePromptPageTop() ? 'auto' : 'smooth' });
     }
 
-    range.forEach(p => {
-        if (p === '...') {
-            const span = document.createElement('span');
-            span.textContent = '...';
-            span.className = 'pagination-ellipsis';
-            nav.appendChild(span);
+    const totalItems = allFilteredItems.length;
+    const requestedCount = Number.parseInt(options.minCount, 10) || 0;
+    const targetCount = Math.min(
+        totalItems,
+        Math.max(getPromptGalleryBatchSize(), requestedCount, preserveScroll ? previousRenderedCount : 0)
+    );
+
+    renderPromptGalleryRange(0, targetCount, { skipEntranceDelay: preserveScroll });
+
+    requestAnimationFrame(() => {
+        grid.classList.add('visible');
+        if (preserveScroll) {
+            window.scrollTo({ top: preservedScrollY, behavior: 'auto' });
         } else {
-            nav.appendChild(createBtn(String(p), p, p === currentPage));
+            forcePromptPageTop();
         }
+        preloadPromptGalleryAroundVisibleRange('down');
     });
-
-    // Next Button
-    nav.appendChild(createBtn('Next →', currentPage + 1, false, currentPage === totalPages));
-
-    grid.parentNode.insertBefore(nav, grid.nextSibling);
-
-    // Animate in
-    nav.animate([
-        { opacity: 0, transform: 'translateY(20px)' },
-        { opacity: 1, transform: 'translateY(0)' }
-    ], { duration: 500, easing: 'ease-out', fill: 'forwards' });
 }
 
-// Filter cards using CSS classes for smooth animations (Only used for filter switching animations if staying on same page, but we are resetting page now)
-// We can simplify this or keep it for small transitions, but standard pagination usually redraws.
-// Keeping a simplified version for small updates if needed, but renderGallery now resets.
+function ensurePromptGalleryRenderedThrough(targetIndex = 0, options = {}) {
+    const safeTargetIndex = Math.max(0, Number.parseInt(targetIndex, 10) || 0);
+    if (!allFilteredItems.length || safeTargetIndex < promptGalleryRenderedCount) {
+        return 0;
+    }
+
+    if (!promptGalleryMasonryState) {
+        renderCurrentPage({
+            preserveScroll: true,
+            minCount: safeTargetIndex + 1
+        });
+        return 0;
+    }
+
+    const nextCount = Math.min(allFilteredItems.length, safeTargetIndex + 1);
+    return renderPromptGalleryRange(promptGalleryRenderedCount, nextCount, options);
+}
+
+function getPromptGalleryVisibleRange() {
+    const cards = Array.from(document.querySelectorAll('.gallery-container .prompt-card[data-gallery-index]'));
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    let minIndex = Infinity;
+    let maxIndex = -Infinity;
+
+    cards.forEach((card) => {
+        const index = Number.parseInt(card.dataset.galleryIndex, 10);
+        if (!Number.isFinite(index)) return;
+
+        const rect = card.getBoundingClientRect();
+        if (rect.bottom < 0 || rect.top > viewportHeight) return;
+
+        minIndex = Math.min(minIndex, index);
+        maxIndex = Math.max(maxIndex, index);
+    });
+
+    if (!Number.isFinite(minIndex) || !Number.isFinite(maxIndex)) {
+        return null;
+    }
+
+    return { minIndex, maxIndex };
+}
+
+function preloadPromptGalleryItems(startIndex = 0, endIndex = 0) {
+    const safeStart = Math.max(0, Math.min(Number.parseInt(startIndex, 10) || 0, allFilteredItems.length));
+    const safeEnd = Math.max(safeStart, Math.min(Number.parseInt(endIndex, 10) || 0, allFilteredItems.length));
+    if (safeEnd <= safeStart) return 0;
+
+    warmPromptGalleryLeadImages(allFilteredItems.slice(safeStart, safeEnd));
+    return safeEnd - safeStart;
+}
+
+function getPromptGalleryViewportHeight() {
+    return Math.max(
+        window.innerHeight || 0,
+        document.documentElement?.clientHeight || 0,
+        window.visualViewport?.height || 0
+    );
+}
+
+function getPromptGalleryDocumentBottomDistance() {
+    const doc = document.documentElement;
+    const body = document.body;
+    const scrollY = Math.max(
+        0,
+        Math.round(window.scrollY || window.pageYOffset || doc?.scrollTop || body?.scrollTop || 0)
+    );
+    const viewportHeight = getPromptGalleryViewportHeight();
+    const documentHeight = Math.max(
+        doc?.scrollHeight || 0,
+        body?.scrollHeight || 0,
+        doc?.offsetHeight || 0,
+        body?.offsetHeight || 0,
+        doc?.clientHeight || 0
+    );
+    return Math.max(0, documentHeight - (scrollY + viewportHeight));
+}
+
+function isPromptGalleryNearDocumentBottom() {
+    const viewportHeight = getPromptGalleryViewportHeight();
+    const threshold = Math.max(PROMPT_GALLERY_BOTTOM_LOAD_MARGIN_PX, Math.round(viewportHeight * 0.75));
+    return getPromptGalleryDocumentBottomDistance() <= threshold;
+}
+
+function ensurePromptGalleryNextScrollBatch(options = {}) {
+    if (allCardsRendered) return 0;
+    return ensurePromptGalleryRenderedThrough(
+        promptGalleryRenderedCount + PROMPT_GALLERY_SCROLL_PRELOAD_COUNT - 1,
+        options
+    );
+}
+
+function getPromptGalleryScrollLoadCount(deltaPx = 0, deltaMs = 16) {
+    const safeDeltaPx = Math.max(0, Math.abs(Number(deltaPx) || 0));
+    const safeDeltaMs = Math.max(16, Math.abs(Number(deltaMs) || 16));
+    const velocityPxPerMs = safeDeltaPx / safeDeltaMs;
+    const distanceBonus = Math.floor(safeDeltaPx / PROMPT_GALLERY_SCROLL_DISTANCE_PER_CARD_PX);
+    const velocityBonus = Math.floor(velocityPxPerMs * PROMPT_GALLERY_SCROLL_VELOCITY_MULTIPLIER);
+
+    return Math.min(
+        PROMPT_GALLERY_SCROLL_LOAD_MAX_COUNT,
+        Math.max(
+            PROMPT_GALLERY_SCROLL_PRELOAD_COUNT,
+            PROMPT_GALLERY_SCROLL_PRELOAD_COUNT + distanceBonus + velocityBonus
+        )
+    );
+}
+
+function queuePromptGalleryScrollLoad(loadCount = PROMPT_GALLERY_SCROLL_PRELOAD_COUNT) {
+    if (allCardsRendered) return;
+
+    const safeLoadCount = Math.min(
+        PROMPT_GALLERY_SCROLL_LOAD_MAX_COUNT,
+        Math.max(PROMPT_GALLERY_SCROLL_PRELOAD_COUNT, Number.parseInt(loadCount, 10) || PROMPT_GALLERY_SCROLL_PRELOAD_COUNT)
+    );
+    promptGalleryPendingScrollLoadCount = Math.max(promptGalleryPendingScrollLoadCount, safeLoadCount);
+
+    if (promptGalleryScrollLoadFrameId) return;
+
+    promptGalleryScrollLoadFrameId = requestAnimationFrame(() => {
+        promptGalleryScrollLoadFrameId = null;
+        const nextLoadCount = promptGalleryPendingScrollLoadCount;
+        promptGalleryPendingScrollLoadCount = 0;
+        if (nextLoadCount <= 0) return;
+
+        ensurePromptGalleryRenderedThrough(
+            promptGalleryRenderedCount + nextLoadCount - 1,
+            { skipEntranceDelay: true }
+        );
+    });
+}
+
+function preloadPromptGalleryAroundVisibleRange(direction = promptGalleryLastScrollDirection) {
+    if (!allFilteredItems.length) return 0;
+
+    if (direction !== 'up' && isPromptGalleryNearDocumentBottom()) {
+        return ensurePromptGalleryNextScrollBatch();
+    }
+
+    const visibleRange = getPromptGalleryVisibleRange();
+    if (!visibleRange) {
+        return direction === 'up'
+            ? preloadPromptGalleryItems(0, PROMPT_GALLERY_SCROLL_PRELOAD_COUNT)
+            : ensurePromptGalleryRenderedThrough(getPromptGalleryBatchSize() + PROMPT_GALLERY_SCROLL_PRELOAD_COUNT - 1);
+    }
+
+    if (direction === 'up') {
+        const startIndex = Math.max(0, visibleRange.minIndex - PROMPT_GALLERY_SCROLL_PRELOAD_COUNT);
+        return preloadPromptGalleryItems(startIndex, visibleRange.minIndex);
+    }
+
+    const preloadStart = visibleRange.maxIndex + 1;
+    const preloadEnd = Math.min(allFilteredItems.length, preloadStart + PROMPT_GALLERY_SCROLL_PRELOAD_COUNT);
+    preloadPromptGalleryItems(preloadStart, preloadEnd);
+    return ensurePromptGalleryRenderedThrough(preloadEnd - 1);
+}
+
+function schedulePromptGalleryScrollIdlePreload(delayMs = PROMPT_GALLERY_SCROLL_IDLE_MS) {
+    if (promptGalleryScrollIdleTimerId) {
+        window.clearTimeout(promptGalleryScrollIdleTimerId);
+    }
+
+    promptGalleryScrollIdleTimerId = window.setTimeout(() => {
+        promptGalleryScrollIdleTimerId = null;
+        preloadPromptGalleryAroundVisibleRange(promptGalleryLastScrollDirection);
+    }, Math.max(PROMPT_GALLERY_SCROLL_IDLE_MS, Number.parseInt(delayMs, 10) || PROMPT_GALLERY_SCROLL_IDLE_MS));
+}
+
+function schedulePromptGalleryResizeIdlePreload() {
+    setPromptGalleryResizeLightMode();
+    schedulePromptGalleryScrollIdlePreload(PROMPT_GALLERY_RESIZE_PRELOAD_IDLE_MS);
+}
+
+function handlePromptGalleryScroll() {
+    const now = Date.now();
+    const nextScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+    const deltaY = nextScrollY - promptGalleryLastScrollY;
+    if (Math.abs(deltaY) > 1) {
+        const deltaMs = promptGalleryLastScrollAt ? now - promptGalleryLastScrollAt : 16;
+        promptGalleryLastScrollDirection = deltaY > 0 ? 'down' : 'up';
+        promptGalleryLastScrollY = nextScrollY;
+        promptGalleryLastScrollAt = now;
+
+        if (promptGalleryLastScrollDirection === 'down') {
+            const scrollLoadCount = getPromptGalleryScrollLoadCount(deltaY, deltaMs);
+            queuePromptGalleryScrollLoad(scrollLoadCount);
+        }
+    }
+    schedulePromptGalleryScrollIdlePreload();
+}
+
+function handlePromptGalleryTouchStart(event) {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    promptGalleryTouchLastY = touch.clientY;
+    promptGalleryTouchLastAt = Date.now();
+}
+
+function handlePromptGalleryTouchMove(event) {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+
+    const now = Date.now();
+    const deltaY = promptGalleryTouchLastY - touch.clientY;
+    const deltaMs = promptGalleryTouchLastAt ? now - promptGalleryTouchLastAt : 16;
+    promptGalleryTouchLastY = touch.clientY;
+    promptGalleryTouchLastAt = now;
+
+    if (deltaY > 1) {
+        promptGalleryLastScrollDirection = 'down';
+        const scrollLoadCount = getPromptGalleryScrollLoadCount(deltaY, deltaMs);
+        queuePromptGalleryScrollLoad(scrollLoadCount);
+    } else if (deltaY < -1) {
+        promptGalleryLastScrollDirection = 'up';
+    }
+
+    schedulePromptGalleryScrollIdlePreload();
+}
 
 function loadMoreCards() {
-    // Deprecated for pagination
-    renderCurrentPage();
+    return ensurePromptGalleryRenderedThrough(promptGalleryRenderedCount + getPromptGalleryBatchSize() - 1);
 }
 
 // --- Infinite Scroll ---
 function setupInfiniteScroll() {
-    // Disabled in favor of Pagination
-    /*
-    window.addEventListener('scroll', () => {
-        if (isLoading) return;
-
-        const scrollY = window.scrollY;
-        const windowHeight = window.innerHeight;
-        const docHeight = document.documentElement.scrollHeight;
-
-        // Load more when near bottom (200px threshold)
-        if (scrollY + windowHeight >= docHeight - 200) {
-            loadMoreCards();
-        }
-    });
-    */
-    console.log('Infinite scroll disabled, using pagination.');
+    if (promptGalleryInfiniteScrollBound) return;
+    promptGalleryInfiniteScrollBound = true;
+    promptGalleryLastScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+    promptGalleryLastScrollAt = Date.now();
+    window.addEventListener('scroll', handlePromptGalleryScroll, { passive: true });
+    window.addEventListener('resize', schedulePromptGalleryResizeIdlePreload, { passive: true });
+    window.visualViewport?.addEventListener('scroll', schedulePromptGalleryScrollIdlePreload, { passive: true });
+    window.visualViewport?.addEventListener('resize', schedulePromptGalleryResizeIdlePreload, { passive: true });
+    document.addEventListener('touchstart', handlePromptGalleryTouchStart, { passive: true });
+    document.addEventListener('touchmove', handlePromptGalleryTouchMove, { passive: true });
+    document.addEventListener('touchend', schedulePromptGalleryScrollIdlePreload, { passive: true });
 }
 
 // --- Filter Interactivity ---
@@ -6133,186 +6615,22 @@ function returnToMainNav() {
         const allItem = navContainer.querySelector('[data-filter="all"]');
         if (allItem) allItem.classList.add('active');
 
-        if (allCardsRendered) {
-            filterCardsCSS('all');
-        } else {
-            renderGallery('all');
-        }
+        renderGallery('all');
 
         finishPromptsNavTransition(navContainer, 'prompts-nav-hidden-up');
     }, 250);
 }
 
-// --- Pinterest-style Search with Dropdown ---
+// --- Prompt Search ---
 function setupSearch() {
     const searchInput = document.getElementById('gallerySearch');
-    const dropdown = document.getElementById('searchDropdown');
-    const hotTagsList = document.getElementById('hotTagsList');
-    const hotTagsSection = document.getElementById('searchHotTags');
-    const suggestionsSection = document.getElementById('searchSuggestions');
-
-    if (!searchInput || !dropdown) return;
+    if (!searchInput) return;
 
     let debounceTimer;
-    let isDropdownActive = false;
-
-    // Generate hot tags from PROMPTS data (with caching)
-    function generateHotTags() {
-        if (!hotTagsList || typeof PROMPTS === 'undefined') return;
-
-        // Use cached tags if available
-        if (HOT_TAGS_CACHE) {
-            renderHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
-            return;
-        }
-
-        HOT_TAGS_CACHE = buildPromptHotTags(PROMPTS, PROMPT_HOT_TAG_LIMIT);
-
-        renderHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
-    }
-
-    // Render hot tags helper function
-    function renderHotTags(topTags, container, searchInput) {
-        container.innerHTML = topTags.map((tag, i) =>
-            `<span class="hot-tag ${buildPromptsStaggerClass(i)}" data-tag="${tag}">${tag}</span>`
-        ).join('');
-
-        // Add mousedown handlers to hot tags (mousedown fires before document mousedown)
-        container.querySelectorAll('.hot-tag').forEach(tagEl => {
-            tagEl.addEventListener('mousedown', (e) => {
-                e.preventDefault(); // Prevent text selection
-                e.stopPropagation(); // Prevent dropdown from closing
-                const tag = tagEl.dataset.tag;
-                searchInput.value = tag;
-                filterBySearch(tag.toLowerCase());
-                hideDropdown();
-            });
-        });
-    }
-
-    // Show dropdown
-    function showDropdown() {
-        // Only show dropdown when user starts typing (handled by showSuggestions)
-        // Don't show on empty focus
-        const query = searchInput.value.trim();
-        if (!query) {
-            // Don't show dropdown when empty
-            return;
-        }
-
-        if (isDropdownActive) return;
-        isDropdownActive = true;
-        dropdown.classList.add('active');
-    }
-
-    // Hide dropdown
-    function hideDropdown() {
-        isDropdownActive = false;
-        dropdown.classList.remove('active');
-    }
-
-    // Show suggestions based on query
-    function showSuggestions(query) {
-        if (!suggestionsSection) return;
-
-        // If no query, hide dropdown entirely (no more hot tags panel on focus)
-        if (!query) {
-            setPromptsHidden(hotTagsSection, true);
-            setPromptsHidden(suggestionsSection, true);
-            hideDropdown();
-            return;
-        }
-
-        // Activate dropdown when typing
-        if (!isDropdownActive) {
-            isDropdownActive = true;
-            dropdown.classList.add('active');
-        }
-
-        // Collect matching suggestions
-        const suggestions = new Set();
-        const lowerQuery = normalizePromptSearchText(query);
-
-        PROMPTS.forEach(p => {
-            collectPromptSearchValues({
-                title: p.title,
-                title_en: p.title_en,
-                title_zh: p.title_zh,
-                tags: p.tags,
-                aiTags: p.aiTags || p.ai_tags
-            }).forEach((value) => {
-                if (normalizePromptSearchText(value).includes(lowerQuery)) {
-                    suggestions.add(value);
-                }
-            });
-        });
-
-        const suggestionArray = Array.from(suggestions).slice(0, 5); // Reduced to 5 for inline tags
-
-        // Always hide the old hot tags section
-        setPromptsHidden(hotTagsSection, true);
-        setPromptsHidden(suggestionsSection, false);
-
-        // Build suggestions HTML
-        let html = suggestionArray.map(s =>
-            `<div class="suggestion-item"><i class="fas fa-search"></i>${s}</div>`
-        ).join('');
-
-        // Add 3 inline hot tag hints at the bottom
-        const hotTags = getInlineHotTags(3);
-        if (hotTags.length > 0) {
-            // Add 'with-suggestions' class only when there are suggestions above
-            const borderClass = suggestionArray.length > 0 ? 'with-suggestions' : '';
-            html += `
-                <div class="inline-hot-tags ${borderClass}">
-                    <span class="inline-label">热门</span>
-                    <div class="inline-hot-tags-list">
-                        ${hotTags.map(tag => `<span class="inline-hot-tag" data-tag="${tag}">${tag}</span>`).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        suggestionsSection.innerHTML = html;
-
-        // Add mousedown handlers for suggestions
-        suggestionsSection.querySelectorAll('.suggestion-item').forEach(item => {
-            item.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                searchInput.value = item.textContent;
-                filterBySearch(item.textContent.toLowerCase());
-                hideDropdown();
-            });
-        });
-
-        // Add mousedown handlers for inline hot tags
-        suggestionsSection.querySelectorAll('.inline-hot-tag').forEach(tagEl => {
-            tagEl.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const tag = tagEl.dataset.tag;
-                searchInput.value = tag;
-                filterBySearch(tag.toLowerCase());
-                hideDropdown();
-            });
-        });
-    }
-
-    // Get inline hot tags (returns top N hot tags not matching current query)
-    function getInlineHotTags(count) {
-        if (!HOT_TAGS_CACHE) {
-            HOT_TAGS_CACHE = buildPromptHotTags(PROMPTS, PROMPT_HOT_TAG_LIMIT);
-        }
-        return HOT_TAGS_CACHE.slice(0, count);
-    }
 
     // Input event
     searchInput.addEventListener('input', (e) => {
         const query = e.target.value.trim();
-
-        // Show suggestions in dropdown
-        showSuggestions(query);
 
         // Debounce for performance
         clearTimeout(debounceTimer);
@@ -6321,33 +6639,13 @@ function setupSearch() {
         }, 200);
     });
 
-    // Focus event - show dropdown
-    searchInput.addEventListener('focus', () => {
-        showDropdown();
-    });
-
     // Clear search on ESC
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             searchInput.value = '';
             filterBySearch('');
-            hideDropdown();
             searchInput.blur();
         }
-    });
-
-    // Click outside to close dropdown
-    // CRITICAL: Use mousedown instead of click to prevent issues with element removal
-    document.addEventListener('mousedown', (e) => {
-        const searchWrapper = document.querySelector('.nav-search-wrapper');
-        if (searchWrapper && !searchWrapper.contains(e.target)) {
-            hideDropdown();
-        }
-    });
-
-    // Prevent dropdown from closing when clicking inside it
-    dropdown.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
     });
 }
 
@@ -6743,7 +7041,6 @@ function applySearchResults(matchedIds, searchingForColor) {
     });
 
     currentFilter = 'search';
-    currentPage = 1;
     allFilteredItems = PROMPTS.filter((item, index) => {
         if (!item) return;
 
