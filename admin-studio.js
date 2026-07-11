@@ -17009,7 +17009,7 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.63';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.64';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
@@ -17077,11 +17077,14 @@ function normalizeGalleryImportFailureMessage(errorOrMessage = '', fallback = '�
     if (status === 401 || status === 403 || /unauthorized|forbidden|not authenticated|登录.*失效/i.test(raw)) {
         return '后台登录状态或操作权限已失效，请刷新页面并重新登录';
     }
-    if (status === 429 || /rate limit|resource exhausted|quota|请求过多|额度/i.test(raw)) {
-        return 'AI 服务当前请求过多或额度不足，请稍后重试';
+    if (/insufficient[_\s-]*(quota|balance|credits?)|quota exceeded|额度不足|余额不足/i.test(raw)) {
+        return 'Codex Relay 上游账号额度不足，请检查账号额度后重试';
     }
-    if (status === 502 || status === 503 || status === 504 || /bad gateway|service unavailable|gateway timeout/i.test(raw)) {
-        return '服务暂时不可用，请稍后重试';
+    if (status === 429 || /rate limit|resource exhausted|请求过多|no available accounts|暂无可用账号/i.test(raw)) {
+        return 'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试';
+    }
+    if ([502, 503, 504, 522, 524].includes(status) || /bad gateway|service unavailable|gateway timeout|timed out|timeout|\b52[24]\b/i.test(raw)) {
+        return 'Codex Relay 上游网关暂时不可用，系统将延迟重试';
     }
     if (/<!doctype\s+html|<html[\s>]|<!--\[if\s+lt\s+ie/i.test(raw)) {
         return '服务返回了异常网页而不是处理结果，通常是临时网关或登录状态问题';

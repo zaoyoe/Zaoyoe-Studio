@@ -663,7 +663,7 @@
         }
     }
 
-    async function pageBatchCollectCurrentPage() {
+    async function pageBatchCollectCurrentPage({ automatic = false } = {}) {
         const tab = await getMeigenTabReady();
         if (!tab) return null;
         setProgressStatus('翻页采集中', 0, DEFAULT_PAGE_BATCH_PAGES, '已采集 0 条');
@@ -674,6 +674,13 @@
                 type: MESSAGE_PAGE_BATCH_COLLECT,
                 maxPages: DEFAULT_PAGE_BATCH_PAGES,
                 maxItems: getMaxItemsSetting(),
+                continueExisting: automatic,
+                preflightDuplicates: automatic,
+                streamToQueue: automatic,
+                batchId: state.streamedBatchId,
+                adminBaseUrl: getElement('adminBaseUrl').value,
+                site: getElement('siteSelect').value,
+                defaultStatus: getElement('statusSelect').value,
                 ...getFavoriteFilterSettings()
             });
         } catch (error) {
@@ -690,6 +697,10 @@
         }
 
         state.payload = response.payload;
+        if (response.streamResult) {
+            state.streamStats = response.streamResult;
+            if (response.streamResult.batchId) state.streamedBatchId = response.streamResult.batchId;
+        }
         if (response.pageBatchStatus) applyPageBatchStatus(response.pageBatchStatus);
         updateSummary(response.summary);
         setStatus(`翻页采集完成：发现 ${response.summary?.total || 0} 条`);
@@ -780,6 +791,10 @@
                 ? `当前发现 ${discovered} 条，正在查库跳重并继续滚动，实际入队目标 ${maxItems} 条...`
                 : `当前发现 ${discovered} 条，正在自动滚动加载，目标上限 ${maxItems} 条...`);
             payload = await scrollCollectCurrentPage({ automatic: true }) || payload;
+            if (Number(state.streamStats?.stagedCount || 0) < maxItems) {
+                setStatus(`滚动页面已稳定，继续自动翻页补足实际入队目标 ${maxItems} 条...`);
+                payload = await pageBatchCollectCurrentPage({ automatic: true }) || payload;
+            }
         }
         if (payloadNeedsDetailEnrichment(payload)) {
             setProgressStatus('发现待补内容，正在补抓详情', 0, getDetailProgressTotal());
