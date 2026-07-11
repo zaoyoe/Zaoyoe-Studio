@@ -99,5 +99,9 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(worker, /entry\.reason\?\.retryable === true/);
     assert.match(runtimeSource, /cleanup_after_pipeline: false/);
     assert.match(runtimeSource, /processing_attempts: retryable \? item\.processing_attempts : 3/);
+    assert.match(runtimeSource, /isPromptImportItemCancelled/);
+    assert.match(runtimeSource, /neq\('status', 'cleaned'\)/);
+    assert.match(importsHandler, /pipeline_stage: 'cancelled'/);
+    assert.match(importsHandler, /worker_name: null,[\s\S]*lease_expires_at: null,[\s\S]*processing_attempts: 3/);
     assert.match(importsHandler, /processing_attempts: 0,[\s\S]*next_attempt_at: retryAt/);
 });

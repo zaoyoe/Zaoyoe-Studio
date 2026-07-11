@@ -1,10 +1,11 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-11.59';
+    const VERSION = '2026-07-11.60';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 200;
     const MAX_IMAGES_PER_ITEM = 24;
+    const MAX_TWEET_IMAGES = 4;
     const IMAGE_URL_PATTERN = /\.(?:avif|webp|png|jpe?g|gif)(?:[?#].*)?$/i;
     const ACTION_PROMPT_LINE_PATTERN = /^(展开|收起|更多相关内容|相关内容|使用\s*Prompt|用作参考图|复制提示词|复制\s*Prompt|下载图片|下载|Download|Copy Prompt|Use Prompt|Use as reference image|More related content)$/i;
     const PROMPT_SECTION_LABEL_PATTERN = /^(提示词|Prompt)$/i;
@@ -401,7 +402,11 @@
 
     function getTrustedDetailArtworkExpectedCount(scope) {
         const countEntry = getDetailCarouselCountEntries(scope)
-            .find((entry) => Number(entry?.textLength || 0) <= 80);
+            .find((entry) => {
+                if (Number(entry?.textLength || 0) > 80) return false;
+                const statusId = extractLongNumericId(getScopeBaseUrl(scope));
+                return !statusId || Number(entry?.count || 0) <= MAX_TWEET_IMAGES;
+            });
         return countEntry?.count || 0;
     }
 
@@ -783,7 +788,9 @@
             if (STRUCTURED_SKIP_IMAGE_CONTEXT_PATTERN.test(entry.path) && !/generated|outputs?|artwork/i.test(entry.path)) {
                 continue;
             }
-            const url = normalizeImageUrl(entry.text, baseUrl);
+            const rawUrl = normalizeText(entry.text, 4000);
+            if (!looksLikeExplicitUrl(rawUrl)) continue;
+            const url = normalizeImageUrl(rawUrl, baseUrl);
             if (!url) continue;
             const key = url.toLowerCase();
             if (seen.has(key)) continue;
@@ -1302,14 +1309,19 @@
         const copyControlPrompt = extractPromptFromCopyControls(scope);
         if (copyControlPrompt) return copyControlPrompt;
 
-        const structuredPrompt = findStructuredValue(scope, /prompt|positivePrompt|fullPrompt|promptText|description|caption/i);
-        if (structuredPrompt) return cleanPromptText(structuredPrompt);
+        if (!isDetailCollectionScope(scope)) {
+            const structuredPrompt = findStructuredValue(scope, /prompt|positivePrompt|fullPrompt|promptText|description|caption/i);
+            if (structuredPrompt) return cleanPromptText(structuredPrompt);
+        }
 
         const sectionPrompt = extractPromptFromLabeledSection(scope);
         if (sectionPrompt) return sectionPrompt;
 
         const looseVisiblePrompt = extractPromptFromLooseVisibleText(scope);
         if (looseVisiblePrompt) return looseVisiblePrompt;
+
+        const structuredPrompt = findStructuredValue(scope, /prompt|positivePrompt|fullPrompt|promptText|description|caption/i);
+        if (structuredPrompt) return cleanPromptText(structuredPrompt);
 
         const text = normalizeText(scope.innerText || scope.textContent || '', 6000);
         const labeled = text.match(/(?:Prompt|提示词)\s*[:：]\s*([\s\S]{12,2000})/i);
@@ -2061,9 +2073,11 @@
             && structuredCandidate?.detailUrl
             && sameDetailUrl(detailUrl, structuredCandidate.detailUrl)
         );
-        const promptText = structuredMatchesDetail
-            ? structuredPromptText
-            : preferDetailValue(visiblePromptText, structuredPromptText);
+        const promptText = detailContext
+            ? (visiblePromptText || (structuredMatchesDetail ? structuredPromptText : ''))
+            : (structuredMatchesDetail
+                ? structuredPromptText
+                : preferDetailValue(visiblePromptText, structuredPromptText));
         const hoverAuthor = getCachedHoverAuthorIdentity(
             scopeDetailUrl,
             detailUrl,
@@ -2285,6 +2299,7 @@
             normalizeAuthorName,
             isCollapsedPromptText,
             collectStructuredItemCandidates,
+            collectStructuredImageUrls,
             getBestStructuredCandidate,
             getStructuredIdentityCounts,
             filterDetailImageUrlsByStatus,

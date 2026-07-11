@@ -198,6 +198,34 @@ function normalizeImageSources(value = [], maxCount = DEFAULT_MAX_IMAGE_COUNT) {
     return items;
 }
 
+function getTweetStatusIdFromUrl(value = '') {
+    try {
+        const url = new URL(String(value || ''));
+        return url.pathname.match(/\/tweets\/(\d{12,25})(?:\/|$)/i)?.[1] || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function getOriginalStatusIdFromUrl(value = '') {
+    try {
+        const url = new URL(String(value || ''));
+        return url.pathname.match(/\/status\/(\d{12,25})(?:\/|$)/i)?.[1] || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function filterImageSourcesForImportIdentity(imageSources = [], item = {}) {
+    const source = normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE);
+    const originalWorkUrl = item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || '';
+    const expectedStatusId = getOriginalStatusIdFromUrl(originalWorkUrl);
+    if (source !== 'meigen' || !expectedStatusId) return imageSources;
+    const statusBoundImages = imageSources.filter((entry) => getTweetStatusIdFromUrl(entry?.url || ''));
+    if (!statusBoundImages.length) return imageSources;
+    return statusBoundImages.filter((entry) => getTweetStatusIdFromUrl(entry?.url || '') === expectedStatusId);
+}
+
 function normalizeImportSettings(value = {}) {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     return {
@@ -216,7 +244,7 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
     const item = rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem) ? rawItem : {};
     const promptText = normalizeText(item.prompt_text || item.promptText || item.prompt || '', 20000);
     const maxImages = normalizePositiveInteger(settings.max_images_per_item, DEFAULT_MAX_IMAGE_COUNT, MAX_IMAGE_COUNT);
-    const expectedImageCount = normalizePositiveInteger(
+    const requestedImageCount = normalizePositiveInteger(
         item.expected_image_count
         ?? item.expectedImageCount
         ?? item.image_count
@@ -224,7 +252,7 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
         0,
         MAX_IMAGE_COUNT
     );
-    const imageSources = normalizeImageSources(
+    const normalizedImageSources = normalizeImageSources(
         item.image_sources
         || item.imageSources
         || item.images
@@ -233,6 +261,16 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
         || [],
         maxImages
     );
+    const imageSources = filterImageSourcesForImportIdentity(normalizedImageSources, item);
+    const originalStatusId = getOriginalStatusIdFromUrl(
+        item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || ''
+    );
+    const hasStatusBoundMeigenImages = normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE) === 'meigen'
+        && Boolean(originalStatusId)
+        && normalizedImageSources.some((entry) => getTweetStatusIdFromUrl(entry?.url || ''));
+    const expectedImageCount = hasStatusBoundMeigenImages
+        ? (imageSources.length ? Math.min(requestedImageCount || imageSources.length, imageSources.length) : 0)
+        : requestedImageCount;
     const promptHash = hashPromptText(promptText);
     const originalWorkUrl = normalizeOptionalUrl(item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || item.x_url || item.xUrl || item.twitter_url || item.twitterUrl || '');
     const authorName = normalizeText(item.author_name || item.authorName || item.nickname || item.creator || '', 200);
@@ -983,6 +1021,9 @@ async function insertPromptRow(supabase, payload) {
 
 async function importSingleItem(supabase, user, itemId, options = {}) {
     const item = await loadImportItem(supabase, itemId);
+    if (String(item.status || '') === 'cleaned') {
+        return { item, cancelled: true, error: '' };
+    }
     const batch = await loadImportBatch(supabase, item.batch_id);
     const site = requireWritableAdminSite(options.site || batch.site, { fieldName: 'site' });
     const settings = normalizeImportSettings(batch.settings || {});
@@ -1001,9 +1042,11 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 updated_at: new Date().toISOString()
             })
             .eq('id', item.id)
+            .neq('status', 'cleaned')
             .select(IMPORT_ITEM_SELECT)
-            .single();
+            .maybeSingle();
         if (skipError) throw skipError;
+        if (!skippedItem) return { batch, item, cancelled: true, error: '' };
         const updatedBatch = await updateBatchStats(supabase, batch.id);
         return {
             batch: updatedBatch,
@@ -1021,7 +1064,8 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             error_details: {},
             updated_at: new Date().toISOString()
         })
-        .eq('id', item.id);
+        .eq('id', item.id)
+        .neq('status', 'cleaned');
 
     try {
         const existingPrompt = await findExistingPromptForImportItem(supabase, item);
@@ -1035,9 +1079,11 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', item.id)
+                .neq('status', 'cleaned')
                 .select(IMPORT_ITEM_SELECT)
-                .single();
+                .maybeSingle();
             if (updateError) throw updateError;
+            if (!updatedItem) return { batch, item, cancelled: true, error: '' };
 
             const updatedBatch = await updateBatchStats(supabase, batch.id);
             await writeAdminAuditLog({
@@ -1064,7 +1110,16 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
         }
 
         const uploadResult = await uploadImportItemImages(item, { site });
-        await supabase
+        const { data: currentItem, error: currentItemError } = await supabase
+            .from('prompt_import_items')
+            .select(IMPORT_ITEM_SELECT)
+            .eq('id', item.id)
+            .single();
+        if (currentItemError) throw currentItemError;
+        if (String(currentItem?.status || '') === 'cleaned') {
+            return { batch, item: currentItem, cancelled: true, error: '' };
+        }
+        const { data: savingItem, error: savingError } = await supabase
             .from('prompt_import_items')
             .update({
                 status: 'saving',
@@ -1072,7 +1127,14 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 error_details: uploadResult.failures.length ? { image_failures: uploadResult.failures } : {},
                 updated_at: new Date().toISOString()
             })
-            .eq('id', item.id);
+            .eq('id', item.id)
+            .neq('status', 'cleaned')
+            .select(IMPORT_ITEM_SELECT)
+            .maybeSingle();
+        if (savingError) throw savingError;
+        if (!savingItem) {
+            return { batch, item: currentItem, cancelled: true, error: '' };
+        }
 
         const promptPayload = buildPromptPayloadFromImportItem(item, {
             imageAssets: uploadResult.assets,
@@ -1098,9 +1160,11 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             .from('prompt_import_items')
             .update(cleanedPayload)
             .eq('id', item.id)
+            .neq('status', 'cleaned')
             .select(IMPORT_ITEM_SELECT)
-            .single();
+            .maybeSingle();
         if (updateError) throw updateError;
+        if (!updatedItem) return { batch, item, prompt, cancelled: true, error: '' };
 
         const updatedBatch = await updateBatchStats(supabase, batch.id);
         await writeAdminAuditLog({
@@ -1125,6 +1189,10 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             imageFailures: uploadResult.failures
         };
     } catch (error) {
+        const latestItem = await loadImportItem(supabase, item.id).catch(() => null);
+        if (String(latestItem?.status || '') === 'cleaned') {
+            return { batch, item: latestItem, cancelled: true, error: '' };
+        }
         const { data: failedItem } = await supabase
             .from('prompt_import_items')
             .update({
@@ -1134,6 +1202,7 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 updated_at: new Date().toISOString()
             })
             .eq('id', item.id)
+            .neq('status', 'cleaned')
             .select(IMPORT_ITEM_SELECT)
             .single();
         const updatedBatch = await updateBatchStats(supabase, batch.id);
@@ -1188,6 +1257,13 @@ async function cleanupImportItems(supabase, user, body) {
             image_sources: [],
             temp_image_assets: [],
             status: 'cleaned',
+            worker_name: null,
+            lease_expires_at: null,
+            processing_attempts: 3,
+            next_attempt_at: null,
+            pipeline_stage: 'cancelled',
+            error_summary: '',
+            error_details: {},
             cleaned_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         })
@@ -1449,6 +1525,7 @@ module.exports = async (req, res) => {
 module.exports._private = {
     hashPromptText,
     normalizeImageSources,
+    filterImageSourcesForImportIdentity,
     deriveAuthorHandleFromOriginalWorkUrl,
     normalizeImportItemPayload,
     importSingleItem,

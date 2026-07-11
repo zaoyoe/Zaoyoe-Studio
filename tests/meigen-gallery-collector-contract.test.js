@@ -2409,6 +2409,40 @@ test('Meigen browser collector rejects unbound community generation images for s
     );
 });
 
+test('Meigen browser collector rejects structured text masquerading as image URLs', () => {
+    const imageUrl = 'https://images.meigen.ai/tweets/2052602437530243303/0.jpg';
+    assert.deepEqual(
+        collector._private.collectStructuredImageUrls({
+            image: 'image',
+            model: 'GPT Image',
+            imagePrompt: 'High-end fashion editorial photography with cinematic image lighting',
+            images: [imageUrl]
+        }, 'https://www.meigen.ai/prompt/2052602437530243303'),
+        [imageUrl]
+    );
+});
+
+test('Meigen browser collector rejects impossible tweet carousel counts', () => {
+    const countNode = {
+        innerText: '1 / 17',
+        textContent: '1 / 17',
+        parentElement: null,
+        getAttribute() {
+            return '';
+        }
+    };
+    const scope = {
+        baseURI: 'https://www.meigen.ai/prompt/2052602437530243303',
+        innerText: '1 / 17',
+        textContent: '1 / 17',
+        querySelectorAll(selector) {
+            return selector === '*' ? [countNode] : [];
+        }
+    };
+    countNode.parentElement = scope;
+    assert.equal(collector._private.getTrustedDetailArtworkExpectedCount(scope), 0);
+});
+
 test('Meigen browser collector rejects neighboring tweet images for community prompts', () => {
     const communityDetailUrl = 'https://www.meigen.ai/prompt/community_b232f212-3458-435e-bfb5-2cd370cca19a';
     const neighboringTweetImage = 'https://images.meigen.ai/tweets/2017096425860215040/0.jpg';

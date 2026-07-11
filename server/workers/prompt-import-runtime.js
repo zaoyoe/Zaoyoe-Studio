@@ -160,9 +160,22 @@ async function claimPromptImportItems(supabase, { workerName, limit = 4, leaseSe
     return data || [];
 }
 
+async function isPromptImportItemCancelled(supabase, itemId) {
+    const { data, error } = await supabase
+        .from('prompt_import_items')
+        .select('status')
+        .eq('id', itemId)
+        .maybeSingle();
+    if (error) throw error;
+    return !data || String(data.status || '') === 'cleaned';
+}
+
 async function processPromptImportItem(supabase, item, { workerName = 'prompt-import-worker' } = {}) {
     const batch = await importsHandler._private.loadImportBatch(supabase, item.batch_id);
     const user = { id: batch.created_by };
+    if (await isPromptImportItemCancelled(supabase, item.id)) {
+        return { item, cancelled: true };
+    }
     let imported;
     if (item.final_prompt_id) {
         const { data: existingPrompt, error: existingPromptError } = await supabase.from('prompts').select('*').eq('id', item.final_prompt_id).single();
@@ -175,16 +188,22 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
             cleanup_after_pipeline: false
         });
     }
+    if (imported.cancelled || await isPromptImportItemCancelled(supabase, item.id)) {
+        return { ...imported, cancelled: true };
+    }
     if (!imported.prompt?.id) return imported;
     try {
         await supabase.from('prompt_import_items').update({
             status: 'queued',
             pipeline_stage: 'analysis',
             updated_at: new Date().toISOString()
-        }).eq('id', item.id);
+        }).eq('id', item.id).neq('status', 'cleaned');
         const analysis = validateAnalysisResult(await callGeminiAnalysis(supabase, imported.prompt, {
             sourceItems: [item, imported.item]
         }));
+        if (await isPromptImportItemCancelled(supabase, item.id)) {
+            return { ...imported, cancelled: true };
+        }
         const patch = buildPromptPatch(imported.prompt, analysis);
         const { data: prompt, error: promptError } = await supabase.from('prompts').update(patch).eq('id', imported.prompt.id).select('*').single();
         if (promptError) throw promptError;
@@ -197,11 +216,15 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
             worker_name: workerName,
             lease_expires_at: null,
             pipeline_stage: 'completed'
-        }).eq('id', item.id).select('*').single();
+        }).eq('id', item.id).neq('status', 'cleaned').select('*').maybeSingle();
         if (itemError) throw itemError;
+        if (!updatedItem) return { ...imported, prompt, cancelled: true };
         await importsHandler._private.updateBatchStats(supabase, item.batch_id);
         return { ...imported, prompt, item: updatedItem };
     } catch (error) {
+        if (await isPromptImportItemCancelled(supabase, item.id).catch(() => false)) {
+            return { ...imported, cancelled: true };
+        }
         const retryable = typeof error.retryable === 'boolean'
             ? error.retryable
             : /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(error?.message || error));
@@ -214,7 +237,7 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
             processing_attempts: retryable ? item.processing_attempts : 3,
             next_attempt_at: retryable ? new Date(Date.now() + 15000).toISOString() : null,
             updated_at: new Date().toISOString()
-        }).eq('id', item.id);
+        }).eq('id', item.id).neq('status', 'cleaned');
         throw error;
     }
 }
@@ -232,6 +255,7 @@ module.exports = {
     fetchAnalysisImage,
     getAnalysisImageUrls,
     loadAnalysisImages,
+    isPromptImportItemCancelled,
     processPromptImportItem,
     runPromptImportWorkerBatch,
     validateAnalysisResult
