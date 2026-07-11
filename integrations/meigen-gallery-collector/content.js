@@ -2369,7 +2369,8 @@
         detailJob.lastError = '';
         rememberSessionPayload(basePayload, summarizePayload(basePayload));
         await persistSessionSnapshot();
-        if (streamMessage) queueStreamStage(baseItems, streamMessage);
+        const markPendingDetail = (items = []) => items.map((item) => ({ ...item, stream_pending_detail: true }));
+        if (streamMessage) queueStreamStage(markPendingDetail(baseItems), streamMessage);
 
         const detailItems = [];
         const resolvedKeys = new Set();
@@ -2432,7 +2433,7 @@
                     detailJob.processed += 1;
                 }
                 saveCheckpoint();
-                if (streamMessage) queueStreamStage(detailJob.lastPayload?.items || [], streamMessage);
+                if (streamMessage) queueStreamStage(markPendingDetail(detailJob.lastPayload?.items || []), streamMessage);
                 if (detailJob.processed < totalJobs) {
                     await sleep(DETAIL_FETCH_DELAY_MS);
                 }
@@ -2460,14 +2461,19 @@
                     }
                 }
                 saveCheckpoint();
-                if (streamMessage) queueStreamStage(detailJob.lastPayload?.items || [], streamMessage);
+                if (streamMessage) queueStreamStage(markPendingDetail(detailJob.lastPayload?.items || []), streamMessage);
 
                 if (fallbackIndex + 1 < fallbackUrls.length) {
                     await sleep(DETAIL_FETCH_DELAY_MS);
                 }
             }
 
-            const mergedItems = mergeDetailItemsIntoBase(baseItems, detailItems, collector);
+            const mergedItems = mergeDetailItemsIntoBase(baseItems, detailItems, collector)
+                .map(({ stream_pending_detail: _pendingDetail, streamPendingDetail: _pendingDetailAlias, ...item }) => (
+                    needsInteractiveDetail(item, { requireFavoriteCount })
+                        ? { ...item, stream_pending_detail: true }
+                        : item
+                ));
             if (streamMessage) {
                 queueStreamStage(mergedItems, streamMessage, { flush: true });
                 await streamStageState.promise;
@@ -2677,10 +2683,14 @@
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
-        let payload = applyPayloadLimits(
-            collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange))),
-            { maxItems, favoriteRange }
-        );
+        const checkedKeys = new Set();
+        let repositoryDuplicateCount = 0;
+        let payload = message.continueExisting
+            ? applyPayloadLimits(getLatestPayload(collector), { maxItems, favoriteRange })
+            : applyPayloadLimits(
+                collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange))),
+                { maxItems, favoriteRange }
+            );
         let currentUrl = window.location.href;
         let currentRoot = document;
         const visited = new Set();
@@ -2703,6 +2713,7 @@
         try {
             for (let index = 0; index < maxPages; index += 1) {
                 if (pageBatchJob.stopRequested) break;
+                if (message.streamToQueue && streamStageState.stagedCount >= maxItems) break;
 
                 const normalizedCurrentUrl = normalizeBatchUrl(currentUrl) || currentUrl;
                 if (visited.has(normalizedCurrentUrl) && currentRoot !== document) break;
@@ -2714,22 +2725,30 @@
                 if (currentRoot === document) {
                     await refreshStructuredDataCache();
                 }
-                const items = collector.collectMeigenGalleryItems(currentRoot, buildCollectionOptions({
+                const currentItems = collector.collectMeigenGalleryItems(currentRoot, buildCollectionOptions({
                     baseUrl: normalizedCurrentUrl,
                     ...favoriteRange,
                     structuredEntries: currentRoot === document ? getStructuredEntriesForCollection() : []
                 }));
+                const duplicateCheck = message.preflightDuplicates
+                    ? await filterRepositoryDuplicates(currentItems, message, checkedKeys)
+                    : { uniqueItems: currentItems, duplicateCount: 0 };
+                repositoryDuplicateCount += duplicateCheck.duplicateCount;
+                if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, { pendingDetail: true });
+                }
                 payload = {
                     ...payload,
                     page_url: normalizeBatchUrl(window.location.href) || payload.page_url,
                     collected_at: new Date().toISOString(),
                     items: collector.mergeCollectedItems([
                         ...(Array.isArray(payload.items) ? payload.items : []),
-                        ...items
+                        ...duplicateCheck.uniqueItems
                     ]).slice(0, maxItems),
                     page_batch: {
                         attempted: index + 1,
-                        stopped: false
+                        stopped: false,
+                        repository_duplicates: repositoryDuplicateCount
                     }
                 };
                 pageBatchJob.processed = index + 1;
@@ -2743,7 +2762,8 @@
                 detailJob.lastSummary = pageBatchJob.lastSummary;
                 rememberSessionPayload(payload, pageBatchJob.lastSummary);
 
-                if (payload.items.length >= maxItems || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
+                const targetCount = message.streamToQueue ? streamStageState.stagedCount : payload.items.length;
+                if (targetCount >= maxItems || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
 
                 const nextTarget = findNextPageTarget(currentRoot, normalizedCurrentUrl);
                 if (!nextTarget) break;
@@ -2773,7 +2793,8 @@
                 collected_at: new Date().toISOString(),
                 page_batch: {
                     attempted: pageBatchJob.processed,
-                    stopped: pageBatchJob.stopRequested
+                    stopped: pageBatchJob.stopRequested,
+                    repository_duplicates: repositoryDuplicateCount
                 }
             };
             pageBatchJob.running = false;
@@ -2789,7 +2810,16 @@
                 ok: true,
                 payload,
                 summary: pageBatchJob.lastSummary,
-                pageBatchStatus: getPageBatchStatus()
+                pageBatchStatus: getPageBatchStatus(),
+                repositoryDuplicateCount,
+                streamResult: message.streamToQueue ? {
+                    batchId: streamStageState.batchId,
+                    attemptedCount: streamStageState.attemptedCount,
+                    stagedCount: streamStageState.stagedCount,
+                    skippedDuplicateCount: streamStageState.skippedDuplicateCount,
+                    rejectedCount: streamStageState.rejectedCount,
+                    lastError: streamStageState.lastError
+                } : null
             };
         } catch (error) {
             pageBatchJob.lastError = error?.message || '翻页采集失败';
@@ -2856,7 +2886,9 @@
         rememberSessionPayload(payload, detailJob.lastSummary);
 
         if (message.enrichDetails || message.retryFailed) {
-            if (message.streamToQueue) resetStreamStageState(message.batchId);
+            if (message.streamToQueue && String(streamStageState.batchId || '') !== String(message.batchId || '')) {
+                resetStreamStageState(message.batchId);
+            }
             payload = await enrichPayloadWithDetails(payload, {
                 retryFailed: Boolean(message.retryFailed),
                 requireFavoriteCount: hasFavoriteRange,

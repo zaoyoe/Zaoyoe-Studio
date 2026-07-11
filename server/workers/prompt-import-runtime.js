@@ -3,7 +3,8 @@ const { resolveCodexRuntimeConfig, resolveGeminiRuntimeConfig } = require('../..
 const importsHandler = require('../api-handlers/admin/prompts/imports');
 
 const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. objects, scenes, styles, and mood MUST each be an object shaped exactly as {"en":["English tags"],"zh":["中文标签"]}; both arrays must contain at least one compact searchable tag. dominantColors must be a compact string array. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced.`;
-const RETRYABLE_IMAGE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_IMAGE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524]);
+const RETRYABLE_ANALYSIS_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524]);
 
 function parseJsonText(value = '') {
     const text = String(value || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
@@ -51,7 +52,7 @@ async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
     const config = await resolveCodexRuntimeConfig(supabase);
     if (!config?.configured) throw new Error(config?.decryptErrorMessage || 'Codex Relay 未配置');
     const imageUrls = getAnalysisImageUrls(prompt, options.sourceItems || []);
-    const images = await loadAnalysisImages(imageUrls, { fetchImage: options.fetchImage, limit: 4 });
+    const images = await loadAnalysisImages(imageUrls, { fetchImage: options.fetchImage, limit: 2 });
     const text = `${ANALYSIS_PROMPT}\nSource prompt:\n${String(prompt.prompt_text || '').slice(0, 20000)}`;
     const apiFormat = config.apiFormat === 'responses' ? 'responses' : 'chat.completions';
     const imageDataUrls = images.map((buffer) => `data:image/webp;base64,${buffer.toString('base64')}`);
@@ -65,7 +66,7 @@ async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
                     ...imageDataUrls.map((imageUrl) => ({ type: 'input_image', image_url: imageUrl }))
                 ]
             }],
-            max_output_tokens: 4096
+            max_output_tokens: 2200
         }
         : {
             model: config.model,
@@ -76,17 +77,33 @@ async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
                     ...imageDataUrls.map((imageUrl) => ({ type: 'image_url', image_url: { url: imageUrl } }))
                 ]
             }],
-            max_tokens: 4096,
+            max_tokens: 2200,
             temperature: 0.25
         };
-    const response = await fetch(resolveCodexUpstreamUrl(config.baseUrl, apiFormat), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90000)
-    });
+    let response;
+    try {
+        response = await fetch(resolveCodexUpstreamUrl(config.baseUrl, apiFormat), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(150000)
+        });
+    } catch (cause) {
+        const error = new Error(`Codex Relay request timed out or failed: ${cause.message || cause}`);
+        error.retryable = true;
+        error.retryAfterMs = 30000;
+        error.cause = cause;
+        throw error;
+    }
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.error?.message || `Codex Relay request failed (${response.status})`);
+    if (!response.ok) {
+        const error = new Error(payload?.error?.message || `Codex Relay request failed (${response.status})`);
+        error.status = response.status;
+        error.retryable = RETRYABLE_ANALYSIS_STATUS_CODES.has(response.status);
+        const retryAfterSeconds = Number(response.headers.get('retry-after') || 0);
+        if (retryAfterSeconds > 0) error.retryAfterMs = retryAfterSeconds * 1000;
+        throw error;
+    }
     return parseJsonText(extractCodexAnalysisText(payload));
 }
 
@@ -114,8 +131,8 @@ async function fetchAnalysisImage(url) {
     }
     const input = Buffer.from(await response.arrayBuffer());
     try {
-        return await sharp(input).rotate().resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 82 }).toBuffer();
+        return await sharp(input).rotate().resize({ width: 768, height: 768, fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 74 }).toBuffer();
     } catch (cause) {
         const error = new Error(`Image decode failed (${hostname}): ${cause.message || cause}`);
         error.retryable = false;
@@ -327,14 +344,24 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
         const retryable = typeof error.retryable === 'boolean'
             ? error.retryable
             : /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(error?.message || error));
+        const status = Number(error.status || error.statusCode || 0);
+        const retryAttempt = Math.max(1, Number(item.error_details?.retry_count || 0) + 1);
+        const shouldRetry = retryable && retryAttempt <= 8;
+        const baseDelayMs = status === 429 || /rate limit|no available accounts/i.test(String(error?.message || ''))
+            ? 60000
+            : 30000;
+        const retryDelayMs = Math.max(
+            Number(error.retryAfterMs || 0),
+            Math.min(15 * 60 * 1000, baseDelayMs * (2 ** Math.min(retryAttempt - 1, 4)))
+        );
         await supabase.from('prompt_import_items').update({
             status: 'failed',
             error_summary: error.message || '服务端处理失败',
-            error_details: error.details || {},
+            error_details: { ...(error.details || {}), retry_count: retryAttempt, upstream_status: status || null },
             pipeline_stage: 'analysis',
             lease_expires_at: null,
-            processing_attempts: retryable ? item.processing_attempts : 3,
-            next_attempt_at: retryable ? new Date(Date.now() + 15000).toISOString() : null,
+            processing_attempts: shouldRetry ? Math.max(0, Number(item.processing_attempts || 1) - 1) : 3,
+            next_attempt_at: shouldRetry ? new Date(Date.now() + retryDelayMs).toISOString() : null,
             updated_at: new Date().toISOString()
         }).eq('id', item.id).neq('status', 'cleaned');
         throw error;

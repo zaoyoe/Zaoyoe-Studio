@@ -28,8 +28,8 @@ async function main() {
     loadEnvironment();
     const supabase = createSupabase();
     const workerName = process.env.PROMPT_IMPORT_WORKER_NAME || `prompt-import:${os.hostname()}:${process.pid}`;
-    const concurrencyCeiling = Math.min(10, Math.max(1, Number(process.env.PROMPT_IMPORT_WORKER_CONCURRENCY || 10)));
-    let adaptiveLimit = Math.min(6, concurrencyCeiling);
+    const concurrencyCeiling = Math.min(4, Math.max(1, Number(process.env.PROMPT_IMPORT_WORKER_CONCURRENCY || 1)));
+    let adaptiveLimit = 1;
     const intervalMs = Math.max(1000, Number(process.env.PROMPT_IMPORT_WORKER_INTERVAL_MS || 2000));
     const once = process.argv.includes('--once');
     let stopping = false;
@@ -48,7 +48,8 @@ async function main() {
                 || /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(entry.reason?.message || entry.reason || '')));
             if (hasPressure) {
                 adaptiveLimit = Math.max(1, Math.floor(adaptiveLimit / 2));
-                await new Promise((resolve) => setTimeout(resolve, 6000));
+                const retryAfterMs = rejected.reduce((maximum, entry) => Math.max(maximum, Number(entry.reason?.retryAfterMs || 0)), 0);
+                await new Promise((resolve) => setTimeout(resolve, Math.max(30000, retryAfterMs)));
             } else if (result.claimed >= adaptiveLimit && rejected.length === 0 && adaptiveLimit < concurrencyCeiling) {
                 adaptiveLimit += 1;
             }
