@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.12');
+    assert.equal(manifest.version, '0.1.13');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -69,6 +69,11 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function queueStreamStage/);
     assert.match(content, /bufferedItems\.length < 3/);
     assert.match(content, /batchId:\s*streamStageState\.batchId/);
+    assert.match(content, /attemptedCount:\s*streamStageState\.attemptedCount/);
+    assert.match(content, /stagedCount:\s*streamStageState\.stagedCount/);
+    assert.match(content, /skippedDuplicateCount:\s*streamStageState\.skippedDuplicateCount/);
+    assert.match(content, /rejectedCount:\s*streamStageState\.rejectedCount/);
+    assert.match(content, /result\.stagedCount \?\? result\.items\?\.length/);
     assert.match(content, /await streamStageState\.promise/);
     assert.match(content, /FatherKeyMeigenCollector/);
     assert.match(content, /DETAIL_FETCH_DELAY_MS\s*=\s*900/);
@@ -107,6 +112,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /await stagePayload\(\)/);
     assert.match(popup, /streamToQueue:\s*true/);
     assert.match(popup, /state\.streamedBatchId/);
+    assert.match(popup, /实际入队 \$\{staged\} 条/);
+    assert.match(popup, /仓库重复跳过 \$\{duplicates\} 条/);
     assert.match(popup, /void runFullyAutomaticCollectionTask\(\)/);
     assert.match(content, /function urlsLooselyMatch/);
     assert.match(content, /function currentDetailUrlMatchesTarget/);
@@ -170,7 +177,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.58'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.59'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);

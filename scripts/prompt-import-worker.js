@@ -39,7 +39,13 @@ async function main() {
         try {
             const result = await runPromptImportWorkerBatch(supabase, { workerName, limit: adaptiveLimit, leaseSeconds: 300 });
             const rejected = result.results.filter((entry) => entry.status === 'rejected');
-            const hasPressure = rejected.some((entry) => /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(entry.reason?.message || entry.reason || '')));
+            result.results.forEach((entry, index) => {
+                if (entry.status !== 'rejected') return;
+                const item = result.items?.[index];
+                console.error(`[${new Date().toISOString()}] item=${item?.id || 'unknown'} stage=${item?.pipeline_stage || 'processing'} failed: ${entry.reason?.message || entry.reason}`);
+            });
+            const hasPressure = rejected.some((entry) => entry.reason?.retryable === true
+                || /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(entry.reason?.message || entry.reason || '')));
             if (hasPressure) {
                 adaptiveLimit = Math.max(1, Math.floor(adaptiveLimit / 2));
                 await new Promise((resolve) => setTimeout(resolve, 6000));

@@ -16995,6 +16995,8 @@ function sleep(ms) {
 const galleryImportState = {
     mode: 'crawl_only',
     batch: null,
+    batches: [],
+    selectedBatchId: '',
     items: [],
     running: false,
     uploadInFlight: false,
@@ -17007,7 +17009,7 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.58';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.59';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
@@ -17092,6 +17094,12 @@ function normalizeGalleryImportFailureMessage(errorOrMessage = '', fallback = '�
     }
     if (/ai translation could not establish coverage|ai translation returned empty fields/i.test(raw)) {
         return 'AI 翻译结果暂时不完整，请稍后重试';
+    }
+    if (/image decode failed|bitstream not supported|bad seek/i.test(raw)) {
+        return '已保存图片格式无法解析，原图回退也未成功';
+    }
+    if (/image request failed/i.test(raw)) {
+        return '图片网络读取失败，系统将自动重试临时故障';
     }
     if (/image fetch failed|图片读取失败|没有可保存的图片|no images/i.test(raw)) {
         return '图片读取失败，请检查原图链接是否还能访问';
@@ -17521,6 +17529,115 @@ function getGalleryImportStatusLabel(status = '') {
     return labels[String(status || '').trim()] || '等待处理';
 }
 
+function getGalleryImportPipelineStageLabel(stage = '') {
+    const labels = {
+        claimed: 'Worker 已领取',
+        analysis: 'AI 图片分析',
+        completed: '处理完成',
+        staged: '等待 Worker'
+    };
+    return labels[String(stage || '').trim()] || String(stage || '').trim();
+}
+
+function getGalleryImportBatchStats(batch = {}) {
+    const stats = batch?.stats && typeof batch.stats === 'object' ? batch.stats : {};
+    const number = (key) => Math.max(0, Number(stats[key] || 0));
+    const total = Math.max(0, Number(stats.total || 0));
+    const pending = number('staged') + number('queued') + number('uploading') + number('saving');
+    const completed = number('cleaned') + number('imported');
+    const attention = number('failed') + number('needs_review');
+    return {
+        total,
+        attempted: Math.max(total, number('attempted')),
+        accepted: Math.max(total, number('accepted')),
+        skippedDuplicates: number('skipped_duplicates'),
+        rejected: number('rejected'),
+        pending,
+        completed,
+        attention,
+        failed: number('failed'),
+        needsReview: number('needs_review'),
+        duplicates: number('duplicate'),
+        skipped: number('skipped')
+    };
+}
+
+function getGalleryImportBatchStatusLabel(batch = {}) {
+    const stats = getGalleryImportBatchStats(batch);
+    if (!stats.total && stats.attempted > 0 && stats.skippedDuplicates >= stats.attempted) return '全部重复';
+    if (!stats.total && stats.rejected > 0) return '未接收';
+    if (!stats.total) return '空批次';
+    if (stats.pending) return '处理中';
+    if (stats.attention) return '需要处理';
+    if (String(batch?.status || '') === 'completed') return '已完成';
+    return '等待处理';
+}
+
+function formatGalleryImportBatchTime(value = '') {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function selectGalleryImportBatch(batches = [], options = {}) {
+    const rows = Array.isArray(batches) ? batches : [];
+    const preferredId = String(options.preferredBatchId || '').trim();
+    const pendingBatch = rows.find((batch) => getGalleryImportBatchStats(batch).pending > 0);
+    if (options.preferPending && pendingBatch) return pendingBatch;
+    const preferred = rows.find((batch) => String(batch?.id || '') === preferredId);
+    if (preferred) return preferred;
+    const current = rows.find((batch) => (
+        String(batch?.id || '') === String(galleryImportState.selectedBatchId || '')
+        && getGalleryImportBatchStats(batch).total > 0
+    ));
+    if (current) return current;
+    if (pendingBatch) return pendingBatch;
+    return rows.find((batch) => getGalleryImportBatchStats(batch).total > 0) || rows[0] || null;
+}
+
+function renderGalleryImportBatchTracker() {
+    const select = document.getElementById('galleryImportBatchSelect');
+    const summary = document.getElementById('galleryImportBatchSummary');
+    const batches = Array.isArray(galleryImportState.batches) ? galleryImportState.batches : [];
+    if (select) {
+        select.innerHTML = batches.length
+            ? batches.map((batch) => {
+                const stats = getGalleryImportBatchStats(batch);
+                const selected = String(batch.id || '') === String(galleryImportState.selectedBatchId || '');
+                const label = `${String(batch.id || '').slice(0, 8)} · ${getGalleryImportBatchStatusLabel(batch)} · ${stats.total} 条 · ${formatGalleryImportBatchTime(batch.updated_at)}`;
+                return `<option value="${escapeGalleryImportHtml(batch.id || '')}"${selected ? ' selected' : ''}>${escapeGalleryImportHtml(label)}</option>`;
+            }).join('')
+            : '<option value="">暂无批次</option>';
+    }
+    if (!summary) return;
+    const batch = galleryImportState.batch;
+    if (!batch) {
+        summary.innerHTML = '<span>尚未加载服务端批次</span>';
+        return;
+    }
+    const stats = getGalleryImportBatchStats(batch);
+    summary.innerHTML = [
+        `<span>批次 ${escapeGalleryImportHtml(batch.id || '')}</span>`,
+        `<span>${escapeGalleryImportHtml(getGalleryImportBatchStatusLabel(batch))}</span>`,
+        `<span>尝试 ${stats.attempted}</span>`,
+        `<span>实际入队 ${stats.accepted}</span>`,
+        `<span>仓库重复 ${stats.skippedDuplicates}</span>`,
+        `<span>未接收 ${stats.rejected}</span>`,
+        `<span>总数 ${stats.total}</span>`,
+        `<span>待处理 ${stats.pending}</span>`,
+        `<span>已完成 ${stats.completed}</span>`,
+        `<span>失败 ${stats.failed}</span>`,
+        `<span>需复核 ${stats.needsReview}</span>`,
+        `<span>批次内跳过 ${stats.duplicates + stats.skipped}</span>`,
+        `<span>更新 ${escapeGalleryImportHtml(formatGalleryImportBatchTime(batch.updated_at))}</span>`
+    ].join('');
+}
+
 function getGalleryImportStats(items = galleryImportState.items) {
     const rows = Array.isArray(items) ? items : [];
     const counts = rows.reduce((acc, item) => {
@@ -17613,6 +17730,14 @@ function renderGalleryImportQueue(items = galleryImportState.items) {
         const status = getGalleryImportStatusLabel(item.status);
         const failure = getGalleryImportFailureInfo(item);
         const processingStatus = String(item?.__processingStatus || '').trim();
+        const pipelineStage = getGalleryImportPipelineStageLabel(item?.pipeline_stage || '');
+        const attempts = Number(item?.processing_attempts || 0);
+        const workerMeta = [
+            pipelineStage ? `阶段：${pipelineStage}` : '',
+            attempts ? `尝试：${attempts}` : '',
+            item?.worker_name ? 'Worker：已领取' : '',
+            item?.updated_at ? `更新：${formatGalleryImportBatchTime(item.updated_at)}` : ''
+        ].filter(Boolean).join(' · ');
         const error = failure
             ? `
                 <div class="gallery-import-item__error" role="status">
@@ -17640,6 +17765,7 @@ function renderGalleryImportQueue(items = galleryImportState.items) {
                     </div>
                     <p class="gallery-import-item__prompt">${escapeGalleryImportHtml(prompt)}</p>
                     <div class="gallery-import-item__source">${escapeGalleryImportHtml(sourceLabel)}</div>
+                    ${workerMeta ? `<div class="gallery-import-item__worker">${escapeGalleryImportHtml(workerMeta)}</div>` : ''}
                     ${error}
                 </div>
             </article>
@@ -18108,6 +18234,11 @@ async function stageGalleryImportItems(items = []) {
         items
     });
     galleryImportState.batch = payload.batch || galleryImportState.batch;
+    if (payload.batch) {
+        galleryImportState.selectedBatchId = payload.batch.id;
+        upsertGalleryImportBatch(payload.batch);
+        renderGalleryImportBatchTracker();
+    }
     setGalleryImportItems(payload.items || []);
     const skippedDuplicateCount = Number(payload.skippedDuplicateCount || 0);
     if (skippedDuplicateCount > 0) {
@@ -18117,11 +18248,47 @@ async function stageGalleryImportItems(items = []) {
     return payload;
 }
 
+function upsertGalleryImportBatch(batch = {}) {
+    const id = String(batch?.id || '').trim();
+    if (!id) return;
+    const index = galleryImportState.batches.findIndex((item) => String(item?.id || '') === id);
+    if (index >= 0) {
+        galleryImportState.batches[index] = { ...galleryImportState.batches[index], ...batch };
+    } else {
+        galleryImportState.batches.unshift(batch);
+    }
+}
+
+async function loadGalleryImportBatchById(batchId, options = {}) {
+    const id = String(batchId || '').trim();
+    if (!id) return null;
+    const detail = await fetchGalleryImportApi({ batchId: id, limit: 100 });
+    galleryImportState.batch = detail.batch || galleryImportState.batches.find((batch) => batch.id === id) || null;
+    galleryImportState.selectedBatchId = galleryImportState.batch?.id || id;
+    if (galleryImportState.batch) upsertGalleryImportBatch(galleryImportState.batch);
+    setGalleryImportItems(detail.items || [], {
+        includeCleaned: options.includeCleaned === true
+    });
+    renderGalleryImportBatchTracker();
+    if (!options.silent) {
+        const stats = getGalleryImportBatchStats(galleryImportState.batch);
+        setGalleryImportRunStatus(`批次 ${id.slice(0, 8)} 已刷新：总数 ${stats.total}，待处理 ${stats.pending}，失败 ${stats.failed}`);
+    }
+    return detail;
+}
+
 async function loadLatestGalleryImportBatch(options = {}) {
     const site = window.AdminSiteFilter?.getSiteFilter?.() || 'cn';
-    const payload = await fetchGalleryImportApi({ limit: 1, site });
-    const batch = payload.batches?.[0] || null;
+    const payload = await fetchGalleryImportApi({ limit: 30, site });
+    galleryImportState.batches = Array.isArray(payload.batches) ? payload.batches : [];
+    const batch = selectGalleryImportBatch(galleryImportState.batches, {
+        preferredBatchId: options.preferredBatchId || galleryImportState.selectedBatchId,
+        preferPending: options.preferPending === true
+    });
     if (!batch) {
+        galleryImportState.batch = null;
+        galleryImportState.selectedBatchId = '';
+        renderGalleryImportBatchTracker();
         const hasPreviewItems = galleryImportState.items.some((item) => String(item?.id || '').startsWith('preview-'));
         setGalleryImportEmptyMessage('还没有队列内容。请先在采集器点“送入队列”；如果复制的是诊断或下载文件，点“粘贴结果”或“导入抓取结果”，再点“开始任务”。');
         if (!options.silent) {
@@ -18135,13 +18302,9 @@ async function loadLatestGalleryImportBatch(options = {}) {
         return null;
     }
     galleryImportState.batch = batch;
-    const detail = await fetchGalleryImportApi({ batchId: batch.id, limit: 100 });
-    galleryImportState.batch = detail.batch || batch;
-    setGalleryImportItems(detail.items || [], {
-        includeCleaned: options.includeCleaned === true
-    });
-    if (!options.silent) setGalleryImportRunStatus('队列已刷新');
-    return detail;
+    galleryImportState.selectedBatchId = batch.id;
+    renderGalleryImportBatchTracker();
+    return loadGalleryImportBatchById(batch.id, options);
 }
 
 function isGalleryImportItemAutoUploadable(item = {}) {
@@ -18189,12 +18352,24 @@ async function runGalleryImportAutoDetectionCycle() {
         if (!galleryImportState.autoDetectionEnabled || galleryImportState.autoDetectionInFlight) return null;
         galleryImportState.autoDetectionInFlight = true;
         try {
-            await loadLatestGalleryImportBatch({ silent: true });
+            await loadLatestGalleryImportBatch({ silent: true, preferPending: true });
             const hasNewQueueItems = galleryImportState.items.some(isGalleryImportItemAutoUploadable);
-            if (!hasNewQueueItems) return null;
+            const batchStats = getGalleryImportBatchStats(galleryImportState.batch);
+            if (!hasNewQueueItems) {
+                if (batchStats.failed || batchStats.needsReview) {
+                    setGalleryImportRunStatus(
+                        `批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)} 需要处理：失败 ${batchStats.failed}，需复核 ${batchStats.needsReview}`
+                    );
+                } else if (batchStats.total > 0 && batchStats.completed >= batchStats.total) {
+                    setGalleryImportRunStatus(`批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)} 已处理完成`);
+                }
+                return { pendingCount: 0, batch: galleryImportState.batch };
+            }
             const pendingCount = galleryImportState.items.filter(isGalleryImportItemAutoUploadable).length;
-            setGalleryImportRunStatus(`服务端 Worker 正在处理 ${pendingCount} 条队列任务，可安全关闭 Admin Studio`);
-            return { pendingCount };
+            setGalleryImportRunStatus(
+                `批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)}：服务端 Worker 正在处理 ${pendingCount} 条，可安全关闭 Admin Studio`
+            );
+            return { pendingCount, batch: galleryImportState.batch };
         } catch (error) {
             console.warn('[GalleryImport] Auto queue detection failed:', error);
             setGalleryImportRunStatus(`自动检测失败：${normalizeGalleryImportFailureMessage(error)}`);
@@ -18821,6 +18996,20 @@ function initGalleryImportAssistant() {
             const enabled = Boolean(autoDetectToggle.checked);
             setGalleryImportAutoDetectionEnabled(enabled);
             setGalleryImportRunStatus(enabled ? '自动检测队列已开启' : '自动检测已关闭，请手动刷新队列');
+        });
+    }
+
+    const batchSelect = document.getElementById('galleryImportBatchSelect');
+    if (batchSelect && batchSelect.dataset.bound !== '1') {
+        batchSelect.dataset.bound = '1';
+        batchSelect.addEventListener('change', () => {
+            const batchId = String(batchSelect.value || '').trim();
+            if (!batchId) return;
+            galleryImportState.selectedBatchId = batchId;
+            void loadGalleryImportBatchById(batchId).catch((error) => {
+                setGalleryImportRunStatus('批次读取失败');
+                showAdminStudioToast(error.message || '批次读取失败', 'error');
+            });
         });
     }
     let autoDetectionEnabled = false;
