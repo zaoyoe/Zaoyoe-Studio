@@ -1009,6 +1009,33 @@ async function stageImportItems(supabase, user, body) {
     };
 }
 
+async function checkImportItemDuplicates(supabase, body) {
+    const settings = normalizeImportSettings(body.settings || {});
+    const maxItems = normalizePositiveInteger(settings.max_items, 50, 1000);
+    const rows = (Array.isArray(body.items) ? body.items : [])
+        .slice(0, maxItems)
+        .map((item) => normalizeImportItemPayload(item, settings));
+    if (!rows.length) {
+        return { checkedCount: 0, duplicateCount: 0, duplicateSourceItemIds: [] };
+    }
+
+    const duplicates = await findExistingPromptDuplicates(supabase, rows);
+    const seenPromptHashes = new Set();
+    const duplicateSourceItemIds = rows.flatMap((row) => {
+        const duplicateId = (row.original_work_url && duplicates.bySourceUrl.get(row.original_work_url))
+            || (row.prompt_hash && duplicates.byPromptHash.get(row.prompt_hash))
+            || '';
+        const repeatsCandidate = Boolean(row.prompt_hash && seenPromptHashes.has(row.prompt_hash));
+        if (row.prompt_hash) seenPromptHashes.add(row.prompt_hash);
+        return (duplicateId || repeatsCandidate) && row.source_item_id ? [row.source_item_id] : [];
+    });
+    return {
+        checkedCount: rows.length,
+        duplicateCount: duplicateSourceItemIds.length,
+        duplicateSourceItemIds
+    };
+}
+
 async function insertPromptRow(supabase, payload) {
     const { data, error } = await supabase
         .from('prompts')
@@ -1484,6 +1511,10 @@ module.exports = async (req, res) => {
             const result = await stageImportItems(supabase, user, body);
             return sendJson(res, 200, { success: true, ...result });
         }
+        if (action === 'check_duplicates') {
+            const result = await checkImportItemDuplicates(supabase, body);
+            return sendJson(res, 200, { success: true, ...result });
+        }
         if (action === 'upload_item') {
             const itemId = normalizeText(body.item_id || body.itemId, 120);
             if (!itemId) {
@@ -1536,6 +1567,7 @@ module.exports._private = {
     buildImportStats,
     buildPromptImportImageKey,
     findExistingPromptDuplicates,
+    checkImportItemDuplicates,
     isBlockedImportHostname,
     isSupportedImageBuffer
 };

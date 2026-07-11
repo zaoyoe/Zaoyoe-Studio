@@ -2,6 +2,7 @@
     'use strict';
 
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
+    const MESSAGE_CHECK_DUPLICATES = 'FATHER_KEY_CHECK_IMPORT_DUPLICATES';
     const MESSAGE_DOWNLOAD = 'FATHER_KEY_DOWNLOAD_IMPORT';
     const MESSAGE_STAGE_VIA_ADMIN_TAB = 'FATHER_KEY_STAGE_IMPORT_VIA_ADMIN_TAB';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
@@ -70,6 +71,15 @@
                 auto_cleanup: true,
                 analyze_after_save: true
             },
+            items: getItemsFromPayload(payload)
+        };
+    }
+
+    function buildDuplicateCheckBody({ payload, maxItems = 20 } = {}) {
+        return {
+            action: 'check_duplicates',
+            source: 'meigen',
+            settings: { max_items: normalizeMaxItems(maxItems) },
             items: getItemsFromPayload(payload)
         };
     }
@@ -267,6 +277,36 @@
         return result;
     }
 
+    async function checkImportDuplicates({ payload, adminBaseUrl, maxItems = 20 } = {}) {
+        const body = buildDuplicateCheckBody({ payload, maxItems });
+        if (!body.items.length) return { checkedCount: 0, duplicateCount: 0, duplicateSourceItemIds: [] };
+        const baseUrl = normalizeAdminBaseUrl(adminBaseUrl);
+        let response;
+        try {
+            response = await fetch(`${baseUrl}/api/admin/prompts/imports`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        } catch (_) {
+            return stageImportPayloadViaAdminTab({ body, adminBaseUrl: baseUrl });
+        }
+        let result = {};
+        try {
+            result = await response.json();
+        } catch (_) {
+            result = {};
+        }
+        if (isUnauthorizedResponse(response, result)) {
+            return stageImportPayloadViaAdminTab({ body, adminBaseUrl: baseUrl });
+        }
+        if (!response.ok || result.success === false) {
+            throw new Error(result.message || '提示词仓库去重预检失败');
+        }
+        return result;
+    }
+
     function buildImportFilename() {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         return `meigen-gallery-import-${stamp}.json`;
@@ -283,6 +323,12 @@
     }
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+        if (message?.type === MESSAGE_CHECK_DUPLICATES) {
+            checkImportDuplicates(message)
+                .then((result) => sendResponse({ ok: true, result }))
+                .catch((error) => sendResponse({ ok: false, message: error?.message || '提示词仓库去重预检失败' }));
+            return true;
+        }
         if (message?.type === MESSAGE_STAGE) {
             stageImportPayload(message)
                 .then((result) => sendResponse({ ok: true, result }))
