@@ -147,7 +147,9 @@
         const images = Number(state.summary.images || 0);
         const withPrompt = Number(state.summary.with_prompt || 0);
         const failures = Number(state.summary.detail_failures || state.detailStatus.failed?.length || 0);
-        const missing = Math.max(0, total - withPrompt);
+        const missing = Array.isArray(state.payload?.items)
+            ? state.payload.items.filter((item) => itemNeedsDetailEnrichment(item)).length
+            : Math.max(0, total - withPrompt);
         const version = state.summary.collector_version || state.payload?.collector_version || '';
         setCollectorVersion(version);
         const summaryEl = getElement('summary');

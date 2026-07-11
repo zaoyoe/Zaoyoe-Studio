@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.20');
+    assert.equal(manifest.version, '0.1.21');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -67,6 +67,9 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /FATHER_KEY_MEIGEN_SESSION_STATE/);
     assert.match(content, /FATHER_KEY_STAGE_IMPORT/);
     assert.match(content, /function queueStreamStage/);
+    assert.match(content, /\{ flush = false, force = false \}/);
+    assert.match(content, /!force && !isStreamItemRevisionImproved/);
+    assert.match(content, /queueStreamStage\(mergedItems, streamMessage, \{ flush: true, force: true \}\)/);
     assert.match(content, /function scrollAndWaitForGalleryBatch/);
     assert.match(content, /function stageStreamItemsToTarget/);
     assert.match(content, /Math\.max\(0, maxItems - streamStageState\.stagedCount\)/);
@@ -186,7 +189,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.66'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.67'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
@@ -326,6 +329,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /诊断已复制/);
     assert.match(popup, /retryFailed/);
     assert.match(popup, /function itemNeedsDetailEnrichment/);
+    assert.match(popup, /state\.payload\.items\.filter\(\(item\) => itemNeedsDetailEnrichment\(item\)\)\.length/);
     assert.match(popup, /expectedImageCount = Number/);
     assert.match(popup, /imageCountIncomplete/);
     assert.match(popup, /favoriteCount <= 0/);

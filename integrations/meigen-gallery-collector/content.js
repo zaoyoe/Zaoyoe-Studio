@@ -208,12 +208,12 @@
         streamStageState.lastError = '';
     }
 
-    function queueStreamStage(items = [], message = {}, { flush = false } = {}) {
+    function queueStreamStage(items = [], message = {}, { flush = false, force = false } = {}) {
         (Array.isArray(items) ? items : []).forEach((item) => {
             const key = getStreamItemKey(item);
             if (!key || getMeigenIdentityConflictReason(item)) return;
             const revision = getStreamItemRevision(item);
-            if (!isStreamItemRevisionImproved(streamStageState.sentRevisions.get(key), revision)) return;
+            if (!force && !isStreamItemRevisionImproved(streamStageState.sentRevisions.get(key), revision)) return;
             streamStageState.sentRevisions.set(key, revision);
             const bufferedIndex = streamStageState.bufferedItems.findIndex((entry) => getStreamItemKey(entry) === key);
             if (bufferedIndex >= 0) {
@@ -2478,7 +2478,7 @@
                         : item
                 ));
             if (streamMessage) {
-                queueStreamStage(mergedItems, streamMessage, { flush: true });
+                queueStreamStage(mergedItems, streamMessage, { flush: true, force: true });
                 await streamStageState.promise;
             }
             detailJob.failed = removeResolvedDetailFailures(detailJob.failed, mergedItems);
