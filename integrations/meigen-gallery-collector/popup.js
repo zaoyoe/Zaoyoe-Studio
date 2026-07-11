@@ -666,13 +666,14 @@
     async function pageBatchCollectCurrentPage({ automatic = false } = {}) {
         const tab = await getMeigenTabReady();
         if (!tab) return null;
-        setProgressStatus('翻页采集中', 0, DEFAULT_PAGE_BATCH_PAGES, '已采集 0 条');
+        const maxPages = automatic ? Math.max(DEFAULT_PAGE_BATCH_PAGES, getMaxItemsSetting()) : DEFAULT_PAGE_BATCH_PAGES;
+        setProgressStatus('翻页采集中', 0, maxPages, '已采集 0 条');
         startPageBatchPolling({ waitForStart: true });
         let response = null;
         try {
             response = await sendTabMessage(tab.id, {
                 type: MESSAGE_PAGE_BATCH_COLLECT,
-                maxPages: DEFAULT_PAGE_BATCH_PAGES,
+                maxPages,
                 maxItems: getMaxItemsSetting(),
                 continueExisting: automatic,
                 preflightDuplicates: automatic,
