@@ -97,7 +97,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.59';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.60';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'function createGalleryImportStageError(stage = \'unknown\', error = null)',
@@ -398,6 +398,25 @@ test('prompt import payload requires source attribution, prompt, and images', ()
     }, { max_images_per_item: 12 });
     assert.equal(expectedCountItem.error_details.import_image_count, 4);
     assert.equal(expectedCountItem.error_details.source_image_count, 1);
+
+    const identityBoundItem = _private.normalizeImportItemPayload({
+        source: 'meigen',
+        prompt: 'High-end fashion portrait with a teal coat and editorial typography',
+        original_work_url: 'https://x.com/artist/status/2052602437530243303',
+        author_name: 'Artist',
+        author_handle: '@artist',
+        expected_image_count: 17,
+        images: [
+            'https://images.meigen.ai/tweets/2052602437530243303/0.jpg',
+            'https://images.meigen.ai/tweets/9999999999999999999/0.jpg',
+            'https://www.meigen.ai/image'
+        ]
+    }, { max_images_per_item: 12 });
+    assert.deepEqual(identityBoundItem.image_sources, [
+        { url: 'https://images.meigen.ai/tweets/2052602437530243303/0.jpg' }
+    ]);
+    assert.equal(identityBoundItem.error_details.expected_image_count, 1);
+    assert.equal(identityBoundItem.error_details.import_image_count, 1);
 
     const cleanedItemPayload = _private.buildCleanedImportedItemPayload({
         finalPromptId: 379,
