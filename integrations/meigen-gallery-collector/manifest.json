@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Father Key Meigen Collector",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "采集 Meigen 当前页面作品，并送入 Father Key Gallery Import 队列。",
   "action": {
     "default_popup": "popup.html",
@@ -36,12 +36,12 @@
     },
     {
       "matches": [
-        "https://www.fatherkey.com/*",
-        "https://fatherkey.com/*",
-        "https://www.zaoyoe.xyz/*",
-        "https://zaoyoe.xyz/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*"
+        "https://www.fatherkey.com/admin-studio*",
+        "https://fatherkey.com/admin-studio*",
+        "https://www.zaoyoe.xyz/admin-studio*",
+        "https://zaoyoe.xyz/admin-studio*",
+        "http://localhost/admin-studio*",
+        "http://127.0.0.1/admin-studio*"
       ],
       "js": [
         "admin-bridge.js"
