@@ -91,8 +91,10 @@
         return allTabs.filter((tab) => {
             try {
                 const url = new URL(tab?.url || '');
-                if (origins.includes(url.origin)) return true;
-                return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+                const isAllowedOrigin = origins.includes(url.origin)
+                    || url.hostname === 'localhost'
+                    || url.hostname === '127.0.0.1';
+                return isAllowedOrigin && /^\/admin-studio(?:\.html)?\/?$/i.test(url.pathname);
             } catch (_) {
                 return false;
             }

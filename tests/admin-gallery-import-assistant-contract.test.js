@@ -167,6 +167,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "mutateGalleryImport('fail_items'",
         "mutateGalleryImport('cleanup_items'",
         'function clearCurrentGalleryImportQueue',
+        "hadSavedPromptReference ? 'lookup' : 'upload'",
         'function fetchImageBase64ViaAdmin',
         "route=prompts/image-base64",
         'function getImageBase64ForAnalysis',
@@ -239,6 +240,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'source_image_count',
         'async function skipImportItems',
         'async function markImportItemsFailed',
+        'skippedDuplicateCount: duplicateIndexes.size',
+        "request = request.neq('status', 'cleaned')",
         "status: 'imported'",
         "prompt_text: ''",
         'image_sources: []',
@@ -344,6 +347,16 @@ test('prompt import payload requires source attribution, prompt, and images', ()
         finalImageAssets: [{ original: 'https://cdn.fatherkey.com/prompts/imports/a.jpg' }]
     });
     assert.equal(cleanedItemPayload.final_prompt_id, '379');
+});
+
+test('prompt import image guard rejects private hosts and non-image payloads', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    assert.equal(_private.isBlockedImportHostname('127.0.0.1'), true);
+    assert.equal(_private.isBlockedImportHostname('[::1]'), true);
+    assert.equal(_private.isBlockedImportHostname('metadata.google.internal'), true);
+    assert.equal(_private.isBlockedImportHostname('images.meigen.ai'), false);
+    assert.equal(_private.isSupportedImageBuffer(Buffer.from('<!doctype html>not an image')), false);
+    assert.equal(_private.isSupportedImageBuffer(Buffer.from([0xff, 0xd8, 0xff, ...new Array(16).fill(0)])), true);
 });
 
 test('admin prompt image base64 helper only accepts public image urls', () => {

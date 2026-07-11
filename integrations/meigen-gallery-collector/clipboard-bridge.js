@@ -72,7 +72,8 @@
     }
 
     const DATA_CACHE_LIMIT = 80;
-    const DATA_TEXT_LIMIT = 700000;
+    const DATA_TEXT_LIMIT = 250000;
+    const DATA_CACHE_TOTAL_TEXT_LIMIT = 6 * 1024 * 1024;
     const DATA_RESPONSE_TYPE = 'FatherKeyMeigenDataCacheResponse';
     const DATA_REQUEST_TYPE = 'FatherKeyMeigenDataCacheRequest';
     const dataCache = window.__FatherKeyMeigenDataCache = Array.isArray(window.__FatherKeyMeigenDataCache)
@@ -118,6 +119,12 @@
             dataCache.push(record);
         }
         while (dataCache.length > DATA_CACHE_LIMIT) dataCache.shift();
+        while (
+            dataCache.length > 1
+            && dataCache.reduce((sum, item) => sum + String(item?.text || '').length, 0) > DATA_CACHE_TOTAL_TEXT_LIMIT
+        ) {
+            dataCache.shift();
+        }
         return true;
     }
 

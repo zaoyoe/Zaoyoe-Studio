@@ -783,10 +783,13 @@
             return;
         }
 
-        const count = response.result?.items?.length || payload.items.length;
+        const count = Array.isArray(response.result?.items)
+            ? response.result.items.length
+            : payload.items.length;
+        const skippedDuplicateCount = Number(response.result?.skippedDuplicateCount || 0);
         const missingPromptCount = getMissingPromptCount(payload);
         const viaAdminTab = response.result?.via_admin_tab ? '，已通过 Admin Studio 登录态提交' : '';
-        setStatus(`已送入队列 ${count} 条${missingPromptCount ? `，待补 ${missingPromptCount} 条` : ''}${viaAdminTab}`);
+        setStatus(`已送入队列 ${count} 条${skippedDuplicateCount ? `，仓库重复跳过 ${skippedDuplicateCount} 条` : ''}${missingPromptCount ? `，待补 ${missingPromptCount} 条` : ''}${viaAdminTab}`);
     }
 
     async function downloadPayload() {

@@ -35,6 +35,9 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
+    assert.equal(manifest.version, '0.1.1');
+    const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
+    assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
     assert.equal(manifest.host_permissions.includes('http://localhost:*/*'), true);
 });
@@ -286,6 +289,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /maxFavoritesInput/);
     assert.match(popup, /先补抓详情，再送入队列/);
     assert.match(popup, /已通过 Admin Studio 登录态提交/);
+    assert.match(popup, /仓库重复跳过/);
     assert.match(popup, /const ready = await ensureContentScriptReady\(tab\);/);
     assert.match(popup, /请刷新 Meigen 页面后再采集/);
     assert.match(html, /id="collectBtn"/);
@@ -322,6 +326,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(bridge, /FatherKeyMeigenDataCacheRequest/);
     assert.match(bridge, /FatherKeyMeigenDataCacheResponse/);
     assert.match(bridge, /__FatherKeyMeigenDataCache/);
+    assert.match(bridge, /DATA_CACHE_TOTAL_TEXT_LIMIT/);
     assert.match(bridge, /function dataCacheEntryMatchesContext/);
     assert.match(bridge, /getDataCacheSnapshot\(data\.currentUrl \|\| window\.location\.href\)/);
     assert.match(bridge, /window\.fetch/);

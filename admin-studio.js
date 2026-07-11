@@ -17026,6 +17026,10 @@ const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({
         label: '图片上传',
         action: '请检查图片链接是否还能访问，然后重新上传'
     },
+    lookup: {
+        label: '作品读取',
+        action: '作品引用已经失效或站点不一致；请在 Manage 确认作品是否存在，再决定清理或重新采集'
+    },
     analysis: {
         label: '图片分析',
         action: '作品已经保存，再次点击“上传队列”会从图片分析继续'
@@ -17182,6 +17186,7 @@ function getGalleryImportFailureInfo(item = {}) {
 
     const stageEntries = [
         ['upload', /^(?:图片上传|上传)(失败|未完成)[:：]\s*/i],
+        ['lookup', /^(?:作品读取|读取作品)(失败|未完成)[:：]\s*/i],
         ['analysis', /^(?:图片分析|分析)(失败|未完成)[:：]\s*/i],
         ['bilingual', /^(?:双语补全|补全双语)(失败|未完成)[:：]\s*/i],
         ['publish', /^发布(失败|未完成)[:：]\s*/i],
@@ -18061,6 +18066,11 @@ async function stageGalleryImportItems(items = []) {
     });
     galleryImportState.batch = payload.batch || galleryImportState.batch;
     setGalleryImportItems(payload.items || []);
+    const skippedDuplicateCount = Number(payload.skippedDuplicateCount || 0);
+    if (skippedDuplicateCount > 0) {
+        setGalleryImportRunStatus(`已入队 ${payload.items?.length || 0} 条，提示词库重复自动跳过 ${skippedDuplicateCount} 条`);
+        showAdminStudioToast(`提示词库已有 ${skippedDuplicateCount} 条，已自动跳过`, 'info');
+    }
     return payload;
 }
 
@@ -18312,6 +18322,7 @@ async function runGalleryImportUploadQueue() {
         };
 
         let pipelinePrompt = null;
+        const hadSavedPromptReference = Boolean(getGalleryImportSavedPromptReferenceId(item));
         let justSaved = false;
         let skipped = false;
         try {
@@ -18395,7 +18406,10 @@ async function runGalleryImportUploadQueue() {
         } catch (error) {
             const pipelineError = error?.galleryImportStage
                 ? error
-                : createGalleryImportStageError(pipelinePrompt ? 'unknown' : 'upload', error);
+                : createGalleryImportStageError(
+                    pipelinePrompt ? 'unknown' : (hadSavedPromptReference ? 'lookup' : 'upload'),
+                    error
+                );
             const failureStage = String(pipelineError?.galleryImportStage || 'unknown');
             failureStageCounts[failureStage] = (failureStageCounts[failureStage] || 0) + 1;
             const failureMessage = normalizeGalleryImportFailureMessage(
@@ -18526,6 +18540,10 @@ async function cleanupGalleryImportItems() {
 }
 
 async function clearCurrentGalleryImportQueue() {
+    if (galleryImportState.running || galleryImportState.uploadInFlight || galleryImportState.statusRefreshInFlight) {
+        showAdminStudioToast('当前仍有导入或状态刷新任务，请等待完成后再清空', 'warning');
+        return;
+    }
     const cleanupIds = galleryImportState.items
         .map((item) => item.id)
         .filter((id) => id && !String(id).startsWith('preview-'));
@@ -18543,6 +18561,10 @@ async function clearCurrentGalleryImportQueue() {
         });
         const cleanedIds = new Set((payload.items || []).map((item) => String(item.id || '')).filter(Boolean));
         galleryImportState.items = galleryImportState.items.filter((item) => !cleanedIds.has(String(item.id || '')));
+        galleryImportState.batch = null;
+        const rawInput = document.getElementById('galleryImportRawInput');
+        if (rawInput) rawInput.value = '';
+        setGalleryImportEmptyMessage('当前队列已清空，可以开始新的采集任务。');
         renderGalleryImportQueue(galleryImportState.items);
         setGalleryImportRunStatus('当前队列已清空');
         showAdminStudioToast(`已清空 ${payload.cleanedCount || cleanupIds.length} 条`, 'success');

@@ -296,15 +296,25 @@ function getImportPageQuery(searchParams) {
     return {
         batchId: normalizeText(searchParams.get('batchId') || searchParams.get('batch_id'), 120),
         status: normalizeImportItemStatus(searchParams.get('status') || '', ''),
+        includeCleaned: searchParams.get('includeCleaned') === 'true' || searchParams.get('include_cleaned') === 'true',
         limit: normalizePositiveInteger(searchParams.get('limit'), DEFAULT_IMPORT_PAGE_SIZE, MAX_IMPORT_PAGE_SIZE)
     };
 }
 
 function isBlockedImportHostname(hostname = '') {
-    const host = String(hostname || '').trim().toLowerCase();
+    const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
     return !host
         || host === 'localhost'
         || host.endsWith('.localhost')
+        || host.endsWith('.local')
+        || host === '::1'
+        || host === '::'
+        || /^f[cd][0-9a-f]{0,2}:/.test(host)
+        || /^fe[89ab][0-9a-f]:/.test(host)
+        || host.startsWith('::ffff:127.')
+        || host.startsWith('::ffff:10.')
+        || host.startsWith('::ffff:192.168.')
+        || host === 'metadata.google.internal'
         || host === '0.0.0.0'
         || host.startsWith('127.')
         || host.startsWith('10.')
@@ -349,6 +359,18 @@ function getImageExtension(mimeType = 'image/jpeg') {
     return 'jpg';
 }
 
+function isSupportedImageBuffer(buffer = Buffer.alloc(0)) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+    const header = buffer.subarray(0, 16);
+    return (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff)
+        || header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        || header.subarray(0, 6).toString('ascii') === 'GIF87a'
+        || header.subarray(0, 6).toString('ascii') === 'GIF89a'
+        || (header.subarray(0, 4).toString('ascii') === 'RIFF' && header.subarray(8, 12).toString('ascii') === 'WEBP')
+        || header.subarray(4, 12).toString('ascii').includes('ftypavif')
+        || header.subarray(4, 12).toString('ascii').includes('ftypavis');
+}
+
 async function downloadRemoteImage(url, {
     timeoutMs = DEFAULT_IMAGE_TIMEOUT_MS,
     maxBytes = DEFAULT_MAX_IMAGE_BYTES
@@ -358,13 +380,25 @@ async function downloadRemoteImage(url, {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        const response = await fetch(url, {
-            signal: controller.signal,
-            headers: {
-                Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5',
-                'User-Agent': 'ZaoyoeGalleryImport/1.0'
+        let currentUrl = assertRemoteImageUrlAllowed(url).toString();
+        let response = null;
+        for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+            response = await fetch(currentUrl, {
+                signal: controller.signal,
+                redirect: 'manual',
+                headers: {
+                    Accept: 'image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5',
+                    Referer: 'https://www.meigen.ai/',
+                    'User-Agent': 'ZaoyoeGalleryImport/1.0'
+                }
+            });
+            if (![301, 302, 303, 307, 308].includes(response.status)) break;
+            const location = response.headers.get('location');
+            if (!location || redirectCount === 3) {
+                throw new Error('图片跳转次数过多');
             }
-        });
+            currentUrl = assertRemoteImageUrlAllowed(new URL(location, currentUrl).toString()).toString();
+        }
         if (!response.ok) {
             throw new Error(`图片下载失败 (${response.status})`);
         }
@@ -381,10 +415,13 @@ async function downloadRemoteImage(url, {
         if (buffer.length > maxBytes) {
             throw new Error('图片超过大小限制');
         }
+        if (!isSupportedImageBuffer(buffer)) {
+            throw new Error('图片地址返回的不是受支持的图片文件');
+        }
 
         return {
             buffer,
-            mimeType: getImageMimeType(response, url)
+            mimeType: getImageMimeType(response, currentUrl)
         };
     } finally {
         clearTimeout(timer);
@@ -658,53 +695,41 @@ async function findExistingPromptDuplicates(supabase, rows = []) {
         rows
             .map((row) => normalizeOptionalUrl(row.original_work_url || ''))
             .filter(Boolean)
-    )].slice(0, 100);
+    )];
     const promptTexts = [...new Set(
         rows
             .map((row) => normalizeText(row.prompt_text || '', 20000))
             .filter(Boolean)
-    )].slice(0, 100);
+    )];
 
     const duplicatesBySourceUrl = new Map();
     const duplicatesByPromptHash = new Map();
 
-    if (sourceUrls.length) {
-        const { data, error } = await supabase
-            .from('prompts')
-            .select('id, source_url, prompt_text')
-            .in('source_url', sourceUrls);
-        if (!error) {
-            (data || []).forEach((prompt) => {
-                const sourceUrl = normalizeOptionalUrl(prompt.source_url || '');
-                if (sourceUrl) {
-                    duplicatesBySourceUrl.set(sourceUrl, prompt.id);
-                }
-                const promptHash = hashPromptText(prompt.prompt_text || '');
-                if (promptHash) {
-                    duplicatesByPromptHash.set(promptHash, prompt.id);
-                }
+    const recordPrompts = (prompts = []) => {
+        prompts.forEach((prompt) => {
+            const sourceUrl = normalizeOptionalUrl(prompt.source_url || '');
+            if (sourceUrl) duplicatesBySourceUrl.set(sourceUrl, prompt.id);
+            [prompt.prompt_text, prompt.prompt_text_en, prompt.prompt_text_zh].forEach((text) => {
+                const promptHash = hashPromptText(text || '');
+                if (promptHash) duplicatesByPromptHash.set(promptHash, prompt.id);
             });
+        });
+    };
+    const queryChunks = async (field, values) => {
+        for (let index = 0; index < values.length; index += 100) {
+            const { data, error } = await supabase
+                .from('prompts')
+                .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh')
+                .in(field, values.slice(index, index + 100));
+            if (error) throw error;
+            recordPrompts(data || []);
         }
-    }
+    };
 
-    if (promptTexts.length) {
-        const { data, error } = await supabase
-            .from('prompts')
-            .select('id, source_url, prompt_text')
-            .in('prompt_text', promptTexts);
-        if (!error) {
-            (data || []).forEach((prompt) => {
-                const promptHash = hashPromptText(prompt.prompt_text || '');
-                if (promptHash) {
-                    duplicatesByPromptHash.set(promptHash, prompt.id);
-                }
-                const sourceUrl = normalizeOptionalUrl(prompt.source_url || '');
-                if (sourceUrl) {
-                    duplicatesBySourceUrl.set(sourceUrl, prompt.id);
-                }
-            });
-        }
-    }
+    await queryChunks('source_url', sourceUrls);
+    await queryChunks('prompt_text', promptTexts);
+    await queryChunks('prompt_text_en', promptTexts);
+    await queryChunks('prompt_text_zh', promptTexts);
 
     return {
         bySourceUrl: duplicatesBySourceUrl,
@@ -741,13 +766,16 @@ async function findExistingPromptForImportItem(supabase, item = {}) {
     }
 
     if (promptText) {
-        const { data, error } = await supabase
-            .from('prompts')
-            .select(PROMPT_SELECT)
-            .eq('prompt_text', promptText)
-            .limit(1);
-        if (!error && Array.isArray(data) && data[0]) {
-            return data[0];
+        for (const field of ['prompt_text', 'prompt_text_en', 'prompt_text_zh']) {
+            const { data, error } = await supabase
+                .from('prompts')
+                .select(PROMPT_SELECT)
+                .eq(field, promptText)
+                .limit(1);
+            if (error) throw error;
+            if (Array.isArray(data) && data[0]) {
+                return data[0];
+            }
         }
     }
 
@@ -764,11 +792,13 @@ async function stageImportItems(supabase, user, body) {
     const maxItems = normalizePositiveInteger(settings.max_items, 50, 1000);
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const seenPromptHashes = new Set();
-    const rows = rawItems.map((rawItem) => {
+    const duplicateIndexes = new Set();
+    const rows = rawItems.map((rawItem, index) => {
         const row = normalizeImportItemPayload(rawItem, settings);
         if (row.prompt_hash && seenPromptHashes.has(row.prompt_hash)) {
             row.status = 'duplicate';
             row.error_summary = '疑似重复';
+            duplicateIndexes.add(index);
         }
         if (row.prompt_hash) {
             seenPromptHashes.add(row.prompt_hash);
@@ -787,7 +817,7 @@ async function stageImportItems(supabase, user, body) {
     }
 
     const existingDuplicates = await findExistingPromptDuplicates(supabase, rows);
-    rows.forEach((row) => {
+    rows.forEach((row, index) => {
         const sourceDuplicateId = row.original_work_url
             ? existingDuplicates.bySourceUrl.get(row.original_work_url)
             : '';
@@ -798,15 +828,21 @@ async function stageImportItems(supabase, user, body) {
         if (duplicateId) {
             row.status = 'duplicate';
             row.duplicate_of_prompt_id = normalizePromptReferenceId(duplicateId);
-            row.error_summary = '疑似重复';
+            row.error_summary = '提示词库已有重复内容，已跳过';
+            duplicateIndexes.add(index);
         }
     });
 
-    const { data, error } = await supabase
-        .from('prompt_import_items')
-        .insert(rows)
-        .select(IMPORT_ITEM_SELECT);
-    if (error) throw error;
+    const rowsToInsert = rows.filter((_row, index) => !duplicateIndexes.has(index));
+    let data = [];
+    if (rowsToInsert.length) {
+        const result = await supabase
+            .from('prompt_import_items')
+            .insert(rowsToInsert)
+            .select(IMPORT_ITEM_SELECT);
+        if (result.error) throw result.error;
+        data = result.data || [];
+    }
 
     const updatedBatch = await updateBatchStats(supabase, batch.id);
     await writeAdminAuditLog({
@@ -817,14 +853,16 @@ async function stageImportItems(supabase, user, body) {
         actionType: 'prompt_import.stage',
         details: {
             batch_id: batch.id,
-            staged_count: data?.length || 0,
+            staged_count: data.length,
+            skipped_duplicate_count: duplicateIndexes.size,
             source: batch.source
         }
     });
 
     return {
         batch: updatedBatch,
-        items: data || []
+        items: data,
+        skippedDuplicateCount: duplicateIndexes.size
     };
 }
 
@@ -1052,6 +1090,12 @@ async function cleanupImportItems(supabase, user, body) {
         .select(IMPORT_ITEM_SELECT);
     if (error) throw error;
 
+    const batchIds = [...new Set((data || []).map((item) => item.batch_id).filter(Boolean))];
+    const batches = [];
+    for (const batchId of batchIds) {
+        batches.push(await updateBatchStats(supabase, batchId));
+    }
+
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
@@ -1066,7 +1110,8 @@ async function cleanupImportItems(supabase, user, body) {
 
     return {
         items: data || [],
-        cleanedCount: data?.length || 0
+        cleanedCount: data?.length || 0,
+        batch: batches[batches.length - 1] || null
     };
 }
 
@@ -1091,6 +1136,7 @@ async function skipImportItems(supabase, user, body) {
             updated_at: new Date().toISOString()
         })
         .in('id', itemIds)
+        .neq('status', 'cleaned')
         .select(IMPORT_ITEM_SELECT);
     if (error) throw error;
 
@@ -1141,6 +1187,7 @@ async function markImportItemsFailed(supabase, user, body) {
             updated_at: new Date().toISOString()
         })
         .in('id', itemIds)
+        .neq('status', 'cleaned')
         .select(IMPORT_ITEM_SELECT);
     if (error) throw error;
 
@@ -1193,6 +1240,8 @@ async function listImportItems(supabase, query) {
         .eq('batch_id', query.batchId);
     if (query.status) {
         request = request.eq('status', query.status);
+    } else if (!query.includeCleaned) {
+        request = request.neq('status', 'cleaned');
     }
 
     const { data, error } = await request
@@ -1289,5 +1338,7 @@ module.exports._private = {
     buildPromptPayloadFromImportItem,
     buildCleanedImportedItemPayload,
     buildImportStats,
-    buildPromptImportImageKey
+    buildPromptImportImageKey,
+    isBlockedImportHostname,
+    isSupportedImageBuffer
 };
