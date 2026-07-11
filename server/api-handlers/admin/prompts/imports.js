@@ -216,6 +216,29 @@ function getOriginalStatusIdFromUrl(value = '') {
     }
 }
 
+function getMeigenPromptIdFromUrl(value = '') {
+    try {
+        const url = new URL(String(value || ''));
+        return url.pathname.match(/\/prompt\/(\d{12,25})(?:\/|$)/i)?.[1] || '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function getMeigenImportIdentityConflictReason(item = {}) {
+    if (normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE) !== 'meigen') return '';
+    const sourceItemId = /^\d{12,25}$/.test(String(item.source_item_id || item.sourceItemId || '').trim())
+        ? String(item.source_item_id || item.sourceItemId).trim()
+        : '';
+    const detailId = getMeigenPromptIdFromUrl(item.source_page_url || item.sourcePageUrl || '');
+    const originalId = getOriginalStatusIdFromUrl(item.original_work_url || item.originalWorkUrl || '');
+    const imageIds = normalizeImageSources(item.image_sources || item.imageSources || item.images || [], MAX_IMAGE_COUNT)
+        .map((entry) => getTweetStatusIdFromUrl(entry.url))
+        .filter(Boolean);
+    const identities = [sourceItemId, detailId, originalId, ...imageIds].filter(Boolean);
+    return new Set(identities).size > 1 ? '作品详情、X 原帖或图片身份不一致，已拒绝入队' : '';
+}
+
 function filterImageSourcesForImportIdentity(imageSources = [], item = {}) {
     const source = normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE);
     const originalWorkUrl = item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || '';
@@ -283,6 +306,7 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
     if (!originalWorkUrl) missingReasons.push('缺少 X 原帖链接');
     if (!authorName) missingReasons.push('缺少原作者昵称');
     if (!authorHandle) missingReasons.push('缺少原作者 ID');
+    if (item.stream_pending_detail === true || item.streamPendingDetail === true) missingReasons.push('等待详情补全');
 
     return {
         source: normalizeImportSource(item.source || settings.source || DEFAULT_IMPORT_SOURCE),
@@ -880,8 +904,15 @@ async function stageImportItems(supabase, user, body) {
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const seenPromptHashes = new Set();
     const duplicateIndexes = new Set();
+    const rejectedIdentityIndexes = new Set();
     const rows = rawItems.map((rawItem, index) => {
         const row = normalizeImportItemPayload(rawItem, settings);
+        const identityConflictReason = getMeigenImportIdentityConflictReason(rawItem);
+        if (identityConflictReason) {
+            row.status = 'skipped';
+            row.error_summary = identityConflictReason;
+            rejectedIdentityIndexes.add(index);
+        }
         if (row.prompt_hash && seenPromptHashes.has(row.prompt_hash)) {
             row.status = 'duplicate';
             row.error_summary = '疑似重复';
@@ -927,7 +958,7 @@ async function stageImportItems(supabase, user, body) {
         }
     });
 
-    let rowsToInsert = rows.filter((_row, index) => !duplicateIndexes.has(index));
+    let rowsToInsert = rows.filter((_row, index) => !duplicateIndexes.has(index) && !rejectedIdentityIndexes.has(index));
     let data = [];
     if (batchId && rowsToInsert.length) {
         const sourceItemIds = rowsToInsert.map((row) => row.source_item_id).filter(Boolean);
@@ -1005,7 +1036,12 @@ async function stageImportItems(supabase, user, body) {
         items: data,
         attemptedCount: rows.length,
         stagedCount: data.length,
-        skippedDuplicateCount: duplicateIndexes.size
+        skippedDuplicateCount: duplicateIndexes.size,
+        rejectedIdentityCount: rejectedIdentityIndexes.size,
+        rejectedIdentitySourceItemIds: rawItems
+            .filter((_item, index) => rejectedIdentityIndexes.has(index))
+            .map((item) => normalizeText(item.source_item_id || item.sourceItemId || '', 220))
+            .filter(Boolean)
     };
 }
 
@@ -1020,6 +1056,11 @@ async function checkImportItemDuplicates(supabase, body) {
     }
 
     const duplicates = await findExistingPromptDuplicates(supabase, rows);
+    const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
+    const rejectedIdentitySourceItemIds = rawItems
+        .filter((item) => getMeigenImportIdentityConflictReason(item))
+        .map((item) => normalizeText(item.source_item_id || item.sourceItemId || '', 220))
+        .filter(Boolean);
     const seenPromptHashes = new Set();
     const duplicateSourceItemIds = rows.flatMap((row) => {
         const duplicateId = (row.original_work_url && duplicates.bySourceUrl.get(row.original_work_url))
@@ -1032,7 +1073,9 @@ async function checkImportItemDuplicates(supabase, body) {
     return {
         checkedCount: rows.length,
         duplicateCount: duplicateSourceItemIds.length,
-        duplicateSourceItemIds
+        duplicateSourceItemIds,
+        rejectedIdentityCount: rejectedIdentitySourceItemIds.length,
+        rejectedIdentitySourceItemIds
     };
 }
 
@@ -1557,6 +1600,7 @@ module.exports._private = {
     hashPromptText,
     normalizeImageSources,
     filterImageSourcesForImportIdentity,
+    getMeigenImportIdentityConflictReason,
     deriveAuthorHandleFromOriginalWorkUrl,
     normalizeImportItemPayload,
     importSingleItem,

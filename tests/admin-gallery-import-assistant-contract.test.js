@@ -97,7 +97,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.62';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.63';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'function createGalleryImportStageError(stage = \'unknown\', error = null)',
@@ -523,9 +523,53 @@ test('collector duplicate preflight reports repository and candidate duplicates 
     assert.deepEqual(result, {
         checkedCount: 3,
         duplicateCount: 2,
-        duplicateSourceItemIds: ['repo-copy', 'candidate-copy']
+        duplicateSourceItemIds: ['repo-copy', 'candidate-copy'],
+        rejectedIdentityCount: 0,
+        rejectedIdentitySourceItemIds: []
     });
     assert.deepEqual(calls, ['prompts']);
+});
+
+test('Meigen import rejects mismatched detail, source, and image identities', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    assert.match(_private.getMeigenImportIdentityConflictReason({
+        source: 'meigen',
+        source_item_id: '2029817553288319295',
+        source_page_url: 'https://www.meigen.ai/prompt/2045717144319697140',
+        original_work_url: 'https://x.com/Kashberg_0/status/2029817553288319295',
+        image_sources: [{ url: 'https://images.meigen.ai/tweets/2063224488494575823/0.jpg' }]
+    }), /身份不一致/);
+    assert.equal(_private.getMeigenImportIdentityConflictReason({
+        source: 'meigen',
+        source_item_id: '2070884374904525180',
+        source_page_url: 'https://www.meigen.ai/prompt/2070884374904525180',
+        original_work_url: 'https://x.com/codewithhajra/status/2070884374904525180',
+        image_sources: [{ url: 'https://images.meigen.ai/tweets/2070884374904525180/0.jpg' }]
+    }), '');
+    assert.equal(_private.getMeigenImportIdentityConflictReason({
+        source: 'meigen',
+        source_item_id: 'meigen-community',
+        source_page_url: 'https://www.meigen.ai/prompt/community_abc',
+        original_work_url: 'https://x.com/user/status/2070884374904525180',
+        image_sources: [{ url: 'https://images.meigen.ai/generations/community_abc.png' }]
+    }), '');
+});
+
+test('streaming imports remain in review until detail enrichment arrives', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const pending = _private.normalizeImportItemPayload({
+        source: 'meigen',
+        source_item_id: '2070884374904525180',
+        source_page_url: 'https://www.meigen.ai/prompt/2070884374904525180',
+        original_work_url: 'https://x.com/codewithhajra/status/2070884374904525180',
+        author_name: 'H A J R A',
+        author_handle: '@codewithhajra',
+        prompt: 'A complete-looking list prompt',
+        images: ['https://images.meigen.ai/tweets/2070884374904525180/0.jpg'],
+        stream_pending_detail: true
+    });
+    assert.equal(pending.status, 'needs_review');
+    assert.match(pending.error_summary, /等待详情补全/);
 });
 
 test('admin prompt image base64 helper only accepts public image urls', () => {
