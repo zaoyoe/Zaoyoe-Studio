@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.14');
+    assert.equal(manifest.version, '0.1.15');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -108,7 +108,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(background, /batch_id:\s*String\(batchId/);
     assert.match(html, /id="collectBtn"[^>]*>全自动采集并入队</);
     assert.match(popup, /async function runFullyAutomaticCollectionTask/);
-    assert.match(popup, /await collectCurrentPageWithAutoEnrich\(\)/);
+    assert.match(popup, /await collectCurrentPageWithAutoEnrich\(\{ preflightDuplicates: true \}\)/);
     assert.match(popup, /await stagePayload\(\)/);
     assert.match(popup, /streamToQueue:\s*true/);
     assert.match(popup, /state\.streamedBatchId/);
@@ -177,7 +177,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.60'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.61'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
@@ -266,6 +266,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function filterUsableDetailItems/);
     assert.match(content, /clipboard\.readText/);
     assert.match(background, /action:\s*'stage_items'/);
+    assert.match(background, /action:\s*'check_duplicates'/);
+    assert.match(background, /FATHER_KEY_CHECK_IMPORT_DUPLICATES/);
     assert.match(background, /max_items:\s*normalizeMaxItems\(maxItems\)/);
     assert.match(background, /min_favorites:\s*normalizeOptionalCount\(minFavorites\)/);
     assert.match(background, /max_favorites:\s*normalizeOptionalCount\(maxFavorites\)/);
@@ -322,8 +324,13 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /function promptNeedsDetailEnrichment/);
     assert.match(popup, /function getMissingPromptCount/);
     assert.match(popup, /promptNeedsDetailEnrichment\(item\?\.prompt_text/);
-    assert.match(popup, /function collectCurrentPageWithAutoEnrich/);
+    assert.match(popup, /function collectCurrentPageWithAutoEnrich\(\{ preflightDuplicates = false \} = \{\}\)/);
     assert.match(popup, /scrollCollectCurrentPage\(\{ automatic: true \}\)/);
+    assert.match(popup, /maxSteps:\s*automatic \? 80 : DEFAULT_SCROLL_STEPS/);
+    assert.match(popup, /preflightDuplicates:\s*automatic/);
+    assert.match(content, /async function filterRepositoryDuplicates/);
+    assert.match(content, /repositoryDuplicateCount \+= duplicateCheck\.duplicateCount/);
+    assert.match(content, /payload\.items\.length >= maxItems/);
     assert.match(popup, /正在自动滚动加载/);
     assert.match(popup, /发现待补内容，正在补抓详情/);
     assert.match(popup, /条待补提示词/);
@@ -355,8 +362,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(html, /id="maxItemsInput"/);
     assert.match(html, /id="minFavoritesInput"/);
     assert.match(html, /id="maxFavoritesInput"/);
-    assert.match(html, /最多作品/);
-    assert.match(html, /最多作品（上限）/);
+    assert.match(html, /实际入队目标/);
     assert.match(html, /收藏最少/);
     assert.match(html, /收藏最多/);
     assert.match(html, /全自动采集并入队/);

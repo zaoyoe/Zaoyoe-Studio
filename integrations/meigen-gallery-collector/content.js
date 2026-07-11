@@ -9,6 +9,7 @@
     const MESSAGE_SCROLL_COLLECT = 'FATHER_KEY_MEIGEN_SCROLL_COLLECT';
     const MESSAGE_SCROLL_STOP = 'FATHER_KEY_MEIGEN_SCROLL_STOP';
     const MESSAGE_SCROLL_STATUS = 'FATHER_KEY_MEIGEN_SCROLL_STATUS';
+    const MESSAGE_CHECK_DUPLICATES = 'FATHER_KEY_CHECK_IMPORT_DUPLICATES';
     const MESSAGE_PAGE_BATCH_COLLECT = 'FATHER_KEY_MEIGEN_PAGE_BATCH_COLLECT';
     const MESSAGE_PAGE_BATCH_STOP = 'FATHER_KEY_MEIGEN_PAGE_BATCH_STOP';
     const MESSAGE_PAGE_BATCH_STATUS = 'FATHER_KEY_MEIGEN_PAGE_BATCH_STATUS';
@@ -102,6 +103,32 @@
         rejectedCount: 0,
         lastError: ''
     };
+
+    function getImportIdentityKey(item = {}) {
+        return String(item.source_item_id || item.original_work_url || item.source_page_url || '').trim().toLowerCase();
+    }
+
+    async function filterRepositoryDuplicates(items = [], message = {}, checkedKeys = new Set()) {
+        const candidates = (Array.isArray(items) ? items : []).filter((item) => {
+            const key = getImportIdentityKey(item);
+            if (!key || checkedKeys.has(key)) return false;
+            checkedKeys.add(key);
+            return true;
+        });
+        if (!candidates.length) return { uniqueItems: [], duplicateCount: 0 };
+        const response = await chrome.runtime.sendMessage({
+            type: MESSAGE_CHECK_DUPLICATES,
+            payload: { source: 'meigen', items: candidates },
+            adminBaseUrl: message.adminBaseUrl,
+            maxItems: candidates.length
+        });
+        if (!response?.ok) throw new Error(response?.message || '提示词仓库去重预检失败');
+        const duplicateIds = new Set((response.result?.duplicateSourceItemIds || []).map((value) => String(value || '')));
+        return {
+            uniqueItems: candidates.filter((item) => !duplicateIds.has(String(item.source_item_id || ''))),
+            duplicateCount: duplicateIds.size
+        };
+    }
 
     function isStreamReadyItem(item = {}) {
         return !needsInteractiveDetail(item, { requireFavoriteCount: false });
@@ -305,6 +332,7 @@
             summary: summarizePayload(payload || {}),
             detail_status: getDetailStatus(),
             scroll_status: getScrollStatus(),
+            repository_duplicate_count: Number(payload?.scroll_collect?.repository_duplicates || 0),
             page_batch_status: getPageBatchStatus(),
             items: items.slice(0, 20).map((item, index) => ({
                 index: index + 1,
@@ -2401,10 +2429,14 @@
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
-        let payload = applyPayloadLimits(
-            collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange))),
-            { maxItems, favoriteRange }
-        );
+        const checkedKeys = new Set();
+        let repositoryDuplicateCount = 0;
+        const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)));
+        const initialCheck = message.preflightDuplicates
+            ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys)
+            : { uniqueItems: initialPayload.items, duplicateCount: 0 };
+        repositoryDuplicateCount += initialCheck.duplicateCount;
+        let payload = applyPayloadLimits({ ...initialPayload, items: initialCheck.uniqueItems }, { maxItems, favoriteRange });
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
 
@@ -2427,16 +2459,21 @@
                 await revealHoverControls(document, maxItems + 6);
                 await refreshStructuredDataCache();
                 const currentItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange));
+                const duplicateCheck = message.preflightDuplicates
+                    ? await filterRepositoryDuplicates(currentItems, message, checkedKeys)
+                    : { uniqueItems: currentItems, duplicateCount: 0 };
+                repositoryDuplicateCount += duplicateCheck.duplicateCount;
                 payload = {
                     ...payload,
                     collected_at: new Date().toISOString(),
                     items: collector.mergeCollectedItems([
                         ...(Array.isArray(payload.items) ? payload.items : []),
-                        ...currentItems
+                        ...duplicateCheck.uniqueItems
                     ]).slice(0, maxItems),
                     scroll_collect: {
                         attempted: index + 1,
-                        stopped: false
+                        stopped: false,
+                        repository_duplicates: repositoryDuplicateCount
                     }
                 };
                 scrollJob.discovered = payload.items.length;
@@ -2471,7 +2508,8 @@
                 collected_at: new Date().toISOString(),
                 scroll_collect: {
                     attempted: scrollJob.processed,
-                    stopped: scrollJob.stopRequested
+                    stopped: scrollJob.stopRequested,
+                    repository_duplicates: repositoryDuplicateCount
                 }
             };
             scrollJob.running = false;
@@ -2485,7 +2523,8 @@
                 ok: true,
                 payload,
                 summary: scrollJob.lastSummary,
-                scrollStatus: getScrollStatus()
+                scrollStatus: getScrollStatus(),
+                repositoryDuplicateCount
             };
         } catch (error) {
             scrollJob.lastError = error?.message || '滚动采集失败';

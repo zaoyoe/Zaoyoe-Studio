@@ -97,7 +97,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.60';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.61';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'function createGalleryImportStageError(stage = \'unknown\', error = null)',
@@ -268,6 +268,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
 
     const handlerMarkers = [
         'async function stageImportItems',
+        'async function checkImportItemDuplicates',
+        "if (action === 'check_duplicates')",
         'const maxItems = normalizePositiveInteger(settings.max_items, 50, 1000);',
         '.slice(0, maxItems)',
         'async function importSingleItem',
@@ -476,6 +478,53 @@ test('prompt repository dedupe scans fixed-size pages instead of putting prompts
     assert.equal(result.bySourceUrl.get('https://x.com/artist/status/123'), 'existing-prompt');
     assert.equal(result.byPromptHash.get(_private.hashPromptText(longPrompt)), 'existing-prompt');
     assert.deepEqual(calls.find((call) => call.type === 'range'), { type: 'range', start: 0, end: 499 });
+});
+
+test('collector duplicate preflight reports repository and candidate duplicates without writing', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const calls = [];
+    const supabase = {
+        from(table) {
+            calls.push(table);
+            assert.equal(table, 'prompts');
+            return {
+                select() {
+                    return {
+                        order() {
+                            return {
+                                async range() {
+                                    return {
+                                        data: [{
+                                            id: 'existing-prompt',
+                                            source_url: 'https://x.com/artist/status/123456789012',
+                                            prompt_text: 'Existing repository prompt',
+                                            prompt_text_en: '',
+                                            prompt_text_zh: ''
+                                        }],
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
+                    };
+                }
+            };
+        }
+    };
+    const result = await _private.checkImportItemDuplicates(supabase, {
+        settings: { max_items: 10 },
+        items: [
+            { source_item_id: 'repo-copy', original_work_url: 'https://x.com/artist/status/123456789012', prompt: 'Existing repository prompt' },
+            { source_item_id: 'new-one', original_work_url: 'https://x.com/artist/status/223456789012', prompt: 'New unique prompt' },
+            { source_item_id: 'candidate-copy', original_work_url: 'https://x.com/artist/status/323456789012', prompt: 'New unique prompt' }
+        ]
+    });
+    assert.deepEqual(result, {
+        checkedCount: 3,
+        duplicateCount: 2,
+        duplicateSourceItemIds: ['repo-copy', 'candidate-copy']
+    });
+    assert.deepEqual(calls, ['prompts']);
 });
 
 test('admin prompt image base64 helper only accepts public image urls', () => {

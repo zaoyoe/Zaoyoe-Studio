@@ -612,8 +612,10 @@
         try {
             response = await sendTabMessage(tab.id, {
                 type: MESSAGE_SCROLL_COLLECT,
-                maxSteps: DEFAULT_SCROLL_STEPS,
+                maxSteps: automatic ? 80 : DEFAULT_SCROLL_STEPS,
                 maxItems: getMaxItemsSetting(),
+                preflightDuplicates: automatic,
+                adminBaseUrl: getElement('adminBaseUrl').value,
                 ...getFavoriteFilterSettings()
             });
         } catch (error) {
@@ -635,7 +637,7 @@
         const total = Number(response.summary?.total || 0);
         const maxItems = getMaxItemsSetting();
         setStatus(automatic
-            ? `自动滚动发现完成：${total} 条${total < maxItems ? '，页面已稳定或没有更多作品' : '，已达到设置上限'}`
+            ? `自动滚动发现完成：${total} 条库外作品${response.repositoryDuplicateCount ? `，提前跳过仓库重复 ${response.repositoryDuplicateCount} 条` : ''}${total < maxItems ? '，页面已稳定或没有更多作品' : '，已达到设置目标'}`
             : `滚动采集完成：发现 ${total} 条`);
         return response.payload;
     }
@@ -758,12 +760,14 @@
         return items.filter((item) => promptNeedsDetailEnrichment(item?.prompt_text || '')).length;
     }
 
-    async function collectCurrentPageWithAutoEnrich() {
+    async function collectCurrentPageWithAutoEnrich({ preflightDuplicates = false } = {}) {
         let payload = await collectCurrentPage();
         const maxItems = getMaxItemsSetting();
         const discovered = Array.isArray(payload?.items) ? payload.items.length : 0;
-        if (discovered > 0 && discovered < maxItems) {
-            setStatus(`当前发现 ${discovered} 条，正在自动滚动加载，目标上限 ${maxItems} 条...`);
+        if (discovered > 0 && (preflightDuplicates || discovered < maxItems)) {
+            setStatus(preflightDuplicates
+                ? `当前发现 ${discovered} 条，正在查库跳重并继续滚动，实际入队目标 ${maxItems} 条...`
+                : `当前发现 ${discovered} 条，正在自动滚动加载，目标上限 ${maxItems} 条...`);
             payload = await scrollCollectCurrentPage({ automatic: true }) || payload;
         }
         if (payloadNeedsDetailEnrichment(payload)) {
@@ -832,9 +836,9 @@
         state.streamedBatchId = '';
         state.streamStats = null;
         updateSummary();
-        setStatus(`全自动任务启动，目标最多 ${getMaxItemsSetting()} 条...`);
+        setStatus(`全自动任务启动，目标实际入队 ${getMaxItemsSetting()} 条...`);
         try {
-            const payload = await collectCurrentPageWithAutoEnrich();
+            const payload = await collectCurrentPageWithAutoEnrich({ preflightDuplicates: true });
             if (!payload?.items?.length) {
                 setStatus('没有采集到可送入队列的作品');
                 return;
