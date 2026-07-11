@@ -97,7 +97,8 @@
     const streamStageState = {
         batchId: '',
         bufferedItems: [],
-        sentKeys: new Set(),
+        sentRevisions: new Map(),
+        acceptedKeys: new Set(),
         promise: Promise.resolve(),
         attemptedCount: 0,
         stagedCount: 0,
@@ -110,14 +111,62 @@
         return String(item.source_item_id || item.original_work_url || item.source_page_url || '').trim().toLowerCase();
     }
 
+    function getNumericIdentityFromUrl(value = '', segment = '') {
+        try {
+            const parts = new URL(String(value || '')).pathname.split('/').filter(Boolean);
+            const index = segment ? parts.findIndex((part) => part.toLowerCase() === segment) : -1;
+            const candidate = index >= 0 ? parts[index + 1] : '';
+            return /^\d{12,25}$/.test(candidate || '') ? candidate : '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function getMeigenIdentityConflictReason(item = {}) {
+        const sourceItemId = /^\d{12,25}$/.test(String(item.source_item_id || '').trim())
+            ? String(item.source_item_id).trim()
+            : '';
+        const detailId = getNumericIdentityFromUrl(item.source_page_url, 'prompt');
+        const originalId = getNumericIdentityFromUrl(item.original_work_url, 'status');
+        const imageIds = new Set((Array.isArray(item.image_sources) ? item.image_sources : [])
+            .map((entry) => getNumericIdentityFromUrl(entry?.url, 'tweets'))
+            .filter(Boolean));
+        const identities = [sourceItemId, detailId, originalId, ...imageIds].filter(Boolean);
+        return new Set(identities).size > 1 ? '作品详情、X 原帖或图片身份不一致' : '';
+    }
+
+    function getStreamItemRevision(item = {}) {
+        const images = Array.isArray(item.image_sources) ? item.image_sources.length : 0;
+        return [
+            String(item.prompt_text || '').trim().length,
+            images,
+            Boolean(String(item.original_work_url || '').trim()),
+            Boolean(String(item.author_name || '').trim()),
+            Boolean(String(item.author_handle || '').trim()),
+            item.stream_pending_detail === true ? 0 : 1
+        ].join(':');
+    }
+
+    function isStreamItemRevisionImproved(previous = '', next = '') {
+        if (!previous) return true;
+        const left = previous.split(':').map(Number);
+        const right = next.split(':').map(Number);
+        return right.some((value, index) => value > (left[index] || 0));
+    }
+
     async function filterRepositoryDuplicates(items = [], message = {}, checkedKeys = new Set()) {
+        let identityConflictCount = 0;
         const candidates = (Array.isArray(items) ? items : []).filter((item) => {
             const key = getImportIdentityKey(item);
             if (!key || checkedKeys.has(key)) return false;
             checkedKeys.add(key);
+            if (getMeigenIdentityConflictReason(item)) {
+                identityConflictCount += 1;
+                return false;
+            }
             return true;
         });
-        if (!candidates.length) return { uniqueItems: [], duplicateCount: 0 };
+        if (!candidates.length) return { uniqueItems: [], duplicateCount: 0, identityConflictCount };
         const response = await chrome.runtime.sendMessage({
             type: MESSAGE_CHECK_DUPLICATES,
             payload: { source: 'meigen', items: candidates },
@@ -126,9 +175,14 @@
         });
         if (!response?.ok) throw new Error(response?.message || '提示词仓库去重预检失败');
         const duplicateIds = new Set((response.result?.duplicateSourceItemIds || []).map((value) => String(value || '')));
+        const rejectedIdentityIds = new Set((response.result?.rejectedIdentitySourceItemIds || []).map((value) => String(value || '')));
         return {
-            uniqueItems: candidates.filter((item) => !duplicateIds.has(String(item.source_item_id || ''))),
-            duplicateCount: duplicateIds.size
+            uniqueItems: candidates.filter((item) => (
+                !duplicateIds.has(String(item.source_item_id || ''))
+                && !rejectedIdentityIds.has(String(item.source_item_id || ''))
+            )),
+            duplicateCount: duplicateIds.size,
+            identityConflictCount: identityConflictCount + rejectedIdentityIds.size
         };
     }
 
@@ -143,7 +197,8 @@
     function resetStreamStageState(batchId = '') {
         streamStageState.batchId = String(batchId || '').trim();
         streamStageState.bufferedItems = [];
-        streamStageState.sentKeys = new Set();
+        streamStageState.sentRevisions = new Map();
+        streamStageState.acceptedKeys = new Set();
         streamStageState.promise = Promise.resolve();
         streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
@@ -155,9 +210,16 @@
     function queueStreamStage(items = [], message = {}, { flush = false } = {}) {
         (Array.isArray(items) ? items : []).forEach((item) => {
             const key = getStreamItemKey(item);
-            if (!key || streamStageState.sentKeys.has(key)) return;
-            streamStageState.sentKeys.add(key);
-            streamStageState.bufferedItems.push(item);
+            if (!key || getMeigenIdentityConflictReason(item)) return;
+            const revision = getStreamItemRevision(item);
+            if (!isStreamItemRevisionImproved(streamStageState.sentRevisions.get(key), revision)) return;
+            streamStageState.sentRevisions.set(key, revision);
+            const bufferedIndex = streamStageState.bufferedItems.findIndex((entry) => getStreamItemKey(entry) === key);
+            if (bufferedIndex >= 0) {
+                streamStageState.bufferedItems[bufferedIndex] = item;
+            } else {
+                streamStageState.bufferedItems.push(item);
+            }
         });
         if (!streamStageState.bufferedItems.length || (!flush && streamStageState.bufferedItems.length < 3)) {
             return streamStageState.promise;
@@ -182,7 +244,11 @@
                 const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
                 const duplicateCount = Number(result.skippedDuplicateCount || 0);
                 streamStageState.batchId = result.batch?.id || streamStageState.batchId;
-                streamStageState.stagedCount += acceptedCount;
+                (Array.isArray(result.items) ? result.items : []).forEach((item) => {
+                    const key = getStreamItemKey(item);
+                    if (key) streamStageState.acceptedKeys.add(key);
+                });
+                streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
                 streamStageState.skippedDuplicateCount += duplicateCount;
                 streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
             } catch (error) {
@@ -194,10 +260,13 @@
         return streamStageState.promise;
     }
 
-    async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20) {
+    async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20, options = {}) {
         const remaining = Math.max(0, maxItems - streamStageState.stagedCount);
         if (!remaining) return;
-        queueStreamStage((Array.isArray(items) ? items : []).slice(0, remaining), message, { flush: true });
+        const stagedItems = (Array.isArray(items) ? items : [])
+            .slice(0, remaining)
+            .map((item) => options.pendingDetail === true ? { ...item, stream_pending_detail: true } : item);
+        queueStreamStage(stagedItems, message, { flush: true });
         await streamStageState.promise;
     }
     let sessionRestorePromise = Promise.resolve(false);
@@ -2469,7 +2538,7 @@
 
         if (message.streamToQueue) {
             resetStreamStageState(message.batchId);
-            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems);
+            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems, { pendingDetail: true });
         }
 
         scrollJob.running = true;
@@ -2500,7 +2569,7 @@
                     : { uniqueItems: currentItems, duplicateCount: 0 };
                 repositoryDuplicateCount += duplicateCheck.duplicateCount;
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
-                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems);
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, { pendingDetail: true });
                 }
                 payload = {
                     ...payload,
