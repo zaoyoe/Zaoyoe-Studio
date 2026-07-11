@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.19');
+    assert.equal(manifest.version, '0.1.20');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -186,7 +186,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.65'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.66'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
@@ -342,6 +342,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /message\.continueExisting/);
     assert.match(content, /preflightDuplicates[\s\S]*filterRepositoryDuplicates\(currentItems/);
     assert.match(content, /markPendingDetail\(detailJob\.lastPayload\?\.items \|\| \[\]\)/);
+    assert.match(content, /detailJob\.total \+= fallbackUrls\.length/);
+    assert.match(content, /detailJob\.phase = 'fallback'/);
+    assert.match(content, /detailJob\.processed \+= 1/);
+    assert.match(popup, /state\.detailStatus\.phase === 'fallback' \? '详情页补抓中' : '卡片补抓中'/);
     assert.match(content, /String\(streamStageState\.batchId \|\| ''\) !== String\(message\.batchId \|\| ''\)/);
     assert.match(popup, /maxSteps:\s*automatic \? 80 : DEFAULT_SCROLL_STEPS/);
     assert.match(popup, /preflightDuplicates:\s*automatic/);

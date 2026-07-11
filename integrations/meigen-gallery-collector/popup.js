@@ -36,6 +36,7 @@
             paused: false,
             processed: 0,
             total: 0,
+            phase: '',
             failed: []
         },
         scrollStatus: {
@@ -205,14 +206,16 @@
             paused: Boolean(detailStatus.paused),
             processed: Number(detailStatus.processed || 0),
             total: Number(detailStatus.total || 0),
+            phase: String(detailStatus.phase || ''),
             failed: Array.isArray(detailStatus.failed) ? detailStatus.failed : [],
             lastError: detailStatus.lastError || ''
         };
         state.summary.detail_failures = state.detailStatus.failed.length;
         updateSummary(state.summary);
         if (state.detailStatus.running) {
+            const detailLabel = state.detailStatus.phase === 'fallback' ? '详情页补抓中' : '卡片补抓中';
             setProgressStatus(
-                state.detailStatus.paused ? '补抓已暂停' : '补抓详情中',
+                state.detailStatus.paused ? '补抓已暂停' : detailLabel,
                 state.detailStatus.processed,
                 state.detailStatus.total
             );
