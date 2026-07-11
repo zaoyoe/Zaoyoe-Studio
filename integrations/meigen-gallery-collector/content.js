@@ -60,6 +60,7 @@
         paused: false,
         processed: 0,
         total: 0,
+        phase: '',
         failed: [],
         lastPayload: null,
         lastSummary: null,
@@ -437,6 +438,7 @@
             paused: detailJob.paused,
             processed: detailJob.processed,
             total: detailJob.total,
+            phase: detailJob.phase,
             failed: detailJob.failed,
             lastError: detailJob.lastError
         };
@@ -2365,6 +2367,7 @@
         detailJob.paused = false;
         detailJob.processed = 0;
         detailJob.total = totalJobs;
+        detailJob.phase = retryFailed ? 'fallback' : 'card';
         detailJob.failed = [];
         detailJob.lastError = '';
         rememberSessionPayload(basePayload, summarizePayload(basePayload));
@@ -2442,6 +2445,8 @@
             const fallbackUrls = retryFailed
                 ? retryDetailUrls
                 : getDetailUrls(interactiveItems.filter((item) => !isDetailResolved(resolvedKeys, item)));
+            if (!retryFailed) detailJob.total += fallbackUrls.length;
+            if (fallbackUrls.length) detailJob.phase = 'fallback';
 
             for (let fallbackIndex = 0; fallbackIndex < fallbackUrls.length; fallbackIndex += 1) {
                 const url = fallbackUrls[fallbackIndex];
@@ -2456,9 +2461,7 @@
                     detailJob.failed.push(failure);
                     detailJob.lastError = failure.message;
                 } finally {
-                    if (retryFailed) {
-                        detailJob.processed += 1;
-                    }
+                    detailJob.processed += 1;
                 }
                 saveCheckpoint();
                 if (streamMessage) queueStreamStage(markPendingDetail(detailJob.lastPayload?.items || []), streamMessage);
@@ -2491,7 +2494,7 @@
                 collected_at: new Date().toISOString(),
                 items: mergedItems,
                 detail_fetch: {
-                    attempted: totalJobs,
+                    attempted: detailJob.processed,
                     failed: detailJob.failed.length
                 }
             };
@@ -2502,6 +2505,7 @@
         } finally {
             detailJob.running = false;
             detailJob.paused = false;
+            detailJob.phase = '';
         }
     }
 
