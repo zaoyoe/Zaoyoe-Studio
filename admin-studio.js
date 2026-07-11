@@ -17009,7 +17009,7 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.61';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.62';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
@@ -17103,6 +17103,9 @@ function normalizeGalleryImportFailureMessage(errorOrMessage = '', fallback = '�
     }
     if (/image fetch failed|图片读取失败|没有可保存的图片|no images/i.test(raw)) {
         return '图片读取失败，请检查原图链接是否还能访问';
+    }
+    if (/api key not valid|invalid api key|incorrect api key|authentication failed/i.test(raw)) {
+        return '当前 AI 服务密钥无效或已失效，请在后台更新密钥后重试';
     }
     if (/请先配置可用的 ai 翻译服务|not configured|api key/i.test(raw)) {
         return 'AI 服务尚未正确配置，请先检查后台 AI 设置';

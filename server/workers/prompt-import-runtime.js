@@ -1,5 +1,5 @@
 const sharp = require('sharp');
-const { resolveGeminiRuntimeConfig } = require('../../api/_lib/secrets');
+const { resolveCodexRuntimeConfig, resolveGeminiRuntimeConfig } = require('../../api/_lib/secrets');
 const importsHandler = require('../api-handlers/admin/prompts/imports');
 
 const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. Arrays must be compact and searchable. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced.`;
@@ -8,6 +8,86 @@ const RETRYABLE_IMAGE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]
 function parseJsonText(value = '') {
     const text = String(value || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
     return JSON.parse(text);
+}
+
+async function resolvePromptImportAiService(supabase) {
+    const { data, error } = await supabase
+        .from('system_config')
+        .select('config_value')
+        .eq('config_key', 'integrations')
+        .maybeSingle();
+    if (error) throw error;
+    const service = String(data?.config_value?.ai_service || '').trim().toLowerCase();
+    return service === 'codex' || service === 'openai' ? 'codex' : 'gemini';
+}
+
+function resolveCodexUpstreamUrl(baseUrl = '', apiFormat = 'responses') {
+    const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+    const endpoint = apiFormat === 'responses' ? 'responses' : 'chat/completions';
+    const url = new URL(normalizedBaseUrl);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    if (/\/(chat\/completions|responses)$/i.test(pathname)) return url.toString().replace(/\/+$/, '');
+    url.pathname = !pathname || pathname === '/' ? `/v1/${endpoint}` : `${pathname}/${endpoint}`;
+    return url.toString();
+}
+
+function extractCodexAnalysisText(payload = {}) {
+    if (typeof payload.output_text === 'string' && payload.output_text.trim()) return payload.output_text.trim();
+    const outputText = (Array.isArray(payload.output) ? payload.output : [])
+        .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+        .map((item) => String(item?.text || item?.output_text || '').trim())
+        .filter(Boolean)
+        .join('\n');
+    if (outputText) return outputText;
+    const content = payload?.choices?.[0]?.message?.content;
+    if (typeof content === 'string') return content.trim();
+    return (Array.isArray(content) ? content : [])
+        .map((item) => String(item?.text || item?.output_text || '').trim())
+        .filter(Boolean)
+        .join('\n');
+}
+
+async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
+    const config = await resolveCodexRuntimeConfig(supabase);
+    if (!config?.configured) throw new Error(config?.decryptErrorMessage || 'Codex Relay 未配置');
+    const imageUrls = getAnalysisImageUrls(prompt, options.sourceItems || []);
+    const images = await loadAnalysisImages(imageUrls, { fetchImage: options.fetchImage, limit: 4 });
+    const text = `${ANALYSIS_PROMPT}\nSource prompt:\n${String(prompt.prompt_text || '').slice(0, 20000)}`;
+    const apiFormat = config.apiFormat === 'responses' ? 'responses' : 'chat.completions';
+    const imageDataUrls = images.map((buffer) => `data:image/webp;base64,${buffer.toString('base64')}`);
+    const body = apiFormat === 'responses'
+        ? {
+            model: config.model,
+            input: [{
+                role: 'user',
+                content: [
+                    { type: 'input_text', text },
+                    ...imageDataUrls.map((imageUrl) => ({ type: 'input_image', image_url: imageUrl }))
+                ]
+            }],
+            max_output_tokens: 4096
+        }
+        : {
+            model: config.model,
+            messages: [{
+                role: 'user',
+                content: [
+                    { type: 'text', text },
+                    ...imageDataUrls.map((imageUrl) => ({ type: 'image_url', image_url: { url: imageUrl } }))
+                ]
+            }],
+            max_tokens: 4096,
+            temperature: 0.25
+        };
+    const response = await fetch(resolveCodexUpstreamUrl(config.baseUrl, apiFormat), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(90000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error?.message || `Codex Relay request failed (${response.status})`);
+    return parseJsonText(extractCodexAnalysisText(payload));
 }
 
 async function fetchAnalysisImage(url) {
@@ -110,6 +190,13 @@ async function callGeminiAnalysis(supabase, prompt = {}, options = {}) {
     return parseJsonText(text);
 }
 
+async function callConfiguredAnalysis(supabase, prompt = {}, options = {}) {
+    const service = await resolvePromptImportAiService(supabase);
+    return service === 'codex'
+        ? callCodexAnalysis(supabase, prompt, options)
+        : callGeminiAnalysis(supabase, prompt, options);
+}
+
 function buildPromptPatch(prompt = {}, result = {}) {
     const existingAiTags = prompt.ai_tags && typeof prompt.ai_tags === 'object' ? prompt.ai_tags : {};
     return {
@@ -198,7 +285,7 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
             pipeline_stage: 'analysis',
             updated_at: new Date().toISOString()
         }).eq('id', item.id).neq('status', 'cleaned');
-        const analysis = validateAnalysisResult(await callGeminiAnalysis(supabase, imported.prompt, {
+        const analysis = validateAnalysisResult(await callConfiguredAnalysis(supabase, imported.prompt, {
             sourceItems: [item, imported.item]
         }));
         if (await isPromptImportItemCancelled(supabase, item.id)) {
@@ -251,6 +338,9 @@ async function runPromptImportWorkerBatch(supabase, options = {}) {
 module.exports = {
     buildPromptPatch,
     callGeminiAnalysis,
+    callCodexAnalysis,
+    callConfiguredAnalysis,
+    resolvePromptImportAiService,
     claimPromptImportItems,
     fetchAnalysisImage,
     getAnalysisImageUrls,

@@ -80,6 +80,37 @@ test('prompt import worker does not retry deterministic image decode failures', 
     );
 });
 
+test('prompt import worker follows the configured admin AI service', async () => {
+    function createSupabase(aiService) {
+        return {
+            from(table) {
+                assert.equal(table, 'system_config');
+                return {
+                    select(fields) {
+                        assert.equal(fields, 'config_value');
+                        return {
+                            eq(field, value) {
+                                assert.equal(field, 'config_key');
+                                assert.equal(value, 'integrations');
+                                return {
+                                    async maybeSingle() {
+                                        return { data: { config_value: { ai_service: aiService } }, error: null };
+                                    }
+                                };
+                            }
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    assert.equal(await runtime.resolvePromptImportAiService(createSupabase('codex')), 'codex');
+    assert.equal(await runtime.resolvePromptImportAiService(createSupabase('openai')), 'codex');
+    assert.equal(await runtime.resolvePromptImportAiService(createSupabase('gemini')), 'gemini');
+    assert.equal(await runtime.resolvePromptImportAiService(createSupabase('')), 'gemini');
+});
+
 test('prompt import worker deployment uses durable leased queue', () => {
     const migration = fs.readFileSync(path.join(repoRoot, 'supabase/migrations/20260711_prompt_gallery_import_worker.sql'), 'utf8');
     const compose = fs.readFileSync(path.join(repoRoot, 'deploy/kvm4/docker-compose.verify-server.yml'), 'utf8');
@@ -100,6 +131,11 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(runtimeSource, /cleanup_after_pipeline: false/);
     assert.match(runtimeSource, /processing_attempts: retryable \? item\.processing_attempts : 3/);
     assert.match(runtimeSource, /isPromptImportItemCancelled/);
+    assert.match(runtimeSource, /resolvePromptImportAiService/);
+    assert.match(runtimeSource, /config_key', 'integrations'/);
+    assert.match(runtimeSource, /callConfiguredAnalysis/);
+    assert.match(runtimeSource, /callCodexAnalysis/);
+    assert.match(runtimeSource, /resolveCodexRuntimeConfig/);
     assert.match(runtimeSource, /neq\('status', 'cleaned'\)/);
     assert.match(importsHandler, /pipeline_stage: 'cancelled'/);
     assert.match(importsHandler, /worker_name: null,[\s\S]*lease_expires_at: null,[\s\S]*processing_attempts: 3/);

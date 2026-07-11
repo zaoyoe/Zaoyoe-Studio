@@ -226,6 +226,8 @@
             processed: Number(scrollStatus.processed || 0),
             total: Number(scrollStatus.total || 0),
             discovered: Number(scrollStatus.discovered || 0),
+            staged: Number(scrollStatus.staged || 0),
+            duplicates: Number(scrollStatus.duplicates || 0),
             lastError: scrollStatus.lastError || ''
         };
         updateSummary(state.summary);
@@ -234,7 +236,7 @@
                 state.scrollStatus.stopRequested ? '停止滚动中' : '滚动采集中',
                 state.scrollStatus.processed,
                 state.scrollStatus.total,
-                `已采集 ${state.scrollStatus.discovered} 条`
+                `已采集 ${state.scrollStatus.discovered} 条，已入队 ${state.scrollStatus.staged} 条`
             );
         }
     }
@@ -312,6 +314,7 @@
                 enrichDetails,
                 retryFailed,
                 streamToQueue,
+                batchId: streamToQueue ? state.streamedBatchId : '',
                 adminBaseUrl: getElement('adminBaseUrl').value,
                 site: getElement('siteSelect').value,
                 defaultStatus: getElement('statusSelect').value,
@@ -615,7 +618,11 @@
                 maxSteps: automatic ? 80 : DEFAULT_SCROLL_STEPS,
                 maxItems: getMaxItemsSetting(),
                 preflightDuplicates: automatic,
+                streamToQueue: automatic,
+                batchId: state.streamedBatchId,
                 adminBaseUrl: getElement('adminBaseUrl').value,
+                site: getElement('siteSelect').value,
+                defaultStatus: getElement('statusSelect').value,
                 ...getFavoriteFilterSettings()
             });
         } catch (error) {
@@ -632,6 +639,10 @@
         }
 
         state.payload = response.payload;
+        if (response.streamResult) {
+            state.streamStats = response.streamResult;
+            if (response.streamResult.batchId) state.streamedBatchId = response.streamResult.batchId;
+        }
         if (response.scrollStatus) applyScrollStatus(response.scrollStatus);
         updateSummary(response.summary);
         const total = Number(response.summary?.total || 0);
