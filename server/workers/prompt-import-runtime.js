@@ -2,7 +2,7 @@ const sharp = require('sharp');
 const { resolveCodexRuntimeConfig, resolveGeminiRuntimeConfig } = require('../../api/_lib/secrets');
 const importsHandler = require('../api-handlers/admin/prompts/imports');
 
-const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. Arrays must be compact and searchable. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced.`;
+const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. objects, scenes, styles, and mood MUST each be an object shaped exactly as {"en":["English tags"],"zh":["中文标签"]}; both arrays must contain at least one compact searchable tag. dominantColors must be a compact string array. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced.`;
 const RETRYABLE_IMAGE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function parseJsonText(value = '') {
@@ -226,15 +226,27 @@ function buildPromptPatch(prompt = {}, result = {}) {
 }
 
 function validateAnalysisResult(result = {}) {
+    const normalizeBilingualGroup = (value) => {
+        if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+        const items = (Array.isArray(value) ? value : [value]).map((item) => String(item || '').trim()).filter(Boolean);
+        return { en: items, zh: items };
+    };
+    const normalized = {
+        ...result,
+        objects: normalizeBilingualGroup(result.objects),
+        scenes: normalizeBilingualGroup(result.scenes),
+        styles: normalizeBilingualGroup(result.styles),
+        mood: normalizeBilingualGroup(result.mood)
+    };
     const requiredText = ['title_en', 'title_zh', 'description_en', 'description_zh', 'prompt_text_en', 'prompt_text_zh'];
-    const missing = requiredText.filter((field) => !String(result?.[field] || '').trim());
+    const missing = requiredText.filter((field) => !String(normalized?.[field] || '').trim());
     const requiredGroups = ['objects', 'scenes', 'styles', 'mood'];
     requiredGroups.forEach((field) => {
-        const group = result?.[field];
+        const group = normalized?.[field];
         if (!Array.isArray(group?.en) || !group.en.length || !Array.isArray(group?.zh) || !group.zh.length) missing.push(field);
     });
     if (missing.length) throw new Error(`分析结果不完整：${missing.join(', ')}`);
-    return result;
+    return normalized;
 }
 
 async function claimPromptImportItems(supabase, { workerName, limit = 4, leaseSeconds = 300 } = {}) {

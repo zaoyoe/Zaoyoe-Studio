@@ -29,6 +29,23 @@ test('prompt import worker rejects incomplete bilingual analysis', () => {
     assert.throws(() => runtime.validateAnalysisResult({ title_en: 'Only English' }), /分析结果不完整/);
 });
 
+test('prompt import worker normalizes flat analysis tags into bilingual groups', () => {
+    const result = runtime.validateAnalysisResult({
+        title_en: 'Poster',
+        title_zh: '海报',
+        description_en: 'Description',
+        description_zh: '描述',
+        prompt_text_en: 'Prompt',
+        prompt_text_zh: '提示词',
+        objects: ['product'],
+        scenes: ['studio'],
+        styles: ['commercial'],
+        mood: ['premium']
+    });
+    assert.deepEqual(result.objects, { en: ['product'], zh: ['product'] });
+    assert.deepEqual(result.mood, { en: ['premium'], zh: ['premium'] });
+});
+
 test('prompt import worker prioritizes original compatible images before saved avif assets', () => {
     const originalUrl = 'https://images.meigen.ai/tweets/123/0.jpg';
     const savedUrl = 'https://cdn.fatherkey.com/prompts/imports/item.avif';
@@ -136,6 +153,7 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(runtimeSource, /callConfiguredAnalysis/);
     assert.match(runtimeSource, /callCodexAnalysis/);
     assert.match(runtimeSource, /resolveCodexRuntimeConfig/);
+    assert.match(runtimeSource, /MUST each be an object shaped exactly/);
     assert.match(runtimeSource, /neq\('status', 'cleaned'\)/);
     assert.match(importsHandler, /pipeline_stage: 'cancelled'/);
     assert.match(importsHandler, /worker_name: null,[\s\S]*lease_expires_at: null,[\s\S]*processing_attempts: 3/);
