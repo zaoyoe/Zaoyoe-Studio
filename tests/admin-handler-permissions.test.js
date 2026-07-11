@@ -315,6 +315,26 @@ test('prompts manage handler requires prompts.manage permission for writes', asy
     });
 });
 
+test('prompts imports handler requires prompts.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/prompts/imports.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', url: '/api/admin/prompts/imports', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'prompts.manage' });
+    });
+});
+
+test('prompts image base64 handler requires prompts.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/prompts/image-base64.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', body: { image_url: 'https://cdn.example.com/a.jpg' }, headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'prompts.manage' });
+    });
+});
+
 test('comments list handler requires content.moderate permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/comments/list.js', async ({ handler, state }) => {
         const res = createMockResponse();

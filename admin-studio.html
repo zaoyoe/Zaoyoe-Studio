@@ -230,6 +230,7 @@
                 <!-- Tab Navigation -->
                 <nav class="admin-tabs">
                     <button class="admin-tab active" data-view="create" data-admin-action="switch-gallery-view">Create</button>
+                    <button class="admin-tab" data-view="import" data-admin-action="switch-gallery-view">Import</button>
                     <button class="admin-tab" data-view="manage" data-admin-action="switch-gallery-view">Manage</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
@@ -562,6 +563,148 @@
                     </div>
                     <!-- END CREATE VIEW -->
 
+                    <!-- IMPORT VIEW -->
+                    <div id="view-import" class="view-section">
+                        <div class="config-inline-note gallery-site-context-banner gallery-import-site-context-banner">
+                            <i class="fas fa-compass"></i>
+                            <span>导入助手会把外部抓取结果暂存为队列；成功写入 Gallery 后会自动清理原抓取数据，异常项保留给管理员处理。</span>
+                        </div>
+                        <section class="gallery-import-assistant" id="galleryImportAssistant">
+                            <div class="gallery-import-assistant__header">
+                                <div>
+                                    <p class="gallery-import-assistant__eyebrow">Gallery 导入助手</p>
+                                    <h3>Meigen 批量导入</h3>
+                                </div>
+                                <div class="gallery-import-assistant__actions">
+                                    <input type="file" id="galleryImportFileInput" accept="application/json,.json,.jsonl" hidden>
+                                    <button type="button" class="btn-secondary" data-admin-action="gallery-import-open-source">
+                                        <i class="fas fa-arrow-up-right-from-square"></i>
+                                        打开 Meigen
+                                    </button>
+                                    <button type="button" class="btn-secondary" data-admin-action="gallery-import-copy-collector">
+                                        <i class="fas fa-bookmark"></i>
+                                        复制采集器
+                                    </button>
+                                    <button type="button" class="btn-secondary" data-admin-action="gallery-import-pick-file">
+                                        <i class="fas fa-file-import"></i>
+                                        导入抓取结果
+                                    </button>
+                                    <button type="button" class="btn-secondary" data-admin-action="gallery-import-paste-clipboard">
+                                        <i class="fas fa-paste"></i>
+                                        粘贴结果
+                                    </button>
+                                    <button type="button" class="btn-secondary" data-admin-action="gallery-import-refresh">
+                                        <i class="fas fa-rotate"></i>
+                                        刷新队列
+                                    </button>
+                                    <button type="button" class="btn-secondary" data-admin-action="gallery-import-refresh-status">
+                                        <i class="fas fa-arrows-rotate"></i>
+                                        刷新处理状态
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="gallery-import-mode-tabs" role="radiogroup" aria-label="导入模式">
+                                <button type="button" class="gallery-import-mode-tab is-active" data-admin-action="gallery-import-set-mode" data-import-mode="crawl_only" aria-pressed="true">
+                                    <i class="fas fa-eye"></i>
+                                    仅抓取预览
+                                </button>
+                                <button type="button" class="gallery-import-mode-tab" data-admin-action="gallery-import-set-mode" data-import-mode="stream" aria-pressed="false">
+                                    <i class="fas fa-forward"></i>
+                                    边抓边上传
+                                </button>
+                                <button type="button" class="gallery-import-mode-tab" data-admin-action="gallery-import-set-mode" data-import-mode="upload_only" aria-pressed="false">
+                                    <i class="fas fa-cloud-arrow-up"></i>
+                                    仅上传队列
+                                </button>
+                            </div>
+                            <div class="gallery-import-controls">
+                                <label>
+                                    <span>收藏量从</span>
+                                    <input type="number" min="0" step="1" id="galleryImportFavoriteMin" value="0">
+                                </label>
+                                <label>
+                                    <span>收藏量到</span>
+                                    <input type="number" min="0" step="1" id="galleryImportFavoriteMax" placeholder="不限">
+                                </label>
+                                <label>
+                                    <span>最多作品</span>
+                                    <input type="number" min="1" step="1" id="galleryImportMaxItems" value="50">
+                                </label>
+                                <label>
+                                    <span>每条最多图片</span>
+                                    <input type="number" min="1" max="24" step="1" id="galleryImportMaxImages" value="12">
+                                </label>
+                                <label>
+                                    <span>同时处理</span>
+                                    <div class="custom-select gallery-import-select" id="galleryImportParallelismDropdown">
+                                        <input type="hidden" id="galleryImportParallelism" value="2">
+                                        <div class="select-display" role="button" aria-haspopup="listbox" aria-label="同时处理">
+                                            <span class="select-text">2 条</span>
+                                            <i class="fas fa-chevron-down select-arrow"></i>
+                                        </div>
+                                        <div class="select-options" role="listbox">
+                                            <div class="select-option" data-value="1">1 条</div>
+                                            <div class="select-option selected" data-value="2">2 条</div>
+                                            <div class="select-option" data-value="3">3 条</div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <label class="gallery-import-control-toggle">
+                                    <input type="checkbox" id="galleryImportAnalyzeAfterSave" checked disabled>
+                                    <span>完整分析后发布</span>
+                                </label>
+                            </div>
+                            <details class="gallery-import-advanced">
+                                <summary>高级导入文本</summary>
+                                <textarea id="galleryImportRawInput" class="gallery-import-raw-input" rows="4" placeholder="可粘贴抓取结果，或使用“导入抓取结果”选择文件"></textarea>
+                            </details>
+                            <div class="gallery-import-runbar">
+                                <button type="button" class="btn-primary" data-admin-action="gallery-import-start">
+                                    <i class="fas fa-play"></i>
+                                    开始任务
+                                </button>
+                                <button type="button" class="btn-secondary" data-admin-action="gallery-import-upload-staged">
+                                    <i class="fas fa-cloud-arrow-up"></i>
+                                    上传队列
+                                </button>
+                                <button type="button" class="btn-secondary" data-admin-action="gallery-import-cleanup">
+                                    <i class="fas fa-broom"></i>
+                                    清理已处理
+                                </button>
+                                <button type="button" class="btn-secondary" data-admin-action="gallery-import-clear-current">
+                                    <i class="fas fa-trash-can"></i>
+                                    清空当前队列
+                                </button>
+                                <span class="gallery-import-runbar__status" id="galleryImportRunStatus">等待开始</span>
+                            </div>
+                            <div class="gallery-import-progress" id="galleryImportProgress">
+                                <div class="gallery-import-progress__row">
+                                    <span>抓取进度</span>
+                                    <progress id="galleryImportCrawlProgress" value="0" max="100"></progress>
+                                    <strong id="galleryImportCrawlText">0 / 0</strong>
+                                </div>
+                                <div class="gallery-import-progress__row">
+                                    <span>上传进度</span>
+                                    <progress id="galleryImportUploadProgress" value="0" max="100"></progress>
+                                    <strong id="galleryImportUploadText">0 / 0</strong>
+                                </div>
+                                <div class="gallery-import-progress__row">
+                                    <span>总进度</span>
+                                    <progress id="galleryImportTotalProgress" value="0" max="100"></progress>
+                                    <strong id="galleryImportTotalText">0 / 0</strong>
+                                </div>
+                            </div>
+                            <div class="gallery-import-summary" id="galleryImportSummary">
+                                <span>发现 0 条</span>
+                                <span>成功 0 条</span>
+                                <span>需要处理 0 条</span>
+                                <span>跳过重复 0 条</span>
+                            </div>
+                            <div class="gallery-import-queue" id="galleryImportQueue"></div>
+                        </section>
+                    </div>
+                    <!-- END IMPORT VIEW -->
+
                     <!-- MANAGE VIEW -->
                     <div id="view-manage" class="view-section">
                         <div class="config-inline-note gallery-site-context-banner" id="gallerySiteContextBanner">
@@ -684,7 +827,7 @@
                                         </div>
                                         <div class="batch-menu-item" id="batchReanalyzeMenuItem">
                                             <i class="fas fa-sync-alt"></i>
-                                            <span>批量重分析</span>
+                                            <span>批量分析并补全双语</span>
                                         </div>
                                         <div class="batch-menu-item" id="analyzeUntaggedMenuItem">
                                             <i class="fas fa-tags"></i>
@@ -709,7 +852,7 @@
                                         </div>
                                         <div class="batch-menu-item" id="batchLocalizeMenuItem" data-admin-action="gallery-batch-localize">
                                             <i class="fas fa-language"></i>
-                                            <span>批量补全双语</span>
+                                            <span>仅补全双语</span>
                                         </div>
                                         <div class="batch-menu-item" data-admin-action="gallery-batch-set-status" data-gallery-batch-status="archived">
                                             <i class="fas fa-box-archive"></i>
@@ -8131,7 +8274,7 @@
             <!-- Batch Progress Modal -->
             <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="batchProgressOverlay">
                 <div class="batch-modal">
-                    <h3 class="batch-modal-title" id="batchModalTitle">批量重分析</h3>
+                    <h3 class="batch-modal-title" id="batchModalTitle">批量分析并补全双语</h3>
                     <div class="batch-modal-body">
                         <p class="batch-current-item" id="batchCurrentItem">正在分析...</p>
                         <div class="batch-progress-bar">
@@ -13251,12 +13394,12 @@
     <script src="admin-config.js?v=20260612_OPS_ALERT_PREVIEW_SITE_1&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&xianyuProductPickerInline=20260525_XIANYU_PRODUCT_PICKER_INLINE_1&googleOneModeDropdown=20260520_GOOGLE_ONE_MODE_DROPDOWN_2&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&announcementWorkflowFeedback=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_FEEDBACK_1&opsExceptionInbox=20260511_ADMIN_STUDIO_OPS_EXCEPTION_INBOX_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&richTextPasteNormalize=20260604_SHOP_RICH_TEXT_PASTE_NORMALIZE_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1&opsAlertCaseMutationTimeout=20260610_OPS_ALERT_CASE_MUTATION_TIMEOUT_1&unlockPricingZero=20260616_UNLOCK_PRICING_ZERO_1&freeUnlockLimit=20260617_FREE_UNLOCK_DAILY_LIMIT_1&verifyProviderVisibility=20260616_VERIFY_PROVIDER_VISIBILITY_1"></script>
     <script src="js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1"></script>
     <script src="admin-homepage.js?v=20260529_HOME_RUNTIME_CACHE_1&siteSwitchGuard=20260513_ADMIN_SITE_SWITCH_STALE_GUARD_1&supportChannels=20260608_SITE_ENTRY_ICONS_1"></script>
-    <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>
+    <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0&galleryImportRetry=20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2"></script>
     <script src="js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1&siteSwitcherOrder=20260428_ADMIN_SITE_SWITCHER_ORDER_1&siteSwitchFeedback=20260513_ADMIN_SITE_SWITCH_FEEDBACK_1"></script>
     <script src="js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1&ticketsMobileLabels=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1" data-cache-bust-ticket-mobile="js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1"></script>
     <script src="js/admin-access.js?v=20260608_ADMIN_STUDIO_SESSION_REFRESH_RETRY_1"></script>
     <script src="js/admin-engagement.js?v=20260506_ENGAGEMENT_SCHEDULE_VISIBLE_SOURCE_2&siteSwitchGuard=20260513_ADMIN_SITE_SWITCH_STALE_GUARD_1"></script>
-		<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&largeModalClose=20260428_ADMIN_STUDIO_LARGE_MODAL_CLOSE_MOBILE_10&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&largeModalCloseTouch=20260430_ADMIN_STUDIO_LARGE_MODAL_CLOSE_TOUCH_1&lightboxCloseTouch=20260430_ADMIN_STUDIO_LIGHTBOX_CLOSE_TOUCH_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&promptUploadVariants=20260501_PROMPT_UPLOAD_FEATURED_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&delegatedDeleteFeedback=20260501_ADMIN_DELEGATED_DELETE_FEEDBACK_1&toolbarActionFeedback=20260501_ADMIN_TOOLBAR_ACTION_FEEDBACK_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1&galleryPageLoad=20260503_ADMIN_GALLERY_PAGE_LOAD_2&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&overlayDismissGuard=20260531_ADMIN_OVERLAY_DISMISS_POINTER_GUARD_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1&shopProfitOrderLink=20260606_ADMIN_STUDIO_SHOP_PROFIT_ORDER_LINK_2&usersListPagination=20260617_ADMIN_USERS_LIST_PAGINATION_1&sourceAttribution=20260619_PROMPT_SOURCE_ATTRIBUTION_16&promptImageCanonical=20260621_PROMPT_IMAGE_CANONICAL_1"></script>
+		<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&xianyuTopTabs=20260525_XIANYU_TOP_TABS_1&xianyuMappingCollapse=20260525_XIANYU_MAPPING_COLLAPSE_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&largeModalClose=20260428_ADMIN_STUDIO_LARGE_MODAL_CLOSE_MOBILE_10&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&largeModalCloseTouch=20260430_ADMIN_STUDIO_LARGE_MODAL_CLOSE_TOUCH_1&lightboxCloseTouch=20260430_ADMIN_STUDIO_LIGHTBOX_CLOSE_TOUCH_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&promptUploadVariants=20260501_PROMPT_UPLOAD_FEATURED_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&delegatedDeleteFeedback=20260501_ADMIN_DELEGATED_DELETE_FEEDBACK_1&toolbarActionFeedback=20260501_ADMIN_TOOLBAR_ACTION_FEEDBACK_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1&galleryPageLoad=20260503_ADMIN_GALLERY_PAGE_LOAD_2&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&verifyMonitorSubmitterLink=20260514_VERIFY_MONITOR_SUBMITTER_LINK_1&overlayDismissGuard=20260531_ADMIN_OVERLAY_DISMISS_POINTER_GUARD_1&discountTriggerToggle=20260605_DISCOUNT_TRIGGER_SECTION_TOGGLE_1&discountTriggerActions=20260605_DISCOUNT_TRIGGER_ACTION_ROUTER_1&shopProfitOrderLink=20260606_ADMIN_STUDIO_SHOP_PROFIT_ORDER_LINK_2&usersListPagination=20260617_ADMIN_USERS_LIST_PAGINATION_1&sourceAttribution=20260619_PROMPT_SOURCE_ATTRIBUTION_16&promptImageCanonical=20260621_PROMPT_IMAGE_CANONICAL_1&galleryImportPipeline=20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2"></script>
     <script src="js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1"></script>
     <script src="js/shop-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1"></script>
     <script src="js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1&adminPriceBadges=20260513_ADMIN_SHOP_PRICE_BADGES_1&siteMarketingPricing=20260513_ADMIN_SHOP_SITE_MARKETING_PRICING_1&productFilterMobile=20260428_ADMIN_SHOP_PRODUCT_FILTER_MOBILE_1&productImageCardVariants=20260430_PRODUCT_IMAGE_CARD_VARIANTS_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&shopActivation=20260530_SHOP_MODULE_ACTIVATION_RECOVERY_2&shopOverlayDismiss=20260531_SHOP_MODAL_BACKDROP_POINTER_GUARD_1&productImageUploadStatus=20260531_SHOP_PRODUCT_IMAGE_UPLOAD_STATUS_1&sharedSkuInventory=20260604_SHARED_SKU_INVENTORY_POOL_LINK_1&skuManualDelivery=20260605_SHOP_SKU_MANUAL_DELIVERY_1&inventoryProductClip=20260606_ADMIN_SHOP_INVENTORY_PRODUCT_CLIP_1&ordersNullUser=20260606_ADMIN_SHOP_ORDERS_NULL_USER_1&procurementSources=20260606_ADMIN_SHOP_PROCUREMENT_SOURCES_1&inventoryDetailNoClose=20260606_ADMIN_SHOP_INVENTORY_DETAIL_NO_CLOSE_1&inventoryDetailSourceTags=20260606_ADMIN_SHOP_INVENTORY_DETAIL_SOURCE_TAGS_1&procurementOverview=20260606_ADMIN_SHOP_PROCUREMENT_OVERVIEW_8&importSourceDateTime=20260606_ADMIN_SHOP_IMPORT_SOURCE_DATETIME_1&orderProfitAttribution=20260606_ADMIN_SHOP_ORDER_PROFIT_ATTRIBUTION_1&pointsSpendBreakdown=20260606_ADMIN_SHOP_ORDER_POINTS_SPEND_BREAKDOWN_1&pointSourceTraceability=20260606_ADMIN_SHOP_POINT_SOURCE_TRACEABILITY_1&reusableInventory=20260612_ADMIN_SHOP_REUSABLE_INVENTORY_1&skuPriceCopy=20260615_ADMIN_SKU_PRICE_COPY_1"></script>

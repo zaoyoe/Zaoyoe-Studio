@@ -45,6 +45,8 @@ const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalo
 const pointsLookupHandler = require('../server/api-handlers/admin/points/lookup');
 const pointsManageHandler = require('../server/api-handlers/admin/points/manage');
 const pointsPackagesHandler = require('../server/api-handlers/admin/points/packages');
+const promptsImageBase64Handler = require('../server/api-handlers/admin/prompts/image-base64');
+const promptsImportsHandler = require('../server/api-handlers/admin/prompts/imports');
 const promptsManageHandler = require('../server/api-handlers/admin/prompts/manage');
 const accessSessionHandler = require('../server/api-handlers/admin/access/session');
 const shopCategoriesHandler = require('../server/api-handlers/admin/shop/categories');
@@ -143,6 +145,8 @@ const ROUTE_HANDLERS = {
     'points/lookup': pointsLookupHandler,
     'points/manage': pointsManageHandler,
     'points/packages': pointsPackagesHandler,
+    'prompts/image-base64': promptsImageBase64Handler,
+    'prompts/imports': promptsImportsHandler,
     'prompts/manage': promptsManageHandler,
     'access/session': accessSessionHandler,
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
