@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.18');
+    assert.equal(manifest.version, '0.1.19');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -186,7 +186,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.64'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-11\.65'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
@@ -337,6 +337,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /scrollCollectCurrentPage\(\{ automatic: true \}\)/);
     assert.match(popup, /pageBatchCollectCurrentPage\(\{ automatic: true \}\)/);
     assert.match(popup, /continueExisting:\s*automatic/);
+    assert.match(popup, /automatic \? Math\.max\(DEFAULT_PAGE_BATCH_PAGES, getMaxItemsSetting\(\)\)/);
+    assert.match(content, /return Math\.min\(parsed, 200\)/);
     assert.match(content, /message\.continueExisting/);
     assert.match(content, /preflightDuplicates[\s\S]*filterRepositoryDuplicates\(currentItems/);
     assert.match(content, /markPendingDetail\(detailJob\.lastPayload\?\.items \|\| \[\]\)/);

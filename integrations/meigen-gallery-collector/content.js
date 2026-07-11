@@ -1127,7 +1127,7 @@
     function normalizePageBatchCount(value) {
         const parsed = Number.parseInt(String(value || ''), 10);
         if (!Number.isFinite(parsed) || parsed < 1) return PAGE_BATCH_MAX_PAGES;
-        return Math.min(parsed, 20);
+        return Math.min(parsed, 200);
     }
 
     function normalizeMaxItems(value) {
