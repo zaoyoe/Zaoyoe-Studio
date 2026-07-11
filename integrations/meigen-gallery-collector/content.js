@@ -25,6 +25,8 @@
     const DETAIL_FRAME_STABLE_ROUNDS = 3;
     const HOVER_REVEAL_DELAY_MS = 80;
     const SCROLL_COLLECT_DELAY_MS = 1200;
+    const SCROLL_BATCH_SETTLE_POLL_MS = 350;
+    const SCROLL_BATCH_SETTLE_LIMIT = 8;
     const SCROLL_COLLECT_MAX_STEPS = 30;
     const SCROLL_COLLECT_STABLE_LIMIT = 3;
     const PAGE_BATCH_DELAY_MS = 1500;
@@ -138,8 +140,8 @@
         return String(item.source_item_id || item.source_page_url || item.original_work_url || '').trim().toLowerCase();
     }
 
-    function resetStreamStageState() {
-        streamStageState.batchId = '';
+    function resetStreamStageState(batchId = '') {
+        streamStageState.batchId = String(batchId || '').trim();
         streamStageState.bufferedItems = [];
         streamStageState.sentKeys = new Set();
         streamStageState.promise = Promise.resolve();
@@ -151,7 +153,7 @@
     }
 
     function queueStreamStage(items = [], message = {}, { flush = false } = {}) {
-        (Array.isArray(items) ? items : []).filter(isStreamReadyItem).forEach((item) => {
+        (Array.isArray(items) ? items : []).forEach((item) => {
             const key = getStreamItemKey(item);
             if (!key || streamStageState.sentKeys.has(key)) return;
             streamStageState.sentKeys.add(key);
@@ -190,6 +192,13 @@
             }
         });
         return streamStageState.promise;
+    }
+
+    async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20) {
+        const remaining = Math.max(0, maxItems - streamStageState.stagedCount);
+        if (!remaining) return;
+        queueStreamStage((Array.isArray(items) ? items : []).slice(0, remaining), message, { flush: true });
+        await streamStageState.promise;
     }
     let sessionRestorePromise = Promise.resolve(false);
 
@@ -371,6 +380,8 @@
             processed: scrollJob.processed,
             total: scrollJob.total,
             discovered: scrollJob.discovered,
+            staged: streamStageState.stagedCount,
+            duplicates: streamStageState.skippedDuplicateCount,
             lastError: scrollJob.lastError
         };
     }
@@ -1108,6 +1119,22 @@
         const snapshot = getScrollSnapshot();
         const distance = Math.max(520, Math.round(snapshot.viewport * 0.86));
         window.scrollBy({ top: distance, behavior: 'smooth' });
+    }
+
+    async function scrollAndWaitForGalleryBatch() {
+        let previousSnapshot = getScrollSnapshot();
+        let stableRounds = 0;
+        window.scrollTo({ top: previousSnapshot.height, behavior: 'auto' });
+        for (let attempt = 0; attempt < SCROLL_BATCH_SETTLE_LIMIT; attempt += 1) {
+            await sleep(SCROLL_BATCH_SETTLE_POLL_MS);
+            const nextSnapshot = getScrollSnapshot();
+            const grew = nextSnapshot.height > previousSnapshot.height + 12;
+            stableRounds = grew ? 0 : stableRounds + 1;
+            if (grew) window.scrollTo({ top: nextSnapshot.height, behavior: 'auto' });
+            previousSnapshot = nextSnapshot;
+            if (attempt >= 3 && stableRounds >= 3) break;
+        }
+        return previousSnapshot;
     }
 
     function isSameMeigenUrl(url = '') {
@@ -2440,6 +2467,11 @@
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
 
+        if (message.streamToQueue) {
+            resetStreamStageState(message.batchId);
+            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems);
+        }
+
         scrollJob.running = true;
         scrollJob.stopRequested = false;
         scrollJob.processed = 0;
@@ -2455,6 +2487,10 @@
         try {
             for (let index = 0; index < maxSteps; index += 1) {
                 if (scrollJob.stopRequested) break;
+                if (message.streamToQueue && streamStageState.stagedCount >= maxItems) break;
+
+                const nextSnapshot = await scrollAndWaitForGalleryBatch();
+                scrollJob.processed = index + 1;
 
                 await revealHoverControls(document, maxItems + 6);
                 await refreshStructuredDataCache();
@@ -2463,6 +2499,9 @@
                     ? await filterRepositoryDuplicates(currentItems, message, checkedKeys)
                     : { uniqueItems: currentItems, duplicateCount: 0 };
                 repositoryDuplicateCount += duplicateCheck.duplicateCount;
+                if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems);
+                }
                 payload = {
                     ...payload,
                     collected_at: new Date().toISOString(),
@@ -2482,16 +2521,10 @@
                 detailJob.lastPayload = payload;
                 detailJob.lastSummary = scrollJob.lastSummary;
                 rememberSessionPayload(payload, scrollJob.lastSummary);
-                if (payload.items.length >= maxItems) {
-                    scrollJob.processed = index + 1;
+                const targetCount = message.streamToQueue ? streamStageState.stagedCount : payload.items.length;
+                if (targetCount >= maxItems) {
                     break;
                 }
-
-                scrollOneViewport();
-                await sleep(SCROLL_COLLECT_DELAY_MS);
-                scrollJob.processed = index + 1;
-
-                const nextSnapshot = getScrollSnapshot();
                 const moved = nextSnapshot.y > previousSnapshot.y + 12;
                 const grew = nextSnapshot.height > previousSnapshot.height + 12;
                 const nearBottom = nextSnapshot.y + nextSnapshot.viewport >= nextSnapshot.height - 24;
@@ -2524,7 +2557,15 @@
                 payload,
                 summary: scrollJob.lastSummary,
                 scrollStatus: getScrollStatus(),
-                repositoryDuplicateCount
+                repositoryDuplicateCount,
+                streamResult: message.streamToQueue ? {
+                    batchId: streamStageState.batchId,
+                    attemptedCount: streamStageState.attemptedCount,
+                    stagedCount: streamStageState.stagedCount,
+                    skippedDuplicateCount: streamStageState.skippedDuplicateCount,
+                    rejectedCount: streamStageState.rejectedCount,
+                    lastError: streamStageState.lastError
+                } : null
             };
         } catch (error) {
             scrollJob.lastError = error?.message || '滚动采集失败';
@@ -2746,7 +2787,7 @@
         rememberSessionPayload(payload, detailJob.lastSummary);
 
         if (message.enrichDetails || message.retryFailed) {
-            if (message.streamToQueue) resetStreamStageState();
+            if (message.streamToQueue) resetStreamStageState(message.batchId);
             payload = await enrichPayloadWithDetails(payload, {
                 retryFailed: Boolean(message.retryFailed),
                 requireFavoriteCount: hasFavoriteRange,
