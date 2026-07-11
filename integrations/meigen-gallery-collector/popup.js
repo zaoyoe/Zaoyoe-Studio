@@ -27,6 +27,7 @@
         payload: null,
         automationRunning: false,
         streamedBatchId: '',
+        streamStats: null,
         pollTimer: 0,
         scrollPollTimer: 0,
         pageBatchPollTimer: 0,
@@ -330,7 +331,10 @@
         }
 
         state.payload = response.payload;
-        if (response.streamResult?.batchId) state.streamedBatchId = response.streamResult.batchId;
+        if (response.streamResult) {
+            state.streamStats = response.streamResult;
+            if (response.streamResult.batchId) state.streamedBatchId = response.streamResult.batchId;
+        }
         if (response.detailStatus) applyDetailStatus(response.detailStatus);
         if (response.scrollStatus) applyScrollStatus(response.scrollStatus);
         if (response.pageBatchStatus) applyPageBatchStatus(response.pageBatchStatus);
@@ -826,6 +830,7 @@
         if (state.automationRunning) return;
         state.automationRunning = true;
         state.streamedBatchId = '';
+        state.streamStats = null;
         updateSummary();
         setStatus(`全自动任务启动，目标最多 ${getMaxItemsSetting()} 条...`);
         try {
@@ -836,7 +841,16 @@
             }
             setStatus(`采集完成 ${payload.items.length} 条，正在自动送入队列...`);
             if (state.streamedBatchId) {
-                setStatus(`流式采集已持续送入批次 ${state.streamedBatchId.slice(0, 8)}，服务端将继续处理`);
+                const attempted = Number(state.streamStats?.attemptedCount || payload.items.length);
+                const staged = Number(state.streamStats?.stagedCount || 0);
+                const duplicates = Number(state.streamStats?.skippedDuplicateCount || 0);
+                const rejected = Number(state.streamStats?.rejectedCount || 0);
+                setStatus(
+                    `批次 ${state.streamedBatchId.slice(0, 8)}：尝试 ${attempted} 条，实际入队 ${staged} 条`
+                    + `${duplicates ? `，仓库重复跳过 ${duplicates} 条` : ''}`
+                    + `${rejected ? `，未接收 ${rejected} 条` : ''}`
+                    + '；服务端将继续处理'
+                );
             } else {
                 await stagePayload();
             }

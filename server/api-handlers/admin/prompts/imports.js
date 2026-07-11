@@ -645,13 +645,27 @@ function buildDeferredImportedItemPayload({ finalPromptId, finalImageAssets = []
 }
 
 async function updateBatchStats(supabase, batchId) {
+    const { data: currentBatch, error: currentBatchError } = await supabase
+        .from('prompt_import_batches')
+        .select('stats')
+        .eq('id', batchId)
+        .single();
+    if (currentBatchError) throw currentBatchError;
     const { data, error } = await supabase
         .from('prompt_import_items')
         .select('status')
         .eq('batch_id', batchId);
     if (error) throw error;
 
-    const stats = buildImportStats(data || []);
+    const itemStats = buildImportStats(data || []);
+    const previousStats = currentBatch?.stats && typeof currentBatch.stats === 'object' ? currentBatch.stats : {};
+    const stats = {
+        ...itemStats,
+        attempted: Math.max(0, Number(previousStats.attempted || 0)),
+        accepted: Math.max(0, Number(previousStats.accepted || 0)),
+        skipped_duplicates: Math.max(0, Number(previousStats.skipped_duplicates || 0)),
+        rejected: Math.max(0, Number(previousStats.rejected || 0))
+    };
     const nextStatus = stats.failed || stats.needs_review || stats.duplicate
         ? 'needs_attention'
         : (stats.total > 0 && stats.imported + stats.cleaned + stats.skipped === stats.total ? 'completed' : 'ready');
@@ -915,7 +929,24 @@ async function stageImportItems(supabase, user, body) {
         data.push(...(result.data || []));
     }
 
-    const updatedBatch = await updateBatchStats(supabase, batch.id);
+    let updatedBatch = await updateBatchStats(supabase, batch.id);
+    const previousIngressStats = batch.stats && typeof batch.stats === 'object' ? batch.stats : {};
+    const rejectedCount = Math.max(0, rows.length - data.length - duplicateIndexes.size);
+    const ingressStats = {
+        ...(updatedBatch.stats || {}),
+        attempted: Math.max(0, Number(previousIngressStats.attempted || 0)) + rows.length,
+        accepted: Math.max(0, Number(previousIngressStats.accepted || 0)) + data.length,
+        skipped_duplicates: Math.max(0, Number(previousIngressStats.skipped_duplicates || 0)) + duplicateIndexes.size,
+        rejected: Math.max(0, Number(previousIngressStats.rejected || 0)) + rejectedCount
+    };
+    const ingressUpdate = await supabase
+        .from('prompt_import_batches')
+        .update({ stats: ingressStats, updated_at: new Date().toISOString() })
+        .eq('id', batch.id)
+        .select(IMPORT_BATCH_SELECT)
+        .single();
+    if (ingressUpdate.error) throw ingressUpdate.error;
+    updatedBatch = ingressUpdate.data || { ...updatedBatch, stats: ingressStats };
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
@@ -924,6 +955,7 @@ async function stageImportItems(supabase, user, body) {
         actionType: 'prompt_import.stage',
         details: {
             batch_id: batch.id,
+            attempted_count: rows.length,
             staged_count: data.length,
             skipped_duplicate_count: duplicateIndexes.size,
             source: batch.source
@@ -933,6 +965,8 @@ async function stageImportItems(supabase, user, body) {
     return {
         batch: updatedBatch,
         items: data,
+        attemptedCount: rows.length,
+        stagedCount: data.length,
         skippedDuplicateCount: duplicateIndexes.size
     };
 }
@@ -1250,11 +1284,16 @@ async function markImportItemsFailed(supabase, user, body) {
     }
 
     const reason = normalizeText(body.reason || body.error_summary || body.errorSummary || '已保存，但发布流程未完成', 500);
+    const retryAt = new Date().toISOString();
     const { data, error } = await supabase
         .from('prompt_import_items')
         .update({
             status: 'failed',
             error_summary: reason,
+            worker_name: null,
+            lease_expires_at: null,
+            processing_attempts: 0,
+            next_attempt_at: retryAt,
             updated_at: new Date().toISOString()
         })
         .in('id', itemIds)

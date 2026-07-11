@@ -96,7 +96,11 @@
         bufferedItems: [],
         sentKeys: new Set(),
         promise: Promise.resolve(),
-        stagedCount: 0
+        attemptedCount: 0,
+        stagedCount: 0,
+        skippedDuplicateCount: 0,
+        rejectedCount: 0,
+        lastError: ''
     };
 
     function isStreamReadyItem(item = {}) {
@@ -112,7 +116,11 @@
         streamStageState.bufferedItems = [];
         streamStageState.sentKeys = new Set();
         streamStageState.promise = Promise.resolve();
+        streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
+        streamStageState.skippedDuplicateCount = 0;
+        streamStageState.rejectedCount = 0;
+        streamStageState.lastError = '';
     }
 
     function queueStreamStage(items = [], message = {}, { flush = false } = {}) {
@@ -127,20 +135,32 @@
         }
         const stagedItems = streamStageState.bufferedItems.splice(0, flush ? streamStageState.bufferedItems.length : 3);
         streamStageState.promise = streamStageState.promise.then(async () => {
-            const response = await chrome.runtime.sendMessage({
-                type: MESSAGE_STAGE,
-                payload: { source: 'meigen', items: stagedItems },
-                batchId: streamStageState.batchId,
-                adminBaseUrl: message.adminBaseUrl,
-                site: message.site,
-                defaultStatus: message.defaultStatus,
-                maxItems: message.maxItems,
-                minFavorites: message.minFavorites,
-                maxFavorites: message.maxFavorites
-            });
-            if (!response?.ok) throw new Error(response?.message || '流式送入队列失败');
-            streamStageState.batchId = response.result?.batch?.id || streamStageState.batchId;
-            streamStageState.stagedCount += stagedItems.length;
+            streamStageState.attemptedCount += stagedItems.length;
+            try {
+                const response = await chrome.runtime.sendMessage({
+                    type: MESSAGE_STAGE,
+                    payload: { source: 'meigen', items: stagedItems },
+                    batchId: streamStageState.batchId,
+                    adminBaseUrl: message.adminBaseUrl,
+                    site: message.site,
+                    defaultStatus: message.defaultStatus,
+                    maxItems: message.maxItems,
+                    minFavorites: message.minFavorites,
+                    maxFavorites: message.maxFavorites
+                });
+                if (!response?.ok) throw new Error(response?.message || '流式送入队列失败');
+                const result = response.result || {};
+                const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
+                const duplicateCount = Number(result.skippedDuplicateCount || 0);
+                streamStageState.batchId = result.batch?.id || streamStageState.batchId;
+                streamStageState.stagedCount += acceptedCount;
+                streamStageState.skippedDuplicateCount += duplicateCount;
+                streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
+            } catch (error) {
+                streamStageState.rejectedCount += stagedItems.length;
+                streamStageState.lastError = error?.message || '流式送入队列失败';
+                throw error;
+            }
         });
         return streamStageState.promise;
     }
@@ -2712,7 +2732,11 @@
             pageBatchStatus: getPageBatchStatus(),
             streamResult: message.streamToQueue ? {
                 batchId: streamStageState.batchId,
-                stagedCount: streamStageState.stagedCount
+                attemptedCount: streamStageState.attemptedCount,
+                stagedCount: streamStageState.stagedCount,
+                skippedDuplicateCount: streamStageState.skippedDuplicateCount,
+                rejectedCount: streamStageState.rejectedCount,
+                lastError: streamStageState.lastError
             } : null
         };
     }

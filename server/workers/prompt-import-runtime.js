@@ -3,6 +3,7 @@ const { resolveGeminiRuntimeConfig } = require('../../api/_lib/secrets');
 const importsHandler = require('../api-handlers/admin/prompts/imports');
 
 const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. Arrays must be compact and searchable. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced.`;
+const RETRYABLE_IMAGE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function parseJsonText(value = '') {
     const text = String(value || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
@@ -10,20 +11,88 @@ function parseJsonText(value = '') {
 }
 
 async function fetchAnalysisImage(url) {
-    const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (!response.ok) throw new Error(`Image fetch failed (${response.status})`);
+    const hostname = (() => {
+        try {
+            return new URL(url).hostname;
+        } catch (_) {
+            return 'invalid-url';
+        }
+    })();
+    let response;
+    try {
+        response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    } catch (cause) {
+        const error = new Error(`Image request failed (${hostname}): ${cause.message || cause}`);
+        error.retryable = true;
+        error.cause = cause;
+        throw error;
+    }
+    if (!response.ok) {
+        const error = new Error(`Image request failed (${response.status}, ${hostname})`);
+        error.retryable = RETRYABLE_IMAGE_STATUS_CODES.has(response.status);
+        throw error;
+    }
     const input = Buffer.from(await response.arrayBuffer());
-    return sharp(input).rotate().resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 82 }).toBuffer();
+    try {
+        return await sharp(input).rotate().resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 82 }).toBuffer();
+    } catch (cause) {
+        const error = new Error(`Image decode failed (${hostname}): ${cause.message || cause}`);
+        error.retryable = false;
+        error.cause = cause;
+        throw error;
+    }
 }
 
-async function callGeminiAnalysis(supabase, prompt = {}) {
+function normalizeAnalysisImageUrl(value) {
+    if (value && typeof value === 'object') {
+        return String(value.url || value.original || '').trim();
+    }
+    return String(value || '').trim();
+}
+
+function getAnalysisImageUrls(prompt = {}, sourceItems = []) {
+    const candidates = [];
+    const append = (values = []) => {
+        (Array.isArray(values) ? values : []).forEach((value) => {
+            const url = normalizeAnalysisImageUrl(value);
+            if (url) candidates.push(url);
+        });
+    };
+    sourceItems.filter(Boolean).forEach((item) => append(item.image_sources));
+    append(prompt.images);
+    append(prompt.image_assets);
+    sourceItems.filter(Boolean).forEach((item) => append(item.final_image_assets));
+    const unique = [...new Set(candidates)];
+    return unique
+        .map((url, index) => ({ url, index, avif: /\.avif(?:$|[?#])/i.test(url) }))
+        .sort((left, right) => Number(left.avif) - Number(right.avif) || left.index - right.index)
+        .slice(0, 12)
+        .map((item) => item.url);
+}
+
+async function loadAnalysisImages(imageUrls = [], { fetchImage = fetchAnalysisImage, limit = 4 } = {}) {
+    const results = await Promise.allSettled(imageUrls.map(fetchImage));
+    const images = results
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value)
+        .slice(0, limit);
+    if (images.length) return images;
+    const failures = results
+        .filter((result) => result.status === 'rejected')
+        .map((result) => result.reason);
+    const details = failures.map((error) => String(error?.message || error || 'unknown image error')).slice(0, 3);
+    const error = new Error(`Image processing failed: ${details.join(' | ') || 'no image candidates'}`);
+    error.retryable = failures.some((failure) => failure?.retryable === true);
+    error.details = { image_failures: details };
+    throw error;
+}
+
+async function callGeminiAnalysis(supabase, prompt = {}, options = {}) {
     const config = await resolveGeminiRuntimeConfig(supabase);
     if (!config?.apiKey) throw new Error('Gemini API Key 未配置');
-    const imageUrls = [...new Set([...(prompt.images || []), ...((prompt.image_assets || []).map((item) => item?.original || item?.url))].filter(Boolean))].slice(0, 4);
-    const images = (await Promise.allSettled(imageUrls.map(fetchAnalysisImage)))
-        .filter((result) => result.status === 'fulfilled').map((result) => result.value);
-    if (!images.length) throw new Error('Image fetch failed: no readable images');
+    const imageUrls = getAnalysisImageUrls(prompt, options.sourceItems || []);
+    const images = await loadAnalysisImages(imageUrls, { fetchImage: options.fetchImage, limit: 4 });
     const parts = [
         { text: `${ANALYSIS_PROMPT}\nSource prompt:\n${String(prompt.prompt_text || '').slice(0, 20000)}` },
         ...images.map((buffer) => ({ inline_data: { mime_type: 'image/webp', data: buffer.toString('base64') } }))
@@ -103,7 +172,7 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
         imported = await importsHandler._private.importSingleItem(supabase, user, item.id, {
             site: batch.site,
             default_status: 'review',
-            cleanup_after_pipeline: true
+            cleanup_after_pipeline: false
         });
     }
     if (!imported.prompt?.id) return imported;
@@ -113,7 +182,9 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
             pipeline_stage: 'analysis',
             updated_at: new Date().toISOString()
         }).eq('id', item.id);
-        const analysis = validateAnalysisResult(await callGeminiAnalysis(supabase, imported.prompt));
+        const analysis = validateAnalysisResult(await callGeminiAnalysis(supabase, imported.prompt, {
+            sourceItems: [item, imported.item]
+        }));
         const patch = buildPromptPatch(imported.prompt, analysis);
         const { data: prompt, error: promptError } = await supabase.from('prompts').update(patch).eq('id', imported.prompt.id).select('*').single();
         if (promptError) throw promptError;
@@ -131,12 +202,16 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
         await importsHandler._private.updateBatchStats(supabase, item.batch_id);
         return { ...imported, prompt, item: updatedItem };
     } catch (error) {
-        const retryable = /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(error?.message || error));
+        const retryable = typeof error.retryable === 'boolean'
+            ? error.retryable
+            : /429|5\d\d|timeout|timed out|fetch failed|network|gateway|rate limit/i.test(String(error?.message || error));
         await supabase.from('prompt_import_items').update({
             status: 'failed',
             error_summary: error.message || '服务端处理失败',
+            error_details: error.details || {},
             pipeline_stage: 'analysis',
             lease_expires_at: null,
+            processing_attempts: retryable ? item.processing_attempts : 3,
             next_attempt_at: retryable ? new Date(Date.now() + 15000).toISOString() : null,
             updated_at: new Date().toISOString()
         }).eq('id', item.id);
@@ -147,7 +222,17 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
 async function runPromptImportWorkerBatch(supabase, options = {}) {
     const items = await claimPromptImportItems(supabase, options);
     const results = await Promise.allSettled(items.map((item) => processPromptImportItem(supabase, item, options)));
-    return { claimed: items.length, results };
+    return { claimed: items.length, items, results };
 }
 
-module.exports = { buildPromptPatch, callGeminiAnalysis, claimPromptImportItems, processPromptImportItem, runPromptImportWorkerBatch, validateAnalysisResult };
+module.exports = {
+    buildPromptPatch,
+    callGeminiAnalysis,
+    claimPromptImportItems,
+    fetchAnalysisImage,
+    getAnalysisImageUrls,
+    loadAnalysisImages,
+    processPromptImportItem,
+    runPromptImportWorkerBatch,
+    validateAnalysisResult
+};

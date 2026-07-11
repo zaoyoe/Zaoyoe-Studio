@@ -603,6 +603,23 @@
                                     </button>
                                 </div>
                             </div>
+                            <div class="gallery-import-batch-tracker" id="galleryImportBatchTracker">
+                                <div class="gallery-import-batch-tracker__heading">
+                                    <div>
+                                        <strong>批次追踪</strong>
+                                        <span>查看最近批次与服务端 Worker 的实际执行状态</span>
+                                    </div>
+                                    <label>
+                                        <span>当前批次</span>
+                                        <select id="galleryImportBatchSelect" aria-label="选择 Gallery 导入批次">
+                                            <option value="">暂无批次</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="gallery-import-batch-tracker__summary" id="galleryImportBatchSummary">
+                                    <span>尚未加载服务端批次</span>
+                                </div>
+                            </div>
                             <div class="gallery-import-mode-tabs" role="radiogroup" aria-label="导入模式">
                                 <button type="button" class="gallery-import-mode-tab is-active" data-admin-action="gallery-import-set-mode" data-import-mode="crawl_only" aria-pressed="true">
                                     <i class="fas fa-eye"></i>
