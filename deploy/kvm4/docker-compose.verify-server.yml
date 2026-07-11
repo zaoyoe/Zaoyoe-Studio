@@ -48,3 +48,22 @@ services:
     depends_on:
       verify-server:
         condition: service_healthy
+  prompt-import-worker:
+    build:
+      context: ./app
+      dockerfile: ../Dockerfile
+    container_name: zaoyoe-prompt-import-worker
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      PROMPT_IMPORT_WORKER_CONCURRENCY: "10"
+      PROMPT_IMPORT_WORKER_INTERVAL_MS: "2000"
+    command:
+      - npm
+      - run
+      - prompt-import:worker
+    depends_on:
+      verify-server:
+        condition: service_healthy

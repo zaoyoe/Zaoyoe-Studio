@@ -44,8 +44,14 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'id="galleryImportParallelismDropdown"',
         'id="galleryImportParallelism" value="2"',
         '同时处理',
+        'data-value="4">4 条',
+        'data-value="5">5 条',
+        'data-value="6">6 条',
+        'data-value="10">10 条',
         'id="galleryImportAnalyzeAfterSave" checked disabled',
         '完整分析后发布',
+        'id="galleryImportAutoDetectQueue"',
+        '自动检测服务端队列',
         'data-admin-action="gallery-import-start"',
         'data-admin-action="gallery-import-upload-staged"',
         'data-admin-action="gallery-import-cleanup"',
@@ -87,7 +93,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-10.48';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.58';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'function createGalleryImportStageError(stage = \'unknown\', error = null)',
@@ -103,7 +109,13 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'const galleryImportState = {',
         "mode: 'crawl_only'",
         'function parseGalleryImportRawInput(rawText = \'\')',
-        'function runGalleryImportUploadQueue()',
+        'function getGalleryImportAuthorHandle(item = {}, originalWorkUrl = \'\')',
+        'function runGalleryImportUploadQueue(options = {})',
+        'function isGalleryImportItemAutoUploadable(item = {})',
+        'function setGalleryImportAutoDetectionEnabled(enabled, options = {})',
+        'async function runGalleryImportAutoDetectionCycle()',
+        'navigator.locks.request(',
+        '服务端 Worker 正在处理',
         'function isGalleryImportItemReadyForUpload(item = {})',
         'function skipGalleryImportItems(items = [], reason = \'信息不完整，已跳过\')',
         'function failGalleryImportItems(items = [], reason = \'已保存，但发布流程未完成\')',
@@ -132,10 +144,22 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'function preparePromptImagesForFullAnalysis(prompt = {}, maxImages = 6)',
         'const GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS = 2;',
         'const GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS = 3;',
-        "parallelism: normalizeGalleryImportNumber(document.getElementById('galleryImportParallelism')?.value, 2, 3) || 2",
-        'const parallelism = Math.max(1, Math.min(Number(settings.parallelism || 2), readyItems.length, 3));',
-        'const workers = Array.from({ length: parallelism }, async () => {',
-        'await Promise.all(workers);',
+        'const GALLERY_IMPORT_AUTO_DETECT_INTERVAL_MS = 5000;',
+        "const GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY = 'fatherKey.galleryImport.autoDetectQueue';",
+        "const GALLERY_IMPORT_AUTO_DETECT_LOCK_NAME = 'father-key-gallery-import-auto-upload';",
+        'const GALLERY_IMPORT_MAX_PARALLELISM = 10;',
+        'const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 6;',
+        'const GALLERY_IMPORT_ADAPTIVE_MIN_PARALLELISM = 1;',
+        'const GALLERY_IMPORT_ADAPTIVE_LAUNCH_GAP_MS = 500;',
+        'const GALLERY_IMPORT_ADAPTIVE_COOLDOWN_MS = 6000;',
+        'GALLERY_IMPORT_MAX_PARALLELISM',
+        'const applyAdaptivePressure = (result = {}) => {',
+        'adaptiveParallelism = Math.max(',
+        'stableCompletions >= adaptiveParallelism',
+        'const launchAdaptiveTask = (index) => {',
+        'await Promise.race(runningTasks);',
+        'onRetryableError: onPressureSignal',
+        'pressureLimited: pressureSignaled',
         'reportStatus(`检查当前状态 ${index + 1} / ${readyItems.length}`);',
         '__processingStatus: statusText',
         'const seenSourceUrls = new Set();',
@@ -186,6 +210,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     for (const marker of jsMarkers) {
         assert.equal(js.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+    assert.equal(js.includes('const workers = Array.from({ length: parallelism }'), false);
 
     const cssMarkers = [
         '.gallery-import-assistant',
@@ -297,6 +322,19 @@ test('prompt import payload requires source attribution, prompt, and images', ()
     assert.equal(item.image_sources.length, 2);
     assert.equal(item.error_details.import_image_count, 2);
 
+    const derivedHandleItem = _private.normalizeImportItemPayload({
+        prompt: 'A vivid herbal candy commercial poster',
+        original_work_url: 'https://x.com/user_3f39e769/status/2074535407157653609',
+        author_name: '只吃苹果派',
+        images: ['https://images.example.com/herbal-candy.jpg']
+    }, { max_images_per_item: 12 });
+    assert.equal(derivedHandleItem.status, 'staged');
+    assert.equal(derivedHandleItem.author_handle, '@user_3f39e769');
+    assert.equal(
+        _private.deriveAuthorHandleFromOriginalWorkUrl('https://twitter.com/example/status/1234567890'),
+        '@example'
+    );
+
     const promptPayload = _private.buildPromptPayloadFromImportItem(item, {
         imageAssets: [
             { original: 'https://cdn.fatherkey.com/prompts/imports/a.jpg' },
@@ -357,6 +395,49 @@ test('prompt import image guard rejects private hosts and non-image payloads', (
     assert.equal(_private.isBlockedImportHostname('images.meigen.ai'), false);
     assert.equal(_private.isSupportedImageBuffer(Buffer.from('<!doctype html>not an image')), false);
     assert.equal(_private.isSupportedImageBuffer(Buffer.from([0xff, 0xd8, 0xff, ...new Array(16).fill(0)])), true);
+});
+
+test('prompt repository dedupe scans fixed-size pages instead of putting prompts in query URLs', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const longPrompt = `cinematic scene ${'detail '.repeat(1000)}`;
+    const calls = [];
+    const supabase = {
+        from(table) {
+            assert.equal(table, 'prompts');
+            return {
+                select(fields) {
+                    calls.push({ type: 'select', fields });
+                    return {
+                        order(field) {
+                            calls.push({ type: 'order', field });
+                            return {
+                                async range(start, end) {
+                                    calls.push({ type: 'range', start, end });
+                                    return {
+                                        data: [{
+                                            id: 'existing-prompt',
+                                            source_url: 'https://x.com/artist/status/123',
+                                            prompt_text: longPrompt,
+                                            prompt_text_en: '',
+                                            prompt_text_zh: ''
+                                        }],
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
+                    };
+                }
+            };
+        }
+    };
+    const result = await _private.findExistingPromptDuplicates(supabase, [{
+        original_work_url: 'https://x.com/artist/status/123',
+        prompt_text: longPrompt
+    }]);
+    assert.equal(result.bySourceUrl.get('https://x.com/artist/status/123'), 'existing-prompt');
+    assert.equal(result.byPromptHash.get(_private.hashPromptText(longPrompt)), 'existing-prompt');
+    assert.deepEqual(calls.find((call) => call.type === 'range'), { type: 'range', start: 0, end: 499 });
 });
 
 test('admin prompt image base64 helper only accepts public image urls', () => {
