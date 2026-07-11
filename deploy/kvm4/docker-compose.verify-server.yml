@@ -64,9 +64,6 @@ services:
       - npm
       - run
       - prompt-import:worker
-      - --
-      - --env-file
-      - /app/.env
     depends_on:
       verify-server:
         condition: service_healthy
