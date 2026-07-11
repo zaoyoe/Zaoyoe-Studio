@@ -25,6 +25,8 @@
 
     const state = {
         payload: null,
+        automationRunning: false,
+        streamedBatchId: '',
         pollTimer: 0,
         scrollPollTimer: 0,
         pageBatchPollTimer: 0,
@@ -101,9 +103,11 @@
             return state.detailStatus.failed.length
                 || Number(state.summary.detail_failures || 0);
         }
-        const payloadTotal = Array.isArray(state.payload?.items) ? state.payload.items.length : 0;
-        return payloadTotal
-            || Number(state.summary.total || 0)
+        const detailTotal = Array.isArray(state.payload?.items)
+            ? state.payload.items.filter((item) => itemNeedsDetailEnrichment(item)).length
+            : 0;
+        return detailTotal
+            || Number(state.summary.detail_failures || 0)
             || getMaxItemsSetting();
     }
 
@@ -153,7 +157,8 @@
                 `<span>失败 ${failures}</span>`
             ].join('');
         }
-        const busy = state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
+        const busy = state.automationRunning || state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
+        getElement('collectBtn').disabled = busy;
         getElement('stageBtn').disabled = !total || busy;
         getElement('downloadBtn').disabled = !total || busy;
         getElement('retryBtn').disabled = !failures || busy;
@@ -282,7 +287,7 @@
         return tab;
     }
 
-    async function collectCurrentPage({ enrichDetails = false, retryFailed = false } = {}) {
+    async function collectCurrentPage({ enrichDetails = false, retryFailed = false, streamToQueue = false } = {}) {
         const tab = await getMeigenTabReady();
         if (!tab) return null;
         const maxItems = getMaxItemsSetting();
@@ -305,6 +310,10 @@
                 type: MESSAGE_COLLECT,
                 enrichDetails,
                 retryFailed,
+                streamToQueue,
+                adminBaseUrl: getElement('adminBaseUrl').value,
+                site: getElement('siteSelect').value,
+                defaultStatus: getElement('statusSelect').value,
                 maxItems,
                 ...getFavoriteFilterSettings()
             });
@@ -321,6 +330,7 @@
         }
 
         state.payload = response.payload;
+        if (response.streamResult?.batchId) state.streamedBatchId = response.streamResult.batchId;
         if (response.detailStatus) applyDetailStatus(response.detailStatus);
         if (response.scrollStatus) applyScrollStatus(response.scrollStatus);
         if (response.pageBatchStatus) applyPageBatchStatus(response.pageBatchStatus);
@@ -328,11 +338,14 @@
         const failed = response.summary?.detail_failures || 0;
         const total = response.summary?.total || 0;
         const missingPrompt = Math.max(0, total - Number(response.summary?.with_prompt || 0));
+        const belowLimitMessage = total < maxItems
+            ? `当前页只发现 ${total} 条（设置的是上限 ${maxItems}）；如需继续发现作品，请点“滚动采集”或“翻页采集”`
+            : '';
         setStatus(failed
             ? `已采集 ${total} 条，${failed} 个详情待重试`
             : (missingPrompt
                 ? `已采集 ${total} 条，${missingPrompt} 条待补提示词`
-                : `已采集 ${total} 条，可送入队列`));
+                : (belowLimitMessage || `已采集 ${total} 条，已达到设置上限，可送入队列`)));
         return response.payload;
     }
 
@@ -586,7 +599,7 @@
         }
     }
 
-    async function scrollCollectCurrentPage() {
+    async function scrollCollectCurrentPage({ automatic = false } = {}) {
         const tab = await getMeigenTabReady();
         if (!tab) return null;
         setProgressStatus('滚动采集中', 0, DEFAULT_SCROLL_STEPS, '已采集 0 条');
@@ -615,7 +628,11 @@
         state.payload = response.payload;
         if (response.scrollStatus) applyScrollStatus(response.scrollStatus);
         updateSummary(response.summary);
-        setStatus(`滚动采集完成：发现 ${response.summary?.total || 0} 条`);
+        const total = Number(response.summary?.total || 0);
+        const maxItems = getMaxItemsSetting();
+        setStatus(automatic
+            ? `自动滚动发现完成：${total} 条${total < maxItems ? '，页面已稳定或没有更多作品' : '，已达到设置上限'}`
+            : `滚动采集完成：发现 ${total} 条`);
         return response.payload;
     }
 
@@ -708,9 +725,15 @@
             ? imageCount < Math.max(1, expectedImageCount)
             : imageCount <= 1;
         const favoriteCount = Number(item?.favorite_count || 0);
+        const favoriteFilter = getFavoriteFilterSettings();
+        const requireFavoriteCount = favoriteFilter.minFavorites > 0 || favoriteFilter.maxFavorites > 0;
+        const missingSource = !String(item?.original_work_url || '').trim()
+            || !String(item?.author_name || '').trim()
+            || !String(item?.author_handle || '').trim();
         return promptNeedsDetailEnrichment(item?.prompt_text || '')
             || imageCountIncomplete
-            || favoriteCount <= 0;
+            || missingSource
+            || (requireFavoriteCount && favoriteCount <= 0);
     }
 
     function payloadNeedsDetailEnrichment(payload = {}) {
@@ -733,9 +756,15 @@
 
     async function collectCurrentPageWithAutoEnrich() {
         let payload = await collectCurrentPage();
+        const maxItems = getMaxItemsSetting();
+        const discovered = Array.isArray(payload?.items) ? payload.items.length : 0;
+        if (discovered > 0 && discovered < maxItems) {
+            setStatus(`当前发现 ${discovered} 条，正在自动滚动加载，目标上限 ${maxItems} 条...`);
+            payload = await scrollCollectCurrentPage({ automatic: true }) || payload;
+        }
         if (payloadNeedsDetailEnrichment(payload)) {
             setProgressStatus('发现待补内容，正在补抓详情', 0, getDetailProgressTotal());
-            payload = await collectCurrentPage({ enrichDetails: true });
+            payload = await collectCurrentPage({ enrichDetails: true, streamToQueue: true });
         }
         return payload;
     }
@@ -790,6 +819,33 @@
         const missingPromptCount = getMissingPromptCount(payload);
         const viaAdminTab = response.result?.via_admin_tab ? '，已通过 Admin Studio 登录态提交' : '';
         setStatus(`已送入队列 ${count} 条${skippedDuplicateCount ? `，仓库重复跳过 ${skippedDuplicateCount} 条` : ''}${missingPromptCount ? `，待补 ${missingPromptCount} 条` : ''}${viaAdminTab}`);
+        return response;
+    }
+
+    async function runFullyAutomaticCollectionTask() {
+        if (state.automationRunning) return;
+        state.automationRunning = true;
+        state.streamedBatchId = '';
+        updateSummary();
+        setStatus(`全自动任务启动，目标最多 ${getMaxItemsSetting()} 条...`);
+        try {
+            const payload = await collectCurrentPageWithAutoEnrich();
+            if (!payload?.items?.length) {
+                setStatus('没有采集到可送入队列的作品');
+                return;
+            }
+            setStatus(`采集完成 ${payload.items.length} 条，正在自动送入队列...`);
+            if (state.streamedBatchId) {
+                setStatus(`流式采集已持续送入批次 ${state.streamedBatchId.slice(0, 8)}，服务端将继续处理`);
+            } else {
+                await stagePayload();
+            }
+        } catch (error) {
+            setStatus(error?.message || '全自动采集任务失败');
+        } finally {
+            state.automationRunning = false;
+            updateSummary();
+        }
     }
 
     async function downloadPayload() {
@@ -811,7 +867,7 @@
 
     function bindEvents() {
         getElement('collectBtn').addEventListener('click', () => {
-            void collectCurrentPageWithAutoEnrich();
+            void runFullyAutomaticCollectionTask();
         });
         getElement('scrollBtn').addEventListener('click', () => {
             void scrollCollectCurrentPage();

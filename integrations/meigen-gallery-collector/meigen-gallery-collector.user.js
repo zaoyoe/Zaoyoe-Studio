@@ -1,7 +1,7 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-10.48';
+    const VERSION = '2026-07-11.58';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 200;
     const MAX_IMAGES_PER_ITEM = 24;
@@ -19,6 +19,7 @@
     const ENGAGEMENT_TEXT_PATTERN = /\b(?:likes?|views?|bookmarks?|favorites?|收藏|喜欢|浏览|观看|点赞)\b/i;
     const DETAIL_PAGE_PATH_PATTERN = /\/(?:prompt|prompts|post|posts|works?|gallery)\/[a-zA-Z0-9_-]{5,}/i;
     const DETAIL_CAROUSEL_COUNT_PATTERN = /^\s*\d{1,2}\s*\/\s*(\d{1,2})\s*$/;
+    const PROMPT_PREVIEW_HARD_LIMIT = 160;
     const MIN_ARTWORK_SIDE = 180;
     const MIN_ARTWORK_AREA = 42000;
     const STRUCTURED_PROMPT_KEY_PATTERN = /prompt|positivePrompt|fullPrompt|promptText|inputPrompt|copyText|description|caption/i;
@@ -156,6 +157,12 @@
         return `tweet:${info.statusId}:${info.index}:${String(info.suffix || '').toLowerCase()}`;
     }
 
+    function getMeigenGenerationImageIdentity(value = '') {
+        const decoded = decodeUrlishText(value).toLowerCase();
+        const match = decoded.match(/\/generations\/(?:[^/?#\s]+\/)*(community_[a-z0-9-]+)\.(?:avif|webp|png|jpe?g)/i);
+        return match?.[1] ? `generation:${match[1]}` : '';
+    }
+
     function scoreImageUrlQuality(value = '') {
         const text = String(value || '');
         let score = text.length;
@@ -170,7 +177,9 @@
         for (const url of (Array.isArray(urls) ? urls : [])) {
             const normalized = String(url || '').trim();
             if (!normalized) continue;
-            const key = getTweetImageIdentity(normalized) || normalized.toLowerCase();
+            const key = getTweetImageIdentity(normalized)
+                || getMeigenGenerationImageIdentity(normalized)
+                || normalized.toLowerCase();
             const current = byKey.get(key);
             if (!current || scoreImageUrlQuality(normalized) > scoreImageUrlQuality(current)) {
                 byKey.set(key, normalized);
@@ -1515,9 +1524,17 @@
     function getAuthorNameFromTopLines(scope, expectedHandle = '') {
         const lines = getVisibleLines(scope, 2400);
         const handleIndex = lines.findIndex((line) => lineMatchesAuthorHandle(line, expectedHandle));
-        const end = handleIndex >= 0 ? handleIndex : Math.min(lines.length, 8);
-        const start = Math.max(0, end - 5);
-        for (let index = end - 1; index >= start; index -= 1) {
+        if (handleIndex >= 0) {
+            const start = Math.max(0, handleIndex - 5);
+            for (let index = handleIndex - 1; index >= start; index -= 1) {
+                const name = normalizeAuthorName(lines[index]);
+                if (name) return name;
+            }
+            return '';
+        }
+        const detailMetadataIndex = lines.findIndex((line) => /^(?:\d+\s*)?(?:收藏|喜欢|点赞)$|^(?:复制\s*(?:Prompt|提示词)|Copy\s*Prompt)$/i.test(line));
+        if (detailMetadataIndex <= 0) return '';
+        for (let index = 0; index < detailMetadataIndex; index += 1) {
             const name = normalizeAuthorName(lines[index]);
             if (name) return name;
         }
@@ -1550,6 +1567,7 @@
             .filter((line) => !line.startsWith('@'))
             .filter((line) => !/^(Web\s*Page|WebPage)$/i.test(line))
             .filter((line) => !AUTHOR_LINE_NOISE_PATTERN.test(line))
+            .filter((line) => !/^(?:Model|模型)\s*[:：]\s*[^\n]{1,48}$/i.test(line))
             .filter((line) => !ACTION_PROMPT_LINE_PATTERN.test(line))
             .filter((line) => !/^(Prompt|提示词|收藏|喜欢|点赞|作品|图片|Image|Author|作者)\s*[:：]?$/i.test(line))
             .filter((line) => !/^\d+$/.test(line))
@@ -1564,7 +1582,8 @@
     }
 
     function isCollapsedPromptText(value = '') {
-        return /(\.\.\.|…)\s*$/.test(normalizeText(value, 800));
+        const text = normalizeText(value, 800);
+        return /(\.\.\.|…)\s*$/.test(text) || text.length === PROMPT_PREVIEW_HARD_LIMIT;
     }
 
     function preferDetailValue(currentValue = '', nextValue = '') {
@@ -1667,6 +1686,15 @@
             || /\/generations\/[^?#\s]+\/community_[^/?#\s]+\.(?:avif|webp|png|jpe?g)/i.test(decoded);
     }
 
+    function isCommunityDetailUrl(value = '') {
+        try {
+            const parsed = new URL(String(value || ''), getBaseUrl());
+            return /\/prompt\/community_[a-z0-9-]+\/?$/i.test(parsed.pathname);
+        } catch (_) {
+            return /\/prompt\/community_[a-z0-9-]+/i.test(String(value || ''));
+        }
+    }
+
     function isImageUrlTrustedForStatus(value = '', targetStatusId = '') {
         const target = extractLongNumericId(targetStatusId);
         if (!target) return true;
@@ -1693,6 +1721,17 @@
     function filterDetailImageUrlsByStatus(imageUrls = [], targetStatusId = '') {
         if (!targetStatusId || !Array.isArray(imageUrls) || !imageUrls.length) return imageUrls;
         return imageUrls.filter((url) => isImageUrlTrustedForStatus(url, targetStatusId));
+    }
+
+    function filterDetailImageUrlsByIdentity(imageUrls = [], {
+        detailUrl = '',
+        targetStatusId = ''
+    } = {}) {
+        if (!Array.isArray(imageUrls) || !imageUrls.length) return [];
+        if (isCommunityDetailUrl(detailUrl)) {
+            return imageUrls.filter((url) => !getStatusIdFromImageUrl(url));
+        }
+        return filterDetailImageUrlsByStatus(imageUrls, targetStatusId);
     }
 
     function getTweetImageSequenceInfo(value = '') {
@@ -1911,6 +1950,20 @@
         return true;
     }
 
+    function isUnresolvablePlaceholderItem({
+        detailUrl = '',
+        promptText = '',
+        originalWorkUrl = '',
+        imageUrls = []
+    } = {}) {
+        return !String(detailUrl || '').trim()
+            && !String(promptText || '').trim()
+            && !String(originalWorkUrl || '').trim()
+            && Array.isArray(imageUrls)
+            && imageUrls.length > 0
+            && imageUrls.every((url) => isLikelyUnboundMeigenCommunityImageUrl(url));
+    }
+
     function buildSourceItemId(scope, detailUrl, imageUrls, index, fallbackId = '') {
         const explicit = getDatasetValue(scope, ['id', 'itemId', 'promptId', 'postId']);
         if (explicit) return explicit;
@@ -1943,6 +1996,7 @@
             detailOnly: Boolean(options.detailOnly || expectedDetailUrl || isDetailPageUrl(baseUrl))
         });
         let detailUrl = scopeDetailUrl || structuredCandidate?.detailUrl || '';
+        const communityDetail = isCommunityDetailUrl(expectedDetailUrl || detailUrl);
         const optionExpectedDetailCount = detailContext
             ? normalizeExpectedDetailImageCount(options.expectedDetailImageCount || options.detailExpectedCount || 0)
             : 0;
@@ -1954,9 +2008,11 @@
             : getDetailArtworkExpectedCount(scope);
         const sequenceExpectedCount = trustedDetailExpectedCount;
         let originalWorkUrl = initialOriginalWorkUrl || structuredCandidate?.originalWorkUrl || '';
-        const candidateStatusId = structuredCandidate?.statusId
-            || getStatusIdFromImageUrls(structuredCandidate?.imageUrls || [])
-            || extractLongNumericId(originalWorkUrl);
+        const candidateStatusId = communityDetail
+            ? ''
+            : (structuredCandidate?.statusId
+                || getStatusIdFromImageUrls(structuredCandidate?.imageUrls || [])
+                || extractLongNumericId(originalWorkUrl));
         const targetStatusId = getTargetStatusIdForDetail({
             expectedDetailUrl,
             detailUrl,
@@ -1966,7 +2022,10 @@
         }) || candidateStatusId;
         const structuredImageUrls = detailContext && explicitExpectedCount <= 0
             ? []
-            : filterDetailImageUrlsByStatus(structuredCandidate?.imageUrls || [], targetStatusId);
+            : filterDetailImageUrlsByIdentity(structuredCandidate?.imageUrls || [], {
+                detailUrl: expectedDetailUrl || detailUrl,
+                targetStatusId
+            });
         const combinedImageUrls = dedupeImageUrlsByArtwork([
             ...initialImageUrls,
             ...structuredImageUrls
@@ -1982,7 +2041,10 @@
         const imageLimit = expectedCount > 0 ? expectedCount : (detailContext ? 1 : MAX_IMAGES_PER_ITEM);
         let imageUrls = combinedImageUrls.slice(0, imageLimit);
         imageUrls = dedupeImageUrlsByArtwork(expandTweetImageSequence(imageUrls, sequenceExpectedCount), imageLimit);
-        imageUrls = filterDetailImageUrlsByStatus(imageUrls, targetStatusId);
+        imageUrls = filterDetailImageUrlsByIdentity(imageUrls, {
+            detailUrl: expectedDetailUrl || detailUrl,
+            targetStatusId
+        });
         const filteredImageStatusId = getStatusIdFromImageUrls(imageUrls);
         const imageStatusId = filteredImageStatusId
             || (!targetStatusId || initialImageStatusId === targetStatusId ? initialImageStatusId : '');
@@ -2025,7 +2087,8 @@
         const authorName = hoverAuthor?.name
             || visibleAuthorName
             || normalizeAuthorName(structuredCandidate?.authorName || '');
-        if (!imageUrls.length && !detailContext) return null;
+        if (isUnresolvablePlaceholderItem({ detailUrl, promptText, originalWorkUrl, imageUrls })) return null;
+        if (!imageUrls.length && !detailContext && !communityDetail) return null;
         if (!imageUrls.length && !promptText && !originalWorkUrl && !authorName && !authorHandle) return null;
         const imageCountIsComplete = expectedCount > 0
             ? imageUrls.length >= expectedCount
@@ -2082,7 +2145,12 @@
                 continue;
             }
 
-            current.prompt_text = preferDetailValue(current.prompt_text, item.prompt_text);
+            if (item.prompt_complete && item.prompt_text) {
+                current.prompt_text = item.prompt_text;
+                current.prompt_complete = true;
+            } else if (!current.prompt_complete) {
+                current.prompt_text = preferDetailValue(current.prompt_text, item.prompt_text);
+            }
             current.source_page_url = current.source_page_url || item.source_page_url || '';
             current.original_work_url = current.original_work_url || item.original_work_url || '';
             const currentAuthorName = normalizeAuthorName(current.author_name);
@@ -2200,12 +2268,15 @@
             collectDetailArtworkImageUrls,
             getNodeDocumentOrderScore,
             itemMatchesFavoriteRange,
+            isUnresolvablePlaceholderItem,
             extractPromptText,
             getOriginalWorkUrl,
             isOriginalWorkStatusUrl,
             getOriginalStatusId,
             buildOriginalWorkUrlFromHandleAndStatusId,
             getStatusIdFromImageUrl,
+            getMeigenGenerationImageIdentity,
+            dedupeImageUrlsByArtwork,
             expandTweetImageSequence,
             buildMeigenDetailUrlFromStatusId,
             getTrustedDetailArtworkExpectedCount,
@@ -2218,7 +2289,9 @@
             getStructuredIdentityCounts,
             filterDetailImageUrlsByStatus,
             isLikelyUnboundMeigenCommunityImageUrl,
+            isCommunityDetailUrl,
             isImageUrlTrustedForStatus,
+            filterDetailImageUrlsByIdentity,
             isLikelyListContainerScope
         }
     };

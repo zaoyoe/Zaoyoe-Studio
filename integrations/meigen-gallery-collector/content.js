@@ -14,11 +14,14 @@
     const MESSAGE_PAGE_BATCH_STATUS = 'FATHER_KEY_MEIGEN_PAGE_BATCH_STATUS';
     const MESSAGE_DIAGNOSTICS = 'FATHER_KEY_MEIGEN_DIAGNOSTICS';
     const MESSAGE_SESSION_STATE = 'FATHER_KEY_MEIGEN_SESSION_STATE';
+    const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
     const DATA_CACHE_REQUEST_TYPE = 'FatherKeyMeigenDataCacheRequest';
     const DATA_CACHE_RESPONSE_TYPE = 'FatherKeyMeigenDataCacheResponse';
     const DETAIL_FETCH_DELAY_MS = 900;
     const DETAIL_FRAME_TIMEOUT_MS = 12000;
     const DETAIL_FRAME_POLL_MS = 500;
+    const DETAIL_FRAME_MIN_SETTLE_MS = 2500;
+    const DETAIL_FRAME_STABLE_ROUNDS = 3;
     const HOVER_REVEAL_DELAY_MS = 80;
     const SCROLL_COLLECT_DELAY_MS = 1200;
     const SCROLL_COLLECT_MAX_STEPS = 30;
@@ -47,6 +50,7 @@
         '[class*="pin" i]'
     ].join(',');
     const DIAGNOSTIC_LOG_LIMIT = 120;
+    const SESSION_STORAGE_KEY = 'fatherKeyMeigenCollectorSessionV1';
 
     const detailJob = {
         running: false,
@@ -87,6 +91,60 @@
         lastSummary: null,
         updatedAt: ''
     };
+    const streamStageState = {
+        batchId: '',
+        bufferedItems: [],
+        sentKeys: new Set(),
+        promise: Promise.resolve(),
+        stagedCount: 0
+    };
+
+    function isStreamReadyItem(item = {}) {
+        return !needsInteractiveDetail(item, { requireFavoriteCount: false });
+    }
+
+    function getStreamItemKey(item = {}) {
+        return String(item.source_item_id || item.source_page_url || item.original_work_url || '').trim().toLowerCase();
+    }
+
+    function resetStreamStageState() {
+        streamStageState.batchId = '';
+        streamStageState.bufferedItems = [];
+        streamStageState.sentKeys = new Set();
+        streamStageState.promise = Promise.resolve();
+        streamStageState.stagedCount = 0;
+    }
+
+    function queueStreamStage(items = [], message = {}, { flush = false } = {}) {
+        (Array.isArray(items) ? items : []).filter(isStreamReadyItem).forEach((item) => {
+            const key = getStreamItemKey(item);
+            if (!key || streamStageState.sentKeys.has(key)) return;
+            streamStageState.sentKeys.add(key);
+            streamStageState.bufferedItems.push(item);
+        });
+        if (!streamStageState.bufferedItems.length || (!flush && streamStageState.bufferedItems.length < 3)) {
+            return streamStageState.promise;
+        }
+        const stagedItems = streamStageState.bufferedItems.splice(0, flush ? streamStageState.bufferedItems.length : 3);
+        streamStageState.promise = streamStageState.promise.then(async () => {
+            const response = await chrome.runtime.sendMessage({
+                type: MESSAGE_STAGE,
+                payload: { source: 'meigen', items: stagedItems },
+                batchId: streamStageState.batchId,
+                adminBaseUrl: message.adminBaseUrl,
+                site: message.site,
+                defaultStatus: message.defaultStatus,
+                maxItems: message.maxItems,
+                minFavorites: message.minFavorites,
+                maxFavorites: message.maxFavorites
+            });
+            if (!response?.ok) throw new Error(response?.message || '流式送入队列失败');
+            streamStageState.batchId = response.result?.batch?.id || streamStageState.batchId;
+            streamStageState.stagedCount += stagedItems.length;
+        });
+        return streamStageState.promise;
+    }
+    let sessionRestorePromise = Promise.resolve(false);
 
     const diagnosticLog = [];
 
@@ -137,6 +195,56 @@
         sessionState.lastPayload = payload;
         sessionState.lastSummary = summary || summarizePayload(payload);
         sessionState.updatedAt = new Date().toISOString();
+        void persistSessionSnapshot();
+    }
+
+    async function persistSessionSnapshot() {
+        if (!chrome?.storage?.session || !sessionState.lastPayload) return false;
+        try {
+            await chrome.storage.session.set({
+                [SESSION_STORAGE_KEY]: {
+                    payload: sessionState.lastPayload,
+                    summary: sessionState.lastSummary,
+                    updatedAt: sessionState.updatedAt,
+                    pageUrl: window.location.href
+                }
+            });
+            return true;
+        } catch (error) {
+            logDiagnostic('session-persist-failed', {
+                message: error?.message || 'storage.session 写入失败'
+            });
+            return false;
+        }
+    }
+
+    async function restoreSessionSnapshot() {
+        if (!chrome?.storage?.session) return false;
+        try {
+            const stored = await chrome.storage.session.get(SESSION_STORAGE_KEY);
+            const snapshot = stored?.[SESSION_STORAGE_KEY];
+            if (!Array.isArray(snapshot?.payload?.items) || !snapshot.payload.items.length) return false;
+            sessionState.lastPayload = snapshot.payload;
+            sessionState.lastSummary = snapshot.summary || summarizePayload(snapshot.payload);
+            sessionState.updatedAt = snapshot.updatedAt || '';
+            detailJob.lastPayload = snapshot.payload;
+            detailJob.lastSummary = sessionState.lastSummary;
+            scrollJob.lastPayload = snapshot.payload;
+            scrollJob.lastSummary = sessionState.lastSummary;
+            pageBatchJob.lastPayload = snapshot.payload;
+            pageBatchJob.lastSummary = sessionState.lastSummary;
+            logDiagnostic('session-restored', {
+                items: snapshot.payload.items.length,
+                updatedAt: sessionState.updatedAt,
+                previousPageUrl: snapshot.pageUrl || ''
+            });
+            return true;
+        } catch (error) {
+            logDiagnostic('session-restore-failed', {
+                message: error?.message || 'storage.session 读取失败'
+            });
+            return false;
+        }
     }
 
     function getLastJobPayload() {
@@ -165,6 +273,8 @@
             pageBatchStatus: getPageBatchStatus()
         };
     }
+
+    sessionRestorePromise = restoreSessionSnapshot();
 
     function getDiagnostics() {
         const payload = getLastJobPayload();
@@ -416,9 +526,14 @@
         ].join(',')));
     }
 
-    function dispatchSyntheticClick(element) {
+    function dispatchSyntheticClick(element, { preventNavigation = false } = {}) {
         if (!element?.dispatchEvent) return false;
         const eventOptions = { bubbles: true, cancelable: true, view: element.ownerDocument?.defaultView || window };
+        const navigationAnchor = preventNavigation ? element.closest?.('a[href]') : null;
+        const preventAnchorNavigation = (event) => event.preventDefault();
+        if (navigationAnchor) {
+            navigationAnchor.addEventListener('click', preventAnchorNavigation, { capture: true, once: true });
+        }
         try {
             element.dispatchEvent(new PointerEvent('pointerdown', eventOptions));
             element.dispatchEvent(new PointerEvent('pointerup', eventOptions));
@@ -426,15 +541,9 @@
             element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
             element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
         }
-        element.dispatchEvent(new MouseEvent('click', eventOptions));
-        if (typeof element.click === 'function') {
-            try {
-                element.click();
-            } catch (_) {
-                return true;
-            }
-        }
-        return true;
+        const result = element.dispatchEvent(new MouseEvent('click', eventOptions));
+        navigationAnchor?.removeEventListener('click', preventAnchorNavigation, { capture: true });
+        return result;
     }
 
     async function readClipboardText(documentRef = document) {
@@ -707,7 +816,7 @@
             visiblePromptLength: extractedPrompt.length,
             panelTextPreview: promptPanel ? getPromptPanelText(promptPanel).slice(0, 220) : ''
         });
-        if (extractedPrompt) return extractedPrompt;
+        if (extractedPrompt && !promptNeedsDetailEnrichment(extractedPrompt)) return extractedPrompt;
 
         const copyControls = findPromptActionControls(promptRoot, PROMPT_COPY_TEXT_PATTERN);
         logDiagnostic('prompt-copy-controls', {
@@ -763,16 +872,11 @@
     function enrichItemsWithCopiedPrompt(items = [], copiedPrompt = '', collector = getCollector()) {
         const prompt = cleanCopiedPromptText(copiedPrompt, collector);
         if (!prompt) return items;
-        return (Array.isArray(items) ? items : []).map((item) => {
-            const currentPrompt = normalizeText(item?.prompt_text || '', 12000);
-            if (currentPrompt && !promptLooksCollapsed(currentPrompt) && currentPrompt.length >= prompt.length) {
-                return item;
-            }
-            return {
-                ...item,
-                prompt_text: prompt
-            };
-        });
+        return (Array.isArray(items) ? items : []).map((item) => ({
+            ...item,
+            prompt_text: prompt,
+            prompt_complete: true
+        }));
     }
 
     function getLatestPayload(collector) {
@@ -834,6 +938,8 @@
         const handle = String(handleGetter(target, '') || '').trim();
         const name = String(nameGetter(target, handle) || '').trim();
         if (!handle || !name) return null;
+        const prompt = String(collector?._private?.extractPromptText?.(target) || '').trim();
+        if (prompt && normalizeText(prompt).toLowerCase() === normalizeText(name).toLowerCase()) return null;
         target.dataset ||= {};
         target.dataset.authorHandle = handle;
         target.dataset.authorName = name;
@@ -1087,6 +1193,7 @@
         return Array.isArray(items) && items.some((item) => {
             const prompt = cleanCopiedPromptText(item?.prompt_text || '', collector);
             if (!prompt) return false;
+            if (item?.prompt_complete) return true;
             if (promptNeedsDetailEnrichment(prompt)) return false;
             return typeof isCollapsedPromptText !== 'function' || !isCollapsedPromptText(prompt);
         });
@@ -1098,6 +1205,10 @@
         if (text.length < 180) return true;
         if (/Free\s+GPT\s+Image|Copy,\s*paste,\s*generate|no\s+prompt\s+engineering/i.test(text)) return true;
         return false;
+    }
+
+    function itemPromptNeedsDetailEnrichment(item = {}) {
+        return !item?.prompt_complete && promptNeedsDetailEnrichment(item?.prompt_text || '');
     }
 
     function expandDetailItemImagesToExpectedCount(item = {}, expectedCount = 0, collector = getCollector()) {
@@ -1134,7 +1245,7 @@
 
     function filterUsableDetailItems(items = [], collector = getCollector()) {
         return (Array.isArray(items) ? items : []).filter((item) => (
-            !promptNeedsDetailEnrichment(item?.prompt_text || '')
+            !itemPromptNeedsDetailEnrichment(item)
             || hasRealDetailImage(item)
             || String(item?.original_work_url || '').trim()
         ));
@@ -1243,6 +1354,15 @@
     function getTrustedImageSourcesForItem(item = {}, referenceItem = item, collector = getCollector()) {
         const images = Array.isArray(item.image_sources) ? item.image_sources : [];
         const checker = collector?._private?.isImageUrlTrustedForStatus;
+        const statusIdGetter = collector?._private?.getStatusIdFromImageUrl;
+        const communityChecker = collector?._private?.isCommunityDetailUrl;
+        if (
+            typeof communityChecker === 'function'
+            && communityChecker(referenceItem?.source_page_url || item?.source_page_url || '')
+            && typeof statusIdGetter === 'function'
+        ) {
+            return images.filter((entry) => !statusIdGetter(entry?.url || ''));
+        }
         const targetStatusIds = getTargetStatusIds(referenceItem || item);
         if (typeof checker !== 'function' || targetStatusIds.size <= 0) {
             return images.filter((entry) => String(entry?.url || '').trim());
@@ -1329,6 +1449,7 @@
         if (!text) return '';
         if (DETAIL_AUTHOR_HANDLE_PATTERN.test(text) && text.replace(DETAIL_AUTHOR_HANDLE_PATTERN, '').trim() === '') return '';
         if (/^(Web\s*Page|WebPage)$/i.test(text)) return '';
+        if (/^(?:Model|模型)\s*[:：]\s*[^\n]{1,48}$/i.test(text)) return '';
         if (/^(最热|最新|热门|推荐|展开|更多相关内容|相关内容|Related creations?|More related content|使用\s*Prompt|用作参考图|复制\s*Prompt|Copy\s*Prompt|提示词|Prompt|Nanobanana|Nano Banana|GPT Image|Gemini|Imagen|Seedream|Midjourney|Sora)$/i.test(text)) return '';
         if (/(likes?|views?|喜欢|浏览|收藏|bookmarks?)/i.test(text) && /[\d,.万千kK]/.test(text)) return '';
         if (/\b(?:prompt|prompts)\s+by\s+@?[a-zA-Z0-9_]{1,20}\b|\|\s*MeiGen\b/i.test(text)) return '';
@@ -1440,11 +1561,21 @@
         target.original_work_url = target.original_work_url || detailItem.original_work_url || '';
         const targetAuthorSource = String(target.author_identity_source || '');
         const detailAuthorSource = String(detailItem.author_identity_source || '');
-        if (detailAuthorSource === 'hover' && targetAuthorSource !== 'hover') {
+        const targetAuthorName = normalizeAuthorNameForMerge(target.author_name || '');
+        const targetPrompt = normalizeText(target.prompt_text || '', 20000);
+        const targetAuthorMatchesPrompt = Boolean(
+            targetAuthorName
+            && targetPrompt
+            && targetAuthorName.toLowerCase() === targetPrompt.toLowerCase()
+        );
+        const targetHasReliableHoverAuthor = targetAuthorSource === 'hover'
+            && Boolean(targetAuthorName)
+            && !targetAuthorMatchesPrompt;
+        if (detailAuthorSource === 'hover' && !targetHasReliableHoverAuthor) {
             target.author_name = normalizeAuthorNameForMerge(detailItem.author_name || '');
             target.author_handle = detailItem.author_handle || target.author_handle || '';
             target.author_identity_source = 'hover';
-        } else if (targetAuthorSource !== 'hover') {
+        } else if (!targetHasReliableHoverAuthor) {
             target.author_name = chooseBetterAuthorName(target.author_name, detailItem.author_name);
             target.author_handle = detailItem.author_handle || target.author_handle || '';
             target.author_identity_source = detailAuthorSource || targetAuthorSource;
@@ -1455,7 +1586,12 @@
         target.expected_image_count = expectedCount || target.expected_image_count || detailItem.expected_image_count || 0;
         target.detail_expected_count_authoritative = Boolean(target.detail_expected_count_authoritative || detailExpectedCountIsAuthoritative);
         target.detail_image_count_authoritative = Boolean(target.detail_image_count_authoritative || detailCountIsAuthoritative);
-        target.prompt_text = chooseBetterPrompt(target.prompt_text, detailItem.prompt_text);
+        if (detailItem.prompt_complete && detailItem.prompt_text) {
+            target.prompt_text = detailItem.prompt_text;
+            target.prompt_complete = true;
+        } else if (!target.prompt_complete) {
+            target.prompt_text = chooseBetterPrompt(target.prompt_text, detailItem.prompt_text);
+        }
         const detailImagesAreIncomplete = detailExpectedCount > 0 && detailImageCount > 0 && detailImageCount < detailExpectedCount;
         target.image_sources = shouldKeepCurrentImages
             ? mergeImageSources(trustedCurrentImages, trustedDetailImages, imageLimit)
@@ -1734,9 +1870,22 @@
         return true;
     }
 
-    function needsInteractiveDetail(item = {}) {
-        return promptNeedsDetailEnrichment(item.prompt_text || '')
-            || (Array.isArray(item.image_sources) && item.image_sources.length <= 1);
+    function needsInteractiveDetail(item = {}, { requireFavoriteCount = false } = {}) {
+        const images = Array.isArray(item.image_sources) ? item.image_sources : [];
+        const expectedImageCount = Number(item.expected_image_count || 0);
+        const hasAuthoritativeImageCount = Boolean(
+            item.detail_expected_count_authoritative || item.detail_image_count_authoritative
+        );
+        const imageCountIncomplete = hasAuthoritativeImageCount
+            ? images.length < Math.max(1, expectedImageCount)
+            : images.length <= 1;
+        const missingSource = !String(item.original_work_url || '').trim()
+            || !String(item.author_name || '').trim()
+            || !String(item.author_handle || '').trim();
+        return itemPromptNeedsDetailEnrichment(item)
+            || imageCountIncomplete
+            || missingSource
+            || (requireFavoriteCount && Number(item.favorite_count || 0) <= 0);
     }
 
     function hasBetterDetailThanBase(detailItems = [], item = {}, collector = getCollector()) {
@@ -1744,7 +1893,7 @@
         const wantedImages = expectedCount > 0 ? expectedCount : Math.max(2, (item.image_sources || []).length + 1);
         const hasEnoughImages = detailItems.some((detailItem) => (detailItem.image_sources || []).length >= wantedImages);
         const hasPrompt = hasCompletePromptData(detailItems, collector);
-        const basePromptNeedsDetail = promptNeedsDetailEnrichment(item.prompt_text || '');
+        const basePromptNeedsDetail = itemPromptNeedsDetailEnrichment(item);
         if (basePromptNeedsDetail && !hasPrompt) return false;
         if (basePromptNeedsDetail && hasPrompt) return true;
         if ((item.image_sources || []).length <= 1 && hasEnoughImages) return true;
@@ -1768,13 +1917,20 @@
         }
         const target = getCardDetailClickTarget(scope, item);
         const beforeUrl = window.location.href;
+        const navigationAnchor = target?.closest?.('a[href]');
+        if (navigationAnchor) {
+            logDiagnostic('detail-current-navigation-guarded', {
+                sourceItemId: item.source_item_id || '',
+                href: navigationAnchor.href || navigationAnchor.getAttribute?.('href') || ''
+            });
+        }
         try {
             try {
                 target.scrollIntoView?.({ block: 'center', inline: 'center' });
             } catch (_) {
                 // Best-effort only.
             }
-            dispatchSyntheticClick(target);
+            dispatchSyntheticClick(target, { preventNavigation: true });
             await sleep(700);
             await refreshStructuredDataCache();
             logDiagnostic('detail-current-opened', {
@@ -1789,7 +1945,8 @@
             const startedAt = Date.now();
             while (Date.now() - startedAt < DETAIL_FRAME_TIMEOUT_MS) {
                 const promptPanel = findDetailPromptPanel(document);
-                const currentMatchesTarget = currentDetailUrlMatchesTarget(item, window.location.href);
+                const currentMatchesTarget = currentDetailUrlMatchesTarget(item, window.location.href)
+                    || (window.location.href === beforeUrl && Boolean(promptPanel));
                 const detailExpectedCount = currentMatchesTarget ? getDetailExpectedCountFromDocument(document) : 0;
                 if (promptPanel && currentMatchesTarget) await expandPromptSection(promptPanel);
                 if (!copiedPrompt && promptPanel && currentMatchesTarget) {
@@ -1867,8 +2024,8 @@
             return lastItems;
         } finally {
             closeOpenDetailView();
-            if (window.location.href !== beforeUrl && typeof history.back === 'function') {
-                history.back();
+            if (window.location.href !== beforeUrl && typeof history.replaceState === 'function') {
+                history.replaceState(history.state, '', beforeUrl);
             }
             await sleep(300);
         }
@@ -1899,11 +2056,12 @@
         frame.setAttribute('aria-hidden', 'true');
         frame.style.cssText = [
             'position:fixed',
-            'left:-12000px',
+            'left:0',
             'top:0',
-            'width:1024px',
-            'height:900px',
-            'opacity:0',
+            'width:min(1024px, 100vw)',
+            'height:min(900px, 100vh)',
+            'opacity:0.001',
+            'z-index:-2147483647',
             'pointer-events:none',
             'border:0'
         ].join(';');
@@ -1917,6 +2075,8 @@
         let lastItems = [];
         let copiedPrompt = '';
         let detailActionAttempts = 0;
+        let stableSignature = '';
+        let stableRounds = 0;
         try {
             await new Promise((resolve) => {
                 let done = false;
@@ -1954,7 +2114,22 @@
                     lastItems = expandDetailItemsToExpectedCount(lastItems, detailExpectedCount, collector);
                     lastItems = enrichDetailItemsWithVisibleAuthor(lastItems, documentRef, collector);
                     lastItems = filterUsableDetailItems(lastItems, collector);
-                    if (hasUsefulDetailData(lastItems)
+                    const signature = JSON.stringify({
+                        expected: detailExpectedCount,
+                        images: lastItems.map((item) => getItemImageUrlPreview(item, 24)),
+                        prompts: lastItems.map((item) => String(item.prompt_text || '').trim().length)
+                    });
+                    if (signature === stableSignature) {
+                        stableRounds += 1;
+                    } else {
+                        stableSignature = signature;
+                        stableRounds = 0;
+                    }
+                    const elapsedMs = Date.now() - startedAt;
+                    const frameSettled = detailExpectedCount > 0
+                        || (elapsedMs >= DETAIL_FRAME_MIN_SETTLE_MS && stableRounds >= DETAIL_FRAME_STABLE_ROUNDS);
+                    if (frameSettled
+                        && hasUsefulDetailData(lastItems)
                         && hasCompletePromptData(lastItems, collector)
                         && hasExpectedDetailImages(lastItems)) {
                         return lastItems;
@@ -1970,6 +2145,7 @@
 
     async function fetchDetailItems(url, collector) {
         let fetchedItems = [];
+        let fetchedExpectedCount = 0;
         let fetchError = null;
         try {
             const response = await fetch(url, {
@@ -1985,6 +2161,7 @@
             const html = await response.text();
             const documentRef = new DOMParser().parseFromString(html, 'text/html');
             const detailExpectedCount = getDetailExpectedCountFromDocument(documentRef);
+            fetchedExpectedCount = detailExpectedCount;
             fetchedItems = collector.collectMeigenGalleryItems(documentRef, buildCollectionOptions({
                 baseUrl: url,
                 expectedDetailUrl: url,
@@ -1999,7 +2176,8 @@
             fetchError = error;
         }
 
-        if (hasUsefulDetailData(fetchedItems)
+        if (fetchedExpectedCount > 0
+            && hasUsefulDetailData(fetchedItems)
             && hasCompletePromptData(fetchedItems, collector)
             && hasExpectedDetailImages(fetchedItems)) {
             return fetchedItems;
@@ -2015,7 +2193,11 @@
         return mergedItems;
     }
 
-    async function enrichPayloadWithDetails(basePayload, { retryFailed = false } = {}) {
+    async function enrichPayloadWithDetails(basePayload, {
+        retryFailed = false,
+        requireFavoriteCount = false,
+        streamMessage = null
+    } = {}) {
         const collector = getCollector();
         if (!collector?.mergeCollectedItems) return basePayload;
 
@@ -2025,7 +2207,7 @@
             : [];
         const interactiveItems = retryFailed
             ? []
-            : baseItems;
+            : baseItems.filter((item) => needsInteractiveDetail(item, { requireFavoriteCount }));
         const totalJobs = retryDetailUrls.length + interactiveItems.length;
         logDiagnostic('detail-enrich-start', {
             retryFailed,
@@ -2041,20 +2223,38 @@
         detailJob.total = totalJobs;
         detailJob.failed = [];
         detailJob.lastError = '';
+        rememberSessionPayload(basePayload, summarizePayload(basePayload));
+        await persistSessionSnapshot();
+        if (streamMessage) queueStreamStage(baseItems, streamMessage);
 
         const detailItems = [];
         const resolvedKeys = new Set();
+        const saveCheckpoint = () => {
+            const checkpointItems = mergeDetailItemsIntoBase(baseItems, detailItems, collector);
+            const checkpointPayload = {
+                ...basePayload,
+                collected_at: new Date().toISOString(),
+                items: checkpointItems,
+                detail_fetch: {
+                    attempted: detailJob.processed,
+                    failed: detailJob.failed.length
+                }
+            };
+            detailJob.lastPayload = checkpointPayload;
+            detailJob.lastSummary = summarizePayload(checkpointPayload);
+            rememberSessionPayload(checkpointPayload, detailJob.lastSummary);
+        };
         try {
             for (const item of interactiveItems) {
                 await waitWhilePaused();
                 try {
                     const currentDetailItems = await collectDetailItemsFromCurrentCard(item, collector);
                     const hasReliableDetail = hasUsefulDetailData(currentDetailItems)
-                        && (hasCompletePromptData(currentDetailItems, collector) || !promptNeedsDetailEnrichment(item.prompt_text || ''))
+                        && (hasCompletePromptData(currentDetailItems, collector) || !itemPromptNeedsDetailEnrichment(item))
                         && hasExpectedDetailImages(currentDetailItems);
                     const hasUsefulPromptDetail = hasUsefulDetailData(currentDetailItems)
                         && hasCompletePromptData(currentDetailItems, collector)
-                        && (promptNeedsDetailEnrichment(item.prompt_text || '') || hasBetterDetailThanBase(currentDetailItems, item, collector));
+                        && (itemPromptNeedsDetailEnrichment(item) || hasBetterDetailThanBase(currentDetailItems, item, collector));
                     const hasUsefulCountDetail = currentDetailItems.some((detailItem) => isDetailExpectedCountAuthoritative(detailItem));
                     if (hasReliableDetail) {
                         detailItems.push(...currentDetailItems);
@@ -2065,7 +2265,7 @@
                         const failure = {
                             url: item.source_page_url || item.image_sources?.[0]?.url || '',
                             sourceItemId: item.source_item_id || '',
-                            message: promptNeedsDetailEnrichment(item.prompt_text || '')
+                            message: itemPromptNeedsDetailEnrichment(item)
                                 ? '详情已打开，但还没有读到提示词'
                                 : '详情已打开，但图片数量仍需复核'
                         };
@@ -2087,6 +2287,8 @@
                 } finally {
                     detailJob.processed += 1;
                 }
+                saveCheckpoint();
+                if (streamMessage) queueStreamStage(detailJob.lastPayload?.items || [], streamMessage);
                 if (detailJob.processed < totalJobs) {
                     await sleep(DETAIL_FETCH_DELAY_MS);
                 }
@@ -2094,7 +2296,7 @@
 
             const fallbackUrls = retryFailed
                 ? retryDetailUrls
-                : getDetailUrls(baseItems.filter((item) => !isDetailResolved(resolvedKeys, item)));
+                : getDetailUrls(interactiveItems.filter((item) => !isDetailResolved(resolvedKeys, item)));
 
             for (let fallbackIndex = 0; fallbackIndex < fallbackUrls.length; fallbackIndex += 1) {
                 const url = fallbackUrls[fallbackIndex];
@@ -2113,6 +2315,8 @@
                         detailJob.processed += 1;
                     }
                 }
+                saveCheckpoint();
+                if (streamMessage) queueStreamStage(detailJob.lastPayload?.items || [], streamMessage);
 
                 if (fallbackIndex + 1 < fallbackUrls.length) {
                     await sleep(DETAIL_FETCH_DELAY_MS);
@@ -2120,6 +2324,10 @@
             }
 
             const mergedItems = mergeDetailItemsIntoBase(baseItems, detailItems, collector);
+            if (streamMessage) {
+                queueStreamStage(mergedItems, streamMessage, { flush: true });
+                await streamStageState.promise;
+            }
             detailJob.failed = removeResolvedDetailFailures(detailJob.failed, mergedItems);
             detailJob.lastError = detailJob.failed[detailJob.failed.length - 1]?.message || '';
             logDiagnostic('detail-enrich-finish', {
@@ -2479,7 +2687,12 @@
         rememberSessionPayload(payload, detailJob.lastSummary);
 
         if (message.enrichDetails || message.retryFailed) {
-            payload = await enrichPayloadWithDetails(payload, { retryFailed: Boolean(message.retryFailed) });
+            if (message.streamToQueue) resetStreamStageState();
+            payload = await enrichPayloadWithDetails(payload, {
+                retryFailed: Boolean(message.retryFailed),
+                requireFavoriteCount: hasFavoriteRange,
+                streamMessage: message.streamToQueue ? message : null
+            });
             payload = applyPayloadLimits(payload, { maxItems, favoriteRange });
         }
 
@@ -2496,7 +2709,11 @@
             summary,
             detailStatus: getDetailStatus(),
             scrollStatus: getScrollStatus(),
-            pageBatchStatus: getPageBatchStatus()
+            pageBatchStatus: getPageBatchStatus(),
+            streamResult: message.streamToQueue ? {
+                batchId: streamStageState.batchId,
+                stagedCount: streamStageState.stagedCount
+            } : null
         };
     }
 
@@ -2512,8 +2729,10 @@
         }
 
         if (message?.type === MESSAGE_SESSION_STATE) {
-            sendResponse(getSessionState());
-            return false;
+            sessionRestorePromise
+                .then(() => sendResponse(getSessionState()))
+                .catch(() => sendResponse(getSessionState()));
+            return true;
         }
 
         if (message?.type === MESSAGE_DETAIL_STATUS) {

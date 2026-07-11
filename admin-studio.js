@@ -16999,17 +16999,28 @@ const galleryImportState = {
     running: false,
     uploadInFlight: false,
     statusRefreshInFlight: false,
+    autoDetectionEnabled: false,
+    autoDetectionInFlight: false,
+    autoDetectionTimer: 0,
     emptyMessage: '暂无导入内容'
 };
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-10.48';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-11.58';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
+const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
+const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 6;
+const GALLERY_IMPORT_ADAPTIVE_MIN_PARALLELISM = 1;
+const GALLERY_IMPORT_ADAPTIVE_LAUNCH_GAP_MS = 500;
+const GALLERY_IMPORT_ADAPTIVE_COOLDOWN_MS = 6000;
 const GALLERY_IMPORT_RETRY_BASE_DELAY_MS = 1800;
 const GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS = 2;
 const GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS = 3;
+const GALLERY_IMPORT_AUTO_DETECT_INTERVAL_MS = 5000;
+const GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY = 'fatherKey.galleryImport.autoDetectQueue';
+const GALLERY_IMPORT_AUTO_DETECT_LOCK_NAME = 'father-key-gallery-import-auto-upload';
 const GALLERY_IMPORT_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 function escapeGalleryImportHtml(value = '') {
@@ -17150,7 +17161,8 @@ async function runGalleryImportPipelineStageWithRetry({
     index = 0,
     total = 0,
     maxAttempts = 2,
-    reportStatus = setGalleryImportRunStatus
+    reportStatus = setGalleryImportRunStatus,
+    onRetryableError = null
 } = {}) {
     const safeAttempts = Math.max(1, Number(maxAttempts || 1));
     const progress = total ? `${index} / ${total}` : '';
@@ -17167,6 +17179,9 @@ async function runGalleryImportPipelineStageWithRetry({
             const canRetry = attempt < safeAttempts && isGalleryImportPipelineRetryableError(error);
             if (!canRetry) {
                 throw error;
+            }
+            if (typeof onRetryableError === 'function') {
+                onRetryableError(error);
             }
             const delayMs = GALLERY_IMPORT_RETRY_BASE_DELAY_MS * attempt;
             reportStatus(
@@ -17230,7 +17245,11 @@ function getGalleryImportSettings() {
         favorite_max: normalizeGalleryImportNumber(document.getElementById('galleryImportFavoriteMax')?.value, 0, 1000000),
         max_items: normalizeGalleryImportNumber(document.getElementById('galleryImportMaxItems')?.value, 50, 1000) || 50,
         max_images_per_item: normalizeGalleryImportNumber(document.getElementById('galleryImportMaxImages')?.value, 12, 24) || 12,
-        parallelism: normalizeGalleryImportNumber(document.getElementById('galleryImportParallelism')?.value, 2, 3) || 2,
+        parallelism: normalizeGalleryImportNumber(
+            document.getElementById('galleryImportParallelism')?.value,
+            2,
+            GALLERY_IMPORT_MAX_PARALLELISM
+        ) || 2,
         default_status: 'review',
         duplicate_policy: 'skip',
         auto_cleanup: true,
@@ -17370,6 +17389,8 @@ async function mutateGalleryImport(action, payload = {}) {
 function normalizeGalleryImportRawItem(item = {}) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
     const promptText = String(item.prompt_text || item.promptText || item.prompt || '').trim();
+    const originalWorkUrl = String(item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || '').trim();
+    const authorHandle = getGalleryImportAuthorHandle(item, originalWorkUrl);
     const imageSource = item.image_sources || item.imageSources || item.images || item.image_urls || item.imageUrls || [];
     const imageCount = Array.isArray(imageSource)
         ? imageSource.length
@@ -17381,9 +17402,26 @@ function normalizeGalleryImportRawItem(item = {}) {
     return {
         ...item,
         prompt_text: promptText,
+        original_work_url: originalWorkUrl,
+        author_handle: authorHandle,
         image_sources: imageSource,
         __imageCount: expectedImageCount
     };
+}
+
+function getGalleryImportAuthorHandle(item = {}, originalWorkUrl = '') {
+    const explicit = String(item?.author_handle || item?.authorHandle || item?.author_id || item?.authorId || item?.handle || '').trim();
+    if (explicit) return explicit.startsWith('@') ? explicit : `@${explicit}`;
+    try {
+        const parsed = new URL(String(originalWorkUrl || ''));
+        if (!/(^|\.)(?:x|twitter)\.com$/i.test(parsed.hostname)) return '';
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        if (parts.length < 3 || String(parts[1]).toLowerCase() !== 'status') return '';
+        if (!parts[0] || ['i', 'intent', 'share'].includes(String(parts[0]).toLowerCase())) return '';
+        return `@${String(parts[0]).replace(/^@/, '')}`;
+    } catch (_) {
+        return '';
+    }
 }
 
 function parseGalleryImportRawInput(rawText = '') {
@@ -17684,7 +17722,7 @@ function getGalleryImportItemReadinessIssue(item = {}) {
     const imageCount = getGalleryImportDisplayImageCount(item);
     const originalWorkUrl = String(item?.original_work_url || item?.originalWorkUrl || item?.source_url || item?.sourceUrl || '').trim();
     const authorName = String(item?.author_name || item?.authorName || item?.nickname || item?.creator || '').trim();
-    const authorHandle = String(item?.author_handle || item?.authorHandle || item?.author_id || item?.authorId || item?.handle || '').trim();
+    const authorHandle = getGalleryImportAuthorHandle(item, originalWorkUrl);
     const status = String(item?.status || '').trim();
 
     if (finalPromptId || duplicatePromptId) {
@@ -17883,6 +17921,9 @@ async function runGalleryImportPostSavePipeline(prompt = {}, item = {}, context 
     const reportStatus = typeof context.reportStatus === 'function'
         ? context.reportStatus
         : setGalleryImportRunStatus;
+    const onPressureSignal = typeof context.onPressureSignal === 'function'
+        ? context.onPressureSignal
+        : null;
     let currentPrompt = prompt;
     const refreshPrompt = async () => {
         const refreshed = await fetchAdminPromptItem(currentPrompt.id, {
@@ -17909,6 +17950,7 @@ async function runGalleryImportPostSavePipeline(prompt = {}, item = {}, context 
                 total,
                 maxAttempts: GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS,
                 reportStatus,
+                onRetryableError: onPressureSignal,
                 operation: async () => {
                     currentPrompt = await reanalyzeSinglePrompt(currentPrompt, writableSite);
                     await refreshPrompt();
@@ -17933,6 +17975,7 @@ async function runGalleryImportPostSavePipeline(prompt = {}, item = {}, context 
                 total,
                 maxAttempts: GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS,
                 reportStatus,
+                onRetryableError: onPressureSignal,
                 operation: async () => {
                     const result = await completePromptBilingualFields(currentPrompt, writableSite, {
                         mode: 'full'
@@ -18075,12 +18118,15 @@ async function stageGalleryImportItems(items = []) {
 }
 
 async function loadLatestGalleryImportBatch(options = {}) {
-    const payload = await fetchGalleryImportApi({ limit: 1 });
+    const site = window.AdminSiteFilter?.getSiteFilter?.() || 'cn';
+    const payload = await fetchGalleryImportApi({ limit: 1, site });
     const batch = payload.batches?.[0] || null;
     if (!batch) {
         const hasPreviewItems = galleryImportState.items.some((item) => String(item?.id || '').startsWith('preview-'));
         setGalleryImportEmptyMessage('还没有队列内容。请先在采集器点“送入队列”；如果复制的是诊断或下载文件，点“粘贴结果”或“导入抓取结果”，再点“开始任务”。');
-        setGalleryImportRunStatus(hasPreviewItems ? '预览还未写入队列' : '还没有送入队列');
+        if (!options.silent) {
+            setGalleryImportRunStatus(hasPreviewItems ? '预览还未写入队列' : '还没有送入队列');
+        }
         if (hasPreviewItems) {
             renderGalleryImportQueue(galleryImportState.items);
         } else {
@@ -18094,8 +18140,77 @@ async function loadLatestGalleryImportBatch(options = {}) {
     setGalleryImportItems(detail.items || [], {
         includeCleaned: options.includeCleaned === true
     });
-    setGalleryImportRunStatus('队列已刷新');
+    if (!options.silent) setGalleryImportRunStatus('队列已刷新');
     return detail;
+}
+
+function isGalleryImportItemAutoUploadable(item = {}) {
+    const status = String(item?.status || '').trim();
+    return status === 'staged' || status === 'queued';
+}
+
+function setGalleryImportAutoDetectionEnabled(enabled, options = {}) {
+    galleryImportState.autoDetectionEnabled = Boolean(enabled);
+    const toggle = document.getElementById('galleryImportAutoDetectQueue');
+    if (toggle) toggle.checked = galleryImportState.autoDetectionEnabled;
+    if (options.persist !== false) {
+        try {
+            localStorage.setItem(
+                GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY,
+                galleryImportState.autoDetectionEnabled ? '1' : '0'
+            );
+        } catch (_) {
+            // Local storage may be unavailable in hardened browser contexts.
+        }
+    }
+    if (galleryImportState.autoDetectionTimer) {
+        clearInterval(galleryImportState.autoDetectionTimer);
+        galleryImportState.autoDetectionTimer = 0;
+    }
+    if (galleryImportState.autoDetectionEnabled) {
+        galleryImportState.autoDetectionTimer = window.setInterval(() => {
+            void runGalleryImportAutoDetectionCycle();
+        }, GALLERY_IMPORT_AUTO_DETECT_INTERVAL_MS);
+        if (options.runImmediately !== false) {
+            void runGalleryImportAutoDetectionCycle();
+        }
+    }
+}
+
+async function runGalleryImportAutoDetectionCycle() {
+    if (!galleryImportState.autoDetectionEnabled
+        || galleryImportState.autoDetectionInFlight
+        || galleryImportState.running
+        || galleryImportState.uploadInFlight
+        || galleryImportState.statusRefreshInFlight) {
+        return null;
+    }
+    const runCycle = async () => {
+        if (!galleryImportState.autoDetectionEnabled || galleryImportState.autoDetectionInFlight) return null;
+        galleryImportState.autoDetectionInFlight = true;
+        try {
+            await loadLatestGalleryImportBatch({ silent: true });
+            const hasNewQueueItems = galleryImportState.items.some(isGalleryImportItemAutoUploadable);
+            if (!hasNewQueueItems) return null;
+            const pendingCount = galleryImportState.items.filter(isGalleryImportItemAutoUploadable).length;
+            setGalleryImportRunStatus(`服务端 Worker 正在处理 ${pendingCount} 条队列任务，可安全关闭 Admin Studio`);
+            return { pendingCount };
+        } catch (error) {
+            console.warn('[GalleryImport] Auto queue detection failed:', error);
+            setGalleryImportRunStatus(`自动检测失败：${normalizeGalleryImportFailureMessage(error)}`);
+            return null;
+        } finally {
+            galleryImportState.autoDetectionInFlight = false;
+        }
+    };
+    if (navigator.locks?.request) {
+        return navigator.locks.request(
+            GALLERY_IMPORT_AUTO_DETECT_LOCK_NAME,
+            { ifAvailable: true },
+            (lock) => lock ? runCycle() : null
+        );
+    }
+    return runCycle();
 }
 
 async function refreshGalleryImportProcessingStatus(options = {}) {
@@ -18212,21 +18327,26 @@ async function refreshGalleryImportProcessingStatus(options = {}) {
     }
 }
 
-async function runGalleryImportUploadQueue() {
+async function runGalleryImportUploadQueue(options = {}) {
     if (galleryImportState.uploadInFlight || galleryImportState.statusRefreshInFlight) return;
     const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: 'Gallery 导入助手' });
     if (!writableSite) return;
 
-    try {
-        await refreshGalleryImportProcessingStatus({ silent: true });
-    } catch (error) {
-        console.warn('[GalleryImport] Pre-upload status refresh failed, continuing with visible queue:', error);
+    if (!options.skipStatusRefresh) {
+        try {
+            await refreshGalleryImportProcessingStatus({ silent: true });
+        } catch (error) {
+            console.warn('[GalleryImport] Pre-upload status refresh failed, continuing with visible queue:', error);
+        }
     }
 
-    let uploadable = galleryImportState.items.filter(isGalleryImportItemUploadable);
+    const uploadableMatcher = options.automatic
+        ? isGalleryImportItemAutoUploadable
+        : isGalleryImportItemUploadable;
+    let uploadable = galleryImportState.items.filter(uploadableMatcher);
     if (!uploadable.length && !galleryImportState.items.length) {
         await loadLatestGalleryImportBatch();
-        uploadable = galleryImportState.items.filter(isGalleryImportItemUploadable);
+        uploadable = galleryImportState.items.filter(uploadableMatcher);
     }
 
     if (!uploadable.length) {
@@ -18298,14 +18418,23 @@ async function runGalleryImportUploadQueue() {
     galleryImportState.uploadInFlight = true;
     const latestBatch = galleryImportState.batch;
     const settings = getGalleryImportSettings();
-    const parallelism = Math.max(1, Math.min(Number(settings.parallelism || 2), readyItems.length, 3));
-    setGalleryImportRunStatus(`并行处理准备中：同时 ${parallelism} 条`);
+    const parallelismCeiling = Math.max(
+        1,
+        Math.min(Number(settings.parallelism || 2), readyItems.length, GALLERY_IMPORT_MAX_PARALLELISM)
+    );
+    let adaptiveParallelism = Math.min(
+        parallelismCeiling,
+        GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM
+    );
+    let stableCompletions = 0;
+    let pressureCooldownUntil = 0;
+    setGalleryImportRunStatus(`自适应并发准备中：当前 ${adaptiveParallelism}，上限 ${parallelismCeiling}`);
     let completed = 0;
     let active = 0;
     const failureStageCounts = {};
     const updateParallelStatus = (itemStatus = '') => {
         setGalleryImportRunStatus(
-            `${itemStatus ? `${itemStatus} · ` : ''}总进度 ${completed} / ${readyItems.length}，处理中 ${active} 条`
+            `${itemStatus ? `${itemStatus} · ` : ''}总进度 ${completed} / ${readyItems.length}，处理中 ${active} 条，并发阈值 ${adaptiveParallelism} / ${parallelismCeiling}`
         );
     };
     const processGalleryImportItem = async (item, index) => {
@@ -18325,6 +18454,7 @@ async function runGalleryImportUploadQueue() {
         const hadSavedPromptReference = Boolean(getGalleryImportSavedPromptReferenceId(item));
         let justSaved = false;
         let skipped = false;
+        let pressureSignaled = false;
         try {
             reportStatus(`保存图片 ${index + 1} / ${readyItems.length}`);
             pipelinePrompt = await loadGalleryImportSavedPrompt(item, writableSite);
@@ -18396,12 +18526,16 @@ async function runGalleryImportUploadQueue() {
                 total: readyItems.length,
                 justSaved,
                 processingState,
-                reportStatus
+                reportStatus,
+                onPressureSignal: () => {
+                    pressureSignaled = true;
+                }
             });
             return {
                 published: 1,
                 savedOnly: 0,
-                failed: 0
+                failed: 0,
+                pressureLimited: pressureSignaled
             };
         } catch (error) {
             const pipelineError = error?.galleryImportStage
@@ -18433,7 +18567,8 @@ async function runGalleryImportUploadQueue() {
             return {
                 published: 0,
                 savedOnly: pipelinePrompt ? 1 : 0,
-                failed: 1
+                failed: 1,
+                pressureLimited: pressureSignaled || isGalleryImportPipelineRetryableError(pipelineError)
             };
         } finally {
             active = Math.max(0, active - 1);
@@ -18444,18 +18579,67 @@ async function runGalleryImportUploadQueue() {
 
     const results = new Array(readyItems.length);
     let nextIndex = 0;
-    try {
-        const workers = Array.from({ length: parallelism }, async () => {
-            while (nextIndex < readyItems.length) {
-                const index = nextIndex;
-                nextIndex += 1;
-                results[index] = await processGalleryImportItem(readyItems[index], index);
-                if (nextIndex < readyItems.length) {
-                    await sleep(GALLERY_IMPORT_STAGE_GAP_MS);
-                }
+    const runningTasks = new Set();
+    const applyAdaptivePressure = (result = {}) => {
+        if (result.pressureLimited) {
+            const previousParallelism = adaptiveParallelism;
+            adaptiveParallelism = Math.max(
+                GALLERY_IMPORT_ADAPTIVE_MIN_PARALLELISM,
+                Math.floor(adaptiveParallelism / 2)
+            );
+            stableCompletions = 0;
+            pressureCooldownUntil = Date.now() + GALLERY_IMPORT_ADAPTIVE_COOLDOWN_MS;
+            if (adaptiveParallelism < previousParallelism) {
+                updateParallelStatus(`检测到压力，并发 ${previousParallelism} → ${adaptiveParallelism}，冷却 6 秒`);
             }
-        });
-        await Promise.all(workers);
+            return;
+        }
+        if (Number(result.failed || 0) > 0) {
+            stableCompletions = 0;
+            return;
+        }
+        stableCompletions += 1;
+        if (stableCompletions >= adaptiveParallelism && adaptiveParallelism < parallelismCeiling) {
+            adaptiveParallelism += 1;
+            stableCompletions = 0;
+            updateParallelStatus(`运行稳定，并发阈值提升至 ${adaptiveParallelism}`);
+        }
+    };
+    const launchAdaptiveTask = (index) => {
+        let taskPromise;
+        taskPromise = processGalleryImportItem(readyItems[index], index)
+            .then((result) => {
+                results[index] = result;
+                applyAdaptivePressure(result);
+            })
+            .finally(() => {
+                runningTasks.delete(taskPromise);
+            });
+        runningTasks.add(taskPromise);
+    };
+    try {
+        while (nextIndex < readyItems.length || runningTasks.size > 0) {
+            const cooldownRemaining = Math.max(0, pressureCooldownUntil - Date.now());
+            if (
+                nextIndex < readyItems.length
+                && runningTasks.size < adaptiveParallelism
+                && cooldownRemaining <= 0
+            ) {
+                launchAdaptiveTask(nextIndex);
+                nextIndex += 1;
+                if (nextIndex < readyItems.length) {
+                    await sleep(GALLERY_IMPORT_ADAPTIVE_LAUNCH_GAP_MS);
+                }
+                continue;
+            }
+            if (runningTasks.size > 0) {
+                await Promise.race(runningTasks);
+                continue;
+            }
+            if (cooldownRemaining > 0) {
+                await sleep(Math.min(cooldownRemaining, GALLERY_IMPORT_ADAPTIVE_COOLDOWN_MS));
+            }
+        }
     } finally {
         if (latestBatch) {
             galleryImportState.batch = latestBatch;
@@ -18629,6 +18813,26 @@ function initGalleryImportAssistant() {
             loadGalleryImportRawText(rawInput.value, '已读取');
         });
     }
+
+    const autoDetectToggle = document.getElementById('galleryImportAutoDetectQueue');
+    if (autoDetectToggle && autoDetectToggle.dataset.bound !== '1') {
+        autoDetectToggle.dataset.bound = '1';
+        autoDetectToggle.addEventListener('change', () => {
+            const enabled = Boolean(autoDetectToggle.checked);
+            setGalleryImportAutoDetectionEnabled(enabled);
+            setGalleryImportRunStatus(enabled ? '自动检测队列已开启' : '自动检测已关闭，请手动刷新队列');
+        });
+    }
+    let autoDetectionEnabled = false;
+    try {
+        autoDetectionEnabled = localStorage.getItem(GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY) === '1';
+    } catch (_) {
+        autoDetectionEnabled = false;
+    }
+    setGalleryImportAutoDetectionEnabled(autoDetectionEnabled, {
+        persist: false,
+        runImmediately: autoDetectionEnabled
+    });
 
     setGalleryImportMode(galleryImportState.mode);
     updateGalleryImportProgress();

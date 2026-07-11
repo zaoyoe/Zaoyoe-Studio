@@ -34,6 +34,11 @@ const IMPORT_ITEM_SELECT = [
     'imported_at',
     'cleaned_at',
     'cleanup_after',
+    'worker_name',
+    'lease_expires_at',
+    'processing_attempts',
+    'next_attempt_at',
+    'pipeline_stage',
     'created_at',
     'updated_at'
 ].join(', ');
@@ -76,6 +81,21 @@ function normalizeAuthorHandle(value = '') {
     const raw = normalizeText(value, 120).replace(/\s+/g, '');
     if (!raw) return '';
     return raw.startsWith('@') ? raw : `@${raw}`;
+}
+
+function deriveAuthorHandleFromOriginalWorkUrl(value = '') {
+    const normalizedUrl = normalizeOptionalUrl(value);
+    if (!normalizedUrl) return '';
+    try {
+        const parsed = new URL(normalizedUrl);
+        if (!/(^|\.)(?:x|twitter)\.com$/i.test(parsed.hostname)) return '';
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        if (parts.length < 3 || String(parts[1]).toLowerCase() !== 'status') return '';
+        if (!parts[0] || ['i', 'intent', 'share'].includes(String(parts[0]).toLowerCase())) return '';
+        return normalizeAuthorHandle(parts[0]);
+    } catch (_) {
+        return '';
+    }
 }
 
 function normalizeImportSource(value = '') {
@@ -216,7 +236,8 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
     const promptHash = hashPromptText(promptText);
     const originalWorkUrl = normalizeOptionalUrl(item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || item.x_url || item.xUrl || item.twitter_url || item.twitterUrl || '');
     const authorName = normalizeText(item.author_name || item.authorName || item.nickname || item.creator || '', 200);
-    const authorHandle = normalizeAuthorHandle(item.author_handle || item.authorHandle || item.author_id || item.authorId || item.handle || '');
+    const authorHandle = normalizeAuthorHandle(item.author_handle || item.authorHandle || item.author_id || item.authorId || item.handle || '')
+        || deriveAuthorHandleFromOriginalWorkUrl(originalWorkUrl);
     const missingReasons = [];
 
     if (!promptText) missingReasons.push('没有抓到提示词');
@@ -257,7 +278,8 @@ function getImportItemUploadBlockReason(item = {}) {
     const imageSources = getItemImageSourceUrls(item);
     const originalWorkUrl = normalizeOptionalUrl(item.original_work_url || '');
     const authorName = normalizeText(item.author_name || '', 200);
-    const authorHandle = normalizeAuthorHandle(item.author_handle || '');
+    const authorHandle = normalizeAuthorHandle(item.author_handle || '')
+        || deriveAuthorHandleFromOriginalWorkUrl(originalWorkUrl);
     const reasons = [];
 
     if (!promptText) reasons.push('没有抓到提示词');
@@ -585,7 +607,8 @@ function buildPromptPayloadFromImportItem(item, {
         image_assets: imageAssets,
         source_url: normalizeOptionalUrl(item.original_work_url || ''),
         source_author_name: normalizeText(item.author_name || '', 200),
-        source_author_handle: normalizeAuthorHandle(item.author_handle || ''),
+        source_author_handle: normalizeAuthorHandle(item.author_handle || '')
+            || deriveAuthorHandleFromOriginalWorkUrl(item.original_work_url || ''),
         ai_tags: aiTags,
         updated_at: new Date().toISOString()
     };
@@ -704,32 +727,44 @@ async function findExistingPromptDuplicates(supabase, rows = []) {
 
     const duplicatesBySourceUrl = new Map();
     const duplicatesByPromptHash = new Map();
+    const sourceUrlSet = new Set(sourceUrls);
+    const promptHashSet = new Set(promptTexts.map(hashPromptText).filter(Boolean));
+    const matchedSourceUrls = new Set();
+    const matchedPromptHashes = new Set();
 
     const recordPrompts = (prompts = []) => {
         prompts.forEach((prompt) => {
             const sourceUrl = normalizeOptionalUrl(prompt.source_url || '');
-            if (sourceUrl) duplicatesBySourceUrl.set(sourceUrl, prompt.id);
+            if (sourceUrl && sourceUrlSet.has(sourceUrl)) {
+                duplicatesBySourceUrl.set(sourceUrl, prompt.id);
+                matchedSourceUrls.add(sourceUrl);
+            }
             [prompt.prompt_text, prompt.prompt_text_en, prompt.prompt_text_zh].forEach((text) => {
                 const promptHash = hashPromptText(text || '');
-                if (promptHash) duplicatesByPromptHash.set(promptHash, prompt.id);
+                if (promptHash && promptHashSet.has(promptHash)) {
+                    duplicatesByPromptHash.set(promptHash, prompt.id);
+                    matchedPromptHashes.add(promptHash);
+                }
             });
         });
     };
-    const queryChunks = async (field, values) => {
-        for (let index = 0; index < values.length; index += 100) {
-            const { data, error } = await supabase
-                .from('prompts')
-                .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh')
-                .in(field, values.slice(index, index + 100));
-            if (error) throw error;
-            recordPrompts(data || []);
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+            .from('prompts')
+            .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh')
+            .order('id', { ascending: true })
+            .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        const page = data || [];
+        recordPrompts(page);
+        if (
+            page.length < pageSize
+            || (matchedSourceUrls.size === sourceUrlSet.size && matchedPromptHashes.size === promptHashSet.size)
+        ) {
+            break;
         }
-    };
-
-    await queryChunks('source_url', sourceUrls);
-    await queryChunks('prompt_text', promptTexts);
-    await queryChunks('prompt_text_en', promptTexts);
-    await queryChunks('prompt_text_zh', promptTexts);
+    }
 
     return {
         bySourceUrl: duplicatesBySourceUrl,
@@ -765,7 +800,7 @@ async function findExistingPromptForImportItem(supabase, item = {}) {
         }
     }
 
-    if (promptText) {
+    if (promptText && promptText.length <= 500) {
         for (const field of ['prompt_text', 'prompt_text_en', 'prompt_text_zh']) {
             const { data, error } = await supabase
                 .from('prompts')
@@ -816,7 +851,14 @@ async function stageImportItems(supabase, user, body) {
         throw error;
     }
 
-    const existingDuplicates = await findExistingPromptDuplicates(supabase, rows);
+    let existingDuplicates;
+    try {
+        existingDuplicates = await findExistingPromptDuplicates(supabase, rows);
+    } catch (error) {
+        const wrappedError = new Error(`提示词仓库去重检查失败：${error.message || '数据库查询失败'}`);
+        wrappedError.statusCode = 502;
+        throw wrappedError;
+    }
     rows.forEach((row, index) => {
         const sourceDuplicateId = row.original_work_url
             ? existingDuplicates.bySourceUrl.get(row.original_work_url)
@@ -833,15 +875,44 @@ async function stageImportItems(supabase, user, body) {
         }
     });
 
-    const rowsToInsert = rows.filter((_row, index) => !duplicateIndexes.has(index));
+    let rowsToInsert = rows.filter((_row, index) => !duplicateIndexes.has(index));
     let data = [];
+    if (batchId && rowsToInsert.length) {
+        const sourceItemIds = rowsToInsert.map((row) => row.source_item_id).filter(Boolean);
+        const { data: existingRows, error: existingError } = sourceItemIds.length
+            ? await supabase.from('prompt_import_items').select('id, source_item_id, status').eq('batch_id', batch.id).in('source_item_id', sourceItemIds)
+            : { data: [], error: null };
+        if (existingError) throw existingError;
+        const existingBySourceItemId = new Map((existingRows || []).map((row) => [String(row.source_item_id || ''), row]));
+        const newRows = [];
+        for (const row of rowsToInsert) {
+            const existing = existingBySourceItemId.get(String(row.source_item_id || ''));
+            if (!existing) {
+                newRows.push(row);
+                continue;
+            }
+            if (!['staged', 'needs_review', 'failed'].includes(String(existing.status || ''))) continue;
+            const { batch_id: _batchId, ...updatePayload } = row;
+            const updateResult = await supabase.from('prompt_import_items').update({
+                ...updatePayload,
+                worker_name: null,
+                lease_expires_at: null,
+                next_attempt_at: null,
+                pipeline_stage: 'staged',
+                processing_attempts: 0
+            }).eq('id', existing.id).select(IMPORT_ITEM_SELECT).single();
+            if (updateResult.error) throw updateResult.error;
+            if (updateResult.data) data.push(updateResult.data);
+        }
+        rowsToInsert = newRows;
+    }
     if (rowsToInsert.length) {
         const result = await supabase
             .from('prompt_import_items')
             .insert(rowsToInsert)
             .select(IMPORT_ITEM_SELECT);
         if (result.error) throw result.error;
-        data = result.data || [];
+        data.push(...(result.data || []));
     }
 
     const updatedBatch = await updateBatchStats(supabase, batch.id);
@@ -1219,9 +1290,14 @@ async function markImportItemsFailed(supabase, user, body) {
 
 async function listImportBatches(supabase, searchParams) {
     const limit = normalizePositiveInteger(searchParams.get('limit'), 20, MAX_IMPORT_PAGE_SIZE);
-    const { data, error } = await supabase
+    const site = normalizeText(searchParams.get('site'), 20);
+    let request = supabase
         .from('prompt_import_batches')
-        .select(IMPORT_BATCH_SELECT)
+        .select(IMPORT_BATCH_SELECT);
+    if (site) {
+        request = request.eq('site', normalizeAdminSite(site, { defaultValue: 'cn' }));
+    }
+    const { data, error } = await request
         .order('updated_at', { ascending: false })
         .limit(limit);
     if (error) throw error;
@@ -1334,11 +1410,16 @@ module.exports = async (req, res) => {
 module.exports._private = {
     hashPromptText,
     normalizeImageSources,
+    deriveAuthorHandleFromOriginalWorkUrl,
     normalizeImportItemPayload,
+    importSingleItem,
+    loadImportBatch,
+    updateBatchStats,
     buildPromptPayloadFromImportItem,
     buildCleanedImportedItemPayload,
     buildImportStats,
     buildPromptImportImageKey,
+    findExistingPromptDuplicates,
     isBlockedImportHostname,
     isSupportedImageBuffer
 };

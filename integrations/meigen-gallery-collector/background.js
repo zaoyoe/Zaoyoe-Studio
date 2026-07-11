@@ -6,6 +6,20 @@
     const MESSAGE_STAGE_VIA_ADMIN_TAB = 'FATHER_KEY_STAGE_IMPORT_VIA_ADMIN_TAB';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
 
+    async function enableContentScriptSessionStorage() {
+        if (!chrome.storage?.session?.setAccessLevel) return false;
+        try {
+            await chrome.storage.session.setAccessLevel({
+                accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS'
+            });
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    void enableContentScriptSessionStorage();
+
     function normalizeAdminBaseUrl(value = '') {
         const raw = String(value || '').trim() || DEFAULT_ADMIN_BASE_URL;
         try {
@@ -38,10 +52,12 @@
         defaultStatus = 'review',
         maxItems = 20,
         minFavorites = 0,
-        maxFavorites = 0
+        maxFavorites = 0,
+        batchId = ''
     } = {}) {
         return {
             action: 'stage_items',
+            batch_id: String(batchId || '').trim(),
             site,
             source: 'meigen',
             mode: 'crawl_only',
@@ -186,7 +202,8 @@
         defaultStatus = 'review',
         maxItems = 20,
         minFavorites = 0,
-        maxFavorites = 0
+        maxFavorites = 0,
+        batchId = ''
     } = {}) {
         const items = getItemsFromPayload(payload);
         if (!items.length) {
@@ -200,7 +217,8 @@
             defaultStatus,
             maxItems,
             minFavorites,
-            maxFavorites
+            maxFavorites,
+            batchId
         });
         let response = null;
         try {

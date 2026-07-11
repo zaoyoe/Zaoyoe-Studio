@@ -27,6 +27,8 @@ test('Meigen browser collector exports import-compatible payload helpers', () =>
     assert.equal(typeof collector._private.getBestStructuredCandidate, 'function');
     assert.equal(typeof collector._private.isLikelyUnboundMeigenCommunityImageUrl, 'function');
     assert.equal(typeof collector._private.isImageUrlTrustedForStatus, 'function');
+    assert.equal(typeof collector._private.isUnresolvablePlaceholderItem, 'function');
+    assert.equal(typeof collector._private.getMeigenGenerationImageIdentity, 'function');
 });
 
 test('Meigen browser collector parses favorite counts for admin range filtering', () => {
@@ -40,6 +42,36 @@ test('Meigen browser collector filters items by favorite range', () => {
     assert.equal(collector._private.itemMatchesFavoriteRange({ favorite_count: 100 }, { minFavorites: 100 }), true);
     assert.equal(collector._private.itemMatchesFavoriteRange({ favorite_count: 401 }, { maxFavorites: 400 }), false);
     assert.equal(collector._private.itemMatchesFavoriteRange({ favorite_count: 250 }, { minFavorites: 100, maxFavorites: 400 }), true);
+});
+
+test('Meigen browser collector skips cards without detail, prompt, or source identity', () => {
+    assert.equal(collector._private.isUnresolvablePlaceholderItem({
+        detailUrl: '',
+        promptText: '',
+        originalWorkUrl: '',
+        imageUrls: ['https://images.meigen.ai/generations/2026-07/community_f3f4d562-4dca-4229-834e-b424b8c3ad1e.png']
+    }), true);
+    assert.equal(collector._private.isUnresolvablePlaceholderItem({
+        detailUrl: 'https://www.meigen.ai/prompt/community_example',
+        promptText: '',
+        originalWorkUrl: '',
+        imageUrls: ['https://images.meigen.ai/generations/2026-07/community_example.png']
+    }), false);
+});
+
+test('Meigen browser collector dedupes direct and proxied community generation images', () => {
+    const direct = 'https://images.meigen.ai/generations/2026-07/community_b232f212-3458-435e-bfb5-2cd370cca19a.png';
+    const proxied = 'https://images.meigen.ai/cdn-cgi/image/format=auto,quality=85,width=640,fit=scale-down/generations/2026-07/community_b232f212-3458-435e-bfb5-2cd370cca19a.png';
+    const items = collector.mergeCollectedItems([{
+        source: 'meigen',
+        source_item_id: 'community-b232',
+        source_page_url: 'https://www.meigen.ai/prompt/community_b232f212-3458-435e-bfb5-2cd370cca19a',
+        prompt_text: 'A complete community generation prompt.',
+        image_sources: [{ url: proxied }, { url: direct }]
+    }]);
+
+    assert.equal(items.length, 1);
+    assert.deepEqual(items[0].image_sources, [{ url: direct }]);
 });
 
 test('Meigen browser collector merges multiple images into one prompt item', () => {
@@ -633,6 +665,49 @@ test('Meigen browser collector reads detail author nickname from top lines near 
 
     assert.equal(collector._private.getAuthorHandle(scope, ''), '@itsjessiababy');
     assert.equal(collector._private.getAuthorName(scope, '@itsjessiababy'), 'Avelyrah');
+});
+
+test('Meigen browser collector reads detail nickname before metadata without a visible handle', () => {
+    const scope = {
+        dataset: {},
+        innerText: [
+            'Luiz Eduardo da Costa Gomes',
+            'GPT Image',
+            '收藏',
+            '复制Prompt',
+            '提示词',
+            'NO texto principal escreva: megafilmespro'
+        ].join('\n'),
+        textContent: '',
+        querySelectorAll() {
+            return [];
+        },
+        querySelector() {
+            return null;
+        }
+    };
+
+    assert.equal(collector._private.getAuthorName(scope, '@user_9782b976'), 'Luiz Eduardo da Costa Gomes');
+});
+
+test('Meigen browser collector does not use card prompt text as hover nickname', () => {
+    const scope = {
+        dataset: {},
+        innerText: [
+            '0 收藏',
+            '从参考图开始创作 角色 创建并复用 AI 角色',
+            'NO texto principal escreva: megafilmespro'
+        ].join('\n'),
+        textContent: '',
+        querySelectorAll() {
+            return [];
+        },
+        querySelector() {
+            return null;
+        }
+    };
+
+    assert.equal(collector._private.getAuthorName(scope, '@user_9782b976'), '');
 });
 
 test('Meigen browser collector reads prompt from detail prompt section without action text', () => {
@@ -1598,6 +1673,7 @@ test('Meigen browser collector rejects engagement text as author nickname', () =
     assert.equal(collector._private.normalizeAuthorName('Related creations'), '');
     assert.equal(collector._private.normalizeAuthorName('Nanobanana'), '');
     assert.equal(collector._private.normalizeAuthorName('GPT Image'), '');
+    assert.equal(collector._private.normalizeAuthorName('Model: GPT Image'), '');
     assert.equal(collector._private.normalizeAuthorName('Duet | AI'), 'Duet | AI');
     assert.equal(collector._private.normalizeAuthorName('WebPage'), '');
     assert.equal(collector._private.normalizeAuthorName('Prompt アトリエ｜AI画像プロンプト'), 'Prompt アトリエ｜AI画像プロンプト');
@@ -1827,6 +1903,38 @@ test('Meigen browser collector does not use lines below handle as author nicknam
     };
 
     assert.equal(collector._private.getAuthorName(scope, '@Diplomeme'), '');
+});
+
+test('Meigen browser collector detects fixed-length prompt previews without ellipsis', () => {
+    assert.equal(collector._private.isCollapsedPromptText('A'.repeat(159)), false);
+    assert.equal(collector._private.isCollapsedPromptText('A'.repeat(160)), true);
+    assert.equal(collector._private.isCollapsedPromptText('A complete prompt…'), true);
+});
+
+test('Meigen browser collector lets copied detail prompt override hard-truncated preview prompt', () => {
+    const previewPrompt = 'A'.repeat(160);
+    const completePrompt = `${previewPrompt} with complete lighting, composition, wardrobe, camera, and rendering instructions.`;
+    const items = collector.mergeCollectedItems([
+        {
+            source: 'meigen',
+            source_item_id: 'preview-hard-cutoff',
+            source_page_url: 'https://www.meigen.ai/prompt/2017096425860215040',
+            prompt_text: previewPrompt,
+            image_sources: [{ url: 'https://images.meigen.ai/tweets/2017096425860215040/0.jpg' }]
+        },
+        {
+            source: 'meigen',
+            source_item_id: 'copied-detail',
+            source_page_url: 'https://www.meigen.ai/prompt/2017096425860215040',
+            prompt_text: completePrompt,
+            prompt_complete: true,
+            image_sources: [{ url: 'https://images.meigen.ai/tweets/2017096425860215040/1.jpg' }]
+        }
+    ]);
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0].prompt_text, completePrompt);
+    assert.equal(items[0].prompt_complete, true);
 });
 
 test('Meigen browser collector lets complete detail prompt override collapsed preview prompt', () => {
@@ -2298,6 +2406,21 @@ test('Meigen browser collector rejects unbound community generation images for s
     assert.deepEqual(
         collector._private.filterDetailImageUrlsByStatus([communityImage, otherTweetImage, matchingTweetImage], statusId),
         [matchingTweetImage]
+    );
+});
+
+test('Meigen browser collector rejects neighboring tweet images for community prompts', () => {
+    const communityDetailUrl = 'https://www.meigen.ai/prompt/community_b232f212-3458-435e-bfb5-2cd370cca19a';
+    const neighboringTweetImage = 'https://images.meigen.ai/tweets/2017096425860215040/0.jpg';
+    const communityImage = 'https://images.meigen.ai/generations/2026-07/community_e81718e1-cea7-4f31-9235-17ce802de5b7.png';
+
+    assert.equal(collector._private.isCommunityDetailUrl(communityDetailUrl), true);
+    assert.deepEqual(
+        collector._private.filterDetailImageUrlsByIdentity(
+            [neighboringTweetImage, communityImage],
+            { detailUrl: communityDetailUrl }
+        ),
+        [communityImage]
     );
 });
 
