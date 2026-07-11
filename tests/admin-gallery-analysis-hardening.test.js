@@ -222,6 +222,22 @@ test('gallery analysis payload is slimmed and single-image analysis is normalize
     assert.match(createImageGridSource, /return normalizeImageForAnalysis\(images\[0\]\);/);
 });
 
+test('manage batch analysis also completes bilingual fields and verifies persisted results', () => {
+    const source = readRepoFile('admin-studio.js');
+    const html = readRepoFile('admin-studio.html');
+    const batchSource = extractFunction(source, 'executeBatchReanalyze');
+
+    assert.match(html, /批量分析并补全双语/);
+    assert.match(html, /仅补全双语/);
+    assert.match(batchSource, /reanalyzeSinglePrompt\(prompt, writableSite\)/);
+    assert.match(batchSource, /completePromptBilingualFields\(savedPrompt, writableSite, \{\s+mode: 'full'/);
+    assert.match(batchSource, /getGalleryImportMissingAnalysisLabels\(verifiedPrompt\)/);
+    assert.match(batchSource, /getGalleryImportMissingBilingualLabels\(verifiedPrompt\)/);
+    assert.match(batchSource, /分析失败/);
+    assert.match(batchSource, /双语失败/);
+    assert.match(batchSource, /保存确认失败/);
+});
+
 test('vercel admin function gets an explicit longer max duration', () => {
     const config = JSON.parse(readRepoFile('vercel.json'));
 

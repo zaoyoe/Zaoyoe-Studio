@@ -124,6 +124,22 @@ function dedupePromptImageUrls(urls = []) {
     }
     return result;
 }
+
+function getPromptImageUrlsFromAssets(assets = []) {
+    const urls = [];
+    for (const asset of (Array.isArray(assets) ? assets : [])) {
+        const normalized = normalizePromptImageAsset(asset);
+        if (!normalized) continue;
+        urls.push(
+            normalized.original,
+            normalized.featured,
+            normalized.card,
+            normalized.home,
+            normalized.thumb
+        );
+    }
+    return dedupePromptImageUrls(urls);
+}
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.select-options',
     '.modal-content',
@@ -850,11 +866,14 @@ function getAdminGalleryRouteUrlObject() {
     }
 }
 
+const GALLERY_VIEW_NAMES = Object.freeze(new Set(['create', 'import', 'manage']));
+
 function getAdminGalleryRouteState() {
     const url = getAdminGalleryRouteUrlObject();
     const searchParams = url?.searchParams;
+    const routeView = String(searchParams?.get('gallery_view') || '').trim().toLowerCase();
     return {
-        view: String(searchParams?.get('gallery_view') || '').trim().toLowerCase() === 'manage' ? 'manage' : 'create',
+        view: GALLERY_VIEW_NAMES.has(routeView) ? routeView : 'create',
         promptId: String(searchParams?.get('gallery_prompt_id') || '').trim()
     };
 }
@@ -866,8 +885,9 @@ function syncAdminGalleryRouteState(nextState = {}, options = {}) {
     }
 
     const currentState = getAdminGalleryRouteState();
+    const requestedView = String(nextState.view || '').trim().toLowerCase();
     const view = Object.prototype.hasOwnProperty.call(nextState, 'view')
-        ? (String(nextState.view || '').trim().toLowerCase() === 'manage' ? 'manage' : 'create')
+        ? (GALLERY_VIEW_NAMES.has(requestedView) ? requestedView : 'create')
         : currentState.view;
     const promptId = view === 'manage'
         ? (Object.prototype.hasOwnProperty.call(nextState, 'promptId')
@@ -1895,8 +1915,8 @@ async function initializeAdminStudioShell() {
     }
 
     const galleryRouteState = getAdminGalleryRouteState();
-    if (galleryRouteState.view === 'manage') {
-        switchView('manage');
+    if (galleryRouteState.view !== 'create') {
+        switchView(galleryRouteState.view);
     }
 
     await Promise.allSettled(startupTasks);
@@ -6301,6 +6321,10 @@ function updateUIBasedOnPermissions() {
     if (manageTab) {
         manageTab.hidden = !hasPermission('prompts.manage') && !hasPermission('content.moderate');
     }
+    const importTab = document.querySelector('[data-view="import"]');
+    if (importTab) {
+        importTab.hidden = !hasPermission('prompts.manage');
+    }
 
     window.syncAdminStudioModuleAccess?.({
         preferredModule: window.restoreAdminStudioModuleFromUrl?.(),
@@ -6356,11 +6380,12 @@ function organizeOpsAlertsModule() {
     opsAlertsModule.dataset.layoutReady = '1';
 }
 
-// Switch between Create and Manage views
+// Switch between Gallery views
 function switchView(viewName) {
     const galleryModule = document.getElementById('module-gallery');
     if (!galleryModule) return;
-    const normalizedView = viewName === 'manage' ? 'manage' : 'create';
+    const requestedView = String(viewName || '').trim().toLowerCase();
+    const normalizedView = GALLERY_VIEW_NAMES.has(requestedView) ? requestedView : 'create';
 
     // Update active tab buttons
     galleryModule.querySelectorAll('.admin-tab[data-view]').forEach(tab => {
@@ -6394,6 +6419,9 @@ function switchView(viewName) {
     if (normalizedView === 'manage') {
         renderGallerySiteContextBanner();
         loadAdminPrompts({ allowCached: true });
+    } else if (normalizedView === 'import') {
+        initGalleryImportAssistant();
+        setAdminGalleryLoadingChrome(false);
     } else {
         setAdminGalleryLoadingChrome(false);
     }
@@ -6667,13 +6695,18 @@ function updateAdminTabIndicator(activeTab) {
 window.updateAdminTabIndicator = updateAdminTabIndicator;
 
 function getGalleryActiveViewName() {
-    return document.querySelector('#module-gallery .view-section.active')?.id === 'view-manage'
-        ? 'manage'
-        : 'create';
+    const activeId = document.querySelector('#module-gallery .view-section.active')?.id || '';
+    if (activeId === 'view-manage') return 'manage';
+    if (activeId === 'view-import') return 'import';
+    return 'create';
 }
 
 function isGalleryManageViewActive() {
     return getGalleryActiveViewName() === 'manage';
+}
+
+function isGalleryImportViewActive() {
+    return getGalleryActiveViewName() === 'import';
 }
 
 function normalizeAdminGallerySite(site = getAdminPromptsReadSite()) {
@@ -13559,7 +13592,8 @@ async function createImageGrid(images) {
                     const webpDataUrl = canvas.toDataURL('image/webp', 0.85);
                     resolve({
                         dataUrl: webpDataUrl,
-                        base64: webpDataUrl.split(',')[1]
+                        base64: webpDataUrl.split(',')[1],
+                        mimeType: 'image/webp'
                     });
                 }
             };
@@ -13572,7 +13606,10 @@ async function createImageGrid(images) {
 async function normalizeImageForAnalysis(imageData) {
     const fallback = {
         dataUrl: imageData?.dataUrl || '',
-        base64: imageData?.base64 || ''
+        base64: imageData?.base64 || '',
+        mimeType: String(imageData?.mimeType || '').trim()
+            || String(imageData?.dataUrl || '').match(/^data:([^;,]+)/)?.[1]
+            || 'image/jpeg'
     };
 
     if (!fallback.dataUrl || !fallback.base64) {
@@ -13585,7 +13622,12 @@ async function normalizeImageForAnalysis(imageData) {
             ADMIN_VISION_SINGLE_IMAGE_QUALITY,
             ADMIN_VISION_SINGLE_IMAGE_MAX_WIDTH
         );
-        return normalized?.dataUrl && normalized?.base64 ? normalized : fallback;
+        return normalized?.dataUrl && normalized?.base64
+            ? {
+                ...normalized,
+                mimeType: 'image/webp'
+            }
+            : fallback;
     } catch (error) {
         console.warn('Failed to normalize analysis image payload:', error);
         return fallback;
@@ -13791,7 +13833,15 @@ function updateAnalyzeButton() {
 }
 
 async function hydrateEditingImagesForAnalysis() {
-    if (currentMode !== 'edit' || currentEditingPromptImageUrls.length === 0) {
+    if (currentMode !== 'edit') {
+        return 0;
+    }
+
+    if (!currentEditingPromptImageUrls.length && Array.isArray(currentEditingPromptImageAssets) && currentEditingPromptImageAssets.length) {
+        currentEditingPromptImageUrls = getPromptImageUrlsFromAssets(currentEditingPromptImageAssets);
+    }
+
+    if (currentEditingPromptImageUrls.length === 0) {
         return 0;
     }
 
@@ -13799,26 +13849,13 @@ async function hydrateEditingImagesForAnalysis() {
 
     for (const imageUrl of currentEditingPromptImageUrls) {
         try {
-            const response = await fetch(imageUrl);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const blob = await response.blob();
-            const reader = new FileReader();
-
-            await new Promise((resolve, reject) => {
-                reader.onload = () => {
-                    uploadedFiles.push({
-                        file: null,
-                        dataUrl: reader.result,
-                        base64: reader.result.split(',')[1],
-                        url: imageUrl
-                    });
-                    resolve();
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
+            const imageData = await getImageBase64ForAnalysis(imageUrl);
+            const mimeType = imageData.mimeType || 'image/jpeg';
+            uploadedFiles.push({
+                file: null,
+                dataUrl: `data:${mimeType};base64,${imageData.base64}`,
+                base64: imageData.base64,
+                url: imageUrl
             });
         } catch (error) {
             console.warn('Failed to hydrate editing image for analysis:', imageUrl, error);
@@ -13838,7 +13875,7 @@ async function analyzeImages(options = {}) {
     const settings = options instanceof Event || !options || typeof options !== 'object'
         ? {}
         : options;
-    if (uploadedFiles.length === 0 && currentMode === 'edit' && currentEditingPromptImageUrls.length > 0) {
+    if (uploadedFiles.length === 0 && currentMode === 'edit') {
         await hydrateEditingImagesForAnalysis();
     }
     if (uploadedFiles.length === 0) {
@@ -13876,7 +13913,7 @@ async function analyzeImages(options = {}) {
         const imageCount = Math.min(uploadedFiles.length, 6);
         console.log(`🖼️ Analyzing ${imageCount} image(s) as ${imageCount > 1 ? 'grid' : 'single'}`);
 
-        const result = await callAdminVision(gridImage.base64);
+        const result = await callAdminVision(gridImage.base64, gridImage.mimeType || 'image/webp');
 
         analysisResult = result;
         populateForm(result, {
@@ -13906,7 +13943,7 @@ async function analyzeImages(options = {}) {
     }
 }
 
-async function callAdminVision(imageBase64) {
+async function callAdminVision(imageBase64, mimeType = 'image/jpeg') {
     const analysisPrompt = `Analyze this AI-generated art image for an admin prompt gallery and return ONLY valid JSON.
 
 {
@@ -13961,7 +13998,7 @@ Rules:
                 { text: analysisPrompt },
                 {
                     inline_data: {
-                        mime_type: 'image/jpeg',
+                        mime_type: mimeType || 'image/jpeg',
                         data: imageBase64
                     }
                 }
@@ -14181,6 +14218,9 @@ function buildPromptAiTagsPayload(existingAiTags = {}, options = {}) {
     const nextAiTags = clonePromptAiTags(existingAiTags);
     const adminOps = normalizePromptAdminOpsData(options.adminOps || {});
     const analysisData = options.analysisResult && typeof options.analysisResult === 'object' ? options.analysisResult : null;
+    const existingAdmin = nextAiTags.admin && typeof nextAiTags.admin === 'object' && !Array.isArray(nextAiTags.admin)
+        ? clonePromptAiTags(nextAiTags.admin)
+        : {};
 
     if (analysisData) {
         nextAiTags.objects = analysisData.objects;
@@ -14192,8 +14232,14 @@ function buildPromptAiTagsPayload(existingAiTags = {}, options = {}) {
         nextAiTags.difficulty = analysisData.difficulty || '';
     }
 
-    if (adminOps.status || adminOps.note) {
-        nextAiTags.admin = adminOps;
+    const preservedAdminMetadata = Object.fromEntries(
+        Object.entries(existingAdmin).filter(([key]) => !['status', 'note'].includes(key))
+    );
+    if (adminOps.status || adminOps.note || Object.keys(preservedAdminMetadata).length > 0) {
+        nextAiTags.admin = {
+            ...preservedAdminMetadata,
+            ...adminOps
+        };
     } else {
         delete nextAiTags.admin;
     }
@@ -16010,6 +16056,90 @@ function buildPromptBilingualCoveragePatch(prompt = {}, translatedFields = {}) {
     };
 }
 
+async function completePromptBilingualFields(prompt = {}, writableSite = getAdminPromptsReadSite(), options = {}) {
+    const promptId = String(prompt?.id || '').trim();
+    if (!promptId) {
+        throw new Error('缺少 Prompt ID，无法补全双语');
+    }
+    if (!window.PromptTranslator || !window.AdminAI?.configured) {
+        throw new Error('请先配置可用的 AI 翻译服务');
+    }
+
+    const translationSource = buildPromptBilingualCompletionSource(prompt);
+    const seededTranslationFields = typeof PromptTranslator.seedCoverageFields === 'function'
+        ? PromptTranslator.seedCoverageFields(translationSource)
+        : {};
+    const completeTranslationSource = {
+        ...translationSource,
+        ...seededTranslationFields
+    };
+    const translationMode = String(options.mode || 'coverage').trim().toLowerCase() === 'full'
+        ? 'full'
+        : 'coverage';
+    const translatedFields = await withTimeout(
+        PromptTranslator.translatePromptFields(completeTranslationSource, { mode: translationMode }),
+        Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 45000,
+        options.timeoutMessage || `Prompt ${promptId} 补全双语超时，请稍后重试`
+    );
+    const { payload, nextCoverage } = buildPromptBilingualCoveragePatch(prompt, translatedFields);
+    const currentOps = getPromptAdminOpsData(prompt);
+    const currentAiTags = clonePromptAiTags(prompt.ai_tags || prompt.aiTags || {});
+
+    if (currentOps.status === 'needs-localization' && nextCoverage.zh && nextCoverage.en) {
+        const nextAiTags = buildPromptAiTagsPayload(currentAiTags, {
+            adminOps: {
+                ...currentOps,
+                status: ''
+            }
+        });
+        payload.ai_tags = nextAiTags || {};
+    }
+
+    if (Object.keys(payload).length === 0) {
+        return {
+            row: prompt,
+            payload,
+            nextCoverage,
+            unchanged: true,
+            persistenceState: {
+                row: prompt,
+                missingFields: []
+            }
+        };
+    }
+
+    const response = await mutateAdminPrompt({
+        action: 'patch',
+        site: writableSite,
+        id: promptId,
+        payload
+    });
+    const persistenceState = await verifyPromptPersistedBilingualFields(promptId, payload, response?.row || {});
+    if (persistenceState.missingFields.length > 0) {
+        const warningMessage = buildPromptBilingualPersistenceWarningMessage(
+            persistenceState.missingFields,
+            persistenceState
+        );
+        const persistenceError = new Error(warningMessage || '双语结果暂未确认写入，请刷新后复查');
+        persistenceError.persistenceState = persistenceState;
+        persistenceError.missingFields = persistenceState.missingFields;
+        throw persistenceError;
+    }
+
+    return {
+        row: {
+            ...prompt,
+            ...payload,
+            ...(persistenceState.row || response?.row || {}),
+            id: promptId
+        },
+        payload,
+        nextCoverage,
+        unchanged: false,
+        persistenceState
+    };
+}
+
 function requireSelectedPromptsForBatch(label = '批量操作') {
     const selected = getSelectedPromptsData();
     if (selected.length > 0) {
@@ -16018,6 +16148,39 @@ function requireSelectedPromptsForBatch(label = '批量操作') {
 
     showAdminStudioToast(`请先选择要执行「${label}」的 Prompt`, 'error');
     return null;
+}
+
+async function setPromptAdminStatus(prompt = {}, nextStatus = '', writableSite = getAdminPromptsReadSite()) {
+    const promptId = String(prompt?.id || '').trim();
+    if (!promptId) {
+        throw new Error('缺少 Prompt ID，无法更新运营状态');
+    }
+
+    const normalizedStatus = String(nextStatus || '').trim().toLowerCase();
+    const currentAiTags = clonePromptAiTags(prompt.ai_tags || prompt.aiTags || {});
+    const currentOps = getPromptAdminOpsData(prompt);
+    const nextAiTags = buildPromptAiTagsPayload(currentAiTags, {
+        adminOps: {
+            ...currentOps,
+            status: normalizedStatus
+        }
+    });
+
+    const response = await mutateAdminPrompt({
+        action: 'patch',
+        site: writableSite,
+        id: promptId,
+        payload: {
+            ai_tags: nextAiTags || {}
+        }
+    });
+
+    markHomepagePromptPoolUpdated();
+    return response?.row || {
+        ...prompt,
+        ai_tags: nextAiTags || {},
+        id: promptId
+    };
 }
 
 async function batchSetSelectedPromptStatus(nextStatus = '') {
@@ -16038,23 +16201,7 @@ async function batchSetSelectedPromptStatus(nextStatus = '') {
     }
 
     const tasks = selected.map(async (prompt) => {
-        const currentAiTags = clonePromptAiTags(prompt.ai_tags || prompt.aiTags || {});
-        const currentOps = getPromptAdminOpsData(prompt);
-        const nextAiTags = buildPromptAiTagsPayload(currentAiTags, {
-            adminOps: {
-                ...currentOps,
-                status: normalizedStatus
-            }
-        });
-
-        return mutateAdminPrompt({
-            action: 'patch',
-            site: writableSite,
-            id: prompt.id,
-            payload: {
-                ai_tags: nextAiTags || {}
-            }
-        });
+        return setPromptAdminStatus(prompt, normalizedStatus, writableSite);
     });
 
     const results = await Promise.allSettled(tasks);
@@ -16130,65 +16277,29 @@ async function batchCompleteSelectedPromptBilingualFields() {
 
     for (const prompt of selected) {
         try {
-            const translationSource = buildPromptBilingualCompletionSource(prompt);
-            const translatedFields = await withTimeout(
-                PromptTranslator.translatePromptFields(translationSource, { mode: 'coverage' }),
-                45000,
-                `Prompt ${prompt?.id || ''} 补全双语超时，请稍后重试`
-            );
-            const { payload, nextCoverage } = buildPromptBilingualCoveragePatch(prompt, translatedFields);
-            const currentOps = getPromptAdminOpsData(prompt);
-            const currentAiTags = clonePromptAiTags(prompt.ai_tags || prompt.aiTags || {});
-
-            if (currentOps.status === 'needs-localization' && nextCoverage.zh && nextCoverage.en) {
-                const nextAiTags = buildPromptAiTagsPayload(currentAiTags, {
-                    adminOps: {
-                        ...currentOps,
-                        status: ''
-                    }
-                });
-                payload.ai_tags = nextAiTags || {};
-            }
-
-            if (Object.keys(payload).length === 0) {
+            const completionResult = await completePromptBilingualFields(prompt, writableSite);
+            if (completionResult.unchanged) {
                 unchangedCount += 1;
-                if (!nextCoverage.zh || !nextCoverage.en) {
+                if (!completionResult.nextCoverage.zh || !completionResult.nextCoverage.en) {
                     incompleteCount += 1;
                 }
                 continue;
             }
 
-            const response = await mutateAdminPrompt({
-                action: 'patch',
-                site: writableSite,
-                id: prompt.id,
-                payload
-            });
-
-            const bilingualPersistenceState = await verifyPromptPersistedBilingualFields(prompt.id, payload, response?.row || {});
-            if (bilingualPersistenceState.missingFields.length > 0) {
-                persistenceBlockedCount += 1;
-                if (!persistenceWarningDetail) {
-                    persistenceWarningDetail = buildPromptBilingualPersistenceWarningMessage(
-                        bilingualPersistenceState.missingFields,
-                        bilingualPersistenceState
-                    );
-                }
-                console.warn('[Gallery] Batch bilingual completion did not persist bilingual fields:', prompt?.id, bilingualPersistenceState.missingFields, bilingualPersistenceState.verificationError);
-                continue;
-            }
-
-            localizedRows.push({
-                ...prompt,
-                ...payload,
-                ...(bilingualPersistenceState.row || response?.row || {}),
-                id: prompt.id
-            });
+            localizedRows.push(completionResult.row);
             localizedCount += 1;
-            if (!nextCoverage.zh || !nextCoverage.en) {
+            if (!completionResult.nextCoverage.zh || !completionResult.nextCoverage.en) {
                 incompleteCount += 1;
             }
         } catch (error) {
+            if (Array.isArray(error?.missingFields) && error.missingFields.length > 0) {
+                persistenceBlockedCount += 1;
+                if (!persistenceWarningDetail) {
+                    persistenceWarningDetail = error.message || buildPromptBilingualPersistenceWarningMessage(error.missingFields);
+                }
+                console.warn('[Gallery] Batch bilingual completion did not persist bilingual fields:', prompt?.id, error.missingFields, error.persistenceState?.verificationError);
+                continue;
+            }
             failedCount += 1;
             failureMessages.push(normalizeBatchPromptFailureMessage(error, prompt));
             console.error('[Gallery] Batch bilingual completion failed:', prompt?.id, error);
@@ -16350,14 +16461,19 @@ const originalFormSubmit = document.getElementById('promptForm')?.onsubmit;
 // BATCH REANALYZE
 // ========================================
 async function startBatchReanalyze() {
-    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: '批量重分析 Prompt' });
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: '批量分析并补全双语 Prompt' });
     if (!writableSite) {
         return;
     }
 
     // Check API key first
-    if (!window.AdminAI?.configured) {
-        showAdminStudioToast(getCurrentAIMissingConfigMessage(), 'error');
+    if (!window.AdminAI?.configured || !window.PromptTranslator) {
+        showAdminStudioToast(
+            !window.AdminAI?.configured
+                ? getCurrentAIMissingConfigMessage()
+                : '双语补全模块尚未加载，请刷新页面后重试',
+            'error'
+        );
         await checkApiKey();
         return;
     }
@@ -16369,7 +16485,7 @@ async function startBatchReanalyze() {
     }
 
     // Show confirmation with API cost
-    if (!confirm(`确定要重分析 ${selected.length} 个提示词吗？\n\n将消耗约 ${selected.length} 次 API 请求。`)) {
+    if (!confirm(`确定要完整处理 ${selected.length} 个提示词吗？\n\n系统会自动完成图片分析、标题与属性生成、双语补全，并在数据库中确认保存结果。`)) {
         return;
     }
 
@@ -16404,10 +16520,14 @@ async function executeBatchReanalyze(prompts, options = {}) {
     batchPaused = false;
     batchStartTime = Date.now();
 
-    showBatchProgressModal('批量重分析', prompts.length);
+    showBatchProgressModal('批量分析并补全双语', prompts.length);
 
-    let success = 0, failed = 0;
-    const failedItems = [];
+    let success = 0;
+    let analysisFailed = 0;
+    let bilingualFailed = 0;
+    let verificationFailed = 0;
+    const failureMessages = [];
+    const completedRows = [];
 
     for (let i = 0; i < prompts.length; i++) {
         if (batchCancelled) break;
@@ -16419,15 +16539,97 @@ async function executeBatchReanalyze(prompts, options = {}) {
         if (batchCancelled) break;
 
         const prompt = prompts[i];
-        updateBatchProgress(i + 1, prompts.length, prompt.title);
+        const promptLabel = String(
+            prompt?.title
+            || prompt?.title_zh
+            || prompt?.title_en
+            || prompt?.id
+            || '未命名 Prompt'
+        ).trim();
+        let currentStage = 'analysis';
 
         try {
-            await reanalyzeSinglePrompt(prompt, writableSite);
+            updateBatchProgress(i, prompts.length, promptLabel, {
+                stage: '完整分析',
+                itemIndex: i + 1
+            });
+            let savedPrompt = await runGalleryImportPipelineStageWithRetry({
+                label: '完整分析',
+                index: i + 1,
+                total: prompts.length,
+                maxAttempts: GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS,
+                reportStatus: (message) => {
+                    updateBatchProgress(i + 0.2, prompts.length, promptLabel, {
+                        stage: message,
+                        itemIndex: i + 1
+                    });
+                },
+                operation: async () => reanalyzeSinglePrompt(prompt, writableSite)
+            });
+
+            if (batchCancelled) break;
+
+            currentStage = 'bilingual';
+            updateBatchProgress(i + 0.5, prompts.length, savedPrompt.title || promptLabel, {
+                stage: '补全双语',
+                itemIndex: i + 1
+            });
+            const bilingualResult = await runGalleryImportPipelineStageWithRetry({
+                label: '双语补全',
+                index: i + 1,
+                total: prompts.length,
+                maxAttempts: GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS,
+                reportStatus: (message) => {
+                    updateBatchProgress(i + 0.65, prompts.length, savedPrompt.title || promptLabel, {
+                        stage: message,
+                        itemIndex: i + 1
+                    });
+                },
+                operation: async () => completePromptBilingualFields(savedPrompt, writableSite, {
+                    mode: 'full'
+                })
+            });
+            savedPrompt = bilingualResult.row || savedPrompt;
+
+            currentStage = 'verification';
+            updateBatchProgress(i + 0.9, prompts.length, savedPrompt.title || promptLabel, {
+                stage: '确认保存结果',
+                itemIndex: i + 1
+            });
+            const refreshed = await fetchAdminPromptItem(savedPrompt.id || prompt.id, {
+                site: writableSite,
+                hydrateBilingual: true
+            });
+            const verifiedPrompt = refreshed?.row;
+            if (!verifiedPrompt) {
+                throw new Error('处理完成后无法读取数据库记录');
+            }
+
+            const missingAnalysis = getGalleryImportMissingAnalysisLabels(verifiedPrompt);
+            if (missingAnalysis.length > 0) {
+                throw new Error(`完整分析未保存：${missingAnalysis.join('、')}`);
+            }
+            const missingBilingual = getGalleryImportMissingBilingualLabels(verifiedPrompt);
+            if (missingBilingual.length > 0) {
+                throw new Error(`双语字段未保存：${missingBilingual.join('、')}`);
+            }
+
+            completedRows.push(verifiedPrompt);
             success++;
+            updateBatchProgress(i + 1, prompts.length, verifiedPrompt.title || promptLabel, {
+                stage: '处理完成',
+                itemIndex: i + 1
+            });
         } catch (err) {
-            console.error(`Failed to reanalyze ${prompt.title}:`, err);
-            failedItems.push(prompt);
-            failed++;
+            if (currentStage === 'analysis') {
+                analysisFailed += 1;
+            } else if (currentStage === 'bilingual') {
+                bilingualFailed += 1;
+            } else {
+                verificationFailed += 1;
+            }
+            failureMessages.push(normalizeBatchPromptFailureMessage(err, prompt));
+            console.error(`Failed to fully process ${promptLabel} at ${currentStage}:`, err);
         }
 
         if (i < prompts.length - 1 && !batchCancelled) {
@@ -16437,77 +16639,236 @@ async function executeBatchReanalyze(prompts, options = {}) {
 
     hideBatchProgressModal();
 
+    const failed = analysisFailed + bilingualFailed + verificationFailed;
+    const failureBreakdown = [
+        analysisFailed ? `分析失败 ${analysisFailed}` : '',
+        bilingualFailed ? `双语失败 ${bilingualFailed}` : '',
+        verificationFailed ? `保存确认失败 ${verificationFailed}` : ''
+    ].filter(Boolean).join('，');
+    const firstFailure = failureMessages[0] ? `；首条原因：${failureMessages[0]}` : '';
+
     if (batchCancelled) {
-        showAdminStudioToast(`已取消。成功 ${success} 个，失败 ${failed} 个`, 'warning');
+        showAdminStudioToast(
+            `已取消。完整处理 ${success} 条${failureBreakdown ? `，${failureBreakdown}` : ''}${firstFailure}`,
+            'warning',
+            { durationMs: 7200 }
+        );
+    } else if (failed > 0) {
+        showAdminStudioToast(
+            `批量处理完成：完整成功 ${success} 条，${failureBreakdown}${firstFailure}`,
+            success > 0 ? 'warning' : 'error',
+            { durationMs: 8200 }
+        );
     } else {
-        showAdminStudioToast(`完成！成功 ${success} 个，失败 ${failed} 个`, success > 0 ? 'success' : 'error');
+        showAdminStudioToast(`完整分析和双语补全已完成，共 ${success} 条`, 'success');
     }
 
     // Refresh grid
     await loadAdminPrompts();
+    if (completedRows.length > 0) {
+        hydrateAdminGalleryPromptsLocally(completedRows);
+    }
 
     // Exit select mode
     if (isSelectMode) toggleSelectMode();
+
+    return failed === 0 && !batchCancelled;
 }
 
-async function reanalyzeSinglePrompt(prompt, writableSite) {
-    if (!prompt.images || prompt.images.length === 0) {
-        throw new Error('No images');
+async function fetchImageBase64ViaAdmin(imageUrl = '') {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin?route=prompts/image-base64', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            image_url: imageUrl
+        })
+    });
+
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
     }
 
-    // Fetch image and convert to base64
-    const imageUrl = prompt.images[0];
-    console.log(`📷 Fetching image: ${imageUrl}`);
+    if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || `图片读取失败 (${response.status})`);
+    }
+    if (!payload.base64) {
+        throw new Error('图片读取结果为空');
+    }
 
-    let blob;
+    return {
+        base64: payload.base64,
+        mimeType: payload.mime_type || 'image/jpeg'
+    };
+}
+
+async function getImageBase64ForAnalysis(imageUrl = '') {
     try {
         const response = await fetch(imageUrl, { mode: 'cors' });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
-        blob = await response.blob();
-        console.log(`✅ Image fetched: ${blob.size} bytes`);
-    } catch (err) {
-        console.error(`❌ Image fetch failed for ${imageUrl}:`, err);
-        throw new Error(`Image fetch failed: ${err.message}`);
+        const blob = await response.blob();
+        return {
+            base64: await blobToBase64(blob),
+            mimeType: blob.type || 'image/jpeg'
+        };
+    } catch (error) {
+        console.warn(`Browser image fetch failed, retrying through admin image reader: ${imageUrl}`, error);
+        return fetchImageBase64ViaAdmin(imageUrl);
     }
-    const base64 = await blobToBase64(blob);
+}
 
-    // Call current AI provider
-    console.log(`🤖 Calling ${getCurrentAIServiceLabel()}...`);
-    const result = await callAdminVision(base64);
-    console.log(`✅ ${getCurrentAIServiceLabel()} response received:`, result);
+function buildCompletePromptAnalysisResult(result = {}) {
+    const source = result && typeof result === 'object' && !Array.isArray(result) ? result : {};
+    return {
+        ...source,
+        objects: source.objects || { en: [], zh: [] },
+        scenes: source.scenes || { en: [], zh: [] },
+        styles: source.styles || { en: [], zh: [] },
+        mood: source.mood || { en: [], zh: [] },
+        useCase: source.useCase || {},
+        commercial: source.commercial || {},
+        difficulty: String(source.difficulty || '').trim(),
+        dominantColors: normalizeAdminPromptTagList(source.dominantColors || [])
+    };
+}
 
-    // Update in Supabase - correctly map the AI analysis fields
-    // Note: callAdminVision returns objects, scenes, styles, mood directly, not under "tags"
-    const updateData = {
-        ai_tags: {
-            objects: result.objects || { en: [], zh: [] },
-            scenes: result.scenes || { en: [], zh: [] },
-            styles: result.styles || { en: [], zh: [] },
-            mood: result.mood || { en: [], zh: [] },
-            useCase: result.useCase || {},
-            commercial: result.commercial || {},
-            difficulty: result.difficulty || ''
-        },
-        dominant_colors: result.dominantColors || []
+function buildPromptFullAnalysisPayload(prompt = {}, result = {}) {
+    const normalizedResult = buildCompletePromptAnalysisResult(result);
+    const promptText = String(
+        prompt.prompt_text
+        || prompt.prompt
+        || prompt.prompt_text_en
+        || prompt.prompt_text_zh
+        || ''
+    ).trim();
+    const primaryFields = resolvePromptPrimaryFields({
+        prompt: promptText
+    }, {
+        ...normalizedResult,
+        prompt_text: promptText
+    });
+    const currentOps = getPromptAdminOpsData(prompt);
+    const currentAiTags = clonePromptAiTags(prompt.ai_tags || prompt.aiTags || {});
+    const title = String(primaryFields.title || '').trim();
+    const category = String(primaryFields.category || '').trim();
+    const description = String(
+        primaryFields.description
+        || prompt.description
+        || prompt.description_en
+        || prompt.description_zh
+        || ''
+    ).trim();
+    const payload = {
+        title,
+        tags: category ? [category] : [],
+        description,
+        ai_tags: buildPromptAiTagsPayload(currentAiTags, {
+            analysisResult: normalizedResult,
+            adminOps: currentOps
+        }) || {},
+        dominant_colors: normalizedResult.dominantColors
     };
 
-    if (result.title) updateData.title = result.title;
-    if (result.category) updateData.tags = [result.category]; // category -> tags array
-    if (result.description) updateData.description = result.description;
+    const bilingualFields = {
+        title_en: normalizedResult.title_en || normalizedResult.title || title,
+        title_zh: normalizedResult.title_zh || prompt.title_zh || '',
+        description_en: normalizedResult.description_en || normalizedResult.description || description,
+        description_zh: normalizedResult.description_zh || prompt.description_zh || ''
+    };
+    Object.entries(bilingualFields).forEach(([field, value]) => {
+        const normalizedValue = String(value || '').trim();
+        if (normalizedValue) {
+            payload[field] = normalizedValue;
+        }
+    });
 
-    console.log(`💾 Updating Supabase with:`, updateData);
+    return payload;
+}
 
-    await mutateAdminPrompt({
+async function preparePromptImagesForFullAnalysis(prompt = {}, maxImages = 6) {
+    const imageUrls = dedupePromptImageUrls([
+        ...(Array.isArray(prompt.images) ? prompt.images : []),
+        ...getPromptImageUrlsFromAssets(prompt.image_assets || prompt.imageAssets || [])
+    ]).slice(0, Math.max(1, Number(maxImages) || 6));
+    if (!imageUrls.length) {
+        throw new Error('No images');
+    }
+
+    const results = await Promise.allSettled(imageUrls.map(async (imageUrl) => {
+        const imageData = await getImageBase64ForAnalysis(imageUrl);
+        const mimeType = imageData.mimeType || 'image/jpeg';
+        return {
+            file: null,
+            url: imageUrl,
+            base64: imageData.base64,
+            mimeType,
+            dataUrl: `data:${mimeType};base64,${imageData.base64}`
+        };
+    }));
+    const preparedImages = results
+        .filter((entry) => entry.status === 'fulfilled')
+        .map((entry) => entry.value);
+    if (!preparedImages.length) {
+        const firstFailure = results.find((entry) => entry.status === 'rejected');
+        throw new Error(`Image fetch failed: ${firstFailure?.reason?.message || '无法读取作品图片'}`);
+    }
+    results
+        .filter((entry) => entry.status === 'rejected')
+        .forEach((entry) => console.warn('[Gallery] Skipped an unreadable analysis image:', entry.reason));
+
+    return preparedImages;
+}
+
+async function reanalyzeSinglePrompt(prompt, writableSite) {
+    const promptId = String(prompt?.id || '').trim();
+    if (!promptId) {
+        throw new Error('缺少 Prompt ID，无法分析');
+    }
+
+    const preparedImages = await preparePromptImagesForFullAnalysis(prompt, 6);
+    const gridImage = await createImageGrid(preparedImages);
+    if (!gridImage?.base64) {
+        throw new Error('无法生成图片分析预览');
+    }
+    console.log(`🖼️ Analyzing ${preparedImages.length} image(s) for Prompt ${promptId}`);
+
+    console.log(`🤖 Calling ${getCurrentAIServiceLabel()}...`);
+    const result = await callAdminVision(gridImage.base64, gridImage.mimeType || 'image/webp');
+    console.log(`✅ ${getCurrentAIServiceLabel()} response received:`, result);
+
+    const updateData = buildPromptFullAnalysisPayload(prompt, result);
+    console.log('💾 Updating Supabase with complete analysis:', updateData);
+    const response = await mutateAdminPrompt({
         action: 'patch',
         site: writableSite,
-        id: prompt.id,
+        id: promptId,
         payload: updateData
     });
-    markHomepagePromptPoolUpdated();
+    const refreshed = await fetchAdminPromptItem(promptId, {
+        site: writableSite,
+        hydrateBilingual: true
+    });
+    const savedPrompt = refreshed?.row || response?.row;
+    if (!savedPrompt) {
+        throw new Error('分析结果保存后无法读取');
+    }
+    const missingAnalysis = typeof getGalleryImportMissingAnalysisLabels === 'function'
+        ? getGalleryImportMissingAnalysisLabels(savedPrompt)
+        : [];
+    if (missingAnalysis.length > 0) {
+        throw new Error(`分析结果未完整保存：${missingAnalysis.join('、')}`);
+    }
 
-    console.log(`✅ Prompt ${prompt.id} reanalyzed successfully`);
+    markHomepagePromptPoolUpdated();
+    console.log(`✅ Prompt ${promptId} reanalyzed successfully`);
+    return savedPrompt;
 }
 
 function blobToBase64(blob) {
@@ -16573,27 +16934,39 @@ async function executeBatchDelete() {
 function showBatchProgressModal(title, total) {
     document.getElementById('batchModalTitle').textContent = title;
     showAdminStudioOverlay(document.getElementById('batchProgressOverlay'));
-    updateBatchProgress(0, total, '准备中...');
+    updateBatchProgress(0, total, '准备中...', {
+        stage: '准备任务',
+        itemIndex: 0
+    });
 }
 
 function hideBatchProgressModal() {
     hideAdminStudioOverlay(document.getElementById('batchProgressOverlay'));
 }
 
-function updateBatchProgress(current, total, currentItem) {
-    const percent = Math.round((current / total) * 100);
-    document.getElementById('batchCurrentItem').textContent = `正在分析: ${currentItem}`;
+function updateBatchProgress(current, total, currentItem, options = {}) {
+    const safeTotal = Math.max(0, Number(total) || 0);
+    const safeCurrent = Math.max(0, Math.min(Number(current) || 0, safeTotal || 0));
+    const percent = safeTotal > 0 ? Math.round((safeCurrent / safeTotal) * 100) : 0;
+    const stage = String(options.stage || '处理中').trim();
+    const itemIndex = Math.max(0, Math.min(
+        Number(options.itemIndex ?? Math.ceil(safeCurrent)) || 0,
+        safeTotal
+    ));
+    document.getElementById('batchCurrentItem').textContent = `${stage}：${currentItem}`;
     document.getElementById('batchProgressFill').value = percent;
-    document.getElementById('batchProgressText').textContent = `${current}/${total} (${percent}%)`;
+    document.getElementById('batchProgressText').textContent = `第 ${itemIndex}/${safeTotal} 条 · 总进度 ${percent}%`;
 
     // Estimate remaining time
-    if (current > 0 && batchStartTime) {
+    if (safeCurrent > 0 && batchStartTime) {
         const elapsed = Date.now() - batchStartTime;
-        const perItem = elapsed / current;
-        const remaining = perItem * (total - current);
+        const perItem = elapsed / safeCurrent;
+        const remaining = perItem * (safeTotal - safeCurrent);
         const remainingSec = Math.round(remaining / 1000);
         document.getElementById('batchTimeRemaining').textContent =
             `预计剩余: 约 ${remainingSec} 秒`;
+    } else {
+        document.getElementById('batchTimeRemaining').textContent = '预计剩余: --';
     }
 }
 
@@ -16615,6 +16988,1679 @@ function cancelBatch() {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// ========================================
+// GALLERY IMPORT ASSISTANT
+// ========================================
+const galleryImportState = {
+    mode: 'crawl_only',
+    batch: null,
+    items: [],
+    running: false,
+    uploadInFlight: false,
+    statusRefreshInFlight: false,
+    emptyMessage: '暂无导入内容'
+};
+
+const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
+const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-10.48';
+const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
+const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
+const GALLERY_IMPORT_RETRY_BASE_DELAY_MS = 1800;
+const GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS = 2;
+const GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS = 3;
+const GALLERY_IMPORT_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function escapeGalleryImportHtml(value = '') {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({
+    upload: {
+        label: '图片上传',
+        action: '请检查图片链接是否还能访问，然后重新上传'
+    },
+    analysis: {
+        label: '图片分析',
+        action: '作品已经保存，再次点击“上传队列”会从图片分析继续'
+    },
+    bilingual: {
+        label: '双语补全',
+        action: '作品已经保存，再次点击“上传队列”会从双语补全继续'
+    },
+    publish: {
+        label: '发布',
+        action: '作品已经保存，再次点击“上传队列”会继续发布'
+    },
+    cleanup: {
+        label: '暂存清理',
+        action: '作品已经发布，再次点击“上传队列”会继续清理暂存'
+    },
+    ai: {
+        label: 'AI 处理',
+        action: '作品已经保存，请稍后重新执行分析、双语补全和发布'
+    },
+    unknown: {
+        label: '后续处理',
+        action: '请刷新队列后重试；仍失败时查看浏览器控制台日志'
+    }
+});
+
+function normalizeGalleryImportFailureMessage(errorOrMessage = '', fallback = '处理失败') {
+    const error = errorOrMessage instanceof Error ? errorOrMessage : null;
+    const status = Number(error?.status || error?.statusCode || 0);
+    const raw = String(error?.message || errorOrMessage || fallback).trim();
+
+    if (status === 401 || status === 403 || /unauthorized|forbidden|not authenticated|登录.*失效/i.test(raw)) {
+        return '后台登录状态或操作权限已失效，请刷新页面并重新登录';
+    }
+    if (status === 429 || /rate limit|resource exhausted|quota|请求过多|额度/i.test(raw)) {
+        return 'AI 服务当前请求过多或额度不足，请稍后重试';
+    }
+    if (status === 502 || status === 503 || status === 504 || /bad gateway|service unavailable|gateway timeout/i.test(raw)) {
+        return '服务暂时不可用，请稍后重试';
+    }
+    if (/<!doctype\s+html|<html[\s>]|<!--\[if\s+lt\s+ie/i.test(raw)) {
+        return '服务返回了异常网页而不是处理结果，通常是临时网关或登录状态问题';
+    }
+    if (/failed to parse ai response|unexpected token.*json|json parse/i.test(raw)) {
+        return 'AI 返回格式不完整，请稍后重新分析';
+    }
+    if (/no response from ai/i.test(raw)) {
+        return 'AI 服务没有返回结果，请稍后重试';
+    }
+    if (/ai translation could not establish coverage|ai translation returned empty fields/i.test(raw)) {
+        return 'AI 翻译结果暂时不完整，请稍后重试';
+    }
+    if (/image fetch failed|图片读取失败|没有可保存的图片|no images/i.test(raw)) {
+        return '图片读取失败，请检查原图链接是否还能访问';
+    }
+    if (/请先配置可用的 ai 翻译服务|not configured|api key/i.test(raw)) {
+        return 'AI 服务尚未正确配置，请先检查后台 AI 设置';
+    }
+
+    const text = raw
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!text) return fallback;
+    return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+}
+
+function createGalleryImportStageError(stage = 'unknown', error = null) {
+    const normalizedStage = GALLERY_IMPORT_FAILURE_STAGES[stage] ? stage : 'unknown';
+    const stageMeta = GALLERY_IMPORT_FAILURE_STAGES[normalizedStage];
+    const reason = normalizeGalleryImportFailureMessage(error, '处理失败');
+    const wrapped = new Error(`${stageMeta.label}失败：${reason}`);
+    wrapped.galleryImportStage = normalizedStage;
+    wrapped.originalError = error;
+    return wrapped;
+}
+
+function getGalleryImportRootError(error = null) {
+    let current = error;
+    const visited = new Set();
+    while (current?.originalError && !visited.has(current)) {
+        visited.add(current);
+        current = current.originalError;
+    }
+    return current || error;
+}
+
+function isGalleryImportPipelineRetryableError(error = null) {
+    const rootError = getGalleryImportRootError(error);
+    const status = Number(rootError?.status || rootError?.statusCode || error?.status || error?.statusCode || 0);
+    const message = String(rootError?.message || error?.message || '').trim().toLowerCase();
+    return GALLERY_IMPORT_RETRYABLE_STATUS_CODES.has(status)
+        || message.includes('bad gateway')
+        || message.includes('gateway timeout')
+        || message.includes('service unavailable')
+        || message.includes('resource exhausted')
+        || message.includes('rate limit')
+        || message.includes('quota')
+        || message.includes('timeout')
+        || message.includes('timed out')
+        || message.includes('fetch failed')
+        || message.includes('failed to fetch')
+        || message.includes('network')
+        || message.includes('no response from ai')
+        || message.includes('failed to parse ai response')
+        || message.includes('translation could not establish coverage')
+        || message.includes('translation returned empty fields')
+        || message.includes('双语结果未完整保存')
+        || message.includes('分析结果不完整')
+        || message.includes('分析结果未完整保存')
+        || message.includes('analysis result incomplete')
+        || message.includes('image fetch failed');
+}
+
+async function runGalleryImportPipelineStageWithRetry({
+    label = 'AI 处理',
+    operation,
+    index = 0,
+    total = 0,
+    maxAttempts = 2,
+    reportStatus = setGalleryImportRunStatus
+} = {}) {
+    const safeAttempts = Math.max(1, Number(maxAttempts || 1));
+    const progress = total ? `${index} / ${total}` : '';
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= safeAttempts; attempt += 1) {
+        reportStatus(
+            `${label}${attempt > 1 ? `重试 ${attempt} / ${safeAttempts}` : '中'} ${progress}`.trim()
+        );
+        try {
+            return await operation({ attempt, maxAttempts: safeAttempts });
+        } catch (error) {
+            lastError = error;
+            const canRetry = attempt < safeAttempts && isGalleryImportPipelineRetryableError(error);
+            if (!canRetry) {
+                throw error;
+            }
+            const delayMs = GALLERY_IMPORT_RETRY_BASE_DELAY_MS * attempt;
+            reportStatus(
+                `${label}暂时失败，${Math.ceil(delayMs / 1000)} 秒后自动重试 ${progress}`.trim()
+            );
+            await sleep(delayMs);
+        }
+    }
+
+    throw lastError || new Error(`${label}失败`);
+}
+
+function getGalleryImportFailureInfo(item = {}) {
+    if (String(item?.status || '').trim() !== 'failed') return null;
+    const raw = String(item?.error_summary || item?.errorSummary || '').trim();
+    if (!raw) return null;
+
+    const stageEntries = [
+        ['upload', /^(?:图片上传|上传)(失败|未完成)[:：]\s*/i],
+        ['analysis', /^(?:图片分析|分析)(失败|未完成)[:：]\s*/i],
+        ['bilingual', /^(?:双语补全|补全双语)(失败|未完成)[:：]\s*/i],
+        ['publish', /^发布(失败|未完成)[:：]\s*/i],
+        ['cleanup', /^(?:暂存清理|清理)(失败|未完成)[:：]\s*/i]
+    ];
+    let stage = '';
+    let reason = raw;
+    let pending = false;
+    for (const [candidateStage, pattern] of stageEntries) {
+        const match = raw.match(pattern);
+        if (!match) continue;
+        stage = candidateStage;
+        pending = match[1] === '未完成';
+        reason = raw.replace(pattern, '');
+        break;
+    }
+    if (!stage && /<!doctype\s+html|<html[\s>]|<!--\[if\s+lt\s+ie/i.test(raw)) {
+        stage = 'ai';
+    }
+    if (!stage && String(item?.status || '') === 'failed') {
+        stage = 'unknown';
+    }
+    const stageMeta = GALLERY_IMPORT_FAILURE_STAGES[stage || 'unknown'];
+    return {
+        stage: stage || 'unknown',
+        label: pending ? `待${stageMeta.label}` : `${stageMeta.label}失败`,
+        message: normalizeGalleryImportFailureMessage(reason, '处理失败'),
+        action: stageMeta.action
+    };
+}
+
+function normalizeGalleryImportNumber(value, fallback = 0, maxValue = Number.MAX_SAFE_INTEGER) {
+    const parsed = Number.parseInt(String(value || '').trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+    return Math.min(parsed, maxValue);
+}
+
+function getGalleryImportSettings() {
+    return {
+        favorite_min: normalizeGalleryImportNumber(document.getElementById('galleryImportFavoriteMin')?.value, 0, 1000000),
+        favorite_max: normalizeGalleryImportNumber(document.getElementById('galleryImportFavoriteMax')?.value, 0, 1000000),
+        max_items: normalizeGalleryImportNumber(document.getElementById('galleryImportMaxItems')?.value, 50, 1000) || 50,
+        max_images_per_item: normalizeGalleryImportNumber(document.getElementById('galleryImportMaxImages')?.value, 12, 24) || 12,
+        parallelism: normalizeGalleryImportNumber(document.getElementById('galleryImportParallelism')?.value, 2, 3) || 2,
+        default_status: 'review',
+        duplicate_policy: 'skip',
+        auto_cleanup: true,
+        analyze_after_save: true
+    };
+}
+
+function setGalleryImportMode(mode = 'crawl_only') {
+    const normalizedMode = ['stream', 'crawl_only', 'upload_only'].includes(mode) ? mode : 'crawl_only';
+    galleryImportState.mode = normalizedMode;
+    document.querySelectorAll('[data-admin-action="gallery-import-set-mode"]').forEach((button) => {
+        const active = button.dataset.importMode === normalizedMode;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    setGalleryImportRunStatus(
+        normalizedMode === 'stream'
+            ? '边抓边上传'
+            : (normalizedMode === 'upload_only' ? '仅上传队列' : '仅抓取预览')
+    );
+}
+
+function setGalleryImportRunStatus(text = '') {
+    const statusEl = document.getElementById('galleryImportRunStatus');
+    if (statusEl) {
+        statusEl.textContent = text || '等待开始';
+    }
+}
+
+function setGalleryImportEmptyMessage(message = '') {
+    galleryImportState.emptyMessage = message || '暂无导入内容';
+}
+
+function buildGalleryImportCollectorBookmarklet() {
+    const scriptUrl = new URL(GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH, window.location.origin);
+    scriptUrl.searchParams.set('v', GALLERY_IMPORT_COLLECTOR_VERSION);
+    const code = [
+        '(()=>{',
+        'const s=document.createElement("script");',
+        `s.src=${JSON.stringify(scriptUrl.toString())};`,
+        's.async=true;',
+        's.dataset.fatherKeyMeigenCollector="1";',
+        '(document.documentElement||document.body).appendChild(s);',
+        '})()'
+    ].join('');
+    return `javascript:${code}`;
+}
+
+async function copyGalleryImportText(text = '') {
+    const value = String(text || '');
+    if (!value) return false;
+    try {
+        if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+            return true;
+        }
+    } catch (_) {
+        // Fall back to a temporary textarea below.
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch (_) {
+        copied = false;
+    }
+    textarea.remove();
+    return copied;
+}
+
+async function copyGalleryImportCollector() {
+    const copied = await copyGalleryImportText(buildGalleryImportCollectorBookmarklet());
+    if (copied) {
+        setGalleryImportRunStatus('采集器已复制');
+        showAdminStudioToast('采集器已复制，可保存到浏览器书签后在 Meigen 页面运行', 'success');
+    } else {
+        setGalleryImportRunStatus('采集器复制失败');
+        showAdminStudioToast('采集器复制失败，请稍后重试', 'error');
+    }
+}
+
+function buildGalleryImportApiUrl(params = {}) {
+    const url = new URL('/api/admin/prompts/imports', window.location.origin);
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        url.searchParams.set(key, String(value));
+    });
+    return `${url.pathname}${url.search}`;
+}
+
+async function fetchGalleryImportApi(params = {}, options = {}) {
+    const response = await (window.AdminApi?.fetch || fetch)(buildGalleryImportApiUrl(params), {
+        credentials: 'include',
+        ...options,
+        headers: {
+            ...(options.headers || {})
+        }
+    });
+
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok) {
+        const error = new Error(payload?.message || `导入请求失败 (${response.status})`);
+        error.payload = payload;
+        error.status = response.status;
+        throw error;
+    }
+
+    return payload;
+}
+
+async function mutateGalleryImport(action, payload = {}) {
+    return fetchGalleryImportApi({}, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            ...payload
+        })
+    });
+}
+
+function normalizeGalleryImportRawItem(item = {}) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const promptText = String(item.prompt_text || item.promptText || item.prompt || '').trim();
+    const imageSource = item.image_sources || item.imageSources || item.images || item.image_urls || item.imageUrls || [];
+    const imageCount = Array.isArray(imageSource)
+        ? imageSource.length
+        : String(imageSource || '').split(/[\n\r,，]+/).filter(Boolean).length;
+    const expectedImageCount = Math.max(
+        imageCount,
+        Number(item.expected_image_count || item.expectedImageCount || item.image_count || item.imageCount || 0) || 0
+    );
+    return {
+        ...item,
+        prompt_text: promptText,
+        image_sources: imageSource,
+        __imageCount: expectedImageCount
+    };
+}
+
+function parseGalleryImportRawInput(rawText = '') {
+    const raw = String(rawText || '').trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        const items = Array.isArray(parsed)
+            ? parsed
+            : (Array.isArray(parsed.items) ? parsed.items : (Array.isArray(parsed.prompts) ? parsed.prompts : []));
+        return items.map(normalizeGalleryImportRawItem).filter(Boolean);
+    } catch (_) {
+        const rows = raw
+            .split(/\n+/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+                try {
+                    return JSON.parse(line);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+        return rows.map(normalizeGalleryImportRawItem).filter(Boolean);
+    }
+}
+
+function getGalleryImportItemsFromInput() {
+    const rawInput = document.getElementById('galleryImportRawInput');
+    return parseGalleryImportRawInput(rawInput?.value || '');
+}
+
+function getGalleryImportImageSources(item = {}) {
+    const source = item.image_sources || item.imageSources || item.images || [];
+    if (!Array.isArray(source)) return [];
+    return source.map((entry) => {
+        if (typeof entry === 'string') return entry;
+        return entry?.url || entry?.original || entry?.src || entry?.downloadUrl || entry?.download_url || '';
+    }).filter(Boolean);
+}
+
+function getGalleryImportAssetUrls(item = {}, fieldName = 'final_image_assets') {
+    const source = item?.[fieldName] || [];
+    if (!Array.isArray(source)) return [];
+    return source.map((entry) => {
+        if (typeof entry === 'string') return entry;
+        return entry?.original || entry?.url || entry?.src || entry?.publicUrl || entry?.public_url || '';
+    }).filter(Boolean);
+}
+
+function getGalleryImportExpectedImageCount(item = {}) {
+    const details = item?.error_details || item?.errorDetails || {};
+    const candidates = [
+        item.expected_image_count,
+        item.expectedImageCount,
+        item.image_count,
+        item.imageCount,
+        details.import_image_count,
+        details.expected_image_count,
+        details.source_image_count,
+        item.__imageCount
+    ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value) && value > 0);
+    return candidates.length ? Math.max(...candidates) : 0;
+}
+
+function getGalleryImportDisplayImageCount(item = {}) {
+    return Math.max(
+        getGalleryImportAssetUrls(item, 'final_image_assets').length,
+        getGalleryImportImageSources(item).length,
+        getGalleryImportAssetUrls(item, 'temp_image_assets').length,
+        getGalleryImportExpectedImageCount(item)
+    );
+}
+
+function getGalleryImportCoverUrl(item = {}) {
+    return getGalleryImportImageSources(item)[0]
+        || getGalleryImportAssetUrls(item, 'final_image_assets')[0]
+        || getGalleryImportAssetUrls(item, 'temp_image_assets')[0]
+        || '';
+}
+
+function getGalleryImportStatusLabel(status = '') {
+    const labels = {
+        staged: '已抓取',
+        needs_review: '需要处理',
+        duplicate: '疑似重复',
+        queued: '等待上传',
+        uploading: '保存图片中',
+        saving: '写入 Gallery',
+        imported: '已保存',
+        failed: '失败',
+        skipped: '已跳过',
+        cleaned: '已清理'
+    };
+    return labels[String(status || '').trim()] || '等待处理';
+}
+
+function getGalleryImportStats(items = galleryImportState.items) {
+    const rows = Array.isArray(items) ? items : [];
+    const counts = rows.reduce((acc, item) => {
+        const status = String(item?.status || 'staged').trim() || 'staged';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+    }, {});
+    const uploadRelevant = rows.filter((item) => (
+        ['staged', 'queued', 'uploading', 'saving', 'imported', 'cleaned', 'failed'].includes(String(item?.status || ''))
+    ));
+    const uploadable = rows.filter((item) => isGalleryImportItemUploadable(item));
+    const uploadFinished = uploadRelevant.filter((item) => ['imported', 'cleaned', 'failed'].includes(String(item?.status || ''))).length;
+    const crawlFinished = rows.length;
+    const totalFinished = rows.filter((item) => (
+        ['imported', 'cleaned', 'failed', 'needs_review', 'duplicate', 'skipped'].includes(String(item?.status || ''))
+    )).length;
+    const failureStages = rows.reduce((acc, item) => {
+        if (String(item?.status || '') !== 'failed') return acc;
+        const info = getGalleryImportFailureInfo(item);
+        const stage = info?.stage || 'unknown';
+        acc[stage] = (acc[stage] || 0) + 1;
+        return acc;
+    }, {});
+    return {
+        total: rows.length,
+        imported: counts.imported || 0,
+        cleaned: counts.cleaned || 0,
+        failed: counts.failed || 0,
+        needs_review: counts.needs_review || 0,
+        duplicate: counts.duplicate || 0,
+        uploadable: uploadable.length,
+        uploadTotal: uploadRelevant.length,
+        uploadFinished,
+        crawlFinished,
+        totalFinished,
+        failureStages
+    };
+}
+
+function updateGalleryImportProgress() {
+    const stats = getGalleryImportStats();
+    const setProgress = (progressId, textId, current, total) => {
+        const progress = document.getElementById(progressId);
+        const text = document.getElementById(textId);
+        const safeTotal = Math.max(0, Number(total) || 0);
+        const safeCurrent = Math.min(Math.max(0, Number(current) || 0), safeTotal || Number(current) || 0);
+        const percent = safeTotal ? Math.round((safeCurrent / safeTotal) * 100) : 0;
+        if (progress) progress.value = percent;
+        if (text) text.textContent = `${safeCurrent} / ${safeTotal}`;
+    };
+
+    setProgress('galleryImportCrawlProgress', 'galleryImportCrawlText', stats.crawlFinished, stats.total);
+    setProgress('galleryImportUploadProgress', 'galleryImportUploadText', stats.uploadFinished, stats.uploadTotal);
+    setProgress('galleryImportTotalProgress', 'galleryImportTotalText', stats.totalFinished, stats.total);
+
+    const summary = document.getElementById('galleryImportSummary');
+    if (summary) {
+        const failureLabels = Object.entries(stats.failureStages || {})
+            .filter(([, count]) => Number(count) > 0)
+            .map(([stage, count]) => {
+                const label = GALLERY_IMPORT_FAILURE_STAGES[stage]?.label || '后续处理';
+                return `<span class="is-warning">${escapeGalleryImportHtml(label)}失败 ${Number(count)} 条</span>`;
+            });
+        summary.innerHTML = [
+            `<span>发现 ${stats.total} 条</span>`,
+            `<span>成功 ${stats.imported + stats.cleaned} 条</span>`,
+            `<span>需要处理 ${stats.failed + stats.needs_review} 条</span>`,
+            `<span>跳过重复 ${stats.duplicate} 条</span>`,
+            ...failureLabels
+        ].join('');
+    }
+}
+
+function renderGalleryImportQueue(items = galleryImportState.items) {
+    const queue = document.getElementById('galleryImportQueue');
+    if (!queue) return;
+
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+        queue.innerHTML = `<div class="empty-state">${escapeGalleryImportHtml(galleryImportState.emptyMessage || '暂无导入内容')}</div>`;
+        updateGalleryImportProgress();
+        return;
+    }
+
+    queue.innerHTML = rows.map((item) => {
+        const cover = getGalleryImportCoverUrl(item);
+        const imageCount = getGalleryImportDisplayImageCount(item);
+        const prompt = item.prompt_text || (item.final_prompt_id ? '已保存到 Gallery' : '未抓到提示词');
+        const sourceLabel = item.author_name || item.author_handle || item.original_work_url || '未提供来源';
+        const status = getGalleryImportStatusLabel(item.status);
+        const failure = getGalleryImportFailureInfo(item);
+        const processingStatus = String(item?.__processingStatus || '').trim();
+        const error = failure
+            ? `
+                <div class="gallery-import-item__error" role="status">
+                    <strong>${escapeGalleryImportHtml(failure.label)}</strong>
+                    <span>${escapeGalleryImportHtml(failure.message)}</span>
+                    <small>${escapeGalleryImportHtml(failure.action)}</small>
+                </div>
+            `
+            : (item.error_summary
+                ? `<div class="gallery-import-item__notice">${escapeGalleryImportHtml(normalizeGalleryImportFailureMessage(item.error_summary))}</div>`
+                : (processingStatus
+                    ? `<div class="gallery-import-item__notice">${escapeGalleryImportHtml(processingStatus)}</div>`
+                    : ''));
+
+        return `
+            <article class="gallery-import-item" data-import-item-id="${escapeGalleryImportHtml(item.id || '')}">
+                <div class="gallery-import-item__media">
+                    ${cover ? `<img src="${escapeGalleryImportHtml(cover)}" alt="导入预览" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
+                    <span class="gallery-import-item__count">共 ${Number(imageCount) || 0} 张</span>
+                </div>
+                <div class="gallery-import-item__body">
+                    <div class="gallery-import-item__meta">
+                        <span>${Number(item.favorite_count || item.favoriteCount || 0)} 收藏</span>
+                        <span class="gallery-import-item__status">${escapeGalleryImportHtml(status)}</span>
+                    </div>
+                    <p class="gallery-import-item__prompt">${escapeGalleryImportHtml(prompt)}</p>
+                    <div class="gallery-import-item__source">${escapeGalleryImportHtml(sourceLabel)}</div>
+                    ${error}
+                </div>
+            </article>
+        `;
+    }).join('');
+    updateGalleryImportProgress();
+}
+
+function setGalleryImportItems(items = [], options = {}) {
+    const includeCleaned = options.includeCleaned === true;
+    galleryImportState.items = (Array.isArray(items) ? items : [])
+        .filter((item) => includeCleaned || String(item?.status || '') !== 'cleaned');
+    if (galleryImportState.items.length) {
+        setGalleryImportEmptyMessage();
+    }
+    renderGalleryImportQueue(galleryImportState.items);
+}
+
+function buildGalleryImportPreviewItems(items = []) {
+    return (Array.isArray(items) ? items : []).map((item, index) => ({
+        id: `preview-${index}`,
+        ...item,
+        status: getGalleryImportItemReadinessIssue(item) ? 'needs_review' : 'staged',
+        favorite_count: item.favorite_count || item.favoriteCount || 0
+    }));
+}
+
+function loadGalleryImportRawText(rawText = '', statusPrefix = '已读取') {
+    const rawInput = document.getElementById('galleryImportRawInput');
+    if (rawInput) {
+        rawInput.value = String(rawText || '');
+    }
+
+    const previewItems = parseGalleryImportRawInput(rawText);
+    if (!previewItems.length) {
+        setGalleryImportEmptyMessage('没有读到可导入内容。请先在采集器复制诊断或下载结果，再回到这里粘贴 / 导入。');
+        setGalleryImportItems([]);
+        setGalleryImportRunStatus('未读到结果');
+        return [];
+    }
+
+    setGalleryImportItems(buildGalleryImportPreviewItems(previewItems));
+    setGalleryImportRunStatus(`${statusPrefix} ${previewItems.length} 条，点“开始任务”写入队列`);
+    return previewItems;
+}
+
+function upsertGalleryImportItem(nextItem = {}) {
+    const id = String(nextItem?.id || '').trim();
+    if (!id) return;
+    const index = galleryImportState.items.findIndex((item) => String(item?.id || '') === id);
+    if (String(nextItem?.status || '') === 'cleaned') {
+        if (index >= 0) {
+            galleryImportState.items.splice(index, 1);
+            renderGalleryImportQueue(galleryImportState.items);
+        }
+        return;
+    }
+    if (index >= 0) {
+        galleryImportState.items[index] = {
+            ...galleryImportState.items[index],
+            ...nextItem
+        };
+    } else {
+        galleryImportState.items.unshift(nextItem);
+    }
+    renderGalleryImportQueue(galleryImportState.items);
+}
+
+function isGalleryImportItemUploadable(item = {}) {
+    const status = String(item?.status || '').trim();
+    const finalPromptId = String(item?.final_prompt_id || item?.finalPromptId || '').trim();
+    return ['staged', 'queued', 'failed'].includes(status)
+        || (status === 'imported' && Boolean(finalPromptId));
+}
+
+function getGalleryImportItemReadinessIssue(item = {}) {
+    const finalPromptId = String(item?.final_prompt_id || item?.finalPromptId || '').trim();
+    const duplicatePromptId = String(item?.duplicate_of_prompt_id || item?.duplicateOfPromptId || '').trim();
+    const promptText = String(item?.prompt_text || item?.promptText || item?.prompt || '').trim();
+    const imageCount = getGalleryImportDisplayImageCount(item);
+    const originalWorkUrl = String(item?.original_work_url || item?.originalWorkUrl || item?.source_url || item?.sourceUrl || '').trim();
+    const authorName = String(item?.author_name || item?.authorName || item?.nickname || item?.creator || '').trim();
+    const authorHandle = String(item?.author_handle || item?.authorHandle || item?.author_id || item?.authorId || item?.handle || '').trim();
+    const status = String(item?.status || '').trim();
+
+    if (finalPromptId || duplicatePromptId) {
+        return '';
+    }
+    if (!promptText) {
+        return '缺少提示词，已跳过';
+    }
+    if (!imageCount) {
+        return '缺少图片，已跳过';
+    }
+    if (!originalWorkUrl) {
+        return '缺少 X 原帖链接，已跳过';
+    }
+    if (!authorName) {
+        return '缺少原作者昵称，已跳过';
+    }
+    if (!authorHandle) {
+        return '缺少原作者 ID，已跳过';
+    }
+    if (status === 'duplicate' || duplicatePromptId) {
+        return '提示词库已有重复内容，已跳过';
+    }
+    return '';
+}
+
+function isGalleryImportItemReadyForUpload(item = {}) {
+    return !getGalleryImportItemReadinessIssue(item);
+}
+
+async function skipGalleryImportItems(items = [], reason = '信息不完整，已跳过') {
+    const persistentIds = (Array.isArray(items) ? items : [])
+        .map((item) => item?.id)
+        .filter((id) => id && !String(id).startsWith('preview-'));
+
+    if (!persistentIds.length) {
+        return null;
+    }
+
+    const payload = await mutateGalleryImport('skip_items', {
+        site: window.AdminSiteFilter?.getSiteFilter?.() || 'cn',
+        item_ids: persistentIds,
+        reason
+    });
+    (payload.items || []).forEach(upsertGalleryImportItem);
+    if (payload.batch) galleryImportState.batch = payload.batch;
+    return payload;
+}
+
+async function failGalleryImportItems(items = [], reason = '已保存，但发布流程未完成') {
+    const persistentIds = (Array.isArray(items) ? items : [])
+        .map((item) => item?.id)
+        .filter((id) => id && !String(id).startsWith('preview-'));
+
+    if (!persistentIds.length) {
+        return null;
+    }
+
+    const payload = await mutateGalleryImport('fail_items', {
+        site: window.AdminSiteFilter?.getSiteFilter?.() || 'cn',
+        item_ids: persistentIds,
+        reason
+    });
+    (payload.items || []).forEach(upsertGalleryImportItem);
+    if (payload.batch) galleryImportState.batch = payload.batch;
+    return payload;
+}
+
+function hasMeaningfulGalleryImportAnalysisValue(value) {
+    if (Array.isArray(value)) {
+        return value.some((entry) => hasMeaningfulGalleryImportAnalysisValue(entry));
+    }
+    if (value && typeof value === 'object') {
+        return Object.values(value).some((entry) => hasMeaningfulGalleryImportAnalysisValue(entry));
+    }
+    if (typeof value === 'string') {
+        return value.trim().length > 0;
+    }
+    return value !== undefined && value !== null && value !== false;
+}
+
+function isGalleryImportGeneratedTitle(value = '') {
+    const title = String(value || '').replace(/\s+/g, ' ').trim();
+    return Boolean(title) && !/^(?:untitled prompt|未命名 prompt|未命名提示词)$/i.test(title);
+}
+
+function getGalleryImportPromptAnalysisChecks(prompt = {}) {
+    const aiTags = prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+        ? prompt.ai_tags
+        : (prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+            ? prompt.aiTags
+            : {});
+    const tags = Array.isArray(prompt?.tags) ? prompt.tags : [];
+    return {
+        title: isGalleryImportGeneratedTitle(prompt?.title),
+        category: tags.some((value) => String(value || '').trim()),
+        description: promptHasVisibleCopy(prompt?.description),
+        objects: hasMeaningfulGalleryImportAnalysisValue(aiTags.objects),
+        scenes: hasMeaningfulGalleryImportAnalysisValue(aiTags.scenes),
+        styles: hasMeaningfulGalleryImportAnalysisValue(aiTags.styles),
+        mood: hasMeaningfulGalleryImportAnalysisValue(aiTags.mood),
+        useCase: hasMeaningfulGalleryImportAnalysisValue(aiTags.useCase),
+        commercial: hasMeaningfulGalleryImportAnalysisValue(aiTags.commercial),
+        difficulty: hasMeaningfulGalleryImportAnalysisValue(aiTags.difficulty),
+        dominantColors: hasMeaningfulGalleryImportAnalysisValue(
+            prompt?.dominant_colors || prompt?.dominantColors
+        )
+    };
+}
+
+function getGalleryImportMissingAnalysisLabels(prompt = {}) {
+    const labels = {
+        title: '标题',
+        category: '分类',
+        description: '描述',
+        objects: '对象属性',
+        scenes: '场景属性',
+        styles: '风格属性',
+        mood: '氛围属性',
+        useCase: '用途属性',
+        commercial: '商业属性',
+        difficulty: '难度属性',
+        dominantColors: '主色'
+    };
+    return Object.entries(getGalleryImportPromptAnalysisChecks(prompt))
+        .filter(([, completed]) => !completed)
+        .map(([key]) => labels[key] || key);
+}
+
+function hasGalleryImportPromptAnalysis(prompt = {}) {
+    return getGalleryImportMissingAnalysisLabels(prompt).length === 0;
+}
+
+function getGalleryImportMissingBilingualLabels(prompt = {}) {
+    const labels = {
+        title_zh: '中文标题',
+        title_en: '英文标题',
+        description_zh: '中文描述',
+        description_en: '英文描述',
+        prompt_text_zh: '中文提示词',
+        prompt_text_en: '英文提示词'
+    };
+    return Object.entries(labels)
+        .filter(([field]) => !promptHasVisibleCopy(prompt?.[field]))
+        .map(([, label]) => label);
+}
+
+function getGalleryImportPromptProcessingState(prompt = {}, settings = {}) {
+    const analysisRequired = true;
+    const missingAnalysis = analysisRequired ? getGalleryImportMissingAnalysisLabels(prompt) : [];
+    const analyzed = !analysisRequired || missingAnalysis.length === 0;
+    const languageCoverage = getPromptLanguageCoverage(prompt);
+    const missingBilingual = getGalleryImportMissingBilingualLabels(prompt);
+    const bilingual = missingBilingual.length === 0;
+    const published = getPromptAdminOpsData(prompt).status === 'live'
+        && isGalleryImportGeneratedTitle(prompt?.title);
+    const nextStage = !analyzed
+        ? 'analysis'
+        : (!bilingual ? 'bilingual' : (!published ? 'publish' : 'cleanup'));
+
+    return {
+        nextStage,
+        analyzed,
+        bilingual,
+        published,
+        analysisRequired,
+        languageCoverage,
+        missingAnalysis,
+        missingBilingual
+    };
+}
+
+function buildGalleryImportProcessingStatusReason(processingState = {}) {
+    switch (processingState.nextStage) {
+        case 'analysis':
+            return `图片分析未完成：${(processingState.missingAnalysis || []).join('、') || '完整分析属性'}尚未保存，点击“上传队列”将从图片分析继续`;
+        case 'bilingual':
+            return `双语补全未完成：${(processingState.missingBilingual || []).join('、') || '双语字段'}尚未补齐，点击“上传队列”将从双语补全继续`;
+        case 'publish':
+            return '发布未完成：图片分析和双语补全已完成，点击“上传队列”将继续发布';
+        case 'cleanup':
+            return '暂存清理未完成：作品已上线，只需清理抓取暂存';
+        default:
+            return '后续处理未完成：点击“上传队列”继续';
+    }
+}
+
+async function runGalleryImportPostSavePipeline(prompt = {}, item = {}, context = {}) {
+    const writableSite = context.site || window.AdminSiteFilter?.getSiteFilter?.() || 'cn';
+    const settings = context.settings || {};
+    const currentIndex = Number(context.index || 0);
+    const total = Number(context.total || 0);
+    const prefix = total ? `${currentIndex} / ${total}` : '';
+    let processingState = context.processingState
+        || getGalleryImportPromptProcessingState(prompt, settings);
+    const reportStatus = typeof context.reportStatus === 'function'
+        ? context.reportStatus
+        : setGalleryImportRunStatus;
+    let currentPrompt = prompt;
+    const refreshPrompt = async () => {
+        const refreshed = await fetchAdminPromptItem(currentPrompt.id, {
+            site: writableSite,
+            hydrateBilingual: true
+        });
+        if (!refreshed?.row) {
+            throw new Error('处理后无法读取 Gallery 作品');
+        }
+        currentPrompt = refreshed.row;
+        processingState = getGalleryImportPromptProcessingState(currentPrompt, settings);
+        return currentPrompt;
+    };
+
+    if (settings.analyze_after_save && typeof reanalyzeSinglePrompt === 'function' && !processingState.analyzed) {
+        if (context.justSaved) {
+            reportStatus(`等待图片就绪 ${prefix}`.trim());
+            await sleep(GALLERY_IMPORT_STAGE_GAP_MS);
+        }
+        try {
+            await runGalleryImportPipelineStageWithRetry({
+                label: '图片分析',
+                index: currentIndex,
+                total,
+                maxAttempts: GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS,
+                reportStatus,
+                operation: async () => {
+                    currentPrompt = await reanalyzeSinglePrompt(currentPrompt, writableSite);
+                    await refreshPrompt();
+                    if (!processingState.analyzed) {
+                        throw new Error(`分析结果不完整：${processingState.missingAnalysis.join('、')}`);
+                    }
+                    return currentPrompt;
+                }
+            });
+        } catch (error) {
+            throw createGalleryImportStageError('analysis', error);
+        }
+        await sleep(GALLERY_IMPORT_STAGE_GAP_MS);
+    }
+
+    if (!processingState.bilingual) {
+        let bilingualResult;
+        try {
+            bilingualResult = await runGalleryImportPipelineStageWithRetry({
+                label: '双语补全',
+                index: currentIndex,
+                total,
+                maxAttempts: GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS,
+                reportStatus,
+                operation: async () => {
+                    const result = await completePromptBilingualFields(currentPrompt, writableSite, {
+                        mode: 'full'
+                    });
+                    currentPrompt = result.row || currentPrompt;
+                    await refreshPrompt();
+                    if (!processingState.bilingual) {
+                        throw new Error(`双语结果未完整保存：${processingState.missingBilingual.join('、')}`);
+                    }
+                    return result;
+                }
+            });
+        } catch (error) {
+            throw createGalleryImportStageError('bilingual', error);
+        }
+        currentPrompt = bilingualResult.row || currentPrompt;
+        await refreshPrompt();
+        await sleep(GALLERY_IMPORT_STAGE_GAP_MS);
+    }
+
+    if (!processingState.published) {
+        reportStatus(`发布中 ${prefix}`.trim());
+        try {
+            currentPrompt = await setPromptAdminStatus(currentPrompt, 'live', writableSite);
+            await refreshPrompt();
+            if (!processingState.published) {
+                throw new Error('数据库仍未确认作品为已上线状态');
+            }
+        } catch (error) {
+            throw createGalleryImportStageError('publish', error);
+        }
+    }
+
+    await refreshPrompt();
+    if (processingState.nextStage !== 'cleanup') {
+        throw createGalleryImportStageError(
+            processingState.nextStage,
+            new Error(buildGalleryImportProcessingStatusReason(processingState))
+        );
+    }
+
+    if (item?.id) {
+        try {
+            const cleanupPayload = await mutateGalleryImport('cleanup_items', {
+                site: writableSite,
+                item_ids: [item.id]
+            });
+            (cleanupPayload.items || []).forEach(upsertGalleryImportItem);
+            if (cleanupPayload.batch) galleryImportState.batch = cleanupPayload.batch;
+        } catch (error) {
+            throw createGalleryImportStageError('cleanup', error);
+        }
+    }
+
+    return currentPrompt;
+}
+
+async function loadGalleryImportSavedPrompt(item = {}, writableSite = getAdminPromptsReadSite()) {
+    const finalPromptId = String(item?.final_prompt_id || item?.finalPromptId || '').trim();
+    const duplicatePromptId = String(item?.duplicate_of_prompt_id || item?.duplicateOfPromptId || '').trim();
+    const promptId = finalPromptId || duplicatePromptId;
+    if (!promptId) return null;
+    const payload = await fetchAdminPromptItem(promptId, {
+        site: writableSite,
+        hydrateBilingual: true
+    });
+    if (!payload?.row) {
+        throw new Error('已保存的 Gallery 作品读取失败');
+    }
+    if (!finalPromptId) {
+        const aiTags = payload.row?.ai_tags && typeof payload.row.ai_tags === 'object' && !Array.isArray(payload.row.ai_tags)
+            ? payload.row.ai_tags
+            : {};
+        const adminMetadata = aiTags.admin && typeof aiTags.admin === 'object' && !Array.isArray(aiTags.admin)
+            ? aiTags.admin
+            : {};
+        const isAssistantPrompt = String(adminMetadata.source || '').trim() === 'prompt_import'
+            || /meigen\s*导入助手/i.test(String(adminMetadata.note || ''));
+        if (!isAssistantPrompt) {
+            return null;
+        }
+    }
+    return payload.row;
+}
+
+function getGalleryImportSavedPromptReferenceId(item = {}) {
+    return String(
+        item?.final_prompt_id
+        || item?.finalPromptId
+        || item?.duplicate_of_prompt_id
+        || item?.duplicateOfPromptId
+        || ''
+    ).trim();
+}
+
+async function loadRecentGalleryImportSavedItems(limit = 20) {
+    const payload = await fetchGalleryImportApi({ limit });
+    const batches = Array.isArray(payload?.batches) ? payload.batches : [];
+    const details = await Promise.all(batches.map((batch) => (
+        fetchGalleryImportApi({
+            batchId: batch.id,
+            limit: 100
+        }).catch((error) => {
+            console.warn('[GalleryImport] Failed to inspect an earlier import batch:', batch?.id, error);
+            return null;
+        })
+    )));
+    const byPromptId = new Map();
+    details.forEach((detail) => {
+        (detail?.items || []).forEach((item) => {
+            const promptId = getGalleryImportSavedPromptReferenceId(item);
+            if (!promptId || byPromptId.has(promptId)) return;
+            byPromptId.set(promptId, item);
+        });
+    });
+    return [...byPromptId.values()];
+}
+
+async function stageGalleryImportItems(items = []) {
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: 'Gallery 导入助手' });
+    if (!writableSite) return null;
+
+    const settings = getGalleryImportSettings();
+    const payload = await mutateGalleryImport('stage_items', {
+        site: writableSite,
+        source: 'meigen',
+        mode: galleryImportState.mode,
+        settings,
+        batch_id: galleryImportState.batch?.id || '',
+        items
+    });
+    galleryImportState.batch = payload.batch || galleryImportState.batch;
+    setGalleryImportItems(payload.items || []);
+    return payload;
+}
+
+async function loadLatestGalleryImportBatch(options = {}) {
+    const payload = await fetchGalleryImportApi({ limit: 1 });
+    const batch = payload.batches?.[0] || null;
+    if (!batch) {
+        const hasPreviewItems = galleryImportState.items.some((item) => String(item?.id || '').startsWith('preview-'));
+        setGalleryImportEmptyMessage('还没有队列内容。请先在采集器点“送入队列”；如果复制的是诊断或下载文件，点“粘贴结果”或“导入抓取结果”，再点“开始任务”。');
+        setGalleryImportRunStatus(hasPreviewItems ? '预览还未写入队列' : '还没有送入队列');
+        if (hasPreviewItems) {
+            renderGalleryImportQueue(galleryImportState.items);
+        } else {
+            setGalleryImportItems([]);
+        }
+        return null;
+    }
+    galleryImportState.batch = batch;
+    const detail = await fetchGalleryImportApi({ batchId: batch.id, limit: 100 });
+    galleryImportState.batch = detail.batch || batch;
+    setGalleryImportItems(detail.items || [], {
+        includeCleaned: options.includeCleaned === true
+    });
+    setGalleryImportRunStatus('队列已刷新');
+    return detail;
+}
+
+async function refreshGalleryImportProcessingStatus(options = {}) {
+    if (galleryImportState.statusRefreshInFlight || galleryImportState.uploadInFlight) {
+        if (!options.silent) {
+            showAdminStudioToast('当前已有导入任务正在处理，请稍候', 'info');
+        }
+        return null;
+    }
+
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: 'Gallery 导入助手' });
+    if (!writableSite) return null;
+
+    galleryImportState.statusRefreshInFlight = true;
+    setGalleryImportRunStatus('正在读取 Manage 当前状态...');
+    let latestBatch = null;
+
+    try {
+        await loadLatestGalleryImportBatch();
+        latestBatch = galleryImportState.batch;
+        const savedItems = await loadRecentGalleryImportSavedItems(20);
+        if (!savedItems.length) {
+            setGalleryImportRunStatus('当前队列没有已保存到 Gallery 的作品');
+            if (!options.silent) {
+                showAdminStudioToast('当前队列没有可同步处理状态的作品', 'info');
+            }
+            return {
+                total: 0,
+                pending: 0,
+                completed: 0,
+                failed: 0
+            };
+        }
+
+        const settings = getGalleryImportSettings();
+        const stageCounts = {
+            analysis: 0,
+            bilingual: 0,
+            publish: 0,
+            cleanup: 0
+        };
+        let failed = 0;
+
+        for (let index = 0; index < savedItems.length; index += 1) {
+            const item = savedItems[index];
+            setGalleryImportRunStatus(`检查处理状态 ${index + 1} / ${savedItems.length}`);
+            try {
+                const prompt = await loadGalleryImportSavedPrompt(item, writableSite);
+                if (!prompt) {
+                    continue;
+                }
+                const processingState = getGalleryImportPromptProcessingState(prompt, settings);
+                stageCounts[processingState.nextStage] += 1;
+
+                if (processingState.nextStage === 'cleanup') {
+                    if (String(item?.status || '') !== 'cleaned') {
+                        const cleanupPayload = await mutateGalleryImport('cleanup_items', {
+                            site: writableSite,
+                            item_ids: [item.id]
+                        });
+                        (cleanupPayload.items || []).forEach(upsertGalleryImportItem);
+                        if (cleanupPayload.batch) galleryImportState.batch = cleanupPayload.batch;
+                    }
+                    continue;
+                }
+
+                const reason = buildGalleryImportProcessingStatusReason(processingState);
+                await failGalleryImportItems([item], reason);
+            } catch (error) {
+                failed += 1;
+                const reason = `后续处理失败：状态读取失败，${normalizeGalleryImportFailureMessage(error)}`;
+                console.warn('[GalleryImport] Failed to refresh saved prompt state:', error);
+                try {
+                    await failGalleryImportItems([item], reason);
+                } catch (persistError) {
+                    console.warn('[GalleryImport] Failed to persist state refresh error:', persistError);
+                    upsertGalleryImportItem({
+                        ...item,
+                        status: 'failed',
+                        error_summary: reason
+                    });
+                }
+            }
+        }
+
+        const pending = stageCounts.analysis + stageCounts.bilingual + stageCounts.publish;
+        const completed = stageCounts.cleanup;
+        const stageSummary = [
+            stageCounts.analysis ? `待分析 ${stageCounts.analysis} 条` : '',
+            stageCounts.bilingual ? `待双语 ${stageCounts.bilingual} 条` : '',
+            stageCounts.publish ? `待发布 ${stageCounts.publish} 条` : '',
+            completed ? `已完成并清理 ${completed} 条` : '',
+            failed ? `状态读取失败 ${failed} 条` : ''
+        ].filter(Boolean).join('，');
+        setGalleryImportRunStatus(`状态已刷新${stageSummary ? `：${stageSummary}` : ''}`);
+        if (!options.silent) {
+            showAdminStudioToast(
+                stageSummary ? `处理状态已同步：${stageSummary}` : '处理状态已同步',
+                failed ? 'warning' : 'success'
+            );
+        }
+        return {
+            total: savedItems.length,
+            pending,
+            completed,
+            failed,
+            stageCounts
+        };
+    } finally {
+        if (latestBatch) {
+            galleryImportState.batch = latestBatch;
+        }
+        galleryImportState.statusRefreshInFlight = false;
+    }
+}
+
+async function runGalleryImportUploadQueue() {
+    if (galleryImportState.uploadInFlight || galleryImportState.statusRefreshInFlight) return;
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: 'Gallery 导入助手' });
+    if (!writableSite) return;
+
+    try {
+        await refreshGalleryImportProcessingStatus({ silent: true });
+    } catch (error) {
+        console.warn('[GalleryImport] Pre-upload status refresh failed, continuing with visible queue:', error);
+    }
+
+    let uploadable = galleryImportState.items.filter(isGalleryImportItemUploadable);
+    if (!uploadable.length && !galleryImportState.items.length) {
+        await loadLatestGalleryImportBatch();
+        uploadable = galleryImportState.items.filter(isGalleryImportItemUploadable);
+    }
+
+    if (!uploadable.length) {
+        showAdminStudioToast('没有需要上传的内容', 'info');
+        return;
+    }
+
+    const skippedItems = [];
+    const readyItems = [];
+    const seenPromptIds = new Set();
+    const seenPromptTexts = new Set();
+    const seenSourceUrls = new Set();
+    uploadable.forEach((item) => {
+        const issue = getGalleryImportItemReadinessIssue(item);
+        if (issue) {
+            skippedItems.push({ ...item, status: 'skipped', error_summary: issue });
+            return;
+        }
+        const normalizedPromptText = String(item?.prompt_text || item?.promptText || item?.prompt || '')
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/[“”]/g, '"')
+            .replace(/[‘’]/g, "'")
+            .trim();
+        const normalizedSourceUrl = String(
+            item?.original_work_url || item?.originalWorkUrl || item?.source_url || item?.sourceUrl || ''
+        ).trim().toLowerCase();
+        const normalizedPromptId = getGalleryImportSavedPromptReferenceId(item);
+        if (
+            (normalizedPromptId && seenPromptIds.has(normalizedPromptId))
+            ||
+            (normalizedPromptText && seenPromptTexts.has(normalizedPromptText))
+            || (normalizedSourceUrl && seenSourceUrls.has(normalizedSourceUrl))
+        ) {
+            skippedItems.push({
+                ...item,
+                status: 'skipped',
+                error_summary: '当前队列已有相同作品或提示词，已跳过'
+            });
+            return;
+        }
+        if (normalizedPromptId) {
+            seenPromptIds.add(normalizedPromptId);
+        }
+        if (normalizedPromptText) {
+            seenPromptTexts.add(normalizedPromptText);
+        }
+        if (normalizedSourceUrl) {
+            seenSourceUrls.add(normalizedSourceUrl);
+        }
+        readyItems.push(item);
+    });
+
+    if (skippedItems.length) {
+        skippedItems.forEach(upsertGalleryImportItem);
+        try {
+            await skipGalleryImportItems(skippedItems, '必填信息缺失或重复，已跳过');
+        } catch (skipError) {
+            console.warn('[GalleryImport] Failed to persist skipped items:', skipError);
+        }
+    }
+
+    if (!readyItems.length) {
+        setGalleryImportRunStatus(`完成：跳过 ${skippedItems.length} 条，暂无可发布内容`);
+        showAdminStudioToast('没有可发布的完整内容；必填信息缺失或重复的条目已跳过', 'warning');
+        return;
+    }
+
+    galleryImportState.uploadInFlight = true;
+    const latestBatch = galleryImportState.batch;
+    const settings = getGalleryImportSettings();
+    const parallelism = Math.max(1, Math.min(Number(settings.parallelism || 2), readyItems.length, 3));
+    setGalleryImportRunStatus(`并行处理准备中：同时 ${parallelism} 条`);
+    let completed = 0;
+    let active = 0;
+    const failureStageCounts = {};
+    const updateParallelStatus = (itemStatus = '') => {
+        setGalleryImportRunStatus(
+            `${itemStatus ? `${itemStatus} · ` : ''}总进度 ${completed} / ${readyItems.length}，处理中 ${active} 条`
+        );
+    };
+    const processGalleryImportItem = async (item, index) => {
+        active += 1;
+        let pipelineItem = item;
+        const reportStatus = (statusText = '') => {
+            upsertGalleryImportItem({
+                ...pipelineItem,
+                status: 'uploading',
+                error_summary: '',
+                __processingStatus: statusText
+            });
+            updateParallelStatus(statusText);
+        };
+
+        let pipelinePrompt = null;
+        let justSaved = false;
+        let skipped = false;
+        try {
+            reportStatus(`保存图片 ${index + 1} / ${readyItems.length}`);
+            pipelinePrompt = await loadGalleryImportSavedPrompt(item, writableSite);
+            if (pipelinePrompt) {
+                const recoveredPromptId = String(pipelinePrompt.id || '').trim();
+                if (
+                    recoveredPromptId
+                    && !String(pipelineItem?.final_prompt_id || pipelineItem?.finalPromptId || '').trim()
+                ) {
+                    pipelineItem = {
+                        ...pipelineItem,
+                        final_prompt_id: recoveredPromptId,
+                        duplicate_of_prompt_id: ''
+                    };
+                }
+                reportStatus(`检查当前状态 ${index + 1} / ${readyItems.length}`);
+            } else {
+                if (getGalleryImportSavedPromptReferenceId(item)) {
+                    skippedItems.push({
+                        ...item,
+                        status: 'skipped',
+                        error_summary: '提示词库已有重复内容，已跳过'
+                    });
+                    skipped = true;
+                    return {
+                        published: 0,
+                        savedOnly: 0,
+                        failed: 0
+                    };
+                }
+                const payload = await mutateGalleryImport('upload_item', {
+                    site: writableSite,
+                    item_id: item.id,
+                    default_status: settings.default_status,
+                    cleanup_after_pipeline: true
+                });
+                if (payload.item) {
+                    pipelineItem = payload.item;
+                    upsertGalleryImportItem(payload.item);
+                }
+                if (payload.batch) galleryImportState.batch = payload.batch;
+                if (payload.skipped) {
+                    skippedItems.push(payload.item || item);
+                    skipped = true;
+                    return {
+                        published: 0,
+                        savedOnly: 0,
+                        failed: 0
+                    };
+                }
+                if (payload.error || !payload.prompt) {
+                    throw new Error(payload.error || '上传完成后没有读到 Gallery 作品');
+                }
+                pipelinePrompt = payload.prompt;
+                justSaved = true;
+            }
+
+            const processingState = getGalleryImportPromptProcessingState(pipelinePrompt, settings);
+            const stageLabel = GALLERY_IMPORT_FAILURE_STAGES[processingState.nextStage]?.label || '后续处理';
+            reportStatus(
+                processingState.nextStage === 'cleanup'
+                    ? `已完成，清理暂存 ${index + 1} / ${readyItems.length}`
+                    : `${stageLabel} ${index + 1} / ${readyItems.length}`
+            );
+            await runGalleryImportPostSavePipeline(pipelinePrompt, pipelineItem, {
+                site: writableSite,
+                settings,
+                index: index + 1,
+                total: readyItems.length,
+                justSaved,
+                processingState,
+                reportStatus
+            });
+            return {
+                published: 1,
+                savedOnly: 0,
+                failed: 0
+            };
+        } catch (error) {
+            const pipelineError = error?.galleryImportStage
+                ? error
+                : createGalleryImportStageError(pipelinePrompt ? 'unknown' : 'upload', error);
+            const failureStage = String(pipelineError?.galleryImportStage || 'unknown');
+            failureStageCounts[failureStage] = (failureStageCounts[failureStage] || 0) + 1;
+            const failureMessage = normalizeGalleryImportFailureMessage(
+                pipelineError?.message || pipelineError,
+                pipelinePrompt ? '已保存，但发布流程未完成' : '上传失败'
+            );
+            console.warn('[GalleryImport] Import pipeline failed:', pipelineError);
+            if (pipelinePrompt) {
+                try {
+                    await failGalleryImportItems([pipelineItem], failureMessage);
+                } catch (failPersistError) {
+                    console.warn('[GalleryImport] Failed to persist post-save failure:', failPersistError);
+                }
+            }
+            upsertGalleryImportItem({
+                ...pipelineItem,
+                status: 'failed',
+                error_summary: failureMessage,
+                __processingStatus: ''
+            });
+            return {
+                published: 0,
+                savedOnly: pipelinePrompt ? 1 : 0,
+                failed: 1
+            };
+        } finally {
+            active = Math.max(0, active - 1);
+            completed += 1;
+            updateParallelStatus(skipped ? '已跳过' : '');
+        }
+    };
+
+    const results = new Array(readyItems.length);
+    let nextIndex = 0;
+    try {
+        const workers = Array.from({ length: parallelism }, async () => {
+            while (nextIndex < readyItems.length) {
+                const index = nextIndex;
+                nextIndex += 1;
+                results[index] = await processGalleryImportItem(readyItems[index], index);
+                if (nextIndex < readyItems.length) {
+                    await sleep(GALLERY_IMPORT_STAGE_GAP_MS);
+                }
+            }
+        });
+        await Promise.all(workers);
+    } finally {
+        if (latestBatch) {
+            galleryImportState.batch = latestBatch;
+        }
+        galleryImportState.uploadInFlight = false;
+    }
+    const published = results.reduce((sum, result) => sum + Number(result?.published || 0), 0);
+    const savedOnly = results.reduce((sum, result) => sum + Number(result?.savedOnly || 0), 0);
+    const failed = results.reduce((sum, result) => sum + Number(result?.failed || 0), 0);
+    const needsAction = failed + skippedItems.length;
+    const failureBreakdown = Object.entries(failureStageCounts)
+        .filter(([, count]) => Number(count) > 0)
+        .map(([stage, count]) => `${GALLERY_IMPORT_FAILURE_STAGES[stage]?.label || '后续处理'}失败 ${count} 条`)
+        .join('，');
+    setGalleryImportRunStatus(
+        `完成：已发布 ${published} 条，跳过 ${skippedItems.length} 条，需要处理 ${failed} 条${failureBreakdown ? `（${failureBreakdown}）` : ''}`
+    );
+    const savedOnlyText = savedOnly ? `，其中 ${savedOnly} 条已保存但未完成发布` : '';
+    showAdminStudioToast(
+        `导入完成：已发布 ${published} 条，跳过 ${skippedItems.length} 条，需要处理 ${failed} 条${failureBreakdown ? `（${failureBreakdown}）` : ''}${savedOnlyText}`,
+        published && !needsAction ? 'success' : (published ? 'warning' : 'error')
+    );
+    markHomepagePromptPoolUpdated();
+    await loadAdminPrompts({ force: true, replaceExisting: true });
+}
+
+async function startGalleryImportTask() {
+    if (galleryImportState.running) return;
+    galleryImportState.running = true;
+    setGalleryImportRunStatus('准备中...');
+
+    try {
+        if (galleryImportState.mode === 'upload_only') {
+            await runGalleryImportUploadQueue();
+            return;
+        }
+
+        const items = getGalleryImportItemsFromInput();
+        if (!items.length) {
+            showAdminStudioToast('请先导入抓取结果', 'warning');
+            setGalleryImportRunStatus('等待抓取结果');
+            return;
+        }
+
+        setGalleryImportRunStatus('整理抓取结果...');
+        await stageGalleryImportItems(items);
+        setGalleryImportRunStatus(galleryImportState.mode === 'stream' ? '准备上传...' : '已生成预览');
+
+        if (galleryImportState.mode === 'stream') {
+            await runGalleryImportUploadQueue();
+        } else {
+            showAdminStudioToast('抓取结果已进入预览队列', 'success');
+        }
+    } catch (error) {
+        console.error('[GalleryImport] Task failed:', error);
+        showAdminStudioToast(error.message || '导入任务失败', 'error');
+        setGalleryImportRunStatus('任务失败');
+    } finally {
+        galleryImportState.running = false;
+    }
+}
+
+async function cleanupGalleryImportItems() {
+    const cleanupIds = galleryImportState.items
+        .filter((item) => ['imported', 'skipped'].includes(String(item?.status || '')))
+        .map((item) => item.id)
+        .filter(Boolean);
+    if (!cleanupIds.length) {
+        showAdminStudioToast('没有需要清理的已处理内容', 'info');
+        return;
+    }
+
+    try {
+        const payload = await mutateGalleryImport('cleanup_items', {
+            item_ids: cleanupIds
+        });
+        (payload.items || []).forEach(upsertGalleryImportItem);
+        showAdminStudioToast(`已清理 ${payload.cleanedCount || cleanupIds.length} 条`, 'success');
+    } catch (error) {
+        showAdminStudioToast(error.message || '清理失败', 'error');
+    }
+}
+
+async function clearCurrentGalleryImportQueue() {
+    const cleanupIds = galleryImportState.items
+        .map((item) => item.id)
+        .filter((id) => id && !String(id).startsWith('preview-'));
+    if (!cleanupIds.length) {
+        showAdminStudioToast('当前队列没有可清空的内容', 'info');
+        return;
+    }
+    if (!confirm(`确定清空当前队列的 ${cleanupIds.length} 条内容吗？已抓取的原始图片和提示词暂存会被清掉。`)) {
+        return;
+    }
+
+    try {
+        const payload = await mutateGalleryImport('cleanup_items', {
+            item_ids: cleanupIds
+        });
+        const cleanedIds = new Set((payload.items || []).map((item) => String(item.id || '')).filter(Boolean));
+        galleryImportState.items = galleryImportState.items.filter((item) => !cleanedIds.has(String(item.id || '')));
+        renderGalleryImportQueue(galleryImportState.items);
+        setGalleryImportRunStatus('当前队列已清空');
+        showAdminStudioToast(`已清空 ${payload.cleanedCount || cleanupIds.length} 条`, 'success');
+    } catch (error) {
+        showAdminStudioToast(error.message || '清空队列失败', 'error');
+    }
+}
+
+function handleGalleryImportFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        const previewItems = loadGalleryImportRawText(String(reader.result || ''), '已读取');
+        if (previewItems.length) {
+            showAdminStudioToast(`已读取 ${previewItems.length} 条，点开始任务写入队列`, 'success');
+        }
+    };
+    reader.onerror = () => {
+        showAdminStudioToast('读取抓取结果失败', 'error');
+    };
+    reader.readAsText(file);
+}
+
+async function pasteGalleryImportClipboard() {
+    if (!navigator.clipboard?.readText) {
+        showAdminStudioToast('浏览器不允许直接读取剪贴板，请展开高级导入文本后手动粘贴', 'warning');
+        setGalleryImportRunStatus('请手动粘贴结果');
+        return;
+    }
+
+    try {
+        const text = await navigator.clipboard.readText();
+        const previewItems = loadGalleryImportRawText(text, '已从剪贴板读取');
+        if (previewItems.length) {
+            showAdminStudioToast(`已读取 ${previewItems.length} 条，点开始任务写入队列`, 'success');
+        } else {
+            showAdminStudioToast('剪贴板里没有采集结果', 'warning');
+        }
+    } catch (error) {
+        console.warn('[GalleryImport] Clipboard read failed:', error);
+        showAdminStudioToast('读取剪贴板失败，请展开高级导入文本后手动粘贴', 'warning');
+        setGalleryImportRunStatus('请手动粘贴结果');
+    }
+}
+
+function initGalleryImportAssistant() {
+    initCustomDropdown?.();
+
+    const fileInput = document.getElementById('galleryImportFileInput');
+    if (fileInput && fileInput.dataset.bound !== '1') {
+        fileInput.dataset.bound = '1';
+        fileInput.addEventListener('change', (event) => {
+            handleGalleryImportFile(event.target.files?.[0]);
+            event.target.value = '';
+        });
+    }
+
+    const rawInput = document.getElementById('galleryImportRawInput');
+    if (rawInput && rawInput.dataset.bound !== '1') {
+        rawInput.dataset.bound = '1';
+        rawInput.addEventListener('input', () => {
+            loadGalleryImportRawText(rawInput.value, '已读取');
+        });
+    }
+
+    setGalleryImportMode(galleryImportState.mode);
+    updateGalleryImportProgress();
+}
+
+document.addEventListener('click', (event) => {
+    const actionEl = event.target.closest('[data-admin-action]');
+    const action = actionEl?.dataset?.adminAction || '';
+    if (!action || !action.startsWith('gallery-import-')) return;
+
+    switch (action) {
+        case 'gallery-import-open-source':
+            window.open(GALLERY_IMPORT_SOURCE_URL, '_blank', 'noopener,noreferrer');
+            setGalleryImportRunStatus('已打开 Meigen');
+            break;
+        case 'gallery-import-copy-collector':
+            void copyGalleryImportCollector();
+            break;
+        case 'gallery-import-pick-file':
+            document.getElementById('galleryImportFileInput')?.click();
+            break;
+        case 'gallery-import-paste-clipboard':
+            void pasteGalleryImportClipboard();
+            break;
+        case 'gallery-import-set-mode':
+            setGalleryImportMode(actionEl.dataset.importMode || 'crawl_only');
+            break;
+        case 'gallery-import-start':
+            void startGalleryImportTask();
+            break;
+        case 'gallery-import-upload-staged':
+            void runGalleryImportUploadQueue();
+            break;
+        case 'gallery-import-refresh':
+            void loadLatestGalleryImportBatch().catch((error) => {
+                showAdminStudioToast(error.message || '刷新队列失败', 'error');
+            });
+            break;
+        case 'gallery-import-refresh-status':
+            void refreshGalleryImportProcessingStatus().catch((error) => {
+                setGalleryImportRunStatus('刷新处理状态失败');
+                showAdminStudioToast(error.message || '刷新处理状态失败', 'error');
+            });
+            break;
+        case 'gallery-import-cleanup':
+            void cleanupGalleryImportItems();
+            break;
+        case 'gallery-import-clear-current':
+            void clearCurrentGalleryImportQueue();
+            break;
+    }
+});
+
+initGalleryImportAssistant();
 
 // ========================================
 // IMAGE PREVIEW & CROP

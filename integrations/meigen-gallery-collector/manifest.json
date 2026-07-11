@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "Father Key Meigen Collector",
+  "version": "0.1.0",
+  "description": "采集 Meigen 当前页面作品，并送入 Father Key Gallery Import 队列。",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Meigen 导入"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.meigen.ai/*",
+        "https://meigen.ai/*"
+      ],
+      "js": [
+        "clipboard-bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.meigen.ai/*",
+        "https://meigen.ai/*"
+      ],
+      "js": [
+        "content-prelude.js",
+        "meigen-gallery-collector.user.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.fatherkey.com/*",
+        "https://fatherkey.com/*",
+        "https://www.zaoyoe.xyz/*",
+        "https://zaoyoe.xyz/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "admin-bridge.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "clipboardRead",
+    "downloads",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.meigen.ai/*",
+    "https://meigen.ai/*",
+    "https://www.fatherkey.com/*",
+    "https://fatherkey.com/*",
+    "https://www.zaoyoe.xyz/*",
+    "https://zaoyoe.xyz/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ]
+}

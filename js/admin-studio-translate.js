@@ -112,7 +112,7 @@ const PromptTranslator = {
     /**
      * Translate Chinese text to English
      */
-    translateToEnglish: async function (text) {
+    translateToEnglish: async function (text, options = {}) {
         if (!window.AdminAI?.configured) {
             console.warn('[PromptTranslator] No server AI proxy, skipping translation');
             return null;
@@ -141,6 +141,9 @@ Text: ${text}`;
             return normalized;
         } catch (err) {
             console.error('[PromptTranslator] Translation to English failed:', err);
+            if (options.rethrow === true) {
+                throw err;
+            }
             return null;
         }
     },
@@ -148,7 +151,7 @@ Text: ${text}`;
     /**
      * Translate English text to Chinese
      */
-    translateToChinese: async function (text) {
+    translateToChinese: async function (text, options = {}) {
         if (!window.AdminAI?.configured) {
             console.warn('[PromptTranslator] No server AI proxy, skipping translation');
             return null;
@@ -177,6 +180,9 @@ Text: ${text}`;
             return normalized;
         } catch (err) {
             console.error('[PromptTranslator] Translation to Chinese failed:', err);
+            if (options.rethrow === true) {
+                throw err;
+            }
             return null;
         }
     },
@@ -208,11 +214,11 @@ Text: ${text}`;
             try {
                 await Promise.all(targetEntries.map(async ([fieldName, sourceText]) => {
                     if (fieldName.endsWith('_zh')) {
-                        const value = await this.translateToChinese(sourceText);
+                        const value = await this.translateToChinese(sourceText, { rethrow: true });
                         if (value) translations[fieldName] = value;
                         return;
                     }
-                    const value = await this.translateToEnglish(sourceText);
+                    const value = await this.translateToEnglish(sourceText, { rethrow: true });
                     if (value) translations[fieldName] = value;
                 }));
             } catch (err) {
@@ -288,11 +294,11 @@ ${JSON.stringify({
         try {
             const text = await window.AdminAI.generateText(jsonPrompt, {
                 model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
-                generationConfig: { temperature: 0.1, maxOutputTokens: 2200 },
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1600 },
                 budget: {
-                    tier: 'balanced',
-                    maxInputChars: 12000,
-                    maxOutputTokens: 1200
+                    tier: 'expanded',
+                    maxInputChars: 24000,
+                    maxOutputTokens: 1600
                 }
             });
             const parsed = this.parseJsonResponse(text);

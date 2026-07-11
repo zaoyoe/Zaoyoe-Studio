@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Meigen 导入</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <main class="collector-popup">
+        <header class="collector-header">
+            <p>Gallery 导入</p>
+            <h1>Meigen 采集器</h1>
+            <small id="versionText">版本 --</small>
+        </header>
+
+        <section class="collector-panel">
+            <label>
+                <span>Admin 地址</span>
+                <input id="adminBaseUrl" type="url" value="https://www.fatherkey.com" autocomplete="off">
+            </label>
+            <label>
+                <span>站点</span>
+                <select id="siteSelect">
+                    <option value="cn">CN</option>
+                    <option value="intl">INTL</option>
+                </select>
+            </label>
+            <label>
+                <span>保存状态</span>
+                <select id="statusSelect">
+                    <option value="review">待复核</option>
+                    <option value="live">已上线</option>
+                    <option value="draft">草稿</option>
+                </select>
+            </label>
+            <label>
+                <span>最多作品</span>
+                <input id="maxItemsInput" type="number" min="1" max="200" step="1" value="20" inputmode="numeric">
+            </label>
+            <label>
+                <span>收藏最少</span>
+                <input id="minFavoritesInput" type="number" min="0" step="1" placeholder="不限" inputmode="numeric">
+            </label>
+            <label>
+                <span>收藏最多</span>
+                <input id="maxFavoritesInput" type="number" min="0" step="1" placeholder="不限" inputmode="numeric">
+            </label>
+        </section>
+
+        <section class="collector-summary" id="summary">
+            <span>作品 0</span>
+            <span>图片 0</span>
+            <span>待补 0</span>
+            <span>失败 0</span>
+        </section>
+
+        <section class="collector-actions">
+            <button id="collectBtn" type="button" class="primary">采集当前页</button>
+            <button id="scrollBtn" type="button">滚动采集</button>
+            <button id="stopScrollBtn" type="button" disabled>停止滚动</button>
+            <button id="pageBatchBtn" type="button">翻页采集</button>
+            <button id="stopPageBatchBtn" type="button" disabled>停止翻页</button>
+            <button id="enrichBtn" type="button">补抓详情</button>
+            <button id="pauseBtn" type="button" disabled>暂停</button>
+            <button id="retryBtn" type="button" disabled>重试失败</button>
+            <button id="stageBtn" type="button" disabled>送入队列</button>
+            <button id="downloadBtn" type="button" disabled>下载结果</button>
+            <button id="diagnosticsBtn" type="button">复制诊断</button>
+        </section>
+
+        <p class="collector-status" id="statusText">请先打开 Meigen 页面。</p>
+    </main>
+    <script src="popup.js"></script>
+</body>
+</html>
