@@ -5,6 +5,27 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtime = require('../server/workers/prompt-import-runtime');
+const worker = require('../scripts/prompt-import-worker');
+
+test('prompt import worker adapts concurrency to sustained relay capacity', () => {
+    const controller = worker.createAdaptiveConcurrencyController({ ceiling: 10, initial: 3, stableBatchesRequired: 2 });
+    assert.equal(controller.limit, 3);
+    controller.observe({ claimed: 3, fulfilled: 3, rejected: [] });
+    assert.equal(controller.limit, 3);
+    controller.observe({ claimed: 3, fulfilled: 3, rejected: [] });
+    assert.equal(controller.limit, 4);
+    controller.observe({ claimed: 4, fulfilled: 3, rejected: [{ reason: { retryable: true, retryAfterMs: 45000 } }] });
+    assert.equal(controller.limit, 2);
+    const pressure = controller.observe({ claimed: 2, fulfilled: 1, rejected: [{ reason: new Error('429 rate limit') }] });
+    assert.equal(controller.limit, 1);
+    assert.equal(pressure.cooldownMs, 15000);
+});
+
+test('prompt import worker does not increase concurrency on a partial queue batch', () => {
+    const controller = worker.createAdaptiveConcurrencyController({ ceiling: 10, initial: 3, stableBatchesRequired: 1 });
+    controller.observe({ claimed: 2, fulfilled: 2, rejected: [] });
+    assert.equal(controller.limit, 3);
+});
 
 test('prompt import worker builds published bilingual analysis patch', () => {
     const patch = runtime.buildPromptPatch({ ai_tags: { existing: true } }, {
@@ -141,9 +162,10 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(compose, /prompt-import-worker:/);
     assert.match(compose, /zaoyoe-prompt-import-worker/);
     assert.match(deploy, /prompt-import-worker/);
-    assert.match(worker, /let adaptiveLimit = 1/);
-    assert.match(worker, /adaptiveLimit = Math\.max\(1, Math\.floor\(adaptiveLimit \/ 2\)\)/);
-    assert.match(worker, /adaptiveLimit \+= 1/);
+    assert.match(worker, /createAdaptiveConcurrencyController/);
+    assert.match(worker, /PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY \|\| 3/);
+    assert.match(worker, /limit = Math\.max\(1, Math\.floor\(limit \/ 2\)\)/);
+    assert.match(worker, /limit \+= 1/);
     assert.match(worker, /entry\.reason\?\.retryable === true/);
     assert.match(runtimeSource, /cleanup_after_pipeline: false/);
     assert.match(runtimeSource, /retryAttempt <= 8/);
@@ -153,7 +175,8 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(runtimeSource, /limit: 2/);
     assert.match(runtimeSource, /max_output_tokens: 2200/);
     assert.match(runtimeSource, /AbortSignal\.timeout\(150000\)/);
-    assert.match(compose, /PROMPT_IMPORT_WORKER_CONCURRENCY: "1"/);
+    assert.match(compose, /PROMPT_IMPORT_WORKER_CONCURRENCY: "10"/);
+    assert.match(compose, /PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY: "3"/);
     assert.match(runtimeSource, /isPromptImportItemCancelled/);
     assert.match(runtimeSource, /resolvePromptImportAiService/);
     assert.match(runtimeSource, /config_key', 'integrations'/);

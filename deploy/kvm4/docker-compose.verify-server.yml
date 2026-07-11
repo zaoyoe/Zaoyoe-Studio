@@ -58,7 +58,8 @@ services:
       - ./.env
     environment:
       NODE_ENV: production
-      PROMPT_IMPORT_WORKER_CONCURRENCY: "1"
+      PROMPT_IMPORT_WORKER_CONCURRENCY: "10"
+      PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY: "3"
       PROMPT_IMPORT_WORKER_INTERVAL_MS: "2000"
     command:
       - npm
