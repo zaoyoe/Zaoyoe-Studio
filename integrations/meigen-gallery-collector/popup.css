@@ -94,6 +94,55 @@ select {
     font-weight: 800;
 }
 
+.collector-progress {
+    display: grid;
+    gap: 8px;
+    padding: 11px 12px;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #eff6ff;
+}
+
+.collector-progress[hidden] {
+    display: none;
+}
+
+.collector-progress__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+}
+
+.collector-progress__header strong {
+    color: #1d4ed8;
+}
+
+.collector-progress__header span,
+.collector-progress p {
+    margin: 0;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.collector-progress__track {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #dbeafe;
+}
+
+.collector-progress__track span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: #2563eb;
+    transition: width 180ms ease;
+}
+
 .collector-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;

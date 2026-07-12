@@ -15,6 +15,8 @@
     const MESSAGE_PAGE_BATCH_STATUS = 'FATHER_KEY_MEIGEN_PAGE_BATCH_STATUS';
     const MESSAGE_DIAGNOSTICS = 'FATHER_KEY_MEIGEN_DIAGNOSTICS';
     const MESSAGE_SESSION_STATE = 'FATHER_KEY_MEIGEN_SESSION_STATE';
+    const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
+    const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
     const DATA_CACHE_REQUEST_TYPE = 'FatherKeyMeigenDataCacheRequest';
     const DATA_CACHE_RESPONSE_TYPE = 'FatherKeyMeigenDataCacheResponse';
@@ -94,6 +96,15 @@
         lastPayload: null,
         lastSummary: null,
         updatedAt: ''
+    };
+    const automationJob = {
+        running: false,
+        phase: '',
+        target: 0,
+        completed: false,
+        startedAt: '',
+        updatedAt: '',
+        lastError: ''
     };
     const streamStageState = {
         batchId: '',
@@ -334,7 +345,8 @@
                     payload: sessionState.lastPayload,
                     summary: sessionState.lastSummary,
                     updatedAt: sessionState.updatedAt,
-                    pageUrl: window.location.href
+                    pageUrl: window.location.href,
+                    automationStatus: getAutomationStatus()
                 }
             });
             return true;
@@ -361,6 +373,16 @@
             scrollJob.lastSummary = sessionState.lastSummary;
             pageBatchJob.lastPayload = snapshot.payload;
             pageBatchJob.lastSummary = sessionState.lastSummary;
+            if (snapshot.automationStatus?.phase) {
+                Object.assign(automationJob, snapshot.automationStatus, {
+                    running: false,
+                    completed: snapshot.automationStatus.completed === true,
+                    phase: snapshot.automationStatus.running ? 'failed' : snapshot.automationStatus.phase,
+                    lastError: snapshot.automationStatus.running
+                        ? '页面曾刷新或关闭，原任务已中断，请重新启动全自动采集'
+                        : (snapshot.automationStatus.lastError || '')
+                });
+            }
             logDiagnostic('session-restored', {
                 items: snapshot.payload.items.length,
                 updatedAt: sessionState.updatedAt,
@@ -387,6 +409,39 @@
             || (payload ? summarizePayload(payload) : null);
     }
 
+    function updateAutomationJob(updates = {}) {
+        Object.assign(automationJob, updates, { updatedAt: new Date().toISOString() });
+        void persistSessionSnapshot();
+    }
+
+    function getAutomationStatus() {
+        const payload = getLastJobPayload();
+        const summary = getLastJobSummary(payload) || summarizePayload(payload || {});
+        const missingDetailCount = (Array.isArray(payload?.items) ? payload.items : [])
+            .filter((item) => needsInteractiveDetail(item, { requireFavoriteCount: false })).length;
+        return {
+            running: automationJob.running,
+            phase: automationJob.phase,
+            target: automationJob.target,
+            completed: automationJob.completed,
+            startedAt: automationJob.startedAt,
+            updatedAt: sessionState.updatedAt || automationJob.updatedAt,
+            lastError: automationJob.lastError,
+            discovered: Number(summary.total || 0),
+            missingDetailCount,
+            staged: streamStageState.stagedCount,
+            duplicates: streamStageState.skippedDuplicateCount,
+            rejected: streamStageState.rejectedCount,
+            batchId: streamStageState.batchId,
+            detailProcessed: detailJob.processed,
+            detailTotal: detailJob.total,
+            scrollProcessed: scrollJob.processed,
+            scrollTotal: scrollJob.total,
+            pageProcessed: pageBatchJob.processed,
+            pageTotal: pageBatchJob.total
+        };
+    }
+
     function getSessionState() {
         const payload = getLastJobPayload();
         return {
@@ -398,7 +453,8 @@
             summary: getLastJobSummary(payload),
             detailStatus: getDetailStatus(),
             scrollStatus: getScrollStatus(),
-            pageBatchStatus: getPageBatchStatus()
+            pageBatchStatus: getPageBatchStatus(),
+            automationStatus: getAutomationStatus()
         };
     }
 
@@ -415,6 +471,7 @@
             scroll_status: getScrollStatus(),
             repository_duplicate_count: Number(payload?.scroll_collect?.repository_duplicates || 0),
             page_batch_status: getPageBatchStatus(),
+            automation_status: getAutomationStatus(),
             items: items.slice(0, 20).map((item, index) => ({
                 index: index + 1,
                 source_item_id: item.source_item_id || '',
@@ -2939,6 +2996,86 @@
         };
     }
 
+    async function runFullyAutomaticCollection(message = {}) {
+        const maxItems = normalizeMaxItems(message.maxItems);
+        const startedAt = new Date().toISOString();
+        updateAutomationJob({
+            running: true,
+            phase: 'discovering',
+            target: maxItems,
+            completed: false,
+            startedAt,
+            lastError: ''
+        });
+        logDiagnostic('automation-start', { target: maxItems, startedAt });
+
+        try {
+            let response = await runScrollCollect({
+                ...message,
+                maxSteps: maxItems,
+                maxItems,
+                preflightDuplicates: true,
+                streamToQueue: true
+            });
+            let payload = response?.payload || getLastJobPayload();
+
+            if (streamStageState.stagedCount < maxItems) {
+                updateAutomationJob({ phase: 'paging' });
+                response = await runPageBatchCollect({
+                    ...message,
+                    maxPages: Math.max(PAGE_BATCH_MAX_PAGES, maxItems),
+                    maxItems,
+                    continueExisting: true,
+                    preflightDuplicates: true,
+                    streamToQueue: true,
+                    batchId: streamStageState.batchId
+                });
+                payload = response?.payload || payload;
+            }
+
+            if (Array.isArray(payload?.items)
+                && payload.items.some((item) => needsInteractiveDetail(item, { requireFavoriteCount: false }))) {
+                updateAutomationJob({ phase: 'enriching' });
+                response = await collectPayload({
+                    ...message,
+                    enrichDetails: true,
+                    retryFailed: false,
+                    streamToQueue: true,
+                    batchId: streamStageState.batchId,
+                    maxItems
+                });
+                payload = response?.payload || payload;
+            }
+
+            await streamStageState.promise;
+            updateAutomationJob({
+                running: false,
+                phase: 'completed',
+                completed: true,
+                lastError: streamStageState.lastError || ''
+            });
+            logDiagnostic('automation-finish', getAutomationStatus());
+            return payload;
+        } catch (error) {
+            updateAutomationJob({
+                running: false,
+                phase: 'failed',
+                completed: false,
+                lastError: error?.message || '全自动采集任务失败'
+            });
+            logDiagnostic('automation-failed', { message: automationJob.lastError });
+            throw error;
+        }
+    }
+
+    function startFullyAutomaticCollection(message = {}) {
+        if (automationJob.running || detailJob.running || scrollJob.running || pageBatchJob.running) {
+            return { ok: false, message: '已有采集任务正在运行', automationStatus: getAutomationStatus() };
+        }
+        void runFullyAutomaticCollection(message).catch(() => {});
+        return { ok: true, automationStatus: getAutomationStatus() };
+    }
+
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message?.type === MESSAGE_PING) {
             sendResponse({ ok: true, version: getCollector()?.VERSION || '' });
@@ -2955,6 +3092,23 @@
                 .then(() => sendResponse(getSessionState()))
                 .catch(() => sendResponse(getSessionState()));
             return true;
+        }
+
+        if (message?.type === MESSAGE_AUTOMATION_START) {
+            sendResponse(startFullyAutomaticCollection(message));
+            return false;
+        }
+
+        if (message?.type === MESSAGE_AUTOMATION_STATUS) {
+            sendResponse({
+                ok: true,
+                automationStatus: getAutomationStatus(),
+                detailStatus: getDetailStatus(),
+                scrollStatus: getScrollStatus(),
+                pageBatchStatus: getPageBatchStatus(),
+                summary: getLastJobSummary()
+            });
+            return false;
         }
 
         if (message?.type === MESSAGE_DETAIL_STATUS) {
