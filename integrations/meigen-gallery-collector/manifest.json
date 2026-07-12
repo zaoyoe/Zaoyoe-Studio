@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Father Key Meigen Collector",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "采集 Meigen 当前页面作品，并送入 Father Key Gallery Import 队列。",
   "action": {
     "default_popup": "popup.html",

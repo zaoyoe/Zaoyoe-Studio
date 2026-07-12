@@ -3,14 +3,19 @@
 
     const MESSAGE_STAGE_VIA_ADMIN_TAB = 'FATHER_KEY_STAGE_IMPORT_VIA_ADMIN_TAB';
 
-    async function stageItems(body = {}) {
-        const response = await fetch('/api/admin/prompts/imports', {
-            method: 'POST',
+    async function stageItems(body = {}, request = {}) {
+        const method = String(request.method || 'POST').toUpperCase();
+        const path = String(request.path || '/api/admin/prompts/imports');
+        if (!/^\/api\/admin\/prompts\/imports(?:\?|$)/.test(path) || !['GET', 'POST'].includes(method)) {
+            return { ok: false, status: 400, message: '不支持的 Admin Studio 请求' };
+        }
+        const response = await fetch(path, {
+            method,
             credentials: 'include',
-            headers: {
+            headers: method === 'GET' ? undefined : {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(body)
+            body: method === 'GET' ? undefined : JSON.stringify(body)
         });
 
         let result = {};
@@ -41,7 +46,7 @@
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message?.type !== MESSAGE_STAGE_VIA_ADMIN_TAB) return false;
 
-        stageItems(message.body || {})
+        stageItems(message.body || {}, message.request || {})
             .then(sendResponse)
             .catch((error) => sendResponse({
                 ok: false,

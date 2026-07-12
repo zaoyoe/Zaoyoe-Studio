@@ -3,6 +3,8 @@
 
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
     const MESSAGE_CHECK_DUPLICATES = 'FATHER_KEY_CHECK_IMPORT_DUPLICATES';
+    const MESSAGE_LOAD_BATCH = 'FATHER_KEY_LOAD_IMPORT_BATCH';
+    const MESSAGE_CLEANUP_PENDING = 'FATHER_KEY_CLEANUP_PENDING_IMPORT';
     const MESSAGE_DOWNLOAD = 'FATHER_KEY_DOWNLOAD_IMPORT';
     const MESSAGE_STAGE_VIA_ADMIN_TAB = 'FATHER_KEY_STAGE_IMPORT_VIA_ADMIN_TAB';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
@@ -158,11 +160,12 @@
         return wrappedError;
     }
 
-    async function sendStageMessageToAdminTab(tab, body) {
+    async function sendStageMessageToAdminTab(tab, body, request = {}) {
         try {
             return await chrome.tabs.sendMessage(tab.id, {
                 type: MESSAGE_STAGE_VIA_ADMIN_TAB,
-                body
+                body,
+                request
             });
         } catch (error) {
             if (!isMissingMessageReceiver(error) || !await ensureAdminBridgeInjected(tab.id)) {
@@ -171,7 +174,8 @@
             try {
                 return await chrome.tabs.sendMessage(tab.id, {
                     type: MESSAGE_STAGE_VIA_ADMIN_TAB,
-                    body
+                    body,
+                    request
                 });
             } catch (retryError) {
                 throw createAdminBridgeConnectionError(retryError);
@@ -179,7 +183,7 @@
         }
     }
 
-    async function stageImportPayloadViaAdminTab({ body, adminBaseUrl } = {}) {
+    async function stageImportPayloadViaAdminTab({ body, adminBaseUrl, request = {} } = {}) {
         const tabs = await queryAdminTabs(adminBaseUrl);
         if (!tabs.length) {
             throw new Error('请先打开 Admin Studio 并保持登录，再点送入队列');
@@ -188,7 +192,7 @@
         let lastError = null;
         for (const tab of tabs) {
             try {
-                const response = await sendStageMessageToAdminTab(tab, body);
+                const response = await sendStageMessageToAdminTab(tab, body, request);
                 if (response?.ok) {
                     return {
                         ...response.result,
@@ -339,6 +343,60 @@
         return result;
     }
 
+    async function requestImportApi({ adminBaseUrl, method = 'GET', path = '/api/admin/prompts/imports', body = null } = {}) {
+        const baseUrl = normalizeAdminBaseUrl(adminBaseUrl);
+        const request = { method, path };
+        try {
+            const response = await fetch(`${baseUrl}${path}`, {
+                method,
+                credentials: 'include',
+                headers: body ? { 'Content-Type': 'application/json' } : undefined,
+                body: body ? JSON.stringify(body) : undefined
+            });
+            let result = {};
+            try {
+                result = await response.json();
+            } catch (_) {
+                result = {};
+            }
+            if (isUnauthorizedResponse(response, result)) {
+                return stageImportPayloadViaAdminTab({ body, adminBaseUrl: baseUrl, request });
+            }
+            if (!response.ok || result.success === false) {
+                const error = new Error(result.message || 'Admin Studio 请求失败');
+                error.status = response.status;
+                throw error;
+            }
+            return result;
+        } catch (error) {
+            if (error?.status) throw error;
+            return stageImportPayloadViaAdminTab({ body, adminBaseUrl: baseUrl, request });
+        }
+    }
+
+    async function loadImportBatch({ batchId, adminBaseUrl } = {}) {
+        const normalizedBatchId = String(batchId || '').trim();
+        if (!normalizedBatchId) return { batch: null, items: [] };
+        return requestImportApi({
+            adminBaseUrl,
+            path: `/api/admin/prompts/imports?batchId=${encodeURIComponent(normalizedBatchId)}&limit=1000`
+        });
+    }
+
+    async function cleanupPendingImport({ batchId, adminBaseUrl, site = 'cn' } = {}) {
+        const normalizedBatchId = String(batchId || '').trim();
+        if (!normalizedBatchId) return { batch: null, items: [], cleanedCount: 0 };
+        return requestImportApi({
+            adminBaseUrl,
+            method: 'POST',
+            body: {
+                action: 'cleanup_pending_detail_items',
+                batch_id: normalizedBatchId,
+                site
+            }
+        });
+    }
+
     function buildImportFilename() {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         return `meigen-gallery-import-${stamp}.json`;
@@ -355,6 +413,18 @@
     }
 
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+        if (message?.type === MESSAGE_LOAD_BATCH) {
+            loadImportBatch(message)
+                .then((result) => sendResponse({ ok: true, result }))
+                .catch((error) => sendResponse({ ok: false, message: error?.message || '读取原批次失败' }));
+            return true;
+        }
+        if (message?.type === MESSAGE_CLEANUP_PENDING) {
+            cleanupPendingImport(message)
+                .then((result) => sendResponse({ ok: true, result }))
+                .catch((error) => sendResponse({ ok: false, message: error?.message || '清理待补占位项失败' }));
+            return true;
+        }
         if (message?.type === MESSAGE_CHECK_DUPLICATES) {
             checkImportDuplicates(message)
                 .then((result) => sendResponse({ ok: true, result }))

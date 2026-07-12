@@ -49,7 +49,7 @@ const IMPORT_ITEM_STATUSES = new Set(['staged', 'needs_review', 'duplicate', 'qu
 const PROMPT_STATUS_VALUES = new Set(['', 'draft', 'review', 'needs-localization', 'homepage-candidate', 'featured', 'ready', 'live', 'archived']);
 const DEFAULT_IMPORT_SOURCE = 'meigen';
 const DEFAULT_IMPORT_PAGE_SIZE = 20;
-const MAX_IMPORT_PAGE_SIZE = 100;
+const MAX_IMPORT_PAGE_SIZE = 1000;
 const DEFAULT_MAX_IMAGE_COUNT = 12;
 const MAX_IMAGE_COUNT = 24;
 const DEFAULT_IMAGE_TIMEOUT_MS = 20000;
@@ -1392,6 +1392,35 @@ async function cleanupRejectedImportItems(supabase, user, body) {
     return cleanupImportItems(supabase, user, { ...body, item_ids: cleanupIds });
 }
 
+async function cleanupPendingDetailItems(supabase, user, body) {
+    const batchId = normalizeText(body.batch_id || body.batchId, 120);
+    if (!batchId) {
+        const error = new Error('batchId is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    await loadImportBatch(supabase, batchId);
+    const { data, error } = await supabase
+        .from('prompt_import_items')
+        .select(IMPORT_ITEM_SELECT)
+        .eq('batch_id', batchId)
+        .eq('status', 'needs_review');
+    if (error) throw error;
+    const cleanupIds = getPendingDetailCleanupIds(data || []);
+    if (!cleanupIds.length) {
+        return { items: [], cleanedCount: 0, batch: await updateBatchStats(supabase, batchId) };
+    }
+    return cleanupImportItems(supabase, user, { ...body, item_ids: cleanupIds });
+}
+
+function getPendingDetailCleanupIds(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .filter((item) => String(item?.status || '') === 'needs_review'
+            && /等待详情补全/.test(String(item?.error_summary || '')))
+        .map((item) => item?.id)
+        .filter(Boolean);
+}
+
 function getRejectedImportCleanupIds(items = []) {
     return (Array.isArray(items) ? items : [])
         .filter((item) => {
@@ -1621,6 +1650,10 @@ module.exports = async (req, res) => {
             const result = await cleanupRejectedImportItems(supabase, user, body);
             return sendJson(res, 200, { success: true, ...result });
         }
+        if (action === 'cleanup_pending_detail_items') {
+            const result = await cleanupPendingDetailItems(supabase, user, body);
+            return sendJson(res, 200, { success: true, ...result });
+        }
         if (action === 'skip_items') {
             const result = await skipImportItems(supabase, user, body);
             return sendJson(res, 200, { success: true, ...result });
@@ -1657,6 +1690,7 @@ module.exports._private = {
     findExistingPromptDuplicates,
     checkImportItemDuplicates,
     getRejectedImportCleanupIds,
+    getPendingDetailCleanupIds,
     isBlockedImportHostname,
     isSupportedImageBuffer
 };

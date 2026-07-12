@@ -18,6 +18,8 @@
     const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
     const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
+    const MESSAGE_LOAD_BATCH = 'FATHER_KEY_LOAD_IMPORT_BATCH';
+    const MESSAGE_CLEANUP_PENDING = 'FATHER_KEY_CLEANUP_PENDING_IMPORT';
     const DATA_CACHE_REQUEST_TYPE = 'FatherKeyMeigenDataCacheRequest';
     const DATA_CACHE_RESPONSE_TYPE = 'FatherKeyMeigenDataCacheResponse';
     const DETAIL_FETCH_DELAY_MS = 900;
@@ -225,6 +227,17 @@
         streamStageState.lastError = '';
     }
 
+    function getStreamActiveCount() {
+        return streamStageState.processableCount + streamStageState.pendingDetailCount;
+    }
+
+    function syncStreamBatchStats(batch = {}) {
+        const stats = batch?.stats || {};
+        streamStageState.processableCount = ['staged', 'queued', 'uploading', 'saving', 'imported']
+            .reduce((sum, key) => sum + Number(stats[key] || 0), 0);
+        streamStageState.pendingDetailCount = Number(stats.needs_review || 0);
+    }
+
     function queueStreamStage(items = [], message = {}, { flush = false, force = false } = {}) {
         (Array.isArray(items) ? items : []).forEach((item) => {
             const key = getStreamItemKey(item);
@@ -271,10 +284,7 @@
                     streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
                     streamStageState.skippedDuplicateCount += duplicateCount;
                     streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
-                    const stats = result.batch?.stats || {};
-                    streamStageState.processableCount = ['staged', 'queued', 'uploading', 'saving', 'imported']
-                        .reduce((sum, key) => sum + Number(stats[key] || 0), 0);
-                    streamStageState.pendingDetailCount = Number(stats.needs_review || 0);
+                    syncStreamBatchStats(result.batch);
                 } catch (error) {
                     streamStageState.bufferedItems.unshift(...stagedItems);
                     streamStageState.lastError = error?.message || '流式送入队列失败';
@@ -286,13 +296,73 @@
     }
 
     async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20, options = {}) {
-        const remaining = Math.max(0, maxItems - streamStageState.stagedCount);
+        const remaining = Math.max(0, maxItems - getStreamActiveCount());
         if (!remaining) return;
         const stagedItems = (Array.isArray(items) ? items : [])
             .slice(0, remaining)
             .map((item) => options.pendingDetail === true ? { ...item, stream_pending_detail: true } : item);
         queueStreamStage(stagedItems, message, { flush: true });
         await streamStageState.promise;
+    }
+
+    async function restoreStreamBatch(message = {}, collector = getCollector()) {
+        const batchId = String(message.batchId || '').trim();
+        if (!batchId) return null;
+        const response = await chrome.runtime.sendMessage({
+            type: MESSAGE_LOAD_BATCH,
+            batchId,
+            adminBaseUrl: message.adminBaseUrl
+        });
+        if (!response?.ok) throw new Error(response?.message || '读取原批次失败');
+        const result = response.result || {};
+        const items = Array.isArray(result.items) ? result.items : [];
+        resetStreamStageState(result.batch?.id || batchId);
+        items.forEach((item) => {
+            const key = getStreamItemKey(item);
+            if (!key) return;
+            streamStageState.acceptedKeys.add(key);
+            streamStageState.checkedKeys.add(key);
+        });
+        streamStageState.stagedCount = items.length;
+        syncStreamBatchStats(result.batch);
+        if (!items.length) return null;
+        const currentPayload = getLastJobPayload() || collector?.buildPayload?.() || {};
+        const payload = {
+            ...currentPayload,
+            source: 'meigen',
+            collected_at: new Date().toISOString(),
+            items: collector.mergeCollectedItems(items)
+        };
+        rememberSessionPayload(payload, summarizePayload(payload));
+        detailJob.lastPayload = payload;
+        detailJob.lastSummary = summarizePayload(payload);
+        return payload;
+    }
+
+    async function cleanupPendingStreamItems(message = {}, payload = null) {
+        if (!streamStageState.batchId || !streamStageState.pendingDetailCount) return payload;
+        const response = await chrome.runtime.sendMessage({
+            type: MESSAGE_CLEANUP_PENDING,
+            batchId: streamStageState.batchId,
+            adminBaseUrl: message.adminBaseUrl,
+            site: message.site
+        });
+        if (!response?.ok) throw new Error(response?.message || '清理未补全占位项失败');
+        const result = response.result || {};
+        const cleanedKeys = new Set((Array.isArray(result.items) ? result.items : [])
+            .map((item) => getStreamItemKey(item))
+            .filter(Boolean));
+        cleanedKeys.forEach((key) => {
+            streamStageState.acceptedKeys.delete(key);
+            streamStageState.sentRevisions.delete(key);
+        });
+        streamStageState.stagedCount = streamStageState.acceptedKeys.size;
+        syncStreamBatchStats(result.batch);
+        const nextPayload = payload && cleanedKeys.size
+            ? { ...payload, items: (payload.items || []).filter((item) => !cleanedKeys.has(getStreamItemKey(item))) }
+            : payload;
+        if (nextPayload) rememberSessionPayload(nextPayload, summarizePayload(nextPayload));
+        return nextPayload;
     }
     let sessionRestorePromise = Promise.resolve(false);
 
@@ -1088,7 +1158,8 @@
     }
 
     function getLatestPayload(collector) {
-        return pageBatchJob.lastPayload
+        return sessionState.lastPayload
+            || pageBatchJob.lastPayload
             || scrollJob.lastPayload
             || detailJob.lastPayload
             || collector.buildPayload();
@@ -2613,7 +2684,7 @@
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
-        if (message.streamToQueue) resetStreamStageState(message.batchId);
+        if (message.streamToQueue && !message.continueExisting) resetStreamStageState(message.batchId);
         const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
         let repositoryDuplicateCount = 0;
         const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)));
@@ -2621,7 +2692,11 @@
             ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys)
             : { uniqueItems: initialPayload.items, duplicateCount: 0 };
         repositoryDuplicateCount += initialCheck.duplicateCount;
-        let payload = applyPayloadLimits({ ...initialPayload, items: initialCheck.uniqueItems }, { maxItems, favoriteRange });
+        const previousItems = message.continueExisting ? (getLastJobPayload()?.items || []) : [];
+        let payload = applyPayloadLimits({
+            ...initialPayload,
+            items: collector.mergeCollectedItems([...previousItems, ...initialCheck.uniqueItems])
+        }, { maxItems, favoriteRange });
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
 
@@ -2644,7 +2719,7 @@
         try {
             for (let index = 0; index < maxSteps; index += 1) {
                 if (scrollJob.stopRequested) break;
-                if (message.streamToQueue && streamStageState.stagedCount >= maxItems) break;
+                if (message.streamToQueue && getStreamActiveCount() >= maxItems) break;
 
                 const nextSnapshot = await scrollAndWaitForGalleryBatch();
                 scrollJob.processed = index + 1;
@@ -2678,7 +2753,7 @@
                 detailJob.lastPayload = payload;
                 detailJob.lastSummary = scrollJob.lastSummary;
                 rememberSessionPayload(payload, scrollJob.lastSummary);
-                const targetCount = message.streamToQueue ? streamStageState.stagedCount : payload.items.length;
+                const targetCount = message.streamToQueue ? getStreamActiveCount() : payload.items.length;
                 if (targetCount >= maxItems) {
                     break;
                 }
@@ -2723,7 +2798,7 @@
                 scrollStatus: getScrollStatus(),
                 repositoryDuplicateCount,
                 checkedCandidateCount: checkedKeys.size,
-                exhausted: streamStageState.stagedCount < maxItems && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT,
+                exhausted: getStreamActiveCount() < maxItems && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
                     attemptedCount: streamStageState.attemptedCount,
@@ -2804,7 +2879,7 @@
         try {
             for (let index = 0; index < maxPages; index += 1) {
                 if (pageBatchJob.stopRequested) break;
-                if (message.streamToQueue && streamStageState.stagedCount >= maxItems) break;
+                if (message.streamToQueue && getStreamActiveCount() >= maxItems) break;
 
                 const normalizedCurrentUrl = normalizeBatchUrl(currentUrl) || currentUrl;
                 if (visited.has(normalizedCurrentUrl) && currentRoot !== document) break;
@@ -2853,7 +2928,7 @@
                 detailJob.lastSummary = pageBatchJob.lastSummary;
                 rememberSessionPayload(payload, pageBatchJob.lastSummary);
 
-                const targetCount = message.streamToQueue ? streamStageState.stagedCount : payload.items.length;
+                const targetCount = message.streamToQueue ? getStreamActiveCount() : payload.items.length;
                 if (targetCount >= maxItems || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
 
                 const nextTarget = findNextPageTarget(currentRoot, normalizedCurrentUrl);
@@ -2904,7 +2979,7 @@
                 pageBatchStatus: getPageBatchStatus(),
                 repositoryDuplicateCount,
                 checkedCandidateCount: checkedKeys.size,
-                exhausted: (message.streamToQueue ? streamStageState.stagedCount : payload.items.length) < maxItems,
+                exhausted: (message.streamToQueue ? getStreamActiveCount() : payload.items.length) < maxItems,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
                     attemptedCount: streamStageState.attemptedCount,
@@ -3029,16 +3104,54 @@
         logDiagnostic('automation-start', { target: maxItems, startedAt });
 
         try {
+            let payload = null;
+            if (String(message.batchId || '').trim()) {
+                updateAutomationJob({ phase: 'recovering' });
+                payload = await restoreStreamBatch(message);
+            } else {
+                resetStreamStageState('');
+            }
+
+            const enrichAndDiscardUnresolved = async () => {
+                if (!Array.isArray(payload?.items)
+                    || !payload.items.some((item) => needsInteractiveDetail(item, { requireFavoriteCount: false }))) {
+                    return;
+                }
+                updateAutomationJob({ phase: 'enriching' });
+                const detailResponse = await collectPayload({
+                    ...message,
+                    enrichDetails: true,
+                    retryFailed: false,
+                    streamToQueue: true,
+                    batchId: streamStageState.batchId,
+                    maxItems: Math.max(maxItems, payload.items.length)
+                });
+                payload = detailResponse?.payload || payload;
+                await streamStageState.promise;
+                payload = await cleanupPendingStreamItems(message, payload);
+                detailJob.lastPayload = payload;
+                detailJob.lastSummary = summarizePayload(payload || {});
+                rememberSessionPayload(payload, detailJob.lastSummary);
+            };
+
+            await enrichAndDiscardUnresolved();
+
+            updateAutomationJob({ phase: 'discovering' });
             let response = await runScrollCollect({
                 ...message,
                 maxSteps: maxItems,
                 maxItems,
+                continueExisting: true,
                 preflightDuplicates: true,
-                streamToQueue: true
+                streamToQueue: true,
+                batchId: streamStageState.batchId
             });
-            let payload = response?.payload || getLastJobPayload();
+            payload = response?.payload || payload || getLastJobPayload();
+            await enrichAndDiscardUnresolved();
 
-            if (streamStageState.stagedCount < maxItems) {
+            let pagingRound = 0;
+            let previousCheckedCount = -1;
+            while (streamStageState.processableCount < maxItems && pagingRound < maxItems) {
                 updateAutomationJob({ phase: 'paging' });
                 response = await runPageBatchCollect({
                     ...message,
@@ -3050,23 +3163,25 @@
                     batchId: streamStageState.batchId
                 });
                 payload = response?.payload || payload;
-            }
-
-            if (Array.isArray(payload?.items)
-                && payload.items.some((item) => needsInteractiveDetail(item, { requireFavoriteCount: false }))) {
-                updateAutomationJob({ phase: 'enriching' });
-                response = await collectPayload({
-                    ...message,
-                    enrichDetails: true,
-                    retryFailed: false,
-                    streamToQueue: true,
-                    batchId: streamStageState.batchId,
-                    maxItems
-                });
-                payload = response?.payload || payload;
+                await enrichAndDiscardUnresolved();
+                const checkedCount = streamStageState.checkedKeys.size;
+                if (checkedCount === previousCheckedCount && response?.exhausted) break;
+                previousCheckedCount = checkedCount;
+                pagingRound += 1;
             }
 
             await streamStageState.promise;
+            if (streamStageState.processableCount < maxItems) {
+                const shortfall = maxItems - streamStageState.processableCount;
+                updateAutomationJob({
+                    running: false,
+                    phase: 'incomplete',
+                    completed: false,
+                    lastError: `来源已耗尽，仍差 ${shortfall} 条可处理内容；可切换分类后再次继续`
+                });
+                logDiagnostic('automation-incomplete', getAutomationStatus());
+                return payload;
+            }
             updateAutomationJob({
                 running: false,
                 phase: 'completed',
