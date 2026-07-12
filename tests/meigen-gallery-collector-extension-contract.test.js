@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.24');
+    assert.equal(manifest.version, '0.1.25');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -80,6 +80,9 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /sentRevisions:\s*new Map\(\)/);
     assert.match(content, /streamStageState\.stagedCount >= maxItems/);
     assert.match(content, /bufferedItems\.length < 3/);
+    assert.match(content, /bufferedItems\.splice\(0, 3\)/);
+    assert.match(content, /while \(flush && streamStageState\.bufferedItems\.length\)/);
+    assert.match(content, /bufferedItems\.unshift\(\.\.\.stagedItems\)/);
     assert.match(content, /batchId:\s*streamStageState\.batchId/);
     assert.match(content, /attemptedCount:\s*streamStageState\.attemptedCount/);
     assert.match(content, /stagedCount:\s*streamStageState\.stagedCount/);
@@ -118,6 +121,9 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.doesNotMatch(content, /element\.dispatchEvent\(new MouseEvent\('click', eventOptions\)\);\s*if \(typeof element\.click/);
     assert.match(background, /TRUSTED_AND_UNTRUSTED_CONTEXTS/);
     assert.match(background, /batch_id:\s*String\(batchId/);
+    assert.match(background, /if \(items\.length > 3\)/);
+    assert.match(background, /items\.slice\(index, index \+ 3\)/);
+    assert.match(popup, /batchId:\s*state\.streamedBatchId/);
     assert.match(html, /id="collectBtn"[^>]*>全自动采集并入队</);
     assert.match(popup, /async function runFullyAutomaticCollectionTask/);
     assert.match(popup, /type: MESSAGE_AUTOMATION_START/);
@@ -197,7 +203,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.70'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.71'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
@@ -254,6 +260,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /updatedAt:\s*sessionState\.updatedAt/);
     assert.match(content, /automationStatus:\s*getAutomationStatus\(\)/);
     assert.match(content, /页面曾刷新或关闭，原任务已中断/);
+    assert.match(content, /streamStageState\.batchId = String\(snapshot\.automationStatus\.batchId/);
+    assert.match(content, /streamStageState\.pendingDetailCount = Math\.max/);
     assert.match(content, /message\?\.type === MESSAGE_SESSION_STATE/);
     assert.match(content, /sendResponse\(getSessionState\(\)\)/);
     assert.match(content, /rememberSessionPayload\(payload, scrollJob\.lastSummary\)/);

@@ -220,6 +220,38 @@
             throw new Error('当前页面没有可送入队列的内容');
         }
 
+        if (items.length > 3) {
+            let currentBatchId = batchId;
+            const aggregate = {
+                items: [],
+                attemptedCount: 0,
+                stagedCount: 0,
+                skippedDuplicateCount: 0,
+                rejectedIdentityCount: 0,
+                batch: null
+            };
+            for (let index = 0; index < items.length; index += 3) {
+                const result = await stageImportPayload({
+                    payload: { ...payload, items: items.slice(index, index + 3) },
+                    adminBaseUrl,
+                    site,
+                    defaultStatus,
+                    maxItems,
+                    minFavorites,
+                    maxFavorites,
+                    batchId: currentBatchId
+                });
+                currentBatchId = result.batch?.id || currentBatchId;
+                aggregate.batch = result.batch || aggregate.batch;
+                aggregate.items.push(...(Array.isArray(result.items) ? result.items : []));
+                aggregate.attemptedCount += Number(result.attemptedCount || 0);
+                aggregate.stagedCount += Number(result.stagedCount || 0);
+                aggregate.skippedDuplicateCount += Number(result.skippedDuplicateCount || 0);
+                aggregate.rejectedIdentityCount += Number(result.rejectedIdentityCount || 0);
+            }
+            return aggregate;
+        }
+
         const baseUrl = normalizeAdminBaseUrl(adminBaseUrl);
         const body = buildStageItemsBody({
             payload,
