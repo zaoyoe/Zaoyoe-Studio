@@ -242,42 +242,45 @@
         if (!streamStageState.bufferedItems.length || (!flush && streamStageState.bufferedItems.length < 3)) {
             return streamStageState.promise;
         }
-        const stagedItems = streamStageState.bufferedItems.splice(0, flush ? streamStageState.bufferedItems.length : 3);
         streamStageState.promise = streamStageState.promise.then(async () => {
-            streamStageState.attemptedCount += stagedItems.length;
-            try {
-                const response = await chrome.runtime.sendMessage({
-                    type: MESSAGE_STAGE,
-                    payload: { source: 'meigen', items: stagedItems },
-                    batchId: streamStageState.batchId,
-                    adminBaseUrl: message.adminBaseUrl,
-                    site: message.site,
-                    defaultStatus: message.defaultStatus,
-                    maxItems: message.maxItems,
-                    minFavorites: message.minFavorites,
-                    maxFavorites: message.maxFavorites
-                });
-                if (!response?.ok) throw new Error(response?.message || '流式送入队列失败');
-                const result = response.result || {};
-                const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
-                const duplicateCount = Number(result.skippedDuplicateCount || 0);
-                streamStageState.batchId = result.batch?.id || streamStageState.batchId;
-                (Array.isArray(result.items) ? result.items : []).forEach((item) => {
-                    const key = getStreamItemKey(item);
-                    if (key) streamStageState.acceptedKeys.add(key);
-                });
-                streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
-                streamStageState.skippedDuplicateCount += duplicateCount;
-                streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
-                const stats = result.batch?.stats || {};
-                streamStageState.processableCount = ['staged', 'queued', 'uploading', 'saving', 'imported']
-                    .reduce((sum, key) => sum + Number(stats[key] || 0), 0);
-                streamStageState.pendingDetailCount = Number(stats.needs_review || 0);
-            } catch (error) {
-                streamStageState.rejectedCount += stagedItems.length;
-                streamStageState.lastError = error?.message || '流式送入队列失败';
-                throw error;
-            }
+            do {
+                const stagedItems = streamStageState.bufferedItems.splice(0, 3);
+                if (!stagedItems.length) break;
+                streamStageState.attemptedCount += stagedItems.length;
+                try {
+                    const response = await chrome.runtime.sendMessage({
+                        type: MESSAGE_STAGE,
+                        payload: { source: 'meigen', items: stagedItems },
+                        batchId: streamStageState.batchId,
+                        adminBaseUrl: message.adminBaseUrl,
+                        site: message.site,
+                        defaultStatus: message.defaultStatus,
+                        maxItems: message.maxItems,
+                        minFavorites: message.minFavorites,
+                        maxFavorites: message.maxFavorites
+                    });
+                    if (!response?.ok) throw new Error(response?.message || '流式送入队列失败');
+                    const result = response.result || {};
+                    const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
+                    const duplicateCount = Number(result.skippedDuplicateCount || 0);
+                    streamStageState.batchId = result.batch?.id || streamStageState.batchId;
+                    (Array.isArray(result.items) ? result.items : []).forEach((item) => {
+                        const key = getStreamItemKey(item);
+                        if (key) streamStageState.acceptedKeys.add(key);
+                    });
+                    streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
+                    streamStageState.skippedDuplicateCount += duplicateCount;
+                    streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
+                    const stats = result.batch?.stats || {};
+                    streamStageState.processableCount = ['staged', 'queued', 'uploading', 'saving', 'imported']
+                        .reduce((sum, key) => sum + Number(stats[key] || 0), 0);
+                    streamStageState.pendingDetailCount = Number(stats.needs_review || 0);
+                } catch (error) {
+                    streamStageState.bufferedItems.unshift(...stagedItems);
+                    streamStageState.lastError = error?.message || '流式送入队列失败';
+                    throw error;
+                }
+            } while (flush && streamStageState.bufferedItems.length);
         });
         return streamStageState.promise;
     }
@@ -390,6 +393,12 @@
                         ? '页面曾刷新或关闭，原任务已中断，请重新启动全自动采集'
                         : (snapshot.automationStatus.lastError || '')
                 });
+                streamStageState.batchId = String(snapshot.automationStatus.batchId || '').trim();
+                streamStageState.stagedCount = Math.max(0, Number(snapshot.automationStatus.staged || 0));
+                streamStageState.skippedDuplicateCount = Math.max(0, Number(snapshot.automationStatus.duplicates || 0));
+                streamStageState.rejectedCount = Math.max(0, Number(snapshot.automationStatus.rejected || 0));
+                streamStageState.processableCount = Math.max(0, Number(snapshot.automationStatus.processable || 0));
+                streamStageState.pendingDetailCount = Math.max(0, Number(snapshot.automationStatus.pendingDetail || 0));
             }
             logDiagnostic('session-restored', {
                 items: snapshot.payload.items.length,

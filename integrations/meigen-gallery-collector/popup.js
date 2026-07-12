@@ -983,6 +983,7 @@
                 site: getElement('siteSelect').value,
                 defaultStatus: getElement('statusSelect').value,
                 maxItems: getMaxItemsSetting(),
+                batchId: state.streamedBatchId,
                 ...getFavoriteFilterSettings()
             });
         } catch (error) {
