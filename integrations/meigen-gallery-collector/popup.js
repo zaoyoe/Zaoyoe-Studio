@@ -97,7 +97,7 @@
     function getMaxItemsSetting() {
         const parsed = Number.parseInt(String(getElement('maxItemsInput')?.value || ''), 10);
         if (!Number.isFinite(parsed) || parsed < 1) return 20;
-        return Math.min(parsed, 200);
+        return Math.min(parsed, 1000);
     }
 
     function getDetailProgressTotal({ retryFailed = false } = {}) {
@@ -340,7 +340,7 @@
 
         state.payload = response.payload;
         if (response.streamResult) {
-            state.streamStats = response.streamResult;
+            state.streamStats = { ...response.streamResult, checkedCandidateCount: response.checkedCandidateCount };
             if (response.streamResult.batchId) state.streamedBatchId = response.streamResult.batchId;
         }
         if (response.detailStatus) applyDetailStatus(response.detailStatus);
@@ -620,7 +620,7 @@
         try {
             response = await sendTabMessage(tab.id, {
                 type: MESSAGE_SCROLL_COLLECT,
-                maxSteps: automatic ? 80 : DEFAULT_SCROLL_STEPS,
+                maxSteps: automatic ? getMaxItemsSetting() : DEFAULT_SCROLL_STEPS,
                 maxItems: getMaxItemsSetting(),
                 preflightDuplicates: automatic,
                 streamToQueue: automatic,
@@ -645,7 +645,7 @@
 
         state.payload = response.payload;
         if (response.streamResult) {
-            state.streamStats = response.streamResult;
+            state.streamStats = { ...response.streamResult, checkedCandidateCount: response.checkedCandidateCount };
             if (response.streamResult.batchId) state.streamedBatchId = response.streamResult.batchId;
         }
         if (response.scrollStatus) applyScrollStatus(response.scrollStatus);
@@ -653,7 +653,7 @@
         const total = Number(response.summary?.total || 0);
         const maxItems = getMaxItemsSetting();
         setStatus(automatic
-            ? `自动滚动发现完成：${total} 条库外作品${response.repositoryDuplicateCount ? `，提前跳过仓库重复 ${response.repositoryDuplicateCount} 条` : ''}${total < maxItems ? '，页面已稳定或没有更多作品' : '，已达到设置目标'}`
+            ? `自动滚动发现完成：检查 ${Number(response.checkedCandidateCount || total + Number(response.repositoryDuplicateCount || 0))} 条候选，实际入队 ${Number(response.streamResult?.stagedCount || 0)} 条${response.repositoryDuplicateCount ? `，仓库重复 ${response.repositoryDuplicateCount} 条` : ''}${total < maxItems ? '，继续确认来源是否还有作品' : '，已达到设置目标'}`
             : `滚动采集完成：发现 ${total} 条`);
         return response.payload;
     }
@@ -709,7 +709,12 @@
         }
         if (response.pageBatchStatus) applyPageBatchStatus(response.pageBatchStatus);
         updateSummary(response.summary);
-        setStatus(`翻页采集完成：发现 ${response.summary?.total || 0} 条`);
+        const target = getMaxItemsSetting();
+        const staged = Number(response.streamResult?.stagedCount || response.summary?.total || 0);
+        const checked = Number(response.checkedCandidateCount || staged + Number(response.repositoryDuplicateCount || 0));
+        setStatus(staged >= target
+            ? `已达到实际入队目标：检查 ${checked} 条候选，实际入队 ${staged} 条`
+            : `来源已耗尽：检查 ${checked} 条候选，实际入队 ${staged} 条，目标 ${target} 条`);
         return response.payload;
     }
 
@@ -877,12 +882,12 @@
             }
             setStatus(`采集完成 ${payload.items.length} 条，正在自动送入队列...`);
             if (state.streamedBatchId) {
-                const attempted = Number(state.streamStats?.attemptedCount || payload.items.length);
+                const checked = Number(state.streamStats?.checkedCandidateCount || payload.items.length);
                 const staged = Number(state.streamStats?.stagedCount || 0);
                 const duplicates = Number(state.streamStats?.skippedDuplicateCount || 0);
                 const rejected = Number(state.streamStats?.rejectedCount || 0);
                 setStatus(
-                    `批次 ${state.streamedBatchId.slice(0, 8)}：尝试 ${attempted} 条，实际入队 ${staged} 条`
+                    `批次 ${state.streamedBatchId.slice(0, 8)}：检查 ${checked} 条候选，实际入队 ${staged} 条`
                     + `${duplicates ? `，仓库重复跳过 ${duplicates} 条` : ''}`
                     + `${rejected ? `，未接收 ${rejected} 条` : ''}`
                     + '；服务端将继续处理'

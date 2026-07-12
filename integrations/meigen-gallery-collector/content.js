@@ -28,7 +28,7 @@
     const SCROLL_BATCH_SETTLE_POLL_MS = 350;
     const SCROLL_BATCH_SETTLE_LIMIT = 8;
     const SCROLL_COLLECT_MAX_STEPS = 30;
-    const SCROLL_COLLECT_STABLE_LIMIT = 3;
+    const SCROLL_COLLECT_STABLE_LIMIT = 8;
     const PAGE_BATCH_DELAY_MS = 1500;
     const PAGE_BATCH_MAX_PAGES = 5;
     const PROMPT_COPY_CLICK_DELAY_MS = 650;
@@ -100,6 +100,7 @@
         bufferedItems: [],
         sentRevisions: new Map(),
         acceptedKeys: new Set(),
+        checkedKeys: new Set(),
         promise: Promise.resolve(),
         attemptedCount: 0,
         stagedCount: 0,
@@ -200,6 +201,7 @@
         streamStageState.bufferedItems = [];
         streamStageState.sentRevisions = new Map();
         streamStageState.acceptedKeys = new Set();
+        streamStageState.checkedKeys = new Set();
         streamStageState.promise = Promise.resolve();
         streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
@@ -1123,19 +1125,19 @@
     function normalizeScrollStepCount(value) {
         const parsed = Number.parseInt(String(value || ''), 10);
         if (!Number.isFinite(parsed) || parsed < 1) return SCROLL_COLLECT_MAX_STEPS;
-        return Math.min(parsed, 80);
+        return Math.min(parsed, 1000);
     }
 
     function normalizePageBatchCount(value) {
         const parsed = Number.parseInt(String(value || ''), 10);
         if (!Number.isFinite(parsed) || parsed < 1) return PAGE_BATCH_MAX_PAGES;
-        return Math.min(parsed, 200);
+        return Math.min(parsed, 1000);
     }
 
     function normalizeMaxItems(value) {
         const parsed = Number.parseInt(String(value || ''), 10);
         if (!Number.isFinite(parsed) || parsed < 1) return 20;
-        return Math.min(parsed, 200);
+        return Math.min(parsed, 1000);
     }
 
     function normalizeFavoriteRange(message = {}) {
@@ -2535,7 +2537,8 @@
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
-        const checkedKeys = new Set();
+        if (message.streamToQueue) resetStreamStageState(message.batchId);
+        const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
         let repositoryDuplicateCount = 0;
         const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)));
         const initialCheck = message.preflightDuplicates
@@ -2547,7 +2550,6 @@
         let stableRounds = 0;
 
         if (message.streamToQueue) {
-            resetStreamStageState(message.batchId);
             await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems, { pendingDetail: true });
         }
 
@@ -2607,10 +2609,17 @@
                 const moved = nextSnapshot.y > previousSnapshot.y + 12;
                 const grew = nextSnapshot.height > previousSnapshot.height + 12;
                 const nearBottom = nextSnapshot.y + nextSnapshot.viewport >= nextSnapshot.height - 24;
-                stableRounds = moved || grew ? 0 : stableRounds + 1;
+                const foundNewCandidates = duplicateCheck.uniqueItems.length > 0 || duplicateCheck.duplicateCount > 0;
+                stableRounds = moved || grew || foundNewCandidates ? 0 : stableRounds + 1;
                 previousSnapshot = nextSnapshot;
 
                 if (nearBottom && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT) {
+                    logDiagnostic('scroll-source-exhausted', {
+                        stableRounds,
+                        checkedCandidates: checkedKeys.size,
+                        stagedCount: streamStageState.stagedCount,
+                        target: maxItems
+                    });
                     break;
                 }
             }
@@ -2637,6 +2646,8 @@
                 summary: scrollJob.lastSummary,
                 scrollStatus: getScrollStatus(),
                 repositoryDuplicateCount,
+                checkedCandidateCount: checkedKeys.size,
+                exhausted: streamStageState.stagedCount < maxItems && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
                     attemptedCount: streamStageState.attemptedCount,
@@ -2687,7 +2698,7 @@
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
-        const checkedKeys = new Set();
+        const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
         let repositoryDuplicateCount = 0;
         let payload = message.continueExisting
             ? applyPayloadLimits(getLatestPayload(collector), { maxItems, favoriteRange })
@@ -2816,6 +2827,8 @@
                 summary: pageBatchJob.lastSummary,
                 pageBatchStatus: getPageBatchStatus(),
                 repositoryDuplicateCount,
+                checkedCandidateCount: checkedKeys.size,
+                exhausted: (message.streamToQueue ? streamStageState.stagedCount : payload.items.length) < maxItems,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
                     attemptedCount: streamStageState.attemptedCount,
