@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.29');
+    assert.equal(manifest.version, '0.1.30');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -75,13 +75,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.doesNotMatch(content, /window\.scrollTo\(\{ top: previousSnapshot\.height/);
     assert.match(content, /visibleImagesPending/);
     assert.match(content, /distance\(leftRect\) - distance\(rightRect\)/);
-    assert.match(content, /async function resetListScrollPosition/);
-    assert.match(content, /window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)/);
-    assert.match(content, /hasLoadedVisibleGalleryImage\(\)/);
-    assert.match(content, /if \(message\.resetToTop\) await resetListScrollPosition\(\)/);
-    assert.match(content, /let resetToTop = true/);
-    assert.match(content, /resetToTop,\s*\n\s*preflightDuplicates/);
-    assert.match(content, /resetToTop = false/);
+    assert.doesNotMatch(content, /resetListScrollPosition|resetToTop/);
+    assert.match(content, /const initialPayload = collector\.buildPayload[\s\S]*if \(message\.streamToQueue\) \{[\s\S]*await stageStreamItemsToTarget\(initialCheck\.uniqueItems[\s\S]*for \(let index = 0; index < maxSteps; index \+= 1\) \{[\s\S]*await scrollAndWaitForGalleryBatch\(\)/);
     assert.match(content, /AUTOMATION_SCROLL_MAX_STEPS\s*=\s*1000/);
     assert.match(content, /let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS/);
     assert.match(content, /while \(streamStageState\.processableCount < maxItems && scrollStepsRemaining > 0 && !sourceExhausted\)/);
@@ -228,7 +223,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.75'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.76'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);

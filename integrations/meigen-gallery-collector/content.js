@@ -1355,36 +1355,6 @@
         window.scrollBy({ top: distance, behavior: 'smooth' });
     }
 
-    function hasLoadedVisibleGalleryImage() {
-        const viewportHeight = window.innerHeight || 800;
-        return Array.from(document.querySelectorAll('img')).some((image) => {
-            const rect = image.getBoundingClientRect?.() || {};
-            return Number(rect.width || 0) > 100
-                && Number(rect.height || 0) > 100
-                && Number(rect.bottom || 0) >= 0
-                && Number(rect.top || 0) <= viewportHeight
-                && Boolean(String(image.currentSrc || image.src || '').trim());
-        });
-    }
-
-    async function resetListScrollPosition() {
-        const root = getScrollableRoot();
-        window.scrollTo({ top: 0, behavior: 'auto' });
-        if (root) root.scrollTop = 0;
-        let stableRounds = 0;
-        for (let attempt = 0; attempt < SCROLL_BATCH_SETTLE_LIMIT; attempt += 1) {
-            await sleep(SCROLL_BATCH_SETTLE_POLL_MS);
-            const snapshot = getScrollSnapshot();
-            if (snapshot.y <= 12 && hasLoadedVisibleGalleryImage()) {
-                stableRounds += 1;
-                if (stableRounds >= 2) break;
-            } else {
-                stableRounds = 0;
-            }
-        }
-        logDiagnostic('list-scroll-reset', getScrollSnapshot());
-    }
-
     async function scrollAndWaitForGalleryBatch() {
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
@@ -2735,7 +2705,6 @@
         const maxItems = normalizeMaxItems(message.maxItems);
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
-        if (message.resetToTop) await resetListScrollPosition();
         await revealHoverControls(document, maxItems + 6);
         await refreshStructuredDataCache();
         if (message.streamToQueue && !message.continueExisting) resetStreamStageState(message.batchId);
@@ -3200,7 +3169,6 @@
             let response = null;
             let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS;
             let sourceExhausted = false;
-            let resetToTop = true;
             const scrollChunkSteps = Math.max(SCROLL_COLLECT_MAX_STEPS, Math.min(100, maxItems * 3));
             while (streamStageState.processableCount < maxItems && scrollStepsRemaining > 0 && !sourceExhausted) {
                 updateAutomationJob({ phase: 'discovering' });
@@ -3209,7 +3177,6 @@
                     maxSteps: Math.min(scrollChunkSteps, scrollStepsRemaining),
                     maxItems,
                     continueExisting: true,
-                    resetToTop,
                     preflightDuplicates: true,
                     streamToQueue: true,
                     batchId: streamStageState.batchId
@@ -3219,7 +3186,6 @@
                 const processedSteps = Math.max(0, Number(response?.scrollStatus?.processed || 0));
                 scrollStepsRemaining -= Math.max(1, processedSteps);
                 sourceExhausted = response?.exhausted === true;
-                resetToTop = false;
             }
 
             let pagingRound = 0;
