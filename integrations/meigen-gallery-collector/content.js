@@ -33,6 +33,7 @@
     const SCROLL_BATCH_SETTLE_LIMIT = 8;
     const SCROLL_COLLECT_MAX_STEPS = 30;
     const SCROLL_COLLECT_STABLE_LIMIT = 8;
+    const AUTOMATION_SCROLL_MAX_STEPS = 1000;
     const PAGE_BATCH_DELAY_MS = 1500;
     const PAGE_BATCH_MAX_PAGES = 5;
     const PROMPT_COPY_CLICK_DELAY_MS = 650;
@@ -2913,6 +2914,7 @@
         let currentUrl = window.location.href;
         let currentRoot = document;
         const visited = new Set();
+        let sourceExhausted = false;
 
         pageBatchJob.running = true;
         pageBatchJob.stopRequested = false;
@@ -2935,7 +2937,10 @@
                 if (message.streamToQueue && getStreamActiveCount() >= maxItems) break;
 
                 const normalizedCurrentUrl = normalizeBatchUrl(currentUrl) || currentUrl;
-                if (visited.has(normalizedCurrentUrl) && currentRoot !== document) break;
+                if (visited.has(normalizedCurrentUrl) && currentRoot !== document) {
+                    sourceExhausted = true;
+                    break;
+                }
                 if (!visited.has(normalizedCurrentUrl)) {
                     visited.add(normalizedCurrentUrl);
                 }
@@ -2985,7 +2990,10 @@
                 if (targetCount >= maxItems || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
 
                 const nextTarget = findNextPageTarget(currentRoot, normalizedCurrentUrl);
-                if (!nextTarget) break;
+                if (!nextTarget) {
+                    sourceExhausted = true;
+                    break;
+                }
 
                 await sleep(PAGE_BATCH_DELAY_MS);
                 if (nextTarget.type === 'url') {
@@ -3032,7 +3040,7 @@
                 pageBatchStatus: getPageBatchStatus(),
                 repositoryDuplicateCount,
                 checkedCandidateCount: checkedKeys.size,
-                exhausted: (message.streamToQueue ? getStreamActiveCount() : payload.items.length) < maxItems,
+                exhausted: sourceExhausted,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
                     attemptedCount: streamStageState.attemptedCount,
@@ -3189,23 +3197,34 @@
 
             await enrichAndDiscardUnresolved();
 
-            updateAutomationJob({ phase: 'discovering' });
-            let response = await runScrollCollect({
-                ...message,
-                maxSteps: maxItems,
-                maxItems,
-                continueExisting: true,
-                resetToTop: true,
-                preflightDuplicates: true,
-                streamToQueue: true,
-                batchId: streamStageState.batchId
-            });
-            payload = response?.payload || payload || getLastJobPayload();
-            await enrichAndDiscardUnresolved();
+            let response = null;
+            let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS;
+            let sourceExhausted = false;
+            let resetToTop = true;
+            const scrollChunkSteps = Math.max(SCROLL_COLLECT_MAX_STEPS, Math.min(100, maxItems * 3));
+            while (streamStageState.processableCount < maxItems && scrollStepsRemaining > 0 && !sourceExhausted) {
+                updateAutomationJob({ phase: 'discovering' });
+                response = await runScrollCollect({
+                    ...message,
+                    maxSteps: Math.min(scrollChunkSteps, scrollStepsRemaining),
+                    maxItems,
+                    continueExisting: true,
+                    resetToTop,
+                    preflightDuplicates: true,
+                    streamToQueue: true,
+                    batchId: streamStageState.batchId
+                });
+                payload = response?.payload || payload || getLastJobPayload();
+                await enrichAndDiscardUnresolved();
+                const processedSteps = Math.max(0, Number(response?.scrollStatus?.processed || 0));
+                scrollStepsRemaining -= Math.max(1, processedSteps);
+                sourceExhausted = response?.exhausted === true;
+                resetToTop = false;
+            }
 
             let pagingRound = 0;
             let previousCheckedCount = -1;
-            while (streamStageState.processableCount < maxItems && pagingRound < maxItems) {
+            while (streamStageState.processableCount < maxItems && sourceExhausted && pagingRound < maxItems) {
                 updateAutomationJob({ phase: 'paging' });
                 response = await runPageBatchCollect({
                     ...message,
@@ -3219,7 +3238,8 @@
                 payload = response?.payload || payload;
                 await enrichAndDiscardUnresolved();
                 const checkedCount = streamStageState.checkedKeys.size;
-                if (checkedCount === previousCheckedCount && response?.exhausted) break;
+                sourceExhausted = response?.exhausted === true;
+                if (checkedCount === previousCheckedCount && sourceExhausted) break;
                 previousCheckedCount = checkedCount;
                 pagingRound += 1;
             }
@@ -3227,11 +3247,14 @@
             await streamStageState.promise;
             if (streamStageState.processableCount < maxItems) {
                 const shortfall = maxItems - streamStageState.processableCount;
+                const reason = sourceExhausted
+                    ? `来源已连续稳定到底，仍差 ${shortfall} 条可处理内容；可切换分类后再次继续`
+                    : `已达到安全滚动上限，仍差 ${shortfall} 条可处理内容；再次启动可从当前批次继续`;
                 updateAutomationJob({
                     running: false,
                     phase: 'incomplete',
                     completed: false,
-                    lastError: `来源已耗尽，仍差 ${shortfall} 条可处理内容；可切换分类后再次继续`
+                    lastError: reason
                 });
                 logDiagnostic('automation-incomplete', getAutomationStatus());
                 return payload;
