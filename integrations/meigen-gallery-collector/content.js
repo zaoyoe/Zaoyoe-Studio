@@ -57,7 +57,7 @@
         '[class*="post" i]',
         '[class*="pin" i]'
     ].join(',');
-    const DIAGNOSTIC_LOG_LIMIT = 120;
+    const DIAGNOSTIC_LOG_LIMIT = 400;
     const SESSION_STORAGE_KEY = 'fatherKeyMeigenCollectorSessionV1';
 
     const detailJob = {
@@ -119,6 +119,10 @@
         attemptedCount: 0,
         stagedCount: 0,
         skippedDuplicateCount: 0,
+        checkedCandidateCount: 0,
+        repositoryDuplicateCount: 0,
+        identityRejectedCount: 0,
+        persistentFailureCount: 0,
         rejectedCount: 0,
         processableCount: 0,
         pendingDetailCount: 0,
@@ -174,17 +178,25 @@
 
     async function filterRepositoryDuplicates(items = [], message = {}, checkedKeys = new Set()) {
         let identityConflictCount = 0;
+        const identityConflictSourceItemIds = [];
         const candidates = (Array.isArray(items) ? items : []).filter((item) => {
             const key = getImportIdentityKey(item);
             if (!key || checkedKeys.has(key)) return false;
             checkedKeys.add(key);
             if (getMeigenIdentityConflictReason(item)) {
                 identityConflictCount += 1;
+                identityConflictSourceItemIds.push(String(item.source_item_id || ''));
                 return false;
             }
             return true;
         });
-        if (!candidates.length) return { uniqueItems: [], duplicateCount: 0, identityConflictCount };
+        if (!candidates.length) {
+            if (message.streamToQueue) {
+                streamStageState.checkedCandidateCount += identityConflictCount;
+                streamStageState.identityRejectedCount += identityConflictCount;
+            }
+            return { uniqueItems: [], duplicateCount: 0, identityConflictCount, persistentFailureCount: 0 };
+        }
         const response = await chrome.runtime.sendMessage({
             type: MESSAGE_CHECK_DUPLICATES,
             payload: { source: 'meigen', items: candidates },
@@ -194,13 +206,33 @@
         if (!response?.ok) throw new Error(response?.message || '提示词仓库去重预检失败');
         const duplicateIds = new Set((response.result?.duplicateSourceItemIds || []).map((value) => String(value || '')));
         const rejectedIdentityIds = new Set((response.result?.rejectedIdentitySourceItemIds || []).map((value) => String(value || '')));
+        const persistentFailureIds = new Set((response.result?.persistentFailureSourceItemIds || []).map((value) => String(value || '')));
+        const uniqueItems = candidates.filter((item) => (
+            !duplicateIds.has(String(item.source_item_id || ''))
+            && !rejectedIdentityIds.has(String(item.source_item_id || ''))
+            && !persistentFailureIds.has(String(item.source_item_id || ''))
+        ));
+        if (message.streamToQueue) {
+            streamStageState.checkedCandidateCount += candidates.length + identityConflictCount;
+            streamStageState.repositoryDuplicateCount += duplicateIds.size;
+            streamStageState.identityRejectedCount += identityConflictCount + rejectedIdentityIds.size;
+            streamStageState.persistentFailureCount += persistentFailureIds.size;
+        }
+        logDiagnostic('duplicate-preflight', {
+            checked: candidates.length + identityConflictCount,
+            unique: uniqueItems.length,
+            repositoryDuplicates: duplicateIds.size,
+            identityRejected: identityConflictCount + rejectedIdentityIds.size,
+            persistentFailures: persistentFailureIds.size,
+            duplicateSourceItemIds: Array.from(duplicateIds).slice(0, 30),
+            identityRejectedSourceItemIds: [...identityConflictSourceItemIds, ...rejectedIdentityIds].slice(0, 30),
+            persistentFailureSourceItemIds: Array.from(persistentFailureIds).slice(0, 30)
+        });
         return {
-            uniqueItems: candidates.filter((item) => (
-                !duplicateIds.has(String(item.source_item_id || ''))
-                && !rejectedIdentityIds.has(String(item.source_item_id || ''))
-            )),
+            uniqueItems,
             duplicateCount: duplicateIds.size,
-            identityConflictCount: identityConflictCount + rejectedIdentityIds.size
+            identityConflictCount: identityConflictCount + rejectedIdentityIds.size,
+            persistentFailureCount: persistentFailureIds.size
         };
     }
 
@@ -222,6 +254,10 @@
         streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
         streamStageState.skippedDuplicateCount = 0;
+        streamStageState.checkedCandidateCount = 0;
+        streamStageState.repositoryDuplicateCount = 0;
+        streamStageState.identityRejectedCount = 0;
+        streamStageState.persistentFailureCount = 0;
         streamStageState.rejectedCount = 0;
         streamStageState.processableCount = 0;
         streamStageState.pendingDetailCount = 0;
@@ -360,8 +396,23 @@
         streamStageState.stagedCount = streamStageState.acceptedKeys.size;
         syncStreamBatchStats(result.batch);
         const nextPayload = payload && cleanedKeys.size
-            ? { ...payload, items: (payload.items || []).filter((item) => !cleanedKeys.has(getStreamItemKey(item))) }
+            ? {
+                ...payload,
+                items: (payload.items || []).map((item) => cleanedKeys.has(getStreamItemKey(item))
+                    ? {
+                        ...item,
+                        stream_pending_detail: false,
+                        stream_final_status: 'unresolved',
+                        stream_final_reason: '详情补全后仍不完整，已从服务端处理队列移除'
+                    }
+                    : item)
+            }
             : payload;
+        logDiagnostic('pending-detail-finalized', {
+            cleanedCount: cleanedKeys.size,
+            sourceItemIds: Array.from(cleanedKeys).slice(0, 50),
+            batchId: streamStageState.batchId
+        });
         if (nextPayload) rememberSessionPayload(nextPayload, summarizePayload(nextPayload));
         return nextPayload;
     }
@@ -406,6 +457,7 @@
             with_source: items.filter((item) => String(item.original_work_url || '').trim()).length,
             images: items.reduce((sum, item) => sum + (Array.isArray(item.image_sources) ? item.image_sources.length : 0), 0),
             detail_failures: detailJob.failed.length,
+            finalized_unresolved: items.filter((item) => item.stream_final_status === 'unresolved').length,
             scroll_steps: scrollJob.processed,
             batch_pages: pageBatchJob.processed
         };
@@ -466,7 +518,13 @@
                 });
                 streamStageState.batchId = String(snapshot.automationStatus.batchId || '').trim();
                 streamStageState.stagedCount = Math.max(0, Number(snapshot.automationStatus.staged || 0));
-                streamStageState.skippedDuplicateCount = Math.max(0, Number(snapshot.automationStatus.duplicates || 0));
+                streamStageState.skippedDuplicateCount = Math.max(0, Number(snapshot.automationStatus.stageDuplicates || 0));
+                streamStageState.checkedCandidateCount = Math.max(0, Number(snapshot.automationStatus.checkedCandidates || 0));
+                streamStageState.repositoryDuplicateCount = Math.max(0, Number(
+                    snapshot.automationStatus.repositoryDuplicates ?? snapshot.automationStatus.duplicates ?? 0
+                ));
+                streamStageState.identityRejectedCount = Math.max(0, Number(snapshot.automationStatus.identityRejected || 0));
+                streamStageState.persistentFailureCount = Math.max(0, Number(snapshot.automationStatus.persistentFailures || 0));
                 streamStageState.rejectedCount = Math.max(0, Number(snapshot.automationStatus.rejected || 0));
                 streamStageState.processableCount = Math.max(0, Number(snapshot.automationStatus.processable || 0));
                 streamStageState.pendingDetailCount = Math.max(0, Number(snapshot.automationStatus.pendingDetail || 0));
@@ -518,7 +576,12 @@
             discovered: Number(summary.total || 0),
             missingDetailCount,
             staged: streamStageState.stagedCount,
-            duplicates: streamStageState.skippedDuplicateCount,
+            checkedCandidates: streamStageState.checkedCandidateCount,
+            duplicates: streamStageState.repositoryDuplicateCount + streamStageState.skippedDuplicateCount,
+            repositoryDuplicates: streamStageState.repositoryDuplicateCount,
+            stageDuplicates: streamStageState.skippedDuplicateCount,
+            identityRejected: streamStageState.identityRejectedCount,
+            persistentFailures: streamStageState.persistentFailureCount,
             rejected: streamStageState.rejectedCount,
             processable: streamStageState.processableCount,
             pendingDetail: streamStageState.pendingDetailCount,
@@ -559,7 +622,15 @@
             summary: summarizePayload(payload || {}),
             detail_status: getDetailStatus(),
             scroll_status: getScrollStatus(),
-            repository_duplicate_count: Number(payload?.scroll_collect?.repository_duplicates || 0),
+            counters: {
+                checked_candidates: streamStageState.checkedCandidateCount,
+                repository_duplicates: streamStageState.repositoryDuplicateCount,
+                stage_duplicates: streamStageState.skippedDuplicateCount,
+                identity_rejected: streamStageState.identityRejectedCount,
+                persistent_failures: streamStageState.persistentFailureCount,
+                active_server_items: getStreamActiveCount(),
+                finalized_unresolved: items.filter((item) => item.stream_final_status === 'unresolved').length
+            },
             page_batch_status: getPageBatchStatus(),
             automation_status: getAutomationStatus(),
             items: items.slice(0, 20).map((item, index) => ({
@@ -577,7 +648,7 @@
                 author_identity_source: item.author_identity_source || '',
                 original_work_url: item.original_work_url || ''
             })),
-            recent_log: diagnosticLog.slice(-80)
+            recent_log: diagnosticLog.slice(-300)
         };
     }
 
@@ -601,7 +672,7 @@
             total: scrollJob.total,
             discovered: scrollJob.discovered,
             staged: streamStageState.stagedCount,
-            duplicates: streamStageState.skippedDuplicateCount,
+            duplicates: streamStageState.repositoryDuplicateCount + streamStageState.skippedDuplicateCount,
             lastError: scrollJob.lastError
         };
     }
@@ -2188,6 +2259,7 @@
     }
 
     function needsInteractiveDetail(item = {}, { requireFavoriteCount = false } = {}) {
+        if (item.stream_final_status === 'unresolved') return false;
         const images = Array.isArray(item.image_sources) ? item.image_sources : [];
         const expectedImageCount = Number(item.expected_image_count || 0);
         const hasAuthoritativeImageCount = Boolean(
@@ -2722,6 +2794,20 @@
         }, { maxItems, favoriteRange });
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
+        logDiagnostic('scroll-initial-scan', {
+            snapshot: previousSnapshot,
+            domCandidates: initialPayload.items.length,
+            newlyChecked: initialCheck.uniqueItems.length
+                + Number(initialCheck.duplicateCount || 0)
+                + Number(initialCheck.identityConflictCount || 0)
+                + Number(initialCheck.persistentFailureCount || 0),
+            unique: initialCheck.uniqueItems.length,
+            repositoryDuplicates: Number(initialCheck.duplicateCount || 0),
+            identityRejected: Number(initialCheck.identityConflictCount || 0),
+            persistentFailures: Number(initialCheck.persistentFailureCount || 0),
+            checkedCandidates: checkedKeys.size,
+            activeServerItems: getStreamActiveCount()
+        });
 
         if (message.streamToQueue) {
             await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems, { pendingDetail: true });
@@ -2777,6 +2863,24 @@
                 detailJob.lastSummary = scrollJob.lastSummary;
                 rememberSessionPayload(payload, scrollJob.lastSummary);
                 const targetCount = message.streamToQueue ? getStreamActiveCount() : payload.items.length;
+                logDiagnostic('scroll-scan', {
+                    step: index + 1,
+                    snapshot: nextSnapshot,
+                    domCandidates: currentItems.length,
+                    newlyChecked: duplicateCheck.uniqueItems.length
+                        + Number(duplicateCheck.duplicateCount || 0)
+                        + Number(duplicateCheck.identityConflictCount || 0)
+                        + Number(duplicateCheck.persistentFailureCount || 0),
+                    unique: duplicateCheck.uniqueItems.length,
+                    repositoryDuplicates: Number(duplicateCheck.duplicateCount || 0),
+                    identityRejected: Number(duplicateCheck.identityConflictCount || 0),
+                    persistentFailures: Number(duplicateCheck.persistentFailureCount || 0),
+                    checkedCandidates: checkedKeys.size,
+                    activeServerItems: getStreamActiveCount(),
+                    staged: streamStageState.stagedCount,
+                    processable: streamStageState.processableCount,
+                    pendingDetail: streamStageState.pendingDetailCount
+                });
                 if (targetCount >= maxItems) {
                     break;
                 }

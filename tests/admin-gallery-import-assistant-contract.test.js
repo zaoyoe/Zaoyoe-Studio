@@ -504,6 +504,25 @@ test('collector duplicate preflight reports repository and candidate duplicates 
     const supabase = {
         from(table) {
             calls.push(table);
+            if (table === 'prompt_import_items') {
+                return {
+                    select() {
+                        return {
+                            in() {
+                                return {
+                                    eq() {
+                                        return {
+                                            async is() {
+                                                return { data: [], error: null };
+                                            }
+                                        };
+                                    }
+                                };
+                            }
+                        };
+                    }
+                };
+            }
             assert.equal(table, 'prompts');
             return {
                 select() {
@@ -541,10 +560,26 @@ test('collector duplicate preflight reports repository and candidate duplicates 
         checkedCount: 3,
         duplicateCount: 2,
         duplicateSourceItemIds: ['repo-copy', 'candidate-copy'],
+        persistentFailureCount: 0,
+        persistentFailureSourceItemIds: [],
         rejectedIdentityCount: 0,
         rejectedIdentitySourceItemIds: []
     });
-    assert.deepEqual(calls, ['prompts']);
+    assert.deepEqual(calls, ['prompts', 'prompt_import_items']);
+});
+
+test('collector suppresses only unresolved sources cleaned across distinct batches', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    assert.deepEqual(_private.getPersistentFailureSourceItemIds([
+        { batch_id: 'batch-a', source_item_id: 'persistent', status: 'cleaned', final_prompt_id: null },
+        { batch_id: 'batch-a', source_item_id: 'persistent', status: 'cleaned', final_prompt_id: null },
+        { batch_id: 'batch-b', source_item_id: 'persistent', status: 'cleaned', final_prompt_id: null },
+        { batch_id: 'batch-a', source_item_id: 'single-batch', status: 'cleaned', final_prompt_id: null },
+        { batch_id: 'batch-a', source_item_id: 'imported', status: 'cleaned', final_prompt_id: 'prompt-1' },
+        { batch_id: 'batch-b', source_item_id: 'imported', status: 'cleaned', final_prompt_id: 'prompt-1' },
+        { batch_id: 'batch-a', source_item_id: 'not-cleaned', status: 'failed', final_prompt_id: null },
+        { batch_id: 'batch-b', source_item_id: 'not-cleaned', status: 'failed', final_prompt_id: null }
+    ]), ['persistent']);
 });
 
 test('Meigen import rejects mismatched detail, source, and image identities', () => {
