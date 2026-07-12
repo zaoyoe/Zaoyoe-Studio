@@ -1249,8 +1249,21 @@
         const collector = getCollector();
         const targetLimit = Math.min(80, Math.max(1, Number(maxTargets) || 20));
         const targets = Array.from(root.querySelectorAll('img'))
+            .sort((left, right) => {
+                const leftRect = left.getBoundingClientRect?.() || {};
+                const rightRect = right.getBoundingClientRect?.() || {};
+                const viewportHeight = window.innerHeight || 800;
+                const distance = (rect = {}) => {
+                    const top = Number(rect.top || 0);
+                    const bottom = Number(rect.bottom || top);
+                    if (bottom >= 0 && top <= viewportHeight) return 0;
+                    return top > viewportHeight ? top - viewportHeight : Math.abs(bottom);
+                };
+                return distance(leftRect) - distance(rightRect);
+            })
             .map((image) => findHoverScopeFromImage(image))
             .filter(Boolean)
+            .filter((target, index, targetsList) => targetsList.indexOf(target) === index)
             .slice(0, targetLimit);
         const seen = new Set();
         for (const target of targets) {
@@ -1344,15 +1357,23 @@
     async function scrollAndWaitForGalleryBatch() {
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
-        window.scrollTo({ top: previousSnapshot.height, behavior: 'auto' });
+        scrollOneViewport();
         for (let attempt = 0; attempt < SCROLL_BATCH_SETTLE_LIMIT; attempt += 1) {
             await sleep(SCROLL_BATCH_SETTLE_POLL_MS);
             const nextSnapshot = getScrollSnapshot();
             const grew = nextSnapshot.height > previousSnapshot.height + 12;
-            stableRounds = grew ? 0 : stableRounds + 1;
-            if (grew) window.scrollTo({ top: nextSnapshot.height, behavior: 'auto' });
+            const moved = nextSnapshot.y > previousSnapshot.y + 12;
+            const visibleImagesPending = Array.from(document.querySelectorAll('img')).some((image) => {
+                const rect = image.getBoundingClientRect?.() || {};
+                return Number(rect.width || 0) > 100
+                    && Number(rect.height || 0) > 100
+                    && Number(rect.bottom || 0) >= 0
+                    && Number(rect.top || 0) <= nextSnapshot.viewport
+                    && !String(image.currentSrc || image.src || '').trim();
+            });
+            stableRounds = grew || moved || visibleImagesPending ? 0 : stableRounds + 1;
             previousSnapshot = nextSnapshot;
-            if (attempt >= 3 && stableRounds >= 3) break;
+            if (attempt >= 2 && stableRounds >= 2) break;
         }
         return previousSnapshot;
     }

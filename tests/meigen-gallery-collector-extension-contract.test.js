@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.26');
+    assert.equal(manifest.version, '0.1.27');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -71,6 +71,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /!force && !isStreamItemRevisionImproved/);
     assert.match(content, /queueStreamStage\(mergedItems, streamMessage, \{ flush: true, force: true \}\)/);
     assert.match(content, /function scrollAndWaitForGalleryBatch/);
+    assert.match(content, /scrollOneViewport\(\)/);
+    assert.doesNotMatch(content, /window\.scrollTo\(\{ top: previousSnapshot\.height/);
+    assert.match(content, /visibleImagesPending/);
+    assert.match(content, /distance\(leftRect\) - distance\(rightRect\)/);
     assert.match(content, /function stageStreamItemsToTarget/);
     assert.match(content, /Math\.max\(0, maxItems - getStreamActiveCount\(\)\)/);
     assert.match(content, /stageStreamItemsToTarget\(duplicateCheck\.uniqueItems, message, maxItems, \{ pendingDetail: true \}\)/);
@@ -211,7 +215,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.72'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.73'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
