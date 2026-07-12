@@ -230,10 +230,12 @@
         const container = getElement('automationProgress');
         if (!container) return;
         const labels = {
+            recovering: '正在恢复原批次待补内容',
             discovering: '第 1/3 阶段：发现候选并查库去重',
             paging: '第 1/3 阶段：继续翻页寻找候选',
             enriching: '第 2/3 阶段：补抓提示词与详情',
             completed: '第 3/3 阶段：任务已交给服务端',
+            incomplete: '当前来源已采集完，目标尚未达到',
             failed: '任务已中断'
         };
         const hasStatus = Boolean(status.phase || status.running || status.completed || status.lastError);
@@ -251,6 +253,9 @@
         } else if (status.phase === 'enriching') {
             current = status.detailProcessed;
             total = status.detailTotal || Math.max(1, status.missingDetailCount);
+        } else if (status.phase === 'recovering') {
+            current = status.staged;
+            total = status.target || Math.max(1, status.staged);
         } else if (status.phase === 'completed') {
             current = total;
         }
@@ -268,6 +273,8 @@
             setStatus(`全自动任务完成：服务端已接收 ${status.staged} 条，可处理 ${status.processable} 条，待详情 ${status.pendingDetail} 条；关闭插件不影响后台任务`);
         } else if (status.phase === 'failed') {
             setStatus(`任务已中断：${status.lastError || '请点击全自动采集重试'}`);
+        } else if (status.phase === 'incomplete') {
+            setStatus(status.lastError || '当前来源已耗尽，请切换分类后继续');
         }
     }
 
@@ -1009,7 +1016,6 @@
     async function runFullyAutomaticCollectionTask() {
         if (state.automationRunning) return;
         state.automationRunning = true;
-        state.streamedBatchId = '';
         state.streamStats = null;
         updateSummary();
         setStatus(`正在启动页面内全自动任务，目标实际入队 ${getMaxItemsSetting()} 条...`);
@@ -1022,6 +1028,11 @@
                 site: getElement('siteSelect').value,
                 defaultStatus: getElement('statusSelect').value,
                 maxItems: getMaxItemsSetting(),
+                batchId: state.automationStatus.completed
+                    && state.automationStatus.pendingDetail === 0
+                    && state.automationStatus.processable >= state.automationStatus.target
+                    ? ''
+                    : state.streamedBatchId,
                 ...getFavoriteFilterSettings()
             });
             if (!response?.ok) {

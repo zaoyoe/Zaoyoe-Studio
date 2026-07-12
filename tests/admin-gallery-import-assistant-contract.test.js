@@ -614,6 +614,16 @@ test('automatic import cleanup preserves complete transient failures', () => {
     );
 });
 
+test('collector recovery cleanup only removes unresolved detail placeholders', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    assert.deepEqual(_private.getPendingDetailCleanupIds([
+        { id: 'pending', status: 'needs_review', error_summary: '没有抓到提示词；等待详情补全' },
+        { id: 'manual-review', status: 'needs_review', error_summary: '缺少原作者昵称' },
+        { id: 'failed-pending', status: 'failed', error_summary: '等待详情补全' },
+        { id: 'ready', status: 'staged', error_summary: '' }
+    ]), ['pending']);
+});
+
 test('admin prompt image base64 helper only accepts public image urls', () => {
     const { _private } = require('../server/api-handlers/admin/prompts/image-base64');
 

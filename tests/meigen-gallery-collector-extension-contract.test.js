@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.25');
+    assert.equal(manifest.version, '0.1.26');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -72,13 +72,20 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /queueStreamStage\(mergedItems, streamMessage, \{ flush: true, force: true \}\)/);
     assert.match(content, /function scrollAndWaitForGalleryBatch/);
     assert.match(content, /function stageStreamItemsToTarget/);
-    assert.match(content, /Math\.max\(0, maxItems - streamStageState\.stagedCount\)/);
+    assert.match(content, /Math\.max\(0, maxItems - getStreamActiveCount\(\)\)/);
     assert.match(content, /stageStreamItemsToTarget\(duplicateCheck\.uniqueItems, message, maxItems, \{ pendingDetail: true \}\)/);
     assert.match(content, /stream_pending_detail: true/);
     assert.match(content, /function getMeigenIdentityConflictReason/);
     assert.match(content, /function isStreamItemRevisionImproved/);
     assert.match(content, /sentRevisions:\s*new Map\(\)/);
-    assert.match(content, /streamStageState\.stagedCount >= maxItems/);
+    assert.doesNotMatch(content, /streamStageState\.stagedCount >= maxItems/);
+    assert.match(content, /streamStageState\.processableCount < maxItems/);
+    assert.match(content, /phase: 'incomplete'/);
+    assert.match(content, /restoreStreamBatch\(message\)/);
+    assert.match(content, /cleanupPendingStreamItems\(message, payload\)/);
+    assert.match(background, /FATHER_KEY_LOAD_IMPORT_BATCH/);
+    assert.match(background, /cleanup_pending_detail_items/);
+    assert.match(popup, /state\.automationStatus\.pendingDetail === 0/);
     assert.match(content, /bufferedItems\.length < 3/);
     assert.match(content, /bufferedItems\.splice\(0, 3\)/);
     assert.match(content, /while \(flush && streamStageState\.bufferedItems\.length\)/);
@@ -100,6 +107,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /findNextPageTarget/);
     assert.match(content, /fetchDetailItems/);
     assert.match(content, /function getLatestPayload/);
+    assert.match(content, /return sessionState\.lastPayload/);
     assert.match(content, /function revealHoverControls/);
     assert.match(content, /function getHoverChildTargets/);
     assert.match(content, /function cacheHoverAuthorIdentity/);
@@ -203,7 +211,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.71'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.72'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
