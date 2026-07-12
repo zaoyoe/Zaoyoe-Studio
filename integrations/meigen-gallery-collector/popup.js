@@ -210,6 +210,8 @@
             staged: Number(status.staged || 0),
             duplicates: Number(status.duplicates || 0),
             rejected: Number(status.rejected || 0),
+            processable: Number(status.processable || 0),
+            pendingDetail: Number(status.pendingDetail || 0),
             batchId: status.batchId || '',
             detailProcessed: Number(status.detailProcessed || 0),
             detailTotal: Number(status.detailTotal || 0),
@@ -258,12 +260,12 @@
         getElement('automationProgressBar').style.width = `${percent}%`;
         getElement('automationProgressDetail').textContent = status.lastError
             ? `错误：${status.lastError}`
-            : `发现 ${status.discovered} · 待补 ${status.missingDetailCount} · 已入队 ${status.staged}/${status.target || '--'} · 重复 ${status.duplicates} · 未接收 ${status.rejected}`;
+            : `发现 ${status.discovered} · 服务端已接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 重复 ${status.duplicates} · 未接收 ${status.rejected}`;
 
         if (status.running) {
             setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);
         } else if (status.phase === 'completed') {
-            setStatus(`全自动任务完成：实际入队 ${status.staged} 条，服务端继续处理；关闭插件不影响后台任务`);
+            setStatus(`全自动任务完成：服务端已接收 ${status.staged} 条，可处理 ${status.processable} 条，待详情 ${status.pendingDetail} 条；关闭插件不影响后台任务`);
         } else if (status.phase === 'failed') {
             setStatus(`任务已中断：${status.lastError || '请点击全自动采集重试'}`);
         }

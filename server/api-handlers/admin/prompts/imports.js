@@ -963,7 +963,7 @@ async function stageImportItems(supabase, user, body) {
     if (batchId && rowsToInsert.length) {
         const sourceItemIds = rowsToInsert.map((row) => row.source_item_id).filter(Boolean);
         const { data: existingRows, error: existingError } = sourceItemIds.length
-            ? await supabase.from('prompt_import_items').select('id, source_item_id, status').eq('batch_id', batch.id).in('source_item_id', sourceItemIds)
+            ? await supabase.from('prompt_import_items').select('id, source_item_id, status, final_prompt_id').eq('batch_id', batch.id).in('source_item_id', sourceItemIds)
             : { data: [], error: null };
         if (existingError) throw existingError;
         const existingBySourceItemId = new Map((existingRows || []).map((row) => [String(row.source_item_id || ''), row]));
@@ -974,10 +974,15 @@ async function stageImportItems(supabase, user, body) {
                 newRows.push(row);
                 continue;
             }
-            if (!['staged', 'needs_review', 'failed'].includes(String(existing.status || ''))) continue;
+            const existingStatus = String(existing.status || '');
+            const canRestoreCleanedPlaceholder = existingStatus === 'cleaned'
+                && !existing.final_prompt_id
+                && row.status === 'staged';
+            if (!['staged', 'needs_review', 'failed'].includes(existingStatus) && !canRestoreCleanedPlaceholder) continue;
             const { batch_id: _batchId, ...updatePayload } = row;
             const updateResult = await supabase.from('prompt_import_items').update({
                 ...updatePayload,
+                cleaned_at: null,
                 worker_name: null,
                 lease_expires_at: null,
                 next_attempt_at: null,
@@ -1391,6 +1396,8 @@ function getRejectedImportCleanupIds(items = []) {
     return (Array.isArray(items) ? items : [])
         .filter((item) => {
             const status = String(item?.status || '');
+            const waitingForDetail = /等待详情补全/.test(String(item?.error_summary || ''));
+            if (waitingForDetail) return false;
             return status === 'skipped'
                 || status === 'duplicate'
                 || Boolean(getImportItemUploadBlockReason(item));
