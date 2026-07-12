@@ -1366,6 +1366,39 @@ async function cleanupImportItems(supabase, user, body) {
     };
 }
 
+async function cleanupRejectedImportItems(supabase, user, body) {
+    const batchId = normalizeText(body.batch_id || body.batchId, 120);
+    if (!batchId) {
+        const error = new Error('batchId is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    await loadImportBatch(supabase, batchId);
+    const { data, error } = await supabase
+        .from('prompt_import_items')
+        .select(IMPORT_ITEM_SELECT)
+        .eq('batch_id', batchId)
+        .in('status', ['needs_review', 'skipped', 'duplicate', 'failed']);
+    if (error) throw error;
+    const cleanupIds = getRejectedImportCleanupIds(data || []);
+    if (!cleanupIds.length) {
+        return { items: [], cleanedCount: 0, batch: await updateBatchStats(supabase, batchId) };
+    }
+    return cleanupImportItems(supabase, user, { ...body, item_ids: cleanupIds });
+}
+
+function getRejectedImportCleanupIds(items = []) {
+    return (Array.isArray(items) ? items : [])
+        .filter((item) => {
+            const status = String(item?.status || '');
+            return status === 'skipped'
+                || status === 'duplicate'
+                || Boolean(getImportItemUploadBlockReason(item));
+        })
+        .map((item) => item?.id)
+        .filter(Boolean);
+}
+
 async function skipImportItems(supabase, user, body) {
     const itemIds = [...new Set(
         (Array.isArray(body.item_ids) ? body.item_ids : (Array.isArray(body.itemIds) ? body.itemIds : []))
@@ -1577,6 +1610,10 @@ module.exports = async (req, res) => {
             const result = await cleanupImportItems(supabase, user, body);
             return sendJson(res, 200, { success: true, ...result });
         }
+        if (action === 'cleanup_rejected_items') {
+            const result = await cleanupRejectedImportItems(supabase, user, body);
+            return sendJson(res, 200, { success: true, ...result });
+        }
         if (action === 'skip_items') {
             const result = await skipImportItems(supabase, user, body);
             return sendJson(res, 200, { success: true, ...result });
@@ -1612,6 +1649,7 @@ module.exports._private = {
     buildPromptImportImageKey,
     findExistingPromptDuplicates,
     checkImportItemDuplicates,
+    getRejectedImportCleanupIds,
     isBlockedImportHostname,
     isSupportedImageBuffer
 };

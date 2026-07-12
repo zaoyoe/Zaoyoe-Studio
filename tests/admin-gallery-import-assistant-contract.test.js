@@ -46,7 +46,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'id="galleryImportBatchSummary"',
         '批次追踪',
         'id="galleryImportParallelismDropdown"',
-        'id="galleryImportParallelism" value="2"',
+        'id="galleryImportParallelism" value="8"',
         '同时处理',
         'data-value="4">4 条',
         'data-value="5">5 条',
@@ -156,7 +156,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "const GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY = 'fatherKey.galleryImport.autoDetectQueue';",
         "const GALLERY_IMPORT_AUTO_DETECT_LOCK_NAME = 'father-key-gallery-import-auto-upload';",
         'const GALLERY_IMPORT_MAX_PARALLELISM = 10;',
-        'const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 6;',
+        'const GALLERY_IMPORT_DEFAULT_PARALLELISM = 8;',
+        "const GALLERY_IMPORT_PARALLELISM_STORAGE_KEY = 'fatherKey.galleryImport.parallelism';",
+        'const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 8;',
         'const GALLERY_IMPORT_ADAPTIVE_MIN_PARALLELISM = 1;',
         'const GALLERY_IMPORT_ADAPTIVE_LAUNCH_GAP_MS = 500;',
         'const GALLERY_IMPORT_ADAPTIVE_COOLDOWN_MS = 6000;',
@@ -184,6 +186,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'function renderGalleryImportQueue(items = galleryImportState.items)',
         'function getGalleryImportBatchStats(batch = {})',
         'function selectGalleryImportBatch(batches = [], options = {})',
+        'batchSelectionLocked: false',
+        'preferPending: options.preferPending === true && !galleryImportState.batchSelectionLocked',
         'function renderGalleryImportBatchTracker()',
         'async function loadGalleryImportBatchById(batchId, options = {})',
         'preferPending: options.preferPending === true',
@@ -207,6 +211,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "mutateGalleryImport('skip_items'",
         "mutateGalleryImport('fail_items'",
         "mutateGalleryImport('cleanup_items'",
+        "mutateGalleryImport('cleanup_rejected_items'",
+        'function autoCleanupRejectedGalleryImportItems',
+        'localStorage.setItem(GALLERY_IMPORT_PARALLELISM_STORAGE_KEY, String(value))',
         'function clearCurrentGalleryImportQueue',
         "hadSavedPromptReference ? 'lookup' : 'upload'",
         'function fetchImageBase64ViaAdmin',
@@ -287,6 +294,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'source_image_count',
         'async function skipImportItems',
         'async function markImportItemsFailed',
+        'async function cleanupRejectedImportItems',
         'skippedDuplicateCount: duplicateIndexes.size',
         'attemptedCount: rows.length',
         'stagedCount: data.length',
@@ -297,6 +305,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'image_sources: []',
         "action === 'skip_items'",
         "action === 'fail_items'",
+        "action === 'cleanup_rejected_items'",
         "await requireAdmin(req, { permission: 'prompts.manage' })"
     ];
     for (const marker of handlerMarkers) {
@@ -573,6 +582,26 @@ test('streaming imports remain in review until detail enrichment arrives', () =>
     });
     assert.equal(pending.status, 'needs_review');
     assert.match(pending.error_summary, /等待详情补全/);
+});
+
+test('automatic import cleanup preserves complete transient failures', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const complete = {
+        id: 'complete-failed',
+        status: 'failed',
+        prompt_text: 'Complete prompt',
+        image_sources: [{ url: 'https://images.example.com/a.jpg' }],
+        original_work_url: 'https://x.com/artist/status/1234567890',
+        author_name: 'Artist',
+        author_handle: '@artist'
+    };
+    const incomplete = { ...complete, id: 'incomplete-review', status: 'needs_review', prompt_text: '' };
+    const skipped = { ...complete, id: 'skipped', status: 'skipped' };
+    const duplicate = { ...complete, id: 'duplicate', status: 'duplicate' };
+    assert.deepEqual(
+        _private.getRejectedImportCleanupIds([complete, incomplete, skipped, duplicate]),
+        ['incomplete-review', 'skipped', 'duplicate']
+    );
 });
 
 test('admin prompt image base64 helper only accepts public image urls', () => {
