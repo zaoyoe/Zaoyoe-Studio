@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.21');
+    assert.equal(manifest.version, '0.1.22');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -189,7 +189,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.67'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.68'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);
@@ -342,7 +342,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /pageBatchCollectCurrentPage\(\{ automatic: true \}\)/);
     assert.match(popup, /continueExisting:\s*automatic/);
     assert.match(popup, /automatic \? Math\.max\(DEFAULT_PAGE_BATCH_PAGES, getMaxItemsSetting\(\)\)/);
-    assert.match(content, /return Math\.min\(parsed, 200\)/);
+    assert.match(content, /return Math\.min\(parsed, 1000\)/);
     assert.match(content, /message\.continueExisting/);
     assert.match(content, /preflightDuplicates[\s\S]*filterRepositoryDuplicates\(currentItems/);
     assert.match(content, /markPendingDetail\(detailJob\.lastPayload\?\.items \|\| \[\]\)/);
@@ -351,7 +351,11 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /detailJob\.processed \+= 1/);
     assert.match(popup, /state\.detailStatus\.phase === 'fallback' \? '详情页补抓中' : '卡片补抓中'/);
     assert.match(content, /String\(streamStageState\.batchId \|\| ''\) !== String\(message\.batchId \|\| ''\)/);
-    assert.match(popup, /maxSteps:\s*automatic \? 80 : DEFAULT_SCROLL_STEPS/);
+    assert.match(popup, /maxSteps:\s*automatic \? getMaxItemsSetting\(\) : DEFAULT_SCROLL_STEPS/);
+    assert.match(popup, /检查 \$\{checked\} 条候选，实际入队 \$\{staged\} 条/);
+    assert.match(content, /SCROLL_COLLECT_STABLE_LIMIT = 8/);
+    assert.match(content, /checkedKeys:\s*new Set\(\)/);
+    assert.match(content, /checkedCandidateCount:\s*checkedKeys\.size/);
     assert.match(popup, /preflightDuplicates:\s*automatic/);
     assert.match(popup, /streamToQueue:\s*automatic/);
     assert.match(popup, /batchId:\s*state\.streamedBatchId/);
@@ -388,6 +392,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(html, /id="diagnosticsBtn"/);
     assert.match(html, /id="versionText"/);
     assert.match(html, /id="maxItemsInput"/);
+    assert.match(html, /id="maxItemsInput"[^>]*max="1000"/);
     assert.match(html, /id="minFavoritesInput"/);
     assert.match(html, /id="maxFavoritesInput"/);
     assert.match(html, /实际入队目标/);

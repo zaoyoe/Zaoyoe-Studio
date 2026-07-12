@@ -39,7 +39,7 @@
     function normalizeMaxItems(value) {
         const parsed = Number.parseInt(String(value || ''), 10);
         if (!Number.isFinite(parsed) || parsed < 1) return 20;
-        return Math.min(parsed, 200);
+        return Math.min(parsed, 1000);
     }
 
     function normalizeOptionalCount(value) {
