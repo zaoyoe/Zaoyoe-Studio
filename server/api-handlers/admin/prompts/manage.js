@@ -21,6 +21,7 @@ const PROMPT_OPTIONAL_SELECT_FIELDS = [
     'dominant_colors',
     'ai_tags',
     'image_assets',
+    'video_assets',
     'quality_score',
     'source_url',
     'source_author_name',
@@ -417,6 +418,29 @@ function normalizeOptionalImageAssets(value, fieldName) {
     return dedupePromptImageAssets(values);
 }
 
+function normalizeOptionalVideoAssets(value, fieldName = 'video_assets') {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) {
+        const error = new Error(`${fieldName} must be an array`);
+        error.statusCode = 400;
+        throw error;
+    }
+    const seen = new Set();
+    return value.flatMap((entry) => {
+        const source = typeof entry === 'string' ? { original: entry } : entry;
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return [];
+        const original = String(source.original || source.url || source.src || '').trim();
+        if (!original || seen.has(original.toLowerCase())) return [];
+        seen.add(original.toLowerCase());
+        return [{
+            ...source,
+            original,
+            poster: String(source.poster || source.poster_url || source.posterUrl || '').trim(),
+            mime_type: String(source.mime_type || source.mimeType || source.type || '').trim()
+        }];
+    });
+}
+
 function applyPromptFieldFallbacks(row = {}) {
     const safeRow = row && typeof row === 'object' ? { ...row } : {};
 
@@ -434,6 +458,10 @@ function applyPromptFieldFallbacks(row = {}) {
 
     if (!Object.prototype.hasOwnProperty.call(safeRow, 'image_assets')) {
         safeRow.image_assets = [];
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(safeRow, 'video_assets')) {
+        safeRow.video_assets = [];
     }
 
     for (const fieldName of ['source_url', 'source_author_name', 'source_author_handle', 'source_author_avatar_url']) {
@@ -542,6 +570,9 @@ function buildPromptMutationPayload(body, { action = 'create' } = {}) {
         payload.images = normalizedImages.images;
         payload.image_assets = normalizedImages.image_assets;
     }
+
+    const videoAssets = normalizeOptionalVideoAssets(body.video_assets ?? body.videoAssets, 'video_assets');
+    if (videoAssets !== undefined) payload.video_assets = videoAssets;
 
     const dominantColors = normalizeOptionalStringArray(body.dominant_colors ?? body.dominantColors, 'dominant_colors');
     if (dominantColors !== undefined) payload.dominant_colors = dominantColors;

@@ -47,25 +47,6 @@ html:not([data-theme="dark"]) {
 }
 
 /* ========================================
-   AMBIENT LIGHT CANVAS (Living Background)
-   ======================================== */
-#ambientCanvas {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: -1;
-    opacity: 0.6;
-    pointer-events: none;
-    transition: opacity 0.5s ease;
-}
-
-[data-theme="dark"] #ambientCanvas {
-    opacity: 0.4;
-}
-
-/* ========================================
    STARRY SKY CANVAS (Dark Mode Only)
    ======================================== */
 #starryCanvas {
@@ -139,6 +120,11 @@ html.prompt-gallery-resizing body.prompts-page .gallery-container--masonry .prom
     will-change: auto;
 }
 
+html.prompt-gallery-scrolling body.prompts-page .gallery-container--masonry .prompt-card.breathing {
+    animation-play-state: paused !important;
+    will-change: auto;
+}
+
 /* Disable breathing during filtering to allow FLIP animations */
 .prompt-card.filtering {
     animation: none !important;
@@ -199,11 +185,6 @@ html.prompt-gallery-resizing body.prompts-page .gallery-container--masonry .prom
 [data-theme="dark"] .prompt-card {
     border-color: transparent;
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
-}
-
-body.prompts-page.auth-sheet-open #ambientCanvas {
-    opacity: 0.4 !important;
-    transition: none !important;
 }
 
 html[data-theme="dark"] body.prompts-page.auth-sheet-open #starryCanvas {
@@ -2102,19 +2083,12 @@ html:not([data-theme="dark"]) body.prompts-page .prompts-pagination-nav .paginat
 body.prompts-page .nav-items .nav-item-skeleton {
     display: block;
     border-radius: 999px;
-    background:
-        linear-gradient(90deg,
-            rgba(255, 255, 255, 0.04) 0%,
-            rgba(255, 255, 255, 0.12) 22%,
-            rgba(255, 255, 255, 0.2) 34%,
-            rgba(255, 255, 255, 0.1) 48%,
-            rgba(255, 255, 255, 0.04) 62%,
-            rgba(255, 255, 255, 0.04) 100%),
-        linear-gradient(180deg,
-            rgba(255, 255, 255, 0.05),
-            rgba(255, 255, 255, 0.02));
-    background-size: 200% 100%, 100% 100%;
-    animation: promptSkeletonShimmer 1.25s linear infinite;
+    background: linear-gradient(180deg,
+            rgba(255, 255, 255, 0.1),
+            rgba(255, 255, 255, 0.04));
+    background-size: 100% 100%;
+    animation: none;
+    will-change: auto;
 }
 
 body.prompts-page .nav-items .nav-item-skeleton--title {
@@ -2219,6 +2193,13 @@ html[lang="en"] .nav-item .en {
     transform: translateY(0);
 }
 
+.prompt-gallery-load-sentinel {
+    width: 100%;
+    height: 1px;
+    pointer-events: none;
+    contain: strict;
+}
+
 .prompt-gallery-column {
     flex: 1 1 0;
     min-width: 0;
@@ -2266,26 +2247,12 @@ html[lang="en"] .nav-item .en {
 body.prompts-page .prompts-skeleton-block {
     position: relative;
     overflow: hidden;
-    background:
-        linear-gradient(90deg,
-            rgba(255, 255, 255, 0.03) 0%,
-            rgba(255, 255, 255, 0.06) 38%,
-            rgba(255, 255, 255, 0.12) 50%,
-            rgba(255, 255, 255, 0.06) 62%,
-            rgba(255, 255, 255, 0.03) 100%),
-        rgba(255, 255, 255, 0.04);
-    background-size: 220% 100%, 100% 100%;
-    animation: promptSkeletonShimmer 1.55s ease-in-out infinite;
-}
-
-@keyframes promptSkeletonShimmer {
-    0% {
-        background-position: 200% 0, 0 0;
-    }
-
-    100% {
-        background-position: -220% 0, 0 0;
-    }
+    background: linear-gradient(180deg,
+            rgba(255, 255, 255, 0.1),
+            rgba(255, 255, 255, 0.04));
+    background-size: 100% 100%;
+    animation: none;
+    will-change: auto;
 }
 
 body.prompts-page .gallery-container .skeleton {
@@ -2327,18 +2294,21 @@ body.prompts-page .prompt-card-media-skeleton {
 }
 
 body.prompts-page .prompt-card-media-skeleton .prompts-skeleton-block {
-    background:
-        linear-gradient(90deg,
-            rgba(255, 255, 255, 0.03) 0%,
-            rgba(255, 255, 255, 0.06) 40%,
-            rgba(255, 255, 255, 0.11) 50%,
-            rgba(255, 255, 255, 0.06) 60%,
-            rgba(255, 255, 255, 0.03) 100%),
-        linear-gradient(180deg,
+    background: linear-gradient(180deg,
             rgba(16, 24, 36, 0.9) 0%,
             rgba(16, 24, 36, 0.72) 100%);
-    background-size: 220% 100%, 100% 100%;
-    animation: promptSkeletonShimmer 1.55s ease-in-out infinite;
+    background-size: 100% 100%;
+    animation: none;
+    will-change: auto;
+}
+
+body.prompts-page .prompt-card--loading:not(.prompt-card--skeleton) .prompt-card-media-skeleton .prompts-skeleton-block {
+    background: linear-gradient(180deg,
+            rgba(34, 46, 64, 0.92) 0%,
+            rgba(20, 29, 42, 0.96) 100%);
+    background-size: 100% 100%;
+    animation: none;
+    will-change: auto;
 }
 
 body.prompts-page .prompt-card-skeleton-image {
@@ -2418,14 +2388,9 @@ body.prompts-page .prompt-card--loading .card-share-btn {
 }
 
 [data-theme="light"] body.prompts-page .gallery-container .skeleton {
-    background:
-        linear-gradient(90deg,
-            rgba(148, 163, 184, 0.06) 0%,
-            rgba(148, 163, 184, 0.1) 38%,
-            rgba(148, 163, 184, 0.18) 50%,
-            rgba(148, 163, 184, 0.1) 62%,
-            rgba(148, 163, 184, 0.06) 100%),
-        rgba(255, 255, 255, 0.92);
+    background: linear-gradient(180deg,
+            rgba(241, 245, 249, 0.98),
+            rgba(226, 232, 240, 0.92));
 }
 
 [data-theme="light"] body.prompts-page .prompt-card--skeleton,
@@ -2443,17 +2408,17 @@ body.prompts-page .prompt-card--loading .card-share-btn {
 }
 
 [data-theme="light"] body.prompts-page .prompt-card-media-skeleton .prompts-skeleton-block {
-    background:
-        linear-gradient(90deg,
-            rgba(148, 163, 184, 0.06) 0%,
-            rgba(148, 163, 184, 0.1) 40%,
-            rgba(148, 163, 184, 0.18) 50%,
-            rgba(148, 163, 184, 0.1) 60%,
-            rgba(148, 163, 184, 0.06) 100%),
-        linear-gradient(180deg,
+    background: linear-gradient(180deg,
             rgba(255, 255, 255, 0.92) 0%,
             rgba(241, 245, 249, 0.98) 100%);
-    background-size: 220% 100%, 100% 100%;
+    background-size: 100% 100%;
+}
+
+[data-theme="light"] body.prompts-page .prompt-card--loading:not(.prompt-card--skeleton) .prompt-card-media-skeleton .prompts-skeleton-block {
+    background: linear-gradient(180deg,
+            rgba(241, 245, 249, 0.98) 0%,
+            rgba(226, 232, 240, 0.96) 100%);
+    background-size: 100% 100%;
 }
 
 [data-theme="light"] body.prompts-page .prompt-card-skeleton-image {
@@ -2464,26 +2429,18 @@ body.prompts-page .prompt-card--loading .card-share-btn {
 
 [data-theme="light"] body.prompts-page .prompts-skeleton-block,
 [data-theme="light"] body.prompts-page .nav-items .nav-item-skeleton {
-    background:
-        linear-gradient(90deg,
-            rgba(148, 163, 184, 0.08) 0%,
-            rgba(148, 163, 184, 0.16) 22%,
-            rgba(148, 163, 184, 0.24) 34%,
-            rgba(148, 163, 184, 0.14) 48%,
-            rgba(148, 163, 184, 0.08) 62%,
-            rgba(148, 163, 184, 0.08) 100%),
-        linear-gradient(180deg,
+    background: linear-gradient(180deg,
             rgba(255, 255, 255, 0.92),
-            rgba(241, 245, 249, 0.96));
-    background-size: 220% 100%, 100% 100%;
-    animation: promptSkeletonShimmer 1.55s ease-in-out infinite;
-    will-change: background-position;
+            rgba(226, 232, 240, 0.94));
+    background-size: 100% 100%;
+    animation: none;
+    will-change: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    body.prompts-page .prompts-skeleton-block,
-    body.prompts-page .prompt-card-media-skeleton .prompts-skeleton-block {
+    body.prompts-page .prompt-card.breathing {
         animation: none;
+        will-change: auto;
     }
 }
 
@@ -2726,6 +2683,30 @@ body.prompts-page .prompt-card--loading .card-share-btn {
 
 .card-image.loaded {
     opacity: 1;
+}
+
+.prompt-card-video-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 6;
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.48);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    pointer-events: none;
+}
+
+.prompt-card-video-badge i {
+    margin-left: 2px;
+    font-size: 12px;
 }
 
 .card-overlay {
@@ -3296,6 +3277,18 @@ body.prompt-comment-composer-underlay-frozen #promptModal .modal-inner {
     filter: blur(0);
     will-change: top, transform, opacity, filter;
     backface-visibility: hidden;
+}
+
+.modal-image-col .prompt-modal-video {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+    background: #000;
 }
 
 .modal-return-image-freeze {
@@ -4244,6 +4237,10 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     transform: translate3d(-50%, -50%, 0) scale(0.85);
 }
 
+.modal-inner.comment-mode .modal-image-col .prompt-modal-video {
+    object-fit: contain;
+}
+
 /* Motion Blur Class (Added by JS) */
 .modal-image-col img.blur-motion {
     filter: blur(1.5px);
@@ -4469,6 +4466,19 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     to {
         opacity: 1;
         transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+.modal-inner.related-mode .related-prompt-grid--entering .related-prompt-card {
+    animation: relatedPromptCardEnter 0.56s cubic-bezier(0.19, 0.92, 0.22, 1) both;
+    animation-delay: var(--related-card-enter-delay, 0ms);
+    will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-inner.related-mode .related-prompt-grid--entering .related-prompt-card {
+        animation: none;
+        will-change: auto;
     }
 }
 
@@ -6151,12 +6161,6 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     .modal-inner.related-mode .related-prompt-card {
         border-radius: 10px;
         box-shadow: 0 10px 26px rgba(2, 6, 23, 0.2);
-    }
-
-    .modal-inner.related-mode .related-prompt-grid--entering .related-prompt-card {
-        animation: relatedPromptCardEnter 0.56s cubic-bezier(0.19, 0.92, 0.22, 1) both;
-        animation-delay: var(--related-card-enter-delay, 0ms);
-        will-change: opacity, transform;
     }
 
     .modal-inner.related-mode .related-prompt-card__title {
