@@ -16998,6 +16998,7 @@ const galleryImportState = {
     batches: [],
     selectedBatchId: '',
     batchSelectionLocked: false,
+    localPreviewLocked: false,
     items: [],
     running: false,
     uploadInFlight: false,
@@ -17810,12 +17811,14 @@ function loadGalleryImportRawText(rawText = '', statusPrefix = '已读取') {
 
     const previewItems = parseGalleryImportRawInput(rawText);
     if (!previewItems.length) {
+        galleryImportState.localPreviewLocked = false;
         setGalleryImportEmptyMessage('没有读到可导入内容。请先在采集器复制诊断或下载结果，再回到这里粘贴 / 导入。');
         setGalleryImportItems([]);
         setGalleryImportRunStatus('未读到结果');
         return [];
     }
 
+    galleryImportState.localPreviewLocked = true;
     setGalleryImportItems(buildGalleryImportPreviewItems(previewItems));
     setGalleryImportRunStatus(`${statusPrefix} ${previewItems.length} 条，点“开始任务”写入队列`);
     return previewItems;
@@ -18251,14 +18254,16 @@ async function stageGalleryImportItems(items = []) {
     if (!writableSite) return null;
 
     const settings = getGalleryImportSettings();
+    const wasLocalPreviewLocked = galleryImportState.localPreviewLocked;
     const payload = await mutateGalleryImport('stage_items', {
         site: writableSite,
         source: 'meigen',
         mode: galleryImportState.mode,
         settings,
-        batch_id: galleryImportState.batch?.id || '',
+        batch_id: wasLocalPreviewLocked ? '' : (galleryImportState.batch?.id || ''),
         items
     });
+    galleryImportState.localPreviewLocked = false;
     galleryImportState.batch = payload.batch || galleryImportState.batch;
     if (payload.batch) {
         galleryImportState.selectedBatchId = payload.batch.id;
@@ -18305,6 +18310,11 @@ async function loadGalleryImportBatchById(batchId, options = {}) {
 }
 
 async function loadLatestGalleryImportBatch(options = {}) {
+    if (galleryImportState.localPreviewLocked && options.force !== true) {
+        renderGalleryImportQueue(galleryImportState.items);
+        if (!options.silent) setGalleryImportRunStatus('本地预览已锁定，点“开始任务”写入新批次');
+        return { batch: null, items: galleryImportState.items, localPreview: true };
+    }
     const site = window.AdminSiteFilter?.getSiteFilter?.() || 'cn';
     const payload = await fetchGalleryImportApi({ limit: 30, site });
     galleryImportState.batches = Array.isArray(payload.batches) ? payload.batches : [];
@@ -18371,6 +18381,7 @@ function setGalleryImportAutoDetectionEnabled(enabled, options = {}) {
 
 async function runGalleryImportAutoDetectionCycle() {
     if (!galleryImportState.autoDetectionEnabled
+        || galleryImportState.localPreviewLocked
         || galleryImportState.autoDetectionInFlight
         || galleryImportState.running
         || galleryImportState.uploadInFlight
@@ -19084,6 +19095,7 @@ function initGalleryImportAssistant() {
             if (!batchId) return;
             galleryImportState.selectedBatchId = batchId;
             galleryImportState.batchSelectionLocked = true;
+            galleryImportState.localPreviewLocked = false;
             void loadGalleryImportBatchById(batchId).catch((error) => {
                 setGalleryImportRunStatus('批次读取失败');
                 showAdminStudioToast(error.message || '批次读取失败', 'error');
