@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.23');
+    assert.equal(manifest.version, '0.1.24');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -128,7 +128,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /message\?\.type === MESSAGE_AUTOMATION_STATUS/);
     assert.match(popup, /streamToQueue:\s*true/);
     assert.match(popup, /state\.streamedBatchId/);
-    assert.match(popup, /已入队 \$\{status\.staged\}\/\$\{status\.target/);
+    assert.match(popup, /服务端已接收 \$\{status\.staged\}\/\$\{status\.target/);
+    assert.match(popup, /可处理 \$\{status\.processable\}/);
     assert.match(popup, /重复 \$\{status\.duplicates\}/);
     assert.match(popup, /关闭插件不影响后台任务/);
     assert.match(html, /id="automationProgress"/);
@@ -196,7 +197,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.69'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.70'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);

@@ -97,7 +97,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-12.69';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-12.70';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -598,8 +598,13 @@ test('automatic import cleanup preserves complete transient failures', () => {
     const incomplete = { ...complete, id: 'incomplete-review', status: 'needs_review', prompt_text: '' };
     const skipped = { ...complete, id: 'skipped', status: 'skipped' };
     const duplicate = { ...complete, id: 'duplicate', status: 'duplicate' };
+    const pendingDetail = {
+        ...incomplete,
+        id: 'pending-detail',
+        error_summary: '没有抓到提示词；等待详情补全'
+    };
     assert.deepEqual(
-        _private.getRejectedImportCleanupIds([complete, incomplete, skipped, duplicate]),
+        _private.getRejectedImportCleanupIds([complete, incomplete, skipped, duplicate, pendingDetail]),
         ['incomplete-review', 'skipped', 'duplicate']
     );
 });

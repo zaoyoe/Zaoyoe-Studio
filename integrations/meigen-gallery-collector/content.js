@@ -117,6 +117,8 @@
         stagedCount: 0,
         skippedDuplicateCount: 0,
         rejectedCount: 0,
+        processableCount: 0,
+        pendingDetailCount: 0,
         lastError: ''
     };
 
@@ -218,6 +220,8 @@
         streamStageState.stagedCount = 0;
         streamStageState.skippedDuplicateCount = 0;
         streamStageState.rejectedCount = 0;
+        streamStageState.processableCount = 0;
+        streamStageState.pendingDetailCount = 0;
         streamStageState.lastError = '';
     }
 
@@ -265,6 +269,10 @@
                 streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
                 streamStageState.skippedDuplicateCount += duplicateCount;
                 streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
+                const stats = result.batch?.stats || {};
+                streamStageState.processableCount = ['staged', 'queued', 'uploading', 'saving', 'imported']
+                    .reduce((sum, key) => sum + Number(stats[key] || 0), 0);
+                streamStageState.pendingDetailCount = Number(stats.needs_review || 0);
             } catch (error) {
                 streamStageState.rejectedCount += stagedItems.length;
                 streamStageState.lastError = error?.message || '流式送入队列失败';
@@ -432,6 +440,8 @@
             staged: streamStageState.stagedCount,
             duplicates: streamStageState.skippedDuplicateCount,
             rejected: streamStageState.rejectedCount,
+            processable: streamStageState.processableCount,
+            pendingDetail: streamStageState.pendingDetailCount,
             batchId: streamStageState.batchId,
             detailProcessed: detailJob.processed,
             detailTotal: detailJob.total,
