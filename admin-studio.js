@@ -17410,6 +17410,7 @@ function normalizeGalleryImportRawItem(item = {}) {
     const originalWorkUrl = String(item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || '').trim();
     const authorHandle = getGalleryImportAuthorHandle(item, originalWorkUrl);
     const imageSource = item.image_sources || item.imageSources || item.images || item.image_urls || item.imageUrls || [];
+    const videoSource = item.video_sources || item.videoSources || item.videos || item.video_urls || item.videoUrls || [];
     const imageCount = Array.isArray(imageSource)
         ? imageSource.length
         : String(imageSource || '').split(/[\n\r,，]+/).filter(Boolean).length;
@@ -17423,6 +17424,7 @@ function normalizeGalleryImportRawItem(item = {}) {
         original_work_url: originalWorkUrl,
         author_handle: authorHandle,
         image_sources: imageSource,
+        video_sources: videoSource,
         __imageCount: expectedImageCount
     };
 }
@@ -17492,6 +17494,25 @@ function getGalleryImportAssetUrls(item = {}, fieldName = 'final_image_assets') 
     }).filter(Boolean);
 }
 
+function getGalleryImportVideoSources(item = {}) {
+    const source = item.video_sources || item.videoSources || item.videos || [];
+    return Array.isArray(source) ? source.filter((entry) => String(entry?.url || entry || '').trim()) : [];
+}
+
+function getGalleryImportVideoAssets(item = {}, fieldName = 'final_video_assets') {
+    const source = item?.[fieldName] || [];
+    return Array.isArray(source) ? source.filter((entry) => String(entry?.original || entry?.url || entry || '').trim()) : [];
+}
+
+function getGalleryImportDisplayVideoCount(item = {}) {
+    return Math.max(
+        getGalleryImportVideoSources(item).length,
+        getGalleryImportVideoAssets(item, 'final_video_assets').length,
+        getGalleryImportVideoAssets(item, 'temp_video_assets').length,
+        Number(item?.error_details?.source_video_count || item?.expected_video_count || 0) || 0
+    );
+}
+
 function getGalleryImportExpectedImageCount(item = {}) {
     const details = item?.error_details || item?.errorDetails || {};
     const candidates = [
@@ -17520,6 +17541,8 @@ function getGalleryImportCoverUrl(item = {}) {
     return getGalleryImportImageSources(item)[0]
         || getGalleryImportAssetUrls(item, 'final_image_assets')[0]
         || getGalleryImportAssetUrls(item, 'temp_image_assets')[0]
+        || String(getGalleryImportVideoSources(item)[0]?.poster_url || getGalleryImportVideoSources(item)[0]?.poster || '')
+        || String(getGalleryImportVideoAssets(item)[0]?.poster || '')
         || '';
 }
 
@@ -17735,6 +17758,7 @@ function renderGalleryImportQueue(items = galleryImportState.items) {
     queue.innerHTML = rows.map((item) => {
         const cover = getGalleryImportCoverUrl(item);
         const imageCount = getGalleryImportDisplayImageCount(item);
+        const videoCount = getGalleryImportDisplayVideoCount(item);
         const prompt = item.prompt_text || (item.final_prompt_id ? '已保存到 Gallery' : '未抓到提示词');
         const sourceLabel = item.author_name || item.author_handle || item.original_work_url || '未提供来源';
         const status = getGalleryImportStatusLabel(item.status);
@@ -17766,7 +17790,7 @@ function renderGalleryImportQueue(items = galleryImportState.items) {
             <article class="gallery-import-item" data-import-item-id="${escapeGalleryImportHtml(item.id || '')}">
                 <div class="gallery-import-item__media">
                     ${cover ? `<img src="${escapeGalleryImportHtml(cover)}" alt="导入预览" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
-                    <span class="gallery-import-item__count">共 ${Number(imageCount) || 0} 张</span>
+                    <span class="gallery-import-item__count">${videoCount ? `${videoCount} 个视频 · ` : ''}${Number(imageCount) || 0} 张封面/图片</span>
                 </div>
                 <div class="gallery-import-item__body">
                     <div class="gallery-import-item__meta">
@@ -17858,6 +17882,7 @@ function getGalleryImportItemReadinessIssue(item = {}) {
     const duplicatePromptId = String(item?.duplicate_of_prompt_id || item?.duplicateOfPromptId || '').trim();
     const promptText = String(item?.prompt_text || item?.promptText || item?.prompt || '').trim();
     const imageCount = getGalleryImportDisplayImageCount(item);
+    const videoCount = getGalleryImportDisplayVideoCount(item);
     const originalWorkUrl = String(item?.original_work_url || item?.originalWorkUrl || item?.source_url || item?.sourceUrl || '').trim();
     const authorName = String(item?.author_name || item?.authorName || item?.nickname || item?.creator || '').trim();
     const authorHandle = getGalleryImportAuthorHandle(item, originalWorkUrl);
@@ -17869,8 +17894,8 @@ function getGalleryImportItemReadinessIssue(item = {}) {
     if (!promptText) {
         return '缺少提示词，已跳过';
     }
-    if (!imageCount) {
-        return '缺少图片，已跳过';
+    if (!imageCount && !videoCount) {
+        return '缺少媒体，已跳过';
     }
     if (!originalWorkUrl) {
         return '缺少 X 原帖链接，已跳过';

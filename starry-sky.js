@@ -14,11 +14,20 @@ function initStarrySky() {
     const ctx = canvas.getContext('2d');
     let stars = [];
     let shootingStars = [];
+    let lastFrameAt = 0;
+    let hasRenderedFrame = false;
+    let promptPageScrolling = false;
+    let promptPageScrollResumeTimerId = null;
+    const isPromptsPage = document.body?.classList.contains('prompts-page') === true;
+    const frameIntervalMs = isPromptsPage ? 1000 / 30 : 0;
+    const reducedMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function resize() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         initStars();
+        hasRenderedFrame = false;
     }
 
     class Star {
@@ -171,7 +180,14 @@ function initStarrySky() {
         }
     }
 
-    function animate() {
+    function animate(timestamp = 0) {
+        requestAnimationFrame(animate);
+        if (document.hidden || promptPageScrolling) return;
+        if (reducedMotion && hasRenderedFrame) return;
+        if (hasRenderedFrame && timestamp - lastFrameAt < frameIntervalMs) return;
+
+        lastFrameAt = timestamp;
+        hasRenderedFrame = true;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         stars.forEach(star => {
@@ -185,10 +201,28 @@ function initStarrySky() {
             ss.draw();
         });
 
-        requestAnimationFrame(animate);
     }
 
     window.addEventListener('resize', resize);
+    if (isPromptsPage) {
+        window.addEventListener('scroll', () => {
+            promptPageScrolling = true;
+            if (promptPageScrollResumeTimerId) {
+                window.clearTimeout(promptPageScrollResumeTimerId);
+            }
+            promptPageScrollResumeTimerId = window.setTimeout(() => {
+                promptPageScrollResumeTimerId = null;
+                promptPageScrolling = false;
+                lastFrameAt = 0;
+            }, 180);
+        }, { passive: true });
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            lastFrameAt = 0;
+            hasRenderedFrame = false;
+        }
+    });
     resize();
     animate();
 }

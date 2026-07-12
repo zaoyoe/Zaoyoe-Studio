@@ -24,6 +24,7 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
     }
 
     const jsMarkers = [
+        'const PROMPT_GALLERY_SKELETON_COUNT = 6;',
         'function renderFeaturedBannerSkeleton()',
         "banner.classList.add('featured-banner--visible', 'featured-banner--loading');",
         'renderFeaturedBannerSkeleton();',
@@ -59,4 +60,30 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
     for (const marker of cssMarkers) {
         assert.equal(promptsCss.includes(marker), true, `prompts-poetry.css should contain ${marker}`);
     }
+
+    assert.match(
+        promptsCss,
+        /\.prompt-card--loading:not\(\.prompt-card--skeleton\) \.prompt-card-media-skeleton \.prompts-skeleton-block\s*\{[\s\S]*?background-size:\s*100% 100%;[\s\S]*?animation:\s*none;[\s\S]*?will-change:\s*auto;/,
+        'incremental image-card skeletons should remain static and compositor-light'
+    );
+    assert.equal(
+        promptsCss.includes('promptSkeletonShimmer'),
+        false,
+        'prompts should not define or run any skeleton shimmer animation'
+    );
+    assert.equal(
+        promptsCss.includes('will-change: background-position'),
+        false,
+        'static prompt skeletons should not reserve animated background layers'
+    );
+    assert.match(
+        promptsCss,
+        /body\.prompts-page \.prompts-skeleton-block\s*\{[\s\S]*?background-size:\s*100% 100%;[\s\S]*?animation:\s*none;[\s\S]*?will-change:\s*auto;/,
+        'all prompt skeleton surfaces should use the static lightweight treatment'
+    );
+    assert.equal(
+        (promptsHtml.match(/staticSkeleton=20260712_PROMPTS_STATIC_SKELETON_1/g) || []).length,
+        2,
+        'prompts should cache-bust both static skeleton styles and runtime'
+    );
 });

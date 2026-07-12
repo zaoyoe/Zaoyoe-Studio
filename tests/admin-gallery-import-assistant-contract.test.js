@@ -285,6 +285,10 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     const handlerMarkers = [
         'async function stageImportItems',
         'async function checkImportItemDuplicates',
+        "sourceIdentityOnly: settings.source === 'meigen'",
+        "sourceIdentityOnly: source === 'meigen'",
+        "existingBySourceItemId.has(String(row.source_item_id || ''))",
+        'ignoredExistingCount: ignoredExistingIndexes.size',
         "if (action === 'check_duplicates')",
         'const maxItems = normalizePositiveInteger(settings.max_items, 50, 1000);',
         '.slice(0, maxItems)',
@@ -498,6 +502,44 @@ test('prompt repository dedupe scans fixed-size pages instead of putting prompts
     assert.deepEqual(calls.find((call) => call.type === 'range'), { type: 'range', start: 0, end: 499 });
 });
 
+test('Meigen repository dedupe uses direct source identity lookup', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const calls = [];
+    const supabase = {
+        from(table) {
+            assert.equal(table, 'prompts');
+            return {
+                select() {
+                    return {
+                        async in(field, values) {
+                            calls.push({ field, values });
+                            return {
+                                data: [{
+                                    id: 'existing-source',
+                                    source_url: 'https://x.com/artist/status/123',
+                                    prompt_text: 'Existing long prompt',
+                                    prompt_text_en: '',
+                                    prompt_text_zh: ''
+                                }],
+                                error: null
+                            };
+                        }
+                    };
+                }
+            };
+        }
+    };
+    const result = await _private.findExistingPromptDuplicates(supabase, [{
+        original_work_url: 'https://x.com/artist/status/123',
+        prompt_text: `long prompt ${'detail '.repeat(1000)}`
+    }], { sourceIdentityOnly: true });
+    assert.equal(result.bySourceUrl.get('https://x.com/artist/status/123'), 'existing-source');
+    assert.deepEqual(calls, [{
+        field: 'source_url',
+        values: ['https://x.com/artist/status/123']
+    }]);
+});
+
 test('collector duplicate preflight reports repository and candidate duplicates without writing', async () => {
     const { _private } = require('../server/api-handlers/admin/prompts/imports');
     const calls = [];
@@ -527,20 +569,16 @@ test('collector duplicate preflight reports repository and candidate duplicates 
             return {
                 select() {
                     return {
-                        order() {
+                        async in() {
                             return {
-                                async range() {
-                                    return {
-                                        data: [{
-                                            id: 'existing-prompt',
-                                            source_url: 'https://x.com/artist/status/123456789012',
-                                            prompt_text: 'Existing repository prompt',
-                                            prompt_text_en: '',
-                                            prompt_text_zh: ''
-                                        }],
-                                        error: null
-                                    };
-                                }
+                                data: [{
+                                    id: 'existing-prompt',
+                                    source_url: 'https://x.com/artist/status/123456789012',
+                                    prompt_text: 'Existing repository prompt',
+                                    prompt_text_en: '',
+                                    prompt_text_zh: ''
+                                }],
+                                error: null
                             };
                         }
                     };
@@ -549,6 +587,7 @@ test('collector duplicate preflight reports repository and candidate duplicates 
         }
     };
     const result = await _private.checkImportItemDuplicates(supabase, {
+        source: 'meigen',
         settings: { max_items: 10 },
         items: [
             { source_item_id: 'repo-copy', original_work_url: 'https://x.com/artist/status/123456789012', prompt: 'Existing repository prompt' },
@@ -666,4 +705,35 @@ test('admin prompt image base64 helper only accepts public image urls', () => {
     assert.equal(_private.normalizeImageUrl('http://localhost:3000/a.jpg'), '');
     assert.equal(_private.normalizeImageUrl('http://127.0.0.1/a.jpg'), '');
     assert.equal(_private.normalizeImageUrl('file:///tmp/a.jpg'), '');
+});
+
+test('gallery import supports R2-backed video sources without requiring image media', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const sourceUrl = 'https://images.meigen.ai/videos/2073446047326810304/video.mp4';
+    const posterUrl = 'https://images.meigen.ai/videos/2073446047326810304/thumb.jpg';
+    const normalized = _private.normalizeVideoSources([{
+        url: sourceUrl,
+        poster_url: posterUrl,
+        width: 1080,
+        height: 1920,
+        mime_type: 'video/mp4'
+    }]);
+    assert.equal(normalized.length, 1);
+    assert.equal(normalized[0].url, sourceUrl);
+    assert.equal(normalized[0].poster_url, posterUrl);
+
+    const payload = _private.buildPromptPayloadFromImportItem({
+        prompt_text: 'A cinematic vertical fashion video.',
+        original_work_url: 'https://x.com/example/status/2073446047326810304',
+        author_name: 'Example',
+        author_handle: '@example'
+    }, {
+        imageAssets: [],
+        videoAssets: [{
+            original: 'https://cdn.fatherkey.com/prompts/videos/example.mp4',
+            poster: 'https://cdn.fatherkey.com/prompts/example.jpg'
+        }]
+    });
+    assert.deepEqual(payload.images, []);
+    assert.equal(payload.video_assets.length, 1);
 });

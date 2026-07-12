@@ -1,12 +1,13 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-12.77';
+    const VERSION = '2026-07-12.79';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 1000;
     const MAX_IMAGES_PER_ITEM = 24;
     const MAX_TWEET_IMAGES = 4;
     const IMAGE_URL_PATTERN = /\.(?:avif|webp|png|jpe?g|gif)(?:[?#].*)?$/i;
+    const VIDEO_URL_PATTERN = /\.(?:mp4|webm|mov|m4v)(?:[?#].*)?$/i;
     const ACTION_PROMPT_LINE_PATTERN = /^(展开|收起|更多相关内容|相关内容|使用\s*Prompt|用作参考图|复制提示词|复制\s*Prompt|下载图片|下载|Download|Copy Prompt|Use Prompt|Use as reference image|More related content)$/i;
     const PROMPT_SECTION_LABEL_PATTERN = /^(提示词|Prompt)$/i;
     const RELATED_CONTEXT_PATTERN = /(更多相关内容|相关内容|相关推荐|猜你喜欢|More related content|Related|Recommendations)/i;
@@ -83,6 +84,20 @@
             if (parsed.hash && !IMAGE_URL_PATTERN.test(parsed.pathname)) return '';
             if (NON_ART_IMAGE_URL_PATTERN.test(parsed.pathname)) return '';
             if (!IMAGE_URL_PATTERN.test(parsed.pathname) && !/image|img|cdn|media|assets|uploads/i.test(url)) {
+                return '';
+            }
+            return parsed.toString();
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function normalizeVideoUrl(value = '', baseUrl = getBaseUrl()) {
+        const url = toAbsoluteUrl(value, baseUrl);
+        if (!url) return '';
+        try {
+            const parsed = new URL(url);
+            if (!VIDEO_URL_PATTERN.test(parsed.pathname) && !/\/videos?\//i.test(parsed.pathname)) {
                 return '';
             }
             return parsed.toString();
@@ -227,6 +242,11 @@
             });
         });
 
+        scope.querySelectorAll('video').forEach((video) => {
+            const poster = video.poster || video.getAttribute?.('poster') || '';
+            if (poster && isLikelyArtworkImageNode(video, scope)) candidates.push(poster);
+        });
+
         scope.querySelectorAll('a[href]').forEach((link) => {
             const href = link.getAttribute('href');
             if (IMAGE_URL_PATTERN.test(String(href || '').split('?')[0])
@@ -248,6 +268,48 @@
             candidates.map((url) => normalizeImageUrl(url, baseUrl)).filter(Boolean),
             (url) => url.toLowerCase()
         ).slice(0, MAX_IMAGES_PER_ITEM);
+    }
+
+    function collectVideoSources(scope, options = {}) {
+        if (!scope?.querySelectorAll) return [];
+        const baseUrl = options.baseUrl || getScopeBaseUrl(scope);
+        const seen = new Set();
+        const videos = [];
+
+        scope.querySelectorAll('video').forEach((video) => {
+            if (!isLikelyArtworkImageNode(video, scope)) return;
+            const posterUrl = normalizeImageUrl(
+                video.poster || video.getAttribute?.('poster') || '',
+                baseUrl
+            );
+            const candidates = [
+                video.currentSrc,
+                video.src,
+                video.getAttribute?.('src'),
+                video.getAttribute?.('data-src'),
+                ...Array.from(video.querySelectorAll?.('source') || []).flatMap((source) => [
+                    source.src,
+                    source.getAttribute?.('src'),
+                    source.getAttribute?.('data-src')
+                ])
+            ];
+            candidates.forEach((candidate) => {
+                const url = normalizeVideoUrl(candidate, baseUrl);
+                const key = url.toLowerCase();
+                if (!url || seen.has(key)) return;
+                seen.add(key);
+                const dimensions = getNodeDimensions(video);
+                videos.push({
+                    url,
+                    ...(posterUrl ? { poster_url: posterUrl } : {}),
+                    ...(dimensions.width ? { width: dimensions.width } : {}),
+                    ...(dimensions.height ? { height: dimensions.height } : {}),
+                    mime_type: String(video.getAttribute?.('type') || '').trim() || 'video/mp4'
+                });
+            });
+        });
+
+        return videos.slice(0, 4);
     }
 
     function isInsideRelatedSection(node) {
@@ -1680,7 +1742,7 @@
 
     function getStatusIdFromImageUrl(value = '') {
         const text = decodeUrlishText(value);
-        const match = text.match(/\/tweets\/(\d{12,25})(?:\/|$)/i);
+        const match = text.match(/\/(?:tweets|videos)\/(\d{12,25})(?:\/|$)/i);
         return match?.[1] || '';
     }
 
@@ -1887,6 +1949,15 @@
         return candidates[0]?.scope || linkScope || image.parentElement || image;
     }
 
+    function isNodeWithinCollectionViewport(node, options = {}) {
+        if (!options.viewportOnly || typeof node?.getBoundingClientRect !== 'function') return true;
+        const rect = node.getBoundingClientRect();
+        const viewportHeight = Number(global.innerHeight || global.document?.documentElement?.clientHeight || 800);
+        const margin = Math.max(240, Number(options.viewportMargin || Math.round(viewportHeight * 0.35)));
+        return Number(rect.bottom || 0) >= -margin
+            && Number(rect.top || 0) <= viewportHeight + margin;
+    }
+
     function getCandidateScopes(root, options = {}) {
         const documentRef = root?.querySelectorAll ? root : global.document;
         if (!documentRef?.querySelectorAll) return [];
@@ -1929,10 +2000,18 @@
         }
 
         const scopes = [];
-        documentRef.querySelectorAll('img').forEach((image) => {
-            const scope = findItemScopeFromImage(image, options);
-            if (scope) scopes.push(scope);
-        });
+        Array.from(documentRef.querySelectorAll('img'))
+            .filter((image) => isNodeWithinCollectionViewport(image, options))
+            .forEach((image) => {
+                const scope = findItemScopeFromImage(image, options);
+                if (scope) scopes.push(scope);
+            });
+        Array.from(documentRef.querySelectorAll('video'))
+            .filter((video) => isNodeWithinCollectionViewport(video, options))
+            .forEach((video) => {
+                const scope = findItemScopeFromImage(video, options);
+                if (scope) scopes.push(scope);
+            });
 
         return uniqueBy(scopes, (scope) => {
             if (!scope.__fatherKeyCollectorId) {
@@ -1966,21 +2045,23 @@
         detailUrl = '',
         promptText = '',
         originalWorkUrl = '',
-        imageUrls = []
+        imageUrls = [],
+        videoSources = []
     } = {}) {
         return !String(detailUrl || '').trim()
             && !String(promptText || '').trim()
             && !String(originalWorkUrl || '').trim()
+            && (!Array.isArray(videoSources) || videoSources.length === 0)
             && Array.isArray(imageUrls)
             && imageUrls.length > 0
             && imageUrls.every((url) => isLikelyUnboundMeigenCommunityImageUrl(url));
     }
 
-    function buildSourceItemId(scope, detailUrl, imageUrls, index, fallbackId = '') {
+    function buildSourceItemId(scope, detailUrl, imageUrls, index, fallbackId = '', videoSources = []) {
         const explicit = getDatasetValue(scope, ['id', 'itemId', 'promptId', 'postId']);
         if (explicit) return explicit;
         if (fallbackId) return fallbackId;
-        const source = detailUrl || imageUrls[0] || `${SOURCE}-${index}`;
+        const source = detailUrl || imageUrls[0] || videoSources[0]?.url || `${SOURCE}-${index}`;
         let hash = 0;
         for (let i = 0; i < source.length; i += 1) {
             hash = ((hash << 5) - hash + source.charCodeAt(i)) | 0;
@@ -1994,6 +2075,7 @@
         const detailContext = Boolean(expectedDetailUrl || isDetailPageUrl(options.baseUrl || getScopeBaseUrl(scope)));
         const scopeDetailUrl = expectedDetailUrl || getDetailUrl(scope, options) || '';
         const initialImageUrls = collectImageUrls(scope, options);
+        const initialVideoSources = collectVideoSources(scope, options);
         const initialImageStatusId = getStatusIdFromImageUrls(initialImageUrls);
         const initialOriginalWorkUrl = getOriginalWorkUrl(scope, options);
         const initialAuthorHandle = getAuthorHandle(scope, initialOriginalWorkUrl);
@@ -2101,9 +2183,15 @@
         const authorName = hoverAuthor?.name
             || visibleAuthorName
             || normalizeAuthorName(structuredCandidate?.authorName || '');
-        if (isUnresolvablePlaceholderItem({ detailUrl, promptText, originalWorkUrl, imageUrls })) return null;
-        if (!imageUrls.length && !detailContext && !communityDetail) return null;
-        if (!imageUrls.length && !promptText && !originalWorkUrl && !authorName && !authorHandle) return null;
+        if (isUnresolvablePlaceholderItem({
+            detailUrl,
+            promptText,
+            originalWorkUrl,
+            imageUrls,
+            videoSources: initialVideoSources
+        })) return null;
+        if (!imageUrls.length && !initialVideoSources.length && !detailContext && !communityDetail) return null;
+        if (!imageUrls.length && !initialVideoSources.length && !promptText && !originalWorkUrl && !authorName && !authorHandle) return null;
         const imageCountIsComplete = expectedCount > 0
             ? imageUrls.length >= expectedCount
             : Boolean(detailContext && imageUrls.length);
@@ -2112,7 +2200,14 @@
 
         return {
             source: SOURCE,
-            source_item_id: buildSourceItemId(scope, detailUrl, imageUrls, index, structuredCandidate?.sourceItemId || ''),
+            source_item_id: buildSourceItemId(
+                scope,
+                detailUrl,
+                imageUrls,
+                index,
+                structuredCandidate?.sourceItemId || '',
+                initialVideoSources
+            ),
             source_page_url: detailUrl,
             original_work_url: originalWorkUrl,
             author_name: authorName,
@@ -2130,7 +2225,9 @@
             expected_image_count: authoritativeExpectedCount,
             detail_expected_count_authoritative: Boolean(detailContext && authoritativeExpectedCount > 0),
             detail_image_count_authoritative: Boolean(detailContext && authoritativeExpectedCount > 0 && imageCountIsComplete),
-            image_sources: imageUrls.map((url) => ({ url }))
+            image_sources: imageUrls.map((url) => ({ url })),
+            video_sources: initialVideoSources,
+            expected_video_count: initialVideoSources.length
         };
     }
 
@@ -2139,6 +2236,7 @@
         for (const item of items) {
             if (!item) continue;
             const itemImages = Array.isArray(item.image_sources) ? item.image_sources : [];
+            const itemVideos = Array.isArray(item.video_sources) ? item.video_sources : [];
             const promptKey = normalizeText(item.prompt_text || '').toLowerCase();
             const key = item.source_page_url || item.original_work_url || promptKey || item.source_item_id;
             if (!key) continue;
@@ -2154,7 +2252,8 @@
                     ...item,
                     image_sources: dedupeImageUrlsByArtwork(itemImages.map((entry) => entry?.url), expectedCount > 0 ? expectedCount : MAX_IMAGES_PER_ITEM)
                         .map((url) => ({ url }))
-                        .slice(0, expectedCount > 0 ? expectedCount : MAX_IMAGES_PER_ITEM)
+                        .slice(0, expectedCount > 0 ? expectedCount : MAX_IMAGES_PER_ITEM),
+                    video_sources: uniqueBy(itemVideos, (entry) => String(entry?.url || '').trim().toLowerCase()).slice(0, 4)
                 });
                 continue;
             }
@@ -2204,6 +2303,15 @@
                 ),
                 imageLimit
             ).map((url) => ({ url }));
+            current.video_sources = uniqueBy([
+                ...(Array.isArray(current.video_sources) ? current.video_sources : []),
+                ...itemVideos
+            ], (entry) => String(entry?.url || '').trim().toLowerCase()).slice(0, 4);
+            current.expected_video_count = Math.max(
+                Number(current.expected_video_count || 0),
+                Number(item.expected_video_count || 0),
+                current.video_sources.length
+            );
         }
         return Array.from(grouped.values()).slice(0, MAX_ITEMS);
     }
@@ -2280,7 +2388,10 @@
             cleanPromptText,
             mergeCollectedItems,
             collectDetailArtworkImageUrls,
+            collectVideoSources,
+            normalizeVideoUrl,
             getNodeDocumentOrderScore,
+            isNodeWithinCollectionViewport,
             itemMatchesFavoriteRange,
             isUnresolvablePlaceholderItem,
             extractPromptText,

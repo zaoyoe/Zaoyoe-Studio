@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.31');
+    assert.equal(manifest.version, '0.1.33');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -99,6 +99,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /item\.stream_final_status === 'unresolved'/);
     assert.match(content, /logDiagnostic\('scroll-initial-scan'/);
     assert.match(content, /logDiagnostic\('scroll-scan'/);
+    assert.match(content, /viewportOnly:\s*true/);
+    assert.match(content, /structuredCacheMs/);
     assert.match(background, /FATHER_KEY_LOAD_IMPORT_BATCH/);
     assert.match(background, /cleanup_pending_detail_items/);
     assert.match(popup, /state\.automationStatus\.pendingDetail === 0/);
@@ -125,6 +127,9 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function getLatestPayload/);
     assert.match(content, /return sessionState\.lastPayload/);
     assert.match(content, /function revealHoverControls/);
+    assert.match(content, /function getHoverTargetRevision/);
+    assert.match(content, /fatherKeyHoverRevision/);
+    assert.match(content, /Math\.min\(24,/);
     assert.match(content, /function getHoverChildTargets/);
     assert.match(content, /function cacheHoverAuthorIdentity/);
     assert.match(content, /__FatherKeyMeigenHoverAuthors/);
@@ -229,7 +234,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.77'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.79'/);
+    assert.match(collector, /function collectVideoSources/);
+    assert.match(collector, /video_sources:/);
+    assert.match(collector, /function isNodeWithinCollectionViewport/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);

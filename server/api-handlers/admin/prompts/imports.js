@@ -24,8 +24,11 @@ const IMPORT_ITEM_SELECT = [
     'prompt_text',
     'prompt_hash',
     'image_sources',
+    'video_sources',
     'temp_image_assets',
+    'temp_video_assets',
     'final_image_assets',
+    'final_video_assets',
     'final_prompt_id',
     'duplicate_of_prompt_id',
     'status',
@@ -42,7 +45,7 @@ const IMPORT_ITEM_SELECT = [
     'created_at',
     'updated_at'
 ].join(', ');
-const PROMPT_SELECT = 'id, title, tags, description, prompt_text, images, image_assets, source_url, source_author_name, source_author_handle, ai_tags, created_at, updated_at';
+const PROMPT_SELECT = 'id, title, tags, description, prompt_text, images, image_assets, video_assets, source_url, source_author_name, source_author_handle, ai_tags, created_at, updated_at';
 const IMPORT_MODES = new Set(['stream', 'crawl_only', 'upload_only', 'review_first']);
 const IMPORT_BATCH_STATUSES = new Set(['draft', 'running', 'ready', 'uploading', 'completed', 'needs_attention', 'cancelled']);
 const IMPORT_ITEM_STATUSES = new Set(['staged', 'needs_review', 'duplicate', 'queued', 'uploading', 'saving', 'imported', 'failed', 'skipped', 'cleaned']);
@@ -54,6 +57,10 @@ const DEFAULT_MAX_IMAGE_COUNT = 12;
 const MAX_IMAGE_COUNT = 24;
 const DEFAULT_IMAGE_TIMEOUT_MS = 20000;
 const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_MAX_VIDEO_COUNT = 4;
+const MAX_VIDEO_COUNT = 4;
+const DEFAULT_VIDEO_TIMEOUT_MS = 120000;
+const DEFAULT_MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const PERSISTENT_FAILURE_BATCH_THRESHOLD = 2;
 
 function getSearchParams(req) {
@@ -199,6 +206,42 @@ function normalizeImageSources(value = [], maxCount = DEFAULT_MAX_IMAGE_COUNT) {
     return items;
 }
 
+function normalizeVideoSourceEntry(entry = {}) {
+    const source = typeof entry === 'string' ? { url: entry } : entry;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+    const url = normalizeOptionalUrl(
+        source.url || source.download_url || source.downloadUrl || source.original || source.src || source.href
+    );
+    if (!url) return null;
+    const posterUrl = normalizeOptionalUrl(
+        source.poster_url || source.posterUrl || source.poster || source.thumbnail_url || source.thumbnailUrl || source.thumb
+    );
+    return {
+        url,
+        ...(posterUrl ? { poster_url: posterUrl } : {}),
+        mime_type: normalizeText(source.mime_type || source.mimeType || source.type || '', 120),
+        width: normalizeNonNegativeInteger(source.width, 0),
+        height: normalizeNonNegativeInteger(source.height, 0),
+        duration: Math.max(0, Number(source.duration || source.duration_seconds || source.durationSeconds || 0) || 0)
+    };
+}
+
+function normalizeVideoSources(value = [], maxCount = DEFAULT_MAX_VIDEO_COUNT) {
+    const rawItems = Array.isArray(value) ? value : String(value || '').split(/[\n\r,，]+/);
+    const seen = new Set();
+    const items = [];
+    for (const rawItem of rawItems) {
+        const item = normalizeVideoSourceEntry(rawItem);
+        if (!item) continue;
+        const key = item.url.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+        if (items.length >= maxCount) break;
+    }
+    return items;
+}
+
 function getTweetStatusIdFromUrl(value = '') {
     try {
         const url = new URL(String(value || ''));
@@ -226,6 +269,15 @@ function getMeigenPromptIdFromUrl(value = '') {
     }
 }
 
+function getMeigenVideoStatusIdFromUrl(value = '') {
+    try {
+        const url = new URL(String(value || ''));
+        return url.pathname.match(/\/videos\/(\d{12,25})(?:\/|$)/i)?.[1] || '';
+    } catch (_) {
+        return '';
+    }
+}
+
 function getMeigenImportIdentityConflictReason(item = {}) {
     if (normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE) !== 'meigen') return '';
     const sourceItemId = /^\d{12,25}$/.test(String(item.source_item_id || item.sourceItemId || '').trim())
@@ -236,8 +288,11 @@ function getMeigenImportIdentityConflictReason(item = {}) {
     const imageIds = normalizeImageSources(item.image_sources || item.imageSources || item.images || [], MAX_IMAGE_COUNT)
         .map((entry) => getTweetStatusIdFromUrl(entry.url))
         .filter(Boolean);
-    const identities = [sourceItemId, detailId, originalId, ...imageIds].filter(Boolean);
-    return new Set(identities).size > 1 ? '作品详情、X 原帖或图片身份不一致，已拒绝入队' : '';
+    const videoIds = normalizeVideoSources(item.video_sources || item.videoSources || item.videos || [], MAX_VIDEO_COUNT)
+        .map((entry) => getMeigenVideoStatusIdFromUrl(entry.url))
+        .filter(Boolean);
+    const identities = [sourceItemId, detailId, originalId, ...imageIds, ...videoIds].filter(Boolean);
+    return new Set(identities).size > 1 ? '作品详情、X 原帖或媒体身份不一致，已拒绝入队' : '';
 }
 
 function filterImageSourcesForImportIdentity(imageSources = [], item = {}) {
@@ -257,6 +312,7 @@ function normalizeImportSettings(value = {}) {
         favorite_max: normalizeNonNegativeInteger(source.favorite_max ?? source.favoriteMax, 0),
         max_items: normalizePositiveInteger(source.max_items ?? source.maxItems, 50, 1000),
         max_images_per_item: normalizePositiveInteger(source.max_images_per_item ?? source.maxImagesPerItem, DEFAULT_MAX_IMAGE_COUNT, MAX_IMAGE_COUNT),
+        max_videos_per_item: normalizePositiveInteger(source.max_videos_per_item ?? source.maxVideosPerItem, DEFAULT_MAX_VIDEO_COUNT, MAX_VIDEO_COUNT),
         default_status: normalizePromptOpsStatus(source.default_status ?? source.defaultStatus, 'review'),
         duplicate_policy: normalizeText(source.duplicate_policy ?? source.duplicatePolicy, 40).toLowerCase() || 'skip',
         auto_cleanup: source.auto_cleanup === false || source.autoCleanup === false ? false : true,
@@ -286,6 +342,10 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
         maxImages
     );
     const imageSources = filterImageSourcesForImportIdentity(normalizedImageSources, item);
+    const videoSources = normalizeVideoSources(
+        item.video_sources || item.videoSources || item.videos || item.video_urls || item.videoUrls || [],
+        normalizePositiveInteger(settings.max_videos_per_item, DEFAULT_MAX_VIDEO_COUNT, MAX_VIDEO_COUNT)
+    );
     const originalStatusId = getOriginalStatusIdFromUrl(
         item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || ''
     );
@@ -303,7 +363,7 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
     const missingReasons = [];
 
     if (!promptText) missingReasons.push('没有抓到提示词');
-    if (!imageSources.length) missingReasons.push('没有可保存的图片');
+    if (!imageSources.length && !videoSources.length) missingReasons.push('没有可保存的媒体');
     if (!originalWorkUrl) missingReasons.push('缺少 X 原帖链接');
     if (!authorName) missingReasons.push('缺少原作者昵称');
     if (!authorHandle) missingReasons.push('缺少原作者 ID');
@@ -320,14 +380,18 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
         prompt_text: promptText,
         prompt_hash: promptHash,
         image_sources: imageSources,
+        video_sources: videoSources,
         temp_image_assets: Array.isArray(item.temp_image_assets || item.tempImageAssets) ? (item.temp_image_assets || item.tempImageAssets) : [],
+        temp_video_assets: Array.isArray(item.temp_video_assets || item.tempVideoAssets) ? (item.temp_video_assets || item.tempVideoAssets) : [],
         final_image_assets: [],
+        final_video_assets: [],
         status: missingReasons.length ? 'needs_review' : 'staged',
         error_summary: missingReasons.join('；'),
         error_details: {
             import_image_count: Math.max(expectedImageCount, imageSources.length),
             expected_image_count: expectedImageCount,
-            source_image_count: imageSources.length
+            source_image_count: imageSources.length,
+            source_video_count: videoSources.length
         }
     };
 }
@@ -336,9 +400,14 @@ function getItemImageSourceUrls(item = {}) {
     return normalizeImageSources(item.image_sources || [], MAX_IMAGE_COUNT).map((entry) => entry.url);
 }
 
+function getItemVideoSources(item = {}) {
+    return normalizeVideoSources(item.video_sources || [], MAX_VIDEO_COUNT);
+}
+
 function getImportItemUploadBlockReason(item = {}) {
     const promptText = normalizeText(item.prompt_text || '', 20000);
     const imageSources = getItemImageSourceUrls(item);
+    const videoSources = getItemVideoSources(item);
     const originalWorkUrl = normalizeOptionalUrl(item.original_work_url || '');
     const authorName = normalizeText(item.author_name || '', 200);
     const authorHandle = normalizeAuthorHandle(item.author_handle || '')
@@ -346,7 +415,7 @@ function getImportItemUploadBlockReason(item = {}) {
     const reasons = [];
 
     if (!promptText) reasons.push('没有抓到提示词');
-    if (!imageSources.length) reasons.push('没有可保存的图片');
+    if (!imageSources.length && !videoSources.length) reasons.push('没有可保存的媒体');
     if (!originalWorkUrl) reasons.push('缺少 X 原帖链接');
     if (!authorName) reasons.push('缺少原作者昵称');
     if (!authorHandle) reasons.push('缺少原作者 ID');
@@ -456,6 +525,69 @@ function isSupportedImageBuffer(buffer = Buffer.alloc(0)) {
         || header.subarray(4, 12).toString('ascii').includes('ftypavis');
 }
 
+function getVideoMimeType(response, url) {
+    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (contentType.startsWith('video/')) return contentType;
+    const pathname = new URL(url).pathname.toLowerCase();
+    if (pathname.endsWith('.webm')) return 'video/webm';
+    if (pathname.endsWith('.mov')) return 'video/quicktime';
+    if (pathname.endsWith('.m4v')) return 'video/x-m4v';
+    return 'video/mp4';
+}
+
+function getVideoExtension(mimeType = 'video/mp4') {
+    const normalized = String(mimeType || '').toLowerCase();
+    if (normalized.includes('webm')) return 'webm';
+    if (normalized.includes('quicktime')) return 'mov';
+    if (normalized.includes('m4v')) return 'm4v';
+    return 'mp4';
+}
+
+function isSupportedVideoBuffer(buffer = Buffer.alloc(0)) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+    const header = buffer.subarray(0, 16);
+    return header.subarray(4, 8).toString('ascii') === 'ftyp'
+        || header.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+}
+
+async function downloadRemoteVideo(url, {
+    timeoutMs = DEFAULT_VIDEO_TIMEOUT_MS,
+    maxBytes = DEFAULT_MAX_VIDEO_BYTES
+} = {}) {
+    assertRemoteImageUrlAllowed(url);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        let currentUrl = assertRemoteImageUrlAllowed(url).toString();
+        let response = null;
+        for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+            response = await fetch(currentUrl, {
+                signal: controller.signal,
+                redirect: 'manual',
+                headers: {
+                    Accept: 'video/mp4,video/webm,video/quicktime,video/*;q=0.9,*/*;q=0.5',
+                    Referer: 'https://www.meigen.ai/',
+                    'User-Agent': 'ZaoyoeGalleryImport/1.0'
+                }
+            });
+            if (![301, 302, 303, 307, 308].includes(response.status)) break;
+            const location = response.headers.get('location');
+            if (!location || redirectCount === 3) throw new Error('视频跳转次数过多');
+            currentUrl = assertRemoteImageUrlAllowed(new URL(location, currentUrl).toString()).toString();
+        }
+        if (!response.ok) throw new Error(`视频下载失败 (${response.status})`);
+        const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
+        if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error('视频超过大小限制');
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (!buffer.length) throw new Error('视频为空');
+        if (buffer.length > maxBytes) throw new Error('视频超过大小限制');
+        if (!isSupportedVideoBuffer(buffer)) throw new Error('视频地址返回的不是受支持的视频文件');
+        return { buffer, mimeType: getVideoMimeType(response, currentUrl) };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function downloadRemoteImage(url, {
     timeoutMs = DEFAULT_IMAGE_TIMEOUT_MS,
     maxBytes = DEFAULT_MAX_IMAGE_BYTES
@@ -544,6 +676,24 @@ function buildPromptImportImageKey({
     return `prompts/imports/${safeSite}/${year}/${month}/${safeBatch}/${safeItem}-${index}-${digest}.${extension}`;
 }
 
+function buildPromptImportVideoKey({
+    site = 'cn',
+    batchId = '',
+    itemId = '',
+    index = 0,
+    buffer = Buffer.alloc(0),
+    mimeType = 'video/mp4'
+} = {}) {
+    const digest = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16);
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const safeSite = normalizeAdminSite(site, { defaultValue: 'cn' }) === 'intl' ? 'intl' : 'cn';
+    const safeBatch = normalizeText(batchId, 100).replace(/[^a-z0-9-]/gi, '') || 'batch';
+    const safeItem = normalizeText(itemId, 100).replace(/[^a-z0-9-]/gi, '') || 'item';
+    return `prompts/videos/${safeSite}/${year}/${month}/${safeBatch}/${safeItem}-${index}-${digest}.${getVideoExtension(mimeType)}`;
+}
+
 async function uploadImportImageBufferToR2(buffer, {
     site,
     batchId,
@@ -575,15 +725,40 @@ async function uploadImportImageBufferToR2(buffer, {
     };
 }
 
+async function uploadImportVideoBufferToR2(buffer, {
+    site,
+    batchId,
+    itemId,
+    index,
+    mimeType
+} = {}) {
+    const config = resolveR2Config(process.env);
+    if (!config.configured) {
+        const error = new Error('媒体存储未配置，无法保存到 Gallery');
+        error.statusCode = 503;
+        error.code = 'prompt_import_storage_not_configured';
+        throw error;
+    }
+    const key = buildPromptImportVideoKey({ site, batchId, itemId, index, buffer, mimeType });
+    const client = createR2Client(config);
+    await client.send(new PutObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType,
+        CacheControl: 'public, max-age=31536000, immutable'
+    }));
+    return { original: `${config.publicUrl}/${key}`, storage_path: key, mime_type: mimeType };
+}
+
 async function uploadImportItemImages(item, { site = 'cn' } = {}) {
     const sourceUrls = getItemImageSourceUrls(item);
     if (!sourceUrls.length) {
-        const error = new Error('没有可保存的图片');
-        error.statusCode = 400;
-        throw error;
+        return { assets: [], urls: [], failures: [], sourceAssetMap: new Map() };
     }
 
     const assets = [];
+    const sourceAssetMap = new Map();
     const failures = [];
     for (let index = 0; index < sourceUrls.length; index += 1) {
         const url = sourceUrls[index];
@@ -600,6 +775,7 @@ async function uploadImportItemImages(item, { site = 'cn' } = {}) {
                 mimeType: downloaded.mimeType
             });
             assets.push(stored);
+            sourceAssetMap.set(url, stored);
         } catch (error) {
             failures.push({
                 url,
@@ -608,7 +784,7 @@ async function uploadImportItemImages(item, { site = 'cn' } = {}) {
         }
     }
 
-    if (!assets.length) {
+    if (!assets.length && !getItemVideoSources(item).length) {
         const error = new Error('图片保存失败');
         error.statusCode = 502;
         error.details = { failures };
@@ -618,8 +794,66 @@ async function uploadImportItemImages(item, { site = 'cn' } = {}) {
     return {
         assets,
         urls: assets.map((asset) => asset.original).filter(Boolean),
-        failures
+        failures,
+        sourceAssetMap
     };
+}
+
+async function uploadImportItemVideos(item, imageUploadResult, { site = 'cn' } = {}) {
+    const sources = getItemVideoSources(item);
+    const assets = [];
+    const posterAssets = [];
+    const failures = [];
+    for (let index = 0; index < sources.length; index += 1) {
+        const source = sources[index];
+        try {
+            let posterAsset = source.poster_url
+                ? imageUploadResult.sourceAssetMap.get(source.poster_url)
+                : null;
+            if (!posterAsset && source.poster_url) {
+                const poster = await downloadRemoteImage(source.poster_url, {
+                    timeoutMs: normalizePositiveInteger(process.env.PROMPT_IMPORT_IMAGE_TIMEOUT_MS, DEFAULT_IMAGE_TIMEOUT_MS, 60000),
+                    maxBytes: normalizePositiveInteger(process.env.PROMPT_IMPORT_MAX_IMAGE_BYTES, DEFAULT_MAX_IMAGE_BYTES, 80 * 1024 * 1024)
+                });
+                posterAsset = await uploadImportImageBufferToR2(poster.buffer, {
+                    site,
+                    batchId: item.batch_id,
+                    itemId: item.id,
+                    index: getItemImageSourceUrls(item).length + index,
+                    mimeType: poster.mimeType
+                });
+                imageUploadResult.sourceAssetMap.set(source.poster_url, posterAsset);
+                posterAssets.push(posterAsset);
+            }
+            const downloaded = await downloadRemoteVideo(source.url, {
+                timeoutMs: normalizePositiveInteger(process.env.PROMPT_IMPORT_VIDEO_TIMEOUT_MS, DEFAULT_VIDEO_TIMEOUT_MS, 300000),
+                maxBytes: normalizePositiveInteger(process.env.PROMPT_IMPORT_MAX_VIDEO_BYTES, DEFAULT_MAX_VIDEO_BYTES, 500 * 1024 * 1024)
+            });
+            const stored = await uploadImportVideoBufferToR2(downloaded.buffer, {
+                site,
+                batchId: item.batch_id,
+                itemId: item.id,
+                index,
+                mimeType: downloaded.mimeType
+            });
+            assets.push({
+                ...stored,
+                ...(posterAsset?.original ? { poster: posterAsset.original, poster_asset: posterAsset } : {}),
+                ...(source.width ? { width: source.width } : {}),
+                ...(source.height ? { height: source.height } : {}),
+                ...(source.duration ? { duration: source.duration } : {})
+            });
+        } catch (error) {
+            failures.push({ url: source.url, message: error.message || '视频保存失败' });
+        }
+    }
+    if (sources.length && !assets.length) {
+        const error = new Error('视频保存失败');
+        error.statusCode = 502;
+        error.details = { failures };
+        throw error;
+    }
+    return { assets, posterAssets, failures };
 }
 
 function buildPromptTitleFromItem(item = {}) {
@@ -633,6 +867,7 @@ function normalizePromptReferenceId(value) {
 
 function buildPromptPayloadFromImportItem(item, {
     imageAssets = [],
+    videoAssets = [],
     defaultStatus = 'review'
 } = {}) {
     const promptText = normalizeText(item.prompt_text || '', 20000);
@@ -641,8 +876,8 @@ function buildPromptPayloadFromImportItem(item, {
         error.statusCode = 400;
         throw error;
     }
-    if (!imageAssets.length) {
-        const error = new Error('没有可保存的图片');
+    if (!imageAssets.length && !videoAssets.length) {
+        const error = new Error('没有可保存的媒体');
         error.statusCode = 400;
         throw error;
     }
@@ -668,6 +903,7 @@ function buildPromptPayloadFromImportItem(item, {
         prompt_text_zh: '',
         images: imageAssets.map((asset) => asset.original).filter(Boolean),
         image_assets: imageAssets,
+        video_assets: videoAssets,
         source_url: normalizeOptionalUrl(item.original_work_url || ''),
         source_author_name: normalizeText(item.author_name || '', 200),
         source_author_handle: normalizeAuthorHandle(item.author_handle || '')
@@ -677,13 +913,21 @@ function buildPromptPayloadFromImportItem(item, {
     };
 }
 
-function buildCleanedImportedItemPayload({ finalPromptId, finalImageAssets = [], cleanupAfter = null } = {}) {
+function buildCleanedImportedItemPayload({
+    finalPromptId,
+    finalImageAssets = [],
+    finalVideoAssets = [],
+    cleanupAfter = null
+} = {}) {
     return {
         status: 'imported',
         prompt_text: '',
         image_sources: [],
+        video_sources: [],
         temp_image_assets: [],
+        temp_video_assets: [],
         final_image_assets: finalImageAssets,
+        final_video_assets: finalVideoAssets,
         final_prompt_id: normalizePromptReferenceId(finalPromptId),
         error_summary: '',
         error_details: {},
@@ -694,10 +938,16 @@ function buildCleanedImportedItemPayload({ finalPromptId, finalImageAssets = [],
     };
 }
 
-function buildDeferredImportedItemPayload({ finalPromptId, finalImageAssets = [], cleanupAfter = null } = {}) {
+function buildDeferredImportedItemPayload({
+    finalPromptId,
+    finalImageAssets = [],
+    finalVideoAssets = [],
+    cleanupAfter = null
+} = {}) {
     return {
         status: 'imported',
         final_image_assets: finalImageAssets,
+        final_video_assets: finalVideoAssets,
         final_prompt_id: normalizePromptReferenceId(finalPromptId),
         error_summary: '',
         error_details: {},
@@ -790,14 +1040,17 @@ async function createImportBatch(supabase, user, body) {
     return data;
 }
 
-async function findExistingPromptDuplicates(supabase, rows = []) {
+async function findExistingPromptDuplicates(supabase, rows = [], { sourceIdentityOnly = false } = {}) {
     const sourceUrls = [...new Set(
         rows
             .map((row) => normalizeOptionalUrl(row.original_work_url || ''))
             .filter(Boolean)
     )];
+    const promptRows = sourceIdentityOnly
+        ? rows.filter((row) => !normalizeOptionalUrl(row.original_work_url || ''))
+        : rows;
     const promptTexts = [...new Set(
-        rows
+        promptRows
             .map((row) => normalizeText(row.prompt_text || '', 20000))
             .filter(Boolean)
     )];
@@ -825,6 +1078,23 @@ async function findExistingPromptDuplicates(supabase, rows = []) {
             });
         });
     };
+    if (sourceIdentityOnly && sourceUrls.length) {
+        const chunkSize = 40;
+        for (let index = 0; index < sourceUrls.length; index += chunkSize) {
+            const { data, error } = await supabase
+                .from('prompts')
+                .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh')
+                .in('source_url', sourceUrls.slice(index, index + chunkSize));
+            if (error) throw error;
+            recordPrompts(data || []);
+        }
+    }
+    if (!promptHashSet.size) {
+        return {
+            bySourceUrl: duplicatesBySourceUrl,
+            byPromptHash: duplicatesByPromptHash
+        };
+    }
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
         const { data, error } = await supabase
@@ -967,15 +1237,33 @@ async function stageImportItems(supabase, user, body) {
         throw error;
     }
 
+    let existingBySourceItemId = new Map();
+    if (batchId) {
+        const sourceItemIds = rows.map((row) => row.source_item_id).filter(Boolean);
+        const { data: existingRows, error: existingError } = sourceItemIds.length
+            ? await supabase.from('prompt_import_items').select('id, source_item_id, status, final_prompt_id').eq('batch_id', batch.id).in('source_item_id', sourceItemIds)
+            : { data: [], error: null };
+        if (existingError) throw existingError;
+        existingBySourceItemId = new Map((existingRows || []).map((row) => [String(row.source_item_id || ''), row]));
+    }
+
+    const repositoryRows = rows.filter((row, index) => (
+        !rejectedIdentityIndexes.has(index)
+        && !existingBySourceItemId.has(String(row.source_item_id || ''))
+    ));
+
     let existingDuplicates;
     try {
-        existingDuplicates = await findExistingPromptDuplicates(supabase, rows);
+        existingDuplicates = await findExistingPromptDuplicates(supabase, repositoryRows, {
+            sourceIdentityOnly: settings.source === 'meigen'
+        });
     } catch (error) {
         const wrappedError = new Error(`提示词仓库去重检查失败：${error.message || '数据库查询失败'}`);
         wrappedError.statusCode = 502;
         throw wrappedError;
     }
     rows.forEach((row, index) => {
+        if (existingBySourceItemId.has(String(row.source_item_id || ''))) return;
         const sourceDuplicateId = row.original_work_url
             ? existingDuplicates.bySourceUrl.get(row.original_work_url)
             : '';
@@ -993,38 +1281,37 @@ async function stageImportItems(supabase, user, body) {
 
     const persistentFailureSourceItemIds = new Set(await findPersistentFailureSourceItemIds(
         supabase,
-        rows,
+        repositoryRows,
         { excludeBatchId: batch.id }
     ));
     rows.forEach((row, index) => {
         if (persistentFailureSourceItemIds.has(row.source_item_id)) persistentFailureIndexes.add(index);
     });
 
-    let rowsToInsert = rows.filter((_row, index) => (
+    let rowEntriesToInsert = rows.map((row, index) => ({ row, index })).filter(({ index }) => (
         !duplicateIndexes.has(index)
         && !rejectedIdentityIndexes.has(index)
         && !persistentFailureIndexes.has(index)
     ));
     let data = [];
-    if (batchId && rowsToInsert.length) {
-        const sourceItemIds = rowsToInsert.map((row) => row.source_item_id).filter(Boolean);
-        const { data: existingRows, error: existingError } = sourceItemIds.length
-            ? await supabase.from('prompt_import_items').select('id, source_item_id, status, final_prompt_id').eq('batch_id', batch.id).in('source_item_id', sourceItemIds)
-            : { data: [], error: null };
-        if (existingError) throw existingError;
-        const existingBySourceItemId = new Map((existingRows || []).map((row) => [String(row.source_item_id || ''), row]));
+    const ignoredExistingIndexes = new Set();
+    if (batchId && rowEntriesToInsert.length) {
         const newRows = [];
-        for (const row of rowsToInsert) {
+        for (const entry of rowEntriesToInsert) {
+            const { row, index } = entry;
             const existing = existingBySourceItemId.get(String(row.source_item_id || ''));
             if (!existing) {
-                newRows.push(row);
+                newRows.push(entry);
                 continue;
             }
             const existingStatus = String(existing.status || '');
             const canRestoreCleanedPlaceholder = existingStatus === 'cleaned'
                 && !existing.final_prompt_id
                 && row.status === 'staged';
-            if (!['staged', 'needs_review', 'failed'].includes(existingStatus) && !canRestoreCleanedPlaceholder) continue;
+            if (!['staged', 'needs_review', 'failed'].includes(existingStatus) && !canRestoreCleanedPlaceholder) {
+                ignoredExistingIndexes.add(index);
+                continue;
+            }
             const { batch_id: _batchId, ...updatePayload } = row;
             const updateResult = await supabase.from('prompt_import_items').update({
                 ...updatePayload,
@@ -1038,8 +1325,9 @@ async function stageImportItems(supabase, user, body) {
             if (updateResult.error) throw updateResult.error;
             if (updateResult.data) data.push(updateResult.data);
         }
-        rowsToInsert = newRows;
+        rowEntriesToInsert = newRows;
     }
+    const rowsToInsert = rowEntriesToInsert.map(({ row }) => row);
     if (rowsToInsert.length) {
         const result = await supabase
             .from('prompt_import_items')
@@ -1051,7 +1339,7 @@ async function stageImportItems(supabase, user, body) {
 
     let updatedBatch = await updateBatchStats(supabase, batch.id);
     const previousIngressStats = batch.stats && typeof batch.stats === 'object' ? batch.stats : {};
-    const rejectedCount = Math.max(0, rows.length - data.length - duplicateIndexes.size);
+    const rejectedCount = Math.max(0, rows.length - data.length - duplicateIndexes.size - ignoredExistingIndexes.size);
     const ingressStats = {
         ...(updatedBatch.stats || {}),
         attempted: Math.max(0, Number(previousIngressStats.attempted || 0)) + rows.length,
@@ -1088,6 +1376,7 @@ async function stageImportItems(supabase, user, body) {
         attemptedCount: rows.length,
         stagedCount: data.length,
         skippedDuplicateCount: duplicateIndexes.size,
+        ignoredExistingCount: ignoredExistingIndexes.size,
         rejectedIdentityCount: rejectedIdentityIndexes.size,
         persistentFailureCount: persistentFailureIndexes.size,
         persistentFailureSourceItemIds: rawItems
@@ -1111,7 +1400,10 @@ async function checkImportItemDuplicates(supabase, body) {
         return { checkedCount: 0, duplicateCount: 0, duplicateSourceItemIds: [] };
     }
 
-    const duplicates = await findExistingPromptDuplicates(supabase, rows);
+    const source = normalizeImportSource(body.source || body.settings?.source || DEFAULT_IMPORT_SOURCE);
+    const duplicates = await findExistingPromptDuplicates(supabase, rows, {
+        sourceIdentityOnly: source === 'meigen'
+    });
     const persistentFailureSourceItemIds = await findPersistentFailureSourceItemIds(supabase, rows);
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const rejectedIdentitySourceItemIds = rawItems
@@ -1238,7 +1530,9 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             };
         }
 
-        const uploadResult = await uploadImportItemImages(item, { site });
+        const imageUploadResult = await uploadImportItemImages(item, { site });
+        const videoUploadResult = await uploadImportItemVideos(item, imageUploadResult, { site });
+        const finalImageAssets = [...imageUploadResult.assets, ...videoUploadResult.posterAssets];
         const { data: currentItem, error: currentItemError } = await supabase
             .from('prompt_import_items')
             .select(IMPORT_ITEM_SELECT)
@@ -1252,8 +1546,12 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             .from('prompt_import_items')
             .update({
                 status: 'saving',
-                final_image_assets: uploadResult.assets,
-                error_details: uploadResult.failures.length ? { image_failures: uploadResult.failures } : {},
+                final_image_assets: finalImageAssets,
+                final_video_assets: videoUploadResult.assets,
+                error_details: {
+                    ...(imageUploadResult.failures.length ? { image_failures: imageUploadResult.failures } : {}),
+                    ...(videoUploadResult.failures.length ? { video_failures: videoUploadResult.failures } : {})
+                },
                 updated_at: new Date().toISOString()
             })
             .eq('id', item.id)
@@ -1266,7 +1564,8 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
         }
 
         const promptPayload = buildPromptPayloadFromImportItem(item, {
-            imageAssets: uploadResult.assets,
+            imageAssets: finalImageAssets,
+            videoAssets: videoUploadResult.assets,
             defaultStatus
         });
         const prompt = await insertPromptRow(supabase, promptPayload);
@@ -1277,12 +1576,14 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
         const cleanedPayload = cleanupOnSave
             ? buildCleanedImportedItemPayload({
                 finalPromptId: prompt.id,
-                finalImageAssets: uploadResult.assets,
+                finalImageAssets,
+                finalVideoAssets: videoUploadResult.assets,
                 cleanupAfter
             })
             : buildDeferredImportedItemPayload({
                 finalPromptId: prompt.id,
-                finalImageAssets: uploadResult.assets,
+                finalImageAssets,
+                finalVideoAssets: videoUploadResult.assets,
                 cleanupAfter
             });
         const { data: updatedItem, error: updateError } = await supabase
@@ -1306,7 +1607,8 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 batch_id: batch.id,
                 item_id: item.id,
                 prompt_id: prompt.id,
-                image_count: uploadResult.assets.length,
+                image_count: finalImageAssets.length,
+                video_count: videoUploadResult.assets.length,
                 source: item.source
             }
         });
@@ -1315,7 +1617,8 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             batch: updatedBatch,
             item: updatedItem,
             prompt,
-            imageFailures: uploadResult.failures
+            imageFailures: imageUploadResult.failures,
+            videoFailures: videoUploadResult.failures
         };
     } catch (error) {
         const latestItem = await loadImportItem(supabase, item.id).catch(() => null);
@@ -1384,7 +1687,9 @@ async function cleanupImportItems(supabase, user, body) {
         .update({
             prompt_text: '',
             image_sources: [],
+            video_sources: [],
             temp_image_assets: [],
+            temp_video_assets: [],
             status: 'cleaned',
             worker_name: null,
             lease_expires_at: null,
@@ -1730,6 +2035,7 @@ module.exports = async (req, res) => {
 module.exports._private = {
     hashPromptText,
     normalizeImageSources,
+    normalizeVideoSources,
     filterImageSourcesForImportIdentity,
     getMeigenImportIdentityConflictReason,
     deriveAuthorHandleFromOriginalWorkUrl,
@@ -1741,6 +2047,7 @@ module.exports._private = {
     buildCleanedImportedItemPayload,
     buildImportStats,
     buildPromptImportImageKey,
+    buildPromptImportVideoKey,
     findExistingPromptDuplicates,
     getPersistentFailureSourceItemIds,
     findPersistentFailureSourceItemIds,
@@ -1748,5 +2055,6 @@ module.exports._private = {
     getRejectedImportCleanupIds,
     getPendingDetailCleanupIds,
     isBlockedImportHostname,
-    isSupportedImageBuffer
+    isSupportedImageBuffer,
+    isSupportedVideoBuffer
 };

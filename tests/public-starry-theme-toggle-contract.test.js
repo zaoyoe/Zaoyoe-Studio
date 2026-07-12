@@ -56,6 +56,44 @@ test('shared theme toggle wakes dark-mode starry sky on prompts and shop pages',
     }
 });
 
+test('prompts starry sky throttles drawing during scroll and background activity', () => {
+    const starrySource = readRepoFile('starry-sky.js');
+    const promptsSource = readRepoFile('prompts-poetry.js');
+
+    [
+        "const isPromptsPage = document.body?.classList.contains('prompts-page') === true;",
+        'const frameIntervalMs = isPromptsPage ? 1000 / 30 : 0;',
+        'if (document.hidden || promptPageScrolling) return;',
+        "window.addEventListener('scroll', () => {",
+        'promptPageScrolling = true;',
+        "document.addEventListener('visibilitychange', () => {"
+    ].forEach((marker) => {
+        assert.equal(starrySource.includes(marker), true, `starry-sky.js should include ${marker}`);
+    });
+
+    assert.equal(
+        promptsSource.includes("script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';"),
+        true,
+        'prompts should cache-bust the throttled starry runtime'
+    );
+});
+
+test('prompts page removes the full-screen ambient light runtime in every theme', () => {
+    const promptsHtml = readRepoFile('prompts.html');
+    const promptsCss = readRepoFile('prompts-poetry.css');
+    const promptsSource = readRepoFile('prompts-poetry.js');
+
+    assert.equal(promptsHtml.includes('id="ambientCanvas"'), false, 'prompts should not render an ambient canvas');
+    assert.equal(promptsCss.includes('#ambientCanvas'), false, 'prompts should not style an ambient canvas');
+    assert.equal(promptsSource.includes('function initAmbientLight()'), false, 'prompts should not define ambient drawing code');
+    assert.equal(promptsSource.includes("schedulePromptIdleTask('ambient-light'"), false, 'prompts should not schedule ambient drawing');
+    assert.equal(
+        (promptsHtml.match(/ambientLight=20260712_PROMPTS_AMBIENT_LIGHT_REMOVED_1/g) || []).length,
+        2,
+        'prompts should cache-bust both CSS and runtime after removing ambient light'
+    );
+});
+
 test('prompts auth sheet does not paint dark chrome shields behind the login modal', () => {
     const promptsCss = readRepoFile('prompts-poetry.css');
     const promptsHtml = readRepoFile('prompts.html');

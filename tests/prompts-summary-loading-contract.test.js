@@ -236,7 +236,7 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         'featured banner should track failed image variants before falling back'
     );
     assert.equal(
-        promptsSource.includes("script.src = 'starry-sky.js?v=20260501_PROMPTS_IDLE_STARRY_1';"),
+        promptsSource.includes("script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';"),
         true,
         'starry sky animation should be lazy-loaded after the prompts first paint path'
     );

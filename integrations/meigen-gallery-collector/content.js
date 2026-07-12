@@ -153,15 +153,20 @@
         const imageIds = new Set((Array.isArray(item.image_sources) ? item.image_sources : [])
             .map((entry) => getNumericIdentityFromUrl(entry?.url, 'tweets'))
             .filter(Boolean));
-        const identities = [sourceItemId, detailId, originalId, ...imageIds].filter(Boolean);
-        return new Set(identities).size > 1 ? '作品详情、X 原帖或图片身份不一致' : '';
+        const videoIds = new Set((Array.isArray(item.video_sources) ? item.video_sources : [])
+            .map((entry) => getNumericIdentityFromUrl(entry?.url, 'videos'))
+            .filter(Boolean));
+        const identities = [sourceItemId, detailId, originalId, ...imageIds, ...videoIds].filter(Boolean);
+        return new Set(identities).size > 1 ? '作品详情、X 原帖或媒体身份不一致' : '';
     }
 
     function getStreamItemRevision(item = {}) {
         const images = Array.isArray(item.image_sources) ? item.image_sources.length : 0;
+        const videos = Array.isArray(item.video_sources) ? item.video_sources.length : 0;
         return [
             String(item.prompt_text || '').trim().length,
             images,
+            videos,
             Boolean(String(item.original_work_url || '').trim()),
             Boolean(String(item.author_name || '').trim()),
             Boolean(String(item.author_handle || '').trim()),
@@ -313,6 +318,7 @@
                     const result = response.result || {};
                     const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
                     const duplicateCount = Number(result.skippedDuplicateCount || 0);
+                    const ignoredExistingCount = Number(result.ignoredExistingCount || 0);
                     streamStageState.batchId = result.batch?.id || streamStageState.batchId;
                     (Array.isArray(result.items) ? result.items : []).forEach((item) => {
                         const key = getStreamItemKey(item);
@@ -320,7 +326,10 @@
                     });
                     streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
                     streamStageState.skippedDuplicateCount += duplicateCount;
-                    streamStageState.rejectedCount += Math.max(0, stagedItems.length - acceptedCount - duplicateCount);
+                    streamStageState.rejectedCount += Math.max(
+                        0,
+                        stagedItems.length - acceptedCount - duplicateCount - ignoredExistingCount
+                    );
                     syncStreamBatchStats(result.batch);
                 } catch (error) {
                     streamStageState.bufferedItems.unshift(...stagedItems);
@@ -456,6 +465,7 @@
             with_prompt: items.filter((item) => String(item.prompt_text || '').trim()).length,
             with_source: items.filter((item) => String(item.original_work_url || '').trim()).length,
             images: items.reduce((sum, item) => sum + (Array.isArray(item.image_sources) ? item.image_sources.length : 0), 0),
+            videos: items.reduce((sum, item) => sum + (Array.isArray(item.video_sources) ? item.video_sources.length : 0), 0),
             detail_failures: detailJob.failed.length,
             finalized_unresolved: items.filter((item) => item.stream_final_status === 'unresolved').length,
             scroll_steps: scrollJob.processed,
@@ -641,6 +651,11 @@
                 prompt_preview: normalizeText(item.prompt_text || '', 160),
                 image_count: Array.isArray(item.image_sources) ? item.image_sources.length : 0,
                 image_urls: getItemImageUrlPreview(item, 4),
+                video_count: Array.isArray(item.video_sources) ? item.video_sources.length : 0,
+                video_urls: (Array.isArray(item.video_sources) ? item.video_sources : [])
+                    .map((entry) => String(entry?.url || '').trim())
+                    .filter(Boolean)
+                    .slice(0, 4),
                 expected_image_count: item.expected_image_count || 0,
                 favorite_count: item.favorite_count || 0,
                 author_name: item.author_name || '',
@@ -1282,6 +1297,29 @@
             .slice(0, 8);
     }
 
+    function getHoverTargetRevision(target) {
+        if (!target?.querySelectorAll) return '';
+        const images = Array.from(target.querySelectorAll('img'))
+            .map((image) => String(image.currentSrc || image.src || image.getAttribute?.('src') || '').trim())
+            .filter(Boolean)
+            .slice(0, 6);
+        const links = Array.from(target.querySelectorAll('a[href]'))
+            .map((link) => String(link.href || link.getAttribute?.('href') || '').trim())
+            .filter((url) => /\/prompt\/|\/status\//i.test(url))
+            .slice(0, 6);
+        return [...images, ...links].join('|')
+            || normalizeText(target.innerText || target.textContent || '', 240);
+    }
+
+    function isHoverTargetNearViewport(target) {
+        if (typeof target?.getBoundingClientRect !== 'function') return true;
+        const rect = target.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || 800;
+        const margin = Math.max(240, Math.round(viewportHeight * 0.35));
+        return Number(rect.bottom || 0) >= -margin
+            && Number(rect.top || 0) <= viewportHeight + margin;
+    }
+
     function cacheHoverAuthorIdentity(target, collector = getCollector()) {
         const handleGetter = collector?._private?.getAuthorHandle;
         const nameGetter = collector?._private?.getAuthorName;
@@ -1319,8 +1357,9 @@
     async function revealHoverControls(root = document, maxTargets = 20) {
         if (root !== document || !root?.querySelectorAll) return;
         const collector = getCollector();
-        const targetLimit = Math.min(80, Math.max(1, Number(maxTargets) || 20));
+        const targetLimit = Math.min(24, Math.max(1, Number(maxTargets) || 20));
         const targets = Array.from(root.querySelectorAll('img'))
+            .filter((image) => isHoverTargetNearViewport(image))
             .sort((left, right) => {
                 const leftRect = left.getBoundingClientRect?.() || {};
                 const rightRect = right.getBoundingClientRect?.() || {};
@@ -1335,7 +1374,12 @@
             })
             .map((image) => findHoverScopeFromImage(image))
             .filter(Boolean)
+            .filter((target) => isHoverTargetNearViewport(target))
             .filter((target, index, targetsList) => targetsList.indexOf(target) === index)
+            .filter((target) => {
+                const revision = getHoverTargetRevision(target);
+                return !revision || target.dataset?.fatherKeyHoverRevision !== revision;
+            })
             .slice(0, targetLimit);
         const seen = new Set();
         for (const target of targets) {
@@ -1345,6 +1389,11 @@
             getHoverChildTargets(target).forEach(dispatchHoverEvents);
             await sleep(HOVER_REVEAL_DELAY_MS);
             cacheHoverAuthorIdentity(target, collector);
+            const revision = getHoverTargetRevision(target);
+            if (revision) {
+                target.dataset ||= {};
+                target.dataset.fatherKeyHoverRevision = revision;
+            }
         }
     }
 
@@ -1651,6 +1700,20 @@
             images.push({ ...entry, url });
         });
         return images.slice(0, limit);
+    }
+
+    function mergeVideoSources(left = [], right = [], limit = 4) {
+        const seen = new Set();
+        const videos = [];
+        [...(Array.isArray(left) ? left : []), ...(Array.isArray(right) ? right : [])].forEach((entry) => {
+            const url = String(entry?.url || '').trim();
+            if (!url) return;
+            const key = url.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            videos.push({ ...entry, url });
+        });
+        return videos.slice(0, limit);
     }
 
     function isDetailImageCountAuthoritative(item = {}) {
@@ -2001,6 +2064,12 @@
             || expandedTarget.detail_image_count_authoritative
         );
         target.image_sources = expandedTarget.image_sources;
+        target.video_sources = mergeVideoSources(target.video_sources, detailItem.video_sources);
+        target.expected_video_count = Math.max(
+            Number(target.expected_video_count || 0),
+            Number(detailItem.expected_video_count || 0),
+            target.video_sources.length
+        );
         logDiagnostic('detail-merge-applied', {
             sourceItemId: target.source_item_id || '',
             promptLength: String(target.prompt_text || '').trim().length,
@@ -2031,7 +2100,8 @@
         return {
             ...item,
             author_name: normalizeAuthorNameForMerge(item.author_name || ''),
-            image_sources: mergeImageSources([], item.image_sources, expectedCount > 0 ? expectedCount : 24)
+            image_sources: mergeImageSources([], item.image_sources, expectedCount > 0 ? expectedCount : 24),
+            video_sources: mergeVideoSources([], item.video_sources)
         };
     }
 
@@ -2777,15 +2847,23 @@
         const maxItems = normalizeMaxItems(message.maxItems);
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
+        const initialScanStartedAt = Date.now();
         await revealHoverControls(document, maxItems + 6);
+        const initialHoverFinishedAt = Date.now();
         await refreshStructuredDataCache();
+        const initialCacheFinishedAt = Date.now();
         if (message.streamToQueue && !message.continueExisting) resetStreamStageState(message.batchId);
         const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
         let repositoryDuplicateCount = 0;
-        const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)));
+        const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+            ...favoriteRange,
+            viewportOnly: true
+        })));
+        const initialCollectFinishedAt = Date.now();
         const initialCheck = message.preflightDuplicates
             ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys)
             : { uniqueItems: initialPayload.items, duplicateCount: 0 };
+        const initialPreflightFinishedAt = Date.now();
         repositoryDuplicateCount += initialCheck.duplicateCount;
         const previousItems = message.continueExisting ? (getLastJobPayload()?.items || []) : [];
         let payload = applyPayloadLimits({
@@ -2806,7 +2884,14 @@
             identityRejected: Number(initialCheck.identityConflictCount || 0),
             persistentFailures: Number(initialCheck.persistentFailureCount || 0),
             checkedCandidates: checkedKeys.size,
-            activeServerItems: getStreamActiveCount()
+            activeServerItems: getStreamActiveCount(),
+            timings: {
+                hoverMs: initialHoverFinishedAt - initialScanStartedAt,
+                structuredCacheMs: initialCacheFinishedAt - initialHoverFinishedAt,
+                collectMs: initialCollectFinishedAt - initialCacheFinishedAt,
+                preflightMs: initialPreflightFinishedAt - initialCollectFinishedAt,
+                totalMs: initialPreflightFinishedAt - initialScanStartedAt
+            }
         });
 
         if (message.streamToQueue) {
@@ -2833,12 +2918,20 @@
                 const nextSnapshot = await scrollAndWaitForGalleryBatch();
                 scrollJob.processed = index + 1;
 
+                const scanStartedAt = Date.now();
                 await revealHoverControls(document, maxItems + 6);
+                const hoverFinishedAt = Date.now();
                 await refreshStructuredDataCache();
-                const currentItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange));
+                const cacheFinishedAt = Date.now();
+                const currentItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+                    ...favoriteRange,
+                    viewportOnly: true
+                }));
+                const collectFinishedAt = Date.now();
                 const duplicateCheck = message.preflightDuplicates
                     ? await filterRepositoryDuplicates(currentItems, message, checkedKeys)
                     : { uniqueItems: currentItems, duplicateCount: 0 };
+                const preflightFinishedAt = Date.now();
                 repositoryDuplicateCount += duplicateCheck.duplicateCount;
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
                     await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, { pendingDetail: true });
@@ -2879,7 +2972,14 @@
                     activeServerItems: getStreamActiveCount(),
                     staged: streamStageState.stagedCount,
                     processable: streamStageState.processableCount,
-                    pendingDetail: streamStageState.pendingDetailCount
+                    pendingDetail: streamStageState.pendingDetailCount,
+                    timings: {
+                        hoverMs: hoverFinishedAt - scanStartedAt,
+                        structuredCacheMs: cacheFinishedAt - hoverFinishedAt,
+                        collectMs: collectFinishedAt - cacheFinishedAt,
+                        preflightMs: preflightFinishedAt - collectFinishedAt,
+                        totalMs: preflightFinishedAt - scanStartedAt
+                    }
                 });
                 if (targetCount >= maxItems) {
                     break;

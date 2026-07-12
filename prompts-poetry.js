@@ -425,6 +425,34 @@ function getPromptImageAssets(item = {}) {
     return normalizePromptImageAssetsFromRecord(item);
 }
 
+function normalizePromptVideoAsset(value) {
+    const source = typeof value === 'string' ? { original: value } : value;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+    const original = String(source.original || source.url || source.src || '').trim();
+    if (!original || isSupabaseStorageImageUrl(original)) return null;
+    return {
+        original,
+        poster: String(source.poster || source.poster_url || source.posterUrl || '').trim(),
+        mimeType: String(source.mime_type || source.mimeType || source.type || 'video/mp4').trim(),
+        width: Number(source.width || 0) || 0,
+        height: Number(source.height || 0) || 0,
+        duration: Number(source.duration || 0) || 0
+    };
+}
+
+function getPromptVideoAssets(item = {}) {
+    const source = Array.isArray(item?.videoAssets)
+        ? item.videoAssets
+        : (Array.isArray(item?.video_assets) ? item.video_assets : []);
+    const seen = new Set();
+    return source.map(normalizePromptVideoAsset).filter((asset) => {
+        const key = String(asset?.original || '').toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 function getPromptImageAssetAspectRatio(value) {
     const asset = normalizePromptImageAsset(value);
     if (!asset) return 0;
@@ -1736,7 +1764,7 @@ initTheme();
 // ========================================
 // SUPABASE DATA LOADING
 // ========================================
-const PROMPT_GALLERY_SKELETON_COUNT = 8;
+const PROMPT_GALLERY_SKELETON_COUNT = 6;
 const PROMPT_NAV_SKELETON_COUNT = 8;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
 const PROMPT_GALLERY_MOBILE_MASONRY_QUERY = '(max-width: 768px)';
@@ -1761,6 +1789,7 @@ const promptGalleryImageWarmCache = new Set();
 let promptGalleryMasonrySignature = null;
 let promptGalleryMasonryResizeTimerId = null;
 let promptGalleryResizeLightModeTimerId = null;
+let promptGalleryMasonryHeightSyncFrameId = null;
 
 function getPromptAdminVisibilityStatus(prompt = {}) {
     const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
@@ -1857,6 +1886,7 @@ const PROMPTS_SUPABASE_SUMMARY_SELECT = [
     'description_zh',
     'images',
     'image_assets',
+    'video_assets',
     'dominant_colors',
     'ai_tags',
     'source_url',
@@ -1873,7 +1903,7 @@ const PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS = [
 ];
 const PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT = PROMPTS_SUPABASE_SUMMARY_SELECT
     .split(',')
-    .filter((field) => field !== 'image_assets' && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
+    .filter((field) => !['image_assets', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
     .join(',');
 const PROMPTS_SUPABASE_DETAIL_SELECT = [
     'id',
@@ -1889,6 +1919,7 @@ const PROMPTS_SUPABASE_DETAIL_SELECT = [
     'prompt_text_zh',
     'images',
     'image_assets',
+    'video_assets',
     'dominant_colors',
     'ai_tags',
     'source_url',
@@ -1917,7 +1948,7 @@ const PROMPTS_SUPABASE_SEARCH_DETAIL_SELECT = [
 ].join(',');
 const PROMPTS_SUPABASE_DETAIL_LEGACY_SELECT = PROMPTS_SUPABASE_DETAIL_SELECT
     .split(',')
-    .filter((field) => field !== 'image_assets' && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
+    .filter((field) => !['image_assets', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
     .join(',');
 const PROMPTS_SUPABASE_SEARCH_DETAIL_LEGACY_SELECT = PROMPTS_SUPABASE_SEARCH_DETAIL_SELECT
     .split(',')
@@ -1934,6 +1965,7 @@ function isMissingPromptImageAssetsColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
     return Boolean(message && (
         message.includes('image_assets')
+        || message.includes('video_assets')
         || PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.some((field) => message.includes(field))
         || message.includes('column of "prompts"')
         || message.includes("column of 'prompts'")
@@ -1962,6 +1994,9 @@ function replacePromptDataset(nextPrompts = []) {
 
 function normalizeSupabasePromptSummary(item = {}, index = 0) {
     const imageAssets = normalizePromptImageAssetsFromRecord(item);
+    const videoAssets = (Array.isArray(item?.video_assets) || Array.isArray(item?.videoAssets))
+        ? getPromptVideoAssets(item)
+        : [];
     return {
         id: index,
         supabaseId: item.id,
@@ -1976,6 +2011,8 @@ function normalizeSupabasePromptSummary(item = {}, index = 0) {
         images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
         imageAssets,
         image_assets: imageAssets,
+        videoAssets,
+        video_assets: videoAssets,
         dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
         aiTags: item.ai_tags || {},
         sourceUrl: item.source_url || '',
@@ -1995,6 +2032,9 @@ function normalizeSupabasePromptSummary(item = {}, index = 0) {
 
 function normalizeSupabasePromptDetail(item = {}) {
     const imageAssets = normalizePromptImageAssetsFromRecord(item);
+    const videoAssets = (Array.isArray(item?.video_assets) || Array.isArray(item?.videoAssets))
+        ? getPromptVideoAssets(item)
+        : [];
     return {
         supabaseId: item.id,
         supabase_id: item.id,
@@ -2012,6 +2052,8 @@ function normalizeSupabasePromptDetail(item = {}) {
         images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
         imageAssets,
         image_assets: imageAssets,
+        videoAssets,
+        video_assets: videoAssets,
         dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
         aiTags: item.ai_tags || {},
         sourceUrl: item.source_url || '',
@@ -2123,6 +2165,8 @@ function mergePromptDetailIntoItem(item = {}, detail = {}) {
         images: (getPromptImageAssets(detail).length > 0 ? getPromptImageAssets(detail) : getPromptImageAssets(item))
             .map(getPromptImageAssetOriginalUrl)
             .filter(Boolean),
+        videoAssets: getPromptVideoAssets(detail).length > 0 ? getPromptVideoAssets(detail) : getPromptVideoAssets(item),
+        video_assets: getPromptVideoAssets(detail).length > 0 ? getPromptVideoAssets(detail) : getPromptVideoAssets(item),
         dominantColors: Array.isArray(detail.dominantColors) ? detail.dominantColors : (item.dominantColors || []),
         aiTags: detail.aiTags || item.aiTags || {},
         sourceUrl: detail.sourceUrl || detail.source_url || item.sourceUrl || item.source_url || '',
@@ -2582,8 +2626,37 @@ function createPromptGalleryMasonryState(grid) {
     return {
         columns: Array.from(grid.querySelectorAll('.prompt-gallery-column')),
         columnHeights: Array.from({ length: columnCount }, () => 0),
+        gapWeight: PROMPT_GALLERY_MASONRY_CARD_GAP_WEIGHT,
         columnCount
     };
+}
+
+function syncPromptGalleryMasonryColumnHeights(masonryState = promptGalleryMasonryState) {
+    if (!masonryState?.columns?.length) return;
+
+    const grid = masonryState.columns[0]?.parentElement;
+    const gridStyle = grid ? window.getComputedStyle(grid) : null;
+    const gapPx = Math.max(0, Number.parseFloat(gridStyle?.rowGap || gridStyle?.gap || '10') || 10);
+    let totalColumnWidth = 0;
+
+    masonryState.columnHeights = masonryState.columns.map((column) => {
+        const columnWidth = Math.max(1, column.clientWidth || 1);
+        totalColumnWidth += columnWidth;
+        return Math.max(0, column.scrollHeight || 0) / columnWidth;
+    });
+
+    const averageColumnWidth = totalColumnWidth / masonryState.columns.length;
+    masonryState.gapWeight = averageColumnWidth > 0
+        ? gapPx / averageColumnWidth
+        : PROMPT_GALLERY_MASONRY_CARD_GAP_WEIGHT;
+}
+
+function schedulePromptGalleryMasonryHeightSync() {
+    if (promptGalleryMasonryHeightSyncFrameId) return;
+    promptGalleryMasonryHeightSyncFrameId = requestAnimationFrame(() => {
+        promptGalleryMasonryHeightSyncFrameId = null;
+        syncPromptGalleryMasonryColumnHeights();
+    });
 }
 
 function preparePromptGalleryContainer(grid) {
@@ -2604,7 +2677,8 @@ function appendPromptGalleryCard(grid, card, index = 0, masonryState = null) {
     const targetColumnIndex = getPromptGalleryMasonryTargetColumnIndex(masonryState.columnHeights);
     const targetColumn = masonryState.columns[targetColumnIndex] || masonryState.columns[0];
     targetColumn.appendChild(card);
-    masonryState.columnHeights[targetColumnIndex] += getPromptGalleryMasonryCardAspectWeight(card, index) + PROMPT_GALLERY_MASONRY_CARD_GAP_WEIGHT;
+    masonryState.columnHeights[targetColumnIndex] += getPromptGalleryMasonryCardAspectWeight(card, index)
+        + (masonryState.gapWeight || PROMPT_GALLERY_MASONRY_CARD_GAP_WEIGHT);
 }
 
 function setPromptGalleryResizeLightMode() {
@@ -2693,6 +2767,7 @@ function markPromptCardImageReady(card, cardImage) {
     card.classList.remove('prompt-card--loading');
     card.classList.add('prompt-card--loaded');
     cardImage?.classList.add('loaded');
+    schedulePromptGalleryMasonryHeightSync();
 }
 
 function setPromptCardImageSource(cardImage, imageAsset) {
@@ -2939,7 +3014,7 @@ function loadPromptStarrySkyRuntime(options = {}) {
 
     promptStarrySkyRuntimePromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'starry-sky.js?v=20260501_PROMPTS_IDLE_STARRY_1';
+        script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';
         script.async = true;
         script.dataset.promptStarrySky = '1';
         script.addEventListener('load', () => resolve(script), { once: true });
@@ -2994,10 +3069,6 @@ function schedulePromptsDeferredEnhancements() {
     schedulePromptIdleTask('scroll-reveal', () => setupScrollReveal(), {
         delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS,
         timeoutMs: PROMPTS_DEFERRED_TASK_TIMEOUT_MS
-    });
-    schedulePromptIdleTask('ambient-light', () => initAmbientLight(), {
-        delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS + 700,
-        timeoutMs: 2400
     });
     schedulePromptIdleTask('starry-sky', () => loadPromptStarrySkyRuntime(), {
         delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS + 1200,
@@ -3744,136 +3815,6 @@ function generateDynamicNav() {
 }
 
 // ========================================
-// AMBIENT LIGHT SYSTEM (Living Background)
-// ========================================
-function initAmbientLight() {
-    const canvas = document.getElementById('ambientCanvas');
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    let animationId;
-    let blobs = [];
-    let canvasResizeFrameId = null;
-
-    function applyCanvasSize() {
-        const nextWidth = Math.max(1, Math.round(window.innerWidth || document.documentElement?.clientWidth || 1));
-        const nextHeight = Math.max(1, Math.round(window.innerHeight || document.documentElement?.clientHeight || 1));
-        if (canvas.width === nextWidth && canvas.height === nextHeight) return;
-        canvas.width = nextWidth;
-        canvas.height = nextHeight;
-    }
-
-    function scheduleCanvasResize() {
-        if (canvasResizeFrameId) return;
-        canvasResizeFrameId = requestAnimationFrame(() => {
-            canvasResizeFrameId = null;
-            applyCanvasSize();
-        });
-    }
-
-    applyCanvasSize();
-    window.addEventListener('resize', scheduleCanvasResize, { passive: true });
-
-    // Color extraction from visible cards
-    function getVisibleCardColors() {
-        const cards = document.querySelectorAll('.prompt-card');
-        const colors = [];
-        const viewportHeight = window.innerHeight;
-
-        cards.forEach(card => {
-            const rect = card.getBoundingClientRect();
-            // Only cards in viewport
-            if (rect.top < viewportHeight && rect.bottom > 0) {
-                const item = PROMPTS[parseInt(card.dataset.id)];
-                if (item && item.dominantColors && item.dominantColors.length > 0) {
-                    colors.push(...item.dominantColors.slice(0, 2));
-                }
-            }
-        });
-
-        return colors.length > 0 ? colors : ['#9b5de5', '#8b5cf6', '#a78bfa'];
-    }
-
-    // Create blob class
-    class Blob {
-        constructor(color) {
-            this.x = Math.random() * canvas.width;
-            this.y = Math.random() * canvas.height;
-            this.radius = 200 + Math.random() * 300;
-            this.color = color;
-            this.vx = (Math.random() - 0.5) * 0.3;
-            this.vy = (Math.random() - 0.5) * 0.3;
-            this.targetColor = color;
-        }
-
-        update() {
-            this.x += this.vx;
-            this.y += this.vy;
-
-            // Bounce off edges
-            if (this.x < -this.radius || this.x > canvas.width + this.radius) this.vx *= -1;
-            if (this.y < -this.radius || this.y > canvas.height + this.radius) this.vy *= -1;
-        }
-
-        draw() {
-            const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
-            gradient.addColorStop(0, this.hexToRgba(this.color, 0.3));
-            gradient.addColorStop(1, this.hexToRgba(this.color, 0));
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        hexToRgba(hex, alpha) {
-            if (hex.startsWith('rgb')) return hex.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
-            const r = parseInt(hex.slice(1, 3), 16) || 155;
-            const g = parseInt(hex.slice(3, 5), 16) || 93;
-            const b = parseInt(hex.slice(5, 7), 16) || 229;
-            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        }
-    }
-
-    // Initialize blobs
-    const initialColors = ['#9b5de5', '#8b5cf6', '#a78bfa', '#c4b5fd'];
-    for (let i = 0; i < 4; i++) {
-        blobs.push(new Blob(initialColors[i % initialColors.length]));
-    }
-
-    // Update blob colors periodically
-    function updateBlobColors() {
-        const colors = getVisibleCardColors();
-        blobs.forEach((blob, i) => {
-            blob.color = colors[i % colors.length] || blob.color;
-        });
-    }
-
-    // Animation loop
-    function animate() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        blobs.forEach(blob => {
-            blob.update();
-            blob.draw();
-        });
-
-        animationId = requestAnimationFrame(animate);
-    }
-
-    animate();
-
-    // Update colors on scroll
-    let scrollTimeout;
-    window.addEventListener('scroll', () => {
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(updateBlobColors, 100);
-    });
-
-    // Initial color update
-    setTimeout(updateBlobColors, 1000);
-}
-
-// ========================================
 // STARRY SKY (Dark Mode Embellishment)
 // ========================================
 // NOTE: Starry sky animation is now in starry-sky.js shared module
@@ -4231,19 +4172,19 @@ let promptGalleryRenderedCount = 0;
 let promptGalleryMasonryState = null;
 let promptGalleryLastScrollY = 0;
 let promptGalleryLastScrollDirection = 'down';
-let promptGalleryLastScrollAt = 0;
 let promptGalleryScrollIdleTimerId = null;
-let promptGalleryScrollLoadFrameId = null;
-let promptGalleryPendingScrollLoadCount = 0;
 let promptGalleryInfiniteScrollBound = false;
 let promptGalleryTouchLastY = 0;
-let promptGalleryTouchLastAt = 0;
-const PROMPT_GALLERY_SCROLL_PRELOAD_COUNT = 12;
-const PROMPT_GALLERY_SCROLL_IDLE_MS = 160;
+let promptGalleryCardMotionObserver = null;
+let promptGalleryLoadSentinelObserver = null;
+let promptGalleryRenderChunkFrameId = null;
+let promptGalleryQueuedRenderTarget = 0;
+const PROMPT_GALLERY_SCROLL_PRELOAD_COUNT = 8;
+const PROMPT_GALLERY_RENDER_CHUNK_SIZE = 2;
+const PROMPT_GALLERY_DESKTOP_PREFETCH_ROWS = 2;
+const PROMPT_GALLERY_SCROLL_IDLE_MS = 180;
 const PROMPT_GALLERY_BOTTOM_LOAD_MARGIN_PX = 900;
-const PROMPT_GALLERY_SCROLL_LOAD_MAX_COUNT = 72;
-const PROMPT_GALLERY_SCROLL_DISTANCE_PER_CARD_PX = 260;
-const PROMPT_GALLERY_SCROLL_VELOCITY_MULTIPLIER = 10;
+const PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX = 1600;
 
 // Load gallery config from system_config
 let DEFAULT_SORT = 'newest'; // Default sort order
@@ -5421,7 +5362,7 @@ function warmRelatedPromptImages(limit = 6) {
     const grid = document.getElementById('relatedPromptGrid');
     if (!grid) return;
 
-    Array.from(grid.querySelectorAll('img'))
+    getRelatedPromptImagesInVisualOrder(grid)
         .slice(0, limit)
         .forEach((image) => {
             const url = String(image.currentSrc || image.src || '').trim();
@@ -5433,6 +5374,25 @@ function warmRelatedPromptImages(limit = 6) {
                 warmImage.decode().catch(() => {});
             }
         });
+}
+
+function getRelatedPromptImagesInVisualOrder(grid) {
+    if (!grid) return [];
+
+    const columnImages = Array.from(grid.querySelectorAll('.related-prompt-column')).map((column) => (
+        Array.from(column.querySelectorAll('.related-prompt-card img'))
+    ));
+    const rowCount = Math.max(0, ...columnImages.map((images) => images.length));
+    const orderedImages = [];
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        columnImages.forEach((images) => {
+            const image = images[rowIndex];
+            if (image) orderedImages.push(image);
+        });
+    }
+
+    return orderedImages;
 }
 
 function warmRelatedPromptsForModal(item = findPromptAnalyticsItem()) {
@@ -5465,11 +5425,12 @@ function scheduleRelatedPromptWarmup(item = findPromptAnalyticsItem()) {
     promptRelatedWarmupTimerId = window.setTimeout(run, 120);
 }
 
-function playRelatedPromptGridEntryAnimation() {
+function playRelatedPromptGridEntryAnimation(options = {}) {
     const grid = document.getElementById('relatedPromptGrid');
     if (!grid || grid.classList.contains('related-prompt-grid--empty')) return;
 
     clearRelatedPromptGridEntryAnimation();
+    const frameDelay = Math.max(1, Math.floor(Number(options.frameDelay) || 1));
     const columns = Array.from(grid.querySelectorAll('.related-prompt-column'));
     columns.forEach((column, columnIndex) => {
         Array.from(column.querySelectorAll('.related-prompt-card')).forEach((card, rowIndex) => {
@@ -5483,15 +5444,26 @@ function playRelatedPromptGridEntryAnimation() {
         });
     });
 
-    promptRelatedGridEntryFrameId = requestAnimationFrame(() => {
-        promptRelatedGridEntryFrameId = null;
-        if (!grid.isConnected || !isRelatedMode) return;
-        grid.classList.add('related-prompt-grid--entering');
-        promptRelatedGridEntryTimerId = setTimeout(() => {
-            grid.classList.remove('related-prompt-grid--entering');
-            promptRelatedGridEntryTimerId = null;
-        }, 820);
-    });
+    const scheduleEntryFrame = (remainingFrames) => {
+        promptRelatedGridEntryFrameId = requestAnimationFrame(() => {
+            if (!grid.isConnected || !isRelatedMode) {
+                promptRelatedGridEntryFrameId = null;
+                return;
+            }
+            if (remainingFrames > 1) {
+                scheduleEntryFrame(remainingFrames - 1);
+                return;
+            }
+
+            promptRelatedGridEntryFrameId = null;
+            grid.classList.add('related-prompt-grid--entering');
+            promptRelatedGridEntryTimerId = setTimeout(() => {
+                grid.classList.remove('related-prompt-grid--entering');
+                promptRelatedGridEntryTimerId = null;
+            }, 820);
+        });
+    };
+    scheduleEntryFrame(frameDelay);
 }
 
 function clearRelatedModeDeferredRender() {
@@ -5540,9 +5512,16 @@ function renderRelatedPromptsForActiveMode(item = findPromptAnalyticsItem(), opt
     }
 
     clearRelatedModeDeferredRender();
+    if (!isRelatedPromptRenderReady(item)) {
+        scheduleRelatedPromptsRender(item);
+        return;
+    }
+
     renderRelatedPrompts(item);
     if (options.animateEntry) {
-        playRelatedPromptGridEntryAnimation();
+        playRelatedPromptGridEntryAnimation({
+            frameDelay: isPromptModalMobileLayout() ? 1 : 2
+        });
     }
 }
 
@@ -5994,7 +5973,68 @@ function getPromptGalleryBatchSize() {
     return Math.max(1, Number.parseInt(CARDS_PER_PAGE, 10) || 20);
 }
 
+function prefersReducedPromptGalleryMotion() {
+    return typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function disconnectPromptGalleryCardMotionObserver() {
+    promptGalleryCardMotionObserver?.disconnect();
+    promptGalleryCardMotionObserver = null;
+    document.querySelectorAll('.gallery-container .prompt-card--in-viewport, .gallery-container .prompt-card.breathing')
+        .forEach((card) => card.classList.remove('prompt-card--in-viewport', 'breathing'));
+}
+
+function getPromptGalleryCardMotionObserver() {
+    if (promptGalleryCardMotionObserver || typeof IntersectionObserver === 'undefined') {
+        return promptGalleryCardMotionObserver;
+    }
+
+    promptGalleryCardMotionObserver = new IntersectionObserver((entries) => {
+        const reduceMotion = prefersReducedPromptGalleryMotion();
+        entries.forEach((entry) => {
+            const isNearViewport = entry.isIntersecting;
+            entry.target.classList.toggle('prompt-card--in-viewport', isNearViewport);
+            entry.target.classList.toggle('breathing', isNearViewport && !reduceMotion);
+        });
+    }, {
+        threshold: 0.01,
+        rootMargin: '120px 0px'
+    });
+
+    return promptGalleryCardMotionObserver;
+}
+
+function activatePromptGalleryCardMotion(card) {
+    if (!card) return;
+    const observer = getPromptGalleryCardMotionObserver();
+    if (observer) {
+        observer.observe(card);
+        return;
+    }
+
+    card.classList.add('prompt-card--in-viewport');
+    if (!prefersReducedPromptGalleryMotion()) {
+        card.classList.add('breathing');
+    }
+}
+
 function resetPromptGalleryInfiniteState() {
+    if (promptGalleryScrollIdleTimerId) {
+        window.clearTimeout(promptGalleryScrollIdleTimerId);
+        promptGalleryScrollIdleTimerId = null;
+    }
+    if (promptGalleryRenderChunkFrameId) {
+        window.cancelAnimationFrame(promptGalleryRenderChunkFrameId);
+        promptGalleryRenderChunkFrameId = null;
+    }
+    if (promptGalleryMasonryHeightSyncFrameId) {
+        window.cancelAnimationFrame(promptGalleryMasonryHeightSyncFrameId);
+        promptGalleryMasonryHeightSyncFrameId = null;
+    }
+    document.documentElement.classList.remove('prompt-gallery-scrolling');
+    promptGalleryQueuedRenderTarget = 0;
+    disconnectPromptGalleryCardMotionObserver();
     promptGalleryRenderedCount = 0;
     promptGalleryMasonryState = null;
     allCardsRendered = false;
@@ -6008,12 +6048,16 @@ function removePromptGalleryPaginationControls() {
 }
 
 function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
+    const videoAssets = getPromptVideoAssets(item);
+    const videoPosterAsset = videoAssets[0]?.poster ? normalizePromptImageAsset(videoAssets[0].poster) : null;
     const imageAssets = getPromptImageAssets(item);
+    if (!imageAssets.length && videoPosterAsset) imageAssets.push(videoPosterAsset);
     const primaryImageAsset = imageAssets[0] || null;
     const shouldLoadImageEagerly = itemIndex < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
     const promptOpenId = getPromptStableOpenId(item);
     const card = document.createElement('div');
     card.className = 'prompt-card card-enter prompt-card--loading';
+    card.classList.toggle('prompt-card--video', videoAssets.length > 0);
     card.dataset.tags = Array.isArray(item.tags) ? item.tags.join(',') : '';
     card.dataset.id = item.id;
     card.dataset.promptId = promptOpenId;
@@ -6042,6 +6086,7 @@ function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
     card.innerHTML = `
         ${buildPromptCardSkeletonMarkup(itemIndex)}
         <img class="card-image" loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}" decoding="async" alt="${getLocalizedField(item, 'title')}" draggable="false">
+        ${videoAssets.length ? '<span class="prompt-card-video-badge" aria-label="视频"><i class="fas fa-play" aria-hidden="true"></i></span>' : ''}
         <div class="card-overlay">
             ${indicators}
             <div class="card-overlay-bottom">
@@ -6140,7 +6185,12 @@ function renderPromptGalleryRange(startIndex = 0, endIndex = 0, options = {}) {
     }
 
     isLoading = true;
-    warmPromptGalleryLeadImages(itemsToLoad);
+    if (safeStart > 0) {
+        syncPromptGalleryMasonryColumnHeights(promptGalleryMasonryState);
+    }
+    if (options.warmImages !== false) {
+        warmPromptGalleryLeadImages(itemsToLoad);
+    }
 
     itemsToLoad.forEach((item, offset) => {
         const itemIndex = safeStart + offset;
@@ -6152,7 +6202,8 @@ function renderPromptGalleryRange(startIndex = 0, endIndex = 0, options = {}) {
         setTimeout(() => {
             showPromptCard(card, batchIndex);
             setTimeout(() => {
-                card.classList.add('breathing');
+                if (!card.isConnected) return;
+                activatePromptGalleryCardMotion(card);
             }, 850);
         }, staggerDelay);
     });
@@ -6280,77 +6331,121 @@ function isPromptGalleryNearDocumentBottom() {
     return getPromptGalleryDocumentBottomDistance() <= threshold;
 }
 
-function ensurePromptGalleryNextScrollBatch(options = {}) {
-    if (allCardsRendered) return 0;
-    return ensurePromptGalleryRenderedThrough(
-        promptGalleryRenderedCount + PROMPT_GALLERY_SCROLL_PRELOAD_COUNT - 1,
-        options
+function getPromptGalleryProgressiveBatchSize() {
+    if (isPromptGalleryMobileMasonryLayout()) {
+        return PROMPT_GALLERY_SCROLL_PRELOAD_COUNT;
+    }
+
+    const columnCount = promptGalleryMasonryState?.columnCount
+        || getPromptGalleryMasonryColumnCount(document.querySelector('.gallery-container'));
+    return Math.max(
+        PROMPT_GALLERY_SCROLL_PRELOAD_COUNT,
+        columnCount * PROMPT_GALLERY_DESKTOP_PREFETCH_ROWS
     );
 }
 
-function getPromptGalleryScrollLoadCount(deltaPx = 0, deltaMs = 16) {
-    const safeDeltaPx = Math.max(0, Math.abs(Number(deltaPx) || 0));
-    const safeDeltaMs = Math.max(16, Math.abs(Number(deltaMs) || 16));
-    const velocityPxPerMs = safeDeltaPx / safeDeltaMs;
-    const distanceBonus = Math.floor(safeDeltaPx / PROMPT_GALLERY_SCROLL_DISTANCE_PER_CARD_PX);
-    const velocityBonus = Math.floor(velocityPxPerMs * PROMPT_GALLERY_SCROLL_VELOCITY_MULTIPLIER);
+function queuePromptGalleryRenderThrough(targetIndex = 0) {
+    if (allCardsRendered || !promptGalleryMasonryState) return 0;
 
-    return Math.min(
-        PROMPT_GALLERY_SCROLL_LOAD_MAX_COUNT,
-        Math.max(
-            PROMPT_GALLERY_SCROLL_PRELOAD_COUNT,
-            PROMPT_GALLERY_SCROLL_PRELOAD_COUNT + distanceBonus + velocityBonus
-        )
+    const targetCount = Math.min(
+        allFilteredItems.length,
+        Math.max(promptGalleryRenderedCount, (Number.parseInt(targetIndex, 10) || 0) + 1)
     );
-}
+    promptGalleryQueuedRenderTarget = Math.max(promptGalleryQueuedRenderTarget, targetCount);
+    if (promptGalleryRenderChunkFrameId || targetCount <= promptGalleryRenderedCount) return 0;
 
-function queuePromptGalleryScrollLoad(loadCount = PROMPT_GALLERY_SCROLL_PRELOAD_COUNT) {
-    if (allCardsRendered) return;
+    const renderChunk = () => {
+        promptGalleryRenderChunkFrameId = null;
+        if (allCardsRendered || !promptGalleryMasonryState) {
+            promptGalleryQueuedRenderTarget = promptGalleryRenderedCount;
+            return;
+        }
 
-    const safeLoadCount = Math.min(
-        PROMPT_GALLERY_SCROLL_LOAD_MAX_COUNT,
-        Math.max(PROMPT_GALLERY_SCROLL_PRELOAD_COUNT, Number.parseInt(loadCount, 10) || PROMPT_GALLERY_SCROLL_PRELOAD_COUNT)
-    );
-    promptGalleryPendingScrollLoadCount = Math.max(promptGalleryPendingScrollLoadCount, safeLoadCount);
-
-    if (promptGalleryScrollLoadFrameId) return;
-
-    promptGalleryScrollLoadFrameId = requestAnimationFrame(() => {
-        promptGalleryScrollLoadFrameId = null;
-        const nextLoadCount = promptGalleryPendingScrollLoadCount;
-        promptGalleryPendingScrollLoadCount = 0;
-        if (nextLoadCount <= 0) return;
-
-        ensurePromptGalleryRenderedThrough(
-            promptGalleryRenderedCount + nextLoadCount - 1,
-            { skipEntranceDelay: true }
+        const nextEnd = Math.min(
+            promptGalleryQueuedRenderTarget,
+            promptGalleryRenderedCount + PROMPT_GALLERY_RENDER_CHUNK_SIZE
         );
+        renderPromptGalleryRange(promptGalleryRenderedCount, nextEnd, {
+            skipEntranceDelay: true,
+            warmImages: false
+        });
+
+        if (promptGalleryRenderedCount < promptGalleryQueuedRenderTarget) {
+            promptGalleryRenderChunkFrameId = requestAnimationFrame(renderChunk);
+            return;
+        }
+
+        if (!allCardsRendered && isPromptGalleryLoadSentinelNearViewport()) {
+            promptGalleryQueuedRenderTarget = Math.min(
+                allFilteredItems.length,
+                promptGalleryRenderedCount + getPromptGalleryProgressiveBatchSize()
+            );
+            promptGalleryRenderChunkFrameId = requestAnimationFrame(renderChunk);
+        }
+    };
+
+    promptGalleryRenderChunkFrameId = requestAnimationFrame(renderChunk);
+    return targetCount - promptGalleryRenderedCount;
+}
+
+function queuePromptGalleryNextScrollBatch() {
+    return queuePromptGalleryRenderThrough(
+        promptGalleryRenderedCount + getPromptGalleryProgressiveBatchSize() - 1
+    );
+}
+
+function isPromptGalleryLoadSentinelNearViewport() {
+    const sentinel = document.getElementById('promptGalleryLoadSentinel');
+    if (!sentinel) return false;
+
+    const rect = sentinel.getBoundingClientRect();
+    const viewportHeight = getPromptGalleryViewportHeight();
+    return rect.top <= viewportHeight + PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX
+        && rect.bottom >= -PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX;
+}
+
+function setupPromptGalleryLoadSentinel() {
+    if (promptGalleryLoadSentinelObserver || typeof IntersectionObserver === 'undefined') return;
+
+    const sentinel = document.getElementById('promptGalleryLoadSentinel');
+    if (!sentinel) return;
+
+    promptGalleryLoadSentinelObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+            queuePromptGalleryNextScrollBatch();
+        }
+    }, {
+        root: null,
+        rootMargin: `0px 0px ${PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX}px 0px`,
+        threshold: 0
     });
+    promptGalleryLoadSentinelObserver.observe(sentinel);
 }
 
 function preloadPromptGalleryAroundVisibleRange(direction = promptGalleryLastScrollDirection) {
     if (!allFilteredItems.length) return 0;
+    const preloadCount = getPromptGalleryProgressiveBatchSize();
 
     if (direction !== 'up' && isPromptGalleryNearDocumentBottom()) {
-        return ensurePromptGalleryNextScrollBatch();
+        return queuePromptGalleryNextScrollBatch();
     }
 
     const visibleRange = getPromptGalleryVisibleRange();
     if (!visibleRange) {
         return direction === 'up'
-            ? preloadPromptGalleryItems(0, PROMPT_GALLERY_SCROLL_PRELOAD_COUNT)
-            : ensurePromptGalleryRenderedThrough(getPromptGalleryBatchSize() + PROMPT_GALLERY_SCROLL_PRELOAD_COUNT - 1);
+            ? preloadPromptGalleryItems(0, preloadCount)
+            : queuePromptGalleryNextScrollBatch();
     }
 
     if (direction === 'up') {
-        const startIndex = Math.max(0, visibleRange.minIndex - PROMPT_GALLERY_SCROLL_PRELOAD_COUNT);
+        const startIndex = Math.max(0, visibleRange.minIndex - preloadCount);
         return preloadPromptGalleryItems(startIndex, visibleRange.minIndex);
     }
 
     const preloadStart = visibleRange.maxIndex + 1;
-    const preloadEnd = Math.min(allFilteredItems.length, preloadStart + PROMPT_GALLERY_SCROLL_PRELOAD_COUNT);
+    const preloadEnd = Math.min(allFilteredItems.length, preloadStart + preloadCount);
     preloadPromptGalleryItems(preloadStart, preloadEnd);
-    return ensurePromptGalleryRenderedThrough(preloadEnd - 1);
+    return queuePromptGalleryRenderThrough(preloadEnd - 1);
 }
 
 function schedulePromptGalleryScrollIdlePreload(delayMs = PROMPT_GALLERY_SCROLL_IDLE_MS) {
@@ -6360,6 +6455,7 @@ function schedulePromptGalleryScrollIdlePreload(delayMs = PROMPT_GALLERY_SCROLL_
 
     promptGalleryScrollIdleTimerId = window.setTimeout(() => {
         promptGalleryScrollIdleTimerId = null;
+        document.documentElement.classList.remove('prompt-gallery-scrolling');
         preloadPromptGalleryAroundVisibleRange(promptGalleryLastScrollDirection);
     }, Math.max(PROMPT_GALLERY_SCROLL_IDLE_MS, Number.parseInt(delayMs, 10) || PROMPT_GALLERY_SCROLL_IDLE_MS));
 }
@@ -6370,19 +6466,12 @@ function schedulePromptGalleryResizeIdlePreload() {
 }
 
 function handlePromptGalleryScroll() {
-    const now = Date.now();
     const nextScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
     const deltaY = nextScrollY - promptGalleryLastScrollY;
     if (Math.abs(deltaY) > 1) {
-        const deltaMs = promptGalleryLastScrollAt ? now - promptGalleryLastScrollAt : 16;
         promptGalleryLastScrollDirection = deltaY > 0 ? 'down' : 'up';
         promptGalleryLastScrollY = nextScrollY;
-        promptGalleryLastScrollAt = now;
-
-        if (promptGalleryLastScrollDirection === 'down') {
-            const scrollLoadCount = getPromptGalleryScrollLoadCount(deltaY, deltaMs);
-            queuePromptGalleryScrollLoad(scrollLoadCount);
-        }
+        document.documentElement.classList.add('prompt-gallery-scrolling');
     }
     schedulePromptGalleryScrollIdlePreload();
 }
@@ -6391,23 +6480,17 @@ function handlePromptGalleryTouchStart(event) {
     const touch = event.touches?.[0];
     if (!touch) return;
     promptGalleryTouchLastY = touch.clientY;
-    promptGalleryTouchLastAt = Date.now();
 }
 
 function handlePromptGalleryTouchMove(event) {
     const touch = event.touches?.[0];
     if (!touch) return;
 
-    const now = Date.now();
     const deltaY = promptGalleryTouchLastY - touch.clientY;
-    const deltaMs = promptGalleryTouchLastAt ? now - promptGalleryTouchLastAt : 16;
     promptGalleryTouchLastY = touch.clientY;
-    promptGalleryTouchLastAt = now;
 
     if (deltaY > 1) {
         promptGalleryLastScrollDirection = 'down';
-        const scrollLoadCount = getPromptGalleryScrollLoadCount(deltaY, deltaMs);
-        queuePromptGalleryScrollLoad(scrollLoadCount);
     } else if (deltaY < -1) {
         promptGalleryLastScrollDirection = 'up';
     }
@@ -6424,7 +6507,6 @@ function setupInfiniteScroll() {
     if (promptGalleryInfiniteScrollBound) return;
     promptGalleryInfiniteScrollBound = true;
     promptGalleryLastScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
-    promptGalleryLastScrollAt = Date.now();
     window.addEventListener('scroll', handlePromptGalleryScroll, { passive: true });
     window.addEventListener('resize', schedulePromptGalleryResizeIdlePreload, { passive: true });
     window.visualViewport?.addEventListener('scroll', schedulePromptGalleryScrollIdlePreload, { passive: true });
@@ -6432,6 +6514,7 @@ function setupInfiniteScroll() {
     document.addEventListener('touchstart', handlePromptGalleryTouchStart, { passive: true });
     document.addEventListener('touchmove', handlePromptGalleryTouchMove, { passive: true });
     document.addEventListener('touchend', schedulePromptGalleryScrollIdlePreload, { passive: true });
+    setupPromptGalleryLoadSentinel();
 }
 
 // --- Filter Interactivity ---
@@ -7061,6 +7144,7 @@ function applySearchResults(matchedIds, searchingForColor) {
 let currentModalImageIndex = 0;
 let currentModalImages = [];
 let currentModalImageThumbs = [];
+let currentModalVideoAsset = null;
 let currentModalThumbRenderKey = '';
 let currentModalThumbWarmupIdleId = null;
 let currentModalThumbWarmupTimerId = null;
@@ -8455,32 +8539,53 @@ function openPromptModal(id) {
     _copyInProgress = false;
 
     // Store images for navigation
+    const modalVideoAssets = getPromptVideoAssets(item);
+    currentModalVideoAsset = modalVideoAssets[0] || null;
     const modalImageEntries = getPromptModalImageEntries(item);
     currentModalImages = modalImageEntries.map((entry) => entry.imageUrl);
     currentModalImageThumbs = modalImageEntries.map((entry) => entry.thumbUrl || entry.imageUrl);
+    if (currentModalVideoAsset) {
+        const poster = currentModalVideoAsset.poster || currentModalImages[0] || '';
+        currentModalImages = poster ? [poster] : [];
+        currentModalImageThumbs = poster ? [poster] : [];
+    }
     currentModalImageIndex = 0;
     currentModalThumbRenderKey = '';
     cancelModalImageThumbnailWarmup();
 
     // Reset Image Container - remove ALL images (including leftovers from transitions)
     const imgContainer = document.querySelector('.modal-image-col');
-    const allImages = imgContainer.querySelectorAll('img');
-    allImages.forEach(img => img.remove());
+    const allMedia = imgContainer.querySelectorAll('img, video');
+    allMedia.forEach((media) => media.remove());
 
     // Reset animation lock
     isModalImageAnimating = false;
 
     // Create fresh image
-    const newImg = document.createElement('img');
-    newImg.id = 'modalImg';
-    newImg.className = 'active';
-    disablePromptImageDrag(newImg);
-    newImg.src = currentModalImages[0] || '';
-    newImg.alt = getLocalizedField(item, 'title');
+    const newMedia = currentModalVideoAsset
+        ? document.createElement('video')
+        : document.createElement('img');
+    if (currentModalVideoAsset) {
+        newMedia.id = 'modalVideo';
+        newMedia.className = 'active prompt-modal-video';
+        newMedia.src = currentModalVideoAsset.original;
+        newMedia.poster = currentModalVideoAsset.poster || currentModalImages[0] || '';
+        newMedia.controls = true;
+        newMedia.playsInline = true;
+        newMedia.preload = 'metadata';
+        newMedia.setAttribute('controlsList', 'nodownload');
+        newMedia.setAttribute('aria-label', getLocalizedField(item, 'title') || 'Prompt video');
+    } else {
+        newMedia.id = 'modalImg';
+        newMedia.className = 'active';
+        disablePromptImageDrag(newMedia);
+        newMedia.src = currentModalImages[0] || '';
+        newMedia.alt = getLocalizedField(item, 'title');
+    }
 
     // Insert before nav buttons
     const firstBtn = imgContainer.querySelector('.modal-img-nav');
-    imgContainer.insertBefore(newImg, firstBtn);
+    imgContainer.insertBefore(newMedia, firstBtn);
 
     // Populate Data (with i18n support)
     document.getElementById('modalTitle').textContent = getLocalizedField(item, 'title');
@@ -8642,7 +8747,10 @@ function openPromptDetailSideMode(mode) {
     if (isCommentMode) {
         fetchComments(currentPromptId);
     } else {
-        renderRelatedPromptsForActiveMode(findPromptAnalyticsItem(), { forceDefer: isMobileLayout });
+        renderRelatedPromptsForActiveMode(findPromptAnalyticsItem(), {
+            forceDefer: isMobileLayout,
+            animateEntry: true
+        });
     }
 
     if (!isMobileLayout || isCommentMode) {
@@ -12511,6 +12619,11 @@ function navigateModalImage(direction) {
 })();
 
 function closePromptModal() {
+    const modalVideo = document.getElementById('modalVideo');
+    if (modalVideo) {
+        modalVideo.pause();
+        modalVideo.removeAttribute('autoplay');
+    }
     if (!runPromptModalCloseChromeCleanup()) {
         forceHidePromptModalDuringClose();
         clearPromptModalThemeColor({ restoreDelayMs: 320 });

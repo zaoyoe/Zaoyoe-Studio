@@ -325,7 +325,8 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
         if (promptError) throw promptError;
         const cleaned = importsHandler._private.buildCleanedImportedItemPayload({
             finalPromptId: imported.prompt.id,
-            finalImageAssets: imported.item?.final_image_assets || []
+            finalImageAssets: imported.item?.final_image_assets || [],
+            finalVideoAssets: imported.item?.final_video_assets || []
         });
         const { data: updatedItem, error: itemError } = await supabase.from('prompt_import_items').update({
             ...cleaned,

@@ -93,6 +93,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'function getRelatedPromptCardLayout(index = 0)',
         'function getRelatedPromptCardAspectWeight(index = 0)',
         'function getRelatedPromptTargetColumnIndex(columnHeights = [])',
+        'function getRelatedPromptImagesInVisualOrder(grid)',
         'function renderRelatedPrompts(item = findPromptAnalyticsItem())',
         'function toggleRelatedMode()',
         'function openPromptDetailSideMode(mode)',
@@ -523,6 +524,32 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         /\.related-prompt-column--right\s*\{[\s\S]*padding-top:\s*28px;/.test(promptsStyles),
         true,
         'related prompt right column should be vertically offset for a masonry stagger'
+    );
+    assert.equal(
+        /\.modal-inner\.related-mode \.related-prompt-grid--entering \.related-prompt-card\s*\{[\s\S]*animation:\s*relatedPromptCardEnter 0\.56s cubic-bezier\(0\.19, 0\.92, 0\.22, 1\) both;/.test(promptsStyles),
+        true,
+        'related prompt cards should share the 0.56 second staggered entry animation on desktop and mobile'
+    );
+    assert.equal(
+        promptsSource.includes("getRelatedPromptImagesInVisualOrder(grid)\n        .slice(0, limit)"),
+        true,
+        'related image warmup should alternate visible rows across both masonry columns'
+    );
+    assert.equal(
+        promptsSource.includes('forceDefer: isMobileLayout,\n            animateEntry: true'),
+        true,
+        'desktop related mode should explicitly start the shared card entry animation'
+    );
+    assert.equal(
+        promptsSource.includes('if (!isRelatedPromptRenderReady(item)) {\n        scheduleRelatedPromptsRender(item);\n        return;'),
+        true,
+        'a cold desktop related panel should render through the existing frame scheduler instead of the click frame'
+    );
+    assert.equal(
+        promptsSource.includes('function playRelatedPromptGridEntryAnimation(options = {})')
+            && promptsSource.includes('frameDelay: isPromptModalMobileLayout() ? 1 : 2'),
+        true,
+        'a ready desktop related panel should leave one painted layout frame before starting card entry motion'
     );
     assert.equal(
         /\.related-prompt-card__title\s*\{[\s\S]*opacity:\s*0;[\s\S]*transform:\s*translateY\(6px\);/.test(promptsStyles),

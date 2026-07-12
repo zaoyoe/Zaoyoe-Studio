@@ -69,6 +69,7 @@
             collector_version: '',
             total: 0,
             images: 0,
+            videos: 0,
             with_prompt: 0,
             detail_failures: 0
         }
@@ -157,6 +158,7 @@
         state.summary = summary || state.summary;
         const total = Number(state.summary.total || 0);
         const images = Number(state.summary.images || 0);
+        const videos = Number(state.summary.videos || 0);
         const withPrompt = Number(state.summary.with_prompt || 0);
         const retryableFailures = Number(state.summary.detail_failures || state.detailStatus.failed?.length || 0);
         const failures = retryableFailures + Number(state.summary.finalized_unresolved || 0);
@@ -170,6 +172,7 @@
             summaryEl.innerHTML = [
                 `<span>作品 ${total}</span>`,
                 `<span>图片 ${images}</span>`,
+                `<span>视频 ${videos}</span>`,
                 `<span>待补 ${missing}</span>`,
                 `<span>失败 ${failures}</span>`
             ].join('');
@@ -910,11 +913,12 @@
     function itemNeedsDetailEnrichment(item = {}) {
         if (item.stream_final_status === 'unresolved') return false;
         const imageCount = Array.isArray(item?.image_sources) ? item.image_sources.length : 0;
+        const videoCount = Array.isArray(item?.video_sources) ? item.video_sources.length : 0;
         const expectedImageCount = Number(item?.expected_image_count || 0);
         const hasAuthoritativeImageCount = Boolean(item?.detail_expected_count_authoritative || item?.detail_image_count_authoritative);
         const imageCountIncomplete = hasAuthoritativeImageCount
             ? imageCount < Math.max(1, expectedImageCount)
-            : imageCount <= 1;
+            : (videoCount > 0 ? imageCount < 1 : imageCount <= 1);
         const favoriteCount = Number(item?.favorite_count || 0);
         const favoriteFilter = getFavoriteFilterSettings();
         const requireFavoriteCount = favoriteFilter.minFavorites > 0 || favoriteFilter.maxFavorites > 0;
