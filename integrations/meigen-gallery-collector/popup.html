@@ -55,6 +55,17 @@
             <span>失败 0</span>
         </section>
 
+        <section class="collector-progress" id="automationProgress" hidden>
+            <div class="collector-progress__header">
+                <strong id="automationPhase">等待任务</strong>
+                <span id="automationUpdatedAt">--</span>
+            </div>
+            <div class="collector-progress__track" aria-hidden="true">
+                <span id="automationProgressBar"></span>
+            </div>
+            <p id="automationProgressDetail">尚未开始</p>
+        </section>
+
         <section class="collector-actions">
             <button id="collectBtn" type="button" class="primary">全自动采集并入队</button>
             <button id="scrollBtn" type="button">滚动采集</button>

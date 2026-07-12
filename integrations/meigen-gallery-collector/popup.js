@@ -16,10 +16,13 @@
     const MESSAGE_PAGE_BATCH_STATUS = 'FATHER_KEY_MEIGEN_PAGE_BATCH_STATUS';
     const MESSAGE_DIAGNOSTICS = 'FATHER_KEY_MEIGEN_DIAGNOSTICS';
     const MESSAGE_SESSION_STATE = 'FATHER_KEY_MEIGEN_SESSION_STATE';
+    const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
+    const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
     const DETAIL_STATUS_POLL_MS = 700;
     const SCROLL_STATUS_POLL_MS = 700;
     const PAGE_BATCH_STATUS_POLL_MS = 700;
+    const AUTOMATION_STATUS_POLL_MS = 700;
     const DEFAULT_SCROLL_STEPS = 30;
     const DEFAULT_PAGE_BATCH_PAGES = 5;
 
@@ -31,6 +34,15 @@
         pollTimer: 0,
         scrollPollTimer: 0,
         pageBatchPollTimer: 0,
+        automationPollTimer: 0,
+        automationStatus: {
+            running: false,
+            phase: '',
+            target: 0,
+            completed: false,
+            updatedAt: '',
+            lastError: ''
+        },
         detailStatus: {
             running: false,
             paused: false,
@@ -161,7 +173,7 @@
                 `<span>失败 ${failures}</span>`
             ].join('');
         }
-        const busy = state.automationRunning || state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
+        const busy = state.automationRunning || state.automationStatus.running || state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('collectBtn').disabled = busy;
         getElement('stageBtn').disabled = !total || busy;
         getElement('downloadBtn').disabled = !total || busy;
@@ -174,6 +186,87 @@
         getElement('pauseBtn').disabled = !state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('pauseBtn').textContent = state.detailStatus.paused ? '继续' : '暂停';
         getElement('diagnosticsBtn').disabled = busy;
+    }
+
+    function formatActivityTime(value = '') {
+        const timestamp = Date.parse(value);
+        if (!Number.isFinite(timestamp)) return '等待更新';
+        const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+        if (seconds < 5) return '刚刚更新';
+        if (seconds < 60) return `${seconds} 秒前更新`;
+        return `${Math.floor(seconds / 60)} 分钟前更新`;
+    }
+
+    function applyAutomationStatus(status = {}) {
+        state.automationStatus = {
+            running: Boolean(status.running),
+            phase: String(status.phase || ''),
+            target: Number(status.target || 0),
+            completed: Boolean(status.completed),
+            updatedAt: status.updatedAt || '',
+            lastError: status.lastError || '',
+            discovered: Number(status.discovered || 0),
+            missingDetailCount: Number(status.missingDetailCount || 0),
+            staged: Number(status.staged || 0),
+            duplicates: Number(status.duplicates || 0),
+            rejected: Number(status.rejected || 0),
+            batchId: status.batchId || '',
+            detailProcessed: Number(status.detailProcessed || 0),
+            detailTotal: Number(status.detailTotal || 0),
+            scrollProcessed: Number(status.scrollProcessed || 0),
+            scrollTotal: Number(status.scrollTotal || 0),
+            pageProcessed: Number(status.pageProcessed || 0),
+            pageTotal: Number(status.pageTotal || 0)
+        };
+        if (state.automationStatus.batchId) state.streamedBatchId = state.automationStatus.batchId;
+        updateSummary(state.summary);
+        renderAutomationProgress();
+    }
+
+    function renderAutomationProgress() {
+        const status = state.automationStatus;
+        const container = getElement('automationProgress');
+        if (!container) return;
+        const labels = {
+            discovering: '第 1/3 阶段：发现候选并查库去重',
+            paging: '第 1/3 阶段：继续翻页寻找候选',
+            enriching: '第 2/3 阶段：补抓提示词与详情',
+            completed: '第 3/3 阶段：任务已交给服务端',
+            failed: '任务已中断'
+        };
+        const hasStatus = Boolean(status.phase || status.running || status.completed || status.lastError);
+        container.hidden = !hasStatus;
+        if (!hasStatus) return;
+
+        let current = status.staged;
+        let total = status.target || Math.max(1, status.staged);
+        if (status.phase === 'discovering') {
+            current = status.scrollProcessed;
+            total = status.scrollTotal || total;
+        } else if (status.phase === 'paging') {
+            current = status.pageProcessed;
+            total = status.pageTotal || total;
+        } else if (status.phase === 'enriching') {
+            current = status.detailProcessed;
+            total = status.detailTotal || Math.max(1, status.missingDetailCount);
+        } else if (status.phase === 'completed') {
+            current = total;
+        }
+        const percent = Math.max(0, Math.min(100, Math.round((current / Math.max(1, total)) * 100)));
+        getElement('automationPhase').textContent = labels[status.phase] || '采集任务状态';
+        getElement('automationUpdatedAt').textContent = formatActivityTime(status.updatedAt);
+        getElement('automationProgressBar').style.width = `${percent}%`;
+        getElement('automationProgressDetail').textContent = status.lastError
+            ? `错误：${status.lastError}`
+            : `发现 ${status.discovered} · 待补 ${status.missingDetailCount} · 已入队 ${status.staged}/${status.target || '--'} · 重复 ${status.duplicates} · 未接收 ${status.rejected}`;
+
+        if (status.running) {
+            setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);
+        } else if (status.phase === 'completed') {
+            setStatus(`全自动任务完成：实际入队 ${status.staged} 条，服务端继续处理；关闭插件不影响后台任务`);
+        } else if (status.phase === 'failed') {
+            setStatus(`任务已中断：${status.lastError || '请点击全自动采集重试'}`);
+        }
     }
 
     async function getActiveTab() {
@@ -550,16 +643,18 @@
         if (session.detailStatus) applyDetailStatus(session.detailStatus);
         if (session.scrollStatus) applyScrollStatus(session.scrollStatus);
         if (session.pageBatchStatus) applyPageBatchStatus(session.pageBatchStatus);
+        if (session.automationStatus) applyAutomationStatus(session.automationStatus);
     }
 
     function resumeStatusPollingForRunningJobs() {
+        if (state.automationStatus.running) startAutomationPolling();
         if (state.detailStatus.running) startDetailPolling();
         if (state.scrollStatus.running) startScrollPolling();
         if (state.pageBatchStatus.running) startPageBatchPolling();
     }
 
     function hasRunningJob() {
-        return state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
+        return state.automationStatus.running || state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
     }
 
     async function restoreCollectorSession() {
@@ -592,12 +687,53 @@
             }
 
             const total = Number(response.summary?.total || state.summary.total || 0);
-            setStatus(total ? `已恢复上次采集结果：${total} 条` : '可以采集当前 Meigen 页面');
+            const missing = Array.isArray(state.payload?.items)
+                ? state.payload.items.filter((item) => itemNeedsDetailEnrichment(item)).length
+                : Math.max(0, total - Number(state.summary.with_prompt || 0));
+            setStatus(missing
+                ? `上次任务未完成：${total} 条中还有 ${missing} 条待补；点击“全自动采集并入队”可继续查重补足`
+                : (total ? `已恢复上次采集结果：${total} 条` : '可以采集当前 Meigen 页面'));
             return true;
         } catch (_) {
             setStatus('请刷新 Meigen 页面后再采集');
             return false;
         }
+    }
+
+    async function refreshAutomationStatus() {
+        const tab = await getActiveTab();
+        if (!tab || !isMeigenTab(tab)) return null;
+        try {
+            const response = await sendTabMessage(tab.id, { type: MESSAGE_AUTOMATION_STATUS });
+            if (!response?.ok) return null;
+            if (response.summary) updateSummary({ ...state.summary, ...response.summary });
+            if (response.detailStatus) applyDetailStatus(response.detailStatus);
+            if (response.scrollStatus) applyScrollStatus(response.scrollStatus);
+            if (response.pageBatchStatus) applyPageBatchStatus(response.pageBatchStatus);
+            applyAutomationStatus(response.automationStatus || {});
+            return response.automationStatus || null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function startAutomationPolling() {
+        stopAutomationPolling();
+        let observedRunning = Boolean(state.automationStatus.running);
+        const poll = () => {
+            void refreshAutomationStatus().then((status) => {
+                if (status?.running) observedRunning = true;
+                if (status && !status.running && observedRunning) stopAutomationPolling();
+            });
+        };
+        state.automationPollTimer = setInterval(poll, AUTOMATION_STATUS_POLL_MS);
+        poll();
+    }
+
+    function stopAutomationPolling() {
+        if (!state.automationPollTimer) return;
+        clearInterval(state.automationPollTimer);
+        state.automationPollTimer = 0;
     }
 
     async function toggleDetailPause() {
@@ -873,28 +1009,25 @@
         state.streamedBatchId = '';
         state.streamStats = null;
         updateSummary();
-        setStatus(`全自动任务启动，目标实际入队 ${getMaxItemsSetting()} 条...`);
+        setStatus(`正在启动页面内全自动任务，目标实际入队 ${getMaxItemsSetting()} 条...`);
         try {
-            const payload = await collectCurrentPageWithAutoEnrich({ preflightDuplicates: true });
-            if (!payload?.items?.length) {
-                setStatus('没有采集到可送入队列的作品');
+            const tab = await getMeigenTabReady();
+            if (!tab) return;
+            const response = await sendTabMessage(tab.id, {
+                type: MESSAGE_AUTOMATION_START,
+                adminBaseUrl: getElement('adminBaseUrl').value,
+                site: getElement('siteSelect').value,
+                defaultStatus: getElement('statusSelect').value,
+                maxItems: getMaxItemsSetting(),
+                ...getFavoriteFilterSettings()
+            });
+            if (!response?.ok) {
+                setStatus(response?.message || '全自动采集任务启动失败');
+                if (response?.automationStatus) applyAutomationStatus(response.automationStatus);
                 return;
             }
-            setStatus(`采集完成 ${payload.items.length} 条，正在自动送入队列...`);
-            if (state.streamedBatchId) {
-                const checked = Number(state.streamStats?.checkedCandidateCount || payload.items.length);
-                const staged = Number(state.streamStats?.stagedCount || 0);
-                const duplicates = Number(state.streamStats?.skippedDuplicateCount || 0);
-                const rejected = Number(state.streamStats?.rejectedCount || 0);
-                setStatus(
-                    `批次 ${state.streamedBatchId.slice(0, 8)}：检查 ${checked} 条候选，实际入队 ${staged} 条`
-                    + `${duplicates ? `，仓库重复跳过 ${duplicates} 条` : ''}`
-                    + `${rejected ? `，未接收 ${rejected} 条` : ''}`
-                    + '；服务端将继续处理'
-                );
-            } else {
-                await stagePayload();
-            }
+            applyAutomationStatus(response.automationStatus || {});
+            startAutomationPolling();
         } catch (error) {
             setStatus(error?.message || '全自动采集任务失败');
         } finally {
