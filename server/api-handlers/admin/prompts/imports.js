@@ -54,6 +54,7 @@ const DEFAULT_MAX_IMAGE_COUNT = 12;
 const MAX_IMAGE_COUNT = 24;
 const DEFAULT_IMAGE_TIMEOUT_MS = 20000;
 const DEFAULT_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const PERSISTENT_FAILURE_BATCH_THRESHOLD = 2;
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -848,6 +849,37 @@ async function findExistingPromptDuplicates(supabase, rows = []) {
     };
 }
 
+function getPersistentFailureSourceItemIds(historyRows = [], threshold = PERSISTENT_FAILURE_BATCH_THRESHOLD) {
+    const batchesBySourceItemId = new Map();
+    (Array.isArray(historyRows) ? historyRows : []).forEach((row) => {
+        const sourceItemId = normalizeText(row?.source_item_id, 220);
+        const batchId = normalizeText(row?.batch_id, 120);
+        if (!sourceItemId || !batchId || String(row?.status || '') !== 'cleaned' || row?.final_prompt_id) return;
+        if (!batchesBySourceItemId.has(sourceItemId)) batchesBySourceItemId.set(sourceItemId, new Set());
+        batchesBySourceItemId.get(sourceItemId).add(batchId);
+    });
+    return [...batchesBySourceItemId.entries()]
+        .filter(([, batchIds]) => batchIds.size >= threshold)
+        .map(([sourceItemId]) => sourceItemId);
+}
+
+async function findPersistentFailureSourceItemIds(supabase, rows = [], { excludeBatchId = '' } = {}) {
+    const sourceItemIds = [...new Set((Array.isArray(rows) ? rows : [])
+        .map((row) => normalizeText(row?.source_item_id, 220))
+        .filter(Boolean))];
+    if (!sourceItemIds.length) return [];
+    let request = supabase
+        .from('prompt_import_items')
+        .select('batch_id, source_item_id, status, final_prompt_id')
+        .in('source_item_id', sourceItemIds)
+        .eq('status', 'cleaned')
+        .is('final_prompt_id', null);
+    if (excludeBatchId) request = request.neq('batch_id', excludeBatchId);
+    const { data, error } = await request;
+    if (error) throw error;
+    return getPersistentFailureSourceItemIds(data || []);
+}
+
 function normalizePromptImageAssetsFromRow(prompt = {}) {
     if (Array.isArray(prompt.image_assets) && prompt.image_assets.length) {
         return prompt.image_assets;
@@ -905,6 +937,7 @@ async function stageImportItems(supabase, user, body) {
     const seenPromptHashes = new Set();
     const duplicateIndexes = new Set();
     const rejectedIdentityIndexes = new Set();
+    const persistentFailureIndexes = new Set();
     const rows = rawItems.map((rawItem, index) => {
         const row = normalizeImportItemPayload(rawItem, settings);
         const identityConflictReason = getMeigenImportIdentityConflictReason(rawItem);
@@ -958,7 +991,20 @@ async function stageImportItems(supabase, user, body) {
         }
     });
 
-    let rowsToInsert = rows.filter((_row, index) => !duplicateIndexes.has(index) && !rejectedIdentityIndexes.has(index));
+    const persistentFailureSourceItemIds = new Set(await findPersistentFailureSourceItemIds(
+        supabase,
+        rows,
+        { excludeBatchId: batch.id }
+    ));
+    rows.forEach((row, index) => {
+        if (persistentFailureSourceItemIds.has(row.source_item_id)) persistentFailureIndexes.add(index);
+    });
+
+    let rowsToInsert = rows.filter((_row, index) => (
+        !duplicateIndexes.has(index)
+        && !rejectedIdentityIndexes.has(index)
+        && !persistentFailureIndexes.has(index)
+    ));
     let data = [];
     if (batchId && rowsToInsert.length) {
         const sourceItemIds = rowsToInsert.map((row) => row.source_item_id).filter(Boolean);
@@ -1043,6 +1089,11 @@ async function stageImportItems(supabase, user, body) {
         stagedCount: data.length,
         skippedDuplicateCount: duplicateIndexes.size,
         rejectedIdentityCount: rejectedIdentityIndexes.size,
+        persistentFailureCount: persistentFailureIndexes.size,
+        persistentFailureSourceItemIds: rawItems
+            .filter((_item, index) => persistentFailureIndexes.has(index))
+            .map((item) => normalizeText(item.source_item_id || item.sourceItemId || '', 220))
+            .filter(Boolean),
         rejectedIdentitySourceItemIds: rawItems
             .filter((_item, index) => rejectedIdentityIndexes.has(index))
             .map((item) => normalizeText(item.source_item_id || item.sourceItemId || '', 220))
@@ -1061,6 +1112,7 @@ async function checkImportItemDuplicates(supabase, body) {
     }
 
     const duplicates = await findExistingPromptDuplicates(supabase, rows);
+    const persistentFailureSourceItemIds = await findPersistentFailureSourceItemIds(supabase, rows);
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const rejectedIdentitySourceItemIds = rawItems
         .filter((item) => getMeigenImportIdentityConflictReason(item))
@@ -1079,6 +1131,8 @@ async function checkImportItemDuplicates(supabase, body) {
         checkedCount: rows.length,
         duplicateCount: duplicateSourceItemIds.length,
         duplicateSourceItemIds,
+        persistentFailureCount: persistentFailureSourceItemIds.length,
+        persistentFailureSourceItemIds,
         rejectedIdentityCount: rejectedIdentitySourceItemIds.length,
         rejectedIdentitySourceItemIds
     };
@@ -1688,6 +1742,8 @@ module.exports._private = {
     buildImportStats,
     buildPromptImportImageKey,
     findExistingPromptDuplicates,
+    getPersistentFailureSourceItemIds,
+    findPersistentFailureSourceItemIds,
     checkImportItemDuplicates,
     getRejectedImportCleanupIds,
     getPendingDetailCleanupIds,

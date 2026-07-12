@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.30');
+    assert.equal(manifest.version, '0.1.31');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -95,6 +95,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /phase: 'incomplete'/);
     assert.match(content, /restoreStreamBatch\(message\)/);
     assert.match(content, /cleanupPendingStreamItems\(message, payload\)/);
+    assert.match(content, /stream_final_status:\s*'unresolved'/);
+    assert.match(content, /item\.stream_final_status === 'unresolved'/);
+    assert.match(content, /logDiagnostic\('scroll-initial-scan'/);
+    assert.match(content, /logDiagnostic\('scroll-scan'/);
     assert.match(background, /FATHER_KEY_LOAD_IMPORT_BATCH/);
     assert.match(background, /cleanup_pending_detail_items/);
     assert.match(popup, /state\.automationStatus\.pendingDetail === 0/);
@@ -154,9 +158,11 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /message\?\.type === MESSAGE_AUTOMATION_STATUS/);
     assert.match(popup, /streamToQueue:\s*true/);
     assert.match(popup, /state\.streamedBatchId/);
-    assert.match(popup, /服务端已接收 \$\{status\.staged\}\/\$\{status\.target/);
+    assert.match(popup, /服务端接收 \$\{status\.staged\}\/\$\{status\.target/);
     assert.match(popup, /可处理 \$\{status\.processable\}/);
-    assert.match(popup, /重复 \$\{status\.duplicates\}/);
+    assert.match(popup, /仓库重复 \$\{status\.repositoryDuplicates\}/);
+    assert.match(popup, /历史顽固 \$\{status\.persistentFailures\}/);
+    assert.match(popup, /getElement\('diagnosticsBtn'\)\.disabled = false/);
     assert.match(popup, /关闭插件不影响后台任务/);
     assert.match(html, /id="automationProgress"/);
     assert.match(html, /id="automationProgressBar"/);
@@ -223,7 +229,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.76'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-12\.77'/);
     assert.match(collector, /ACTION_PROMPT_LINE_PATTERN/);
     assert.match(collector, /MIN_ARTWORK_AREA/);
     assert.match(collector, /function cleanPromptText/);

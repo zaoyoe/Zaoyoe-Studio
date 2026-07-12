@@ -158,7 +158,8 @@
         const total = Number(state.summary.total || 0);
         const images = Number(state.summary.images || 0);
         const withPrompt = Number(state.summary.with_prompt || 0);
-        const failures = Number(state.summary.detail_failures || state.detailStatus.failed?.length || 0);
+        const retryableFailures = Number(state.summary.detail_failures || state.detailStatus.failed?.length || 0);
+        const failures = retryableFailures + Number(state.summary.finalized_unresolved || 0);
         const missing = Array.isArray(state.payload?.items)
             ? state.payload.items.filter((item) => itemNeedsDetailEnrichment(item)).length
             : Math.max(0, total - withPrompt);
@@ -177,7 +178,7 @@
         getElement('collectBtn').disabled = busy;
         getElement('stageBtn').disabled = !total || busy;
         getElement('downloadBtn').disabled = !total || busy;
-        getElement('retryBtn').disabled = !failures || busy;
+        getElement('retryBtn').disabled = !retryableFailures || busy;
         getElement('enrichBtn').disabled = state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('scrollBtn').disabled = busy;
         getElement('stopScrollBtn').disabled = !state.scrollStatus.running;
@@ -185,7 +186,7 @@
         getElement('stopPageBatchBtn').disabled = !state.pageBatchStatus.running;
         getElement('pauseBtn').disabled = !state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('pauseBtn').textContent = state.detailStatus.paused ? '继续' : '暂停';
-        getElement('diagnosticsBtn').disabled = busy;
+        getElement('diagnosticsBtn').disabled = false;
     }
 
     function formatActivityTime(value = '') {
@@ -209,6 +210,11 @@
             missingDetailCount: Number(status.missingDetailCount || 0),
             staged: Number(status.staged || 0),
             duplicates: Number(status.duplicates || 0),
+            checkedCandidates: Number(status.checkedCandidates || 0),
+            repositoryDuplicates: Number(status.repositoryDuplicates || 0),
+            stageDuplicates: Number(status.stageDuplicates || 0),
+            identityRejected: Number(status.identityRejected || 0),
+            persistentFailures: Number(status.persistentFailures || 0),
             rejected: Number(status.rejected || 0),
             processable: Number(status.processable || 0),
             pendingDetail: Number(status.pendingDetail || 0),
@@ -265,7 +271,7 @@
         getElement('automationProgressBar').style.width = `${percent}%`;
         getElement('automationProgressDetail').textContent = status.lastError
             ? `错误：${status.lastError}`
-            : `发现 ${status.discovered} · 服务端已接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 重复 ${status.duplicates} · 未接收 ${status.rejected}`;
+            : `检查 ${status.checkedCandidates} · 发现 ${status.discovered} · 仓库重复 ${status.repositoryDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 历史顽固 ${status.persistentFailures} · 服务端接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 未接收 ${status.rejected}`;
 
         if (status.running) {
             setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);
@@ -902,6 +908,7 @@
     }
 
     function itemNeedsDetailEnrichment(item = {}) {
+        if (item.stream_final_status === 'unresolved') return false;
         const imageCount = Array.isArray(item?.image_sources) ? item.image_sources.length : 0;
         const expectedImageCount = Number(item?.expected_image_count || 0);
         const hasAuthoritativeImageCount = Boolean(item?.detail_expected_count_authoritative || item?.detail_image_count_authoritative);
