@@ -16997,6 +16997,7 @@ const galleryImportState = {
     batch: null,
     batches: [],
     selectedBatchId: '',
+    batchSelectionLocked: false,
     items: [],
     running: false,
     uploadInFlight: false,
@@ -17012,8 +17013,10 @@ const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-colle
 const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-12.68';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
+const GALLERY_IMPORT_DEFAULT_PARALLELISM = 8;
+const GALLERY_IMPORT_PARALLELISM_STORAGE_KEY = 'fatherKey.galleryImport.parallelism';
 const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
-const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 6;
+const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 8;
 const GALLERY_IMPORT_ADAPTIVE_MIN_PARALLELISM = 1;
 const GALLERY_IMPORT_ADAPTIVE_LAUNCH_GAP_MS = 500;
 const GALLERY_IMPORT_ADAPTIVE_COOLDOWN_MS = 6000;
@@ -17261,9 +17264,9 @@ function getGalleryImportSettings() {
         max_images_per_item: normalizeGalleryImportNumber(document.getElementById('galleryImportMaxImages')?.value, 12, 24) || 12,
         parallelism: normalizeGalleryImportNumber(
             document.getElementById('galleryImportParallelism')?.value,
-            2,
+            GALLERY_IMPORT_DEFAULT_PARALLELISM,
             GALLERY_IMPORT_MAX_PARALLELISM
-        ) || 2,
+        ) || GALLERY_IMPORT_DEFAULT_PARALLELISM,
         default_status: 'review',
         duplicate_policy: 'skip',
         auto_cleanup: true,
@@ -17594,9 +17597,9 @@ function selectGalleryImportBatch(batches = [], options = {}) {
     const rows = Array.isArray(batches) ? batches : [];
     const preferredId = String(options.preferredBatchId || '').trim();
     const pendingBatch = rows.find((batch) => getGalleryImportBatchStats(batch).pending > 0);
-    if (options.preferPending && pendingBatch) return pendingBatch;
     const preferred = rows.find((batch) => String(batch?.id || '') === preferredId);
     if (preferred) return preferred;
+    if (options.preferPending && pendingBatch) return pendingBatch;
     const current = rows.find((batch) => (
         String(batch?.id || '') === String(galleryImportState.selectedBatchId || '')
         && getGalleryImportBatchStats(batch).total > 0
@@ -17901,6 +17904,23 @@ async function skipGalleryImportItems(items = [], reason = '信息不完整，�
     });
     (payload.items || []).forEach(upsertGalleryImportItem);
     if (payload.batch) galleryImportState.batch = payload.batch;
+    return payload;
+}
+
+async function autoCleanupRejectedGalleryImportItems(batchId = galleryImportState.selectedBatchId) {
+    const id = String(batchId || '').trim();
+    if (!id) return { cleanedCount: 0 };
+    const payload = await mutateGalleryImport('cleanup_rejected_items', {
+        site: window.AdminSiteFilter?.getSiteFilter?.() || 'cn',
+        batch_id: id
+    });
+    const cleanedIds = new Set((payload.items || []).map((item) => String(item.id || '')).filter(Boolean));
+    if (cleanedIds.size) {
+        galleryImportState.items = galleryImportState.items.filter((item) => !cleanedIds.has(String(item.id || '')));
+        if (payload.batch) galleryImportState.batch = payload.batch;
+        renderGalleryImportQueue(galleryImportState.items);
+        renderGalleryImportBatchTracker();
+    }
     return payload;
 }
 
@@ -18242,6 +18262,7 @@ async function stageGalleryImportItems(items = []) {
     galleryImportState.batch = payload.batch || galleryImportState.batch;
     if (payload.batch) {
         galleryImportState.selectedBatchId = payload.batch.id;
+        galleryImportState.batchSelectionLocked = false;
         upsertGalleryImportBatch(payload.batch);
         renderGalleryImportBatchTracker();
     }
@@ -18288,8 +18309,10 @@ async function loadLatestGalleryImportBatch(options = {}) {
     const payload = await fetchGalleryImportApi({ limit: 30, site });
     galleryImportState.batches = Array.isArray(payload.batches) ? payload.batches : [];
     const batch = selectGalleryImportBatch(galleryImportState.batches, {
-        preferredBatchId: options.preferredBatchId || galleryImportState.selectedBatchId,
-        preferPending: options.preferPending === true
+        preferredBatchId: galleryImportState.batchSelectionLocked
+            ? galleryImportState.selectedBatchId
+            : (options.preferredBatchId || galleryImportState.selectedBatchId),
+        preferPending: options.preferPending === true && !galleryImportState.batchSelectionLocked
     });
     if (!batch) {
         galleryImportState.batch = null;
@@ -18360,8 +18383,15 @@ async function runGalleryImportAutoDetectionCycle() {
         try {
             await loadLatestGalleryImportBatch({ silent: true, preferPending: true });
             const hasNewQueueItems = galleryImportState.items.some(isGalleryImportItemAutoUploadable);
-            const batchStats = getGalleryImportBatchStats(galleryImportState.batch);
+            let batchStats = getGalleryImportBatchStats(galleryImportState.batch);
             if (!hasNewQueueItems) {
+                const batchId = String(galleryImportState.batch?.id || '').trim();
+                const cleanupPayload = await autoCleanupRejectedGalleryImportItems(batchId);
+                if (cleanupPayload.cleanedCount && batchId) {
+                    await loadGalleryImportBatchById(batchId, { silent: true });
+                    batchStats = getGalleryImportBatchStats(galleryImportState.batch);
+                    setGalleryImportRunStatus(`批次 ${batchId.slice(0, 8)} 已自动清理 ${cleanupPayload.cleanedCount} 条不完整或不合规卡片`);
+                }
                 if (batchStats.failed || batchStats.needsReview) {
                     setGalleryImportRunStatus(
                         `批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)} 需要处理：失败 ${batchStats.failed}，需复核 ${batchStats.needsReview}`
@@ -18591,8 +18621,12 @@ async function runGalleryImportUploadQueue(options = {}) {
     }
 
     if (!readyItems.length) {
+        const cleanupPayload = await autoCleanupRejectedGalleryImportItems(galleryImportState.selectedBatchId);
         setGalleryImportRunStatus(`完成：跳过 ${skippedItems.length} 条，暂无可发布内容`);
-        showAdminStudioToast('没有可发布的完整内容；必填信息缺失或重复的条目已跳过', 'warning');
+        showAdminStudioToast(
+            `没有可发布的完整内容；已自动清理 ${cleanupPayload.cleanedCount || skippedItems.length} 条不完整或重复卡片`,
+            'warning'
+        );
         return;
     }
 
@@ -18601,7 +18635,7 @@ async function runGalleryImportUploadQueue(options = {}) {
     const settings = getGalleryImportSettings();
     const parallelismCeiling = Math.max(
         1,
-        Math.min(Number(settings.parallelism || 2), readyItems.length, GALLERY_IMPORT_MAX_PARALLELISM)
+        Math.min(Number(settings.parallelism || GALLERY_IMPORT_DEFAULT_PARALLELISM), readyItems.length, GALLERY_IMPORT_MAX_PARALLELISM)
     );
     let adaptiveParallelism = Math.min(
         parallelismCeiling,
@@ -18845,6 +18879,15 @@ async function runGalleryImportUploadQueue(options = {}) {
     );
     markHomepagePromptPoolUpdated();
     await loadAdminPrompts({ force: true, replaceExisting: true });
+    try {
+        const cleanupPayload = await autoCleanupRejectedGalleryImportItems(latestBatch?.id || galleryImportState.selectedBatchId);
+        if (cleanupPayload.cleanedCount) {
+            showAdminStudioToast(`任务结束，已自动清理 ${cleanupPayload.cleanedCount} 条不完整或不合规卡片`, 'info');
+        }
+    } catch (cleanupError) {
+        console.warn('[GalleryImport] Automatic rejected-item cleanup failed:', cleanupError);
+        showAdminStudioToast('任务已完成，但不完整卡片自动清理失败，可稍后刷新处理状态重试', 'warning');
+    }
 }
 
 async function startGalleryImportTask() {
@@ -18978,6 +19021,34 @@ async function pasteGalleryImportClipboard() {
 function initGalleryImportAssistant() {
     initCustomDropdown?.();
 
+    let savedParallelism = GALLERY_IMPORT_DEFAULT_PARALLELISM;
+    try {
+        savedParallelism = normalizeGalleryImportNumber(
+            localStorage.getItem(GALLERY_IMPORT_PARALLELISM_STORAGE_KEY),
+            GALLERY_IMPORT_DEFAULT_PARALLELISM,
+            GALLERY_IMPORT_MAX_PARALLELISM
+        ) || GALLERY_IMPORT_DEFAULT_PARALLELISM;
+    } catch (_) {
+        savedParallelism = GALLERY_IMPORT_DEFAULT_PARALLELISM;
+    }
+    setCustomDropdownValue('galleryImportParallelismDropdown', String(savedParallelism));
+    const parallelismInput = document.getElementById('galleryImportParallelism');
+    if (parallelismInput && parallelismInput.dataset.galleryImportPersistBound !== '1') {
+        parallelismInput.dataset.galleryImportPersistBound = '1';
+        parallelismInput.addEventListener('change', () => {
+            const value = normalizeGalleryImportNumber(
+                parallelismInput.value,
+                GALLERY_IMPORT_DEFAULT_PARALLELISM,
+                GALLERY_IMPORT_MAX_PARALLELISM
+            ) || GALLERY_IMPORT_DEFAULT_PARALLELISM;
+            try {
+                localStorage.setItem(GALLERY_IMPORT_PARALLELISM_STORAGE_KEY, String(value));
+            } catch (_) {
+                // Local storage may be unavailable in hardened browser contexts.
+            }
+        });
+    }
+
     const fileInput = document.getElementById('galleryImportFileInput');
     if (fileInput && fileInput.dataset.bound !== '1') {
         fileInput.dataset.bound = '1';
@@ -19012,6 +19083,7 @@ function initGalleryImportAssistant() {
             const batchId = String(batchSelect.value || '').trim();
             if (!batchId) return;
             galleryImportState.selectedBatchId = batchId;
+            galleryImportState.batchSelectionLocked = true;
             void loadGalleryImportBatchById(batchId).catch((error) => {
                 setGalleryImportRunStatus('批次读取失败');
                 showAdminStudioToast(error.message || '批次读取失败', 'error');
