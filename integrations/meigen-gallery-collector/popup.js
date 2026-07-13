@@ -17,6 +17,7 @@
     const MESSAGE_DIAGNOSTICS = 'FATHER_KEY_MEIGEN_DIAGNOSTICS';
     const MESSAGE_SESSION_STATE = 'FATHER_KEY_MEIGEN_SESSION_STATE';
     const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
+    const MESSAGE_AUTOMATION_STOP = 'FATHER_KEY_MEIGEN_AUTOMATION_STOP';
     const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
     const DETAIL_STATUS_POLL_MS = 700;
@@ -37,6 +38,7 @@
         automationPollTimer: 0,
         automationStatus: {
             running: false,
+            stopRequested: false,
             phase: '',
             target: 0,
             completed: false,
@@ -172,7 +174,7 @@
             summaryEl.innerHTML = [
                 `<span>作品 ${total}</span>`,
                 `<span>图片 ${images}</span>`,
-                `<span>视频 ${videos}</span>`,
+                `<span>视频源 ${videos}</span>`,
                 `<span>待补 ${missing}</span>`,
                 `<span>失败 ${failures}</span>`
             ].join('');
@@ -184,7 +186,8 @@
         getElement('retryBtn').disabled = !retryableFailures || busy;
         getElement('enrichBtn').disabled = state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('scrollBtn').disabled = busy;
-        getElement('stopScrollBtn').disabled = !state.scrollStatus.running;
+        getElement('stopScrollBtn').disabled = !state.scrollStatus.running && !state.automationStatus.running;
+        getElement('stopScrollBtn').textContent = state.automationStatus.running ? '停止任务' : '停止滚动';
         getElement('pageBatchBtn').disabled = busy;
         getElement('stopPageBatchBtn').disabled = !state.pageBatchStatus.running;
         getElement('pauseBtn').disabled = !state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
@@ -204,6 +207,7 @@
     function applyAutomationStatus(status = {}) {
         state.automationStatus = {
             running: Boolean(status.running),
+            stopRequested: Boolean(status.stopRequested),
             phase: String(status.phase || ''),
             target: Number(status.target || 0),
             completed: Boolean(status.completed),
@@ -245,7 +249,8 @@
             enriching: '第 2/3 阶段：补抓提示词与详情',
             completed: '第 3/3 阶段：任务已交给服务端',
             incomplete: '当前来源已采集完，目标尚未达到',
-            failed: '任务已中断'
+            failed: '任务已中断',
+            stopped: '任务已停止'
         };
         const hasStatus = Boolean(status.phase || status.running || status.completed || status.lastError);
         container.hidden = !hasStatus;
@@ -274,7 +279,7 @@
         getElement('automationProgressBar').style.width = `${percent}%`;
         getElement('automationProgressDetail').textContent = status.lastError
             ? `错误：${status.lastError}`
-            : `检查 ${status.checkedCandidates} · 发现 ${status.discovered} · 仓库重复 ${status.repositoryDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 历史顽固 ${status.persistentFailures} · 服务端接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 未接收 ${status.rejected}`;
+            : `检查作品候选 ${status.checkedCandidates} · 当前作品 ${status.discovered} · 仓库重复 ${status.repositoryDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 历史顽固 ${status.persistentFailures} · 服务端接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 未接收 ${status.rejected}`;
 
         if (status.running) {
             setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);
@@ -284,6 +289,8 @@
             setStatus(`任务已中断：${status.lastError || '请点击全自动采集重试'}`);
         } else if (status.phase === 'incomplete') {
             setStatus(status.lastError || '当前来源已耗尽，请切换分类后继续');
+        } else if (status.phase === 'stopped') {
+            setStatus('全自动采集任务已停止');
         }
     }
 
@@ -812,13 +819,16 @@
         return response.payload;
     }
 
-    async function stopScrollCollect() {
+    async function stopActiveCollection() {
         const tab = await getMeigenTabReady();
         if (!tab) return;
-        const response = await sendTabMessage(tab.id, { type: MESSAGE_SCROLL_STOP });
+        const response = state.automationStatus.running
+            ? await sendTabMessage(tab.id, { type: MESSAGE_AUTOMATION_STOP })
+            : await sendTabMessage(tab.id, { type: MESSAGE_SCROLL_STOP });
         if (response?.ok) {
-            applyScrollStatus(response.status);
-            setStatus('正在停止滚动采集');
+            if (response.automationStatus) applyAutomationStatus(response.automationStatus);
+            if (response.status) applyScrollStatus(response.status);
+            setStatus(state.automationStatus.running ? '正在停止全自动任务' : '正在停止滚动采集');
         }
     }
 
@@ -1086,7 +1096,7 @@
             void scrollCollectCurrentPage();
         });
         getElement('stopScrollBtn').addEventListener('click', () => {
-            void stopScrollCollect();
+            void stopActiveCollection();
         });
         getElement('pageBatchBtn').addEventListener('click', () => {
             void pageBatchCollectCurrentPage();

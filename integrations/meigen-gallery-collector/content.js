@@ -16,6 +16,7 @@
     const MESSAGE_DIAGNOSTICS = 'FATHER_KEY_MEIGEN_DIAGNOSTICS';
     const MESSAGE_SESSION_STATE = 'FATHER_KEY_MEIGEN_SESSION_STATE';
     const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
+    const MESSAGE_AUTOMATION_STOP = 'FATHER_KEY_MEIGEN_AUTOMATION_STOP';
     const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
     const MESSAGE_LOAD_BATCH = 'FATHER_KEY_LOAD_IMPORT_BATCH';
@@ -30,10 +31,12 @@
     const HOVER_REVEAL_DELAY_MS = 80;
     const SCROLL_COLLECT_DELAY_MS = 1200;
     const SCROLL_BATCH_SETTLE_POLL_MS = 350;
-    const SCROLL_BATCH_SETTLE_LIMIT = 8;
+    const SCROLL_BATCH_SETTLE_LIMIT = 12;
+    const SCROLL_MEDIA_MIN_WAIT_ATTEMPTS = 6;
     const SCROLL_COLLECT_MAX_STEPS = 30;
     const SCROLL_COLLECT_STABLE_LIMIT = 8;
     const AUTOMATION_SCROLL_MAX_STEPS = 1000;
+    const AUTOMATION_STAGNANT_LIMIT = 3;
     const PAGE_BATCH_DELAY_MS = 1500;
     const PAGE_BATCH_MAX_PAGES = 5;
     const PROMPT_COPY_CLICK_DELAY_MS = 650;
@@ -102,6 +105,7 @@
     };
     const automationJob = {
         running: false,
+        stopRequested: false,
         phase: '',
         target: 0,
         completed: false,
@@ -115,6 +119,7 @@
         sentRevisions: new Map(),
         acceptedKeys: new Set(),
         checkedKeys: new Set(),
+        checkedRevisions: new Map(),
         promise: Promise.resolve(),
         attemptedCount: 0,
         stagedCount: 0,
@@ -181,13 +186,21 @@
         return right.some((value, index) => value > (left[index] || 0));
     }
 
-    async function filterRepositoryDuplicates(items = [], message = {}, checkedKeys = new Set()) {
+    async function filterRepositoryDuplicates(
+        items = [],
+        message = {},
+        checkedKeys = new Set(),
+        checkedRevisions = new Map()
+    ) {
         let identityConflictCount = 0;
         const identityConflictSourceItemIds = [];
         const candidates = (Array.isArray(items) ? items : []).filter((item) => {
             const key = getImportIdentityKey(item);
-            if (!key || checkedKeys.has(key)) return false;
+            if (!key) return false;
+            const revision = getStreamItemRevision(item);
+            if (checkedKeys.has(key) && !isStreamItemRevisionImproved(checkedRevisions.get(key), revision)) return false;
             checkedKeys.add(key);
+            checkedRevisions.set(key, revision);
             if (getMeigenIdentityConflictReason(item)) {
                 identityConflictCount += 1;
                 identityConflictSourceItemIds.push(String(item.source_item_id || ''));
@@ -255,6 +268,7 @@
         streamStageState.sentRevisions = new Map();
         streamStageState.acceptedKeys = new Set();
         streamStageState.checkedKeys = new Set();
+        streamStageState.checkedRevisions = new Map();
         streamStageState.promise = Promise.resolve();
         streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
@@ -342,11 +356,15 @@
     }
 
     async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20, options = {}) {
+        const candidates = Array.isArray(items) ? items : [];
+        const revisionItems = candidates.filter((item) => streamStageState.acceptedKeys.has(getStreamItemKey(item)));
         const remaining = Math.max(0, maxItems - getStreamActiveCount());
-        if (!remaining) return;
-        const stagedItems = (Array.isArray(items) ? items : [])
-            .slice(0, remaining)
+        const newItems = candidates
+            .filter((item) => !streamStageState.acceptedKeys.has(getStreamItemKey(item)))
+            .slice(0, remaining);
+        const stagedItems = [...revisionItems, ...newItems]
             .map((item) => options.pendingDetail === true ? { ...item, stream_pending_detail: true } : item);
+        if (!stagedItems.length) return;
         queueStreamStage(stagedItems, message, { flush: true });
         await streamStageState.promise;
     }
@@ -368,6 +386,7 @@
             if (!key) return;
             streamStageState.acceptedKeys.add(key);
             streamStageState.checkedKeys.add(key);
+            streamStageState.checkedRevisions.set(key, getStreamItemRevision(item));
         });
         streamStageState.stagedCount = items.length;
         syncStreamBatchStats(result.batch);
@@ -387,6 +406,7 @@
 
     async function cleanupPendingStreamItems(message = {}, payload = null) {
         if (!streamStageState.batchId || !streamStageState.pendingDetailCount) return payload;
+        const previousPendingDetailCount = streamStageState.pendingDetailCount;
         const response = await chrome.runtime.sendMessage({
             type: MESSAGE_CLEANUP_PENDING,
             batchId: streamStageState.batchId,
@@ -403,7 +423,11 @@
             streamStageState.sentRevisions.delete(key);
         });
         streamStageState.stagedCount = streamStageState.acceptedKeys.size;
-        syncStreamBatchStats(result.batch);
+        if (result.batch) {
+            syncStreamBatchStats(result.batch);
+        } else {
+            streamStageState.pendingDetailCount = Math.max(0, previousPendingDetailCount - cleanedKeys.size);
+        }
         const nextPayload = payload && cleanedKeys.size
             ? {
                 ...payload,
@@ -577,6 +601,7 @@
             .filter((item) => needsInteractiveDetail(item, { requireFavoriteCount: false })).length;
         return {
             running: automationJob.running,
+            stopRequested: automationJob.stopRequested,
             phase: automationJob.phase,
             target: automationJob.target,
             completed: automationJob.completed,
@@ -1252,6 +1277,14 @@
             || collector.buildPayload();
     }
 
+    function getContinuablePayload(payload = {}) {
+        return {
+            ...payload,
+            items: (Array.isArray(payload?.items) ? payload.items : [])
+                .filter((item) => item?.stream_final_status !== 'unresolved')
+        };
+    }
+
     function findHoverScopeFromImage(image) {
         let node = image;
         for (let depth = 0; node && depth < 7; depth += 1) {
@@ -1471,32 +1504,103 @@
 
     function scrollOneViewport() {
         const snapshot = getScrollSnapshot();
-        const distance = Math.max(520, Math.round(snapshot.viewport * 0.86));
-        window.scrollBy({ top: distance, behavior: 'smooth' });
+        const distance = Math.max(360, Math.round(snapshot.viewport * 0.62));
+        window.scrollBy({ top: distance, behavior: 'auto' });
     }
 
-    async function scrollAndWaitForGalleryBatch() {
+    function getVisibleGalleryMediaState() {
+        const viewport = Number(window.innerHeight || document.documentElement?.clientHeight || 800);
+        const margin = Math.max(240, Math.round(viewport * 0.35));
+        const entries = Array.from(document.querySelectorAll('img, video'))
+            .filter((media) => {
+                const rect = media.getBoundingClientRect?.() || {};
+                return Number(rect.width || 0) > 100
+                    && Number(rect.height || 0) > 100
+                    && Number(rect.bottom || 0) >= -margin
+                    && Number(rect.top || 0) <= viewport + margin;
+            })
+            .map((media) => {
+                const tagName = String(media.tagName || '').toLowerCase();
+                const sources = [
+                    media.currentSrc,
+                    media.src,
+                    media.getAttribute?.('src'),
+                    media.getAttribute?.('data-src'),
+                    ...Array.from(media.querySelectorAll?.('source') || []).flatMap((source) => [
+                        source.src,
+                        source.getAttribute?.('src'),
+                        source.getAttribute?.('data-src')
+                    ])
+                ].map((value) => String(value || '').trim()).filter(Boolean);
+                const durableSource = sources.find((value) => /^https?:\/\//i.test(value)) || '';
+                const pending = tagName === 'video'
+                    ? !durableSource
+                    : (!durableSource || media.complete === false);
+                return {
+                    tagName,
+                    pending,
+                    signature: [
+                        tagName,
+                        durableSource,
+                        String(media.currentSrc || ''),
+                        String(media.getAttribute?.('poster') || media.poster || ''),
+                        Number(media.readyState || 0),
+                        Number(media.naturalWidth || media.videoWidth || 0),
+                        Number(media.naturalHeight || media.videoHeight || 0)
+                    ].join(':')
+                };
+            });
+        return {
+            count: entries.length,
+            pending: entries.filter((entry) => entry.pending).length,
+            signature: entries.map((entry) => entry.signature).join('|')
+        };
+    }
+
+    async function waitForVisibleGalleryBatch() {
         let previousSnapshot = getScrollSnapshot();
+        let previousMediaState = getVisibleGalleryMediaState();
         let stableRounds = 0;
-        scrollOneViewport();
         for (let attempt = 0; attempt < SCROLL_BATCH_SETTLE_LIMIT; attempt += 1) {
             await sleep(SCROLL_BATCH_SETTLE_POLL_MS);
             const nextSnapshot = getScrollSnapshot();
+            const nextMediaState = getVisibleGalleryMediaState();
             const grew = nextSnapshot.height > previousSnapshot.height + 12;
-            const moved = nextSnapshot.y > previousSnapshot.y + 12;
-            const visibleImagesPending = Array.from(document.querySelectorAll('img')).some((image) => {
-                const rect = image.getBoundingClientRect?.() || {};
-                return Number(rect.width || 0) > 100
-                    && Number(rect.height || 0) > 100
-                    && Number(rect.bottom || 0) >= 0
-                    && Number(rect.top || 0) <= nextSnapshot.viewport
-                    && !String(image.currentSrc || image.src || '').trim();
-            });
-            stableRounds = grew || moved || visibleImagesPending ? 0 : stableRounds + 1;
+            const moved = Math.abs(nextSnapshot.y - previousSnapshot.y) > 12;
+            const mediaChanged = nextMediaState.signature !== previousMediaState.signature;
+            const waitingForMedia = nextMediaState.pending > 0 && attempt < SCROLL_MEDIA_MIN_WAIT_ATTEMPTS;
+            stableRounds = grew || moved || mediaChanged || waitingForMedia ? 0 : stableRounds + 1;
             previousSnapshot = nextSnapshot;
+            previousMediaState = nextMediaState;
             if (attempt >= 2 && stableRounds >= 2) break;
         }
-        return previousSnapshot;
+        return {
+            ...previousSnapshot,
+            mediaCandidates: previousMediaState.count,
+            pendingMedia: previousMediaState.pending
+        };
+    }
+
+    async function scrollAndWaitForGalleryBatch() {
+        scrollOneViewport();
+        return waitForVisibleGalleryBatch();
+    }
+
+    async function beginFullSweepAtTop() {
+        const before = getScrollSnapshot();
+        if (before.y > 12) {
+            window.scrollTo({ top: 0, behavior: 'auto' });
+            for (let attempt = 0; attempt < 10; attempt += 1) {
+                await sleep(100);
+                if (getScrollSnapshot().y <= 12) break;
+            }
+        }
+        const snapshot = await waitForVisibleGalleryBatch();
+        logDiagnostic('full-sweep-start', {
+            previousY: before.y,
+            snapshot
+        });
+        return snapshot;
     }
 
     function isSameMeigenUrl(url = '') {
@@ -2707,6 +2811,7 @@
         };
         try {
             for (const item of interactiveItems) {
+                if (automationJob.stopRequested) break;
                 await waitWhilePaused();
                 try {
                     const currentDetailItems = await collectDetailItemsFromCurrentCard(item, collector);
@@ -2762,6 +2867,7 @@
             if (fallbackUrls.length) detailJob.phase = 'fallback';
 
             for (let fallbackIndex = 0; fallbackIndex < fallbackUrls.length; fallbackIndex += 1) {
+                if (automationJob.stopRequested) break;
                 const url = fallbackUrls[fallbackIndex];
                 await waitWhilePaused();
                 try {
@@ -2847,13 +2953,16 @@
         const maxItems = normalizeMaxItems(message.maxItems);
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
+        await waitForVisibleGalleryBatch();
         const initialScanStartedAt = Date.now();
         await revealHoverControls(document, maxItems + 6);
+        await waitForVisibleGalleryBatch();
         const initialHoverFinishedAt = Date.now();
         await refreshStructuredDataCache();
         const initialCacheFinishedAt = Date.now();
         if (message.streamToQueue && !message.continueExisting) resetStreamStageState(message.batchId);
         const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
+        const checkedRevisions = message.streamToQueue ? streamStageState.checkedRevisions : new Map();
         let repositoryDuplicateCount = 0;
         const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions({
             ...favoriteRange,
@@ -2861,11 +2970,13 @@
         })));
         const initialCollectFinishedAt = Date.now();
         const initialCheck = message.preflightDuplicates
-            ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys)
+            ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys, checkedRevisions)
             : { uniqueItems: initialPayload.items, duplicateCount: 0 };
         const initialPreflightFinishedAt = Date.now();
         repositoryDuplicateCount += initialCheck.duplicateCount;
-        const previousItems = message.continueExisting ? (getLastJobPayload()?.items || []) : [];
+        const previousItems = message.continueExisting
+            ? getContinuablePayload(getLastJobPayload() || {}).items
+            : [];
         let payload = applyPayloadLimits({
             ...initialPayload,
             items: collector.mergeCollectedItems([...previousItems, ...initialCheck.uniqueItems])
@@ -2920,6 +3031,7 @@
 
                 const scanStartedAt = Date.now();
                 await revealHoverControls(document, maxItems + 6);
+                await waitForVisibleGalleryBatch();
                 const hoverFinishedAt = Date.now();
                 await refreshStructuredDataCache();
                 const cacheFinishedAt = Date.now();
@@ -2929,7 +3041,7 @@
                 }));
                 const collectFinishedAt = Date.now();
                 const duplicateCheck = message.preflightDuplicates
-                    ? await filterRepositoryDuplicates(currentItems, message, checkedKeys)
+                    ? await filterRepositoryDuplicates(currentItems, message, checkedKeys, checkedRevisions)
                     : { uniqueItems: currentItems, duplicateCount: 0 };
                 const preflightFinishedAt = Date.now();
                 repositoryDuplicateCount += duplicateCheck.duplicateCount;
@@ -2982,6 +3094,36 @@
                     }
                 });
                 if (targetCount >= maxItems) {
+                    await waitForVisibleGalleryBatch();
+                    await refreshStructuredDataCache();
+                    const verificationItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+                        ...favoriteRange,
+                        viewportOnly: true
+                    }));
+                    const verificationCheck = message.preflightDuplicates
+                        ? await filterRepositoryDuplicates(verificationItems, message, checkedKeys, checkedRevisions)
+                        : { uniqueItems: verificationItems, duplicateCount: 0 };
+                    repositoryDuplicateCount += verificationCheck.duplicateCount;
+                    if (message.streamToQueue && verificationCheck.uniqueItems.length) {
+                        await stageStreamItemsToTarget(verificationCheck.uniqueItems, message, maxItems, { pendingDetail: true });
+                    }
+                    payload = {
+                        ...payload,
+                        collected_at: new Date().toISOString(),
+                        items: collector.mergeCollectedItems([
+                            ...(Array.isArray(payload.items) ? payload.items : []),
+                            ...verificationCheck.uniqueItems
+                        ]).slice(0, maxItems)
+                    };
+                    scrollJob.lastPayload = payload;
+                    scrollJob.lastSummary = summarizePayload(payload);
+                    rememberSessionPayload(payload, scrollJob.lastSummary);
+                    logDiagnostic('scroll-final-verification', {
+                        domCandidates: verificationItems.length,
+                        improved: verificationCheck.uniqueItems.length,
+                        checkedCandidates: checkedKeys.size,
+                        activeServerItems: getStreamActiveCount()
+                    });
                     break;
                 }
                 const moved = nextSnapshot.y > previousSnapshot.y + 12;
@@ -3077,9 +3219,10 @@
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
         const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
+        const checkedRevisions = message.streamToQueue ? streamStageState.checkedRevisions : new Map();
         let repositoryDuplicateCount = 0;
         let payload = message.continueExisting
-            ? applyPayloadLimits(getLatestPayload(collector), { maxItems, favoriteRange })
+            ? applyPayloadLimits(getContinuablePayload(getLatestPayload(collector)), { maxItems, favoriteRange })
             : applyPayloadLimits(
                 collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange))),
                 { maxItems, favoriteRange }
@@ -3120,6 +3263,7 @@
 
                 await revealHoverControls(currentRoot, maxItems + 6);
                 if (currentRoot === document) {
+                    await waitForVisibleGalleryBatch();
                     await refreshStructuredDataCache();
                 }
                 const currentItems = collector.collectMeigenGalleryItems(currentRoot, buildCollectionOptions({
@@ -3128,7 +3272,7 @@
                     structuredEntries: currentRoot === document ? getStructuredEntriesForCollection() : []
                 }));
                 const duplicateCheck = message.preflightDuplicates
-                    ? await filterRepositoryDuplicates(currentItems, message, checkedKeys)
+                    ? await filterRepositoryDuplicates(currentItems, message, checkedKeys, checkedRevisions)
                     : { uniqueItems: currentItems, duplicateCount: 0 };
                 repositoryDuplicateCount += duplicateCheck.duplicateCount;
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
@@ -3329,6 +3473,7 @@
         const startedAt = new Date().toISOString();
         updateAutomationJob({
             running: true,
+            stopRequested: false,
             phase: 'discovering',
             target: maxItems,
             completed: false,
@@ -3339,6 +3484,9 @@
 
         try {
             let payload = null;
+            updateAutomationJob({ phase: 'discovering' });
+            await prepareListPageForCollection();
+            await beginFullSweepAtTop();
             if (String(message.batchId || '').trim()) {
                 updateAutomationJob({ phase: 'recovering' });
                 payload = await restoreStreamBatch(message);
@@ -3347,20 +3495,25 @@
             }
 
             const enrichAndDiscardUnresolved = async () => {
-                if (!Array.isArray(payload?.items)
-                    || !payload.items.some((item) => needsInteractiveDetail(item, { requireFavoriteCount: false }))) {
-                    return;
+                if (automationJob.stopRequested) return;
+                payload = getContinuablePayload(payload || {});
+                const items = Array.isArray(payload.items) ? payload.items : [];
+                const needsEnrichment = items.some((item) => needsInteractiveDetail(item, { requireFavoriteCount: false }));
+                if (items.length && (needsEnrichment || streamStageState.pendingDetailCount > 0)) {
+                    detailJob.lastPayload = payload;
+                    detailJob.lastSummary = summarizePayload(payload);
+                    rememberSessionPayload(payload, detailJob.lastSummary);
+                    updateAutomationJob({ phase: 'enriching' });
+                    const detailResponse = await collectPayload({
+                        ...message,
+                        enrichDetails: true,
+                        retryFailed: false,
+                        streamToQueue: true,
+                        batchId: streamStageState.batchId,
+                        maxItems: Math.max(maxItems, items.length)
+                    });
+                    payload = detailResponse?.payload || payload;
                 }
-                updateAutomationJob({ phase: 'enriching' });
-                const detailResponse = await collectPayload({
-                    ...message,
-                    enrichDetails: true,
-                    retryFailed: false,
-                    streamToQueue: true,
-                    batchId: streamStageState.batchId,
-                    maxItems: Math.max(maxItems, payload.items.length)
-                });
-                payload = detailResponse?.payload || payload;
                 await streamStageState.promise;
                 payload = await cleanupPendingStreamItems(message, payload);
                 detailJob.lastPayload = payload;
@@ -3373,8 +3526,18 @@
             let response = null;
             let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS;
             let sourceExhausted = false;
+            let stagnantRounds = 0;
             const scrollChunkSteps = Math.max(SCROLL_COLLECT_MAX_STEPS, Math.min(100, maxItems * 3));
-            while (streamStageState.processableCount < maxItems && scrollStepsRemaining > 0 && !sourceExhausted) {
+            while (streamStageState.processableCount < maxItems
+                && scrollStepsRemaining > 0
+                && !sourceExhausted
+                && !automationJob.stopRequested) {
+                const beforeProgress = {
+                    checked: streamStageState.checkedKeys.size,
+                    processable: streamStageState.processableCount,
+                    pendingDetail: streamStageState.pendingDetailCount,
+                    scrollY: getScrollSnapshot().y
+                };
                 updateAutomationJob({ phase: 'discovering' });
                 response = await runScrollCollect({
                     ...message,
@@ -3390,11 +3553,34 @@
                 const processedSteps = Math.max(0, Number(response?.scrollStatus?.processed || 0));
                 scrollStepsRemaining -= Math.max(1, processedSteps);
                 sourceExhausted = response?.exhausted === true;
+                const afterProgress = {
+                    checked: streamStageState.checkedKeys.size,
+                    processable: streamStageState.processableCount,
+                    pendingDetail: streamStageState.pendingDetailCount,
+                    scrollY: getScrollSnapshot().y
+                };
+                const madeProgress = processedSteps > 0
+                    || afterProgress.checked > beforeProgress.checked
+                    || afterProgress.processable > beforeProgress.processable
+                    || afterProgress.pendingDetail !== beforeProgress.pendingDetail
+                    || Math.abs(afterProgress.scrollY - beforeProgress.scrollY) > 12;
+                stagnantRounds = madeProgress ? 0 : stagnantRounds + 1;
+                if (stagnantRounds >= AUTOMATION_STAGNANT_LIMIT) {
+                    sourceExhausted = true;
+                    logDiagnostic('automation-stagnant-source', {
+                        stagnantRounds,
+                        beforeProgress,
+                        afterProgress
+                    });
+                }
             }
 
             let pagingRound = 0;
             let previousCheckedCount = -1;
-            while (streamStageState.processableCount < maxItems && sourceExhausted && pagingRound < maxItems) {
+            while (streamStageState.processableCount < maxItems
+                && sourceExhausted
+                && pagingRound < maxItems
+                && !automationJob.stopRequested) {
                 updateAutomationJob({ phase: 'paging' });
                 response = await runPageBatchCollect({
                     ...message,
@@ -3415,6 +3601,17 @@
             }
 
             await streamStageState.promise;
+            if (automationJob.stopRequested) {
+                updateAutomationJob({
+                    running: false,
+                    stopRequested: false,
+                    phase: 'stopped',
+                    completed: false,
+                    lastError: '任务已由用户停止'
+                });
+                logDiagnostic('automation-stopped', getAutomationStatus());
+                return payload;
+            }
             if (streamStageState.processableCount < maxItems) {
                 const shortfall = maxItems - streamStageState.processableCount;
                 const reason = sourceExhausted
@@ -3489,6 +3686,16 @@
                 pageBatchStatus: getPageBatchStatus(),
                 summary: getLastJobSummary()
             });
+            return false;
+        }
+
+        if (message?.type === MESSAGE_AUTOMATION_STOP) {
+            automationJob.stopRequested = automationJob.running;
+            scrollJob.stopRequested = scrollJob.running;
+            pageBatchJob.stopRequested = pageBatchJob.running;
+            detailJob.paused = false;
+            updateAutomationJob({});
+            sendResponse({ ok: true, automationStatus: getAutomationStatus() });
             return false;
         }
 

@@ -96,7 +96,7 @@
     function looksLikeStructuredPayload(url = '', contentType = '', text = '') {
         const source = `${url} ${contentType}`;
         if (/json|\/api\/|_next\/data|rsc|flight/i.test(source)) return true;
-        return /prompt|positivePrompt|fullPrompt|imageUrls?|generatedImages?|twitter|x\.com|status\/\d{5,}/i.test(text.slice(0, 120000));
+        return /prompt|positivePrompt|fullPrompt|imageUrls?|generatedImages?|videoUrls?|videos?|twitter|x\.com|status\/\d{5,}/i.test(text.slice(0, 120000));
     }
 
     function addDataCacheEntry(entry = {}) {
@@ -138,7 +138,7 @@
             if (!text) return;
             if (id !== '__NEXT_DATA__'
                 && !/json|ld\+json/i.test(type)
-                && !/(self\.)?__next_f\.push|prompt|imageUrls?|generatedImages?|x\.com|twitter\.com/i.test(text.slice(0, 120000))) {
+                && !/(self\.)?__next_f\.push|prompt|imageUrls?|generatedImages?|videoUrls?|videos?|x\.com|twitter\.com/i.test(text.slice(0, 120000))) {
                 return;
             }
             entries.push({

@@ -1,7 +1,7 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-12.79';
+    const VERSION = '2026-07-13.81';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 1000;
     const MAX_IMAGES_PER_ITEM = 24;
@@ -26,6 +26,7 @@
     const MIN_ARTWORK_AREA = 42000;
     const STRUCTURED_PROMPT_KEY_PATTERN = /prompt|positivePrompt|fullPrompt|promptText|inputPrompt|copyText|description|caption/i;
     const STRUCTURED_IMAGE_KEY_PATTERN = /images?|imageUrls?|image_urls?|media|generatedImages?|outputs?|photos?|pictures?|src|url/i;
+    const STRUCTURED_VIDEO_KEY_PATTERN = /videos?|videoUrls?|video_urls?|media|outputs?|sources?|src|url/i;
     const STRUCTURED_AUTHOR_HANDLE_KEY_PATTERN = /authorHandle|authorId|handle|username|screenName|twitterUsername|xUsername|userName/i;
     const STRUCTURED_AUTHOR_NAME_KEY_PATTERN = /authorName|creatorName|displayName|nickname|screenName|name/i;
     const STRUCTURED_SKIP_IMAGE_CONTEXT_PATTERN = /(avatar|profile|icon|logo|emoji|badge|author|creator|user|related|recommend)/i;
@@ -103,6 +104,15 @@
             return parsed.toString();
         } catch (_) {
             return '';
+        }
+    }
+
+    function isVideoCollectionUrl(value = getBaseUrl()) {
+        try {
+            const parsed = new URL(String(value || ''), getBaseUrl());
+            return ['category', 'cat', 'type'].some((key) => /^(?:video|videos)$/i.test(parsed.searchParams.get(key) || ''));
+        } catch (_) {
+            return /[?&](?:category|cat|type)=videos?(?:&|$)/i.test(String(value || ''));
         }
     }
 
@@ -863,6 +873,27 @@
         return urls;
     }
 
+    function collectStructuredVideoUrls(value, baseUrl = getBaseUrl(), limit = 4) {
+        const urls = [];
+        const seen = new Set();
+        for (const entry of collectStructuredStrings(value, { maxStrings: 900 })) {
+            if (!STRUCTURED_VIDEO_KEY_PATTERN.test(entry.path) && !VIDEO_URL_PATTERN.test(entry.text.split('?')[0])) {
+                continue;
+            }
+            if (/(related|recommend|avatar|profile|icon|logo)/i.test(entry.path)) continue;
+            const rawUrl = normalizeText(entry.text, 4000);
+            if (!looksLikeExplicitUrl(rawUrl)) continue;
+            const url = normalizeVideoUrl(rawUrl, baseUrl);
+            if (!url) continue;
+            const key = url.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            urls.push(url);
+            if (urls.length >= limit) break;
+        }
+        return urls;
+    }
+
     function extractStructuredOriginalWorkUrl(value, baseUrl = getBaseUrl()) {
         for (const entry of collectStructuredStrings(value, { maxStrings: 700 })) {
             if (!/(url|href|link|source|twitter|tweet|status|original|x)/i.test(entry.path + entry.text)) continue;
@@ -963,6 +994,7 @@
         const authorHandle = extractStructuredAuthorHandle(value) || getAuthorHandleFromUrl(originalWorkUrl);
         const promptText = extractStructuredPrompt(value);
         const imageUrls = collectStructuredImageUrls(value, baseUrl);
+        const videoUrls = collectStructuredVideoUrls(value, baseUrl);
         const detailUrl = extractStructuredDetailUrl(value, baseUrl);
         const authorName = extractStructuredAuthorName(value, authorHandle);
         const sourceItemId = extractStructuredSourceItemId(value);
@@ -972,13 +1004,14 @@
         const quality = [
             promptText,
             imageUrls.length ? imageUrls[0] : '',
+            videoUrls.length ? videoUrls[0] : '',
             originalWorkUrl,
             detailUrl,
             authorHandle,
             authorName
         ].filter(Boolean).length;
         if (quality < 2) return null;
-        if (imageUrls.length > MAX_IMAGES_PER_ITEM && !promptText && !originalWorkUrl) return null;
+        if (imageUrls.length > MAX_IMAGES_PER_ITEM && !promptText && !originalWorkUrl && !videoUrls.length) return null;
         return {
             path,
             sourceItemId,
@@ -989,7 +1022,8 @@
             authorName,
             favoriteCount,
             promptText,
-            imageUrls
+            imageUrls,
+            videoUrls
         };
     }
 
@@ -1029,7 +1063,8 @@
             if (!current) {
                 grouped.set(key, {
                     ...candidate,
-                    imageUrls: dedupeImageUrlsByArtwork(candidate.imageUrls || [])
+                    imageUrls: dedupeImageUrlsByArtwork(candidate.imageUrls || []),
+                    videoUrls: uniqueBy(candidate.videoUrls || [], (url) => String(url || '').trim().toLowerCase()).slice(0, 4)
                 });
                 continue;
             }
@@ -1044,6 +1079,10 @@
                 ...(current.imageUrls || []),
                 ...(candidate.imageUrls || [])
             ], MAX_IMAGES_PER_ITEM);
+            current.videoUrls = uniqueBy([
+                ...(current.videoUrls || []),
+                ...(candidate.videoUrls || [])
+            ], (url) => String(url || '').trim().toLowerCase()).slice(0, 4);
         }
         return Array.from(grouped.values());
     }
@@ -1135,6 +1174,7 @@
         if (context.sourceItemId && candidate.sourceItemId && String(context.sourceItemId) === String(candidate.sourceItemId)) score += 70;
         if (candidate.promptText) score += 25;
         if ((candidate.imageUrls || []).length) score += Math.min(30, candidate.imageUrls.length * 6);
+        if ((candidate.videoUrls || []).length) score += Math.min(30, candidate.videoUrls.length * 10);
         if (candidate.originalWorkUrl) score += 15;
         if (candidate.authorName || candidate.authorHandle) score += 8;
         if (context.detailOnly && candidate.promptText && (candidate.imageUrls || []).length) score += 20;
@@ -1808,6 +1848,26 @@
         return filterDetailImageUrlsByStatus(imageUrls, targetStatusId);
     }
 
+    function filterVideoSourcesByIdentity(videoSources = [], {
+        detailUrl = '',
+        targetStatusId = ''
+    } = {}) {
+        const sources = uniqueBy(
+            Array.isArray(videoSources) ? videoSources : [],
+            (entry) => String(entry?.url || '').trim().toLowerCase()
+        ).filter((entry) => String(entry?.url || '').trim());
+        if (!sources.length) return [];
+        if (isCommunityDetailUrl(detailUrl)) {
+            return sources.filter((entry) => !getStatusIdFromImageUrl(entry.url));
+        }
+        const target = extractLongNumericId(targetStatusId);
+        if (target) {
+            return sources.filter((entry) => getStatusIdFromImageUrl(entry.url) === target);
+        }
+        const sourceIds = new Set(sources.map((entry) => getStatusIdFromImageUrl(entry.url)).filter(Boolean));
+        return sourceIds.size <= 1 ? sources : [];
+    }
+
     function getTweetImageSequenceInfo(value = '') {
         const decoded = decodeUrlishText(value);
         const directMatch = decoded.match(/(https?:\/\/[^\s"'<>?)]*?\/tweets\/(\d{12,25})\/)(\d+)(\.[a-z0-9]+)(?:[?#][^\s"'<>)]*)?/i);
@@ -2089,6 +2149,13 @@
             expectedAuthorHandle: initialAuthorHandle,
             detailOnly: Boolean(options.detailOnly || expectedDetailUrl || isDetailPageUrl(baseUrl))
         });
+        const collectedVideoSources = uniqueBy([
+            ...initialVideoSources,
+            ...(structuredCandidate?.videoUrls || []).map((url) => ({
+                url,
+                mime_type: /\.webm(?:[?#]|$)/i.test(url) ? 'video/webm' : 'video/mp4'
+            }))
+        ], (entry) => String(entry?.url || '').trim().toLowerCase()).slice(0, 4);
         let detailUrl = scopeDetailUrl || structuredCandidate?.detailUrl || '';
         const communityDetail = isCommunityDetailUrl(expectedDetailUrl || detailUrl);
         const optionExpectedDetailCount = detailContext
@@ -2114,6 +2181,11 @@
             baseUrl,
             options
         }) || candidateStatusId;
+        const videoSources = filterVideoSourcesByIdentity(collectedVideoSources, {
+            detailUrl: expectedDetailUrl || detailUrl,
+            targetStatusId
+        });
+        if (isVideoCollectionUrl(options.baseUrl || baseUrl) && !videoSources.length) return null;
         const structuredImageUrls = detailContext && explicitExpectedCount <= 0
             ? []
             : filterDetailImageUrlsByIdentity(structuredCandidate?.imageUrls || [], {
@@ -2188,10 +2260,10 @@
             promptText,
             originalWorkUrl,
             imageUrls,
-            videoSources: initialVideoSources
+            videoSources
         })) return null;
-        if (!imageUrls.length && !initialVideoSources.length && !detailContext && !communityDetail) return null;
-        if (!imageUrls.length && !initialVideoSources.length && !promptText && !originalWorkUrl && !authorName && !authorHandle) return null;
+        if (!imageUrls.length && !videoSources.length && !detailContext && !communityDetail) return null;
+        if (!imageUrls.length && !videoSources.length && !promptText && !originalWorkUrl && !authorName && !authorHandle) return null;
         const imageCountIsComplete = expectedCount > 0
             ? imageUrls.length >= expectedCount
             : Boolean(detailContext && imageUrls.length);
@@ -2206,7 +2278,7 @@
                 imageUrls,
                 index,
                 structuredCandidate?.sourceItemId || '',
-                initialVideoSources
+                videoSources
             ),
             source_page_url: detailUrl,
             original_work_url: originalWorkUrl,
@@ -2226,8 +2298,8 @@
             detail_expected_count_authoritative: Boolean(detailContext && authoritativeExpectedCount > 0),
             detail_image_count_authoritative: Boolean(detailContext && authoritativeExpectedCount > 0 && imageCountIsComplete),
             image_sources: imageUrls.map((url) => ({ url })),
-            video_sources: initialVideoSources,
-            expected_video_count: initialVideoSources.length
+            video_sources: videoSources,
+            expected_video_count: videoSources.length
         };
     }
 
@@ -2390,6 +2462,7 @@
             collectDetailArtworkImageUrls,
             collectVideoSources,
             normalizeVideoUrl,
+            isVideoCollectionUrl,
             getNodeDocumentOrderScore,
             isNodeWithinCollectionViewport,
             itemMatchesFavoriteRange,
@@ -2411,6 +2484,8 @@
             isCollapsedPromptText,
             collectStructuredItemCandidates,
             collectStructuredImageUrls,
+            collectStructuredVideoUrls,
+            filterVideoSourcesByIdentity,
             getBestStructuredCandidate,
             getStructuredIdentityCounts,
             filterDetailImageUrlsByStatus,
