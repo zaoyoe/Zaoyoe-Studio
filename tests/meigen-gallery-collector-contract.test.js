@@ -31,7 +31,10 @@ test('Meigen browser collector exports import-compatible payload helpers', () =>
     assert.equal(typeof collector._private.isUnresolvablePlaceholderItem, 'function');
     assert.equal(typeof collector._private.getMeigenGenerationImageIdentity, 'function');
     assert.equal(typeof collector._private.collectVideoSources, 'function');
+    assert.equal(typeof collector._private.collectStructuredVideoUrls, 'function');
+    assert.equal(typeof collector._private.filterVideoSourcesByIdentity, 'function');
     assert.equal(typeof collector._private.normalizeVideoUrl, 'function');
+    assert.equal(typeof collector._private.isVideoCollectionUrl, 'function');
 });
 
 test('Meigen browser collector captures video URLs and posters', () => {
@@ -68,6 +71,52 @@ test('Meigen browser collector captures video URLs and posters', () => {
         height: 1920,
         mime_type: 'video/mp4'
     }]);
+});
+
+test('Meigen browser collector recovers direct video URLs from structured page data', () => {
+    const directVideoUrl = 'https://images.meigen.ai/videos/2073446047326810304/video.mp4';
+    const relatedVideoUrl = 'https://images.meigen.ai/videos/2073446047326810999/video.mp4';
+    const urls = collector._private.collectStructuredVideoUrls({
+        work: {
+            videoUrl: directVideoUrl,
+            related: [{ videoUrl: relatedVideoUrl }]
+        }
+    });
+
+    assert.deepEqual(urls, [directVideoUrl]);
+    const candidates = collector._private.collectStructuredItemCandidates({
+        baseURI: 'https://www.meigen.ai/',
+        querySelectorAll() {
+            return [];
+        }
+    }, {
+        structuredEntries: [{
+            data: {
+                work: {
+                    id: '2073446047326810304',
+                    detailUrl: 'https://www.meigen.ai/prompt/2073446047326810304',
+                    promptText: 'A cinematic vertical video with a slow camera move and dramatic light.',
+                    videoUrl: directVideoUrl
+                }
+            }
+        }]
+    });
+    assert.equal(candidates.some((candidate) => candidate.videoUrls?.includes(directVideoUrl)), true);
+});
+
+test('Meigen browser collector keeps only video sources matching the current work identity', () => {
+    const targetId = '2075360600968884496';
+    const targetVideo = `https://images.meigen.ai/videos/${targetId}/video.mp4`;
+    const neighborVideo = 'https://images.meigen.ai/videos/2073724837948981756/video.mp4';
+    const sources = [targetVideo, neighborVideo].map((url) => ({ url, mime_type: 'video/mp4' }));
+
+    assert.deepEqual(collector._private.filterVideoSourcesByIdentity(sources, {
+        detailUrl: `https://www.meigen.ai/prompt/${targetId}`,
+        targetStatusId: targetId
+    }), [{ url: targetVideo, mime_type: 'video/mp4' }]);
+    assert.deepEqual(collector._private.filterVideoSourcesByIdentity(sources), []);
+    assert.equal(collector._private.isVideoCollectionUrl('https://www.meigen.ai/?category=videos'), true);
+    assert.equal(collector._private.isVideoCollectionUrl('https://www.meigen.ai/?category=images'), false);
 });
 
 test('Meigen browser collector limits incremental scans to the current viewport buffer', () => {
