@@ -35,7 +35,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.35');
+    assert.equal(manifest.version, '0.1.36');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -65,6 +65,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /FATHER_KEY_MEIGEN_PAGE_BATCH_STATUS/);
     assert.match(content, /FATHER_KEY_MEIGEN_DIAGNOSTICS/);
     assert.match(content, /FATHER_KEY_MEIGEN_SESSION_STATE/);
+    assert.match(content, /FATHER_KEY_MEIGEN_RESET_STATE/);
     assert.match(content, /FATHER_KEY_STAGE_IMPORT/);
     assert.match(content, /function queueStreamStage/);
     assert.match(content, /\{ flush = false, force = false \}/);
@@ -79,9 +80,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /snapshot\.viewport \* 0\.62/);
     assert.match(content, /behavior: 'auto'/);
     assert.match(content, /distance\(leftRect\) - distance\(rightRect\)/);
-    assert.match(content, /function beginFullSweepAtTop/);
-    assert.match(content, /await beginFullSweepAtTop\(\)/);
-    assert.match(content, /window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)/);
+    assert.match(content, /function beginSweepAtCurrentPosition/);
+    assert.match(content, /await beginSweepAtCurrentPosition\(\)/);
+    assert.match(content, /logDiagnostic\('current-sweep-start'/);
+    assert.doesNotMatch(content, /window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)/);
     assert.match(content, /const initialPayload = collector\.buildPayload[\s\S]*if \(message\.streamToQueue\) \{[\s\S]*await stageStreamItemsToTarget\(initialCheck\.uniqueItems[\s\S]*for \(let index = 0; index < maxSteps; index \+= 1\) \{[\s\S]*await scrollAndWaitForGalleryBatch\(\)/);
     assert.match(content, /AUTOMATION_SCROLL_MAX_STEPS\s*=\s*1000/);
     assert.match(content, /let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS/);
@@ -106,6 +108,11 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /phase: 'stopped'/);
     assert.match(content, /FATHER_KEY_MEIGEN_AUTOMATION_STOP/);
     assert.match(popup, /FATHER_KEY_MEIGEN_AUTOMATION_STOP/);
+    assert.match(popup, /FATHER_KEY_MEIGEN_RESET_STATE/);
+    assert.match(popup, /async function resetCollector/);
+    assert.match(content, /async function resetCollectorState/);
+    assert.match(content, /chrome\.storage\.session\.remove\(SESSION_STORAGE_KEY\)/);
+    assert.match(html, /id="resetBtn"[^>]*>重置插件</);
     assert.match(popup, /function stopActiveCollection/);
     assert.match(content, /restoreStreamBatch\(message\)/);
     assert.match(content, /cleanupPendingStreamItems\(message, payload\)/);
@@ -253,7 +260,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-13\.81'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-14\.82'/);
     assert.match(collector, /function collectVideoSources/);
     assert.match(collector, /function collectStructuredVideoUrls/);
     assert.match(collector, /function filterVideoSourcesByIdentity/);

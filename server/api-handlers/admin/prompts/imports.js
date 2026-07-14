@@ -53,6 +53,7 @@ const PROMPT_STATUS_VALUES = new Set(['', 'draft', 'review', 'needs-localization
 const DEFAULT_IMPORT_SOURCE = 'meigen';
 const DEFAULT_IMPORT_PAGE_SIZE = 20;
 const MAX_IMPORT_PAGE_SIZE = 1000;
+const MAX_IMPORT_PAGE = 100000;
 const DEFAULT_MAX_IMAGE_COUNT = 12;
 const MAX_IMAGE_COUNT = 24;
 const DEFAULT_IMAGE_TIMEOUT_MS = 20000;
@@ -447,11 +448,17 @@ function buildImportStats(items = []) {
 }
 
 function getImportPageQuery(searchParams) {
+    const pageSize = normalizePositiveInteger(
+        searchParams.get('pageSize') || searchParams.get('page_size') || searchParams.get('limit'),
+        DEFAULT_IMPORT_PAGE_SIZE,
+        MAX_IMPORT_PAGE_SIZE
+    );
     return {
         batchId: normalizeText(searchParams.get('batchId') || searchParams.get('batch_id'), 120),
         status: normalizeImportItemStatus(searchParams.get('status') || '', ''),
         includeCleaned: searchParams.get('includeCleaned') === 'true' || searchParams.get('include_cleaned') === 'true',
-        limit: normalizePositiveInteger(searchParams.get('limit'), DEFAULT_IMPORT_PAGE_SIZE, MAX_IMPORT_PAGE_SIZE)
+        page: normalizePositiveInteger(searchParams.get('page'), 1, MAX_IMPORT_PAGE),
+        pageSize
     };
 }
 
@@ -1730,6 +1737,58 @@ async function cleanupImportItems(supabase, user, body) {
     };
 }
 
+async function deleteImportBatch(supabase, user, body) {
+    const batchId = normalizeText(body.batch_id || body.batchId, 120);
+    if (!batchId) {
+        const error = new Error('batchId is required');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const batch = await loadImportBatch(supabase, batchId);
+    const { data: activeItems, error: activeItemsError } = await supabase
+        .from('prompt_import_items')
+        .select('id, status')
+        .eq('batch_id', batchId)
+        .in('status', ['queued', 'uploading', 'saving']);
+    if (activeItemsError) throw activeItemsError;
+    if (activeItems?.length) {
+        const error = new Error('当前批次仍有 Worker 正在上传或保存，请等待处理停止后再删除');
+        error.statusCode = 409;
+        error.code = 'prompt_import_batch_busy';
+        throw error;
+    }
+
+    const { data: deletedBatch, error: deleteError } = await supabase
+        .from('prompt_import_batches')
+        .delete()
+        .eq('id', batchId)
+        .select(IMPORT_BATCH_SELECT)
+        .single();
+    if (deleteError) throw deleteError;
+
+    const deletedItemCount = Math.max(0, Number(batch?.stats?.total || 0));
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        module: 'prompts',
+        site: batch.site,
+        actionType: 'prompt_import.delete_batch',
+        details: {
+            batch_id: batchId,
+            deleted_item_count: deletedItemCount,
+            source: batch.source,
+            status: batch.status
+        }
+    });
+
+    return {
+        batch: deletedBatch || batch,
+        deletedBatchId: batchId,
+        deletedItemCount
+    };
+}
+
 async function cleanupRejectedImportItems(supabase, user, body) {
     const batchId = normalizeText(body.batch_id || body.batchId, 120);
     if (!batchId) {
@@ -1925,7 +1984,7 @@ async function listImportItems(supabase, query) {
     }
     let request = supabase
         .from('prompt_import_items')
-        .select(IMPORT_ITEM_SELECT)
+        .select(IMPORT_ITEM_SELECT, { count: 'exact' })
         .eq('batch_id', query.batchId);
     if (query.status) {
         request = request.eq('status', query.status);
@@ -1933,11 +1992,23 @@ async function listImportItems(supabase, query) {
         request = request.neq('status', 'cleaned');
     }
 
-    const { data, error } = await request
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.max(1, Number(query.pageSize) || DEFAULT_IMPORT_PAGE_SIZE);
+    const pageStart = (page - 1) * pageSize;
+    const { data, error, count } = await request
         .order('updated_at', { ascending: false })
-        .limit(query.limit);
+        .range(pageStart, pageStart + pageSize - 1);
     if (error) throw error;
-    return data || [];
+    const total = Math.max(0, Number(count) || 0);
+    return {
+        items: data || [],
+        pagination: {
+            page,
+            pageSize,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / pageSize))
+        }
+    };
 }
 
 module.exports = async (req, res) => {
@@ -1954,14 +2025,15 @@ module.exports = async (req, res) => {
         if (method === 'GET') {
             const query = getImportPageQuery(searchParams);
             if (query.batchId) {
-                const [batch, items] = await Promise.all([
+                const [batch, itemPage] = await Promise.all([
                     loadImportBatch(supabase, query.batchId),
                     listImportItems(supabase, query)
                 ]);
                 return sendJson(res, 200, {
                     success: true,
                     batch,
-                    items
+                    items: itemPage.items,
+                    pagination: itemPage.pagination
                 });
             }
 
@@ -1980,7 +2052,11 @@ module.exports = async (req, res) => {
         }
         if (action === 'stage_items') {
             const result = await stageImportItems(supabase, user, body);
-            return sendJson(res, 200, { success: true, ...result });
+            return sendJson(res, 200, {
+                success: true,
+                ...result,
+                items: body.compact_response === true ? [] : result.items
+            });
         }
         if (action === 'check_duplicates') {
             const result = await checkImportItemDuplicates(supabase, body);
@@ -2003,6 +2079,10 @@ module.exports = async (req, res) => {
         }
         if (action === 'cleanup_items') {
             const result = await cleanupImportItems(supabase, user, body);
+            return sendJson(res, 200, { success: true, ...result });
+        }
+        if (action === 'delete_batch') {
+            const result = await deleteImportBatch(supabase, user, body);
             return sendJson(res, 200, { success: true, ...result });
         }
         if (action === 'cleanup_rejected_items') {
@@ -2054,7 +2134,10 @@ module.exports._private = {
     checkImportItemDuplicates,
     getRejectedImportCleanupIds,
     getPendingDetailCleanupIds,
+    deleteImportBatch,
     isBlockedImportHostname,
     isSupportedImageBuffer,
-    isSupportedVideoBuffer
+    isSupportedVideoBuffer,
+    getImportPageQuery,
+    listImportItems
 };

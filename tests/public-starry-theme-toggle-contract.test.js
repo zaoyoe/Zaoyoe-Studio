@@ -56,16 +56,17 @@ test('shared theme toggle wakes dark-mode starry sky on prompts and shop pages',
     }
 });
 
-test('prompts starry sky throttles drawing during scroll and background activity', () => {
+test('shared starry sky throttles drawing during scroll and background activity', () => {
     const starrySource = readRepoFile('starry-sky.js');
     const promptsSource = readRepoFile('prompts-poetry.js');
 
     [
-        "const isPromptsPage = document.body?.classList.contains('prompts-page') === true;",
-        'const frameIntervalMs = isPromptsPage ? 1000 / 30 : 0;',
-        'if (document.hidden || promptPageScrolling) return;',
-        "window.addEventListener('scroll', () => {",
-        'promptPageScrolling = true;',
+        'const frameIntervalMs = 1000 / 30;',
+        "if (document.hidden || pageScrolling || document.documentElement.dataset.theme !== 'dark') return;",
+        "window.addEventListener('scroll', handleScrollActivity, { passive: true });",
+        'pageScrolling = true;',
+        "document.documentElement.classList.add('starry-scroll-active');",
+        "document.addEventListener('scroll', handleScrollActivity, { passive: true, capture: true });",
         "document.addEventListener('visibilitychange', () => {"
     ].forEach((marker) => {
         assert.equal(starrySource.includes(marker), true, `starry-sky.js should include ${marker}`);

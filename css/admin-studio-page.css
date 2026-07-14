@@ -10510,6 +10510,53 @@ body.admin-access-pending,
     margin-top: -4px;
 }
 
+/* 20260714_ADMIN_GALLERY_MANAGE_SCROLL_PERF_1 */
+#module-gallery #view-manage .admin-card {
+    contain: layout style;
+    box-shadow: 0 6px 18px rgba(5, 10, 24, 0.14) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: border-color 0.2s ease, background-color 0.2s ease !important;
+}
+
+#module-gallery #view-manage :is(
+    .admin-card-context-btn,
+    .admin-card-site-metric,
+    .gallery-ops-overview__status-btn,
+    .gallery-ops-overview__meta-pill,
+    .gallery-ops-overview__hint
+) {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html:not([data-theme="dark"]) #module-gallery #view-manage .admin-card {
+    background: rgba(255, 255, 255, 0.98) !important;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07) !important;
+}
+
+html:not([data-theme="dark"]) #module-gallery #view-manage .admin-card-context-btn {
+    background: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* 20260714_ADMIN_GALLERY_HOVER_ACTION_LINE_FIX_1 */
+html:not([data-theme="dark"]) #module-gallery #view-manage .admin-card-hover-actions,
+html:not([data-theme="dark"]) #module-gallery #view-manage .admin-card-hover-actions:is(:hover, :focus, :focus-within, :active) {
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html:not([data-theme="dark"]) #module-gallery #view-manage .admin-card-hover-actions::before,
+html:not([data-theme="dark"]) #module-gallery #view-manage .admin-card-hover-actions::after {
+    content: none !important;
+    display: none !important;
+}
+
 #productModal .shop-delivery-mode-toggle {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
