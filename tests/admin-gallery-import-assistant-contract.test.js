@@ -14,6 +14,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     const js = readRepoFile('admin-studio.js');
     const css = readRepoFile('admin-studio.css');
     const api = readRepoFile('api/admin.js');
+    const thumbnailHandler = readRepoFile(path.join('server', 'api-handlers', 'admin', 'prompts', 'image-thumbnail.js'));
     const handler = readRepoFile(path.join('server', 'api-handlers', 'admin', 'prompts', 'imports.js'));
     const migration = readRepoFile(path.join('supabase', 'migrations', '20260709_prompt_gallery_import_staging.sql'));
     const promptIdFixMigration = readRepoFile(path.join('supabase', 'migrations', '20260709_prompt_gallery_import_prompt_ids_text.sql'));
@@ -41,6 +42,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'id="galleryImportUploadProgress"',
         'id="galleryImportTotalProgress"',
         'id="galleryImportQueue"',
+        'id="galleryImportPagination"',
         'id="galleryImportBatchTracker"',
         'id="galleryImportBatchSelect"',
         'id="galleryImportBatchSummary"',
@@ -61,8 +63,13 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'data-admin-action="gallery-import-cleanup"',
         'data-admin-action="gallery-import-clear-current"',
         '清空当前队列',
+        'data-admin-action="gallery-import-delete-batch"',
+        '删除批次记录',
         'galleryImportRetry=20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2',
-        'galleryImportPipeline=20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2'
+        'galleryImportPipeline=20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2',
+        'galleryImportPagination=20260714_ADMIN_GALLERY_IMPORT_PAGINATION_1',
+        'galleryImportThumb=20260714_ADMIN_GALLERY_IMPORT_THUMBNAIL_1',
+        'galleryImportControls=20260714_GALLERY_IMPORT_CONTROLS_1'
     ];
 
     for (const marker of htmlMarkers) {
@@ -97,7 +104,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-13.81';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-14.82';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -114,6 +121,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "case 'gallery-import-open-source':",
         "case 'gallery-import-copy-collector':",
         "case 'gallery-import-paste-clipboard':",
+        "case 'gallery-import-delete-batch':",
+        'async function deleteCurrentGalleryImportBatch()',
+        "mutateGalleryImport('delete_batch'",
         'const galleryImportState = {',
         "mode: 'crawl_only'",
         'function parseGalleryImportRawInput(rawText = \'\')',
@@ -184,6 +194,21 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'function setPromptAdminStatus(prompt = {}, nextStatus = \'\', writableSite = getAdminPromptsReadSite())',
         'function updateGalleryImportProgress()',
         'function renderGalleryImportQueue(items = galleryImportState.items)',
+        'const GALLERY_IMPORT_PAGE_SIZE = 10;',
+        'pageSize: 10',
+        'function getGalleryImportTotalItems()',
+        'function normalizeGalleryImportPage(page = galleryImportState.page, totalItems = getGalleryImportTotalItems())',
+        'function renderGalleryImportPagination(totalItems = getGalleryImportTotalItems())',
+        'async function changeGalleryImportPage(page)',
+        'const pageRows = galleryImportState.serverPaginated',
+        'serverPaginated: false',
+        'async function loadAllGalleryImportBatchItems(batchId, options = {})',
+        'pageSize: galleryImportState.pageSize',
+        'data-admin-action="gallery-import-pagination-go"',
+        'data-admin-change-action="gallery-import-pagination-go"',
+        'function scheduleGalleryImportQueueRender()',
+        'function upsertGalleryImportItems(items = [])',
+        'fetchpriority="low"',
         'function getGalleryImportBatchStats(batch = {})',
         'function selectGalleryImportBatch(batches = [], options = {})',
         'batchSelectionLocked: false',
@@ -210,8 +235,13 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "throw createGalleryImportStageError('bilingual', error);",
         "throw createGalleryImportStageError('publish', error);",
         'function getGalleryImportCoverUrl(item = {})',
+        'function getGalleryImportPreviewImageUrl(imageUrl = \'\')',
+        "proxyUrl.searchParams.set('route', 'prompts/image-thumbnail');",
+        'function handleGalleryImportPreviewImageError(event)',
+        "document.addEventListener('error', handleGalleryImportPreviewImageError, true);",
         'function getPromptImageUrlsFromAssets',
         "mutateGalleryImport('stage_items'",
+        'compact_response: true',
         "mutateGalleryImport('upload_item'",
         "mutateGalleryImport('skip_items'",
         "mutateGalleryImport('fail_items'",
@@ -239,6 +269,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     for (const marker of jsMarkers) {
         assert.equal(js.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+    assert.equal(api.includes("'prompts/image-thumbnail': promptsImageThumbnailHandler"), true);
+    assert.equal(thumbnailHandler.includes(".webp({ quality: 72, effort: 2 })"), true);
+    assert.equal(thumbnailHandler.includes("'Cache-Control', 'private, max-age=86400'"), true);
     assert.equal(js.includes('const workers = Array.from({ length: parallelism }'), false);
 
     const cssMarkers = [
@@ -246,6 +279,10 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         '.gallery-import-mode-tabs',
         '.gallery-import-progress__row',
         '.gallery-import-queue',
+        '.gallery-import-pagination',
+        '.gallery-import-pagination__summary',
+        'content-visibility: auto;',
+        'contain-intrinsic-size: 280px 380px;',
         '.gallery-import-item__count',
         '.gallery-import-item__error',
         '.gallery-import-item__notice',
@@ -304,11 +341,18 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'async function skipImportItems',
         'async function markImportItemsFailed',
         'async function cleanupRejectedImportItems',
+        'async function deleteImportBatch',
+        "if (action === 'delete_batch')",
+        "actionType: 'prompt_import.delete_batch'",
         'skippedDuplicateCount: duplicateIndexes.size',
         'attemptedCount: rows.length',
         'stagedCount: data.length',
+        'items: body.compact_response === true ? [] : result.items',
         'skipped_duplicates: Math.max(0, Number(previousStats.skipped_duplicates || 0))',
         "request = request.neq('status', 'cleaned')",
+        ".select(IMPORT_ITEM_SELECT, { count: 'exact' })",
+        '.range(pageStart, pageStart + pageSize - 1)',
+        'pagination: itemPage.pagination',
         "status: 'imported'",
         "prompt_text: ''",
         'image_sources: []',
@@ -343,6 +387,176 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     for (const marker of promptIdFixMarkers) {
         assert.equal(promptIdFixMigration.includes(marker), true, `prompt id fix migration should contain ${marker}`);
     }
+});
+
+test('prompt import batch details use server-side pagination with exact totals', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const query = _private.getImportPageQuery(new URLSearchParams({
+        batchId: 'batch-paged',
+        page: '3',
+        pageSize: '10'
+    }));
+    assert.deepEqual(query, {
+        batchId: 'batch-paged',
+        status: '',
+        includeCleaned: false,
+        page: 3,
+        pageSize: 10
+    });
+
+    const calls = [];
+    const request = {
+        select(columns, options) {
+            calls.push(['select', columns, options]);
+            return this;
+        },
+        eq(field, value) {
+            calls.push(['eq', field, value]);
+            return this;
+        },
+        neq(field, value) {
+            calls.push(['neq', field, value]);
+            return this;
+        },
+        order(field, options) {
+            calls.push(['order', field, options]);
+            return this;
+        },
+        async range(from, to) {
+            calls.push(['range', from, to]);
+            return {
+                data: Array.from({ length: 10 }, (_, index) => ({ id: `item-${index + 21}` })),
+                count: 57,
+                error: null
+            };
+        }
+    };
+    const supabase = {
+        from(table) {
+            calls.push(['from', table]);
+            return request;
+        }
+    };
+    const result = await _private.listImportItems(supabase, query);
+
+    assert.equal(result.items.length, 10);
+    assert.deepEqual(result.pagination, {
+        page: 3,
+        pageSize: 10,
+        total: 57,
+        totalPages: 6
+    });
+    assert.deepEqual(calls.at(-1), ['range', 20, 29]);
+    assert.deepEqual(calls[1][2], { count: 'exact' });
+});
+
+test('prompt import batch deletion cascades idle queue records', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const calls = [];
+    const batch = {
+        id: 'batch-delete',
+        source: 'meigen',
+        site: 'cn',
+        status: 'needs_attention',
+        stats: { total: 12 }
+    };
+    const supabase = {
+        from(table) {
+            if (table === 'prompt_import_batches') {
+                return {
+                    select() {
+                        return {
+                            eq() {
+                                return { async single() { return { data: batch, error: null }; } };
+                            }
+                        };
+                    },
+                    delete() {
+                        calls.push('delete-batch');
+                        return {
+                            eq() {
+                                return {
+                                    select() {
+                                        return { async single() { return { data: batch, error: null }; } };
+                                    }
+                                };
+                            }
+                        };
+                    }
+                };
+            }
+            if (table === 'prompt_import_items') {
+                return {
+                    select() {
+                        return {
+                            eq() {
+                                return { async in() { return { data: [], error: null }; } };
+                            }
+                        };
+                    }
+                };
+            }
+            assert.equal(table, 'admin_audit_logs');
+            return {
+                async insert(payload) {
+                    calls.push(payload.action_type);
+                    return { error: null };
+                }
+            };
+        }
+    };
+
+    const result = await _private.deleteImportBatch(supabase, { id: 'admin-1' }, {
+        batch_id: batch.id
+    });
+    assert.equal(result.deletedBatchId, batch.id);
+    assert.equal(result.deletedItemCount, 12);
+    assert.deepEqual(calls, ['delete-batch', 'prompt_import.delete_batch']);
+});
+
+test('prompt import batch deletion blocks active worker records', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const batch = {
+        id: 'batch-busy',
+        source: 'meigen',
+        site: 'cn',
+        status: 'ready',
+        stats: { total: 2 }
+    };
+    const supabase = {
+        from(table) {
+            if (table === 'prompt_import_batches') {
+                return {
+                    select() {
+                        return {
+                            eq() {
+                                return { async single() { return { data: batch, error: null }; } };
+                            }
+                        };
+                    }
+                };
+            }
+            assert.equal(table, 'prompt_import_items');
+            return {
+                select() {
+                    return {
+                        eq() {
+                            return {
+                                async in() {
+                                    return { data: [{ id: 'active-1', status: 'uploading' }], error: null };
+                                }
+                            };
+                        }
+                    };
+                }
+            };
+        }
+    };
+
+    await assert.rejects(
+        _private.deleteImportBatch(supabase, { id: 'admin-1' }, { batch_id: batch.id }),
+        (error) => error.statusCode === 409 && error.code === 'prompt_import_batch_busy'
+    );
 });
 
 test('prompt import payload requires source attribution, prompt, and images', () => {

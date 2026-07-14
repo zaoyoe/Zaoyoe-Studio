@@ -19,6 +19,7 @@
     const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
     const MESSAGE_AUTOMATION_STOP = 'FATHER_KEY_MEIGEN_AUTOMATION_STOP';
     const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
+    const MESSAGE_RESET_STATE = 'FATHER_KEY_MEIGEN_RESET_STATE';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
     const DETAIL_STATUS_POLL_MS = 700;
     const SCROLL_STATUS_POLL_MS = 700;
@@ -26,6 +27,14 @@
     const AUTOMATION_STATUS_POLL_MS = 700;
     const DEFAULT_SCROLL_STEPS = 30;
     const DEFAULT_PAGE_BATCH_PAGES = 5;
+    const DEFAULT_SETTINGS = Object.freeze({
+        adminBaseUrl: DEFAULT_ADMIN_BASE_URL,
+        site: 'cn',
+        defaultStatus: 'review',
+        maxItems: 20,
+        minFavorites: 0,
+        maxFavorites: 0
+    });
 
     const state = {
         payload: null,
@@ -193,6 +202,7 @@
         getElement('pauseBtn').disabled = !state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('pauseBtn').textContent = state.detailStatus.paused ? '继续' : '暂停';
         getElement('diagnosticsBtn').disabled = false;
+        getElement('resetBtn').disabled = busy;
     }
 
     function formatActivityTime(value = '') {
@@ -893,14 +903,7 @@
     }
 
     async function loadSettings() {
-        const settings = await chrome.storage.local.get({
-            adminBaseUrl: DEFAULT_ADMIN_BASE_URL,
-            site: 'cn',
-            defaultStatus: 'review',
-            maxItems: 20,
-            minFavorites: 0,
-            maxFavorites: 0
-        });
+        const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
         getElement('adminBaseUrl').value = settings.adminBaseUrl || DEFAULT_ADMIN_BASE_URL;
         getElement('siteSelect').value = settings.site || 'cn';
         getElement('statusSelect').value = settings.defaultStatus || 'review';
@@ -918,6 +921,95 @@
             maxItems: getMaxItemsSetting(),
             ...favoriteFilter
         });
+    }
+
+    function resetPopupState(version = '') {
+        stopDetailPolling();
+        stopScrollPolling();
+        stopPageBatchPolling();
+        stopAutomationPolling();
+        state.payload = null;
+        state.automationRunning = false;
+        state.streamedBatchId = '';
+        state.streamStats = null;
+        state.automationStatus = {
+            running: false,
+            stopRequested: false,
+            phase: '',
+            target: 0,
+            completed: false,
+            updatedAt: '',
+            lastError: ''
+        };
+        state.detailStatus = {
+            running: false,
+            paused: false,
+            processed: 0,
+            total: 0,
+            phase: '',
+            failed: [],
+            lastError: ''
+        };
+        state.scrollStatus = {
+            running: false,
+            stopRequested: false,
+            processed: 0,
+            total: 0,
+            discovered: 0,
+            staged: 0,
+            duplicates: 0,
+            lastError: ''
+        };
+        state.pageBatchStatus = {
+            running: false,
+            stopRequested: false,
+            processed: 0,
+            total: 0,
+            discovered: 0,
+            currentUrl: '',
+            lastError: ''
+        };
+        state.summary = {
+            collector_version: version,
+            total: 0,
+            images: 0,
+            videos: 0,
+            with_prompt: 0,
+            detail_failures: 0,
+            finalized_unresolved: 0
+        };
+        updateSummary(state.summary);
+        renderAutomationProgress();
+    }
+
+    async function resetCollector() {
+        if (state.automationRunning || hasRunningJob()) {
+            setStatus('请先停止当前任务，任务完全停止后再重置');
+            return;
+        }
+        if (!confirm('确定重置插件吗？本地采集结果、进度、已关联批次和筛选设置会恢复默认；Admin Import 中已经送入的批次不会被删除。')) {
+            return;
+        }
+        const tab = await getMeigenTabReady();
+        if (!tab) return;
+        try {
+            const response = await sendTabMessage(tab.id, { type: MESSAGE_RESET_STATE });
+            if (!response?.ok) {
+                setStatus(response?.message || '插件重置失败');
+                return;
+            }
+            await chrome.storage.local.set(DEFAULT_SETTINGS);
+            getElement('adminBaseUrl').value = DEFAULT_SETTINGS.adminBaseUrl;
+            getElement('siteSelect').value = DEFAULT_SETTINGS.site;
+            getElement('statusSelect').value = DEFAULT_SETTINGS.defaultStatus;
+            getElement('maxItemsInput').value = String(DEFAULT_SETTINGS.maxItems);
+            getElement('minFavoritesInput').value = '';
+            getElement('maxFavoritesInput').value = '';
+            resetPopupState(response.version || state.summary.collector_version || '');
+            setStatus('插件已恢复默认状态；下一次将从当前页面位置向下采集');
+        } catch (error) {
+            setStatus(error?.message || '插件重置失败，请刷新 Meigen 页面后重试');
+        }
     }
 
     function itemNeedsDetailEnrichment(item = {}) {
@@ -1121,6 +1213,9 @@
         });
         getElement('diagnosticsBtn').addEventListener('click', () => {
             void copyDiagnostics();
+        });
+        getElement('resetBtn').addEventListener('click', () => {
+            void resetCollector();
         });
         ['adminBaseUrl', 'siteSelect', 'statusSelect', 'maxItemsInput', 'minFavoritesInput', 'maxFavoritesInput'].forEach((id) => {
             getElement(id).addEventListener('change', () => {

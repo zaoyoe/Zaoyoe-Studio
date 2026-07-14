@@ -16,10 +16,9 @@ function initStarrySky() {
     let shootingStars = [];
     let lastFrameAt = 0;
     let hasRenderedFrame = false;
-    let promptPageScrolling = false;
-    let promptPageScrollResumeTimerId = null;
-    const isPromptsPage = document.body?.classList.contains('prompts-page') === true;
-    const frameIntervalMs = isPromptsPage ? 1000 / 30 : 0;
+    let pageScrolling = false;
+    let scrollResumeTimerId = null;
+    const frameIntervalMs = 1000 / 30;
     const reducedMotion = typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -182,7 +181,7 @@ function initStarrySky() {
 
     function animate(timestamp = 0) {
         requestAnimationFrame(animate);
-        if (document.hidden || promptPageScrolling) return;
+        if (document.hidden || pageScrolling || document.documentElement.dataset.theme !== 'dark') return;
         if (reducedMotion && hasRenderedFrame) return;
         if (hasRenderedFrame && timestamp - lastFrameAt < frameIntervalMs) return;
 
@@ -203,20 +202,25 @@ function initStarrySky() {
 
     }
 
-    window.addEventListener('resize', resize);
-    if (isPromptsPage) {
-        window.addEventListener('scroll', () => {
-            promptPageScrolling = true;
-            if (promptPageScrollResumeTimerId) {
-                window.clearTimeout(promptPageScrollResumeTimerId);
-            }
-            promptPageScrollResumeTimerId = window.setTimeout(() => {
-                promptPageScrollResumeTimerId = null;
-                promptPageScrolling = false;
-                lastFrameAt = 0;
-            }, 180);
-        }, { passive: true });
+    function handleScrollActivity() {
+        if (!pageScrolling) {
+            pageScrolling = true;
+            document.documentElement.classList.add('starry-scroll-active');
+        }
+        if (scrollResumeTimerId) {
+            window.clearTimeout(scrollResumeTimerId);
+        }
+        scrollResumeTimerId = window.setTimeout(() => {
+            scrollResumeTimerId = null;
+            pageScrolling = false;
+            document.documentElement.classList.remove('starry-scroll-active');
+            lastFrameAt = 0;
+        }, 180);
     }
+
+    window.addEventListener('resize', resize);
+    window.addEventListener('scroll', handleScrollActivity, { passive: true });
+    document.addEventListener('scroll', handleScrollActivity, { passive: true, capture: true });
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
             lastFrameAt = 0;

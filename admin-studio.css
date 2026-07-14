@@ -1295,9 +1295,39 @@ body.ios-scroll-lock-fixed {
 
 .gallery-import-item {
     overflow: hidden;
+    contain: layout paint style;
+    content-visibility: auto;
+    contain-intrinsic-size: 280px 380px;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.72);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+#module-gallery #view-import :is(
+    .gallery-import-assistant,
+    .gallery-import-batch-tracker,
+    .gallery-import-mode-tabs,
+    .gallery-import-progress__row,
+    .gallery-import-summary span,
+    .gallery-import-item
+) {
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+html.starry-scroll-active #module-gallery #view-import :is(
+    .gallery-import-assistant,
+    .gallery-import-batch-tracker,
+    .gallery-import-progress__row,
+    .gallery-import-summary span,
+    .gallery-import-item
+) {
+    box-shadow: none !important;
+    transition: none !important;
 }
 
 [data-theme="dark"] .gallery-import-item {
@@ -1315,6 +1345,28 @@ body.ios-scroll-lock-fixed {
     height: 100%;
     object-fit: cover;
     display: block;
+}
+
+.gallery-import-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    min-height: 38px;
+}
+
+.gallery-import-pagination:empty {
+    display: none;
+}
+
+.gallery-import-pagination__summary {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.gallery-import-pagination .pagination-input {
+    width: 58px;
 }
 
 .gallery-import-item__count {
@@ -1445,6 +1497,10 @@ body.ios-scroll-lock-fixed {
     .gallery-import-batch-tracker__heading select {
         min-width: 0;
         width: 100%;
+    }
+
+    .gallery-import-pagination {
+        justify-content: space-between;
     }
 }
 
@@ -2586,15 +2642,6 @@ body.ios-scroll-lock-fixed {
         linear-gradient(180deg, rgba(40, 51, 80, 0.95) 0%, rgba(20, 27, 45, 1) 100%);
 }
 
-.admin-card-media::after {
-    content: '';
-    position: absolute;
-    inset: auto 0 0;
-    height: 42%;
-    background: linear-gradient(180deg, transparent 0%, rgba(10, 14, 26, 0.72) 100%);
-    pointer-events: none;
-}
-
 .admin-card--skeleton,
 .admin-card--skeleton:hover {
     transform: none;
@@ -2770,39 +2817,7 @@ body.ios-scroll-lock-fixed {
     gap: 8px;
 }
 
-.admin-card-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.admin-card-badges--overlay {
-    position: absolute;
-    left: 14px;
-    right: 14px;
-    bottom: 14px;
-    z-index: 2;
-}
-
-.admin-card-badge {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    background: rgba(12, 18, 34, 0.64);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    color: rgba(236, 243, 255, 0.92);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-}
-
 .admin-card :is(
-    .admin-card-badge,
     .admin-card-title,
     .admin-card-status,
     .admin-card-language-summary,
@@ -2814,31 +2829,6 @@ body.ios-scroll-lock-fixed {
 ) {
     cursor: default;
     user-select: none;
-}
-
-.admin-card-badge--global {
-    border-color: rgba(96, 165, 250, 0.28);
-    background: rgba(37, 99, 235, 0.16);
-    color: rgba(191, 219, 254, 0.96);
-}
-
-.admin-card-badge--lang.is-ready {
-    border-color: rgba(74, 222, 128, 0.3);
-    background: rgba(22, 101, 52, 0.22);
-    color: rgba(187, 247, 208, 0.96);
-}
-
-.admin-card-badge--lang.is-missing {
-    border-color: rgba(248, 113, 113, 0.3);
-    background: rgba(127, 29, 29, 0.22);
-    color: rgba(254, 202, 202, 0.96);
-}
-
-.admin-card-badge--category {
-    border-color: rgba(244, 114, 182, 0.24);
-    background: rgba(157, 23, 77, 0.18);
-    color: rgba(251, 207, 232, 0.96);
-    text-transform: none;
 }
 
 .admin-card-title {
@@ -3063,11 +3053,11 @@ body.ios-scroll-lock-fixed {
 }
 
 .admin-card-hover-actions.left {
-    left: 12px;
+    left: 10px;
 }
 
 .admin-card-hover-actions.right {
-    right: 12px;
+    right: 10px;
 }
 
 .admin-card:hover .admin-card-hover-actions,
@@ -3078,9 +3068,9 @@ body.ios-scroll-lock-fixed {
 
 .hover-action-btn {
     --admin-card-hover-action-bg: #273142;
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
     /* 20260427_ADMIN_STUDIO_GALLERY_HOVER_ACTION_EDGE_SEAM_GUARD_1 */
     border: 1px solid var(--admin-card-hover-action-bg);
     appearance: none;
@@ -3095,7 +3085,7 @@ body.ios-scroll-lock-fixed {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 0.86rem;
     line-height: 1;
     outline: 0;
     outline-offset: 0;

@@ -297,10 +297,6 @@ test('gallery admin form exposes explicit bilingual editing controls', () => {
         '.gallery-ops-grid',
         '.gallery-bilingual-grid .form-group--full',
         '.admin-card-media',
-        '.admin-card-badges',
-        '.admin-card-badges--overlay',
-        '.admin-card-badge--global',
-        '.admin-card-badge--lang.is-ready',
         '.gallery-site-context-banner',
         '.admin-card-header',
         '.admin-card-status',
@@ -457,10 +453,6 @@ test('gallery admin runtime populates and saves bilingual fields explicitly', ()
         'setPromptBilingualFieldsOpen(hasPromptBilingualContent(nextBilingualValues));',
         "media.className = 'admin-card-media';",
         "media.appendChild(checkbox);",
-        "badges.className = 'admin-card-badges admin-card-badges--overlay';",
-        "globalBadge.textContent = 'Global Asset';",
-        "zhBadge.textContent = 'ZH';",
-        "enBadge.textContent = 'EN';",
         "statusBadge.className = `admin-card-status admin-card-status--${lifecycleState.key}`;",
         "contextActions.className = 'admin-card-context-actions';",
         "commentsBtn.setAttribute('data-admin-action', 'gallery-open-prompt-comments');",
@@ -510,6 +502,15 @@ test('gallery admin runtime populates and saves bilingual fields explicitly', ()
 
     for (const marker of requiredMarkers) {
         assert.equal(adminSource.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    for (const removedMarker of [
+        "badges.className = 'admin-card-badges admin-card-badges--overlay';",
+        "globalBadge.textContent = 'Global Asset';",
+        "zhBadge.textContent = 'ZH';",
+        "enBadge.textContent = 'EN';"
+    ]) {
+        assert.equal(adminSource.includes(removedMarker), false, `admin-studio.js should remove ${removedMarker}`);
     }
 
     assert.equal(

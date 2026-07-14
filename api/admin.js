@@ -46,6 +46,7 @@ const pointsLookupHandler = require('../server/api-handlers/admin/points/lookup'
 const pointsManageHandler = require('../server/api-handlers/admin/points/manage');
 const pointsPackagesHandler = require('../server/api-handlers/admin/points/packages');
 const promptsImageBase64Handler = require('../server/api-handlers/admin/prompts/image-base64');
+const promptsImageThumbnailHandler = require('../server/api-handlers/admin/prompts/image-thumbnail');
 const promptsImportsHandler = require('../server/api-handlers/admin/prompts/imports');
 const promptsManageHandler = require('../server/api-handlers/admin/prompts/manage');
 const accessSessionHandler = require('../server/api-handlers/admin/access/session');
@@ -146,6 +147,7 @@ const ROUTE_HANDLERS = {
     'points/manage': pointsManageHandler,
     'points/packages': pointsPackagesHandler,
     'prompts/image-base64': promptsImageBase64Handler,
+    'prompts/image-thumbnail': promptsImageThumbnailHandler,
     'prompts/imports': promptsImportsHandler,
     'prompts/manage': promptsManageHandler,
     'access/session': accessSessionHandler,

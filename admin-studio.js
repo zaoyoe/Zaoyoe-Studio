@@ -30,6 +30,7 @@ const ADMIN_GALLERY_HOMEPAGE_WARM_TIMEOUT_MS = 5000;
 let allPrompts = []; // Cache all prompts for local search
 const ADMIN_GALLERY_PAGE_SIZE = 10;
 const ADMIN_GALLERY_EAGER_IMAGE_COUNT = 4;
+const ADMIN_GALLERY_IMAGE_ROOT_MARGIN = '240px 0px';
 const PROMPT_IMAGE_ASSET_KEYS = Object.freeze(['original', 'thumb', 'featured', 'card', 'home']);
 const PROMPT_IMAGE_CDN_VARIANT_PATHS = new Set(['thumb', 'featured', 'card', 'home']);
 const adminGalleryPrefetchState = {
@@ -5717,6 +5718,13 @@ function bindAdminStudioDelegatedControls() {
                 changeAdminGalleryPage(nextPage);
                 break;
             }
+            case 'gallery-import-pagination-go': {
+                const max = Math.max(1, parseInt(actionEl.dataset.galleryImportPageMax || '1', 10) || 1);
+                const nextPage = Math.min(Math.max(parseInt(actionEl.value || '', 10) || 1, 1), max);
+                actionEl.value = String(nextPage);
+                changeGalleryImportPage(nextPage);
+                break;
+            }
             case 'payments-change-active-provider':
                 window.handlePaymentChannelActiveChange?.(actionEl.value);
                 break;
@@ -7533,6 +7541,27 @@ function getAdminGalleryCards() {
     return Array.from(document.querySelectorAll('#adminGrid .admin-card'));
 }
 
+let adminGalleryImageObserver = null;
+
+function getAdminGalleryImageObserver() {
+    if (adminGalleryImageObserver || typeof IntersectionObserver !== 'function') {
+        return adminGalleryImageObserver;
+    }
+
+    adminGalleryImageObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            ensureAdminGalleryCardImageLoaded(entry.target);
+            adminGalleryImageObserver.unobserve(entry.target);
+        });
+    }, {
+        rootMargin: ADMIN_GALLERY_IMAGE_ROOT_MARGIN,
+        threshold: 0.01
+    });
+
+    return adminGalleryImageObserver;
+}
+
 function ensureAdminGalleryCardImageLoaded(card, { eager = false } = {}) {
     if (!card) {
         return false;
@@ -7568,10 +7597,15 @@ function syncAdminGalleryVisibleCardImages() {
         && !card.classList.contains('admin-card--hidden-by-pagination')
     ));
 
+    const observer = getAdminGalleryImageObserver();
+    observer?.disconnect();
+
     visibleCards.forEach((card, index) => {
-        ensureAdminGalleryCardImageLoaded(card, {
-            eager: index < ADMIN_GALLERY_EAGER_IMAGE_COUNT
-        });
+        if (index < ADMIN_GALLERY_EAGER_IMAGE_COUNT || !observer) {
+            ensureAdminGalleryCardImageLoaded(card, { eager: index < ADMIN_GALLERY_EAGER_IMAGE_COUNT });
+            return;
+        }
+        observer.observe(card);
     });
 }
 
@@ -8364,32 +8398,6 @@ function renderAdminCard(prompt) {
     media.appendChild(image);
     media.appendChild(checkbox);
 
-    const badges = document.createElement('div');
-    badges.className = 'admin-card-badges admin-card-badges--overlay';
-
-    const globalBadge = document.createElement('span');
-    globalBadge.className = 'admin-card-badge admin-card-badge--global';
-    globalBadge.textContent = 'Global Asset';
-    badges.appendChild(globalBadge);
-
-    const zhBadge = document.createElement('span');
-    zhBadge.className = `admin-card-badge admin-card-badge--lang ${languageCoverage.zh ? 'is-ready' : 'is-missing'}`;
-    zhBadge.textContent = 'ZH';
-    badges.appendChild(zhBadge);
-
-    const enBadge = document.createElement('span');
-    enBadge.className = `admin-card-badge admin-card-badge--lang ${languageCoverage.en ? 'is-ready' : 'is-missing'}`;
-    enBadge.textContent = 'EN';
-    badges.appendChild(enBadge);
-
-    if (Array.isArray(prompt.tags) && prompt.tags[0]) {
-        const categoryBadge = document.createElement('span');
-        categoryBadge.className = 'admin-card-badge admin-card-badge--category';
-        categoryBadge.textContent = prompt.tags[0];
-        badges.appendChild(categoryBadge);
-    }
-
-    media.appendChild(badges);
     card.appendChild(media);
 
     const content = document.createElement('div');
@@ -17000,6 +17008,12 @@ const galleryImportState = {
     batchSelectionLocked: false,
     localPreviewLocked: false,
     items: [],
+    page: 1,
+    pageSize: 10,
+    totalItems: 0,
+    serverPaginated: false,
+    pageRequestId: 0,
+    paginationKey: '',
     running: false,
     uploadInFlight: false,
     statusRefreshInFlight: false,
@@ -17011,10 +17025,11 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-13.81';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-14.82';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_DEFAULT_PARALLELISM = 8;
+const GALLERY_IMPORT_PAGE_SIZE = 10;
 const GALLERY_IMPORT_PARALLELISM_STORAGE_KEY = 'fatherKey.galleryImport.parallelism';
 const GALLERY_IMPORT_STAGE_GAP_MS = 1500;
 const GALLERY_IMPORT_ADAPTIVE_INITIAL_PARALLELISM = 8;
@@ -17538,12 +17553,50 @@ function getGalleryImportDisplayImageCount(item = {}) {
 }
 
 function getGalleryImportCoverUrl(item = {}) {
-    return getGalleryImportImageSources(item)[0]
-        || getGalleryImportAssetUrls(item, 'final_image_assets')[0]
-        || getGalleryImportAssetUrls(item, 'temp_image_assets')[0]
-        || String(getGalleryImportVideoSources(item)[0]?.poster_url || getGalleryImportVideoSources(item)[0]?.poster || '')
-        || String(getGalleryImportVideoAssets(item)[0]?.poster || '')
-        || '';
+    const candidates = [
+        Array.isArray(item?.final_image_assets) ? item.final_image_assets[0] : null,
+        Array.isArray(item?.temp_image_assets) ? item.temp_image_assets[0] : null,
+        getGalleryImportImageSources(item)[0],
+        String(getGalleryImportVideoSources(item)[0]?.poster_url || getGalleryImportVideoSources(item)[0]?.poster || ''),
+        String(getGalleryImportVideoAssets(item)[0]?.poster || '')
+    ];
+
+    for (const candidate of candidates) {
+        const optimizedUrl = getOptimizedPromptCardImageUrl(candidate);
+        if (optimizedUrl) return optimizedUrl;
+    }
+    return '';
+}
+
+function getGalleryImportPreviewImageUrl(imageUrl = '') {
+    const rawUrl = String(imageUrl || '').trim();
+    if (!rawUrl) return '';
+    if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
+
+    try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        const isGeneratedVariant = /\/prompts\/(?:thumb|card|home)\//.test(parsed.pathname);
+        if (parsed.origin === window.location.origin || isGeneratedVariant) {
+            return parsed.toString();
+        }
+        const proxyUrl = new URL('/api/admin', window.location.origin);
+        proxyUrl.searchParams.set('route', 'prompts/image-thumbnail');
+        proxyUrl.searchParams.set('image_url', parsed.toString());
+        proxyUrl.searchParams.set('width', '440');
+        return `${proxyUrl.pathname}${proxyUrl.search}`;
+    } catch (_) {
+        return rawUrl;
+    }
+}
+
+function handleGalleryImportPreviewImageError(event) {
+    const image = event?.target;
+    if (!(image instanceof HTMLImageElement) || !image.matches('.gallery-import-item__media img')) return;
+    if (image.dataset.fallbackApplied === 'true') return;
+    const fallbackSrc = String(image.dataset.originalSrc || '').trim();
+    if (!fallbackSrc || image.src === fallbackSrc) return;
+    image.dataset.fallbackApplied = 'true';
+    image.src = fallbackSrc;
 }
 
 function getGalleryImportStatusLabel(status = '') {
@@ -17694,7 +17747,7 @@ function getGalleryImportStats(items = galleryImportState.items) {
         acc[stage] = (acc[stage] || 0) + 1;
         return acc;
     }, {});
-    return {
+    const itemStats = {
         total: rows.length,
         imported: counts.imported || 0,
         cleaned: counts.cleaned || 0,
@@ -17707,6 +17760,25 @@ function getGalleryImportStats(items = galleryImportState.items) {
         crawlFinished,
         totalFinished,
         failureStages
+    };
+    if (!galleryImportState.serverPaginated || galleryImportState.localPreviewLocked) {
+        return itemStats;
+    }
+
+    const batchStats = getGalleryImportBatchStats(galleryImportState.batch);
+    return {
+        ...itemStats,
+        total: batchStats.total,
+        imported: batchStats.completed,
+        cleaned: 0,
+        failed: batchStats.failed,
+        needs_review: batchStats.needsReview,
+        duplicate: batchStats.duplicates,
+        uploadable: batchStats.pending + batchStats.failed,
+        uploadTotal: batchStats.pending + batchStats.completed + batchStats.failed,
+        uploadFinished: batchStats.completed + batchStats.failed,
+        crawlFinished: batchStats.total,
+        totalFinished: batchStats.completed + batchStats.attention + batchStats.duplicates + batchStats.skipped
     };
 }
 
@@ -17744,19 +17816,100 @@ function updateGalleryImportProgress() {
     }
 }
 
+function getGalleryImportTotalItems() {
+    return galleryImportState.serverPaginated
+        ? Math.max(0, Number(galleryImportState.totalItems) || 0)
+        : galleryImportState.items.length;
+}
+
+function normalizeGalleryImportPage(page = galleryImportState.page, totalItems = getGalleryImportTotalItems()) {
+    const pageSize = Math.max(1, Number(galleryImportState.pageSize) || GALLERY_IMPORT_PAGE_SIZE);
+    const totalPages = Math.max(1, Math.ceil(Math.max(0, Number(totalItems) || 0) / pageSize));
+    const parsedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    return Math.min(parsedPage, totalPages);
+}
+
+function renderGalleryImportPagination(totalItems = getGalleryImportTotalItems()) {
+    const container = document.getElementById('galleryImportPagination');
+    if (!container) return;
+
+    const safeTotalItems = Math.max(0, Number(totalItems) || 0);
+    const pageSize = Math.max(1, Number(galleryImportState.pageSize) || GALLERY_IMPORT_PAGE_SIZE);
+    const totalPages = Math.max(1, Math.ceil(safeTotalItems / pageSize));
+    const currentPage = normalizeGalleryImportPage(galleryImportState.page, safeTotalItems);
+    galleryImportState.page = currentPage;
+
+    if (safeTotalItems <= pageSize) {
+        container.replaceChildren();
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="gallery-import-pagination__summary">第 ${currentPage} / ${totalPages} 页 · 共 ${safeTotalItems} 条</div>
+        <div class="pagination-control">
+            <button class="pagination-btn pagination-btn--step" type="button"
+                data-admin-action="gallery-import-pagination-go"
+                data-gallery-import-page="${currentPage - 1}"
+                ${currentPage <= 1 ? 'disabled' : ''}>
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <input class="pagination-input" type="number" value="${currentPage}" min="1" max="${totalPages}"
+                data-admin-change-action="gallery-import-pagination-go"
+                data-gallery-import-page-max="${totalPages}"
+                aria-label="导入队列页码">
+            <button class="pagination-btn pagination-btn--step" type="button"
+                data-admin-action="gallery-import-pagination-go"
+                data-gallery-import-page="${currentPage + 1}"
+                ${currentPage >= totalPages ? 'disabled' : ''}>
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    `;
+}
+
+async function changeGalleryImportPage(page) {
+    const nextPage = normalizeGalleryImportPage(page);
+    if (!galleryImportState.serverPaginated || galleryImportState.localPreviewLocked) {
+        galleryImportState.page = nextPage;
+        renderGalleryImportQueue(galleryImportState.items);
+        return;
+    }
+
+    const batchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
+    if (!batchId) return;
+    galleryImportState.page = nextPage;
+    try {
+        await loadGalleryImportBatchById(batchId, { page: nextPage, silent: true });
+    } catch (error) {
+        showAdminStudioToast(error.message || '分页读取失败', 'error');
+    }
+}
+
 function renderGalleryImportQueue(items = galleryImportState.items) {
     const queue = document.getElementById('galleryImportQueue');
     if (!queue) return;
 
     const rows = Array.isArray(items) ? items : [];
     if (!rows.length) {
-        queue.innerHTML = `<div class="empty-state">${escapeGalleryImportHtml(galleryImportState.emptyMessage || '暂无导入内容')}</div>`;
+        const totalItems = getGalleryImportTotalItems();
+        queue.innerHTML = `<div class="empty-state">${escapeGalleryImportHtml(totalItems ? '当前页暂无内容' : (galleryImportState.emptyMessage || '暂无导入内容'))}</div>`;
+        if (!totalItems) galleryImportState.page = 1;
+        renderGalleryImportPagination(totalItems);
         updateGalleryImportProgress();
         return;
     }
 
-    queue.innerHTML = rows.map((item) => {
+    const totalItems = getGalleryImportTotalItems();
+    galleryImportState.page = normalizeGalleryImportPage(galleryImportState.page, totalItems);
+    const pageSize = Math.max(1, Number(galleryImportState.pageSize) || GALLERY_IMPORT_PAGE_SIZE);
+    const pageStart = (galleryImportState.page - 1) * pageSize;
+    const pageRows = galleryImportState.serverPaginated
+        ? rows
+        : rows.slice(pageStart, pageStart + pageSize);
+
+    queue.innerHTML = pageRows.map((item) => {
         const cover = getGalleryImportCoverUrl(item);
+        const previewCover = getGalleryImportPreviewImageUrl(cover);
         const imageCount = getGalleryImportDisplayImageCount(item);
         const videoCount = getGalleryImportDisplayVideoCount(item);
         const prompt = item.prompt_text || (item.final_prompt_id ? '已保存到 Gallery' : '未抓到提示词');
@@ -17789,7 +17942,7 @@ function renderGalleryImportQueue(items = galleryImportState.items) {
         return `
             <article class="gallery-import-item" data-import-item-id="${escapeGalleryImportHtml(item.id || '')}">
                 <div class="gallery-import-item__media">
-                    ${cover ? `<img src="${escapeGalleryImportHtml(cover)}" alt="导入预览" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}
+                    ${previewCover ? `<img src="${escapeGalleryImportHtml(previewCover)}" data-original-src="${escapeGalleryImportHtml(cover)}" alt="导入预览" width="440" height="330" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer">` : ''}
                     <span class="gallery-import-item__count">${videoCount ? `${videoCount} 个视频 · ` : ''}${Number(imageCount) || 0} 张封面/图片</span>
                 </div>
                 <div class="gallery-import-item__body">
@@ -17805,13 +17958,28 @@ function renderGalleryImportQueue(items = galleryImportState.items) {
             </article>
         `;
     }).join('');
+    renderGalleryImportPagination(totalItems);
     updateGalleryImportProgress();
 }
 
 function setGalleryImportItems(items = [], options = {}) {
     const includeCleaned = options.includeCleaned === true;
+    const paginationKey = String(options.paginationKey || '').trim();
+    if (options.resetPage === true || (paginationKey && paginationKey !== galleryImportState.paginationKey)) {
+        galleryImportState.page = 1;
+    }
+    if (paginationKey) {
+        galleryImportState.paginationKey = paginationKey;
+    }
+    galleryImportState.serverPaginated = options.serverPaginated === true;
     galleryImportState.items = (Array.isArray(items) ? items : [])
         .filter((item) => includeCleaned || String(item?.status || '') !== 'cleaned');
+    galleryImportState.totalItems = galleryImportState.serverPaginated
+        ? Math.max(0, Number(options.totalItems) || 0)
+        : galleryImportState.items.length;
+    if (galleryImportState.serverPaginated) {
+        galleryImportState.page = normalizeGalleryImportPage(options.page || galleryImportState.page, galleryImportState.totalItems);
+    }
     if (galleryImportState.items.length) {
         setGalleryImportEmptyMessage();
     }
@@ -17837,25 +18005,44 @@ function loadGalleryImportRawText(rawText = '', statusPrefix = '已读取') {
     if (!previewItems.length) {
         galleryImportState.localPreviewLocked = false;
         setGalleryImportEmptyMessage('没有读到可导入内容。请先在采集器复制诊断或下载结果，再回到这里粘贴 / 导入。');
-        setGalleryImportItems([]);
+        setGalleryImportItems([], { resetPage: true, paginationKey: 'empty' });
         setGalleryImportRunStatus('未读到结果');
         return [];
     }
 
     galleryImportState.localPreviewLocked = true;
-    setGalleryImportItems(buildGalleryImportPreviewItems(previewItems));
+    setGalleryImportItems(buildGalleryImportPreviewItems(previewItems), {
+        resetPage: true,
+        paginationKey: 'preview'
+    });
     setGalleryImportRunStatus(`${statusPrefix} ${previewItems.length} 条，点“开始任务”写入队列`);
     return previewItems;
 }
 
-function upsertGalleryImportItem(nextItem = {}) {
+let galleryImportQueueRenderFrame = 0;
+
+function scheduleGalleryImportQueueRender() {
+    if (galleryImportQueueRenderFrame) return;
+    const schedule = typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : (callback) => window.setTimeout(callback, 0);
+    galleryImportQueueRenderFrame = schedule(() => {
+        galleryImportQueueRenderFrame = 0;
+        renderGalleryImportQueue(galleryImportState.items);
+    });
+}
+
+function upsertGalleryImportItem(nextItem = {}, options = {}) {
     const id = String(nextItem?.id || '').trim();
     if (!id) return;
     const index = galleryImportState.items.findIndex((item) => String(item?.id || '') === id);
     if (String(nextItem?.status || '') === 'cleaned') {
         if (index >= 0) {
             galleryImportState.items.splice(index, 1);
-            renderGalleryImportQueue(galleryImportState.items);
+            if (galleryImportState.serverPaginated) {
+                galleryImportState.totalItems = Math.max(0, galleryImportState.totalItems - 1);
+            }
+            if (options.render !== false) scheduleGalleryImportQueueRender();
         }
         return;
     }
@@ -17864,10 +18051,19 @@ function upsertGalleryImportItem(nextItem = {}) {
             ...galleryImportState.items[index],
             ...nextItem
         };
-    } else {
+    } else if (!galleryImportState.serverPaginated) {
         galleryImportState.items.unshift(nextItem);
+    } else {
+        return;
     }
-    renderGalleryImportQueue(galleryImportState.items);
+    if (options.render !== false) scheduleGalleryImportQueueRender();
+}
+
+function upsertGalleryImportItems(items = []) {
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        upsertGalleryImportItem(item, { render: false });
+    });
+    scheduleGalleryImportQueueRender();
 }
 
 function isGalleryImportItemUploadable(item = {}) {
@@ -17930,7 +18126,7 @@ async function skipGalleryImportItems(items = [], reason = '信息不完整，�
         item_ids: persistentIds,
         reason
     });
-    (payload.items || []).forEach(upsertGalleryImportItem);
+    upsertGalleryImportItems(payload.items || []);
     if (payload.batch) galleryImportState.batch = payload.batch;
     return payload;
 }
@@ -17944,9 +18140,13 @@ async function autoCleanupRejectedGalleryImportItems(batchId = galleryImportStat
     });
     const cleanedIds = new Set((payload.items || []).map((item) => String(item.id || '')).filter(Boolean));
     if (cleanedIds.size) {
-        galleryImportState.items = galleryImportState.items.filter((item) => !cleanedIds.has(String(item.id || '')));
         if (payload.batch) galleryImportState.batch = payload.batch;
-        renderGalleryImportQueue(galleryImportState.items);
+        if (galleryImportState.serverPaginated && String(galleryImportState.selectedBatchId || '') === id) {
+            await loadGalleryImportBatchById(id, { silent: true });
+        } else {
+            galleryImportState.items = galleryImportState.items.filter((item) => !cleanedIds.has(String(item.id || '')));
+            renderGalleryImportQueue(galleryImportState.items);
+        }
         renderGalleryImportBatchTracker();
     }
     return payload;
@@ -17966,7 +18166,7 @@ async function failGalleryImportItems(items = [], reason = '已保存，但发�
         item_ids: persistentIds,
         reason
     });
-    (payload.items || []).forEach(upsertGalleryImportItem);
+    upsertGalleryImportItems(payload.items || []);
     if (payload.batch) galleryImportState.batch = payload.batch;
     return payload;
 }
@@ -18203,7 +18403,7 @@ async function runGalleryImportPostSavePipeline(prompt = {}, item = {}, context 
                 site: writableSite,
                 item_ids: [item.id]
             });
-            (cleanupPayload.items || []).forEach(upsertGalleryImportItem);
+            upsertGalleryImportItems(cleanupPayload.items || []);
             if (cleanupPayload.batch) galleryImportState.batch = cleanupPayload.batch;
         } catch (error) {
             throw createGalleryImportStageError('cleanup', error);
@@ -18274,6 +18474,29 @@ async function loadRecentGalleryImportSavedItems(limit = 20) {
     return [...byPromptId.values()];
 }
 
+async function loadAllGalleryImportBatchItems(batchId, options = {}) {
+    const id = String(batchId || '').trim();
+    if (!id) return [];
+    const pageSize = Math.max(10, Math.min(Number(options.pageSize) || 100, 250));
+    const rows = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+        const payload = await fetchGalleryImportApi({
+            batchId: id,
+            page,
+            pageSize,
+            includeCleaned: options.includeCleaned === true ? 'true' : undefined
+        });
+        rows.push(...(Array.isArray(payload.items) ? payload.items : []));
+        totalPages = Math.max(1, Number(payload.pagination?.totalPages) || 1);
+        page += 1;
+    } while (page <= totalPages);
+
+    return rows;
+}
+
 async function stageGalleryImportItems(items = []) {
     const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: 'Gallery 导入助手' });
     if (!writableSite) return null;
@@ -18286,6 +18509,7 @@ async function stageGalleryImportItems(items = []) {
         mode: galleryImportState.mode,
         settings,
         batch_id: wasLocalPreviewLocked ? '' : (galleryImportState.batch?.id || ''),
+        compact_response: true,
         items
     });
     galleryImportState.localPreviewLocked = false;
@@ -18296,10 +18520,15 @@ async function stageGalleryImportItems(items = []) {
         upsertGalleryImportBatch(payload.batch);
         renderGalleryImportBatchTracker();
     }
-    setGalleryImportItems(payload.items || []);
+    const batchId = String(payload.batch?.id || galleryImportState.selectedBatchId || '');
+    if (batchId) {
+        await loadGalleryImportBatchById(batchId, { page: 1, resetPage: true, silent: true });
+    } else {
+        setGalleryImportItems(payload.items || [], { resetPage: true });
+    }
     const skippedDuplicateCount = Number(payload.skippedDuplicateCount || 0);
     if (skippedDuplicateCount > 0) {
-        setGalleryImportRunStatus(`已入队 ${payload.items?.length || 0} 条，提示词库重复自动跳过 ${skippedDuplicateCount} 条`);
+        setGalleryImportRunStatus(`已入队 ${Number(payload.stagedCount || 0)} 条，提示词库重复自动跳过 ${skippedDuplicateCount} 条`);
         showAdminStudioToast(`提示词库已有 ${skippedDuplicateCount} 条，已自动跳过`, 'info');
     }
     return payload;
@@ -18319,12 +18548,30 @@ function upsertGalleryImportBatch(batch = {}) {
 async function loadGalleryImportBatchById(batchId, options = {}) {
     const id = String(batchId || '').trim();
     if (!id) return null;
-    const detail = await fetchGalleryImportApi({ batchId: id, limit: 100 });
+    const paginationKey = `batch:${id}`;
+    const requestedPage = options.resetPage === true || galleryImportState.paginationKey !== paginationKey
+        ? 1
+        : Math.max(1, Number(options.page || galleryImportState.page) || 1);
+    const requestId = ++galleryImportState.pageRequestId;
+    const detail = await fetchGalleryImportApi({
+        batchId: id,
+        page: requestedPage,
+        pageSize: galleryImportState.pageSize
+    });
+    if (requestId !== galleryImportState.pageRequestId) return null;
+    const totalPages = Math.max(1, Number(detail.pagination?.totalPages) || 1);
+    if (requestedPage > totalPages) {
+        return loadGalleryImportBatchById(id, { ...options, page: totalPages, resetPage: false });
+    }
     galleryImportState.batch = detail.batch || galleryImportState.batches.find((batch) => batch.id === id) || null;
     galleryImportState.selectedBatchId = galleryImportState.batch?.id || id;
     if (galleryImportState.batch) upsertGalleryImportBatch(galleryImportState.batch);
     setGalleryImportItems(detail.items || [], {
-        includeCleaned: options.includeCleaned === true
+        includeCleaned: options.includeCleaned === true,
+        paginationKey,
+        serverPaginated: true,
+        page: requestedPage,
+        totalItems: detail.pagination?.total
     });
     renderGalleryImportBatchTracker();
     if (!options.silent) {
@@ -18418,13 +18665,11 @@ async function runGalleryImportAutoDetectionCycle() {
         galleryImportState.autoDetectionInFlight = true;
         try {
             await loadLatestGalleryImportBatch({ silent: true, preferPending: true });
-            const hasNewQueueItems = galleryImportState.items.some(isGalleryImportItemAutoUploadable);
             let batchStats = getGalleryImportBatchStats(galleryImportState.batch);
-            if (!hasNewQueueItems) {
+            if (!batchStats.pending) {
                 const batchId = String(galleryImportState.batch?.id || '').trim();
                 const cleanupPayload = await autoCleanupRejectedGalleryImportItems(batchId);
                 if (cleanupPayload.cleanedCount && batchId) {
-                    await loadGalleryImportBatchById(batchId, { silent: true });
                     batchStats = getGalleryImportBatchStats(galleryImportState.batch);
                     setGalleryImportRunStatus(`批次 ${batchId.slice(0, 8)} 已自动清理 ${cleanupPayload.cleanedCount} 条不完整或不合规卡片`);
                 }
@@ -18437,7 +18682,7 @@ async function runGalleryImportAutoDetectionCycle() {
                 }
                 return { pendingCount: 0, batch: galleryImportState.batch };
             }
-            const pendingCount = galleryImportState.items.filter(isGalleryImportItemAutoUploadable).length;
+            const pendingCount = batchStats.pending;
             setGalleryImportRunStatus(
                 `批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)}：服务端 Worker 正在处理 ${pendingCount} 条，可安全关闭 Admin Studio`
             );
@@ -18518,7 +18763,7 @@ async function refreshGalleryImportProcessingStatus(options = {}) {
                             site: writableSite,
                             item_ids: [item.id]
                         });
-                        (cleanupPayload.items || []).forEach(upsertGalleryImportItem);
+                        upsertGalleryImportItems(cleanupPayload.items || []);
                         if (cleanupPayload.batch) galleryImportState.batch = cleanupPayload.batch;
                     }
                     continue;
@@ -18590,10 +18835,31 @@ async function runGalleryImportUploadQueue(options = {}) {
     const uploadableMatcher = options.automatic
         ? isGalleryImportItemAutoUploadable
         : isGalleryImportItemUploadable;
-    let uploadable = galleryImportState.items.filter(uploadableMatcher);
-    if (!uploadable.length && !galleryImportState.items.length) {
+    let operationItems = galleryImportState.items;
+    const activeBatchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
+    if (galleryImportState.serverPaginated && activeBatchId) {
+        try {
+            operationItems = await loadAllGalleryImportBatchItems(activeBatchId);
+        } catch (error) {
+            showAdminStudioToast(error.message || '读取完整导入队列失败', 'error');
+            return;
+        }
+    }
+    let uploadable = operationItems.filter(uploadableMatcher);
+    if (!uploadable.length && !operationItems.length) {
         await loadLatestGalleryImportBatch();
-        uploadable = galleryImportState.items.filter(uploadableMatcher);
+        const refreshedBatchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
+        if (galleryImportState.serverPaginated && refreshedBatchId) {
+            try {
+                operationItems = await loadAllGalleryImportBatchItems(refreshedBatchId);
+            } catch (error) {
+                showAdminStudioToast(error.message || '读取完整导入队列失败', 'error');
+                return;
+            }
+        } else {
+            operationItems = galleryImportState.items;
+        }
+        uploadable = operationItems.filter(uploadableMatcher);
     }
 
     if (!uploadable.length) {
@@ -18648,7 +18914,7 @@ async function runGalleryImportUploadQueue(options = {}) {
     });
 
     if (skippedItems.length) {
-        skippedItems.forEach(upsertGalleryImportItem);
+        upsertGalleryImportItems(skippedItems);
         try {
             await skipGalleryImportItems(skippedItems, '必填信息缺失或重复，已跳过');
         } catch (skipError) {
@@ -18963,7 +19229,17 @@ async function startGalleryImportTask() {
 }
 
 async function cleanupGalleryImportItems() {
-    const cleanupIds = galleryImportState.items
+    const batchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
+    let operationItems = galleryImportState.items;
+    if (galleryImportState.serverPaginated && batchId) {
+        try {
+            operationItems = await loadAllGalleryImportBatchItems(batchId);
+        } catch (error) {
+            showAdminStudioToast(error.message || '读取完整导入队列失败', 'error');
+            return;
+        }
+    }
+    const cleanupIds = operationItems
         .filter((item) => ['imported', 'skipped'].includes(String(item?.status || '')))
         .map((item) => item.id)
         .filter(Boolean);
@@ -18976,7 +19252,10 @@ async function cleanupGalleryImportItems() {
         const payload = await mutateGalleryImport('cleanup_items', {
             item_ids: cleanupIds
         });
-        (payload.items || []).forEach(upsertGalleryImportItem);
+        upsertGalleryImportItems(payload.items || []);
+        if (galleryImportState.serverPaginated && batchId) {
+            await loadGalleryImportBatchById(batchId, { silent: true });
+        }
         showAdminStudioToast(`已清理 ${payload.cleanedCount || cleanupIds.length} 条`, 'success');
     } catch (error) {
         showAdminStudioToast(error.message || '清理失败', 'error');
@@ -18988,7 +19267,17 @@ async function clearCurrentGalleryImportQueue() {
         showAdminStudioToast('当前仍有导入或状态刷新任务，请等待完成后再清空', 'warning');
         return;
     }
-    const cleanupIds = galleryImportState.items
+    const batchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
+    let operationItems = galleryImportState.items;
+    if (galleryImportState.serverPaginated && batchId) {
+        try {
+            operationItems = await loadAllGalleryImportBatchItems(batchId);
+        } catch (error) {
+            showAdminStudioToast(error.message || '读取完整导入队列失败', 'error');
+            return;
+        }
+    }
+    const cleanupIds = operationItems
         .map((item) => item.id)
         .filter((id) => id && !String(id).startsWith('preview-'));
     if (!cleanupIds.length) {
@@ -19005,6 +19294,8 @@ async function clearCurrentGalleryImportQueue() {
         });
         const cleanedIds = new Set((payload.items || []).map((item) => String(item.id || '')).filter(Boolean));
         galleryImportState.items = galleryImportState.items.filter((item) => !cleanedIds.has(String(item.id || '')));
+        galleryImportState.totalItems = 0;
+        galleryImportState.serverPaginated = false;
         galleryImportState.batch = null;
         const rawInput = document.getElementById('galleryImportRawInput');
         if (rawInput) rawInput.value = '';
@@ -19014,6 +19305,52 @@ async function clearCurrentGalleryImportQueue() {
         showAdminStudioToast(`已清空 ${payload.cleanedCount || cleanupIds.length} 条`, 'success');
     } catch (error) {
         showAdminStudioToast(error.message || '清空队列失败', 'error');
+    }
+}
+
+async function deleteCurrentGalleryImportBatch() {
+    if (galleryImportState.running
+        || galleryImportState.uploadInFlight
+        || galleryImportState.statusRefreshInFlight
+        || galleryImportState.autoDetectionInFlight) {
+        showAdminStudioToast('当前仍有导入或状态刷新任务，请等待完成后再删除批次', 'warning');
+        return;
+    }
+    const batchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
+    if (!batchId) {
+        showAdminStudioToast('当前没有可删除的服务端批次', 'info');
+        return;
+    }
+    const stats = getGalleryImportBatchStats(galleryImportState.batch);
+    if (!confirm(`确定永久删除批次 ${batchId.slice(0, 8)} 及其 ${stats.total} 条队列记录吗？Supabase 中的暂存记录会被删除；已发布 Gallery 内容和 R2 媒体不会被删除。`)) {
+        return;
+    }
+
+    try {
+        setGalleryImportAutoDetectionEnabled(false);
+        const payload = await mutateGalleryImport('delete_batch', {
+            batch_id: batchId
+        });
+        galleryImportState.batches = galleryImportState.batches
+            .filter((batch) => String(batch?.id || '') !== batchId);
+        galleryImportState.batch = null;
+        galleryImportState.selectedBatchId = '';
+        galleryImportState.batchSelectionLocked = false;
+        galleryImportState.localPreviewLocked = false;
+        galleryImportState.items = [];
+        galleryImportState.totalItems = 0;
+        galleryImportState.serverPaginated = false;
+        galleryImportState.page = 1;
+        galleryImportState.paginationKey = '';
+        const rawInput = document.getElementById('galleryImportRawInput');
+        if (rawInput) rawInput.value = '';
+        renderGalleryImportBatchTracker();
+        renderGalleryImportQueue([]);
+        await loadLatestGalleryImportBatch({ force: true, silent: true });
+        setGalleryImportRunStatus(`批次 ${batchId.slice(0, 8)} 已删除`);
+        showAdminStudioToast(`已删除批次记录及 ${payload.deletedItemCount ?? stats.total} 条队列记录`, 'success');
+    } catch (error) {
+        showAdminStudioToast(error.message || '删除批次失败', 'error');
     }
 }
 
@@ -19056,6 +19393,11 @@ async function pasteGalleryImportClipboard() {
 
 function initGalleryImportAssistant() {
     initCustomDropdown?.();
+
+    if (document.documentElement.dataset.galleryImportPreviewFallbackBound !== '1') {
+        document.documentElement.dataset.galleryImportPreviewFallbackBound = '1';
+        document.addEventListener('error', handleGalleryImportPreviewImageError, true);
+    }
 
     let savedParallelism = GALLERY_IMPORT_DEFAULT_PARALLELISM;
     try {
@@ -19164,6 +19506,9 @@ document.addEventListener('click', (event) => {
         case 'gallery-import-set-mode':
             setGalleryImportMode(actionEl.dataset.importMode || 'crawl_only');
             break;
+        case 'gallery-import-pagination-go':
+            changeGalleryImportPage(actionEl.dataset.galleryImportPage || 1);
+            break;
         case 'gallery-import-start':
             void startGalleryImportTask();
             break;
@@ -19186,6 +19531,9 @@ document.addEventListener('click', (event) => {
             break;
         case 'gallery-import-clear-current':
             void clearCurrentGalleryImportQueue();
+            break;
+        case 'gallery-import-delete-batch':
+            void deleteCurrentGalleryImportBatch();
             break;
     }
 });

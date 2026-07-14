@@ -18,6 +18,7 @@
     const MESSAGE_AUTOMATION_START = 'FATHER_KEY_MEIGEN_AUTOMATION_START';
     const MESSAGE_AUTOMATION_STOP = 'FATHER_KEY_MEIGEN_AUTOMATION_STOP';
     const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
+    const MESSAGE_RESET_STATE = 'FATHER_KEY_MEIGEN_RESET_STATE';
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
     const MESSAGE_LOAD_BATCH = 'FATHER_KEY_LOAD_IMPORT_BATCH';
     const MESSAGE_CLEANUP_PENDING = 'FATHER_KEY_CLEANUP_PENDING_IMPORT';
@@ -643,6 +644,81 @@
             scrollStatus: getScrollStatus(),
             pageBatchStatus: getPageBatchStatus(),
             automationStatus: getAutomationStatus()
+        };
+    }
+
+    async function resetCollectorState() {
+        if (automationJob.running || detailJob.running || scrollJob.running || pageBatchJob.running) {
+            return {
+                ok: false,
+                message: '请先停止当前任务，任务完全停止后再重置'
+            };
+        }
+        Object.assign(detailJob, {
+            running: false,
+            paused: false,
+            processed: 0,
+            total: 0,
+            phase: '',
+            failed: [],
+            lastPayload: null,
+            lastSummary: null,
+            lastError: ''
+        });
+        Object.assign(scrollJob, {
+            running: false,
+            stopRequested: false,
+            processed: 0,
+            total: 0,
+            discovered: 0,
+            lastPayload: null,
+            lastSummary: null,
+            lastError: ''
+        });
+        Object.assign(pageBatchJob, {
+            running: false,
+            stopRequested: false,
+            processed: 0,
+            total: 0,
+            discovered: 0,
+            currentUrl: '',
+            lastPayload: null,
+            lastSummary: null,
+            lastError: ''
+        });
+        Object.assign(automationJob, {
+            running: false,
+            stopRequested: false,
+            phase: '',
+            target: 0,
+            completed: false,
+            startedAt: '',
+            updatedAt: '',
+            lastError: ''
+        });
+        Object.assign(sessionState, {
+            lastPayload: null,
+            lastSummary: null,
+            updatedAt: ''
+        });
+        resetStreamStageState('');
+        diagnosticLog.length = 0;
+        window.__FatherKeyMeigenStructuredEntries = [];
+        window.__FatherKeyMeigenHoverAuthors = new Map();
+        document.querySelectorAll('[data-father-key-hover-revision]').forEach((node) => {
+            delete node.dataset.fatherKeyHoverRevision;
+        });
+        if (chrome?.storage?.session) {
+            await chrome.storage.session.remove(SESSION_STORAGE_KEY);
+        }
+        logDiagnostic('collector-reset', {
+            pageUrl: window.location.href,
+            scrollY: getScrollSnapshot().y
+        });
+        return {
+            ...getSessionState(),
+            ok: true,
+            version: getCollector()?.VERSION || ''
         };
     }
 
@@ -1586,18 +1662,11 @@
         return waitForVisibleGalleryBatch();
     }
 
-    async function beginFullSweepAtTop() {
+    async function beginSweepAtCurrentPosition() {
         const before = getScrollSnapshot();
-        if (before.y > 12) {
-            window.scrollTo({ top: 0, behavior: 'auto' });
-            for (let attempt = 0; attempt < 10; attempt += 1) {
-                await sleep(100);
-                if (getScrollSnapshot().y <= 12) break;
-            }
-        }
         const snapshot = await waitForVisibleGalleryBatch();
-        logDiagnostic('full-sweep-start', {
-            previousY: before.y,
+        logDiagnostic('current-sweep-start', {
+            startingY: before.y,
             snapshot
         });
         return snapshot;
@@ -3486,7 +3555,7 @@
             let payload = null;
             updateAutomationJob({ phase: 'discovering' });
             await prepareListPageForCollection();
-            await beginFullSweepAtTop();
+            await beginSweepAtCurrentPosition();
             if (String(message.batchId || '').trim()) {
                 updateAutomationJob({ phase: 'recovering' });
                 payload = await restoreStreamBatch(message);
@@ -3669,6 +3738,16 @@
             sessionRestorePromise
                 .then(() => sendResponse(getSessionState()))
                 .catch(() => sendResponse(getSessionState()));
+            return true;
+        }
+
+        if (message?.type === MESSAGE_RESET_STATE) {
+            resetCollectorState()
+                .then((response) => sendResponse(response))
+                .catch((error) => sendResponse({
+                    ok: false,
+                    message: error?.message || '插件重置失败'
+                }));
             return true;
         }
 
