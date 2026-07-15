@@ -131,7 +131,7 @@ describe('OAuthCallbackView', () => {
     mount(OAuthCallbackView)
     await vi.dynamicImportSettled()
 
-    expect(routerReplaceMock).toHaveBeenCalledWith('/login?region_blocked=login')
+    expect(routerReplaceMock).toHaveBeenCalledWith('/login?region_blocked=registration')
     expect(showErrorMock).not.toHaveBeenCalled()
   })
 

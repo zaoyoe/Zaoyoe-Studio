@@ -44,7 +44,7 @@
         '.prompt-text:not(.blur-masked)',
         '.comment-list:not(.collapsed)',
         '#commentInput',
-        '#promptCommentComposerInput',
+        '#promptCommentInputDockField',
         '.verify-batch-results',
         '.verify-history-list'
     ].join(', ');

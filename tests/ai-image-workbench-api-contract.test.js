@@ -31,7 +31,7 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260707_AI_IMAGE_WORKBENCH_AUTH_LAYER_2/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260715_AI_IMAGE_WORKBENCH_PROXY_LIFECYCLE_24/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
 });
 
@@ -323,7 +323,7 @@ test('ai image chat thread includes a Codex-style quick navigation rail', () => 
     assert.match(source, /let chatNavigationObserver = null/);
     assert.match(source, /let chatNavigationDragState = null/);
     assert.match(source, /let chatNavigationResizeObserver = null/);
-    assert.match(source, /root\.addEventListener\('pointerdown', handleRootPointerDown\)/);
+    assert.match(source, /root\.addEventListener\('pointerdown', handleRootPointerDown, true\)/);
     assert.match(source, /root\.addEventListener\('pointermove', handleRootPointerMove\)/);
     assert.match(source, /root\.addEventListener\('pointerup', handleRootPointerUp\)/);
     assert.match(source, /root\.addEventListener\('pointercancel', handleRootPointerUp\)/);
@@ -617,7 +617,7 @@ test('ai image workbench locks page scroll while the modal is open', () => {
     assert.match(source, /function lockWorkbenchPageScroll\(\)/);
     assert.match(source, /const useFixedBodyLock = !isMobileWorkbenchViewport\(\);/);
     assert.match(source, /mode: useFixedBodyLock \? 'fixed-body' : 'overflow-only'/);
-    assert.match(source, /if \(!useFixedBodyLock\) \{[\s\S]*doc\.style\.overflow = 'hidden';[\s\S]*body\.style\.overflow = 'hidden';[\s\S]*return;[\s\S]*\}/);
+    assert.match(source, /if \(!useFixedBodyLock\) \{[\s\S]*body\.style\.overflow = 'hidden';[\s\S]*return;[\s\S]*\}/);
     assert.match(source, /body\.style\.position = 'fixed'/);
     assert.match(source, /body\.style\.top = `-\$\{scroll\.y\}px`/);
     assert.match(source, /function unlockWorkbenchPageScroll\(\)/);
@@ -652,7 +652,7 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260707_AI_IMAGE_WORKBENCH_NO_PINCH_1/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260715_AI_IMAGE_WORKBENCH_PROXY_LIFECYCLE_24/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -926,14 +926,93 @@ test('ai image workbench exposes video generation only from configured video mod
     assert.match(source, /function syncMobileComposerMenuAnchor\(\)/);
     assert.match(source, /const MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX = 12/);
     assert.match(source, /const historyPanelMaxHeight = Math\.max\(60, composerTop - MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX\)/);
-    assert.match(source, /const nextHistoryPanelMaxHeight = Math\.max\(60, nextComposerTop - MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX\)/);
     assert.match(source, /root\?\.style\?\.setProperty\('--aiw-mobile-composer-top', `\$\{composerTop\}px`\)/);
     assert.match(source, /shell\.style\.setProperty\('--aiw-mobile-composer-top', `\$\{composerTop\}px`\)/);
+    assert.match(source, /let mobilePromptProxyState = 'closed';/);
+    assert.match(source, /function addMobilePromptProxyViewportListeners\(\) \{[\s\S]*visualViewport\?\.addEventListener\?\.\('resize', handleMobilePromptProxyViewportChange/);
+    assert.match(source, /function removeMobilePromptProxyViewportListeners\(\) \{[\s\S]*visualViewport\?\.removeEventListener\?\.\('resize', handleMobilePromptProxyViewportChange/);
+    assert.match(source, /function handleMobilePromptProxyViewportChange\(\) \{[\s\S]*syncMobilePromptProxyViewport\(\);/);
+    assert.match(source, /function syncMobilePromptProxyViewport\(\) \{[\s\S]*mobilePromptProxyBaselineHeight - viewport\.height >= keyboardThreshold[\s\S]*mobilePromptProxyState = 'open';[\s\S]*classList\.add\('is-open'\)/);
+    assert.match(source, /mobilePromptProxyState === 'opening'[\s\S]*const minimumPlausibleHeight = Math\.max\(320, Math\.round\(mobilePromptProxyBaselineHeight \* 0\.42\)\)/);
+    assert.match(source, /const openingExpired = Date\.now\(\) - mobilePromptProxyStartedAt >= 1200;/);
+    assert.match(source, /if \(!keyboardVisible \|\| viewport\.height < minimumPlausibleHeight\) \{[\s\S]*if \(openingExpired\) \{[\s\S]*closeMobilePromptProxy\(\{ blur: true, animate: false \}\);[\s\S]*return;/);
+    assert.match(source, /const geometryStable = mobilePromptProxyCandidateViewport[\s\S]*mobilePromptProxyCandidateViewport\.height - viewport\.height\) <= 4[\s\S]*mobilePromptProxyCandidateViewport\.top - viewport\.top\) <= 2/);
+    assert.match(source, /if \(!geometryStable\) mobilePromptProxyCandidateSince = Date\.now\(\);[\s\S]*Date\.now\(\) - mobilePromptProxyCandidateSince < 80[\s\S]*scheduleMobilePromptProxyViewportSync\(\);[\s\S]*return;/);
+    assert.doesNotMatch(source, /mobilePromptProxyAcceptedViewport|mobilePromptProxyPendingViewport|maxHeightStep|maxTopStep|suspiciousDrop/);
+    assert.match(source, /function handleMobilePromptProxyViewportChange\(\) \{[\s\S]*\['opening', 'open', 'closing'\]\.includes\(mobilePromptProxyState\)[\s\S]*syncMobilePromptProxyViewport\(\);/);
+    assert.match(source, /function applyMobilePromptProxyViewport\(viewport\) \{[\s\S]*previous\.top !== viewport\.top[\s\S]*--aiw-mobile-proxy-top[\s\S]*previous\.height !== viewport\.height[\s\S]*--aiw-mobile-proxy-height[\s\S]*mobilePromptProxyAppliedViewport = viewport;/);
+    assert.match(source, /function syncMobilePromptProxyViewport\(\) \{[\s\S]*applyMobilePromptProxyViewport\(viewport\);[\s\S]*mobilePromptProxyState === 'closing'[\s\S]*scheduleMobilePromptProxyViewportSync\(\);[\s\S]*return;/);
+    assert.match(source, /const keyboardDescentStarted = mobilePromptProxyOpenViewportHeight > 0[\s\S]*viewport\.height >= mobilePromptProxyOpenViewportHeight \+ 4/);
+    assert.match(source, /mobilePromptProxyState === 'open'[\s\S]*mobilePromptProxyKeyboardVisible[\s\S]*keyboardDescentStarted \|\| !keyboardVisible[\s\S]*closeMobilePromptProxy\(\{ blur: false, animate: true \}\);/);
+    assert.doesNotMatch(source, /mobilePromptProxyOpenViewportHeight \+ 80|mobilePromptProxyHiddenFrames|mobilePromptProxyStartedAt >= 650/);
+    assert.match(source, /mobilePromptProxyState = 'open';[\s\S]*mobilePromptProxyOpenViewportHeight = viewport\.height;/);
+    assert.match(source, /mobilePromptProxy\.classList\.add\('is-open'\);[\s\S]*scheduleMobilePromptProxyViewportSync\(\);/);
+    assert.doesNotMatch(source, /viewport\.height > mobilePromptProxyViewportHeight/);
+    assert.doesNotMatch(source, /Date\.now\(\) - mobilePromptProxyStartedAt >= 1600[\s\S]*closeMobilePromptProxy/);
+    assert.doesNotMatch(source, /mobilePromptProxyStableFrames|Date\.now\(\) - mobilePromptProxyStartedAt >= 320/);
+    assert.match(source, /function focusMobilePromptProxyInput\(\{ restart = false \} = \{\}\) \{[\s\S]*restart && document\.activeElement === mobilePromptProxyInput[\s\S]*mobilePromptProxyInput\.blur\(\);[\s\S]*mobilePromptProxyInput\.focus\(\{ preventScroll: true \}\);[\s\S]*clearMobilePromptProxyBlurTimer\(\);/);
+    assert.match(source, /mobilePromptProxyState === 'open'[\s\S]*keyboardVisible && document\.activeElement === mobilePromptProxyInput[\s\S]*mobilePromptProxyState = 'opening';[\s\S]*classList\.add\('is-active', 'is-opening'\);[\s\S]*focusMobilePromptProxyInput\(\{ restart: true \}\)/);
+    assert.match(source, /mobilePromptProxyState === 'opening'[\s\S]*Date\.now\(\) - mobilePromptProxyStartedAt < 180[\s\S]*focusMobilePromptProxyInput\(\{ restart: true \}\)[\s\S]*scheduleMobilePromptProxyViewportSync\(\)/);
+    assert.match(source, /function openMobilePromptProxy\(source = null\) \{[\s\S]*mobilePromptProxyState = 'opening';[\s\S]*classList\.add\('is-active', 'is-opening'\);[\s\S]*if \(!focusMobilePromptProxyInput\(\)\)/);
+    const openMobileProxyHandler = source.slice(
+        source.indexOf('function openMobilePromptProxy(source = null)'),
+        source.indexOf('function closeMobilePromptProxy(')
+    );
+    assert.match(openMobileProxyHandler, /mobilePromptProxyState = 'opening';[\s\S]*root\?\.classList\?\.remove\('is-mobile-prompt-proxy-active'\);[\s\S]*document\.body\?\.classList\?\.remove\('ai-image-prompt-proxy-active'\);/);
+    assert.match(openMobileProxyHandler, /if \(!focusMobilePromptProxyInput\(\)\) \{[\s\S]*closeMobilePromptProxy\(\{ blur: false, animate: false \}\);[\s\S]*return false;/);
+    assert.doesNotMatch(openMobileProxyHandler, /classList\?\.add\('is-mobile-prompt-proxy-active'\)|classList\?\.add\('ai-image-prompt-proxy-active'\)/);
+    assert.match(source, /mobilePromptProxyState = 'open';[\s\S]*root\?\.classList\?\.add\('is-mobile-prompt-proxy-active'\);[\s\S]*document\.body\?\.classList\?\.add\('ai-image-prompt-proxy-active'\);[\s\S]*classList\.add\('is-open'\);/);
+    assert.doesNotMatch(openMobileProxyHandler, /requestAnimationFrame[\s\S]*classList\.add\('is-open'\)/);
+    assert.match(source, /function closeMobilePromptProxy\(\{ blur = true, animate = true \} = \{\}\) \{[\s\S]*syncMobilePromptProxySource\(value, selectionStart, selectionEnd\);[\s\S]*mobilePromptProxyState = 'closing';[\s\S]*const finalize = \(\) => \{[\s\S]*removeMobilePromptProxyViewportListeners\(\);[\s\S]*setTimeout\?\.\(finalize, 120\)/);
+    assert.match(source, /mobilePromptProxyAppliedViewport = null;[\s\S]*mobilePromptProxySource = null;/);
+    const closeMobileProxyHandler = source.slice(
+        source.indexOf('function closeMobilePromptProxy('),
+        source.indexOf('function handleWorkbenchWindowResize()')
+    );
+    assert.doesNotMatch(closeMobileProxyHandler.split('const finalize = () => {')[0], /removeMobilePromptProxyViewportListeners\(\)/);
+    assert.match(source, /mobilePromptProxySource = null;[\s\S]*root\?\.classList\?\.remove\('is-mobile-prompt-proxy-active'\)/);
+    assert.match(source, /document\.body\?\.classList\?\.remove\('ai-image-prompt-proxy-active'\)/);
+    assert.match(source, /mobilePromptProxySource instanceof HTMLTextAreaElement && mobilePromptProxySource\.isConnected[\s\S]*root\?\.querySelector\?\.\('\.ai-image-main-prompt\[data-aiw-prompt\]'\)/);
+    assert.match(source, /mobilePromptProxy = document\.createElement\('div'\);[\s\S]*document\.body\.appendChild\(mobilePromptProxy\);/);
+    assert.match(source, /readonly inputmode="none" tabindex="-1" role="button" aria-haspopup="dialog"/);
+    assert.match(source, /mobilePromptProxyInput\?\.addEventListener\('input', syncMobilePromptProxyHeight\)/);
+    assert.match(source, /mobilePromptProxyInput\?\.addEventListener\('blur', handleMobilePromptProxyBlur\)/);
+    assert.match(source, /function handleMobilePromptProxyBlur\(\) \{[\s\S]*mobilePromptProxyState === 'open'[\s\S]*closeMobilePromptProxy\(\{ blur: false, animate: true \}\);[\s\S]*setTimeout\?\.\([\s\S]*mobilePromptProxyState !== 'opening'[\s\S]*document\.activeElement === mobilePromptProxyInput[\s\S]*if \(!keyboardVisible\) \{[\s\S]*closeMobilePromptProxy\(\{ blur: false, animate: false \}\);[\s\S]*240/);
+    const proxyInputHandler = source.slice(
+        source.indexOf('function syncMobilePromptProxyHeight()'),
+        source.indexOf('function openMobilePromptProxy(source = null)')
+    );
+    assert.doesNotMatch(proxyInputHandler, /state\.prompt|persistState\(|renderMainComposerOnly\(/);
+    assert.match(source, /function handleRootPointerDown\(event\) \{[\s\S]*mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice\(\)[\s\S]*openMobilePromptProxy\(mainPrompt\);[\s\S]*event\.preventDefault\(\);[\s\S]*event\.stopPropagation\(\);/);
+    const rootClickHandler = source.slice(
+        source.indexOf('function handleRootClick(event)'),
+        source.indexOf('function handleRootPointerOver(event)')
+    );
+    assert.match(rootClickHandler, /mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice\(\)\) \{\s*event\.preventDefault\(\);\s*return;\s*\}/);
+    assert.doesNotMatch(rootClickHandler, /openMobilePromptProxy\(/);
+    const rootPromptClickBranch = rootClickHandler.slice(
+        rootClickHandler.indexOf('const mainPrompt ='),
+        rootClickHandler.indexOf('const fullPreview =')
+    );
+    assert.doesNotMatch(rootPromptClickBranch, /stopPropagation\(|openMobilePromptProxy\(/);
+    assert.doesNotMatch(source, /function (?:syncMobileKeyboardState|scheduleMobileViewportSync|setMobileKeyboardActive|isMainComposerPromptFocused|getMobileComposerScrollSnapshot|restoreMobileComposerScroll|lockMobileComposerScroll|focusMobileMainPrompt)/);
+    assert.doesNotMatch(source, /function (?:handleRootTouchStart|handleRootTouchMove|handleRootTouchEnd|handleMobileWorkbenchTouchGuardStart|handleMobileWorkbenchTouchGuardMove|findScrollableWorkbenchElement)/);
+    assert.doesNotMatch(source, /\[0, 40, 90, 160, 260, 420\]/);
+    assert.doesNotMatch(source, /function scheduleMobileViewportLayoutSync/);
+    assert.doesNotMatch(source, /global\.requestAnimationFrame\?\.\(setComposerTopVar\)/);
+    assert.doesNotMatch(source, /global\.setTimeout\?\.\(setComposerTopVar, 220\)/);
+    assert.doesNotMatch(source, /--aiw-mobile-(?:keyboard-offset|composer-lift)/);
     assert.match(source, /root\?\.style\?\.setProperty\('--aiw-mobile-history-panel-max-height', `\$\{historyPanelMaxHeight\}px`\)/);
     assert.match(source, /shell\.style\.setProperty\('--aiw-mobile-history-panel-max-height', `\$\{historyPanelMaxHeight\}px`\)/);
     assert.match(source, /root\.style\.removeProperty\('--aiw-mobile-history-panel-max-height'\)/);
-    assert.match(source, /window\.addEventListener\('resize', scheduleMobileViewportSync, \{ passive: true \}\)/);
-    assert.match(source, /global\.visualViewport\?\.addEventListener\?\.\('resize', scheduleMobileViewportSync, \{ passive: true \}\)/);
+    assert.match(source, /window\.addEventListener\('resize', handleWorkbenchWindowResize, \{ passive: true \}\)/);
+    assert.match(source, /function handleWorkbenchWindowResize\(\) \{[\s\S]*mobileWorkbenchStaticHeight > 0\) return;/);
+    assert.match(source, /if \(!mobileWorkbenchStaticHeight && measuredHeight > 0\) \{[\s\S]*mobileWorkbenchStaticHeight = measuredHeight;/);
+    const rootInitialization = source.slice(
+        source.indexOf('function createRoot()'),
+        source.indexOf('function handleWorkbenchViewportGesture(event)')
+    );
+    assert.doesNotMatch(rootInitialization, /visualViewport\?\.addEventListener/);
     assert.match(source, /syncPromptTextareaHeight\(target\);\s*syncMobileComposerMenuAnchor\(\);/);
     assert.match(source, /function getCssPixelValue\(value, fallback = 0\)/);
     assert.match(source, /const minHeight = getCssPixelValue\(styles\?\.minHeight, 34\);/);
@@ -1498,28 +1577,27 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-prompt\s*\{[\s\S]*color: var\(--aiw-muted\);[\s\S]*min-height: 58px;[\s\S]*max-height: min\(30dvh, 170px\);[\s\S]*font: 650 14px\/1\.55 var\(--aiw-font\) !important;/);
     assert.match(cssSource, /\.ai-image-main-prompt\s*\{[\s\S]*overflow-y: auto;[\s\S]*overscroll-behavior: contain;[\s\S]*-webkit-overflow-scrolling: touch;[\s\S]*touch-action: pan-y;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-prompt\s*\{[\s\S]*overscroll-behavior-y: contain;[\s\S]*-webkit-overflow-scrolling: touch;[\s\S]*touch-action: pan-y;/);
-    assert.match(source, /let mobileComposerPendingFocusSnapshot = null;/);
-    assert.match(source, /let mobilePromptTouchScrollState = null;/);
-    assert.match(source, /let mobileWorkbenchTouchGuardState = null;/);
-    assert.match(source, /root\.addEventListener\('touchmove', handleRootTouchMove, \{ passive: false \}\)/);
-    assert.match(source, /root\.addEventListener\('touchend', handleRootTouchEnd, \{ passive: false \}\)/);
-    assert.match(source, /function findScrollableWorkbenchElement\(target, deltaX, deltaY\)/);
-    assert.match(source, /function handleMobileWorkbenchTouchGuardStart\(event, target\)/);
-    assert.match(source, /function handleMobileWorkbenchTouchGuardMove\(event\)/);
-    assert.match(source, /handleMobileWorkbenchTouchGuardStart\(event, target\);/);
-    assert.match(source, /if \(findScrollableWorkbenchElement\(guardState\.target, deltaX, deltaY\)\) return false;[\s\S]*event\.preventDefault\(\);[\s\S]*event\.stopPropagation\(\);[\s\S]*return true;/);
-    assert.match(source, /const wasFocused = document\.activeElement === mainPrompt;/);
-    assert.match(source, /wasFocused[\s\S]*if \(!wasFocused\) \{[\s\S]*mobileComposerPendingFocusSnapshot = mobileComposerPendingFocusSnapshot \|\| getMobileComposerScrollSnapshot\(\);[\s\S]*event\.preventDefault\(\);[\s\S]*event\.stopPropagation\(\);[\s\S]*\}/);
-    assert.match(source, /mobileComposerPendingFocusSnapshot = getMobileComposerScrollSnapshot\(\);/);
-    assert.match(source, /if \(maxScrollTop > 1\) \{[\s\S]*textarea\.scrollTop = Math\.min\(maxScrollTop, Math\.max\(0, Number\(scrollState\.startScrollTop \|\| 0\) - deltaY\)\);[\s\S]*\}/);
-    assert.match(source, /focusMobileMainPrompt\(scrollState\.textarea, focusSnapshot\);/);
-    assert.match(source, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);/);
-    assert.doesNotMatch(source, /event\.preventDefault\(\);\s*focusMobileMainPrompt\(mainPrompt\);/);
+    assert.doesNotMatch(source, /mobilePromptTouchScrollState|mobileWorkbenchTouchGuardState|mobileComposerPendingFocusSnapshot/);
+    assert.doesNotMatch(source, /root\.addEventListener\('touch(?:start|move|end|cancel)', handleRootTouch/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-prompt::placeholder\s*\{[\s\S]*color: color-mix\(in srgb, var\(--aiw-muted\) 56%, transparent\);[\s\S]*font-size: 14px;[\s\S]*font-weight: 650;[\s\S]*line-height: 1\.55;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-composer\s*\{[\s\S]*right: 0;[\s\S]*bottom: var\(--aiw-mobile-composer-lift, 0px\);[\s\S]*left: 0;[\s\S]*width: auto;[\s\S]*padding: 12px;[\s\S]*border-radius: 20px 20px 0 0;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-workbench-root\.is-mobile-keyboard-active \.ai-image-main-composer,[\s\S]*\.ai-image-workbench-root\.is-mobile-keyboard-active \.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-main-composer\s*\{[\s\S]*bottom: calc\(var\(--aiw-mobile-composer-lift, 0px\) \+ 10px\);[\s\S]*border-radius: 20px;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*html\[data-theme="dark"\] \.ai-image-canvas::after\s*\{[\s\S]*background: rgba\(17, 24, 39, 0\.50\);[\s\S]*\}/);
-    assert.doesNotMatch(cssSource, /html\[data-theme="dark"\] \.ai-image-workbench-root\.is-mobile-keyboard-active \.ai-image-canvas::after\s*\{/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-composer\s*\{[\s\S]*position: absolute;[\s\S]*right: 0;[\s\S]*bottom: 0;[\s\S]*left: 0;[\s\S]*width: auto;[\s\S]*padding: 12px;[\s\S]*border-radius: 20px 20px 0 0;[\s\S]*transform: none;[\s\S]*transition: none;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-mobile-prompt-proxy\s*\{[\s\S]*position: fixed;[\s\S]*top: var\(--aiw-mobile-proxy-top, 0px\);[\s\S]*right: 0;[\s\S]*bottom: auto;[\s\S]*left: 0;[\s\S]*z-index: 100260;[\s\S]*display: none;[\s\S]*align-items: end;[\s\S]*width: 100vw;[\s\S]*height: var\(--aiw-mobile-proxy-height, 100dvh\);[\s\S]*padding: 0 10px 10px;/);
+    assert.match(cssSource, /\.ai-image-mobile-prompt-proxy\.is-active\s*\{[\s\S]*display: flex;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-mobile-prompt-proxy-input\s*\{[\s\S]*min-height: 92px;[\s\S]*max-height: 180px;[\s\S]*font: 650 16px\/1\.55 var\(--aiw-font\);/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-mobile-prompt-proxy-panel\s*\{[\s\S]*opacity: 0;[\s\S]*transition: opacity 0\.1s linear;[\s\S]*will-change: opacity;/);
+    assert.doesNotMatch(cssSource, /\.ai-image-mobile-prompt-proxy-panel\s*\{[\s\S]*transform: translate3d/);
+    assert.doesNotMatch(cssSource, /\.ai-image-mobile-prompt-proxy\.is-opening\s*\{[\s\S]*align-items: flex-start/);
+    assert.match(cssSource, /\.ai-image-mobile-prompt-proxy\.is-opening \.ai-image-mobile-prompt-proxy-panel\s*\{[\s\S]*opacity: 0\.001;[\s\S]*pointer-events: auto;[\s\S]*transition: none;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-mobile-prompt-proxy\.is-open \.ai-image-mobile-prompt-proxy-panel\s*\{[\s\S]*opacity: 1;[\s\S]*pointer-events: auto;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-mobile-prompt-proxy\.is-closing \.ai-image-mobile-prompt-proxy-panel\s*\{[\s\S]*opacity: 0;[\s\S]*pointer-events: none;/);
+    assert.doesNotMatch(cssSource, /is-mobile-keyboard-active|--aiw-mobile-(?:keyboard-offset|composer-lift)/);
+    assert.match(cssSource, /\.ai-image-workbench-root\.is-mobile-prompt-proxy-active \.ai-image-overlay,[\s\S]*\.ai-image-workbench-root\.is-mobile-prompt-proxy-active \.ai-image-layout\.is-history-open \.ai-image-stage\s*\{[\s\S]*filter: none !important;[\s\S]*opacity: 1 !important;[\s\S]*backdrop-filter: none !important;/);
+    assert.match(cssSource, /\.ai-image-workbench-root\.is-mobile-prompt-proxy-active \.ai-image-overlay\s*\{[\s\S]*transform: translate3d\(0, var\(--aiw-mobile-visual-top, 0px\), 0\) !important;/);
+    assert.match(cssSource, /\.ai-image-workbench-root\.is-mobile-prompt-proxy-active \.ai-image-canvas,[\s\S]*\.ai-image-chat-nav-layer\s*\{[\s\S]*visibility: hidden !important;/);
+    assert.doesNotMatch(cssSource, /is-mobile-prompt-proxy-active \.ai-image-shell\s*\{[\s\S]*visibility: hidden/);
+    assert.doesNotMatch(cssSource, /\.ai-image-mobile-prompt-proxy::before/);
+    assert.match(cssSource, /body\.ai-image-prompt-proxy-active #main-content,[\s\S]*body\.ai-image-prompt-proxy-active #promptModal\s*\{[\s\S]*visibility: hidden !important;/);
+    assert.match(cssSource, /\.ai-image-workbench-root\.is-mobile-prompt-proxy-active \.ai-image-canvas::after\s*\{[\s\S]*display: none !important;[\s\S]*content: none !important;[\s\S]*backdrop-filter: none !important;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-composer-input\s*\{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\) auto;[\s\S]*align-items: center;/);
     assert.match(cssSource, /\.ai-image-composer-settings-select\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /\.ai-image-composer-settings-menu\s*\{[\s\S]*width: min\(340px, calc\(100vw - 40px\)\)/);
@@ -1558,8 +1636,7 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.doesNotMatch(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-history-sidebar,[\s\S]*height: 56px;/);
     assert.doesNotMatch(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-rail-brand,[\s\S]*\.ai-image-rail-btn,[\s\S]*width: 40px;/);
     assert.doesNotMatch(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-dock\s*\{[\s\S]*bottom: max\(42px,/);
-    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-composer,[\s\S]*\.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-main-composer\s*\{[\s\S]*right: 0;[\s\S]*bottom: var\(--aiw-mobile-composer-lift, 0px\);[\s\S]*left: 0;[\s\S]*width: auto;[\s\S]*padding: 11px;[\s\S]*border-radius: 18px 18px 0 0;/);
-    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-workbench-root\.is-mobile-keyboard-active \.ai-image-main-composer,[\s\S]*\.ai-image-workbench-root\.is-mobile-keyboard-active \.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-main-composer\s*\{[\s\S]*bottom: calc\(var\(--aiw-mobile-composer-lift, 0px\) \+ 10px\);[\s\S]*border-radius: 18px;/);
+    assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-composer,[\s\S]*\.ai-image-shell:has\(\.ai-image-chat-nav-layer\) \.ai-image-main-composer\s*\{[\s\S]*right: 0;[\s\S]*bottom: 0;[\s\S]*left: 0;[\s\S]*width: auto;[\s\S]*padding: 11px;[\s\S]*border-radius: 18px 18px 0 0;/);
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-prompt\s*\{[\s\S]*min-height: 58px;[\s\S]*max-height: min\(32dvh, 190px\);[\s\S]*font-size: 14px;[\s\S]*line-height: 1\.55;/);
     assert.match(cssSource, /@media \(max-width: 520px\) \{[\s\S]*\.ai-image-main-prompt::placeholder\s*\{[\s\S]*font-size: 14px;/);
 });

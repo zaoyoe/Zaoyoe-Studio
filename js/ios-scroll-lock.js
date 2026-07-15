@@ -450,6 +450,15 @@
                 if (lightScrollAnchorEnabled) {
                     attachRootScrollGuard();
                     scheduleLightLockedScrollRestore({ withFollowup: true });
+                } else {
+                    if (lightRestoreRafId) {
+                        cancelAnimationFrame(lightRestoreRafId);
+                        lightRestoreRafId = 0;
+                    }
+                    clearLightLockedScrollRestoreTimers();
+                    if (typeof scrollCleanup === 'function') {
+                        scrollCleanup();
+                    }
                 }
             }
             if (isIOSMobile() && shouldObserveViewportChanges()) {

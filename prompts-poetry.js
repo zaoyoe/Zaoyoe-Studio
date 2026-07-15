@@ -5281,7 +5281,7 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
                 || String(prompt?.id ?? '').trim() === relatedId
             ));
             if (relatedPrompt) {
-                openPromptModal(getPromptStableOpenId(relatedPrompt));
+                openPromptModal(getPromptStableOpenId(relatedPrompt), { animateRelatedSelection: true });
             }
         });
     });
@@ -5660,7 +5660,7 @@ function clearPromptDetailSideMode({ resetButtons = true, resetClasses = true, r
     isRelatedMode = false;
     cancelRelatedPromptWork();
     setCommentSortDropdownOpen(false);
-    closePromptCommentComposer({ preserveModalDock: true });
+    closePromptCommentInputDock();
     if (releaseGeometry) {
         releasePromptModalCommentModeGeometry();
     }
@@ -7156,95 +7156,16 @@ let promptRelatedRenderTimerId = null;
 let promptRelatedWarmupIdleId = null;
 let promptRelatedWarmupTimerId = null;
 let promptRelatedRenderToken = 0;
-let promptModalReturnImageFreezeFadeTimer = null;
-let promptModalReturnImageFreezeRemoveTimer = null;
 let promptModalLayoutWasMobile = null;
 let promptModalLayoutSyncFrameId = null;
 let currentPromptId = null;
-
-function getPromptModalImageColumnBackground(imageCol) {
-    if (document.documentElement?.getAttribute('data-theme') === 'dark') {
-        return '#222d3d';
-    }
-
-    const computedBackground = window.getComputedStyle?.(imageCol)?.backgroundColor || '';
-    if (computedBackground && computedBackground !== 'rgba(0, 0, 0, 0)' && computedBackground !== 'transparent') {
-        return computedBackground;
-    }
-
-    return '#f1f5f9';
-}
-
-function clearPromptModalReturnImageFreeze() {
-    if (promptModalReturnImageFreezeFadeTimer) {
-        clearTimeout(promptModalReturnImageFreezeFadeTimer);
-        promptModalReturnImageFreezeFadeTimer = null;
-    }
-    if (promptModalReturnImageFreezeRemoveTimer) {
-        clearTimeout(promptModalReturnImageFreezeRemoveTimer);
-        promptModalReturnImageFreezeRemoveTimer = null;
-    }
-    document.querySelectorAll('#promptModal .modal-return-image-freeze').forEach((image) => image.remove());
-    document.querySelector('#promptModal .modal-image-col')?.classList.remove('modal-image-col--return-settling');
-}
-
-function startPromptModalReturnImageFreeze() {
-    if (!isPromptModalMobileLayout()) return;
-
-    clearPromptModalReturnImageFreeze();
-    const imageCol = document.querySelector('#promptModal .modal-image-col');
-    const activeImage = document.getElementById('modalImg');
-    if (!imageCol || !activeImage?.src) return;
-    const imageColBackground = getPromptModalImageColumnBackground(imageCol);
-
-    const freezeImage = activeImage.cloneNode(false);
-    freezeImage.removeAttribute('id');
-    freezeImage.className = 'modal-return-image-freeze';
-    freezeImage.setAttribute('aria-hidden', 'true');
-    freezeImage.alt = '';
-    Object.entries({
-        position: 'absolute',
-        inset: 'auto',
-        top: '50%',
-        left: '50%',
-        width: '100%',
-        height: '100%',
-        'max-width': 'none',
-        'max-height': 'none',
-        'object-fit': 'contain',
-        'object-position': 'center',
-        transform: 'translate3d(-50%, -50%, 0)',
-        opacity: '1',
-        filter: 'none',
-        background: imageColBackground,
-        transition: 'opacity 0.24s ease, filter 0.34s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1)',
-        'pointer-events': 'none'
-    }).forEach(([property, value]) => {
-        freezeImage.style.setProperty(property, value, 'important');
-    });
-    disablePromptImageDrag(freezeImage);
-    imageCol.appendChild(freezeImage);
-    imageCol.classList.add('modal-image-col--return-settling');
-
-    promptModalReturnImageFreezeFadeTimer = setTimeout(() => {
-        promptModalReturnImageFreezeFadeTimer = null;
-        freezeImage.style.setProperty('opacity', '0', 'important');
-        freezeImage.style.setProperty('filter', 'blur(1.5px)', 'important');
-        freezeImage.classList.add('is-fading');
-        promptModalReturnImageFreezeRemoveTimer = setTimeout(() => {
-            freezeImage.remove();
-            imageCol.classList.remove('modal-image-col--return-settling');
-            promptModalReturnImageFreezeRemoveTimer = null;
-        }, 340);
-    }, 560);
-}
+const PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS = 620;
 
 function clearPromptCommentModeReturnState(modalInner = document.querySelector('#promptModal .modal-inner')) {
     if (promptCommentModeReturnTimer) {
         clearTimeout(promptCommentModeReturnTimer);
         promptCommentModeReturnTimer = null;
     }
-    clearPromptModalReturnImageFreeze();
     modalInner?.classList.remove('comment-mode-returning', 'comment-mode-title-revealing');
 }
 
@@ -7456,9 +7377,8 @@ function isPromptModalMobileLayout() {
     return window.matchMedia('(max-width: 768px)').matches;
 }
 
-function isPromptCommentComposerOpen() {
-    const { overlay } = getPromptCommentComposerElements();
-    return !!overlay?.classList.contains('active');
+function isPromptCommentInputDockOpen() {
+    return Boolean(promptCommentInputDock?.isActive());
 }
 
 function isPromptModalExpandedCommentView() {
@@ -7537,7 +7457,7 @@ function syncPromptModalTopButtonState() {
     const icon = button?.querySelector('i');
     if (!button || !icon) return;
 
-    const useBackState = isPromptDetailSideModeActive() || isPromptCommentComposerOpen();
+    const useBackState = isPromptDetailSideModeActive() || isPromptCommentInputDockOpen();
     button.classList.toggle('is-back', useBackState);
     button.classList.toggle('is-close', !useBackState);
     button.setAttribute('aria-label', useBackState ? 'Back' : 'Close');
@@ -7545,8 +7465,8 @@ function syncPromptModalTopButtonState() {
 }
 
 function handlePromptModalTopButton() {
-    if (isPromptCommentComposerOpen()) {
-        closePromptCommentComposer();
+    if (isPromptCommentInputDockOpen()) {
+        closePromptCommentInputDock();
         return;
     }
 
@@ -8346,11 +8266,11 @@ function detachPromptModalKeyboardDock() {
     resetPromptModalKeyboardDock(false);
 }
 
-function suspendPromptModalKeyboardDockForCommentComposer() {
-    const vv = window.visualViewport;
-    if (vv && promptModalKeyboardDock.onViewportChange) {
-        vv.removeEventListener('resize', requestPromptModalViewportSync);
-        vv.removeEventListener('scroll', requestPromptModalViewportSync);
+function disablePromptModalKeyboardDockForCommentInput() {
+    const viewport = window.visualViewport;
+    if (viewport && promptModalKeyboardDock.onViewportChange) {
+        viewport.removeEventListener('resize', requestPromptModalViewportSync);
+        viewport.removeEventListener('scroll', requestPromptModalViewportSync);
         window.removeEventListener('resize', requestPromptModalViewportSync);
         window.removeEventListener('orientationchange', requestPromptModalViewportSync);
     }
@@ -8363,6 +8283,18 @@ function suspendPromptModalKeyboardDockForCommentComposer() {
     clearPromptModalKeyboardSettleTimer();
     clearPromptModalDockTimers();
     resetPromptModalKeyboardDockIfNeeded(false);
+}
+
+function preparePromptCommentModeInputDock() {
+    if (!isPromptModalIOSMobile()) return;
+    const { modal, modalInner } = getPromptModalDockNodes();
+    if (!modal?.classList.contains('active') || !modalInner?.classList.contains('comment-mode')) return;
+
+    disablePromptModalKeyboardDockForCommentInput();
+    lockPromptModalCommentModeGeometry({ force: true });
+    if (window.iOSScrollLock?.isLocked) {
+        window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: false });
+    }
 }
 
 function primePromptModalKeyboardDock() {
@@ -8453,7 +8385,7 @@ function findPromptForModalOpen(id) {
         || null;
 }
 
-function openPromptModal(id) {
+function openPromptModal(id, options = {}) {
     const item = findPromptForModalOpen(id);
     if (!item) return;
     const detailPromise = ensurePromptDetailLoaded(item);
@@ -8477,6 +8409,10 @@ function openPromptModal(id) {
 
     const modal = document.getElementById('promptModal');
     const modalInner = modal?.querySelector('.modal-inner');
+    const shouldAnimateRelatedSelection = options.animateRelatedSelection === true
+        && isPromptModalMobileLayout()
+        && modal?.classList.contains('active')
+        && modalInner?.classList.contains('related-mode');
     const backdrop = ensurePromptModalBackdrop();
     releasePromptModalForceHidden();
     clearPromptModalCloseCleanupTimer();
@@ -8494,7 +8430,7 @@ function openPromptModal(id) {
     );
     promptModalKeyboardDock.overlayBaseHeight = initialViewportHeight + 160;
     freezePromptModalOverlay();
-    closePromptCommentComposer({ clearDraft: true });
+    closePromptCommentInputDock({ clearDraft: true, immediate: true, reason: 'modal-open-reset' });
     releasePromptModalCommentModeGeometry();
 
     // Reset State
@@ -8503,6 +8439,9 @@ function openPromptModal(id) {
     isRelatedMode = false;
     promptModalLayoutWasMobile = isPromptModalMobileLayout();
     clearPromptCommentModeReturnState(modalInner);
+    if (shouldAnimateRelatedSelection) {
+        modalInner?.classList.add('comment-mode-returning');
+    }
     modalInner?.classList.remove('comment-mode', 'related-mode', 'related-mode-entering');
     backdrop?.classList.add('visible');
 
@@ -8513,6 +8452,9 @@ function openPromptModal(id) {
     // Reset Prompt Area (in case it was docked/moved)
     const promptArea = document.getElementById('promptArea');
     const contentCol = document.querySelector('.modal-content-col');
+    if (contentCol) {
+        contentCol.scrollTop = 0;
+    }
     if (promptArea.parentNode !== contentCol) {
         // Move back to original column
         promptArea.classList.remove('docked');
@@ -8593,6 +8535,9 @@ function openPromptModal(id) {
 
     // Set prompt text (ensure clean connection) - use localized version if available
     setPromptModalPromptContent(promptText, item);
+    if (shouldAnimateRelatedSelection) {
+        startPromptDetailReturnReveal(modalInner, { isMobileLayout: true });
+    }
     syncPromptModalUnlockPriceState();
     detailPromise
         .then((updatedItem) => {
@@ -8685,6 +8630,24 @@ function openPromptModal(id) {
 
 // --- Spatial Flow & Comment Logic ---
 
+function startPromptDetailReturnReveal(modalInner, { isMobileLayout = isPromptModalMobileLayout() } = {}) {
+    const revealPromptDetailContent = () => {
+        if (!modalInner?.classList.contains('comment-mode-returning')) return;
+        modalInner.classList.add('comment-mode-title-revealing');
+    };
+    if (isMobileLayout) {
+        revealPromptDetailContent();
+    } else {
+        requestAnimationFrame(revealPromptDetailContent);
+    }
+    promptCommentModeReturnTimer = setTimeout(() => {
+        if (modalInner) {
+            modalInner.classList.remove('comment-mode-returning', 'comment-mode-title-revealing');
+        }
+        promptCommentModeReturnTimer = null;
+    }, isMobileLayout ? PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS : 560);
+}
+
 function closePromptDetailSideMode() {
     const modalInner = document.querySelector('.modal-inner');
     const isMobileLayout = isPromptModalMobileLayout();
@@ -8696,9 +8659,6 @@ function closePromptDetailSideMode() {
     }
     clearPromptDetailSideMode({ resetButtons: true, resetClasses: false, releaseGeometry: !isMobileLayout });
     clearPromptCommentModeReturnState(modalInner);
-    if (isMobileLayout && wasSideModeActive) {
-        startPromptModalReturnImageFreeze();
-    }
     if (modalInner) {
         modalInner.classList.add('comment-mode-returning');
         modalInner.classList.remove('comment-mode', 'related-mode', 'related-mode-entering');
@@ -8708,16 +8668,7 @@ function closePromptDetailSideMode() {
             releasePromptModalCommentModeGeometry();
         });
     }
-    requestAnimationFrame(() => {
-        if (!modalInner?.classList.contains('comment-mode-returning')) return;
-        modalInner.classList.add('comment-mode-title-revealing');
-    });
-    promptCommentModeReturnTimer = setTimeout(() => {
-        if (modalInner) {
-            modalInner.classList.remove('comment-mode-returning', 'comment-mode-title-revealing');
-        }
-        promptCommentModeReturnTimer = null;
-    }, isMobileLayout ? 780 : 560);
+    startPromptDetailReturnReveal(modalInner, { isMobileLayout });
     updateCommentSectionHeading();
 
     if (wasDesktopDocked) {
@@ -8732,12 +8683,15 @@ function openPromptDetailSideMode(mode) {
     const normalizedMode = mode === 'related' ? 'related' : 'comment';
 
     setCommentSortDropdownOpen(false);
-    closePromptCommentComposer({ preserveModalDock: true });
+    closePromptCommentInputDock({ reason: 'side-mode-change' });
     clearPromptCommentModeReturnState(modalInner);
     isCommentMode = normalizedMode === 'comment';
     isRelatedMode = normalizedMode === 'related';
     modalInner?.classList.add('comment-mode');
     modalInner?.classList.toggle('related-mode', isRelatedMode);
+    if (isMobileLayout && isCommentMode) {
+        preparePromptCommentModeInputDock();
+    }
     scheduleModalImageThumbnailPlacementSync();
     setPromptCommentTriggerActive(isCommentMode);
     setPromptRelatedTriggerActive(isRelatedMode);
@@ -9256,1326 +9210,216 @@ function formatCommentTime(timestamp) {
 
 // Global state for selected image
 let selectedCommentImage = null;
-let promptCommentComposerMounted = false;
-let promptCommentComposerViewportCleanup = null;
-let promptCommentComposerLayoutHeight = 0;
-let promptCommentComposerViewportRafId = null;
-let promptCommentComposerStableViewportProbe = null;
-let promptCommentComposerOverlayBaseHeight = 0;
-let promptCommentComposerBaseSheetHeight = 0;
-let promptCommentComposerKeyboardOffset = 0;
-let promptCommentComposerOwnsScrollLock = false;
-let promptCommentComposerAuthAlertTimer = null;
-let promptCommentComposerCaretStabilizeTimer = null;
-let promptCommentComposerEnterAnimationTimer = null;
-let promptCommentComposerSheetAnimationTimer = null;
-let promptCommentComposerKeyboardSettleTimer = null;
-let promptCommentComposerDeferredFocusRafId = null;
-let promptCommentComposerViewportSettleTimers = [];
-let promptCommentComposerFocusScrollLock = null;
-let promptCommentComposerFocusScrollTimers = [];
-let promptCommentComposerFocusScrollFollowupTimers = [];
-let promptCommentComposerFocusScrollRafId = null;
-let promptCommentComposerLoginGateTimer = null;
-let promptCommentComposerAuthGateActive = false;
-let promptCommentComposerOpenedAt = 0;
-let promptCommentComposerBackdropTouch = null;
-const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;
-const PROMPT_COMMENT_COMPOSER_SHEET_ANIMATION_MS = 290;
-const PROMPT_COMMENT_COMPOSER_AUTH_FLASH_MS = 1080;
-const PROMPT_COMMENT_COMPOSER_AUTH_GATE_DELAY_MS = 320;
-const PROMPT_COMMENT_COMPOSER_BACKDROP_CLOSE_GUARD_MS = 260;
-const PROMPT_COMMENT_COMPOSER_BACKDROP_TAP_MOVE_PX = 14;
-const PROMPT_COMMENT_COMPOSER_ENTER_ANIMATION_MS = 420;
-const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 420;
-const PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_RESTORE_DELAYS = [0, 40, 90, 160, 260, 420, 620, 860, 1120, 1460];
-const PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_FOLLOWUP_DELAYS = [48, 120, 240, 420, 680, 960, 1280];
-const PROMPT_COMMENT_COMPOSER_VIEWPORT_SETTLE_DELAYS = [80, 160, 280, 420, 620, 860, 1120, 1460];
-const PROMPT_COMMENT_COMPOSER_FRESH_SAMPLE_MS = 900;
-const PROMPT_COMMENT_COMPOSER_MAX_KEYBOARD_RATIO = 0.62;
-const PROMPT_COMMENT_COMPOSER_MIN_TOP = 12;
-const PROMPT_COMMENT_COMPOSER_BASE_SHEET_HEIGHT = 400;
+let promptCommentInputDock = null;
 
-function isPromptCommentComposerEnabled() {
-    return isPromptModalIOSMobile();
+function isPromptCommentInputDockEnabled() {
+    const coarsePointer = window.matchMedia?.('(any-pointer: coarse)')?.matches;
+    const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    return isPromptModalMobileLayout()
+        && (coarsePointer || navigator.maxTouchPoints > 0 || mobileUserAgent)
+        && typeof window.PromptCommentInputDock === 'function';
 }
 
-function getPromptCommentComposerElements() {
+function getPromptCommentInputCopy() {
     return {
-        overlay: document.getElementById('promptCommentComposer'),
-        sheet: document.querySelector('#promptCommentComposer .prompt-comment-composer-sheet'),
-        editor: document.querySelector('#promptCommentComposer .prompt-comment-composer-editor'),
-        input: document.getElementById('promptCommentComposerInput'),
-        meta: document.getElementById('promptCommentComposerMeta'),
-        uploadBtn: document.getElementById('promptCommentComposerUploadBtn'),
-        fileInput: document.getElementById('promptCommentComposerImageUpload'),
-        sendBtn: document.getElementById('promptCommentComposerSendBtn')
-    };
-}
-
-function autoExpandPromptCommentComposerInput(input) {
-    if (!input) return;
-    if (!input.value.trim()) {
-        resetPromptsTextareaAutoHeight(input);
-        return;
-    }
-    const maxHeight = Math.min(Math.round((window.innerHeight || 0) * 0.42), 360);
-    applyPromptsTextareaAutoHeight(input, maxHeight || 360, 160);
-}
-
-function syncPromptCommentComposerEmptyState() {
-    const { editor, input } = getPromptCommentComposerElements();
-    if (!editor || !input) return;
-    const isEmpty = !input.value.trim();
-
-    editor.classList.toggle('is-empty', isEmpty);
-    input.classList.toggle('is-empty', isEmpty);
-}
-
-function focusPromptCommentComposerInputWithoutScroll(input, focusSnapshot = null) {
-    if (!input) return;
-    const snapshot = focusSnapshot || getPromptCommentComposerFocusScrollSnapshot();
-    preparePromptCommentComposerForInputFocus(snapshot);
-    try {
-        input.focus({ preventScroll: true });
-    } catch (_) {
-        input.focus();
-    }
-    restorePromptCommentComposerFocusScroll(snapshot);
-    schedulePromptCommentComposerViewportSettleSync();
-}
-
-function bindPromptCommentComposerInputFocusStabilizer(input) {
-    if (!input || input.dataset.preventScrollBind === '1') return;
-
-    input.addEventListener('touchstart', (event) => {
-        if (!isPromptCommentComposerEnabled()) return;
-        const { overlay } = getPromptCommentComposerElements();
-        if (!overlay?.classList.contains('active')) return;
-        if (document.activeElement === input) {
-            schedulePromptCommentComposerFocusScrollRestore({ withFollowup: true });
-            return;
-        }
-        if (event?.cancelable) event.preventDefault();
-        event?.stopPropagation?.();
-        focusPromptCommentComposerInputWithoutScroll(input);
-    }, { passive: false });
-
-    input.dataset.preventScrollBind = '1';
-}
-
-function getPromptCommentComposerI18n() {
-    return {
-        commentsTitle: window.i18n?.t('gallery.commentsTitle') || 'Comments',
-        title: window.i18n?.t('gallery.commentComposerTitle') || 'Leave a note',
-        placeholder: window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...',
-        attachImage: window.i18n?.t('gallery.attachImage') || 'Attach image',
-        imageAttached: window.i18n?.t('gallery.imageAttached') || 'Image attached',
-        imageSelected: window.i18n?.t('gallery.imageSelected') || 'Image selected',
-        imageSelectedLabel: window.i18n?.t('gallery.imageSelectedLabel') || 'Selected',
-        imageCompressedLabel: window.i18n?.t('gallery.imageCompressedLabel') || 'Compressed',
-        tapToRemove: window.i18n?.t('gallery.tapToRemove') || 'tap to remove',
-        send: window.i18n?.t('gallery.send') || 'Send',
-        close: window.i18n?.t('common.close') || 'Close',
-        removeSelectedImageConfirm: window.i18n?.t('gallery.removeSelectedImageConfirm') || 'Remove selected image?',
-        selectImageFileError: window.i18n?.t('gallery.selectImageFileError') || 'Please select an image file',
-        compressingImage: window.i18n?.t('gallery.compressingImage') || 'Compressing image...',
-        imageCompressFailed: window.i18n?.t('gallery.imageCompressFailed') || 'Image compression failed, please try again'
+        placeholder: window.i18n?.t('gallery.commentComposerPlaceholder') || '写下你的评论…',
+        addComment: window.i18n?.t('gallery.addComment') || '添加评论...',
+        attachImage: window.i18n?.t('gallery.attachImage') || '添加图片',
+        imageAttached: window.i18n?.t('gallery.imageAttached') || '已添加图片',
+        imageSelected: window.i18n?.t('gallery.imageSelected') || '已选择图片',
+        imageSelectedLabel: window.i18n?.t('gallery.imageSelectedLabel') || '已选择',
+        imageCompressedLabel: window.i18n?.t('gallery.imageCompressedLabel') || '已压缩',
+        tapToRemove: window.i18n?.t('gallery.tapToRemove') || '点击移除',
+        removeSelectedImageConfirm: window.i18n?.t('gallery.removeSelectedImageConfirm') || '移除已选择的图片？',
+        selectImageFileError: window.i18n?.t('gallery.selectImageFileError') || '请选择图片文件',
+        compressingImage: window.i18n?.t('gallery.compressingImage') || '正在压缩图片…',
+        imageCompressFailed: window.i18n?.t('gallery.imageCompressFailed') || '图片压缩失败，请重试'
     };
 }
 
 function buildCommentImageUploadTitle(file, finalFile, compressed) {
-    const copy = getPromptCommentComposerI18n();
+    const copy = getPromptCommentInputCopy();
     const originalSize = (file.size / 1024).toFixed(0);
     const compressedSize = (finalFile.size / 1024).toFixed(0);
 
     if (compressed === file) {
-        return `${copy.imageSelectedLabel}: ${file.name} (${originalSize}KB)`;
+        return copy.imageSelectedLabel + ': ' + file.name + ' (' + originalSize + 'KB)';
     }
 
-    return `${copy.imageCompressedLabel}: ${file.name} (${originalSize}KB -> ${compressedSize}KB, ${copy.tapToRemove})`;
+    return copy.imageCompressedLabel + ': ' + file.name + ' (' + originalSize + 'KB -> '
+        + compressedSize + 'KB, ' + copy.tapToRemove + ')';
 }
 
 function refreshCommentImageUploadLanguageUI() {
-    const copy = getPromptCommentComposerI18n();
-    const bindings = getCommentImageUploadBindings();
-    bindings.forEach(({ button }) => {
-        const title = selectedCommentImage ? copy.imageSelected : copy.attachImage;
+    const copy = getPromptCommentInputCopy();
+    getCommentImageUploadBindings().forEach(({ button }) => {
         button.dataset.defaultTitle = copy.attachImage;
-        button.title = title;
-        button.setAttribute('aria-label', title);
+        button.title = selectedCommentImage ? copy.imageSelected : copy.attachImage;
+        button.setAttribute('aria-label', button.title);
     });
 }
 
-function syncPromptCommentComposerMeta() {
-    const { input, meta } = getPromptCommentComposerElements();
-    if (!input || !meta) return;
+function copyPromptCommentInputDatasets(source, target) {
+    if (!source || !target) return;
+    ['replyTo', 'replyToName'].forEach((key) => {
+        if (source.dataset[key]) target.dataset[key] = source.dataset[key];
+        else delete target.dataset[key];
+    });
+}
 
-    const copy = getPromptCommentComposerI18n();
+function getPromptCommentInputMeta(source = promptCommentInputDock?.input) {
     const pieces = [];
-    const replyToName = input.dataset.replyToName;
-    if (replyToName) {
-        pieces.push(`${window.i18n?.t('gallery.replyingTo') || 'Replying to'} @${replyToName}`);
+    if (source?.dataset.replyToName) {
+        pieces.push((window.i18n?.t('gallery.replyingTo') || '回复') + ' @' + source.dataset.replyToName);
     }
     if (selectedCommentImage) {
-        pieces.push(copy.imageAttached);
+        pieces.push(getPromptCommentInputCopy().imageAttached);
     }
-
-    meta.textContent = pieces.join(' · ');
-    meta.classList.toggle('has-reply', !!replyToName);
+    return pieces.join(' · ');
 }
 
-function flashPromptCommentComposerAuthRequired() {
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay || !overlay.classList.contains('active')) return false;
+function updatePromptCommentInputTrigger() {
+    const canonicalInput = document.getElementById('commentInput');
+    const trigger = document.getElementById('commentInputTrigger');
+    const triggerText = document.getElementById('commentInputTriggerText');
+    const triggerArea = trigger?.closest('.comment-input-area');
+    if (!canonicalInput || !trigger || !triggerText || !triggerArea) return;
 
-    overlay.classList.remove('auth-required');
-    void overlay.offsetWidth;
-    overlay.classList.add('auth-required');
-
-    if (promptCommentComposerAuthAlertTimer) {
-        clearTimeout(promptCommentComposerAuthAlertTimer);
-    }
-
-    promptCommentComposerAuthAlertTimer = setTimeout(() => {
-        overlay.classList.remove('auth-required');
-        promptCommentComposerAuthAlertTimer = null;
-    }, PROMPT_COMMENT_COMPOSER_AUTH_FLASH_MS);
-
-    return true;
+    const copy = getPromptCommentInputCopy();
+    const draft = canonicalInput.value.trim();
+    triggerText.textContent = draft || copy.addComment;
+    triggerText.dataset.placeholder = copy.addComment;
+    trigger.setAttribute('aria-label', draft ? copy.placeholder : copy.addComment);
+    triggerArea.classList.toggle('has-draft', Boolean(draft) || Boolean(selectedCommentImage));
 }
 
-function clearPromptCommentComposerLoginGate() {
-    if (promptCommentComposerLoginGateTimer) {
-        clearTimeout(promptCommentComposerLoginGateTimer);
-        promptCommentComposerLoginGateTimer = null;
-    }
-    promptCommentComposerAuthGateActive = false;
-}
-
-function openPromptCommentComposerLoginGate() {
-    if (promptCommentComposerAuthGateActive) return;
-    promptCommentComposerAuthGateActive = true;
-
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay?.classList.contains('active')) {
-        clearPromptCommentComposerLoginGate();
-        showLoginModal();
-        return;
-    }
-
-    closePromptCommentComposer({ preserveModalDock: true });
-    promptCommentComposerLoginGateTimer = setTimeout(() => {
-        promptCommentComposerLoginGateTimer = null;
-        promptCommentComposerAuthGateActive = false;
-        showLoginModal();
-    }, PROMPT_COMMENT_COMPOSER_AUTH_GATE_DELAY_MS);
-}
-
-function updatePromptCommentComposerTriggerState() {
-    const triggerInput = document.getElementById('commentInput');
-    const triggerArea = triggerInput?.closest('.comment-input-area');
-    const proxyLabel = document.getElementById('commentInputProxyLabel');
-    if (!triggerInput || !triggerArea) return;
-
-    const hasDraft = Boolean(triggerInput.value.trim());
-    triggerArea.classList.toggle('has-draft', hasDraft);
-
-    if (proxyLabel) {
-        proxyLabel.textContent = window.i18n?.t('gallery.commentsTitle') || '评论';
-    }
-}
-
-function syncPromptCommentComposerTrigger() {
-    const triggerInput = document.getElementById('commentInput');
-    const { input } = getPromptCommentComposerElements();
-    if (!triggerInput || !input) return;
-
-    triggerInput.value = input.value;
-    if (input.dataset.replyTo) {
-        triggerInput.dataset.replyTo = input.dataset.replyTo;
-    } else {
-        delete triggerInput.dataset.replyTo;
-    }
-    if (input.dataset.replyToName) {
-        triggerInput.dataset.replyToName = input.dataset.replyToName;
-    } else {
-        delete triggerInput.dataset.replyToName;
-    }
-    autoExpandTextarea(triggerInput);
-    updatePromptCommentComposerTriggerState();
+function syncPromptCommentInputDraft(source = promptCommentInputDock?.input) {
+    const canonicalInput = document.getElementById('commentInput');
+    if (!canonicalInput || !source) return;
+    canonicalInput.value = source.value;
+    copyPromptCommentInputDatasets(source, canonicalInput);
+    updatePromptCommentInputTrigger();
+    promptCommentInputDock?.setMeta(getPromptCommentInputMeta(source));
 }
 
 function clearCommentDraftFields() {
-    const triggerInput = document.getElementById('commentInput');
-    const { input } = getPromptCommentComposerElements();
-
-    if (triggerInput) {
-        triggerInput.value = '';
-        delete triggerInput.dataset.replyTo;
-        delete triggerInput.dataset.replyToName;
-        resetPromptsTextareaAutoHeight(triggerInput);
+    const canonicalInput = document.getElementById('commentInput');
+    if (canonicalInput) {
+        canonicalInput.value = '';
+        delete canonicalInput.dataset.replyTo;
+        delete canonicalInput.dataset.replyToName;
+        resetPromptsTextareaAutoHeight(canonicalInput);
     }
-
-    if (input) {
-        input.value = '';
-        delete input.dataset.replyTo;
-        delete input.dataset.replyToName;
-        resetPromptsTextareaAutoHeight(input);
+    if (promptCommentInputDock?.input) {
+        promptCommentInputDock.setValue('');
+        promptCommentInputDock.setMeta('');
     }
-
-    syncPromptCommentComposerMeta();
-    updatePromptCommentComposerTriggerState();
+    updatePromptCommentInputTrigger();
 }
 
-function clearPromptCommentComposerKeyboardTimers() {
-    clearPromptCommentComposerKeyboardSettleTimer();
-}
+function ensurePromptCommentInputDock() {
+    if (!isPromptCommentInputDockEnabled()) return null;
+    if (promptCommentInputDock) return promptCommentInputDock;
 
-function detachPromptCommentComposerViewportSync() {
-    if (typeof promptCommentComposerViewportCleanup === 'function') {
-        promptCommentComposerViewportCleanup();
-        promptCommentComposerViewportCleanup = null;
-    }
-    clearPromptCommentComposerKeyboardTimers();
-    clearPromptCommentComposerDeferredFocus();
-    clearPromptCommentComposerViewportSettleTimers();
-}
-
-function unlockPromptCommentComposerPage() {
-    if (promptCommentComposerOwnsScrollLock && window.iOSScrollLock) {
-        const modalInner = document.querySelector('#promptModal .modal-inner');
-        const modal = document.getElementById('promptModal');
-        window.iOSScrollLock.unlock();
-        scrollPromptModalPageToBase();
-        if (modal?.classList.contains('active') && modalInner && !window.iOSScrollLock.isLocked) {
-            window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: true });
+    const copy = getPromptCommentInputCopy();
+    promptCommentInputDock = new window.PromptCommentInputDock({
+        rootId: 'promptCommentInputDock',
+        inputId: 'promptCommentInputDockField',
+        metaId: 'promptCommentInputDockMeta',
+        placeholder: copy.placeholder,
+        getScrollPosition: () => ({
+            x: window.scrollX || window.pageXOffset || 0,
+            y: getPromptModalBaseScrollY()
+        }),
+        onInput: (_value, input) => {
+            syncPromptCommentInputDraft(input);
+        },
+        onBeforeDismiss: (input) => {
+            syncPromptCommentInputDraft(input);
+        },
+        onKeydown: (event) => {
+            handleCommentKeydown(event);
+        },
+        onStateChange: () => {
+            syncPromptModalTopButtonState();
         }
-    }
-    promptCommentComposerOwnsScrollLock = false;
-}
-
-function lockPromptCommentComposerPage() {
-    const { overlay } = getPromptCommentComposerElements();
-    if (!window.iOSScrollLock || !overlay?.classList.contains('active')) return;
-    scrollPromptModalPageToBase();
-    window.iOSScrollLock.lockLight(overlay, { restoreScrollDuringViewport: true });
-    promptCommentComposerOwnsScrollLock = true;
-}
-
-function hardRestorePromptCommentComposerPageScroll() {
-    const targetY = getPromptModalBaseScrollY();
-    if (Math.abs(Math.round(window.scrollY || window.pageYOffset || 0) - targetY) > 1) {
-        window.scrollTo(0, targetY);
-    }
-    document.documentElement.scrollTop = targetY;
-    document.body.scrollTop = targetY;
-}
-
-function syncPromptCommentComposerUnderlayFreeze() {
-    if (!isPromptCommentComposerEnabled()) return;
-    const modal = document.getElementById('promptModal');
-    if (modal?.classList.contains('active')) {
-        document.body.classList.add('prompt-comment-composer-underlay-frozen');
-    }
-}
-
-function requestPromptCommentComposerUnderlayFreezeSync() {
-    syncPromptCommentComposerUnderlayFreeze();
-}
-
-function freezePromptCommentComposerUnderlay() {
-    if (!isPromptCommentComposerEnabled()) return;
-    const modal = document.getElementById('promptModal');
-    if (!modal?.classList.contains('active')) return;
-    document.body.classList.add('prompt-comment-composer-underlay-frozen');
-    syncPromptCommentComposerUnderlayFreeze();
-}
-
-function releasePromptCommentComposerUnderlayFreeze() {
-    document.body.classList.remove('prompt-comment-composer-underlay-frozen');
-}
-
-function settlePromptCommentComposerParentFrame() {
-    if (!isPromptCommentComposerEnabled()) return;
-    const { modal, modalInner } = getPromptModalDockNodes();
-    if (!modal?.classList.contains('active')) return;
-
-    if (modal.classList.contains('modal-opening')) {
-        clearPromptModalOpeningTimer();
-        modal.classList.remove('modal-opening');
-    }
-
-    clearPromptModalKeyboardPreLift(false);
-    resetPromptModalKeyboardDockIfNeeded(false);
-
-    if (modalInner?.classList.contains('comment-mode')) {
-        lockPromptModalCommentModeGeometry({ force: true });
-    }
-
-    hardRestorePromptCommentComposerPageScroll();
-    requestPromptCommentComposerUnderlayFreezeSync();
-}
-
-function getPromptCommentComposerFocusScrollSnapshot() {
-    const modalInner = document.querySelector('#promptModal .modal-inner');
-    const modalContent = document.querySelector('#promptModal .modal-content-col');
-    const commentList = document.getElementById('commentList');
-    const currentPageY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
-    const basePageY = Math.max(0, Math.round(getPromptModalBaseScrollY() || currentPageY || 0));
-
-    return {
-        pageX: Math.max(0, Math.round(window.scrollX || window.pageXOffset || 0)),
-        pageY: basePageY,
-        modalScrollTop: Math.max(0, Math.round(modalInner?.scrollTop || 0)),
-        modalScrollLeft: Math.max(0, Math.round(modalInner?.scrollLeft || 0)),
-        modalContentScrollTop: Math.max(0, Math.round(modalContent?.scrollTop || 0)),
-        modalContentScrollLeft: Math.max(0, Math.round(modalContent?.scrollLeft || 0)),
-        commentListScrollTop: Math.max(0, Math.round(commentList?.scrollTop || 0)),
-        commentListScrollLeft: Math.max(0, Math.round(commentList?.scrollLeft || 0))
-    };
-}
-
-function restorePromptCommentComposerFocusScroll(snapshot = promptCommentComposerFocusScrollLock) {
-    if (!snapshot || !isPromptCommentComposerEnabled()) return;
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
-
-    const modalInner = document.querySelector('#promptModal .modal-inner');
-    const modalContent = document.querySelector('#promptModal .modal-content-col');
-    const commentList = document.getElementById('commentList');
-
-    if (modalInner) {
-        modalInner.scrollTop = snapshot.modalScrollTop;
-        modalInner.scrollLeft = snapshot.modalScrollLeft;
-    }
-    if (modalContent) {
-        modalContent.scrollTop = snapshot.modalContentScrollTop;
-        modalContent.scrollLeft = snapshot.modalContentScrollLeft;
-    }
-    if (commentList) {
-        commentList.scrollTop = snapshot.commentListScrollTop;
-        commentList.scrollLeft = snapshot.commentListScrollLeft;
-    }
-
-    const currentPageX = Math.round(window.scrollX || window.pageXOffset || 0);
-    const currentPageY = Math.round(window.scrollY || window.pageYOffset || 0);
-    if (Math.abs(currentPageX - snapshot.pageX) > 1 || Math.abs(currentPageY - snapshot.pageY) > 1) {
-        window.scrollTo(snapshot.pageX, snapshot.pageY);
-        document.documentElement.scrollTop = snapshot.pageY;
-        document.body.scrollTop = snapshot.pageY;
-    }
-    requestPromptCommentComposerUnderlayFreezeSync();
-}
-
-function clearPromptCommentComposerFocusScrollTimers() {
-    promptCommentComposerFocusScrollTimers.forEach((timerId) => clearTimeout(timerId));
-    promptCommentComposerFocusScrollTimers = [];
-    promptCommentComposerFocusScrollFollowupTimers.forEach((timerId) => clearTimeout(timerId));
-    promptCommentComposerFocusScrollFollowupTimers = [];
-    if (promptCommentComposerFocusScrollRafId) {
-        cancelAnimationFrame(promptCommentComposerFocusScrollRafId);
-        promptCommentComposerFocusScrollRafId = null;
-    }
-}
-
-function clearPromptCommentComposerDeferredFocus() {
-    if (promptCommentComposerDeferredFocusRafId) {
-        cancelAnimationFrame(promptCommentComposerDeferredFocusRafId);
-        promptCommentComposerDeferredFocusRafId = null;
-    }
-}
-
-function clearPromptCommentComposerViewportSettleTimers() {
-    promptCommentComposerViewportSettleTimers.forEach((timerId) => clearTimeout(timerId));
-    promptCommentComposerViewportSettleTimers = [];
-}
-
-function runPromptCommentComposerSettledViewportSync(options = {}) {
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
-
-    settlePromptCommentComposerParentFrame();
-    restorePromptCommentComposerFocusScroll();
-    syncPromptCommentComposerUnderlayFreeze();
-    capturePromptCommentComposerOverlayFrame();
-    syncPromptCommentComposerViewport({ animate: options.animate !== false });
-    restorePromptCommentComposerFocusScroll();
-    syncPromptCommentComposerUnderlayFreeze();
-}
-
-function schedulePromptCommentComposerViewportSettleSync() {
-    clearPromptCommentComposerViewportSettleTimers();
-    PROMPT_COMMENT_COMPOSER_VIEWPORT_SETTLE_DELAYS.forEach((delay) => {
-        const timerId = setTimeout(() => {
-            promptCommentComposerViewportSettleTimers = promptCommentComposerViewportSettleTimers.filter((id) => id !== timerId);
-            runPromptCommentComposerSettledViewportSync({ animate: true });
-        }, delay);
-        promptCommentComposerViewportSettleTimers.push(timerId);
     });
+    return promptCommentInputDock;
 }
 
-function schedulePromptCommentComposerSettledFocus(input, snapshot = null) {
-    if (!input) return;
-    clearPromptCommentComposerDeferredFocus();
-    const focusSnapshot = snapshot || getPromptCommentComposerFocusScrollSnapshot();
-    settlePromptCommentComposerParentFrame();
-    restorePromptCommentComposerFocusScroll(focusSnapshot);
+function refreshPromptCommentInputLanguageUI() {
+    const copy = getPromptCommentInputCopy();
+    promptCommentInputDock?.setPlaceholder(copy.placeholder);
+    if (promptCommentInputDock?.input) {
+        promptCommentInputDock.setMeta(getPromptCommentInputMeta(promptCommentInputDock.input));
+    }
+    updatePromptCommentInputTrigger();
+}
 
-    promptCommentComposerDeferredFocusRafId = requestAnimationFrame(() => {
-        promptCommentComposerDeferredFocusRafId = requestAnimationFrame(() => {
-            promptCommentComposerDeferredFocusRafId = null;
-            const { overlay } = getPromptCommentComposerElements();
-            if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
+function openPromptCommentInputDock(options = {}) {
+    const dock = ensurePromptCommentInputDock();
+    const canonicalInput = document.getElementById('commentInput');
+    if (!dock || !canonicalInput) return false;
 
-            settlePromptCommentComposerParentFrame();
-            capturePromptCommentComposerOverlayFrame(!promptCommentComposerLayoutHeight);
-            syncPromptCommentComposerViewport({ animate: false });
-            focusPromptCommentComposerInputWithoutScroll(input, focusSnapshot);
-        });
+    const value = options.value !== undefined ? options.value : canonicalInput.value;
+    const replyTo = options.replyTo !== undefined ? options.replyTo : canonicalInput.dataset.replyTo;
+    const replyToName = options.replyToName !== undefined
+        ? options.replyToName
+        : canonicalInput.dataset.replyToName;
+
+    canonicalInput.value = value || '';
+    if (replyTo) canonicalInput.dataset.replyTo = replyTo;
+    else delete canonicalInput.dataset.replyTo;
+    if (replyToName) canonicalInput.dataset.replyToName = replyToName;
+    else delete canonicalInput.dataset.replyToName;
+
+    updatePromptCommentInputTrigger();
+    const opened = dock.open({
+        value: canonicalInput.value,
+        replyTo,
+        replyToName,
+        placeholder: getPromptCommentInputCopy().placeholder,
+        meta: getPromptCommentInputMeta(canonicalInput)
     });
-}
-
-function releasePromptCommentComposerFocusScrollLock() {
-    clearPromptCommentComposerFocusScrollTimers();
-    promptCommentComposerFocusScrollLock = null;
-}
-
-function schedulePromptCommentComposerFocusScrollRestore(options = {}) {
-    const lock = promptCommentComposerFocusScrollLock;
-    if (!lock) return;
-
-    restorePromptCommentComposerFocusScroll(lock);
-
-    if (!promptCommentComposerFocusScrollRafId) {
-        promptCommentComposerFocusScrollRafId = requestAnimationFrame(() => {
-            promptCommentComposerFocusScrollRafId = null;
-            if (promptCommentComposerFocusScrollLock === lock) {
-                restorePromptCommentComposerFocusScroll(lock);
-            }
-        });
-    }
-
-    if (!options.withFollowup) return;
-    promptCommentComposerFocusScrollFollowupTimers.forEach((timerId) => clearTimeout(timerId));
-    promptCommentComposerFocusScrollFollowupTimers = PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_FOLLOWUP_DELAYS.map((delay) => setTimeout(() => {
-        if (promptCommentComposerFocusScrollLock !== lock) return;
-        restorePromptCommentComposerFocusScroll(lock);
-    }, delay));
-}
-
-function lockPromptCommentComposerFocusScroll(snapshot = null) {
-    if (!isPromptCommentComposerEnabled()) return;
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
-
-    const lock = snapshot || getPromptCommentComposerFocusScrollSnapshot();
-    clearPromptCommentComposerFocusScrollTimers();
-    promptCommentComposerFocusScrollLock = lock;
-    PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_RESTORE_DELAYS.forEach((delay) => {
-        const timerId = setTimeout(() => {
-            if (promptCommentComposerFocusScrollLock !== lock) return;
-            restorePromptCommentComposerFocusScroll(lock);
-        }, delay);
-        promptCommentComposerFocusScrollTimers.push(timerId);
-    });
-    schedulePromptCommentComposerFocusScrollRestore();
-}
-
-function canClosePromptCommentComposerFromBackdrop() {
-    const { overlay } = getPromptCommentComposerElements();
-    return !!(
-        overlay?.classList.contains('active') &&
-        !overlay.classList.contains('composer-closing') &&
-        Date.now() - promptCommentComposerOpenedAt >= PROMPT_COMMENT_COMPOSER_BACKDROP_CLOSE_GUARD_MS
-    );
-}
-
-function closePromptCommentComposerFromBackdrop() {
-    schedulePromptCommentComposerFocusScrollRestore({ withFollowup: true });
-    if (!canClosePromptCommentComposerFromBackdrop()) return;
-    closePromptCommentComposer({ preserveModalDock: true });
-}
-
-function getPromptCommentComposerTouchPoint(event, changed = false) {
-    const list = changed ? event.changedTouches : event.touches;
-    const touch = list?.[0];
-    if (!touch) return null;
-    return {
-        x: Math.round(touch.clientX || 0),
-        y: Math.round(touch.clientY || 0)
-    };
-}
-
-function getPromptCommentComposerStableViewportProbe() {
-    if (promptCommentComposerStableViewportProbe?.isConnected) {
-        return promptCommentComposerStableViewportProbe;
-    }
-
-    const probe = document.createElement('div');
-    probe.setAttribute('aria-hidden', 'true');
-    probe.className = 'prompt-comment-composer-viewport-probe';
-    document.body.appendChild(probe);
-    promptCommentComposerStableViewportProbe = probe;
-    return probe;
-}
-
-function getPromptCommentComposerStableViewportHeight() {
-    const probe = getPromptCommentComposerStableViewportProbe();
-    return Math.max(0, Math.round(probe?.getBoundingClientRect().height || probe?.offsetHeight || 0));
-}
-
-function getPromptCommentComposerViewportSnapshot() {
-    const vv = window.visualViewport;
-    const stableViewportHeight = getPromptCommentComposerStableViewportHeight();
-    const visualTop = Math.max(0, vv?.offsetTop || 0);
-    const visualHeight = Math.max(0, vv?.height || 0);
-    const visualBottom = Math.round(
-        visualHeight
-            ? visualTop + visualHeight
-            : (window.innerHeight || document.documentElement.clientHeight || stableViewportHeight || 0)
-    );
-    const measuredHeight = Math.max(
-        PROMPT_COMMENT_COMPOSER_MIN_TOP,
-        Math.round(stableViewportHeight || 0),
-        Math.round(window.innerHeight || 0),
-        Math.round(document.documentElement.clientHeight || 0),
-        Math.round(visualBottom || 0)
-    );
-    const layoutWidth = Math.max(
-        320,
-        Math.round(window.innerWidth || 0),
-        Math.round(document.documentElement.clientWidth || 0),
-        Math.round(vv?.width || 0)
-    );
-
-    return {
-        visualBottom,
-        measuredHeight,
-        layoutWidth
-    };
-}
-
-function capturePromptCommentComposerOverlayFrame(force = false) {
-    const { overlay, input } = getPromptCommentComposerElements();
-    if (!overlay) return null;
-
-    const snapshot = getPromptCommentComposerViewportSnapshot();
-    const isInputFocused = input === document.activeElement;
-    if (
-        force ||
-        !promptCommentComposerLayoutHeight ||
-        (!isInputFocused && snapshot.measuredHeight > promptCommentComposerLayoutHeight)
-    ) {
-        promptCommentComposerLayoutHeight = Math.max(PROMPT_COMMENT_COMPOSER_MIN_TOP, snapshot.measuredHeight);
-    }
-
-    const layoutHeight = Math.max(
-        PROMPT_COMMENT_COMPOSER_MIN_TOP,
-        Math.round(promptCommentComposerLayoutHeight || snapshot.measuredHeight || 0)
-    );
-    promptCommentComposerOverlayBaseHeight = layoutHeight;
-
-    setPromptsCssVars(overlay, {
-        '--prompt-comment-composer-viewport-top': '0px',
-        '--prompt-comment-composer-viewport-left': '0px',
-        '--prompt-comment-composer-viewport-width': `${snapshot.layoutWidth}px`,
-        '--prompt-comment-composer-overlay-height': `${layoutHeight}px`
-    });
-    setPromptsCssVars(document.body, {
-        '--prompt-comment-composer-viewport-top': '0px',
-        '--prompt-comment-composer-viewport-left': '0px',
-        '--prompt-comment-composer-viewport-width': `${snapshot.layoutWidth}px`,
-        '--prompt-comment-composer-overlay-height': `${layoutHeight}px`
-    });
-
-    return {
-        ...snapshot,
-        layoutHeight
-    };
-}
-
-function restorePromptCommentComposerOverlay() {
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay) return;
-    promptCommentComposerLayoutHeight = 0;
-    promptCommentComposerOverlayBaseHeight = 0;
-    setPromptsCssVars(overlay, {
-        '--prompt-comment-composer-overlay-height': null,
-        '--prompt-comment-composer-viewport-top': null,
-        '--prompt-comment-composer-viewport-left': null,
-        '--prompt-comment-composer-viewport-width': null,
-        '--composer-keyboard-offset': null,
-        '--composer-sheet-top': null
-    });
-    setPromptsCssVars(document.body, {
-        '--prompt-comment-composer-overlay-height': null,
-        '--prompt-comment-composer-viewport-top': null,
-        '--prompt-comment-composer-viewport-left': null,
-        '--prompt-comment-composer-viewport-width': null
-    });
-}
-
-function clearPromptCommentComposerCaretStabilizer(refreshCaret = false) {
-    if (promptCommentComposerCaretStabilizeTimer) {
-        clearTimeout(promptCommentComposerCaretStabilizeTimer);
-        promptCommentComposerCaretStabilizeTimer = null;
-    }
-
-    const { overlay, input } = getPromptCommentComposerElements();
-    overlay?.classList.remove('composer-caret-stabilizing');
-    if (refreshCaret) {
-        refreshPromptsTextareaCaret(input);
-    }
-}
-
-function clearPromptCommentComposerEnterAnimation(removeClass = false) {
-    if (promptCommentComposerEnterAnimationTimer) {
-        clearTimeout(promptCommentComposerEnterAnimationTimer);
-        promptCommentComposerEnterAnimationTimer = null;
-    }
-
-    if (removeClass) {
-        const { overlay } = getPromptCommentComposerElements();
-        overlay?.classList.remove('composer-entering');
-    }
-}
-
-function startPromptCommentComposerEnterAnimation(overlay) {
-    if (!overlay) return;
-    clearPromptCommentComposerEnterAnimation(false);
-    overlay.classList.remove('composer-entering');
-    void overlay.offsetWidth;
-    overlay.classList.add('composer-entering');
-    promptCommentComposerEnterAnimationTimer = setTimeout(() => {
-        overlay.classList.remove('composer-entering');
-        promptCommentComposerEnterAnimationTimer = null;
-    }, PROMPT_COMMENT_COMPOSER_ENTER_ANIMATION_MS);
-}
-
-function finishPromptCommentComposerEnterAnimation() {
-    clearPromptCommentComposerEnterAnimation(true);
-}
-
-function clearPromptCommentComposerSheetAnimationTimer() {
-    if (promptCommentComposerSheetAnimationTimer) {
-        clearTimeout(promptCommentComposerSheetAnimationTimer);
-        promptCommentComposerSheetAnimationTimer = null;
-    }
-}
-
-function togglePromptCommentComposerSheetAnimation(sheet, animate) {
-    if (!sheet) return;
-
-    clearPromptCommentComposerSheetAnimationTimer();
-    sheet.classList.toggle('composer-animating', Boolean(animate));
-
-    if (!animate) return;
-
-    promptCommentComposerSheetAnimationTimer = setTimeout(() => {
-        sheet.classList.remove('composer-animating');
-        promptCommentComposerSheetAnimationTimer = null;
-    }, PROMPT_COMMENT_COMPOSER_SHEET_ANIMATION_MS);
-}
-
-function clearPromptCommentComposerKeyboardSettleTimer() {
-    if (promptCommentComposerKeyboardSettleTimer) {
-        clearTimeout(promptCommentComposerKeyboardSettleTimer);
-        promptCommentComposerKeyboardSettleTimer = null;
-    }
-}
-
-function setPromptCommentComposerKeyboardSettling(active) {
-    const { overlay } = getPromptCommentComposerElements();
-    if (!overlay) return;
-
-    clearPromptCommentComposerKeyboardSettleTimer();
-    overlay.classList.toggle('keyboard-settling', Boolean(active));
-
-    if (!active) return;
-
-    promptCommentComposerKeyboardSettleTimer = setTimeout(() => {
-        overlay.classList.remove('keyboard-settling');
-        promptCommentComposerKeyboardSettleTimer = null;
-    }, PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS);
-}
-
-function preparePromptCommentComposerForInputFocus(focusSnapshot = null) {
-    const { overlay, sheet } = getPromptCommentComposerElements();
-    if (!overlay?.classList.contains('active') || overlay.classList.contains('composer-closing')) return;
-
-    settlePromptCommentComposerParentFrame();
-    finishPromptCommentComposerEnterAnimation();
-    clearPromptCommentComposerSheetAnimationTimer();
-    sheet?.classList.remove('composer-animating');
-    suspendPromptModalKeyboardDockForCommentComposer();
-    freezePromptCommentComposerUnderlay();
-    capturePromptCommentComposerOverlayFrame(!promptCommentComposerLayoutHeight);
-    lockPromptCommentComposerPage();
-    lockPromptCommentComposerFocusScroll(focusSnapshot);
-    syncPromptCommentComposerViewport({ animate: false });
-    requestPromptCommentComposerUnderlayFreezeSync();
-    setPromptCommentComposerKeyboardSettling(true);
-}
-
-function stabilizePromptCommentComposerCaretDuringMotion(duration = 250) {
-    const { overlay, input } = getPromptCommentComposerElements();
-    if (!overlay || !input || document.activeElement !== input) return;
-
-    clearPromptCommentComposerCaretStabilizer(false);
-    overlay.classList.add('composer-caret-stabilizing');
-    promptCommentComposerCaretStabilizeTimer = setTimeout(() => {
-        clearPromptCommentComposerCaretStabilizer(true);
-    }, Math.max(0, duration) + 60);
-}
-
-function resetPromptCommentComposerKeyboardState() {
-    clearPromptCommentComposerKeyboardTimers();
-    clearPromptCommentComposerSheetAnimationTimer();
-    clearPromptCommentComposerKeyboardSettleTimer();
-    clearPromptCommentComposerDeferredFocus();
-    clearPromptCommentComposerViewportSettleTimers();
-    clearPromptCommentComposerCaretStabilizer(false);
-    if (promptCommentComposerViewportRafId) {
-        cancelAnimationFrame(promptCommentComposerViewportRafId);
-        promptCommentComposerViewportRafId = null;
-    }
-    const { overlay, sheet } = getPromptCommentComposerElements();
-    overlay?.classList.remove('keyboard-docked', 'keyboard-active');
-    setPromptsCssVars(overlay, {
-        '--composer-keyboard-offset': '0px'
-    });
-    setPromptsCssVars(sheet, {
-        height: null,
-        'max-height': null
-    });
-    promptCommentComposerBaseSheetHeight = 0;
-    promptCommentComposerKeyboardOffset = 0;
-    setPromptCommentComposerKeyboardSettling(false);
-    releasePromptCommentComposerFocusScrollLock();
-}
-
-function resetPromptCommentComposerViewportStyles() {
-    resetPromptCommentComposerKeyboardState();
-    restorePromptCommentComposerOverlay();
-    releasePromptCommentComposerUnderlayFreeze();
-}
-
-function getPromptCommentComposerBaseSheetHeight(sheet) {
-    if (!sheet) return PROMPT_COMMENT_COMPOSER_BASE_SHEET_HEIGHT;
-    if (!promptCommentComposerBaseSheetHeight) {
-        const liveHeight = Math.round(sheet.offsetHeight || sheet.getBoundingClientRect().height || 0);
-        promptCommentComposerBaseSheetHeight = Math.max(
-            300,
-            Math.min(440, liveHeight || PROMPT_COMMENT_COMPOSER_BASE_SHEET_HEIGHT)
-        );
-    }
-    return Math.max(300, promptCommentComposerBaseSheetHeight || PROMPT_COMMENT_COMPOSER_BASE_SHEET_HEIGHT);
-}
-
-function getPromptCommentComposerSheetLayout(sheet, snapshot, keyboardOffset) {
-    const layoutHeight = Math.max(
-        PROMPT_COMMENT_COMPOSER_MIN_TOP,
-        Math.round(snapshot?.layoutHeight || promptCommentComposerLayoutHeight || promptCommentComposerOverlayBaseHeight || 0)
-    );
-    const baseSheetHeight = getPromptCommentComposerBaseSheetHeight(sheet);
-    const keyboardTop = Math.max(0, layoutHeight - Math.max(0, keyboardOffset));
-    const maxKeyboardSheetHeight = Math.max(
-        260,
-        Math.round(keyboardTop - PROMPT_COMMENT_COMPOSER_MIN_TOP - PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE)
-    );
-    const sheetHeight = Math.min(baseSheetHeight, maxKeyboardSheetHeight);
-    const maxRestingTop = Math.max(
-        PROMPT_COMMENT_COMPOSER_MIN_TOP,
-        Math.round(layoutHeight - sheetHeight - PROMPT_COMMENT_COMPOSER_MIN_TOP)
-    );
-    const restingTop = Math.max(
-        PROMPT_COMMENT_COMPOSER_MIN_TOP,
-        Math.min(maxRestingTop, Math.round((layoutHeight - sheetHeight) / 2))
-    );
-    const keyboardTopPosition = Math.max(
-        PROMPT_COMMENT_COMPOSER_MIN_TOP,
-        Math.round(keyboardTop - sheetHeight - PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE)
-    );
-
-    return {
-        sheetHeight,
-        sheetTop: keyboardOffset > 24 ? keyboardTopPosition : restingTop
-    };
-}
-
-function syncPromptCommentComposerViewport(options = {}) {
-    const { overlay, input, sheet } = getPromptCommentComposerElements();
-    if (!overlay || !sheet || !overlay.classList.contains('active')) {
-        resetPromptCommentComposerKeyboardState();
-        return;
-    }
-
-    if (overlay.classList.contains('composer-closing')) return;
-
-    if (!isPromptCommentComposerEnabled()) {
-        capturePromptCommentComposerOverlayFrame(true);
-        return;
-    }
-
-    const snapshot = capturePromptCommentComposerOverlayFrame();
-    const activeInput = input === document.activeElement ? input : null;
-    if (activeInput && !promptCommentComposerOwnsScrollLock) {
-        lockPromptCommentComposerPage();
-    }
-
-    const rawKeyboardOffset = Math.max(0, Math.round((snapshot?.layoutHeight || 0) - (snapshot?.visualBottom || 0)));
-    const maxKeyboardOffset = Math.max(0, Math.round((snapshot?.layoutHeight || 0) * PROMPT_COMMENT_COMPOSER_MAX_KEYBOARD_RATIO));
-    const isFreshKeyboardSample = activeInput &&
-        promptCommentComposerKeyboardOffset <= 24 &&
-        Date.now() - promptCommentComposerOpenedAt < PROMPT_COMMENT_COMPOSER_FRESH_SAMPLE_MS;
-    if (isFreshKeyboardSample && maxKeyboardOffset > 0 && rawKeyboardOffset > maxKeyboardOffset) {
-        setPromptCommentComposerKeyboardSettling(true);
-        schedulePromptCommentComposerViewportSettleSync();
-        return;
-    }
-    const keyboardOffset = activeInput ? Math.min(rawKeyboardOffset, maxKeyboardOffset || rawKeyboardOffset) : 0;
-    const sheetLayout = getPromptCommentComposerSheetLayout(sheet, snapshot, keyboardOffset);
-    const keyboardActive = keyboardOffset > 24;
-
-    finishPromptCommentComposerEnterAnimation();
-    overlay.classList.toggle('keyboard-docked', keyboardActive);
-    overlay.classList.toggle('keyboard-active', keyboardActive);
-    setPromptsCssVars(overlay, {
-        '--composer-keyboard-offset': `${keyboardOffset}px`,
-        '--composer-sheet-top': `${sheetLayout.sheetTop}px`
-    });
-    setPromptsCssVars(sheet, {
-        height: `${sheetLayout.sheetHeight}px`,
-        'max-height': `${sheetLayout.sheetHeight}px`
-    });
-    togglePromptCommentComposerSheetAnimation(sheet, Boolean(options.animate));
-    setPromptCommentComposerKeyboardSettling(Boolean(activeInput));
-    promptCommentComposerKeyboardOffset = keyboardOffset;
-}
-
-function attachPromptCommentComposerViewportSync() {
-    if (!isPromptCommentComposerEnabled()) return;
-
-    const { overlay, input } = getPromptCommentComposerElements();
-    const vv = window.visualViewport;
-    if (!overlay || !vv) return;
-
-    detachPromptCommentComposerViewportSync();
-    capturePromptCommentComposerOverlayFrame(true);
-    syncPromptCommentComposerViewport({ animate: false });
-    bindPromptCommentComposerInputFocusStabilizer(input);
-
-    const handleViewportChange = () => {
-        schedulePromptCommentComposerFocusScrollRestore({ withFollowup: true });
-        requestPromptCommentComposerUnderlayFreezeSync();
-        if (promptCommentComposerViewportRafId) return;
-        promptCommentComposerViewportRafId = requestAnimationFrame(() => {
-            promptCommentComposerViewportRafId = null;
-            settlePromptCommentComposerParentFrame();
-            restorePromptCommentComposerFocusScroll();
-            syncPromptCommentComposerUnderlayFreeze();
-            capturePromptCommentComposerOverlayFrame();
-            syncPromptCommentComposerViewport({ animate: true });
-            restorePromptCommentComposerFocusScroll();
-            syncPromptCommentComposerUnderlayFreeze();
-        });
-    };
-    const handleRootScroll = () => {
-        schedulePromptCommentComposerFocusScrollRestore({ withFollowup: true });
-        requestPromptCommentComposerUnderlayFreezeSync();
-    };
-
-    vv.addEventListener('resize', handleViewportChange, { passive: true });
-    vv.addEventListener('scroll', handleViewportChange, { passive: true });
-    window.addEventListener('scroll', handleRootScroll, { passive: true });
-    window.addEventListener('resize', handleViewportChange, { passive: true });
-    window.addEventListener('orientationchange', handleViewportChange, { passive: true });
-    input?.addEventListener('focus', handleViewportChange);
-    input?.addEventListener('blur', handleViewportChange);
-
-    promptCommentComposerViewportCleanup = () => {
-        vv.removeEventListener('resize', handleViewportChange);
-        vv.removeEventListener('scroll', handleViewportChange);
-        window.removeEventListener('scroll', handleRootScroll);
-        window.removeEventListener('resize', handleViewportChange);
-        window.removeEventListener('orientationchange', handleViewportChange);
-        input?.removeEventListener('focus', handleViewportChange);
-        input?.removeEventListener('blur', handleViewportChange);
-        if (promptCommentComposerViewportRafId) {
-            cancelAnimationFrame(promptCommentComposerViewportRafId);
-            promptCommentComposerViewportRafId = null;
-        }
-    };
-}
-
-function ensurePromptCommentComposer() {
-    if (!isPromptCommentComposerEnabled()) return null;
-    if (promptCommentComposerMounted) return getPromptCommentComposerElements();
-
-    const copy = getPromptCommentComposerI18n();
-
-    const overlay = document.createElement('div');
-    overlay.id = 'promptCommentComposer';
-    overlay.className = 'prompt-comment-composer';
-    overlay.innerHTML = `
-        <div class="prompt-comment-composer-sheet">
-            <div class="prompt-comment-composer-handle" aria-hidden="true"></div>
-            <div class="prompt-comment-composer-header">
-                <div class="prompt-comment-composer-copy">
-                    <div class="prompt-comment-composer-kicker" data-i18n="gallery.commentsTitle">${copy.commentsTitle}</div>
-                    <div class="prompt-comment-composer-title" data-i18n="gallery.commentComposerTitle">${copy.title}</div>
-                </div>
-            </div>
-            <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
-            <div class="prompt-comment-composer-editor">
-                <div class="prompt-comment-composer-empty-placeholder" aria-hidden="true" data-i18n="gallery.commentComposerPlaceholder">${copy.placeholder}</div>
-                <textarea id="promptCommentComposerInput" rows="6" placeholder="${copy.placeholder}" data-i18n-placeholder="gallery.commentComposerPlaceholder"></textarea>
-                <button type="button" class="prompt-comment-composer-upload prompt-comment-composer-upload-inline" id="promptCommentComposerUploadBtn" title="${copy.attachImage}" aria-label="${copy.attachImage}" data-i18n-title="gallery.attachImage">
-                    <i class="fas fa-image"></i>
-                </button>
-            </div>
-            <input type="file" id="promptCommentComposerImageUpload" accept="image/*" class="prompts-comment-image-upload-hidden">
-            <div class="prompt-comment-composer-actions">
-                <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn" data-i18n="gallery.send">
-                    ${copy.send}
-                </button>
-            </div>
-        </div>
-    `;
-
-    const handleBackdropClick = (e) => {
-        if (e.target !== overlay) return;
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        closePromptCommentComposerFromBackdrop();
-    };
-    const handleBackdropTouchStart = (e) => {
-        if (e.target !== overlay) return;
-        const point = getPromptCommentComposerTouchPoint(e);
-        if (!point) return;
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        promptCommentComposerBackdropTouch = {
-            ...point,
-            cancelled: false
-        };
-        schedulePromptCommentComposerFocusScrollRestore({ withFollowup: true });
-    };
-    const handleBackdropTouchMove = (e) => {
-        if (!promptCommentComposerBackdropTouch) return;
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        const point = getPromptCommentComposerTouchPoint(e);
-        if (!point) return;
-        const dx = Math.abs(point.x - promptCommentComposerBackdropTouch.x);
-        const dy = Math.abs(point.y - promptCommentComposerBackdropTouch.y);
-        if (dx > PROMPT_COMMENT_COMPOSER_BACKDROP_TAP_MOVE_PX || dy > PROMPT_COMMENT_COMPOSER_BACKDROP_TAP_MOVE_PX) {
-            promptCommentComposerBackdropTouch.cancelled = true;
-        }
-        schedulePromptCommentComposerFocusScrollRestore({ withFollowup: true });
-    };
-    const handleBackdropTouchEnd = (e) => {
-        if (!promptCommentComposerBackdropTouch) return;
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        const wasTap = !promptCommentComposerBackdropTouch.cancelled;
-        promptCommentComposerBackdropTouch = null;
-        if (wasTap) {
-            closePromptCommentComposerFromBackdrop();
-        }
-    };
-    overlay.addEventListener('click', handleBackdropClick);
-    overlay.addEventListener('touchstart', handleBackdropTouchStart, { passive: false });
-    overlay.addEventListener('touchmove', handleBackdropTouchMove, { passive: false });
-    overlay.addEventListener('touchend', handleBackdropTouchEnd, { passive: false });
-    overlay.addEventListener('touchcancel', () => {
-        promptCommentComposerBackdropTouch = null;
-    }, { passive: true });
-
-    document.body.appendChild(overlay);
-    promptCommentComposerMounted = true;
-
-    const { input, sendBtn } = getPromptCommentComposerElements();
-    sendBtn?.addEventListener('click', (event) => {
-        if (event?.cancelable) event.preventDefault();
-        event?.stopPropagation?.();
-        void submitComment({ source: 'prompt-comment-composer-send' });
-    });
-
-    input?.addEventListener('input', () => {
-        autoExpandPromptCommentComposerInput(input);
-        syncPromptCommentComposerEmptyState();
-        syncPromptCommentComposerMeta();
-        syncPromptCommentComposerTrigger();
-    });
-    input?.addEventListener('keydown', handleCommentKeydown);
-    input?.addEventListener('focus', () => {
-        preparePromptCommentComposerForInputFocus();
-        overlay.classList.add('ios-focus-lock');
-        syncPromptCommentComposerEmptyState();
-        schedulePromptCommentComposerViewportSettleSync();
-    });
-    input?.addEventListener('blur', () => {
-        setTimeout(() => {
-            const active = document.activeElement;
-            if (!overlay.contains(active) || !/^(INPUT|TEXTAREA|SELECT)$/.test(active?.tagName || '')) {
-                overlay.classList.remove('ios-focus-lock');
-            }
-        }, 150);
-        syncPromptCommentComposerEmptyState();
-    });
-    bindPromptCommentComposerInputFocusStabilizer(input);
-
-    return getPromptCommentComposerElements();
-}
-
-function refreshPromptCommentComposerLanguageUI() {
-    const composer = getPromptCommentComposerElements();
-    if (!composer?.overlay) return;
-
-    const copy = getPromptCommentComposerI18n();
-    const uploadBtn = document.getElementById('promptCommentComposerUploadBtn');
-    const sendBtn = document.getElementById('promptCommentComposerSendBtn');
-    const placeholder = composer.overlay.querySelector('.prompt-comment-composer-empty-placeholder');
-
-    composer.input?.setAttribute('placeholder', copy.placeholder);
-
-    if (placeholder) {
-        placeholder.textContent = copy.placeholder;
-    }
-
-    if (uploadBtn) {
-        const title = selectedCommentImage ? copy.imageSelected : copy.attachImage;
-        uploadBtn.dataset.defaultTitle = copy.attachImage;
-        uploadBtn.title = title;
-        uploadBtn.setAttribute('aria-label', title);
-    }
-
-    if (sendBtn) {
-        sendBtn.textContent = copy.send;
-    }
-
-    syncPromptCommentComposerMeta();
-}
-
-function openPromptCommentComposer(options = {}) {
-    if (!isPromptCommentComposerEnabled()) return false;
-    clearPromptCommentComposerLoginGate();
-    const composer = ensurePromptCommentComposer();
-    const triggerInput = document.getElementById('commentInput');
-    if (!composer?.overlay || !composer.input) return false;
-    if (triggerInput && document.activeElement === triggerInput) {
-        triggerInput.blur();
-    }
-
-    if (options.value !== undefined) {
-        composer.input.value = options.value;
-    } else if (!composer.input.value && triggerInput?.value) {
-        composer.input.value = triggerInput.value;
-    }
-
-    if (options.replyTo !== undefined) {
-        if (options.replyTo) {
-            composer.input.dataset.replyTo = options.replyTo;
-        } else {
-            delete composer.input.dataset.replyTo;
-            delete composer.input.dataset.replyToName;
-        }
-    } else if (triggerInput?.dataset.replyTo && !composer.input.dataset.replyTo) {
-        composer.input.dataset.replyTo = triggerInput.dataset.replyTo;
-        if (triggerInput.dataset.replyToName) {
-            composer.input.dataset.replyToName = triggerInput.dataset.replyToName;
-        }
-    }
-
-    if (options.replyToName !== undefined) {
-        if (options.replyToName) {
-            composer.input.dataset.replyToName = options.replyToName;
-        } else {
-            delete composer.input.dataset.replyToName;
-        }
-    }
-
-    const shouldFocusComposer = options.focus !== false;
-    const isAlreadyActive = composer.overlay.classList.contains('active') &&
-        !composer.overlay.classList.contains('composer-closing');
-    if (isAlreadyActive) {
-        suspendPromptModalKeyboardDockForCommentComposer();
-        freezePromptCommentComposerUnderlay();
-        settlePromptCommentComposerParentFrame();
-        lockPromptCommentComposerPage();
-        lockPromptCommentComposerFocusScroll(promptCommentComposerFocusScrollLock || getPromptCommentComposerFocusScrollSnapshot());
-        syncPromptCommentComposerViewport({ animate: false });
-        requestPromptCommentComposerUnderlayFreezeSync();
-        autoExpandPromptCommentComposerInput(composer.input);
-        syncPromptCommentComposerEmptyState();
-        syncPromptCommentComposerMeta();
-        syncPromptCommentComposerTrigger();
-        attachPromptCommentComposerViewportSync();
-        if (shouldFocusComposer && document.activeElement !== composer.input) {
-            schedulePromptCommentComposerSettledFocus(composer.input);
-        }
-        if (options.openFilePicker) {
-            setTimeout(() => composer.fileInput?.click(), 80);
-        }
-        return true;
-    }
-
-    const openingScrollSnapshot = getPromptCommentComposerFocusScrollSnapshot();
-    detachPromptCommentComposerViewportSync();
-    resetPromptCommentComposerKeyboardState();
-    finishPromptCommentComposerEnterAnimation();
-    clearPromptCommentComposerSheetAnimationTimer();
-    composer.sheet?.classList.remove('composer-animating');
-    composer.overlay.classList.remove(
-        'active',
-        'composer-closing',
-        'keyboard-docked',
-        'keyboard-active',
-        'ios-focus-lock',
-        'composer-entering',
-        'keyboard-settling'
-    );
-    setPromptsCssVars(composer.overlay, {
-        '--composer-keyboard-offset': '0px',
-        '--composer-sheet-top': null
-    });
-    setPromptsCssVars(composer.sheet, {
-        height: null,
-        'max-height': null
-    });
-
-    void composer.overlay.offsetWidth;
-    composer.overlay.classList.add('active');
-    promptCommentComposerOpenedAt = Date.now();
-    promptCommentComposerBackdropTouch = null;
-    lockPromptCommentComposerFocusScroll(openingScrollSnapshot);
-    suspendPromptModalKeyboardDockForCommentComposer();
-    freezePromptCommentComposerUnderlay();
-    settlePromptCommentComposerParentFrame();
-    capturePromptCommentComposerOverlayFrame(true);
-    syncPromptCommentComposerViewport({ animate: false });
-    startPromptCommentComposerEnterAnimation(composer.overlay);
-    lockPromptCommentComposerPage();
-    restorePromptCommentComposerFocusScroll(openingScrollSnapshot);
-    autoExpandPromptCommentComposerInput(composer.input);
-    syncPromptCommentComposerEmptyState();
-    syncPromptCommentComposerMeta();
-    syncPromptCommentComposerTrigger();
-    attachPromptCommentComposerViewportSync();
     syncPromptModalTopButtonState();
-    initCommentImageUpload();
-
-    if (shouldFocusComposer) {
-        schedulePromptCommentComposerSettledFocus(composer.input, openingScrollSnapshot);
-    }
-
-    if (options.openFilePicker) {
-        setTimeout(() => composer.fileInput?.click(), 80);
-    }
-
-    return true;
+    return opened;
 }
 
-function closePromptCommentComposer(options = {}) {
-    const { overlay, input } = getPromptCommentComposerElements();
-    if (!overlay) return;
-    if (options.clearDraft) {
-        clearPromptCommentComposerLoginGate();
-    }
-    const wasActive = overlay.classList.contains('active') || overlay.classList.contains('composer-closing');
-    if (!wasActive) {
-        if (options.clearDraft) {
-            clearCommentDraftFields();
-            clearSelectedCommentImage();
-        } else {
-            syncPromptCommentComposerTrigger();
-            syncPromptCommentComposerMeta();
-        }
-        return;
-    }
-
-    input?.blur();
-    promptCommentComposerBackdropTouch = null;
-    detachPromptCommentComposerViewportSync();
-    resetPromptCommentComposerKeyboardState();
-    clearPromptModalUndockTimer();
-    clearPromptModalKeyboardPreLift();
-
-    if (options.clearDraft) {
+function closePromptCommentInputDock({
+    blur = true,
+    immediate = false,
+    clearDraft = false,
+    reason = 'close'
+} = {}) {
+    if (clearDraft) {
         clearCommentDraftFields();
         clearSelectedCommentImage();
-    } else {
-        syncPromptCommentComposerTrigger();
-        syncPromptCommentComposerMeta();
+    } else if (promptCommentInputDock?.input) {
+        syncPromptCommentInputDraft(promptCommentInputDock.input);
     }
 
-    finishPromptCommentComposerEnterAnimation();
-    clearPromptCommentComposerSheetAnimationTimer();
-    overlay.classList.add('composer-closing');
-
-    setTimeout(() => {
-        if (!overlay.classList.contains('composer-closing')) return;
-
-        resetPromptCommentComposerKeyboardState();
-        restorePromptCommentComposerOverlay();
-        unlockPromptCommentComposerPage();
-        overlay.classList.remove(
-            'active',
-            'composer-closing',
-            'keyboard-docked',
-            'keyboard-active',
-            'ios-focus-lock',
-            'composer-entering',
-            'keyboard-settling'
-        );
-        overlay.querySelector('.prompt-comment-composer-sheet')?.classList.remove('composer-animating');
-        setPromptsCssVars(overlay, {
-            '--composer-keyboard-offset': '0px',
-            '--composer-sheet-top': null
-        });
-        promptCommentComposerLayoutHeight = 0;
-        promptCommentComposerBaseSheetHeight = 0;
-        promptCommentComposerOverlayBaseHeight = 0;
-        promptCommentComposerKeyboardOffset = 0;
-        promptCommentComposerOpenedAt = 0;
-        promptCommentComposerBackdropTouch = null;
-        releasePromptCommentComposerUnderlayFreeze();
-        syncPromptCommentComposerEmptyState();
-        syncPromptModalTopButtonState();
-
-        if (options.preserveModalDock) {
-            clearPromptModalUndockTimer();
-        }
-    }, 260);
+    if (!promptCommentInputDock?.isActive()) return false;
+    return promptCommentInputDock.close({ blur, immediate, reason });
 }
 
 function getActiveCommentInput() {
-    const { overlay, input } = getPromptCommentComposerElements();
-    if (isPromptCommentComposerEnabled() && overlay?.classList.contains('active') && input) {
-        return input;
+    if (promptCommentInputDock?.isActive() && promptCommentInputDock.input) {
+        return promptCommentInputDock.input;
     }
     return document.getElementById('commentInput');
 }
-
 function getCommentImageUploadBindings() {
-    ensurePromptCommentComposer();
     return [
         {
             button: document.getElementById('commentUploadBtn'),
             input: document.getElementById('commentImageUpload')
-        },
-        {
-            button: document.getElementById('promptCommentComposerUploadBtn'),
-            input: document.getElementById('promptCommentComposerImageUpload')
         }
     ].filter(binding => binding.button && binding.input);
 }
 
 function updateCommentImageUploadButtonsState(title = null) {
     const bindings = getCommentImageUploadBindings();
-    const copy = getPromptCommentComposerI18n();
+    const copy = getPromptCommentInputCopy();
     bindings.forEach(({ button, input }) => {
         button.disabled = false;
         button.innerHTML = '<i class="fas fa-image"></i>';
@@ -10589,7 +9433,10 @@ function updateCommentImageUploadButtonsState(title = null) {
             input.value = '';
         }
     });
-    syncPromptCommentComposerMeta();
+    if (promptCommentInputDock?.input) {
+        promptCommentInputDock.setMeta(getPromptCommentInputMeta(promptCommentInputDock.input));
+    }
+    updatePromptCommentInputTrigger();
 }
 
 function clearSelectedCommentImage() {
@@ -10604,17 +9451,12 @@ function initCommentImageUpload() {
 
     bindings.forEach(({ button, input }) => {
         if (!button.dataset.defaultTitle) {
-            button.dataset.defaultTitle = getPromptCommentComposerI18n().attachImage;
+            button.dataset.defaultTitle = getPromptCommentInputCopy().attachImage;
         }
 
-        button.onclick = () => {
-            if (button.id === 'commentUploadBtn' && isPromptCommentComposerEnabled()) {
-                openPromptCommentComposer({ focus: true, openFilePicker: true });
-                return;
-            }
-
+        const handleUpload = () => {
             if (selectedCommentImage) {
-                if (confirm(getPromptCommentComposerI18n().removeSelectedImageConfirm)) {
+                if (confirm(getPromptCommentInputCopy().removeSelectedImageConfirm)) {
                     clearSelectedCommentImage();
                 }
                 return;
@@ -10622,13 +9464,14 @@ function initCommentImageUpload() {
 
             input.click();
         };
+        button.onclick = handleUpload;
 
         input.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
             if (!file.type.startsWith('image/')) {
-                alert(getPromptCommentComposerI18n().selectImageFileError);
+                alert(getPromptCommentInputCopy().selectImageFileError);
                 input.value = '';
                 return;
             }
@@ -10636,7 +9479,7 @@ function initCommentImageUpload() {
             bindings.forEach(({ button: eachButton }) => {
                 eachButton.disabled = true;
                 eachButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                eachButton.title = getPromptCommentComposerI18n().compressingImage;
+                eachButton.title = getPromptCommentInputCopy().compressingImage;
             });
 
             try {
@@ -10661,7 +9504,7 @@ function initCommentImageUpload() {
                 updateCommentImageUploadButtonsState(buildCommentImageUploadTitle(file, finalFile, compressed));
             } catch (error) {
                 console.error('Compression error:', error);
-                alert(getPromptCommentComposerI18n().imageCompressFailed);
+                alert(getPromptCommentInputCopy().imageCompressFailed);
                 input.value = '';
                 updateCommentImageUploadButtonsState();
             }
@@ -11710,15 +10553,15 @@ async function handleLikeComment(commentId, button) {
 }
 
 function handleReplyComment(commentId, authorName) {
-    const input = getActiveCommentInput();
+    const input = document.getElementById('commentInput');
     if (input) {
         input.value = `@${authorName} `;
         input.dataset.replyTo = commentId;
         input.dataset.replyToName = authorName;
 
-        if (isPromptCommentComposerEnabled()) {
-            openPromptCommentComposer({
-                focus: true,
+        if (isPromptCommentInputDockEnabled()) {
+            updatePromptCommentInputTrigger();
+            openPromptCommentInputDock({
                 value: input.value,
                 replyTo: commentId,
                 replyToName: authorName
@@ -11830,7 +10673,7 @@ function handleCommentKeydown(e) {
     // Shift+Enter: insert newline (default behavior for textarea)
     // Enter alone: submit comment
     if (e.key === 'Enter' && !e.shiftKey) {
-        if (isPromptCommentComposerEnabled() && e.target?.id === 'promptCommentComposerInput') {
+        if (isPromptCommentInputDockEnabled() && e.target?.id === 'promptCommentInputDockField') {
             return;
         }
         e.preventDefault(); // Prevent newline
@@ -11852,12 +10695,12 @@ function restoreCommentDraft(input, content, parentId = null, replyToName = '') 
         delete input.dataset.replyToName;
     }
 
-    if (input.id === 'promptCommentComposerInput') {
-        autoExpandPromptCommentComposerInput(input);
-        syncPromptCommentComposerMeta();
-        syncPromptCommentComposerTrigger();
+    if (input.id === 'promptCommentInputDockField') {
+        promptCommentInputDock?.syncHeight();
+        syncPromptCommentInputDraft(input);
     } else {
         autoExpandTextarea(input);
+        updatePromptCommentInputTrigger();
     }
 }
 
@@ -11900,7 +10743,7 @@ async function submitComment(options = {}) {
     if (!input) return;
     const content = input.value.trim();
     const site = getPromptInteractionSite();
-    const isPromptComposerInput = input?.id === 'promptCommentComposerInput';
+    const isPromptDockInput = input?.id === 'promptCommentInputDockField';
 
     // Allow empty content only when an image is attached. Check this before auth
     // so keyboard Return/Done events on an empty composer cannot summon login.
@@ -11911,12 +10754,8 @@ async function submitComment(options = {}) {
     // Authenticate only after there is real work to submit.
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
-        if (isPromptComposerInput && isPromptCommentComposerEnabled()) {
-            flashPromptCommentComposerAuthRequired();
-            if (options.source === 'prompt-comment-composer-send') {
-                openPromptCommentComposerLoginGate();
-            }
-            return;
+        if (isPromptDockInput && isPromptCommentInputDockEnabled()) {
+            closePromptCommentInputDock({ reason: 'authentication-required' });
         }
         showLoginModal();
         return;
@@ -12064,8 +10903,8 @@ async function submitComment(options = {}) {
         clearSelectedCommentImage();
     }
 
-    if (isPromptCommentComposerEnabled()) {
-        closePromptCommentComposer({ clearDraft: true });
+    if (isPromptCommentInputDockEnabled()) {
+        closePromptCommentInputDock({ clearDraft: true, reason: 'comment-submitted' });
     }
 
     // Invalidate cache
@@ -12172,18 +11011,17 @@ function setupCommentSorting() {
 function refreshCommentLanguageUI() {
     updateCommentSectionHeading();
     refreshCommentImageUploadLanguageUI();
-    refreshPromptCommentComposerLanguageUI();
-    updatePromptCommentComposerTriggerState();
+    refreshPromptCommentInputLanguageUI();
     sanitizeCommentSortTopUI();
 
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
-        if (isPromptCommentComposerEnabled()) {
-            commentInput.setAttribute('placeholder', '');
-        } else {
-            commentInput.setAttribute('placeholder', window.i18n?.t('gallery.addComment') || 'Add a comment...');
-        }
+        commentInput.setAttribute(
+            'placeholder',
+            window.i18n?.t('gallery.addComment') || 'Add a comment...'
+        );
     }
+    updatePromptCommentInputTrigger();
 
     const sortLabel = document.getElementById('currentSortLabel');
     const sortType = localStorage.getItem('commentSortPreference') || 'newest';
@@ -12198,7 +11036,6 @@ function refreshCommentLanguageUI() {
     }
 }
 
-// Initialize sorting on load
 document.addEventListener('DOMContentLoaded', () => {
     promptModalLayoutWasMobile = isPromptModalMobileLayout();
     window.addEventListener('resize', requestPromptModalLayoutModeSync, { passive: true });
@@ -12207,98 +11044,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupCommentSorting();
 
-    // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
+    const commentInputTrigger = document.getElementById('commentInputTrigger');
     if (commentInput) {
-        commentInput.addEventListener('keydown', handleCommentKeydown);
-        commentInput.addEventListener('input', () => autoExpandTextarea(commentInput));
-
-        if (isPromptCommentComposerEnabled()) {
-            const commentInputArea = commentInput.closest('.comment-input-area');
-            const commentInputProxy = commentInputArea?.querySelector('.comment-input-proxy-ui');
-            const uploadBtn = document.getElementById('commentUploadBtn');
-            const sendBtn = document.getElementById('sendCommentBtn');
-            const launchComposer = (e, options = {}) => {
-                if (e?.cancelable) e.preventDefault();
-                if (e) e.stopPropagation();
-                suspendPromptModalKeyboardDockForCommentComposer();
-                freezePromptCommentComposerUnderlay();
-                if (document.activeElement === commentInput) {
-                    commentInput.blur();
-                }
-                openPromptCommentComposer({ focus: true, ...options });
-            };
-
-            ensurePromptCommentComposer();
-            initCommentImageUpload();
-
-            commentInputArea?.classList.add('composer-proxy');
-            commentInput.setAttribute('readonly', 'readonly');
-            commentInput.setAttribute('inputmode', 'none');
-            commentInput.setAttribute('tabindex', '-1');
-            commentInput.setAttribute('placeholder', '');
-            updatePromptCommentComposerTriggerState();
-            commentInputProxy?.addEventListener('touchstart', (e) => launchComposer(e), { passive: false });
-            commentInputProxy?.addEventListener('click', (e) => launchComposer(e));
-            commentInput.addEventListener('touchstart', (e) => launchComposer(e), { passive: false });
-            commentInput.addEventListener('click', (e) => launchComposer(e));
-            commentInput.addEventListener('focus', (e) => launchComposer(e));
-
-            if (uploadBtn) {
-                uploadBtn.addEventListener('click', (e) => launchComposer(e, { openFilePicker: true }));
-            }
-
-            if (sendBtn) {
-                sendBtn.addEventListener('click', (e) => launchComposer(e));
-            }
-            window.i18n?.ready?.().then(() => refreshCommentLanguageUI());
-            return;
-        }
-
+        initCommentImageUpload();
         document.getElementById('sendCommentBtn')?.addEventListener('click', () => {
             void submitComment({ source: 'comment-send' });
         });
 
-        // Keep the native long-press menu available while clamping Safari's
-        // scroll-to-input jitter during keyboard docking.
-        const handleTouchFocus = (e) => {
-            if (isPromptModalIOSMobile()) {
-                if (document.activeElement !== commentInput) {
-                    // Continuous scroll clamp to catch Safari's native scroll-to-input
-                    const scrollClamp = () => {
-                        if (window.scrollY !== 0 || window.scrollX !== 0) {
-                            window.scrollTo(0, 0);
-                        }
-                    };
-                    window.addEventListener('scroll', scrollClamp, { passive: true });
-                    window.scrollTo(0, 0);
+        if (isPromptCommentInputDockEnabled() && commentInputTrigger) {
+            const commentInputArea = commentInput.closest('.comment-input-area');
+            const launchDock = (event) => {
+                if (event?.cancelable) event.preventDefault();
+                event?.stopPropagation?.();
+                openPromptCommentInputDock();
+            };
 
-                    try {
-                        commentInput.focus({ preventScroll: true });
-                    } catch (err) {
-                        commentInput.focus();
-                    }
-
-                    window.scrollTo(0, 0);
-
-                    // Remove clamp after keyboard settles
-                    setTimeout(() => {
-                        window.removeEventListener('scroll', scrollClamp);
-                        window.scrollTo(0, 0);
-                    }, 400);
+            ensurePromptCommentInputDock();
+            commentInputArea?.classList.add('comment-input-dock-enabled');
+            updatePromptCommentInputTrigger();
+            commentInputTrigger.addEventListener('pointerdown', (event) => {
+                if (event.button !== undefined && event.button !== 0) return;
+                launchDock(event);
+            });
+            commentInputTrigger.addEventListener('click', (event) => {
+                if (event.detail !== 0) {
+                    event.preventDefault();
+                    return;
                 }
-                // else: textarea already focused, allow native scroll
+                launchDock(event);
+            });
+            window.i18n?.ready?.().then(() => refreshCommentLanguageUI());
+            return;
+        }
+
+        commentInput.addEventListener('keydown', handleCommentKeydown);
+        commentInput.addEventListener('input', () => autoExpandTextarea(commentInput));
+
+        const handleTouchFocus = () => {
+            if (!isPromptModalIOSMobile() || document.activeElement === commentInput) return;
+            const scrollClamp = () => {
+                if (window.scrollY !== 0 || window.scrollX !== 0) {
+                    window.scrollTo(0, 0);
+                }
+            };
+            window.addEventListener('scroll', scrollClamp, { passive: true });
+            window.scrollTo(0, 0);
+            try {
+                commentInput.focus({ preventScroll: true });
+            } catch (_) {
+                commentInput.focus();
             }
+            window.scrollTo(0, 0);
+            setTimeout(() => {
+                window.removeEventListener('scroll', scrollClamp);
+                window.scrollTo(0, 0);
+            }, 400);
         };
         commentInput.addEventListener('touchstart', handleTouchFocus, { passive: true });
-
-        commentInput.addEventListener('focus', () => {
-            primePromptModalKeyboardDock();
-        });
-
-        commentInput.addEventListener('blur', () => {
-            schedulePromptModalUndock();
-        });
+        commentInput.addEventListener('focus', primePromptModalKeyboardDock);
+        commentInput.addEventListener('blur', schedulePromptModalUndock);
     }
 
     window.i18n?.ready?.().then(() => refreshCommentLanguageUI());
@@ -12631,7 +11436,11 @@ function closePromptModal() {
     hidePromptModalStatusBarShield({ immediate: true });
     cancelRelatedPromptWork();
     cancelModalImageThumbnailWarmup();
-    closePromptCommentComposer({ clearDraft: true, preserveModalDock: true });
+    closePromptCommentInputDock({
+        clearDraft: true,
+        immediate: true,
+        reason: 'modal-close'
+    });
     setCommentSortDropdownOpen(false);
     if (promptModalLayoutSyncFrameId) {
         cancelAnimationFrame(promptModalLayoutSyncFrameId);

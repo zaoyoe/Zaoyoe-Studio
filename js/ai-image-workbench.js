@@ -388,12 +388,21 @@
     let chatNavigationPositionFrame = 0;
     let chatNavigationResizeBound = false;
     let suppressNextChatNavigationClick = false;
-    let mobileWorkbenchLayoutHeight = 0;
-    let mobileViewportSyncFrame = 0;
-    let mobileComposerFocusLock = null;
-    let mobileComposerPendingFocusSnapshot = null;
-    let mobilePromptTouchScrollState = null;
-    let mobileWorkbenchTouchGuardState = null;
+    let mobileWorkbenchStaticHeight = 0;
+    let mobilePromptProxy = null;
+    let mobilePromptProxyInput = null;
+    let mobilePromptProxySource = null;
+    let mobilePromptProxyState = 'closed';
+    let mobilePromptProxyBaselineHeight = 0;
+    let mobilePromptProxyKeyboardVisible = false;
+    let mobilePromptProxyOpenViewportHeight = 0;
+    let mobilePromptProxyStartedAt = 0;
+    let mobilePromptProxyCandidateViewport = null;
+    let mobilePromptProxyCandidateSince = 0;
+    let mobilePromptProxyAppliedViewport = null;
+    let mobilePromptProxyViewportFrame = 0;
+    let mobilePromptProxyCloseTimer = 0;
+    let mobilePromptProxyBlurTimer = 0;
     let bodyScrollLockState = null;
     let viewportScaleLockState = null;
     const progressVisualCache = new Map();
@@ -5189,14 +5198,14 @@
                 overscrollBehavior: body.style.overscrollBehavior
             }
         };
+        if (doc?.style) {
+            doc.style.overflow = 'hidden';
+            doc.style.overscrollBehavior = 'none';
+        }
         if (!useFixedBodyLock) {
-            if (doc?.style) {
-                doc.style.overflow = 'hidden';
-                doc.style.overscrollBehavior = 'none';
-            }
+            body.style.width = '100%';
             body.style.overflow = 'hidden';
             body.style.overscrollBehavior = 'none';
-            body.style.width = '100%';
             return;
         }
         body.style.position = 'fixed';
@@ -5205,6 +5214,7 @@
         body.style.right = '0';
         body.style.width = '100%';
         body.style.overflow = 'hidden';
+        body.style.overscrollBehavior = 'none';
     }
 
     function unlockWorkbenchPageScroll() {
@@ -5262,108 +5272,342 @@
         return isMobileWorkbenchViewport() && (coarsePointer || touchPoints > 0 || mobileUserAgent);
     }
 
-    function resetMobileViewportVars() {
-        mobileWorkbenchLayoutHeight = 0;
-        mobileComposerFocusLock = null;
-        mobileComposerPendingFocusSnapshot = null;
-        mobilePromptTouchScrollState = null;
-        mobileWorkbenchTouchGuardState = null;
-        setMobileKeyboardActive(false);
+    function resetMobileWorkbenchLayout() {
+        mobileWorkbenchStaticHeight = 0;
+        closeMobilePromptProxy({ blur: true, animate: false });
+        root?.classList?.remove('is-mobile-prompt-proxy-active');
+        document.body?.classList?.remove('ai-image-prompt-proxy-active');
         if (!root?.style) return;
         root.style.removeProperty('--aiw-mobile-layout-height');
-        root.style.removeProperty('--aiw-mobile-keyboard-offset');
-        root.style.removeProperty('--aiw-mobile-composer-lift');
         root.style.removeProperty('--aiw-mobile-composer-top');
         root.style.removeProperty('--aiw-mobile-history-panel-max-height');
     }
 
-    function getMobileViewportSnapshot() {
+    function getMobileWorkbenchLayoutHeight() {
+        return Math.round(Math.max(
+            Number(document.documentElement?.clientHeight || 0),
+            Number(global.innerHeight || 0),
+            0
+        ));
+    }
+
+    function getMobilePromptProxyViewport() {
         const visualViewport = global.visualViewport || null;
-        const documentHeight = Number(document.documentElement?.clientHeight || 0);
-        const windowHeight = Number(global.innerHeight || 0);
-        const visualHeight = Number(visualViewport?.height || 0);
-        const visualOffsetTop = Math.max(0, Number(visualViewport?.offsetTop || 0));
-        const visualBottom = visualHeight ? visualHeight + visualOffsetTop : 0;
-        const measuredHeight = Math.round(Math.max(documentHeight, windowHeight, visualBottom, 0));
         return {
-            measuredHeight,
-            visualBottom: Math.round(visualBottom || windowHeight || measuredHeight)
+            top: Math.max(0, Math.round(Number(visualViewport?.offsetTop || 0))),
+            height: Math.max(1, Math.round(Number(visualViewport?.height || global.innerHeight || 0)))
         };
     }
 
-    function isMainComposerPromptFocused() {
-        const activeElement = document.activeElement;
-        return activeElement instanceof HTMLTextAreaElement
-            && activeElement.matches('.ai-image-main-prompt[data-aiw-prompt]');
+    function addMobilePromptProxyViewportListeners() {
+        global.visualViewport?.addEventListener?.('resize', handleMobilePromptProxyViewportChange, { passive: true });
+        global.visualViewport?.addEventListener?.('scroll', handleMobilePromptProxyViewportChange, { passive: true });
+        global.addEventListener?.('resize', handleMobilePromptProxyViewportChange, { passive: true });
     }
 
-    function setMobileKeyboardActive(active) {
-        const shouldActivate = Boolean(active && state.open && isMobileKeyboardDevice());
-        root?.classList?.toggle('is-mobile-keyboard-active', shouldActivate);
+    function removeMobilePromptProxyViewportListeners() {
+        global.visualViewport?.removeEventListener?.('resize', handleMobilePromptProxyViewportChange);
+        global.visualViewport?.removeEventListener?.('scroll', handleMobilePromptProxyViewportChange);
+        global.removeEventListener?.('resize', handleMobilePromptProxyViewportChange);
+        if (mobilePromptProxyViewportFrame) {
+            global.cancelAnimationFrame?.(mobilePromptProxyViewportFrame);
+            mobilePromptProxyViewportFrame = 0;
+        }
     }
 
-    function scheduleMobileViewportSync() {
-        syncWorkbenchViewportScaleLock();
-        if (mobileViewportSyncFrame) return;
+    function clearMobilePromptProxyBlurTimer() {
+        if (!mobilePromptProxyBlurTimer) return;
+        global.clearTimeout?.(mobilePromptProxyBlurTimer);
+        mobilePromptProxyBlurTimer = 0;
+    }
+
+    function applyMobilePromptProxyViewport(viewport) {
+        if (!mobilePromptProxy) return;
+        const previous = mobilePromptProxyAppliedViewport;
+        if (!previous || previous.top !== viewport.top) {
+            root?.style?.setProperty('--aiw-mobile-visual-top', `${viewport.top}px`);
+            mobilePromptProxy.style.setProperty('--aiw-mobile-proxy-top', `${viewport.top}px`);
+        }
+        if (!previous || previous.height !== viewport.height) {
+            mobilePromptProxy.style.setProperty('--aiw-mobile-proxy-height', `${viewport.height}px`);
+        }
+        mobilePromptProxyAppliedViewport = viewport;
+    }
+
+    function handleMobilePromptProxyViewportChange() {
+        if (!['opening', 'open', 'closing'].includes(mobilePromptProxyState)) return;
+        syncMobilePromptProxyViewport();
+    }
+
+    function scheduleMobilePromptProxyViewportSync() {
+        if (!['opening', 'open', 'closing'].includes(mobilePromptProxyState) || mobilePromptProxyViewportFrame) return;
         const sync = () => {
-            mobileViewportSyncFrame = 0;
-            syncMobileComposerMenuAnchor();
+            mobilePromptProxyViewportFrame = 0;
+            syncMobilePromptProxyViewport();
         };
-        if (typeof global.requestAnimationFrame === 'function') {
-            mobileViewportSyncFrame = global.requestAnimationFrame(sync);
-        } else {
-            mobileViewportSyncFrame = global.setTimeout(sync, 16);
+        mobilePromptProxyViewportFrame = global.requestAnimationFrame?.(sync) || global.setTimeout?.(sync, 16) || 0;
+    }
+
+    function syncMobilePromptProxyViewport() {
+        if (!mobilePromptProxy || !['opening', 'open', 'closing'].includes(mobilePromptProxyState)) return;
+        const viewport = getMobilePromptProxyViewport();
+        const keyboardThreshold = Math.max(32, Math.round(mobilePromptProxyBaselineHeight * 0.05));
+        const keyboardVisible = mobilePromptProxyBaselineHeight - viewport.height >= keyboardThreshold;
+        applyMobilePromptProxyViewport(viewport);
+        if (mobilePromptProxyState === 'closing') {
+            scheduleMobilePromptProxyViewportSync();
+            return;
         }
-    }
-
-    function getMobileComposerScrollSnapshot() {
-        const stage = overlay?.querySelector?.('.ai-image-stage');
-        return {
-            pageX: Number(global.scrollX || 0),
-            pageY: Number(global.scrollY || 0),
-            stageTop: Number(stage?.scrollTop || 0),
-            stageLeft: Number(stage?.scrollLeft || 0)
-        };
-    }
-
-    function restoreMobileComposerScroll(snapshot = null) {
-        if (!snapshot) return;
-        const stage = overlay?.querySelector?.('.ai-image-stage');
-        if (stage) {
-            stage.scrollTop = snapshot.stageTop;
-            stage.scrollLeft = snapshot.stageLeft;
+        if (mobilePromptProxyState === 'opening') {
+            const openingExpired = Date.now() - mobilePromptProxyStartedAt >= 1200;
+            const minimumPlausibleHeight = Math.max(320, Math.round(mobilePromptProxyBaselineHeight * 0.42));
+            if (!keyboardVisible || viewport.height < minimumPlausibleHeight) {
+                if (openingExpired) {
+                    closeMobilePromptProxy({ blur: true, animate: false });
+                    return;
+                }
+                mobilePromptProxyCandidateViewport = null;
+                mobilePromptProxyCandidateSince = 0;
+                scheduleMobilePromptProxyViewportSync();
+                return;
+            }
+            const geometryStable = mobilePromptProxyCandidateViewport
+                && Math.abs(mobilePromptProxyCandidateViewport.height - viewport.height) <= 4
+                && Math.abs(mobilePromptProxyCandidateViewport.top - viewport.top) <= 2;
+            if (!geometryStable) mobilePromptProxyCandidateSince = Date.now();
+            mobilePromptProxyCandidateViewport = viewport;
+            if (!mobilePromptProxyCandidateSince || Date.now() - mobilePromptProxyCandidateSince < 80) {
+                if (openingExpired) {
+                    closeMobilePromptProxy({ blur: true, animate: false });
+                    return;
+                }
+                scheduleMobilePromptProxyViewportSync();
+                return;
+            }
         }
-        if (Number(global.scrollX || 0) !== snapshot.pageX || Number(global.scrollY || 0) !== snapshot.pageY) {
-            global.scrollTo?.(snapshot.pageX, snapshot.pageY);
+        if (mobilePromptProxyState === 'open'
+            && mobilePromptProxyOpenViewportHeight > 0
+            && viewport.height < mobilePromptProxyOpenViewportHeight) {
+            mobilePromptProxyOpenViewportHeight = viewport.height;
         }
-        scheduleMobileViewportSync();
+        const keyboardDescentStarted = mobilePromptProxyOpenViewportHeight > 0
+            && viewport.height >= mobilePromptProxyOpenViewportHeight + 4;
+        if (mobilePromptProxyState === 'open'
+            && mobilePromptProxyKeyboardVisible
+            && (keyboardDescentStarted || !keyboardVisible)) {
+            closeMobilePromptProxy({ blur: false, animate: true });
+            return;
+        }
+        if (!keyboardVisible) {
+            return;
+        }
+
+        mobilePromptProxyKeyboardVisible = true;
+        if (mobilePromptProxyState === 'opening') {
+            mobilePromptProxyState = 'open';
+            mobilePromptProxyOpenViewportHeight = viewport.height;
+            root?.classList?.add('is-mobile-prompt-proxy-active');
+            document.body?.classList?.add('ai-image-prompt-proxy-active');
+            mobilePromptProxy.classList.remove('is-opening');
+            mobilePromptProxy.classList.add('is-open');
+        }
+        scheduleMobilePromptProxyViewportSync();
     }
 
-    function lockMobileComposerScroll(snapshot = null) {
-        if (!isMobileWorkbenchViewport() || !state.open) return;
-        const lock = snapshot || getMobileComposerScrollSnapshot();
-        mobileComposerFocusLock = lock;
-        [0, 40, 90, 160, 260, 420].forEach((delay) => {
-            global.setTimeout?.(() => {
-                if (mobileComposerFocusLock !== lock) return;
-                restoreMobileComposerScroll(lock);
-            }, delay);
-        });
+    function syncMobilePromptProxySource(value, selectionStart, selectionEnd) {
+        state.prompt = value;
+        clearComposerError();
+        const currentSource = mobilePromptProxySource instanceof HTMLTextAreaElement && mobilePromptProxySource.isConnected
+            ? mobilePromptProxySource
+            : root?.querySelector?.('.ai-image-main-prompt[data-aiw-prompt]');
+        if (currentSource instanceof HTMLTextAreaElement) {
+            currentSource.value = value;
+            currentSource.setSelectionRange(
+                Math.min(selectionStart, value.length),
+                Math.min(selectionEnd, value.length)
+            );
+            syncPromptTextareaHeight(currentSource);
+        }
+        overlay?.querySelector?.('.ai-image-main-error')?.remove?.();
+        const submitButton = overlay?.querySelector?.('.ai-image-main-submit[data-aiw-action="generate"]');
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = !canSubmitWorkbench(inferWorkbenchMode());
+        }
+        persistState();
     }
 
-    function focusMobileMainPrompt(textarea, snapshot = null) {
-        if (!(textarea instanceof HTMLTextAreaElement)) return false;
-        if (!isMobileKeyboardDevice() || !state.open) return false;
-        setMobileKeyboardActive(true);
-        const focusSnapshot = snapshot || getMobileComposerScrollSnapshot();
-        lockMobileComposerScroll(focusSnapshot);
+    function getMobilePromptProxyCount() {
+        return mobilePromptProxy?.querySelector?.('[data-aiw-mobile-prompt-count]') || null;
+    }
+
+    function syncMobilePromptProxyHeight() {
+        if (!(mobilePromptProxyInput instanceof HTMLTextAreaElement)) return;
+        mobilePromptProxyInput.style.height = 'auto';
+        mobilePromptProxyInput.style.height = `${Math.min(180, Math.max(92, mobilePromptProxyInput.scrollHeight || 0))}px`;
+        const count = getMobilePromptProxyCount();
+        if (count) count.textContent = `${mobilePromptProxyInput.value.length}/4000`;
+    }
+
+    function focusMobilePromptProxyInput({ restart = false } = {}) {
+        if (!(mobilePromptProxyInput instanceof HTMLTextAreaElement)) return false;
+        if (restart && document.activeElement === mobilePromptProxyInput) {
+            mobilePromptProxyInput.blur();
+        }
         try {
-            textarea.focus({ preventScroll: true });
+            mobilePromptProxyInput.focus({ preventScroll: true });
         } catch (_) {
-            textarea.focus();
+            mobilePromptProxyInput.focus();
         }
-        restoreMobileComposerScroll(focusSnapshot);
+        clearMobilePromptProxyBlurTimer();
+        return document.activeElement === mobilePromptProxyInput;
+    }
+
+    function handleMobilePromptProxyBlur() {
+        if (!['opening', 'open'].includes(mobilePromptProxyState)) return;
+        clearMobilePromptProxyBlurTimer();
+        if (mobilePromptProxyState === 'open') {
+            closeMobilePromptProxy({ blur: false, animate: true });
+            return;
+        }
+        mobilePromptProxyBlurTimer = global.setTimeout?.(() => {
+            mobilePromptProxyBlurTimer = 0;
+            if (mobilePromptProxyState !== 'opening') return;
+            if (document.activeElement === mobilePromptProxyInput) return;
+            const viewport = getMobilePromptProxyViewport();
+            const keyboardThreshold = Math.max(32, Math.round(mobilePromptProxyBaselineHeight * 0.05));
+            const keyboardVisible = mobilePromptProxyBaselineHeight - viewport.height >= keyboardThreshold;
+            if (!keyboardVisible) {
+                closeMobilePromptProxy({ blur: false, animate: false });
+            }
+        }, 240) || 0;
+    }
+
+    function openMobilePromptProxy(source = null) {
+        if (!state.open || !isMobileKeyboardDevice()) return false;
+        if (!(mobilePromptProxyInput instanceof HTMLTextAreaElement) || !mobilePromptProxy) return false;
+        if (mobilePromptProxyState === 'open') {
+            const viewport = getMobilePromptProxyViewport();
+            const keyboardThreshold = Math.max(32, Math.round(mobilePromptProxyBaselineHeight * 0.05));
+            const keyboardVisible = mobilePromptProxyBaselineHeight - viewport.height >= keyboardThreshold;
+            if (keyboardVisible && document.activeElement === mobilePromptProxyInput) return true;
+            mobilePromptProxyState = 'opening';
+            mobilePromptProxyKeyboardVisible = false;
+            mobilePromptProxyOpenViewportHeight = 0;
+            mobilePromptProxyStartedAt = Date.now();
+            mobilePromptProxyCandidateViewport = null;
+            mobilePromptProxyCandidateSince = 0;
+            root?.classList?.remove('is-mobile-prompt-proxy-active');
+            document.body?.classList?.remove('ai-image-prompt-proxy-active');
+            mobilePromptProxy.classList.remove('is-open', 'is-closing');
+            mobilePromptProxy.classList.add('is-active', 'is-opening');
+            const focused = focusMobilePromptProxyInput({ restart: true });
+            if (focused) scheduleMobilePromptProxyViewportSync();
+            return focused;
+        }
+        if (mobilePromptProxyState === 'opening') {
+            const viewport = getMobilePromptProxyViewport();
+            const keyboardThreshold = Math.max(32, Math.round(mobilePromptProxyBaselineHeight * 0.05));
+            const keyboardVisible = mobilePromptProxyBaselineHeight - viewport.height >= keyboardThreshold;
+            if (keyboardVisible || Date.now() - mobilePromptProxyStartedAt < 180) return true;
+            mobilePromptProxyStartedAt = Date.now();
+            mobilePromptProxyCandidateViewport = null;
+            mobilePromptProxyCandidateSince = 0;
+            const focused = focusMobilePromptProxyInput({ restart: true });
+            if (focused) scheduleMobilePromptProxyViewportSync();
+            return focused;
+        }
+        const promptSource = source instanceof HTMLTextAreaElement
+            ? source
+            : root?.querySelector?.('.ai-image-main-prompt[data-aiw-prompt]');
+        mobilePromptProxySource = promptSource instanceof HTMLTextAreaElement ? promptSource : null;
+        if (mobilePromptProxyCloseTimer) {
+            global.clearTimeout?.(mobilePromptProxyCloseTimer);
+            mobilePromptProxyCloseTimer = 0;
+        }
+        clearMobilePromptProxyBlurTimer();
+        removeMobilePromptProxyViewportListeners();
+        const value = String(mobilePromptProxySource?.value ?? state.prompt ?? '').slice(0, 4000);
+        mobilePromptProxyInput.value = value;
+        mobilePromptProxyInput.placeholder = mobilePromptProxySource?.placeholder || '输入你的想象';
+        mobilePromptProxyBaselineHeight = getMobilePromptProxyViewport().height;
+        mobilePromptProxyKeyboardVisible = false;
+        mobilePromptProxyOpenViewportHeight = 0;
+        mobilePromptProxyStartedAt = Date.now();
+        mobilePromptProxyCandidateViewport = null;
+        mobilePromptProxyCandidateSince = 0;
+        mobilePromptProxyAppliedViewport = null;
+        mobilePromptProxyState = 'opening';
+        root?.classList?.remove('is-mobile-prompt-proxy-active');
+        document.body?.classList?.remove('ai-image-prompt-proxy-active');
+        mobilePromptProxy.classList.remove('is-open', 'is-closing');
+        mobilePromptProxy.classList.add('is-active', 'is-opening');
+        mobilePromptProxy.setAttribute('aria-hidden', 'false');
+        if (!focusMobilePromptProxyInput()) {
+            closeMobilePromptProxy({ blur: false, animate: false });
+            return false;
+        }
+        const initialViewport = getMobilePromptProxyViewport();
+        applyMobilePromptProxyViewport(initialViewport);
+        syncMobilePromptProxyHeight();
+        addMobilePromptProxyViewportListeners();
+        const selectionStart = Math.min(value.length, Number(mobilePromptProxySource?.selectionStart ?? value.length));
+        const selectionEnd = Math.min(value.length, Number(mobilePromptProxySource?.selectionEnd ?? selectionStart));
+        mobilePromptProxyInput.setSelectionRange(selectionStart, selectionEnd);
+        scheduleMobilePromptProxyViewportSync();
         return true;
+    }
+
+    function closeMobilePromptProxy({ blur = true, animate = true } = {}) {
+        if (!mobilePromptProxy || mobilePromptProxyState === 'closed') return false;
+        if (mobilePromptProxyState === 'closing') return true;
+        const value = String(mobilePromptProxyInput?.value || '').slice(0, 4000);
+        const selectionStart = Number(mobilePromptProxyInput?.selectionStart ?? value.length);
+        const selectionEnd = Number(mobilePromptProxyInput?.selectionEnd ?? selectionStart);
+        clearMobilePromptProxyBlurTimer();
+        syncMobilePromptProxySource(value, selectionStart, selectionEnd);
+        mobilePromptProxyState = 'closing';
+        mobilePromptProxy.classList.remove('is-opening', 'is-open');
+        mobilePromptProxy.classList.add('is-closing');
+        if (blur && document.activeElement === mobilePromptProxyInput) {
+            mobilePromptProxyInput.blur();
+        }
+        const finalize = () => {
+            removeMobilePromptProxyViewportListeners();
+            mobilePromptProxyCloseTimer = 0;
+            mobilePromptProxyState = 'closed';
+            mobilePromptProxy.classList.remove('is-active', 'is-closing');
+            mobilePromptProxy.setAttribute('aria-hidden', 'true');
+            mobilePromptProxy.style.removeProperty('--aiw-mobile-proxy-top');
+            mobilePromptProxy.style.removeProperty('--aiw-mobile-proxy-height');
+            root?.style?.removeProperty('--aiw-mobile-visual-top');
+            mobilePromptProxyBaselineHeight = 0;
+            mobilePromptProxyKeyboardVisible = false;
+            mobilePromptProxyOpenViewportHeight = 0;
+            mobilePromptProxyCandidateViewport = null;
+            mobilePromptProxyCandidateSince = 0;
+            mobilePromptProxyAppliedViewport = null;
+            mobilePromptProxySource = null;
+            root?.classList?.remove('is-mobile-prompt-proxy-active');
+            document.body?.classList?.remove('ai-image-prompt-proxy-active');
+        };
+        if (!animate) {
+            finalize();
+            return true;
+        }
+        mobilePromptProxyCloseTimer = global.setTimeout?.(finalize, 120) || 0;
+        return true;
+    }
+
+    function handleWorkbenchWindowResize() {
+        syncWorkbenchViewportScaleLock();
+        if (!state.open || !isMobileWorkbenchViewport() || mobileWorkbenchStaticHeight > 0) return;
+        syncMobileComposerMenuAnchor();
+    }
+
+    function handleWorkbenchOrientationChange() {
+        closeMobilePromptProxy({ blur: true, animate: false });
+        resetMobileWorkbenchLayout();
+        global.requestAnimationFrame?.(syncMobileComposerMenuAnchor);
     }
 
     function openWorkbench(payload = {}) {
@@ -5371,7 +5615,7 @@
         applyPayload(payload);
         openSelect = '';
         state.open = true;
-        if (!wasOpen) resetMobileViewportVars();
+        if (!wasOpen) resetMobileWorkbenchLayout();
         render();
         setBodyOpenState(true);
         loadRemoteConfig();
@@ -5428,7 +5672,7 @@
         syncOverlayOpenState();
         renderDock();
         setBodyOpenState(false);
-        resetMobileViewportVars();
+        resetMobileWorkbenchLayout();
     }
 
     function toggleWorkbench() {
@@ -5529,9 +5773,31 @@
             <div class="ai-image-overlay" data-aiw-overlay aria-hidden="true"></div>
         `;
         document.body.appendChild(root);
+        mobilePromptProxy = document.createElement('div');
+        mobilePromptProxy.className = 'ai-image-mobile-prompt-proxy';
+        mobilePromptProxy.setAttribute('data-aiw-mobile-prompt-proxy', '');
+        mobilePromptProxy.setAttribute('aria-hidden', 'true');
+        mobilePromptProxy.innerHTML = `
+            <div class="ai-image-mobile-prompt-proxy-panel">
+                <textarea class="ai-image-mobile-prompt-proxy-input" data-aiw-mobile-prompt-input rows="1" maxlength="4000" placeholder="输入你的想象" aria-label="输入提示词"></textarea>
+                <div class="ai-image-mobile-prompt-proxy-footer">
+                    <span data-aiw-mobile-prompt-count>0/4000</span>
+                    <button type="button" data-aiw-mobile-prompt-done>完成</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(mobilePromptProxy);
         nativeToggle = root.querySelector('#aiImageWorkbenchToggle');
         dock = root.querySelector('[data-aiw-dock]');
         overlay = root.querySelector('[data-aiw-overlay]');
+        mobilePromptProxyInput = mobilePromptProxy.querySelector('[data-aiw-mobile-prompt-input]');
+        mobilePromptProxyInput?.addEventListener('input', syncMobilePromptProxyHeight);
+        mobilePromptProxyInput?.addEventListener('blur', handleMobilePromptProxyBlur);
+        mobilePromptProxy?.querySelector?.('[data-aiw-mobile-prompt-done]')?.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeMobilePromptProxy({ blur: true });
+        });
 
         nativeToggle?.addEventListener('change', () => {
             state.open = Boolean(nativeToggle.checked);
@@ -5541,14 +5807,10 @@
         root.addEventListener('click', handleRootClick);
         root.addEventListener('pointerover', handleRootPointerOver);
         root.addEventListener('pointerout', handleRootPointerOut);
-        root.addEventListener('pointerdown', handleRootPointerDown);
+        root.addEventListener('pointerdown', handleRootPointerDown, true);
         root.addEventListener('pointermove', handleRootPointerMove);
         root.addEventListener('pointerup', handleRootPointerUp);
         root.addEventListener('pointercancel', handleRootPointerUp);
-        root.addEventListener('touchstart', handleRootTouchStart, { passive: false });
-        root.addEventListener('touchmove', handleRootTouchMove, { passive: false });
-        root.addEventListener('touchend', handleRootTouchEnd, { passive: false });
-        root.addEventListener('touchcancel', handleRootTouchEnd, { passive: true });
         root.addEventListener('touchstart', handleWorkbenchViewportGesture, { passive: false });
         root.addEventListener('touchmove', handleWorkbenchViewportGesture, { passive: false });
         root.addEventListener('wheel', handleRootWheel, { passive: false });
@@ -5565,13 +5827,8 @@
         root.addEventListener('loadeddata', handleRootVideoLoaded, true);
         root.addEventListener('canplay', handleRootVideoLoaded, true);
         root.addEventListener('canplaythrough', handleRootVideoLoaded, true);
-        window.addEventListener('resize', scheduleMobileViewportSync, { passive: true });
-        window.addEventListener('orientationchange', () => {
-            resetMobileViewportVars();
-            scheduleMobileViewportSync();
-        }, { passive: true });
-        global.visualViewport?.addEventListener?.('resize', scheduleMobileViewportSync, { passive: true });
-        global.visualViewport?.addEventListener?.('scroll', scheduleMobileViewportSync, { passive: true });
+        window.addEventListener('resize', handleWorkbenchWindowResize, { passive: true });
+        window.addEventListener('orientationchange', handleWorkbenchOrientationChange, { passive: true });
         document.addEventListener('touchstart', handleWorkbenchViewportGesture, { passive: false });
         document.addEventListener('touchmove', handleWorkbenchViewportGesture, { passive: false });
         global.addEventListener?.('gesturestart', handleWorkbenchViewportGesture, { passive: false });
@@ -5625,6 +5882,12 @@
     function handleRootClick(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (!target) return;
+
+        const mainPrompt = target.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
+        if (mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
+            event.preventDefault();
+            return;
+        }
 
         const fullPreview = target.closest('[data-aiw-full-preview]');
         if (fullPreview && (target === fullPreview || target.closest('[data-aiw-preview-close]'))) {
@@ -5984,9 +6247,9 @@
         if (!target || event.button !== 0) return;
         const mainPrompt = target.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
         if (mainPrompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
-            if (document.activeElement !== mainPrompt) {
-                mobileComposerPendingFocusSnapshot = getMobileComposerScrollSnapshot();
-            }
+            openMobilePromptProxy(mainPrompt);
+            event.preventDefault();
+            event.stopPropagation();
             return;
         }
         const navButton = target.closest('[data-aiw-chat-nav-id]');
@@ -6003,145 +6266,6 @@
         };
         rail.classList.add('is-dragging');
         navButton.setPointerCapture?.(event.pointerId);
-    }
-
-    function isScrollableWorkbenchElement(element, axis) {
-        if (!(element instanceof Element)) return false;
-        const maxScroll = axis === 'x'
-            ? Number(element.scrollWidth || 0) - Number(element.clientWidth || 0)
-            : Number(element.scrollHeight || 0) - Number(element.clientHeight || 0);
-        if (maxScroll <= 1) return false;
-        const styles = global.getComputedStyle?.(element);
-        const overflow = axis === 'x'
-            ? String(styles?.overflowX || '')
-            : String(styles?.overflowY || '');
-        return /auto|scroll|overlay/i.test(overflow);
-    }
-
-    function canScrollWorkbenchElementInDirection(element, deltaX, deltaY) {
-        const vertical = Math.abs(deltaY) >= Math.abs(deltaX);
-        const axis = vertical ? 'y' : 'x';
-        if (!isScrollableWorkbenchElement(element, axis)) return false;
-        const maxScroll = vertical
-            ? Number(element.scrollHeight || 0) - Number(element.clientHeight || 0)
-            : Number(element.scrollWidth || 0) - Number(element.clientWidth || 0);
-        const currentScroll = vertical ? Number(element.scrollTop || 0) : Number(element.scrollLeft || 0);
-        const delta = vertical ? deltaY : deltaX;
-        if (delta > 0) return currentScroll > 0;
-        if (delta < 0) return currentScroll < maxScroll - 1;
-        return true;
-    }
-
-    function findScrollableWorkbenchElement(target, deltaX, deltaY) {
-        if (!(target instanceof Element) || !overlay?.contains?.(target)) return null;
-        let current = target;
-        while (current instanceof Element && overlay.contains(current)) {
-            if (canScrollWorkbenchElementInDirection(current, deltaX, deltaY)) return current;
-            current = current.parentElement;
-        }
-        return null;
-    }
-
-    function handleMobileWorkbenchTouchGuardStart(event, target) {
-        if (!state.open || !isMobileWorkbenchViewport() || !(target instanceof Element) || !overlay?.contains?.(target)) {
-            mobileWorkbenchTouchGuardState = null;
-            return;
-        }
-        const touch = event.touches?.[0] || null;
-        mobileWorkbenchTouchGuardState = touch
-            ? { target, startX: touch.clientX, startY: touch.clientY, moved: false }
-            : null;
-    }
-
-    function handleMobileWorkbenchTouchGuardMove(event) {
-        const guardState = mobileWorkbenchTouchGuardState;
-        if (!guardState || !state.open || !isMobileWorkbenchViewport()) return false;
-        const touch = event.touches?.[0] || null;
-        if (!touch) {
-            mobileWorkbenchTouchGuardState = null;
-            return false;
-        }
-        const deltaX = Number(touch.clientX || 0) - Number(guardState.startX || 0);
-        const deltaY = Number(touch.clientY || 0) - Number(guardState.startY || 0);
-        if (!guardState.moved && Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 3) return false;
-        guardState.moved = true;
-
-        if (findScrollableWorkbenchElement(guardState.target, deltaX, deltaY)) return false;
-        event.preventDefault();
-        event.stopPropagation();
-        return true;
-    }
-
-    function handleRootTouchStart(event) {
-        const target = event.target instanceof Element ? event.target : null;
-        handleMobileWorkbenchTouchGuardStart(event, target);
-        const mainPrompt = target?.closest?.('.ai-image-main-prompt[data-aiw-prompt]');
-        if (!(mainPrompt instanceof HTMLTextAreaElement) || !isMobileKeyboardDevice()) return;
-        const wasFocused = document.activeElement === mainPrompt;
-        const touch = event.touches?.[0] || null;
-        if (touch) {
-            mobilePromptTouchScrollState = {
-                textarea: mainPrompt,
-                startX: touch.clientX,
-                startY: touch.clientY,
-                startScrollTop: Number(mainPrompt.scrollTop || 0),
-                moved: false,
-                wasFocused
-            };
-        } else {
-            mobilePromptTouchScrollState = null;
-        }
-        if (!wasFocused) {
-            mobileComposerPendingFocusSnapshot = mobileComposerPendingFocusSnapshot || getMobileComposerScrollSnapshot();
-            event.preventDefault();
-            event.stopPropagation();
-        }
-    }
-
-    function handleRootTouchMove(event) {
-        const scrollState = mobilePromptTouchScrollState;
-        if (scrollState && isMobileKeyboardDevice()) {
-            const touch = event.touches?.[0] || null;
-            const textarea = scrollState.textarea;
-            if (!touch || !(textarea instanceof HTMLTextAreaElement)) {
-                mobilePromptTouchScrollState = null;
-                return;
-            }
-
-            const deltaX = Number(touch.clientX || 0) - Number(scrollState.startX || 0);
-            const deltaY = Number(touch.clientY || 0) - Number(scrollState.startY || 0);
-            if (!scrollState.moved && Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 3) return;
-
-            scrollState.moved = true;
-            const maxScrollTop = Math.max(0, Number(textarea.scrollHeight || 0) - Number(textarea.clientHeight || 0));
-            if (Math.abs(deltaY) < Math.abs(deltaX)) return;
-
-            if (maxScrollTop > 1) {
-                textarea.scrollTop = Math.min(maxScrollTop, Math.max(0, Number(scrollState.startScrollTop || 0) - deltaY));
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            return;
-        }
-        handleMobileWorkbenchTouchGuardMove(event);
-    }
-
-    function handleRootTouchEnd(event) {
-        const scrollState = mobilePromptTouchScrollState;
-        if (
-            scrollState
-            && !scrollState.moved
-            && scrollState.textarea instanceof HTMLTextAreaElement
-            && document.activeElement !== scrollState.textarea
-            && isMobileKeyboardDevice()
-        ) {
-            const focusSnapshot = mobileComposerPendingFocusSnapshot || getMobileComposerScrollSnapshot();
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            focusMobileMainPrompt(scrollState.textarea, focusSnapshot);
-        }
-        mobilePromptTouchScrollState = null;
-        mobileWorkbenchTouchGuardState = null;
     }
 
     function handleRootPointerMove(event) {
@@ -6407,7 +6531,12 @@
             resetConversationDraft({ preserveToolMode: true });
             render();
             persistState();
-            root?.querySelector?.('.ai-image-main-prompt')?.focus?.();
+            const prompt = root?.querySelector?.('.ai-image-main-prompt');
+            if (prompt instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
+                openMobilePromptProxy(prompt);
+            } else {
+                prompt?.focus?.();
+            }
             return;
         }
         if (action === 'discover-api-models') {
@@ -6723,13 +6852,11 @@
     function handleRootFocusIn(event) {
         const target = event.target instanceof Element ? event.target : null;
         if (target?.matches?.('.ai-image-main-prompt[data-aiw-prompt]')) {
-            const focusSnapshot = mobileComposerPendingFocusSnapshot || getMobileComposerScrollSnapshot();
-            mobileComposerPendingFocusSnapshot = null;
-            setMobileKeyboardActive(true);
-            lockMobileComposerScroll(focusSnapshot);
-            scheduleMobileViewportSync();
-            global.setTimeout?.(scheduleMobileViewportSync, 80);
-            global.setTimeout?.(scheduleMobileViewportSync, 260);
+            if (isMobileKeyboardDevice()) {
+                target.blur?.();
+                openMobilePromptProxy(target);
+                return;
+            }
         }
         const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
         if (historyNavButton) {
@@ -6743,17 +6870,6 @@
 
     function handleRootFocusOut(event) {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.matches?.('.ai-image-main-prompt[data-aiw-prompt]')) {
-            scheduleMobileViewportSync();
-            global.setTimeout?.(scheduleMobileViewportSync, 120);
-            global.setTimeout?.(() => {
-                if (!isMainComposerPromptFocused()) {
-                    mobileComposerFocusLock = null;
-                    mobileComposerPendingFocusSnapshot = null;
-                    setMobileKeyboardActive(false);
-                }
-            }, 180);
-        }
         const historyNavButton = target?.closest?.('[data-aiw-history-nav-id]');
         if (historyNavButton) {
             window.requestAnimationFrame(() => {
@@ -7812,7 +7928,11 @@
             setComposerError('请输入提示词');
             render();
             const input = root.querySelector('[data-aiw-prompt]');
-            input?.focus?.();
+            if (input instanceof HTMLTextAreaElement && isMobileKeyboardDevice()) {
+                openMobilePromptProxy(input);
+            } else {
+                input?.focus?.();
+            }
             input?.setAttribute('aria-invalid', 'true');
             setTimeout(() => input?.removeAttribute('aria-invalid'), 1200);
             return;
@@ -8530,40 +8650,18 @@
         if (!isMobileWorkbenchViewport() || !state.open) {
             shell.style.removeProperty('--aiw-mobile-composer-top');
             shell.style.removeProperty('--aiw-mobile-history-panel-max-height');
-            resetMobileViewportVars();
+            if (!isMobileWorkbenchViewport()) mobileWorkbenchStaticHeight = 0;
             return;
         }
 
-        const snapshot = getMobileViewportSnapshot();
-        if (!mobileWorkbenchLayoutHeight && snapshot.measuredHeight > 0) {
-            mobileWorkbenchLayoutHeight = snapshot.measuredHeight;
-        } else if (!isMainComposerPromptFocused() && snapshot.measuredHeight > mobileWorkbenchLayoutHeight) {
-            mobileWorkbenchLayoutHeight = snapshot.measuredHeight;
+        if (mobilePromptProxyState !== 'closed') return;
+        const measuredHeight = getMobileWorkbenchLayoutHeight();
+        if (!mobileWorkbenchStaticHeight && measuredHeight > 0) {
+            mobileWorkbenchStaticHeight = measuredHeight;
         }
-
-        const layoutHeight = Math.max(
-            320,
-            Math.round(mobileWorkbenchLayoutHeight || snapshot.measuredHeight || global.innerHeight || 0)
-        );
-        const keyboardOffset = isMainComposerPromptFocused()
-            ? clampNumber(layoutHeight - snapshot.visualBottom, 0, Math.round(layoutHeight * 0.68), 0)
-            : 0;
-        setMobileKeyboardActive(isMainComposerPromptFocused() && keyboardOffset > 24);
+        const layoutHeight = Math.max(320, mobileWorkbenchStaticHeight || measuredHeight || 0);
         root?.style?.setProperty('--aiw-mobile-layout-height', `${layoutHeight}px`);
-        root?.style?.setProperty('--aiw-mobile-keyboard-offset', `${Math.round(keyboardOffset)}px`);
-        root?.style?.setProperty('--aiw-mobile-composer-lift', `${Math.round(keyboardOffset)}px`);
 
-        const setComposerTopVar = () => {
-            const nextShellRect = shell.getBoundingClientRect?.();
-            const nextComposerRect = composer.getBoundingClientRect?.();
-            if (!nextShellRect || !nextComposerRect) return;
-            const nextComposerTop = Math.max(12, Math.round(nextComposerRect.top - nextShellRect.top));
-            const nextHistoryPanelMaxHeight = Math.max(60, nextComposerTop - MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX);
-            root?.style?.setProperty('--aiw-mobile-composer-top', `${nextComposerTop}px`);
-            shell.style.setProperty('--aiw-mobile-composer-top', `${nextComposerTop}px`);
-            root?.style?.setProperty('--aiw-mobile-history-panel-max-height', `${nextHistoryPanelMaxHeight}px`);
-            shell.style.setProperty('--aiw-mobile-history-panel-max-height', `${nextHistoryPanelMaxHeight}px`);
-        };
         const shellRect = shell.getBoundingClientRect?.();
         const composerRect = composer.getBoundingClientRect?.();
         if (!shellRect || !composerRect) return;
@@ -8573,8 +8671,6 @@
         shell.style.setProperty('--aiw-mobile-composer-top', `${composerTop}px`);
         root?.style?.setProperty('--aiw-mobile-history-panel-max-height', `${historyPanelMaxHeight}px`);
         shell.style.setProperty('--aiw-mobile-history-panel-max-height', `${historyPanelMaxHeight}px`);
-        global.requestAnimationFrame?.(setComposerTopVar);
-        global.setTimeout?.(setComposerTopVar, 220);
     }
 
     function syncRenderedProgressBars() {
@@ -10154,7 +10250,7 @@
                     <div class="ai-image-main-attach-action">
                         ${uploadButtonHtml}
                     </div>
-                    <textarea class="ai-image-main-prompt" data-aiw-prompt rows="1" placeholder="${escapeHtml(promptPlaceholder)}">${escapeHtml(state.prompt)}</textarea>
+                    <textarea class="ai-image-main-prompt" data-aiw-prompt rows="1" placeholder="${escapeHtml(promptPlaceholder)}"${isMobileKeyboardDevice() ? ' readonly inputmode="none" tabindex="-1" role="button" aria-haspopup="dialog"' : ''}>${escapeHtml(state.prompt)}</textarea>
                     <div class="ai-image-main-submit-action">
                         <button class="ai-image-main-submit ${canCancel ? 'is-cancel' : ''}" type="button" data-aiw-action="${canCancel ? 'cancel-task' : 'generate'}" data-task-id="${escapeHtml(busyTask?.id || '')}" aria-label="${escapeHtml(canCancel ? '取消生成' : submitLabel)}" ${canCancel || canSubmit ? '' : 'disabled'}>
                             <i class="fas ${canCancel ? 'fa-stop' : 'fa-arrow-up'}"></i>
