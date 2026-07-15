@@ -27,14 +27,14 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260620_HOME_SHOP_RENDER_SIGNATURE_1'),
+        indexSource.includes('./js/framer_home.js?v=20260715_HOME_PROMPTS_LIVE_ONLY_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
         indexSource.includes('promptNoRepaint=20260510_PROMPT_NO_REPAINT_1'),
-        true,
-        'index.html should cache-bust the prompt no-repaint homepage runtime fix'
+        false,
+        'index.html should remove the obsolete behavior that preserved already-painted prompt cards'
     );
     assert.equal(
         indexSource.includes('./css/framer_home_critical.css?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1'),
@@ -620,9 +620,9 @@ test('homepage defers below-fold section rendering off the first JS pass', () =>
     );
 });
 
-test('homepage prompt masonry keeps first refresh light while warming thumbnails after load', () => {
+test('homepage prompt masonry renders live rows only while warming thumbnails after load', () => {
     const framerSource = readRepoFile('js/framer_home.js');
-    const homepagePromptsSource = readRepoFile('js/homepage-prompts-data.js');
+    const indexSource = readRepoFile('index.html');
 
     assert.match(
         framerSource,
@@ -656,48 +656,43 @@ test('homepage prompt masonry keeps first refresh light while warming thumbnails
     );
     assert.match(
         framerSource,
-        /this\.promptPool = await this\.fetchVisiblePromptPool\(\{ preferStaticFirst: true \}\);/,
-        'homepage prompt cards should render from the static prompt bundle before live prompt sync'
+        /this\.promptPool = await this\.fetchVisiblePromptPool\(\);\s*const prompts = await this\.aggregatePrompts/,
+        'homepage prompt cards should wait for the live prompt pool before aggregation'
     );
-    assert.match(
+    assert.doesNotMatch(
         framerSource,
-        /function getHomepageStaticPromptSource\(\)/,
-        'homepage should read the lightweight prompt summary before falling back to the full prompt dataset'
-    );
-    assert.match(
-        framerSource,
-        /const promptsReady = isHomepagePromptSourceReady\(\);/,
-        'homepage initialization should wait for the lightweight prompt source instead of hard-requiring full PROMPTS'
+        /getHomepageStaticPromptSource|__HOMEPAGE_PROMPTS__|preferStaticFirst/,
+        'homepage should not retain a static prompt snapshot source'
     );
     assert.equal(
-        homepagePromptsSource.includes('window.__HOMEPAGE_PROMPTS__ = prompts;'),
-        true,
-        'homepage should ship a dedicated prompt summary payload'
-    );
-    assert.equal(
-        homepagePromptsSource.includes('"prompt":'),
+        indexSource.includes('homepage-prompts-data.js'),
         false,
-        'homepage prompt summary should not ship full prompt bodies'
+        'homepage should not download the deleted prompt snapshot bundle'
     );
     assert.match(
         framerSource,
-        /this\.schedulePromptPoolLiveSync\(\{ reason: 'initial-static-prompt-pool' \}\);/,
-        'homepage live prompt sync should move off the blocking first render path'
+        /this\.cachedData = \{\s*\.\.\.prefetch\.cachedData,\s*prompts: \[\]\s*\};[\s\S]*this\.promptPool = await this\.fetchVisiblePromptPool\(\);[\s\S]*this\.cachedData\.prompts = await this\.aggregatePrompts/,
+        'homepage should discard cached prompt cards and validate them against the live table before render'
+    );
+    assert.match(
+        framerSource,
+        /catch \(error\) \{\s*console\.warn\('Failed to fetch live homepage prompt pool:'[\s\S]*this\.promptPool = \[\];\s*window\.PROMPTS = \[\];\s*return \[\];/,
+        'homepage should render no prompt cards when the live query fails'
+    );
+    assert.match(
+        framerSource,
+        /if \(!prompts\.length\) \{[\s\S]*clearHomepageSectionShell\(section\);[\s\S]*section\.innerHTML = '';[\s\S]*setHomeSectionVisibility\(section, false\);/,
+        'homepage should remove any previously painted prompt DOM when the live result is empty'
     );
     assert.doesNotMatch(
         framerSource,
         /const updatedAt = String\(normalizedPrompt\?\.(?:updated_at|created_at)/,
         'homepage live prompt sync should not repaint cards just because live rows include timestamp metadata'
     );
-    assert.match(
+    assert.doesNotMatch(
         framerSource,
-        /const promptSectionAlreadyPainted = Boolean\(promptSection\?\.querySelector\?\.\('\.masonry-card'\)\);/,
-        'homepage live prompt sync should detect when first-paint prompt cards are already on screen'
-    );
-    assert.match(
-        framerSource,
-        /if \(options\.forceRender === true \|\| !promptSectionAlreadyPainted\) \{\s*this\.renderPrompts\(\);/,
-        'homepage live prompt sync should not clear already-painted prompt cards during first-load background refresh'
+        /promptSectionAlreadyPainted/,
+        'homepage live sync should never preserve cards merely because they are already painted'
     );
     assert.match(
         framerSource,
@@ -807,7 +802,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260620_HOME_SHOP_RENDER_SIGNATURE_1'),
+        indexSource.includes('./js/framer_home.js?v=20260715_HOME_PROMPTS_LIVE_ONLY_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
@@ -833,8 +828,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1',
         './js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1',
-        './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1',
-        './js/homepage-prompts-data.js?v=20260501_HOME_PROMPTS_SUMMARY_1'
+        './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1'
     ];
 
     assert.equal(

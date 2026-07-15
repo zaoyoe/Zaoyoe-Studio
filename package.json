@@ -10,6 +10,7 @@
     "audit:env-drift": "node scripts/check-env-drift.js",
     "audit:deploy-health": "node scripts/check-prod-env.js --runtime-only --check-app-runtime --base-url https://www.fatherkey.com --expect-current-git-version",
     "audit:image-delivery": "node scripts/audit-image-delivery.js",
+    "audit:ai-workbench-billing": "node scripts/audit-ai-workbench-billing.js",
     "audit:payment-closeout": "node scripts/payment-postdeploy-audit.js",
     "audit:payment-profile-mapping": "node scripts/audit-payment-profile-mapping.js",
     "ai-image:worker": "node scripts/ai-image-worker.js",

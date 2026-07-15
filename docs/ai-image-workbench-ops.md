@@ -10,6 +10,15 @@ AI 图片工作台的真实生图链路由三段组成：
 
 积分模式只在任务成功后扣费；失败任务不扣积分。API 模式不会使用站点 Key，也不会扣站点积分。
 
+Billing V2 上线时，积分模式会在调用上游前冻结足额积分，成功后按实际金额结算，失败或取消后释放。必须先执行 `supabase/migrations/20260715_ai_workbench_billing_v2.sql`，确认没有遗留的积分模式排队或运行任务，再设置：
+
+```bash
+AI_WORKBENCH_BILLING_V2_ENABLED=true
+AI_WORKBENCH_DYNAMIC_AUTHORIZATION_POINTS=1
+```
+
+第二项是 Sub2API 实际成本尚未返回前的动态任务预授权额。预授权不足时结算会尝试补扣；补扣余额不足时任务保留待结算状态，不得回退到旧的部分扣款 RPC。
+
 ## 模型配置优先级
 
 Worker 调用模型时按下面顺序解析配置：

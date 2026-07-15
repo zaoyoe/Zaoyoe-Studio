@@ -4,6 +4,11 @@ const {
 const {
     calculateAiImageRuleChargePoints
 } = require('./_ai-image-pricing');
+const {
+    isAiWorkbenchBillingError,
+    releaseAiWorkbenchPoints,
+    settleAiWorkbenchPoints
+} = require('../../api/_lib/payments/ai-workbench-billing');
 
 const DEMO_RESULT_IMAGES = Object.freeze([
     'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1600&q=90',
@@ -117,6 +122,31 @@ function normalizeTaskStatus(value = '') {
     if (['succeeded', 'success', 'completed'].includes(normalized)) return 'succeeded';
     if (['failed', 'cancelled', 'refunded'].includes(normalized)) return normalized;
     return 'queued';
+}
+
+function getAiWorkbenchLedgerReason(task = {}) {
+    const mode = normalizeText(task.mode, 40).toLowerCase();
+    if (mode === 'chat') return 'AI 文本对话';
+    if (mode === 'reverse') return 'AI 提示词反推';
+    if (mode === 'video') return 'AI 视频生成';
+    return 'AI 图片生成';
+}
+
+function getAiWorkbenchBillingV2Metadata(task = {}) {
+    return safeObject(safeObject(task.metadata).billing_v2);
+}
+
+function isAiWorkbenchBillingV2Task(task = {}) {
+    return task.billing_mode === 'points' && getAiWorkbenchBillingV2Metadata(task).enabled === true;
+}
+
+async function releaseTaskAuthorizationIfNeeded(supabase, task = {}, reason = 'AI 工作台任务未完成，释放预授权') {
+    if (!isAiWorkbenchBillingV2Task(task)) return null;
+    return releaseAiWorkbenchPoints({
+        supabase,
+        task,
+        reason
+    });
 }
 
 function isVideoTask(task = {}) {
@@ -751,6 +781,56 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
 
     const chargeEstimate = calculateAiImageRuleChargePoints(task, execution.tokenUsage || task.token_usage || {});
     const expectedAmount = normalizeBillablePoints(chargeEstimate.points ?? task.estimated_points, 0);
+    const billingV2 = getAiWorkbenchBillingV2Metadata(task);
+    if (billingV2.enabled === true) {
+        const syncStatus = normalizeText(
+            safeObject(execution.metadata).sub2api_billing_sync?.status
+            || safeObject(execution.metadata).sub2apiBillingSync?.status,
+            40
+        ).toLowerCase();
+        const dynamicBillingPending = billingV2.dynamic === true
+            && chargeEstimate.source !== 'sub2api_actual_cost'
+            && syncStatus !== 'settled';
+        if (dynamicBillingPending) {
+            return {
+                chargedPoints: 0,
+                referenceId: '',
+                pricing: chargeEstimate,
+                authorizationPending: true
+            };
+        }
+        if (billingV2.authorization_required === false) {
+            return {
+                chargedPoints: 0,
+                referenceId: '',
+                pricing: chargeEstimate
+            };
+        }
+        const settlement = await settleAiWorkbenchPoints({
+            supabase,
+            task,
+            amount: expectedAmount,
+            reason: getAiWorkbenchLedgerReason(task)
+        });
+        const settledAmount = normalizeBillablePoints(settlement.deducted, 0);
+        if (Math.abs(settledAmount - expectedAmount) > 0.000001) {
+            const error = new Error('AI 工作台积分结算金额不一致');
+            error.code = 'ai_billing_settlement_mismatch';
+            error.statusCode = 503;
+            error.billing = {
+                expected: expectedAmount,
+                settled: settledAmount,
+                task_id: task.id
+            };
+            throw error;
+        }
+        return {
+            chargedPoints: settledAmount,
+            referenceId: expectedAmount > 0 ? task.id : '',
+            pricing: chargeEstimate,
+            settlement
+        };
+    }
     if (expectedAmount <= 0) {
         return {
             chargedPoints: 0,
@@ -780,7 +860,7 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
         supabase,
         userId: task.user_id,
         amount: expectedAmount,
-        reason: 'AI 图片生成',
+        reason: getAiWorkbenchLedgerReason(task),
         referenceId: task.id,
         site: task.site || 'cn'
     });
@@ -853,6 +933,14 @@ async function completeTaskFromExistingResults(supabase, task = {}, results = []
     const metadata = safeObject(task.metadata);
     const nextMetadata = {
         ...metadata,
+        ...(isAiWorkbenchBillingV2Task(task) ? {
+            billing_v2: {
+                ...getAiWorkbenchBillingV2Metadata(task),
+                status: charge.authorizationPending ? 'settlement_pending' : 'settled',
+                settled_points: charge.chargedPoints,
+                settled_at: charge.authorizationPending ? '' : completedAt
+            }
+        } : {}),
         recovery: {
             ...(safeObject(metadata.recovery)),
             recovered_from_results: true,
@@ -1012,6 +1100,14 @@ async function completeTask(supabase, task = {}, execution = {}) {
     const executorAccountedMs = preflightMs + upstreamMs + postprocessMs;
     const nextMetadata = {
         ...baseMetadata,
+        ...(isAiWorkbenchBillingV2Task(task) ? {
+            billing_v2: {
+                ...getAiWorkbenchBillingV2Metadata(task),
+                status: charge.authorizationPending ? 'settlement_pending' : 'settled',
+                settled_points: charge.chargedPoints,
+                settled_at: charge.authorizationPending ? '' : completedAt
+            }
+        } : {}),
         delivery: {
             ...(baseMetadata.delivery && typeof baseMetadata.delivery === 'object' && !Array.isArray(baseMetadata.delivery) ? baseMetadata.delivery : {}),
             requested_image_count: getExpectedImageCount(task),
@@ -1149,9 +1245,29 @@ async function failTask(supabase, task = {}, error = {}) {
     const errorTiming = safeObject(errorMetadata.timing);
     const baseTiming = safeObject(baseMetadata.timing);
     const executorMs = normalizeTimingMs(errorMetadata.executor_ms || errorTiming.executor_ms || baseTiming.executor_ms);
+    const release = await releaseTaskAuthorizationIfNeeded(
+        supabase,
+        task,
+        `AI 工作台任务失败释放：${code}`
+    );
+    if (release?.status === 'settled' && normalizeBillablePoints(release.deducted, 0) > 0) {
+        const settlementError = new Error('任务积分已结算，等待任务状态收口');
+        settlementError.code = 'ai_billing_task_completion_pending';
+        settlementError.statusCode = 503;
+        settlementError.billing = release;
+        throw settlementError;
+    }
     const nextMetadata = {
         ...baseMetadata,
         ...errorMetadata,
+        billing_v2: {
+            ...getAiWorkbenchBillingV2Metadata(task),
+            ...(release ? {
+                release_status: release.status || '',
+                released_points: normalizeBillablePoints(release.released, 0),
+                released_at: completedAt
+            } : {})
+        },
         failure: {
             ...(safeObject(baseMetadata.failure)),
             failed_at: completedAt,
@@ -1334,6 +1450,12 @@ async function failStaleRunningTasks(supabase, {
             continue;
         }
 
+        await releaseTaskAuthorizationIfNeeded(
+            supabase,
+            task,
+            'AI 工作台超时任务释放预授权'
+        );
+
         const { data, error } = await supabase
             .from('ai_image_tasks')
             .update({
@@ -1500,6 +1622,9 @@ async function executeAiImageTask({
                     message: normalizeText(recoveryError?.message || recoveryError, 500)
                 });
             }
+            if (isAiWorkbenchBillingError(error)) {
+                throw error;
+            }
             return failTaskWithRetry(supabase, runningTask, error);
         }
         throw error;
@@ -1603,6 +1728,7 @@ module.exports = {
     completeTask,
     executeAiImageTask,
     failStaleRunningTasks,
+    getAiWorkbenchLedgerReason,
     recoverTaskFromExistingResults,
     runAiImageTaskBatch
 };

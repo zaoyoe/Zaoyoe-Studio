@@ -55,8 +55,7 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     const contractSource = fs.readFileSync(homepageContractPath, 'utf8');
 
     assert.match(framerSource, /\.rpc\('fn_get_homepage_config'/);
-    assert.match(framerSource, /async fetchVisiblePromptPool\(options = \{\}\)/);
-    assert.match(framerSource, /const \{ preferStaticFirst = false \} = options;/);
+    assert.match(framerSource, /async fetchVisiblePromptPool\(\)/);
     assert.match(framerSource, /\.from\('prompts'\)\s*\.select\(HOMEPAGE_PROMPT_LIVE_SELECT\)\s*\.order\('updated_at', \{ ascending: false \}\)\s*\.limit\(80\)/);
     assert.match(framerSource, /filterHomeVisiblePrompts\(data\)/);
     assert.match(framerSource, /const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';/);
@@ -64,14 +63,15 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.match(framerSource, /function buildHomepagePromptRenderSignature\(prompts = \[\]\)/);
     assert.match(framerSource, /schedulePromptPoolLiveSync\(options = \{\}\)/);
     assert.match(framerSource, /async syncPromptPoolFromLiveSourceInBackground\(options = \{\}\)/);
-    assert.match(framerSource, /this\.schedulePromptPoolLiveSync\(\{ reason: 'prefetch-cache' \}\);/);
+    assert.match(framerSource, /this\.promptPool = await this\.fetchVisiblePromptPool\(\);/);
     assert.match(framerSource, /prompt\?\.image_url/);
     assert.match(framerSource, /prompt\?\.cover_image/);
     assert.match(framerSource, /function readHomepagePrefetchCache\(site = getHomepageRuntimeSite\(\)\)/);
     assert.match(framerSource, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(site\), JSON\.stringify\(/);
     assert.match(framerSource, /this\.sectionOrder = HomepageContract\?\.sortSectionsByDisplayOrder\?\.\(data\)/);
     assert.match(framerSource, /prompt\?\.supabaseId \?\? prompt\?\.id/);
-    assert.match(framerSource, /this\.findFeaturedPromptRecord\(promptPool, item\) \|\| this\.buildFeaturedPromptFallback\(item\)/);
+    assert.match(framerSource, /\.map\(item => this\.findFeaturedPromptRecord\(promptPool, item\)\)/);
+    assert.doesNotMatch(framerSource, /buildFeaturedPromptFallback|homepage_featured_fallback/);
     assert.match(framerSource, /const columnCount = Math\.min\(5, Math\.max\(1, prompts\.length \|\| 1\)\);/);
     assert.match(framerSource, /class="masonry-container" data-columns="\$\{columnCount\}"/);
     assert.match(framerSource, /this\.buildGongyiData\(this\.config\.gongyi \|\| \{\}\)/);
@@ -90,7 +90,8 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.match(prefetchSource, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(currentSite\), JSON\.stringify\(/);
     assert.match(prefetchSource, /cacheKind = promptPoolSource === 'live' \? 'complete' : 'partial'/);
     assert.match(prefetchSource, /prompt\?\.supabaseId \?\? prompt\?\.id/);
-    assert.match(prefetchSource, /findFeaturedPromptRecord\(promptPool, item\) \|\| buildFeaturedPromptFallback\(item\)/);
+    assert.match(prefetchSource, /\.map\(\(item\) => findFeaturedPromptRecord\(promptPool, item\)\)/);
+    assert.doesNotMatch(prefetchSource, /buildFeaturedPromptFallback|homepage_featured_fallback/);
     assert.match(prefetchSource, /getSectionExperimentValue\('prompts', config, 'featured_items', null\)/);
     assert.doesNotMatch(prefetchSource, /config\.featured_items\.length > 0\) \{\s+return config\.featured_items[\s\S]*\.slice\(0, Number\(config\.max_items\) \|\| 24\);/);
     assert.match(prefetchSource, /gongyi: buildGongyiData\(config\.gongyi \|\| \{\}\)/);
@@ -134,7 +135,7 @@ test('public nav shop dropdown only exposes current-site priced categories', () 
     assert.match(framerSource, /return Array\.isArray\(categories\) \? categories : \[\];/);
     assert.doesNotMatch(framerSource, /'全部商品', 'API密钥', '会员服务', '资源包'/);
 
-    assert.match(indexSource, /js\/framer_home\.js\?v=20260620_HOME_SHOP_RENDER_SIGNATURE_1/);
+    assert.match(indexSource, /js\/framer_home\.js\?v=20260715_HOME_PROMPTS_LIVE_ONLY_1/);
     navSubpageSources.forEach((source) => {
         assert.match(source, /js\/framer-nav-runtime\.js\?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1/);
     });

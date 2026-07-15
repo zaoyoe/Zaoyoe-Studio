@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const {
     completeTask,
     executeAiImageTask,
+    getAiWorkbenchLedgerReason,
     recoverTaskFromExistingResults
 } = require('../_ai-image-runtime');
 const {
@@ -20,6 +21,14 @@ const {
 const {
     deductPointsForService
 } = require('../../../api/_lib/payments/rpc');
+const {
+    authorizeAiWorkbenchPoints,
+    getDynamicAuthorizationPoints,
+    isAiWorkbenchBillingError,
+    isAiWorkbenchBillingV2Enabled,
+    releaseAiWorkbenchPoints,
+    settleAiWorkbenchPoints
+} = require('../../../api/_lib/payments/ai-workbench-billing');
 const {
     loadAiImageGuardrailsFromSystemConfig
 } = require('../_ai-image-guardrails');
@@ -2484,6 +2493,120 @@ function safeObject(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function getAiWorkbenchBillingV2Metadata(task = {}) {
+    return safeObject(safeObject(task.metadata).billing_v2);
+}
+
+function isAiWorkbenchBillingV2Task(task = {}) {
+    return normalizeText(task.billing_mode || task.billingMode, 40) === 'points'
+        && getAiWorkbenchBillingV2Metadata(task).enabled === true;
+}
+
+function configureAiWorkbenchBillingV2TaskPayload(task = {}, {
+    env = process.env,
+    targetStatus = 'queued'
+} = {}) {
+    if (task.billing_mode !== 'points' || !isAiWorkbenchBillingV2Enabled(env)) return task;
+    const dynamic = shouldCaptureSub2ApiBillingForTask(task);
+    const estimatedPoints = normalizeBillablePoints(task.estimated_points, 0);
+    const authorizationPoints = dynamic
+        ? Math.max(estimatedPoints, getDynamicAuthorizationPoints(env))
+        : estimatedPoints;
+    return {
+        ...task,
+        status: 'authorizing',
+        started_at: null,
+        metadata: {
+            ...safeObject(task.metadata),
+            billing_v2: {
+                enabled: true,
+                dynamic,
+                target_status: targetStatus,
+                authorization_required: authorizationPoints > 0,
+                authorization_points: authorizationPoints,
+                status: authorizationPoints > 0 ? 'pending' : 'free'
+            }
+        }
+    };
+}
+
+async function authorizeConfiguredAiWorkbenchTask(supabase, task = {}, {
+    targetStatus = 'queued',
+    startedAt = ''
+} = {}) {
+    const billingV2 = getAiWorkbenchBillingV2Metadata(task);
+    if (billingV2.enabled !== true) return task;
+    let authorization = null;
+    try {
+        if (billingV2.authorization_required !== false) {
+            authorization = await authorizeAiWorkbenchPoints({
+                supabase,
+                task,
+                amount: billingV2.authorization_points,
+                reason: 'AI 工作台预授权'
+            });
+        }
+        const metadata = {
+            ...safeObject(task.metadata),
+            billing_v2: {
+                ...billingV2,
+                status: authorization ? 'authorized' : 'free',
+                authorized_points: normalizeBillablePoints(authorization?.authorized, 0),
+                reservation_id: authorization?.reservation_id || '',
+                authorized_at: new Date().toISOString()
+            }
+        };
+        const updatePayload = {
+            status: targetStatus,
+            metadata,
+            error_code: '',
+            error_message: ''
+        };
+        if (targetStatus === 'running') {
+            updatePayload.started_at = startedAt || new Date().toISOString();
+        }
+        const { data, error } = await supabase
+            .from('ai_image_tasks')
+            .update(updatePayload)
+            .eq('id', task.id)
+            .eq('status', 'authorizing')
+            .select(TASK_SELECT)
+            .maybeSingle();
+        if (error || !data) {
+            const updateError = new Error(error?.message || 'AI 工作台任务预授权状态更新失败');
+            updateError.code = error?.code || 'ai_workbench_authorization_state_failed';
+            updateError.statusCode = 503;
+            throw updateError;
+        }
+        return data;
+    } catch (error) {
+        if (authorization) {
+            try {
+                await releaseAiWorkbenchPoints({
+                    supabase,
+                    task,
+                    reason: 'AI 工作台任务启动失败，释放预授权'
+                });
+            } catch (_releaseError) {
+            }
+        }
+        try {
+            await supabase
+                .from('ai_image_tasks')
+                .update({
+                    status: 'failed',
+                    error_code: normalizeText(error?.code || 'ai_workbench_authorization_failed', 120),
+                    error_message: normalizeText(error?.message || error, 1000),
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', task.id)
+                .eq('status', 'authorizing');
+        } catch (_updateError) {
+        }
+        throw error;
+    }
+}
+
 function shouldCaptureSub2ApiBillingForTask(task = {}) {
     if (normalizeText(task.billing_mode || task.billingMode, 40) !== 'points') return false;
     const pricing = safeObject(safeObject(task.metadata).pricing);
@@ -2696,6 +2819,37 @@ async function findExistingTaskPointDeduction(supabase, task = {}) {
 
 async function deductReconciledTaskPoints(supabase, task = {}, amount = 0) {
     const normalizedAmount = normalizeBillablePoints(amount, 0);
+    if (isAiWorkbenchBillingV2Task(task)) {
+        if (!supabase?.from || !task?.id || !task?.user_id) {
+            return {
+                chargedPoints: 0,
+                referenceId: ''
+            };
+        }
+        const settlement = await settleAiWorkbenchPoints({
+            supabase,
+            task,
+            amount: normalizedAmount,
+            reason: getAiWorkbenchLedgerReason(task)
+        });
+        const chargedPoints = normalizeBillablePoints(settlement.deducted, 0);
+        if (Math.abs(chargedPoints - normalizedAmount) > 0.000001) {
+            const error = new Error('AI 工作台延迟结算金额不一致');
+            error.code = 'ai_billing_reconciliation_mismatch';
+            error.statusCode = 503;
+            error.billing = {
+                expected: normalizedAmount,
+                settled: chargedPoints,
+                task_id: task.id
+            };
+            throw error;
+        }
+        return {
+            chargedPoints,
+            referenceId: chargedPoints > 0 ? task.id : '',
+            settlement
+        };
+    }
     if (!supabase?.from || normalizedAmount <= 0 || !task?.id || !task?.user_id) {
         return {
             chargedPoints: 0,
@@ -2713,7 +2867,7 @@ async function deductReconciledTaskPoints(supabase, task = {}, amount = 0) {
         supabase,
         userId: task.user_id,
         amount: normalizedAmount,
-        reason: 'AI 图片生成',
+        reason: getAiWorkbenchLedgerReason(task),
         referenceId: task.id,
         site: task.site || 'cn'
     });
@@ -2775,6 +2929,14 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
     const reconciledAt = new Date().toISOString();
     const buildReconciledMetadata = (extra = {}) => ({
         ...safeObject(task.metadata),
+        ...(isAiWorkbenchBillingV2Task(task) ? {
+            billing_v2: {
+                ...getAiWorkbenchBillingV2Metadata(task),
+                status: 'settled',
+                settled_points: expectedPoints,
+                settled_at: reconciledAt
+            }
+        } : {}),
         pricing_charge: {
             ...safeObject(chargeEstimate.pricing),
             reconciled: true,
@@ -2797,6 +2959,9 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
         }
     });
     if (expectedPoints <= 0) {
+        const zeroSettlement = isAiWorkbenchBillingV2Task(task)
+            ? await deductReconciledTaskPoints(supabase, task, 0)
+            : null;
         const { data, error } = await supabase
             .from('ai_image_tasks')
             .update({
@@ -2807,7 +2972,8 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
                 total_tokens: normalizePositiveInt(usageWithBilling.total_tokens || usageWithBilling.totalTokens || task.total_tokens, 0, { min: 0, max: Number.MAX_SAFE_INTEGER }),
                 metadata: buildReconciledMetadata({
                     pricingCharge: {
-                        charged_points: 0
+                        charged_points: 0,
+                        billing_v2_settlement: zeroSettlement?.settlement || null
                     }
                 })
             })
@@ -4086,7 +4252,7 @@ function createAiImageHandlers({
                     quantity: previewPayload.quantity || 1
                 });
             const estimatedPoints = pricingEstimate.estimatedPoints;
-            const taskPayload = buildTaskPayload({
+            const taskPayload = configureAiWorkbenchBillingV2TaskPayload(buildTaskPayload({
                 body,
                 userId: user.id,
                 site,
@@ -4100,7 +4266,7 @@ function createAiImageHandlers({
                 providerId,
                 estimatedPoints,
                 pricing: pricingEstimate.pricing
-            });
+            }), { env, targetStatus: 'queued' });
             Object.assign(submitDiagnostics, {
                 normalizedRatio: taskPayload.ratio || '',
                 normalizedResolution: taskPayload.resolution || '',
@@ -4126,11 +4292,14 @@ function createAiImageHandlers({
                 dbError.hint = error?.hint || '';
                 throw dbError;
             }
+            const preparedTask = await authorizeConfiguredAiWorkbenchTask(supabase, data, {
+                targetStatus: 'queued'
+            });
             logSubmitDiagnostic('submit_inserted', {
                 ...submitDiagnostics,
-                taskId: data.id,
-                status: data.status,
-                estimatedPoints: data.estimated_points
+                taskId: preparedTask.id,
+                status: preparedTask.status,
+                estimatedPoints: preparedTask.estimated_points
             });
 
             if (billingMode === 'api') {
@@ -4147,7 +4316,7 @@ function createAiImageHandlers({
 
                 const execution = await executeAiImageTask({
                     supabase,
-                    task: data,
+                    task: preparedTask,
                     executor: createOpenAiCompatibleApiExecutor(executorOptions)
                 });
                 const results = execution.results?.length
@@ -4157,9 +4326,9 @@ function createAiImageHandlers({
                 return sendJson(res, 200, {
                     success: execution.task?.status === 'succeeded',
                     task: serializeTask(execution.task, results),
-                    task_id: execution.task?.id || data.id,
-                    status: execution.task?.status || data.status,
-                    estimated_points: normalizeBillablePoints(execution.task?.estimated_points ?? data.estimated_points, 0),
+                    task_id: execution.task?.id || preparedTask.id,
+                    status: execution.task?.status || preparedTask.status,
+                    estimated_points: normalizeBillablePoints(execution.task?.estimated_points ?? preparedTask.estimated_points, 0),
                     storedApiKey: resolvedUserApiKey.storedApiKey,
                     stored_api_key: resolvedUserApiKey.storedApiKey,
                     error: execution.error || null
@@ -4169,29 +4338,29 @@ function createAiImageHandlers({
             if (billingMode === 'points' && mode === 'chat') {
                 const execution = await executeAiImageTask({
                     supabase,
-                    task: data,
+                    task: preparedTask,
                     executor: createOpenAiCompatibleImageExecutor({ supabase, fetchImpl, env })
                 });
 
                 return sendJson(res, 200, {
                     success: execution.task?.status === 'succeeded',
                     task: serializeTask(execution.task, []),
-                    task_id: execution.task?.id || data.id,
-                    status: execution.task?.status || data.status,
-                    estimated_points: normalizeBillablePoints(execution.task?.estimated_points ?? data.estimated_points, 0),
+                    task_id: execution.task?.id || preparedTask.id,
+                    status: execution.task?.status || preparedTask.status,
+                    estimated_points: normalizeBillablePoints(execution.task?.estimated_points ?? preparedTask.estimated_points, 0),
                     error: execution.error || null
                 });
             }
 
-            const queueEstimate = await estimateQueueForTask(supabase, data, { site, env });
-            const estimatedTask = attachQueueEstimateToTask(data, queueEstimate);
+            const queueEstimate = await estimateQueueForTask(supabase, preparedTask, { site, env });
+            const estimatedTask = attachQueueEstimateToTask(preparedTask, queueEstimate);
 
             return sendJson(res, 200, {
                 success: true,
                 task: serializeTask(estimatedTask, []),
-                task_id: data.id,
-                status: data.status,
-                estimated_points: normalizeBillablePoints(data.estimated_points, 0),
+                task_id: preparedTask.id,
+                status: preparedTask.status,
+                estimated_points: normalizeBillablePoints(preparedTask.estimated_points, 0),
                 queue_position: queueEstimate.queue_position,
                 estimated_wait_seconds: queueEstimate.estimated_wait_seconds,
                 queue_eta_seconds: queueEstimate.queue_eta_seconds
@@ -4220,6 +4389,8 @@ function createAiImageHandlers({
         let task = null;
         let streamStarted = false;
         let streamSupabase = null;
+        let streamedResultText = '';
+        let streamedTokenUsage = {};
         const chatDiagnostics = {
             route: 'chat-stream'
         };
@@ -4314,7 +4485,7 @@ function createAiImageHandlers({
                 });
 
             const startedAt = new Date().toISOString();
-            const previewPayload = {
+            const previewPayload = configureAiWorkbenchBillingV2TaskPayload({
                 ...buildTaskPayload({
                     body,
                     userId: user.id,
@@ -4334,7 +4505,7 @@ function createAiImageHandlers({
                 started_at: startedAt,
                 error_code: '',
                 error_message: ''
-            };
+            }, { env, targetStatus: 'running' });
             validateTaskPayload(previewPayload);
             await consumeAiImageRateLimits({
                 req,
@@ -4365,7 +4536,10 @@ function createAiImageHandlers({
                 throw dbError;
             }
 
-            task = data;
+            task = await authorizeConfiguredAiWorkbenchTask(supabase, data, {
+                targetStatus: 'running',
+                startedAt
+            });
             logChatStreamDiagnostic('task_inserted', {
                 ...chatDiagnostics,
                 task_id: task.id,
@@ -5034,6 +5208,8 @@ function createAiImageHandlers({
                 };
             }
 
+            streamedResultText = outputText;
+            streamedTokenUsage = normalizedUsage.raw;
             const completion = await completeTask(supabase, task, {
                 status: 'succeeded',
                 resultPrompt: outputText,
@@ -5090,25 +5266,88 @@ function createAiImageHandlers({
                 code: error?.code || '',
                 message: error?.message || '对话生成失败，请稍后重试'
             });
+            let billingSettlementDeferred = false;
+            let deferredChargedPoints = 0;
+            if (task?.id && streamSupabase?.from && isAiWorkbenchBillingV2Task(task)) {
+                if (streamedResultText && isAiWorkbenchBillingError(error)) {
+                    billingSettlementDeferred = true;
+                } else {
+                    try {
+                        const release = await releaseAiWorkbenchPoints({
+                            supabase: streamSupabase,
+                            task,
+                            reason: 'AI 文本对话未完成，释放预授权'
+                        });
+                        if (streamedResultText && release.status === 'settled') {
+                            billingSettlementDeferred = true;
+                            deferredChargedPoints = normalizeBillablePoints(release.deducted, 0);
+                        }
+                    } catch (releaseError) {
+                        if (streamedResultText) {
+                            billingSettlementDeferred = true;
+                        } else {
+                            throw releaseError;
+                        }
+                    }
+                }
+            }
             if (task?.id && streamSupabase?.from) {
                 try {
-                    const { data: failedTask } = await streamSupabase
-                        .from('ai_image_tasks')
-                        .update({
+                    const updatePayload = billingSettlementDeferred
+                        ? {
+                            status: 'succeeded',
+                            result_prompt: streamedResultText,
+                            charged_points: deferredChargedPoints,
+                            points_ledger_reference_id: deferredChargedPoints > 0 ? task.id : '',
+                            token_usage: streamedTokenUsage,
+                            metadata: {
+                                ...safeObject(task.metadata),
+                                billing_v2: {
+                                    ...getAiWorkbenchBillingV2Metadata(task),
+                                    status: deferredChargedPoints > 0 ? 'settled' : 'settlement_pending',
+                                    settlement_error_code: normalizeText(error?.code, 120),
+                                    settlement_error_message: normalizeText(error?.message || error, 1000),
+                                    settlement_checked_at: new Date().toISOString()
+                                }
+                            },
+                            error_code: '',
+                            error_message: '',
+                            completed_at: new Date().toISOString()
+                        }
+                        : {
                             status: 'failed',
                             error_code: normalizeText(error?.code || 'chat_stream_error', 120),
                             error_message: normalizeText(error?.message || error, 1000),
                             completed_at: new Date().toISOString()
-                        })
+                        };
+                    const { data: persistedTask } = await streamSupabase
+                        .from('ai_image_tasks')
+                        .update(updatePayload)
                         .eq('id', task.id)
                         .select(TASK_SELECT)
                         .maybeSingle();
-                    task = failedTask || task;
-                } catch (_) {
-                    // Keep the original error path if failure persistence fails.
+                    task = persistedTask || task;
+                } catch (_persistenceError) {
                 }
             }
             if (streamStarted) {
+                if (billingSettlementDeferred) {
+                    writeSse(res, 'billing', {
+                        success: false,
+                        pending: deferredChargedPoints <= 0,
+                        task_id: task?.id || '',
+                        charged_points: deferredChargedPoints,
+                        message: deferredChargedPoints > 0 ? '扣费已完成，任务状态已恢复' : '扣费正在后台同步'
+                    });
+                    writeSse(res, 'done', {
+                        success: true,
+                        task: serializeTask(task, []),
+                        task_id: task?.id || '',
+                        charged_points: deferredChargedPoints,
+                        text: streamedResultText
+                    });
+                    return res.end();
+                }
                 writeSseError(res, error, task);
                 return res.end();
             }
@@ -5483,6 +5722,13 @@ function createAiImageHandlers({
             }
 
             if (task.status === 'cancelled') {
+                if (isAiWorkbenchBillingV2Task(task)) {
+                    await releaseAiWorkbenchPoints({
+                        supabase,
+                        task,
+                        reason: '用户取消 AI 工作台任务，释放预授权'
+                    });
+                }
                 return sendJson(res, 200, {
                     success: true,
                     task: serializeTask(task, []),
@@ -5523,6 +5769,14 @@ function createAiImageHandlers({
                     message: '任务已进入上游生成阶段，可能已产生扣费，无法取消',
                     code: 'task_not_cancellable',
                     task: serializeTask(task, [])
+                });
+            }
+
+            if (isAiWorkbenchBillingV2Task(cancelledTask)) {
+                await releaseAiWorkbenchPoints({
+                    supabase,
+                    task: cancelledTask,
+                    reason: '用户取消 AI 工作台任务，释放预授权'
                 });
             }
 
