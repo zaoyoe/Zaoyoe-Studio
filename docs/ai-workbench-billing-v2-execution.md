@@ -77,4 +77,8 @@
 
 ## 生产上线阶段
 
-当前进度：40%。数据库迁移和权限门禁已通过；全部本地改动已进入 `codex/ai-workbench-billing-v2` 功能分支。聚焦回归 467 项、完整回归 2629 项和 Vercel 构建均已通过，构建生成的源码版本戳噪声已清除。下一步完成恢复后轻量复验，随后提交、推送并创建 PR；Billing V2 开关暂不启用。
+基础部署进度：100%。PR #564 已合并到 `main`，Vercel production、KVM4 Verify Server 和 KVM4 Sub2API 均已部署 `201dc8ec` 并通过主机级健康检查；Billing V2 在该阶段保持关闭。
+
+## Billing V2 灰度启用阶段
+
+当前进度：20%。管理员已批准开始灰度；启用前只读复验确认活动积分任务和授权中预留均为 0。Vercel Production 与 KVM4 Verify 已准备 `AI_WORKBENCH_BILLING_V2_ENABLED=true` 和动态预授权 `1`，现有实例在下一次 `main` 部署前仍未启用。下一步通过 PR 合并触发三条部署链路，随后执行生产金丝雀和账务审计；任何金额不一致、重复扣款或残留预授权立即触发关闭开关。
