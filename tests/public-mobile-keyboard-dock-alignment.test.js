@@ -19,6 +19,7 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     const chatWidget = readRepoFile(path.join('js', 'components', 'ChatWidget.js'));
     const walletModal = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
     const promptsPoetry = readRepoFile('prompts-poetry.js');
+    const promptCommentInputDock = readRepoFile(path.join('js', 'prompt-comment-input-dock.js'));
     const scrollLock = readRepoFile(path.join('js', 'ios-scroll-lock.js'));
 
     assert.doesNotMatch(
@@ -74,143 +75,54 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
             'modal dock math should leave the same 12px keyboard/address-bar clearance as customer service'
         );
     });
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_RESTORE_DELAYS = \[0, 40, 90, 160, 260, 420, 620, 860, 1120, 1460\];/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_FOLLOWUP_DELAYS = \[48, 120, 240, 420, 680, 960, 1280\];/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_VIEWPORT_SETTLE_DELAYS = \[80, 160, 280, 420, 620, 860, 1120, 1460\];/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_FRESH_SAMPLE_MS = 900;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_MAX_KEYBOARD_RATIO = 0\.62;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_MIN_TOP = 12;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_BASE_SHEET_HEIGHT = 400;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_AUTH_FLASH_MS = 1080;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_AUTH_GATE_DELAY_MS = 320;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_BACKDROP_CLOSE_GUARD_MS = 260;/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_BACKDROP_TAP_MOVE_PX = 14;/);
-    assert.match(promptsPoetry, /let promptCommentComposerLayoutHeight = 0;/);
-    assert.match(promptsPoetry, /let promptCommentComposerKeyboardOffset = 0;/);
-    assert.match(promptsPoetry, /let promptCommentComposerDeferredFocusRafId = null;/);
-    assert.match(promptsPoetry, /let promptCommentComposerViewportSettleTimers = \[\];/);
-    assert.match(promptsPoetry, /let promptCommentComposerLoginGateTimer = null;/);
-    assert.match(promptsPoetry, /let promptCommentComposerAuthGateActive = false;/);
-    assert.match(promptsPoetry, /let promptCommentComposerOpenedAt = 0;/);
-    assert.match(promptsPoetry, /let promptCommentComposerBackdropTouch = null;/);
-    assert.doesNotMatch(promptsPoetry, /let promptCommentComposerDocked/);
-    assert.doesNotMatch(promptsPoetry, /let promptCommentComposerLastBottomInset/);
-    assert.doesNotMatch(promptsPoetry, /let promptCommentComposerInitialDockTimer/);
-    assert.doesNotMatch(promptsPoetry, /let promptCommentComposerFocusedReleaseTimer/);
-    assert.doesNotMatch(promptsPoetry, /PROMPT_COMMENT_COMPOSER_DOCK_/);
-    assert.doesNotMatch(promptsPoetry, /PROMPT_COMMENT_COMPOSER_FOCUSED_RELEASE_MS/);
-    assert.match(promptsPoetry, /function getPromptCommentComposerStableViewportHeight\(\) \{/);
-    assert.match(promptsPoetry, /function getPromptCommentComposerViewportSnapshot\(\) \{/);
-    assert.match(promptsPoetry, /function freezePromptCommentComposerUnderlay\(\) \{/);
-    assert.match(promptsPoetry, /function releasePromptCommentComposerUnderlayFreeze\(\) \{/);
-    assert.match(promptsPoetry, /function syncPromptCommentComposerUnderlayFreeze\(\) \{/);
-    assert.match(promptsPoetry, /function requestPromptCommentComposerUnderlayFreezeSync\(\) \{/);
-    assert.match(promptsPoetry, /function hardRestorePromptCommentComposerPageScroll\(\) \{[\s\S]*document\.documentElement\.scrollTop = targetY;[\s\S]*document\.body\.scrollTop = targetY;/);
-    assert.match(promptsPoetry, /function settlePromptCommentComposerParentFrame\(\) \{[\s\S]*modal\.classList\.remove\('modal-opening'\);[\s\S]*lockPromptModalCommentModeGeometry\(\{ force: true \}\);[\s\S]*hardRestorePromptCommentComposerPageScroll\(\);/);
-    assert.match(promptsPoetry, /function capturePromptCommentComposerOverlayFrame\(force = false\) \{/);
-    assert.match(promptsPoetry, /promptCommentComposerLayoutHeight = Math\.max\(PROMPT_COMMENT_COMPOSER_MIN_TOP, snapshot\.measuredHeight\);/);
-    assert.match(promptsPoetry, /'--prompt-comment-composer-viewport-top': '0px',[\s\S]*'--prompt-comment-composer-viewport-left': '0px',[\s\S]*'--prompt-comment-composer-viewport-width': `\$\{snapshot\.layoutWidth\}px`,[\s\S]*'--prompt-comment-composer-overlay-height': `\$\{layoutHeight\}px`/);
-    assert.match(promptsPoetry, /function getPromptCommentComposerSheetLayout\(sheet, snapshot, keyboardOffset\) \{/);
-    assert.match(promptsPoetry, /const keyboardTop = Math\.max\(0, layoutHeight - Math\.max\(0, keyboardOffset\)\);/);
-    assert.match(promptsPoetry, /const maxRestingTop = Math\.max\([\s\S]*Math\.round\(layoutHeight - sheetHeight - PROMPT_COMMENT_COMPOSER_MIN_TOP\)[\s\S]*\);/);
-    assert.match(promptsPoetry, /Math\.min\(maxRestingTop, Math\.round\(\(layoutHeight - sheetHeight\) \/ 2\)\)/);
-    assert.match(promptsPoetry, /Math\.round\(keyboardTop - sheetHeight - PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE\)/);
-    assert.match(promptsPoetry, /'--composer-keyboard-offset': `\$\{keyboardOffset\}px`,[\s\S]*'--composer-sheet-top': `\$\{sheetLayout\.sheetTop\}px`/);
-    assert.doesNotMatch(promptsPoetry, /normalizedViewportDelta/);
-    assert.doesNotMatch(promptsPoetry, /function getPromptCommentComposerViewportMetrics\(\) \{/);
-    assert.doesNotMatch(promptsPoetry, /function getPromptCommentComposerDockGeometry/);
-    assert.doesNotMatch(promptsPoetry, /function getPromptCommentComposerDockViewportHeight/);
-    assert.doesNotMatch(promptsPoetry, /function applyPromptCommentComposerDock/);
-    assert.doesNotMatch(promptsPoetry, /function releasePromptCommentComposerDock/);
-    assert.doesNotMatch(promptsPoetry, /function applyPromptCommentComposerSheetHeight/);
-    assert.doesNotMatch(promptsPoetry, /function getPromptCommentComposerDockKeyboardReserve/);
-    assert.doesNotMatch(promptsPoetry, /PROMPT_COMMENT_COMPOSER_REST_BOTTOM/);
-    assert.doesNotMatch(promptsPoetry, /PROMPT_COMMENT_COMPOSER_AUTH_ALERT_DURATION_MS/);
-    assert.doesNotMatch(promptsPoetry, /function queuePromptCommentComposerLoginModal/);
-    assert.doesNotMatch(promptsPoetry, /keyboardReserve/);
-    assert.doesNotMatch(promptsPoetry, /const dockTargetBottom = Math\.max\(40, Math\.round\(viewportBottom - PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE\)\);/);
-    assert.doesNotMatch(promptsPoetry, /const centeredTop = \(baseViewportHeight - finalSheetHeight\) \/ 2;/);
-    assert.doesNotMatch(promptsPoetry, /const shiftY = Math\.round\(desiredTop - centeredTop\);/);
-    assert.doesNotMatch(promptsPoetry, /metrics\.keyboardTop/);
-    assert.doesNotMatch(promptsPoetry, /getPromptCommentComposerEffectiveBottomInset/);
-    assert.doesNotMatch(promptsPoetry, /getPromptCommentComposerStableScreenHeight/);
-    assert.match(promptsPoetry, /window\.iOSScrollLock\.lockLight\(overlay, \{ restoreScrollDuringViewport: true \}\);/);
-    assert.doesNotMatch(promptsPoetry, /window\.iOSScrollLock\.lock\(overlay/);
-    assert.doesNotMatch(promptsPoetry, /window\.iOSScrollLock\.lockLight\(overlay, \{ restoreScrollDuringViewport: false \}\);/);
-    assert.match(promptsPoetry, /window\.iOSScrollLock\.lockLight\(modalInner, \{ restoreScrollDuringViewport: true \}\);/);
-    assert.match(promptsPoetry, /function getPromptCommentComposerFocusScrollSnapshot\(\) \{/);
-    assert.match(promptsPoetry, /function restorePromptCommentComposerFocusScroll\(snapshot = promptCommentComposerFocusScrollLock\) \{/);
-    assert.match(promptsPoetry, /function lockPromptCommentComposerFocusScroll\(snapshot = null\) \{/);
-    assert.match(promptsPoetry, /promptCommentComposerFocusScrollFollowupTimers = PROMPT_COMMENT_COMPOSER_FOCUS_SCROLL_FOLLOWUP_DELAYS\.map/);
-    assert.match(promptsPoetry, /function schedulePromptCommentComposerViewportSettleSync\(\) \{[\s\S]*PROMPT_COMMENT_COMPOSER_VIEWPORT_SETTLE_DELAYS\.forEach/);
-    assert.match(promptsPoetry, /function schedulePromptCommentComposerSettledFocus\(input, snapshot = null\) \{[\s\S]*settlePromptCommentComposerParentFrame\(\);[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*focusPromptCommentComposerInputWithoutScroll\(input, focusSnapshot\);/);
-    assert.match(promptsPoetry, /function canClosePromptCommentComposerFromBackdrop\(\) \{[\s\S]*Date\.now\(\) - promptCommentComposerOpenedAt >= PROMPT_COMMENT_COMPOSER_BACKDROP_CLOSE_GUARD_MS/);
-    assert.match(promptsPoetry, /function closePromptCommentComposerFromBackdrop\(\) \{[\s\S]*closePromptCommentComposer\(\{ preserveModalDock: true \}\);[\s\S]*\}/);
-    assert.match(promptsPoetry, /function getPromptCommentComposerTouchPoint\(event, changed = false\) \{/);
-    assert.match(promptsPoetry, /window\.addEventListener\('scroll', handleRootScroll, \{ passive: true \}\);/);
-    assert.match(promptsPoetry, /const handleBackdropClick = \(e\) => \{[\s\S]*closePromptCommentComposerFromBackdrop\(\);[\s\S]*\};/);
-    assert.match(promptsPoetry, /const handleBackdropTouchStart = \(e\) => \{[\s\S]*promptCommentComposerBackdropTouch = \{[\s\S]*cancelled: false[\s\S]*\};/);
-    assert.match(promptsPoetry, /const handleBackdropTouchMove = \(e\) => \{[\s\S]*PROMPT_COMMENT_COMPOSER_BACKDROP_TAP_MOVE_PX[\s\S]*promptCommentComposerBackdropTouch\.cancelled = true;/);
-    assert.match(promptsPoetry, /const handleBackdropTouchEnd = \(e\) => \{[\s\S]*const wasTap = !promptCommentComposerBackdropTouch\.cancelled;[\s\S]*if \(wasTap\) \{[\s\S]*closePromptCommentComposerFromBackdrop\(\);/);
-    assert.match(promptsPoetry, /overlay\.addEventListener\('touchend', handleBackdropTouchEnd, \{ passive: false \}\);/);
-    assert.doesNotMatch(promptsPoetry, /if \(e\.target === overlay\) \{[\s\S]*closePromptCommentComposer\(\);[\s\S]*\}/);
-    assert.doesNotMatch(promptsPoetry, /setPromptsCssVars\(modal, \{[\s\S]*display: 'none'/);
-    assert.doesNotMatch(promptsPoetry, /setPromptsCssVars\(backdrop, \{[\s\S]*display: 'none'/);
-    assert.doesNotMatch(promptsPoetry, /promptCommentComposerScrollClampCleanup\s*=\s*clampPromptModalPageScroll/);
-    assert.doesNotMatch(promptsPoetry, /function clampPromptModalPageScroll/);
-    assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_KEYBOARD_SETTLE_MS = 420;/);
-    assert.doesNotMatch(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS = 160;/);
-    assert.doesNotMatch(promptsPoetry, /function isPromptCommentComposerKeyboardSettling\(\) \{/);
-    assert.doesNotMatch(promptsPoetry, /function resetPromptCommentComposerKeyboardCycle\(\) \{/);
-    assert.doesNotMatch(promptsPoetry, /function schedulePromptCommentComposerKeyboardCycleReset\(delay = PROMPT_COMMENT_COMPOSER_HIDDEN_RESET_MS\) \{/);
-    const promptComposerInputTouchBlock = promptsPoetry.match(/input\.addEventListener\('touchstart', \(event\) => \{[\s\S]*?\n    \}, \{ passive: false \}\);/)?.[0] || '';
-    assert.match(promptComposerInputTouchBlock, /if \(document\.activeElement === input\) \{[\s\S]*schedulePromptCommentComposerFocusScrollRestore\(\{ withFollowup: true \}\);[\s\S]*return;[\s\S]*\}/);
-    assert.match(promptComposerInputTouchBlock, /if \(event\?\.cancelable\) event\.preventDefault\(\);[\s\S]*focusPromptCommentComposerInputWithoutScroll\(input\);/);
-    assert.doesNotMatch(promptComposerInputTouchBlock, /preparePromptCommentComposerForInputFocus\(\);/);
-    assert.doesNotMatch(promptsPoetry, /isStaleFocusedHiddenKeyboard/);
-    assert.doesNotMatch(promptsPoetry, /schedulePromptCommentComposerHiddenFocusDetach/);
-    assert.match(promptsPoetry, /commentInput\.setAttribute\('inputmode', 'none'\);/);
-    assert.match(promptsPoetry, /commentInput\.setAttribute\('tabindex', '-1'\);/);
-    assert.match(promptsPoetry, /commentInputProxy\?\.addEventListener\('touchstart', \(e\) => launchComposer\(e\), \{ passive: false \}\);/);
-    assert.match(promptsPoetry, /commentInput\.addEventListener\('focus', \(e\) => launchComposer\(e\)\);/);
-    assert.match(promptsPoetry, /if \(document\.activeElement === commentInput\) \{[\s\S]*commentInput\.blur\(\);[\s\S]*\}/);
-    const promptComposerPrepareBlock = promptsPoetry.match(/function preparePromptCommentComposerForInputFocus\(focusSnapshot = null\) \{[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(promptComposerPrepareBlock, /sheet\?\.classList\.remove\('composer-animating'\);[\s\S]*suspendPromptModalKeyboardDockForCommentComposer\(\);[\s\S]*freezePromptCommentComposerUnderlay\(\);[\s\S]*capturePromptCommentComposerOverlayFrame\(!promptCommentComposerLayoutHeight\);[\s\S]*lockPromptCommentComposerPage\(\);[\s\S]*lockPromptCommentComposerFocusScroll\(focusSnapshot\);[\s\S]*syncPromptCommentComposerViewport\(\{ animate: false \}\);/);
-    assert.doesNotMatch(promptComposerPrepareBlock, /clearPromptCommentComposerKeyboardTimers\(\);/);
-    assert.doesNotMatch(promptComposerPrepareBlock, /capturePromptCommentComposerViewportBase\(\);/);
-    assert.match(promptsPoetry, /promptCommentComposerLayoutHeight = 0;[\s\S]*promptCommentComposerBaseSheetHeight = 0;[\s\S]*promptCommentComposerOverlayBaseHeight = 0;[\s\S]*promptCommentComposerKeyboardOffset = 0;/);
-    assert.match(promptsPoetry, /function resetPromptCommentComposerKeyboardState\(\) \{[\s\S]*overlay\?\.classList\.remove\('keyboard-docked', 'keyboard-active'\);[\s\S]*'--composer-keyboard-offset': '0px'/);
-    assert.match(promptsPoetry, /function resetPromptCommentComposerViewportStyles\(\) \{[\s\S]*resetPromptCommentComposerKeyboardState\(\);[\s\S]*restorePromptCommentComposerOverlay\(\);[\s\S]*\}/);
-    assert.match(promptsPoetry, /const rawKeyboardOffset = Math\.max\(0, Math\.round\(\(snapshot\?\.layoutHeight \|\| 0\) - \(snapshot\?\.visualBottom \|\| 0\)\)\);/);
-    assert.match(promptsPoetry, /Date\.now\(\) - promptCommentComposerOpenedAt < PROMPT_COMMENT_COMPOSER_FRESH_SAMPLE_MS;/);
-    assert.match(promptsPoetry, /if \(isFreshKeyboardSample && maxKeyboardOffset > 0 && rawKeyboardOffset > maxKeyboardOffset\) \{[\s\S]*schedulePromptCommentComposerViewportSettleSync\(\);[\s\S]*return;/);
-    assert.match(promptsPoetry, /const keyboardOffset = activeInput \? Math\.min\(rawKeyboardOffset, maxKeyboardOffset \|\| rawKeyboardOffset\) : 0;/);
-    assert.doesNotMatch(promptsPoetry, /function getPromptCommentComposerPredictedKeyboardOffset\(snapshot\) \{/);
-    assert.doesNotMatch(promptsPoetry, /forceKeyboardOffset/);
-    assert.doesNotMatch(promptsPoetry, /promptCommentComposerLastStableKeyboardOffset/);
-    assert.doesNotMatch(promptsPoetry, /isInsetDroppingWhileFocused/);
-    assert.doesNotMatch(promptsPoetry, /const handleInputBlur = \(\) => \{[\s\S]*releasePromptCommentComposerDock\(true\);[\s\S]*\};/);
-    assert.doesNotMatch(promptsPoetry, /const zeroBottom = Math\.round\(overlayTop \+ \(sheet\.offsetTop \|\| 0\) \+ dockHeight\);/);
-    assert.doesNotMatch(promptsPoetry, /Math\.round\(targetBottom - zeroBottom\)/);
-    assert.match(promptsPoetry, /input\?\.addEventListener\('focus', \(\) => \{[\s\S]*preparePromptCommentComposerForInputFocus\(\);[\s\S]*overlay\.classList\.add\('ios-focus-lock'\);/);
-    assert.match(promptComposerPrepareBlock, /finishPromptCommentComposerEnterAnimation\(\);[\s\S]*lockPromptCommentComposerPage\(\);[\s\S]*setPromptCommentComposerKeyboardSettling\(true\);/);
-    assert.match(promptsPoetry, /function focusPromptCommentComposerInputWithoutScroll\(input, focusSnapshot = null\) \{[\s\S]*const snapshot = focusSnapshot \|\| getPromptCommentComposerFocusScrollSnapshot\(\);[\s\S]*preparePromptCommentComposerForInputFocus\(snapshot\);[\s\S]*input\.focus\(\{ preventScroll: true \}\);[\s\S]*restorePromptCommentComposerFocusScroll\(snapshot\);[\s\S]*schedulePromptCommentComposerViewportSettleSync\(\);/);
-    assert.match(promptsPoetry, /suspendPromptModalKeyboardDockForCommentComposer\(\);[\s\S]*freezePromptCommentComposerUnderlay\(\);[\s\S]*capturePromptCommentComposerOverlayFrame\(true\);[\s\S]*syncPromptCommentComposerViewport\(\{ animate: false \}\);[\s\S]*startPromptCommentComposerEnterAnimation\(composer\.overlay\);[\s\S]*lockPromptCommentComposerPage\(\);/);
-    assert.match(promptsPoetry, /const isAlreadyActive = composer\.overlay\.classList\.contains\('active'\) &&[\s\S]*!composer\.overlay\.classList\.contains\('composer-closing'\);[\s\S]*if \(isAlreadyActive\) \{[\s\S]*freezePromptCommentComposerUnderlay\(\);[\s\S]*lockPromptCommentComposerFocusScroll\(promptCommentComposerFocusScrollLock \|\| getPromptCommentComposerFocusScrollSnapshot\(\)\);[\s\S]*return true;[\s\S]*\}/);
-    assert.match(promptsPoetry, /const openingScrollSnapshot = getPromptCommentComposerFocusScrollSnapshot\(\);[\s\S]*composer\.overlay\.classList\.add\('active'\);[\s\S]*promptCommentComposerOpenedAt = Date\.now\(\);[\s\S]*promptCommentComposerBackdropTouch = null;[\s\S]*lockPromptCommentComposerFocusScroll\(openingScrollSnapshot\);[\s\S]*freezePromptCommentComposerUnderlay\(\);[\s\S]*lockPromptCommentComposerPage\(\);[\s\S]*restorePromptCommentComposerFocusScroll\(openingScrollSnapshot\);/);
-    assert.match(promptsPoetry, /syncPromptCommentComposerViewport\(\{ animate: true \}\);/);
-    assert.match(promptsPoetry, /function openPromptCommentComposerLoginGate\(\) \{[\s\S]*closePromptCommentComposer\(\{ preserveModalDock: true \}\);[\s\S]*showLoginModal\(\);[\s\S]*PROMPT_COMMENT_COMPOSER_AUTH_GATE_DELAY_MS/);
-    assert.match(promptsPoetry, /sendBtn\?\.addEventListener\('click', \(event\) => \{[\s\S]*submitComment\(\{ source: 'prompt-comment-composer-send' \}\);[\s\S]*\}\);/);
-    assert.match(promptsPoetry, /function handleCommentKeydown\(e\) \{[\s\S]*if \(isPromptCommentComposerEnabled\(\) && e\.target\?\.id === 'promptCommentComposerInput'\) \{[\s\S]*return;[\s\S]*\}[\s\S]*submitComment\(\{ source: 'keyboard' \}\);/);
-    assert.match(promptsPoetry, /async function submitComment\(options = \{\}\) \{[\s\S]*const input = getActiveCommentInput\(\);[\s\S]*if \(!input\) return;[\s\S]*const content = input\.value\.trim\(\);[\s\S]*if \(!content && !selectedCommentImage\) \{[\s\S]*return;[\s\S]*\}[\s\S]*window\.supabaseClient\.auth\.getUser\(\);/);
-    assert.match(promptsPoetry, /if \(!user\) \{[\s\S]*if \(isPromptComposerInput && isPromptCommentComposerEnabled\(\)\) \{[\s\S]*flashPromptCommentComposerAuthRequired\(\);[\s\S]*if \(options\.source === 'prompt-comment-composer-send'\) \{[\s\S]*openPromptCommentComposerLoginGate\(\);[\s\S]*\}[\s\S]*return;[\s\S]*\}[\s\S]*showLoginModal\(\);/);
-    assert.match(promptsPoetry, /overlay\.classList\.add\('ios-focus-lock'\);/);
-    assert.doesNotMatch(promptsPoetry, /setTimeout\(handleViewportChange, 60\);[\s\S]*setTimeout\(handleViewportChange, 120\);[\s\S]*setTimeout\(handleViewportChange, 260\);/);
-    assert.doesNotMatch(promptsPoetry, /if \(!isFocused && bottomInset <= 8\) \{[\s\S]*resetPromptCommentComposerKeyboardCycle\(\);[\s\S]*\}/);
-    assert.doesNotMatch(promptsPoetry, /const handleInputBlur = \(\) => \{[\s\S]*schedulePromptCommentComposerKeyboardCycleReset\(240\);[\s\S]*\};/);
-    assert.doesNotMatch(promptsPoetry, /function schedulePromptCommentComposerSettleSync\(\) \{/);
+    assert.match(promptCommentInputDock, /class PromptCommentInputDock \{/);
+    assert.match(promptCommentInputDock, /const STATE_IDLE = 'idle';[\s\S]*const STATE_FOCUSING = 'focusing';[\s\S]*const STATE_VISIBLE = 'visible';[\s\S]*const STATE_DISMISSING = 'dismissing';/);
+    assert.match(promptCommentInputDock, /getViewportFrame\(\) \{[\s\S]*visualViewport[\s\S]*offsetTop[\s\S]*layoutHeight/);
+    assert.match(promptCommentInputDock, /captureBaseline\(frame, force = false\) \{[\s\S]*Math\.max\(this\.baselineHeight[\s\S]*Math\.max\(this\.baselineBottom/);
+    assert.match(promptCommentInputDock, /handleViewportChange\(\) \{[\s\S]*if \(!this\.isActive\(\)\) return;[\s\S]*this\.syncViewport\(\);/);
+    assert.match(promptCommentInputDock, /const topChanged = !previous \|\| previous\.top !== frame\.top;[\s\S]*const heightChanged[\s\S]*if \(!topChanged && !heightChanged\) return;/);
+    assert.match(promptCommentInputDock, /const OPENING_STABLE_MS = 80;[\s\S]*const OPENING_TIMEOUT_MS = 1200;/);
+    assert.match(promptCommentInputDock, /const geometryStable = this\.openingCandidateFrame[\s\S]*this\.openingCandidateFrame\.height - frame\.height[\s\S]*this\.openingCandidateFrame\.top - frame\.top/);
+    assert.match(promptCommentInputDock, /frame\.height < minimumPlausibleHeight[\s\S]*opening-timeout/);
+    assert.doesNotMatch(promptCommentInputDock, /pageTop|visualPageDelta|pageScrollDelta|underlayTop/);
+    assert.match(promptCommentInputDock, /syncViewport\(\) \{[\s\S]*KEYBOARD_DESCENT_DELTA[\s\S]*beginDismiss\(\{ blur: false, reason: 'viewport' \}\)/);
+    assert.match(promptCommentInputDock, /beginDismiss\(\{ blur = true, reason = 'close' \} = \{\}\) \{[\s\S]*setState\(STATE_DISMISSING\)[\s\S]*DISMISS_GUARD_MS/);
+    assert.match(promptCommentInputDock, /this\.state === STATE_DISMISSING[\s\S]*keyboardInset <= KEYBOARD_RETURN_THRESHOLD[\s\S]*this\.finalizeDismiss\(\);/);
+    assert.match(promptCommentInputDock, /keyboardInset <= KEYBOARD_RETURN_THRESHOLD[\s\S]*frame\.top <= 2/);
+    assert.match(promptCommentInputDock, /lockPageScroll\(\) \{[\s\S]*width', '100%'[\s\S]*overflow', 'hidden'/);
+    assert.doesNotMatch(promptCommentInputDock, /body\.style\.setProperty\('position', 'fixed'/);
+    assert.match(promptCommentInputDock, /unlockPageScroll\(\) \{[\s\S]*restoreInlineStyles\(document\.body[\s\S]*global\.scrollTo\?\.\(lock\.x, lock\.y\)/);
+    assert.doesNotMatch(promptCommentInputDock, /iOSScrollLock|setInterval\(/);
+    assert.doesNotMatch(promptCommentInputDock, /focus-timeout/);
+    assert.match(promptsPoetry, /function isPromptCommentInputDockEnabled\(\) \{[\s\S]*any-pointer: coarse[\s\S]*PromptCommentInputDock/);
+    assert.match(promptsPoetry, /function ensurePromptCommentInputDock\(\) \{[\s\S]*new window\.PromptCommentInputDock\(\{/);
+    assert.match(promptsPoetry, /getScrollPosition: \(\) => \(\{[\s\S]*y: getPromptModalBaseScrollY\(\)/);
+    assert.doesNotMatch(promptsPoetry, /PromptCommentInputSession|PromptCommentInputUnderlay|prompt-comment-input-active|prompt-comment-input-viewport-tracking|--prompt-comment-visual-top|--prompt-comment-page-shift-y/);
+    assert.match(promptsPoetry, /function preparePromptCommentModeInputDock\(\) \{[\s\S]*disablePromptModalKeyboardDockForCommentInput\(\);[\s\S]*restoreScrollDuringViewport: false/);
+    assert.match(promptsPoetry, /function syncPromptCommentInputDraft\(source = promptCommentInputDock\?\.input\) \{[\s\S]*canonicalInput\.value = source\.value[\s\S]*copyPromptCommentInputDatasets/);
+    assert.match(promptsPoetry, /function handleReplyComment\(commentId, authorName\) \{[\s\S]*openPromptCommentInputDock\(\{[\s\S]*replyTo: commentId,[\s\S]*replyToName: authorName/);
+    assert.match(promptsPoetry, /document\.getElementById\('sendCommentBtn'\)\?\.addEventListener\('click'[^]*submitComment\(\{ source: 'comment-send' \}\)/);
+    assert.match(promptsPoetry, /function handleCommentKeydown\(e\) \{[\s\S]*e\.target\?\.id === 'promptCommentInputDockField'[\s\S]*return;[\s\S]*submitComment\(\{ source: 'keyboard' \}\);/);
+    assert.match(promptsPoetry, /commentInputTrigger\.addEventListener\('pointerdown'[\s\S]*launchDock\(event\)/);
+    assert.match(promptsPoetry, /commentInputTrigger\.addEventListener\('click'[\s\S]*event\.detail !== 0/);
+    assert.doesNotMatch(promptsPoetry, /commentInput\.setAttribute\('(readonly|inputmode|tabindex)'/);
+    assert.match(promptsPoetry, /async function submitComment\(options = \{\}\) \{[\s\S]*const input = getActiveCommentInput\(\);[\s\S]*if \(!content && !selectedCommentImage\) \{[\s\S]*return;/);
 
+    [
+        'promptCommentComposer',
+        'PromptCommentComposer',
+        'PROMPT_COMMENT_COMPOSER_',
+        'prompt-comment-composer',
+        'freezePromptCommentComposerUnderlay',
+        'restorePromptCommentComposerFocusScroll',
+        'lockPromptCommentComposerPage',
+        'promptCommentComposerViewportCleanup',
+        'promptCommentProxy',
+        'PromptCommentProxy',
+        'prompt-comment-proxy'
+    ].forEach((legacyMarker) => {
+        assert.equal(promptsPoetry.includes(legacyMarker), false, `prompt comments should not retain legacy composer marker ${legacyMarker}`);
+    });
     assert.match(adminChat, /classList\.add\('admin-chat-keyboard-docked'\)/);
     assert.match(adminChat, /const targetBottom = Math\.max\(40, keyboardTop - 12\);/);
     assert.match(adminChat, /scheduleAdminChatFocusedRelease\(\) \{/);
@@ -294,6 +206,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     const chatWidgetCss = readRepoFile(path.join('css', 'chat-widget.css'));
     const homepageOverlayCss = readRepoFile(path.join('css', 'homepage-overlays.css'));
     const promptsCss = readRepoFile('prompts-poetry.css');
+    const promptCommentInputDock = readRepoFile(path.join('js', 'prompt-comment-input-dock.js'));
     const adminChatCss = readRepoFile(path.join('css', 'admin-chat.css'));
     const chatWidgetLoader = readRepoFile(path.join('js', 'chat-widget-loader.js'));
     const chatWidget = readRepoFile(path.join('js', 'components', 'ChatWidget.js'));
@@ -305,19 +218,24 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(styleCss, /--comment-modal-translate-y: 0px;/);
     assert.match(styleCss, /#guestbookModal \{[\s\S]*--guestbook-modal-viewport-top: 0px;[\s\S]*top: var\(--guestbook-modal-viewport-top\) !important;[\s\S]*width: var\(--guestbook-modal-viewport-width\) !important;/);
     assert.match(homepageOverlayCss, /#guestbookModal \{[\s\S]*--guestbook-modal-viewport-top: 0px;[\s\S]*top: var\(--guestbook-modal-viewport-top\) !important;[\s\S]*width: var\(--guestbook-modal-viewport-width\) !important;/);
-    assert.match(promptsCss, /\.prompt-comment-composer \{[\s\S]*--prompt-comment-composer-viewport-top: 0px;[\s\S]*top: var\(--prompt-comment-composer-viewport-top\) !important;[\s\S]*width: var\(--prompt-comment-composer-viewport-width\) !important;[\s\S]*height: var\(--prompt-comment-composer-overlay-height\) !important;/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock \{[\s\S]*position: fixed;[\s\S]*top: var\(--prompt-comment-input-top\);[\s\S]*width: 100vw;[\s\S]*height: var\(--prompt-comment-input-height\);/);
     assert.match(styleCss, /#guestbookModal \.guestbook-composer-sheet,[\s\S]*width: 95vw !important;[\s\S]*max-width: 1000px !important;/);
     assert.match(homepageOverlayCss, /#guestbookModal \.guestbook-composer-sheet,[\s\S]*width: 95vw !important;[\s\S]*max-width: 1000px !important;/);
-    assert.match(promptsCss, /\.prompt-comment-composer-sheet \{[\s\S]*width: 95vw;[\s\S]*max-width: 1000px;/);
-    assert.match(promptsCss, /body\.prompt-comment-composer-underlay-frozen #promptModal,[\s\S]*body\.prompt-comment-composer-underlay-frozen \.poetry-modal-backdrop \{[\s\S]*top: var\(--prompt-comment-composer-viewport-top, 0px\) !important;[\s\S]*height: var\(--prompt-comment-composer-overlay-height, 100svh\) !important;[\s\S]*transform: translate3d\(0, 0, 0\) !important;[\s\S]*overflow: hidden !important;/);
-    assert.match(promptsCss, /body\.prompt-comment-composer-underlay-frozen #promptModal \.modal-inner \{[\s\S]*transform: translate3d\(0, 0, 0\) scale\(1\) translateZ\(0\) !important;/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock__panel \{[\s\S]*width: 100%;[\s\S]*opacity: 0;[\s\S]*transition: opacity 100ms linear;/);
+    assert.match(promptsCss, /html\[data-theme="dark"\] \.prompt-comment-input-dock__panel \{[\s\S]*border-color: transparent;[\s\S]*background: #1a1f2b;/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock__field \{[\s\S]*min-height: 104px;[\s\S]*max-height: 190px;/);
+    assert.match(promptCommentInputDock, /Math\.min\(190, Math\.max\(104, this\.input\.scrollHeight \|\| 0\)\)/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock\.is-focusing \.prompt-comment-input-dock__field \{[\s\S]*position: absolute;[\s\S]*top: max\(12px, env\(safe-area-inset-top, 0px\)\);[\s\S]*height: 44px !important;[\s\S]*opacity: 0;/);
+    assert.doesNotMatch(promptsCss, /prompt-comment-input-active|prompt-comment-input-viewport-tracking|--prompt-comment-visual-top|--prompt-comment-page-shift-y/);
+    assert.doesNotMatch(promptsCss, /prompt-comment-composer-underlay-frozen|prompt-comment-composer-sheet/);
     assert.doesNotMatch(promptsCss, /--prompt-comment-underlay-shift-y/);
-    assert.match(promptsCss, /\.modal-inner\.comment-mode \.comment-input-area\.composer-proxy #commentInput \{[\s\S]*pointer-events: none;[\s\S]*touch-action: none;/);
-    assert.match(promptsCss, /\.modal-inner\.comment-mode \.comment-input-area\.composer-proxy \.comment-input-proxy-ui \{[\s\S]*pointer-events: auto;[\s\S]*touch-action: manipulation;/);
-    assert.match(promptsCss, /\.prompt-comment-composer \{[\s\S]*--composer-keyboard-offset: 0px;[\s\S]*--composer-sheet-top: max\(12px, calc\(\(var\(--prompt-comment-composer-overlay-height, 100dvh\) - 400px\) \/ 2\)\);/);
-    assert.match(promptsCss, /\.prompt-comment-composer\.ios-focus-lock \.prompt-comment-composer-sheet,[\s\S]*\.prompt-comment-composer\.keyboard-docked \.prompt-comment-composer-sheet,[\s\S]*\.prompt-comment-composer\.keyboard-docked\.active \.prompt-comment-composer-sheet,[\s\S]*\.prompt-comment-composer\.keyboard-docked\.active:focus-within \.prompt-comment-composer-sheet \{[\s\S]*transform: translate3d\(-50%, 0, 0\) scale\(1\) !important;[\s\S]*animation: none !important;/);
-    assert.match(promptsCss, /\.prompt-comment-composer-sheet \{[\s\S]*position: absolute;[\s\S]*top: var\(--composer-sheet-top, 24px\);[\s\S]*left: 50%;[\s\S]*transform: translate3d\(-50%, 0, 0\);/);
-    assert.match(promptsCss, /\.prompt-comment-composer-sheet\.composer-animating \{[\s\S]*transition: top 220ms cubic-bezier\(0\.22, 1, 0\.36, 1\) !important;/);
+    assert.match(promptsCss, /\.modal-inner\.comment-mode \.comment-input-area\.comment-input-dock-enabled #commentInput \{[\s\S]*display: none;/);
+    assert.match(promptsCss, /\.modal-inner\.comment-mode \.comment-input-area\.comment-input-dock-enabled \.comment-input-trigger \{[\s\S]*display: flex;[\s\S]*touch-action: manipulation;/);
+    assert.match(promptsCss, /\.modal-inner\.comment-mode \.comment-input-area \.comment-upload-btn,[\s\S]*\.send-comment-btn \{[\s\S]*display: inline-flex;/);
+    assert.doesNotMatch(promptsCss, /comment-input-proxy-ui|prompt-comment-proxy|prompt-comment-composer/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock\.is-focusing \.prompt-comment-input-dock__panel \{[\s\S]*opacity: 0\.001;[\s\S]*pointer-events: auto;[\s\S]*transition: none;/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock\.is-visible \.prompt-comment-input-dock__panel \{[\s\S]*opacity: 1;[\s\S]*pointer-events: auto;/);
+    assert.match(promptsCss, /\.prompt-comment-input-dock\.is-dismissing \.prompt-comment-input-dock__panel \{[\s\S]*opacity: 0;[\s\S]*pointer-events: none;/);
     assert.match(styleCss, /#commentModal\.keyboard-docked \.comment-composer-sheet/);
     assert.match(profileCss, /--profile-modal-dock-height:/);
     assert.match(profileCss, /#profileModal\.active\.keyboard-active \.modal-content\.profile-modal/);
@@ -342,9 +260,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     const commentSheetAnimatingRule = styleCss.match(/#commentModal \.comment-composer-sheet\.comment-sheet-animating \{[\s\S]*?\n\}/)?.[0] || '';
     const homepageGuestbookAnimatingRule = homepageOverlayCss.match(/#guestbookModal \.guestbook-composer-sheet\.guestbook-sheet-animating \{[\s\S]*?\n\}/)?.[0] || '';
     const promptModalAnimatingRule = promptsCss.match(/\.poetry-modal\.active:focus-within \.modal-inner\.prompt-modal-animating,[\s\S]*?\.poetry-modal\.keyboard-docked \.modal-inner\.prompt-modal-animating \{[\s\S]*?\n\}/)?.[0] || '';
-    const promptComposerAnimatingRule = promptsCss.match(/\.prompt-comment-composer-sheet\.composer-animating \{[\s\S]*?\n\}/)?.[0] || '';
-    const promptCaretStabilizingRule = promptsCss.match(/\.poetry-modal\.prompt-caret-stabilizing #commentInput,[\s\S]*?#promptCommentComposerInput:focus \{[\s\S]*?\n\}/)?.[0] || '';
-    assert.match(promptsCss, /\.prompt-comment-composer\.keyboard-settling #promptCommentComposerInput/);
+    const promptCaretStabilizingRule = promptsCss.match(/\.poetry-modal\.prompt-caret-stabilizing #commentInput,[\s\S]*?#commentInput:focus \{[\s\S]*?\n\}/)?.[0] || '';
 
     for (const [label, rule] of [
         ['chat widget', chatKeyboardAnimatingRule],
@@ -357,9 +273,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
         assert.match(rule, /transition: transform (?:var\(--chat-keyboard-motion-duration, )?250ms/, `${label} should dock with one 250ms transform transition`);
         assert.doesNotMatch(rule, /\bheight\s+\d+ms|\bmax-height\s+\d+ms/, `${label} should not animate height while docking to the keyboard`);
     }
-    assert.match(promptComposerAnimatingRule, /transition: top 220ms cubic-bezier\(0\.22, 1, 0\.36, 1\) !important;/);
-    assert.doesNotMatch(promptComposerAnimatingRule, /\bheight\s+\d+ms|\bmax-height\s+\d+ms/);
-    assert.doesNotMatch(promptComposerAnimatingRule, /transition: transform/);
+    assert.match(promptCaretStabilizingRule, /caret-color: transparent !important;/);
 
     assert.match(
         chatWidgetCss,

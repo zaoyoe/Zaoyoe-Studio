@@ -33,19 +33,51 @@
 
       <template #actions>
         <div class="flex justify-end gap-3">
-        <button
-          @click="loadApiKeys"
-          :disabled="loading"
-          class="btn btn-secondary"
-          :title="t('common.refresh')"
-        >
-          <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-        </button>
-        <button @click="openCreateModal" class="btn btn-primary" data-tour="keys-create-btn">
-          <Icon name="plus" size="md" class="mr-2" />
-          {{ t('keys.createKey') }}
-        </button>
-      </div>
+          <button
+            @click="loadApiKeys"
+            :disabled="loading"
+            class="btn btn-secondary"
+            :title="t('common.refresh')"
+          >
+            <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+          </button>
+          <div class="relative" ref="columnDropdownRef">
+            <button
+              @click="showColumnDropdown = !showColumnDropdown"
+              class="btn btn-secondary px-2 md:px-3"
+              :title="t('keys.columnSettings')"
+            >
+              <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
+              </svg>
+              <span class="hidden md:inline">{{ t('keys.columnSettings') }}</span>
+            </button>
+            <div
+              v-if="showColumnDropdown"
+              class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
+            >
+              <button
+                v-for="col in toggleableColumns"
+                :key="col.key"
+                @click="toggleColumn(col.key)"
+                class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+              >
+                <span>{{ col.label }}</span>
+                <Icon
+                  v-if="isColumnVisible(col.key)"
+                  name="check"
+                  size="sm"
+                  class="text-primary-500"
+                  :stroke-width="2"
+                />
+              </button>
+            </div>
+          </div>
+          <button @click="openCreateModal" class="btn btn-primary" data-tour="keys-create-btn">
+            <Icon name="plus" size="md" class="mr-2" />
+            {{ t('keys.createKey') }}
+          </button>
+        </div>
       </template>
 
       <template #table>
@@ -58,6 +90,10 @@
           default-sort-order="desc"
           @sort="handleSort"
         >
+          <template #cell-id="{ value }">
+            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
+          </template>
+
           <template #cell-key="{ value, row }">
             <div class="flex items-center gap-2">
               <code class="code text-xs">
@@ -112,6 +148,10 @@
                   :subscription-type="row.group.subscription_type"
                   :rate-multiplier="row.group.rate_multiplier"
                   :user-rate-multiplier="userGroupRates[row.group.id]"
+                  :peak-rate-enabled="row.group.peak_rate_enabled"
+                  :peak-start="row.group.peak_start"
+                  :peak-end="row.group.peak_end"
+                  :peak-rate-multiplier="row.group.peak_rate_multiplier"
                 />
                 <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
                   t('keys.noGroup')
@@ -132,6 +172,19 @@
                 </svg>
               </button>
             </div>
+          </template>
+
+          <template #cell-current_concurrency="{ value }">
+            <span
+              :class="[
+                'inline-flex min-w-8 items-center justify-center rounded px-2 py-1 text-sm font-semibold tabular-nums',
+                (value ?? 0) > 0
+                  ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
+              ]"
+            >
+              {{ value ?? 0 }}
+            </span>
           </template>
 
           <template #cell-usage="{ row }">
@@ -305,6 +358,13 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
+          <template #cell-last_used_ip="{ value }">
+            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ value }}
+            </span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
           <template #cell-created_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
@@ -422,6 +482,10 @@
                 :subscription-type="(option as unknown as GroupOption).subscriptionType"
                 :rate-multiplier="(option as unknown as GroupOption).rate"
                 :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
+                :peak-start="(option as unknown as GroupOption).peakStart"
+                :peak-end="(option as unknown as GroupOption).peakEnd"
+                :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
               />
               <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
             </template>
@@ -432,6 +496,10 @@
                 :subscription-type="(option as unknown as GroupOption).subscriptionType"
                 :rate-multiplier="(option as unknown as GroupOption).rate"
                 :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
+                :peak-start="(option as unknown as GroupOption).peakStart"
+                :peak-end="(option as unknown as GroupOption).peakEnd"
+                :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
                 :description="(option as unknown as GroupOption).description"
                 :selected="selected"
               />
@@ -951,9 +1019,7 @@
                 type="checkbox"
                 class="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 bg-white text-primary-600 focus:ring-primary-500 dark:border-gray-500"
               />
-              <span>
-                {{ regionalRestrictionModalCopy.confirmation }}
-              </span>
+              <span>{{ regionalRestrictionModalCopy.confirmation }}</span>
             </label>
 
             <div class="mt-6 flex flex-wrap gap-3">
@@ -966,17 +1032,13 @@
               >
                 {{ regionalRestrictionModalCopy.confirmButton }}
               </button>
-              <button
-                type="button"
-                class="btn btn-secondary min-w-[7rem]"
-                @click="leaveApiKeyPage"
-              >
+              <button type="button" class="btn btn-secondary min-w-[7rem]" @click="leaveApiKeyPage">
                 {{ regionalRestrictionModalCopy.backButton }}
               </button>
             </div>
 
             <div v-if="!regionalRestrictionBlocked" class="mt-6 border-t border-gray-200 pt-4 dark:border-white/10">
-              <p v-if="!regionalRestrictionBlocked" class="text-xs leading-5 text-gray-500 dark:text-gray-400">
+              <p class="text-xs leading-5 text-gray-500 dark:text-gray-400">
                 {{ regionalRestrictionModalCopy.storageNotice }}
               </p>
             </div>
@@ -1128,6 +1190,10 @@
               :subscription-type="option.subscriptionType"
               :rate-multiplier="option.rate"
               :user-rate-multiplier="option.userRate"
+              :peak-rate-enabled="option.peakRateEnabled"
+              :peak-start="option.peakStart"
+              :peak-end="option.peakEnd"
+              :peak-rate-multiplier="option.peakRateMultiplier"
               :description="option.description"
               :selected="
                 selectedKeyForGroup?.group_id === option.value ||
@@ -1146,29 +1212,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { useAppStore } from '@/stores/app'
-import { useOnboardingStore } from '@/stores/onboarding'
-import { useClipboard } from '@/composables/useClipboard'
+	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { useI18n } from 'vue-i18n'
+	import { useRouter } from 'vue-router'
+	import { useAppStore } from '@/stores/app'
+	import { useOnboardingStore } from '@/stores/onboarding'
+	import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+
+const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-import DataTable from '@/components/common/DataTable.vue'
-import Pagination from '@/components/common/Pagination.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import Select from '@/components/common/Select.vue'
-import SearchInput from '@/components/common/SearchInput.vue'
-import Icon from '@/components/icons/Icon.vue'
-import UseKeyModal from '@/components/keys/UseKeyModal.vue'
-import EndpointPopover from '@/components/keys/EndpointPopover.vue'
-import GroupBadge from '@/components/common/GroupBadge.vue'
-import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
+	import DataTable from '@/components/common/DataTable.vue'
+	import Pagination from '@/components/common/Pagination.vue'
+	import BaseDialog from '@/components/common/BaseDialog.vue'
+	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+	import EmptyState from '@/components/common/EmptyState.vue'
+	import Select from '@/components/common/Select.vue'
+	import SearchInput from '@/components/common/SearchInput.vue'
+	import Icon from '@/components/icons/Icon.vue'
+	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
+	import GroupBadge from '@/components/common/GroupBadge.vue'
+	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import type { RegionalRestrictionScope, RegionalRestrictionStatus } from '@/api/keys'
@@ -1176,12 +1244,9 @@ import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
-  resolveCcSwitchClaudeModelSlots,
-  type CcSwitchClaudeModelSlots,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
 
-const { t } = useI18n()
 const router = useRouter()
 
 // Helper to format date for datetime-local input
@@ -1197,6 +1262,10 @@ interface GroupOption {
   description: string | null
   rate: number
   userRate: number | null
+  peakRateEnabled: boolean
+  peakStart: string
+  peakEnd: string
+  peakRateMultiplier: number
   subscriptionType: SubscriptionType
   platform: GroupPlatform
 }
@@ -1205,18 +1274,99 @@ const appStore = useAppStore()
 const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
-const columns = computed<Column[]>(() => [
+const allColumns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },
+  { key: 'id', label: t('keys.id'), sortable: true },
   { key: 'key', label: t('keys.apiKey'), sortable: false },
   { key: 'group', label: t('keys.group'), sortable: false },
+  { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
   { key: 'usage', label: t('keys.usage'), sortable: false },
   { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
   { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
   { key: 'status', label: t('common.status'), sortable: true },
   { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
+  { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false },
   { key: 'created_at', label: t('keys.created'), sortable: true },
   { key: 'actions', label: t('common.actions'), sortable: false }
 ])
+
+const ALWAYS_VISIBLE_COLUMNS = new Set(['name', 'actions'])
+const DEFAULT_HIDDEN_COLUMNS = ['id', 'rate_limit', 'last_used_at', 'last_used_ip']
+const HIDDEN_COLUMNS_KEY = 'api-key-hidden-columns'
+const COLUMN_SETTINGS_VERSION_KEY = 'api-key-column-settings-version'
+const COLUMN_SETTINGS_VERSION = 3
+const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
+  2: ['last_used_ip'],
+  3: ['id']
+}
+
+const toggleableColumns = computed(() =>
+  allColumns.value.filter((col) => !ALWAYS_VISIBLE_COLUMNS.has(col.key))
+)
+
+const hiddenColumns = reactive<Set<string>>(new Set())
+
+const saveColumnsToStorage = () => {
+  try {
+    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+    localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
+  } catch (error) {
+    console.error('Failed to save API key table columns:', error)
+  }
+}
+
+const loadSavedColumns = () => {
+  hiddenColumns.clear()
+  try {
+    const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved) as string[]
+      const validColumnKeys = new Set(allColumns.value.map((col) => col.key))
+      parsed
+        .filter((key) =>
+          typeof key === 'string' &&
+          validColumnKeys.has(key) &&
+          !ALWAYS_VISIBLE_COLUMNS.has(key)
+        )
+        .forEach((key) => hiddenColumns.add(key))
+      const storedVersion = Number(localStorage.getItem(COLUMN_SETTINGS_VERSION_KEY) ?? '1')
+      if (storedVersion < COLUMN_SETTINGS_VERSION) {
+        for (let v = storedVersion + 1; v <= COLUMN_SETTINGS_VERSION; v++) {
+          for (const key of VERSION_NEW_HIDDEN_COLUMNS[v] ?? []) {
+            if (validColumnKeys.has(key) && !ALWAYS_VISIBLE_COLUMNS.has(key)) {
+              hiddenColumns.add(key)
+            }
+          }
+        }
+        saveColumnsToStorage()
+      } else {
+        localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
+      }
+    } else {
+      DEFAULT_HIDDEN_COLUMNS.forEach((key) => hiddenColumns.add(key))
+      localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
+    }
+  } catch (error) {
+    console.error('Failed to load API key table columns:', error)
+    DEFAULT_HIDDEN_COLUMNS.forEach((key) => hiddenColumns.add(key))
+  }
+}
+
+const toggleColumn = (key: string) => {
+  if (ALWAYS_VISIBLE_COLUMNS.has(key)) return
+  if (hiddenColumns.has(key)) {
+    hiddenColumns.delete(key)
+  } else {
+    hiddenColumns.add(key)
+  }
+  saveColumnsToStorage()
+}
+
+const isColumnVisible = (key: string) => !hiddenColumns.has(key)
+
+const columns = computed<Column[]>(() =>
+  allColumns.value.filter((col) => ALWAYS_VISIBLE_COLUMNS.has(col.key) || !hiddenColumns.has(col.key))
+)
 
 const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
@@ -1250,6 +1400,7 @@ const showResetQuotaDialog = ref(false)
 const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
+const showColumnDropdown = ref(false)
 const showRegionalRestrictionModal = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
@@ -1263,6 +1414,7 @@ const apiKeysLoaded = ref(false)
 const pendingRegionalRestrictionAction = ref<'create' | null>(null)
 const regionalRestrictionAcceptedThisVisit = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const columnDropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
@@ -1379,10 +1531,8 @@ const hasAcceptedRegionalRestriction = () => {
   if (regionalRestrictionConfirmationFrequency.value === 'always') {
     return regionalRestrictionAcceptedThisVisit.value
   }
-  const key = regionalRestrictionStorageKey.value
-  if (!key) return false
   try {
-    const raw = localStorage.getItem(key)
+    const raw = localStorage.getItem(regionalRestrictionStorageKey.value)
     if (!raw) return false
     const parsed = JSON.parse(raw) as { revision?: string; accepted_at?: string }
     const revision = regionalRestrictionStatus.value?.revision || publicSettings.value?.regional_restriction_confirmation_revision || ''
@@ -1410,11 +1560,7 @@ const openRegionalRestrictionModal = async (scope: RegionalRestrictionScope = 'a
     showRegionalRestrictionModal.value = true
     return false
   }
-  if (!regionalRestrictionConfirmationRequired.value) {
-    showRegionalRestrictionModal.value = false
-    return true
-  }
-  if (hasAcceptedRegionalRestriction()) {
+  if (!regionalRestrictionConfirmationRequired.value || hasAcceptedRegionalRestriction()) {
     showRegionalRestrictionModal.value = false
     return true
   }
@@ -1431,10 +1577,7 @@ const acceptRegionalRestrictionConfirmation = () => {
   if (revision) {
     localStorage.setItem(
       regionalRestrictionStorageKey.value,
-      JSON.stringify({
-        revision,
-        accepted_at: new Date().toISOString()
-      })
+      JSON.stringify({ revision, accepted_at: new Date().toISOString() })
     )
   }
   regionalRestrictionAcceptedThisVisit.value = true
@@ -1515,6 +1658,13 @@ const statusOptions = computed(() => [
   { value: 'inactive', label: t('common.inactive') }
 ])
 
+const shouldSubmitEditStatus = (key: ApiKey, status: 'active' | 'inactive') => {
+  if (key.status === 'quota_exhausted' || key.status === 'expired') {
+    return status === 'active'
+  }
+  return true
+}
+
 // Filter dropdown options
 const groupFilterOptions = computed(() => [
   { value: '', label: t('keys.allGroups') },
@@ -1553,6 +1703,10 @@ const groupOptions = computed(() =>
     description: group.description,
     rate: group.rate_multiplier,
     userRate: userGroupRates.value[group.id] ?? null,
+    peakRateEnabled: group.peak_rate_enabled,
+    peakStart: group.peak_start,
+    peakEnd: group.peak_end,
+    peakRateMultiplier: group.peak_rate_multiplier,
     subscriptionType: group.subscription_type,
     platform: group.platform
   }))
@@ -1792,6 +1946,9 @@ const closeGroupSelector = (event: MouseEvent) => {
     groupSelectorKeyId.value = null
     dropdownPosition.value = null
   }
+  if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
+    showColumnDropdown.value = false
+  }
 }
 
 const confirmDelete = (key: ApiKey) => {
@@ -1863,10 +2020,9 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (showEditModal.value && selectedKey.value) {
-      await keysAPI.update(selectedKey.value.id, {
+      const updates: UpdateApiKeyRequest = {
         name: formData.value.name,
         group_id: formData.value.group_id,
-        status: formData.value.status,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
         quota: quota,
@@ -1874,7 +2030,11 @@ const handleSubmit = async () => {
         rate_limit_5h: rateLimitData.rate_limit_5h,
         rate_limit_1d: rateLimitData.rate_limit_1d,
         rate_limit_7d: rateLimitData.rate_limit_7d,
-      })
+      }
+      if (shouldSubmitEditStatus(selectedKey.value, formData.value.status)) {
+        updates.status = formData.value.status
+      }
+      await keysAPI.update(selectedKey.value.id, updates)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
@@ -2025,64 +2185,7 @@ const importToCcswitch = (row: ApiKey) => {
   executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
 }
 
-const buildClaudeModelsUrl = (
-  baseUrl: string,
-  platform: GroupPlatform | undefined,
-  clientType: CcSwitchClientType
-) => {
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
-  if (platform === 'antigravity' && clientType === 'claude') {
-    return `${normalizedBaseUrl}/antigravity/v1/models`
-  }
-  return `${normalizedBaseUrl}/v1/models`
-}
-
-const fetchClaudeModelSlotsForCcs = async (
-  baseUrl: string,
-  platform: GroupPlatform | undefined,
-  clientType: CcSwitchClientType,
-  apiKey: string
-): Promise<CcSwitchClaudeModelSlots | undefined> => {
-  const normalizedPlatform = platform || 'anthropic'
-  if (
-    clientType !== 'claude' ||
-    (normalizedPlatform !== 'anthropic' && normalizedPlatform !== 'antigravity')
-  ) {
-    return undefined
-  }
-
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 3000)
-
-  try {
-    const response = await fetch(buildClaudeModelsUrl(baseUrl, platform, clientType), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      },
-      signal: controller.signal
-    })
-
-    if (!response.ok) return undefined
-
-    const payload = (await response.json()) as { data?: Array<{ id?: unknown }> }
-    const modelIds =
-      payload.data
-        ?.map((model) => (typeof model.id === 'string' ? model.id : ''))
-        .filter((modelId) => modelId.length > 0) || []
-
-    return resolveCcSwitchClaudeModelSlots(modelIds)
-  } catch (error: any) {
-    if (error?.name !== 'AbortError') {
-      console.warn('Failed to load Claude models for CC Switch import:', error)
-    }
-    return undefined
-  } finally {
-    window.clearTimeout(timeoutId)
-  }
-}
-
-const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => {
+const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
@@ -2101,17 +2204,15 @@ const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => 
         unit
       };
     }
-	  })`
+  })`
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
-  const claudeModelSlots = await fetchClaudeModelSlotsForCcs(baseUrl, platform, clientType, row.key)
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
     platform,
     clientType,
     providerName,
     apiKey: row.key,
-    usageScript,
-    claudeModelSlots
+    usageScript
   })
 
   try {
@@ -2155,9 +2256,10 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
-  loadPublicSettings()
+  loadSavedColumns()
   loadGroups()
   loadUserGroupRates()
+  loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
   resetTimer = setInterval(() => { now.value = new Date() }, 60000)
   void openRegionalRestrictionModal().then((allowed) => {
@@ -2174,28 +2276,3 @@ onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
-
-<style scoped>
-.api-key-confirmation-fade-enter-active,
-.api-key-confirmation-fade-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.api-key-confirmation-fade-enter-from,
-.api-key-confirmation-fade-leave-to {
-  opacity: 0;
-}
-
-.api-key-confirmation-fade-enter-active > div,
-.api-key-confirmation-fade-leave-active > div {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
-}
-
-.api-key-confirmation-fade-enter-from > div,
-.api-key-confirmation-fade-leave-to > div {
-  opacity: 0;
-  transform: translateY(8px) scale(0.99);
-}
-</style>

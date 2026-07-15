@@ -117,6 +117,8 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 			service.OpenAIUpstreamTransportHTTPSSE,
 			service.OpenAIEndpointCapabilityVideos,
 			false,
+			false,
+			service.PlatformOpenAI,
 		)
 		if err != nil {
 			reqLog.Warn("openai.videos.account_select_failed",

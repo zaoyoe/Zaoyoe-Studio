@@ -238,15 +238,17 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
         'html:not([data-theme="dark"]) .modal-inner.comment-mode .modal-content-col',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-footer-toggle',
-        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
-        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui',
-        '20260502_PROMPTS_COMMENT_FAB_COMPOSITE_1',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.comment-input-dock-enabled .comment-input-trigger',
+        '.modal-inner.comment-mode .comment-input-area .comment-upload-btn',
+        '.modal-inner.comment-mode .comment-input-area .send-comment-btn',
+        '.modal-inner.comment-mode .comment-list.comment-list-empty .comment-empty-state',
+        'color: rgba(148, 163, 184, 0.56);',
         '20260502_PROMPTS_PROMPT_CARD_STABLE_1',
         '.modal-inner:not(.comment-mode) .prompt-text.prompt-text--loading',
         'html[data-theme="light"] .modal-inner.comment-mode .close-modal-btn',
-        'html[data-theme="light"] .prompt-comment-composer-sheet',
-        'html[data-theme="light"] .prompt-comment-composer-send',
-        'html:not([data-theme="dark"]) .prompt-comment-composer-editor',
+        '.prompt-comment-input-dock__panel',
+        'html[data-theme="dark"] .prompt-comment-input-dock__panel',
+        '.prompt-comment-input-dock__field',
         '.modal-inner.comment-mode.prompt-comment-geometry-locked:not(.keyboard-docked)'
     ];
 
@@ -257,6 +259,11 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
             `prompts-poetry.css should contain ${marker}`
         );
     }
+
+    assert.equal(promptsHtml.includes('comment-input-proxy-ui'), false, 'mobile comments should not retain the circular add-comment trigger');
+    assert.equal(promptsHtml.includes('id="commentInputTrigger"'), true, 'mobile comments should use a non-editable trigger button');
+    assert.equal(promptsCss.includes('.prompt-comment-input-dock__send'), false, 'the input dock should not contain a send control');
+    assert.equal(promptsCss.includes('.prompt-comment-input-dock__upload'), false, 'the input dock should not contain an image control');
 
     assert.equal(
         /@media \(min-width:\s*769px\)\s*\{[\s\S]*?\.modal-image-col\s*\{[\s\S]*?flex:\s*0 0 calc\(50% - 40px\);/.test(promptsCss),
@@ -309,9 +316,10 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
         'comment mode return cleanup should remove both transient title animation classes together'
     );
     assert.equal(
-        promptsSource.includes('}, 560);'),
+        promptsSource.includes('const PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS = 620;')
+            && promptsSource.includes('isMobileLayout ? PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS : 560'),
         true,
-        'comment mode title reveal should last long enough to match the prompt and image return animations'
+        'comment mode title reveal should clean up shortly after the compact prompt and image return animations finish'
     );
     assert.equal(
         /\.modal-inner\.comment-mode \.comment-section\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?margin-top:\s*0;/.test(promptsCss),
