@@ -338,7 +338,18 @@ test('wallet transactions handler returns browse payload with prompt title map',
                 amount: -3,
                 reason: 'unlock_prompt',
                 reference_id: 'prompt-1',
+                is_visible: true,
                 created_at: '2026-04-16T09:00:00.000Z'
+            },
+            {
+                id: 'ledger-hidden-release',
+                user_id: 'user-wallet-1',
+                site: 'cn',
+                amount: 0,
+                reason: 'AI 文本对话未完成，释放预授权',
+                reference_id: 'task-hidden',
+                is_visible: false,
+                created_at: '2026-04-16T09:05:00.000Z'
             }
         ],
         prompts: [
@@ -366,7 +377,42 @@ test('wallet transactions handler returns browse payload with prompt title map',
     assert.equal(payload.shop_orders[0].discount_snapshot.applied_discounts[0].code, 'FREEONE');
     assert.equal(payload.ledger_entries.length, 1);
     assert.equal(payload.ledger_entries[0].amount, -3);
+    assert.equal(payload.ledger_entries.some((entry) => entry.id === 'ledger-hidden-release'), false);
     assert.equal(payload.prompt_titles['prompt-1'], '高级提示词');
+});
+
+test('wallet transactions handler remains compatible when points_ledger.is_visible is missing', async () => {
+    const handlers = createHandlers({
+        missingColumns: {
+            points_ledger: ['is_visible']
+        },
+        pointsLedger: [
+            {
+                id: 'legacy-ledger-transaction',
+                user_id: 'user-wallet-1',
+                site: 'cn',
+                amount: 3,
+                reason: 'legacy_recharge',
+                reference_id: 'legacy-transaction-1',
+                created_at: '2026-04-16T09:00:00.000Z'
+            }
+        ]
+    });
+    const res = createMockResponse();
+
+    await handlers.transactions({
+        method: 'GET',
+        query: {
+            site: 'cn',
+            limit: '100'
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.ledger_entries.length, 1);
+    assert.equal(payload.ledger_entries[0].id, 'legacy-ledger-transaction');
 });
 
 test('wallet transactions handler selects paid and gross shop order totals', () => {
@@ -405,6 +451,7 @@ test('wallet transactions handler search path expands prompt-title and verify-lo
                 amount: -4,
                 reason: 'unlock_prompt',
                 reference_id: 'prompt-2',
+                is_visible: true,
                 created_at: '2026-04-16T09:00:00.000Z'
             },
             {
@@ -414,7 +461,18 @@ test('wallet transactions handler search path expands prompt-title and verify-lo
                 amount: -2,
                 reason: 'verify_google_one',
                 reference_id: 'verify-job-1',
+                is_visible: true,
                 created_at: '2026-04-16T09:05:00.000Z'
+            },
+            {
+                id: 'ledger-hidden-search',
+                user_id: 'user-wallet-1',
+                site: 'cn',
+                amount: 0,
+                reason: '礼包隐藏释放记录',
+                reference_id: 'hidden-search',
+                is_visible: false,
+                created_at: '2026-04-16T09:07:00.000Z'
             }
         ],
         prompts: [
@@ -448,6 +506,7 @@ test('wallet transactions handler search path expands prompt-title and verify-lo
     const promptPayload = promptRes.json();
     assert.equal(promptRes.statusCode, 200);
     assert.equal(promptPayload.ledger_entries.some((entry) => entry.id === 'ledger-prompt-search'), true);
+    assert.equal(promptPayload.ledger_entries.some((entry) => entry.id === 'ledger-hidden-search'), false);
     assert.equal(promptPayload.prompt_titles['prompt-2'], '谷歌礼包提示词');
 
     const verifyRes = createMockResponse();

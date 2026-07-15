@@ -363,6 +363,37 @@ async function loadWalletHistoryRows(client, { userId, site, limit }) {
     return [];
 }
 
+async function queryVisibleWalletLedgerRows(client, {
+    userId,
+    site,
+    limit,
+    configure = (query) => query
+}) {
+    const runQuery = (hasVisible) => {
+        let query = client
+            .from('points_ledger')
+            .select(hasVisible
+                ? 'id, amount, reason, reference_id, created_at, is_visible'
+                : 'id, amount, reason, reference_id, created_at')
+            .eq('user_id', userId)
+            .eq('site', site);
+
+        if (hasVisible) {
+            query = query.eq('is_visible', true);
+        }
+
+        return configure(query)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+    };
+
+    let result = await runQuery(true);
+    if (result.error && isMissingColumnError(result.error)) {
+        result = await runQuery(false);
+    }
+    return result;
+}
+
 async function queryWalletBrowseData(client, { userId, site, limit }) {
     const [shopOrdersResult, ledgerResult] = await Promise.all([
         client
@@ -388,13 +419,11 @@ async function queryWalletBrowseData(client, { userId, site, limit }) {
             .eq('site', site)
             .order('created_at', { ascending: false })
             .limit(limit),
-        client
-            .from('points_ledger')
-            .select('id, amount, reason, reference_id, created_at')
-            .eq('user_id', userId)
-            .eq('site', site)
-            .order('created_at', { ascending: false })
-            .limit(limit)
+        queryVisibleWalletLedgerRows(client, {
+            userId,
+            site,
+            limit
+        })
     ]);
 
     if (shopOrdersResult.error) throw shopOrdersResult.error;
@@ -462,34 +491,28 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
     ];
 
     const ledgerRequests = [
-        client
-            .from('points_ledger')
-            .select('id, amount, reason, reference_id, created_at')
-            .eq('user_id', userId)
-            .eq('site', site)
-            .ilike('reference_id', likeValue)
-            .order('created_at', { ascending: false })
-            .limit(searchLimit),
-        client
-            .from('points_ledger')
-            .select('id, amount, reason, reference_id, created_at')
-            .eq('user_id', userId)
-            .eq('site', site)
-            .ilike('reason', likeValue)
-            .order('created_at', { ascending: false })
-            .limit(searchLimit)
+        queryVisibleWalletLedgerRows(client, {
+            userId,
+            site,
+            limit: searchLimit,
+            configure: (ledgerQuery) => ledgerQuery.ilike('reference_id', likeValue)
+        }),
+        queryVisibleWalletLedgerRows(client, {
+            userId,
+            site,
+            limit: searchLimit,
+            configure: (ledgerQuery) => ledgerQuery.ilike('reason', likeValue)
+        })
     ];
 
     if (isPositiveAmountQuery) {
         ledgerRequests.push(
-            client
-                .from('points_ledger')
-                .select('id, amount, reason, reference_id, created_at')
-                .eq('user_id', userId)
-                .eq('site', site)
-                .eq('amount', numericQuery)
-                .order('created_at', { ascending: false })
-                .limit(searchLimit)
+            queryVisibleWalletLedgerRows(client, {
+                userId,
+                site,
+                limit: searchLimit,
+                configure: (ledgerQuery) => ledgerQuery.eq('amount', numericQuery)
+            })
         );
     }
 
@@ -521,13 +544,12 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
         );
 
         ledgerRequests.push(
-            client
-                .from('points_ledger')
-                .select('id, amount, reason, reference_id, created_at')
-                .eq('user_id', userId)
-                .eq('site', site)
-                .eq('id', trimmedQuery)
-                .limit(20)
+            queryVisibleWalletLedgerRows(client, {
+                userId,
+                site,
+                limit: 20,
+                configure: (ledgerQuery) => ledgerQuery.eq('id', trimmedQuery)
+            })
         );
     }
 
@@ -569,15 +591,14 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
 
     if (promptIds.length > 0) {
         ledgerRequests.push(
-            client
-                .from('points_ledger')
-                .select('id, amount, reason, reference_id, created_at')
-                .eq('user_id', userId)
-                .eq('site', site)
-                .eq('reason', 'unlock_prompt')
-                .in('reference_id', promptIds)
-                .order('created_at', { ascending: false })
-                .limit(searchLimit)
+            queryVisibleWalletLedgerRows(client, {
+                userId,
+                site,
+                limit: searchLimit,
+                configure: (ledgerQuery) => ledgerQuery
+                    .eq('reason', 'unlock_prompt')
+                    .in('reference_id', promptIds)
+            })
         );
     }
 
@@ -597,14 +618,13 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
 
     if (verifyReferenceIds.length > 0) {
         ledgerRequests.push(
-            client
-                .from('points_ledger')
-                .select('id, amount, reason, reference_id, created_at')
-                .eq('user_id', userId)
-                .eq('site', site)
-                .in('reference_id', [...new Set(verifyReferenceIds)].slice(0, searchLimit))
-                .order('created_at', { ascending: false })
-                .limit(searchLimit)
+            queryVisibleWalletLedgerRows(client, {
+                userId,
+                site,
+                limit: searchLimit,
+                configure: (ledgerQuery) => ledgerQuery
+                    .in('reference_id', [...new Set(verifyReferenceIds)].slice(0, searchLimit))
+            })
         );
     }
 
