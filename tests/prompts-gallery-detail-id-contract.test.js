@@ -15,7 +15,7 @@ test('prompt gallery detail opens by stable Supabase id instead of page/index id
         'card.dataset.promptId = promptOpenId;',
         'bindPromptCardActivation(card, promptOpenId);',
         'openPromptModal(getPromptStableOpenId(prompt));',
-        'openPromptModal(getPromptStableOpenId(relatedPrompt));'
+        'openPromptModal(getPromptStableOpenId(relatedPrompt), { animateRelatedSelection: true });'
     ].forEach((marker) => {
         assert.equal(source.includes(marker), true, `prompts-poetry.js should include ${marker}`);
     });
@@ -23,7 +23,7 @@ test('prompt gallery detail opens by stable Supabase id instead of page/index id
     const finderStart = source.indexOf('function findPromptForModalOpen(id)');
     assert.notEqual(finderStart, -1, 'findPromptForModalOpen should exist');
 
-    const finderEnd = source.indexOf('function openPromptModal(id)', finderStart);
+    const finderEnd = source.indexOf('function openPromptModal(id, options = {})', finderStart);
     assert.notEqual(finderEnd, -1, 'openPromptModal should follow findPromptForModalOpen');
 
     const finderBody = source.slice(finderStart, finderEnd);
