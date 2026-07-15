@@ -65,7 +65,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260531_HOME_SHOP_IMAGE_CACHE_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260715_HOME_PROMPTS_LIVE_ONLY_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
@@ -332,20 +332,6 @@ function getHomepagePromptPoolLastUpdatedKey(site = getHomepageRuntimeSite()) {
   return `${HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY}_${site}`;
 }
 
-function getHomepageStaticPromptSource() {
-  const homepagePrompts = Array.isArray(window.__HOMEPAGE_PROMPTS__) ? window.__HOMEPAGE_PROMPTS__ : [];
-  if (homepagePrompts.length > 0) {
-    return homepagePrompts;
-  }
-  return Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
-}
-
-function isHomepagePromptSourceReady() {
-  return window.__HOMEPAGE_PROMPTS_READY__ === true
-    || Array.isArray(window.__HOMEPAGE_PROMPTS__)
-    || Array.isArray(window.PROMPTS);
-}
-
 function getHomepageRuntimeLanguage() {
   return window.i18n?.getCurrentLanguage?.() === 'en' ? 'en' : 'zh';
 }
@@ -579,6 +565,13 @@ function resolveHomepageGongyiBrandName(value) {
 }
 
 async function loadHomepageConfigRows(site = getHomepageRuntimeSite()) {
+  if (!window.supabaseClient) {
+    await waitForHomepageSupabaseClientReady();
+  }
+  if (!window.supabaseClient) {
+    throw new Error('supabase_client_unavailable');
+  }
+
   const { data, error } = await window.supabaseClient
     .rpc('fn_get_homepage_config', {
       p_site: site,
@@ -2239,27 +2232,18 @@ const FramerHome = {
   },
 
   getPromptPool() {
-    if (Array.isArray(this.promptPool) && this.promptPool.length > 0) {
-      return this.promptPool;
-    }
-    return filterHomeVisiblePrompts(getHomepageStaticPromptSource());
+    return Array.isArray(this.promptPool) ? this.promptPool : [];
   },
 
-  async fetchVisiblePromptPool(options = {}) {
-    const { preferStaticFirst = false } = options;
-    const fallbackPool = filterHomeVisiblePrompts(getHomepageStaticPromptSource());
-
-    if (preferStaticFirst && fallbackPool.length > 0) {
-      this.promptPool = fallbackPool;
-      if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
-        window.PROMPTS = fallbackPool;
-      }
-      return fallbackPool;
+  async fetchVisiblePromptPool() {
+    if (!window.supabaseClient) {
+      await waitForHomepageSupabaseClientReady();
     }
 
     if (!window.supabaseClient) {
-      this.promptPool = fallbackPool;
-      return fallbackPool;
+      this.promptPool = [];
+      window.PROMPTS = [];
+      return [];
     }
 
     try {
@@ -2289,11 +2273,9 @@ const FramerHome = {
       return livePool;
     } catch (error) {
       console.warn('Failed to fetch live homepage prompt pool:', error);
-      this.promptPool = fallbackPool;
-      if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
-        window.PROMPTS = fallbackPool;
-      }
-      return fallbackPool;
+      this.promptPool = [];
+      window.PROMPTS = [];
+      return [];
     }
   },
 
@@ -2315,8 +2297,6 @@ const FramerHome = {
     }
 
     try {
-      const promptSection = document.getElementById('prompts-section');
-      const promptSectionAlreadyPainted = Boolean(promptSection?.querySelector?.('.masonry-card'));
       const previousSignature = buildHomepagePromptRenderSignature(this.cachedData?.prompts || []);
       const livePromptPool = await this.fetchVisiblePromptPool();
       const nextPrompts = await this.aggregatePrompts(this.config.prompts || {});
@@ -2329,9 +2309,7 @@ const FramerHome = {
       this.cachedData = this.cachedData || {};
       this.cachedData.prompts = nextPrompts;
       this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
-      if (options.forceRender === true || !promptSectionAlreadyPainted) {
-        this.renderPrompts();
-      }
+      this.renderPrompts();
       this.renderTicker();
       this.scheduleScrollAnimationsInit();
 
@@ -2350,7 +2328,7 @@ const FramerHome = {
       }
 
       console.log('♻️ Homepage prompt pool synced from live source', {
-        domPatched: options.forceRender === true || !promptSectionAlreadyPainted,
+        domPatched: true,
         reason: String(options.reason || 'background-sync').trim() || 'background-sync'
       });
       return true;
@@ -3012,12 +2990,13 @@ const FramerHome = {
 
           // Use if < 5 minutes old and contains actual translated text
           if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && canUsePrefetch) {
-            this.cachedData = prefetch.cachedData;
+            this.cachedData = {
+              ...prefetch.cachedData,
+              prompts: []
+            };
             this.config = prefetch.config;
-            this.promptPool = Array.isArray(prefetch.promptPool)
-              ? filterHomeVisiblePrompts(prefetch.promptPool)
-              : filterHomeVisiblePrompts(prefetch.cachedData?.prompts || []);
-            window.PROMPTS = this.promptPool;
+            this.promptPool = [];
+            window.PROMPTS = [];
             this.sectionRows = prefetch.sectionRows || {};
             this.sectionOrder = Array.isArray(prefetch.sectionOrder) && prefetch.sectionOrder.length
               ? prefetch.sectionOrder
@@ -3029,20 +3008,13 @@ const FramerHome = {
             this.resolveSectionExperiments('gongyi', this.config.gongyi || {});
             this.resolveSectionExperiments('verify', this.config.verify || {});
             this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
-            if ((!Array.isArray(this.cachedData.prompts) || this.cachedData.prompts.length === 0) && this.promptPool.length > 0) {
-              try {
-                this.cachedData.prompts = await this.aggregatePrompts(this.config.prompts || {});
-              } catch (error) {
-                console.warn('Failed to rebuild homepage prompts from cached prompt pool:', error);
-                this.cachedData.prompts = this.promptPool.slice(0, Math.min(Number(this.config.prompts?.max_items) || 24, 24));
-              }
-            }
+            this.promptPool = await this.fetchVisiblePromptPool();
+            this.cachedData.prompts = await this.aggregatePrompts(this.config.prompts || {});
             this.cachedData.gongyi = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
             this.cachedData.shop = Array.isArray(this.cachedData.shop) ? this.cachedData.shop : [];
             this.cachedData.guestbook = Array.isArray(this.cachedData.guestbook) ? this.cachedData.guestbook : [];
             this.cachedData.shopCategories = Array.isArray(this.cachedData.shopCategories) ? this.cachedData.shopCategories : [];
             this.writeHeroTextCache(this.cachedData.hero);
-            this.schedulePromptPoolLiveSync({ reason: 'prefetch-cache' });
             void this.scheduleSupplementalHomepageDataLoad();
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
@@ -3060,10 +3032,7 @@ const FramerHome = {
       const config = await this.fetchHomepageConfig();
       this.config = config;
       this.resetActiveExperiments();
-      this.promptPool = await this.fetchVisiblePromptPool({ preferStaticFirst: true });
-
-      // Keep the first homepage paint focused: prompt cards can render from
-      // the static prompt bundle while live prompts and shop data warm behind it.
+      this.promptPool = await this.fetchVisiblePromptPool();
       const prompts = await this.aggregatePrompts(this.config.prompts || {});
 
       this.cachedData = {
@@ -3080,7 +3049,6 @@ const FramerHome = {
 
       console.log('📦 Data aggregated:', this.cachedData);
       this.persistHomepagePrefetch('partial');
-      this.schedulePromptPoolLiveSync({ reason: 'initial-static-prompt-pool' });
       void this.scheduleSupplementalHomepageDataLoad();
     } catch (error) {
       console.error('❌ Failed to load data:', error);
@@ -3276,36 +3244,6 @@ const FramerHome = {
     return matchedPrompt || null;
   },
 
-  buildFeaturedPromptFallback(item = {}) {
-    const normalizedId = this.normalizeFeaturedPromptLookupId(item?.id);
-    if (!normalizedId) {
-      return null;
-    }
-
-    const normalizedItem = normalizeHomePromptRecord(item);
-    const image = String(normalizedItem?.image || normalizedItem?.image_url || '').trim();
-    const tags = Array.isArray(item?.tags)
-      ? item.tags.map(tag => String(tag || '').trim()).filter(Boolean).slice(0, 8)
-      : [];
-    const title = String(item?.title || item?.title_zh || item?.title_en || normalizedId).trim() || normalizedId;
-    const titleZh = String(item?.title_zh || item?.title || '').trim();
-    const titleEn = String(item?.title_en || item?.title || '').trim();
-
-    return {
-      id: normalizedId,
-      title,
-      title_zh: titleZh,
-      title_en: titleEn,
-      images: normalizedItem.images,
-      image,
-      image_url: image,
-      tags,
-      ai_tags: [...tags],
-      aiTags: tags.length > 0 ? { styles: { zh: [...tags], en: [...tags] } } : undefined,
-      homepage_featured_fallback: true
-    };
-  },
-
   /**
    * Aggregate prompts data (auto or manual)
    */
@@ -3319,7 +3257,7 @@ const FramerHome = {
     // Manual mode - use custom selected items
     if ((Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0) || (!config.enable_auto && featuredItems?.length > 0)) {
       return (featuredItems || [])
-        .map(item => this.findFeaturedPromptRecord(promptPool, item) || this.buildFeaturedPromptFallback(item))
+        .map(item => this.findFeaturedPromptRecord(promptPool, item))
         .filter(Boolean);
     }
 
@@ -4047,7 +3985,6 @@ const FramerHome = {
   useFallbackData() {
     console.warn('⚠️ Using fallback data');
     this.resetActiveExperiments();
-    const promptPool = this.getPromptPool();
     this.config = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: '提示词', section_subtitle: '让创作更高效，让灵感更自由' },
@@ -4063,13 +4000,13 @@ const FramerHome = {
     // Rebuild cachedData with fallback config
     this.cachedData = {
       hero: this.buildHeroData(this.config.hero),
-      prompts: promptPool.slice(0, 6),
+      prompts: [],
       shop: [],
       gongyi: this.buildGongyiData(this.config.gongyi),
       verify: this.buildVerifyData(this.config.verify),
       guestbook: [],
       ticker: {
-        top: [...new Set(promptPool.flatMap(p => p.tags || []))].slice(0, 20),
+        top: [],
         bottom: []
       }
     };
@@ -4225,14 +4162,7 @@ const FramerHome = {
         this.cachedData = {};
       }
 
-      // Load prompts from the lightweight homepage summary first, then fall back to full PROMPTS.
-      const navPromptSource = getHomepageStaticPromptSource();
-      if (navPromptSource.length > 0) {
-        this.cachedData.prompts = filterHomeVisiblePrompts(navPromptSource);
-      } else {
-        // Fallback: empty array (will use fallback tags)
-        this.cachedData.prompts = [];
-      }
+      this.cachedData.prompts = [];
 
       this.cachedData.shopCategories = await this.fetchShopCategories();
 
@@ -4905,13 +4835,14 @@ const FramerHome = {
     }
 
     if (!prompts.length) {
-      if (!isHomepagePromptSourceReady()) {
-        renderHomepageSectionShell('prompts', section);
-      } else {
-        setHomeSectionVisibility(section, false);
-      }
+      this.clearPromptImageWarmup();
+      clearHomepageSectionShell(section);
+      section.innerHTML = '';
+      section.dataset.homePromptsEmpty = '1';
+      setHomeSectionVisibility(section, false);
       return;
     }
+    delete section.dataset.homePromptsEmpty;
     setHomeSectionVisibility(section, true);
 
     // Change section class to masonry style
@@ -7197,18 +7128,7 @@ function scheduleHomepageInit() {
 
   FramerHome.renderHeroFirstPaint();
 
-  const startedAt = Date.now();
-  const waitForDeps = setInterval(() => {
-    const promptsReady = isHomepagePromptSourceReady();
-
-    if (!promptsReady && Date.now() - startedAt < 500) {
-      return;
-    }
-
-    clearInterval(waitForDeps);
-
-    FramerHome.init();
-  }, 40);
+  FramerHome.init();
 }
 
 // Auto-initialize when DOM is ready and dependencies are loaded

@@ -5675,6 +5675,19 @@ html[data-theme="dark"] .prompt-comment-input-dock__field::placeholder {
         transform-origin: center center !important;
     }
 
+    .modal-inner .modal-image-col > .modal-next-image {
+        inset: 0 !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        object-position: center !important;
+        transform: scale(1);
+        transform-origin: center center !important;
+    }
+
     .modal-inner.comment-mode-returning .modal-image-col > #modalImg {
         inset: 0 !important;
         top: 0 !important;

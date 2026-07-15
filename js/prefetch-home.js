@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260531_HOME_SHOP_IMAGE_CACHE_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260715_HOME_PROMPTS_LIVE_ONLY_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -374,16 +374,6 @@
         }
     }
 
-    function getPromptPool() {
-        if (Array.isArray(window.PROMPTS)) {
-            return filterVisibleHomepagePrompts(window.PROMPTS);
-        }
-        if (Array.isArray(window.promptsData)) {
-            return filterVisibleHomepagePrompts(window.promptsData);
-        }
-        return [];
-    }
-
     function getLocalizedField(obj, fieldBase) {
         if (Contract?.getLocalizedField) {
             return Contract.getLocalizedField(obj, fieldBase, window.i18n?.getCurrentLanguage?.() || 'zh') || '';
@@ -567,12 +557,10 @@
     }
 
     async function fetchVisiblePromptPool() {
-        const fallbackPool = getPromptPool();
-
         if (!window.supabaseClient) {
             return {
-                items: fallbackPool,
-                source: 'fallback'
+                items: [],
+                source: 'unavailable'
             };
         }
 
@@ -602,10 +590,10 @@
                 source: 'live'
             };
         } catch (error) {
-            console.warn('Homepage prefetch prompt pool fallback:', error?.message || error);
+            console.warn('Homepage live prompt prefetch failed:', error?.message || error);
             return {
-                items: fallbackPool,
-                source: 'fallback'
+                items: [],
+                source: 'unavailable'
             };
         }
     }
@@ -691,36 +679,8 @@
         return matchedPrompt || null;
     }
 
-    function buildFeaturedPromptFallback(item = {}) {
-        const normalizedId = normalizeFeaturedPromptLookupId(item?.id);
-        if (!normalizedId) {
-            return null;
-        }
-
-        const normalizedItem = normalizeHomepagePromptRecord(item);
-        const image = String(normalizedItem?.image || normalizedItem?.image_url || '').trim();
-        const tags = Array.isArray(item?.tags)
-            ? item.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 8)
-            : [];
-        const title = String(item?.title || item?.title_zh || item?.title_en || normalizedId).trim() || normalizedId;
-
-        return {
-            id: normalizedId,
-            title,
-            title_zh: String(item?.title_zh || item?.title || '').trim(),
-            title_en: String(item?.title_en || item?.title || '').trim(),
-            images: normalizedItem.images,
-            image,
-            image_url: image,
-            tags,
-            ai_tags: [...tags],
-            aiTags: tags.length > 0 ? { styles: { zh: [...tags], en: [...tags] } } : undefined,
-            homepage_featured_fallback: true
-        };
-    }
-
     function aggregatePrompts(config = {}, promptPoolOverride = null) {
-        const promptPool = Array.isArray(promptPoolOverride) ? promptPoolOverride : getPromptPool();
+        const promptPool = Array.isArray(promptPoolOverride) ? promptPoolOverride : [];
         const experimentFeaturedItems = getSectionExperimentValue('prompts', config, 'featured_items', null);
         const featuredItems = Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0
             ? experimentFeaturedItems
@@ -728,7 +688,7 @@
 
         if ((Array.isArray(experimentFeaturedItems) && experimentFeaturedItems.length > 0) || (!config.enable_auto && Array.isArray(featuredItems) && featuredItems.length > 0)) {
             return featuredItems
-                .map((item) => findFeaturedPromptRecord(promptPool, item) || buildFeaturedPromptFallback(item))
+                .map((item) => findFeaturedPromptRecord(promptPool, item))
                 .filter(Boolean);
         }
 

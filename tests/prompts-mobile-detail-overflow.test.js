@@ -28,6 +28,16 @@ test('mobile prompt details preserve the prompt card and scroll overflowing cont
         'the title and prompt card should keep their intrinsic height instead of shrinking below their contents'
     );
     assert.match(
+        promptsStyles,
+        /\.modal-inner \.modal-image-col > \.modal-next-image\s*\{[\s\S]*?inset:\s*0 !important;[\s\S]*?top:\s*0 !important;[\s\S]*?left:\s*0 !important;[\s\S]*?transform:\s*scale\(1\);[\s\S]*?transform-origin:\s*center center !important;/,
+        'the incoming mobile image should keep the same top-left geometry when it becomes the active image'
+    );
+    assert.equal(
+        /\.modal-inner \.modal-image-col > \.modal-next-image\s*\{[^}]*translate(?:3d|X|Y)?\(/.test(promptsStyles),
+        false,
+        'the incoming mobile image should not animate away from percentage-based centering after the cross-fade'
+    );
+    assert.match(
         promptsSource,
         /const contentCol = document\.querySelector\('\.modal-content-col'\);\s*if \(contentCol\) \{\s*contentCol\.scrollTop = 0;\s*\}/,
         'opening a prompt should reset the newly scrollable content column'
@@ -36,5 +46,10 @@ test('mobile prompt details preserve the prompt card and scroll overflowing cont
         promptsHtml.includes('mobileDetailOverflow=20260714_PROMPT_DETAIL_MOBILE_OVERFLOW_1'),
         true,
         'the prompt detail stylesheet should be cache-busted for the mobile overflow fix'
+    );
+    assert.equal(
+        promptsHtml.includes('imageSwitch=20260715_PROMPT_MODAL_IMAGE_SWITCH_STABLE_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for the stable mobile image switch'
     );
 });

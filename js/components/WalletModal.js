@@ -2727,7 +2727,9 @@
 
         normalizePointValue(value, fallback = 0) {
             const parsed = Number(value);
-            return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+            if (!Number.isFinite(parsed)) return fallback;
+            const normalized = Math.round(parsed * 1000000) / 1000000;
+            return Object.is(normalized, -0) ? 0 : normalized;
         },
 
         normalizeOptionalPointValue(value) {
@@ -3069,10 +3071,14 @@
 
         formatPoints(value) {
             const normalized = this.normalizePointValue(value, 0);
-            const hasDecimal = Math.abs(normalized % 1) > 0.0001;
+            const absolute = Math.abs(normalized);
+            const hasDecimal = Math.abs(normalized % 1) > 0.000001;
+            const isMicroAmount = absolute > 0 && absolute < 0.01;
             return normalized.toLocaleString(undefined, {
-                minimumFractionDigits: hasDecimal ? (Math.abs(normalized * 10 - Math.round(normalized * 10)) > 0.0001 ? 2 : 1) : 0,
-                maximumFractionDigits: 2
+                minimumFractionDigits: hasDecimal && !isMicroAmount
+                    ? (Math.abs(normalized * 10 - Math.round(normalized * 10)) > 0.000001 ? 2 : 1)
+                    : 0,
+                maximumFractionDigits: isMicroAmount ? 6 : 2
             });
         },
 

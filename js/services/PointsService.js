@@ -16,7 +16,9 @@
 
     function normalizePointValue(value, fallback = 0) {
         const parsed = Number(value);
-        return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
+        if (!Number.isFinite(parsed)) return fallback;
+        const normalized = Math.round(parsed * 1000000) / 1000000;
+        return Object.is(normalized, -0) ? 0 : normalized;
     }
 
     const WALLET_DISCOUNT_ASSETS_CACHE_TTL_MS = 30_000;
