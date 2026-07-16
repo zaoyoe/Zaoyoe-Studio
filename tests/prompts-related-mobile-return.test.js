@@ -151,4 +151,14 @@ test('mobile related-mode return smoothly reveals detail content after geometry 
         true,
         'the prompt stylesheet should be cache-busted for the shared side-mode header mask'
     );
+    assert.match(
+        promptsStyles,
+        /\.modal-inner\.related-mode \.modal-content-col\s*\{[\s\S]*?padding-bottom:\s*0;/,
+        'mobile related mode should extend its image grid through the former bottom padding strip'
+    );
+    assert.equal(
+        promptsHtml.includes('relatedBottomFlow=20260716_PROMPT_RELATED_BOTTOM_FLOW_1'),
+        true,
+        'the prompt stylesheet should be cache-busted for the edge-to-edge related grid'
+    );
 });

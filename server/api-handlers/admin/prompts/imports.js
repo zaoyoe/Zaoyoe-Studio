@@ -9,6 +9,10 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const { resolveR2Config } = require('../../_ai-image-models');
+const {
+    alignPromptImagePalettes,
+    extractPromptImagePalette
+} = require('../../../prompt-image-palette');
 
 const IMPORT_BATCH_SELECT = 'id, source, mode, site, status, settings, stats, created_by, created_at, updated_at, completed_at, cleanup_after';
 const IMPORT_ITEM_SELECT = [
@@ -45,7 +49,7 @@ const IMPORT_ITEM_SELECT = [
     'created_at',
     'updated_at'
 ].join(', ');
-const PROMPT_SELECT = 'id, title, tags, description, prompt_text, images, image_assets, video_assets, source_url, source_author_name, source_author_handle, ai_tags, created_at, updated_at';
+const PROMPT_SELECT = 'id, title, tags, description, prompt_text, images, image_assets, image_palettes, video_assets, source_url, source_author_name, source_author_handle, ai_tags, created_at, updated_at';
 const IMPORT_MODES = new Set(['stream', 'crawl_only', 'upload_only', 'review_first']);
 const IMPORT_BATCH_STATUSES = new Set(['draft', 'running', 'ready', 'uploading', 'completed', 'needs_attention', 'cancelled']);
 const IMPORT_ITEM_STATUSES = new Set(['staged', 'needs_review', 'duplicate', 'queued', 'uploading', 'saving', 'imported', 'failed', 'skipped', 'cleaned']);
@@ -761,12 +765,23 @@ async function uploadImportVideoBufferToR2(buffer, {
 async function uploadImportItemImages(item, { site = 'cn' } = {}) {
     const sourceUrls = getItemImageSourceUrls(item);
     if (!sourceUrls.length) {
-        return { assets: [], urls: [], failures: [], sourceAssetMap: new Map() };
+        return {
+            assets: [],
+            urls: [],
+            palettes: [],
+            failures: [],
+            paletteFailures: [],
+            sourceAssetMap: new Map(),
+            paletteByImageUrl: new Map()
+        };
     }
 
     const assets = [];
+    const palettes = [];
     const sourceAssetMap = new Map();
+    const paletteByImageUrl = new Map();
     const failures = [];
+    const paletteFailures = [];
     for (let index = 0; index < sourceUrls.length; index += 1) {
         const url = sourceUrls[index];
     try {
@@ -783,6 +798,20 @@ async function uploadImportItemImages(item, { site = 'cn' } = {}) {
             });
             assets.push(stored);
             sourceAssetMap.set(url, stored);
+            try {
+                const palette = await extractPromptImagePalette(downloaded.buffer, {
+                    imageIndex: assets.length - 1,
+                    imageUrl: stored.original
+                });
+                palettes.push(palette);
+                paletteByImageUrl.set(stored.original, palette);
+            } catch (paletteError) {
+                paletteFailures.push({
+                    url,
+                    image_url: stored.original,
+                    message: paletteError.message || '色卡提取失败'
+                });
+            }
         } catch (error) {
             failures.push({
                 url,
@@ -801,8 +830,11 @@ async function uploadImportItemImages(item, { site = 'cn' } = {}) {
     return {
         assets,
         urls: assets.map((asset) => asset.original).filter(Boolean),
+        palettes,
         failures,
-        sourceAssetMap
+        paletteFailures,
+        sourceAssetMap,
+        paletteByImageUrl
     };
 }
 
@@ -810,7 +842,9 @@ async function uploadImportItemVideos(item, imageUploadResult, { site = 'cn' } =
     const sources = getItemVideoSources(item);
     const assets = [];
     const posterAssets = [];
+    const posterPalettes = [];
     const failures = [];
+    const paletteFailures = [];
     for (let index = 0; index < sources.length; index += 1) {
         const source = sources[index];
         try {
@@ -831,6 +865,20 @@ async function uploadImportItemVideos(item, imageUploadResult, { site = 'cn' } =
                 });
                 imageUploadResult.sourceAssetMap.set(source.poster_url, posterAsset);
                 posterAssets.push(posterAsset);
+                try {
+                    const palette = await extractPromptImagePalette(poster.buffer, {
+                        imageIndex: posterAssets.length - 1,
+                        imageUrl: posterAsset.original
+                    });
+                    posterPalettes.push(palette);
+                    imageUploadResult.paletteByImageUrl.set(posterAsset.original, palette);
+                } catch (paletteError) {
+                    paletteFailures.push({
+                        url: source.poster_url,
+                        image_url: posterAsset.original,
+                        message: paletteError.message || '视频封面色卡提取失败'
+                    });
+                }
             }
             const downloaded = await downloadRemoteVideo(source.url, {
                 timeoutMs: normalizePositiveInteger(process.env.PROMPT_IMPORT_VIDEO_TIMEOUT_MS, DEFAULT_VIDEO_TIMEOUT_MS, 300000),
@@ -860,7 +908,7 @@ async function uploadImportItemVideos(item, imageUploadResult, { site = 'cn' } =
         error.details = { failures };
         throw error;
     }
-    return { assets, posterAssets, failures };
+    return { assets, posterAssets, posterPalettes, failures, paletteFailures };
 }
 
 function buildPromptTitleFromItem(item = {}) {
@@ -874,6 +922,7 @@ function normalizePromptReferenceId(value) {
 
 function buildPromptPayloadFromImportItem(item, {
     imageAssets = [],
+    imagePalettes = [],
     videoAssets = [],
     defaultStatus = 'review'
 } = {}) {
@@ -901,6 +950,7 @@ function buildPromptPayloadFromImportItem(item, {
         }
         : {};
 
+    const images = imageAssets.map((asset) => asset.original).filter(Boolean);
     return {
         title: buildPromptTitleFromItem(item),
         tags: ['Creative'],
@@ -908,8 +958,9 @@ function buildPromptPayloadFromImportItem(item, {
         prompt_text: promptText,
         prompt_text_en: /[\u3400-\u9fff\uf900-\ufaff]/.test(promptText) ? '' : promptText,
         prompt_text_zh: '',
-        images: imageAssets.map((asset) => asset.original).filter(Boolean),
+        images,
         image_assets: imageAssets,
+        image_palettes: alignPromptImagePalettes(images, imagePalettes),
         video_assets: videoAssets,
         source_url: normalizeOptionalUrl(item.original_work_url || ''),
         source_author_name: normalizeText(item.author_name || '', 200),
@@ -1438,11 +1489,22 @@ async function checkImportItemDuplicates(supabase, body) {
 }
 
 async function insertPromptRow(supabase, payload) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
         .from('prompts')
         .insert(payload)
         .select(PROMPT_SELECT)
         .single();
+    if (error && String(error.message || '').toLowerCase().includes('image_palettes')) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.image_palettes;
+        const fallbackResult = await supabase
+            .from('prompts')
+            .insert(fallbackPayload)
+            .select(PROMPT_SELECT.replace(', image_palettes', ''))
+            .single();
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+    }
     if (error) throw error;
     return data;
 }
@@ -1540,6 +1602,10 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
         const imageUploadResult = await uploadImportItemImages(item, { site });
         const videoUploadResult = await uploadImportItemVideos(item, imageUploadResult, { site });
         const finalImageAssets = [...imageUploadResult.assets, ...videoUploadResult.posterAssets];
+        const finalImagePalettes = alignPromptImagePalettes(
+            finalImageAssets.map((asset) => asset.original).filter(Boolean),
+            [...imageUploadResult.palettes, ...videoUploadResult.posterPalettes]
+        );
         const { data: currentItem, error: currentItemError } = await supabase
             .from('prompt_import_items')
             .select(IMPORT_ITEM_SELECT)
@@ -1557,7 +1623,12 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 final_video_assets: videoUploadResult.assets,
                 error_details: {
                     ...(imageUploadResult.failures.length ? { image_failures: imageUploadResult.failures } : {}),
-                    ...(videoUploadResult.failures.length ? { video_failures: videoUploadResult.failures } : {})
+                    ...(videoUploadResult.failures.length ? { video_failures: videoUploadResult.failures } : {}),
+                    ...(
+                        imageUploadResult.paletteFailures.length || videoUploadResult.paletteFailures.length
+                            ? { palette_failures: [...imageUploadResult.paletteFailures, ...videoUploadResult.paletteFailures] }
+                            : {}
+                    )
                 },
                 updated_at: new Date().toISOString()
             })
@@ -1572,6 +1643,7 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
 
         const promptPayload = buildPromptPayloadFromImportItem(item, {
             imageAssets: finalImageAssets,
+            imagePalettes: finalImagePalettes,
             videoAssets: videoUploadResult.assets,
             defaultStatus
         });

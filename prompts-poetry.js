@@ -425,6 +425,31 @@ function getPromptImageAssets(item = {}) {
     return normalizePromptImageAssetsFromRecord(item);
 }
 
+function normalizePromptImagePalettesFromRecord(record = {}) {
+    const source = Array.isArray(record?.imagePalettes)
+        ? record.imagePalettes
+        : (Array.isArray(record?.image_palettes) ? record.image_palettes : []);
+
+    return source.flatMap((palette) => {
+        if (!palette || typeof palette !== 'object' || Array.isArray(palette)) return [];
+        const colors = (Array.isArray(palette.colors) ? palette.colors : []).flatMap((color) => {
+            const hex = String(color?.hex || '').trim().toUpperCase();
+            if (!/^#[0-9A-F]{6}$/.test(hex)) return [];
+            const ratio = Number(color?.ratio);
+            return [{ hex, ratio: Number.isFinite(ratio) && ratio >= 0 ? ratio : 0 }];
+        }).slice(0, 6);
+        if (!colors.length) return [];
+
+        return [{
+            image_index: Math.max(0, Number.parseInt(palette.image_index ?? palette.imageIndex, 10) || 0),
+            image_url: String(palette.image_url || palette.imageUrl || '').trim(),
+            image_hash: String(palette.image_hash || palette.imageHash || '').trim(),
+            version: Number.parseInt(palette.version, 10) || 0,
+            colors
+        }];
+    });
+}
+
 function normalizePromptVideoAsset(value) {
     const source = typeof value === 'string' ? { original: value } : value;
     if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
@@ -1066,7 +1091,7 @@ async function checkGallerySensitiveContent(content) {
 }
 
 // ==================== 自定义 Toast 通知 ====================
-function showGalleryToast(message, type = 'warning', duration = 3000) {
+function showGalleryToast(message, type = 'warning', duration = 3000, compact = false) {
     // Remove existing toast if any
     const existingToast = document.querySelector('.gallery-toast');
     if (existingToast) {
@@ -1083,7 +1108,7 @@ function showGalleryToast(message, type = 'warning', duration = 3000) {
 
     // Create toast element
     const toast = document.createElement('div');
-    toast.className = `gallery-toast gallery-toast--${type}`;
+    toast.className = `gallery-toast gallery-toast--${type}${compact ? ' gallery-toast--compact' : ''}`;
     toast.innerHTML = `
         <i class="gallery-toast__icon ${icons[type] || icons.info}"></i>
         <span>${message}</span>
@@ -1919,6 +1944,7 @@ const PROMPTS_SUPABASE_DETAIL_SELECT = [
     'prompt_text_zh',
     'images',
     'image_assets',
+    'image_palettes',
     'video_assets',
     'dominant_colors',
     'ai_tags',
@@ -1948,7 +1974,7 @@ const PROMPTS_SUPABASE_SEARCH_DETAIL_SELECT = [
 ].join(',');
 const PROMPTS_SUPABASE_DETAIL_LEGACY_SELECT = PROMPTS_SUPABASE_DETAIL_SELECT
     .split(',')
-    .filter((field) => !['image_assets', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
+    .filter((field) => !['image_assets', 'image_palettes', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
     .join(',');
 const PROMPTS_SUPABASE_SEARCH_DETAIL_LEGACY_SELECT = PROMPTS_SUPABASE_SEARCH_DETAIL_SELECT
     .split(',')
@@ -1965,6 +1991,7 @@ function isMissingPromptImageAssetsColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
     return Boolean(message && (
         message.includes('image_assets')
+        || message.includes('image_palettes')
         || message.includes('video_assets')
         || PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.some((field) => message.includes(field))
         || message.includes('column of "prompts"')
@@ -2011,6 +2038,8 @@ function normalizeSupabasePromptSummary(item = {}, index = 0) {
         images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
         imageAssets,
         image_assets: imageAssets,
+        imagePalettes: normalizePromptImagePalettesFromRecord(item),
+        image_palettes: normalizePromptImagePalettesFromRecord(item),
         videoAssets,
         video_assets: videoAssets,
         dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
@@ -2052,6 +2081,8 @@ function normalizeSupabasePromptDetail(item = {}) {
         images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
         imageAssets,
         image_assets: imageAssets,
+        imagePalettes: normalizePromptImagePalettesFromRecord(item),
+        image_palettes: normalizePromptImagePalettesFromRecord(item),
         videoAssets,
         video_assets: videoAssets,
         dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
@@ -2165,6 +2196,12 @@ function mergePromptDetailIntoItem(item = {}, detail = {}) {
         images: (getPromptImageAssets(detail).length > 0 ? getPromptImageAssets(detail) : getPromptImageAssets(item))
             .map(getPromptImageAssetOriginalUrl)
             .filter(Boolean),
+        imagePalettes: normalizePromptImagePalettesFromRecord(detail).length > 0
+            ? normalizePromptImagePalettesFromRecord(detail)
+            : normalizePromptImagePalettesFromRecord(item),
+        image_palettes: normalizePromptImagePalettesFromRecord(detail).length > 0
+            ? normalizePromptImagePalettesFromRecord(detail)
+            : normalizePromptImagePalettesFromRecord(item),
         videoAssets: getPromptVideoAssets(detail).length > 0 ? getPromptVideoAssets(detail) : getPromptVideoAssets(item),
         video_assets: getPromptVideoAssets(detail).length > 0 ? getPromptVideoAssets(detail) : getPromptVideoAssets(item),
         dominantColors: Array.isArray(detail.dominantColors) ? detail.dominantColors : (item.dominantColors || []),
@@ -5188,10 +5225,13 @@ const RELATED_PROMPT_CARD_LAYOUTS = [
 const RELATED_PROMPT_CARD_GAP_WEIGHT = 0.12;
 const RELATED_PROMPT_COLUMN_STAGGER_WEIGHT = 0.18;
 const RELATED_MODE_MOBILE_RENDER_DELAY_MS = 180;
+const RELATED_PROMPT_INITIAL_IMAGE_COUNT = 4;
+const RELATED_PROMPT_IMAGE_ROOT_MARGIN_PX = 240;
 let promptRelatedModeRenderTimerId = null;
 let promptRelatedModePendingItem = null;
 let promptRelatedGridEntryFrameId = null;
 let promptRelatedGridEntryTimerId = null;
+let promptRelatedImageObserver = null;
 
 function getRelatedPromptCardLayout(index = 0) {
     return RELATED_PROMPT_CARD_LAYOUTS[index % RELATED_PROMPT_CARD_LAYOUTS.length] || RELATED_PROMPT_CARD_LAYOUTS[0];
@@ -5210,13 +5250,56 @@ function buildRelatedPromptCardMarkup(item = {}, index = 0) {
     const imageUrl = getRelatedPromptImageUrl(item);
     const aspectClass = ` ${getRelatedPromptCardLayout(index).className}`;
     const promptId = getPromptStableOpenId(item);
+    const shouldLoadImage = index < RELATED_PROMPT_INITIAL_IMAGE_COUNT;
+    const imageSourceAttribute = shouldLoadImage
+        ? `src="${escapeHtml(imageUrl)}"`
+        : `data-related-image-src="${escapeHtml(imageUrl)}" fetchpriority="low"`;
     return `
         <button class="related-prompt-card${aspectClass}" type="button" data-related-prompt-id="${escapeHtml(promptId)}" aria-label="${escapeHtml(title)}">
-            ${imageUrl ? `<img class="related-prompt-card__image" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
+            ${imageUrl ? `<img class="related-prompt-card__image" ${imageSourceAttribute} alt="${escapeHtml(title)}" loading="lazy" decoding="async" draggable="false">` : '<span class="related-prompt-card__fallback" aria-hidden="true"></span>'}
             <span class="related-prompt-card__shade" aria-hidden="true"></span>
             <span class="related-prompt-card__title">${escapeHtml(title)}</span>
         </button>
     `;
+}
+
+function clearRelatedPromptImageObserver() {
+    promptRelatedImageObserver?.disconnect();
+    promptRelatedImageObserver = null;
+}
+
+function activateRelatedPromptImage(image) {
+    if (!image) return;
+
+    const imageUrl = String(image.dataset.relatedImageSrc || '').trim();
+    if (!imageUrl) return;
+    delete image.dataset.relatedImageSrc;
+    image.src = imageUrl;
+}
+
+function observeDeferredRelatedPromptImages(grid) {
+    clearRelatedPromptImageObserver();
+    const deferredImages = Array.from(grid?.querySelectorAll('img[data-related-image-src]') || []);
+    if (!deferredImages.length) return;
+
+    if (typeof window.IntersectionObserver !== 'function') {
+        deferredImages.forEach(activateRelatedPromptImage);
+        return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            activateRelatedPromptImage(entry.target);
+            observer.unobserve(entry.target);
+        });
+    }, {
+        root: grid,
+        rootMargin: `${RELATED_PROMPT_IMAGE_ROOT_MARGIN_PX}px 0px`,
+        threshold: 0.01
+    });
+    promptRelatedImageObserver = observer;
+    deferredImages.forEach((image) => observer.observe(image));
 }
 
 function prepareRelatedPromptCardImages(grid) {
@@ -5229,8 +5312,11 @@ function prepareRelatedPromptCardImages(grid) {
             revealImage();
             return;
         }
+        if (image.dataset.relatedImageRevealBound === '1') return;
+        image.dataset.relatedImageRevealBound = '1';
         image.addEventListener('load', revealImage, { once: true });
     });
+    observeDeferredRelatedPromptImages(grid);
 }
 
 function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
@@ -5239,9 +5325,11 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
 
     const renderKey = getRelatedPromptRenderKey(item);
     if (renderKey && renderKey === lastRenderedRelatedPromptKey && grid.children.length > 0) {
+        prepareRelatedPromptCardImages(grid);
         return;
     }
     lastRenderedRelatedPromptKey = renderKey;
+    clearRelatedPromptImageObserver();
 
     const relatedItems = getRelatedPrompts(item, 14);
     if (!relatedItems.length) {
@@ -5326,6 +5414,7 @@ function cancelRelatedPromptWork() {
     cancelScheduledRelatedPromptRender();
     cancelRelatedPromptWarmup();
     clearRelatedModeDeferredRender();
+    clearRelatedPromptImageObserver();
 }
 
 function scheduleRelatedPromptsRender(item = findPromptAnalyticsItem()) {
@@ -5358,20 +5447,16 @@ function isRelatedPromptRenderReady(item = findPromptAnalyticsItem()) {
     return Boolean(renderKey && grid?.children.length > 0 && renderKey === lastRenderedRelatedPromptKey);
 }
 
-function warmRelatedPromptImages(limit = 6) {
+function warmRelatedPromptImages(limit = RELATED_PROMPT_INITIAL_IMAGE_COUNT) {
     const grid = document.getElementById('relatedPromptGrid');
     if (!grid) return;
 
     getRelatedPromptImagesInVisualOrder(grid)
         .slice(0, limit)
         .forEach((image) => {
-            const url = String(image.currentSrc || image.src || '').trim();
-            if (!url) return;
-            const warmImage = new Image();
-            warmImage.decoding = 'async';
-            warmImage.src = url;
-            if (typeof warmImage.decode === 'function') {
-                warmImage.decode().catch(() => {});
+            activateRelatedPromptImage(image);
+            if (typeof image.decode === 'function') {
+                image.decode().catch(() => {});
             }
         });
 }
@@ -5431,13 +5516,14 @@ function playRelatedPromptGridEntryAnimation(options = {}) {
 
     clearRelatedPromptGridEntryAnimation();
     const frameDelay = Math.max(1, Math.floor(Number(options.frameDelay) || 1));
+    const isMobileLayout = isPromptModalMobileLayout();
     const columns = Array.from(grid.querySelectorAll('.related-prompt-column'));
     columns.forEach((column, columnIndex) => {
         Array.from(column.querySelectorAll('.related-prompt-card')).forEach((card, rowIndex) => {
-            const rowDelay = rowIndex * 32;
-            const columnDrift = columnIndex * 16;
-            const organicOffset = ((rowIndex + columnIndex) % 3) * 5;
-            const delay = Math.min(rowDelay + columnDrift + organicOffset, 220);
+            const rowDelay = rowIndex * (isMobileLayout ? 32 : 12);
+            const columnDrift = columnIndex * (isMobileLayout ? 16 : 8);
+            const organicOffset = ((rowIndex + columnIndex) % 3) * (isMobileLayout ? 5 : 3);
+            const delay = Math.min(rowDelay + columnDrift + organicOffset, isMobileLayout ? 220 : 80);
             const yOffset = 7 + Math.min(rowIndex, 3);
             card.style.setProperty('--related-card-enter-delay', `${delay}ms`);
             card.style.setProperty('--related-card-enter-y', `${yOffset}px`);
@@ -5460,7 +5546,7 @@ function playRelatedPromptGridEntryAnimation(options = {}) {
             promptRelatedGridEntryTimerId = setTimeout(() => {
                 grid.classList.remove('related-prompt-grid--entering');
                 promptRelatedGridEntryTimerId = null;
-            }, 820);
+            }, isMobileLayout ? 820 : 520);
         });
     };
     scheduleEntryFrame(frameDelay);
@@ -5556,6 +5642,71 @@ function resetPromptDetailSideModeButtons() {
     setPromptRelatedTriggerActive(false);
 }
 
+function cancelPromptAreaMotion({ resetStyles = true } = {}) {
+    if (promptAreaMotionFrameId !== null) {
+        cancelAnimationFrame(promptAreaMotionFrameId);
+        promptAreaMotionFrameId = null;
+    }
+    if (promptAreaMotionTimerId !== null) {
+        clearTimeout(promptAreaMotionTimerId);
+        promptAreaMotionTimerId = null;
+    }
+
+    document.querySelector('#promptModal .modal-image-col img')?.classList.remove('blur-motion');
+    if (!resetStyles) return;
+
+    const promptArea = document.getElementById('promptArea');
+    promptArea?.classList.remove('returning');
+    setPromptsCssVars(promptArea, {
+        animation: null,
+        transition: null,
+        transform: null,
+        'transform-origin': null,
+        'will-change': null
+    });
+}
+
+function prepareDesktopRelatedSelectionPromptArea(promptArea) {
+    if (!promptArea?.classList.contains('docked')) return false;
+
+    cancelPromptAreaMotion();
+    setPromptsCssVars(promptArea, {
+        animation: 'none',
+        transition: 'none',
+        transform: null,
+        'will-change': 'transform'
+    });
+    return true;
+}
+
+function animateDesktopRelatedSelectionPromptArea(promptArea, prepared) {
+    if (!promptArea || !prepared) return;
+
+    setPromptsCssVars(promptArea, {
+        transform: `translate3d(0, -${PROMPT_DESKTOP_RELATED_SELECTION_OFFSET_PX}px, 0)`
+    });
+    void promptArea.offsetWidth;
+
+    promptAreaMotionFrameId = requestAnimationFrame(() => {
+        promptAreaMotionFrameId = null;
+        setPromptsCssVars(promptArea, {
+            transition: `transform ${PROMPT_DESKTOP_RELATED_SELECTION_MOTION_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
+            transform: 'translate3d(0, 0, 0)'
+        });
+
+        promptAreaMotionTimerId = window.setTimeout(() => {
+            promptAreaMotionTimerId = null;
+            setPromptsCssVars(promptArea, {
+                animation: null,
+                transition: null,
+                transform: null,
+                'transform-origin': null,
+                'will-change': null
+            });
+        }, PROMPT_DESKTOP_RELATED_SELECTION_MOTION_MS + 50);
+    });
+}
+
 function movePromptAreaToDetailColumn() {
     const promptArea = document.getElementById('promptArea');
     const contentCol = document.querySelector('.modal-content-col');
@@ -5564,6 +5715,7 @@ function movePromptAreaToDetailColumn() {
         return;
     }
 
+    cancelPromptAreaMotion();
     promptArea.classList.remove('docked');
     syncModalImageThumbnailPlacement();
     setPromptsCssVars(promptArea, {
@@ -5584,6 +5736,7 @@ function dockPromptAreaWithoutAnimation() {
         return;
     }
 
+    cancelPromptAreaMotion();
     setPromptsCssVars(promptArea, {
         animation: 'none',
         transition: 'none',
@@ -5595,42 +5748,63 @@ function dockPromptAreaWithoutAnimation() {
     scheduleModalImageThumbnailPlacementSync();
 }
 
-function animatePromptAreaToDock() {
-    const promptArea = document.getElementById('promptArea');
-    const dockTarget = document.getElementById('promptDockTarget');
-    if (!promptArea || !dockTarget) return;
-
-    const first = promptArea.getBoundingClientRect();
-    dockTarget.appendChild(promptArea);
-    promptArea.classList.add('docked');
-    scheduleModalImageThumbnailPlacementSync();
-
-    const last = promptArea.getBoundingClientRect();
-    const dx = first.left - last.left;
-    const dy = first.top - last.top;
-    const wRatio = first.width / last.width;
+function animatePromptAreaHorizontalSettle(promptArea, {
+    offsetX,
+    durationMs
+} = {}) {
+    if (!promptArea || !Number.isFinite(offsetX) || !Number.isFinite(durationMs)) return;
 
     setPromptsCssVars(promptArea, {
-        transform: `translate(${dx}px, ${dy}px) scale(${wRatio})`,
-        'transform-origin': 'top left'
+        animation: 'none',
+        transition: 'none',
+        transform: `translate3d(${offsetX}px, 0, 0)`,
+        'transform-origin': null,
+        'will-change': 'transform'
     });
+    void promptArea.offsetWidth;
 
-    requestAnimationFrame(() => {
+    promptAreaMotionFrameId = requestAnimationFrame(() => {
+        promptAreaMotionFrameId = null;
         setPromptsCssVars(promptArea, {
-            transition: 'transform 0.5s ease-in-out',
-            transform: null
+            transition: `transform ${durationMs}ms cubic-bezier(0.16, 1, 0.3, 1)`,
+            transform: 'translate3d(0, 0, 0)'
         });
 
         const img = document.querySelector('.modal-image-col img');
         if (img) img.classList.add('blur-motion');
 
-        setTimeout(() => {
+        promptAreaMotionTimerId = window.setTimeout(() => {
+            promptAreaMotionTimerId = null;
             setPromptsCssVars(promptArea, {
-                transition: null
+                animation: null,
+                transition: null,
+                transform: null,
+                'transform-origin': null,
+                'will-change': null
             });
             if (img) img.classList.remove('blur-motion');
             scheduleModalImageThumbnailPlacementSync();
-        }, 500);
+        }, durationMs + 50);
+    });
+}
+
+function animatePromptAreaToDock() {
+    const promptArea = document.getElementById('promptArea');
+    const dockTarget = document.getElementById('promptDockTarget');
+    if (!promptArea || !dockTarget) return;
+
+    cancelPromptAreaMotion();
+    setPromptsCssVars(promptArea, {
+        animation: 'none',
+        transition: 'none',
+        transform: null
+    });
+    dockTarget.appendChild(promptArea);
+    promptArea.classList.add('docked');
+    scheduleModalImageThumbnailPlacementSync();
+    animatePromptAreaHorizontalSettle(promptArea, {
+        offsetX: PROMPT_DESKTOP_SIDE_MODE_PROMPT_OFFSET_PX,
+        durationMs: PROMPT_DESKTOP_SIDE_MODE_PROMPT_MOTION_MS
     });
 }
 
@@ -5638,21 +5812,11 @@ function animatePromptAreaFromDock() {
     const promptArea = document.getElementById('promptArea');
     if (!promptArea) return;
 
-    promptArea.classList.remove('docked');
-    syncModalImageThumbnailPlacement();
     movePromptAreaToDetailColumn();
-
-    promptArea.classList.remove('returning');
-    void promptArea.offsetWidth;
-    promptArea.classList.add('returning');
-
-    const img = document.querySelector('.modal-image-col img');
-    if (img) img.classList.add('blur-motion');
-
-    setTimeout(() => {
-        promptArea.classList.remove('returning');
-        if (img) img.classList.remove('blur-motion');
-    }, 500);
+    animatePromptAreaHorizontalSettle(promptArea, {
+        offsetX: -PROMPT_DESKTOP_SIDE_MODE_PROMPT_OFFSET_PX,
+        durationMs: PROMPT_DESKTOP_SIDE_MODE_PROMPT_MOTION_MS
+    });
 }
 
 function clearPromptDetailSideMode({ resetButtons = true, resetClasses = true, releaseGeometry = true } = {}) {
@@ -7144,6 +7308,7 @@ function applySearchResults(matchedIds, searchingForColor) {
 let currentModalImageIndex = 0;
 let currentModalImages = [];
 let currentModalImageThumbs = [];
+let currentModalImagePalettes = [];
 let currentModalVideoAsset = null;
 let currentModalThumbRenderKey = '';
 let currentModalThumbWarmupIdleId = null;
@@ -7158,8 +7323,15 @@ let promptRelatedWarmupTimerId = null;
 let promptRelatedRenderToken = 0;
 let promptModalLayoutWasMobile = null;
 let promptModalLayoutSyncFrameId = null;
+let promptAreaMotionFrameId = null;
+let promptAreaMotionTimerId = null;
 let currentPromptId = null;
 const PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS = 620;
+const PROMPT_DESKTOP_SIDE_MODE_RETURN_CLEANUP_MS = 520;
+const PROMPT_DESKTOP_RELATED_SELECTION_MOTION_MS = 500;
+const PROMPT_DESKTOP_RELATED_SELECTION_OFFSET_PX = 24;
+const PROMPT_DESKTOP_SIDE_MODE_PROMPT_OFFSET_PX = 24;
+const PROMPT_DESKTOP_SIDE_MODE_PROMPT_MOTION_MS = 500;
 
 function clearPromptCommentModeReturnState(modalInner = document.querySelector('#promptModal .modal-inner')) {
     if (promptCommentModeReturnTimer) {
@@ -8372,6 +8544,8 @@ function applyPromptModalDetailContent(item = {}) {
             ? getPromptModalPromptText(item)
             : getPromptDetailUnavailableText());
     }
+    currentModalImagePalettes = normalizePromptImagePalettesFromRecord(item);
+    renderModalImagePalette();
 }
 
 function findPromptForModalOpen(id) {
@@ -8409,10 +8583,18 @@ function openPromptModal(id, options = {}) {
 
     const modal = document.getElementById('promptModal');
     const modalInner = modal?.querySelector('.modal-inner');
+    const promptArea = document.getElementById('promptArea');
     const shouldAnimateRelatedSelection = options.animateRelatedSelection === true
         && isPromptModalMobileLayout()
         && modal?.classList.contains('active')
         && modalInner?.classList.contains('related-mode');
+    const shouldAnimateDesktopRelatedSelection = options.animateRelatedSelection === true
+        && !isPromptModalMobileLayout()
+        && modal?.classList.contains('active')
+        && modalInner?.classList.contains('related-mode');
+    const desktopRelatedSelectionPromptPrepared = shouldAnimateDesktopRelatedSelection
+        ? prepareDesktopRelatedSelectionPromptArea(promptArea)
+        : false;
     const backdrop = ensurePromptModalBackdrop();
     releasePromptModalForceHidden();
     clearPromptModalCloseCleanupTimer();
@@ -8450,7 +8632,6 @@ function openPromptModal(id, options = {}) {
     syncPromptModalTopButtonState();
 
     // Reset Prompt Area (in case it was docked/moved)
-    const promptArea = document.getElementById('promptArea');
     const contentCol = document.querySelector('.modal-content-col');
     if (contentCol) {
         contentCol.scrollTop = 0;
@@ -8486,6 +8667,7 @@ function openPromptModal(id, options = {}) {
     const modalImageEntries = getPromptModalImageEntries(item);
     currentModalImages = modalImageEntries.map((entry) => entry.imageUrl);
     currentModalImageThumbs = modalImageEntries.map((entry) => entry.thumbUrl || entry.imageUrl);
+    currentModalImagePalettes = normalizePromptImagePalettesFromRecord(item);
     if (currentModalVideoAsset) {
         const poster = currentModalVideoAsset.poster || currentModalImages[0] || '';
         currentModalImages = poster ? [poster] : [];
@@ -8538,6 +8720,7 @@ function openPromptModal(id, options = {}) {
     if (shouldAnimateRelatedSelection) {
         startPromptDetailReturnReveal(modalInner, { isMobileLayout: true });
     }
+    animateDesktopRelatedSelectionPromptArea(promptArea, desktopRelatedSelectionPromptPrepared);
     syncPromptModalUnlockPriceState();
     detailPromise
         .then((updatedItem) => {
@@ -8645,7 +8828,7 @@ function startPromptDetailReturnReveal(modalInner, { isMobileLayout = isPromptMo
             modalInner.classList.remove('comment-mode-returning', 'comment-mode-title-revealing');
         }
         promptCommentModeReturnTimer = null;
-    }, isMobileLayout ? PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS : 560);
+    }, isMobileLayout ? PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS : PROMPT_DESKTOP_SIDE_MODE_RETURN_CLEANUP_MS);
 }
 
 function closePromptDetailSideMode() {
@@ -8676,6 +8859,13 @@ function closePromptDetailSideMode() {
     }
 }
 
+function resetRelatedPromptScrollPosition() {
+    const relatedGrid = document.getElementById('relatedPromptGrid');
+    if (relatedGrid) {
+        relatedGrid.scrollTop = 0;
+    }
+}
+
 function openPromptDetailSideMode(mode) {
     const modalInner = document.querySelector('.modal-inner');
     const isMobileLayout = isPromptModalMobileLayout();
@@ -8701,6 +8891,7 @@ function openPromptDetailSideMode(mode) {
     if (isCommentMode) {
         fetchComments(currentPromptId);
     } else {
+        resetRelatedPromptScrollPosition();
         renderRelatedPromptsForActiveMode(findPromptAnalyticsItem(), {
             forceDefer: isMobileLayout,
             animateEntry: true
@@ -11264,25 +11455,23 @@ function syncModalImageThumbnailActiveState(thumbs = document.getElementById('mo
 
 function syncModalImageThumbnailPlacement() {
     const imageCol = document.querySelector('#promptModal .modal-image-col');
-    const modalInner = document.querySelector('#promptModal .modal-inner');
     if (!imageCol) return;
 
     const promptArea = document.getElementById('promptArea');
     const shouldLiftAboveDockedPrompt = Boolean(
-        modalInner?.classList.contains('related-mode')
-        && promptArea?.classList.contains('docked')
+        promptArea?.classList.contains('docked')
         && promptArea.parentElement?.id === 'promptDockTarget'
     );
 
     if (!shouldLiftAboveDockedPrompt) {
-        imageCol.style.removeProperty('--modal-img-thumbs-related-bottom');
+        imageCol.style.removeProperty('--modal-img-thumbs-docked-bottom');
         return;
     }
 
     const promptHeight = Math.ceil(promptArea.getBoundingClientRect().height || promptArea.offsetHeight || 0);
     const dockBottom = 16;
     const visualGap = 14;
-    imageCol.style.setProperty('--modal-img-thumbs-related-bottom', `${Math.max(140, promptHeight + dockBottom + visualGap)}px`);
+    imageCol.style.setProperty('--modal-img-thumbs-docked-bottom', `${Math.max(140, promptHeight + dockBottom + visualGap)}px`);
 }
 
 function scheduleModalImageThumbnailPlacementSync() {
@@ -11346,6 +11535,54 @@ function renderModalImageThumbnails() {
     scheduleModalImageThumbnailPlacementSync();
 }
 
+function getCurrentModalImagePalette() {
+    return currentModalImagePalettes.find((palette) => palette.image_index === currentModalImageIndex)
+        || currentModalImagePalettes[currentModalImageIndex]
+        || null;
+}
+
+function getPromptPaletteCopyLabel(hex) {
+    return getCurrentLanguage() === 'en' ? `Copy ${hex}` : `复制色号 ${hex}`;
+}
+
+async function copyPromptPaletteColor(hex, button) {
+    try {
+        await writePromptShareTextToClipboard(hex);
+        button?.classList.add('copied');
+        showGalleryToast(
+            getCurrentLanguage() === 'en' ? `${hex} copied` : `已复制 ${hex}`,
+            'success',
+            1600,
+            true
+        );
+        window.setTimeout(() => button?.classList.remove('copied'), 900);
+    } catch (error) {
+        showGalleryToast(getCurrentLanguage() === 'en' ? 'Copy failed' : '复制失败', 'error', 1800, true);
+    }
+}
+
+function renderModalImagePalette() {
+    const container = document.getElementById('modalImagePalette');
+    if (!container) return;
+    const palette = getCurrentModalImagePalette();
+    const colors = Array.isArray(palette?.colors) ? palette.colors : [];
+    container.classList.toggle('is-visible', colors.length > 0);
+    container.setAttribute('aria-hidden', colors.length ? 'false' : 'true');
+    container.replaceChildren();
+
+    colors.forEach((color) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'prompt-image-palette-color';
+        button.style.setProperty('--prompt-palette-color', color.hex);
+        button.dataset.hex = color.hex;
+        button.setAttribute('aria-label', getPromptPaletteCopyLabel(color.hex));
+        button.setAttribute('title', getPromptPaletteCopyLabel(color.hex));
+        button.addEventListener('click', () => copyPromptPaletteColor(color.hex, button));
+        container.appendChild(button);
+    });
+}
+
 function syncModalImageNavigationState() {
     const hasMultipleImages = currentModalImages.length > 1;
     const leftArrow = document.getElementById('modalImgNavLeft');
@@ -11360,6 +11597,7 @@ function syncModalImageNavigationState() {
         updateModalCounter();
     }
     renderModalImageThumbnails();
+    renderModalImagePalette();
 }
 
 function navigateModalImage(direction) {

@@ -266,9 +266,9 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     assert.equal(promptsCss.includes('.prompt-comment-input-dock__upload'), false, 'the input dock should not contain an image control');
 
     assert.equal(
-        /@media \(min-width:\s*769px\)\s*\{[\s\S]*?\.modal-image-col\s*\{[\s\S]*?flex:\s*0 0 calc\(50% - 40px\);/.test(promptsCss),
+        /@media \(min-width:\s*769px\)\s*\{[\s\S]*?\.modal-image-col\s*\{[\s\S]*?flex:\s*0 0 50%;/.test(promptsCss),
         true,
-        'desktop comment mode should keep the image column width pinned instead of letting the right-column padding change resize it'
+        'desktop comment mode should keep the image and content columns at equal pinned widths'
     );
     assert.equal(
         /\.modal-inner\.comment-mode \.modal-content-col\s*\{[\s\S]*?padding:\s*40px;/.test(promptsCss),
@@ -286,7 +286,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
         'desktop comment mode should not hard-remove the prompt title with display:none'
     );
     assert.equal(
-        /\.modal-inner\.comment-mode-returning \.modal-header,[\s\S]*?\.modal-inner\.comment-mode-returning \.modal-description\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transition:[\s\S]*?opacity 0\.56s/.test(promptsCss),
+        /\.modal-inner\.comment-mode-returning \.modal-header,[\s\S]*?\.modal-inner\.comment-mode-returning \.modal-description\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transition:[\s\S]*?opacity 500ms cubic-bezier\(0\.16, 1, 0\.3, 1\)/.test(promptsCss),
         true,
         'desktop comment mode return should keep the title reveal paced with the other modal return animations'
     );
@@ -317,7 +317,8 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     );
     assert.equal(
         promptsSource.includes('const PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS = 620;')
-            && promptsSource.includes('isMobileLayout ? PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS : 560'),
+            && promptsSource.includes('const PROMPT_DESKTOP_SIDE_MODE_RETURN_CLEANUP_MS = 520;')
+            && promptsSource.includes('isMobileLayout ? PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS : PROMPT_DESKTOP_SIDE_MODE_RETURN_CLEANUP_MS'),
         true,
         'comment mode title reveal should clean up shortly after the compact prompt and image return animations finish'
     );
@@ -327,9 +328,9 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
         'desktop comment mode should raise the comment section to the top of the modal column without changing column geometry'
     );
     assert.equal(
-        /\.modal-inner\.comment-mode \.modal-image-col img\s*\{[\s\S]*?top:\s*35% !important;[\s\S]*?translate3d\(-50%, -50%, 0\) scale\(0\.85\);/.test(promptsCss),
+        /\.modal-inner\.comment-mode \.modal-image-col img\s*\{[\s\S]*?transform:\s*translate3d\(-50%, -65%, 0\) scale\(0\.85\);/.test(promptsCss),
         true,
-        'desktop comment mode should keep the old upward image motion while the column width remains pinned'
+        'desktop comment mode should keep the upward image motion on the compositor while the column width remains pinned'
     );
     assert.equal(
         /\.modal-inner\.comment-mode \.comment-section > \.comment-header\s*\{[\s\S]*?justify-content:\s*flex-start;/.test(promptsCss),

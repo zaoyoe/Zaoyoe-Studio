@@ -597,6 +597,13 @@ test('prompt import payload requires source attribution, prompt, and images', ()
             { original: 'https://cdn.fatherkey.com/prompts/imports/a.jpg' },
             { original: 'https://cdn.fatherkey.com/prompts/imports/b.webp' }
         ],
+        imagePalettes: [{
+            image_index: 0,
+            image_url: 'https://cdn.fatherkey.com/prompts/imports/a.jpg',
+            image_hash: 'sha256:test',
+            version: 1,
+            colors: [{ hex: '#123456', ratio: 1 }]
+        }],
         defaultStatus: 'live'
     });
 
@@ -610,6 +617,13 @@ test('prompt import payload requires source attribution, prompt, and images', ()
         'https://cdn.fatherkey.com/prompts/imports/a.jpg',
         'https://cdn.fatherkey.com/prompts/imports/b.webp'
     ]);
+    assert.deepEqual(promptPayload.image_palettes, [{
+        image_index: 0,
+        image_url: 'https://cdn.fatherkey.com/prompts/imports/a.jpg',
+        image_hash: 'sha256:test',
+        version: 1,
+        colors: [{ hex: '#123456', ratio: 1 }]
+    }]);
 
     const missingPrompt = _private.normalizeImportItemPayload({
         images: ['https://images.example.com/a.jpg']

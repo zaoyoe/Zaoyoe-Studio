@@ -6,6 +6,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    resolvePromptImagePalettes
+} = require('../../../prompt-image-palette');
 
 const PROMPT_REQUIRED_SELECT_FIELDS = [
     'id',
@@ -21,6 +24,7 @@ const PROMPT_OPTIONAL_SELECT_FIELDS = [
     'dominant_colors',
     'ai_tags',
     'image_assets',
+    'image_palettes',
     'video_assets',
     'quality_score',
     'source_url',
@@ -458,6 +462,10 @@ function applyPromptFieldFallbacks(row = {}) {
 
     if (!Object.prototype.hasOwnProperty.call(safeRow, 'image_assets')) {
         safeRow.image_assets = [];
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(safeRow, 'image_palettes')) {
+        safeRow.image_palettes = [];
     }
 
     if (!Object.prototype.hasOwnProperty.call(safeRow, 'video_assets')) {
@@ -1322,6 +1330,30 @@ async function updatePromptRow(supabase, id, payload) {
     return applyPromptFieldFallbacks(result.data);
 }
 
+async function attachPromptImagePalettes(supabase, payload, { action, id } = {}) {
+    if (!Object.prototype.hasOwnProperty.call(payload, 'images')) return payload;
+
+    const existingRow = action === 'create' ? null : await loadPromptById(supabase, id);
+    const result = await resolvePromptImagePalettes(payload.images, {
+        existingPalettes: existingRow?.image_palettes || [],
+        concurrency: 2,
+        timeoutMs: process.env.PROMPT_PALETTE_IMAGE_TIMEOUT_MS,
+        maxBytes: process.env.PROMPT_PALETTE_MAX_IMAGE_BYTES
+    });
+    if (result.failures.length) {
+        console.warn('[PromptPalette] Some images could not be analyzed', {
+            promptId: id || null,
+            failureCount: result.failures.length,
+            failures: result.failures
+        });
+    }
+
+    return {
+        ...payload,
+        image_palettes: result.palettes
+    };
+}
+
 module.exports = async (req, res) => {
     const method = String(req.method || 'GET').toUpperCase();
 
@@ -1414,7 +1446,13 @@ module.exports = async (req, res) => {
             return sendJson(res, 400, { success: false, message: 'Unsupported prompt action' });
         }
 
-        const payload = buildPromptMutationPayload(body, { action });
+        const id = action === 'create' ? '' : normalizePromptId(body.id);
+        if (action !== 'create' && !id) {
+            return sendJson(res, 400, { success: false, message: 'id is required' });
+        }
+
+        let payload = buildPromptMutationPayload(body, { action });
+        payload = await attachPromptImagePalettes(supabase, payload, { action, id });
 
         if (action === 'create') {
             const data = await insertPromptRow(supabase, payload);
@@ -1437,11 +1475,6 @@ module.exports = async (req, res) => {
                 site,
                 row: data
             });
-        }
-
-        const id = normalizePromptId(body.id);
-        if (!id) {
-            return sendJson(res, 400, { success: false, message: 'id is required' });
         }
 
         let data;

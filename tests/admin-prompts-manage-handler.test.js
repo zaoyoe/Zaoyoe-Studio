@@ -239,6 +239,18 @@ async function withPromptsManageHandler(options, callback) {
             };
         }
 
+        if (request === '../../../prompt-image-palette') {
+            return {
+                async resolvePromptImagePalettes(imageUrls, paletteOptions = {}) {
+                    state.paletteRequest = { imageUrls, paletteOptions };
+                    return {
+                        palettes: options.imagePalettes || [],
+                        failures: options.paletteFailures || []
+                    };
+                }
+            };
+        }
+
         return originalLoad.call(this, request, parent, isMain);
     };
 
@@ -297,6 +309,7 @@ test('prompts manage handler lists prompt rows for reads', async () => {
             ai_tags: {},
             quality_score: null,
             image_assets: [],
+            image_palettes: [],
             video_assets: [],
             title_en: '',
             title_zh: '',
@@ -509,6 +522,7 @@ test('prompts manage handler falls back to legacy select fields when bilingual c
             ai_tags: {},
             quality_score: null,
             image_assets: [],
+            image_palettes: [],
             video_assets: [],
             title_en: '',
             title_zh: '',
@@ -582,6 +596,7 @@ test('prompts manage handler keeps listing rows when prompt metric site columns 
             ai_tags: {},
             quality_score: null,
             image_assets: [],
+            image_palettes: [],
             video_assets: [],
             title_en: '',
             title_zh: '',
@@ -634,6 +649,7 @@ test('prompts manage handler falls back when quality_score column is unavailable
             ai_tags: {},
             quality_score: null,
             image_assets: [],
+            image_palettes: [],
             video_assets: [],
             title_en: '',
             title_zh: '',
@@ -686,6 +702,7 @@ test('prompts manage handler falls back when updated_at column is unavailable', 
             ai_tags: {},
             quality_score: null,
             image_assets: [],
+            image_palettes: [],
             video_assets: [],
             title_en: '',
             title_zh: '',
@@ -815,7 +832,55 @@ test('prompts manage handler canonicalizes prompt image variants before saving',
                 card: 'https://cdn.fatherkey.com/prompts/card/b.webp'
             }
         ]);
+        assert.deepEqual(state.updatePayload.image_palettes, []);
         assert.equal(typeof state.updatePayload.updated_at, 'string');
+    });
+});
+
+test('prompts manage handler persists server-generated image palettes', async () => {
+    const existingPalette = [{
+        image_index: 0,
+        image_url: 'https://cdn.fatherkey.com/prompts/a.webp',
+        image_hash: 'sha256:existing',
+        version: 1,
+        colors: [{ hex: '#112233', ratio: 1 }]
+    }];
+    const generatedPalette = [{
+        image_index: 0,
+        image_url: 'https://cdn.fatherkey.com/prompts/a.webp',
+        image_hash: 'sha256:generated',
+        version: 1,
+        colors: [{ hex: '#336699', ratio: 1 }]
+    }];
+
+    await withPromptsManageHandler({
+        row: {
+            id: 'prompt-palette-1',
+            title: 'Prompt Palette',
+            tags: ['Photography'],
+            image_palettes: existingPalette
+        },
+        imagePalettes: generatedPalette
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update',
+                id: 'prompt-palette-1',
+                site: 'cn',
+                title: 'Prompt Palette',
+                tags: ['Photography'],
+                images: ['https://cdn.fatherkey.com/prompts/a.webp']
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(state.paletteRequest.imageUrls, ['https://cdn.fatherkey.com/prompts/a.webp']);
+        assert.deepEqual(state.paletteRequest.paletteOptions.existingPalettes, existingPalette);
+        assert.deepEqual(state.updatePayload.image_palettes, generatedPalette);
     });
 });
 
