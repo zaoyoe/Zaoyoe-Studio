@@ -332,6 +332,7 @@ test('prompts gallery folds CDN variant urls into one visible image per original
         extractFunction(promptsSource, 'normalizePromptImageAsset'),
         extractFunction(promptsSource, 'getPromptImageAssetOriginalUrl'),
         extractFunction(promptsSource, 'normalizePromptImageAssetsFromRecord'),
+        extractFunction(promptsSource, 'normalizePromptImagePalettesFromRecord'),
         extractFunction(promptsSource, 'normalizeSupabasePromptSummary'),
         'globalThis.__promptImageExports = { normalizeSupabasePromptSummary, normalizePromptImageAssetsFromRecord };'
     ].join('\n\n');

@@ -13,6 +13,7 @@
     "audit:ai-workbench-billing": "node scripts/audit-ai-workbench-billing.js",
     "audit:payment-closeout": "node scripts/payment-postdeploy-audit.js",
     "audit:payment-profile-mapping": "node scripts/audit-payment-profile-mapping.js",
+    "backfill:prompt-palettes": "node scripts/backfill-prompt-image-palettes.js",
     "ai-image:worker": "node scripts/ai-image-worker.js",
     "prompt-import:worker": "node scripts/prompt-import-worker.js",
     "build:vercel": "node api/_lib/vercel-build.js",
@@ -68,6 +69,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",
+    "@jsquash/avif": "^2.1.1",
     "@supabase/supabase-js": "^2.95.3",
     "@vercel/functions": "^3.4.3",
     "cors": "^2.8.5",

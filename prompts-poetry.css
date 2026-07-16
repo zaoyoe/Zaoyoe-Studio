@@ -1519,11 +1519,11 @@ body.prompts-page .nav-search input:active {
     padding: 16px 24px;
     border-radius: 16px;
     border: 1px solid rgba(59, 130, 246, 0.5);
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: #ffffff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-    z-index: 10000;
+    z-index: 30000;
     font-family: var(--font-sans, sans-serif);
     font-size: 0.95rem;
     color: #1e293b;
@@ -1544,6 +1544,32 @@ body.prompts-page .nav-search input:active {
 
 .gallery-toast__icon {
     font-size: 1.2rem;
+}
+
+.gallery-toast--compact {
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 12px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.14);
+    font-size: 0.86rem;
+    line-height: 1.25;
+    transition: opacity 160ms ease-out, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gallery-toast--compact .gallery-toast__icon {
+    font-size: 1rem;
+}
+
+.gallery-toast--compact:not(.gallery-toast--visible) {
+    transform: translateX(-50%) translateY(12px);
+}
+
+.gallery-toast--compact.gallery-toast--visible {
+    transform: translateX(-50%) translateY(0);
+}
+
+.gallery-toast--compact.gallery-toast--exiting {
+    transform: translateX(-50%) translateY(8px);
 }
 
 .gallery-toast--warning {
@@ -1579,7 +1605,7 @@ body.prompts-page .nav-search input:active {
 }
 
 [data-theme="dark"] .gallery-toast {
-    background: rgba(30, 41, 59, 0.85);
+    background: #1e293b;
     color: #e2e8f0;
 }
 
@@ -3180,8 +3206,8 @@ body.modal-open .prompt-card {
 .modal-inner {
     --prompt-modal-translate-y: 0px;
     --prompt-modal-scale: 0.92;
-    width: 90%;
-    max-width: 1000px;
+    width: 86%;
+    max-width: 940px;
     height: 85vh;
     background: var(--modal-bg);
     border: 1px solid var(--card-border);
@@ -3246,10 +3272,10 @@ body.modal-open .prompt-card {
     top: 50%;
     left: 50%;
     transform: translate3d(-50%, -50%, 0);
-    transition: opacity 0.5s ease-in-out, top 0.5s ease-in-out, transform 0.5s ease-in-out, filter 0.5s ease-in-out;
+    transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out, filter 0.5s ease-in-out;
     opacity: 1;
     filter: blur(0);
-    will-change: top, transform, opacity, filter;
+    will-change: transform, opacity, filter;
     backface-visibility: hidden;
 }
 
@@ -3455,8 +3481,8 @@ body.modal-open .prompt-card {
         scrollbar-width: none;
     }
 
-    .modal-inner.related-mode .modal-img-thumbs.is-visible {
-        bottom: var(--modal-img-thumbs-related-bottom, 188px);
+    .modal-inner.comment-mode .modal-img-thumbs.is-visible {
+        bottom: var(--modal-img-thumbs-docked-bottom, 188px);
         max-width: min(340px, calc(100% - 48px));
     }
 
@@ -3597,11 +3623,67 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 }
 
 .prompt-content-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    justify-content: space-between;
     gap: 16px;
     margin-bottom: 8px;
+}
+
+.prompt-heading-group {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+}
+
+.prompt-image-palette {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: center;
+}
+
+.prompt-image-palette.is-visible {
+    display: flex;
+}
+
+.prompt-image-palette-color {
+    width: 24px;
+    height: 18px;
+    flex: 0 0 auto;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 4px;
+    background: var(--prompt-palette-color, transparent);
+    box-shadow: none;
+    cursor: pointer;
+    transition: opacity 140ms ease, border-color 140ms ease;
+}
+
+.prompt-image-palette-color:hover,
+.prompt-image-palette-color:focus-visible {
+    opacity: 0.78;
+    border-color: rgba(15, 23, 42, 0.28);
+    box-shadow: none;
+    outline: 2px solid rgba(var(--prompt-detail-accent-rgb), 0.24);
+    outline-offset: 2px;
+}
+
+.prompt-image-palette-color.copied {
+    opacity: 0.64;
+    border-color: rgba(var(--prompt-detail-accent-rgb), 0.5);
+    box-shadow: none;
+}
+
+[data-theme="dark"] .prompt-image-palette-color {
+    border-color: rgba(255, 255, 255, 0.16);
 }
 
 .prompt-header-actions {
@@ -3609,6 +3691,9 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     align-items: center;
     gap: 4px;
     flex: 0 0 auto;
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
 }
 
 .prompt-header-share-slot,
@@ -4168,17 +4253,11 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
    The image still glides upward; the column width is pinned separately to avoid width-jump stutter.
 */
 .modal-inner.comment-mode .modal-image-col img {
-    top: 35% !important;
-    transform: translate3d(-50%, -50%, 0) scale(0.85);
+    transform: translate3d(-50%, -65%, 0) scale(0.85);
 }
 
 .modal-inner.comment-mode .modal-image-col .prompt-modal-video {
     object-fit: contain;
-}
-
-/* Motion Blur Class (Added by JS) */
-.modal-image-col img.blur-motion {
-    filter: blur(1.5px);
 }
 
 /* DOCKED Prompt Styling (When prompt is in the left column) */
@@ -4192,7 +4271,6 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     margin: 0;
     width: 100%;
     box-sizing: border-box;
-    animation: promptDockIn 0.5s ease-in-out forwards;
     pointer-events: auto;
     /* Re-enable clicks on docked prompt */
 }
@@ -4204,6 +4282,36 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 
 .prompt-area.docked .prompt-content-header {
     margin-bottom: 6px;
+}
+
+.prompt-area.docked .prompt-heading-group {
+    gap: 7px;
+}
+
+.prompt-area.docked .prompt-image-palette {
+    gap: 4px;
+}
+
+.prompt-area.docked .prompt-image-palette-color {
+    width: 20px;
+    height: 16px;
+    border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+    .prompt-heading-group {
+        gap: 7px;
+    }
+
+    .prompt-image-palette {
+        gap: 4px;
+    }
+
+    .prompt-image-palette-color {
+        width: 20px;
+        height: 16px;
+        border-radius: 4px;
+    }
 }
 
 .prompt-area.docked .unlock-btn {
@@ -4226,35 +4334,6 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 [data-theme="dark"] .prompt-area.docked {
     background: rgba(30, 41, 59, 0.85);
     border-color: rgba(255, 255, 255, 0.1);
-}
-
-@keyframes promptDockIn {
-    from {
-        opacity: 0;
-        transform: translateX(40px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-@keyframes promptReturn {
-    from {
-        opacity: 0;
-        transform: translateX(-40px);
-        /* Slide from left to right */
-    }
-
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-.prompt-area.returning {
-    animation: promptReturn 0.5s ease-in-out forwards;
 }
 
 /* 4. Clean Stream Comment Section */
@@ -4315,7 +4394,7 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     display: flex;
     opacity: 1;
     transform: translateY(0);
-    animation: commentsFadeIn 0.4s ease 0.2s backwards;
+    animation: commentsFadeIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
 }
 
 .related-header {
@@ -4353,8 +4432,10 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     align-items: flex-start;
     gap: 16px;
     overflow-y: auto;
+    overscroll-behavior-y: contain;
     padding: 2px 6px 34px 2px;
     scrollbar-width: thin;
+    contain: layout paint style;
 }
 
 .related-prompt-grid--empty {
@@ -4388,7 +4469,7 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     cursor: pointer;
     box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
     isolation: isolate;
-    transform: translateZ(0);
+    contain: layout paint style;
     transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
@@ -4531,13 +4612,68 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 
 @media (min-width: 769px) {
     .modal-image-col {
-        flex: 0 0 calc(50% - 40px);
+        flex: 0 0 50%;
+    }
+
+    .modal-inner .modal-image-col > #modalImg {
+        transition:
+            opacity 500ms cubic-bezier(0.16, 1, 0.3, 1),
+            transform 500ms cubic-bezier(0.16, 1, 0.3, 1),
+            filter 120ms linear;
+    }
+
+    .modal-inner.comment-mode:not(.comment-mode-returning) .modal-content-col {
+        transition: padding 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms;
+    }
+
+    .modal-inner.comment-mode:not(.comment-mode-returning) .modal-header,
+    .modal-inner.comment-mode:not(.comment-mode-returning) .modal-description {
+        transition:
+            opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms,
+            transform 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms,
+            max-height 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms,
+            margin 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms,
+            padding 400ms cubic-bezier(0.16, 1, 0.3, 1) 100ms;
+    }
+
+    .modal-inner.related-mode .related-prompt-grid--entering .related-prompt-card {
+        animation-duration: calc(400ms - var(--related-card-enter-delay, 0ms));
+        animation-delay: calc(100ms + var(--related-card-enter-delay, 0ms));
+        animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .modal-image-col img.blur-motion {
+        animation: promptDesktopZoomFocusBlur 500ms linear both;
+    }
+
+    @keyframes promptDesktopZoomFocusBlur {
+        0% {
+            filter: blur(0);
+        }
+
+        18% {
+            filter: blur(1px);
+        }
+
+        58% {
+            filter: blur(0.25px);
+        }
+
+        78%,
+        100% {
+            filter: blur(0);
+        }
     }
 
     .modal-content-col {
         flex: 1 1 0;
         min-width: 0;
         padding-bottom: 16px;
+    }
+
+    .modal-inner:not(.comment-mode):not(.related-mode) .prompt-area {
+        margin-left: -24px;
+        margin-right: -24px;
     }
 
     .modal-inner.comment-mode .modal-content-col {
@@ -4563,11 +4699,15 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
         transform: translateY(-8px);
         pointer-events: none;
         transition:
-            opacity 0.56s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            transform 0.56s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            max-height 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-            margin 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-            padding 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+            opacity 500ms cubic-bezier(0.16, 1, 0.3, 1),
+            transform 500ms cubic-bezier(0.16, 1, 0.3, 1),
+            max-height 500ms cubic-bezier(0.16, 1, 0.3, 1),
+            margin 500ms cubic-bezier(0.16, 1, 0.3, 1),
+            padding 500ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .modal-inner.comment-mode-returning .modal-content-col {
+        transition: padding 500ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .modal-inner.comment-mode-title-revealing .modal-header,
@@ -4586,6 +4726,16 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
         margin-top: 0;
         padding: 40px 40px 0;
         box-sizing: border-box;
+    }
+
+    .modal-inner.related-mode .related-section {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .modal-inner.related-mode .related-prompt-grid {
+        padding-left: 0;
+        padding-right: 0;
     }
 
     .modal-inner.related-mode .comment-section {
@@ -5895,6 +6045,10 @@ html[data-theme="dark"] .prompt-comment-input-dock__field::placeholder {
 
     .modal-inner.related-mode .comment-section {
         display: none;
+    }
+
+    .modal-inner.related-mode .modal-content-col {
+        padding-bottom: 0;
     }
 
     .modal-inner.related-mode .related-section {

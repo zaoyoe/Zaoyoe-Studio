@@ -573,14 +573,144 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'desktop prompt detail content column should place the prompt card at the same bottom height as the docked comment card'
     );
     assert.equal(
+        /\.modal-inner:not\(\.comment-mode\):not\(\.related-mode\) \.prompt-area\s*\{[\s\S]*?margin-left:\s*-24px;[\s\S]*?margin-right:\s*-24px;/.test(promptsStyles),
+        true,
+        'desktop prompt card should keep equal sixteen pixel insets beside the image and modal edge'
+    );
+    assert.equal(
+        /\.modal-inner\s*\{[\s\S]*?width:\s*86%;[\s\S]*?max-width:\s*940px;/.test(promptsStyles),
+        true,
+        'desktop prompt detail modal should use the narrower balanced width'
+    );
+    assert.equal(
+        promptsHtml.includes('promptCardSpacing=20260716_PROMPT_CARD_SPACING_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for the balanced card spacing'
+    );
+    assert.equal(
+        promptsHtml.includes('promptModalWidth=20260716_PROMPT_MODAL_WIDTH_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for the narrower modal width'
+    );
+    assert.equal(
+        promptsHtml.includes('promptEqualColumns=20260716_PROMPT_EQUAL_COLUMNS_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for equal desktop columns'
+    );
+    assert.equal(
+        /\.modal-inner\.related-mode \.related-section\s*\{[\s\S]*?padding-left:\s*16px;[\s\S]*?padding-right:\s*16px;/.test(promptsStyles),
+        true,
+        'desktop same-style content should use the compact horizontal modal inset'
+    );
+    assert.equal(
+        /\.modal-inner\.related-mode \.related-prompt-grid\s*\{[\s\S]*?padding-left:\s*0;[\s\S]*?padding-right:\s*0;/.test(promptsStyles),
+        true,
+        'desktop same-style image grid should not add a second horizontal inset'
+    );
+    assert.equal(
+        promptsHtml.includes('relatedHorizontalSpacing=20260716_PROMPT_RELATED_HORIZONTAL_SPACING_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for compact same-style spacing'
+    );
+    assert.equal(
+        /\.modal-inner\.comment-mode \.modal-image-col img\s*\{[\s\S]*?transform:\s*translate3d\(-50%, -65%, 0\) scale\(0\.85\);/.test(promptsStyles)
+            && promptsStyles.includes('transform 500ms cubic-bezier(0.16, 1, 0.3, 1),')
+            && !promptsStyles.includes('top 500ms cubic-bezier(0.16, 1, 0.3, 1),')
+            && !promptsStyles.includes('will-change: top, transform, opacity, filter;'),
+        true,
+        'desktop side-mode zoom should use compositor-only translation with the natural zoom curve'
+    );
+    assert.equal(
+        /\.modal-image-col img\.blur-motion\s*\{[\s\S]*?animation:\s*promptDesktopZoomFocusBlur 500ms linear both;/.test(promptsStyles),
+        true,
+        'desktop return blur should share the zoom duration instead of trailing it'
+    );
+    assert.equal(
+        /@keyframes promptDesktopZoomFocusBlur\s*\{[\s\S]*?0%\s*\{[\s\S]*?blur\(0\);[\s\S]*?18%\s*\{[\s\S]*?blur\(1px\);[\s\S]*?58%\s*\{[\s\S]*?blur\(0\.25px\);[\s\S]*?78%,[\s\S]*?100%\s*\{[\s\S]*?blur\(0\);/.test(promptsStyles),
+        true,
+        'desktop return blur should peak early and clear before the zoom settles'
+    );
+    assert.equal(
+        promptsHtml.includes('returnFocusBlur=20260716_PROMPT_RETURN_FOCUS_BLUR_2'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for the softer return focus blur'
+    );
+    assert.equal(
+        promptsHtml.includes('returnZoomCurve=20260716_PROMPT_RETURN_ZOOM_CURVE_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for the synchronized zoom curve'
+    );
+    assert.equal(
+        promptsHtml.includes('imageTransformMotion=20260716_PROMPT_IMAGE_TRANSFORM_MOTION_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for compositor-only image motion'
+    );
+    assert.equal(
+        promptsStyles.includes('@keyframes promptReturn') || promptsStyles.includes('.prompt-area.returning'),
+        false,
+        'desktop prompt card return should use the shared compositor-only motion helper'
+    );
+    assert.equal(
+        /\.modal-inner\.comment-mode-returning \.modal-content-col\s*\{[\s\S]*?padding 500ms cubic-bezier\(0\.16, 1, 0\.3, 1\);/.test(promptsStyles),
+        true,
+        'desktop content column should settle on the shared return timing'
+    );
+    assert.equal(
+        /\.modal-inner\.comment-mode-returning \.prompt-area\s*\{[^}]*max-height 500ms/.test(promptsStyles),
+        false,
+        'desktop prompt card geometry should settle before its horizontal return motion'
+    );
+    assert.equal(
+        promptsHtml.includes('returnChoreography=20260716_PROMPT_RETURN_CHOREOGRAPHY_1'),
+        true,
+        'the prompt detail stylesheet should be cache-busted for synchronized return elements'
+    );
+    assert.equal(
+        promptsStyles.includes('@keyframes promptDockIn'),
+        false,
+        'desktop prompt dock entrance should use the shared compositor-only motion helper'
+    );
+    assert.equal(
+        /\.modal-inner\.related-mode \.related-section\s*\{[\s\S]*?animation:\s*commentsFadeIn 400ms cubic-bezier\(0\.16, 1, 0\.3, 1\) 100ms both;/.test(promptsStyles),
+        true,
+        'desktop same-style panel entrance should end with the image zoom after a short load-smoothing delay'
+    );
+    assert.equal(
+        promptsSource.includes('const PROMPT_DESKTOP_SIDE_MODE_PROMPT_OFFSET_PX = 24;')
+            && promptsSource.includes('const PROMPT_DESKTOP_SIDE_MODE_PROMPT_MOTION_MS = 500;'),
+        true,
+        'desktop prompt enter and return should use the same compact distance and duration'
+    );
+    assert.equal(
+        (promptsHtml.match(/promptHorizontalMotion=20260716_PROMPT_HORIZONTAL_MOTION_1/g) || []).length,
+        2,
+        'the prompt script and stylesheet should be cache-busted for symmetric horizontal motion'
+    );
+    assert.equal(
+        promptsSource.includes('isMobileLayout ? 220 : 80'),
+        true,
+        'desktop related cards should finish their compact stagger inside the shared zoom window'
+    );
+    assert.equal(
+        promptsStyles.includes('animation-duration: calc(400ms - var(--related-card-enter-delay, 0ms));')
+            && promptsStyles.includes('animation-delay: calc(100ms + var(--related-card-enter-delay, 0ms));'),
+        true,
+        'desktop related card stagger should keep every card on the shared five hundred millisecond endpoint'
+    );
+    assert.equal(
+        promptsSource.includes('isMobileLayout ? 820 : 520'),
+        true,
+        'desktop related card animation state should clear immediately after the shared endpoint'
+    );
+    assert.equal(
         /\.prompt-dock-target\s*\{[\s\S]*bottom:\s*16px;/.test(promptsStyles),
         true,
         'comment mode docked prompt card should keep its original bottom position'
     );
     assert.equal(
-        /\.modal-inner\.related-mode \.modal-img-thumbs\.is-visible\s*\{[\s\S]*bottom:\s*var\(--modal-img-thumbs-related-bottom, 188px\);/.test(promptsStyles),
+        /\.modal-inner\.comment-mode \.modal-img-thumbs\.is-visible\s*\{[\s\S]*bottom:\s*var\(--modal-img-thumbs-docked-bottom, 188px\);/.test(promptsStyles),
         true,
-        'related mode image thumbnails should lift above the docked prompt card instead of covering actions'
+        'all desktop side-mode thumbnails should lift above the docked prompt card instead of covering actions'
     );
     assert.equal(
         /\.modal-image-col:has\(> img:hover\) \.modal-img-thumbs\.is-visible,[\s\S]*\.modal-img-thumbs\.is-visible:hover,[\s\S]*\.modal-img-thumbs\.is-visible:focus-within\s*\{/.test(promptsStyles),
@@ -604,10 +734,15 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
     );
     assert.equal(
         promptsSource.includes('function syncModalImageThumbnailPlacement()')
-            && promptsSource.includes("modalInner?.classList.contains('related-mode')")
-            && promptsSource.includes("--modal-img-thumbs-related-bottom"),
+            && /const shouldLiftAboveDockedPrompt = Boolean\(\s*promptArea\?\.classList\.contains\('docked'\)\s*&& promptArea\.parentElement\?\.id === 'promptDockTarget'/.test(promptsSource)
+            && promptsSource.includes("--modal-img-thumbs-docked-bottom"),
         true,
-        'runtime should measure the docked prompt card height for related-mode thumbnail placement'
+        'runtime should measure the docked prompt card height in both comment and related modes'
+    );
+    assert.equal(
+        (promptsHtml.match(/promptDockedThumbs=20260716_PROMPT_DOCKED_THUMBS_1/g) || []).length,
+        2,
+        'the prompt script and stylesheet should be cache-busted for docked thumbnail placement'
     );
     assert.equal(
         /function getPromptModalThumbnailUrl\(value\)\s*\{\s*return getPromptModalImageUrl\(value\);\s*\}/.test(promptsSource),

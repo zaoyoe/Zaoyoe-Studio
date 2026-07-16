@@ -66,12 +66,12 @@
 
     function scheduleOptionalGuestbookEnhancements() {
         scheduleOptionalTask(250, () => {
-            loadScript('./starry-sky.js?v=20260503_GUESTBOOK_DARK_STARRY_BG_1');
+            loadScript('./starry-sky.js?v=87e2e3d98e61');
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1');
-            loadScript('js/components/ChatWidget.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1', initChatWidgetIfReady);
+            loadStylesheet('css/chat-widget.css?v=87e2e3d98e61&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1');
+            loadScript('js/components/ChatWidget.js?v=87e2e3d98e61&siteAssetCdn=20260510_SITE_ASSET_CDN_1', initChatWidgetIfReady);
         }, 2200);
     }
 

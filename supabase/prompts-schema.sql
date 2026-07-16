@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS prompts (
     images TEXT[] DEFAULT '{}',
     image_assets JSONB DEFAULT '[]'::jsonb,
     dominant_colors TEXT[] DEFAULT '{}',
+    image_palettes JSONB NOT NULL DEFAULT '[]'::jsonb,
     ai_tags JSONB,
     quality_score FLOAT,
     source_url TEXT,
