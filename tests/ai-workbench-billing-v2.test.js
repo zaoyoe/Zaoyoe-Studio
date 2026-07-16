@@ -18,6 +18,9 @@ const migrationPath = path.resolve(__dirname, '../supabase/migrations/20260715_a
 const walletHandlerPath = path.resolve(__dirname, '../server/api-handlers/public/wallet.js');
 const pointsServicePath = path.resolve(__dirname, '../js/services/PointsService.js');
 const walletModalPath = path.resolve(__dirname, '../js/components/WalletModal.js');
+const walletStylesPath = path.resolve(__dirname, '../css/wallet.css');
+const walletZhPath = path.resolve(__dirname, '../lang/zh.json');
+const walletEnPath = path.resolve(__dirname, '../lang/en.json');
 const aiImageHandlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
 
 function createRpcStub(responses = {}) {
@@ -177,4 +180,21 @@ test('wallet and workbench contracts preserve micro-point precision end to end',
     assert.match(aiImageHandler, /status: 'authorizing'/);
     assert.match(aiImageHandler, /authorizeConfiguredAiWorkbenchTask\(supabase, data/);
     assert.match(aiImageHandler, /releaseAiWorkbenchPoints\(\{/);
+});
+
+test('wallet balance hover exposes the authoritative six-decimal value', () => {
+    const walletModal = fs.readFileSync(walletModalPath, 'utf8');
+    const walletStyles = fs.readFileSync(walletStylesPath, 'utf8');
+    const walletZh = JSON.parse(fs.readFileSync(walletZhPath, 'utf8'));
+    const walletEn = JSON.parse(fs.readFileSync(walletEnPath, 'utf8'));
+
+    assert.match(walletModal, /formatExactPoints\(value\)[\s\S]*minimumFractionDigits: 6,[\s\S]*maximumFractionDigits: 6/);
+    assert.match(walletModal, /applyExactPointsTooltip\(element, value, translationKey, fallback\)/);
+    assert.match(walletModal, /element\.title = tooltip/);
+    assert.match(walletModal, /element\.dataset\.exactPoints = tooltip/);
+    assert.match(walletModal, /element\.setAttribute\('aria-label', tooltip\)/);
+    assert.ok((walletModal.match(/applyExactPointsTooltip\(/g) || []).length >= 6);
+    assert.match(walletStyles, /#wallet-total\[data-exact-points\],[\s\S]*#wallet-paid\[data-exact-points\],[\s\S]*#wallet-bonus\[data-exact-points\][\s\S]*cursor: help/);
+    assert.equal(walletZh.wallet.exactBalanceTooltip, '精确余额：{points} 积分');
+    assert.equal(walletEn.wallet.exactBalanceTooltip, 'Exact balance: {points} points');
 });

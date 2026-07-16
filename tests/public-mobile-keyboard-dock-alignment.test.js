@@ -448,5 +448,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*animation: none;/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translate3d\(0, -2px, 0\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260707_WALLET_MODAL_DARK_INPUT_GRAY_1';/);
+    assert.match(walletLoader, /const VERSION = '20260716_WALLET_EXACT_BALANCE_TOOLTIP_1';/);
 });

@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260707_WALLET_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
+    const walletCssHref = 'css/wallet.css?v=20260716_WALLET_EXACT_BALANCE_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
@@ -2902,13 +2902,35 @@
                     totalEl.textContent = this.formatPoints(newVal);
                 }
                 totalEl.dataset.value = newVal;
+                this.applyExactPointsTooltip(
+                    totalEl,
+                    newVal,
+                    'wallet.exactBalanceTooltip',
+                    '精确余额：{points} 积分'
+                );
             }
 
             const paidEl = document.getElementById('wallet-paid');
-            if (paidEl) paidEl.textContent = this.formatPoints(normalizedBalance.paid_balance);
+            if (paidEl) {
+                paidEl.textContent = this.formatPoints(normalizedBalance.paid_balance);
+                this.applyExactPointsTooltip(
+                    paidEl,
+                    normalizedBalance.paid_balance,
+                    'wallet.exactPaidBalanceTooltip',
+                    '精确付费余额：{points} 积分'
+                );
+            }
 
             const bonusEl = document.getElementById('wallet-bonus');
-            if (bonusEl) bonusEl.textContent = this.formatPoints(normalizedBalance.bonus_balance);
+            if (bonusEl) {
+                bonusEl.textContent = this.formatPoints(normalizedBalance.bonus_balance);
+                this.applyExactPointsTooltip(
+                    bonusEl,
+                    normalizedBalance.bonus_balance,
+                    'wallet.exactBonusBalanceTooltip',
+                    '精确赠送余额：{points} 积分'
+                );
+            }
 
             this.renderBalanceContext(normalizedBalance);
             return normalizedBalance;
@@ -3080,6 +3102,24 @@
                     : 0,
                 maximumFractionDigits: isMicroAmount ? 6 : 2
             });
+        },
+
+        formatExactPoints(value) {
+            return this.normalizePointValue(value, 0).toLocaleString(undefined, {
+                minimumFractionDigits: 6,
+                maximumFractionDigits: 6
+            });
+        },
+
+        applyExactPointsTooltip(element, value, translationKey, fallback) {
+            if (!element) return '';
+            const tooltip = this.tr(translationKey, fallback, {
+                points: this.formatExactPoints(value)
+            });
+            element.title = tooltip;
+            element.dataset.exactPoints = tooltip;
+            element.setAttribute('aria-label', tooltip);
+            return tooltip;
         },
 
         formatCny(value) {
@@ -11203,6 +11243,12 @@
                             const normalizedBalance = this.normalizePointValue(data.new_balance);
                             totalEl.textContent = this.formatPoints(normalizedBalance);
                             totalEl.dataset.value = normalizedBalance;
+                            this.applyExactPointsTooltip(
+                                totalEl,
+                                normalizedBalance,
+                                'wallet.exactBalanceTooltip',
+                                '精确余额：{points} 积分'
+                            );
                         }
                     }
 
@@ -11273,6 +11319,12 @@
                             const normalizedBalance = this.normalizePointValue(data.new_balance);
                             totalEl.textContent = this.formatPoints(normalizedBalance);
                             totalEl.dataset.value = normalizedBalance;
+                            this.applyExactPointsTooltip(
+                                totalEl,
+                                normalizedBalance,
+                                'wallet.exactBalanceTooltip',
+                                '精确余额：{points} 积分'
+                            );
                         }
                     }
 

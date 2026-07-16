@@ -2253,6 +2253,12 @@ body.wallet-modal-lock {
     letter-spacing: 0.5px;
 }
 
+#wallet-total[data-exact-points],
+#wallet-paid[data-exact-points],
+#wallet-bonus[data-exact-points] {
+    cursor: help;
+}
+
 /* Sections */
 .wallet-section {
     padding: 16px 24px 24px;
