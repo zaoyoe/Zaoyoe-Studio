@@ -2152,7 +2152,7 @@ body.wallet-modal-lock {
     justify-content: space-between;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     transition: border-color 0.24s ease, box-shadow 0.24s ease, transform 0.24s ease;
@@ -2256,7 +2256,157 @@ body.wallet-modal-lock {
 #wallet-total[data-exact-points],
 #wallet-paid[data-exact-points],
 #wallet-bonus[data-exact-points] {
+    position: relative;
+    z-index: 4;
     cursor: help;
+    border-radius: 8px;
+    outline: none;
+}
+
+#wallet-total[data-exact-points]::before,
+#wallet-total[data-exact-points]::after,
+#wallet-paid[data-exact-points]::before,
+#wallet-paid[data-exact-points]::after,
+#wallet-bonus[data-exact-points]::before,
+#wallet-bonus[data-exact-points]::after {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+        opacity 110ms ease,
+        transform 110ms ease,
+        visibility 0s linear 110ms;
+}
+
+#wallet-total[data-exact-points]::after,
+#wallet-paid[data-exact-points]::after,
+#wallet-bonus[data-exact-points]::after {
+    content: attr(data-exact-points);
+    z-index: 2;
+    width: max-content;
+    max-width: min(320px, calc(100vw - 48px));
+    padding: 8px 11px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 10px;
+    background: rgba(9, 15, 28, 0.96);
+    box-shadow:
+        0 14px 34px rgba(0, 0, 0, 0.34),
+        0 3px 8px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
+    -webkit-text-fill-color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.35;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+#wallet-total[data-exact-points]::before,
+#wallet-paid[data-exact-points]::before,
+#wallet-bonus[data-exact-points]::before {
+    content: '';
+    z-index: 3;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+}
+
+#wallet-total[data-exact-points]::after {
+    top: calc(100% + 10px);
+    left: 0;
+    transform: translateY(-4px);
+}
+
+#wallet-total[data-exact-points]::before {
+    top: calc(100% + 3px);
+    left: 22px;
+    border-bottom: 7px solid rgba(9, 15, 28, 0.96);
+}
+
+#wallet-paid[data-exact-points]::after,
+#wallet-bonus[data-exact-points]::after {
+    right: 0;
+    bottom: calc(100% + 10px);
+    transform: translateY(4px);
+}
+
+#wallet-paid[data-exact-points]::before,
+#wallet-bonus[data-exact-points]::before {
+    right: 14px;
+    bottom: calc(100% + 3px);
+    border-top: 7px solid rgba(9, 15, 28, 0.96);
+}
+
+#wallet-total[data-exact-points]:hover::before,
+#wallet-total[data-exact-points]:hover::after,
+#wallet-total[data-exact-points]:focus-visible::before,
+#wallet-total[data-exact-points]:focus-visible::after,
+#wallet-paid[data-exact-points]:hover::before,
+#wallet-paid[data-exact-points]:hover::after,
+#wallet-paid[data-exact-points]:focus-visible::before,
+#wallet-paid[data-exact-points]:focus-visible::after,
+#wallet-bonus[data-exact-points]:hover::before,
+#wallet-bonus[data-exact-points]:hover::after,
+#wallet-bonus[data-exact-points]:focus-visible::before,
+#wallet-bonus[data-exact-points]:focus-visible::after {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s;
+}
+
+#wallet-total[data-exact-points]:hover::after,
+#wallet-total[data-exact-points]:focus-visible::after,
+#wallet-paid[data-exact-points]:hover::after,
+#wallet-paid[data-exact-points]:focus-visible::after,
+#wallet-bonus[data-exact-points]:hover::after,
+#wallet-bonus[data-exact-points]:focus-visible::after {
+    transform: translateY(0);
+}
+
+#wallet-total[data-exact-points]:focus-visible,
+#wallet-paid[data-exact-points]:focus-visible,
+#wallet-bonus[data-exact-points]:focus-visible {
+    outline: 2px solid rgba(96, 165, 250, 0.72);
+    outline-offset: 4px;
+}
+
+[data-theme="light"] #wallet-total[data-exact-points]::after,
+[data-theme="light"] #wallet-paid[data-exact-points]::after,
+[data-theme="light"] #wallet-bonus[data-exact-points]::after {
+    border-color: rgba(148, 163, 184, 0.3);
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow:
+        0 14px 34px rgba(15, 23, 42, 0.16),
+        0 3px 8px rgba(15, 23, 42, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    color: #1e293b;
+    -webkit-text-fill-color: #1e293b;
+}
+
+[data-theme="light"] #wallet-total[data-exact-points]::before {
+    border-bottom-color: rgba(255, 255, 255, 0.97);
+}
+
+[data-theme="light"] #wallet-paid[data-exact-points]::before,
+[data-theme="light"] #wallet-bonus[data-exact-points]::before {
+    border-top-color: rgba(255, 255, 255, 0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wallet-total[data-exact-points]::before,
+    #wallet-total[data-exact-points]::after,
+    #wallet-paid[data-exact-points]::before,
+    #wallet-paid[data-exact-points]::after,
+    #wallet-bonus[data-exact-points]::before,
+    #wallet-bonus[data-exact-points]::after {
+        transition: none;
+    }
 }
 
 /* Sections */
@@ -4338,6 +4488,40 @@ body.wallet-modal-lock {
         flex-direction: column;
         gap: 4px;
         text-align: center;
+    }
+
+    #wallet-total[data-exact-points]::after {
+        left: 50%;
+        transform: translate(-50%, -4px);
+    }
+
+    #wallet-total[data-exact-points]::before {
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    #wallet-total[data-exact-points]:hover::after,
+    #wallet-total[data-exact-points]:focus-visible::after {
+        transform: translate(-50%, 0);
+    }
+
+    #wallet-paid[data-exact-points]::after,
+    #wallet-bonus[data-exact-points]::after {
+        right: 50%;
+        transform: translate(50%, 4px);
+    }
+
+    #wallet-paid[data-exact-points]::before,
+    #wallet-bonus[data-exact-points]::before {
+        right: 50%;
+        transform: translateX(50%);
+    }
+
+    #wallet-paid[data-exact-points]:hover::after,
+    #wallet-paid[data-exact-points]:focus-visible::after,
+    #wallet-bonus[data-exact-points]:hover::after,
+    #wallet-bonus[data-exact-points]:focus-visible::after {
+        transform: translate(50%, 0);
     }
 
     /* Redeem section */

@@ -12,9 +12,9 @@ test('wallet loader and auth runtime prewarm the wallet shell before modal open'
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260716_WALLET_EXACT_BALANCE_TOOLTIP_1';",
+        "const VERSION = '20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260716_WALLET_EXACT_BALANCE_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'function warmWalletRuntime() {',

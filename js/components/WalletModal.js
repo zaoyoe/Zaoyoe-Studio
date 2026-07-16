@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260716_WALLET_EXACT_BALANCE_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
+    const walletCssHref = 'css/wallet.css?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
@@ -3116,9 +3116,10 @@
             const tooltip = this.tr(translationKey, fallback, {
                 points: this.formatExactPoints(value)
             });
-            element.title = tooltip;
+            element.removeAttribute('title');
             element.dataset.exactPoints = tooltip;
             element.setAttribute('aria-label', tooltip);
+            element.setAttribute('tabindex', '0');
             return tooltip;
         },
 
