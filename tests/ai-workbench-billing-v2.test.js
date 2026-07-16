@@ -182,7 +182,7 @@ test('wallet and workbench contracts preserve micro-point precision end to end',
     assert.match(aiImageHandler, /releaseAiWorkbenchPoints\(\{/);
 });
 
-test('wallet balance hover exposes the authoritative six-decimal value', () => {
+test('wallet balance uses an immediate custom tooltip for the authoritative six-decimal value', () => {
     const walletModal = fs.readFileSync(walletModalPath, 'utf8');
     const walletStyles = fs.readFileSync(walletStylesPath, 'utf8');
     const walletZh = JSON.parse(fs.readFileSync(walletZhPath, 'utf8'));
@@ -190,11 +190,17 @@ test('wallet balance hover exposes the authoritative six-decimal value', () => {
 
     assert.match(walletModal, /formatExactPoints\(value\)[\s\S]*minimumFractionDigits: 6,[\s\S]*maximumFractionDigits: 6/);
     assert.match(walletModal, /applyExactPointsTooltip\(element, value, translationKey, fallback\)/);
-    assert.match(walletModal, /element\.title = tooltip/);
+    assert.match(walletModal, /element\.removeAttribute\('title'\)/);
+    assert.doesNotMatch(walletModal, /element\.title = tooltip/);
     assert.match(walletModal, /element\.dataset\.exactPoints = tooltip/);
     assert.match(walletModal, /element\.setAttribute\('aria-label', tooltip\)/);
+    assert.match(walletModal, /element\.setAttribute\('tabindex', '0'\)/);
     assert.ok((walletModal.match(/applyExactPointsTooltip\(/g) || []).length >= 6);
-    assert.match(walletStyles, /#wallet-total\[data-exact-points\],[\s\S]*#wallet-paid\[data-exact-points\],[\s\S]*#wallet-bonus\[data-exact-points\][\s\S]*cursor: help/);
+    assert.match(walletStyles, /#wallet-total\[data-exact-points\]::after[\s\S]*content: attr\(data-exact-points\)/);
+    assert.match(walletStyles, /#wallet-total\[data-exact-points\]:hover::after[\s\S]*#wallet-total\[data-exact-points\]:focus-visible::after/);
+    assert.match(walletStyles, /transition:[\s\S]*opacity 110ms ease,[\s\S]*transform 110ms ease/);
+    assert.match(walletStyles, /\[data-theme="light"\] #wallet-total\[data-exact-points\]::after/);
+    assert.match(walletStyles, /@media \(prefers-reduced-motion: reduce\)/);
     assert.equal(walletZh.wallet.exactBalanceTooltip, '精确余额：{points} 积分');
     assert.equal(walletEn.wallet.exactBalanceTooltip, 'Exact balance: {points} points');
 });
