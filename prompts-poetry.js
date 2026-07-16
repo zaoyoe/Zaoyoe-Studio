@@ -1899,7 +1899,7 @@ async function waitForPromptSupabaseClientReady(timeoutMs = 2200) {
     });
 }
 
-const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=87e2e3d98e61';
+const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=20260302_G_AUTH';
 const PROMPTS_SUPABASE_SUMMARY_SELECT = [
     'id',
     'title',
@@ -3051,7 +3051,7 @@ function loadPromptStarrySkyRuntime(options = {}) {
 
     promptStarrySkyRuntimePromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'starry-sky.js?v=87e2e3d98e61';
+        script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';
         script.async = true;
         script.dataset.promptStarrySky = '1';
         script.addEventListener('load', () => resolve(script), { once: true });
