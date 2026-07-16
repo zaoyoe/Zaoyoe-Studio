@@ -8564,7 +8564,7 @@
         const deploymentSteps = Array.isArray(diagnostics.deployment_steps) ? diagnostics.deployment_steps : [];
         const snippet = external.embed_snippet || [
             '<script',
-            '  src="https://www.fatherkey.com/js/engagement-external-embed.js?v=87e2e3d98e61"',
+            '  src="https://www.fatherkey.com/js/engagement-external-embed.js?v=20260505_GONGYI_EXTERNAL_ENGAGEMENT_1"',
             `  data-page-id="${external.default_page_id}"`,
             `  data-site="${external.default_site}"`,
             `  data-api-origin="${external.api_origin}"`,
