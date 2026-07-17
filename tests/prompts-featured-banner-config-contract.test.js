@@ -231,6 +231,13 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     const promptsHtml = readRepoFile('prompts.html');
     const promptsCss = readRepoFile('prompts-poetry.css');
     const promptsSource = readRepoFile('prompts-poetry.js');
+    const desktopTitleRule = promptsCss.match(/\.modal-title-large\s*\{[\s\S]*?\}/)?.[0] || '';
+
+    assert.match(
+        desktopTitleRule,
+        /font-size:\s*1\.8rem/,
+        'desktop prompt title should use the same font size as the narrow layout'
+    );
 
     const requiredStyleMarkers = [
         '20260425_PROMPTS_COMMENT_HOVER_LIGHT_1',

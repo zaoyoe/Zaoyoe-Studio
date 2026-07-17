@@ -2,7 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createPublicVerifyHandlers } = require('../server/api-handlers/public/verify');
-const { buildClientStatusMessage, fetchUpstreamJobStatus, postVerifyJobAction, postVerifyProviderAction } = require('../server/api-handlers/_verify-job-runtime');
+const {
+    buildClientStatusMessage,
+    commitVerifyPointsCharge,
+    fetchUpstreamJobStatus,
+    mergeVerifyBillingCharge,
+    postVerifyJobAction,
+    postVerifyProviderAction
+} = require('../server/api-handlers/_verify-job-runtime');
 const {
     VERIFY_PROVIDER_CATCARD,
     fetchDirectVerifyQuotaState,
@@ -34,6 +41,31 @@ function sendJson(res, status, payload) {
     res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify(payload));
     return payload;
+}
+
+function createVerifyBillingRuntimeStubs() {
+    return {
+        commitVerifyPointsCharge,
+        mergeVerifyBillingCharge,
+        async prechargeVerifyPoints({ amount, action }) {
+            return {
+                action,
+                state: 'reserved',
+                reference_id: `verify:${action}:test-charge`,
+                refund_reference_id: `verify:${action}:test-charge:refund`,
+                charged_points: Number(amount),
+                charged_paid: Number(amount),
+                charged_bonus: 0
+            };
+        },
+        async releaseVerifyPointsCharge({ charge }) {
+            return {
+                ...charge,
+                state: 'refunded',
+                refunded_points: charge.charged_points
+            };
+        }
+    };
 }
 
 test('verify status message keeps actionable failed-task guidance', () => {
@@ -125,6 +157,7 @@ test('public verify submit handler returns queued task metadata for authenticate
             sendJson
         },
         verifyRuntime: {
+            ...createVerifyBillingRuntimeStubs(),
             normalizeVerifyTaskType(value) {
                 return String(value || '').trim() === 'full' ? 'full' : 'extract';
             },
@@ -234,6 +267,7 @@ test('public verify status handler returns normalized job progress for authentic
             sendJson
         },
         verifyRuntime: {
+            ...createVerifyBillingRuntimeStubs(),
             resolveVerifyRequestSite() {
                 return 'cn';
             },
@@ -362,6 +396,7 @@ test('public verify action handler unlocks failed captured links through the ori
             sendJson
         },
         verifyRuntime: {
+            ...createVerifyBillingRuntimeStubs(),
             resolveVerifyRequestSite() {
                 return 'cn';
             },
@@ -482,6 +517,61 @@ test('public verify action handler unlocks failed captured links through the ori
     assert.equal(payload.remaining_uses, 448.5);
 });
 
+test('public verify action handler rejects cancellation after a task leaves the pending queue', async () => {
+    let upstreamCalled = false;
+    const handlers = createPublicVerifyHandlers({
+        admin: {
+            async requireAuthenticatedUser() {
+                return {
+                    user: { id: 'user-1' },
+                    adminSupabase: {
+                        from() {
+                            throw new Error('action route should stop before database config access');
+                        }
+                    }
+                };
+            },
+            async parseJsonBody() {
+                return {
+                    action: 'cancel_task',
+                    taskId: 'SYS-RUNNING-1'
+                };
+            },
+            sendJson
+        },
+        verifyRuntime: {
+            resolveVerifyRequestSite() {
+                return 'cn';
+            },
+            async findTrackedJobLog() {
+                return {
+                    status: 'running',
+                    message: JSON.stringify({
+                        kind: 'google_one_job',
+                        job_id: 'SYS-RUNNING-1',
+                        raw_status: 'running'
+                    })
+                };
+            },
+            parseHistoryMessage(message) {
+                return JSON.parse(message);
+            },
+            async postVerifyJobAction() {
+                upstreamCalled = true;
+                return { ok: true };
+            }
+        }
+    });
+
+    const res = createResponseRecorder();
+    await handlers.action({ method: 'POST', headers: {} }, res);
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(payload.code, 'task_not_pending');
+    assert.equal(upstreamCalled, false);
+});
+
 test('public verify submit handler forwards the selected CDKey from the pool to upstream', async () => {
     const handlers = createPublicVerifyHandlers({
         admin: {
@@ -510,6 +600,7 @@ test('public verify submit handler forwards the selected CDKey from the pool to 
             sendJson
         },
         verifyRuntime: {
+            ...createVerifyBillingRuntimeStubs(),
             normalizeVerifyTaskType() {
                 return 'extract';
             },
@@ -614,6 +705,7 @@ test('public verify submit handler retries the next CDKey when the selected key 
             sendJson
         },
         verifyRuntime: {
+            ...createVerifyBillingRuntimeStubs(),
             normalizeVerifyTaskType() {
                 return 'full';
             },
@@ -764,6 +856,36 @@ test('verify job runtime status lookup falls back across the CDKey pool when the
     } finally {
         global.fetch = originalFetch;
     }
+});
+
+test('verify job runtime does not convert an all-key job_not_found result into a refundable failure', async () => {
+    const seenTaskIds = [];
+    const result = await fetchUpstreamJobStatus({
+        apiKey: 'SYS-AAA111',
+        apiKeys: ['SYS-AAA111', 'SYS-BBB222'],
+        apiBaseUrl: 'https://aidone.lol'
+    }, '1024', {
+        fetchImpl: async (_input, init = {}) => {
+            const payload = JSON.parse(init.body || '{}');
+            seenTaskIds.push(payload.task_id);
+            return new Response(JSON.stringify({
+                success: false,
+                code: 'job_not_found',
+                message: '任务不存在'
+            }), {
+                status: 404,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+    });
+
+    assert.deepEqual(seenTaskIds, [1024, 1024], 'numeric upstream task ids should remain JSON numbers');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 404);
+    assert.equal(result.code, 'job_not_found');
+    assert.match(result.message, /保留积分扣款/);
 });
 
 test('verify job runtime posts aidone job actions and rejects unsupported 1free job actions', async () => {

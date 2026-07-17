@@ -300,7 +300,7 @@
             return 'failed';
         }
 
-        if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing'].includes(normalized)) {
+        if (['running', 'processing', 'working', 'in_progress', 'assigned', 'accepted', 'started', 'executing', 'billing_pending'].includes(normalized)) {
             return 'running';
         }
 
@@ -2113,7 +2113,7 @@
         if (isPixelBridgeHistoryPayload(parsedPayload)) {
             return false;
         }
-        return Boolean(getHistoryJobId(item, parsedPayload)) && ['queued', 'running'].includes(status);
+        return Boolean(getHistoryJobId(item, parsedPayload)) && status === 'queued';
     }
 
     function canPurchaseFailedHistoryLink(item = {}, payload = null) {
@@ -2121,9 +2121,6 @@
         const status = normalizeVerifyClientStatus(item?.status || parsedPayload.raw_status || parsedPayload.status || '');
         const hasCapturedLink = parsedPayload.has_offer_url === true || parsedPayload.has_offer_url === 'true';
         const hasUnlockedUrl = Boolean(String(parsedPayload.url || parsedPayload.offer_url || '').trim());
-        if (normalizeTaskType(parsedPayload.task_type) === 'full') {
-            return false;
-        }
         return Boolean(getHistoryJobId(item, parsedPayload)) && status === 'failed' && hasCapturedLink && !hasUnlockedUrl;
     }
 
@@ -2539,11 +2536,6 @@
 
             if (isPurchaseAction) {
                 const unlockedUrl = String(payload.url || payload.offer_url || '').trim();
-                if (Number(payload.pointsDeducted) > 0) {
-                    userBalance = Math.max(0, userBalance - Number(payload.pointsDeducted));
-                    const balEl = document.getElementById('verifyBalanceValue');
-                    if (balEl) balEl.textContent = userBalance;
-                }
                 if (unlockedUrl) {
                     await copyTextToClipboard(unlockedUrl);
                     showSingleResult(
@@ -3773,27 +3765,7 @@ ${fullModeMarkup}
     }
 
     async function logToHistory(email, status, payload = {}, pointsDeducted = 0) {
-        if (!currentUser || !window.supabaseClient) return;
-
-        try {
-            await window.supabaseClient.from('verification_logs').insert({
-                user_id: currentUser.id,
-                verification_id: email || payload.job_id || '--',
-                status,
-                message: serializeHistoryMessage({
-                    email: email || '',
-                    task_type: normalizeTaskType(payload.task_type || getSelectedTaskType()),
-                    ...payload
-                }),
-                points_deducted: pointsDeducted,
-                batch_count: 1,
-                batch_success: status === 'success' ? 1 : 0,
-                batch_failed: status === 'success' ? 0 : 1,
-                site: window.SiteConfig?.site || 'cn'
-            });
-        } catch (error) {
-            console.warn('[VerifyHistory] Failed to write client-side history:', error.message);
-        }
+        return false;
     }
 
     function restorePendingTask(options = {}) {
@@ -3876,11 +3848,6 @@ ${fullModeMarkup}
             const stats = channelState.batchStats || { success: 0, failed: 0, total: 1 };
             if (result.terminal && result.success) {
                 stats.success = 1;
-                if (result.pointsDeducted) {
-                    userBalance = Math.max(0, userBalance - result.pointsDeducted);
-                    const balEl = document.getElementById('verifyBalanceValue');
-                    if (balEl) balEl.textContent = userBalance;
-                }
             } else if (result.terminal) {
                 stats.failed = 1;
             }
@@ -4118,6 +4085,7 @@ ${fullModeMarkup}
         });
         updateResultItem(entry.index, display.status, display.html, provider);
         updateExecutionRing(data, provider);
+        void loadUserBalance();
 
         return { submitted: true, jobId, data, provider };
     }
@@ -4199,11 +4167,6 @@ ${fullModeMarkup}
         const markTerminal = (result = {}, entry = {}, jobId = '') => {
             if (result.terminal && result.success) {
                 stats.success += 1;
-                if (result.pointsDeducted) {
-                    userBalance = Math.max(0, userBalance - result.pointsDeducted);
-                    const balEl = document.getElementById('verifyBalanceValue');
-                    if (balEl) balEl.textContent = userBalance;
-                }
             } else {
                 stats.failed += 1;
             }
@@ -4409,11 +4372,6 @@ ${fullModeMarkup}
                 const stats = state.batchStats || { success: 0, failed: 0, total: 1 };
                 if (result.terminal && result.success) {
                     stats.success = 1;
-                    if (result.pointsDeducted) {
-                        userBalance = Math.max(0, userBalance - result.pointsDeducted);
-                        const balEl = document.getElementById('verifyBalanceValue');
-                        if (balEl) balEl.textContent = userBalance;
-                    }
                 } else if (result.terminal) {
                     stats.failed = 1;
                 }

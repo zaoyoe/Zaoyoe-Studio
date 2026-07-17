@@ -2,7 +2,8 @@ const crypto = require('node:crypto');
 
 const {
     deductPointsForService,
-    getUserBalance
+    getUserBalance,
+    rechargePointsForPayment
 } = require('../../api/_lib/payments/rpc');
 const {
     AUTO_USER_TAGS,
@@ -26,8 +27,10 @@ const VERIFY_TASK_UNIT_COSTS = Object.freeze({
     extract: 0.5,
     full: 1
 });
-const ACTIVE_TRACKED_JOB_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned']);
+const ACTIVE_TRACKED_JOB_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned', 'billing_pending']);
 const TERMINAL_TRACKED_JOB_STATUSES = Object.freeze(['success', 'failed']);
+const VERIFY_BILLING_VERSION = 2;
+const VERIFY_BILLING_CHARGE_STATES = Object.freeze(['reserved', 'charged', 'refund_pending']);
 const jobSyncLocks = new Map();
 
 async function safeSyncVerifyUserTags(supabase, options = {}) {
@@ -79,6 +82,19 @@ function isVerifyInsufficientBalanceError(payload = {}, message = '') {
         || /余额不足|额度不足|insufficient.*balance|not enough.*balance/.test(text);
 }
 
+function isDefinitiveVerifyUpstreamRejection(result = {}) {
+    const status = Number(result.status || 0);
+    if (status >= 400 && status < 500 && ![408, 409, 425].includes(status)) {
+        return true;
+    }
+
+    const payload = result.payload && typeof result.payload === 'object' ? result.payload : result;
+    const code = String(getApiErrorCode(payload) || result.code || '').trim().toLowerCase();
+    const message = String(getApiErrorMessage(payload, result.message || '') || '').trim().toLowerCase();
+    return /^(invalid|missing|insufficient|unsupported|not_allowed|task_not_pending|failed_link_not_available)/.test(code)
+        || /余额不足|额度不足|参数无效|缺少参数|任务不存在|不支持该操作|not found|invalid|missing|required/.test(message);
+}
+
 function normalizeVerifyApiBaseUrl(value) {
     const normalized = String(value || '').trim().replace(/\/+$/, '');
     if (!normalized) return '';
@@ -121,6 +137,15 @@ function normalizeVerifyTaskType(value, fallback = DEFAULT_VERIFY_TASK_TYPE) {
     return fallback;
 }
 
+function normalizeVerifyUpstreamTaskId(value) {
+    const normalized = String(value ?? '').trim();
+    if (/^\d+$/.test(normalized)) {
+        const numeric = Number(normalized);
+        if (Number.isSafeInteger(numeric)) return numeric;
+    }
+    return normalized;
+}
+
 function normalizeVerifyCredentialCandidates(values = []) {
     const list = Array.isArray(values) ? values : [values];
     const flattened = [];
@@ -158,6 +183,267 @@ function getVerifyPriceForTaskType(config = {}, taskType = DEFAULT_VERIFY_TASK_T
     return normalizeVerifyTaskType(taskType) === 'full'
         ? Number(config.pricePerVerifyFull || config.pricePerVerifyExtract || config.pricePerVerify || 20)
         : Number(config.pricePerVerifyExtract || config.pricePerVerify || 10);
+}
+
+function normalizeVerifyPoints(value, fallback = 0) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.round(parsed * 1000000) / 1000000);
+}
+
+function buildVerifyBillingReference(action = 'submit_task') {
+    const normalizedAction = String(action || 'submit_task').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+    const randomId = typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : crypto.randomBytes(16).toString('hex');
+    return `verify:${normalizedAction || 'charge'}:${randomId}`;
+}
+
+function normalizeVerifyBillingCharge(value = {}, fallbackAction = '') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const chargedPoints = normalizeVerifyPoints(
+        value.charged_points ?? value.authorized_points ?? value.points,
+        0
+    );
+    const refundedPoints = normalizeVerifyPoints(value.refunded_points, 0);
+    const referenceId = String(value.reference_id || value.authorization_reference_id || '').trim();
+    if (!referenceId || chargedPoints <= 0) return null;
+
+    let chargedPaid = normalizeVerifyPoints(value.charged_paid ?? value.authorized_paid, 0);
+    let chargedBonus = normalizeVerifyPoints(value.charged_bonus ?? value.authorized_bonus, 0);
+    if (chargedPaid + chargedBonus <= 0) {
+        chargedPaid = chargedPoints;
+        chargedBonus = 0;
+    }
+    chargedPaid = Math.min(chargedPoints, chargedPaid);
+    chargedBonus = Math.min(Math.max(0, chargedPoints - chargedPaid), chargedBonus);
+
+    const action = String(value.action || fallbackAction || 'submit_task').trim().toLowerCase();
+    const rawState = String(value.state || value.status || 'charged').trim().toLowerCase();
+    const state = rawState === 'released' ? 'refunded' : rawState;
+    return {
+        action,
+        state,
+        reference_id: referenceId,
+        refund_reference_id: String(value.refund_reference_id || `${referenceId}:refund`).trim(),
+        charged_points: chargedPoints,
+        charged_paid: chargedPaid,
+        charged_bonus: chargedBonus,
+        refunded_points: state === 'refunded' ? Math.max(refundedPoints, chargedPoints) : refundedPoints,
+        charged_at: String(value.charged_at || value.authorized_at || '').trim() || null,
+        refunded_at: String(value.refunded_at || value.released_at || '').trim() || null,
+        refund_reason: String(value.refund_reason || '').trim(),
+        error_code: String(value.error_code || '').trim(),
+        error_message: String(value.error_message || '').trim()
+    };
+}
+
+function normalizeVerifyBilling(value = {}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return { version: VERIFY_BILLING_VERSION, charges: {} };
+    }
+
+    const sourceCharges = value.charges && typeof value.charges === 'object' && !Array.isArray(value.charges)
+        ? value.charges
+        : {};
+    const charges = {};
+    Object.entries(sourceCharges).forEach(([key, charge]) => {
+        const normalizedCharge = normalizeVerifyBillingCharge(charge, key);
+        if (normalizedCharge) charges[normalizedCharge.action || key] = normalizedCharge;
+    });
+
+    const legacyCharge = normalizeVerifyBillingCharge(value, value.action || 'submit_task');
+    if (legacyCharge && !charges[legacyCharge.action]) {
+        charges[legacyCharge.action] = legacyCharge;
+    }
+
+    return {
+        version: VERIFY_BILLING_VERSION,
+        charges
+    };
+}
+
+function mergeVerifyBillingCharge(value = {}, charge = {}) {
+    const billing = normalizeVerifyBilling(value);
+    const normalizedCharge = normalizeVerifyBillingCharge(charge, charge.action);
+    if (!normalizedCharge) return billing;
+    return {
+        version: VERIFY_BILLING_VERSION,
+        charges: {
+            ...billing.charges,
+            [normalizedCharge.action]: normalizedCharge
+        }
+    };
+}
+
+function mergeVerifyBilling(value = {}, overlay = {}) {
+    let billing = normalizeVerifyBilling(value);
+    const overlayBilling = normalizeVerifyBilling(overlay);
+    Object.values(overlayBilling.charges).forEach((charge) => {
+        billing = mergeVerifyBillingCharge(billing, charge);
+    });
+    return billing;
+}
+
+function getVerifyBillingCharge(value = {}, action = 'submit_task') {
+    const billing = normalizeVerifyBilling(value);
+    return billing.charges[String(action || '').trim().toLowerCase()] || null;
+}
+
+function getVerifyNetChargedPoints(value = {}) {
+    const billing = normalizeVerifyBilling(value);
+    return normalizeVerifyPoints(Object.values(billing.charges).reduce((total, charge) => {
+        return VERIFY_BILLING_CHARGE_STATES.includes(charge.state)
+            ? total + normalizeVerifyPoints(charge.charged_points, 0)
+            : total;
+    }, 0), 0);
+}
+
+function buildVerifyBillingError(message, code, statusCode = 503, billing = null) {
+    const error = new Error(message);
+    error.code = code;
+    error.statusCode = statusCode;
+    if (billing) error.billing = billing;
+    return error;
+}
+
+async function releaseVerifyPointsCharge({
+    supabase,
+    userId,
+    site = 'cn',
+    charge,
+    reason = 'Google One 任务上游退款返还'
+}) {
+    const normalizedCharge = normalizeVerifyBillingCharge(charge, charge?.action);
+    if (!normalizedCharge || normalizedCharge.state === 'refunded') {
+        return normalizedCharge;
+    }
+
+    const refundReferenceId = normalizedCharge.refund_reference_id || `${normalizedCharge.reference_id}:refund`;
+    const { error } = await rechargePointsForPayment({
+        supabase,
+        userId,
+        paidPoints: normalizedCharge.charged_paid,
+        bonusPoints: normalizedCharge.charged_bonus,
+        reason,
+        referenceId: refundReferenceId,
+        site
+    });
+    if (error) {
+        return {
+            ...normalizedCharge,
+            state: 'refund_pending',
+            refund_reference_id: refundReferenceId,
+            refund_reason: reason,
+            error_code: String(error.code || 'verify_points_refund_failed'),
+            error_message: String(error.message || error)
+        };
+    }
+
+    return {
+        ...normalizedCharge,
+        state: 'refunded',
+        refund_reference_id: refundReferenceId,
+        refunded_points: normalizedCharge.charged_points,
+        refunded_at: new Date().toISOString(),
+        refund_reason: reason,
+        error_code: '',
+        error_message: ''
+    };
+}
+
+async function prechargeVerifyPoints({
+    supabase,
+    userId,
+    amount,
+    site = 'cn',
+    taskType = DEFAULT_VERIFY_TASK_TYPE,
+    action = 'submit_task',
+    referenceId = ''
+}) {
+    const normalizedAmount = normalizeVerifyPoints(amount, 0);
+    const normalizedAction = String(action || 'submit_task').trim().toLowerCase();
+    const normalizedTaskType = normalizeVerifyTaskType(taskType);
+    if (!supabase?.rpc || !userId || normalizedAmount <= 0) {
+        throw buildVerifyBillingError('验证积分预扣参数无效', 'verify_points_precharge_invalid', 500);
+    }
+
+    const chargeReferenceId = String(referenceId || buildVerifyBillingReference(normalizedAction)).trim();
+    const reason = normalizedAction === 'purchase_failed_link'
+        ? 'Google One 失败暂存链接购买预扣'
+        : (normalizedTaskType === 'full'
+            ? 'Google One 全流程包绑卡服务预扣'
+            : 'Google One 试用链接提取服务预扣');
+    const { data, error } = await deductPointsForService({
+        supabase,
+        userId,
+        amount: normalizedAmount,
+        reason,
+        referenceId: chargeReferenceId,
+        site
+    });
+
+    if (error) {
+        throw buildVerifyBillingError(
+            error.message || '验证积分预扣失败',
+            'verify_points_precharge_failed',
+            503
+        );
+    }
+
+    const deducted = normalizeVerifyPoints(data?.deducted, 0);
+    let chargedPaid = normalizeVerifyPoints(data?.deducted_paid, 0);
+    let chargedBonus = normalizeVerifyPoints(data?.deducted_bonus, 0);
+    if (chargedPaid + chargedBonus <= 0 && deducted > 0) {
+        chargedPaid = deducted;
+        chargedBonus = 0;
+    }
+
+    const charge = normalizeVerifyBillingCharge({
+        action: normalizedAction,
+        state: 'reserved',
+        reference_id: chargeReferenceId,
+        charged_points: deducted,
+        charged_paid: chargedPaid,
+        charged_bonus: chargedBonus,
+        charged_at: new Date().toISOString()
+    }, normalizedAction);
+
+    if (deducted + 1e-9 < normalizedAmount) {
+        if (charge) {
+            await releaseVerifyPointsCharge({
+                supabase,
+                userId,
+                site,
+                charge,
+                reason: 'Google One 预扣不足自动返还'
+            });
+        }
+        throw buildVerifyBillingError(
+            `积分不足，需要 ${normalizedAmount} 积分`,
+            'insufficient_points',
+            402,
+            charge
+        );
+    }
+
+    return {
+        ...charge,
+        charged_points: normalizedAmount,
+        state: 'reserved'
+    };
+}
+
+function commitVerifyPointsCharge(charge = {}) {
+    const normalizedCharge = normalizeVerifyBillingCharge(charge, charge.action);
+    if (!normalizedCharge) return null;
+    return {
+        ...normalizedCharge,
+        state: 'charged',
+        charged_at: normalizedCharge.charged_at || new Date().toISOString(),
+        error_code: '',
+        error_message: ''
+    };
 }
 
 function normalizeVerifyUpstreamStatus(value) {
@@ -283,6 +569,7 @@ function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
         || fallback.message
         || ''
     ).trim();
+    const billing = mergeVerifyBilling(fallback.billing, source.billing);
 
     return {
         ...source,
@@ -310,7 +597,8 @@ function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
         queue_position: queuePositionValue,
         estimated_wait_seconds: waitSecondsValue,
         elapsed_seconds: elapsedSecondsValue,
-        created_at: String(source.completed_at || source.updated_at || source.created_at || fallback.created_at || '').trim() || null
+        created_at: String(source.completed_at || source.updated_at || source.created_at || fallback.created_at || '').trim() || null,
+        billing
     };
 }
 
@@ -668,6 +956,7 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
         estimated_wait_seconds: Number.isFinite(estimatedWait) ? estimatedWait : null,
         elapsed_seconds: Number.isFinite(elapsedSeconds) ? elapsedSeconds : null,
         points_deducted: pointsDeducted,
+        billing: normalizeVerifyBilling(apiData?.billing),
         logged_at: new Date().toISOString()
     };
 }
@@ -851,7 +1140,7 @@ async function deductPointsForJob({
         return 0;
     }
 
-    return Number(deductData?.deducted) || amount;
+    return normalizeVerifyPoints(deductData?.deducted, 0);
 }
 
 async function syncTrackedJobStatus({
@@ -877,10 +1166,18 @@ async function syncTrackedJobStatus({
             provider_key_fingerprint: existingPayload.provider_key_fingerprint || '',
             provider_key_name: existingPayload.provider_key_name || '',
             provider: existingPayload.provider || config?.provider,
-            provider_adapter: existingPayload.provider_adapter || config?.adapter || config?.provider_adapter
+            provider_adapter: existingPayload.provider_adapter || config?.adapter || config?.provider_adapter,
+            billing: existingPayload.billing
         });
         const upstreamStatus = String(normalizedApiData?.status || '').toLowerCase();
         const taskType = normalizeVerifyTaskType(normalizedApiData?.task_type || existingPayload.task_type);
+        let billing = normalizeVerifyBilling(normalizedApiData.billing || existingPayload.billing);
+        normalizedApiData.billing = billing;
+        let pointsDeducted = getVerifyNetChargedPoints(billing)
+            || Number(existingRecord?.points_deducted)
+            || 0;
+        let pointsRefunded = 0;
+        let billingPending = false;
 
         if (!upstreamStatus) {
             return {
@@ -899,38 +1196,72 @@ async function syncTrackedJobStatus({
                 jobId,
                 status: upstreamStatus,
                 apiData: normalizedApiData,
-                pointsDeducted: Number(existingRecord?.points_deducted) || 0
+                pointsDeducted
             });
 
             return {
-                pointsDeducted: Number(existingRecord?.points_deducted) || 0,
+                pointsDeducted,
+                pointsRefunded,
+                billingPending,
+                apiData: normalizedApiData,
                 record: existingRecord
             };
         }
 
         if (existingRecord && isTerminalTrackedStatus(existingRecord.status)) {
             const existingTerminalStatus = String(existingRecord.status || '').toLowerCase();
-            if (existingTerminalStatus === 'success' || upstreamStatus !== 'success') {
+            if (existingTerminalStatus === 'success') {
                 return {
                     pointsDeducted: Number(existingRecord.points_deducted) || 0,
+                    pointsRefunded,
+                    billingPending,
+                    apiData: normalizeVerifyJobPayload(existingPayload, existingPayload),
                     record: existingRecord
                 };
             }
         }
 
-        const runtimeConfig = config || await loadVerifyRuntimeConfig(supabase, process.env, {
-            site
-        });
-        let pointsDeducted = Number(existingRecord?.points_deducted) || 0;
-        if (upstreamStatus === 'success') {
+        if (upstreamStatus === 'failed') {
+            for (const [action, charge] of Object.entries(billing.charges)) {
+                if (!VERIFY_BILLING_CHARGE_STATES.includes(charge.state)) continue;
+                const releasedCharge = await releaseVerifyPointsCharge({
+                    supabase,
+                    userId,
+                    site,
+                    charge,
+                    reason: action === 'purchase_failed_link'
+                        ? 'Google One 失败提链购买未完成返还'
+                        : 'Google One 任务失败或取消返还'
+                });
+                if (releasedCharge?.state === 'refunded' && charge.state !== 'refunded') {
+                    pointsRefunded += normalizeVerifyPoints(releasedCharge.refunded_points, 0);
+                }
+                billing = mergeVerifyBillingCharge(billing, releasedCharge || charge);
+            }
+            normalizedApiData.billing = billing;
+            pointsDeducted = getVerifyNetChargedPoints(billing);
+        } else if (upstreamStatus === 'success' && getVerifyNetChargedPoints(billing) <= 0) {
+            const runtimeConfig = config || await loadVerifyRuntimeConfig(supabase, process.env, {
+                site
+            });
+            const expectedPoints = getVerifyPriceForTaskType(runtimeConfig, taskType);
             pointsDeducted = await deductPointsForJob({
                 supabase,
                 userId,
                 jobId,
-                amount: getVerifyPriceForTaskType(runtimeConfig, taskType),
+                amount: expectedPoints,
                 site,
                 taskType
             });
+            if (pointsDeducted + 1e-9 < expectedPoints) {
+                billingPending = true;
+                normalizedApiData.status = 'billing_pending';
+                normalizedApiData.url = '';
+                normalizedApiData.offer_url = '';
+                normalizedApiData.has_offer_url = false;
+                normalizedApiData.message = '任务已完成，但积分尚未足额结算；充值后系统会自动重试';
+                normalizedApiData.provider_message = '';
+            }
         }
 
         existingRecord = await upsertTrackedJobLog({
@@ -940,20 +1271,28 @@ async function syncTrackedJobStatus({
             site,
             email,
             jobId,
-            status: upstreamStatus === 'success' ? 'success' : 'failed',
+            status: billingPending ? 'billing_pending' : (upstreamStatus === 'success' ? 'success' : 'failed'),
             apiData: normalizedApiData,
             pointsDeducted
         });
 
-        await safeSyncVerifyUserTags(supabase, {
-            userId,
-            status: upstreamStatus === 'success' ? 'success' : 'failed',
-            site,
-            sourceEventId: jobId,
-            sourceModule: 'verify'
-        });
+        if (!billingPending) {
+            await safeSyncVerifyUserTags(supabase, {
+                userId,
+                status: upstreamStatus === 'success' ? 'success' : 'failed',
+                site,
+                sourceEventId: jobId,
+                sourceModule: 'verify'
+            });
+        }
 
-        return { pointsDeducted, record: existingRecord };
+        return {
+            pointsDeducted,
+            pointsRefunded,
+            billingPending,
+            apiData: normalizedApiData,
+            record: existingRecord
+        };
     });
 }
 
@@ -1042,17 +1381,10 @@ async function fetchPixelBridgeTaskStatus(config = {}, jobId, options = {}) {
     }
 
     return {
-        ok: true,
-        data: normalizeVerifyJobPayload({
-            job_id: jobId,
-            status: 'failed',
-            error: 'job_not_found',
-            message: '任务不存在'
-        }, {
-            task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
-            provider: config.provider,
-            provider_adapter: config.adapter || config.provider_adapter
-        })
+        ok: false,
+        status: 404,
+        code: 'job_not_found',
+        message: '任务暂时无法在原上游凭证下确认，未执行自动退款'
     };
 }
 
@@ -1073,7 +1405,7 @@ async function fetchUpstreamJobStatus(config, jobId, options = {}) {
         const upstream = await postVerifyProviderAction(config, {
             action: 'get_status',
             cdkey: apiKey,
-            task_id: jobId
+            task_id: normalizeVerifyUpstreamTaskId(jobId)
         }, {
             ...options,
             apiKey
@@ -1125,17 +1457,10 @@ async function fetchUpstreamJobStatus(config, jobId, options = {}) {
     };
 
     return {
-        ok: true,
-        data: normalizeVerifyJobPayload({
-            job_id: jobId,
-            status: 'failed',
-            error: missingJobError.code || 'job_not_found',
-            message: missingJobError.message || '任务不存在'
-        }, {
-            task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
-            provider: config.provider,
-            provider_adapter: config.adapter || config.provider_adapter
-        })
+        ok: false,
+        status: missingJobError.status || 404,
+        code: missingJobError.code || 'job_not_found',
+        message: `${missingJobError.message || '任务不存在'}；未确认上游退款，本站保留积分扣款`
     };
 }
 
@@ -1180,7 +1505,7 @@ async function postVerifyJobAction(config = {}, {
         const upstream = await postVerifyProviderAction(config, {
             action: normalizedAction,
             cdkey: candidateApiKey,
-            task_id: normalizedJobId
+            task_id: normalizeVerifyUpstreamTaskId(normalizedJobId)
         }, {
             ...options,
             apiKey: candidateApiKey
@@ -1233,20 +1558,31 @@ module.exports = {
     ACTIVE_TRACKED_JOB_STATUSES,
     DEFAULT_VERIFY_TASK_TYPE,
     buildClientStatusMessage,
+    buildVerifyBillingReference,
     buildVerifyCredentialFingerprint,
+    commitVerifyPointsCharge,
     fetchUpstreamJobStatus,
     findTrackedJobLog,
     getApiErrorCode,
     getApiErrorMessage,
+    getVerifyBillingCharge,
+    getVerifyNetChargedPoints,
     getVerifyPriceForTaskType,
+    mergeVerifyBilling,
+    mergeVerifyBillingCharge,
+    normalizeVerifyBilling,
     normalizeVerifyJobPayload,
     normalizeVerifyTaskType,
+    normalizeVerifyUpstreamTaskId,
     parseHistoryMessage,
     postVerifyJobAction,
     postVerifyProviderAction,
+    prechargeVerifyPoints,
+    releaseVerifyPointsCharge,
     resolveVerifyRequestSite,
     resolveVerifyApiKeyByFingerprint,
     isVerifyInsufficientBalanceError,
+    isDefinitiveVerifyUpstreamRejection,
     selectVerifyCredentialForTask,
     syncTrackedJobStatus,
     validateUserBalance

@@ -1791,6 +1791,18 @@ initTheme();
 // ========================================
 const PROMPT_GALLERY_SKELETON_COUNT = 6;
 const PROMPT_NAV_SKELETON_COUNT = 8;
+const PROMPT_NAV_FONT_WAIT_TIMEOUT_MS = 1400;
+const PROMPT_NAV_SKELETON_ITEMS = [
+    ['All', '全部'],
+    ['Photography', '摄影'],
+    ['Creative', '创意'],
+    ['Illustration', '插画'],
+    ['3D Art', '3D艺术'],
+    ['Miniature', '微缩'],
+    ['Animation', '动画'],
+    ['Saved', '收藏']
+];
+let promptNavFontReadyPromise = null;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
 const PROMPT_GALLERY_MOBILE_MASONRY_QUERY = '(max-width: 768px)';
 const PROMPT_GALLERY_MASONRY_MIN_COLUMN_WIDTH_PX = 280;
@@ -1911,6 +1923,7 @@ const PROMPTS_SUPABASE_SUMMARY_SELECT = [
     'description_zh',
     'images',
     'image_assets',
+    'image_palettes',
     'video_assets',
     'dominant_colors',
     'ai_tags',
@@ -1928,7 +1941,7 @@ const PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS = [
 ];
 const PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT = PROMPTS_SUPABASE_SUMMARY_SELECT
     .split(',')
-    .filter((field) => !['image_assets', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
+    .filter((field) => !['image_assets', 'image_palettes', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
     .join(',');
 const PROMPTS_SUPABASE_DETAIL_SELECT = [
     'id',
@@ -2021,6 +2034,7 @@ function replacePromptDataset(nextPrompts = []) {
 
 function normalizeSupabasePromptSummary(item = {}, index = 0) {
     const imageAssets = normalizePromptImageAssetsFromRecord(item);
+    const imagePalettes = normalizePromptImagePalettesFromRecord(item);
     const videoAssets = (Array.isArray(item?.video_assets) || Array.isArray(item?.videoAssets))
         ? getPromptVideoAssets(item)
         : [];
@@ -2038,8 +2052,8 @@ function normalizeSupabasePromptSummary(item = {}, index = 0) {
         images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
         imageAssets,
         image_assets: imageAssets,
-        imagePalettes: normalizePromptImagePalettesFromRecord(item),
-        image_palettes: normalizePromptImagePalettesFromRecord(item),
+        imagePalettes,
+        image_palettes: imagePalettes,
         videoAssets,
         video_assets: videoAssets,
         dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
@@ -2513,26 +2527,34 @@ function buildPromptCardSkeletonMarkup(index = 0) {
 }
 
 function buildPromptNavSkeletonMarkup(count = PROMPT_NAV_SKELETON_COUNT) {
-    const titleWidthClasses = [
-        'nav-item-skeleton--title-wide',
-        'nav-item-skeleton--title-medium',
-        'nav-item-skeleton--title-short',
-        'nav-item-skeleton--title-medium'
-    ];
-    const subtitleWidthClasses = [
-        'nav-item-skeleton--subtitle-wide',
-        'nav-item-skeleton--subtitle-medium',
-        'nav-item-skeleton--subtitle-short',
-        'nav-item-skeleton--subtitle-medium'
-    ];
     const safeCount = Math.min(Math.max(Number.parseInt(count, 10) || PROMPT_NAV_SKELETON_COUNT, 6), 10);
 
-    return Array.from({ length: safeCount }, (_, index) => `
-        <div class="nav-item nav-item--skeleton" aria-hidden="true" data-nav-skeleton-index="${index}">
-            <span class="skeleton nav-item-skeleton nav-item-skeleton--title ${titleWidthClasses[index % titleWidthClasses.length]}"></span>
-            <span class="skeleton nav-item-skeleton nav-item-skeleton--subtitle ${subtitleWidthClasses[index % subtitleWidthClasses.length]}"></span>
-        </div>
-    `).join('');
+    return Array.from({ length: safeCount }, (_, index) => {
+        const [englishLabel, chineseLabel] = PROMPT_NAV_SKELETON_ITEMS[index % PROMPT_NAV_SKELETON_ITEMS.length];
+        return `
+            <div class="nav-item nav-item--skeleton" aria-hidden="true" data-nav-skeleton-index="${index}">
+                <span class="en skeleton nav-item-skeleton nav-item-skeleton--title">${englishLabel}</span>
+                <span class="cn skeleton nav-item-skeleton nav-item-skeleton--subtitle">${chineseLabel}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function waitForPromptNavFont() {
+    if (promptNavFontReadyPromise) return promptNavFontReadyPromise;
+    if (!document.fonts?.load) {
+        promptNavFontReadyPromise = Promise.resolve();
+        return promptNavFontReadyPromise;
+    }
+
+    const fontLoadPromise = document.fonts
+        .load('400 1.4rem "Playfair Display"', 'Photography')
+        .catch(() => []);
+    const timeoutPromise = new Promise((resolve) => {
+        window.setTimeout(resolve, PROMPT_NAV_FONT_WAIT_TIMEOUT_MS);
+    });
+    promptNavFontReadyPromise = Promise.race([fontLoadPromise, timeoutPromise]).then(() => undefined);
+    return promptNavFontReadyPromise;
 }
 
 function renderPromptNavSkeletons(count = PROMPT_NAV_SKELETON_COUNT) {
@@ -3150,9 +3172,10 @@ async function completePromptPageInitialRender(initialFilter = 'all', tagParam =
     // Assign IDs to PROMPTS for favorites to work
     PROMPTS.forEach((p, i) => p.id = i);
 
-    generateDynamicNav(); // New: AI-driven navigation
+    const promptNavReadyPromise = generateDynamicNav(); // New: AI-driven navigation
     const featuredFirstPaintPromise = renderFeaturedBanner({ waitForFirstImage: true });
     const galleryConfigPromise = loadGalleryConfigForFirstRender();
+    await promptNavReadyPromise;
 
     if (tagParam) {
         console.log(`🏷️ URL tag parameter found: ${tagParam}`);
@@ -3178,18 +3201,6 @@ async function completePromptPageInitialRender(initialFilter = 'all', tagParam =
     setupSearch(); // Pinterest-style search
     checkAuthState(); // New: Check if admin is logged in
     schedulePromptsDeferredEnhancements();
-
-    // Fade in nav after fonts load (or timeout)
-    if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => {
-            document.querySelector('.nav-items')?.classList.add('loaded');
-        });
-    } else {
-        // Fallback for older browsers
-        setTimeout(() => {
-            document.querySelector('.nav-items')?.classList.add('loaded');
-        }, 100);
-    }
 
     // Check for URL parameter to open specific prompt
     handleUrlPromptParam();
@@ -3222,6 +3233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncPromptNavOffset();
     bindPromptGalleryMasonryWatcher();
     renderPromptNavSkeletons();
+    void waitForPromptNavFont();
     renderFeaturedBannerSkeleton();
     renderPromptGallerySkeletons();
 
@@ -3777,7 +3789,7 @@ function getDaysUntil(currentMonth, currentDay, targetMonth, targetDay) {
     return diffDays;
 }
 
-function generateDynamicNav() {
+async function generateDynamicNav() {
     const navContainer = document.getElementById('navItems');
     if (!navContainer || !PROMPTS) return;
 
@@ -3839,6 +3851,8 @@ function generateDynamicNav() {
             <span class="cn">收藏</span>
         </div>
     `;
+
+    await waitForPromptNavFont();
 
     navContainer.classList.remove('nav-items--skeleton');
     navContainer.classList.add('nav-items--hydrated');
@@ -7655,6 +7669,23 @@ function handlePromptModalTopButton() {
     closePromptModal();
 }
 
+function handlePromptModalEscapeKey(event) {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+
+    const modal = document.getElementById('promptModal');
+    if (!modal?.classList.contains('active')) return;
+
+    const eventTarget = event.target instanceof Element ? event.target : null;
+    const foregroundDialog = eventTarget?.closest(
+        'dialog[open], [role="dialog"][aria-modal="true"], .modal-overlay.active, .auth-sheet-overlay.active, .auth-sheet-overlay.visible'
+    );
+    if (foregroundDialog && foregroundDialog !== modal && !modal.contains(foregroundDialog)) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    closePromptModal();
+}
+
 function initializePromptStaticControls() {
     if (window.__promptStaticControlsBound) return;
 
@@ -7673,6 +7704,7 @@ function initializePromptStaticControls() {
     document.getElementById('relatedTriggerBtn')?.addEventListener('click', () => {
         toggleRelatedMode();
     });
+    document.addEventListener('keydown', handlePromptModalEscapeKey, true);
     syncPromptRelatedTriggerLabel();
 
     window.__promptStaticControlsBound = true;
@@ -8710,6 +8742,9 @@ function openPromptModal(id, options = {}) {
     // Insert before nav buttons
     const firstBtn = imgContainer.querySelector('.modal-img-nav');
     imgContainer.insertBefore(newMedia, firstBtn);
+    if (newMedia.tagName === 'IMG') {
+        newMedia.addEventListener('load', () => requestAnimationFrame(syncModalImagePaletteSurface), { once: true });
+    }
 
     // Populate Data (with i18n support)
     document.getElementById('modalTitle').textContent = getLocalizedField(item, 'title');
@@ -11232,6 +11267,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', requestPromptModalLayoutModeSync, { passive: true });
     window.addEventListener('orientationchange', requestPromptModalLayoutModeSync, { passive: true });
     window.visualViewport?.addEventListener('resize', requestPromptModalLayoutModeSync, { passive: true });
+    window.addEventListener('resize', syncModalImagePaletteSurface, { passive: true });
+    window.addEventListener('orientationchange', syncModalImagePaletteSurface, { passive: true });
 
     setupCommentSorting();
 
@@ -11361,6 +11398,7 @@ function updateModalImage(index) {
                 newImg.id = 'modalImg';
                 newImg.classList.remove('modal-next-image', 'animate-in');
                 newImg.className = 'active';
+                requestAnimationFrame(syncModalImagePaletteSurface);
 
                 // Release the lock
                 isModalImageAnimating = false;
@@ -11545,6 +11583,53 @@ function getPromptPaletteCopyLabel(hex) {
     return getCurrentLanguage() === 'en' ? `Copy ${hex}` : `复制色号 ${hex}`;
 }
 
+function syncModalImagePaletteSurface() {
+    const paletteContainer = document.getElementById('modalImagePaletteWide');
+    if (!paletteContainer) return;
+
+    paletteContainer.classList.remove('is-over-image');
+    if (!paletteContainer.classList.contains('is-visible')) return;
+
+    const image = document.getElementById('modalImg');
+    if (!image || !image.naturalWidth || !image.naturalHeight) return;
+
+    const paletteRect = paletteContainer.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    if (paletteRect.width <= 0 || paletteRect.height <= 0 || imageRect.width <= 0 || imageRect.height <= 0) return;
+
+    const imageRatio = image.naturalWidth / image.naturalHeight;
+    const boxRatio = imageRect.width / imageRect.height;
+    let renderedWidth = imageRect.width;
+    let renderedHeight = imageRect.height;
+
+    if (imageRatio > boxRatio) {
+        renderedHeight = imageRect.width / imageRatio;
+    } else {
+        renderedWidth = imageRect.height * imageRatio;
+    }
+
+    const renderedImageRect = {
+        left: imageRect.left + (imageRect.width - renderedWidth) / 2,
+        right: imageRect.right - (imageRect.width - renderedWidth) / 2,
+        top: imageRect.top + (imageRect.height - renderedHeight) / 2,
+        bottom: imageRect.bottom - (imageRect.height - renderedHeight) / 2
+    };
+    const overlapWidth = Math.max(
+        0,
+        Math.min(paletteRect.right, renderedImageRect.right) - Math.max(paletteRect.left, renderedImageRect.left)
+    );
+    const overlapHeight = Math.max(
+        0,
+        Math.min(paletteRect.bottom, renderedImageRect.bottom) - Math.max(paletteRect.top, renderedImageRect.top)
+    );
+    const paletteArea = paletteRect.width * paletteRect.height;
+    const overlapRatio = paletteArea > 0 ? (overlapWidth * overlapHeight) / paletteArea : 0;
+
+    // A small edge touch should keep the solid surface; switch to glass only
+    // when a meaningful part of the palette actually sits over image pixels.
+    paletteContainer.classList.toggle('is-over-image', overlapRatio >= 0.2);
+}
+
 async function copyPromptPaletteColor(hex, button) {
     try {
         await writePromptShareTextToClipboard(hex);
@@ -11562,25 +11647,31 @@ async function copyPromptPaletteColor(hex, button) {
 }
 
 function renderModalImagePalette() {
-    const container = document.getElementById('modalImagePalette');
-    if (!container) return;
+    const containers = document.querySelectorAll('[data-prompt-image-palette]');
+    if (!containers.length) return;
     const palette = getCurrentModalImagePalette();
     const colors = Array.isArray(palette?.colors) ? palette.colors : [];
-    container.classList.toggle('is-visible', colors.length > 0);
-    container.setAttribute('aria-hidden', colors.length ? 'false' : 'true');
-    container.replaceChildren();
 
-    colors.forEach((color) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'prompt-image-palette-color';
-        button.style.setProperty('--prompt-palette-color', color.hex);
-        button.dataset.hex = color.hex;
-        button.setAttribute('aria-label', getPromptPaletteCopyLabel(color.hex));
-        button.setAttribute('title', getPromptPaletteCopyLabel(color.hex));
-        button.addEventListener('click', () => copyPromptPaletteColor(color.hex, button));
-        container.appendChild(button);
+    containers.forEach((container) => {
+        container.classList.toggle('is-visible', colors.length > 0);
+        container.setAttribute('aria-hidden', colors.length ? 'false' : 'true');
+        container.replaceChildren();
+
+        colors.forEach((color) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'prompt-image-palette-color';
+            button.style.setProperty('--prompt-palette-color', color.hex);
+            button.dataset.hex = color.hex;
+            const copyLabel = getPromptPaletteCopyLabel(color.hex);
+            button.dataset.tooltip = copyLabel;
+            button.setAttribute('aria-label', copyLabel);
+            button.addEventListener('click', () => copyPromptPaletteColor(color.hex, button));
+            container.appendChild(button);
+        });
     });
+
+    requestAnimationFrame(syncModalImagePaletteSurface);
 }
 
 function syncModalImageNavigationState() {

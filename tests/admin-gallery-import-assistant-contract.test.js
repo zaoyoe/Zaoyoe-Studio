@@ -210,6 +210,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'function upsertGalleryImportItems(items = [])',
         'fetchpriority="low"',
         'function getGalleryImportBatchStats(batch = {})',
+        "const published = rows.filter((item) => String(item?.final_prompt_id || item?.finalPromptId || '').trim()).length;",
         'function selectGalleryImportBatch(batches = [], options = {})',
         'batchSelectionLocked: false',
         'localPreviewLocked: false',
@@ -222,8 +223,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'async function loadGalleryImportBatchById(batchId, options = {})',
         'preferPending: options.preferPending === true',
         'await loadLatestGalleryImportBatch({ silent: true, preferPending: true });',
-        '实际入队 ${stats.accepted}',
-        '仓库重复 ${stats.skippedDuplicates}',
+        '批次记录 ${stats.total}',
+        '实际发布 ${stats.published}',
+        '累计判重（含重试） ${stats.skippedDuplicates}',
         '阶段：${pipelineStage}',
         'function getGalleryImportAssetUrls(item = {}, fieldName = \'final_image_assets\')',
         'function getGalleryImportExpectedImageCount(item = {})',
@@ -348,7 +350,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'attemptedCount: rows.length',
         'stagedCount: data.length',
         'items: body.compact_response === true ? [] : result.items',
-        'skipped_duplicates: Math.max(0, Number(previousStats.skipped_duplicates || 0))',
+        'accepted: Math.max(0, Number(updatedBatch?.stats?.total || 0))',
+        'batchItemCount: Math.max(0, Number(updatedBatch?.stats?.total || 0))',
         "request = request.neq('status', 'cleaned')",
         ".select(IMPORT_ITEM_SELECT, { count: 'exact' })",
         '.range(pageStart, pageStart + pageSize - 1)',
@@ -675,6 +678,24 @@ test('prompt import payload requires source attribution, prompt, and images', ()
         finalImageAssets: [{ original: 'https://cdn.fatherkey.com/prompts/imports/a.jpg' }]
     });
     assert.equal(cleanedItemPayload.final_prompt_id, '379');
+});
+
+test('prompt import stats only count persisted prompt references as published', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const stats = _private.buildImportStats([
+        { status: 'imported', final_prompt_id: 'prompt-1' },
+        { status: 'cleaned', final_prompt_id: 'prompt-2' },
+        { status: 'cleaned', final_prompt_id: null },
+        { status: 'failed', final_prompt_id: null }
+    ]);
+
+    assert.equal(stats.total, 4);
+    assert.equal(stats.imported, 1);
+    assert.equal(stats.cleaned, 2);
+    assert.equal(stats.failed, 1);
+    assert.equal(stats.published, 2);
+    assert.equal(stats.cleaned_published, 1);
+    assert.equal(stats.cleaned_unpublished, 1);
 });
 
 test('prompt import image guard rejects private hosts and non-image payloads', () => {

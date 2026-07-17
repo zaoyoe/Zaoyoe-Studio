@@ -1137,7 +1137,7 @@ async function loadPromptList(supabase, options = {}) {
         const result = await executePromptSelectWithFallback((selectFields, excludedFields) => {
             let query = supabase
                 .from('prompts')
-                .select(selectFields, { count: 'planned' });
+                .select(selectFields, { count: 'exact' });
 
             query = applyPromptDbFilters(query, filters);
             query = applyPromptDbSort(query, filters.sort, excludedFields);

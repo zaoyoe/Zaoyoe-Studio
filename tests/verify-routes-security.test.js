@@ -224,16 +224,21 @@ function createSupabaseStub(state = {}) {
 
             if (name === 'fn_deduct_points_admin_site_with_breakdown' || name === 'fn_deduct_points_admin_site') {
                 state.metrics.deductCalls += 1;
-                pointsLedger.push({
-                    id: `ledger-${pointsLedger.length + 1}`,
-                    user_id: args.p_target_user_id,
-                    amount: -Math.abs(Number(args.p_amount) || 0),
-                    reference_id: args.p_reference_id,
-                    site: args.p_site || null,
-                    created_at: new Date().toISOString()
-                });
+                const deducted = state.deductedAmountOverride === undefined
+                    ? Number(args.p_amount) || 0
+                    : Number(state.deductedAmountOverride) || 0;
+                if (deducted > 0) {
+                    pointsLedger.push({
+                        id: `ledger-${pointsLedger.length + 1}`,
+                        user_id: args.p_target_user_id,
+                        amount: -Math.abs(deducted),
+                        reference_id: args.p_reference_id,
+                        site: args.p_site || null,
+                        created_at: new Date().toISOString()
+                    });
+                }
                 return createRpcResult({
-                    deducted: Number(args.p_amount) || 0
+                    deducted
                 });
             }
 
@@ -1281,11 +1286,31 @@ test('verify submit binds tracked job ownership to the authenticated user', asyn
             const url = String(input || '');
             if (url === 'https://verify.test/openapi') {
                 const body = JSON.parse(init?.body || '{}');
+                if (body.action === 'get_status') {
+                    assert.equal(body.task_id, 'job-queued-1');
+                    return new Response(JSON.stringify({
+                        success: true,
+                        data: {
+                            task_id: 'job-queued-1',
+                            status: 'Success',
+                            task_type: 'extract',
+                            offer_url: 'https://example.com/precharged-result'
+                        }
+                    }), {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                }
                 assert.equal(body.action, 'submit_task');
                 assert.equal(body.cdkey, 'verify-api-key');
                 assert.equal(body.email, 'member@example.com');
                 assert.equal(body.twofa, 'totp-secret');
                 assert.equal(body.task_type, 'extract');
+                assert.equal(state.pointsLedger.length, 1, 'user points must be charged before calling upstream');
+                assert.equal(state.pointsLedger[0].amount, -10);
+                assert.match(state.pointsLedger[0].reference_id, /^verify:submit_task:/);
                 return new Response(JSON.stringify({
                     success: true,
                     task_id: 'job-queued-1',
@@ -1328,6 +1353,20 @@ test('verify submit binds tracked job ownership to the authenticated user', asyn
             assert.equal(state.verificationLogs[0].user_id, 'user-1');
             assert.equal(state.verificationLogs[0].site, 'cn');
             assert.equal(state.verificationLogs[0].verification_id, 'job-queued-1');
+            assert.equal(state.verificationLogs[0].points_deducted, 10);
+            const trackedPayload = JSON.parse(state.verificationLogs[0].message || '{}');
+            assert.equal(trackedPayload.billing.charges.submit_task.state, 'charged');
+
+            const statusResponse = await dispatchRoute(app, {
+                url: '/api/verify/status/job-queued-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            assert.equal(statusResponse.status, 200);
+            assert.equal(statusResponse.json().success, true);
+            assert.equal(state.metrics.deductCalls, 1, 'terminal success must not charge a precharged task again');
+            assert.equal(state.pointsLedger.length, 1);
         } finally {
             global.fetch = originalFetch;
         }
@@ -1360,6 +1399,8 @@ test('verify submit accepts full-flow mode and charges the configured full-flow 
                 const body = JSON.parse(init?.body || '{}');
                 assert.equal(body.action, 'submit_task');
                 assert.equal(body.task_type, 'full');
+                assert.equal(state.pointsLedger.length, 1, 'full-flow points must be charged before calling upstream');
+                assert.equal(state.pointsLedger[0].amount, -26);
                 return new Response(JSON.stringify({
                     success: true,
                     task_id: 'job-full-1',
@@ -1396,6 +1437,123 @@ test('verify submit accepts full-flow mode and charges the configured full-flow 
             assert.equal(payload.job_id, 'job-full-1');
             assert.equal(payload.task_type, 'full');
             assert.equal(payload.pricePerVerify, 26);
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify submit refunds the precharge only after an explicit upstream rejection', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verificationLogs: [],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            assert.equal(String(input || ''), 'https://verify.test/openapi');
+            const body = JSON.parse(init?.body || '{}');
+            assert.equal(body.action, 'submit_task');
+            assert.equal(state.pointsLedger.length, 1);
+            assert.equal(state.pointsLedger[0].amount, -10);
+            return new Response(JSON.stringify({
+                success: false,
+                code: 'invalid_account',
+                message: '账号参数无效'
+            }), {
+                status: 400,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/verify',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                },
+                body: {
+                    email: 'member@example.com',
+                    password: 'pw',
+                    totpSecret: 'totp-secret',
+                    taskType: 'extract'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 400);
+            assert.equal(payload.success, false);
+            assert.equal(payload.code, 'invalid_account');
+            assert.equal(payload.pointsRefunded, 10);
+            assert.equal(state.verificationLogs.length, 0);
+            assert.equal(state.pointsLedger.length, 2);
+            assert.equal(state.pointsLedger[1].amount, 10);
+            assert.match(state.pointsLedger[1].reference_id, /^verify:submit_task:.*:refund$/);
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify submit retains the precharge when a server error leaves upstream billing uncertain', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verificationLogs: [],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async () => new Response(JSON.stringify({
+            success: false,
+            message: 'upstream response failed after dispatch'
+        }), {
+            status: 500,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        try {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/verify',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                },
+                body: {
+                    email: 'member@example.com',
+                    password: 'pw',
+                    totpSecret: 'totp-secret',
+                    taskType: 'extract'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 503);
+            assert.equal(payload.success, false);
+            assert.equal(payload.code, 'upstream_submit_outcome_unknown');
+            assert.equal(payload.pointsDeducted, 10);
+            assert.equal(payload.pointsRefunded, 0);
+            assert.match(payload.billing_reference, /^verify:submit_task:/);
+            assert.equal(state.pointsLedger.length, 1);
+            assert.equal(state.pointsLedger[0].amount, -10);
+            assert.equal(state.verificationLogs.length, 0);
         } finally {
             global.fetch = originalFetch;
         }
@@ -2477,6 +2635,188 @@ test('verify success polling deducts points only once per job id', async () => {
     });
 });
 
+test('verify legacy success with an unpaid settlement withholds the upstream result', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 0
+        },
+        deductedAmountOverride: 0,
+        verificationLogs: [
+            {
+                id: 'verify-job-unpaid-legacy-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-unpaid-legacy-1',
+                status: 'queued',
+                points_deducted: 0,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-unpaid-legacy-1',
+                    email: 'member@example.com',
+                    task_type: 'extract',
+                    raw_status: 'queued'
+                })
+            }
+        ],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            assert.equal(String(input || ''), 'https://verify.test/openapi');
+            const body = JSON.parse(init?.body || '{}');
+            assert.equal(body.action, 'get_status');
+            return new Response(JSON.stringify({
+                success: true,
+                data: {
+                    task_id: 'job-unpaid-legacy-1',
+                    status: 'Success',
+                    task_type: 'extract',
+                    offer_url: 'https://example.com/must-not-leak'
+                }
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/verify/status/job-unpaid-legacy-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            const payload = response.json();
+            const trackedPayload = JSON.parse(state.verificationLogs[0].message || '{}');
+
+            assert.equal(response.status, 402);
+            assert.equal(payload.success, false);
+            assert.equal(payload.code, 'verify_billing_pending');
+            assert.equal(payload.status, 'billing_pending');
+            assert.equal(payload.url, '');
+            assert.equal(state.metrics.deductCalls, 1);
+            assert.equal(state.pointsLedger.length, 0);
+            assert.equal(state.verificationLogs[0].status, 'billing_pending');
+            assert.equal(trackedPayload.url, '');
+            assert.equal(trackedPayload.offer_url, '');
+            assert.equal(trackedPayload.has_offer_url, false);
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify failed polling refunds a prior precharge after upstream confirms failure', async () => {
+    const chargeReference = 'verify:submit_task:failed-job-charge';
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 90
+        },
+        verificationLogs: [
+            {
+                id: 'verify-job-precharged-failed-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-precharged-failed-1',
+                status: 'queued',
+                points_deducted: 10,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-precharged-failed-1',
+                    email: 'member@example.com',
+                    task_type: 'extract',
+                    raw_status: 'queued',
+                    billing: {
+                        version: 2,
+                        charges: {
+                            submit_task: {
+                                action: 'submit_task',
+                                state: 'charged',
+                                reference_id: chargeReference,
+                                refund_reference_id: `${chargeReference}:refund`,
+                                charged_points: 10,
+                                charged_paid: 10,
+                                charged_bonus: 0
+                            }
+                        }
+                    }
+                })
+            }
+        ],
+        pointsLedger: [
+            {
+                id: 'ledger-precharge-1',
+                user_id: 'user-1',
+                amount: -10,
+                reference_id: chargeReference,
+                site: 'cn',
+                created_at: '2026-03-22T12:00:00.000Z'
+            }
+        ]
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            assert.equal(String(input || ''), 'https://verify.test/openapi');
+            const body = JSON.parse(init?.body || '{}');
+            assert.equal(body.action, 'get_status');
+            assert.equal(body.task_id, 'job-precharged-failed-1');
+            return new Response(JSON.stringify({
+                success: true,
+                data: {
+                    task_id: 'job-precharged-failed-1',
+                    status: 'Failed',
+                    message: '执行失败，卡片无效',
+                    task_type: 'extract',
+                    has_offer_url: false
+                }
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/verify/status/job-precharged-failed-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            const payload = response.json();
+            const trackedPayload = JSON.parse(state.verificationLogs[0].message || '{}');
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.status, 'failed');
+            assert.equal(payload.pointsDeducted, 0);
+            assert.equal(payload.pointsRefunded, 10);
+            assert.equal(state.metrics.deductCalls, 0);
+            assert.equal(state.pointsLedger.length, 2);
+            assert.equal(state.pointsLedger[1].amount, 10);
+            assert.equal(state.pointsLedger[1].reference_id, `${chargeReference}:refund`);
+            assert.equal(state.verificationLogs[0].points_deducted, 0);
+            assert.equal(trackedPayload.billing.charges.submit_task.state, 'refunded');
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
 test('verify status polling can repair a previously misclassified failed job once upstream reports success', async () => {
     const state = {
         tokens: {
@@ -2556,7 +2896,8 @@ test('verify status polling can repair a previously misclassified failed job onc
     });
 });
 
-test('verify action endpoint cancels pending aidone tasks without deducting user points', async () => {
+test('verify action endpoint cancels pending aidone tasks and refunds the prior precharge', async () => {
+    const chargeReference = 'verify:submit_task:cancel-job-charge';
     const state = {
         tokens: {
             'member-token': { id: 'user-1', email: 'member@example.com' }
@@ -2571,7 +2912,7 @@ test('verify action endpoint cancels pending aidone tasks without deducting user
                 site: 'cn',
                 verification_id: 'job-cancel-1',
                 status: 'queued',
-                points_deducted: 0,
+                points_deducted: 20,
                 created_at: '2026-03-22T12:00:00.000Z',
                 message: JSON.stringify({
                     kind: 'google_one_job',
@@ -2579,11 +2920,34 @@ test('verify action endpoint cancels pending aidone tasks without deducting user
                     email: 'member@example.com',
                     task_type: 'full',
                     provider: 'aidone',
-                    raw_status: 'queued'
+                    raw_status: 'queued',
+                    billing: {
+                        version: 2,
+                        charges: {
+                            submit_task: {
+                                action: 'submit_task',
+                                state: 'charged',
+                                reference_id: chargeReference,
+                                refund_reference_id: `${chargeReference}:refund`,
+                                charged_points: 20,
+                                charged_paid: 20,
+                                charged_bonus: 0
+                            }
+                        }
+                    }
                 })
             }
         ],
-        pointsLedger: []
+        pointsLedger: [
+            {
+                id: 'ledger-cancel-precharge-1',
+                user_id: 'user-1',
+                amount: -20,
+                reference_id: chargeReference,
+                site: 'cn',
+                created_at: '2026-03-22T12:00:00.000Z'
+            }
+        ]
     };
 
     await withTestServer(state, async ({ app }) => {
@@ -2628,8 +2992,11 @@ test('verify action endpoint cancels pending aidone tasks without deducting user
             assert.equal(payload.action, 'cancel_task');
             assert.equal(payload.status, 'failed');
             assert.equal(payload.pointsDeducted, 0);
+            assert.equal(payload.pointsRefunded, 20);
             assert.equal(state.metrics.deductCalls, 0);
-            assert.equal(state.pointsLedger.length, 0);
+            assert.equal(state.pointsLedger.length, 2);
+            assert.equal(state.pointsLedger[1].amount, 20);
+            assert.equal(state.pointsLedger[1].reference_id, `${chargeReference}:refund`);
             assert.equal(state.verificationLogs[0].status, 'failed');
             assert.equal(state.verificationLogs[0].points_deducted, 0);
         } finally {
@@ -2726,7 +3093,7 @@ test('verify action endpoint purchases a failed captured link at extract price',
             assert.equal(payload.pointsDeducted, 10);
             assert.equal(state.metrics.deductCalls, 1);
             assert.equal(state.pointsLedger.length, 1);
-            assert.equal(state.pointsLedger[0].reference_id, 'job-failed-link-1');
+            assert.match(state.pointsLedger[0].reference_id, /^verify:purchase_failed_link:/);
             assert.equal(state.pointsLedger[0].amount, -10);
             assert.equal(state.verificationLogs[0].status, 'success');
             assert.equal(state.verificationLogs[0].points_deducted, 10);

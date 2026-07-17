@@ -44,6 +44,7 @@ async function withPromptsManageHandler(options, callback) {
     const state = {
         requireAdminCalls: [],
         rpcCalls: [],
+        selectOptions: [],
         selectFilters: [],
         metricFilters: [],
         listRanges: [],
@@ -106,7 +107,8 @@ async function withPromptsManageHandler(options, callback) {
                             }
 
                             return {
-                                select() {
+                                select(_fields, selectOptions) {
+                                    state.selectOptions.push(selectOptions || null);
                                     return this;
                                 },
                                 order() {
@@ -481,6 +483,7 @@ test('prompts manage handler falls back to query pagination when gallery manage 
             assert.equal(state.rpcCalls.length, 1);
             assert.deepEqual(state.listRanges, [{ from: 1, to: 1 }]);
             assert.deepEqual(payload.rows.map((row) => row.id), ['prompt-2']);
+            assert.equal(state.selectOptions.some((options) => options?.count === 'exact'), true);
         });
     } finally {
         console.warn = originalWarn;

@@ -7,7 +7,7 @@ const {
     resolveSiteScopedSystemConfigValue
 } = require('./_site-scoped-system-config');
 
-const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned']);
+const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending', 'assigned', 'billing_pending']);
 const VERIFY_PROVIDER_AIDONE = 'aidone';
 const VERIFY_PROVIDER_CATCARD = 'catcard';
 const VERIFY_ADAPTER_AIDONE_OPENAPI = 'aidone_openapi';
