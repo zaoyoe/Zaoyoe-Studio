@@ -910,3 +910,26 @@ test('prompt unlock overload hotfix removes the varchar RPC signature and refres
         'overload hotfix should force PostgREST to refresh its function cache'
     );
 });
+
+test('verification task ownership logs are writable only by the service role', () => {
+    const migrationSql = readRepoFile(path.join(
+        'supabase',
+        'migrations',
+        '20260717_harden_verification_logs_server_writes.sql'
+    ));
+    const canonicalSql = readRepoFile(path.join('supabase', 'verification_logs_rls.sql'));
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+
+    for (const sql of [migrationSql, canonicalSql]) {
+        assert.match(sql, /DROP POLICY IF EXISTS "Users can insert their own verification logs"/);
+        assert.match(sql, /REVOKE INSERT, UPDATE, DELETE ON TABLE (?:public\.)?verification_logs FROM authenticated;/);
+        assert.match(sql, /CREATE POLICY "Service role can manage verification logs"/);
+        assert.match(sql, /TO service_role[\s\S]*WITH CHECK \(true\);/);
+    }
+
+    assert.doesNotMatch(
+        verifyWidgetSource,
+        /from\(['"]verification_logs['"]\)\.insert\(/,
+        'the browser must not be able to forge upstream task ownership rows'
+    );
+});

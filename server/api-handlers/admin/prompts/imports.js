@@ -436,6 +436,16 @@ function buildImportStats(items = []) {
         return acc;
     }, {});
 
+    const published = rows.filter((item) => normalizePromptReferenceId(item?.final_prompt_id)).length;
+    const cleanedPublished = rows.filter((item) => (
+        normalizeImportItemStatus(item?.status || 'staged') === 'cleaned'
+        && normalizePromptReferenceId(item?.final_prompt_id)
+    )).length;
+    const cleanedUnpublished = rows.filter((item) => (
+        normalizeImportItemStatus(item?.status || 'staged') === 'cleaned'
+        && !normalizePromptReferenceId(item?.final_prompt_id)
+    )).length;
+
     return {
         total: rows.length,
         staged: counts.staged || 0,
@@ -447,7 +457,10 @@ function buildImportStats(items = []) {
         imported: counts.imported || 0,
         failed: counts.failed || 0,
         skipped: counts.skipped || 0,
-        cleaned: counts.cleaned || 0
+        cleaned: counts.cleaned || 0,
+        published,
+        cleaned_published: cleanedPublished,
+        cleaned_unpublished: cleanedUnpublished
     };
 }
 
@@ -1024,7 +1037,7 @@ async function updateBatchStats(supabase, batchId) {
     if (currentBatchError) throw currentBatchError;
     const { data, error } = await supabase
         .from('prompt_import_items')
-        .select('status')
+        .select('status, final_prompt_id')
         .eq('batch_id', batchId);
     if (error) throw error;
 
@@ -1064,6 +1077,24 @@ async function loadImportBatch(supabase, batchId) {
         .single();
     if (error) throw error;
     return data;
+}
+
+async function loadImportBatchWithLiveStats(supabase, batchId) {
+    const [batch, itemResult] = await Promise.all([
+        loadImportBatch(supabase, batchId),
+        supabase
+            .from('prompt_import_items')
+            .select('status, final_prompt_id')
+            .eq('batch_id', batchId)
+    ]);
+    if (itemResult.error) throw itemResult.error;
+    return {
+        ...batch,
+        stats: {
+            ...(batch?.stats || {}),
+            ...buildImportStats(itemResult.data || [])
+        }
+    };
 }
 
 async function loadImportItem(supabase, itemId) {
@@ -1401,7 +1432,7 @@ async function stageImportItems(supabase, user, body) {
     const ingressStats = {
         ...(updatedBatch.stats || {}),
         attempted: Math.max(0, Number(previousIngressStats.attempted || 0)) + rows.length,
-        accepted: Math.max(0, Number(previousIngressStats.accepted || 0)) + data.length,
+        accepted: Math.max(0, Number(updatedBatch?.stats?.total || 0)),
         skipped_duplicates: Math.max(0, Number(previousIngressStats.skipped_duplicates || 0)) + duplicateIndexes.size,
         rejected: Math.max(0, Number(previousIngressStats.rejected || 0)) + rejectedCount
     };
@@ -1433,6 +1464,7 @@ async function stageImportItems(supabase, user, body) {
         items: data,
         attemptedCount: rows.length,
         stagedCount: data.length,
+        batchItemCount: Math.max(0, Number(updatedBatch?.stats?.total || 0)),
         skippedDuplicateCount: duplicateIndexes.size,
         ignoredExistingCount: ignoredExistingIndexes.size,
         rejectedIdentityCount: rejectedIdentityIndexes.size,
@@ -2098,7 +2130,7 @@ module.exports = async (req, res) => {
             const query = getImportPageQuery(searchParams);
             if (query.batchId) {
                 const [batch, itemPage] = await Promise.all([
-                    loadImportBatch(supabase, query.batchId),
+                    loadImportBatchWithLiveStats(supabase, query.batchId),
                     listImportItems(supabase, query)
                 ]);
                 return sendJson(res, 200, {
@@ -2194,6 +2226,7 @@ module.exports._private = {
     normalizeImportItemPayload,
     importSingleItem,
     loadImportBatch,
+    loadImportBatchWithLiveStats,
     updateBatchStats,
     buildPromptPayloadFromImportItem,
     buildCleanedImportedItemPayload,

@@ -7,17 +7,22 @@ const {
 const {
     buildClientStatusMessage,
     buildVerifyCredentialFingerprint,
+    commitVerifyPointsCharge,
     fetchUpstreamJobStatus,
     findTrackedJobLog,
     getApiErrorCode,
     getApiErrorMessage,
     getVerifyPriceForTaskType,
+    isDefinitiveVerifyUpstreamRejection,
     isVerifyInsufficientBalanceError,
+    mergeVerifyBillingCharge,
     normalizeVerifyJobPayload,
     normalizeVerifyTaskType,
     parseHistoryMessage,
     postVerifyJobAction,
     postVerifyProviderAction,
+    prechargeVerifyPoints,
+    releaseVerifyPointsCharge,
     resolveVerifyRequestSite,
     resolveVerifyApiKeyByFingerprint,
     syncTrackedJobStatus,
@@ -42,17 +47,22 @@ function createPublicVerifyHandlers({
     const runtimeSelectVerifyCredentialForTask = runtime.selectVerifyCredentialForTask || selectVerifyCredentialForTask;
     const runtimeBuildClientStatusMessage = runtime.buildClientStatusMessage || buildClientStatusMessage;
     const runtimeBuildVerifyCredentialFingerprint = runtime.buildVerifyCredentialFingerprint || buildVerifyCredentialFingerprint;
+    const runtimeCommitVerifyPointsCharge = runtime.commitVerifyPointsCharge || commitVerifyPointsCharge;
     const runtimeFetchUpstreamJobStatus = runtime.fetchUpstreamJobStatus || fetchUpstreamJobStatus;
     const runtimeFindTrackedJobLog = runtime.findTrackedJobLog || findTrackedJobLog;
     const runtimeGetApiErrorCode = runtime.getApiErrorCode || getApiErrorCode;
     const runtimeGetApiErrorMessage = runtime.getApiErrorMessage || getApiErrorMessage;
     const runtimeGetVerifyPriceForTaskType = runtime.getVerifyPriceForTaskType || getVerifyPriceForTaskType;
+    const runtimeIsDefinitiveVerifyUpstreamRejection = runtime.isDefinitiveVerifyUpstreamRejection || isDefinitiveVerifyUpstreamRejection;
     const runtimeIsVerifyInsufficientBalanceError = runtime.isVerifyInsufficientBalanceError || isVerifyInsufficientBalanceError;
+    const runtimeMergeVerifyBillingCharge = runtime.mergeVerifyBillingCharge || mergeVerifyBillingCharge;
     const runtimeNormalizeVerifyJobPayload = runtime.normalizeVerifyJobPayload || normalizeVerifyJobPayload;
     const runtimeNormalizeVerifyTaskType = runtime.normalizeVerifyTaskType || normalizeVerifyTaskType;
     const runtimeParseHistoryMessage = runtime.parseHistoryMessage || parseHistoryMessage;
     const runtimePostVerifyJobAction = runtime.postVerifyJobAction || postVerifyJobAction;
     const runtimePostVerifyProviderAction = runtime.postVerifyProviderAction || postVerifyProviderAction;
+    const runtimePrechargeVerifyPoints = runtime.prechargeVerifyPoints || prechargeVerifyPoints;
+    const runtimeReleaseVerifyPointsCharge = runtime.releaseVerifyPointsCharge || releaseVerifyPointsCharge;
     const runtimeResolveVerifyRequestSite = runtime.resolveVerifyRequestSite || resolveVerifyRequestSite;
     const runtimeResolveVerifyApiKeyByFingerprint = runtime.resolveVerifyApiKeyByFingerprint || resolveVerifyApiKeyByFingerprint;
     const runtimeSyncTrackedJobStatus = runtime.syncTrackedJobStatus || syncTrackedJobStatus;
@@ -184,37 +194,82 @@ function createPublicVerifyHandlers({
             });
         }
 
+        let pointsCharge;
+        try {
+            pointsCharge = await runtimePrechargeVerifyPoints({
+                supabase,
+                userId: user.id,
+                amount: priceForTask,
+                site: currentSite,
+                taskType: normalizedTaskType,
+                action: 'submit_task'
+            });
+        } catch (error) {
+            return sendJson(res, error.statusCode || 503, {
+                success: false,
+                message: error.message || '积分预扣失败',
+                code: error.code || 'verify_points_precharge_failed'
+            });
+        }
+
         let upstream = null;
         let submittedCredential = null;
-        for (const candidate of credentialCandidates) {
-            upstream = await runtimePostVerifyProviderAction(config, {
-                action: 'submit_task',
-                cdkey: candidate.apiKey,
-                email: normalizedEmail,
-                password: normalizedPassword,
-                twofa: normalizedTotpSecret,
-                priority: normalizedPriority,
-                task_type: normalizedTaskType
-            }, {
-                fetchImpl
+        try {
+            for (const candidate of credentialCandidates) {
+                upstream = await runtimePostVerifyProviderAction(config, {
+                    action: 'submit_task',
+                    cdkey: candidate.apiKey,
+                    email: normalizedEmail,
+                    password: normalizedPassword,
+                    twofa: normalizedTotpSecret,
+                    priority: normalizedPriority,
+                    task_type: normalizedTaskType
+                }, {
+                    fetchImpl
+                });
+                submittedCredential = candidate;
+
+                if (upstream.ok) {
+                    break;
+                }
+
+                const errorMessage = runtimeGetApiErrorMessage(upstream.payload, '任务提交失败');
+                if (!runtimeIsVerifyInsufficientBalanceError(upstream.payload, errorMessage)) {
+                    break;
+                }
+            }
+        } catch (error) {
+            return sendJson(res, 503, {
+                success: false,
+                message: '上游提交结果无法确认，积分暂不退回，请凭账单编号联系管理员核对',
+                code: 'upstream_submit_outcome_unknown',
+                billing_reference: pointsCharge.reference_id,
+                pointsDeducted: pointsCharge.charged_points
             });
-            submittedCredential = candidate;
-
-            if (upstream.ok) {
-                break;
-            }
-
-            const errorMessage = runtimeGetApiErrorMessage(upstream.payload, '任务提交失败');
-            if (!runtimeIsVerifyInsufficientBalanceError(upstream.payload, errorMessage)) {
-                break;
-            }
         }
 
         if (!upstream.ok) {
-            return sendJson(res, upstream.status || 502, {
+            const isDefinitiveRejection = !pointsCharge || runtimeIsDefinitiveVerifyUpstreamRejection(upstream);
+            const releasedCharge = isDefinitiveRejection
+                ? await runtimeReleaseVerifyPointsCharge({
+                    supabase,
+                    userId: user.id,
+                    site: currentSite,
+                    charge: pointsCharge,
+                    reason: 'Google One 上游拒绝接单返还'
+                })
+                : null;
+            return sendJson(res, isDefinitiveRejection ? (upstream.status || 502) : 503, {
                 success: false,
-                message: runtimeGetApiErrorMessage(upstream.payload, '任务提交失败'),
-                code: runtimeGetApiErrorCode(upstream.payload)
+                message: isDefinitiveRejection
+                    ? runtimeGetApiErrorMessage(upstream.payload, '任务提交失败')
+                    : '上游提交结果无法确认，积分暂不退回，请凭账单编号联系管理员核对',
+                code: isDefinitiveRejection
+                    ? runtimeGetApiErrorCode(upstream.payload)
+                    : 'upstream_submit_outcome_unknown',
+                pointsRefunded: releasedCharge?.state === 'refunded' ? releasedCharge.refunded_points : 0,
+                pointsDeducted: isDefinitiveRejection ? 0 : pointsCharge.charged_points,
+                billing_reference: pointsCharge.reference_id
             });
         }
 
@@ -224,12 +279,28 @@ function createPublicVerifyHandlers({
             provider: config.provider,
             provider_adapter: config.adapter || config.provider_adapter,
             provider_key_fingerprint: runtimeBuildVerifyCredentialFingerprint(submittedCredential.apiKey),
-            provider_key_name: submittedCredential.key_name || submittedCredential.keyName || ''
+            provider_key_name: submittedCredential.key_name || submittedCredential.keyName || '',
+            billing: runtimeMergeVerifyBillingCharge({}, runtimeCommitVerifyPointsCharge(pointsCharge))
         });
+        apiData.billing = runtimeMergeVerifyBillingCharge(
+            apiData.billing,
+            runtimeCommitVerifyPointsCharge(pointsCharge)
+        );
         const jobId = String(apiData.job_id || apiData.task_id || '').trim();
 
+        if (!jobId) {
+            return sendJson(res, 502, {
+                success: false,
+                message: '上游已接单但未返回任务编号，积分暂不退回，请凭账单编号联系管理员核对',
+                code: 'upstream_job_id_missing',
+                billing_reference: pointsCharge.reference_id,
+                pointsDeducted: pointsCharge.charged_points
+            });
+        }
+
+        let syncResult = null;
         if (jobId) {
-            await runtimeSyncTrackedJobStatus({
+            syncResult = await runtimeSyncTrackedJobStatus({
                 supabase,
                 userId: user.id,
                 site: currentSite,
@@ -261,7 +332,9 @@ function createPublicVerifyHandlers({
             progress: apiData.progress,
             elapsed_seconds: apiData.elapsed_seconds,
             message: apiData.message || '任务已提交',
-            pricePerVerify: priceForTask
+            pricePerVerify: priceForTask,
+            pointsDeducted: Number(syncResult?.pointsDeducted) || pointsCharge.charged_points,
+            billing_reference: pointsCharge.reference_id
         });
     }
 
@@ -337,12 +410,13 @@ function createPublicVerifyHandlers({
             });
         }
 
-        const normalizedApiData = runtimeNormalizeVerifyJobPayload(upstream.data, {
+        let normalizedApiData = runtimeNormalizeVerifyJobPayload(upstream.data, {
             task_type: runtimeNormalizeVerifyTaskType(trackedPayload.task_type),
             provider: trackedPayload.provider || config.provider,
             provider_adapter: trackedPayload.provider_adapter || config.adapter || config.provider_adapter,
             provider_key_fingerprint: trackedPayload.provider_key_fingerprint || '',
-            provider_key_name: trackedPayload.provider_key_name || ''
+            provider_key_name: trackedPayload.provider_key_name || '',
+            billing: trackedPayload.billing
         });
         const syncResult = await runtimeSyncTrackedJobStatus({
             supabase,
@@ -353,9 +427,11 @@ function createPublicVerifyHandlers({
             apiData: normalizedApiData,
             config
         });
+        normalizedApiData = syncResult?.apiData || normalizedApiData;
 
-        return sendJson(res, 200, {
-            success: normalizedApiData.status === 'success',
+        return sendJson(res, syncResult?.billingPending ? 402 : 200, {
+            success: !syncResult?.billingPending && normalizedApiData.status === 'success',
+            code: syncResult?.billingPending ? 'verify_billing_pending' : '',
             job_id: normalizedApiData.job_id || taskId,
             status: normalizedApiData.status,
             stage: normalizedApiData.stage,
@@ -378,7 +454,8 @@ function createPublicVerifyHandlers({
             provider_progress: normalizedApiData.provider_progress,
             progress: normalizedApiData.progress,
             message: runtimeBuildClientStatusMessage(normalizedApiData),
-            pointsDeducted: Number(syncResult?.pointsDeducted) || 0
+            pointsDeducted: Number(syncResult?.pointsDeducted) || 0,
+            pointsRefunded: Number(syncResult?.pointsRefunded) || 0
         });
     }
 
@@ -431,6 +508,27 @@ function createPublicVerifyHandlers({
         }
 
         const trackedPayload = runtimeParseHistoryMessage(trackedRecord?.message) || {};
+        const trackedStatus = String(
+            trackedRecord?.status || trackedPayload.raw_status || trackedPayload.status || ''
+        ).trim().toLowerCase();
+        if (action === 'cancel_task' && !['queued', 'pending'].includes(trackedStatus)) {
+            return sendJson(res, 409, {
+                success: false,
+                message: '只有仍在排队中的任务可以取消',
+                code: 'task_not_pending'
+            });
+        }
+        if (action === 'purchase_failed_link') {
+            const hasCapturedLink = trackedPayload.has_offer_url === true || trackedPayload.has_offer_url === 'true';
+            const hasUnlockedUrl = Boolean(String(trackedPayload.url || trackedPayload.offer_url || '').trim());
+            if (trackedStatus !== 'failed' || !hasCapturedLink || hasUnlockedUrl) {
+                return sendJson(res, 409, {
+                    success: false,
+                    message: '该任务当前没有可购买的失败暂存链接',
+                    code: 'failed_link_not_available'
+                });
+            }
+        }
         const loadedConfig = await runtimeLoadVerifyRuntimeConfig(supabase, env, {
             site: currentSite
         });
@@ -449,21 +547,72 @@ function createPublicVerifyHandlers({
 
         const preferredApiKey = runtimeResolveVerifyApiKeyByFingerprint(config, trackedPayload.provider_key_fingerprint || '')
             || config.apiKey;
-        const upstream = await runtimePostVerifyJobAction(config, {
-            action,
-            jobId: taskId,
-            apiKey: preferredApiKey,
-            taskType: runtimeNormalizeVerifyTaskType(trackedPayload.task_type)
-        }, {
-            fetchImpl,
-            apiKey: preferredApiKey
-        });
+        let pointsCharge = null;
+        if (action === 'purchase_failed_link') {
+            try {
+                pointsCharge = await runtimePrechargeVerifyPoints({
+                    supabase,
+                    userId: user.id,
+                    amount: runtimeGetVerifyPriceForTaskType(config, 'extract'),
+                    site: currentSite,
+                    taskType: 'extract',
+                    action
+                });
+            } catch (error) {
+                return sendJson(res, error.statusCode || 503, {
+                    success: false,
+                    message: error.message || '积分预扣失败',
+                    code: error.code || 'verify_points_precharge_failed'
+                });
+            }
+        }
+
+        let upstream;
+        try {
+            upstream = await runtimePostVerifyJobAction(config, {
+                action,
+                jobId: taskId,
+                apiKey: preferredApiKey,
+                taskType: runtimeNormalizeVerifyTaskType(trackedPayload.task_type)
+            }, {
+                fetchImpl,
+                apiKey: preferredApiKey
+            });
+        } catch (error) {
+            return sendJson(res, 503, {
+                success: false,
+                message: pointsCharge
+                    ? '上游购买结果无法确认，积分暂不退回，请凭账单编号联系管理员核对'
+                    : (error.message || '操作失败'),
+                code: pointsCharge ? 'upstream_purchase_outcome_unknown' : 'job_action_failed',
+                billing_reference: pointsCharge?.reference_id || '',
+                pointsDeducted: pointsCharge?.charged_points || 0
+            });
+        }
 
         if (!upstream.ok) {
-            return sendJson(res, upstream.status || 502, {
+            let releasedCharge = null;
+            const isDefinitiveRejection = !pointsCharge || runtimeIsDefinitiveVerifyUpstreamRejection(upstream);
+            if (pointsCharge && isDefinitiveRejection) {
+                releasedCharge = await runtimeReleaseVerifyPointsCharge({
+                    supabase,
+                    userId: user.id,
+                    site: currentSite,
+                    charge: pointsCharge,
+                    reason: 'Google One 失败提链购买被上游拒绝返还'
+                });
+            }
+            return sendJson(res, isDefinitiveRejection ? (upstream.status || 502) : 503, {
                 success: false,
-                message: upstream.message || '操作失败',
-                code: upstream.code || 'job_action_failed'
+                message: isDefinitiveRejection
+                    ? (upstream.message || '操作失败')
+                    : '上游购买结果无法确认，积分暂不退回，请凭账单编号联系管理员核对',
+                code: isDefinitiveRejection
+                    ? (upstream.code || 'job_action_failed')
+                    : 'upstream_purchase_outcome_unknown',
+                pointsRefunded: releasedCharge?.state === 'refunded' ? releasedCharge.refunded_points : 0,
+                pointsDeducted: pointsCharge && !isDefinitiveRejection ? pointsCharge.charged_points : 0,
+                billing_reference: pointsCharge?.reference_id || ''
             });
         }
 
@@ -476,8 +625,15 @@ function createPublicVerifyHandlers({
             provider: trackedPayload.provider || config.provider,
             provider_adapter: trackedPayload.provider_adapter || config.adapter || config.provider_adapter,
             provider_key_fingerprint: trackedPayload.provider_key_fingerprint || '',
-            provider_key_name: trackedPayload.provider_key_name || ''
+            provider_key_name: trackedPayload.provider_key_name || '',
+            billing: trackedPayload.billing
         });
+        if (pointsCharge) {
+            normalizedApiData.billing = runtimeMergeVerifyBillingCharge(
+                trackedPayload.billing,
+                runtimeCommitVerifyPointsCharge(pointsCharge)
+            );
+        }
         const syncResult = await runtimeSyncTrackedJobStatus({
             supabase,
             userId: user.id,
@@ -502,6 +658,8 @@ function createPublicVerifyHandlers({
             offer_url: normalizedApiData.offer_url || normalizedApiData.url || '',
             message: runtimeBuildClientStatusMessage(normalizedApiData),
             pointsDeducted: Number(syncResult?.pointsDeducted) || 0,
+            pointsRefunded: Number(syncResult?.pointsRefunded) || 0,
+            billing_reference: pointsCharge?.reference_id || '',
             remaining_uses: upstream.payload?.remaining_uses ?? upstream.data?.remaining_uses ?? null
         });
     }

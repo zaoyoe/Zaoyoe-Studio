@@ -7101,10 +7101,18 @@ function sortAdminGalleryCards(sortValue = getAdminGallerySortValue(), rows = al
     return safeRows;
 }
 
-function summarizeAdminGalleryOps(rows = allPrompts) {
+function summarizeAdminGalleryOps(rows = allPrompts, totalItems = null) {
     const safeRows = Array.isArray(rows) ? rows : [];
+    const parsedTotalItems = Number(totalItems);
+    const hasServerTotal = totalItems !== null
+        && totalItems !== undefined
+        && totalItems !== ''
+        && Number.isFinite(parsedTotalItems)
+        && parsedTotalItems >= 0;
     const counts = {
-        all: safeRows.length,
+        all: hasServerTotal
+            ? Math.max(parsedTotalItems, safeRows.length)
+            : safeRows.length,
         draft: 0,
         review: 0,
         'homepage-candidate': 0,
@@ -7145,8 +7153,14 @@ function renderGalleryOpsOverview() {
         return;
     }
 
-    const { counts, siteTotals } = summarizeAdminGalleryOps(allPrompts);
     const activeStatus = String(document.getElementById('statusFilter')?.value || '').trim().toLowerCase();
+    const { counts, siteTotals } = summarizeAdminGalleryOps(
+        allPrompts,
+        adminGalleryViewState.pagination?.totalItems
+    );
+    if (activeStatus && Object.prototype.hasOwnProperty.call(counts, activeStatus)) {
+        counts[activeStatus] = counts.all;
+    }
     const currentSite = getAdminPromptsReadSite();
     const sortValue = getAdminGallerySortValue();
     const statusCards = [
@@ -7176,7 +7190,7 @@ function renderGalleryOpsOverview() {
         <div class="gallery-ops-overview__meta">
             <span class="gallery-ops-overview__meta-pill">CN 解锁 ${escapeHtml(String(siteTotals.cn.unlock_count))} · 评论 ${escapeHtml(String(siteTotals.cn.comment_count))}</span>
             <span class="gallery-ops-overview__meta-pill">EN 解锁 ${escapeHtml(String(siteTotals.intl.unlock_count))} · 评论 ${escapeHtml(String(siteTotals.intl.comment_count))}</span>
-            <span class="gallery-ops-overview__hint">当前视角 ${escapeHtml(currentSite === 'intl' ? 'EN' : (currentSite === 'cn' ? 'CN' : '全部站点'))} · 排序 ${escapeHtml(ADMIN_GALLERY_SORT_LABELS[sortValue] || ADMIN_GALLERY_SORT_LABELS['updated-desc'])}</span>
+            <span class="gallery-ops-overview__hint">全部提示词为当前筛选总数 · 其余状态为本页分布 · 当前视角 ${escapeHtml(currentSite === 'intl' ? 'EN' : (currentSite === 'cn' ? 'CN' : '全部站点'))} · 排序 ${escapeHtml(ADMIN_GALLERY_SORT_LABELS[sortValue] || ADMIN_GALLERY_SORT_LABELS['updated-desc'])}</span>
         </div>
     `;
 }
@@ -17630,16 +17644,26 @@ function getGalleryImportBatchStats(batch = {}) {
     const number = (key) => Math.max(0, Number(stats[key] || 0));
     const total = Math.max(0, Number(stats.total || 0));
     const pending = number('staged') + number('queued') + number('uploading') + number('saving');
-    const completed = number('cleaned') + number('imported');
+    const completed = number('cleaned') + number('imported') + number('duplicate') + number('skipped');
     const attention = number('failed') + number('needs_review');
+    const hasPublishedStats = Object.prototype.hasOwnProperty.call(stats, 'published');
+    const published = hasPublishedStats
+        ? number('published')
+        : number('imported');
+    const cleanedUnpublished = Object.prototype.hasOwnProperty.call(stats, 'cleaned_unpublished')
+        ? number('cleaned_unpublished')
+        : number('cleaned');
     return {
         total,
         attempted: Math.max(total, number('attempted')),
-        accepted: Math.max(total, number('accepted')),
+        accepted: total,
         skippedDuplicates: number('skipped_duplicates'),
         rejected: number('rejected'),
         pending,
         completed,
+        hasPublishedStats,
+        published,
+        cleanedUnpublished,
         attention,
         failed: number('failed'),
         needsReview: number('needs_review'),
@@ -17655,7 +17679,9 @@ function getGalleryImportBatchStatusLabel(batch = {}) {
     if (!stats.total) return '空批次';
     if (stats.pending) return '处理中';
     if (stats.attention) return '需要处理';
-    if (String(batch?.status || '') === 'completed') return '已完成';
+    if (String(batch?.status || '') === 'completed') {
+        return stats.hasPublishedStats && stats.published === 0 ? '已处理，未发布' : '已处理完成';
+    }
     return '等待处理';
 }
 
@@ -17710,13 +17736,14 @@ function renderGalleryImportBatchTracker() {
     summary.innerHTML = [
         `<span>批次 ${escapeGalleryImportHtml(batch.id || '')}</span>`,
         `<span>${escapeGalleryImportHtml(getGalleryImportBatchStatusLabel(batch))}</span>`,
-        `<span>尝试 ${stats.attempted}</span>`,
-        `<span>实际入队 ${stats.accepted}</span>`,
-        `<span>仓库重复 ${stats.skippedDuplicates}</span>`,
+        `<span>累计提交（含重试） ${stats.attempted}</span>`,
+        `<span>批次记录 ${stats.total}</span>`,
+        `<span>累计判重（含重试） ${stats.skippedDuplicates}</span>`,
         `<span>未接收 ${stats.rejected}</span>`,
-        `<span>总数 ${stats.total}</span>`,
         `<span>待处理 ${stats.pending}</span>`,
-        `<span>已完成 ${stats.completed}</span>`,
+        `<span>已处理 ${stats.completed}</span>`,
+        `<span>实际发布 ${stats.published}</span>`,
+        `<span>清理未发布 ${stats.cleanedUnpublished}</span>`,
         `<span>失败 ${stats.failed}</span>`,
         `<span>需复核 ${stats.needsReview}</span>`,
         `<span>批次内跳过 ${stats.duplicates + stats.skipped}</span>`,
@@ -17740,6 +17767,7 @@ function getGalleryImportStats(items = galleryImportState.items) {
     const totalFinished = rows.filter((item) => (
         ['imported', 'cleaned', 'failed', 'needs_review', 'duplicate', 'skipped'].includes(String(item?.status || ''))
     )).length;
+    const published = rows.filter((item) => String(item?.final_prompt_id || item?.finalPromptId || '').trim()).length;
     const failureStages = rows.reduce((acc, item) => {
         if (String(item?.status || '') !== 'failed') return acc;
         const info = getGalleryImportFailureInfo(item);
@@ -17749,8 +17777,8 @@ function getGalleryImportStats(items = galleryImportState.items) {
     }, {});
     const itemStats = {
         total: rows.length,
-        imported: counts.imported || 0,
-        cleaned: counts.cleaned || 0,
+        imported: published,
+        cleaned: 0,
         failed: counts.failed || 0,
         needs_review: counts.needs_review || 0,
         duplicate: counts.duplicate || 0,
@@ -17769,7 +17797,7 @@ function getGalleryImportStats(items = galleryImportState.items) {
     return {
         ...itemStats,
         total: batchStats.total,
-        imported: batchStats.completed,
+        imported: batchStats.published,
         cleaned: 0,
         failed: batchStats.failed,
         needs_review: batchStats.needsReview,
@@ -17778,7 +17806,7 @@ function getGalleryImportStats(items = galleryImportState.items) {
         uploadTotal: batchStats.pending + batchStats.completed + batchStats.failed,
         uploadFinished: batchStats.completed + batchStats.failed,
         crawlFinished: batchStats.total,
-        totalFinished: batchStats.completed + batchStats.attention + batchStats.duplicates + batchStats.skipped
+        totalFinished: batchStats.completed + batchStats.attention
     };
 }
 
@@ -18528,7 +18556,7 @@ async function stageGalleryImportItems(items = []) {
     }
     const skippedDuplicateCount = Number(payload.skippedDuplicateCount || 0);
     if (skippedDuplicateCount > 0) {
-        setGalleryImportRunStatus(`已入队 ${Number(payload.stagedCount || 0)} 条，提示词库重复自动跳过 ${skippedDuplicateCount} 条`);
+        setGalleryImportRunStatus(`批次记录 ${Number(payload.batchItemCount ?? payload.batch?.stats?.total ?? 0)} 条，提示词库重复自动跳过 ${skippedDuplicateCount} 条`);
         showAdminStudioToast(`提示词库已有 ${skippedDuplicateCount} 条，已自动跳过`, 'info');
     }
     return payload;

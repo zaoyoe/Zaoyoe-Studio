@@ -42,6 +42,8 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         'function compareAdminGalleryPrompts(leftPrompt = {}, rightPrompt = {}, sortValue = getAdminGallerySortValue())',
         'function sortAdminGalleryCards(sortValue = getAdminGallerySortValue(), rows = allPrompts)',
         'function renderGalleryOpsOverview()',
+        'adminGalleryViewState.pagination?.totalItems',
+        '全部提示词为当前筛选总数',
         "case 'gallery-set-status-filter':",
         "case 'gallery-batch-set-status':",
         "case 'gallery-batch-add-homepage':",

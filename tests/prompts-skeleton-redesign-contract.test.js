@@ -51,15 +51,21 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
         '.prompt-card-skeleton-title--wide',
         '.prompt-card-skeleton-meta',
         '.prompt-card-skeleton-meta--wide',
-        '.nav-items.nav-items--skeleton .nav-item.nav-item--skeleton',
-        'grid-template-columns: repeat(4, minmax(0, 1fr));',
-        'column-gap: clamp(10px, 3vw, 16px);',
-        'width: min(100%, 92px);'
+        '.nav-item.nav-item--skeleton',
+        '.nav-item-skeleton--title',
+        'width: fit-content;',
+        'margin: 0 auto 0.2rem;'
     ];
 
     for (const marker of cssMarkers) {
         assert.equal(promptsCss.includes(marker), true, `prompts-poetry.css should contain ${marker}`);
     }
+
+    assert.doesNotMatch(
+        promptsCss,
+        /\.nav-items\.nav-items--skeleton\s*\{[^}]*display:\s*grid;/,
+        'mobile skeletons should reuse the live flex layout so category positions remain stable'
+    );
 
     assert.match(
         promptsCss,
@@ -76,6 +82,14 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
         false,
         'static prompt skeletons should not reserve animated background layers'
     );
+    const skeletonRuleBodies = [...promptsCss.matchAll(/([^{}]*skeleton[^{}]*)\{([^{}]*)\}/gi)]
+        .map((match) => match[2]);
+    for (const ruleBody of skeletonRuleBodies) {
+        assert.doesNotMatch(ruleBody, /(?:linear|radial)-gradient\(/, 'prompt skeletons should use flat solid fills');
+        for (const shadowMatch of ruleBody.matchAll(/box-shadow:\s*([^;]+)/g)) {
+            assert.equal(shadowMatch[1].trim(), 'none', 'prompt skeletons should not use weighted shadows');
+        }
+    }
     assert.match(
         promptsCss,
         /body\.prompts-page \.prompts-skeleton-block\s*\{[\s\S]*?background-size:\s*100% 100%;[\s\S]*?animation:\s*none;[\s\S]*?will-change:\s*auto;/,

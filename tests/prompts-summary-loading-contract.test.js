@@ -162,6 +162,16 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         'Supabase first-paint query should request only summary fields'
     );
     assert.equal(
+        /const PROMPTS_SUPABASE_SUMMARY_SELECT = \[[\s\S]*?'image_palettes'/.test(promptsSource),
+        true,
+        'Supabase summary should include compact palette data for first-frame modal rendering'
+    );
+    assert.equal(
+        /PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT[\s\S]*?\['image_assets', 'image_palettes', 'video_assets'\]/.test(promptsSource),
+        true,
+        'legacy summary fallback should omit image palettes when the column is unavailable'
+    );
+    assert.equal(
         promptsSource.includes("createdAt: item.created_at || ''"),
         true,
         'Supabase summary prompts should keep created_at for stable first-render sorting'
