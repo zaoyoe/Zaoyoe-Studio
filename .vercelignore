@@ -129,6 +129,7 @@ api/wallet/verify-log.js
 !scripts/*.js
 !server/
 server/*
+!server/prompt-image-palette.js
 !server/api-handlers/
 !server/api-handlers/**
 !supabase/
