@@ -244,6 +244,15 @@ test('vercel admin function gets an explicit longer max duration', () => {
     assert.equal(config.functions['api/admin.js'].maxDuration, 60);
 });
 
+test('vercel admin function includes the prompt image palette runtime dependency', () => {
+    const config = JSON.parse(readRepoFile('vercel.json'));
+    const vercelIgnore = readRepoFile('.vercelignore');
+    const includeFiles = String(config.functions?.['api/admin.js']?.includeFiles || '');
+
+    assert.equal(includeFiles.includes('server/prompt-image-palette.js'), true);
+    assert.match(vercelIgnore, /!server\/prompt-image-palette\.js/);
+});
+
 test('vercel recovery readiness functions include non-runtime audit assets', () => {
     const config = JSON.parse(readRepoFile('vercel.json'));
     const vercelIgnore = readRepoFile('.vercelignore');
