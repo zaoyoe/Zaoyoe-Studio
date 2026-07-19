@@ -1301,17 +1301,70 @@ function setCommentCollapseVisibility(allComments, collapsed) {
     });
 }
 
-// Inverted search index for O(1) tag lookups (built on init)
+// Inverted search index for O(1) tag lookups (warmed in idle chunks)
 // Structure: { "tag_lowercase": [promptIndex1, promptIndex2, ...] }
 let SEARCH_INDEX = null;
 let SEARCH_INDEX_PROMPTS_REF = null;
 let SEARCH_INDEX_PROMPTS_LENGTH = 0;
+let SEARCH_INDEX_GENERATION = 0;
+let SEARCH_INDEX_WARM_PROMISE = null;
 let PROMPT_SEARCH_REQUEST_ID = 0;
+const PROMPT_IDLE_CHUNK_BUDGET_MS = 8;
+const PROMPT_SEARCH_INDEX_CHUNK_SIZE = 6;
+const PROMPT_RELATED_PROFILE_CHUNK_SIZE = 2;
+
+function getPromptWorkNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+}
+
+function waitForPromptIdleChunk(timeoutMs = 120) {
+    return new Promise((resolve) => {
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(resolve, { timeout: timeoutMs });
+            return;
+        }
+        window.setTimeout(() => resolve(null), 0);
+    });
+}
+
+function shouldYieldPromptWork(deadline, startedAt, processedCount, maxItems) {
+    if (processedCount >= maxItems) return true;
+    if (getPromptWorkNow() - startedAt >= PROMPT_IDLE_CHUNK_BUDGET_MS) return true;
+    return Boolean(deadline && !deadline.didTimeout && deadline.timeRemaining() <= 2);
+}
+
+function appendPromptToSearchIndex(targetIndex, prompt, index) {
+    if (!prompt) return;
+    const searchId = prompt.id ?? index;
+    const addToIndex = (term) => {
+        const key = normalizePromptSearchText(term);
+        if (!hasPromptSearchSignal(key)) return;
+        if (!targetIndex[key]) targetIndex[key] = [];
+        if (!targetIndex[key].includes(searchId)) {
+            targetIndex[key].push(searchId);
+        }
+    };
+
+    collectPromptSearchValues({
+        title: prompt.title,
+        title_en: prompt.title_en,
+        title_zh: prompt.title_zh,
+        tags: prompt.tags,
+        aiTags: prompt.aiTags || prompt.ai_tags,
+        dominantColors: prompt.dominantColors || prompt.dominant_colors
+    }).forEach((value) => {
+        getPromptSearchTokenVariants(value).forEach(addToIndex);
+    });
+}
 
 function invalidatePromptSearchCaches() {
     SEARCH_INDEX = null;
     SEARCH_INDEX_PROMPTS_REF = null;
     SEARCH_INDEX_PROMPTS_LENGTH = 0;
+    SEARCH_INDEX_GENERATION += 1;
+    SEARCH_INDEX_WARM_PROMISE = null;
     HOT_TAGS_CACHE = null;
 }
 
@@ -1324,36 +1377,62 @@ function buildSearchIndex() {
     if (typeof PROMPTS === 'undefined' || PROMPTS.length === 0) return;
 
     console.log('🔍 Building search index...');
-    SEARCH_INDEX = {};
+    const nextIndex = {};
+    PROMPTS.forEach((prompt, index) => appendPromptToSearchIndex(nextIndex, prompt, index));
 
-    PROMPTS.forEach((p, index) => {
-        if (!p) return;
-        const searchId = p.id ?? index;
-
-        const addToIndex = (term) => {
-            const key = normalizePromptSearchText(term);
-            if (!hasPromptSearchSignal(key)) return;
-            if (!SEARCH_INDEX[key]) SEARCH_INDEX[key] = [];
-            if (!SEARCH_INDEX[key].includes(searchId)) {
-                SEARCH_INDEX[key].push(searchId);
-            }
-        };
-
-        collectPromptSearchValues({
-            title: p.title,
-            title_en: p.title_en,
-            title_zh: p.title_zh,
-            tags: p.tags,
-            aiTags: p.aiTags || p.ai_tags,
-            dominantColors: p.dominantColors || p.dominant_colors
-        }).forEach((value) => {
-            getPromptSearchTokenVariants(value).forEach(addToIndex);
-        });
-    });
-
+    SEARCH_INDEX = nextIndex;
     SEARCH_INDEX_PROMPTS_REF = PROMPTS;
     SEARCH_INDEX_PROMPTS_LENGTH = PROMPTS.length;
     console.log(`✅ Search index built: ${Object.keys(SEARCH_INDEX).length} terms`);
+}
+
+function buildSearchIndexIncrementally() {
+    if (SEARCH_INDEX && SEARCH_INDEX_PROMPTS_REF === PROMPTS && SEARCH_INDEX_PROMPTS_LENGTH === PROMPTS.length) {
+        return Promise.resolve(true);
+    }
+    if (SEARCH_INDEX_WARM_PROMISE) return SEARCH_INDEX_WARM_PROMISE;
+    if (typeof PROMPTS === 'undefined' || PROMPTS.length === 0) return Promise.resolve(false);
+
+    const sourcePrompts = PROMPTS;
+    const sourceLength = sourcePrompts.length;
+    const sourceGeneration = SEARCH_INDEX_GENERATION;
+    const nextIndex = {};
+    let cursor = 0;
+
+    const warmPromise = (async () => {
+        console.log('🔍 Building search index in idle chunks...');
+        while (cursor < sourceLength) {
+            const deadline = await waitForPromptIdleChunk();
+            const startedAt = getPromptWorkNow();
+            let processedCount = 0;
+
+            while (cursor < sourceLength) {
+                appendPromptToSearchIndex(nextIndex, sourcePrompts[cursor], cursor);
+                cursor += 1;
+                processedCount += 1;
+                if (shouldYieldPromptWork(deadline, startedAt, processedCount, PROMPT_SEARCH_INDEX_CHUNK_SIZE)) break;
+            }
+
+            if (PROMPTS !== sourcePrompts || PROMPTS.length !== sourceLength || SEARCH_INDEX_GENERATION !== sourceGeneration) {
+                return false;
+            }
+        }
+
+        SEARCH_INDEX = nextIndex;
+        SEARCH_INDEX_PROMPTS_REF = sourcePrompts;
+        SEARCH_INDEX_PROMPTS_LENGTH = sourceLength;
+        console.log(`✅ Search index built: ${Object.keys(nextIndex).length} terms`);
+        return true;
+    })();
+
+    SEARCH_INDEX_WARM_PROMISE = warmPromise;
+    const clearWarmPromise = () => {
+        if (SEARCH_INDEX_WARM_PROMISE === warmPromise) {
+            SEARCH_INDEX_WARM_PROMISE = null;
+        }
+    };
+    void warmPromise.then(clearWarmPromise, clearWarmPromise);
+    return warmPromise;
 }
 
 /**
@@ -3007,11 +3086,7 @@ function schedulePromptIdleTask(taskName, task, options = {}) {
 }
 
 function warmPromptSearchIndex() {
-    return runPromptDeferredTaskOnce('search-index', () => {
-        if (!SEARCH_INDEX) {
-            buildSearchIndex();
-        }
-    });
+    return buildSearchIndexIncrementally();
 }
 
 function schedulePromptSearchIndexWarmup() {
@@ -3029,19 +3104,36 @@ function schedulePromptSearchIndexWarmup() {
     });
 }
 
-function warmPromptRelatedProfiles() {
+async function warmPromptRelatedProfiles() {
     if (!Array.isArray(PROMPTS) || PROMPTS.length === 0) {
         return 0;
     }
 
+    await warmPromptSearchIndex();
+    const sourcePrompts = PROMPTS;
+    const sourceLength = sourcePrompts.length;
     let warmedCount = 0;
-    PROMPTS.forEach((item) => {
-        if (!item || getPromptImageAssets(item).length === 0) {
-            return;
+    let cursor = 0;
+
+    while (cursor < sourceLength) {
+        const deadline = await waitForPromptIdleChunk();
+        const startedAt = getPromptWorkNow();
+        let processedCount = 0;
+
+        while (cursor < sourceLength) {
+            const item = sourcePrompts[cursor];
+            cursor += 1;
+            processedCount += 1;
+            if (item && getPromptImageAssets(item).length > 0) {
+                getPromptRelatedProfile(item);
+                warmedCount += 1;
+            }
+            if (shouldYieldPromptWork(deadline, startedAt, processedCount, PROMPT_RELATED_PROFILE_CHUNK_SIZE)) break;
         }
-        getPromptRelatedProfile(item);
-        warmedCount += 1;
-    });
+
+        if (PROMPTS !== sourcePrompts || PROMPTS.length !== sourceLength) break;
+    }
+
     return warmedCount;
 }
 
@@ -6920,6 +7012,11 @@ async function filterBySearch(query) {
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         const allItem = document.querySelector('.nav-item[data-filter="all"]');
         if (allItem) allItem.classList.add('active');
+        return;
+    }
+
+    await warmPromptSearchIndex();
+    if (!isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
         return;
     }
 

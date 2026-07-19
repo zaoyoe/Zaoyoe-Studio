@@ -52,7 +52,7 @@ test('prompts search uses visual ai tags across the full gallery dataset', () =>
         'currentFilter = \'search\';',
         'allFilteredItems = PROMPTS.filter((item, index) => {',
         'renderCurrentPage();',
-        'aiTags: p.aiTags || p.ai_tags',
+        'aiTags: prompt.aiTags || prompt.ai_tags',
         'function setupSearch() {',
         "const searchInput = document.getElementById('gallerySearch');",
         "searchInput.addEventListener('input', (e) => {",
