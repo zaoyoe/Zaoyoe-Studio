@@ -2664,18 +2664,15 @@ body.prompts-page .prompt-card--loading .card-share-btn {
     top: 0;
     width: 100%;
     padding: 18px;
-    background:
-        linear-gradient(to top,
-            rgba(0, 0, 0, 0.74) 0%,
-            rgba(0, 0, 0, 0.42) 38%,
-            rgba(0, 0, 0, 0.16) 70%,
-            transparent 100%),
-        rgba(0, 0, 0, 0.12);
-    transform: translateY(8px);
+    background: linear-gradient(to top,
+            rgba(2, 6, 23, 0.72) 0%,
+            rgba(2, 6, 23, 0.38) 36%,
+            rgba(2, 6, 23, 0.14) 68%,
+            rgba(2, 6, 23, 0) 100%);
+    transform: none;
     opacity: 0;
-    transition:
-        opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-        transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: opacity 0.24s ease-out;
+    will-change: opacity;
     box-sizing: border-box;
     pointer-events: none;
 }
@@ -2995,18 +2992,16 @@ body.prompts-page .prompt-card--loading .card-share-btn {
     }
 
     .prompt-card:hover {
-        transform: translateY(-8px) scale(1.01);
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
         /* Stronger shadow */
         border-color: rgba(0, 0, 0, 0.1);
     }
 
     .prompt-card:hover .card-image {
-        transform: scale(1.05);
+        transform: scale(1.02);
     }
 
     .prompt-card:hover .card-overlay {
-        transform: translateY(0);
         opacity: 1;
     }
 
@@ -6426,17 +6421,6 @@ html[data-theme="dark"] .prompt-comment-input-dock__field::placeholder {
 
     .gallery-container--mobile-masonry .indicator-dot.active {
         background: #ffffff;
-    }
-}
-
-@media (hover: hover) and (pointer: fine) {
-    .gallery-container--masonry .prompt-card:hover {
-        border-color: transparent;
-        box-shadow: none;
-    }
-
-    .gallery-container--masonry .prompt-card:hover .card-image {
-        transform: none;
     }
 }
 

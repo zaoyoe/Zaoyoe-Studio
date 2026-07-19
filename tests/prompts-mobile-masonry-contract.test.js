@@ -92,15 +92,25 @@ test('prompts gallery renders as a top-aligned masonry grid with intrinsic-ratio
         /\.gallery-container--masonry \.card-image\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?background:\s*transparent;/,
         'masonry images should fill the column-width card while the card keeps the real image ratio'
     );
-    assert.match(
+    assert.doesNotMatch(
         promptsStyles,
-        /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*?\.gallery-container--masonry \.prompt-card:hover\s*\{[\s\S]*?border-color:\s*transparent;[\s\S]*?box-shadow:\s*none;/,
-        'masonry hover should not reintroduce a container border or shadow behind images'
+        /\.gallery-container--masonry \.prompt-card:hover\s*\{[\s\S]*?box-shadow:\s*none;/,
+        'masonry hover should preserve the shared prompt card shadow'
+    );
+    assert.doesNotMatch(
+        promptsStyles,
+        /\.gallery-container--masonry \.prompt-card:hover \.card-image\s*\{[\s\S]*?transform:\s*none;/,
+        'masonry hover should preserve the shared prompt image zoom'
     );
     assert.match(
         promptsStyles,
-        /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*?\.gallery-container--masonry \.prompt-card:hover \.card-image\s*\{[\s\S]*?transform:\s*none;/,
-        'desktop hover should keep the full masonry image visible'
+        /\.prompt-card:hover\s*\{[\s\S]*?box-shadow:\s*0 20px 40px rgba\(0, 0, 0, 0\.08\);/,
+        'desktop hover should retain the shared prompt card shadow'
+    );
+    assert.match(
+        promptsStyles,
+        /\.prompt-card:hover \.card-image\s*\{[\s\S]*?transform:\s*scale\(1\.02\);/,
+        'desktop hover should retain the shared prompt image zoom'
     );
     assert.match(
         promptsStyles,

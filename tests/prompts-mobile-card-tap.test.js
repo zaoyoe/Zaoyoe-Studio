@@ -7,7 +7,7 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
 }
 
-test('prompts mobile cards open detail on first tap while desktop keeps hover affordances', () => {
+test('prompts mobile cards open detail on first tap while desktop hover does not lift cards', () => {
     const promptsSource = readRepoFile('prompts-poetry.js');
     const promptsStyles = readRepoFile('prompts-poetry.css');
     const promptsHtml = readRepoFile('prompts.html');
@@ -57,7 +57,20 @@ test('prompts mobile cards open detail on first tap while desktop keeps hover af
     assert.equal(
         hoverMediaBlock.includes('.prompt-card:hover {'),
         true,
-        'desktop hover should still keep the existing card lift behavior'
+        'desktop hover should keep the card visual affordance rule'
+    );
+    assert.doesNotMatch(
+        hoverMediaBlock.match(/\.prompt-card:hover\s*\{([^}]*)\}/)?.[1] || '',
+        /\btransform\s*:/,
+        'desktop hover should not translate or scale the prompt card itself'
+    );
+    const cardOverlayRule = promptsStyles.match(/^\.card-overlay\s*\{([^}]*)\}/m)?.[1] || '';
+    assert.match(cardOverlayRule, /transform:\s*none;/, 'the card overlay should remain spatially fixed');
+    assert.match(cardOverlayRule, /transition:\s*opacity 0\.24s ease-out;/, 'the card overlay should fade in without moving');
+    assert.doesNotMatch(
+        hoverMediaBlock.match(/\.prompt-card:hover \.card-overlay\s*\{([^}]*)\}/)?.[1] || '',
+        /\btransform\s*:/,
+        'desktop hover should not move the full-card gradient overlay'
     );
     assert.match(
         promptsStyles,
@@ -76,5 +89,10 @@ test('prompts mobile cards open detail on first tap while desktop keeps hover af
         (promptsHtml.match(/mobileCardTap=20260614_PROMPTS_MOBILE_CARD_SINGLE_TAP_1/g) || []).length,
         2,
         'prompts.html should cache-bust both the card tap CSS and runtime changes'
+    );
+    assert.equal(
+        (promptsHtml.match(/cardHover=20260719_PROMPT_CARD_OVERLAY_FIXED_FADE_ZOOM_102_1/g) || []).length,
+        1,
+        'prompts.html should cache-bust the prompt card hover style change'
     );
 });
