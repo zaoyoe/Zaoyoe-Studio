@@ -1,7 +1,7 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-14.82';
+    const VERSION = '2026-07-22.83';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 1000;
     const MAX_IMAGES_PER_ITEM = 24;
@@ -991,7 +991,7 @@
         const identityCounts = getStructuredIdentityCounts(value, baseUrl);
         if (identityCounts.detailUrls > 1 || identityCounts.originalUrls > 1) return null;
         const originalWorkUrl = extractStructuredOriginalWorkUrl(value, baseUrl);
-        const authorHandle = extractStructuredAuthorHandle(value) || getAuthorHandleFromUrl(originalWorkUrl);
+        const authorHandle = getAuthorHandleFromUrl(originalWorkUrl) || extractStructuredAuthorHandle(value);
         const promptText = extractStructuredPrompt(value);
         const imageUrls = collectStructuredImageUrls(value, baseUrl);
         const videoUrls = collectStructuredVideoUrls(value, baseUrl);
@@ -1142,6 +1142,48 @@
         }
     }
 
+    function structuredCandidateMatchesContext(candidate = {}, context = {}) {
+        const expectedDetailUrl = context.expectedDetailUrl || context.detailUrl || '';
+        const expectedOriginalUrl = context.expectedOriginalWorkUrl || context.originalWorkUrl || '';
+        const expectedImages = Array.isArray(context.expectedImageUrls) ? context.expectedImageUrls : [];
+        const expectedStatusId = extractLongNumericId(expectedDetailUrl)
+            || extractLongNumericId(expectedOriginalUrl)
+            || getStatusIdFromImageUrls(expectedImages);
+        const candidateIds = new Set([
+            extractLongNumericId(candidate.statusId || ''),
+            extractLongNumericId(candidate.detailUrl || ''),
+            extractLongNumericId(candidate.originalWorkUrl || ''),
+            getStatusIdFromImageUrls(candidate.imageUrls || []),
+            ...((candidate.videoUrls || []).map((url) => getStatusIdFromImageUrl(url)))
+        ].filter(Boolean));
+        let matchedIdentity = false;
+
+        if (expectedDetailUrl && candidate.detailUrl) {
+            if (!sameDetailUrl(expectedDetailUrl, candidate.detailUrl)) return false;
+            matchedIdentity = true;
+        }
+        if (expectedStatusId && candidateIds.size) {
+            if (Array.from(candidateIds).some((id) => id !== expectedStatusId)) return false;
+            matchedIdentity = candidateIds.has(expectedStatusId);
+        }
+        if (expectedOriginalUrl && candidate.originalWorkUrl) {
+            const expectedOriginalId = extractLongNumericId(expectedOriginalUrl);
+            const candidateOriginalId = extractLongNumericId(candidate.originalWorkUrl);
+            if (expectedOriginalId && candidateOriginalId && expectedOriginalId !== candidateOriginalId) return false;
+            if (normalizeComparableUrl(expectedOriginalUrl) === normalizeComparableUrl(candidate.originalWorkUrl)) {
+                matchedIdentity = true;
+            }
+        }
+        if (expectedImages.length && Array.isArray(candidate.imageUrls)) {
+            if (candidate.imageUrls.some((url) => expectedImages.some((expected) => imageUrlMatches(url, expected)))) {
+                matchedIdentity = true;
+            }
+        }
+
+        const hasExpectedIdentity = Boolean(expectedDetailUrl || expectedOriginalUrl || expectedStatusId || expectedImages.length);
+        return !hasExpectedIdentity || matchedIdentity;
+    }
+
     function scoreStructuredCandidate(candidate = {}, context = {}) {
         let score = 0;
         const expectedDetailUrl = context.expectedDetailUrl || context.detailUrl || '';
@@ -1182,7 +1224,8 @@
     }
 
     function getBestStructuredCandidate(scope, options = {}) {
-        const candidates = collectStructuredItemCandidates(scope, options);
+        const candidates = collectStructuredItemCandidates(scope, options)
+            .filter((candidate) => structuredCandidateMatchesContext(candidate, options));
         if (!candidates.length) return null;
         const scored = candidates
             .map((candidate) => ({
@@ -1477,7 +1520,8 @@
                 }
             });
 
-        return links[0] || (current && new URL(current).pathname !== '/' ? current : '');
+        const detailLink = links.find((url) => isDetailPageUrl(url));
+        return detailLink || (current && isDetailPageUrl(current) ? current : '');
     }
 
     function getOriginalWorkUrl(scope, options = {}) {
@@ -2310,7 +2354,12 @@
             const itemImages = Array.isArray(item.image_sources) ? item.image_sources : [];
             const itemVideos = Array.isArray(item.video_sources) ? item.video_sources : [];
             const promptKey = normalizeText(item.prompt_text || '').toLowerCase();
-            const key = item.source_page_url || item.original_work_url || promptKey || item.source_item_id;
+            const primaryMediaUrl = String(itemImages[0]?.url || itemVideos[0]?.url || '').trim();
+            const key = item.source_page_url
+                || item.original_work_url
+                || item.source_item_id
+                || primaryMediaUrl
+                || `prompt-row:${promptKey}:${grouped.size}`;
             if (!key) continue;
             const current = grouped.get(key)
                 || Array.from(grouped.values()).find((entry) => {
@@ -2338,6 +2387,7 @@
             }
             current.source_page_url = current.source_page_url || item.source_page_url || '';
             current.original_work_url = current.original_work_url || item.original_work_url || '';
+            const originalAuthorHandle = getAuthorHandleFromUrl(current.original_work_url);
             const currentAuthorName = normalizeAuthorName(current.author_name);
             const itemAuthorName = normalizeAuthorName(item.author_name);
             const currentAuthorSource = String(current.author_identity_source || '');
@@ -2352,6 +2402,9 @@
             }
             if (current.author_identity_source !== 'hover') {
                 current.author_handle = current.author_handle || item.author_handle || '';
+            }
+            if (originalAuthorHandle) {
+                current.author_handle = originalAuthorHandle;
             }
             current.favorite_count = Math.max(current.favorite_count || 0, item.favorite_count || 0);
             const itemExpectedCount = Number(item.expected_image_count || 0);
@@ -2487,6 +2540,7 @@
             collectStructuredVideoUrls,
             filterVideoSourcesByIdentity,
             getBestStructuredCandidate,
+            structuredCandidateMatchesContext,
             getStructuredIdentityCounts,
             filterDetailImageUrlsByStatus,
             isLikelyUnboundMeigenCommunityImageUrl,

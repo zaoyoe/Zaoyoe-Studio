@@ -224,6 +224,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function getDetailExpectedCountFromDocument/);
     assert.match(content, /function getTweetStatusIdFromImageUrl/);
     assert.match(content, /function getTargetStatusIds/);
+    assert.match(content, /function getObservedDetailStatusIds/);
+    assert.match(content, /function detailItemMatchesTargetIdentity/);
+    assert.match(content, /detail_identity_verified:\s*true/);
+    assert.match(content, /detail-merge-skipped-identity-conflict/);
     assert.match(content, /hasConflictingImageStatus/);
     assert.match(content, /function isDetailImageCountAuthoritative/);
     assert.match(content, /function isDetailExpectedCountAuthoritative/);
@@ -260,7 +264,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-14\.82'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-22\.83'/);
     assert.match(collector, /function collectVideoSources/);
     assert.match(collector, /function collectStructuredVideoUrls/);
     assert.match(collector, /function filterVideoSourcesByIdentity/);

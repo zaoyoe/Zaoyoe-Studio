@@ -104,7 +104,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-14.82';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-22.83';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -840,14 +840,27 @@ test('collector duplicate preflight reports repository and candidate duplicates 
         settings: { max_items: 10 },
         items: [
             { source_item_id: 'repo-copy', original_work_url: 'https://x.com/artist/status/123456789012', prompt: 'Existing repository prompt' },
-            { source_item_id: 'new-one', original_work_url: 'https://x.com/artist/status/223456789012', prompt: 'New unique prompt' },
-            { source_item_id: 'candidate-copy', original_work_url: 'https://x.com/artist/status/323456789012', prompt: 'New unique prompt' }
+            {
+                source: 'meigen',
+                source_item_id: 'new-one',
+                original_work_url: 'https://x.com/artist/status/223456789012',
+                prompt: 'New unique prompt',
+                images: ['https://cdn.example.com/shared-cover.jpg']
+            },
+            { source_item_id: 'candidate-copy', original_work_url: 'https://x.com/artist/status/323456789012', prompt: 'New unique prompt' },
+            {
+                source: 'meigen',
+                source_item_id: 'media-copy',
+                original_work_url: 'https://x.com/artist/status/423456789012',
+                prompt: 'Different prompt with a duplicated cover',
+                images: ['https://cdn.example.com/shared-cover.jpg']
+            }
         ]
     });
     assert.deepEqual(result, {
-        checkedCount: 3,
-        duplicateCount: 2,
-        duplicateSourceItemIds: ['repo-copy', 'candidate-copy'],
+        checkedCount: 4,
+        duplicateCount: 3,
+        duplicateSourceItemIds: ['repo-copy', 'candidate-copy', 'media-copy'],
         persistentFailureCount: 0,
         persistentFailureSourceItemIds: [],
         rejectedIdentityCount: 0,
@@ -893,6 +906,30 @@ test('Meigen import rejects mismatched detail, source, and image identities', ()
         original_work_url: 'https://x.com/user/status/2070884374904525180',
         image_sources: [{ url: 'https://images.meigen.ai/generations/community_abc.png' }]
     }), '');
+    assert.match(_private.getMeigenImportIdentityConflictReason({
+        source: 'meigen',
+        source_page_url: 'https://www.meigen.ai/prompt/2070884374904525180',
+        original_work_url: 'https://x.com/codewithhajra/status/2070884374904525180',
+        video_sources: [{
+            url: 'https://images.meigen.ai/videos/2070884374904525180/video.mp4',
+            poster_url: 'https://images.meigen.ai/tweets/2079999999999999999/0.jpg'
+        }]
+    }), /身份不一致/);
+});
+
+test('Meigen cover identity normalizes proxy variants and video posters', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    assert.equal(
+        _private.getMeigenMediaIdentityKey('https://www.meigen.ai/_next/image?url=https%3A%2F%2Fimages.meigen.ai%2Ftweets%2F2070884374904525180%2F0.jpg&w=640&q=75'),
+        'tweet:2070884374904525180:0'
+    );
+    assert.deepEqual(_private.getMeigenCoverIdentityKeys({
+        source: 'meigen',
+        video_sources: [{
+            url: 'https://images.meigen.ai/videos/2070884374904525180/video.mp4',
+            poster_url: 'https://images.meigen.ai/tweets/2070884374904525180/0.jpg'
+        }]
+    }), ['tweet:2070884374904525180:0', 'video:2070884374904525180']);
 });
 
 test('streaming imports remain in review until detail enrichment arrives', () => {
