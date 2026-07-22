@@ -438,6 +438,50 @@ test('Meigen browser collector reads prompt and source from structured page data
     assert.equal(collector._private.getOriginalWorkUrl(scope), sourceUrl);
 });
 
+test('Meigen browser collector requires structured prompt identity and trusts the X source handle', () => {
+    const targetId = '2074697587756806354';
+    const otherId = '2079999999999999999';
+    assert.equal(collector._private.structuredCandidateMatchesContext({
+        promptText: 'A long but unbound prompt from a neighboring card.'
+    }, {
+        expectedDetailUrl: `https://www.meigen.ai/prompt/${targetId}`
+    }), false);
+    assert.equal(collector._private.structuredCandidateMatchesContext({
+        statusId: otherId,
+        detailUrl: `https://www.meigen.ai/prompt/${otherId}`,
+        promptText: 'A mismatched neighboring prompt.'
+    }, {
+        expectedDetailUrl: `https://www.meigen.ai/prompt/${targetId}`
+    }), false);
+    assert.equal(collector._private.structuredCandidateMatchesContext({
+        statusId: targetId,
+        originalWorkUrl: `https://x.com/real_creator/status/${targetId}`,
+        promptText: 'The matching prompt.'
+    }, {
+        expectedDetailUrl: `https://www.meigen.ai/prompt/${targetId}`
+    }), true);
+
+    const candidates = collector._private.collectStructuredItemCandidates({
+        baseURI: 'https://www.meigen.ai/',
+        querySelectorAll() {
+            return [];
+        }
+    }, {
+        baseUrl: 'https://www.meigen.ai/',
+        structuredEntries: [{
+            data: {
+                id: targetId,
+                sourceUrl: `https://x.com/real_creator/status/${targetId}`,
+                promptText: 'A complete identity-bound prompt for the selected work.',
+                author: { username: 'context', displayName: 'Wrong cached author' },
+                images: [`https://images.meigen.ai/tweets/${targetId}/0.jpg`]
+            }
+        }]
+    });
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].authorHandle, '@real_creator');
+});
+
 test('Meigen browser collector fills prompt and carousel images from page data cache', () => {
     const prompt = 'Create a premium modern tech product promotional social media poster with dramatic rim light and glass reflections.';
     const sourceUrl = 'https://x.com/Sheldon056/status/2074697587756806354';

@@ -1963,7 +1963,7 @@
         } catch (_) {
             // Use the raw URL if decoding fails.
         }
-        return decoded.match(/\/tweets\/(\d{12,25})(?:\/|$)/i)?.[1] || '';
+        return decoded.match(/\/(?:tweets|videos)\/(\d{12,25})(?:\/|$)/i)?.[1] || '';
     }
 
     function getTargetStatusIds(item = {}) {
@@ -1971,8 +1971,38 @@
             getPromptIdFromUrl(item.source_page_url || ''),
             getLongNumericIdFromText(item.original_work_url || ''),
             ...((Array.isArray(item.image_sources) ? item.image_sources : [])
-                .map((entry) => getTweetStatusIdFromImageUrl(entry?.url || '')))
+                .map((entry) => getTweetStatusIdFromImageUrl(entry?.url || ''))),
+            ...((Array.isArray(item.video_sources) ? item.video_sources : [])
+                .flatMap((entry) => [entry?.url, entry?.poster_url, entry?.posterUrl])
+                .map((url) => getTweetStatusIdFromImageUrl(url || '')))
         ].filter(Boolean));
+    }
+
+    function getObservedDetailStatusIds(item = {}) {
+        const sourceItemId = /^\d{12,25}$/.test(String(item.source_item_id || '').trim())
+            ? String(item.source_item_id).trim()
+            : '';
+        return new Set([
+            sourceItemId,
+            getLongNumericIdFromText(item.original_work_url || ''),
+            ...((Array.isArray(item.image_sources) ? item.image_sources : [])
+                .map((entry) => getTweetStatusIdFromImageUrl(entry?.url || ''))),
+            ...((Array.isArray(item.video_sources) ? item.video_sources : [])
+                .flatMap((entry) => [entry?.url, entry?.poster_url, entry?.posterUrl])
+                .map((url) => getTweetStatusIdFromImageUrl(url || '')))
+        ].filter(Boolean));
+    }
+
+    function detailItemMatchesTargetIdentity(detailItem = {}, targetItem = {}) {
+        const targetStatusIds = getTargetStatusIds(targetItem);
+        const observedStatusIds = getObservedDetailStatusIds(detailItem);
+        if (targetStatusIds.size > 1) return false;
+        if (targetStatusIds.size === 1) {
+            if (!observedStatusIds.size) return false;
+            const targetStatusId = Array.from(targetStatusIds)[0];
+            return Array.from(observedStatusIds).every((id) => id === targetStatusId);
+        }
+        return detailItemMatchesTarget(detailItem, targetItem);
     }
 
     function getTrustedImageSourcesForItem(item = {}, referenceItem = item, collector = getCollector()) {
@@ -2039,14 +2069,9 @@
 
     function selectBestDetailItemsForTarget(items = [], targetItem = {}, options = {}) {
         const expectedCount = Number(options.expectedCount || 0);
-        const targetIdentity = getItemDetailIdentity(targetItem);
         const candidates = (Array.isArray(items) ? items : [])
             .filter(Boolean)
-            .filter((item) => {
-                if (detailItemMatchesTarget(item, targetItem)) return true;
-                const itemIdentity = getItemDetailIdentity(item);
-                return !targetIdentity || !itemIdentity;
-            })
+            .filter((item) => detailItemMatchesTargetIdentity(item, targetItem))
             .map((item, index) => ({
                 item,
                 index,
@@ -2144,7 +2169,32 @@
         return next;
     }
 
+    function getAuthorHandleFromOriginalWorkUrl(value = '') {
+        try {
+            const parts = new URL(String(value || '')).pathname.split('/').filter(Boolean);
+            if (parts.length >= 3 && parts[1].toLowerCase() === 'status') {
+                return `@${parts[0].replace(/^@/, '')}`;
+            }
+        } catch (_) {
+            // Preserve the existing handle when the original URL cannot be parsed.
+        }
+        return '';
+    }
+
     function applyDetailItemToTarget(target, detailItem = {}) {
+        const targetStatusIds = getTargetStatusIds(target);
+        const detailStatusIds = getObservedDetailStatusIds(detailItem);
+        const hasIdentityConflict = targetStatusIds.size > 0
+            && detailStatusIds.size > 0
+            && Array.from(detailStatusIds).some((id) => !targetStatusIds.has(id));
+        if (hasIdentityConflict) {
+            logDiagnostic('detail-merge-skipped-identity-conflict', {
+                sourceItemId: target.source_item_id || '',
+                targetStatusIds: Array.from(targetStatusIds),
+                detailStatusIds: Array.from(detailStatusIds)
+            });
+            return target;
+        }
         const detailExpectedCount = Number(detailItem.expected_image_count || 0);
         const detailExpectedCountIsAuthoritative = isDetailExpectedCountAuthoritative(detailItem);
         const trustContextItem = {
@@ -2183,6 +2233,7 @@
         target.source_item_id = target.source_item_id || detailItem.source_item_id || '';
         target.source_page_url = target.source_page_url || detailItem.source_page_url || '';
         target.original_work_url = target.original_work_url || detailItem.original_work_url || '';
+        const originalAuthorHandle = getAuthorHandleFromOriginalWorkUrl(target.original_work_url);
         const targetAuthorSource = String(target.author_identity_source || '');
         const detailAuthorSource = String(detailItem.author_identity_source || '');
         const targetAuthorName = normalizeAuthorNameForMerge(target.author_name || '');
@@ -2203,6 +2254,9 @@
             target.author_name = chooseBetterAuthorName(target.author_name, detailItem.author_name);
             target.author_handle = detailItem.author_handle || target.author_handle || '';
             target.author_identity_source = detailAuthorSource || targetAuthorSource;
+        }
+        if (originalAuthorHandle) {
+            target.author_handle = originalAuthorHandle;
         }
         target.favorite_count = detailCountIsAuthoritative && Number(detailItem.favorite_count || 0) > 0
             ? Number(detailItem.favorite_count || 0)
@@ -2606,17 +2660,17 @@
                     detailOnly: true,
                     structuredEntries: []
                 }, item));
-                lastItems = mergeDetailItemsWithCopiedPrompt(lastItems, copiedPrompt, collector)
-                    .map((detailItem) => ({
-                        ...detailItem,
-                        source_item_id: item.source_item_id || detailItem.source_item_id || '',
-                        source_page_url: item.source_page_url || ''
-                    }));
+                lastItems = mergeDetailItemsWithCopiedPrompt(lastItems, copiedPrompt, collector);
                 lastItems = expandDetailItemsToExpectedCount(lastItems, detailExpectedCount, collector);
                 lastItems = enrichDetailItemsWithVisibleAuthor(lastItems, document, collector);
                 lastItems = selectBestDetailItemsForTarget(lastItems, item, {
                     expectedCount: detailExpectedCount
-                });
+                }).map((detailItem) => ({
+                    ...detailItem,
+                    source_item_id: item.source_item_id || detailItem.source_item_id || '',
+                    source_page_url: item.source_page_url || detailItem.source_page_url || '',
+                    detail_identity_verified: true
+                }));
                 lastItems = filterUsableDetailItems(lastItems, collector);
                 logDiagnostic('detail-current-poll', {
                     itemCount: lastItems.length,

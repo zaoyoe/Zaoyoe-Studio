@@ -247,6 +247,50 @@ function normalizeVideoSources(value = [], maxCount = DEFAULT_MAX_VIDEO_COUNT) {
     return items;
 }
 
+function getMeigenMediaIdentityKey(value = '') {
+    let decoded = String(value || '').trim();
+    for (let index = 0; index < 3; index += 1) {
+        try {
+            const next = decodeURIComponent(decoded);
+            if (!next || next === decoded) break;
+            decoded = next;
+        } catch (_) {
+            break;
+        }
+    }
+    const tweetMatch = decoded.match(/\/tweets\/(\d{12,25})\/(\d+)(?:\.[a-z0-9]+)?/i);
+    if (tweetMatch) return `tweet:${tweetMatch[1]}:${tweetMatch[2]}`;
+    const videoMatch = decoded.match(/\/videos\/(\d{12,25})(?:\/|$)/i);
+    if (videoMatch) return `video:${videoMatch[1]}`;
+    const generationMatch = decoded.match(/\/generations\/(?:[^/?#\s]+\/)*(community_[a-z0-9-]+)/i);
+    if (generationMatch) return `generation:${generationMatch[1].toLowerCase()}`;
+    try {
+        const url = new URL(decoded);
+        url.hash = '';
+        url.search = '';
+        return `url:${url.toString().replace(/\/$/, '').toLowerCase()}`;
+    } catch (_) {
+        return '';
+    }
+}
+
+function getMeigenCoverIdentityKeys(item = {}) {
+    if (normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE) !== 'meigen') return [];
+    const images = normalizeImageSources(
+        item.image_sources || item.imageSources || item.images || item.image_urls || item.imageUrls || [],
+        MAX_IMAGE_COUNT
+    );
+    const videos = normalizeVideoSources(
+        item.video_sources || item.videoSources || item.videos || item.video_urls || item.videoUrls || [],
+        MAX_VIDEO_COUNT
+    );
+    return Array.from(new Set([
+        images[0]?.url,
+        videos[0]?.poster_url,
+        videos[0]?.url
+    ].map(getMeigenMediaIdentityKey).filter(Boolean)));
+}
+
 function getTweetStatusIdFromUrl(value = '') {
     try {
         const url = new URL(String(value || ''));
@@ -294,7 +338,8 @@ function getMeigenImportIdentityConflictReason(item = {}) {
         .map((entry) => getTweetStatusIdFromUrl(entry.url))
         .filter(Boolean);
     const videoIds = normalizeVideoSources(item.video_sources || item.videoSources || item.videos || [], MAX_VIDEO_COUNT)
-        .map((entry) => getMeigenVideoStatusIdFromUrl(entry.url))
+        .flatMap((entry) => [entry.url, entry.poster_url])
+        .flatMap((url) => [getMeigenVideoStatusIdFromUrl(url), getTweetStatusIdFromUrl(url)])
         .filter(Boolean);
     const identities = [sourceItemId, detailId, originalId, ...imageIds, ...videoIds].filter(Boolean);
     return new Set(identities).size > 1 ? '作品详情、X 原帖或媒体身份不一致，已拒绝入队' : '';
@@ -1294,6 +1339,8 @@ async function stageImportItems(supabase, user, body) {
     const maxItems = normalizePositiveInteger(settings.max_items, 50, 1000);
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const seenPromptHashes = new Set();
+    const seenCoverOwners = new Map();
+    const existingCoverOwners = new Map();
     const duplicateIndexes = new Set();
     const rejectedIdentityIndexes = new Set();
     const persistentFailureIndexes = new Set();
@@ -1305,14 +1352,20 @@ async function stageImportItems(supabase, user, body) {
             row.error_summary = identityConflictReason;
             rejectedIdentityIndexes.add(index);
         }
-        if (row.prompt_hash && seenPromptHashes.has(row.prompt_hash)) {
+        const coverKeys = getMeigenCoverIdentityKeys(row);
+        const repeatsCover = coverKeys.some((key) => {
+            const owner = seenCoverOwners.get(key);
+            return owner && owner !== row.source_item_id;
+        });
+        if (!identityConflictReason && (repeatsCover || (row.prompt_hash && seenPromptHashes.has(row.prompt_hash)))) {
             row.status = 'duplicate';
-            row.error_summary = '疑似重复';
+            row.error_summary = repeatsCover ? '封面媒体与当前批次其他作品重复' : '疑似重复';
             duplicateIndexes.add(index);
         }
-        if (row.prompt_hash) {
+        if (!identityConflictReason && row.prompt_hash) {
             seenPromptHashes.add(row.prompt_hash);
         }
+        if (!identityConflictReason) coverKeys.forEach((key) => seenCoverOwners.set(key, row.source_item_id));
         return {
             ...row,
             batch_id: batch.id,
@@ -1328,12 +1381,28 @@ async function stageImportItems(supabase, user, body) {
 
     let existingBySourceItemId = new Map();
     if (batchId) {
-        const sourceItemIds = rows.map((row) => row.source_item_id).filter(Boolean);
-        const { data: existingRows, error: existingError } = sourceItemIds.length
-            ? await supabase.from('prompt_import_items').select('id, source_item_id, status, final_prompt_id').eq('batch_id', batch.id).in('source_item_id', sourceItemIds)
-            : { data: [], error: null };
+        const { data: existingRows, error: existingError } = await supabase
+            .from('prompt_import_items')
+            .select('id, source_item_id, status, final_prompt_id, source, image_sources, video_sources')
+            .eq('batch_id', batch.id);
         if (existingError) throw existingError;
         existingBySourceItemId = new Map((existingRows || []).map((row) => [String(row.source_item_id || ''), row]));
+        (existingRows || []).forEach((row) => {
+            getMeigenCoverIdentityKeys(row).forEach((key) => {
+                if (!existingCoverOwners.has(key)) existingCoverOwners.set(key, String(row.source_item_id || ''));
+            });
+        });
+        rows.forEach((row, index) => {
+            if (rejectedIdentityIndexes.has(index)) return;
+            const repeatsExistingCover = getMeigenCoverIdentityKeys(row).some((key) => {
+                const owner = existingCoverOwners.get(key);
+                return owner && owner !== row.source_item_id;
+            });
+            if (!repeatsExistingCover) return;
+            row.status = 'duplicate';
+            row.error_summary = '封面媒体与当前批次已有作品重复';
+            duplicateIndexes.add(index);
+        });
     }
 
     const repositoryRows = rows.filter((row, index) => (
@@ -1501,13 +1570,21 @@ async function checkImportItemDuplicates(supabase, body) {
         .map((item) => normalizeText(item.source_item_id || item.sourceItemId || '', 220))
         .filter(Boolean);
     const seenPromptHashes = new Set();
-    const duplicateSourceItemIds = rows.flatMap((row) => {
+    const seenCoverOwners = new Map();
+    const duplicateSourceItemIds = rows.flatMap((row, index) => {
+        if (getMeigenImportIdentityConflictReason(rawItems[index])) return [];
         const duplicateId = (row.original_work_url && duplicates.bySourceUrl.get(row.original_work_url))
             || (row.prompt_hash && duplicates.byPromptHash.get(row.prompt_hash))
             || '';
         const repeatsCandidate = Boolean(row.prompt_hash && seenPromptHashes.has(row.prompt_hash));
+        const coverKeys = getMeigenCoverIdentityKeys(row);
+        const repeatsCover = coverKeys.some((key) => {
+            const owner = seenCoverOwners.get(key);
+            return owner && owner !== row.source_item_id;
+        });
         if (row.prompt_hash) seenPromptHashes.add(row.prompt_hash);
-        return (duplicateId || repeatsCandidate) && row.source_item_id ? [row.source_item_id] : [];
+        coverKeys.forEach((key) => seenCoverOwners.set(key, row.source_item_id));
+        return (duplicateId || repeatsCandidate || repeatsCover) && row.source_item_id ? [row.source_item_id] : [];
     });
     return {
         checkedCount: rows.length,
@@ -2220,6 +2297,8 @@ module.exports._private = {
     hashPromptText,
     normalizeImageSources,
     normalizeVideoSources,
+    getMeigenMediaIdentityKey,
+    getMeigenCoverIdentityKeys,
     filterImageSourcesForImportIdentity,
     getMeigenImportIdentityConflictReason,
     deriveAuthorHandleFromOriginalWorkUrl,
