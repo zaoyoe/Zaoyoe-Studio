@@ -3327,6 +3327,11 @@ function bindAdminStudioDelegatedControls() {
                     pendingLabel: '正在补全双语...'
                 });
                 break;
+            case 'gallery-batch-backfill-prompt-text':
+                void runGalleryBatchActionFromMenu(actionEl, () => window.batchBackfillPublishedPromptTexts?.(), {
+                    pendingLabel: '正在回填完整提示词...'
+                });
+                break;
             case 'ai-remove-preview': {
                 const index = parseInt(actionEl.dataset.previewIndex || '', 10);
                 if (!Number.isNaN(index)) {
@@ -8004,6 +8009,7 @@ window.setAdminGalleryStatusFilter = setAdminGalleryStatusFilter;
 window.batchSetSelectedPromptStatus = batchSetSelectedPromptStatus;
 window.batchAddSelectedPromptsToHomepage = batchAddSelectedPromptsToHomepage;
 window.batchCompleteSelectedPromptBilingualFields = batchCompleteSelectedPromptBilingualFields;
+window.batchBackfillPublishedPromptTexts = batchBackfillPublishedPromptTexts;
 window.addPromptToHomepagePromptsSection = addPromptToHomepagePromptsSection;
 window.prefetchSettingsModule = prefetchSettingsModule;
 window.prefetchOpsAlertsModule = prefetchOpsAlertsModule;
@@ -8351,6 +8357,7 @@ function renderAdminCard(prompt) {
     card.className = 'admin-card';
     card.dataset.id = String(prompt.id ?? '');
     if (isSelectMode && selectedPrompts.has(String(prompt.id ?? ''))) {
+        selectedPromptRecords.set(String(prompt.id ?? ''), prompt);
         card.classList.add('selected');
     }
     const languageCoverage = getPromptLanguageCoverage(prompt);
@@ -8779,7 +8786,7 @@ async function deletePrompt(id) {
                 allPrompts = allPrompts.filter((prompt) => String(prompt?.id || '') !== String(id));
                 SEARCH_INDEX = null;
                 HOT_TAGS_CACHE = null;
-                selectedPrompts.delete(String(id));
+                setPromptSelected(String(id), false);
                 if (getAdminGalleryRouteState().promptId === String(id)) {
                     syncAdminGalleryRouteState({
                         view: isGalleryManageViewActive() ? 'manage' : 'create',
@@ -15670,6 +15677,7 @@ let searchDebounce = null;
 // ========================================
 let isSelectMode = false;
 let selectedPrompts = new Set();
+const selectedPromptRecords = new Map();
 let batchEditPrompts = [];
 let batchEditIndex = 0;
 let batchCancelled = false;
@@ -15679,6 +15687,14 @@ let activeGalleryBatchInteraction = null;
 const GALLERY_BATCH_INTERACTION_MIN_MS = 260;
 
 function setGalleryBatchPromptCardsPending(isPending, label = '') {
+    if (!isPending) {
+        document.querySelectorAll('.admin-card.is-batch-pending').forEach((card) => {
+            card.classList.remove('is-batch-pending');
+            delete card.dataset.batchPendingLabel;
+        });
+        return;
+    }
+
     const selectedIds = Array.from(selectedPrompts || []);
     if (!selectedIds.length) {
         return;
@@ -15690,8 +15706,8 @@ function setGalleryBatchPromptCardsPending(isPending, label = '') {
             return;
         }
 
-        card.classList.toggle('is-batch-pending', Boolean(isPending));
-        if (isPending && label) {
+        card.classList.add('is-batch-pending');
+        if (label) {
             card.dataset.batchPendingLabel = label;
         } else {
             delete card.dataset.batchPendingLabel;
@@ -15830,6 +15846,25 @@ function initBatchOperations() {
 
     // Batch menu items
     document.getElementById('selectAllBtn')?.addEventListener('click', selectAllPrompts);
+    document.getElementById('selectAllVideoPromptsBtn')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void runGalleryBatchActionFromMenu(event.currentTarget, () => selectAllFilteredPromptsByMedia('video'), {
+            pendingLabel: '正在读取全部视频...'
+        });
+    });
+    document.getElementById('selectAllImagePromptsBtn')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void runGalleryBatchActionFromMenu(event.currentTarget, () => selectAllFilteredPromptsByMedia('image'), {
+            pendingLabel: '正在读取全部图片...'
+        });
+    });
+    document.getElementById('clearPromptSelectionBtn')?.addEventListener('click', () => {
+        clearSelectedPromptSelection();
+        updateBatchButtonStates();
+        closeBatchMenu();
+    });
     document.getElementById('batchEditMenuItem')?.addEventListener('click', () => { closeBatchMenu(); startBatchEdit(); });
     document.getElementById('batchReanalyzeMenuItem')?.addEventListener('click', () => { closeBatchMenu(); startBatchReanalyze(); });
     document.getElementById('analyzeUntaggedMenuItem')?.addEventListener('click', () => { closeBatchMenu(); analyzeUntaggedPrompts(); });
@@ -15838,6 +15873,13 @@ function initBatchOperations() {
         e.stopPropagation();
         void runGalleryBatchActionFromMenu(e.currentTarget, () => batchCompleteSelectedPromptBilingualFields(), {
             pendingLabel: '正在补全双语...'
+        });
+    });
+    document.getElementById('batchBackfillPublishedPromptTextMenuItem')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void runGalleryBatchActionFromMenu(e.currentTarget, () => batchBackfillPublishedPromptTexts(), {
+            pendingLabel: '正在回填完整提示词...'
         });
     });
     document.getElementById('batchDeleteMenuItem')?.addEventListener('click', () => { closeBatchMenu(); showDeleteConfirmation(); });
@@ -15924,14 +15966,157 @@ function closeBatchMenu(force = false) {
     container.classList.remove('open');
 }
 
-// Select all prompts (only visible cards)
+function getPromptSelectionRecordById(promptId = '') {
+    const normalizedId = String(promptId || '').trim();
+    if (!normalizedId) return null;
+    return allPrompts.find((prompt) => String(prompt?.id || '') === normalizedId)
+        || selectedPromptRecords.get(normalizedId)
+        || null;
+}
+
+function setPromptSelected(promptId = '', selected = true, prompt = null) {
+    const normalizedId = String(promptId || '').trim();
+    if (!normalizedId) return false;
+
+    if (!selected) {
+        selectedPrompts.delete(normalizedId);
+        selectedPromptRecords.delete(normalizedId);
+        return false;
+    }
+
+    const record = prompt && typeof prompt === 'object'
+        ? prompt
+        : getPromptSelectionRecordById(normalizedId);
+    selectedPrompts.add(normalizedId);
+    if (record) {
+        selectedPromptRecords.set(normalizedId, record);
+    }
+    return true;
+}
+
+function clearSelectedPromptSelection({ syncCards = true } = {}) {
+    selectedPrompts.clear();
+    selectedPromptRecords.clear();
+    if (syncCards) {
+        document.querySelectorAll('.admin-card.selected').forEach((card) => {
+            card.classList.remove('selected');
+        });
+    }
+}
+
+function getPromptVideoAssetsForSelection(prompt = {}) {
+    const assets = Array.isArray(prompt?.video_assets)
+        ? prompt.video_assets
+        : (Array.isArray(prompt?.videoAssets) ? prompt.videoAssets : []);
+    return assets.filter((asset) => {
+        if (typeof asset === 'string') return Boolean(asset.trim());
+        if (!asset || typeof asset !== 'object' || Array.isArray(asset)) return false;
+        return Boolean(String(asset.original || asset.url || asset.src || '').trim());
+    });
+}
+
+function promptMatchesGalleryMediaSelection(prompt = {}, mediaType = '') {
+    const normalizedType = String(mediaType || '').trim().toLowerCase();
+    const hasVideo = getPromptVideoAssetsForSelection(prompt).length > 0;
+    if (normalizedType === 'video') return hasVideo;
+    if (normalizedType !== 'image' || hasVideo) return false;
+
+    const imageAssets = Array.isArray(prompt?.image_assets)
+        ? prompt.image_assets
+        : (Array.isArray(prompt?.imageAssets) ? prompt.imageAssets : []);
+    const images = Array.isArray(prompt?.images) ? prompt.images : [];
+    return [...imageAssets, ...images].some((asset) => {
+        if (typeof asset === 'string') return Boolean(asset.trim());
+        if (!asset || typeof asset !== 'object' || Array.isArray(asset)) return false;
+        return Boolean(String(asset.original || asset.url || asset.src || '').trim());
+    });
+}
+
+async function fetchAllAdminPromptRowsForSelection({ onProgress } = {}) {
+    const pageSize = 100;
+    const listParams = getAdminGalleryListParams({ page: 1, pageSize });
+    const firstPayload = await fetchAdminPromptList({
+        ...listParams,
+        hydrateBilingual: false
+    });
+    const firstRows = Array.isArray(firstPayload?.rows) ? firstPayload.rows : [];
+    const totalPages = Math.max(1, Number(firstPayload?.pagination?.totalPages) || 1);
+    const rows = [...firstRows];
+    const concurrency = 4;
+    onProgress?.(1, totalPages);
+
+    for (let startPage = 2; startPage <= totalPages; startPage += concurrency) {
+        const pages = Array.from(
+            { length: Math.min(concurrency, totalPages - startPage + 1) },
+            (_, index) => startPage + index
+        );
+        const payloads = await Promise.all(pages.map((page) => fetchAdminPromptList({
+            ...listParams,
+            page,
+            hydrateBilingual: false
+        })));
+        payloads.forEach((payload) => {
+            if (Array.isArray(payload?.rows)) rows.push(...payload.rows);
+        });
+        onProgress?.(pages[pages.length - 1], totalPages);
+    }
+
+    return [...new Map(rows
+        .map((prompt) => [String(prompt?.id || '').trim(), prompt])
+        .filter(([id]) => Boolean(id))).values()];
+}
+
+async function selectAllFilteredPromptsByMedia(mediaType = '') {
+    const normalizedType = String(mediaType || '').trim().toLowerCase();
+    if (normalizedType !== 'video' && normalizedType !== 'image') {
+        throw new Error('未知的素材类型');
+    }
+
+    const mediaLabel = normalizedType === 'video' ? '视频' : '图片';
+    const progressToast = showAdminStudioToast(`正在读取当前筛选的全部${mediaLabel}...`, 'info', { durationMs: 0 });
+    try {
+        const rows = await fetchAllAdminPromptRowsForSelection({
+            onProgress: (page, totalPages) => {
+                if (progressToast?.isConnected && totalPages > 1) {
+                    setToastContent(progressToast, `正在读取全部${mediaLabel} ${page}/${totalPages} 页...`, 'info');
+                }
+            }
+        });
+        const matchedRows = rows.filter((prompt) => promptMatchesGalleryMediaSelection(prompt, normalizedType));
+        clearSelectedPromptSelection();
+        matchedRows.forEach((prompt) => setPromptSelected(prompt?.id, true, prompt));
+        document.querySelectorAll('.admin-card').forEach((card) => {
+            card.classList.toggle('selected', selectedPrompts.has(String(card.dataset.id || '')));
+        });
+        updateBatchButtonStates();
+
+        const message = matchedRows.length
+            ? `已选择当前筛选的全部${mediaLabel}，共 ${matchedRows.length} 条`
+            : `当前筛选中没有${mediaLabel}记录`;
+        if (progressToast?.isConnected) {
+            setToastContent(progressToast, message, matchedRows.length ? 'success' : 'warning');
+            scheduleToastDismiss(progressToast, matchedRows.length ? 4200 : 5200);
+        } else {
+            showAdminStudioToast(message, matchedRows.length ? 'success' : 'warning');
+        }
+        return matchedRows.length > 0;
+    } catch (error) {
+        if (progressToast?.isConnected) {
+            setToastContent(progressToast, `读取全部${mediaLabel}失败：${error?.message || '未知错误'}`, 'error');
+            scheduleToastDismiss(progressToast, 6200);
+        }
+        console.error(`[Gallery] Failed to select all filtered ${normalizedType} prompts:`, error);
+        return false;
+    }
+}
+
+// Select all prompts on the current page.
 function selectAllPrompts() {
-    // Only select cards that are NOT hidden by search filter
     const cards = document.querySelectorAll('.admin-card:not(.admin-card--hidden-by-search):not(.admin-card--hidden-by-pagination)');
     cards.forEach(card => {
         const id = card.dataset.id; // UUID string, not parseInt
-        if (!selectedPrompts.has(id)) {
-            selectedPrompts.add(id);
+        if (id && !selectedPrompts.has(id)) {
+            setPromptSelected(id, true);
             card.classList.add('selected');
         }
     });
@@ -15958,10 +16143,7 @@ function toggleSelectMode() {
     } else {
         setAdminStudioVisibility(batchMenuContainer, false);
         batchMenuContainer.classList.remove('open');
-        selectedPrompts.clear();
-        document.querySelectorAll('.admin-card.selected').forEach(card => {
-            card.classList.remove('selected');
-        });
+        clearSelectedPromptSelection();
         // Hide count when exiting select mode
         setAdminStudioVisibility(promptCountWrapper, false);
     }
@@ -15983,10 +16165,10 @@ function attachCardSelectionListeners() {
 
             const id = card.dataset.id; // UUID string
             if (selectedPrompts.has(id)) {
-                selectedPrompts.delete(id);
+                setPromptSelected(id, false);
                 card.classList.remove('selected');
             } else {
-                selectedPrompts.add(id);
+                setPromptSelected(id, true);
                 card.classList.add('selected');
             }
             updateBatchButtonStates();
@@ -16004,10 +16186,10 @@ function handleCardSelection(e) {
     const id = card.dataset.id; // UUID string
 
     if (selectedPrompts.has(id)) {
-        selectedPrompts.delete(id);
+        setPromptSelected(id, false);
         card.classList.remove('selected');
     } else {
-        selectedPrompts.add(id);
+        setPromptSelected(id, true);
         card.classList.add('selected');
     }
 
@@ -16031,7 +16213,9 @@ function updateBatchButtonStates() {
 
 // Get selected prompts data
 function getSelectedPromptsData() {
-    return allPrompts.filter(p => selectedPrompts.has(String(p.id))); // 将ID转为字符串比较
+    return Array.from(selectedPrompts)
+        .map((promptId) => getPromptSelectionRecordById(promptId))
+        .filter(Boolean);
 }
 
 function buildPromptBilingualCompletionSource(prompt = {}) {
@@ -16364,6 +16548,479 @@ async function batchCompleteSelectedPromptBilingualFields() {
     }
 
     finalizeProgressToast(`已批量补全 ${localizedCount} 条 Prompt 双语`, 'success');
+    return true;
+}
+
+function isPublishedPromptTextBackfillCandidate(prompt = {}) {
+    return ['live', 'featured'].includes(getPromptAdminOpsData(prompt).status);
+}
+
+const PUBLISHED_PROMPT_BACKFILL_MAX_ATTEMPTS = 3;
+const PUBLISHED_PROMPT_BACKFILL_RETRY_BASE_DELAY_MS = 5000;
+const PUBLISHED_PROMPT_BACKFILL_RETRY_MAX_DELAY_MS = 60000;
+const PUBLISHED_PROMPT_BACKFILL_MAX_CONSECUTIVE_FAILURES = 5;
+const PUBLISHED_PROMPT_BACKFILL_INITIAL_PARALLELISM = 4;
+const PUBLISHED_PROMPT_BACKFILL_MAX_PARALLELISM = 10;
+const PUBLISHED_PROMPT_BACKFILL_MIN_PARALLELISM = 1;
+const PUBLISHED_PROMPT_BACKFILL_LAUNCH_GAP_MS = 250;
+const PUBLISHED_PROMPT_BACKFILL_RESULT_STORAGE_KEY = 'fatherKey.gallery.publishedPromptBackfill.lastResult';
+
+function isPublishedPromptTextBackfillComplete(prompt = {}, translator = window.PromptTranslator) {
+    const sourcePrompt = String(prompt?.prompt_text || prompt?.prompt || '').trim();
+    const promptTextEn = String(prompt?.prompt_text_en || '').trim();
+    const promptTextZh = String(prompt?.prompt_text_zh || '').trim();
+    if (!sourcePrompt || !promptTextEn || !promptTextZh) return false;
+    if (!translator?.getCanonicalPromptLanguage || !translator?.validateCanonicalPromptTranslation) return false;
+
+    const sourceLanguage = translator.getCanonicalPromptLanguage(sourcePrompt);
+    const canonicalText = sourceLanguage === 'zh' ? promptTextZh : promptTextEn;
+    const translatedText = sourceLanguage === 'zh' ? promptTextEn : promptTextZh;
+    if (!sourceLanguage || canonicalText !== sourcePrompt) return false;
+
+    try {
+        translator.validateCanonicalPromptTranslation(sourcePrompt, translatedText);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function isPublishedPromptBackfillRetryableError(error = null) {
+    const status = Number(error?.status || error?.statusCode || 0);
+    if (error?.isRateLimited) return true;
+    if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+    return /resource exhausted|quota|rate.?limit|too many requests|temporar(?:y|ily)|timeout|timed out|fetch failed|network|econnreset|gateway|服务暂时不可用|限流|额度/i
+        .test(String(error?.message || ''));
+}
+
+function shouldPausePublishedPromptBackfill(error = null) {
+    const status = Number(error?.status || error?.statusCode || 0);
+    if ([401, 403].includes(status)) return true;
+    return /api key|密钥|未配置|unauthorized|forbidden|permission|权限|unsupported model/i
+        .test(String(error?.message || ''));
+}
+
+function getPublishedPromptBackfillRetryDelayMs(error = null, attempt = 1) {
+    const retryAfterMs = Number(error?.retryAfterMs) || 0;
+    const exponentialDelay = PUBLISHED_PROMPT_BACKFILL_RETRY_BASE_DELAY_MS * (3 ** Math.max(0, Number(attempt) - 1));
+    return Math.min(
+        PUBLISHED_PROMPT_BACKFILL_RETRY_MAX_DELAY_MS,
+        Math.max(PUBLISHED_PROMPT_BACKFILL_RETRY_BASE_DELAY_MS, retryAfterMs, exponentialDelay)
+    );
+}
+
+function createPublishedPromptBackfillAdaptiveController(totalCount = 0, options = {}) {
+    const ceiling = Math.max(1, Math.min(
+        Number(options.ceiling) || PUBLISHED_PROMPT_BACKFILL_MAX_PARALLELISM,
+        Number(totalCount) || 1,
+        PUBLISHED_PROMPT_BACKFILL_MAX_PARALLELISM
+    ));
+    const minimum = Math.max(1, Math.min(
+        Number(options.minimum) || PUBLISHED_PROMPT_BACKFILL_MIN_PARALLELISM,
+        ceiling
+    ));
+    let limit = Math.max(minimum, Math.min(
+        Number(options.initial) || PUBLISHED_PROMPT_BACKFILL_INITIAL_PARALLELISM,
+        ceiling
+    ));
+    let peakLimit = limit;
+    let stableCompletions = 0;
+    let pressureCooldownUntil = 0;
+    let pressureEvents = 0;
+    const nowFn = typeof options.nowFn === 'function' ? options.nowFn : Date.now;
+
+    return {
+        get limit() {
+            return limit;
+        },
+        get ceiling() {
+            return ceiling;
+        },
+        get peakLimit() {
+            return peakLimit;
+        },
+        get pressureEvents() {
+            return pressureEvents;
+        },
+        getCooldownRemainingMs() {
+            return Math.max(0, pressureCooldownUntil - nowFn());
+        },
+        observeSuccess() {
+            if (pressureCooldownUntil > nowFn()) {
+                stableCompletions = 0;
+                return { changed: false, previousLimit: limit, limit };
+            }
+            stableCompletions += 1;
+            const requiredStableCompletions = Math.max(2, limit);
+            if (stableCompletions < requiredStableCompletions || limit >= ceiling) {
+                return { changed: false, previousLimit: limit, limit };
+            }
+            const previousLimit = limit;
+            limit += 1;
+            peakLimit = Math.max(peakLimit, limit);
+            stableCompletions = 0;
+            return { changed: true, previousLimit, limit };
+        },
+        observeFailure() {
+            stableCompletions = 0;
+        },
+        observePressure(error = null, delayMs = 0) {
+            const previousLimit = limit;
+            limit = Math.max(minimum, Math.floor(limit / 2));
+            stableCompletions = 0;
+            pressureEvents += 1;
+            const cooldownMs = Math.min(
+                PUBLISHED_PROMPT_BACKFILL_RETRY_MAX_DELAY_MS,
+                Math.max(
+                    PUBLISHED_PROMPT_BACKFILL_RETRY_BASE_DELAY_MS,
+                    Number(delayMs) || 0,
+                    Number(error?.retryAfterMs) || 0
+                )
+            );
+            pressureCooldownUntil = Math.max(pressureCooldownUntil, nowFn() + cooldownMs);
+            return {
+                changed: limit !== previousLimit,
+                previousLimit,
+                limit,
+                cooldownMs: Math.max(0, pressureCooldownUntil - nowFn())
+            };
+        }
+    };
+}
+
+async function waitForPublishedPromptBackfillCooldown(controller, sleepFn = sleep) {
+    while (controller?.getCooldownRemainingMs?.() > 0) {
+        await sleepFn(controller.getCooldownRemainingMs());
+    }
+}
+
+async function backfillPublishedPromptTextWithRetry(prompt = {}, writableSite = getAdminPromptsReadSite(), options = {}) {
+    const maxAttempts = Math.max(1, Number(options.maxAttempts) || PUBLISHED_PROMPT_BACKFILL_MAX_ATTEMPTS);
+    const sleepFn = typeof options.sleepFn === 'function' ? options.sleepFn : sleep;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            return await backfillPublishedPromptText(prompt, writableSite);
+        } catch (error) {
+            error.attempts = attempt;
+            if (attempt >= maxAttempts || !isPublishedPromptBackfillRetryableError(error)) {
+                throw error;
+            }
+
+            const delayMs = getPublishedPromptBackfillRetryDelayMs(error, attempt);
+            const retryWait = options.onRetry?.({
+                attempt,
+                nextAttempt: attempt + 1,
+                maxAttempts,
+                delayMs,
+                error,
+                prompt
+            });
+            if (retryWait && typeof retryWait.then === 'function') {
+                await retryWait;
+            } else {
+                await sleepFn(delayMs);
+            }
+        }
+    }
+
+    throw new Error('完整提示词回填重试次数已耗尽');
+}
+
+function persistPublishedPromptBackfillResult(summary = {}) {
+    const safeSummary = {
+        completedAt: new Date().toISOString(),
+        selectedCount: Math.max(0, Number(summary.selectedCount) || 0),
+        publishedCount: Math.max(0, Number(summary.publishedCount) || 0),
+        processedCount: Math.max(0, Number(summary.processedCount) || 0),
+        updatedCount: Math.max(0, Number(summary.updatedCount) || 0),
+        failedCount: Math.max(0, Number(summary.failedCount) || 0),
+        skippedCompleteCount: Math.max(0, Number(summary.skippedCompleteCount) || 0),
+        skippedNonPublishedCount: Math.max(0, Number(summary.skippedNonPublishedCount) || 0),
+        remainingCount: Math.max(0, Number(summary.remainingCount) || 0),
+        peakParallelism: Math.max(0, Number(summary.peakParallelism) || 0),
+        finalParallelism: Math.max(0, Number(summary.finalParallelism) || 0),
+        pressureEvents: Math.max(0, Number(summary.pressureEvents) || 0),
+        paused: summary.paused === true,
+        failures: (Array.isArray(summary.failures) ? summary.failures : [])
+            .map((message) => String(message || '').trim())
+            .filter(Boolean)
+            .slice(0, 20)
+    };
+
+    window.lastPublishedPromptBackfillResult = safeSummary;
+    try {
+        localStorage.setItem(PUBLISHED_PROMPT_BACKFILL_RESULT_STORAGE_KEY, JSON.stringify(safeSummary));
+    } catch (error) {
+        console.warn('[Gallery] Failed to persist published prompt backfill result:', error);
+    }
+    console.info('[Gallery] Published prompt text backfill result:', safeSummary);
+    return safeSummary;
+}
+
+async function backfillPublishedPromptText(prompt = {}, writableSite = getAdminPromptsReadSite()) {
+    const promptId = String(prompt?.id || '').trim();
+    const sourcePrompt = String(prompt?.prompt_text || prompt?.prompt || '').trim();
+    if (!promptId) throw new Error('缺少 Prompt ID');
+    if (!isPublishedPromptTextBackfillCandidate(prompt)) throw new Error('Prompt 不是已发布状态');
+    if (!sourcePrompt) throw new Error('源提示词为空');
+    if (!window.PromptTranslator?.translateCanonicalPromptText) {
+        throw new Error('完整提示词翻译器尚未加载');
+    }
+
+    const translatedFields = await withTimeout(
+        PromptTranslator.translateCanonicalPromptText(sourcePrompt),
+        600000,
+        `Prompt ${promptId} 完整提示词翻译超时，请稍后重试`
+    );
+    const payload = {
+        prompt_text_en: String(translatedFields?.prompt_text_en || '').trim(),
+        prompt_text_zh: String(translatedFields?.prompt_text_zh || '').trim()
+    };
+    if (!payload.prompt_text_en || !payload.prompt_text_zh) {
+        throw new Error('完整提示词翻译结果缺少双语字段');
+    }
+
+    const response = await mutateAdminPrompt({
+        action: 'patch',
+        site: writableSite,
+        id: promptId,
+        payload
+    });
+    const persistenceState = await verifyPromptPersistedBilingualFields(promptId, payload, response?.row || {});
+    if (persistenceState.missingFields.length > 0) {
+        const error = new Error(buildPromptBilingualPersistenceWarningMessage(
+            persistenceState.missingFields,
+            persistenceState
+        ) || '完整提示词回填后暂未确认写入');
+        error.missingFields = persistenceState.missingFields;
+        error.persistenceState = persistenceState;
+        throw error;
+    }
+    return {
+        ...prompt,
+        ...payload,
+        ...(persistenceState.row || response?.row || {}),
+        id: promptId
+    };
+}
+
+async function batchBackfillPublishedPromptTexts() {
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ action: 'gallery-batch-backfill-prompt-text' });
+    if (!writableSite) return false;
+
+    const selected = requireSelectedPromptsForBatch('回填已发布提示词');
+    if (!selected) return false;
+    const publishedPrompts = selected.filter(isPublishedPromptTextBackfillCandidate);
+    const skippedNonPublishedCount = selected.length - publishedPrompts.length;
+    if (!publishedPrompts.length) {
+        showAdminStudioToast('所选 Prompt 中没有已发布记录', 'error');
+        return false;
+    }
+    if (!window.PromptTranslator?.translateCanonicalPromptText || !window.AdminAI?.configured) {
+        showAdminStudioToast('请先配置可用的 AI 翻译服务，再执行提示词回填。', 'error');
+        await checkApiKey();
+        return false;
+    }
+
+    const pendingPrompts = publishedPrompts.filter((prompt) => !isPublishedPromptTextBackfillComplete(prompt));
+    const skippedCompleteCount = publishedPrompts.length - pendingPrompts.length;
+    if (!pendingPrompts.length) {
+        persistPublishedPromptBackfillResult({
+            selectedCount: selected.length,
+            publishedCount: publishedPrompts.length,
+            processedCount: 0,
+            updatedCount: 0,
+            failedCount: 0,
+            skippedCompleteCount,
+            skippedNonPublishedCount,
+            remainingCount: 0,
+            paused: false,
+            failures: []
+        });
+        showAdminStudioToast(`已检查 ${publishedPrompts.length} 条已发布 Prompt，全部已完整回填，无需重复处理`, 'success');
+        return true;
+    }
+
+    const progressToast = showAdminStudioToast(
+        `准备回填 ${pendingPrompts.length} 条，已完整跳过 ${skippedCompleteCount} 条...`,
+        'info',
+        { durationMs: 0 }
+    );
+    const finalizeProgressToast = (message, type = 'info', durationMs = 5200) => {
+        if (progressToast && progressToast.isConnected) {
+            setToastContent(progressToast, message, type);
+            scheduleToastDismiss(progressToast, durationMs);
+            return;
+        }
+        showAdminStudioToast(message, type, { durationMs });
+    };
+    const updatedRows = [];
+    const failures = [];
+    const adaptiveController = createPublishedPromptBackfillAdaptiveController(pendingPrompts.length);
+    let processedCount = 0;
+    let activeCount = 0;
+    let consecutiveFailures = 0;
+    let paused = false;
+    let pauseFailureMessage = '';
+    const updateBackfillProgress = (detail = '', type = 'info') => {
+        if (!progressToast?.isConnected) return;
+        const prefix = String(detail || '').trim();
+        setToastContent(
+            progressToast,
+            `${prefix ? `${prefix} · ` : ''}已完成 ${processedCount}/${pendingPrompts.length}，处理中 ${activeCount}，成功 ${updatedRows.length}，失败 ${failures.length}，并发 ${adaptiveController.limit}/${adaptiveController.ceiling}`,
+            type
+        );
+    };
+    const processPrompt = async (prompt, index) => {
+        activeCount += 1;
+        updateBackfillProgress(`启动第 ${index + 1} 条`);
+        try {
+            const row = await backfillPublishedPromptTextWithRetry(prompt, writableSite, {
+                onRetry: ({ nextAttempt, maxAttempts, delayMs, error }) => {
+                    const pressure = adaptiveController.observePressure(error, delayMs);
+                    const waitSeconds = Math.max(1, Math.ceil(pressure.cooldownMs / 1000));
+                    const reason = error?.isRateLimited ? 'AI 服务限流' : 'AI 服务出现压力';
+                    const limitChange = pressure.changed
+                        ? `，并发 ${pressure.previousLimit}→${pressure.limit}`
+                        : `，并发维持 ${pressure.limit}`;
+                    updateBackfillProgress(
+                        `${reason}${limitChange}，冷却 ${waitSeconds} 秒后重试 ${nextAttempt}/${maxAttempts}`,
+                        'warning'
+                    );
+                    return waitForPublishedPromptBackfillCooldown(adaptiveController);
+                }
+            });
+            return { ok: true, row, prompt, index };
+        } catch (error) {
+            return { ok: false, error, prompt, index };
+        } finally {
+            activeCount = Math.max(0, activeCount - 1);
+        }
+    };
+    const applyPromptResult = (result = {}) => {
+        processedCount += 1;
+        if (result.ok) {
+            updatedRows.push(result.row);
+            consecutiveFailures = 0;
+            const scale = adaptiveController.observeSuccess();
+            updateBackfillProgress(
+                scale.changed ? `运行稳定，并发 ${scale.previousLimit}→${scale.limit}` : '回填成功'
+            );
+            return;
+        }
+
+        const { error, prompt } = result;
+        const failureMessage = normalizeBatchPromptFailureMessage(error, prompt);
+        failures.push(failureMessage);
+        consecutiveFailures += 1;
+        console.error('[Gallery] Published prompt text backfill failed:', prompt?.id, error);
+        if (isPublishedPromptBackfillRetryableError(error)) {
+            const pressure = adaptiveController.observePressure(
+                error,
+                getPublishedPromptBackfillRetryDelayMs(error, error?.attempts || PUBLISHED_PROMPT_BACKFILL_MAX_ATTEMPTS)
+            );
+            const waitSeconds = Math.max(1, Math.ceil(pressure.cooldownMs / 1000));
+            updateBackfillProgress(
+                `压力请求失败，并发 ${pressure.previousLimit}→${pressure.limit}，全局冷却 ${waitSeconds} 秒`,
+                'warning'
+            );
+        } else {
+            adaptiveController.observeFailure();
+            updateBackfillProgress('单条内容校验失败，继续处理', 'warning');
+        }
+
+        if (shouldPausePublishedPromptBackfill(error)
+            || consecutiveFailures >= PUBLISHED_PROMPT_BACKFILL_MAX_CONSECUTIVE_FAILURES) {
+            paused = true;
+            pauseFailureMessage = failureMessage;
+        }
+    };
+
+    const runningTasks = new Set();
+    let nextIndex = 0;
+    const launchPrompt = (index) => {
+        let taskPromise;
+        taskPromise = processPrompt(pendingPrompts[index], index)
+            .then(applyPromptResult)
+            .finally(() => {
+                runningTasks.delete(taskPromise);
+            });
+        runningTasks.add(taskPromise);
+    };
+
+    updateBackfillProgress('压力自适应队列已启动');
+    while ((!paused && nextIndex < pendingPrompts.length) || runningTasks.size > 0) {
+        const cooldownRemaining = adaptiveController.getCooldownRemainingMs();
+        if (
+            !paused
+            && nextIndex < pendingPrompts.length
+            && runningTasks.size < adaptiveController.limit
+            && cooldownRemaining <= 0
+        ) {
+            launchPrompt(nextIndex);
+            nextIndex += 1;
+            if (nextIndex < pendingPrompts.length) {
+                await sleep(PUBLISHED_PROMPT_BACKFILL_LAUNCH_GAP_MS);
+            }
+            continue;
+        }
+        if (runningTasks.size > 0) {
+            await Promise.race(runningTasks);
+            continue;
+        }
+        if (!paused && cooldownRemaining > 0) {
+            updateBackfillProgress(`压力冷却中，剩余 ${Math.max(1, Math.ceil(cooldownRemaining / 1000))} 秒`, 'warning');
+            await waitForPublishedPromptBackfillCooldown(adaptiveController);
+            continue;
+        }
+        break;
+    }
+
+    if (updatedRows.length) {
+        markHomepagePromptPoolUpdated();
+        await loadAdminPrompts();
+        hydrateAdminGalleryPromptsLocally(updatedRows);
+    }
+
+    const remainingCount = Math.max(0, pendingPrompts.length - processedCount);
+    const result = persistPublishedPromptBackfillResult({
+        selectedCount: selected.length,
+        publishedCount: publishedPrompts.length,
+        processedCount,
+        updatedCount: updatedRows.length,
+        failedCount: failures.length,
+        skippedCompleteCount,
+        skippedNonPublishedCount,
+        remainingCount,
+        peakParallelism: adaptiveController.peakLimit,
+        finalParallelism: adaptiveController.limit,
+        pressureEvents: adaptiveController.pressureEvents,
+        paused,
+        failures
+    });
+    const skippedMessage = [
+        result.skippedCompleteCount > 0 ? `已完整跳过 ${result.skippedCompleteCount} 条` : '',
+        result.skippedNonPublishedCount > 0 ? `跳过非发布 ${result.skippedNonPublishedCount} 条` : ''
+    ].filter(Boolean).join('，');
+    const skippedSuffix = skippedMessage ? `，${skippedMessage}` : '';
+    if (paused) {
+        finalizeProgressToast(
+            `回填已暂停：成功 ${updatedRows.length} 条，失败 ${failures.length} 条${skippedSuffix}，未处理 ${remainingCount} 条，峰值并发 ${result.peakParallelism}；${pauseFailureMessage || failures[0] || '请稍后重试'}`,
+            updatedRows.length ? 'warning' : 'error',
+            20000
+        );
+        return false;
+    }
+    if (failures.length) {
+        finalizeProgressToast(
+            `回填完成：成功 ${updatedRows.length} 条，失败 ${failures.length} 条${skippedSuffix}，峰值并发 ${result.peakParallelism}；${failures[0]}`,
+            updatedRows.length ? 'warning' : 'error',
+            12000
+        );
+        return false;
+    }
+    finalizeProgressToast(`回填完成：新增 ${updatedRows.length} 条完整提示词${skippedSuffix}，峰值并发 ${result.peakParallelism}`, 'success', 7200);
     return true;
 }
 
@@ -16941,7 +17598,7 @@ async function executeBatchDelete() {
         await loadAdminPrompts();
 
         // Exit select mode
-        selectedPrompts.clear();
+        clearSelectedPromptSelection();
         if (isSelectMode) toggleSelectMode();
 
     } catch (err) {
@@ -17039,7 +17696,7 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-22.83';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-23.87';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_DEFAULT_PARALLELISM = 8;
@@ -17054,6 +17711,7 @@ const GALLERY_IMPORT_RETRY_BASE_DELAY_MS = 1800;
 const GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS = 2;
 const GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS = 3;
 const GALLERY_IMPORT_AUTO_DETECT_INTERVAL_MS = 5000;
+const GALLERY_IMPORT_AUTO_DETECT_IDLE_TIMEOUT_MS = 15000;
 const GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY = 'fatherKey.galleryImport.autoDetectQueue';
 const GALLERY_IMPORT_AUTO_DETECT_LOCK_NAME = 'father-key-gallery-import-auto-upload';
 const GALLERY_IMPORT_RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -18733,6 +19391,18 @@ async function runGalleryImportAutoDetectionCycle() {
     return runCycle();
 }
 
+async function waitForGalleryImportAutoDetectionIdle(
+    timeoutMs = GALLERY_IMPORT_AUTO_DETECT_IDLE_TIMEOUT_MS
+) {
+    const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+    while (galleryImportState.autoDetectionInFlight) {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) return false;
+        await sleep(Math.min(100, remainingMs));
+    }
+    return true;
+}
+
 async function refreshGalleryImportProcessingStatus(options = {}) {
     if (galleryImportState.statusRefreshInFlight || galleryImportState.uploadInFlight) {
         if (!options.silent) {
@@ -19339,23 +20009,38 @@ async function clearCurrentGalleryImportQueue() {
 async function deleteCurrentGalleryImportBatch() {
     if (galleryImportState.running
         || galleryImportState.uploadInFlight
-        || galleryImportState.statusRefreshInFlight
-        || galleryImportState.autoDetectionInFlight) {
+        || galleryImportState.statusRefreshInFlight) {
+        showAdminStudioToast('当前仍有导入或状态刷新任务，请等待完成后再删除批次', 'warning');
+        return;
+    }
+    const shouldRestoreAutoDetection = galleryImportState.autoDetectionEnabled;
+    setGalleryImportAutoDetectionEnabled(false);
+    const autoDetectionIdle = await waitForGalleryImportAutoDetectionIdle();
+    if (!autoDetectionIdle) {
+        if (shouldRestoreAutoDetection) setGalleryImportAutoDetectionEnabled(true);
+        showAdminStudioToast('自动检测正在收尾，请稍后再试', 'warning');
+        return;
+    }
+    if (galleryImportState.running
+        || galleryImportState.uploadInFlight
+        || galleryImportState.statusRefreshInFlight) {
+        if (shouldRestoreAutoDetection) setGalleryImportAutoDetectionEnabled(true);
         showAdminStudioToast('当前仍有导入或状态刷新任务，请等待完成后再删除批次', 'warning');
         return;
     }
     const batchId = String(galleryImportState.selectedBatchId || galleryImportState.batch?.id || '').trim();
     if (!batchId) {
+        if (shouldRestoreAutoDetection) setGalleryImportAutoDetectionEnabled(true);
         showAdminStudioToast('当前没有可删除的服务端批次', 'info');
         return;
     }
     const stats = getGalleryImportBatchStats(galleryImportState.batch);
     if (!confirm(`确定永久删除批次 ${batchId.slice(0, 8)} 及其 ${stats.total} 条队列记录吗？Supabase 中的暂存记录会被删除；已发布 Gallery 内容和 R2 媒体不会被删除。`)) {
+        if (shouldRestoreAutoDetection) setGalleryImportAutoDetectionEnabled(true);
         return;
     }
 
     try {
-        setGalleryImportAutoDetectionEnabled(false);
         const payload = await mutateGalleryImport('delete_batch', {
             batch_id: batchId
         });
@@ -19378,6 +20063,7 @@ async function deleteCurrentGalleryImportBatch() {
         setGalleryImportRunStatus(`批次 ${batchId.slice(0, 8)} 已删除`);
         showAdminStudioToast(`已删除批次记录及 ${payload.deletedItemCount ?? stats.total} 条队列记录`, 'success');
     } catch (error) {
+        if (shouldRestoreAutoDetection) setGalleryImportAutoDetectionEnabled(true);
         showAdminStudioToast(error.message || '删除批次失败', 'error');
     }
 }

@@ -357,6 +357,69 @@ test('AdminAI.generateText requires an explicit budget tier before sending admin
     assert.equal(fetchCalls.length, 0);
 });
 
+test('AdminAI.generateText exposes upstream retry timing for recoverable rate limits', async () => {
+    const source = readRepoFile('js/admin-ai.js');
+    const events = [];
+    const context = {
+        performance: {
+            now() {
+                return 100;
+            }
+        },
+        CustomEvent: function CustomEvent(type, init) {
+            this.type = type;
+            this.detail = init?.detail;
+        },
+        fetch: async () => ({
+            ok: false,
+            status: 429,
+            headers: {
+                get(name) {
+                    return String(name).toLowerCase() === 'retry-after' ? '12' : '';
+                }
+            },
+            async text() {
+                return JSON.stringify({
+                    success: false,
+                    message: 'Resource exhausted'
+                });
+            }
+        }),
+        window: {
+            ADMIN_AI_SERVICE: 'gemini',
+            dispatchEvent(event) {
+                events.push(event);
+            },
+            supabaseClient: {
+                auth: {
+                    async getSession() {
+                        return {
+                            data: {
+                                session: {
+                                    access_token: 'token'
+                                }
+                            }
+                        };
+                    }
+                }
+            }
+        }
+    };
+
+    vm.runInNewContext(source, context);
+
+    const error = await context.window.AdminAI.generateText('translate this', {
+        budget: { tier: 'longform' }
+    }).catch((caught) => caught);
+
+    assert.equal(error.status, 429);
+    assert.equal(error.isRateLimited, true);
+    assert.equal(error.retryAfterMs, 12000);
+    assert.equal(events.some((event) => event.type === 'admin-ai-response'
+        && event.detail.ok === false
+        && event.detail.retryAfterMs === 12000), true);
+});
+
 test('checkApiKey keeps existing Gemini source when health probe is temporarily unavailable', async () => {
     const source = readRepoFile('admin-studio.js');
     const helperSource = extractFunction(source, 'getAIHealthFailureStatusText');

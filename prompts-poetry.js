@@ -746,9 +746,14 @@ function getLocalizedField(item, field) {
     const lang = getCurrentLanguage();
     const localizedKey = `${field}_${lang}`;
     const otherLangKey = `${field}_${lang === 'en' ? 'zh' : 'en'}`;
+    const canonicalValue = String(item[field] || '').trim();
 
     // Priority 1: Try current language field
     if (item[localizedKey] && item[localizedKey].trim()) {
+        if (field === 'prompt_text'
+            && window.FatherKeyPromptMediaTabs?.shouldUseFallbackPromptText?.(item[localizedKey], canonicalValue)) {
+            return resolvePromptLocalizedDataText(canonicalValue, field);
+        }
         return resolvePromptLocalizedDataText(item[localizedKey], field);
     }
 
@@ -7437,6 +7442,9 @@ let promptModalLayoutSyncFrameId = null;
 let promptAreaMotionFrameId = null;
 let promptAreaMotionTimerId = null;
 let currentPromptId = null;
+let currentPromptMediaItemKey = '';
+let currentPromptMediaType = '';
+let currentPromptMediaVariants = [];
 const PROMPT_MOBILE_SIDE_MODE_RETURN_CLEANUP_MS = 620;
 const PROMPT_DESKTOP_SIDE_MODE_RETURN_CLEANUP_MS = 520;
 const PROMPT_DESKTOP_RELATED_SELECTION_MOTION_MS = 500;
@@ -8616,6 +8624,128 @@ function getPromptDetailLoadingText() {
     return getCurrentLanguage() === 'en' ? 'Loading prompt details...' : '提示词详情加载中...';
 }
 
+function getPromptMediaTabLabel(type = '') {
+    if (type === 'video') {
+        return window.i18n?.t('gallery.videoPrompt') || (getCurrentLanguage() === 'en' ? 'Video prompt' : '视频提示词');
+    }
+    return window.i18n?.t('gallery.imagePrompt') || (getCurrentLanguage() === 'en' ? 'Image prompt' : '图片提示词');
+}
+
+function getPromptDefaultLabel() {
+    return window.i18n?.t('gallery.prompt') || (getCurrentLanguage() === 'en' ? 'Prompt' : '提示词');
+}
+
+function resetPromptMediaTabs({ resetItem = false } = {}) {
+    const tabs = document.getElementById('promptMediaTabs');
+    const defaultLabel = document.getElementById('promptDefaultLabel');
+    if (tabs) {
+        tabs.hidden = true;
+        tabs.removeAttribute('data-active-type');
+        tabs.querySelectorAll('[data-prompt-media-type]').forEach((button) => {
+            button.hidden = false;
+            button.setAttribute('aria-selected', 'false');
+            button.tabIndex = -1;
+        });
+    }
+    if (defaultLabel) {
+        defaultLabel.hidden = false;
+        defaultLabel.textContent = getPromptDefaultLabel();
+    }
+    currentPromptMediaVariants = [];
+    currentPromptMediaType = '';
+    if (resetItem) currentPromptMediaItemKey = '';
+}
+
+function syncPromptMediaTabSelection({ focus = false } = {}) {
+    const tabs = document.getElementById('promptMediaTabs');
+    if (!tabs) return;
+    tabs.dataset.activeType = currentPromptMediaType;
+    tabs.querySelectorAll('[data-prompt-media-type]').forEach((button) => {
+        const selected = button.dataset.promptMediaType === currentPromptMediaType;
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        button.tabIndex = selected ? 0 : -1;
+        if (selected && focus) button.focus();
+    });
+}
+
+function selectPromptMediaType(type = '', { focus = false } = {}) {
+    const variant = currentPromptMediaVariants.find((entry) => entry.type === type);
+    const promptText = document.getElementById('modalPromptText');
+    if (!variant || !promptText) return false;
+    currentPromptMediaType = type;
+    setPromptDetailTextState(promptText, variant.text);
+    syncPromptMediaTabSelection({ focus });
+    return true;
+}
+
+function handlePromptMediaTabKeydown(event, type = '') {
+    const availableTypes = currentPromptMediaVariants.map((variant) => variant.type);
+    if (!availableTypes.length) return;
+    const currentIndex = Math.max(0, availableTypes.indexOf(type));
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % availableTypes.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + availableTypes.length) % availableTypes.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = availableTypes.length - 1;
+    else return;
+    event.preventDefault();
+    selectPromptMediaType(availableTypes[nextIndex], { focus: true });
+}
+
+function renderPromptMediaTabs(promptText, item = {}) {
+    const mediaTabsApi = window.FatherKeyPromptMediaTabs;
+    const localizedText = getPromptModalPromptText(item);
+    const fallbackText = String(item.prompt_text || item.prompt || '').trim();
+    const mediaState = mediaTabsApi?.buildPromptMediaVariants?.(localizedText, fallbackText) || {
+        fullText: localizedText || fallbackText,
+        variants: []
+    };
+    const itemKey = getPromptStableOpenId(item);
+    if (currentPromptMediaItemKey !== itemKey) {
+        currentPromptMediaItemKey = itemKey;
+        currentPromptMediaType = '';
+    }
+    currentPromptMediaVariants = Array.isArray(mediaState.variants) ? mediaState.variants : [];
+    if (!currentPromptMediaVariants.length) {
+        resetPromptMediaTabs();
+        currentPromptMediaItemKey = itemKey;
+        setPromptDetailTextState(promptText, mediaState.fullText);
+        return;
+    }
+
+    const tabs = document.getElementById('promptMediaTabs');
+    const defaultLabel = document.getElementById('promptDefaultLabel');
+    if (currentPromptMediaVariants.length === 1) {
+        const onlyVariant = currentPromptMediaVariants[0];
+        if (tabs) tabs.hidden = true;
+        if (defaultLabel) {
+            defaultLabel.hidden = false;
+            defaultLabel.textContent = getPromptMediaTabLabel(onlyVariant.type);
+        }
+        currentPromptMediaType = onlyVariant.type;
+        setPromptDetailTextState(promptText, onlyVariant.text);
+        return;
+    }
+    if (defaultLabel) defaultLabel.hidden = true;
+    if (tabs) {
+        tabs.hidden = false;
+        tabs.setAttribute('aria-label', getCurrentLanguage() === 'en' ? 'Prompt type' : '提示词类型');
+        tabs.querySelectorAll('[data-prompt-media-type]').forEach((button) => {
+            const type = button.dataset.promptMediaType;
+            const available = currentPromptMediaVariants.some((variant) => variant.type === type);
+            button.hidden = !available;
+            button.textContent = getPromptMediaTabLabel(type);
+            button.setAttribute('aria-label', getPromptMediaTabLabel(type));
+            button.onclick = () => selectPromptMediaType(type);
+            button.onkeydown = (event) => handlePromptMediaTabKeydown(event, type);
+        });
+    }
+    const preferredType = currentPromptMediaVariants.some((variant) => variant.type === currentPromptMediaType)
+        ? currentPromptMediaType
+        : (currentPromptMediaVariants.find((variant) => variant.type === 'image') || currentPromptMediaVariants[0]).type;
+    selectPromptMediaType(preferredType);
+}
+
 function setPromptDetailLoadingState(promptText) {
     if (!promptText) return;
     promptText.classList.add('prompt-text--loading');
@@ -8640,9 +8770,10 @@ function setPromptDetailTextState(promptText, text = '') {
 
 function setPromptModalPromptContent(promptText, item = {}) {
     if (hasPromptDetailBody(item)) {
-        setPromptDetailTextState(promptText, getPromptModalPromptText(item));
+        renderPromptMediaTabs(promptText, item);
         return;
     }
+    resetPromptMediaTabs({ resetItem: true });
     setPromptDetailLoadingState(promptText);
 }
 
@@ -8669,9 +8800,12 @@ function applyPromptModalDetailContent(item = {}) {
         description.textContent = getLocalizedField(item, 'description');
     }
     if (promptText) {
-        setPromptDetailTextState(promptText, hasPromptDetailBody(item)
-            ? getPromptModalPromptText(item)
-            : getPromptDetailUnavailableText());
+        if (hasPromptDetailBody(item)) {
+            renderPromptMediaTabs(promptText, item);
+        } else {
+            resetPromptMediaTabs({ resetItem: true });
+            setPromptDetailTextState(promptText, getPromptDetailUnavailableText());
+        }
     }
     currentModalImagePalettes = normalizePromptImagePalettesFromRecord(item);
     renderModalImagePalette();
@@ -8869,6 +9003,7 @@ function openPromptModal(id, options = {}) {
         .catch((error) => {
             console.warn('Failed to load prompt detail:', error?.message || error);
             if (String(currentPromptId || '').trim() === modalPromptId) {
+                resetPromptMediaTabs({ resetItem: true });
                 setPromptDetailTextState(promptText, getPromptDetailUnavailableText());
             }
         });
@@ -9428,19 +9563,23 @@ function setPromptUnlocked() {
     const promptItem = findPromptForModalOpen(promptId);
     if (promptItem) {
         if (hasPromptDetailBody(promptItem)) {
-            setPromptDetailTextState(promptText, getPromptModalPromptText(promptItem));
+            renderPromptMediaTabs(promptText, promptItem);
         } else {
             setPromptDetailLoadingState(promptText);
             ensurePromptDetailLoaded(promptItem)
                 .then((updatedItem) => {
                     if (currentPromptId !== promptId) return;
-                    setPromptDetailTextState(promptText, hasPromptDetailBody(updatedItem)
-                        ? getPromptModalPromptText(updatedItem)
-                        : getPromptDetailUnavailableText());
+                    if (hasPromptDetailBody(updatedItem)) {
+                        renderPromptMediaTabs(promptText, updatedItem);
+                    } else {
+                        resetPromptMediaTabs({ resetItem: true });
+                        setPromptDetailTextState(promptText, getPromptDetailUnavailableText());
+                    }
                 })
                 .catch((error) => {
                     console.warn('Failed to load unlocked prompt detail:', error?.message || error);
                     if (currentPromptId === promptId) {
+                        resetPromptMediaTabs({ resetItem: true });
                         setPromptDetailTextState(promptText, getPromptDetailUnavailableText());
                     }
                 });

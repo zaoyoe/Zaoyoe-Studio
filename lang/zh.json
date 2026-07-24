@@ -489,6 +489,8 @@
         "hotSearch": "热门搜索",
         "featured": "✦ 精选推荐",
         "prompt": "提示词",
+        "imagePrompt": "图片提示词",
+        "videoPrompt": "视频提示词",
         "unlock": "解锁",
         "viewAll": "查看全部",
         "viewAllComments": "查看全部评论",

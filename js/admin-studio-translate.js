@@ -109,6 +109,235 @@ const PromptTranslator = {
         return /[\u4e00-\u9fff]/.test(text);
     },
 
+    getCanonicalPromptLanguage: function (text = '') {
+        const source = String(text || '');
+        const cjkCount = (source.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+        const latinCount = (source.match(/[a-z]/gi) || []).length;
+        if (cjkCount >= 4 && cjkCount >= latinCount * 0.15) return 'zh';
+        if (latinCount >= 8) return 'en';
+        return cjkCount > 0 ? 'zh' : '';
+    },
+
+    extractCanonicalMediaHeaders: function (text = '') {
+        return Array.from(String(text || '').matchAll(/\[(?:IMAGE|VIDEO)\s*·\s*\d{1,3}\]/gi))
+            .map((match) => match[0]);
+    },
+
+    extractPromptStructureTokens: function (text = '') {
+        const source = String(text || '');
+        const patterns = [
+            /\bP(?:\d{1,3}\b|#{1,3})/gi,
+            /\b\d{1,2}:\d{2}(?::\d{2})?\b/g,
+            /\b\d+(?:\.\d+)?(?:\s*[-–—]\s*\d+(?:\.\d+)?)?\s*(?:ms|s|sec|secs|second|seconds|秒|毫秒)\b/gi,
+            /\b\d+(?:\.\d+)?%(?!\w)/g,
+            /\b\d{1,2}:\d{1,2}\b/g
+        ];
+        return [...new Set(patterns.flatMap((pattern) => source.match(pattern) || []).map((token) => token.toLowerCase()))];
+    },
+
+    splitCanonicalPromptText: function (text = '', maxChars = 4200) {
+        const source = String(text || '').trim();
+        if (!source) return [];
+
+        const chunkLimit = Math.max(64, Number(maxChars) || 4200);
+        if (source.length <= chunkLimit) return [source];
+
+        const chunks = [];
+        let remaining = source;
+        while (remaining.length > chunkLimit) {
+            const windowText = remaining.slice(0, chunkLimit + 1);
+            const minimumCut = Math.max(32, Math.floor(chunkLimit * 0.55));
+            let cutIndex = 0;
+            const mediaHeaderCuts = Array.from(windowText.matchAll(/\n(?=\[(?:IMAGE|VIDEO)\s*·\s*\d{1,3}\])/gi))
+                .map((match) => match.index + 1)
+                .filter((index) => index >= minimumCut && index <= chunkLimit);
+            if (mediaHeaderCuts.length) cutIndex = Math.max(...mediaHeaderCuts);
+
+            for (const separator of ['\r\n\r\n', '\n\n', '\r\n', '\n', '. ', '! ', '? ', '。', '！', '？', '; ', '；', ', ', '，', ' ']) {
+                if (cutIndex) break;
+                const separatorIndex = windowText.lastIndexOf(separator);
+                const candidateCut = separatorIndex + separator.length;
+                if (separatorIndex >= 0 && candidateCut >= minimumCut && candidateCut <= chunkLimit) {
+                    cutIndex = candidateCut;
+                }
+            }
+            if (!cutIndex) cutIndex = chunkLimit;
+            const chunk = remaining.slice(0, cutIndex).trim();
+            if (chunk) chunks.push(chunk);
+            remaining = remaining.slice(cutIndex).trim();
+        }
+        if (remaining) chunks.push(remaining);
+        return chunks;
+    },
+
+    protectCanonicalPromptTokens: function (text = '') {
+        const source = String(text || '');
+        let tokenPrefix = 'FK_CANONICAL_TOKEN';
+        while (source.includes(`__${tokenPrefix}_`)) tokenPrefix += 'X';
+
+        const tokens = [];
+        const tokenPattern = /\[(?:IMAGE|VIDEO)\s*·\s*\d{1,3}\]|\bP(?:\d{1,3}\b|#{1,3})|\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?)?|\b\d+(?:\.\d+)?(?:\s*[-–—]\s*\d+(?:\.\d+)?)?\s*(?:ms|s|sec|secs|second|seconds|秒|毫秒)\b|\b\d{1,2}\s*:\s*\d{1,2}\b|\b\d+(?:\.\d+)?%(?!\w)|\b\d+(?:\.\d+)?\s*[x×]\s*\d+(?:\.\d+)?\b|[-+]?\b\d+(?:\.\d+)?(?:e[-+]?\d+)?(?![\d.])/gi;
+        const protectedText = source.replace(tokenPattern, (value) => {
+            const placeholder = `__${tokenPrefix}_${String(tokens.length + 1).padStart(4, '0')}__`;
+            tokens.push({ placeholder, value });
+            return placeholder;
+        });
+
+        return { protectedText, tokens, tokenPrefix };
+    },
+
+    restoreCanonicalPromptTokens: function (translatedText = '', protection = {}) {
+        let restored = String(translatedText || '').trim();
+        const tokens = Array.isArray(protection?.tokens) ? protection.tokens : [];
+        for (const token of tokens) {
+            const occurrenceCount = restored.split(token.placeholder).length - 1;
+            if (occurrenceCount !== 1) {
+                throw new Error(`完整提示词翻译改写了结构占位符：${token.value}`);
+            }
+        }
+        for (const token of tokens) {
+            restored = restored.replace(token.placeholder, token.value);
+        }
+
+        const unresolvedPrefix = String(protection?.tokenPrefix || '').trim();
+        if (unresolvedPrefix && restored.includes(`__${unresolvedPrefix}_`)) {
+            throw new Error('完整提示词翻译包含无法恢复的结构占位符');
+        }
+        return restored.trim();
+    },
+
+    validateCanonicalPromptTranslation: function (sourceText = '', translatedText = '') {
+        const source = String(sourceText || '').trim();
+        const translated = String(translatedText || '').trim();
+        if (!source || !translated) {
+            throw new Error('完整提示词翻译为空');
+        }
+
+        const expectedHeaders = this.extractCanonicalMediaHeaders(source);
+        const actualHeaders = this.extractCanonicalMediaHeaders(translated);
+        if (expectedHeaders.length && JSON.stringify(actualHeaders) !== JSON.stringify(expectedHeaders)) {
+            throw new Error('完整提示词翻译丢失图片或视频段落');
+        }
+        if (/(?:\.{3}|…)\s*$/.test(translated)) {
+            throw new Error('完整提示词翻译疑似被截断');
+        }
+
+        const sourceLength = source.replace(/\s/g, '').length;
+        const translatedLength = translated.replace(/\s/g, '').length;
+        if (sourceLength >= 240 && translatedLength < Math.ceil(sourceLength * 0.2)) {
+            throw new Error('完整提示词翻译明显短于源提示词');
+        }
+
+        const translatedLower = translated.toLowerCase();
+        const missingTokens = this.extractPromptStructureTokens(source)
+            .filter((token) => !translatedLower.includes(token));
+        if (missingTokens.length) {
+            throw new Error(`完整提示词翻译丢失结构标记：${missingTokens.slice(0, 8).join(', ')}`);
+        }
+        return translated;
+    },
+
+    translateCanonicalPromptChunk: async function (sourceChunk = '', targetLanguage = 'Chinese', options = {}) {
+        const source = String(sourceChunk || '').trim();
+        if (!source) throw new Error('完整提示词分段为空');
+        const maxAttempts = Math.max(1, Number(options.maxAttempts) || 3);
+        const protection = this.protectCanonicalPromptTokens(source);
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const prompt = `Translate the source prompt chunk completely into ${targetLanguage}.
+Return ONLY the translated prompt, with no markdown fence, label, summary, or commentary.
+Translate every sentence and line. Do not shorten, omit, paraphrase, or add instructions.
+Tokens matching __${protection.tokenPrefix}_NNNN__ are protected placeholders. Copy every placeholder exactly once and never translate, reformat, duplicate, or remove it. Keep media section headers in their original order. Other placeholders may move only when required by natural ${targetLanguage} grammar.
+Preserve paragraph and line structure.
+
+Source prompt chunk:
+${protection.protectedText}`;
+
+            // Provider and transport errors must reach the outer adaptive scheduler unchanged.
+            const response = await window.AdminAI.generateText(prompt, {
+                model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
+                generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+                budget: {
+                    tier: 'longform',
+                    maxInputChars: 24000,
+                    maxOutputTokens: 8192
+                }
+            });
+
+            try {
+                const protectedTranslation = String(response || '').trim()
+                    .replace(/^```(?:text)?\s*/i, '')
+                    .replace(/```$/i, '')
+                    .trim();
+                const translated = this.restoreCanonicalPromptTokens(protectedTranslation, protection);
+                this.validateCanonicalPromptTranslation(source, translated);
+                return translated;
+            } catch (error) {
+                error.code = error.code || 'CANONICAL_PROMPT_VALIDATION_FAILED';
+                error.chunkAttempt = attempt;
+                if (attempt >= maxAttempts) throw error;
+            }
+        }
+
+        throw new Error('完整提示词分段翻译重试次数已耗尽');
+    },
+
+    translateCanonicalPromptChunks: async function (chunks = [], targetLanguage = 'Chinese', options = {}) {
+        const sourceChunks = Array.isArray(chunks) ? chunks.filter((chunk) => String(chunk || '').trim()) : [];
+        if (!sourceChunks.length) return [];
+
+        const translatedChunks = new Array(sourceChunks.length);
+        const parallelism = Math.max(1, Math.min(
+            Number(options.parallelism) || 3,
+            sourceChunks.length,
+            3
+        ));
+        let nextIndex = 0;
+        let firstError = null;
+        const workers = Array.from({ length: parallelism }, async () => {
+            while (!firstError) {
+                const chunkIndex = nextIndex;
+                nextIndex += 1;
+                if (chunkIndex >= sourceChunks.length) return;
+                try {
+                    translatedChunks[chunkIndex] = await this.translateCanonicalPromptChunk(
+                        sourceChunks[chunkIndex],
+                        targetLanguage,
+                        { maxAttempts: options.maxAttempts }
+                    );
+                } catch (error) {
+                    firstError = firstError || error;
+                }
+            }
+        });
+        await Promise.all(workers);
+        if (firstError) throw firstError;
+        return translatedChunks;
+    },
+
+    translateCanonicalPromptText: async function (sourceText = '') {
+        if (!window.AdminAI?.configured) {
+            throw new Error('请先配置可用的 AI 翻译服务');
+        }
+        const source = String(sourceText || '').trim();
+        if (!source) throw new Error('源提示词为空');
+        if (source.length > 20000) throw new Error('源提示词超过 20000 字符，需人工处理');
+
+        const sourceLanguage = this.getCanonicalPromptLanguage(source);
+        if (!sourceLanguage) throw new Error('无法识别源提示词语言');
+        const targetLanguage = sourceLanguage === 'zh' ? 'English' : 'Chinese';
+        const chunks = this.splitCanonicalPromptText(source);
+        const translatedChunks = await this.translateCanonicalPromptChunks(chunks, targetLanguage, {
+            parallelism: 3,
+            maxAttempts: 3
+        });
+        const translated = translatedChunks.join('\n\n').trim();
+        this.validateCanonicalPromptTranslation(source, translated);
+        return sourceLanguage === 'zh'
+            ? { prompt_text_en: translated, prompt_text_zh: source }
+            : { prompt_text_en: source, prompt_text_zh: translated };
+    },
+
     /**
      * Translate Chinese text to English
      */

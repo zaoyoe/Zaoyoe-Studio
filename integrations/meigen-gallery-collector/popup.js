@@ -229,9 +229,9 @@
             duplicates: Number(status.duplicates || 0),
             checkedCandidates: Number(status.checkedCandidates || 0),
             repositoryDuplicates: Number(status.repositoryDuplicates || 0),
+            candidateDuplicates: Number(status.candidateDuplicates || 0),
             stageDuplicates: Number(status.stageDuplicates || 0),
             identityRejected: Number(status.identityRejected || 0),
-            persistentFailures: Number(status.persistentFailures || 0),
             rejected: Number(status.rejected || 0),
             processable: Number(status.processable || 0),
             pendingDetail: Number(status.pendingDetail || 0),
@@ -289,7 +289,7 @@
         getElement('automationProgressBar').style.width = `${percent}%`;
         getElement('automationProgressDetail').textContent = status.lastError
             ? `错误：${status.lastError}`
-            : `检查作品候选 ${status.checkedCandidates} · 当前作品 ${status.discovered} · 仓库重复 ${status.repositoryDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 历史顽固 ${status.persistentFailures} · 服务端接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 未接收 ${status.rejected}`;
+            : `检查唯一作品 ${status.checkedCandidates} · 当前作品 ${status.discovered} · 仓库已有 ${status.repositoryDuplicates} · 当前扫描重复 ${status.candidateDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 服务端接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 未接收 ${status.rejected}`;
 
         if (status.running) {
             setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);

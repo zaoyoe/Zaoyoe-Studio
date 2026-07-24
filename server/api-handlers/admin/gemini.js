@@ -135,6 +135,10 @@ module.exports = async (req, res) => {
         const payload = await upstreamResponse.json().catch(() => ({}));
 
         if (!upstreamResponse.ok) {
+            const retryAfter = String(upstreamResponse.headers?.get?.('retry-after') || '').trim();
+            if (retryAfter) {
+                res.setHeader('Retry-After', retryAfter);
+            }
             return sendJson(res, upstreamResponse.status, {
                 success: false,
                 message: redactSensitiveText(payload?.error?.message || `Gemini request failed (${upstreamResponse.status})`),

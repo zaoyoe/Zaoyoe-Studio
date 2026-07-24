@@ -3836,11 +3836,79 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     font-weight: 600;
 }
 
+.prompt-label[hidden] {
+    display: none;
+}
+
+.prompt-media-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 30px;
+}
+
+.prompt-media-tabs[hidden],
+.prompt-media-tab[hidden] {
+    display: none;
+}
+
+.prompt-media-tab {
+    position: relative;
+    min-height: 30px;
+    padding: 0 1px;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 160ms ease;
+}
+
+.prompt-media-tab:hover {
+    color: var(--prompt-detail-accent);
+}
+
+.prompt-media-tab[aria-selected="true"] {
+    color: var(--prompt-detail-accent);
+}
+
+.prompt-media-tab::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0;
+    transform: scaleX(0.45);
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.prompt-media-tab[aria-selected="true"]::after {
+    opacity: 1;
+    transform: scaleX(1);
+}
+
+.prompt-media-tab:focus-visible {
+    outline: 2px solid var(--prompt-detail-accent);
+    outline-offset: 2px;
+}
+
 .prompt-text {
     font-size: 0.95rem;
     line-height: 1.6;
     color: var(--text-main);
-    word-break: break-all;
+    white-space: pre-wrap;
+    word-break: break-word;
     height: 120px;
     min-height: 120px;
     max-height: 120px;
@@ -4408,6 +4476,17 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
 
 .prompt-area.docked .prompt-heading-group {
     gap: 7px;
+}
+
+.prompt-area.docked .prompt-media-tabs {
+    gap: 11px;
+    min-height: 26px;
+}
+
+.prompt-area.docked .prompt-media-tab {
+    min-height: 26px;
+    padding: 0 1px;
+    font-size: 0.72rem;
 }
 
 .prompt-area.docked .prompt-image-palette {

@@ -104,7 +104,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-22.83';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-23.87';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -132,6 +132,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'function isGalleryImportItemAutoUploadable(item = {})',
         'function setGalleryImportAutoDetectionEnabled(enabled, options = {})',
         'async function runGalleryImportAutoDetectionCycle()',
+        'async function waitForGalleryImportAutoDetectionIdle(',
+        'const autoDetectionIdle = await waitForGalleryImportAutoDetectionIdle();',
+        "showAdminStudioToast('自动检测正在收尾，请稍后再试', 'warning');",
         'navigator.locks.request(',
         '服务端 Worker 正在处理',
         'function isGalleryImportItemReadyForUpload(item = {})',
@@ -163,6 +166,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'const GALLERY_IMPORT_ANALYSIS_MAX_ATTEMPTS = 2;',
         'const GALLERY_IMPORT_BILINGUAL_MAX_ATTEMPTS = 3;',
         'const GALLERY_IMPORT_AUTO_DETECT_INTERVAL_MS = 5000;',
+        'const GALLERY_IMPORT_AUTO_DETECT_IDLE_TIMEOUT_MS = 15000;',
         "const GALLERY_IMPORT_AUTO_DETECT_STORAGE_KEY = 'fatherKey.galleryImport.autoDetectQueue';",
         "const GALLERY_IMPORT_AUTO_DETECT_LOCK_NAME = 'father-key-gallery-import-auto-upload';",
         'const GALLERY_IMPORT_MAX_PARALLELISM = 10;',
@@ -390,6 +394,37 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     for (const marker of promptIdFixMarkers) {
         assert.equal(promptIdFixMigration.includes(marker), true, `prompt id fix migration should contain ${marker}`);
     }
+});
+
+test('gallery batch deletion stops and drains auto detection without weakening write guards', () => {
+    const js = readRepoFile('admin-studio.js');
+    const functionStart = js.indexOf('async function deleteCurrentGalleryImportBatch()');
+    const functionEnd = js.indexOf('\nfunction handleGalleryImportFile(', functionStart);
+    assert.ok(functionStart >= 0 && functionEnd > functionStart, 'delete batch function should be discoverable');
+
+    const deletionSource = js.slice(functionStart, functionEnd);
+    const stopDetectionAt = deletionSource.indexOf('setGalleryImportAutoDetectionEnabled(false);');
+    const waitForIdleAt = deletionSource.indexOf('await waitForGalleryImportAutoDetectionIdle();');
+    const confirmAt = deletionSource.indexOf('if (!confirm(');
+    const deleteRequestAt = deletionSource.indexOf("mutateGalleryImport('delete_batch'");
+
+    assert.ok(stopDetectionAt >= 0, 'batch deletion should stop automatic detection');
+    assert.ok(waitForIdleAt > stopDetectionAt, 'batch deletion should wait after stopping automatic detection');
+    assert.ok(confirmAt > waitForIdleAt, 'confirmation should use state captured after automatic detection drains');
+    assert.ok(deleteRequestAt > confirmAt, 'the delete request should only run after confirmation');
+    assert.equal(
+        deletionSource.includes('|| galleryImportState.autoDetectionInFlight'),
+        false,
+        'read-only automatic detection should not immediately block deletion'
+    );
+    assert.ok(
+        deletionSource.match(/galleryImportState\.running[\s\S]*galleryImportState\.uploadInFlight[\s\S]*galleryImportState\.statusRefreshInFlight/),
+        'write and status-refresh work should continue to block deletion'
+    );
+    assert.ok(
+        deletionSource.match(/if \(!confirm\([\s\S]*setGalleryImportAutoDetectionEnabled\(true\)/),
+        'cancelling deletion should restore automatic detection when it was previously enabled'
+    );
 });
 
 test('prompt import batch details use server-side pagination with exact totals', async () => {
@@ -861,26 +896,20 @@ test('collector duplicate preflight reports repository and candidate duplicates 
         checkedCount: 4,
         duplicateCount: 3,
         duplicateSourceItemIds: ['repo-copy', 'candidate-copy', 'media-copy'],
+        repositoryDuplicateCount: 1,
+        repositoryDuplicateSourceItemIds: ['repo-copy'],
+        candidateDuplicateCount: 2,
+        candidateDuplicateSourceItemIds: ['candidate-copy', 'media-copy'],
+        candidatePromptDuplicateCount: 1,
+        candidatePromptDuplicateSourceItemIds: ['candidate-copy'],
+        candidateCoverDuplicateCount: 1,
+        candidateCoverDuplicateSourceItemIds: ['media-copy'],
         persistentFailureCount: 0,
         persistentFailureSourceItemIds: [],
         rejectedIdentityCount: 0,
         rejectedIdentitySourceItemIds: []
     });
-    assert.deepEqual(calls, ['prompts', 'prompt_import_items']);
-});
-
-test('collector suppresses only unresolved sources cleaned across distinct batches', () => {
-    const { _private } = require('../server/api-handlers/admin/prompts/imports');
-    assert.deepEqual(_private.getPersistentFailureSourceItemIds([
-        { batch_id: 'batch-a', source_item_id: 'persistent', status: 'cleaned', final_prompt_id: null },
-        { batch_id: 'batch-a', source_item_id: 'persistent', status: 'cleaned', final_prompt_id: null },
-        { batch_id: 'batch-b', source_item_id: 'persistent', status: 'cleaned', final_prompt_id: null },
-        { batch_id: 'batch-a', source_item_id: 'single-batch', status: 'cleaned', final_prompt_id: null },
-        { batch_id: 'batch-a', source_item_id: 'imported', status: 'cleaned', final_prompt_id: 'prompt-1' },
-        { batch_id: 'batch-b', source_item_id: 'imported', status: 'cleaned', final_prompt_id: 'prompt-1' },
-        { batch_id: 'batch-a', source_item_id: 'not-cleaned', status: 'failed', final_prompt_id: null },
-        { batch_id: 'batch-b', source_item_id: 'not-cleaned', status: 'failed', final_prompt_id: null }
-    ]), ['persistent']);
+    assert.deepEqual(calls, ['prompts']);
 });
 
 test('Meigen import rejects mismatched detail, source, and image identities', () => {

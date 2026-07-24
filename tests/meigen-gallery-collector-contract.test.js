@@ -35,6 +35,282 @@ test('Meigen browser collector exports import-compatible payload helpers', () =>
     assert.equal(typeof collector._private.filterVideoSourcesByIdentity, 'function');
     assert.equal(typeof collector._private.normalizeVideoUrl, 'function');
     assert.equal(typeof collector._private.isVideoCollectionUrl, 'function');
+    assert.equal(typeof collector._private.isVideoCollectionContext, 'function');
+    assert.equal(typeof collector._private.getActiveCollectionPanel, 'function');
+    assert.equal(typeof collector._private.buildSourceItemId, 'function');
+    assert.equal(typeof collector._private.extractMediaPromptBlocks, 'function');
+    assert.equal(typeof collector._private.formatMediaPromptBlocks, 'function');
+});
+
+test('Meigen browser collector scopes root-page collection to the selected Seedance panel', () => {
+    const selectedTab = {
+        id: 'seedance-tab',
+        innerText: 'Seedance',
+        textContent: 'Seedance',
+        hidden: false,
+        getAttribute(name) {
+            if (name === 'aria-controls') return 'seedance-panel';
+            if (name === 'id') return this.id;
+            return '';
+        }
+    };
+    const seedancePanel = {
+        id: 'seedance-panel',
+        hidden: false,
+        ownerDocument: null,
+        matches(selector) {
+            return selector === '[role="tabpanel"]';
+        },
+        getAttribute(name) {
+            return name === 'aria-labelledby' ? selectedTab.id : '';
+        },
+        querySelectorAll() {
+            return [];
+        }
+    };
+    const documentRef = {
+        nodeType: 9,
+        querySelectorAll(selector) {
+            if (selector === '[role="tab"][aria-selected="true"]') return [selectedTab];
+            if (selector === '[role="tabpanel"]') return [seedancePanel];
+            return [];
+        },
+        getElementById(id) {
+            return id === seedancePanel.id ? seedancePanel : null;
+        }
+    };
+    seedancePanel.ownerDocument = documentRef;
+    const card = { ownerDocument: documentRef, baseURI: 'https://www.meigen.ai/' };
+
+    assert.equal(collector._private.getActiveCollectionPanel(documentRef), seedancePanel);
+    assert.equal(collector._private.isVideoCollectionContext(card, { baseUrl: 'https://www.meigen.ai/' }), true);
+});
+
+test('Meigen browser collector excludes videos outside Seedance and keeps modal-only cards linkless', () => {
+    let documentRef;
+    function createVideoCard(statusId, promptText, { hasDetailLink = true } = {}) {
+        const detailUrl = `https://www.meigen.ai/prompt/${statusId}`;
+        const detailLink = {
+            href: detailUrl,
+            parentElement: null,
+            getAttribute(name) {
+                return name === 'href' ? detailUrl : '';
+            },
+            querySelectorAll() {
+                return [];
+            }
+        };
+        const videoUrl = `https://images.meigen.ai/videos/${statusId}/video.mp4`;
+        const posterUrl = `https://images.meigen.ai/videos/${statusId}/thumb.jpg`;
+        const video = {
+            tagName: 'VIDEO',
+            currentSrc: videoUrl,
+            src: videoUrl,
+            poster: posterUrl,
+            videoWidth: 1080,
+            videoHeight: 1920,
+            parentElement: null,
+            ownerDocument: null,
+            className: '',
+            id: '',
+            getAttribute(name) {
+                if (name === 'src') return videoUrl;
+                if (name === 'poster') return posterUrl;
+                if (name === 'type') return 'video/mp4';
+                return '';
+            },
+            getBoundingClientRect() {
+                return { width: 360, height: 640, top: 100, bottom: 740, left: 20 };
+            },
+            querySelectorAll() {
+                return [];
+            },
+            matches() {
+                return false;
+            },
+            closest() {
+                return null;
+            }
+        };
+        const card = {
+            tagName: 'DIV',
+            dataset: { promptId: statusId },
+            baseURI: 'https://www.meigen.ai/',
+            innerText: promptText,
+            textContent: promptText,
+            parentElement: null,
+            ownerDocument: null,
+            className: 'seedance-card',
+            id: '',
+            getAttribute(name) {
+                return name === 'data-prompt-id' ? statusId : '';
+            },
+            getBoundingClientRect() {
+                return { width: 360, height: 720, top: 80, bottom: 800, left: 20 };
+            },
+            querySelectorAll(selector) {
+                if (selector === 'video') return [video];
+                if (selector === 'a[href]') return hasDetailLink ? [detailLink] : [];
+                return [];
+            },
+            querySelector() {
+                return null;
+            },
+            matches(selector) {
+                return String(selector).includes('[data-prompt-id]');
+            }
+        };
+        detailLink.parentElement = card;
+        video.parentElement = card;
+        return { card, video };
+    }
+
+    const selected = createVideoCard(
+        '2078474489063678257',
+        'A Seedance camera move follows a subject through a neon-lit city street.',
+        { hasDetailLink: false }
+    );
+    const featured = createVideoCard(
+        '2078474489063678999',
+        'A featured video outside the selected collection must never be collected.'
+    );
+    const selectedTab = {
+        id: 'seedance-tab',
+        innerText: 'Seedance',
+        textContent: 'Seedance',
+        hidden: false,
+        getAttribute(name) {
+            if (name === 'aria-controls') return 'seedance-panel';
+            if (name === 'id') return this.id;
+            return '';
+        }
+    };
+    const seedancePanel = {
+        id: 'seedance-panel',
+        hidden: false,
+        ownerDocument: null,
+        matches(selector) {
+            return selector === '[role="tabpanel"]';
+        },
+        getAttribute(name) {
+            return name === 'aria-labelledby' ? selectedTab.id : '';
+        },
+        querySelectorAll(selector) {
+            if (selector === 'video') return [selected.video];
+            return [];
+        }
+    };
+    documentRef = {
+        nodeType: 9,
+        baseURI: 'https://www.meigen.ai/',
+        querySelectorAll(selector) {
+            if (selector === '[role="tab"][aria-selected="true"]') return [selectedTab];
+            if (selector === '[role="tabpanel"]') return [seedancePanel];
+            if (selector === 'video') return [selected.video, featured.video];
+            return [];
+        },
+        getElementById(id) {
+            return id === seedancePanel.id ? seedancePanel : null;
+        }
+    };
+    seedancePanel.ownerDocument = documentRef;
+    [selected, featured].forEach(({ card, video }) => {
+        card.ownerDocument = documentRef;
+        video.ownerDocument = documentRef;
+    });
+
+    const items = collector.collectMeigenGalleryItems(documentRef, { baseUrl: 'https://www.meigen.ai/' });
+    assert.deepEqual(items.map((item) => item.source_item_id), ['2078474489063678257']);
+    assert.equal(items[0].source_page_url, '');
+    assert.equal(items[0].video_sources[0].url, 'https://images.meigen.ai/videos/2078474489063678257/video.mp4');
+});
+
+test('Meigen browser collector uses the numeric video identity instead of a transient hash', () => {
+    assert.equal(collector._private.buildSourceItemId(
+        { dataset: {} },
+        '',
+        [],
+        0,
+        '',
+        [{ url: 'https://images.meigen.ai/videos/2078474489063678257/video.mp4' }]
+    ), '2078474489063678257');
+});
+
+test('Meigen browser collector preserves separate Seedance image and video prompts', () => {
+    function createPromptBlock(label, text) {
+        const promptNode = { innerText: text, textContent: text };
+        return {
+            innerText: `${label}\n${text}\n翻译\n复制`,
+            textContent: `${label}\n${text}\n翻译\n复制`,
+            matches(selector) {
+                return selector === '[role="button"]';
+            },
+            querySelectorAll(selector) {
+                return selector === 'p, [data-prompt-text], [data-prompt]' ? [promptNode] : [];
+            }
+        };
+    }
+
+    const imagePrompt = 'A cinematic storyboard frame showing a runner beneath glowing signs in a rainy alley.';
+    const videoPrompt = 'The camera tracks backward as the runner accelerates and reflections ripple across the pavement.';
+    const blocks = [
+        createPromptBlock('Image · 1', imagePrompt),
+        createPromptBlock('Video · 2', videoPrompt)
+    ];
+    const scope = {
+        dataset: {},
+        baseURI: 'https://www.meigen.ai/',
+        innerText: blocks.map((block) => block.innerText).join('\n'),
+        textContent: '',
+        querySelectorAll(selector) {
+            return selector === '[role="button"]' ? blocks : [];
+        }
+    };
+    const expected = [
+        `[IMAGE · 1]\n${imagePrompt}`,
+        `[VIDEO · 2]\n${videoPrompt}`
+    ].join('\n\n');
+
+    assert.deepEqual(collector._private.extractMediaPromptBlocks(scope), [
+        { type: 'image', index: 1, label: 'Image · 1', text: imagePrompt },
+        { type: 'video', index: 2, label: 'Video · 2', text: videoPrompt }
+    ]);
+    assert.equal(collector._private.formatMediaPromptBlocks(
+        collector._private.extractMediaPromptBlocks(scope)
+    ), expected);
+    assert.equal(
+        collector._private.cleanPromptText(expected),
+        expected.replace('\n\n[VIDEO · 2]', '\n[VIDEO · 2]')
+    );
+    assert.equal(collector._private.extractPromptText(scope), expected);
+});
+
+test('Meigen browser collector keeps a Seedance video poster as detail artwork', () => {
+    const posterUrl = 'https://images.meigen.ai/videos/2079178948110352889/thumb.jpg';
+    const video = {
+        poster: posterUrl,
+        videoWidth: 1080,
+        videoHeight: 1920,
+        className: '',
+        id: '',
+        parentElement: null,
+        getAttribute(name) {
+            return name === 'poster' ? posterUrl : '';
+        },
+        getBoundingClientRect() {
+            return { width: 360, height: 640, top: 20, left: 20 };
+        }
+    };
+    const scope = {
+        baseURI: 'https://www.meigen.ai/',
+        innerText: 'Image · 1\nA complete image prompt.\nVideo · 2\nA complete video prompt.',
+        textContent: '',
+        querySelectorAll(selector) {
+            return selector === 'video' ? [video] : [];
+        }
+    };
+
+    assert.deepEqual(collector.collectImageUrls(scope, { detailOnly: true }), [posterUrl]);
 });
 
 test('Meigen browser collector captures video URLs and posters', () => {

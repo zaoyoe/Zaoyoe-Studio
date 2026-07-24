@@ -2,9 +2,15 @@ const sharp = require('sharp');
 const { resolveCodexRuntimeConfig, resolveGeminiRuntimeConfig } = require('../../api/_lib/secrets');
 const importsHandler = require('../api-handlers/admin/prompts/imports');
 
-const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. objects, scenes, styles, and mood MUST each be an object shaped exactly as {"en":["English tags"],"zh":["中文标签"]}; both arrays must contain at least one compact searchable tag. dominantColors must be a compact string array. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced.`;
+const ANALYSIS_PROMPT = `Analyze these AI-generated images and the source prompt for a prompt gallery. Return ONLY valid JSON with: title, title_en, title_zh, description, description_en, description_zh, prompt_text_en, prompt_text_zh, category, objects, scenes, styles, mood, useCase, commercial, difficulty, dominantColors. objects, scenes, styles, and mood MUST each be an object shaped exactly as {"en":["English tags"],"zh":["中文标签"]}; both arrays must contain at least one compact searchable tag. dominantColors must be a compact string array. category must be Photography, Illustration, 3D Art, Miniature, Creative, or Animation. difficulty must be beginner, intermediate, or advanced. prompt_text_en and prompt_text_zh are complete translations of the source prompt, not summaries: translate every sentence and line without shortening, omitting, paraphrasing, or adding instructions. Preserve all headings, shot numbers, P## markers, timestamps, durations, aspect ratios, numeric parameters, and formatting structure. If the source prompt contains canonical media section headers such as [IMAGE · 1] or [VIDEO · 2], prompt_text_en and prompt_text_zh MUST preserve every header exactly and in the same order, translate each section independently, and never merge image and video sections.`;
 const RETRYABLE_IMAGE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524]);
 const RETRYABLE_ANALYSIS_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524]);
+const MAX_ANALYSIS_SOURCE_LENGTH = 20000;
+const MAX_ANALYSIS_OUTPUT_TOKENS = 16000;
+
+function getAnalysisSourcePrompt(value = '') {
+    return String(value || '').trim().slice(0, MAX_ANALYSIS_SOURCE_LENGTH);
+}
 
 function parseJsonText(value = '') {
     const text = String(value || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
@@ -53,7 +59,7 @@ async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
     if (!config?.configured) throw new Error(config?.decryptErrorMessage || 'Codex Relay 未配置');
     const imageUrls = getAnalysisImageUrls(prompt, options.sourceItems || []);
     const images = await loadAnalysisImages(imageUrls, { fetchImage: options.fetchImage, limit: 2 });
-    const text = `${ANALYSIS_PROMPT}\nSource prompt:\n${String(prompt.prompt_text || '').slice(0, 20000)}`;
+    const text = `${ANALYSIS_PROMPT}\nSource prompt:\n${getAnalysisSourcePrompt(prompt.prompt_text)}`;
     const apiFormat = config.apiFormat === 'responses' ? 'responses' : 'chat.completions';
     const imageDataUrls = images.map((buffer) => `data:image/webp;base64,${buffer.toString('base64')}`);
     const body = apiFormat === 'responses'
@@ -66,7 +72,7 @@ async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
                     ...imageDataUrls.map((imageUrl) => ({ type: 'input_image', image_url: imageUrl }))
                 ]
             }],
-            max_output_tokens: 2200
+            max_output_tokens: MAX_ANALYSIS_OUTPUT_TOKENS
         }
         : {
             model: config.model,
@@ -77,7 +83,7 @@ async function callCodexAnalysis(supabase, prompt = {}, options = {}) {
                     ...imageDataUrls.map((imageUrl) => ({ type: 'image_url', image_url: { url: imageUrl } }))
                 ]
             }],
-            max_tokens: 2200,
+            max_tokens: MAX_ANALYSIS_OUTPUT_TOKENS,
             temperature: 0.25
         };
     let response;
@@ -191,14 +197,14 @@ async function callGeminiAnalysis(supabase, prompt = {}, options = {}) {
     const imageUrls = getAnalysisImageUrls(prompt, options.sourceItems || []);
     const images = await loadAnalysisImages(imageUrls, { fetchImage: options.fetchImage, limit: 4 });
     const parts = [
-        { text: `${ANALYSIS_PROMPT}\nSource prompt:\n${String(prompt.prompt_text || '').slice(0, 20000)}` },
+        { text: `${ANALYSIS_PROMPT}\nSource prompt:\n${getAnalysisSourcePrompt(prompt.prompt_text)}` },
         ...images.map((buffer) => ({ inline_data: { mime_type: 'image/webp', data: buffer.toString('base64') } }))
     ];
     const model = config.model || 'gemini-2.5-flash';
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts }], generationConfig: { temperature: 0.25, maxOutputTokens: 4096, responseMimeType: 'application/json' } }),
+        body: JSON.stringify({ contents: [{ parts }], generationConfig: { temperature: 0.25, maxOutputTokens: MAX_ANALYSIS_OUTPUT_TOKENS, responseMimeType: 'application/json' } }),
         signal: AbortSignal.timeout(90000)
     });
     const payload = await response.json().catch(() => ({}));
@@ -216,6 +222,8 @@ async function callConfiguredAnalysis(supabase, prompt = {}, options = {}) {
 
 function buildPromptPatch(prompt = {}, result = {}) {
     const existingAiTags = prompt.ai_tags && typeof prompt.ai_tags === 'object' ? prompt.ai_tags : {};
+    const sourcePrompt = String(prompt.prompt_text || '').trim();
+    const sourceLanguage = getSourcePromptLanguage(sourcePrompt);
     return {
         title: String(result.title || result.title_en || 'Creative Prompt').trim(),
         title_en: String(result.title_en || result.title || '').trim(),
@@ -223,8 +231,8 @@ function buildPromptPatch(prompt = {}, result = {}) {
         description: String(result.description || result.description_en || '').trim(),
         description_en: String(result.description_en || result.description || '').trim(),
         description_zh: String(result.description_zh || '').trim(),
-        prompt_text_en: String(result.prompt_text_en || '').trim(),
-        prompt_text_zh: String(result.prompt_text_zh || '').trim(),
+        prompt_text_en: sourceLanguage === 'en' ? sourcePrompt : String(result.prompt_text_en || '').trim(),
+        prompt_text_zh: sourceLanguage === 'zh' ? sourcePrompt : String(result.prompt_text_zh || '').trim(),
         tags: [String(result.category || 'Creative').trim()],
         dominant_colors: Array.isArray(result.dominantColors) ? result.dominantColors.slice(0, 4) : [],
         ai_tags: {
@@ -242,7 +250,81 @@ function buildPromptPatch(prompt = {}, result = {}) {
     };
 }
 
-function validateAnalysisResult(result = {}) {
+function getSourcePromptLanguage(value = '') {
+    const text = String(value || '');
+    const cjkCount = (text.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+    const latinCount = (text.match(/[a-z]/gi) || []).length;
+    if (cjkCount >= 4 && cjkCount >= latinCount * 0.15) return 'zh';
+    if (latinCount >= 8) return 'en';
+    return cjkCount > 0 ? 'zh' : '';
+}
+
+function extractCanonicalMediaHeaders(value = '') {
+    return Array.from(String(value || '').matchAll(/\[(?:IMAGE|VIDEO)\s*·\s*\d{1,3}\]/gi))
+        .map((match) => match[0]);
+}
+
+function extractPromptStructureTokens(value = '') {
+    const text = String(value || '');
+    const patterns = [
+        /\bP(?:\d{1,3}|#{1,3})\b/gi,
+        /\b\d{1,2}:\d{2}(?::\d{2})?\b/g,
+        /\b\d+(?:\.\d+)?\s*(?:ms|s|sec|secs|second|seconds|秒|毫秒)\b/gi,
+        /\b\d+(?:\.\d+)?%\b/g,
+        /\b\d{1,2}:\d{1,2}\b/g
+    ];
+    return [...new Set(patterns.flatMap((pattern) => text.match(pattern) || []).map((token) => token.toLowerCase()))];
+}
+
+function createAnalysisCompletenessError(message, details = {}) {
+    const error = new Error(message);
+    error.code = 'analysis_prompt_incomplete';
+    error.retryable = true;
+    error.retryAfterMs = 30000;
+    error.details = details;
+    return error;
+}
+
+function validateTranslatedPromptCompleteness(sourcePrompt = '', translatedPrompt = '', field = '') {
+    const source = getAnalysisSourcePrompt(sourcePrompt);
+    const translated = String(translatedPrompt || '').trim();
+    if (!source || !translated) return;
+
+    const sourceHeaders = extractCanonicalMediaHeaders(source);
+    const translatedHeaders = extractCanonicalMediaHeaders(translated);
+    if (sourceHeaders.length && JSON.stringify(translatedHeaders) !== JSON.stringify(sourceHeaders)) {
+        throw createAnalysisCompletenessError(`分析结果提示词段落不完整：${field}`, {
+            field,
+            expected_media_headers: sourceHeaders,
+            actual_media_headers: translatedHeaders
+        });
+    }
+
+    if (/(?:\.{3}|…)\s*$/.test(translated)) {
+        throw createAnalysisCompletenessError(`分析结果提示词疑似截断：${field}`, { field });
+    }
+
+    const sourceLength = source.replace(/\s/g, '').length;
+    const translatedLength = translated.replace(/\s/g, '').length;
+    if (sourceLength >= 240 && translatedLength < Math.ceil(sourceLength * 0.2)) {
+        throw createAnalysisCompletenessError(`分析结果提示词明显短于原文：${field}`, {
+            field,
+            source_length: sourceLength,
+            translated_length: translatedLength
+        });
+    }
+
+    const missingTokens = extractPromptStructureTokens(source)
+        .filter((token) => !translated.toLowerCase().includes(token));
+    if (missingTokens.length) {
+        throw createAnalysisCompletenessError(`分析结果提示词丢失结构标记：${field}`, {
+            field,
+            missing_tokens: missingTokens.slice(0, 30)
+        });
+    }
+}
+
+function validateAnalysisResult(result = {}, sourcePrompt = '') {
     const normalizeBilingualGroup = (value) => {
         if (value && typeof value === 'object' && !Array.isArray(value)) return value;
         const items = (Array.isArray(value) ? value : [value]).map((item) => String(item || '').trim()).filter(Boolean);
@@ -262,7 +344,14 @@ function validateAnalysisResult(result = {}) {
         const group = normalized?.[field];
         if (!Array.isArray(group?.en) || !group.en.length || !Array.isArray(group?.zh) || !group.zh.length) missing.push(field);
     });
-    if (missing.length) throw new Error(`分析结果不完整：${missing.join(', ')}`);
+    if (missing.length) throw createAnalysisCompletenessError(`分析结果不完整：${missing.join(', ')}`, { missing_fields: missing });
+    const sourceLanguage = getSourcePromptLanguage(sourcePrompt);
+    const translatedFields = sourceLanguage === 'en'
+        ? ['prompt_text_zh']
+        : sourceLanguage === 'zh'
+            ? ['prompt_text_en']
+            : ['prompt_text_en', 'prompt_text_zh'];
+    translatedFields.forEach((field) => validateTranslatedPromptCompleteness(sourcePrompt, normalized[field], field));
     return normalized;
 }
 
@@ -316,7 +405,7 @@ async function processPromptImportItem(supabase, item, { workerName = 'prompt-im
         }).eq('id', item.id).neq('status', 'cleaned');
         const analysis = validateAnalysisResult(await callConfiguredAnalysis(supabase, imported.prompt, {
             sourceItems: [item, imported.item]
-        }));
+        }), imported.prompt.prompt_text);
         if (await isPromptImportItemCancelled(supabase, item.id)) {
             return { ...imported, cancelled: true };
         }
@@ -384,9 +473,12 @@ module.exports = {
     claimPromptImportItems,
     fetchAnalysisImage,
     getAnalysisImageUrls,
+    getAnalysisSourcePrompt,
+    getSourcePromptLanguage,
     loadAnalysisImages,
     isPromptImportItemCancelled,
     processPromptImportItem,
     runPromptImportWorkerBatch,
-    validateAnalysisResult
+    validateAnalysisResult,
+    validateTranslatedPromptCompleteness
 };
