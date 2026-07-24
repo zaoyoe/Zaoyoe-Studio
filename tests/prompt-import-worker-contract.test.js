@@ -46,6 +46,22 @@ test('prompt import worker builds published bilingual analysis patch', () => {
     assert.equal(patch.ai_tags.existing, true);
 });
 
+test('prompt import worker preserves the canonical source in its original language', () => {
+    const englishSource = '[IMAGE · 1]\nCreate every detail exactly as written.\n[VIDEO · 2]\n00:00-00:05 P01 tracking shot.';
+    const englishPatch = runtime.buildPromptPatch({ prompt_text: englishSource }, {
+        prompt_text_en: 'Short summary.',
+        prompt_text_zh: '[IMAGE · 1]\n逐字保留所有细节。\n[VIDEO · 2]\n00:00-00:05 P01 跟拍镜头。'
+    });
+    assert.equal(englishPatch.prompt_text_en, englishSource);
+
+    const chineseSource = '完整保留这段中文提示词的每一个镜头和参数。';
+    const chinesePatch = runtime.buildPromptPatch({ prompt_text: chineseSource }, {
+        prompt_text_en: 'Preserve every shot and parameter in this complete Chinese prompt.',
+        prompt_text_zh: '缩短版本'
+    });
+    assert.equal(chinesePatch.prompt_text_zh, chineseSource);
+});
+
 test('prompt import worker rejects incomplete bilingual analysis', () => {
     assert.throws(() => runtime.validateAnalysisResult({ title_en: 'Only English' }), /分析结果不完整/);
 });
@@ -65,6 +81,33 @@ test('prompt import worker normalizes flat analysis tags into bilingual groups',
     });
     assert.deepEqual(result.objects, { en: ['product'], zh: ['product'] });
     assert.deepEqual(result.mood, { en: ['premium'], zh: ['premium'] });
+});
+
+test('prompt import worker rejects summarized or structurally incomplete prompt translations', () => {
+    const sourcePrompt = `[IMAGE · 1]\n${'Detailed visual instruction. '.repeat(20)}\n[VIDEO · 2]\n00:00-00:05 P01 16:9 tracking shot.`;
+    const baseResult = {
+        title_en: 'Poster',
+        title_zh: '海报',
+        description_en: 'Description',
+        description_zh: '描述',
+        prompt_text_en: sourcePrompt,
+        prompt_text_zh: '很短的摘要。',
+        objects: ['product'],
+        scenes: ['studio'],
+        styles: ['commercial'],
+        mood: ['premium']
+    };
+    assert.throws(
+        () => runtime.validateAnalysisResult(baseResult, sourcePrompt),
+        (error) => error.retryable === true && /段落不完整|明显短于原文/.test(error.message)
+    );
+
+    const completeTranslation = `[IMAGE · 1]\n${'详细的视觉指令。'.repeat(20)}\n[VIDEO · 2]\n00:00-00:05 P01 16:9 跟拍镜头。`;
+    const result = runtime.validateAnalysisResult({
+        ...baseResult,
+        prompt_text_zh: completeTranslation
+    }, sourcePrompt);
+    assert.equal(result.prompt_text_zh, completeTranslation);
 });
 
 test('prompt import worker prioritizes original compatible images before saved avif assets', () => {
@@ -173,7 +216,8 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(runtimeSource, /retry_count: retryAttempt/);
     assert.match(runtimeSource, /baseDelayMs[\s\S]*60000[\s\S]*30000/);
     assert.match(runtimeSource, /limit: 2/);
-    assert.match(runtimeSource, /max_output_tokens: 2200/);
+    assert.match(runtimeSource, /MAX_ANALYSIS_OUTPUT_TOKENS = 16000/);
+    assert.match(runtimeSource, /max_output_tokens: MAX_ANALYSIS_OUTPUT_TOKENS/);
     assert.match(runtimeSource, /AbortSignal\.timeout\(150000\)/);
     assert.match(compose, /PROMPT_IMPORT_WORKER_CONCURRENCY: "10"/);
     assert.match(compose, /PROMPT_IMPORT_WORKER_INITIAL_CONCURRENCY: "3"/);
@@ -184,6 +228,9 @@ test('prompt import worker deployment uses durable leased queue', () => {
     assert.match(runtimeSource, /callCodexAnalysis/);
     assert.match(runtimeSource, /resolveCodexRuntimeConfig/);
     assert.match(runtimeSource, /MUST each be an object shaped exactly/);
+    assert.match(runtimeSource, /MUST preserve every header exactly and in the same order/);
+    assert.match(runtimeSource, /complete translations of the source prompt, not summaries/);
+    assert.match(runtimeSource, /validateTranslatedPromptCompleteness/);
     assert.match(runtimeSource, /neq\('status', 'cleaned'\)/);
     assert.match(importsHandler, /pipeline_stage: 'cancelled'/);
     assert.match(importsHandler, /worker_name: null,[\s\S]*lease_expires_at: null,[\s\S]*processing_attempts: 3/);

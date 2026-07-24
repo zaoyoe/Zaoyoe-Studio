@@ -13,6 +13,11 @@ const AI_BUDGET_PRESETS = Object.freeze({
         tier: 'expanded',
         maxInputChars: 24000,
         maxOutputTokens: 1600
+    },
+    longform: {
+        tier: 'longform',
+        maxInputChars: 24000,
+        maxOutputTokens: 8192
     }
 });
 
@@ -25,7 +30,8 @@ const AI_BUDGET_ALIASES = Object.freeze({
     balanced: 'balanced',
     standard: 'balanced',
     deep: 'expanded',
-    expanded: 'expanded'
+    expanded: 'expanded',
+    longform: 'longform'
 });
 
 function clampInteger(value, min, max, fallback = min) {

@@ -1,7 +1,7 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-22.83';
+    const VERSION = '2026-07-23.89';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 1000;
     const MAX_IMAGES_PER_ITEM = 24;
@@ -10,6 +10,8 @@
     const VIDEO_URL_PATTERN = /\.(?:mp4|webm|mov|m4v)(?:[?#].*)?$/i;
     const ACTION_PROMPT_LINE_PATTERN = /^(展开|收起|更多相关内容|相关内容|使用\s*Prompt|用作参考图|复制提示词|复制\s*Prompt|下载图片|下载|Download|Copy Prompt|Use Prompt|Use as reference image|More related content)$/i;
     const PROMPT_SECTION_LABEL_PATTERN = /^(提示词|Prompt)$/i;
+    const MEDIA_PROMPT_LABEL_PATTERN = /^(Image|Video|图片|视频)\s*[·•]\s*(\d{1,3})$/i;
+    const MEDIA_PROMPT_ACTION_PATTERN = /^(翻译|Translate|复制|Copy)$/i;
     const RELATED_CONTEXT_PATTERN = /(更多相关内容|相关内容|相关推荐|猜你喜欢|More related content|Related|Recommendations)/i;
     const NON_ART_IMAGE_CONTEXT_PATTERN = /(avatar|profile|user-avatar|author-avatar|icon|logo|emoji|badge|button|toolbar|header|footer)/i;
     const NON_ART_IMAGE_URL_PATTERN = /(avatar|profile|user-avatar|author-avatar|icon|logo|emoji|badge|gallery-card-(?:front|back)|placeholder|sprite)/i;
@@ -30,6 +32,7 @@
     const STRUCTURED_AUTHOR_HANDLE_KEY_PATTERN = /authorHandle|authorId|handle|username|screenName|twitterUsername|xUsername|userName/i;
     const STRUCTURED_AUTHOR_NAME_KEY_PATTERN = /authorName|creatorName|displayName|nickname|screenName|name/i;
     const STRUCTURED_SKIP_IMAGE_CONTEXT_PATTERN = /(avatar|profile|icon|logo|emoji|badge|author|creator|user|related|recommend)/i;
+    const VIDEO_COLLECTION_TAB_PATTERN = /^(?:Seedance(?:\s*2(?:\.0)?)?|视频)$/i;
     const ITEM_SCOPE_SELECTOR = [
         'article',
         '[role="article"]',
@@ -114,6 +117,58 @@
         } catch (_) {
             return /[?&](?:category|cat|type)=videos?(?:&|$)/i.test(String(value || ''));
         }
+    }
+
+    function getCollectionDocument(scope) {
+        if (scope?.nodeType === 9) return scope;
+        return scope?.ownerDocument || global.document || null;
+    }
+
+    function getSelectedCollectionTab(scope) {
+        const documentRef = getCollectionDocument(scope);
+        if (!documentRef?.querySelectorAll) return null;
+        return Array.from(documentRef.querySelectorAll('[role="tab"][aria-selected="true"]'))
+            .find((tab) => tab.hidden !== true && tab.getAttribute?.('aria-hidden') !== 'true') || null;
+    }
+
+    function getActiveCollectionPanel(scope) {
+        if (scope?.matches?.('[role="tabpanel"]')) return scope;
+        const documentRef = getCollectionDocument(scope);
+        const selectedTab = getSelectedCollectionTab(documentRef);
+        if (!selectedTab || !documentRef?.querySelectorAll) return null;
+
+        const controlledPanelId = normalizeText(selectedTab.getAttribute?.('aria-controls') || '', 200);
+        if (controlledPanelId && typeof documentRef.getElementById === 'function') {
+            const controlledPanel = documentRef.getElementById(controlledPanelId);
+            if (controlledPanel) return controlledPanel;
+        }
+
+        const panels = Array.from(documentRef.querySelectorAll('[role="tabpanel"]'));
+        const selectedTabId = normalizeText(selectedTab.id || selectedTab.getAttribute?.('id') || '', 200);
+        const labelledPanel = selectedTabId
+            ? panels.find((panel) => normalizeText(panel.getAttribute?.('aria-labelledby') || '', 200) === selectedTabId)
+            : null;
+        if (labelledPanel) return labelledPanel;
+
+        const selectedLabel = normalizeText(selectedTab.innerText || selectedTab.textContent || '', 120).toLowerCase();
+        const namedPanel = selectedLabel
+            ? panels.find((panel) => {
+                const label = normalizeText([
+                    panel.getAttribute?.('aria-label'),
+                    panel.getAttribute?.('title')
+                ].filter(Boolean).join(' '), 120).toLowerCase();
+                return label && (label === selectedLabel || label.includes(selectedLabel));
+            })
+            : null;
+        if (namedPanel) return namedPanel;
+        return panels.find((panel) => panel.hidden !== true && panel.getAttribute?.('aria-hidden') !== 'true') || null;
+    }
+
+    function isVideoCollectionContext(scope, options = {}) {
+        if (isVideoCollectionUrl(options.baseUrl || getScopeBaseUrl(scope))) return true;
+        const selectedTab = getSelectedCollectionTab(scope);
+        const selectedLabel = normalizeText(selectedTab?.innerText || selectedTab?.textContent || '', 120);
+        return VIDEO_COLLECTION_TAB_PATTERN.test(selectedLabel);
     }
 
     function getNodeLabel(node) {
@@ -224,8 +279,15 @@
     function collectImageUrls(scope, options = {}) {
         if (!scope?.querySelectorAll) return [];
         const baseUrl = options.baseUrl || getScopeBaseUrl(scope);
+        const videoPosterUrls = Array.from(scope.querySelectorAll('video'))
+            .filter((video) => isLikelyArtworkImageNode(video, scope))
+            .map((video) => normalizeImageUrl(video.poster || video.getAttribute?.('poster') || '', baseUrl))
+            .filter(Boolean);
         if (isDetailCollectionScope(scope, options)) {
-            return collectDetailArtworkImageUrls(scope, { baseUrl });
+            return dedupeImageUrlsByArtwork([
+                ...collectDetailArtworkImageUrls(scope, { baseUrl }),
+                ...videoPosterUrls
+            ]);
         }
 
         const candidates = [];
@@ -252,10 +314,7 @@
             });
         });
 
-        scope.querySelectorAll('video').forEach((video) => {
-            const poster = video.poster || video.getAttribute?.('poster') || '';
-            if (poster && isLikelyArtworkImageNode(video, scope)) candidates.push(poster);
-        });
+        candidates.push(...videoPosterUrls);
 
         scope.querySelectorAll('a[href]').forEach((link) => {
             const href = link.getAttribute('href');
@@ -1422,8 +1481,81 @@
         return '';
     }
 
+    function getMediaPromptLabel(value = '') {
+        const match = normalizeText(value, 120).match(MEDIA_PROMPT_LABEL_PATTERN);
+        if (!match) return null;
+        const type = /^(?:Image|图片)$/i.test(match[1]) ? 'image' : 'video';
+        const index = Number.parseInt(match[2], 10);
+        return {
+            type,
+            index,
+            label: `${type === 'image' ? 'Image' : 'Video'} · ${index}`
+        };
+    }
+
+    function cleanMediaPromptBlockText(value = '') {
+        const lines = normalizeText(value, 20000)
+            .split(/\n+/)
+            .map((line) => normalizeText(line))
+            .filter(Boolean)
+            .filter((line) => !MEDIA_PROMPT_LABEL_PATTERN.test(line))
+            .filter((line) => !MEDIA_PROMPT_ACTION_PATTERN.test(line));
+        const text = lines.join('\n').trim();
+        return text.length >= 12 && !isLikelyNonPromptListText(text) ? text : '';
+    }
+
+    function extractMediaPromptBlocks(scope) {
+        if (!scope?.querySelectorAll) return [];
+        const candidates = [
+            ...(scope.matches?.('[role="button"]') ? [scope] : []),
+            ...Array.from(scope.querySelectorAll('[role="button"]'))
+        ];
+        const blocks = [];
+        const seen = new Set();
+
+        for (const block of candidates) {
+            const lines = normalizeText(block.innerText || block.textContent || '', 20000)
+                .split(/\n+/)
+                .map((line) => normalizeText(line))
+                .filter(Boolean);
+            const label = lines.map(getMediaPromptLabel).find(Boolean);
+            if (!label) continue;
+
+            const richText = Array.from(block.querySelectorAll?.('p, [data-prompt-text], [data-prompt]') || [])
+                .map((node) => cleanMediaPromptBlockText(node.innerText || node.textContent || ''))
+                .filter(Boolean)
+                .sort((left, right) => right.length - left.length)[0] || '';
+            const labelIndex = lines.findIndex((line) => MEDIA_PROMPT_LABEL_PATTERN.test(line));
+            const visibleText = cleanMediaPromptBlockText(lines.slice(labelIndex + 1).join('\n'));
+            const text = richText || visibleText;
+            if (!text) continue;
+
+            const key = `${label.type}:${label.index}:${text}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            blocks.push({ ...label, text });
+        }
+
+        return blocks;
+    }
+
+    function formatMediaPromptBlocks(blocks = []) {
+        return (Array.isArray(blocks) ? blocks : [])
+            .map((block) => {
+                const type = String(block?.type || '').toLowerCase() === 'image' ? 'IMAGE' : 'VIDEO';
+                const index = Number.parseInt(String(block?.index || ''), 10);
+                const text = cleanMediaPromptBlockText(block?.text || '');
+                if (!text || !Number.isFinite(index) || index <= 0) return '';
+                return `[${type} · ${index}]\n${text}`;
+            })
+            .filter(Boolean)
+            .join('\n\n');
+    }
+
     function extractPromptText(scope) {
         if (!scope?.querySelectorAll) return '';
+        const mediaPromptText = formatMediaPromptBlocks(extractMediaPromptBlocks(scope));
+        if (mediaPromptText) return mediaPromptText;
         const datasetPrompt = getDatasetValue(scope, [
             'prompt',
             'promptText',
@@ -2103,14 +2235,15 @@
                 .slice(0, 4);
         }
 
+        const collectionRoot = getActiveCollectionPanel(documentRef) || documentRef;
         const scopes = [];
-        Array.from(documentRef.querySelectorAll('img'))
+        Array.from(collectionRoot.querySelectorAll('img'))
             .filter((image) => isNodeWithinCollectionViewport(image, options))
             .forEach((image) => {
                 const scope = findItemScopeFromImage(image, options);
                 if (scope) scopes.push(scope);
             });
-        Array.from(documentRef.querySelectorAll('video'))
+        Array.from(collectionRoot.querySelectorAll('video'))
             .filter((video) => isNodeWithinCollectionViewport(video, options))
             .forEach((video) => {
                 const scope = findItemScopeFromImage(video, options);
@@ -2165,6 +2298,10 @@
         const explicit = getDatasetValue(scope, ['id', 'itemId', 'promptId', 'postId']);
         if (explicit) return explicit;
         if (fallbackId) return fallbackId;
+        const stableMediaId = extractLongNumericId(detailUrl)
+            || getStatusIdFromImageUrls(imageUrls)
+            || (Array.isArray(videoSources) ? videoSources.map((entry) => getStatusIdFromImageUrl(entry?.url)).find(Boolean) : '');
+        if (stableMediaId) return stableMediaId;
         const source = detailUrl || imageUrls[0] || videoSources[0]?.url || `${SOURCE}-${index}`;
         let hash = 0;
         for (let i = 0; i < source.length; i += 1) {
@@ -2176,10 +2313,15 @@
     function normalizeCollectedItem(scope, index = 0, options = {}) {
         const baseUrl = options.baseUrl || getScopeBaseUrl(scope);
         const expectedDetailUrl = toAbsoluteUrl(options.expectedDetailUrl || '', baseUrl);
-        const detailContext = Boolean(expectedDetailUrl || isDetailPageUrl(options.baseUrl || getScopeBaseUrl(scope)));
+        const detailContext = Boolean(
+            options.detailOnly
+            || expectedDetailUrl
+            || isDetailPageUrl(options.baseUrl || getScopeBaseUrl(scope))
+        );
         const scopeDetailUrl = expectedDetailUrl || getDetailUrl(scope, options) || '';
         const initialImageUrls = collectImageUrls(scope, options);
         const initialVideoSources = collectVideoSources(scope, options);
+        const videoCollectionContext = isVideoCollectionContext(scope, options);
         const initialImageStatusId = getStatusIdFromImageUrls(initialImageUrls);
         const initialOriginalWorkUrl = getOriginalWorkUrl(scope, options);
         const initialAuthorHandle = getAuthorHandle(scope, initialOriginalWorkUrl);
@@ -2229,7 +2371,7 @@
             detailUrl: expectedDetailUrl || detailUrl,
             targetStatusId
         });
-        if (isVideoCollectionUrl(options.baseUrl || baseUrl) && !videoSources.length) return null;
+        if (videoCollectionContext && !videoSources.length) return null;
         const structuredImageUrls = detailContext && explicitExpectedCount <= 0
             ? []
             : filterDetailImageUrlsByIdentity(structuredCandidate?.imageUrls || [], {
@@ -2258,7 +2400,7 @@
         const filteredImageStatusId = getStatusIdFromImageUrls(imageUrls);
         const imageStatusId = filteredImageStatusId
             || (!targetStatusId || initialImageStatusId === targetStatusId ? initialImageStatusId : '');
-        if (!detailUrl && imageStatusId && !options.detailOnly) {
+        if (!detailUrl && imageStatusId && !options.detailOnly && !videoCollectionContext && !videoSources.length) {
             detailUrl = buildMeigenDetailUrlFromStatusId(imageStatusId, baseUrl);
         }
 
@@ -2516,10 +2658,16 @@
             collectVideoSources,
             normalizeVideoUrl,
             isVideoCollectionUrl,
+            isVideoCollectionContext,
+            getSelectedCollectionTab,
+            getActiveCollectionPanel,
             getNodeDocumentOrderScore,
             isNodeWithinCollectionViewport,
             itemMatchesFavoriteRange,
             isUnresolvablePlaceholderItem,
+            buildSourceItemId,
+            extractMediaPromptBlocks,
+            formatMediaPromptBlocks,
             extractPromptText,
             getOriginalWorkUrl,
             isOriginalWorkStatusUrl,

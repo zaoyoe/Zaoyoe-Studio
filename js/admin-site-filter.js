@@ -45,6 +45,7 @@
     const WRITABLE_ACTION_LABELS = Object.freeze({
         'comments-batch-delete': '批量删除评论',
         'gallery-batch-add-homepage': '批量加入首页精选',
+        'gallery-batch-backfill-prompt-text': '回填已发布 Prompt 提示词',
         'gallery-batch-localize': '批量补全 Prompt 双语',
         'gallery-batch-set-status': '批量更新 Prompt 运营状态',
         'homepage-save-section': '保存首页分区',

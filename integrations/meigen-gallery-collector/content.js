@@ -48,6 +48,8 @@
     const PROMPT_EXPAND_TEXT_PATTERN = /^(展开|显示更多|查看更多|Show more|More)$/i;
     const COLLAPSED_PROMPT_MARKER_PATTERN = /(\.\.\.|…)\s*$/;
     const DETAIL_PROMPT_LABEL_PATTERN = /(^|\n)\s*(提示词|Prompt)\s*($|\n|[:：])/i;
+    const MEDIA_PROMPT_HEADER_PATTERN = /\[(?:IMAGE|VIDEO)\s*·\s*\d{1,3}\]/i;
+    const DETAIL_DIALOG_SELECTOR = '[role="dialog"], dialog, [aria-modal="true"]';
     const DETAIL_AUTHOR_HANDLE_PATTERN = /@[a-zA-Z0-9_]{1,20}\b/;
     const HOVER_SCOPE_SELECTOR = [
         'article',
@@ -121,14 +123,17 @@
         acceptedKeys: new Set(),
         checkedKeys: new Set(),
         checkedRevisions: new Map(),
+        capacityDeferredKeys: new Set(),
         promise: Promise.resolve(),
         attemptedCount: 0,
         stagedCount: 0,
         skippedDuplicateCount: 0,
         checkedCandidateCount: 0,
         repositoryDuplicateCount: 0,
+        candidateDuplicateCount: 0,
+        repositoryDuplicateKeys: new Set(),
+        candidateDuplicateKeys: new Set(),
         identityRejectedCount: 0,
-        persistentFailureCount: 0,
         rejectedCount: 0,
         processableCount: 0,
         pendingDetailCount: 0,
@@ -199,7 +204,12 @@
             const key = getImportIdentityKey(item);
             if (!key) return false;
             const revision = getStreamItemRevision(item);
-            if (checkedKeys.has(key) && !isStreamItemRevisionImproved(checkedRevisions.get(key), revision)) return false;
+            const wasCapacityDeferred = message.streamToQueue
+                && streamStageState.capacityDeferredKeys.has(key);
+            if (checkedKeys.has(key)
+                && !wasCapacityDeferred
+                && !isStreamItemRevisionImproved(checkedRevisions.get(key), revision)) return false;
+            if (wasCapacityDeferred) streamStageState.capacityDeferredKeys.delete(key);
             checkedKeys.add(key);
             checkedRevisions.set(key, revision);
             if (getMeigenIdentityConflictReason(item)) {
@@ -211,10 +221,18 @@
         });
         if (!candidates.length) {
             if (message.streamToQueue) {
-                streamStageState.checkedCandidateCount += identityConflictCount;
+                streamStageState.checkedCandidateCount = checkedKeys.size;
                 streamStageState.identityRejectedCount += identityConflictCount;
             }
-            return { uniqueItems: [], duplicateCount: 0, identityConflictCount, persistentFailureCount: 0 };
+            return {
+                uniqueItems: [],
+                duplicateCount: 0,
+                repositoryDuplicateCount: 0,
+                candidateDuplicateCount: 0,
+                repositoryDuplicateSourceItemIds: [],
+                candidateDuplicateSourceItemIds: [],
+                identityConflictCount
+            };
         }
         const response = await chrome.runtime.sendMessage({
             type: MESSAGE_CHECK_DUPLICATES,
@@ -224,35 +242,54 @@
         });
         if (!response?.ok) throw new Error(response?.message || '提示词仓库去重预检失败');
         const duplicateIds = new Set((response.result?.duplicateSourceItemIds || []).map((value) => String(value || '')));
+        const hasDuplicateBreakdown = Array.isArray(response.result?.repositoryDuplicateSourceItemIds)
+            || Array.isArray(response.result?.candidateDuplicateSourceItemIds);
+        const repositoryDuplicateIds = new Set((hasDuplicateBreakdown
+            ? response.result?.repositoryDuplicateSourceItemIds
+            : response.result?.duplicateSourceItemIds || []).map((value) => String(value || '')));
+        const candidateDuplicateIds = new Set((response.result?.candidateDuplicateSourceItemIds || [])
+            .map((value) => String(value || '')));
         const rejectedIdentityIds = new Set((response.result?.rejectedIdentitySourceItemIds || []).map((value) => String(value || '')));
-        const persistentFailureIds = new Set((response.result?.persistentFailureSourceItemIds || []).map((value) => String(value || '')));
         const uniqueItems = candidates.filter((item) => (
             !duplicateIds.has(String(item.source_item_id || ''))
             && !rejectedIdentityIds.has(String(item.source_item_id || ''))
-            && !persistentFailureIds.has(String(item.source_item_id || ''))
         ));
         if (message.streamToQueue) {
-            streamStageState.checkedCandidateCount += candidates.length + identityConflictCount;
-            streamStageState.repositoryDuplicateCount += duplicateIds.size;
+            repositoryDuplicateIds.forEach((key) => streamStageState.repositoryDuplicateKeys.add(key));
+            candidateDuplicateIds.forEach((key) => streamStageState.candidateDuplicateKeys.add(key));
+            streamStageState.checkedCandidateCount = checkedKeys.size;
+            streamStageState.repositoryDuplicateCount = streamStageState.repositoryDuplicateKeys.size;
+            streamStageState.candidateDuplicateCount = streamStageState.candidateDuplicateKeys.size;
             streamStageState.identityRejectedCount += identityConflictCount + rejectedIdentityIds.size;
-            streamStageState.persistentFailureCount += persistentFailureIds.size;
         }
         logDiagnostic('duplicate-preflight', {
             checked: candidates.length + identityConflictCount,
             unique: uniqueItems.length,
-            repositoryDuplicates: duplicateIds.size,
+            repositoryDuplicates: repositoryDuplicateIds.size,
+            candidateDuplicates: candidateDuplicateIds.size,
             identityRejected: identityConflictCount + rejectedIdentityIds.size,
-            persistentFailures: persistentFailureIds.size,
             duplicateSourceItemIds: Array.from(duplicateIds).slice(0, 30),
+            repositoryDuplicateSourceItemIds: Array.from(repositoryDuplicateIds).slice(0, 30),
+            candidateDuplicateSourceItemIds: Array.from(candidateDuplicateIds).slice(0, 30),
             identityRejectedSourceItemIds: [...identityConflictSourceItemIds, ...rejectedIdentityIds].slice(0, 30),
-            persistentFailureSourceItemIds: Array.from(persistentFailureIds).slice(0, 30)
         });
         return {
             uniqueItems,
             duplicateCount: duplicateIds.size,
+            repositoryDuplicateCount: repositoryDuplicateIds.size,
+            candidateDuplicateCount: candidateDuplicateIds.size,
+            repositoryDuplicateSourceItemIds: Array.from(repositoryDuplicateIds),
+            candidateDuplicateSourceItemIds: Array.from(candidateDuplicateIds),
             identityConflictCount: identityConflictCount + rejectedIdentityIds.size,
-            persistentFailureCount: persistentFailureIds.size
         };
+    }
+
+    function mergeDuplicateSourceItemIds(target = new Set(), result = {}, field = '') {
+        (Array.isArray(result?.[field]) ? result[field] : [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+            .forEach((value) => target.add(value));
+        return target.size;
     }
 
     function isStreamReadyItem(item = {}) {
@@ -270,14 +307,17 @@
         streamStageState.acceptedKeys = new Set();
         streamStageState.checkedKeys = new Set();
         streamStageState.checkedRevisions = new Map();
+        streamStageState.capacityDeferredKeys = new Set();
         streamStageState.promise = Promise.resolve();
         streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
         streamStageState.skippedDuplicateCount = 0;
         streamStageState.checkedCandidateCount = 0;
         streamStageState.repositoryDuplicateCount = 0;
+        streamStageState.candidateDuplicateCount = 0;
+        streamStageState.repositoryDuplicateKeys = new Set();
+        streamStageState.candidateDuplicateKeys = new Set();
         streamStageState.identityRejectedCount = 0;
-        streamStageState.persistentFailureCount = 0;
         streamStageState.rejectedCount = 0;
         streamStageState.processableCount = 0;
         streamStageState.pendingDetailCount = 0;
@@ -286,6 +326,10 @@
 
     function getStreamActiveCount() {
         return streamStageState.processableCount + streamStageState.pendingDetailCount;
+    }
+
+    function getStreamCandidateCount() {
+        return getStreamActiveCount();
     }
 
     function syncStreamBatchStats(batch = {}) {
@@ -359,15 +403,58 @@
     async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20, options = {}) {
         const candidates = Array.isArray(items) ? items : [];
         const revisionItems = candidates.filter((item) => streamStageState.acceptedKeys.has(getStreamItemKey(item)));
-        const remaining = Math.max(0, maxItems - getStreamActiveCount());
+        const remaining = Math.max(0, maxItems - getStreamCandidateCount());
         const newItems = candidates
             .filter((item) => !streamStageState.acceptedKeys.has(getStreamItemKey(item)))
             .slice(0, remaining);
+        const selectedNewKeys = new Set(newItems.map((item) => getStreamItemKey(item)).filter(Boolean));
+        const capacityDeferredItems = candidates.filter((item) => {
+            const key = getStreamItemKey(item);
+            return key
+                && !streamStageState.acceptedKeys.has(key)
+                && !selectedNewKeys.has(key);
+        });
         const stagedItems = [...revisionItems, ...newItems]
             .map((item) => options.pendingDetail === true ? { ...item, stream_pending_detail: true } : item);
-        if (!stagedItems.length) return;
-        queueStreamStage(stagedItems, message, { flush: true });
-        await streamStageState.promise;
+        if (stagedItems.length) {
+            queueStreamStage(stagedItems, message, { flush: true });
+            await streamStageState.promise;
+        }
+        selectedNewKeys.forEach((key) => streamStageState.capacityDeferredKeys.delete(key));
+        capacityDeferredItems
+            .map((item) => getStreamItemKey(item))
+            .filter(Boolean)
+            .forEach((key) => streamStageState.capacityDeferredKeys.add(key));
+        streamStageState.checkedCandidateCount = streamStageState.checkedKeys.size;
+        if (capacityDeferredItems.length) {
+            logDiagnostic('stream-candidates-capacity-deferred', {
+                count: capacityDeferredItems.length,
+                sourceItemIds: capacityDeferredItems
+                    .map((item) => item.source_item_id)
+                    .filter(Boolean)
+                    .slice(0, 30)
+            });
+        }
+    }
+
+    function alignPayloadItemsWithStreamBatch(items = []) {
+        const candidates = Array.isArray(items) ? items : [];
+        const alignedItems = candidates.filter((item) => {
+            const key = getStreamItemKey(item);
+            return key && streamStageState.acceptedKeys.has(key);
+        });
+        if (alignedItems.length !== candidates.length) {
+            logDiagnostic('stream-payload-aligned', {
+                before: candidates.length,
+                after: alignedItems.length,
+                omittedSourceItemIds: candidates
+                    .filter((item) => !streamStageState.acceptedKeys.has(getStreamItemKey(item)))
+                    .map((item) => item.source_item_id)
+                    .filter(Boolean)
+                    .slice(0, 30)
+            });
+        }
+        return alignedItems;
     }
 
     async function restoreStreamBatch(message = {}, collector = getCollector()) {
@@ -380,7 +467,11 @@
         });
         if (!response?.ok) throw new Error(response?.message || '读取原批次失败');
         const result = response.result || {};
-        const items = Array.isArray(result.items) ? result.items : [];
+        const items = (Array.isArray(result.items) ? result.items : []).map((item) => (
+            String(item?.status || '') === 'needs_review'
+                ? { ...item, stream_pending_detail: true }
+                : item
+        ));
         resetStreamStageState(result.batch?.id || batchId);
         items.forEach((item) => {
             const key = getStreamItemKey(item);
@@ -407,6 +498,34 @@
 
     async function cleanupPendingStreamItems(message = {}, payload = null) {
         if (!streamStageState.batchId || !streamStageState.pendingDetailCount) return payload;
+        const payloadItems = Array.isArray(payload?.items) ? payload.items : [];
+        const pendingPayloadItems = payloadItems.filter((item) => item?.stream_pending_detail === true);
+        const retryableItems = pendingPayloadItems
+            .filter((item) => item?.stream_pending_detail === true && needsInteractiveDetail(item));
+        const unmatchedPendingCount = Math.max(
+            0,
+            streamStageState.pendingDetailCount - pendingPayloadItems.length
+        );
+        if (retryableItems.length || unmatchedPendingCount > 0) {
+            const retryableKeys = new Set(retryableItems.map((item) => getStreamItemKey(item)).filter(Boolean));
+            const nextPayload = payload ? {
+                ...payload,
+                items: (Array.isArray(payload.items) ? payload.items : []).map((item) => (
+                    retryableKeys.has(getStreamItemKey(item))
+                        ? { ...item, stream_pending_detail: true, stream_discovery_deferred: true }
+                        : item
+                ))
+            } : payload;
+            logDiagnostic('pending-detail-retained', {
+                retainedCount: streamStageState.pendingDetailCount,
+                retryableCount: retryableItems.length,
+                unmatchedPendingCount,
+                sourceItemIds: retryableItems.map((item) => item.source_item_id).filter(Boolean).slice(0, 50),
+                batchId: streamStageState.batchId
+            });
+            if (nextPayload) rememberSessionPayload(nextPayload, summarizePayload(nextPayload));
+            return nextPayload;
+        }
         const previousPendingDetailCount = streamStageState.pendingDetailCount;
         const response = await chrome.runtime.sendMessage({
             type: MESSAGE_CLEANUP_PENDING,
@@ -515,7 +634,14 @@
                     summary: sessionState.lastSummary,
                     updatedAt: sessionState.updatedAt,
                     pageUrl: window.location.href,
-                    automationStatus: getAutomationStatus()
+                    automationStatus: getAutomationStatus(),
+                    streamDedupState: {
+                        checkedKeys: Array.from(streamStageState.checkedKeys),
+                        checkedRevisions: Array.from(streamStageState.checkedRevisions.entries()),
+                        capacityDeferredKeys: Array.from(streamStageState.capacityDeferredKeys),
+                        repositoryDuplicateKeys: Array.from(streamStageState.repositoryDuplicateKeys),
+                        candidateDuplicateKeys: Array.from(streamStageState.candidateDuplicateKeys)
+                    }
                 }
             });
             return true;
@@ -543,6 +669,10 @@
             pageBatchJob.lastPayload = snapshot.payload;
             pageBatchJob.lastSummary = sessionState.lastSummary;
             if (snapshot.automationStatus?.phase) {
+                const dedupState = snapshot.streamDedupState || {};
+                const checkedRevisionEntries = (Array.isArray(dedupState.checkedRevisions)
+                    ? dedupState.checkedRevisions
+                    : []).filter((entry) => Array.isArray(entry) && entry.length >= 2);
                 Object.assign(automationJob, snapshot.automationStatus, {
                     running: false,
                     completed: snapshot.automationStatus.completed === true,
@@ -551,15 +681,24 @@
                         ? '页面曾刷新或关闭，原任务已中断，请重新启动全自动采集'
                         : (snapshot.automationStatus.lastError || '')
                 });
+                streamStageState.checkedKeys = new Set(Array.isArray(dedupState.checkedKeys) ? dedupState.checkedKeys : []);
+                streamStageState.checkedRevisions = new Map(checkedRevisionEntries);
+                streamStageState.capacityDeferredKeys = new Set(
+                    Array.isArray(dedupState.capacityDeferredKeys) ? dedupState.capacityDeferredKeys : []
+                );
+                streamStageState.repositoryDuplicateKeys = new Set(
+                    Array.isArray(dedupState.repositoryDuplicateKeys) ? dedupState.repositoryDuplicateKeys : []
+                );
+                streamStageState.candidateDuplicateKeys = new Set(
+                    Array.isArray(dedupState.candidateDuplicateKeys) ? dedupState.candidateDuplicateKeys : []
+                );
                 streamStageState.batchId = String(snapshot.automationStatus.batchId || '').trim();
                 streamStageState.stagedCount = Math.max(0, Number(snapshot.automationStatus.staged || 0));
                 streamStageState.skippedDuplicateCount = Math.max(0, Number(snapshot.automationStatus.stageDuplicates || 0));
-                streamStageState.checkedCandidateCount = Math.max(0, Number(snapshot.automationStatus.checkedCandidates || 0));
-                streamStageState.repositoryDuplicateCount = Math.max(0, Number(
-                    snapshot.automationStatus.repositoryDuplicates ?? snapshot.automationStatus.duplicates ?? 0
-                ));
+                streamStageState.checkedCandidateCount = streamStageState.checkedKeys.size;
+                streamStageState.repositoryDuplicateCount = streamStageState.repositoryDuplicateKeys.size;
+                streamStageState.candidateDuplicateCount = streamStageState.candidateDuplicateKeys.size;
                 streamStageState.identityRejectedCount = Math.max(0, Number(snapshot.automationStatus.identityRejected || 0));
-                streamStageState.persistentFailureCount = Math.max(0, Number(snapshot.automationStatus.persistentFailures || 0));
                 streamStageState.rejectedCount = Math.max(0, Number(snapshot.automationStatus.rejected || 0));
                 streamStageState.processableCount = Math.max(0, Number(snapshot.automationStatus.processable || 0));
                 streamStageState.pendingDetailCount = Math.max(0, Number(snapshot.automationStatus.pendingDetail || 0));
@@ -612,12 +751,12 @@
             discovered: Number(summary.total || 0),
             missingDetailCount,
             staged: streamStageState.stagedCount,
-            checkedCandidates: streamStageState.checkedCandidateCount,
-            duplicates: streamStageState.repositoryDuplicateCount + streamStageState.skippedDuplicateCount,
+            checkedCandidates: streamStageState.checkedKeys.size || streamStageState.checkedCandidateCount,
+            duplicates: streamStageState.repositoryDuplicateCount + streamStageState.candidateDuplicateCount + streamStageState.skippedDuplicateCount,
             repositoryDuplicates: streamStageState.repositoryDuplicateCount,
+            candidateDuplicates: streamStageState.candidateDuplicateCount,
             stageDuplicates: streamStageState.skippedDuplicateCount,
             identityRejected: streamStageState.identityRejectedCount,
-            persistentFailures: streamStageState.persistentFailureCount,
             rejected: streamStageState.rejectedCount,
             processable: streamStageState.processableCount,
             pendingDetail: streamStageState.pendingDetailCount,
@@ -734,11 +873,11 @@
             detail_status: getDetailStatus(),
             scroll_status: getScrollStatus(),
             counters: {
-                checked_candidates: streamStageState.checkedCandidateCount,
+                checked_candidates: streamStageState.checkedKeys.size || streamStageState.checkedCandidateCount,
                 repository_duplicates: streamStageState.repositoryDuplicateCount,
+                candidate_duplicates: streamStageState.candidateDuplicateCount,
                 stage_duplicates: streamStageState.skippedDuplicateCount,
                 identity_rejected: streamStageState.identityRejectedCount,
-                persistent_failures: streamStageState.persistentFailureCount,
                 active_server_items: getStreamActiveCount(),
                 finalized_unresolved: items.filter((item) => item.stream_final_status === 'unresolved').length
             },
@@ -788,7 +927,7 @@
             total: scrollJob.total,
             discovered: scrollJob.discovered,
             staged: streamStageState.stagedCount,
-            duplicates: streamStageState.repositoryDuplicateCount + streamStageState.skippedDuplicateCount,
+            duplicates: streamStageState.repositoryDuplicateCount + streamStageState.candidateDuplicateCount + streamStageState.skippedDuplicateCount,
             lastError: scrollJob.lastError
         };
     }
@@ -1104,31 +1243,46 @@
 
     function isDetailPromptPanelCandidate(node) {
         const text = getPromptPanelText(node);
-        return Boolean(text && DETAIL_PROMPT_LABEL_PATTERN.test(text) && PROMPT_COPY_TEXT_PATTERN.test(text));
+        const mediaPromptBlocks = getCollector()?._private?.extractMediaPromptBlocks?.(node) || [];
+        return Boolean(
+            mediaPromptBlocks.length
+            || (text && DETAIL_PROMPT_LABEL_PATTERN.test(text) && PROMPT_COPY_TEXT_PATTERN.test(text))
+        );
     }
 
     function findDetailPromptPanel(documentRef = document) {
         if (!documentRef?.querySelectorAll) return null;
-        const candidates = [
-            ...(documentRef.nodeType === 9 ? [] : [documentRef]),
-            ...Array.from(documentRef.querySelectorAll([
+        const dialogs = Array.from(documentRef.querySelectorAll(DETAIL_DIALOG_SELECTOR));
+        const broadCandidates = Array.from(documentRef.querySelectorAll([
             'aside',
             'section',
             'article',
             'main',
-            '[role="dialog"]',
             '[class*="side" i]',
             '[class*="detail" i]',
             '[class*="drawer" i]',
             '[class*="panel" i]',
             'div'
-            ].join(','))).slice(0, 900)
+        ].join(','))).slice(0, 900);
+        const candidates = [
+            ...(documentRef.nodeType === 9 ? [] : [documentRef]),
+            ...dialogs,
+            ...broadCandidates
         ];
+        const seen = new Set();
         const scored = candidates
+            .filter((node) => {
+                if (!node || seen.has(node)) return false;
+                seen.add(node);
+                return true;
+            })
             .map((node) => {
                 const text = getPromptPanelText(node);
                 if (!isDetailPromptPanelCandidate(node)) return null;
-                let score = 100;
+                const mediaPromptBlocks = getCollector()?._private?.extractMediaPromptBlocks?.(node) || [];
+                let score = mediaPromptBlocks.length ? 180 + (mediaPromptBlocks.length * 120) : 100;
+                if (mediaPromptBlocks.length > 1) score += 100;
+                if (node.matches?.(DETAIL_DIALOG_SELECTOR)) score += 240;
                 if (DETAIL_AUTHOR_HANDLE_PATTERN.test(text)) score += 35;
                 if (/更多相关内容|More related content/i.test(text)) score -= 12;
                 if (text.length < 2500) score += 30;
@@ -1282,14 +1436,16 @@
             visiblePromptLength: extractedPrompt.length,
             panelTextPreview: promptPanel ? getPromptPanelText(promptPanel).slice(0, 220) : ''
         });
-        if (extractedPrompt && !promptNeedsDetailEnrichment(extractedPrompt)) return extractedPrompt;
-
         const copyControls = findPromptActionControls(promptRoot, PROMPT_COPY_TEXT_PATTERN);
         logDiagnostic('prompt-copy-controls', {
             count: copyControls.length,
             labels: copyControls.slice(0, 4).map((control) => getShortControlText(control))
         });
-        if (!copyControls.length) return '';
+        const mediaPromptBlocks = collector?._private?.extractMediaPromptBlocks?.(promptRoot) || [];
+        if (mediaPromptBlocks.length && extractedPrompt && !promptNeedsDetailEnrichment(extractedPrompt)) {
+            return extractedPrompt;
+        }
+        if (!copyControls.length) return extractedPrompt;
         const before = await readClipboardText(documentRef);
         for (const control of copyControls) {
             const attributePrompt = getClipboardPromptAttributeText(control, collector);
@@ -1328,7 +1484,7 @@
         logDiagnostic('prompt-copy-missing', {
             beforeLength: before.length
         });
-        return '';
+        return extractedPrompt;
     }
 
     function promptLooksCollapsed(value = '') {
@@ -1358,6 +1514,7 @@
             ...payload,
             items: (Array.isArray(payload?.items) ? payload.items : [])
                 .filter((item) => item?.stream_final_status !== 'unresolved')
+                .filter((item) => item?.stream_discovery_deferred !== true)
         };
     }
 
@@ -1463,8 +1620,14 @@
         return { name, handle };
     }
 
+    function getActiveCollectionRoot(collector = getCollector()) {
+        return collector?._private?.getActiveCollectionPanel?.(document) || document;
+    }
+
     async function revealHoverControls(root = document, maxTargets = 20) {
-        if (root !== document || !root?.querySelectorAll) return;
+        if (!root?.querySelectorAll) return;
+        const rootDocument = root.nodeType === 9 ? root : root.ownerDocument;
+        if (rootDocument !== document) return;
         const collector = getCollector();
         const targetLimit = Math.min(24, Math.max(1, Number(maxTargets) || 20));
         const targets = Array.from(root.querySelectorAll('img'))
@@ -1587,7 +1750,8 @@
     function getVisibleGalleryMediaState() {
         const viewport = Number(window.innerHeight || document.documentElement?.clientHeight || 800);
         const margin = Math.max(240, Math.round(viewport * 0.35));
-        const entries = Array.from(document.querySelectorAll('img, video'))
+        const collectionRoot = getActiveCollectionRoot();
+        const entries = Array.from(collectionRoot.querySelectorAll('img, video'))
             .filter((media) => {
                 const rect = media.getBoundingClientRect?.() || {};
                 return Number(rect.width || 0) > 100
@@ -1682,8 +1846,10 @@
     }
 
     function normalizeBatchUrl(value = '', baseUrl = window.location.href) {
+        const rawValue = String(value || '').trim();
+        if (!rawValue) return '';
         try {
-            const url = new URL(String(value || ''), baseUrl);
+            const url = new URL(rawValue, baseUrl);
             if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
             if (!isSameMeigenUrl(url.toString())) return '';
             return url.toString();
@@ -1763,6 +1929,7 @@
         const seen = new Set();
         const urls = [];
         for (const item of Array.isArray(items) ? items : []) {
+            if (Array.isArray(item?.video_sources) && item.video_sources.length) continue;
             const url = String(item?.source_page_url || '').trim();
             if (!url || seen.has(url) || !isSameMeigenUrl(url)) continue;
             seen.add(url);
@@ -1812,13 +1979,21 @@
     function promptNeedsDetailEnrichment(value = '') {
         const text = normalizeText(value, 20000);
         if (!text) return true;
+        if (MEDIA_PROMPT_HEADER_PATTERN.test(text)) {
+            return text
+                .split(/(?=\[(?:IMAGE|VIDEO)\s*·\s*\d{1,3}\])/i)
+                .some((section) => COLLAPSED_PROMPT_MARKER_PATTERN.test(normalizeText(section, 20000)));
+        }
         if (text.length < 180) return true;
         if (/Free\s+GPT\s+Image|Copy,\s*paste,\s*generate|no\s+prompt\s+engineering/i.test(text)) return true;
         return false;
     }
 
     function itemPromptNeedsDetailEnrichment(item = {}) {
-        return !item?.prompt_complete && promptNeedsDetailEnrichment(item?.prompt_text || '');
+        if (item?.prompt_complete) return false;
+        const hasVideo = (Array.isArray(item?.video_sources) && item.video_sources.length > 0)
+            || Number(item?.expected_video_count || 0) > 0;
+        return hasVideo || promptNeedsDetailEnrichment(item?.prompt_text || '');
     }
 
     function expandDetailItemImagesToExpectedCount(item = {}, expectedCount = 0, collector = getCollector()) {
@@ -1967,7 +2142,11 @@
     }
 
     function getTargetStatusIds(item = {}) {
+        const sourceItemId = /^\d{12,25}$/.test(String(item.source_item_id || '').trim())
+            ? String(item.source_item_id).trim()
+            : '';
         return new Set([
+            sourceItemId,
             getPromptIdFromUrl(item.source_page_url || ''),
             getLongNumericIdFromText(item.original_work_url || ''),
             ...((Array.isArray(item.image_sources) ? item.image_sources : [])
@@ -2395,6 +2574,16 @@
             .filter(Boolean));
     }
 
+    function getItemMediaUrlSet(item = {}) {
+        return new Set([
+            ...getItemImageUrlSet(item),
+            ...(Array.isArray(item.video_sources) ? item.video_sources : [])
+                .flatMap((entry) => [entry?.url, entry?.poster_url, entry?.posterUrl])
+                .map((value) => String(value || '').toLowerCase())
+                .filter(Boolean)
+        ]);
+    }
+
     function normalizeUrlForLooseMatch(value = '') {
         try {
             const url = new URL(String(value || ''), window.location.href);
@@ -2455,16 +2644,54 @@
             .filter(Boolean);
     }
 
+    function getMediaNodeStatusIds(node) {
+        return new Set([
+            node?.currentSrc,
+            node?.src,
+            node?.poster,
+            node?.getAttribute?.('src'),
+            node?.getAttribute?.('data-src'),
+            node?.getAttribute?.('poster')
+        ].map((value) => getTweetStatusIdFromImageUrl(value || '')).filter(Boolean));
+    }
+
+    function getScopeMediaStatusIds(scope) {
+        const ids = new Set();
+        Array.from(scope?.querySelectorAll?.('img, video, source') || []).forEach((node) => {
+            getMediaNodeStatusIds(node).forEach((id) => ids.add(id));
+        });
+        return ids;
+    }
+
+    function getCardArtworkClickTarget(scope, item = {}) {
+        const targetStatusIds = getTargetStatusIds(item);
+        const mediaNodes = Array.from(scope?.querySelectorAll?.('img, video') || []);
+        if (targetStatusIds.size) {
+            const exactMedia = mediaNodes.find((node) => (
+                Array.from(getMediaNodeStatusIds(node)).some((id) => targetStatusIds.has(id))
+            ));
+            if (exactMedia) return exactMedia;
+        }
+        return mediaNodes.find((node) => {
+            const text = normalizeText([
+                node?.getAttribute?.('alt'),
+                node?.getAttribute?.('class')
+            ].filter(Boolean).join(' '), 400);
+            return !/(avatar|profile|作者头像|用户头像)/i.test(text);
+        }) || null;
+    }
+
     function findCurrentPageCardScopeForItem(item = {}, collector = getCollector()) {
-        const targetImages = Array.from(getItemImageUrlSet(item));
+        const targetMediaUrls = Array.from(getItemMediaUrlSet(item));
+        const targetStatusIds = getTargetStatusIds(item);
         const targetDetailUrl = normalizeBatchUrl(item.source_page_url || '');
-        if (!targetImages.length && !targetDetailUrl) return null;
+        if (!targetMediaUrls.length && !targetDetailUrl && !targetStatusIds.size) return null;
         if (!collector?.collectImageUrls) return null;
         const scopes = [];
         const exactScope = getBestCardScopeFromDetailLink(targetDetailUrl);
         if (exactScope) scopes.push(exactScope);
-        document.querySelectorAll('img').forEach((image) => {
-            const scope = findHoverScopeFromImage(image);
+        document.querySelectorAll('img, video').forEach((media) => {
+            const scope = findHoverScopeFromImage(media);
             if (scope) scopes.push(scope);
         });
         document.querySelectorAll('a[href]').forEach((link) => {
@@ -2480,17 +2707,28 @@
             const urls = collector.collectImageUrls(scope)
                 .map((url) => String(url || '').toLowerCase())
                 .filter(Boolean);
+            const videoSources = collector?._private?.collectVideoSources?.(scope) || [];
+            videoSources.forEach((entry) => {
+                [entry?.url, entry?.poster_url, entry?.posterUrl]
+                    .map((value) => String(value || '').toLowerCase())
+                    .filter(Boolean)
+                    .forEach((url) => urls.push(url));
+            });
             const detailUrls = getScopeDetailUrls(scope);
             let score = 0;
             if (targetDetailUrl && detailUrls.some((url) => urlsLooselyMatch(url, targetDetailUrl))) {
                 score += 120;
             }
+            const observedStatusIds = getScopeMediaStatusIds(scope);
+            if (targetStatusIds.size && Array.from(observedStatusIds).some((id) => targetStatusIds.has(id))) {
+                score += 100;
+            }
             for (const url of urls) {
-                if (targetImages.includes(url)) {
+                if (targetMediaUrls.includes(url)) {
                     score += 90;
                     continue;
                 }
-                if (targetImages.some((targetUrl) => urlsLooselyMatch(url, targetUrl))) {
+                if (targetMediaUrls.some((targetUrl) => urlsLooselyMatch(url, targetUrl))) {
                     score += 65;
                 }
             }
@@ -2513,15 +2751,50 @@
                     || (targetId && getPromptIdFromUrl(href) === targetId);
             });
         if (exactLink) return exactLink;
+        const draggableTarget = scope.matches?.('[draggable="true"]')
+            ? scope
+            : scope.querySelector?.('[draggable="true"]');
+        if (draggableTarget) return draggableTarget;
+        const artworkTarget = getCardArtworkClickTarget(scope, item);
+        if (artworkTarget) return artworkTarget;
         const imageLink = Array.from(scope.querySelectorAll('a[href]'))
             .find((link) => link.querySelector?.('img') && isSameMeigenUrl(link.href || link.getAttribute?.('href') || ''));
         if (imageLink) return imageLink;
         return scope.querySelector('img') || scope.querySelector('a[href]') || scope;
     }
 
+    function activateCardDetailTarget(target) {
+        const navigationAnchor = target?.closest?.('a[href]');
+        if (!navigationAnchor && typeof target?.click === 'function') {
+            target.click();
+            return true;
+        }
+        return dispatchSyntheticClick(target, { preventNavigation: true });
+    }
+
+    function getOpenDetailDialog(documentRef = document) {
+        const dialogs = Array.from(documentRef?.querySelectorAll?.(DETAIL_DIALOG_SELECTOR) || []);
+        return dialogs.find((node) => (
+            node?.hidden !== true
+            && node?.getAttribute?.('aria-hidden') !== 'true'
+        )) || null;
+    }
+
+    function getCloseControlLabel(element) {
+        const values = [
+            element?.getAttribute?.('aria-label'),
+            element?.getAttribute?.('title'),
+            element?.innerText,
+            element?.textContent
+        ].map((value) => normalizeText(value, 120)).filter(Boolean);
+        return values[0] || '';
+    }
+
     function closeOpenDetailView() {
-        const closeControl = Array.from(document.querySelectorAll('button, [role="button"], [aria-label], [title]'))
-            .find((element) => /^(关闭|Close|esc|Esc|ESC|×|X)$/i.test(getControlText(element)));
+        const dialog = getOpenDetailDialog(document);
+        const controlRoot = dialog || document;
+        const closeControl = Array.from(controlRoot.querySelectorAll('button, [role="button"], [aria-label], [title]'))
+            .find((element) => /^(关闭|Close|esc|×|X)$/i.test(getCloseControlLabel(element)));
         if (closeControl) {
             dispatchSyntheticClick(closeControl);
             return true;
@@ -2534,11 +2807,48 @@
     function isDetailViewVisible() {
         return Boolean(
             findDetailPromptPanel(document)
-            || Array.from(document.querySelectorAll('[role="dialog"], dialog, [aria-modal="true"]') || []).some((node) => {
+            || Array.from(document.querySelectorAll(DETAIL_DIALOG_SELECTOR) || []).some((node) => {
                 const text = normalizeText(node.innerText || node.textContent || '', 2500);
                 return DETAIL_PROMPT_LABEL_PATTERN.test(text) || PROMPT_COPY_TEXT_PATTERN.test(text);
             })
         );
+    }
+
+    function detailDialogMatchesTarget(dialog, item = {}) {
+        if (!dialog) return false;
+        const targetStatusIds = getTargetStatusIds(item);
+        const observedStatusIds = getScopeMediaStatusIds(dialog);
+        if (targetStatusIds.size) {
+            if (!observedStatusIds.size) return false;
+            return Array.from(observedStatusIds).every((id) => targetStatusIds.has(id));
+        }
+        const expectedMediaUrls = [
+            ...(Array.isArray(item.image_sources) ? item.image_sources.map((entry) => entry?.url) : []),
+            ...(Array.isArray(item.video_sources) ? item.video_sources.flatMap((entry) => [entry?.url, entry?.poster_url, entry?.posterUrl]) : [])
+        ].filter(Boolean);
+        const observedMediaUrls = Array.from(dialog.querySelectorAll('img, video, source'))
+            .flatMap((node) => [
+                node?.currentSrc,
+                node?.src,
+                node?.poster,
+                node?.getAttribute?.('src'),
+                node?.getAttribute?.('data-src'),
+                node?.getAttribute?.('poster')
+            ])
+            .filter(Boolean);
+        return expectedMediaUrls.some((expectedUrl) => (
+            observedMediaUrls.some((observedUrl) => urlsLooselyMatch(expectedUrl, observedUrl))
+        ));
+    }
+
+    async function ensureDetailViewClosed() {
+        if (!getOpenDetailDialog(document) && !findDetailPromptPanel(document)) return true;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            closeOpenDetailView();
+            await sleep(300);
+            if (!getOpenDetailDialog(document) && !findDetailPromptPanel(document)) return true;
+        }
+        return false;
     }
 
     async function prepareListPageForCollection() {
@@ -2546,12 +2856,7 @@
         logDiagnostic('list-collect-close-detail', {
             pageUrl: window.location.href
         });
-        closeOpenDetailView();
-        await sleep(500);
-        if (isDetailViewVisible()) {
-            closeOpenDetailView();
-            await sleep(500);
-        }
+        await ensureDetailViewClosed();
         return true;
     }
 
@@ -2593,6 +2898,9 @@
             promptLength: String(item.prompt_text || '').trim().length,
             imageCount: Array.isArray(item.image_sources) ? item.image_sources.length : 0
         });
+        if (!await ensureDetailViewClosed()) {
+            throw new Error('上一个作品详情未能关闭，已停止读取以避免提示词串门');
+        }
         const scope = findCurrentPageCardScopeForItem(item, collector);
         if (!scope) {
             logDiagnostic('detail-current-card-missing', {
@@ -2616,24 +2924,32 @@
             } catch (_) {
                 // Best-effort only.
             }
-            dispatchSyntheticClick(target, { preventNavigation: true });
+            activateCardDetailTarget(target);
             await sleep(700);
             await refreshStructuredDataCache();
+            const openedDialog = getOpenDetailDialog(document);
             logDiagnostic('detail-current-opened', {
                 beforeUrl,
                 currentUrl: window.location.href,
-                hasPromptPanel: Boolean(findDetailPromptPanel(document)),
+                hasPromptPanel: Boolean(findDetailPromptPanel(openedDialog || document)),
                 currentMatchesTarget: currentDetailUrlMatchesTarget(item, window.location.href)
+                    || detailDialogMatchesTarget(openedDialog, item),
+                dialogMatchesTarget: detailDialogMatchesTarget(openedDialog, item),
+                observedStatusIds: Array.from(getScopeMediaStatusIds(openedDialog))
             });
 
             let copiedPrompt = '';
             let lastItems = [];
             const startedAt = Date.now();
             while (Date.now() - startedAt < DETAIL_FRAME_TIMEOUT_MS) {
-                const promptPanel = findDetailPromptPanel(document);
+                const dialog = getOpenDetailDialog(document);
+                const detailRoot = dialog || document;
+                const promptPanel = findDetailPromptPanel(detailRoot);
                 const currentMatchesTarget = currentDetailUrlMatchesTarget(item, window.location.href)
-                    || (window.location.href === beforeUrl && Boolean(promptPanel));
-                const detailExpectedCount = currentMatchesTarget ? getDetailExpectedCountFromDocument(document) : 0;
+                    || (window.location.href === beforeUrl
+                        && Boolean(promptPanel)
+                        && detailDialogMatchesTarget(dialog, item));
+                const detailExpectedCount = currentMatchesTarget ? getDetailExpectedCountFromDocument(detailRoot) : 0;
                 if (promptPanel && currentMatchesTarget) await expandPromptSection(promptPanel);
                 if (!copiedPrompt && promptPanel && currentMatchesTarget) {
                     copiedPrompt = await readPromptFromCopyButton(promptPanel, collector);
@@ -2647,22 +2963,25 @@
                         currentUrl: window.location.href,
                         currentMatchesTarget,
                         hasPromptPanel: Boolean(promptPanel),
+                        hasDialog: Boolean(dialog),
+                        dialogMatchesTarget: detailDialogMatchesTarget(dialog, item),
+                        observedStatusIds: Array.from(getScopeMediaStatusIds(dialog)),
                         detailExpectedCount
                     });
                     await sleep(DETAIL_FRAME_POLL_MS);
                     continue;
                 }
-                lastItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+                lastItems = collector.collectMeigenGalleryItems(detailRoot, buildCollectionOptions({
                     baseUrl: window.location.href,
-                    expectedDetailUrl: item.source_page_url || window.location.href,
+                    expectedDetailUrl: item.source_page_url || '',
                     expectedDetailImageCount: detailExpectedCount,
-                    detailFavoriteCount: getDetailFavoriteCountFromPromptPanel(document, collector),
+                    detailFavoriteCount: getDetailFavoriteCountFromPromptPanel(detailRoot, collector),
                     detailOnly: true,
                     structuredEntries: []
                 }, item));
                 lastItems = mergeDetailItemsWithCopiedPrompt(lastItems, copiedPrompt, collector);
                 lastItems = expandDetailItemsToExpectedCount(lastItems, detailExpectedCount, collector);
-                lastItems = enrichDetailItemsWithVisibleAuthor(lastItems, document, collector);
+                lastItems = enrichDetailItemsWithVisibleAuthor(lastItems, detailRoot, collector);
                 lastItems = selectBestDetailItemsForTarget(lastItems, item, {
                     expectedCount: detailExpectedCount
                 }).map((detailItem) => ({
@@ -2709,11 +3028,10 @@
             });
             return lastItems;
         } finally {
-            closeOpenDetailView();
+            await ensureDetailViewClosed();
             if (window.location.href !== beforeUrl && typeof history.replaceState === 'function') {
                 history.replaceState(history.state, '', beforeUrl);
             }
-            await sleep(300);
         }
     }
 
@@ -2913,7 +3231,13 @@
         rememberSessionPayload(basePayload, summarizePayload(basePayload));
         await persistSessionSnapshot();
         const markPendingDetail = (items = []) => items.map((item) => ({ ...item, stream_pending_detail: true }));
-        if (streamMessage) queueStreamStage(markPendingDetail(baseItems), streamMessage);
+        if (streamMessage) {
+            const unstagedItems = baseItems.filter((item) => !streamStageState.acceptedKeys.has(getStreamItemKey(item)));
+            if (unstagedItems.length) {
+                queueStreamStage(markPendingDetail(unstagedItems), streamMessage, { flush: true });
+                await streamStageState.promise;
+            }
+        }
 
         const detailItems = [];
         const resolvedKeys = new Set();
@@ -2931,6 +3255,28 @@
             detailJob.lastPayload = checkpointPayload;
             detailJob.lastSummary = summarizePayload(checkpointPayload);
             rememberSessionPayload(checkpointPayload, detailJob.lastSummary);
+        };
+        const streamCheckpointForItem = async (targetItem = {}) => {
+            if (!streamMessage) return;
+            const checkpointItems = Array.isArray(detailJob.lastPayload?.items)
+                ? detailJob.lastPayload.items
+                : [];
+            const targetKey = getStreamItemKey(targetItem);
+            const checkpointItem = checkpointItems.find((item) => (
+                (targetKey && getStreamItemKey(item) === targetKey)
+                || getDetailResolutionKeys(targetItem).some((key) => getDetailResolutionKeys(item).includes(key))
+            ));
+            if (!checkpointItem) return;
+            const {
+                stream_pending_detail: _pendingDetail,
+                streamPendingDetail: _pendingDetailAlias,
+                ...cleanItem
+            } = checkpointItem;
+            const stagedItem = needsInteractiveDetail(cleanItem, { requireFavoriteCount })
+                ? { ...cleanItem, stream_pending_detail: true }
+                : cleanItem;
+            queueStreamStage([stagedItem], streamMessage, { flush: true, force: true });
+            await streamStageState.promise;
         };
         try {
             for (const item of interactiveItems) {
@@ -2977,7 +3323,7 @@
                     detailJob.processed += 1;
                 }
                 saveCheckpoint();
-                if (streamMessage) queueStreamStage(markPendingDetail(detailJob.lastPayload?.items || []), streamMessage);
+                await streamCheckpointForItem(item);
                 if (detailJob.processed < totalJobs) {
                     await sleep(DETAIL_FETCH_DELAY_MS);
                 }
@@ -3006,7 +3352,7 @@
                     detailJob.processed += 1;
                 }
                 saveCheckpoint();
-                if (streamMessage) queueStreamStage(markPendingDetail(detailJob.lastPayload?.items || []), streamMessage);
+                await streamCheckpointForItem({ source_page_url: url });
 
                 if (fallbackIndex + 1 < fallbackUrls.length) {
                     await sleep(DETAIL_FETCH_DELAY_MS);
@@ -3075,10 +3421,11 @@
         const maxSteps = normalizeScrollStepCount(message.maxSteps);
         const maxItems = normalizeMaxItems(message.maxItems);
         const favoriteRange = normalizeFavoriteRange(message);
+        const collectionRoot = getActiveCollectionRoot(collector);
         await prepareListPageForCollection();
         await waitForVisibleGalleryBatch();
         const initialScanStartedAt = Date.now();
-        await revealHoverControls(document, maxItems + 6);
+        await revealHoverControls(collectionRoot, maxItems + 6);
         await waitForVisibleGalleryBatch();
         const initialHoverFinishedAt = Date.now();
         await refreshStructuredDataCache();
@@ -3086,6 +3433,7 @@
         if (message.streamToQueue && !message.continueExisting) resetStreamStageState(message.batchId);
         const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
         const checkedRevisions = message.streamToQueue ? streamStageState.checkedRevisions : new Map();
+        const repositoryDuplicateKeys = new Set();
         let repositoryDuplicateCount = 0;
         const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions({
             ...favoriteRange,
@@ -3096,14 +3444,14 @@
             ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys, checkedRevisions)
             : { uniqueItems: initialPayload.items, duplicateCount: 0 };
         const initialPreflightFinishedAt = Date.now();
-        repositoryDuplicateCount += initialCheck.duplicateCount;
+        repositoryDuplicateCount = mergeDuplicateSourceItemIds(
+            repositoryDuplicateKeys,
+            initialCheck,
+            'repositoryDuplicateSourceItemIds'
+        );
         const previousItems = message.continueExisting
             ? getContinuablePayload(getLastJobPayload() || {}).items
             : [];
-        let payload = applyPayloadLimits({
-            ...initialPayload,
-            items: collector.mergeCollectedItems([...previousItems, ...initialCheck.uniqueItems])
-        }, { maxItems, favoriteRange });
         let previousSnapshot = getScrollSnapshot();
         let stableRounds = 0;
         logDiagnostic('scroll-initial-scan', {
@@ -3111,12 +3459,11 @@
             domCandidates: initialPayload.items.length,
             newlyChecked: initialCheck.uniqueItems.length
                 + Number(initialCheck.duplicateCount || 0)
-                + Number(initialCheck.identityConflictCount || 0)
-                + Number(initialCheck.persistentFailureCount || 0),
+                + Number(initialCheck.identityConflictCount || 0),
             unique: initialCheck.uniqueItems.length,
-            repositoryDuplicates: Number(initialCheck.duplicateCount || 0),
+            repositoryDuplicates: Number(initialCheck.repositoryDuplicateCount ?? initialCheck.duplicateCount ?? 0),
+            candidateDuplicates: Number(initialCheck.candidateDuplicateCount || 0),
             identityRejected: Number(initialCheck.identityConflictCount || 0),
-            persistentFailures: Number(initialCheck.persistentFailureCount || 0),
             checkedCandidates: checkedKeys.size,
             activeServerItems: getStreamActiveCount(),
             timings: {
@@ -3129,8 +3476,17 @@
         });
 
         if (message.streamToQueue) {
-            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems, { pendingDetail: true });
+            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems, {
+                pendingDetail: true
+            });
         }
+        const initialMergedItems = collector.mergeCollectedItems([...previousItems, ...initialCheck.uniqueItems]);
+        let payload = applyPayloadLimits({
+            ...initialPayload,
+            items: message.streamToQueue
+                ? alignPayloadItemsWithStreamBatch(initialMergedItems)
+                : initialMergedItems
+        }, { maxItems, favoriteRange });
 
         scrollJob.running = true;
         scrollJob.stopRequested = false;
@@ -3147,13 +3503,13 @@
         try {
             for (let index = 0; index < maxSteps; index += 1) {
                 if (scrollJob.stopRequested) break;
-                if (message.streamToQueue && getStreamActiveCount() >= maxItems) break;
+                if (message.streamToQueue && getStreamCandidateCount() >= maxItems) break;
 
                 const nextSnapshot = await scrollAndWaitForGalleryBatch();
                 scrollJob.processed = index + 1;
 
                 const scanStartedAt = Date.now();
-                await revealHoverControls(document, maxItems + 6);
+                await revealHoverControls(collectionRoot, maxItems + 6);
                 await waitForVisibleGalleryBatch();
                 const hoverFinishedAt = Date.now();
                 await refreshStructuredDataCache();
@@ -3167,17 +3523,26 @@
                     ? await filterRepositoryDuplicates(currentItems, message, checkedKeys, checkedRevisions)
                     : { uniqueItems: currentItems, duplicateCount: 0 };
                 const preflightFinishedAt = Date.now();
-                repositoryDuplicateCount += duplicateCheck.duplicateCount;
+                repositoryDuplicateCount = mergeDuplicateSourceItemIds(
+                    repositoryDuplicateKeys,
+                    duplicateCheck,
+                    'repositoryDuplicateSourceItemIds'
+                );
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
-                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, { pendingDetail: true });
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, {
+                        pendingDetail: true
+                    });
                 }
+                const mergedPayloadItems = collector.mergeCollectedItems([
+                    ...(Array.isArray(payload.items) ? payload.items : []),
+                    ...duplicateCheck.uniqueItems
+                ]);
                 payload = {
                     ...payload,
                     collected_at: new Date().toISOString(),
-                    items: collector.mergeCollectedItems([
-                        ...(Array.isArray(payload.items) ? payload.items : []),
-                        ...duplicateCheck.uniqueItems
-                    ]).slice(0, maxItems),
+                    items: (message.streamToQueue
+                        ? alignPayloadItemsWithStreamBatch(mergedPayloadItems)
+                        : mergedPayloadItems).slice(0, maxItems),
                     scroll_collect: {
                         attempted: index + 1,
                         stopped: false,
@@ -3190,19 +3555,20 @@
                 detailJob.lastPayload = payload;
                 detailJob.lastSummary = scrollJob.lastSummary;
                 rememberSessionPayload(payload, scrollJob.lastSummary);
-                const targetCount = message.streamToQueue ? getStreamActiveCount() : payload.items.length;
+                const targetCount = message.streamToQueue
+                    ? getStreamCandidateCount()
+                    : payload.items.length;
                 logDiagnostic('scroll-scan', {
                     step: index + 1,
                     snapshot: nextSnapshot,
                     domCandidates: currentItems.length,
                     newlyChecked: duplicateCheck.uniqueItems.length
                         + Number(duplicateCheck.duplicateCount || 0)
-                        + Number(duplicateCheck.identityConflictCount || 0)
-                        + Number(duplicateCheck.persistentFailureCount || 0),
+                        + Number(duplicateCheck.identityConflictCount || 0),
                     unique: duplicateCheck.uniqueItems.length,
-                    repositoryDuplicates: Number(duplicateCheck.duplicateCount || 0),
+                    repositoryDuplicates: Number(duplicateCheck.repositoryDuplicateCount ?? duplicateCheck.duplicateCount ?? 0),
+                    candidateDuplicates: Number(duplicateCheck.candidateDuplicateCount || 0),
                     identityRejected: Number(duplicateCheck.identityConflictCount || 0),
-                    persistentFailures: Number(duplicateCheck.persistentFailureCount || 0),
                     checkedCandidates: checkedKeys.size,
                     activeServerItems: getStreamActiveCount(),
                     staged: streamStageState.stagedCount,
@@ -3226,17 +3592,26 @@
                     const verificationCheck = message.preflightDuplicates
                         ? await filterRepositoryDuplicates(verificationItems, message, checkedKeys, checkedRevisions)
                         : { uniqueItems: verificationItems, duplicateCount: 0 };
-                    repositoryDuplicateCount += verificationCheck.duplicateCount;
+                    repositoryDuplicateCount = mergeDuplicateSourceItemIds(
+                        repositoryDuplicateKeys,
+                        verificationCheck,
+                        'repositoryDuplicateSourceItemIds'
+                    );
                     if (message.streamToQueue && verificationCheck.uniqueItems.length) {
-                        await stageStreamItemsToTarget(verificationCheck.uniqueItems, message, maxItems, { pendingDetail: true });
+                        await stageStreamItemsToTarget(verificationCheck.uniqueItems, message, maxItems, {
+                            pendingDetail: true
+                        });
                     }
+                    const verifiedPayloadItems = collector.mergeCollectedItems([
+                        ...(Array.isArray(payload.items) ? payload.items : []),
+                        ...verificationCheck.uniqueItems
+                    ]);
                     payload = {
                         ...payload,
                         collected_at: new Date().toISOString(),
-                        items: collector.mergeCollectedItems([
-                            ...(Array.isArray(payload.items) ? payload.items : []),
-                            ...verificationCheck.uniqueItems
-                        ]).slice(0, maxItems)
+                        items: (message.streamToQueue
+                            ? alignPayloadItemsWithStreamBatch(verifiedPayloadItems)
+                            : verifiedPayloadItems).slice(0, maxItems)
                     };
                     scrollJob.lastPayload = payload;
                     scrollJob.lastSummary = summarizePayload(payload);
@@ -3290,7 +3665,8 @@
                 scrollStatus: getScrollStatus(),
                 repositoryDuplicateCount,
                 checkedCandidateCount: checkedKeys.size,
-                exhausted: getStreamActiveCount() < maxItems && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT,
+                exhausted: getStreamCandidateCount() < maxItems
+                    && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
                     attemptedCount: streamStageState.attemptedCount,
@@ -3343,9 +3719,16 @@
         await refreshStructuredDataCache();
         const checkedKeys = message.streamToQueue ? streamStageState.checkedKeys : new Set();
         const checkedRevisions = message.streamToQueue ? streamStageState.checkedRevisions : new Map();
+        const repositoryDuplicateKeys = new Set();
         let repositoryDuplicateCount = 0;
+        const continuablePayload = getContinuablePayload(getLatestPayload(collector));
         let payload = message.continueExisting
-            ? applyPayloadLimits(getContinuablePayload(getLatestPayload(collector)), { maxItems, favoriteRange })
+            ? applyPayloadLimits({
+                ...continuablePayload,
+                items: message.streamToQueue
+                    ? alignPayloadItemsWithStreamBatch(continuablePayload.items)
+                    : continuablePayload.items
+            }, { maxItems, favoriteRange })
             : applyPayloadLimits(
                 collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange))),
                 { maxItems, favoriteRange }
@@ -3373,7 +3756,7 @@
         try {
             for (let index = 0; index < maxPages; index += 1) {
                 if (pageBatchJob.stopRequested) break;
-                if (message.streamToQueue && getStreamActiveCount() >= maxItems) break;
+                if (message.streamToQueue && getStreamCandidateCount() >= maxItems) break;
 
                 const normalizedCurrentUrl = normalizeBatchUrl(currentUrl) || currentUrl;
                 if (visited.has(normalizedCurrentUrl) && currentRoot !== document) {
@@ -3397,18 +3780,27 @@
                 const duplicateCheck = message.preflightDuplicates
                     ? await filterRepositoryDuplicates(currentItems, message, checkedKeys, checkedRevisions)
                     : { uniqueItems: currentItems, duplicateCount: 0 };
-                repositoryDuplicateCount += duplicateCheck.duplicateCount;
+                repositoryDuplicateCount = mergeDuplicateSourceItemIds(
+                    repositoryDuplicateKeys,
+                    duplicateCheck,
+                    'repositoryDuplicateSourceItemIds'
+                );
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
-                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, { pendingDetail: true });
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, {
+                        pendingDetail: true
+                    });
                 }
+                const mergedPayloadItems = collector.mergeCollectedItems([
+                    ...(Array.isArray(payload.items) ? payload.items : []),
+                    ...duplicateCheck.uniqueItems
+                ]);
                 payload = {
                     ...payload,
                     page_url: normalizeBatchUrl(window.location.href) || payload.page_url,
                     collected_at: new Date().toISOString(),
-                    items: collector.mergeCollectedItems([
-                        ...(Array.isArray(payload.items) ? payload.items : []),
-                        ...duplicateCheck.uniqueItems
-                    ]).slice(0, maxItems),
+                    items: (message.streamToQueue
+                        ? alignPayloadItemsWithStreamBatch(mergedPayloadItems)
+                        : mergedPayloadItems).slice(0, maxItems),
                     page_batch: {
                         attempted: index + 1,
                         stopped: false,
@@ -3426,7 +3818,9 @@
                 detailJob.lastSummary = pageBatchJob.lastSummary;
                 rememberSessionPayload(payload, pageBatchJob.lastSummary);
 
-                const targetCount = message.streamToQueue ? getStreamActiveCount() : payload.items.length;
+                const targetCount = message.streamToQueue
+                    ? getStreamCandidateCount()
+                    : payload.items.length;
                 if (targetCount >= maxItems || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
 
                 const nextTarget = findNextPageTarget(currentRoot, normalizedCurrentUrl);
@@ -3539,7 +3933,7 @@
             await prepareListPageForCollection();
         }
         const maxItems = normalizeMaxItems(message.maxItems);
-        await revealHoverControls(document, maxItems + 6);
+        await revealHoverControls(getActiveCollectionRoot(collector), maxItems + 6);
         await refreshStructuredDataCache();
         const favoriteRange = normalizeFavoriteRange(message);
         const hasFavoriteRange = Number(favoriteRange.min || 0) > 0 || Number(favoriteRange.max || 0) > 0;
@@ -3651,7 +4045,7 @@
             let sourceExhausted = false;
             let stagnantRounds = 0;
             const scrollChunkSteps = Math.max(SCROLL_COLLECT_MAX_STEPS, Math.min(100, maxItems * 3));
-            while (streamStageState.processableCount < maxItems
+            while (getStreamActiveCount() < maxItems
                 && scrollStepsRemaining > 0
                 && !sourceExhausted
                 && !automationJob.stopRequested) {
@@ -3700,7 +4094,7 @@
 
             let pagingRound = 0;
             let previousCheckedCount = -1;
-            while (streamStageState.processableCount < maxItems
+            while (getStreamActiveCount() < maxItems
                 && sourceExhausted
                 && pagingRound < maxItems
                 && !automationJob.stopRequested) {

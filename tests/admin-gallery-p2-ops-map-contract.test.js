@@ -25,6 +25,17 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         '批量发布',
         'id="batchLocalizeMenuItem"',
         'data-admin-action="gallery-batch-localize"',
+        'id="selectAllBtn"',
+        '全选当前页',
+        'id="selectAllVideoPromptsBtn"',
+        '全选全部视频',
+        'id="selectAllImagePromptsBtn"',
+        '全选全部图片',
+        'id="clearPromptSelectionBtn"',
+        'gallerySelectAllMedia=20260723_ADMIN_GALLERY_SELECT_ALL_MEDIA_1',
+        'id="batchBackfillPublishedPromptTextMenuItem"',
+        'data-admin-action="gallery-batch-backfill-prompt-text"',
+        '回填已发布提示词',
         'id="batchActionFeedback"'
     ];
 
@@ -48,9 +59,23 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         "case 'gallery-batch-set-status':",
         "case 'gallery-batch-add-homepage':",
         "case 'gallery-batch-localize':",
+        "case 'gallery-batch-backfill-prompt-text':",
         'async function batchSetSelectedPromptStatus(nextStatus = \'\')',
         'async function batchAddSelectedPromptsToHomepage()',
         'async function batchCompleteSelectedPromptBilingualFields()',
+        'async function batchBackfillPublishedPromptTexts()',
+        'const selectedPromptRecords = new Map();',
+        'function setPromptSelected(promptId = \'\', selected = true, prompt = null)',
+        'function clearSelectedPromptSelection({ syncCards = true } = {})',
+        'function promptMatchesGalleryMediaSelection(prompt = {}, mediaType = \'\')',
+        'async function fetchAllAdminPromptRowsForSelection({ onProgress } = {})',
+        'async function selectAllFilteredPromptsByMedia(mediaType = \'\')',
+        "selectAllFilteredPromptsByMedia('video')",
+        "selectAllFilteredPromptsByMedia('image')",
+        'return Array.from(selectedPrompts)',
+        'async function backfillPublishedPromptText(prompt = {}, writableSite = getAdminPromptsReadSite())',
+        "return ['live', 'featured'].includes(getPromptAdminOpsData(prompt).status);",
+        'PromptTranslator.translateCanonicalPromptText(sourcePrompt)',
         'async function completePromptBilingualFields(prompt = {}, writableSite = getAdminPromptsReadSite(), options = {})',
         'function beginGalleryBatchMenuInteraction(actionEl, options = {})',
         'async function runGalleryBatchActionFromMenu(actionEl, operation, options = {})',
@@ -76,6 +101,7 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
         'window.batchSetSelectedPromptStatus = batchSetSelectedPromptStatus;',
         'window.batchAddSelectedPromptsToHomepage = batchAddSelectedPromptsToHomepage;',
         'window.batchCompleteSelectedPromptBilingualFields = batchCompleteSelectedPromptBilingualFields;',
+        'window.batchBackfillPublishedPromptTexts = batchBackfillPublishedPromptTexts;',
         'sortAdminGalleryCards(sortValue, filteredRows);',
         'renderGalleryOpsOverview();'
     ];
@@ -112,6 +138,7 @@ test('gallery p2 ops map adds overview, sorting, batch workflow actions, and hom
     const siteFilterMarkers = [
         "'gallery-batch-add-homepage': '批量加入首页精选'",
         "'gallery-batch-localize': '批量补全 Prompt 双语'",
+        "'gallery-batch-backfill-prompt-text': '回填已发布 Prompt 提示词'",
         "'gallery-batch-set-status': '批量更新 Prompt 运营状态'"
     ];
 

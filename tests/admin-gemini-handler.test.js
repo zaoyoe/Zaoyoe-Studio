@@ -6,7 +6,8 @@ const Module = require('node:module');
 function createMockResponse() {
     const state = {
         statusCode: 200,
-        body: ''
+        body: '',
+        headers: {}
     };
 
     return {
@@ -14,7 +15,8 @@ function createMockResponse() {
             state.statusCode = code;
             return this;
         },
-        setHeader() {
+        setHeader(name, value) {
+            state.headers[String(name || '').toLowerCase()] = String(value ?? '');
             return this;
         },
         end(payload = '') {
@@ -26,6 +28,9 @@ function createMockResponse() {
         },
         get statusCode() {
             return state.statusCode;
+        },
+        get headers() {
+            return { ...state.headers };
         }
     };
 }
@@ -273,5 +278,45 @@ test('gemini handler redacts upstream secrets from error payloads', async () => 
         assert.match(payload.message, /Bearer \[redacted\]/);
         assert.doesNotMatch(JSON.stringify(payload), /AIzaSySuperSecretValue/);
         assert.equal(payload.error.apiKey, '[redacted]');
+    });
+});
+
+test('gemini handler forwards upstream retry timing on rate limits', async () => {
+    await withGeminiHandler({
+        runtimeConfig: {
+            apiKey: 'AIzaSyTestGeminiKey12345678901234567890',
+            model: 'gemini-2.0-flash'
+        },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 429,
+            headers: {
+                get(name) {
+                    return String(name).toLowerCase() === 'retry-after' ? '30' : '';
+                }
+            },
+            async json() {
+                return {
+                    error: {
+                        message: 'Resource exhausted'
+                    }
+                };
+            }
+        })
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                contents: [{ parts: [{ text: 'hello' }] }],
+                budget: { tier: 'longform' }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 429);
+        assert.equal(res.headers['retry-after'], '30');
+        assert.match(res.json().message, /resource exhausted/i);
     });
 });

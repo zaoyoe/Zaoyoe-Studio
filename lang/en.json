@@ -489,6 +489,8 @@
         "hotSearch": "Hot Searches",
         "featured": "✦ FEATURED",
         "prompt": "Prompt",
+        "imagePrompt": "Image prompt",
+        "videoPrompt": "Video prompt",
         "unlock": "Unlock",
         "viewAll": "View all",
         "viewAllComments": "View all comments",

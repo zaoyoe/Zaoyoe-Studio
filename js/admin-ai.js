@@ -106,6 +106,11 @@
             tier: 'expanded',
             maxInputChars: 24000,
             maxOutputTokens: 1600
+        },
+        longform: {
+            tier: 'longform',
+            maxInputChars: 24000,
+            maxOutputTokens: 8192
         }
     });
     const TOKEN_BUDGET_ALIASES = Object.freeze({
@@ -117,7 +122,8 @@
         balanced: 'balanced',
         standard: 'balanced',
         deep: 'expanded',
-        expanded: 'expanded'
+        expanded: 'expanded',
+        longform: 'longform'
     });
 
     function clampInteger(value, min, max, fallback = min) {
@@ -262,6 +268,58 @@
         return headers && typeof headers === 'object'
             ? { ...headers }
             : {};
+    }
+
+    function parseRetryDelayMs(value, now = Date.now()) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return Math.max(0, Math.round(value));
+        }
+
+        const normalized = String(value || '').trim();
+        if (!normalized) return 0;
+        if (/^\d+(?:\.\d+)?$/.test(normalized)) {
+            return Math.max(0, Math.round(Number(normalized) * 1000));
+        }
+
+        const durationMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m)$/i);
+        if (durationMatch) {
+            const multiplier = durationMatch[2].toLowerCase() === 'm'
+                ? 60000
+                : (durationMatch[2].toLowerCase() === 's' ? 1000 : 1);
+            return Math.max(0, Math.round(Number(durationMatch[1]) * multiplier));
+        }
+
+        const retryAt = Date.parse(normalized);
+        return Number.isFinite(retryAt) ? Math.max(0, retryAt - now) : 0;
+    }
+
+    function resolveAdminAIRetryAfterMs(response, payload = {}) {
+        const headerValue = response?.headers && typeof response.headers.get === 'function'
+            ? response.headers.get('retry-after')
+            : '';
+        const candidateValues = [
+            headerValue,
+            payload?.retryAfterMs,
+            payload?.retry_after_ms,
+            payload?.retryAfterSeconds === undefined ? '' : `${payload.retryAfterSeconds}s`,
+            payload?.retry_after_seconds === undefined ? '' : `${payload.retry_after_seconds}s`,
+            payload?.error?.retryAfterMs,
+            payload?.error?.retry_after_ms,
+            ...(Array.isArray(payload?.error?.details)
+                ? payload.error.details.flatMap((detail) => [
+                    detail?.retryDelay,
+                    detail?.retry_delay,
+                    detail?.retryAfter
+                ])
+                : [])
+        ];
+
+        for (const candidate of candidateValues) {
+            if (candidate === undefined || candidate === null || candidate === '') continue;
+            const parsed = parseRetryDelayMs(candidate);
+            if (parsed > 0) return parsed;
+        }
+        return 0;
     }
 
     const AdminAI = {
@@ -772,6 +830,7 @@
                     error.details = payload.error || null;
                     error.isRateLimited = response.status === 429
                         || /resource exhausted|quota|429/i.test(String(error.message || ''));
+                    error.retryAfterMs = resolveAdminAIRetryAfterMs(response, payload);
                     throw error;
                 }
 
@@ -816,7 +875,8 @@
                     budget: preparedPayload.budget,
                     durationMs: this.lastLatencyMs,
                     status: error.status || 0,
-                    message: error.message || 'AI request failed'
+                    message: error.message || 'AI request failed',
+                    retryAfterMs: Number(error.retryAfterMs) || 0
                 });
                 throw error;
             }

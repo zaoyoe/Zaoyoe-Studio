@@ -116,6 +116,7 @@ test('gallery module routes prompt mutations through writable site guard', () =>
         "window.AdminSiteFilter?.requireWritableSite?.({",
         "批量加入首页精选",
         "gallery-batch-localize",
+        "gallery-batch-backfill-prompt-text",
         "buildAdminPromptsUrl(params = {})",
         "/api/admin/prompts/manage"
     ];
