@@ -249,8 +249,19 @@ test('vercel admin function includes the prompt image palette runtime dependency
     const vercelIgnore = readRepoFile('.vercelignore');
     const includeFiles = String(config.functions?.['api/admin.js']?.includeFiles || '');
 
-    assert.equal(includeFiles.includes('server/prompt-image-palette.js'), true);
+    assert.equal(includeFiles.includes('server/prompt-*.js'), true);
     assert.match(vercelIgnore, /!server\/prompt-image-palette\.js/);
+});
+
+test('vercel admin function traces the prompt video poster runtime and FFmpeg dependency', () => {
+    const config = JSON.parse(readRepoFile('vercel.json'));
+    const packageJson = JSON.parse(readRepoFile('package.json'));
+    const includeFiles = String(config.functions?.['api/admin.js']?.includeFiles || '');
+    const posterRuntime = readRepoFile('server/prompt-video-poster.js');
+
+    assert.equal(includeFiles.includes('server/prompt-*.js'), true);
+    assert.equal(packageJson.dependencies?.['@ffmpeg-installer/ffmpeg'], '^1.1.0');
+    assert.match(posterRuntime, /require\('@ffmpeg-installer\/ffmpeg'\)\.path/);
 });
 
 test('vercel recovery readiness functions include non-runtime audit assets', () => {
