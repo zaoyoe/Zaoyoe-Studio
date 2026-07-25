@@ -2,12 +2,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const repoRoot = path.resolve(__dirname, '..');
 const extensionRoot = path.join(repoRoot, 'integrations', 'meigen-gallery-collector');
 
 function readExtensionFile(fileName) {
     return fs.readFileSync(path.join(extensionRoot, fileName), 'utf8');
+}
+
+function extractSimpleFunction(source, functionName) {
+    const pattern = new RegExp(`function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n    \\}`);
+    const match = source.match(pattern);
+    assert.ok(match, `Expected to find ${functionName}`);
+    return match[0];
 }
 
 test('Meigen collector Chrome extension declares the expected surfaces', () => {
@@ -35,11 +43,104 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('clipboardRead'), true);
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.40');
+    assert.equal(manifest.host_permissions.includes('https://images.meigen.ai/*'), true);
+    assert.equal(manifest.version, '0.1.47');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
     assert.equal(manifest.host_permissions.includes('http://localhost:*/*'), true);
+});
+
+test('Meigen collector keeps active, pending, and published records within the discovery target', () => {
+    const content = readExtensionFile('content.js');
+    const context = {
+        streamStageState: {
+            processableCount: 17,
+            pendingDetailCount: 5,
+            cleanedPublishedCount: 3
+        }
+    };
+    vm.runInNewContext([
+        extractSimpleFunction(content, 'getStreamActiveCount'),
+        extractSimpleFunction(content, 'getStreamFulfilledCount'),
+        extractSimpleFunction(content, 'getStreamCandidateCount'),
+        'globalThis.getStreamCandidateCount = getStreamCandidateCount;',
+        'globalThis.getStreamFulfilledCount = getStreamFulfilledCount;'
+    ].join('\n'), context);
+
+    assert.equal(context.getStreamFulfilledCount(), 20);
+    assert.equal(context.getStreamCandidateCount(), 25);
+    context.streamStageState.pendingDetailCount = 8;
+    assert.equal(context.getStreamCandidateCount(), 28);
+});
+
+test('Meigen collector does not restore cleaned repository duplicates as retry candidates', () => {
+    const content = readExtensionFile('content.js');
+    assert.match(
+        content,
+        /String\(item\?\.status \|\| ''\) === 'cleaned'[\s\S]{0,180}!String\(item\?\.duplicate_of_prompt_id \|\| ''\)\.trim\(\)/
+    );
+});
+
+test('Meigen collector preflights video etags and poster hashes before staging', () => {
+    const background = readExtensionFile('background.js');
+    assert.match(background, /method:\s*'HEAD'/);
+    assert.match(background, /source_fingerprint:\s*`http-etag:\$\{etag\}:\$\{contentLength\}`/);
+    assert.match(background, /crypto\.subtle\.digest\('SHA-256', buffer\)/);
+    assert.match(background, /poster-sha256:\$\{hex\}/);
+    assert.match(background, /await enrichPayloadVideoFingerprints\(payload\)/);
+});
+
+test('Meigen collector reserves retry slots without blocking ordinary new candidates', () => {
+    const content = readExtensionFile('content.js');
+    const context = {};
+    vm.runInNewContext([
+        extractSimpleFunction(content, 'getStreamRetryCapacity'),
+        'globalThis.getStreamRetryCapacity = getStreamRetryCapacity;'
+    ].join('\n'), context);
+
+    assert.deepEqual(
+        { ...context.getStreamRetryCapacity(197, ['retry-1', 'retry-2', 'retry-3', 'retry-4', 'retry-5']) },
+        { unstagedRetryCount: 5, retryReservedCount: 5, regularCapacity: 192 }
+    );
+    assert.deepEqual(
+        { ...context.getStreamRetryCapacity(5, ['retry-1', 'retry-2'], new Set(['retry-1'])) },
+        { unstagedRetryCount: 1, retryReservedCount: 1, regularCapacity: 4 }
+    );
+    assert.deepEqual(
+        { ...context.getStreamRetryCapacity(3, ['retry-1', 'retry-2', 'retry-3', 'retry-4']) },
+        { unstagedRetryCount: 4, retryReservedCount: 3, regularCapacity: 0 }
+    );
+    assert.deepEqual(
+        { ...context.getStreamRetryCapacity(5, ['retry-1', 'retry-2', 'retry-3', 'retry-4', 'retry-5'], null, 0, false) },
+        { unstagedRetryCount: 5, retryReservedCount: 0, regularCapacity: 5 }
+    );
+});
+
+test('Meigen collector releases stale retry reservations after a bounded candidate window', () => {
+    const content = readExtensionFile('content.js');
+    const constantSource = [
+        'AUTOMATION_RETRY_RESERVATION_MIN_DEFERRED',
+        'AUTOMATION_RETRY_RESERVATION_MULTIPLIER',
+        'AUTOMATION_RETRY_RESERVATION_MAX_DEFERRED'
+    ].map((name) => content.match(new RegExp(`const ${name} = \\d+;`))?.[0]).join('\n');
+    assert.ok(!constantSource.includes('undefined'), 'Expected retry reservation threshold constants');
+    const context = {};
+    vm.runInNewContext([
+        constantSource,
+        extractSimpleFunction(content, 'getStreamRetryReservationReleaseThreshold'),
+        extractSimpleFunction(content, 'shouldReleaseStreamRetryReservation'),
+        'globalThis.getThreshold = getStreamRetryReservationReleaseThreshold;',
+        'globalThis.shouldRelease = shouldReleaseStreamRetryReservation;'
+    ].join('\n'), context);
+
+    assert.equal(context.getThreshold(1), 12);
+    assert.equal(context.getThreshold(5), 15);
+    assert.equal(context.getThreshold(50), 60);
+    assert.equal(context.shouldRelease(5, 5, 0, 14), false);
+    assert.equal(context.shouldRelease(5, 5, 0, 15), true);
+    assert.equal(context.shouldRelease(8, 5, 0, 30), false);
+    assert.equal(context.shouldRelease(5, 5, 1, 30), false);
 });
 
 test('Meigen collector extension can collect, download, and stage import payloads', () => {
@@ -83,33 +184,46 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function beginSweepAtCurrentPosition/);
     assert.match(content, /await beginSweepAtCurrentPosition\(\)/);
     assert.match(content, /logDiagnostic\('current-sweep-start'/);
-    assert.doesNotMatch(content, /window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)/);
+    assert.match(content, /function beginRecoverySweep\(\)[\s\S]{0,180}window\.scrollTo\(\{ top: 0, behavior: 'auto' \}\)/);
+    assert.match(content, /retry-recovery-sweep-start/);
     assert.match(content, /const initialPayload = collector\.buildPayload[\s\S]*if \(message\.streamToQueue\) \{[\s\S]*await stageStreamItemsToTarget\(initialCheck\.uniqueItems[\s\S]*for \(let index = 0; index < maxSteps; index \+= 1\) \{[\s\S]*await scrollAndWaitForGalleryBatch\(\)/);
     assert.match(content, /AUTOMATION_SCROLL_MAX_STEPS\s*=\s*1000/);
     assert.match(content, /let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS/);
-    assert.match(content, /while \(getStreamActiveCount\(\) < maxItems[\s\S]*&& !automationJob\.stopRequested\)/);
+    assert.match(content, /while \(getStreamFulfilledCount\(\) < maxItems[\s\S]*&& !automationJob\.stopRequested\)/);
     assert.match(content, /exhausted:\s*sourceExhausted/);
     assert.match(content, /来源已连续稳定到底/);
-    assert.match(content, /已达到安全滚动上限/);
+    assert.match(content, /已达到 \$\{AUTOMATION_SCROLL_MAX_STEPS\} 步安全滚动上限/);
     assert.match(content, /function stageStreamItemsToTarget/);
     assert.match(content, /function alignPayloadItemsWithStreamBatch/);
     assert.match(content, /streamStageState\.acceptedKeys\.has\(key\)/);
     assert.match(content, /logDiagnostic\('stream-payload-aligned'/);
     assert.match(content, /const capacityDeferredItems = candidates\.filter/);
+    assert.match(content, /function getStreamRetryCapacity/);
+    assert.match(content, /getStreamRetryCapacity\([\s\S]{0,180}streamStageState\.retryItems\.keys\(\)/);
+    assert.match(content, /const newItems = \[\.\.\.selectedRetryItems, \.\.\.selectedRegularItems\]/);
+    assert.match(content, /stream-capacity-reserved-for-retry/);
+    assert.match(content, /stream-retry-reservation-released/);
+    assert.match(content, /shouldReleaseStreamRetryReservation\(/);
+    assert.match(content, /batchRemaining <= unstagedRetryCount/);
+    assert.doesNotMatch(content, /stream-new-candidates-deferred-for-retry/);
     assert.match(content, /capacityDeferredKeys:\s*new Set\(\)/);
     assert.match(content, /streamStageState\.capacityDeferredKeys\.has\(key\)/);
     assert.match(content, /streamStageState\.capacityDeferredKeys\.add\(key\)/);
+    assert.match(content, /streamStageState\.sentRevisions\.delete\(key\)/);
     assert.match(content, /capacityDeferredKeys: Array\.from\(streamStageState\.capacityDeferredKeys\)/);
     assert.match(content, /logDiagnostic\('stream-candidates-capacity-deferred'/);
     assert.match(content, /await stageStreamItemsToTarget\(initialCheck\.uniqueItems[\s\S]{0,500}alignPayloadItemsWithStreamBatch\(initialMergedItems\)/);
     assert.match(content, /await stageStreamItemsToTarget\(duplicateCheck\.uniqueItems[\s\S]{0,700}alignPayloadItemsWithStreamBatch\(mergedPayloadItems\)/);
-    assert.match(content, /function getStreamCandidateCount\(\) \{[\s\S]{0,100}return getStreamActiveCount\(\)/);
-    assert.match(content, /Math\.max\(0, maxItems - getStreamCandidateCount\(\)\)/);
+    assert.match(content, /function getStreamCandidateCount\(\)/);
+    assert.match(content, /function getStreamProcessableCount\(\) \{[\s\S]{0,100}return streamStageState\.processableCount/);
+    assert.match(content, /function getStreamFulfilledCount\(\) \{[\s\S]{0,120}cleanedPublishedCount/);
+    assert.match(content, /return getStreamFulfilledCount\(\) \+ streamStageState\.pendingDetailCount/);
+    assert.match(content, /maxItems - getStreamCandidateCount\(\)/);
     assert.doesNotMatch(content, /pendingDetailBaseline/);
-    assert.match(content, /getStreamCandidateCount\(\) >= maxItems/);
+    assert.match(content, /getStreamCandidateCount\(\) >= streamTarget/);
     assert.match(content, /revisionItems = candidates\.filter\(\(item\) => streamStageState\.acceptedKeys\.has\(getStreamItemKey\(item\)\)\)/);
     assert.match(content, /const stagedItems = \[\.\.\.revisionItems, \.\.\.newItems\]/);
-    assert.match(content, /stageStreamItemsToTarget\(duplicateCheck\.uniqueItems, message, maxItems, \{[\s\S]{0,160}pendingDetail: true/);
+    assert.match(content, /stageStreamItemsToTarget\(duplicateCheck\.uniqueItems, message, streamTarget, \{[\s\S]{0,160}pendingDetail: true/);
     assert.match(content, /stream_pending_detail: true/);
     assert.match(content, /function getMeigenIdentityConflictReason/);
     assert.match(content, /function isStreamItemRevisionImproved/);
@@ -117,7 +231,9 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /checkedRevisions:\s*new Map\(\)/);
     assert.match(content, /checkedKeys\.has\(key\)[\s\S]{0,100}&& !wasCapacityDeferred[\s\S]{0,100}&& !isStreamItemRevisionImproved\(checkedRevisions\.get\(key\), revision\)/);
     assert.doesNotMatch(content, /streamStageState\.stagedCount >= maxItems/);
-    assert.match(content, /streamStageState\.processableCount < maxItems/);
+    assert.match(content, /getStreamFulfilledCount\(\) < maxItems/);
+    assert.match(content, /logDiagnostic\('over-capacity-batch-recovery'/);
+    assert.match(content, /pendingItems\.slice\(0, remainingProcessableSlots\)/);
     assert.match(content, /phase: 'incomplete'/);
     assert.match(content, /phase: 'stopped'/);
     assert.match(content, /FATHER_KEY_MEIGEN_AUTOMATION_STOP/);
@@ -130,29 +246,37 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /function stopActiveCollection/);
     assert.match(content, /restoreStreamBatch\(message\)/);
     assert.match(content, /cleanupPendingStreamItems\(message, payload\)/);
-    assert.match(content, /pending-detail-retained/);
+    assert.doesNotMatch(content, /pending-detail-retained/);
     assert.match(content, /const unmatchedPendingCount = Math\.max/);
-    assert.match(content, /retryableItems\.length \|\| unmatchedPendingCount > 0/);
-    assert.match(content, /item\?\.stream_pending_detail === true && needsInteractiveDetail\(item\)/);
+    assert.doesNotMatch(content, /pending-detail-unmatched-cleanup/);
+    assert.match(content, /item\?\.stream_pending_detail === true && needsRequiredDetail\(item\)/);
+    assert.match(content, /pending-detail-finalized[\s\S]{0,240}retryableCount[\s\S]{0,160}unmatchedPendingCount/);
     assert.match(content, /const hasVideo = \(Array\.isArray\(item\?\.video_sources\)/);
     assert.match(content, /return hasVideo \|\| promptNeedsDetailEnrichment/);
     assert.match(content, /async \(targetItem = \{\}\) =>/);
     assert.match(content, /queueStreamStage\(\[stagedItem\], streamMessage, \{ flush: true, force: true \}\)/);
     assert.doesNotMatch(content, /queueStreamStage\(markPendingDetail\(detailJob\.lastPayload/);
-    assert.match(content, /stream_discovery_deferred: true/);
-    assert.match(content, /item\?\.stream_discovery_deferred !== true/);
+    assert.doesNotMatch(content, /stream_discovery_deferred: true/);
     assert.match(content, /function getContinuablePayload/);
-    assert.match(content, /item\?\.stream_final_status !== 'unresolved'/);
+    assert.match(content, /retryItems:\s*new Map\(\)/);
+    assert.match(content, /retryItems: Array\.from\(streamStageState\.retryItems\.entries\(\)\)/);
+    assert.match(content, /batchTargetCount = Math\.max/);
+    assert.match(content, /maxItems = normalizeMaxItems\(streamStageState\.batchTargetCount\)/);
+    assert.match(background, /includeCleaned=true/);
+    assert.match(content, /AUTOMATION_DETAIL_RETRY_PASSES = 2/);
+    assert.match(content, /logDiagnostic\('scroll-paused-for-detail'/);
     assert.match(content, /AUTOMATION_STAGNANT_LIMIT = 3/);
     assert.match(content, /logDiagnostic\('automation-stagnant-source'/);
-    assert.match(content, /stream_final_status:\s*'unresolved'/);
-    assert.match(content, /item\.stream_final_status === 'unresolved'/);
+    assert.match(content, /stream_retry_pending:\s*true/);
     assert.match(content, /logDiagnostic\('scroll-initial-scan'/);
     assert.match(content, /logDiagnostic\('scroll-scan'/);
     assert.match(content, /logDiagnostic\('scroll-final-verification'/);
     assert.match(content, /viewportOnly:\s*true/);
     assert.match(content, /structuredCacheMs/);
     assert.match(background, /FATHER_KEY_LOAD_IMPORT_BATCH/);
+    assert.match(background, /FATHER_KEY_FIND_RECOVERABLE_IMPORT_BATCH/);
+    assert.match(background, /stats\.retry_pending \|\| stats\.cleaned_unpublished/);
+    assert.match(background, /aggregate\.capacityDeferredCount \+= Number\(result\.capacityDeferredCount \|\| 0\)/);
     assert.match(background, /cleanup_pending_detail_items/);
     assert.match(popup, /state\.automationStatus\.pendingDetail === 0/);
     assert.match(content, /bufferedItems\.length < 3/);
@@ -205,7 +329,11 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(background, /items\.slice\(index, index \+ 3\)/);
     assert.match(popup, /batchId:\s*state\.streamedBatchId/);
     assert.match(html, /id="collectBtn"[^>]*>全自动采集并入队</);
-    assert.match(popup, /async function runFullyAutomaticCollectionTask/);
+    assert.match(html, /id="recoverBtn"[^>]*>恢复待重新采集</);
+    assert.match(popup, /async function runFullyAutomaticCollectionTask\(\{ batchId = null \} = \{\}\)/);
+    assert.match(popup, /async function recoverLatestImportBatch/);
+    assert.match(popup, /state\.automationStatus\.fulfilled >= state\.automationStatus\.target/);
+    assert.match(popup, /runFullyAutomaticCollectionTask\(\{ batchId: state\.streamedBatchId \}\)/);
     assert.match(popup, /type: MESSAGE_AUTOMATION_START/);
     assert.match(popup, /function startAutomationPolling/);
     assert.match(content, /async function runFullyAutomaticCollection/);
@@ -214,10 +342,12 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /message\?\.type === MESSAGE_AUTOMATION_STATUS/);
     assert.match(popup, /streamToQueue:\s*true/);
     assert.match(popup, /state\.streamedBatchId/);
-    assert.match(popup, /服务端接收 \$\{status\.staged\}\/\$\{status\.target/);
+    assert.match(popup, /目标完成 \$\{status\.fulfilled\}\/\$\{status\.target/);
     assert.match(popup, /可处理 \$\{status\.processable\}/);
     assert.match(popup, /仓库已有 \$\{status\.repositoryDuplicates\}/);
     assert.match(popup, /当前扫描重复 \$\{status\.candidateDuplicates\}/);
+    assert.match(popup, /重采预留 \$\{status\.retryReserved\}/);
+    assert.match(popup, /待后续候选 \$\{status\.deferredCandidates\}/);
     assert.doesNotMatch(popup, /历史顽固/);
     assert.match(popup, /getElement\('diagnosticsBtn'\)\.disabled = false/);
     assert.match(popup, /关闭插件不影响后台任务/);
@@ -231,7 +361,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /未定位到当前作品卡片/);
     assert.match(content, /详情已打开，但还没有读到提示词/);
     assert.match(content, /function needsInteractiveDetail/);
-    assert.match(content, /baseItems\.filter\(\(item\) => needsInteractiveDetail/);
+    assert.match(content, /baseItems\.filter\(\(item\) => requiredDetailsOnly[\s\S]{0,160}needsRequiredDetail\(item\)[\s\S]{0,160}needsInteractiveDetail\(item/);
     assert.match(content, /requireFavoriteCount: hasFavoriteRange/);
     assert.match(content, /function hasBetterDetailThanBase/);
     assert.match(content, /detail-current-not-ready/);
@@ -290,7 +420,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-23\.89'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-25\.96'/);
     assert.match(collector, /!videoCollectionContext && !videoSources\.length/);
     assert.match(collector, /function extractMediaPromptBlocks/);
     assert.match(collector, /function formatMediaPromptBlocks/);
@@ -498,7 +628,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(popup, /已采集.*已入队/);
     assert.match(content, /async function filterRepositoryDuplicates/);
     assert.match(content, /candidateDuplicateSourceItemIds/);
-    assert.match(content, /targetCount >= maxItems/);
+    assert.match(content, /targetCount >= streamTarget/);
     assert.match(popup, /正在自动滚动加载/);
     assert.match(popup, /发现待补内容，正在补抓详情/);
     assert.match(popup, /条待补提示词/);

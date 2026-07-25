@@ -455,9 +455,20 @@ function normalizePromptVideoAsset(value) {
     if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
     const original = String(source.original || source.url || source.src || '').trim();
     if (!original || isSupabaseStorageImageUrl(original)) return null;
+    const posterAsset = normalizePromptImageAsset(
+        source.poster_asset
+        || source.posterAsset
+        || source.poster
+        || source.poster_url
+        || source.posterUrl
+        || null
+    );
+    const poster = getPromptImageAssetOriginalUrl(posterAsset)
+        || String(source.poster || source.poster_url || source.posterUrl || '').trim();
     return {
         original,
-        poster: String(source.poster || source.poster_url || source.posterUrl || '').trim(),
+        poster,
+        posterAsset,
         mimeType: String(source.mime_type || source.mimeType || source.type || 'video/mp4').trim(),
         width: Number(source.width || 0) || 0,
         height: Number(source.height || 0) || 0,
@@ -517,7 +528,9 @@ function applyPromptCardNaturalImageAspectRatio(card, cardImage) {
 }
 
 function getPromptPrimaryImageAsset(item = {}) {
-    return getPromptImageAssets(item)[0] || null;
+    const videoAsset = getPromptVideoAssets(item)[0];
+    const posterAsset = videoAsset?.posterAsset || normalizePromptImageAsset(videoAsset?.poster);
+    return posterAsset || getPromptImageAssets(item)[0] || null;
 }
 
 function getPromptModalImageUrl(url) {
@@ -3234,6 +3247,10 @@ function schedulePromptsDeferredEnhancements() {
         delayMs: PROMPTS_DEFERRED_COMMENT_COUNT_DELAY_MS,
         timeoutMs: 3000
     });
+    schedulePromptIdleTask('hotness-prefetch', () => loadPromptHotnessMetrics(), {
+        delayMs: 0,
+        timeoutMs: 1800
+    });
 }
 
 function getPromptInitialFilterFromLocation() {
@@ -3294,6 +3311,7 @@ async function completePromptPageInitialRender(initialFilter = 'all', tagParam =
     await galleryConfigPromise;
     renderGallery(initialFilter);
     setupFilters();
+    setupPromptMediaFilters();
     setupInfiniteScroll();
     setupSearch(); // Pinterest-style search
     checkAuthState(); // New: Check if admin is logged in
@@ -4311,6 +4329,12 @@ function initSpotlight() {
 // --- Infinite Gallery State ---
 let CARDS_PER_PAGE = 20; // Default initial/incremental render batch size.
 let currentFilter = 'all';
+let currentPromptMediaFilter = 'image';
+let currentPromptSort = 'random';
+let promptGalleryBaseFilteredItems = [];
+const promptRandomOrderKeys = new Map();
+const promptHotnessMetrics = new Map();
+let promptHotnessLoadPromise = null;
 let isLoading = false;
 let allFilteredItems = [];
 let allCardsRendered = false; // Track if all filtered cards have been rendered.
@@ -4489,9 +4513,11 @@ function sortPrompts(sortType) {
 }
 
 // --- Favorites System (Pinterest-style) ---
-const PROMPT_FAVORITES_USER_STORAGE_PREFIX = 'promptFavorites:user:';
+const PROMPT_FAVORITES_USER_STORAGE_PREFIX = 'promptFavoritesStable:user:';
+const PROMPT_FAVORITES_LEGACY_STORAGE_PREFIX = 'promptFavorites:user:';
 let promptFavoriteAuthUserId = '';
 let promptFavoriteAuthListenerBound = false;
+let promptFavoriteMutationVersion = 0;
 let favorites = new Set();
 
 function normalizePromptFavoriteId(id = '') {
@@ -4505,6 +4531,28 @@ function normalizePromptFavoriteUserId(id = '') {
 function getPromptFavoriteStorageKey(userId = promptFavoriteAuthUserId) {
     const normalizedUserId = normalizePromptFavoriteUserId(userId);
     return normalizedUserId ? `${PROMPT_FAVORITES_USER_STORAGE_PREFIX}${normalizedUserId}` : '';
+}
+
+function migrateLegacyPromptFavorites(userId = promptFavoriteAuthUserId) {
+    const normalizedUserId = normalizePromptFavoriteUserId(userId);
+    const storageKey = getPromptFavoriteStorageKey(normalizedUserId);
+    if (!normalizedUserId || !storageKey) return;
+
+    try {
+        if (localStorage.getItem(storageKey) !== null) return;
+        const legacyKey = `${PROMPT_FAVORITES_LEGACY_STORAGE_PREFIX}${normalizedUserId}`;
+        const parsed = JSON.parse(localStorage.getItem(legacyKey) || '[]');
+        const legacyIds = Array.isArray(parsed) ? parsed : [];
+        const stableIds = legacyIds.flatMap((legacyId) => {
+            const normalizedLegacyId = normalizePromptFavoriteId(legacyId);
+            const item = PROMPTS.find((prompt) => normalizePromptFavoriteId(prompt?.id) === normalizedLegacyId);
+            const persistentId = String(item?.supabaseId ?? item?.supabase_id ?? '').trim();
+            return persistentId ? [persistentId] : [];
+        });
+        localStorage.setItem(storageKey, JSON.stringify([...new Set(stableIds)]));
+    } catch (error) {
+        // Storage may be unavailable in privacy-restricted browsers.
+    }
 }
 
 function getStoredPromptFavorites(storageKey = getPromptFavoriteStorageKey()) {
@@ -4574,7 +4622,91 @@ function saveFavorites() {
         return;
     }
 
-    localStorage.setItem(storageKey, JSON.stringify([...favorites].map(normalizePromptFavoriteId).filter(Boolean)));
+    try {
+        localStorage.setItem(storageKey, JSON.stringify([...favorites].map(normalizePromptFavoriteId).filter(Boolean)));
+    } catch (error) {
+        // Keep the in-memory state when storage is unavailable.
+    }
+}
+
+async function syncPromptFavoriteToSupabase(promptId, shouldSave) {
+    const normalizedPromptId = normalizePromptFavoriteId(promptId);
+    if (!normalizedPromptId || !promptFavoriteAuthUserId || !window.supabaseClient) return false;
+
+    const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+    try {
+        if (shouldSave) {
+            const { error } = await window.supabaseClient
+                .from('prompt_favorites')
+                .upsert({
+                    user_id: promptFavoriteAuthUserId,
+                    prompt_id: normalizedPromptId,
+                    site
+                }, { onConflict: 'user_id,prompt_id,site' });
+            if (error) throw error;
+        } else {
+            const { error } = await window.supabaseClient
+                .from('prompt_favorites')
+                .delete()
+                .eq('user_id', promptFavoriteAuthUserId)
+                .eq('prompt_id', normalizedPromptId)
+                .eq('site', site);
+            if (error) throw error;
+        }
+        return true;
+    } catch (error) {
+        console.warn('[PromptFavorites] Cloud sync failed; local favorite remains available:', error?.message || error);
+        return false;
+    }
+}
+
+async function hydratePromptFavoriteCloudState() {
+    if (!promptFavoriteAuthUserId || !window.supabaseClient) return favorites;
+
+    const requestedUserId = promptFavoriteAuthUserId;
+    const requestedMutationVersion = promptFavoriteMutationVersion;
+    const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('prompt_favorites')
+            .select('prompt_id')
+            .eq('user_id', requestedUserId)
+            .eq('site', site);
+        if (error) throw error;
+        if (requestedUserId !== promptFavoriteAuthUserId) return favorites;
+        if (requestedMutationVersion !== promptFavoriteMutationVersion) return favorites;
+
+        const cloudFavorites = (Array.isArray(data) ? data : [])
+            .map((row) => normalizePromptFavoriteId(row?.prompt_id))
+            .filter(Boolean);
+        const mergedFavorites = new Set([...favorites, ...cloudFavorites]);
+        const localOnlyFavorites = [...mergedFavorites].filter((promptId) => !cloudFavorites.includes(promptId));
+        favorites = mergedFavorites;
+        saveFavorites();
+
+        if (localOnlyFavorites.length > 0) {
+            const { error: upsertError } = await window.supabaseClient
+                .from('prompt_favorites')
+                .upsert(localOnlyFavorites.map((promptId) => ({
+                    user_id: requestedUserId,
+                    prompt_id: promptId,
+                    site
+                })), { onConflict: 'user_id,prompt_id,site' });
+            if (upsertError) throw upsertError;
+        }
+        syncPromptFavoriteButtons();
+        if (currentFilter === 'favorites' && promptGalleryHasRendered) {
+            promptGalleryBaseFilteredItems = PROMPTS.filter((prompt) => (
+                isPromptFavoriteSaved(getPromptFavoriteIdForItem(prompt))
+            ));
+            allFilteredItems = applyPromptGalleryFiltersAndSort();
+            renderCurrentPage({ preserveScroll: true });
+        }
+        return favorites;
+    } catch (error) {
+        console.warn('[PromptFavorites] Cloud hydration failed; using local favorites:', error?.message || error);
+        return favorites;
+    }
 }
 
 function normalizePromptFavoriteCount(value, fallback = 0) {
@@ -4604,13 +4736,8 @@ function getPromptFavoriteDisplayCount(item = {}) {
 }
 
 function getPromptFavoriteIdForItem(item = {}) {
-    const persistentId = String(item.supabaseId ?? '').trim();
-    if (persistentId && Array.isArray(PROMPTS)) {
-        const galleryItem = PROMPTS.find((prompt) => String(prompt?.supabaseId ?? '').trim() === persistentId);
-        if (galleryItem) {
-            return normalizePromptFavoriteId(galleryItem.id ?? galleryItem.supabaseId ?? persistentId);
-        }
-    }
+    const persistentId = String(item.supabaseId ?? item.supabase_id ?? '').trim();
+    if (persistentId) return normalizePromptFavoriteId(persistentId);
     const itemId = normalizePromptFavoriteId(item.id ?? '');
     if (itemId) {
         return itemId;
@@ -4623,7 +4750,7 @@ function getPromptFavoriteIdForItem(item = {}) {
                 || String(prompt?.id ?? '').trim() === currentId;
         });
         if (galleryItem) {
-            return normalizePromptFavoriteId(galleryItem.id ?? galleryItem.supabaseId ?? currentId);
+            return normalizePromptFavoriteId(galleryItem.supabaseId ?? galleryItem.supabase_id ?? galleryItem.id ?? currentId);
         }
     }
 
@@ -4730,7 +4857,9 @@ function toggleFavorite(id, btn, e) {
     btn.classList.add('animating');
     setTimeout(() => btn.classList.remove('animating'), 400);
 
-    if (isPromptFavoriteSaved(favoriteId)) {
+    const shouldSave = !isPromptFavoriteSaved(favoriteId);
+    promptFavoriteMutationVersion += 1;
+    if (!shouldSave) {
         favorites.delete(favoriteId);
     } else {
         favorites.add(favoriteId);
@@ -4738,6 +4867,7 @@ function toggleFavorite(id, btn, e) {
     saveFavorites();
     updatePromptFavoriteButtonState(btn, favoriteId);
     syncPromptFavoriteButtons();
+    void syncPromptFavoriteToSupabase(favoriteId, shouldSave);
 
     // If viewing favorites, remove card if unsaved
     if (currentFilter === 'favorites' && !isPromptFavoriteSaved(favoriteId)) {
@@ -6011,8 +6141,11 @@ function setPromptFavoriteAuthUser(user = null, options = {}) {
     }
 
     promptFavoriteAuthUserId = nextUserId;
+    promptFavoriteMutationVersion += 1;
     if (promptFavoriteAuthUserId) {
+        migrateLegacyPromptFavorites(promptFavoriteAuthUserId);
         favorites = new Set(getStoredPromptFavorites());
+        void hydratePromptFavoriteCloudState();
     } else {
         favorites = new Set();
     }
@@ -6198,6 +6331,174 @@ function bindPromptCardActivation(card, promptId) {
 }
 
 // --- Render Gallery ---
+function promptMatchesMediaFilter(item, mediaFilter = currentPromptMediaFilter) {
+    const normalizedFilter = ['image', 'video'].includes(mediaFilter) ? mediaFilter : 'image';
+
+    const hasVideo = getPromptVideoAssets(item).length > 0;
+    if (normalizedFilter === 'video') return hasVideo;
+    return !hasVideo && getPromptImageAssets(item).length > 0;
+}
+
+function applyPromptMediaFilter(items = promptGalleryBaseFilteredItems) {
+    return (Array.isArray(items) ? items : []).filter((item) => (
+        promptMatchesMediaFilter(item, currentPromptMediaFilter)
+    ));
+}
+
+function getPromptSortKey(item = {}) {
+    return String(item.supabaseId ?? item.supabase_id ?? item.id ?? '').trim();
+}
+
+function getPromptRandomOrderKey(item = {}) {
+    const key = getPromptSortKey(item);
+    if (!promptRandomOrderKeys.has(key)) {
+        promptRandomOrderKeys.set(key, Math.random());
+    }
+    return promptRandomOrderKeys.get(key);
+}
+
+function comparePromptStableIds(a = {}, b = {}) {
+    return getPromptSortKey(a).localeCompare(getPromptSortKey(b), undefined, {
+        numeric: true,
+        sensitivity: 'base'
+    });
+}
+
+function applyPromptSort(items = []) {
+    const sortedItems = [...(Array.isArray(items) ? items : [])];
+    if (currentPromptSort === 'hot') {
+        return sortedItems.sort((a, b) => {
+            const aMetrics = promptHotnessMetrics.get(getPromptSortKey(a));
+            const bMetrics = promptHotnessMetrics.get(getPromptSortKey(b));
+            const scoreDifference = Number(bMetrics?.hot_score || 0) - Number(aMetrics?.hot_score || 0);
+            if (scoreDifference !== 0) return scoreDifference;
+            return comparePromptStableIds(a, b);
+        });
+    }
+
+    return sortedItems.sort((a, b) => {
+        const orderDifference = getPromptRandomOrderKey(a) - getPromptRandomOrderKey(b);
+        return orderDifference || comparePromptStableIds(a, b);
+    });
+}
+
+function applyPromptGalleryFiltersAndSort(items = promptGalleryBaseFilteredItems) {
+    return applyPromptSort(applyPromptMediaFilter(items));
+}
+
+function normalizePromptHotnessMetric(row = {}) {
+    const promptId = String(row.prompt_id ?? row.promptId ?? '').trim();
+    if (!promptId) return null;
+    return {
+        prompt_id: promptId,
+        favorite_count: Math.max(0, Number(row.favorite_count ?? row.favoriteCount) || 0),
+        comment_count: Math.max(0, Number(row.comment_count ?? row.commentCount) || 0),
+        click_count: Math.max(0, Number(row.click_count ?? row.clickCount) || 0),
+        hot_score: Math.max(0, Number(row.hot_score ?? row.hotScore) || 0)
+    };
+}
+
+async function loadPromptHotnessMetrics(options = {}) {
+    if (promptHotnessMetrics.size > 0 && options.forceRefresh !== true) return promptHotnessMetrics;
+    if (promptHotnessLoadPromise) return promptHotnessLoadPromise;
+    if (!window.supabaseClient?.rpc) return promptHotnessMetrics;
+
+    promptHotnessLoadPromise = (async () => {
+        const { data, error } = await window.supabaseClient.rpc('fn_public_prompt_hotness', {
+            p_site: window.SiteConfig?.site === 'intl' ? 'intl' : 'cn'
+        });
+        if (error) throw error;
+        promptHotnessMetrics.clear();
+        (Array.isArray(data) ? data : []).forEach((row) => {
+            const metric = normalizePromptHotnessMetric(row);
+            if (metric) promptHotnessMetrics.set(metric.prompt_id, metric);
+        });
+        return promptHotnessMetrics;
+    })().catch((error) => {
+        console.warn('[PromptSort] Failed to load hotness metrics:', error?.message || error);
+        return promptHotnessMetrics;
+    }).finally(() => {
+        promptHotnessLoadPromise = null;
+    });
+
+    return promptHotnessLoadPromise;
+}
+
+function syncPromptSortButtons(options = {}) {
+    document.querySelectorAll('.prompt-sort-filter__button[data-prompt-sort]').forEach((button) => {
+        const active = button.dataset.promptSort === currentPromptSort;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        button.disabled = options.loading === true && button.dataset.promptSort === 'hot';
+    });
+}
+
+async function setPromptSort(sortType = 'random') {
+    const normalizedSort = sortType === 'hot' ? 'hot' : 'random';
+    if (normalizedSort === currentPromptSort && promptGalleryHasRendered) return;
+
+    currentPromptSort = normalizedSort;
+    syncPromptSortButtons({ loading: normalizedSort === 'hot' && promptHotnessMetrics.size === 0 });
+    if (normalizedSort === 'hot') {
+        await loadPromptHotnessMetrics();
+        if (currentPromptSort !== normalizedSort) return;
+        if (promptHotnessMetrics.size === 0) {
+            currentPromptSort = 'random';
+        }
+    }
+    syncPromptSortButtons();
+    allFilteredItems = applyPromptGalleryFiltersAndSort();
+    renderCurrentPage({ preserveScroll: true });
+}
+
+function syncPromptMediaFilterButtons() {
+    document.querySelectorAll('.prompt-media-filter__button[data-media-filter]').forEach((button) => {
+        const active = button.dataset.mediaFilter === currentPromptMediaFilter;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+function setPromptMediaFilter(mediaFilter = 'image') {
+    const normalizedFilter = ['image', 'video'].includes(mediaFilter) ? mediaFilter : 'image';
+    if (normalizedFilter === currentPromptMediaFilter && promptGalleryHasRendered) return;
+
+    currentPromptMediaFilter = normalizedFilter;
+    syncPromptMediaFilterButtons();
+    allFilteredItems = applyPromptGalleryFiltersAndSort();
+    renderCurrentPage({ preserveScroll: true });
+}
+
+function setupPromptMediaFilters() {
+    const filter = document.querySelector('.prompt-media-filter');
+    if (filter && filter.dataset.bound !== 'true') {
+        filter.dataset.bound = 'true';
+        filter.addEventListener('click', (event) => {
+            const button = event.target.closest('.prompt-media-filter__button[data-media-filter]');
+            if (!button || !filter.contains(button)) return;
+            setPromptMediaFilter(button.dataset.mediaFilter);
+        });
+    }
+    syncPromptMediaFilterButtons();
+
+    const sortFilter = document.querySelector('.prompt-sort-filter');
+    if (sortFilter && sortFilter.dataset.bound !== 'true') {
+        sortFilter.dataset.bound = 'true';
+        const warmHotness = () => {
+            void loadPromptHotnessMetrics();
+        };
+        sortFilter.addEventListener('pointerenter', warmHotness, { once: true, passive: true });
+        sortFilter.addEventListener('focusin', warmHotness, { once: true });
+        sortFilter.addEventListener('touchstart', warmHotness, { once: true, passive: true });
+        sortFilter.addEventListener('click', (event) => {
+            const button = event.target.closest('.prompt-sort-filter__button[data-prompt-sort]');
+            if (!button || !sortFilter.contains(button)) return;
+            void setPromptSort(button.dataset.promptSort);
+        });
+    }
+    syncPromptSortButtons();
+}
+
 function renderGallery(filter, reset = true) {
     const grid = document.querySelector('.gallery-container');
     if (!grid) return;
@@ -6206,15 +6507,15 @@ function renderGallery(filter, reset = true) {
 
     if (reset) {
         if (filter === 'favorites') {
-            allFilteredItems = isPromptFavoriteUserAuthenticated()
-                ? PROMPTS.filter(p => isPromptFavoriteSaved(p.id))
+            promptGalleryBaseFilteredItems = isPromptFavoriteUserAuthenticated()
+                ? PROMPTS.filter((prompt) => isPromptFavoriteSaved(getPromptFavoriteIdForItem(prompt)))
                 : [];
         } else if (filter === 'all') {
-            allFilteredItems = [...PROMPTS];
+            promptGalleryBaseFilteredItems = [...PROMPTS];
         } else {
             // Filter by category tag OR AI tags (for sub-tag filtering)
             const filterLower = filter.toLowerCase();
-            allFilteredItems = PROMPTS.filter(p => {
+            promptGalleryBaseFilteredItems = PROMPTS.filter(p => {
                 // Check main tags array
                 if (p.tags && p.tags.some(t => t.toLowerCase() === filterLower)) {
                     return true;
@@ -6238,6 +6539,8 @@ function renderGallery(filter, reset = true) {
             });
         }
     }
+
+    allFilteredItems = applyPromptGalleryFiltersAndSort();
 
     renderCurrentPage();
     promptGalleryHasRendered = true;
@@ -6324,9 +6627,17 @@ function removePromptGalleryPaginationControls() {
 
 function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
     const videoAssets = getPromptVideoAssets(item);
-    const videoPosterAsset = videoAssets[0]?.poster ? normalizePromptImageAsset(videoAssets[0].poster) : null;
-    const imageAssets = getPromptImageAssets(item);
-    if (!imageAssets.length && videoPosterAsset) imageAssets.push(videoPosterAsset);
+    const videoPosterAsset = videoAssets[0]?.posterAsset || normalizePromptImageAsset(videoAssets[0]?.poster);
+    const sourceImageAssets = getPromptImageAssets(item);
+    const videoPosterKey = getPromptImageCanonicalDedupeKey(getPromptImageAssetOriginalUrl(videoPosterAsset));
+    const imageAssets = videoPosterAsset
+        ? [
+            videoPosterAsset,
+            ...sourceImageAssets.filter((asset) => (
+                getPromptImageCanonicalDedupeKey(getPromptImageAssetOriginalUrl(asset)) !== videoPosterKey
+            ))
+        ]
+        : sourceImageAssets;
     const primaryImageAsset = imageAssets[0] || null;
     const shouldLoadImageEagerly = itemIndex < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
     const promptOpenId = getPromptStableOpenId(item);
@@ -6346,7 +6657,7 @@ function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
         ? `<div class="card-indicators">${imageAssets.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
         : '';
 
-    const promptFavoriteId = normalizePromptFavoriteId(item.id);
+    const promptFavoriteId = getPromptFavoriteIdForItem(item);
     const promptSourceActionsMarkup = `
         ${buildPromptSourceLinkMarkup(item)}
         ${buildPromptFavoriteClusterMarkup(item, { favoriteId: promptFavoriteId })}
@@ -7415,6 +7726,8 @@ function applySearchResults(matchedIds, searchingForColor) {
 
         return isVisible;
     });
+    promptGalleryBaseFilteredItems = allFilteredItems;
+    allFilteredItems = applyPromptGalleryFiltersAndSort(promptGalleryBaseFilteredItems);
 
     renderCurrentPage();
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -8822,6 +9135,60 @@ function findPromptForModalOpen(id) {
         || null;
 }
 
+let promptCardClickFallbackSessionId = '';
+
+function getPromptCardClickSessionId() {
+    const trackerSessionId = String(window.UserEventTracker?.getSessionId?.() || '').trim();
+    if (trackerSessionId) return trackerSessionId;
+
+    const storageKey = 'prompt-card-click:session-id';
+    try {
+        const storedSessionId = String(sessionStorage.getItem(storageKey) || '').trim();
+        if (storedSessionId) return storedSessionId;
+
+        const generatedSessionId = typeof window.crypto?.randomUUID === 'function'
+            ? `prompt_${window.crypto.randomUUID()}`
+            : `prompt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        sessionStorage.setItem(storageKey, generatedSessionId);
+        return generatedSessionId;
+    } catch (error) {
+        if (!promptCardClickFallbackSessionId) {
+            promptCardClickFallbackSessionId = `prompt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        }
+        return promptCardClickFallbackSessionId;
+    }
+}
+
+function recordPromptCardClick(promptId) {
+    const normalizedPromptId = String(promptId || '').trim();
+    if (!normalizedPromptId || !window.supabaseClient?.rpc) return;
+
+    const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+    const dedupeKey = `prompt-card-click:${site}:${normalizedPromptId}`;
+    try {
+        if (sessionStorage.getItem(dedupeKey)) return;
+    } catch (error) {
+        // Database-side session deduplication still protects the metric.
+    }
+
+    const sessionId = getPromptCardClickSessionId();
+    void window.supabaseClient.rpc('fn_record_prompt_card_click', {
+        p_prompt_id: normalizedPromptId,
+        p_site: site,
+        p_session_id: sessionId
+    }).then(({ data, error } = {}) => {
+        if (error) throw error;
+        if (data !== true) return;
+        try {
+            sessionStorage.setItem(dedupeKey, '1');
+        } catch (storageError) {
+            // Database-side session deduplication remains authoritative.
+        }
+    }).catch((error) => {
+        console.debug('[PromptSort] Card click count failed:', error?.message || error);
+    });
+}
+
 function openPromptModal(id, options = {}) {
     const item = findPromptForModalOpen(id);
     if (!item) return;
@@ -8831,6 +9198,7 @@ function openPromptModal(id, options = {}) {
 
     currentPromptId = getPromptStableOpenId(item);
     const modalPromptId = String(currentPromptId || '').trim();
+    recordPromptCardClick(modalPromptId);
     console.log('[DEBUG] openPromptModal opening:', {
         localId: id,
         supabaseId: currentPromptId,

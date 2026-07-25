@@ -18,6 +18,9 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     const handler = readRepoFile(path.join('server', 'api-handlers', 'admin', 'prompts', 'imports.js'));
     const migration = readRepoFile(path.join('supabase', 'migrations', '20260709_prompt_gallery_import_staging.sql'));
     const promptIdFixMigration = readRepoFile(path.join('supabase', 'migrations', '20260709_prompt_gallery_import_prompt_ids_text.sql'));
+    const dedupeMigration = readRepoFile(path.join('supabase', 'migrations', '20260725_prompt_gallery_import_dedupe_rpc.sql'));
+    assert.equal(html.includes('meigenRetryRecovery=20260724_MEIGEN_RETRY_RECOVERY_1'), true);
+    assert.equal(html.includes('meigenPromptDedupe=20260725_MEIGEN_VIDEO_FINGERPRINT_2'), true);
 
     const htmlMarkers = [
         'data-view="create"',
@@ -104,7 +107,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-23.87';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-25.96';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -114,6 +117,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         '当前 AI 服务密钥无效或已失效',
         'function getGalleryImportFailureInfo(item = {})',
         'function buildGalleryImportCollectorBookmarklet()',
+        "Object.prototype.hasOwnProperty.call(stats, 'retry_pending')",
+        '<span>待重新采集 ${stats.retryPending}</span>',
         'function copyGalleryImportCollector()',
         'function buildGalleryImportPreviewItems(items = [])',
         'function loadGalleryImportRawText(rawText = \'\', statusPrefix = \'已读取\')',
@@ -328,10 +333,15 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     const handlerMarkers = [
         'async function stageImportItems',
         'async function checkImportItemDuplicates',
-        "sourceIdentityOnly: settings.source === 'meigen'",
-        "sourceIdentityOnly: source === 'meigen'",
-        "existingBySourceItemId.has(String(row.source_item_id || ''))",
+        "supabase.rpc('fn_admin_find_prompt_duplicates'",
+        'p_source_urls: Array.from(sourceUrlSet)',
+        'p_prompt_hashes: Array.from(promptHashSet)',
+        'buildExistingPromptHashOwners(existingRows || []).forEach((owner, promptHash)',
         'ignoredExistingCount: ignoredExistingIndexes.size',
+        'capacityDeferredCount: capacityDeferredIndexes.size',
+        'capacityDeferredSourceItemIds:',
+        'reserveImportBatchSlot(occupiedBatchItemCount, maxItems',
+        'countOccupiedImportBatchItems(existingRows || [])',
         "if (action === 'check_duplicates')",
         'const maxItems = normalizePositiveInteger(settings.max_items, 50, 1000);',
         '.slice(0, maxItems)',
@@ -340,6 +350,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         'prompt_import.skip_duplicate',
         'async function uploadImportItemImages',
         'function buildCleanedImportedItemPayload',
+        'function buildCleanedDuplicateItemPayload',
+        "cleanup_reason: 'repository_duplicate'",
         'function buildDeferredImportedItemPayload',
         'import_image_count',
         'expected_image_count',
@@ -393,6 +405,21 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     ];
     for (const marker of promptIdFixMarkers) {
         assert.equal(promptIdFixMigration.includes(marker), true, `prompt id fix migration should contain ${marker}`);
+    }
+
+    const dedupeMigrationMarkers = [
+        'CREATE OR REPLACE FUNCTION public.fn_prompt_import_prompt_hash',
+        'idx_prompts_prompt_text_import_hash',
+        'idx_prompts_prompt_text_en_import_hash',
+        'idx_prompts_prompt_text_zh_import_hash',
+        'idx_prompts_video_fingerprints_import_dedupe',
+        'idx_prompts_video_poster_hashes_import_dedupe',
+        'uniq_prompts_primary_video_sha256',
+        'CREATE OR REPLACE FUNCTION public.fn_admin_find_prompt_duplicates',
+        'GRANT EXECUTE ON FUNCTION public.fn_admin_find_prompt_duplicates(TEXT[], TEXT[], TEXT[], TEXT[], TEXT[]) TO service_role'
+    ];
+    for (const marker of dedupeMigrationMarkers) {
+        assert.equal(dedupeMigration.includes(marker), true, `dedupe migration should contain ${marker}`);
     }
 });
 
@@ -713,6 +740,15 @@ test('prompt import payload requires source attribution, prompt, and images', ()
         finalImageAssets: [{ original: 'https://cdn.fatherkey.com/prompts/imports/a.jpg' }]
     });
     assert.equal(cleanedItemPayload.final_prompt_id, '379');
+
+    const cleanedDuplicatePayload = _private.buildCleanedDuplicateItemPayload({
+        duplicateOfPromptId: 380
+    });
+    assert.equal(cleanedDuplicatePayload.status, 'cleaned');
+    assert.equal(cleanedDuplicatePayload.duplicate_of_prompt_id, '380');
+    assert.equal(cleanedDuplicatePayload.prompt_text, '');
+    assert.deepEqual(cleanedDuplicatePayload.image_sources, []);
+    assert.equal(cleanedDuplicatePayload.error_details.cleanup_reason, 'repository_duplicate');
 });
 
 test('prompt import stats only count persisted prompt references as published', () => {
@@ -721,16 +757,19 @@ test('prompt import stats only count persisted prompt references as published', 
         { status: 'imported', final_prompt_id: 'prompt-1' },
         { status: 'cleaned', final_prompt_id: 'prompt-2' },
         { status: 'cleaned', final_prompt_id: null },
+        { status: 'cleaned', final_prompt_id: null, duplicate_of_prompt_id: 'prompt-3' },
         { status: 'failed', final_prompt_id: null }
     ]);
 
-    assert.equal(stats.total, 4);
+    assert.equal(stats.total, 5);
     assert.equal(stats.imported, 1);
-    assert.equal(stats.cleaned, 2);
+    assert.equal(stats.cleaned, 3);
     assert.equal(stats.failed, 1);
     assert.equal(stats.published, 2);
     assert.equal(stats.cleaned_published, 1);
-    assert.equal(stats.cleaned_unpublished, 1);
+    assert.equal(stats.cleaned_unpublished, 2);
+    assert.equal(stats.cleaned_duplicates, 1);
+    assert.equal(stats.retry_pending, 1);
 });
 
 test('prompt import image guard rejects private hosts and non-image payloads', () => {
@@ -786,26 +825,104 @@ test('prompt repository dedupe scans fixed-size pages instead of putting prompts
     assert.deepEqual(calls.find((call) => call.type === 'range'), { type: 'range', start: 0, end: 499 });
 });
 
-test('Meigen repository dedupe uses direct source identity lookup', async () => {
+test('Meigen repository dedupe RPC checks source identity and normalized prompt hash', async () => {
     const { _private } = require('../server/api-handlers/admin/prompts/imports');
     const calls = [];
+    const promptText = `long prompt ${'detail '.repeat(1000)}`;
+    const promptHash = _private.hashPromptText(promptText);
     const supabase = {
+        async rpc(name, args) {
+            calls.push({ name, args });
+            return {
+                data: [{
+                    id: 'existing-source',
+                    source_url: 'https://x.com/artist/status/123',
+                    prompt_hash: promptHash
+                }],
+                error: null
+            };
+        }
+    };
+    const result = await _private.findExistingPromptDuplicates(supabase, [{
+        original_work_url: 'https://x.com/artist/status/123',
+        prompt_text: promptText
+    }]);
+    assert.equal(result.bySourceUrl.get('https://x.com/artist/status/123'), 'existing-source');
+    assert.equal(result.byPromptHash.get(promptHash), 'existing-source');
+    assert.deepEqual(calls, [{
+        name: 'fn_admin_find_prompt_duplicates',
+        args: {
+            p_source_urls: ['https://x.com/artist/status/123'],
+            p_prompt_hashes: [promptHash],
+            p_video_fingerprints: [],
+            p_video_hashes: [],
+            p_video_poster_hashes: []
+        }
+    }]);
+});
+
+test('Meigen repository dedupe matches video source, poster, and binary fingerprints', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const sourceFingerprint = 'http-etag:abcdef0123456789:3481862';
+    const posterHash = `poster-sha256:${'a'.repeat(64)}`;
+    const videoHash = `sha256:${'b'.repeat(64)}`;
+    const calls = [];
+    const supabase = {
+        async rpc(name, args) {
+            calls.push({ name, args });
+            return {
+                data: [
+                    { id: 'source-match', video_fingerprint: sourceFingerprint },
+                    { id: 'poster-match', video_fingerprint: posterHash },
+                    { id: 'hash-match', video_hash: videoHash }
+                ],
+                error: null
+            };
+        }
+    };
+    const result = await _private.findExistingPromptDuplicates(supabase, [{
+        video_sources: [{
+            url: 'https://images.meigen.ai/videos/2079520974517805421/video.mp4',
+            source_fingerprint: sourceFingerprint,
+            poster_content_hash: posterHash
+        }],
+        video_content_hashes: [videoHash]
+    }]);
+
+    assert.equal(result.byVideoFingerprint.get(sourceFingerprint), 'source-match');
+    assert.equal(result.byVideoFingerprint.get(posterHash), 'poster-match');
+    assert.equal(result.byVideoHash.get(videoHash), 'hash-match');
+    assert.deepEqual(calls[0].args.p_video_fingerprints, [sourceFingerprint, posterHash]);
+    assert.deepEqual(calls[0].args.p_video_poster_hashes, [posterHash]);
+    assert.deepEqual(calls[0].args.p_video_hashes, [videoHash, `sha256-prefix:${'b'.repeat(16)}`]);
+});
+
+test('prompt repository dedupe falls back to fixed-size scan when RPC is not migrated yet', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const promptText = 'Fallback prompt text';
+    const supabase = {
+        async rpc() {
+            return { data: null, error: { code: 'PGRST202', message: 'function not found in schema cache' } };
+        },
         from(table) {
             assert.equal(table, 'prompts');
             return {
                 select() {
                     return {
-                        async in(field, values) {
-                            calls.push({ field, values });
+                        order() {
                             return {
-                                data: [{
-                                    id: 'existing-source',
-                                    source_url: 'https://x.com/artist/status/123',
-                                    prompt_text: 'Existing long prompt',
-                                    prompt_text_en: '',
-                                    prompt_text_zh: ''
-                                }],
-                                error: null
+                                async range() {
+                                    return {
+                                        data: [{
+                                            id: 'fallback-prompt',
+                                            source_url: '',
+                                            prompt_text: promptText,
+                                            prompt_text_en: '',
+                                            prompt_text_zh: ''
+                                        }],
+                                        error: null
+                                    };
+                                }
                             };
                         }
                     };
@@ -813,60 +930,93 @@ test('Meigen repository dedupe uses direct source identity lookup', async () => 
             };
         }
     };
+    const result = await _private.findExistingPromptDuplicates(supabase, [{ prompt_text: promptText }]);
+    assert.equal(result.byPromptHash.get(_private.hashPromptText(promptText)), 'fallback-prompt');
+});
+
+test('prompt repository media dedupe fallback scans beyond the first page', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const sourceFingerprint = 'http-etag:abcdef0123456789:3481862';
+    const posterHash = `poster-sha256:${'a'.repeat(64)}`;
+    const videoHash = `sha256:${'b'.repeat(64)}`;
+    const ranges = [];
+    const firstPage = Array.from({ length: 500 }, (_value, index) => ({
+        id: `unrelated-${index}`,
+        source_url: '',
+        prompt_text: '',
+        prompt_text_en: '',
+        prompt_text_zh: '',
+        video_assets: [],
+        video_fingerprints: [],
+        video_poster_hashes: []
+    }));
+    const supabase = {
+        async rpc() {
+            return { data: null, error: { code: 'PGRST202', message: 'function not found in schema cache' } };
+        },
+        from(table) {
+            assert.equal(table, 'prompts');
+            return {
+                select() {
+                    return {
+                        order() {
+                            return {
+                                async range(start, end) {
+                                    ranges.push([start, end]);
+                                    if (start === 0) return { data: firstPage, error: null };
+                                    return {
+                                        data: [{
+                                            id: 'media-on-second-page',
+                                            source_url: '',
+                                            prompt_text: '',
+                                            prompt_text_en: '',
+                                            prompt_text_zh: '',
+                                            video_assets: [],
+                                            video_fingerprints: [
+                                                sourceFingerprint,
+                                                `sha256-prefix:${'b'.repeat(16)}`
+                                            ],
+                                            video_poster_hashes: [posterHash]
+                                        }],
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
+                    };
+                }
+            };
+        }
+    };
+
     const result = await _private.findExistingPromptDuplicates(supabase, [{
-        original_work_url: 'https://x.com/artist/status/123',
-        prompt_text: `long prompt ${'detail '.repeat(1000)}`
-    }], { sourceIdentityOnly: true });
-    assert.equal(result.bySourceUrl.get('https://x.com/artist/status/123'), 'existing-source');
-    assert.deepEqual(calls, [{
-        field: 'source_url',
-        values: ['https://x.com/artist/status/123']
+        video_sources: [{
+            url: 'https://cdn.example.com/a.mp4',
+            source_fingerprint: sourceFingerprint,
+            poster_content_hash: posterHash
+        }],
+        video_content_hashes: [videoHash]
     }]);
+
+    assert.deepEqual(ranges, [[0, 499], [500, 999]]);
+    assert.equal(result.byVideoFingerprint.get(sourceFingerprint), 'media-on-second-page');
+    assert.equal(result.byVideoFingerprint.get(posterHash), 'media-on-second-page');
+    assert.equal(result.byVideoHash.get(`sha256-prefix:${'b'.repeat(16)}`), 'media-on-second-page');
 });
 
 test('collector duplicate preflight reports repository and candidate duplicates without writing', async () => {
     const { _private } = require('../server/api-handlers/admin/prompts/imports');
     const calls = [];
     const supabase = {
-        from(table) {
-            calls.push(table);
-            if (table === 'prompt_import_items') {
-                return {
-                    select() {
-                        return {
-                            in() {
-                                return {
-                                    eq() {
-                                        return {
-                                            async is() {
-                                                return { data: [], error: null };
-                                            }
-                                        };
-                                    }
-                                };
-                            }
-                        };
-                    }
-                };
-            }
-            assert.equal(table, 'prompts');
+        async rpc(name, args) {
+            calls.push({ name, args });
             return {
-                select() {
-                    return {
-                        async in() {
-                            return {
-                                data: [{
-                                    id: 'existing-prompt',
-                                    source_url: 'https://x.com/artist/status/123456789012',
-                                    prompt_text: 'Existing repository prompt',
-                                    prompt_text_en: '',
-                                    prompt_text_zh: ''
-                                }],
-                                error: null
-                            };
-                        }
-                    };
-                }
+                data: [{
+                    id: 'existing-prompt',
+                    source_url: 'https://x.com/artist/status/123456789012',
+                    prompt_hash: _private.hashPromptText('Existing repository prompt')
+                }],
+                error: null
             };
         }
     };
@@ -909,7 +1059,57 @@ test('collector duplicate preflight reports repository and candidate duplicates 
         rejectedIdentityCount: 0,
         rejectedIdentitySourceItemIds: []
     });
-    assert.deepEqual(calls, ['prompts']);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, 'fn_admin_find_prompt_duplicates');
+    assert.equal(calls[0].args.p_source_urls.length, 4);
+    assert.equal(calls[0].args.p_prompt_hashes.length, 3);
+});
+
+test('collector preflight rejects different works that share a video fingerprint or poster hash', async () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const sourceFingerprint = 'http-etag:abcdef0123456789:3481862';
+    const posterHash = `poster-sha256:${'c'.repeat(64)}`;
+    const buildVideo = (url, fields) => ({ url, ...fields });
+    const supabase = {
+        async rpc() {
+            return { data: [], error: null };
+        }
+    };
+    const result = await _private.checkImportItemDuplicates(supabase, {
+        source: 'meigen',
+        settings: { max_items: 10 },
+        items: [
+            {
+                source_item_id: 'media-owner',
+                original_work_url: 'https://x.com/artist/status/1111111111111111111',
+                prompt: 'First unique prompt',
+                videos: [buildVideo('https://cdn.example.com/one.mp4', {
+                    source_fingerprint: sourceFingerprint,
+                    poster_content_hash: posterHash
+                })]
+            },
+            {
+                source_item_id: 'fingerprint-copy',
+                original_work_url: 'https://x.com/artist/status/2222222222222222222',
+                prompt: 'Second different prompt',
+                videos: [buildVideo('https://cdn.example.com/two.mp4', {
+                    source_fingerprint: sourceFingerprint
+                })]
+            },
+            {
+                source_item_id: 'poster-copy',
+                original_work_url: 'https://x.com/artist/status/3333333333333333333',
+                prompt: 'Third different prompt',
+                videos: [buildVideo('https://cdn.example.com/three.mp4', {
+                    poster_content_hash: posterHash
+                })]
+            }
+        ]
+    });
+
+    assert.deepEqual(result.duplicateSourceItemIds, ['fingerprint-copy', 'poster-copy']);
+    assert.deepEqual(result.candidateDuplicateSourceItemIds, ['fingerprint-copy', 'poster-copy']);
+    assert.equal(result.candidateCoverDuplicateCount, 2);
 });
 
 test('Meigen import rejects mismatched detail, source, and image identities', () => {
@@ -976,6 +1176,34 @@ test('streaming imports remain in review until detail enrichment arrives', () =>
     });
     assert.equal(pending.status, 'needs_review');
     assert.match(pending.error_summary, /等待详情补全/);
+});
+
+test('streaming import batch capacity is strict while existing revisions remain allowed', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    assert.deepEqual(_private.reserveImportBatchSlot(9, 10), { allowed: true, activeCount: 10 });
+    assert.deepEqual(_private.reserveImportBatchSlot(10, 10), { allowed: false, activeCount: 10 });
+    assert.deepEqual(
+        _private.reserveImportBatchSlot(10, 10, { alreadyActive: true }),
+        { allowed: true, activeCount: 10 }
+    );
+    assert.equal(_private.countOccupiedImportBatchItems([
+        { status: 'staged', final_prompt_id: null },
+        { status: 'cleaned', final_prompt_id: 'published-1' },
+        { status: 'cleaned', final_prompt_id: null }
+    ]), 2);
+});
+
+test('streaming import dedupe carries prompt hashes across microbatches', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const promptHash = _private.hashPromptText('Same normalized prompt');
+    const owners = _private.buildExistingPromptHashOwners([{
+        id: 'first-row',
+        source_item_id: 'microbatch-one',
+        prompt_hash: promptHash
+    }]);
+
+    assert.equal(owners.get(promptHash), 'microbatch-one');
+    assert.notEqual(owners.get(promptHash), 'microbatch-two');
 });
 
 test('automatic import cleanup preserves complete transient failures', () => {
@@ -1051,4 +1279,37 @@ test('gallery import supports R2-backed video sources without requiring image me
     });
     assert.deepEqual(payload.images, []);
     assert.equal(payload.video_assets.length, 1);
+});
+
+test('gallery import persists only the bound video poster hash and derives video sha prefix', () => {
+    const { _private } = require('../server/api-handlers/admin/prompts/imports');
+    const videoSha = 'd'.repeat(64);
+    const posterUrl = 'https://cdn.fatherkey.com/prompts/video-poster.jpg';
+    const imageUrl = 'https://cdn.fatherkey.com/prompts/ordinary-image.jpg';
+    const payload = _private.buildPromptPayloadFromImportItem({
+        prompt_text: 'A unique video prompt.',
+        video_sources: [{
+            url: 'https://images.meigen.ai/videos/2073446047326810304/video.mp4',
+            source_fingerprint: 'http-etag:abcdef0123456789:3481862'
+        }]
+    }, {
+        imageAssets: [
+            { original: imageUrl },
+            { original: posterUrl }
+        ],
+        imagePalettes: [
+            { image_url: imageUrl, image_hash: `sha256:${'e'.repeat(64)}` },
+            { image_url: posterUrl, image_hash: `sha256:${'f'.repeat(64)}` }
+        ],
+        videoAssets: [{
+            original: 'https://cdn.fatherkey.com/prompts/video.mp4',
+            poster: posterUrl,
+            content_hash: `sha256:${videoSha}`
+        }]
+    });
+
+    assert.deepEqual(payload.video_poster_hashes, [`poster-sha256:${'f'.repeat(64)}`]);
+    assert.equal(payload.video_fingerprints.includes(`sha256:${videoSha}`), true);
+    assert.equal(payload.video_fingerprints.includes(`sha256-prefix:${videoSha.slice(0, 16)}`), true);
+    assert.equal(payload.primary_video_sha256, videoSha);
 });

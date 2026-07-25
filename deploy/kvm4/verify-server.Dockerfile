@@ -1,6 +1,9 @@
 FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
+
+RUN apk add --no-cache ffmpeg
 
 COPY package*.json ./
 RUN npm ci --omit=dev

@@ -2162,6 +2162,78 @@ html[lang="en"] .nav-item .en {
 }
 
 /* --- Gallery Grid --- */
+.prompt-media-filter-bar {
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 10px 8px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.prompt-media-filter,
+.prompt-sort-filter {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    gap: 24px;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.2);
+}
+
+.prompt-media-filter__button,
+.prompt-sort-filter__button {
+    position: relative;
+    min-width: 42px;
+    min-height: 40px;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font: 500 0.8rem/1 var(--font-sans);
+    letter-spacing: 0;
+    cursor: pointer;
+    transition: color 180ms ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.prompt-media-filter__button::after,
+.prompt-sort-filter__button::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--prompt-detail-accent);
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform 180ms ease;
+}
+
+.prompt-media-filter__button:hover,
+.prompt-media-filter__button:focus-visible,
+.prompt-media-filter__button.is-active,
+.prompt-sort-filter__button:hover,
+.prompt-sort-filter__button:focus-visible,
+.prompt-sort-filter__button.is-active {
+    color: var(--text-main);
+}
+
+.prompt-media-filter__button:focus-visible,
+.prompt-sort-filter__button:focus-visible {
+    outline: 2px solid var(--prompt-detail-accent);
+    outline-offset: 3px;
+}
+
+.prompt-media-filter__button.is-active::after,
+.prompt-sort-filter__button.is-active::after {
+    transform: scaleX(1);
+}
+
 .gallery-container {
     padding: 10px 10px 10vh;
     max-width: 1600px;
@@ -5782,6 +5854,21 @@ html[data-theme="dark"] .prompt-comment-input-dock__field::placeholder {
         gap: 10px;
     }
 
+    .prompt-media-filter-bar {
+        padding: 14px 12px 0;
+    }
+
+    .prompt-media-filter,
+    .prompt-sort-filter {
+        min-height: 38px;
+        gap: 20px;
+    }
+
+    .prompt-media-filter__button,
+    .prompt-sort-filter__button {
+        min-height: 38px;
+    }
+
     .prompt-gallery-column {
         flex: 1 1 0;
         min-width: 0;
@@ -5876,6 +5963,10 @@ html[data-theme="dark"] .prompt-comment-input-dock__field::placeholder {
         gap: 1.2rem 0;
         /* Rem vertical, 0 horizontal (controlled by width margin) */
         justify-content: center;
+    }
+
+    html[lang="en"] .nav-items {
+        min-height: 0;
     }
 
     .nav-item {
