@@ -692,6 +692,7 @@ module.exports = {
     PROMPT_IMAGE_PALETTE_MIN_COLORS,
     PROMPT_IMAGE_PALETTE_MAX_COLORS,
     alignPromptImagePalettes,
+    createPaletteImagePipeline,
     downloadImageBuffer,
     extractPaletteColors,
     extractPromptImagePalette,

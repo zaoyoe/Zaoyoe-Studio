@@ -20,6 +20,7 @@
     const MESSAGE_AUTOMATION_STOP = 'FATHER_KEY_MEIGEN_AUTOMATION_STOP';
     const MESSAGE_AUTOMATION_STATUS = 'FATHER_KEY_MEIGEN_AUTOMATION_STATUS';
     const MESSAGE_RESET_STATE = 'FATHER_KEY_MEIGEN_RESET_STATE';
+    const MESSAGE_FIND_RECOVERABLE_BATCH = 'FATHER_KEY_FIND_RECOVERABLE_IMPORT_BATCH';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
     const DETAIL_STATUS_POLL_MS = 700;
     const SCROLL_STATUS_POLL_MS = 700;
@@ -190,6 +191,7 @@
         }
         const busy = state.automationRunning || state.automationStatus.running || state.detailStatus.running || state.scrollStatus.running || state.pageBatchStatus.running;
         getElement('collectBtn').disabled = busy;
+        getElement('recoverBtn').disabled = busy;
         getElement('stageBtn').disabled = !total || busy;
         getElement('downloadBtn').disabled = !total || busy;
         getElement('retryBtn').disabled = !retryableFailures || busy;
@@ -235,6 +237,11 @@
             rejected: Number(status.rejected || 0),
             processable: Number(status.processable || 0),
             pendingDetail: Number(status.pendingDetail || 0),
+            published: Number(status.published || 0),
+            fulfilled: Number(status.fulfilled || 0),
+            retryPending: Number(status.retryPending || 0),
+            retryReserved: Number(status.retryReserved || 0),
+            deferredCandidates: Number(status.deferredCandidates || 0),
             batchId: status.batchId || '',
             detailProcessed: Number(status.detailProcessed || 0),
             detailTotal: Number(status.detailTotal || 0),
@@ -257,6 +264,7 @@
             discovering: '第 1/3 阶段：发现候选并查库去重',
             paging: '第 1/3 阶段：继续翻页寻找候选',
             enriching: '第 2/3 阶段：补抓提示词与详情',
+            retrying: '第 2/3 阶段：重试补抓提示词与详情',
             completed: '第 3/3 阶段：任务已交给服务端',
             incomplete: '当前来源已采集完，目标尚未达到',
             failed: '任务已中断',
@@ -266,7 +274,7 @@
         container.hidden = !hasStatus;
         if (!hasStatus) return;
 
-        let current = status.staged;
+        let current = status.fulfilled;
         let total = status.target || Math.max(1, status.staged);
         if (status.phase === 'discovering') {
             current = status.scrollProcessed;
@@ -289,7 +297,7 @@
         getElement('automationProgressBar').style.width = `${percent}%`;
         getElement('automationProgressDetail').textContent = status.lastError
             ? `错误：${status.lastError}`
-            : `检查唯一作品 ${status.checkedCandidates} · 当前作品 ${status.discovered} · 仓库已有 ${status.repositoryDuplicates} · 当前扫描重复 ${status.candidateDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 服务端接收 ${status.staged}/${status.target || '--'} · 可处理 ${status.processable} · 待详情 ${status.pendingDetail} · 未接收 ${status.rejected}`;
+            : `检查唯一作品 ${status.checkedCandidates} · 当前作品 ${status.discovered} · 仓库已有 ${status.repositoryDuplicates} · 当前扫描重复 ${status.candidateDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 目标完成 ${status.fulfilled}/${status.target || '--'} · 可处理 ${status.processable} · 已发布 ${status.published} · 待详情 ${status.pendingDetail} · 待重新采集 ${status.retryPending} · 重采预留 ${status.retryReserved} · 待后续候选 ${status.deferredCandidates} · 未接收 ${status.rejected}`;
 
         if (status.running) {
             setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);
@@ -1020,7 +1028,7 @@
         const hasAuthoritativeImageCount = Boolean(item?.detail_expected_count_authoritative || item?.detail_image_count_authoritative);
         const imageCountIncomplete = hasAuthoritativeImageCount
             ? imageCount < Math.max(1, expectedImageCount)
-            : (videoCount > 0 ? imageCount < 1 : imageCount <= 1);
+            : imageCount < 1 && videoCount < 1;
         const favoriteCount = Number(item?.favorite_count || 0);
         const favoriteFilter = getFavoriteFilterSettings();
         const requireFavoriteCount = favoriteFilter.minFavorites > 0 || favoriteFilter.maxFavorites > 0;
@@ -1126,7 +1134,7 @@
         return response;
     }
 
-    async function runFullyAutomaticCollectionTask() {
+    async function runFullyAutomaticCollectionTask({ batchId = null } = {}) {
         if (state.automationRunning) return;
         state.automationRunning = true;
         state.streamStats = null;
@@ -1141,11 +1149,13 @@
                 site: getElement('siteSelect').value,
                 defaultStatus: getElement('statusSelect').value,
                 maxItems: getMaxItemsSetting(),
-                batchId: state.automationStatus.completed
-                    && state.automationStatus.pendingDetail === 0
-                    && state.automationStatus.processable >= state.automationStatus.target
-                    ? ''
-                    : state.streamedBatchId,
+                batchId: batchId !== null
+                    ? String(batchId || '')
+                    : (state.automationStatus.completed
+                        && state.automationStatus.pendingDetail === 0
+                        && state.automationStatus.fulfilled >= state.automationStatus.target
+                        ? ''
+                        : state.streamedBatchId),
                 ...getFavoriteFilterSettings()
             });
             if (!response?.ok) {
@@ -1161,6 +1171,35 @@
             state.automationRunning = false;
             updateSummary();
         }
+    }
+
+    async function recoverLatestImportBatch() {
+        if (state.automationRunning) return;
+        await saveSettings();
+        setStatus('正在查找最近的待重新采集批次...');
+        let response = null;
+        try {
+            response = await chrome.runtime.sendMessage({
+                type: MESSAGE_FIND_RECOVERABLE_BATCH,
+                adminBaseUrl: getElement('adminBaseUrl').value,
+                site: getElement('siteSelect').value
+            });
+        } catch (error) {
+            setStatus(getFriendlyConnectionMessage(error));
+            return;
+        }
+        const batch = response?.result?.batch;
+        const retryPending = Number(batch?.stats?.retry_pending || batch?.stats?.cleaned_unpublished || 0);
+        if (!response?.ok || !batch?.id || retryPending <= 0) {
+            setStatus(response?.message || '没有找到待重新采集的 Meigen 批次');
+            return;
+        }
+        state.streamedBatchId = String(batch.id);
+        const batchTarget = Number(batch?.settings?.max_items || batch?.settings?.maxItems || 0);
+        if (batchTarget > 0) getElement('maxItemsInput').value = String(batchTarget);
+        await saveSettings();
+        setStatus(`已找到批次 ${state.streamedBatchId.slice(0, 8)}，待重新采集 ${retryPending} 条，正在恢复...`);
+        await runFullyAutomaticCollectionTask({ batchId: state.streamedBatchId });
     }
 
     async function downloadPayload() {
@@ -1183,6 +1222,9 @@
     function bindEvents() {
         getElement('collectBtn').addEventListener('click', () => {
             void runFullyAutomaticCollectionTask();
+        });
+        getElement('recoverBtn').addEventListener('click', () => {
+            void recoverLatestImportBatch();
         });
         getElement('scrollBtn').addEventListener('click', () => {
             void scrollCollectCurrentPage();

@@ -14,7 +14,7 @@
     "functions": {
         "api/admin.js": {
             "maxDuration": 60,
-            "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,server/prompt-image-palette.js,supabase/migrations/*.sql}"
+            "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,server/prompt-*.js,supabase/migrations/*.sql}"
         },
         "api/public.js": {
             "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,supabase/migrations/*.sql}"

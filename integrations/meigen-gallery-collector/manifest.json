@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Father Key Meigen Collector",
-  "version": "0.1.40",
+  "version": "0.1.47",
   "description": "采集 Meigen 当前页面图片/视频作品，并送入 Father Key Gallery Import 队列。",
   "action": {
     "default_popup": "popup.html",
@@ -60,6 +60,7 @@
   "host_permissions": [
     "https://www.meigen.ai/*",
     "https://meigen.ai/*",
+    "https://images.meigen.ai/*",
     "https://www.fatherkey.com/*",
     "https://fatherkey.com/*",
     "https://www.zaoyoe.xyz/*",

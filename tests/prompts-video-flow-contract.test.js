@@ -14,6 +14,12 @@ test('public prompt gallery renders R2-backed videos with poster cards and modal
 
     assert.match(runtime, /'video_assets'/);
     assert.match(runtime, /function getPromptVideoAssets/);
+    assert.match(runtime, /source\.poster_asset/);
+    assert.match(runtime, /posterAsset/);
+    assert.match(runtime, /videoAsset\?\.posterAsset/);
+    assert.match(runtime, /videoAssets\[0\]\?\.posterAsset/);
+    assert.match(runtime, /const videoPosterKey = getPromptImageCanonicalDedupeKey/);
+    assert.match(runtime, /const primaryImageAsset = imageAssets\[0\] \|\| null/);
     assert.match(runtime, /prompt-card-video-badge/);
     assert.match(runtime, /document\.createElement\('video'\)/);
     assert.match(runtime, /newMedia\.controls = true/);
@@ -21,6 +27,8 @@ test('public prompt gallery renders R2-backed videos with poster cards and modal
     assert.match(migration, /ADD COLUMN IF NOT EXISTS video_assets JSONB/);
     assert.match(migration, /ADD COLUMN IF NOT EXISTS video_sources JSONB/);
     assert.match(imports, /prompts\/videos\//);
+    assert.match(imports, /poster_asset: posterAsset/);
+    assert.match(imports, /PROMPT_IMPORT_IMAGE_VARIANTS/);
     assert.match(imports, /PutObjectCommand/);
     assert.doesNotMatch(imports, /supabase\.storage/i);
 });

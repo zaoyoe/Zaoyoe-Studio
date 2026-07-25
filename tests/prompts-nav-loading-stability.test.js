@@ -30,3 +30,14 @@ test('prompt category skeletons reuse label geometry and wait for stable font me
     assert.match(css, /\.nav-item-skeleton--title\s*\{\s*width:\s*fit-content;\s*height:\s*auto;\s*margin:\s*0 auto 0\.2rem;/);
     assert.doesNotMatch(css, /\.nav-items\.nav-items--skeleton\s*\{\s*display:\s*grid;/);
 });
+
+test('narrow English prompt navigation does not retain bilingual minimum height', () => {
+    const html = readRepoFile('prompts.html');
+    const css = readRepoFile('prompts-poetry.css');
+
+    assert.match(
+        css,
+        /@media \(max-width: 768px\) \{[\s\S]*?html\[lang="en"\] \.nav-items \{\s*min-height:\s*0;/
+    );
+    assert.match(html, /englishNavSpacing=20260725_PROMPTS_ENGLISH_NAV_SPACING_1/);
+});

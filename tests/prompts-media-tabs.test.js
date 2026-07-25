@@ -73,5 +73,5 @@ test('prompt detail modal wires accessible media tabs before the prompt text', (
     assert.match(styles, /white-space:\s*pre-wrap/);
     assert.match(worker, /MUST preserve every header exactly and in the same order/);
     assert.match(html, /mediaPromptTabs=20260723_PROMPT_MEDIA_TABS_3/);
-    assert.match(html, /js\/i18n\.js\?v=20260723_PROMPT_MEDIA_TABS_I18N_1/);
+    assert.match(html, /js\/i18n\.js\?v=20260725_PROMPT_MEDIA_SORT_I18N_1/);
 });

@@ -11,8 +11,10 @@ const {
 const { resolveR2Config } = require('../../_ai-image-models');
 const {
     alignPromptImagePalettes,
+    createPaletteImagePipeline,
     extractPromptImagePalette
 } = require('../../../prompt-image-palette');
+const { extractVideoPosterFrame } = require('../../../prompt-video-poster');
 
 const IMPORT_BATCH_SELECT = 'id, source, mode, site, status, settings, stats, created_by, created_at, updated_at, completed_at, cleanup_after';
 const IMPORT_ITEM_SELECT = [
@@ -27,6 +29,9 @@ const IMPORT_ITEM_SELECT = [
     'favorite_count',
     'prompt_text',
     'prompt_hash',
+    'video_fingerprints',
+    'video_poster_hashes',
+    'video_content_hashes',
     'image_sources',
     'video_sources',
     'temp_image_assets',
@@ -49,7 +54,7 @@ const IMPORT_ITEM_SELECT = [
     'created_at',
     'updated_at'
 ].join(', ');
-const PROMPT_SELECT = 'id, title, tags, description, prompt_text, images, image_assets, image_palettes, video_assets, source_url, source_author_name, source_author_handle, ai_tags, created_at, updated_at';
+const PROMPT_SELECT = 'id, title, tags, description, prompt_text, images, image_assets, image_palettes, video_assets, video_fingerprints, video_poster_hashes, primary_video_sha256, source_url, source_author_name, source_author_handle, ai_tags, created_at, updated_at';
 const IMPORT_MODES = new Set(['stream', 'crawl_only', 'upload_only', 'review_first']);
 const IMPORT_BATCH_STATUSES = new Set(['draft', 'running', 'ready', 'uploading', 'completed', 'needs_attention', 'cancelled']);
 const IMPORT_ITEM_STATUSES = new Set(['staged', 'needs_review', 'duplicate', 'queued', 'uploading', 'saving', 'imported', 'failed', 'skipped', 'cleaned']);
@@ -66,7 +71,10 @@ const DEFAULT_MAX_VIDEO_COUNT = 4;
 const MAX_VIDEO_COUNT = 4;
 const DEFAULT_VIDEO_TIMEOUT_MS = 120000;
 const DEFAULT_MAX_VIDEO_BYTES = 100 * 1024 * 1024;
-
+const PROMPT_IMPORT_IMAGE_VARIANTS = Object.freeze({
+    card: Object.freeze({ width: 560, quality: 76 }),
+    thumb: Object.freeze({ width: 800, quality: 85 })
+});
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
     return url.searchParams;
@@ -223,11 +231,69 @@ function normalizeVideoSourceEntry(entry = {}) {
     return {
         url,
         ...(posterUrl ? { poster_url: posterUrl } : {}),
+        source_fingerprint: normalizeVideoFingerprint(source.source_fingerprint || source.sourceFingerprint),
+        poster_content_hash: normalizeVideoFingerprint(source.poster_content_hash || source.posterContentHash),
+        source_etag: normalizeText(source.source_etag || source.sourceEtag || '', 180),
+        source_content_length: normalizeNonNegativeInteger(
+            source.source_content_length ?? source.sourceContentLength,
+            0
+        ),
         mime_type: normalizeText(source.mime_type || source.mimeType || source.type || '', 120),
         width: normalizeNonNegativeInteger(source.width, 0),
         height: normalizeNonNegativeInteger(source.height, 0),
         duration: Math.max(0, Number(source.duration || source.duration_seconds || source.durationSeconds || 0) || 0)
     };
+}
+
+function normalizeVideoFingerprint(value = '') {
+    const fingerprint = normalizeText(value, 220).toLowerCase();
+    return /^(?:http-etag:[a-f0-9]{16,128}:\d+|sha256:[a-f0-9]{64}|sha256-prefix:[a-f0-9]{16}|poster-sha256:[a-f0-9]{64})$/.test(fingerprint)
+        ? fingerprint
+        : '';
+}
+
+function getVideoFingerprintKeys(item = {}) {
+    const explicit = [
+        ...(Array.isArray(item.video_fingerprints) ? item.video_fingerprints : []),
+        ...(Array.isArray(item.video_content_hashes) ? item.video_content_hashes : [])
+    ];
+    const sources = normalizeVideoSources(
+        item.video_sources || item.videoSources || item.videos || item.video_urls || item.videoUrls || [],
+        MAX_VIDEO_COUNT
+    );
+    return Array.from(new Set([
+        ...explicit,
+        ...sources.map((source) => source.source_fingerprint)
+    ].map(normalizeVideoFingerprint).filter(Boolean)));
+}
+
+function getVideoContentHashKeys(item = {}) {
+    const assets = Array.isArray(item.video_assets) ? item.video_assets : [];
+    const hashes = [
+        ...(Array.isArray(item.video_content_hashes) ? item.video_content_hashes : []),
+        ...(Array.isArray(item.video_fingerprints) ? item.video_fingerprints : []),
+        ...assets.flatMap((asset) => [asset?.content_hash, asset?.content_hash_prefix]),
+        item.primary_video_sha256 ? `sha256:${item.primary_video_sha256}` : ''
+    ].map(normalizeVideoFingerprint).filter((value) => value.startsWith('sha256'));
+    hashes.filter((value) => value.startsWith('sha256:')).forEach((value) => {
+        hashes.push(`sha256-prefix:${value.slice('sha256:'.length, 'sha256:'.length + 16)}`);
+    });
+    return Array.from(new Set(hashes));
+}
+
+function getVideoSourceFingerprintKeys(item = {}) {
+    return getVideoFingerprintKeys(item).filter((value) => value.startsWith('http-etag:'));
+}
+
+function getVideoPosterHashKeys(item = {}) {
+    const sources = normalizeVideoSources(
+        item.video_sources || item.videoSources || item.videos || item.video_urls || item.videoUrls || [],
+        MAX_VIDEO_COUNT
+    );
+    return Array.from(new Set([
+        ...(Array.isArray(item.video_poster_hashes) ? item.video_poster_hashes : []),
+        ...sources.map((source) => source.poster_content_hash)
+    ].map(normalizeVideoFingerprint).filter((value) => value.startsWith('poster-sha256:'))));
 }
 
 function normalizeVideoSources(value = [], maxCount = DEFAULT_MAX_VIDEO_COUNT) {
@@ -395,6 +461,12 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
         item.video_sources || item.videoSources || item.videos || item.video_urls || item.videoUrls || [],
         normalizePositiveInteger(settings.max_videos_per_item, DEFAULT_MAX_VIDEO_COUNT, MAX_VIDEO_COUNT)
     );
+    const videoFingerprints = Array.from(new Set(
+        videoSources.map((source) => source.source_fingerprint).filter(Boolean)
+    ));
+    const videoPosterHashes = Array.from(new Set(
+        videoSources.map((source) => source.poster_content_hash).filter(Boolean)
+    ));
     const originalStatusId = getOriginalStatusIdFromUrl(
         item.original_work_url || item.originalWorkUrl || item.source_url || item.sourceUrl || ''
     );
@@ -428,6 +500,9 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
         favorite_count: normalizeNonNegativeInteger(item.favorite_count ?? item.favoriteCount ?? item.likes ?? item.bookmarks, 0),
         prompt_text: promptText,
         prompt_hash: promptHash,
+        video_fingerprints: videoFingerprints,
+        video_poster_hashes: videoPosterHashes,
+        video_content_hashes: [],
         image_sources: imageSources,
         video_sources: videoSources,
         temp_image_assets: Array.isArray(item.temp_image_assets || item.tempImageAssets) ? (item.temp_image_assets || item.tempImageAssets) : [],
@@ -489,6 +564,12 @@ function buildImportStats(items = []) {
         normalizeImportItemStatus(item?.status || 'staged') === 'cleaned'
         && !normalizePromptReferenceId(item?.final_prompt_id)
     )).length;
+    const cleanedDuplicates = rows.filter((item) => (
+        normalizeImportItemStatus(item?.status || 'staged') === 'cleaned'
+        && !normalizePromptReferenceId(item?.final_prompt_id)
+        && normalizePromptReferenceId(item?.duplicate_of_prompt_id)
+    )).length;
+    const retryPending = rows.filter(isRetryableCleanedImportItem).length;
 
     return {
         total: rows.length,
@@ -504,8 +585,54 @@ function buildImportStats(items = []) {
         cleaned: counts.cleaned || 0,
         published,
         cleaned_published: cleanedPublished,
-        cleaned_unpublished: cleanedUnpublished
+        cleaned_unpublished: cleanedUnpublished,
+        cleaned_duplicates: cleanedDuplicates,
+        retry_pending: retryPending
     };
+}
+
+function isRetryableCleanedImportItem(item = {}) {
+    if (normalizeImportItemStatus(item?.status || 'staged') !== 'cleaned') return false;
+    if (normalizePromptReferenceId(item?.final_prompt_id)) return false;
+    if (normalizePromptReferenceId(item?.duplicate_of_prompt_id)) return false;
+    const cleanupReason = normalizeText(item?.error_details?.cleanup_reason || '', 80).toLowerCase();
+    return !cleanupReason || cleanupReason === 'retry_pending';
+}
+
+function reserveImportBatchSlot(activeCount, maxItems, { alreadyActive = false } = {}) {
+    const count = Math.max(0, Number(activeCount) || 0);
+    const limit = normalizePositiveInteger(maxItems, 50, 1000);
+    if (alreadyActive) return { allowed: true, activeCount: count };
+    if (count >= limit) return { allowed: false, activeCount: count };
+    return { allowed: true, activeCount: count + 1 };
+}
+
+function countOccupiedImportBatchItems(items = []) {
+    return (Array.isArray(items) ? items : []).filter((item) => (
+        normalizeImportItemStatus(item?.status || 'staged') !== 'cleaned'
+        || Boolean(normalizePromptReferenceId(item?.final_prompt_id))
+    )).length;
+}
+
+function buildExistingPromptHashOwners(items = []) {
+    const owners = new Map();
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        const promptHash = normalizeText(item?.prompt_hash || '', 80).toLowerCase();
+        if (!promptHash || owners.has(promptHash)) return;
+        owners.set(promptHash, String(item?.source_item_id || item?.id || '__existing__'));
+    });
+    return owners;
+}
+
+function buildExistingVideoFingerprintOwners(items = []) {
+    const owners = new Map();
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        [...getVideoFingerprintKeys(item), ...getVideoPosterHashKeys(item)].forEach((fingerprint) => {
+            if (owners.has(fingerprint)) return;
+            owners.set(fingerprint, String(item?.source_item_id || item?.id || '__existing__'));
+        });
+    });
+    return owners;
 }
 
 function getImportPageQuery(searchParams) {
@@ -650,7 +777,11 @@ async function downloadRemoteVideo(url, {
         if (!buffer.length) throw new Error('视频为空');
         if (buffer.length > maxBytes) throw new Error('视频超过大小限制');
         if (!isSupportedVideoBuffer(buffer)) throw new Error('视频地址返回的不是受支持的视频文件');
-        return { buffer, mimeType: getVideoMimeType(response, currentUrl) };
+        return {
+            buffer,
+            mimeType: getVideoMimeType(response, currentUrl),
+            contentHash: `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`
+        };
     } finally {
         clearTimeout(timer);
     }
@@ -744,6 +875,43 @@ function buildPromptImportImageKey({
     return `prompts/imports/${safeSite}/${year}/${month}/${safeBatch}/${safeItem}-${index}-${digest}.${extension}`;
 }
 
+function buildPromptImportImageVariantKey(originalKey = '', variant = '') {
+    const normalizedKey = String(originalKey || '').replace(/^\/+/, '');
+    const normalizedVariant = String(variant || '').trim().toLowerCase();
+    if (!normalizedKey.startsWith('prompts/imports/') || !PROMPT_IMPORT_IMAGE_VARIANTS[normalizedVariant]) {
+        throw new Error('Invalid prompt import image variant key');
+    }
+
+    const relativeKey = normalizedKey.slice('prompts/imports/'.length).replace(/\.[^/.]+$/, '.webp');
+    return `prompts/imports/${normalizedVariant}/${relativeKey}`;
+}
+
+async function buildPromptImportImageDerivatives(buffer) {
+    const imagePipeline = await createPaletteImagePipeline(buffer);
+    const metadata = await imagePipeline.clone().metadata();
+    const orientation = Number(metadata.orientation || 1);
+    const swapsDimensions = orientation >= 5 && orientation <= 8;
+    const width = Math.max(0, Number(swapsDimensions ? metadata.height : metadata.width) || 0);
+    const height = Math.max(0, Number(swapsDimensions ? metadata.width : metadata.height) || 0);
+    const variants = await Promise.all(Object.entries(PROMPT_IMPORT_IMAGE_VARIANTS).map(async ([name, config]) => {
+        const variantBuffer = await imagePipeline.clone()
+            .rotate()
+            .resize(config.width, null, {
+                fit: 'inside',
+                withoutEnlargement: true
+            })
+            .webp({ quality: config.quality, effort: 5 })
+            .toBuffer();
+        return [name, variantBuffer];
+    }));
+
+    return {
+        width,
+        height,
+        variants: Object.fromEntries(variants)
+    };
+}
+
 function buildPromptImportVideoKey({
     site = 'cn',
     batchId = '',
@@ -778,17 +946,36 @@ async function uploadImportImageBufferToR2(buffer, {
     }
 
     const key = buildPromptImportImageKey({ site, batchId, itemId, index, buffer, mimeType });
+    const derivatives = await buildPromptImportImageDerivatives(buffer);
     const client = createR2Client(config);
-    await client.send(new PutObjectCommand({
-        Bucket: config.bucket,
-        Key: key,
-        Body: buffer,
-        ContentType: mimeType,
-        CacheControl: 'public, max-age=31536000, immutable'
-    }));
+    const variantEntries = Object.entries(derivatives.variants);
+    await Promise.all([
+        client.send(new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+            Body: buffer,
+            ContentType: mimeType,
+            CacheControl: 'public, max-age=31536000, immutable'
+        })),
+        ...variantEntries.map(([variant, variantBuffer]) => client.send(new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: buildPromptImportImageVariantKey(key, variant),
+            Body: variantBuffer,
+            ContentType: 'image/webp',
+            CacheControl: 'public, max-age=31536000, immutable'
+        })))
+    ]);
 
     return {
         original: `${config.publicUrl}/${key}`,
+        ...Object.fromEntries(variantEntries.map(([variant]) => [
+            variant,
+            `${config.publicUrl}/${buildPromptImportImageVariantKey(key, variant)}`
+        ])),
+        ...(derivatives.width && derivatives.height ? {
+            width: derivatives.width,
+            height: derivatives.height
+        } : {}),
         storage_path: key
     };
 }
@@ -816,7 +1003,14 @@ async function uploadImportVideoBufferToR2(buffer, {
         ContentType: mimeType,
         CacheControl: 'public, max-age=31536000, immutable'
     }));
-    return { original: `${config.publicUrl}/${key}`, storage_path: key, mime_type: mimeType };
+    const contentHash = `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`;
+    return {
+        original: `${config.publicUrl}/${key}`,
+        storage_path: key,
+        mime_type: mimeType,
+        content_hash: contentHash,
+        content_hash_prefix: `sha256-prefix:${contentHash.slice('sha256:'.length, 'sha256:'.length + 16)}`
+    };
 }
 
 async function uploadImportItemImages(item, { site = 'cn' } = {}) {
@@ -905,6 +1099,10 @@ async function uploadImportItemVideos(item, imageUploadResult, { site = 'cn' } =
     for (let index = 0; index < sources.length; index += 1) {
         const source = sources[index];
         try {
+            const downloaded = await downloadRemoteVideo(source.url, {
+                timeoutMs: normalizePositiveInteger(process.env.PROMPT_IMPORT_VIDEO_TIMEOUT_MS, DEFAULT_VIDEO_TIMEOUT_MS, 300000),
+                maxBytes: normalizePositiveInteger(process.env.PROMPT_IMPORT_MAX_VIDEO_BYTES, DEFAULT_MAX_VIDEO_BYTES, 500 * 1024 * 1024)
+            });
             let posterAsset = source.poster_url
                 ? imageUploadResult.sourceAssetMap.get(source.poster_url)
                 : null;
@@ -937,10 +1135,26 @@ async function uploadImportItemVideos(item, imageUploadResult, { site = 'cn' } =
                     });
                 }
             }
-            const downloaded = await downloadRemoteVideo(source.url, {
-                timeoutMs: normalizePositiveInteger(process.env.PROMPT_IMPORT_VIDEO_TIMEOUT_MS, DEFAULT_VIDEO_TIMEOUT_MS, 300000),
-                maxBytes: normalizePositiveInteger(process.env.PROMPT_IMPORT_MAX_VIDEO_BYTES, DEFAULT_MAX_VIDEO_BYTES, 500 * 1024 * 1024)
-            });
+            if (!posterAsset) {
+                posterAsset = imageUploadResult.assets[index] || imageUploadResult.assets[0] || null;
+            }
+            if (!posterAsset) {
+                const posterBuffer = await extractVideoPosterFrame(downloaded.buffer, {
+                    timeoutMs: normalizePositiveInteger(
+                        process.env.PROMPT_IMPORT_POSTER_TIMEOUT_MS,
+                        DEFAULT_VIDEO_TIMEOUT_MS,
+                        300000
+                    )
+                });
+                posterAsset = await uploadImportImageBufferToR2(posterBuffer, {
+                    site,
+                    batchId: item.batch_id,
+                    itemId: item.id,
+                    index: getItemImageSourceUrls(item).length + index,
+                    mimeType: 'image/png'
+                });
+                posterAssets.push(posterAsset);
+            }
             const stored = await uploadImportVideoBufferToR2(downloaded.buffer, {
                 site,
                 batchId: item.batch_id,
@@ -1008,6 +1222,12 @@ function buildPromptPayloadFromImportItem(item, {
         : {};
 
     const images = imageAssets.map((asset) => asset.original).filter(Boolean);
+    const videoPosterUrls = new Set(videoAssets
+        .map((asset) => normalizeOptionalUrl(asset?.poster || asset?.poster_url || asset?.posterUrl || ''))
+        .filter(Boolean));
+    const persistedPosterHashes = imagePalettes
+        .filter((palette) => videoPosterUrls.has(normalizeOptionalUrl(palette?.image_url || '')))
+        .map((palette) => String(palette?.image_hash || '').replace(/^sha256:/, 'poster-sha256:'));
     return {
         title: buildPromptTitleFromItem(item),
         tags: ['Creative'],
@@ -1019,6 +1239,18 @@ function buildPromptPayloadFromImportItem(item, {
         image_assets: imageAssets,
         image_palettes: alignPromptImagePalettes(images, imagePalettes),
         video_assets: videoAssets,
+        video_fingerprints: Array.from(new Set([
+            ...getVideoFingerprintKeys(item),
+            ...videoAssets.map((asset) => asset?.source_fingerprint),
+            ...getVideoContentHashKeys({ video_assets: videoAssets })
+        ].map(normalizeVideoFingerprint).filter(Boolean))),
+        video_poster_hashes: Array.from(new Set([
+            ...getVideoPosterHashKeys(item),
+            ...persistedPosterHashes
+        ].map(normalizeVideoFingerprint).filter((value) => value.startsWith('poster-sha256:')))),
+        primary_video_sha256: videoAssets[0]?.content_hash?.startsWith('sha256:')
+            ? videoAssets[0].content_hash.slice('sha256:'.length)
+            : null,
         source_url: normalizeOptionalUrl(item.original_work_url || ''),
         source_author_name: normalizeText(item.author_name || '', 200),
         source_author_handle: normalizeAuthorHandle(item.author_handle || '')
@@ -1039,6 +1271,9 @@ function buildCleanedImportedItemPayload({
         prompt_text: '',
         image_sources: [],
         video_sources: [],
+        video_fingerprints: [],
+        video_poster_hashes: [],
+        video_content_hashes: [],
         temp_image_assets: [],
         temp_video_assets: [],
         final_image_assets: finalImageAssets,
@@ -1072,6 +1307,39 @@ function buildDeferredImportedItemPayload({
     };
 }
 
+function buildCleanedDuplicateItemPayload({ duplicateOfPromptId } = {}) {
+    const duplicatePromptId = normalizePromptReferenceId(duplicateOfPromptId);
+    const now = new Date().toISOString();
+    return {
+        status: 'cleaned',
+        prompt_text: '',
+        prompt_hash: '',
+        image_sources: [],
+        video_sources: [],
+        video_fingerprints: [],
+        video_poster_hashes: [],
+        video_content_hashes: [],
+        temp_image_assets: [],
+        temp_video_assets: [],
+        final_image_assets: [],
+        final_video_assets: [],
+        final_prompt_id: null,
+        duplicate_of_prompt_id: duplicatePromptId,
+        worker_name: null,
+        lease_expires_at: null,
+        next_attempt_at: null,
+        pipeline_stage: 'cancelled',
+        error_summary: '提示词库已有重复内容，已在导入前清理',
+        error_details: {
+            cleanup_reason: 'repository_duplicate',
+            duplicate_of_prompt_id: duplicatePromptId
+        },
+        cleaned_at: now,
+        cleanup_after: null,
+        updated_at: now
+    };
+}
+
 async function updateBatchStats(supabase, batchId) {
     const { data: currentBatch, error: currentBatchError } = await supabase
         .from('prompt_import_batches')
@@ -1081,7 +1349,7 @@ async function updateBatchStats(supabase, batchId) {
     if (currentBatchError) throw currentBatchError;
     const { data, error } = await supabase
         .from('prompt_import_items')
-        .select('status, final_prompt_id')
+        .select('status, final_prompt_id, duplicate_of_prompt_id, error_details')
         .eq('batch_id', batchId);
     if (error) throw error;
 
@@ -1091,7 +1359,11 @@ async function updateBatchStats(supabase, batchId) {
         ...itemStats,
         attempted: Math.max(0, Number(previousStats.attempted || 0)),
         accepted: Math.max(0, Number(previousStats.accepted || 0)),
-        skipped_duplicates: Math.max(0, Number(previousStats.skipped_duplicates || 0)),
+        skipped_duplicates: Math.max(
+            0,
+            Number(previousStats.skipped_duplicates || 0),
+            itemStats.duplicate + itemStats.cleaned_duplicates
+        ),
         rejected: Math.max(0, Number(previousStats.rejected || 0))
     };
     const nextStatus = stats.failed || stats.needs_review || stats.duplicate
@@ -1128,7 +1400,7 @@ async function loadImportBatchWithLiveStats(supabase, batchId) {
         loadImportBatch(supabase, batchId),
         supabase
             .from('prompt_import_items')
-            .select('status, final_prompt_id')
+            .select('status, final_prompt_id, duplicate_of_prompt_id, error_details')
             .eq('batch_id', batchId)
     ]);
     if (itemResult.error) throw itemResult.error;
@@ -1173,27 +1445,47 @@ async function createImportBatch(supabase, user, body) {
     return data;
 }
 
-async function findExistingPromptDuplicates(supabase, rows = [], { sourceIdentityOnly = false } = {}) {
+function isMissingPromptDedupeRpcError(error = {}) {
+    const code = String(error?.code || '').trim().toUpperCase();
+    const message = String(error?.message || error || '');
+    return code === 'PGRST202'
+        || code === '42883'
+        || /fn_admin_find_prompt_duplicates|function .* does not exist|schema cache/i.test(message);
+}
+
+function isVideoContentUniqueViolation(error = {}) {
+    const code = String(error?.code || '').trim();
+    const message = String(error?.message || error || '');
+    return code === '23505' && /uniq_prompts_primary_video_sha256|primary_video_sha256/i.test(message);
+}
+
+async function findExistingPromptDuplicates(supabase, rows = []) {
     const sourceUrls = [...new Set(
         rows
             .map((row) => normalizeOptionalUrl(row.original_work_url || ''))
             .filter(Boolean)
     )];
-    const promptRows = sourceIdentityOnly
-        ? rows.filter((row) => !normalizeOptionalUrl(row.original_work_url || ''))
-        : rows;
     const promptTexts = [...new Set(
-        promptRows
+        rows
             .map((row) => normalizeText(row.prompt_text || '', 20000))
             .filter(Boolean)
     )];
 
     const duplicatesBySourceUrl = new Map();
     const duplicatesByPromptHash = new Map();
+    const duplicatesByVideoFingerprint = new Map();
+    const duplicatesByVideoHash = new Map();
     const sourceUrlSet = new Set(sourceUrls);
     const promptHashSet = new Set(promptTexts.map(hashPromptText).filter(Boolean));
+    const videoFingerprintSet = new Set(rows.flatMap((row) => [
+        ...getVideoSourceFingerprintKeys(row),
+        ...getVideoPosterHashKeys(row)
+    ]));
+    const videoHashSet = new Set(rows.flatMap(getVideoContentHashKeys));
     const matchedSourceUrls = new Set();
     const matchedPromptHashes = new Set();
+    const matchedVideoFingerprints = new Set();
+    const matchedVideoHashes = new Set();
 
     const recordPrompts = (prompts = []) => {
         prompts.forEach((prompt) => {
@@ -1209,46 +1501,97 @@ async function findExistingPromptDuplicates(supabase, rows = [], { sourceIdentit
                     matchedPromptHashes.add(promptHash);
                 }
             });
+            getVideoSourceFingerprintKeys(prompt).forEach((fingerprint) => {
+                if (!videoFingerprintSet.has(fingerprint)) return;
+                duplicatesByVideoFingerprint.set(fingerprint, prompt.id);
+                matchedVideoFingerprints.add(fingerprint);
+            });
+            getVideoPosterHashKeys(prompt).forEach((fingerprint) => {
+                if (!videoFingerprintSet.has(fingerprint)) return;
+                duplicatesByVideoFingerprint.set(fingerprint, prompt.id);
+                matchedVideoFingerprints.add(fingerprint);
+            });
+            getVideoContentHashKeys(prompt).forEach((fingerprint) => {
+                if (!videoHashSet.has(fingerprint)) return;
+                duplicatesByVideoHash.set(fingerprint, prompt.id);
+                matchedVideoHashes.add(fingerprint);
+            });
         });
     };
-    if (sourceIdentityOnly && sourceUrls.length) {
-        const chunkSize = 40;
-        for (let index = 0; index < sourceUrls.length; index += chunkSize) {
-            const { data, error } = await supabase
-                .from('prompts')
-                .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh')
-                .in('source_url', sourceUrls.slice(index, index + chunkSize));
-            if (error) throw error;
-            recordPrompts(data || []);
+
+    if (typeof supabase?.rpc === 'function'
+        && (sourceUrlSet.size || promptHashSet.size || videoFingerprintSet.size || videoHashSet.size)) {
+        const { data, error } = await supabase.rpc('fn_admin_find_prompt_duplicates', {
+            p_source_urls: Array.from(sourceUrlSet),
+            p_prompt_hashes: Array.from(promptHashSet),
+            p_video_fingerprints: Array.from(videoFingerprintSet),
+            p_video_hashes: Array.from(videoHashSet),
+            p_video_poster_hashes: Array.from(new Set(rows.flatMap(getVideoPosterHashKeys)))
+        });
+        if (!error) {
+            (Array.isArray(data) ? data : []).forEach((match) => {
+                const sourceUrl = normalizeOptionalUrl(match?.source_url || '');
+                const promptHash = normalizeText(match?.prompt_hash || '', 80).toLowerCase();
+                const videoFingerprint = normalizeVideoFingerprint(match?.video_fingerprint || '');
+                const videoHash = normalizeVideoFingerprint(match?.video_hash || '');
+                const promptId = normalizePromptReferenceId(match?.id);
+                if (sourceUrl && sourceUrlSet.has(sourceUrl) && promptId) {
+                    duplicatesBySourceUrl.set(sourceUrl, promptId);
+                }
+                if (promptHash && promptHashSet.has(promptHash) && promptId) {
+                    duplicatesByPromptHash.set(promptHash, promptId);
+                }
+                if (videoFingerprint && videoFingerprintSet.has(videoFingerprint) && promptId) {
+                    duplicatesByVideoFingerprint.set(videoFingerprint, promptId);
+                }
+                if (videoHash && videoHashSet.has(videoHash) && promptId) {
+                    duplicatesByVideoHash.set(videoHash, promptId);
+                }
+            });
+            return {
+                bySourceUrl: duplicatesBySourceUrl,
+                byPromptHash: duplicatesByPromptHash,
+                byVideoFingerprint: duplicatesByVideoFingerprint,
+                byVideoHash: duplicatesByVideoHash
+            };
         }
+        if (!isMissingPromptDedupeRpcError(error)) throw error;
     }
-    if (!promptHashSet.size) {
+
+    if (!promptHashSet.size && !sourceUrlSet.size && !videoFingerprintSet.size && !videoHashSet.size) {
         return {
             bySourceUrl: duplicatesBySourceUrl,
-            byPromptHash: duplicatesByPromptHash
+            byPromptHash: duplicatesByPromptHash,
+            byVideoFingerprint: duplicatesByVideoFingerprint,
+            byVideoHash: duplicatesByVideoHash
         };
     }
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
         const { data, error } = await supabase
             .from('prompts')
-            .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh')
+            .select('id, source_url, prompt_text, prompt_text_en, prompt_text_zh, video_assets, video_fingerprints, video_poster_hashes, primary_video_sha256')
             .order('id', { ascending: true })
             .range(offset, offset + pageSize - 1);
         if (error) throw error;
         const page = data || [];
         recordPrompts(page);
-        if (
-            page.length < pageSize
-            || (matchedSourceUrls.size === sourceUrlSet.size && matchedPromptHashes.size === promptHashSet.size)
-        ) {
+        if (page.length < pageSize
+            || (
+                matchedSourceUrls.size === sourceUrlSet.size
+                && matchedPromptHashes.size === promptHashSet.size
+                && matchedVideoFingerprints.size === videoFingerprintSet.size
+                && matchedVideoHashes.size === videoHashSet.size
+            )) {
             break;
         }
     }
 
     return {
         bySourceUrl: duplicatesBySourceUrl,
-        byPromptHash: duplicatesByPromptHash
+        byPromptHash: duplicatesByPromptHash,
+        byVideoFingerprint: duplicatesByVideoFingerprint,
+        byVideoHash: duplicatesByVideoHash
     };
 }
 
@@ -1268,33 +1611,20 @@ function normalizePromptImageAssetsFromRow(prompt = {}) {
 async function findExistingPromptForImportItem(supabase, item = {}) {
     const sourceUrl = normalizeOptionalUrl(item.original_work_url || '');
     const promptText = normalizeText(item.prompt_text || '', 20000);
-
-    if (sourceUrl) {
-        const { data, error } = await supabase
-            .from('prompts')
-            .select(PROMPT_SELECT)
-            .eq('source_url', sourceUrl)
-            .limit(1);
-        if (!error && Array.isArray(data) && data[0]) {
-            return data[0];
-        }
-    }
-
-    if (promptText && promptText.length <= 500) {
-        for (const field of ['prompt_text', 'prompt_text_en', 'prompt_text_zh']) {
-            const { data, error } = await supabase
-                .from('prompts')
-                .select(PROMPT_SELECT)
-                .eq(field, promptText)
-                .limit(1);
-            if (error) throw error;
-            if (Array.isArray(data) && data[0]) {
-                return data[0];
-            }
-        }
-    }
-
-    return null;
+    const duplicateIndex = await findExistingPromptDuplicates(supabase, [{
+        original_work_url: sourceUrl,
+        prompt_text: promptText,
+        video_fingerprints: getVideoFingerprintKeys(item),
+        video_poster_hashes: getVideoPosterHashKeys(item),
+        video_content_hashes: getVideoContentHashKeys(item)
+    }]);
+    const promptId = (sourceUrl && duplicateIndex.bySourceUrl.get(sourceUrl))
+        || (promptText && duplicateIndex.byPromptHash.get(hashPromptText(promptText)))
+        || getVideoSourceFingerprintKeys(item).map((key) => duplicateIndex.byVideoFingerprint.get(key)).find(Boolean)
+        || getVideoPosterHashKeys(item).map((key) => duplicateIndex.byVideoFingerprint.get(key)).find(Boolean)
+        || getVideoContentHashKeys(item).map((key) => duplicateIndex.byVideoHash.get(key)).find(Boolean)
+        || '';
+    return promptId ? { id: normalizePromptReferenceId(promptId) } : null;
 }
 
 async function stageImportItems(supabase, user, body) {
@@ -1308,6 +1638,7 @@ async function stageImportItems(supabase, user, body) {
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const seenPromptHashes = new Set();
     const seenCoverOwners = new Map();
+    const seenVideoFingerprintOwners = new Map();
     const existingCoverOwners = new Map();
     const duplicateIndexes = new Set();
     const rejectedIdentityIndexes = new Set();
@@ -1324,15 +1655,32 @@ async function stageImportItems(supabase, user, body) {
             const owner = seenCoverOwners.get(key);
             return owner && owner !== row.source_item_id;
         });
-        if (!identityConflictReason && (repeatsCover || (row.prompt_hash && seenPromptHashes.has(row.prompt_hash)))) {
+        const videoFingerprintKeys = [
+            ...getVideoSourceFingerprintKeys(row),
+            ...getVideoPosterHashKeys(row)
+        ];
+        const repeatsVideoFingerprint = videoFingerprintKeys.some((key) => {
+            const owner = seenVideoFingerprintOwners.get(key);
+            return owner && owner !== row.source_item_id;
+        });
+        if (!identityConflictReason && (
+            repeatsCover
+            || repeatsVideoFingerprint
+            || (row.prompt_hash && seenPromptHashes.has(row.prompt_hash))
+        )) {
             row.status = 'duplicate';
-            row.error_summary = repeatsCover ? '封面媒体与当前批次其他作品重复' : '疑似重复';
+            row.error_summary = repeatsCover || repeatsVideoFingerprint
+                ? '视频媒体与当前批次其他作品重复'
+                : '疑似重复';
             duplicateIndexes.add(index);
         }
         if (!identityConflictReason && row.prompt_hash) {
             seenPromptHashes.add(row.prompt_hash);
         }
         if (!identityConflictReason) coverKeys.forEach((key) => seenCoverOwners.set(key, row.source_item_id));
+        if (!identityConflictReason) {
+            videoFingerprintKeys.forEach((key) => seenVideoFingerprintOwners.set(key, row.source_item_id));
+        }
         return {
             ...row,
             batch_id: batch.id,
@@ -1347,13 +1695,23 @@ async function stageImportItems(supabase, user, body) {
     }
 
     let existingBySourceItemId = new Map();
+    const existingPromptHashOwners = new Map();
+    const existingVideoFingerprintOwners = new Map();
+    let occupiedBatchItemCount = 0;
     if (batchId) {
         const { data: existingRows, error: existingError } = await supabase
             .from('prompt_import_items')
-            .select('id, source_item_id, status, final_prompt_id, source, image_sources, video_sources')
+            .select('id, source_item_id, status, final_prompt_id, duplicate_of_prompt_id, prompt_hash, video_fingerprints, video_poster_hashes, video_content_hashes, source, image_sources, video_sources')
             .eq('batch_id', batch.id);
         if (existingError) throw existingError;
         existingBySourceItemId = new Map((existingRows || []).map((row) => [String(row.source_item_id || ''), row]));
+        occupiedBatchItemCount = countOccupiedImportBatchItems(existingRows || []);
+        buildExistingPromptHashOwners(existingRows || []).forEach((owner, promptHash) => {
+            existingPromptHashOwners.set(promptHash, owner);
+        });
+        buildExistingVideoFingerprintOwners(existingRows || []).forEach((owner, fingerprint) => {
+            existingVideoFingerprintOwners.set(fingerprint, owner);
+        });
         (existingRows || []).forEach((row) => {
             getMeigenCoverIdentityKeys(row).forEach((key) => {
                 if (!existingCoverOwners.has(key)) existingCoverOwners.set(key, String(row.source_item_id || ''));
@@ -1361,6 +1719,22 @@ async function stageImportItems(supabase, user, body) {
         });
         rows.forEach((row, index) => {
             if (rejectedIdentityIndexes.has(index)) return;
+            const promptOwner = row.prompt_hash ? existingPromptHashOwners.get(row.prompt_hash) : '';
+            if (promptOwner && promptOwner !== row.source_item_id) {
+                row.status = 'duplicate';
+                row.error_summary = '当前批次已有相同提示词，已跳过';
+                duplicateIndexes.add(index);
+                return;
+            }
+            const videoOwner = getVideoFingerprintKeys(row)
+                .map((fingerprint) => existingVideoFingerprintOwners.get(fingerprint))
+                .find((owner) => owner && owner !== row.source_item_id);
+            if (videoOwner) {
+                row.status = 'duplicate';
+                row.error_summary = '当前批次已有相同视频媒体，已跳过';
+                duplicateIndexes.add(index);
+                return;
+            }
             const repeatsExistingCover = getMeigenCoverIdentityKeys(row).some((key) => {
                 const owner = existingCoverOwners.get(key);
                 return owner && owner !== row.source_item_id;
@@ -1379,9 +1753,7 @@ async function stageImportItems(supabase, user, body) {
 
     let existingDuplicates;
     try {
-        existingDuplicates = await findExistingPromptDuplicates(supabase, repositoryRows, {
-            sourceIdentityOnly: settings.source === 'meigen'
-        });
+        existingDuplicates = await findExistingPromptDuplicates(supabase, repositoryRows);
     } catch (error) {
         const wrappedError = new Error(`提示词仓库去重检查失败：${error.message || '数据库查询失败'}`);
         wrappedError.statusCode = 502;
@@ -1395,7 +1767,21 @@ async function stageImportItems(supabase, user, body) {
         const promptDuplicateId = row.prompt_hash
             ? existingDuplicates.byPromptHash.get(row.prompt_hash)
             : '';
-        const duplicateId = sourceDuplicateId || promptDuplicateId || '';
+        const videoFingerprintDuplicateId = getVideoSourceFingerprintKeys(row)
+            .map((key) => existingDuplicates.byVideoFingerprint.get(key))
+            .find(Boolean);
+        const videoPosterDuplicateId = getVideoPosterHashKeys(row)
+            .map((key) => existingDuplicates.byVideoFingerprint.get(key))
+            .find(Boolean);
+        const videoHashDuplicateId = getVideoContentHashKeys(row)
+            .map((key) => existingDuplicates.byVideoHash.get(key))
+            .find(Boolean);
+        const duplicateId = sourceDuplicateId
+            || promptDuplicateId
+            || videoFingerprintDuplicateId
+            || videoPosterDuplicateId
+            || videoHashDuplicateId
+            || '';
         if (duplicateId) {
             row.status = 'duplicate';
             row.duplicate_of_prompt_id = normalizePromptReferenceId(duplicateId);
@@ -1410,21 +1796,36 @@ async function stageImportItems(supabase, user, body) {
     ));
     let data = [];
     const ignoredExistingIndexes = new Set();
+    const capacityDeferredIndexes = new Set();
     if (batchId && rowEntriesToInsert.length) {
         const newRows = [];
         for (const entry of rowEntriesToInsert) {
             const { row, index } = entry;
             const existing = existingBySourceItemId.get(String(row.source_item_id || ''));
             if (!existing) {
+                const reservation = reserveImportBatchSlot(occupiedBatchItemCount, maxItems);
+                if (!reservation.allowed) {
+                    capacityDeferredIndexes.add(index);
+                    continue;
+                }
                 newRows.push(entry);
+                occupiedBatchItemCount = reservation.activeCount;
                 continue;
             }
             const existingStatus = String(existing.status || '');
             const canRestoreCleanedPlaceholder = existingStatus === 'cleaned'
                 && !existing.final_prompt_id
-                && row.status === 'staged';
+                && !existing.duplicate_of_prompt_id
+                && ['staged', 'needs_review'].includes(row.status);
             if (!['staged', 'needs_review', 'failed'].includes(existingStatus) && !canRestoreCleanedPlaceholder) {
                 ignoredExistingIndexes.add(index);
+                continue;
+            }
+            const reservation = reserveImportBatchSlot(occupiedBatchItemCount, maxItems, {
+                alreadyActive: !canRestoreCleanedPlaceholder
+            });
+            if (!reservation.allowed) {
+                capacityDeferredIndexes.add(index);
                 continue;
             }
             const { batch_id: _batchId, ...updatePayload } = row;
@@ -1439,6 +1840,7 @@ async function stageImportItems(supabase, user, body) {
             }).eq('id', existing.id).select(IMPORT_ITEM_SELECT).single();
             if (updateResult.error) throw updateResult.error;
             if (updateResult.data) data.push(updateResult.data);
+            occupiedBatchItemCount = reservation.activeCount;
         }
         rowEntriesToInsert = newRows;
     }
@@ -1454,7 +1856,14 @@ async function stageImportItems(supabase, user, body) {
 
     let updatedBatch = await updateBatchStats(supabase, batch.id);
     const previousIngressStats = batch.stats && typeof batch.stats === 'object' ? batch.stats : {};
-    const rejectedCount = Math.max(0, rows.length - data.length - duplicateIndexes.size - ignoredExistingIndexes.size);
+    const rejectedCount = Math.max(
+        0,
+        rows.length
+            - data.length
+            - duplicateIndexes.size
+            - ignoredExistingIndexes.size
+            - capacityDeferredIndexes.size
+    );
     const ingressStats = {
         ...(updatedBatch.stats || {}),
         attempted: Math.max(0, Number(previousIngressStats.attempted || 0)) + rows.length,
@@ -1481,6 +1890,7 @@ async function stageImportItems(supabase, user, body) {
             attempted_count: rows.length,
             staged_count: data.length,
             skipped_duplicate_count: duplicateIndexes.size,
+            capacity_deferred_count: capacityDeferredIndexes.size,
             source: batch.source
         }
     });
@@ -1493,6 +1903,11 @@ async function stageImportItems(supabase, user, body) {
         batchItemCount: Math.max(0, Number(updatedBatch?.stats?.total || 0)),
         skippedDuplicateCount: duplicateIndexes.size,
         ignoredExistingCount: ignoredExistingIndexes.size,
+        capacityDeferredCount: capacityDeferredIndexes.size,
+        capacityDeferredSourceItemIds: rawItems
+            .filter((_item, index) => capacityDeferredIndexes.has(index))
+            .map((item) => normalizeText(item.source_item_id || item.sourceItemId || '', 220))
+            .filter(Boolean),
         rejectedIdentityCount: rejectedIdentityIndexes.size,
         persistentFailureCount: 0,
         persistentFailureSourceItemIds: [],
@@ -1513,10 +1928,7 @@ async function checkImportItemDuplicates(supabase, body) {
         return { checkedCount: 0, duplicateCount: 0, duplicateSourceItemIds: [] };
     }
 
-    const source = normalizeImportSource(body.source || body.settings?.source || DEFAULT_IMPORT_SOURCE);
-    const duplicates = await findExistingPromptDuplicates(supabase, rows, {
-        sourceIdentityOnly: source === 'meigen'
-    });
+    const duplicates = await findExistingPromptDuplicates(supabase, rows);
     const rawItems = (Array.isArray(body.items) ? body.items : []).slice(0, maxItems);
     const rejectedIdentitySourceItemIds = rawItems
         .filter((item) => getMeigenImportIdentityConflictReason(item))
@@ -1524,6 +1936,7 @@ async function checkImportItemDuplicates(supabase, body) {
         .filter(Boolean);
     const seenPromptHashes = new Set();
     const seenCoverOwners = new Map();
+    const seenVideoFingerprintOwners = new Map();
     const repositoryDuplicateSourceItemIds = [];
     const candidatePromptDuplicateSourceItemIds = [];
     const candidateCoverDuplicateSourceItemIds = [];
@@ -1531,6 +1944,9 @@ async function checkImportItemDuplicates(supabase, body) {
         if (getMeigenImportIdentityConflictReason(rawItems[index])) return [];
         const duplicateId = (row.original_work_url && duplicates.bySourceUrl.get(row.original_work_url))
             || (row.prompt_hash && duplicates.byPromptHash.get(row.prompt_hash))
+            || getVideoSourceFingerprintKeys(row).map((key) => duplicates.byVideoFingerprint.get(key)).find(Boolean)
+            || getVideoPosterHashKeys(row).map((key) => duplicates.byVideoFingerprint.get(key)).find(Boolean)
+            || getVideoContentHashKeys(row).map((key) => duplicates.byVideoHash.get(key)).find(Boolean)
             || '';
         const repeatsCandidate = Boolean(row.prompt_hash && seenPromptHashes.has(row.prompt_hash));
         const coverKeys = getMeigenCoverIdentityKeys(row);
@@ -1538,13 +1954,22 @@ async function checkImportItemDuplicates(supabase, body) {
             const owner = seenCoverOwners.get(key);
             return owner && owner !== row.source_item_id;
         });
+        const videoFingerprintKeys = [
+            ...getVideoSourceFingerprintKeys(row),
+            ...getVideoPosterHashKeys(row)
+        ];
+        const repeatsVideoFingerprint = videoFingerprintKeys.some((key) => {
+            const owner = seenVideoFingerprintOwners.get(key);
+            return owner && owner !== row.source_item_id;
+        });
         if (row.prompt_hash) seenPromptHashes.add(row.prompt_hash);
         coverKeys.forEach((key) => seenCoverOwners.set(key, row.source_item_id));
+        videoFingerprintKeys.forEach((key) => seenVideoFingerprintOwners.set(key, row.source_item_id));
         if (!row.source_item_id) return [];
         if (duplicateId) repositoryDuplicateSourceItemIds.push(row.source_item_id);
         else if (repeatsCandidate) candidatePromptDuplicateSourceItemIds.push(row.source_item_id);
-        else if (repeatsCover) candidateCoverDuplicateSourceItemIds.push(row.source_item_id);
-        return (duplicateId || repeatsCandidate || repeatsCover) ? [row.source_item_id] : [];
+        else if (repeatsCover || repeatsVideoFingerprint) candidateCoverDuplicateSourceItemIds.push(row.source_item_id);
+        return (duplicateId || repeatsCandidate || repeatsCover || repeatsVideoFingerprint) ? [row.source_item_id] : [];
     });
     const candidateDuplicateSourceItemIds = [
         ...candidatePromptDuplicateSourceItemIds,
@@ -1638,17 +2063,14 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
         .eq('id', item.id)
         .neq('status', 'cleaned');
 
+    let uploadedVideoHashes = [];
     try {
         const existingPrompt = await findExistingPromptForImportItem(supabase, item);
         if (existingPrompt?.id) {
+            const duplicatePromptId = normalizePromptReferenceId(existingPrompt.id);
             const { data: updatedItem, error: updateError } = await supabase
                 .from('prompt_import_items')
-                .update({
-                    status: 'skipped',
-                    duplicate_of_prompt_id: normalizePromptReferenceId(existingPrompt.id),
-                    error_summary: '提示词库已有重复内容，已跳过',
-                    updated_at: new Date().toISOString()
-                })
+                .update(buildCleanedDuplicateItemPayload({ duplicateOfPromptId: duplicatePromptId }))
                 .eq('id', item.id)
                 .neq('status', 'cleaned')
                 .select(IMPORT_ITEM_SELECT)
@@ -1666,7 +2088,7 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 details: {
                     batch_id: batch.id,
                     item_id: item.id,
-                    prompt_id: normalizePromptReferenceId(existingPrompt.id),
+                    prompt_id: duplicatePromptId,
                     source: item.source
                 }
             });
@@ -1675,13 +2097,41 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 batch: updatedBatch,
                 item: updatedItem,
                 skipped: true,
-                duplicateOfPromptId: normalizePromptReferenceId(existingPrompt.id),
-                error: '提示词库已有重复内容，已跳过'
+                duplicateOfPromptId: duplicatePromptId,
+                error: ''
             };
         }
 
         const imageUploadResult = await uploadImportItemImages(item, { site });
         const videoUploadResult = await uploadImportItemVideos(item, imageUploadResult, { site });
+        uploadedVideoHashes = getVideoContentHashKeys({ video_assets: videoUploadResult.assets });
+        if (uploadedVideoHashes.length) {
+            const mediaDuplicates = await findExistingPromptDuplicates(supabase, [{
+                video_content_hashes: uploadedVideoHashes
+            }]);
+            const duplicatePromptId = uploadedVideoHashes
+                .map((key) => mediaDuplicates.byVideoHash.get(key))
+                .find(Boolean);
+            if (duplicatePromptId) {
+                const duplicateId = normalizePromptReferenceId(duplicatePromptId);
+                const { data: updatedItem, error: updateError } = await supabase
+                    .from('prompt_import_items')
+                    .update(buildCleanedDuplicateItemPayload({ duplicateOfPromptId: duplicateId }))
+                    .eq('id', item.id)
+                    .neq('status', 'cleaned')
+                    .select(IMPORT_ITEM_SELECT)
+                    .maybeSingle();
+                if (updateError) throw updateError;
+                if (!updatedItem) return { batch, item, cancelled: true, error: '' };
+                return {
+                    batch: await updateBatchStats(supabase, batch.id),
+                    item: updatedItem,
+                    skipped: true,
+                    duplicateOfPromptId: duplicateId,
+                    error: ''
+                };
+            }
+        }
         const finalImageAssets = [...imageUploadResult.assets, ...videoUploadResult.posterAssets];
         const finalImagePalettes = alignPromptImagePalettes(
             finalImageAssets.map((asset) => asset.original).filter(Boolean),
@@ -1702,6 +2152,7 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
                 status: 'saving',
                 final_image_assets: finalImageAssets,
                 final_video_assets: videoUploadResult.assets,
+                video_content_hashes: uploadedVideoHashes,
                 error_details: {
                     ...(imageUploadResult.failures.length ? { image_failures: imageUploadResult.failures } : {}),
                     ...(videoUploadResult.failures.length ? { video_failures: videoUploadResult.failures } : {}),
@@ -1781,6 +2232,32 @@ async function importSingleItem(supabase, user, itemId, options = {}) {
             videoFailures: videoUploadResult.failures
         };
     } catch (error) {
+        if (isVideoContentUniqueViolation(error) && uploadedVideoHashes.length) {
+            const mediaDuplicates = await findExistingPromptDuplicates(supabase, [{
+                video_content_hashes: uploadedVideoHashes
+            }]).catch(() => null);
+            const duplicatePromptId = uploadedVideoHashes
+                .map((key) => mediaDuplicates?.byVideoHash?.get(key))
+                .find(Boolean);
+            if (duplicatePromptId) {
+                const duplicateId = normalizePromptReferenceId(duplicatePromptId);
+                const { data: updatedItem, error: updateError } = await supabase
+                    .from('prompt_import_items')
+                    .update(buildCleanedDuplicateItemPayload({ duplicateOfPromptId: duplicateId }))
+                    .eq('id', item.id)
+                    .neq('status', 'cleaned')
+                    .select(IMPORT_ITEM_SELECT)
+                    .maybeSingle();
+                if (updateError) throw updateError;
+                return {
+                    batch: await updateBatchStats(supabase, batch.id),
+                    item: updatedItem || item,
+                    skipped: true,
+                    duplicateOfPromptId: duplicateId,
+                    error: ''
+                };
+            }
+        }
         const latestItem = await loadImportItem(supabase, item.id).catch(() => null);
         if (String(latestItem?.status || '') === 'cleaned') {
             return { batch, item: latestItem, cancelled: true, error: '' };
@@ -1848,6 +2325,9 @@ async function cleanupImportItems(supabase, user, body) {
             prompt_text: '',
             image_sources: [],
             video_sources: [],
+            video_fingerprints: [],
+            video_poster_hashes: [],
+            video_content_hashes: [],
             temp_image_assets: [],
             temp_video_assets: [],
             status: 'cleaned',
@@ -1981,7 +2461,21 @@ async function cleanupPendingDetailItems(supabase, user, body) {
     if (!cleanupIds.length) {
         return { items: [], cleanedCount: 0, batch: await updateBatchStats(supabase, batchId) };
     }
-    return cleanupImportItems(supabase, user, { ...body, item_ids: cleanupIds });
+    const result = await cleanupImportItems(supabase, user, { ...body, item_ids: cleanupIds });
+    const { data: retryItems, error: retryError } = await supabase
+        .from('prompt_import_items')
+        .update({
+            error_summary: '等待重新采集：详情补全暂未完成，服务端名额已释放',
+            updated_at: new Date().toISOString()
+        })
+        .in('id', cleanupIds)
+        .select(IMPORT_ITEM_SELECT);
+    if (retryError) throw retryError;
+    return {
+        ...result,
+        items: retryItems || result.items,
+        batch: await updateBatchStats(supabase, batchId)
+    };
 }
 
 function getPendingDetailCleanupIds(items = []) {
@@ -2281,8 +2775,15 @@ module.exports._private = {
     updateBatchStats,
     buildPromptPayloadFromImportItem,
     buildCleanedImportedItemPayload,
+    buildCleanedDuplicateItemPayload,
     buildImportStats,
+    reserveImportBatchSlot,
+    countOccupiedImportBatchItems,
+    buildExistingPromptHashOwners,
+    buildExistingVideoFingerprintOwners,
     buildPromptImportImageKey,
+    buildPromptImportImageVariantKey,
+    buildPromptImportImageDerivatives,
     buildPromptImportVideoKey,
     findExistingPromptDuplicates,
     checkImportItemDuplicates,

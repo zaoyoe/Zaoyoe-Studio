@@ -4,10 +4,12 @@
     const MESSAGE_STAGE = 'FATHER_KEY_STAGE_IMPORT';
     const MESSAGE_CHECK_DUPLICATES = 'FATHER_KEY_CHECK_IMPORT_DUPLICATES';
     const MESSAGE_LOAD_BATCH = 'FATHER_KEY_LOAD_IMPORT_BATCH';
+    const MESSAGE_FIND_RECOVERABLE_BATCH = 'FATHER_KEY_FIND_RECOVERABLE_IMPORT_BATCH';
     const MESSAGE_CLEANUP_PENDING = 'FATHER_KEY_CLEANUP_PENDING_IMPORT';
     const MESSAGE_DOWNLOAD = 'FATHER_KEY_DOWNLOAD_IMPORT';
     const MESSAGE_STAGE_VIA_ADMIN_TAB = 'FATHER_KEY_STAGE_IMPORT_VIA_ADMIN_TAB';
     const DEFAULT_ADMIN_BASE_URL = 'https://www.fatherkey.com';
+    const videoFingerprintCache = new Map();
 
     async function enableContentScriptSessionStorage() {
         if (!chrome.storage?.session?.setAccessLevel) return false;
@@ -84,6 +86,99 @@
             settings: { max_items: normalizeMaxItems(maxItems) },
             items: getItemsFromPayload(payload)
         };
+    }
+
+    function normalizeStrongEtag(value = '') {
+        const normalized = String(value || '').trim().replace(/^W\//i, '').replace(/^"|"$/g, '').toLowerCase();
+        return /^[a-f0-9]{16,128}$/.test(normalized) ? normalized : '';
+    }
+
+    async function resolveVideoSourceFingerprint(url = '') {
+        const normalizedUrl = String(url || '').trim();
+        if (!normalizedUrl) return null;
+        if (videoFingerprintCache.has(normalizedUrl)) return videoFingerprintCache.get(normalizedUrl);
+        const promise = (async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            try {
+                const response = await fetch(normalizedUrl, {
+                    method: 'HEAD',
+                    redirect: 'follow',
+                    signal: controller.signal,
+                    headers: { Accept: 'video/*,*/*;q=0.5' }
+                });
+                if (!response.ok) return null;
+                const etag = normalizeStrongEtag(response.headers.get('etag'));
+                const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
+                if (!etag || !Number.isFinite(contentLength) || contentLength < 1) return null;
+                return {
+                    source_fingerprint: `http-etag:${etag}:${contentLength}`,
+                    source_etag: etag,
+                    source_content_length: contentLength
+                };
+            } catch (_) {
+                return null;
+            } finally {
+                clearTimeout(timer);
+            }
+        })();
+        videoFingerprintCache.set(normalizedUrl, promise);
+        return promise;
+    }
+
+    async function resolvePosterContentHash(url = '') {
+        const normalizedUrl = String(url || '').trim();
+        if (!normalizedUrl || !globalThis.crypto?.subtle) return '';
+        const cacheKey = `poster:${normalizedUrl}`;
+        if (videoFingerprintCache.has(cacheKey)) return videoFingerprintCache.get(cacheKey);
+        const promise = (async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            try {
+                const response = await fetch(normalizedUrl, { redirect: 'follow', signal: controller.signal });
+                if (!response.ok) return '';
+                const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
+                if (Number.isFinite(contentLength) && contentLength > 8 * 1024 * 1024) return '';
+                const buffer = await response.arrayBuffer();
+                if (!buffer.byteLength || buffer.byteLength > 8 * 1024 * 1024) return '';
+                const digest = await crypto.subtle.digest('SHA-256', buffer);
+                const hex = Array.from(new Uint8Array(digest))
+                    .map((value) => value.toString(16).padStart(2, '0'))
+                    .join('');
+                return `poster-sha256:${hex}`;
+            } catch (_) {
+                return '';
+            } finally {
+                clearTimeout(timer);
+            }
+        })();
+        videoFingerprintCache.set(cacheKey, promise);
+        return promise;
+    }
+
+    async function enrichPayloadVideoFingerprints(payload = {}) {
+        const items = getItemsFromPayload(payload);
+        const enrichedItems = await Promise.all(items.map(async (item) => {
+            const videoSources = Array.isArray(item?.video_sources) ? item.video_sources : [];
+            if (!videoSources.length) return item;
+            const enrichedSources = await Promise.all(videoSources.map(async (entry) => {
+                const source = typeof entry === 'string' ? { url: entry } : { ...(entry || {}) };
+                const fingerprint = source.source_fingerprint || source.sourceFingerprint
+                    ? null
+                    : await resolveVideoSourceFingerprint(source.url || source.original || source.src || '');
+                const posterUrl = source.poster_url || source.posterUrl || source.poster || '';
+                const posterContentHash = source.poster_content_hash
+                    || source.posterContentHash
+                    || await resolvePosterContentHash(posterUrl);
+                return {
+                    ...source,
+                    ...(fingerprint || {}),
+                    ...(posterContentHash ? { poster_content_hash: posterContentHash } : {})
+                };
+            }));
+            return { ...item, video_sources: enrichedSources };
+        }));
+        return { ...payload, items: enrichedItems };
     }
 
     function isUnauthorizedResponse(response = {}, result = {}) {
@@ -219,7 +314,8 @@
         maxFavorites = 0,
         batchId = ''
     } = {}) {
-        const items = getItemsFromPayload(payload);
+        const enrichedPayload = await enrichPayloadVideoFingerprints(payload);
+        const items = getItemsFromPayload(enrichedPayload);
         if (!items.length) {
             throw new Error('当前页面没有可送入队列的内容');
         }
@@ -231,6 +327,9 @@
                 attemptedCount: 0,
                 stagedCount: 0,
                 skippedDuplicateCount: 0,
+                ignoredExistingCount: 0,
+                capacityDeferredCount: 0,
+                capacityDeferredSourceItemIds: [],
                 rejectedIdentityCount: 0,
                 batch: null
             };
@@ -251,6 +350,13 @@
                 aggregate.attemptedCount += Number(result.attemptedCount || 0);
                 aggregate.stagedCount += Number(result.stagedCount || 0);
                 aggregate.skippedDuplicateCount += Number(result.skippedDuplicateCount || 0);
+                aggregate.ignoredExistingCount += Number(result.ignoredExistingCount || 0);
+                aggregate.capacityDeferredCount += Number(result.capacityDeferredCount || 0);
+                aggregate.capacityDeferredSourceItemIds.push(...(
+                    Array.isArray(result.capacityDeferredSourceItemIds)
+                        ? result.capacityDeferredSourceItemIds
+                        : []
+                ));
                 aggregate.rejectedIdentityCount += Number(result.rejectedIdentityCount || 0);
             }
             return aggregate;
@@ -258,7 +364,7 @@
 
         const baseUrl = normalizeAdminBaseUrl(adminBaseUrl);
         const body = buildStageItemsBody({
-            payload,
+            payload: enrichedPayload,
             site,
             defaultStatus,
             maxItems,
@@ -314,7 +420,8 @@
     }
 
     async function checkImportDuplicates({ payload, adminBaseUrl, maxItems = 20 } = {}) {
-        const body = buildDuplicateCheckBody({ payload, maxItems });
+        const enrichedPayload = await enrichPayloadVideoFingerprints(payload);
+        const body = buildDuplicateCheckBody({ payload: enrichedPayload, maxItems });
         if (!body.items.length) return { checkedCount: 0, duplicateCount: 0, duplicateSourceItemIds: [] };
         const baseUrl = normalizeAdminBaseUrl(adminBaseUrl);
         let response;
@@ -379,8 +486,22 @@
         if (!normalizedBatchId) return { batch: null, items: [] };
         return requestImportApi({
             adminBaseUrl,
-            path: `/api/admin/prompts/imports?batchId=${encodeURIComponent(normalizedBatchId)}&limit=1000`
+            path: `/api/admin/prompts/imports?batchId=${encodeURIComponent(normalizedBatchId)}&limit=1000&includeCleaned=true`
         });
+    }
+
+    async function findRecoverableImportBatch({ adminBaseUrl, site = 'cn' } = {}) {
+        const batchesResult = await requestImportApi({
+            adminBaseUrl,
+            path: `/api/admin/prompts/imports?limit=20&site=${encodeURIComponent(site)}`
+        });
+        const batch = (Array.isArray(batchesResult.batches) ? batchesResult.batches : []).find((entry) => {
+            const stats = entry?.stats || {};
+            return String(entry?.source || '') === 'meigen'
+                && Number(stats.retry_pending || stats.cleaned_unpublished || 0) > 0;
+        });
+        if (!batch?.id) return { batch: null, items: [] };
+        return loadImportBatch({ batchId: batch.id, adminBaseUrl });
     }
 
     async function cleanupPendingImport({ batchId, adminBaseUrl, site = 'cn' } = {}) {
@@ -417,6 +538,12 @@
             loadImportBatch(message)
                 .then((result) => sendResponse({ ok: true, result }))
                 .catch((error) => sendResponse({ ok: false, message: error?.message || '读取原批次失败' }));
+            return true;
+        }
+        if (message?.type === MESSAGE_FIND_RECOVERABLE_BATCH) {
+            findRecoverableImportBatch(message)
+                .then((result) => sendResponse({ ok: true, result }))
+                .catch((error) => sendResponse({ ok: false, message: error?.message || '查找待重新采集批次失败' }));
             return true;
         }
         if (message?.type === MESSAGE_CLEANUP_PENDING) {

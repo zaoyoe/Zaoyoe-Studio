@@ -17696,7 +17696,7 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-23.87';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-25.96';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_DEFAULT_PARALLELISM = 8;
@@ -18311,6 +18311,10 @@ function getGalleryImportBatchStats(batch = {}) {
     const cleanedUnpublished = Object.prototype.hasOwnProperty.call(stats, 'cleaned_unpublished')
         ? number('cleaned_unpublished')
         : number('cleaned');
+    const retryPending = Object.prototype.hasOwnProperty.call(stats, 'retry_pending')
+        ? number('retry_pending')
+        : cleanedUnpublished;
+    const cleanedDuplicates = number('cleaned_duplicates');
     return {
         total,
         attempted: Math.max(total, number('attempted')),
@@ -18322,6 +18326,8 @@ function getGalleryImportBatchStats(batch = {}) {
         hasPublishedStats,
         published,
         cleanedUnpublished,
+        cleanedDuplicates,
+        retryPending,
         attention,
         failed: number('failed'),
         needsReview: number('needs_review'),
@@ -18337,6 +18343,7 @@ function getGalleryImportBatchStatusLabel(batch = {}) {
     if (!stats.total) return '空批次';
     if (stats.pending) return '处理中';
     if (stats.attention) return '需要处理';
+    if (stats.retryPending) return '待重新采集';
     if (String(batch?.status || '') === 'completed') {
         return stats.hasPublishedStats && stats.published === 0 ? '已处理，未发布' : '已处理完成';
     }
@@ -18401,10 +18408,10 @@ function renderGalleryImportBatchTracker() {
         `<span>待处理 ${stats.pending}</span>`,
         `<span>已处理 ${stats.completed}</span>`,
         `<span>实际发布 ${stats.published}</span>`,
-        `<span>清理未发布 ${stats.cleanedUnpublished}</span>`,
+        `<span>待重新采集 ${stats.retryPending}</span>`,
         `<span>失败 ${stats.failed}</span>`,
         `<span>需复核 ${stats.needsReview}</span>`,
-        `<span>批次内跳过 ${stats.duplicates + stats.skipped}</span>`,
+        `<span>批次内跳过重复 ${stats.duplicates + stats.cleanedDuplicates}</span>`,
         `<span>更新 ${escapeGalleryImportHtml(formatGalleryImportBatchTime(batch.updated_at))}</span>`
     ].join('');
 }
@@ -18459,7 +18466,7 @@ function getGalleryImportStats(items = galleryImportState.items) {
         cleaned: 0,
         failed: batchStats.failed,
         needs_review: batchStats.needsReview,
-        duplicate: batchStats.duplicates,
+        duplicate: batchStats.duplicates + batchStats.cleanedDuplicates,
         uploadable: batchStats.pending + batchStats.failed,
         uploadTotal: batchStats.pending + batchStats.completed + batchStats.failed,
         uploadFinished: batchStats.completed + batchStats.failed,
@@ -19362,6 +19369,10 @@ async function runGalleryImportAutoDetectionCycle() {
                 if (batchStats.failed || batchStats.needsReview) {
                     setGalleryImportRunStatus(
                         `批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)} 需要处理：失败 ${batchStats.failed}，需复核 ${batchStats.needsReview}`
+                    );
+                } else if (batchStats.retryPending) {
+                    setGalleryImportRunStatus(
+                        `批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)} 有 ${batchStats.retryPending} 条待重新采集`
                     );
                 } else if (batchStats.total > 0 && batchStats.completed >= batchStats.total) {
                     setGalleryImportRunStatus(`批次 ${String(galleryImportState.batch?.id || '').slice(0, 8)} 已处理完成`);

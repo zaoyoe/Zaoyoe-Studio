@@ -38,6 +38,12 @@
     const SCROLL_COLLECT_STABLE_LIMIT = 8;
     const AUTOMATION_SCROLL_MAX_STEPS = 1000;
     const AUTOMATION_STAGNANT_LIMIT = 3;
+    const AUTOMATION_DETAIL_BATCH_SIZE = 8;
+    const AUTOMATION_DETAIL_RETRY_PASSES = 2;
+    const AUTOMATION_RECOVERY_SWEEP_LIMIT = 2;
+    const AUTOMATION_RETRY_RESERVATION_MIN_DEFERRED = 12;
+    const AUTOMATION_RETRY_RESERVATION_MULTIPLIER = 3;
+    const AUTOMATION_RETRY_RESERVATION_MAX_DEFERRED = 60;
     const PAGE_BATCH_DELAY_MS = 1500;
     const PAGE_BATCH_MAX_PAGES = 5;
     const PROMPT_COPY_CLICK_DELAY_MS = 650;
@@ -124,6 +130,10 @@
         checkedKeys: new Set(),
         checkedRevisions: new Map(),
         capacityDeferredKeys: new Set(),
+        retryItems: new Map(),
+        retryAttemptCounts: new Map(),
+        retryReservationActive: true,
+        retryReservationDeferredKeys: new Set(),
         promise: Promise.resolve(),
         attemptedCount: 0,
         stagedCount: 0,
@@ -137,6 +147,8 @@
         rejectedCount: 0,
         processableCount: 0,
         pendingDetailCount: 0,
+        cleanedPublishedCount: 0,
+        batchTargetCount: 0,
         lastError: ''
     };
 
@@ -293,11 +305,44 @@
     }
 
     function isStreamReadyItem(item = {}) {
-        return !needsInteractiveDetail(item, { requireFavoriteCount: false });
+        return !needsRequiredDetail(item);
     }
 
     function getStreamItemKey(item = {}) {
         return String(item.source_item_id || item.source_page_url || item.original_work_url || '').trim().toLowerCase();
+    }
+
+    function rememberStreamRetryItem(item = {}, { incrementAttempt = true } = {}) {
+        const key = getStreamItemKey(item);
+        if (!key) return '';
+        const previousItem = streamStageState.retryItems.get(key);
+        const mergedRetryItems = previousItem
+            ? getCollector()?.mergeCollectedItems?.([previousItem, item])
+            : [];
+        const retryItem = mergedRetryItems?.find((entry) => getStreamItemKey(entry) === key)
+            || (previousItem ? { ...previousItem, ...item } : { ...item });
+        const previousAttemptCount = Math.max(0, Number(streamStageState.retryAttemptCounts.get(key) || 0));
+        const attemptCount = previousAttemptCount + (incrementAttempt ? 1 : 0);
+        streamStageState.retryItems.set(key, {
+            ...retryItem,
+            stream_pending_detail: false,
+            stream_retry_pending: true,
+            stream_retry_attempts: attemptCount,
+            stream_server_released: true
+        });
+        streamStageState.retryAttemptCounts.set(key, attemptCount);
+        streamStageState.capacityDeferredKeys.add(key);
+        return key;
+    }
+
+    function resolveStreamRetryItem(item = {}) {
+        const key = getStreamItemKey(item);
+        if (!key) return;
+        streamStageState.retryItems.delete(key);
+        streamStageState.retryAttemptCounts.delete(key);
+        streamStageState.capacityDeferredKeys.delete(key);
+        streamStageState.retryReservationDeferredKeys.clear();
+        if (!streamStageState.retryItems.size) streamStageState.retryReservationActive = false;
     }
 
     function resetStreamStageState(batchId = '') {
@@ -308,6 +353,10 @@
         streamStageState.checkedKeys = new Set();
         streamStageState.checkedRevisions = new Map();
         streamStageState.capacityDeferredKeys = new Set();
+        streamStageState.retryItems = new Map();
+        streamStageState.retryAttemptCounts = new Map();
+        streamStageState.retryReservationActive = true;
+        streamStageState.retryReservationDeferredKeys = new Set();
         streamStageState.promise = Promise.resolve();
         streamStageState.attemptedCount = 0;
         streamStageState.stagedCount = 0;
@@ -321,6 +370,8 @@
         streamStageState.rejectedCount = 0;
         streamStageState.processableCount = 0;
         streamStageState.pendingDetailCount = 0;
+        streamStageState.cleanedPublishedCount = 0;
+        streamStageState.batchTargetCount = 0;
         streamStageState.lastError = '';
     }
 
@@ -328,8 +379,78 @@
         return streamStageState.processableCount + streamStageState.pendingDetailCount;
     }
 
+    function getStreamProcessableCount() {
+        return streamStageState.processableCount;
+    }
+
+    function getStreamFulfilledCount() {
+        return streamStageState.processableCount + streamStageState.cleanedPublishedCount;
+    }
+
     function getStreamCandidateCount() {
-        return getStreamActiveCount();
+        return getStreamFulfilledCount() + streamStageState.pendingDetailCount;
+    }
+
+    function getStreamDeferredCandidateCount() {
+        return Array.from(streamStageState.capacityDeferredKeys).filter((key) => (
+            !streamStageState.acceptedKeys.has(key)
+            && !streamStageState.retryItems.has(key)
+        )).length;
+    }
+
+    function getStreamRetryCapacity(
+        remaining = 0,
+        retryKeys = [],
+        acceptedKeys = null,
+        selectedRetryCount = 0,
+        reservationActive = true
+    ) {
+        const stagedKeys = acceptedKeys || new Set();
+        const unstagedRetryCount = Array.from(retryKeys).filter((key) => !stagedKeys.has(key)).length;
+        const retryReservedCount = Math.min(
+            remaining,
+            reservationActive ? unstagedRetryCount : selectedRetryCount
+        );
+        return {
+            unstagedRetryCount,
+            retryReservedCount,
+            regularCapacity: Math.max(0, remaining - retryReservedCount)
+        };
+    }
+
+    function getStreamRetryReservationReleaseThreshold(retryCount = 0) {
+        return Math.min(
+            AUTOMATION_RETRY_RESERVATION_MAX_DEFERRED,
+            Math.max(
+                AUTOMATION_RETRY_RESERVATION_MIN_DEFERRED,
+                Math.max(0, Number(retryCount || 0)) * AUTOMATION_RETRY_RESERVATION_MULTIPLIER
+            )
+        );
+    }
+
+    function shouldReleaseStreamRetryReservation(
+        batchRemaining = 0,
+        unstagedRetryCount = 0,
+        retryCandidateCount = 0,
+        deferredCandidateCount = 0
+    ) {
+        return batchRemaining > 0
+            && batchRemaining <= unstagedRetryCount
+            && retryCandidateCount === 0
+            && deferredCandidateCount >= getStreamRetryReservationReleaseThreshold(unstagedRetryCount);
+    }
+
+    function releaseStreamRetryReservation(reason = '') {
+        if (!streamStageState.retryReservationActive) return false;
+        const deferredCandidateCount = streamStageState.retryReservationDeferredKeys.size;
+        streamStageState.retryReservationActive = false;
+        streamStageState.retryReservationDeferredKeys.clear();
+        logDiagnostic('stream-retry-reservation-released', {
+            reason: reason || '待重采卡片未在限定候选窗口内出现',
+            retryQueueCount: streamStageState.retryItems.size,
+            deferredCandidateCount
+        });
+        return true;
     }
 
     function syncStreamBatchStats(batch = {}) {
@@ -337,6 +458,11 @@
         streamStageState.processableCount = ['staged', 'queued', 'uploading', 'saving', 'imported']
             .reduce((sum, key) => sum + Number(stats[key] || 0), 0);
         streamStageState.pendingDetailCount = Number(stats.needs_review || 0);
+        streamStageState.cleanedPublishedCount = Number(stats.cleaned_published || 0);
+        streamStageState.batchTargetCount = Math.max(
+            0,
+            Number(batch?.settings?.max_items || batch?.settings?.maxItems || streamStageState.batchTargetCount || 0)
+        );
     }
 
     function queueStreamStage(items = [], message = {}, { flush = false, force = false } = {}) {
@@ -378,16 +504,31 @@
                     const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
                     const duplicateCount = Number(result.skippedDuplicateCount || 0);
                     const ignoredExistingCount = Number(result.ignoredExistingCount || 0);
+                    const capacityDeferredCount = Number(result.capacityDeferredCount || 0);
+                    (Array.isArray(result.capacityDeferredSourceItemIds)
+                        ? result.capacityDeferredSourceItemIds
+                        : [])
+                        .map((value) => String(value || '').trim().toLowerCase())
+                        .filter(Boolean)
+                        .forEach((key) => {
+                            streamStageState.capacityDeferredKeys.add(key);
+                            streamStageState.sentRevisions.delete(key);
+                        });
                     streamStageState.batchId = result.batch?.id || streamStageState.batchId;
                     (Array.isArray(result.items) ? result.items : []).forEach((item) => {
                         const key = getStreamItemKey(item);
                         if (key) streamStageState.acceptedKeys.add(key);
+                        if (String(item?.status || '') !== 'needs_review') resolveStreamRetryItem(item);
                     });
                     streamStageState.stagedCount = streamStageState.acceptedKeys.size || (streamStageState.stagedCount + acceptedCount);
                     streamStageState.skippedDuplicateCount += duplicateCount;
                     streamStageState.rejectedCount += Math.max(
                         0,
-                        stagedItems.length - acceptedCount - duplicateCount - ignoredExistingCount
+                        stagedItems.length
+                            - acceptedCount
+                            - duplicateCount
+                            - ignoredExistingCount
+                            - capacityDeferredCount
                     );
                     syncStreamBatchStats(result.batch);
                 } catch (error) {
@@ -403,11 +544,66 @@
     async function stageStreamItemsToTarget(items = [], message = {}, maxItems = 20, options = {}) {
         const candidates = Array.isArray(items) ? items : [];
         const revisionItems = candidates.filter((item) => streamStageState.acceptedKeys.has(getStreamItemKey(item)));
+        const newCandidates = candidates.filter((item) => !streamStageState.acceptedKeys.has(getStreamItemKey(item)));
+        const retryCandidates = newCandidates.filter((item) => streamStageState.retryItems.has(getStreamItemKey(item)));
+        const regularCandidates = newCandidates.filter((item) => !streamStageState.retryItems.has(getStreamItemKey(item)));
         const remaining = Math.max(0, maxItems - getStreamCandidateCount());
-        const newItems = candidates
-            .filter((item) => !streamStageState.acceptedKeys.has(getStreamItemKey(item)))
-            .slice(0, remaining);
+        let selectedRetryItems = retryCandidates.slice(0, remaining);
+        let { unstagedRetryCount, retryReservedCount, regularCapacity } = getStreamRetryCapacity(
+            remaining,
+            streamStageState.retryItems.keys(),
+            streamStageState.acceptedKeys,
+            selectedRetryItems.length,
+            streamStageState.retryReservationActive
+        );
+        let selectedRegularItems = regularCandidates.slice(0, regularCapacity);
+        const batchRemaining = Math.max(
+            0,
+            normalizeMaxItems(message.maxItems || maxItems) - getStreamCandidateCount()
+        );
+        const retryReservationAtFinalCapacity = batchRemaining > 0
+            && batchRemaining <= unstagedRetryCount;
+        if (retryCandidates.length > 0) {
+            streamStageState.retryReservationDeferredKeys.clear();
+        } else if (streamStageState.retryReservationActive
+            && retryReservationAtFinalCapacity
+            && regularCandidates.length > selectedRegularItems.length) {
+            regularCandidates
+                .slice(regularCapacity)
+                .map((item) => getStreamItemKey(item))
+                .filter(Boolean)
+                .forEach((key) => streamStageState.retryReservationDeferredKeys.add(key));
+            if (shouldReleaseStreamRetryReservation(
+                batchRemaining,
+                unstagedRetryCount,
+                retryCandidates.length,
+                streamStageState.retryReservationDeferredKeys.size
+            )) {
+                releaseStreamRetryReservation('已发现足够多的普通候选，仍未遇到待重新采集卡片');
+                ({ unstagedRetryCount, retryReservedCount, regularCapacity } = getStreamRetryCapacity(
+                    remaining,
+                    streamStageState.retryItems.keys(),
+                    streamStageState.acceptedKeys,
+                    selectedRetryItems.length,
+                    false
+                ));
+                selectedRegularItems = regularCandidates.slice(0, regularCapacity);
+            }
+        } else if (!retryReservationAtFinalCapacity) {
+            streamStageState.retryReservationDeferredKeys.clear();
+        }
+        const newItems = [...selectedRetryItems, ...selectedRegularItems];
         const selectedNewKeys = new Set(newItems.map((item) => getStreamItemKey(item)).filter(Boolean));
+        const deferredRegularCount = Math.max(0, regularCandidates.length - selectedRegularItems.length);
+        if (retryReservedCount > selectedRetryItems.length && deferredRegularCount > 0) {
+            logDiagnostic('stream-capacity-reserved-for-retry', {
+                retryQueueCount: unstagedRetryCount,
+                retryCandidates: retryCandidates.length,
+                reservedRetrySlots: retryReservedCount - selectedRetryItems.length,
+                acceptedNewCandidates: selectedRegularItems.length,
+                deferredNewCandidates: deferredRegularCount
+            });
+        }
         const capacityDeferredItems = candidates.filter((item) => {
             const key = getStreamItemKey(item);
             return key
@@ -415,12 +611,15 @@
                 && !selectedNewKeys.has(key);
         });
         const stagedItems = [...revisionItems, ...newItems]
-            .map((item) => options.pendingDetail === true ? { ...item, stream_pending_detail: true } : item);
+            .map((item) => options.pendingDetail === true
+                && needsRequiredDetail(item)
+                ? { ...item, stream_pending_detail: true }
+                : item);
+        selectedNewKeys.forEach((key) => streamStageState.capacityDeferredKeys.delete(key));
         if (stagedItems.length) {
             queueStreamStage(stagedItems, message, { flush: true });
             await streamStageState.promise;
         }
-        selectedNewKeys.forEach((key) => streamStageState.capacityDeferredKeys.delete(key));
         capacityDeferredItems
             .map((item) => getStreamItemKey(item))
             .filter(Boolean)
@@ -467,7 +666,14 @@
         });
         if (!response?.ok) throw new Error(response?.message || '读取原批次失败');
         const result = response.result || {};
-        const items = (Array.isArray(result.items) ? result.items : []).map((item) => (
+        const restoredItems = Array.isArray(result.items) ? result.items : [];
+        const activeItems = restoredItems.filter((item) => String(item?.status || '') !== 'cleaned');
+        const retryItems = restoredItems.filter((item) => (
+            String(item?.status || '') === 'cleaned'
+            && !String(item?.final_prompt_id || '').trim()
+            && !String(item?.duplicate_of_prompt_id || '').trim()
+        ));
+        const items = activeItems.map((item) => (
             String(item?.status || '') === 'needs_review'
                 ? { ...item, stream_pending_detail: true }
                 : item
@@ -480,8 +686,14 @@
             streamStageState.checkedKeys.add(key);
             streamStageState.checkedRevisions.set(key, getStreamItemRevision(item));
         });
+        retryItems.forEach((item) => rememberStreamRetryItem(item, { incrementAttempt: false }));
         streamStageState.stagedCount = items.length;
         syncStreamBatchStats(result.batch);
+        logDiagnostic('stream-batch-restored', {
+            activeItems: items.length,
+            retryItems: retryItems.length,
+            batchId: streamStageState.batchId
+        });
         if (!items.length) return null;
         const currentPayload = getLastJobPayload() || collector?.buildPayload?.() || {};
         const payload = {
@@ -501,32 +713,13 @@
         const payloadItems = Array.isArray(payload?.items) ? payload.items : [];
         const pendingPayloadItems = payloadItems.filter((item) => item?.stream_pending_detail === true);
         const retryableItems = pendingPayloadItems
-            .filter((item) => item?.stream_pending_detail === true && needsInteractiveDetail(item));
+            .filter((item) => item?.stream_pending_detail === true && needsRequiredDetail(item));
         const unmatchedPendingCount = Math.max(
             0,
             streamStageState.pendingDetailCount - pendingPayloadItems.length
         );
-        if (retryableItems.length || unmatchedPendingCount > 0) {
-            const retryableKeys = new Set(retryableItems.map((item) => getStreamItemKey(item)).filter(Boolean));
-            const nextPayload = payload ? {
-                ...payload,
-                items: (Array.isArray(payload.items) ? payload.items : []).map((item) => (
-                    retryableKeys.has(getStreamItemKey(item))
-                        ? { ...item, stream_pending_detail: true, stream_discovery_deferred: true }
-                        : item
-                ))
-            } : payload;
-            logDiagnostic('pending-detail-retained', {
-                retainedCount: streamStageState.pendingDetailCount,
-                retryableCount: retryableItems.length,
-                unmatchedPendingCount,
-                sourceItemIds: retryableItems.map((item) => item.source_item_id).filter(Boolean).slice(0, 50),
-                batchId: streamStageState.batchId
-            });
-            if (nextPayload) rememberSessionPayload(nextPayload, summarizePayload(nextPayload));
-            return nextPayload;
-        }
         const previousPendingDetailCount = streamStageState.pendingDetailCount;
+        pendingPayloadItems.forEach((item) => rememberStreamRetryItem(item));
         const response = await chrome.runtime.sendMessage({
             type: MESSAGE_CLEANUP_PENDING,
             batchId: streamStageState.batchId,
@@ -538,9 +731,13 @@
         const cleanedKeys = new Set((Array.isArray(result.items) ? result.items : [])
             .map((item) => getStreamItemKey(item))
             .filter(Boolean));
+        (Array.isArray(result.items) ? result.items : []).forEach((item) => {
+            if (!streamStageState.retryItems.has(getStreamItemKey(item))) rememberStreamRetryItem(item);
+        });
         cleanedKeys.forEach((key) => {
             streamStageState.acceptedKeys.delete(key);
             streamStageState.sentRevisions.delete(key);
+            streamStageState.capacityDeferredKeys.add(key);
         });
         streamStageState.stagedCount = streamStageState.acceptedKeys.size;
         if (result.batch) {
@@ -555,14 +752,19 @@
                     ? {
                         ...item,
                         stream_pending_detail: false,
-                        stream_final_status: 'unresolved',
-                        stream_final_reason: '详情补全后仍不完整，已从服务端处理队列移除'
+                        stream_retry_pending: true,
+                        stream_retry_attempts: streamStageState.retryAttemptCounts.get(getStreamItemKey(item)) || 1,
+                        stream_server_released: true,
+                        stream_final_reason: '详情补全后仍不完整，已释放服务端名额并保留为待重新采集'
                     }
                     : item)
             }
             : payload;
         logDiagnostic('pending-detail-finalized', {
             cleanedCount: cleanedKeys.size,
+            retryableCount: retryableItems.length,
+            unmatchedPendingCount,
+            retryQueueCount: streamStageState.retryItems.size,
             sourceItemIds: Array.from(cleanedKeys).slice(0, 50),
             batchId: streamStageState.batchId
         });
@@ -612,6 +814,7 @@
             videos: items.reduce((sum, item) => sum + (Array.isArray(item.video_sources) ? item.video_sources.length : 0), 0),
             detail_failures: detailJob.failed.length,
             finalized_unresolved: items.filter((item) => item.stream_final_status === 'unresolved').length,
+            retry_pending: streamStageState.retryItems.size,
             scroll_steps: scrollJob.processed,
             batch_pages: pageBatchJob.processed
         };
@@ -639,6 +842,10 @@
                         checkedKeys: Array.from(streamStageState.checkedKeys),
                         checkedRevisions: Array.from(streamStageState.checkedRevisions.entries()),
                         capacityDeferredKeys: Array.from(streamStageState.capacityDeferredKeys),
+                        retryItems: Array.from(streamStageState.retryItems.entries()),
+                        retryAttemptCounts: Array.from(streamStageState.retryAttemptCounts.entries()),
+                        retryReservationActive: streamStageState.retryReservationActive,
+                        retryReservationDeferredKeys: Array.from(streamStageState.retryReservationDeferredKeys),
                         repositoryDuplicateKeys: Array.from(streamStageState.repositoryDuplicateKeys),
                         candidateDuplicateKeys: Array.from(streamStageState.candidateDuplicateKeys)
                     }
@@ -686,6 +893,20 @@
                 streamStageState.capacityDeferredKeys = new Set(
                     Array.isArray(dedupState.capacityDeferredKeys) ? dedupState.capacityDeferredKeys : []
                 );
+                streamStageState.retryItems = new Map(
+                    (Array.isArray(dedupState.retryItems) ? dedupState.retryItems : [])
+                        .filter((entry) => Array.isArray(entry) && entry.length >= 2)
+                );
+                streamStageState.retryAttemptCounts = new Map(
+                    (Array.isArray(dedupState.retryAttemptCounts) ? dedupState.retryAttemptCounts : [])
+                        .filter((entry) => Array.isArray(entry) && entry.length >= 2)
+                );
+                streamStageState.retryReservationActive = dedupState.retryReservationActive !== false;
+                streamStageState.retryReservationDeferredKeys = new Set(
+                    Array.isArray(dedupState.retryReservationDeferredKeys)
+                        ? dedupState.retryReservationDeferredKeys
+                        : []
+                );
                 streamStageState.repositoryDuplicateKeys = new Set(
                     Array.isArray(dedupState.repositoryDuplicateKeys) ? dedupState.repositoryDuplicateKeys : []
                 );
@@ -702,6 +923,8 @@
                 streamStageState.rejectedCount = Math.max(0, Number(snapshot.automationStatus.rejected || 0));
                 streamStageState.processableCount = Math.max(0, Number(snapshot.automationStatus.processable || 0));
                 streamStageState.pendingDetailCount = Math.max(0, Number(snapshot.automationStatus.pendingDetail || 0));
+                streamStageState.cleanedPublishedCount = Math.max(0, Number(snapshot.automationStatus.published || 0));
+                streamStageState.batchTargetCount = Math.max(0, Number(snapshot.automationStatus.batchTarget || 0));
             }
             logDiagnostic('session-restored', {
                 items: snapshot.payload.items.length,
@@ -738,7 +961,7 @@
         const payload = getLastJobPayload();
         const summary = getLastJobSummary(payload) || summarizePayload(payload || {});
         const missingDetailCount = (Array.isArray(payload?.items) ? payload.items : [])
-            .filter((item) => needsInteractiveDetail(item, { requireFavoriteCount: false })).length;
+            .filter((item) => needsRequiredDetail(item)).length;
         return {
             running: automationJob.running,
             stopRequested: automationJob.stopRequested,
@@ -760,6 +983,18 @@
             rejected: streamStageState.rejectedCount,
             processable: streamStageState.processableCount,
             pendingDetail: streamStageState.pendingDetailCount,
+            published: streamStageState.cleanedPublishedCount,
+            fulfilled: getStreamFulfilledCount(),
+            retryPending: streamStageState.retryItems.size,
+            retryReserved: getStreamRetryCapacity(
+                Math.max(0, automationJob.target - getStreamCandidateCount()),
+                streamStageState.retryItems.keys(),
+                streamStageState.acceptedKeys,
+                0,
+                streamStageState.retryReservationActive
+            ).retryReservedCount,
+            deferredCandidates: getStreamDeferredCandidateCount(),
+            batchTarget: streamStageState.batchTargetCount,
             batchId: streamStageState.batchId,
             detailProcessed: detailJob.processed,
             detailTotal: detailJob.total,
@@ -879,6 +1114,7 @@
                 stage_duplicates: streamStageState.skippedDuplicateCount,
                 identity_rejected: streamStageState.identityRejectedCount,
                 active_server_items: getStreamActiveCount(),
+                target_fulfilled_items: getStreamFulfilledCount(),
                 finalized_unresolved: items.filter((item) => item.stream_final_status === 'unresolved').length
             },
             page_batch_status: getPageBatchStatus(),
@@ -1514,7 +1750,6 @@
             ...payload,
             items: (Array.isArray(payload?.items) ? payload.items : [])
                 .filter((item) => item?.stream_final_status !== 'unresolved')
-                .filter((item) => item?.stream_discovery_deferred !== true)
         };
     }
 
@@ -1830,6 +2065,18 @@
         const before = getScrollSnapshot();
         const snapshot = await waitForVisibleGalleryBatch();
         logDiagnostic('current-sweep-start', {
+            startingY: before.y,
+            snapshot
+        });
+        return snapshot;
+    }
+
+    async function beginRecoverySweep() {
+        const before = getScrollSnapshot();
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        const snapshot = await waitForVisibleGalleryBatch();
+        logDiagnostic('retry-recovery-sweep-start', {
+            retryQueueCount: streamStageState.retryItems.size,
             startingY: before.y,
             snapshot
         });
@@ -2863,13 +3110,14 @@
     function needsInteractiveDetail(item = {}, { requireFavoriteCount = false } = {}) {
         if (item.stream_final_status === 'unresolved') return false;
         const images = Array.isArray(item.image_sources) ? item.image_sources : [];
+        const videos = Array.isArray(item.video_sources) ? item.video_sources : [];
         const expectedImageCount = Number(item.expected_image_count || 0);
         const hasAuthoritativeImageCount = Boolean(
             item.detail_expected_count_authoritative || item.detail_image_count_authoritative
         );
         const imageCountIncomplete = hasAuthoritativeImageCount
             ? images.length < Math.max(1, expectedImageCount)
-            : images.length <= 1;
+            : (videos.length > 0 ? images.length < 1 : images.length <= 1);
         const missingSource = !String(item.original_work_url || '').trim()
             || !String(item.author_name || '').trim()
             || !String(item.author_handle || '').trim();
@@ -2877,6 +3125,27 @@
             || imageCountIncomplete
             || missingSource
             || (requireFavoriteCount && Number(item.favorite_count || 0) <= 0);
+    }
+
+    function needsRequiredDetail(item = {}) {
+        if (item.stream_final_status === 'unresolved') return false;
+        const images = Array.isArray(item.image_sources) ? item.image_sources : [];
+        const videos = Array.isArray(item.video_sources) ? item.video_sources : [];
+        const expectedImageCount = Number(item.expected_image_count || 0);
+        const hasAuthoritativeImageCount = Boolean(
+            item.detail_expected_count_authoritative || item.detail_image_count_authoritative
+        );
+        const missingRequiredMedia = images.length === 0 && videos.length === 0;
+        const confirmedMissingImages = hasAuthoritativeImageCount
+            && expectedImageCount > 0
+            && images.length < expectedImageCount;
+        const missingSource = !String(item.original_work_url || '').trim()
+            || !String(item.author_name || '').trim()
+            || !String(item.author_handle || '').trim();
+        return itemPromptNeedsDetailEnrichment(item)
+            || missingRequiredMedia
+            || confirmedMissingImages
+            || missingSource;
     }
 
     function hasBetterDetailThanBase(detailItems = [], item = {}, collector = getCollector()) {
@@ -3200,6 +3469,7 @@
     async function enrichPayloadWithDetails(basePayload, {
         retryFailed = false,
         requireFavoriteCount = false,
+        requiredDetailsOnly = false,
         streamMessage = null
     } = {}) {
         const collector = getCollector();
@@ -3211,7 +3481,9 @@
             : [];
         const interactiveItems = retryFailed
             ? []
-            : baseItems.filter((item) => needsInteractiveDetail(item, { requireFavoriteCount }));
+            : baseItems.filter((item) => requiredDetailsOnly
+                ? needsRequiredDetail(item)
+                : needsInteractiveDetail(item, { requireFavoriteCount }));
         const totalJobs = retryDetailUrls.length + interactiveItems.length;
         logDiagnostic('detail-enrich-start', {
             retryFailed,
@@ -3273,6 +3545,7 @@
                 ...cleanItem
             } = checkpointItem;
             const stagedItem = needsInteractiveDetail(cleanItem, { requireFavoriteCount })
+                && needsRequiredDetail(cleanItem)
                 ? { ...cleanItem, stream_pending_detail: true }
                 : cleanItem;
             queueStreamStage([stagedItem], streamMessage, { flush: true, force: true });
@@ -3361,10 +3634,11 @@
 
             const mergedItems = mergeDetailItemsIntoBase(baseItems, detailItems, collector)
                 .map(({ stream_pending_detail: _pendingDetail, streamPendingDetail: _pendingDetailAlias, ...item }) => (
-                    needsInteractiveDetail(item, { requireFavoriteCount })
+                    needsRequiredDetail(item)
                         ? { ...item, stream_pending_detail: true }
                         : item
                 ));
+            mergedItems.filter((item) => !needsRequiredDetail(item)).forEach((item) => resolveStreamRetryItem(item));
             if (streamMessage) {
                 queueStreamStage(mergedItems, streamMessage, { flush: true, force: true });
                 await streamStageState.promise;
@@ -3420,6 +3694,9 @@
 
         const maxSteps = normalizeScrollStepCount(message.maxSteps);
         const maxItems = normalizeMaxItems(message.maxItems);
+        const streamTarget = message.streamToQueue
+            ? Math.min(maxItems, normalizeMaxItems(message.streamTarget || maxItems))
+            : maxItems;
         const favoriteRange = normalizeFavoriteRange(message);
         const collectionRoot = getActiveCollectionRoot(collector);
         await prepareListPageForCollection();
@@ -3476,7 +3753,7 @@
         });
 
         if (message.streamToQueue) {
-            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, maxItems, {
+            await stageStreamItemsToTarget(initialCheck.uniqueItems, message, streamTarget, {
                 pendingDetail: true
             });
         }
@@ -3503,7 +3780,7 @@
         try {
             for (let index = 0; index < maxSteps; index += 1) {
                 if (scrollJob.stopRequested) break;
-                if (message.streamToQueue && getStreamCandidateCount() >= maxItems) break;
+                if (message.streamToQueue && getStreamCandidateCount() >= streamTarget) break;
 
                 const nextSnapshot = await scrollAndWaitForGalleryBatch();
                 scrollJob.processed = index + 1;
@@ -3529,7 +3806,7 @@
                     'repositoryDuplicateSourceItemIds'
                 );
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
-                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, {
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, streamTarget, {
                         pendingDetail: true
                     });
                 }
@@ -3558,6 +3835,14 @@
                 const targetCount = message.streamToQueue
                     ? getStreamCandidateCount()
                     : payload.items.length;
+                if (message.streamToQueue && streamStageState.pendingDetailCount > 0) {
+                    logDiagnostic('scroll-paused-for-detail', {
+                        step: index + 1,
+                        pendingDetail: streamStageState.pendingDetailCount,
+                        activeServerItems: getStreamActiveCount()
+                    });
+                    break;
+                }
                 logDiagnostic('scroll-scan', {
                     step: index + 1,
                     snapshot: nextSnapshot,
@@ -3582,7 +3867,7 @@
                         totalMs: preflightFinishedAt - scanStartedAt
                     }
                 });
-                if (targetCount >= maxItems) {
+                if (targetCount >= streamTarget) {
                     await waitForVisibleGalleryBatch();
                     await refreshStructuredDataCache();
                     const verificationItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions({
@@ -3598,7 +3883,7 @@
                         'repositoryDuplicateSourceItemIds'
                     );
                     if (message.streamToQueue && verificationCheck.uniqueItems.length) {
-                        await stageStreamItemsToTarget(verificationCheck.uniqueItems, message, maxItems, {
+                        await stageStreamItemsToTarget(verificationCheck.uniqueItems, message, streamTarget, {
                             pendingDetail: true
                         });
                     }
@@ -3665,7 +3950,7 @@
                 scrollStatus: getScrollStatus(),
                 repositoryDuplicateCount,
                 checkedCandidateCount: checkedKeys.size,
-                exhausted: getStreamCandidateCount() < maxItems
+                exhausted: getStreamCandidateCount() < streamTarget
                     && stableRounds >= SCROLL_COLLECT_STABLE_LIMIT,
                 streamResult: message.streamToQueue ? {
                     batchId: streamStageState.batchId,
@@ -3714,6 +3999,9 @@
 
         const maxPages = normalizePageBatchCount(message.maxPages);
         const maxItems = normalizeMaxItems(message.maxItems);
+        const streamTarget = message.streamToQueue
+            ? Math.min(maxItems, normalizeMaxItems(message.streamTarget || maxItems))
+            : maxItems;
         const favoriteRange = normalizeFavoriteRange(message);
         await prepareListPageForCollection();
         await refreshStructuredDataCache();
@@ -3756,7 +4044,7 @@
         try {
             for (let index = 0; index < maxPages; index += 1) {
                 if (pageBatchJob.stopRequested) break;
-                if (message.streamToQueue && getStreamCandidateCount() >= maxItems) break;
+                if (message.streamToQueue && getStreamCandidateCount() >= streamTarget) break;
 
                 const normalizedCurrentUrl = normalizeBatchUrl(currentUrl) || currentUrl;
                 if (visited.has(normalizedCurrentUrl) && currentRoot !== document) {
@@ -3786,7 +4074,7 @@
                     'repositoryDuplicateSourceItemIds'
                 );
                 if (message.streamToQueue && duplicateCheck.uniqueItems.length) {
-                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, maxItems, {
+                    await stageStreamItemsToTarget(duplicateCheck.uniqueItems, message, streamTarget, {
                         pendingDetail: true
                     });
                 }
@@ -3821,7 +4109,7 @@
                 const targetCount = message.streamToQueue
                     ? getStreamCandidateCount()
                     : payload.items.length;
-                if (targetCount >= maxItems || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
+                if (targetCount >= streamTarget || pageBatchJob.stopRequested || index + 1 >= maxPages) break;
 
                 const nextTarget = findNextPageTarget(currentRoot, normalizedCurrentUrl);
                 if (!nextTarget) {
@@ -3955,6 +4243,7 @@
             payload = await enrichPayloadWithDetails(payload, {
                 retryFailed: Boolean(message.retryFailed),
                 requireFavoriteCount: hasFavoriteRange,
+                requiredDetailsOnly: message.requiredDetailsOnly === true,
                 streamMessage: message.streamToQueue ? message : null
             });
             payload = applyPayloadLimits(payload, { maxItems, favoriteRange });
@@ -3986,7 +4275,7 @@
     }
 
     async function runFullyAutomaticCollection(message = {}) {
-        const maxItems = normalizeMaxItems(message.maxItems);
+        let maxItems = normalizeMaxItems(message.maxItems);
         const startedAt = new Date().toISOString();
         updateAutomationJob({
             running: true,
@@ -4003,33 +4292,68 @@
             let payload = null;
             updateAutomationJob({ phase: 'discovering' });
             await prepareListPageForCollection();
-            await beginSweepAtCurrentPosition();
             if (String(message.batchId || '').trim()) {
                 updateAutomationJob({ phase: 'recovering' });
                 payload = await restoreStreamBatch(message);
+                if (streamStageState.batchTargetCount > 0) {
+                    maxItems = normalizeMaxItems(streamStageState.batchTargetCount);
+                    updateAutomationJob({ target: maxItems });
+                }
             } else {
                 resetStreamStageState('');
             }
+            if (streamStageState.retryItems.size > 0) {
+                await beginRecoverySweep();
+            } else {
+                await beginSweepAtCurrentPosition();
+            }
 
-            const enrichAndDiscardUnresolved = async () => {
+            const enrichAndReleaseUnresolved = async () => {
                 if (automationJob.stopRequested) return;
                 payload = getContinuablePayload(payload || {});
-                const items = Array.isArray(payload.items) ? payload.items : [];
-                const needsEnrichment = items.some((item) => needsInteractiveDetail(item, { requireFavoriteCount: false }));
-                if (items.length && (needsEnrichment || streamStageState.pendingDetailCount > 0)) {
-                    detailJob.lastPayload = payload;
-                    detailJob.lastSummary = summarizePayload(payload);
-                    rememberSessionPayload(payload, detailJob.lastSummary);
-                    updateAutomationJob({ phase: 'enriching' });
-                    const detailResponse = await collectPayload({
-                        ...message,
-                        enrichDetails: true,
-                        retryFailed: false,
-                        streamToQueue: true,
-                        batchId: streamStageState.batchId,
-                        maxItems: Math.max(maxItems, items.length)
+                let items = Array.isArray(payload.items) ? payload.items : [];
+                if (getStreamCandidateCount() > maxItems && streamStageState.pendingDetailCount > 0) {
+                    const remainingProcessableSlots = Math.max(0, maxItems - getStreamFulfilledCount());
+                    const processableItems = items.filter((item) => item?.stream_pending_detail !== true);
+                    const pendingItems = items.filter((item) => item?.stream_pending_detail === true);
+                    const selectedPendingItems = pendingItems.slice(0, remainingProcessableSlots);
+                    items = [...processableItems, ...selectedPendingItems];
+                    payload = { ...payload, items };
+                    logDiagnostic('over-capacity-batch-recovery', {
+                        target: maxItems,
+                        activeServerItems: getStreamActiveCount(),
+                        processable: getStreamProcessableCount(),
+                        pendingDetail: streamStageState.pendingDetailCount,
+                        selectedPendingForEnrichment: selectedPendingItems.length
                     });
-                    payload = detailResponse?.payload || payload;
+                }
+                const needsEnrichment = items.some((item) => needsRequiredDetail(item));
+                if (items.length && (needsEnrichment || streamStageState.pendingDetailCount > 0)) {
+                    for (let retryPass = 0; retryPass < AUTOMATION_DETAIL_RETRY_PASSES; retryPass += 1) {
+                        if (automationJob.stopRequested) break;
+                        const unresolvedCount = items.filter((item) => needsRequiredDetail(item)).length;
+                        if (!unresolvedCount && streamStageState.pendingDetailCount === 0) break;
+                        detailJob.lastPayload = payload;
+                        detailJob.lastSummary = summarizePayload(payload);
+                        rememberSessionPayload(payload, detailJob.lastSummary);
+                        updateAutomationJob({ phase: retryPass > 0 ? 'retrying' : 'enriching' });
+                        logDiagnostic('detail-retry-pass', {
+                            pass: retryPass + 1,
+                            unresolvedCount,
+                            pendingDetail: streamStageState.pendingDetailCount
+                        });
+                        const detailResponse = await collectPayload({
+                            ...message,
+                            enrichDetails: true,
+                            retryFailed: false,
+                            requiredDetailsOnly: true,
+                            streamToQueue: true,
+                            batchId: streamStageState.batchId,
+                            maxItems: Math.max(maxItems, items.length)
+                        });
+                        payload = detailResponse?.payload || payload;
+                        items = Array.isArray(payload?.items) ? payload.items : [];
+                    }
                 }
                 await streamStageState.promise;
                 payload = await cleanupPendingStreamItems(message, payload);
@@ -4038,17 +4362,26 @@
                 rememberSessionPayload(payload, detailJob.lastSummary);
             };
 
-            await enrichAndDiscardUnresolved();
+            await enrichAndReleaseUnresolved();
 
             let response = null;
             let scrollStepsRemaining = AUTOMATION_SCROLL_MAX_STEPS;
             let sourceExhausted = false;
             let stagnantRounds = 0;
-            const scrollChunkSteps = Math.max(SCROLL_COLLECT_MAX_STEPS, Math.min(100, maxItems * 3));
-            while (getStreamActiveCount() < maxItems
+            let recoverySweepCount = streamStageState.retryItems.size > 0 ? 1 : 0;
+            const scrollChunkSteps = Math.max(8, Math.min(SCROLL_COLLECT_MAX_STEPS, AUTOMATION_DETAIL_BATCH_SIZE * 2));
+            while (getStreamFulfilledCount() < maxItems
                 && scrollStepsRemaining > 0
-                && !sourceExhausted
                 && !automationJob.stopRequested) {
+                if (sourceExhausted) {
+                    if (streamStageState.retryItems.size === 0
+                        || recoverySweepCount >= AUTOMATION_RECOVERY_SWEEP_LIMIT) break;
+                    updateAutomationJob({ phase: 'recovering' });
+                    await beginRecoverySweep();
+                    recoverySweepCount += 1;
+                    sourceExhausted = false;
+                    stagnantRounds = 0;
+                }
                 const beforeProgress = {
                     checked: streamStageState.checkedKeys.size,
                     processable: streamStageState.processableCount,
@@ -4056,17 +4389,22 @@
                     scrollY: getScrollSnapshot().y
                 };
                 updateAutomationJob({ phase: 'discovering' });
+                const streamTarget = Math.min(
+                    maxItems,
+                    getStreamCandidateCount() + AUTOMATION_DETAIL_BATCH_SIZE
+                );
                 response = await runScrollCollect({
                     ...message,
                     maxSteps: Math.min(scrollChunkSteps, scrollStepsRemaining),
                     maxItems,
+                    streamTarget,
                     continueExisting: true,
                     preflightDuplicates: true,
                     streamToQueue: true,
                     batchId: streamStageState.batchId
                 });
                 payload = response?.payload || payload || getLastJobPayload();
-                await enrichAndDiscardUnresolved();
+                await enrichAndReleaseUnresolved();
                 const processedSteps = Math.max(0, Number(response?.scrollStatus?.processed || 0));
                 scrollStepsRemaining -= Math.max(1, processedSteps);
                 sourceExhausted = response?.exhausted === true;
@@ -4074,12 +4412,14 @@
                     checked: streamStageState.checkedKeys.size,
                     processable: streamStageState.processableCount,
                     pendingDetail: streamStageState.pendingDetailCount,
+                    retryPending: streamStageState.retryItems.size,
                     scrollY: getScrollSnapshot().y
                 };
                 const madeProgress = processedSteps > 0
                     || afterProgress.checked > beforeProgress.checked
                     || afterProgress.processable > beforeProgress.processable
                     || afterProgress.pendingDetail !== beforeProgress.pendingDetail
+                    || afterProgress.retryPending !== beforeProgress.retryPending
                     || Math.abs(afterProgress.scrollY - beforeProgress.scrollY) > 12;
                 stagnantRounds = madeProgress ? 0 : stagnantRounds + 1;
                 if (stagnantRounds >= AUTOMATION_STAGNANT_LIMIT) {
@@ -4093,28 +4433,29 @@
             }
 
             let pagingRound = 0;
-            let previousCheckedCount = -1;
-            while (getStreamActiveCount() < maxItems
-                && sourceExhausted
-                && pagingRound < maxItems
-                && !automationJob.stopRequested) {
-                updateAutomationJob({ phase: 'paging' });
-                response = await runPageBatchCollect({
-                    ...message,
-                    maxPages: Math.max(PAGE_BATCH_MAX_PAGES, maxItems),
-                    maxItems,
-                    continueExisting: true,
-                    preflightDuplicates: true,
-                    streamToQueue: true,
-                    batchId: streamStageState.batchId
-                });
-                payload = response?.payload || payload;
-                await enrichAndDiscardUnresolved();
-                const checkedCount = streamStageState.checkedKeys.size;
-                sourceExhausted = response?.exhausted === true;
-                if (checkedCount === previousCheckedCount && sourceExhausted) break;
-                previousCheckedCount = checkedCount;
-                pagingRound += 1;
+            if (sourceExhausted) {
+                let previousCheckedCount = -1;
+                while (getStreamFulfilledCount() < maxItems
+                    && pagingRound < maxItems
+                    && !automationJob.stopRequested) {
+                    updateAutomationJob({ phase: 'paging' });
+                    response = await runPageBatchCollect({
+                        ...message,
+                        maxPages: Math.max(PAGE_BATCH_MAX_PAGES, maxItems),
+                        maxItems,
+                        continueExisting: true,
+                        preflightDuplicates: true,
+                        streamToQueue: true,
+                        batchId: streamStageState.batchId
+                    });
+                    payload = response?.payload || payload;
+                    await enrichAndReleaseUnresolved();
+                    const checkedCount = streamStageState.checkedKeys.size;
+                    sourceExhausted = response?.exhausted === true;
+                    pagingRound += 1;
+                    if (checkedCount === previousCheckedCount && sourceExhausted) break;
+                    previousCheckedCount = checkedCount;
+                }
             }
 
             await streamStageState.promise;
@@ -4129,11 +4470,16 @@
                 logDiagnostic('automation-stopped', getAutomationStatus());
                 return payload;
             }
-            if (streamStageState.processableCount < maxItems) {
-                const shortfall = maxItems - streamStageState.processableCount;
-                const reason = sourceExhausted
-                    ? `来源已连续稳定到底，仍差 ${shortfall} 条可处理内容；可切换分类后再次继续`
-                    : `已达到安全滚动上限，仍差 ${shortfall} 条可处理内容；再次启动可从当前批次继续`;
+            if (getStreamFulfilledCount() < maxItems) {
+                const shortfall = maxItems - getStreamFulfilledCount();
+                let reason = `采集提前停止，仍差 ${shortfall} 条可处理内容；再次启动可从当前批次继续`;
+                if (sourceExhausted) {
+                    reason = `来源已连续稳定到底，仍差 ${shortfall} 条可处理内容；可切换分类后再次继续`;
+                } else if (scrollStepsRemaining <= 0) {
+                    reason = `已达到 ${AUTOMATION_SCROLL_MAX_STEPS} 步安全滚动上限，仍差 ${shortfall} 条可处理内容；再次启动可从当前批次继续`;
+                } else if (pagingRound >= maxItems) {
+                    reason = `已达到 ${maxItems} 轮安全翻页上限，仍差 ${shortfall} 条可处理内容；再次启动可从当前批次继续`;
+                }
                 updateAutomationJob({
                     running: false,
                     phase: 'incomplete',
