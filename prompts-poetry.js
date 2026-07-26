@@ -1901,6 +1901,10 @@ const PROMPT_NAV_SKELETON_ITEMS = [
 ];
 let promptNavFontReadyPromise = null;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
+const PROMPT_GALLERY_INITIAL_RENDER_MAX_COUNT = 20;
+const PROMPT_GALLERY_IMAGE_ACTIVATION_MARGIN_PX = 360;
+const PROMPT_GALLERY_IMAGE_ACTIVATION_CHUNK_SIZE = 2;
+const PROMPT_GALLERY_IMAGE_ACTIVATION_INTERVAL_MS = 80;
 const PROMPT_GALLERY_MOBILE_MASONRY_QUERY = '(max-width: 768px)';
 const PROMPT_GALLERY_MASONRY_MIN_COLUMN_WIDTH_PX = 280;
 const PROMPT_GALLERY_MASONRY_MAX_COLUMN_COUNT = 5;
@@ -1920,6 +1924,10 @@ const PROMPT_GALLERY_RESIZE_LIGHT_MODE_CLASS = 'prompt-gallery-resizing';
 const PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS = 12000;
 const PROMPT_SUPABASE_RETRY_DELAY_MS = 2800;
 const promptGalleryImageWarmCache = new Set();
+const promptGalleryDeferredImageAssets = new WeakMap();
+const promptGalleryPendingImageActivations = new Set();
+let promptGalleryCardImageObserver = null;
+let promptGalleryImageActivationTimerId = null;
 let promptGalleryMasonrySignature = null;
 let promptGalleryMasonryResizeTimerId = null;
 let promptGalleryResizeLightModeTimerId = null;
@@ -2952,6 +2960,101 @@ function setPromptCardImageSource(cardImage, imageAsset) {
     } else {
         cardImage.removeAttribute('src');
     }
+}
+
+function disconnectPromptGalleryCardImageObserver() {
+    promptGalleryCardImageObserver?.disconnect();
+    promptGalleryCardImageObserver = null;
+    promptGalleryPendingImageActivations.clear();
+    if (promptGalleryImageActivationTimerId) {
+        window.clearTimeout(promptGalleryImageActivationTimerId);
+        promptGalleryImageActivationTimerId = null;
+    }
+}
+
+function activatePromptGalleryCardImage(cardImage) {
+    if (!cardImage || cardImage.dataset.imageSourceActive === 'true') return;
+    const imageAsset = promptGalleryDeferredImageAssets.get(cardImage);
+    if (!imageAsset) return;
+
+    cardImage.dataset.imageSourceActive = 'true';
+    promptGalleryDeferredImageAssets.delete(cardImage);
+    promptGalleryPendingImageActivations.delete(cardImage);
+    promptGalleryCardImageObserver?.unobserve(cardImage);
+    setPromptCardImageSource(cardImage, imageAsset);
+}
+
+function queuePromptGalleryPendingImageActivations() {
+    if (
+        promptGalleryImageActivationTimerId
+        || promptGalleryPendingImageActivations.size === 0
+        || document.documentElement.classList.contains('prompt-gallery-scrolling')
+    ) {
+        return;
+    }
+
+    const activateChunk = () => {
+        promptGalleryImageActivationTimerId = null;
+        if (document.documentElement.classList.contains('prompt-gallery-scrolling')) return;
+
+        let activatedCount = 0;
+        for (const cardImage of promptGalleryPendingImageActivations) {
+            if (!cardImage.isConnected) {
+                promptGalleryPendingImageActivations.delete(cardImage);
+                continue;
+            }
+            activatePromptGalleryCardImage(cardImage);
+            activatedCount += 1;
+            if (activatedCount >= PROMPT_GALLERY_IMAGE_ACTIVATION_CHUNK_SIZE) break;
+        }
+
+        if (promptGalleryPendingImageActivations.size > 0) {
+            promptGalleryImageActivationTimerId = window.setTimeout(
+                activateChunk,
+                PROMPT_GALLERY_IMAGE_ACTIVATION_INTERVAL_MS
+            );
+        }
+    };
+
+    promptGalleryImageActivationTimerId = window.setTimeout(activateChunk, 0);
+}
+
+function getPromptGalleryCardImageObserver() {
+    if (promptGalleryCardImageObserver || typeof IntersectionObserver === 'undefined') {
+        return promptGalleryCardImageObserver;
+    }
+
+    promptGalleryCardImageObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+                promptGalleryPendingImageActivations.add(entry.target);
+            } else {
+                promptGalleryPendingImageActivations.delete(entry.target);
+            }
+        });
+        if (document.documentElement.classList.contains('prompt-gallery-scrolling')) {
+            schedulePromptGalleryScrollIdlePreload();
+            return;
+        }
+        queuePromptGalleryPendingImageActivations();
+    }, {
+        root: null,
+        rootMargin: `${PROMPT_GALLERY_IMAGE_ACTIVATION_MARGIN_PX}px 0px`,
+        threshold: 0.01
+    });
+
+    return promptGalleryCardImageObserver;
+}
+
+function observePromptGalleryCardImage(cardImage, imageAsset) {
+    if (!cardImage || !imageAsset) return;
+    promptGalleryDeferredImageAssets.set(cardImage, imageAsset);
+    const observer = getPromptGalleryCardImageObserver();
+    if (!observer) {
+        activatePromptGalleryCardImage(cardImage);
+        return;
+    }
+    observer.observe(cardImage);
 }
 
 function getUniquePromptImageCandidates(urls = []) {
@@ -6551,6 +6654,10 @@ function getPromptGalleryBatchSize() {
     return Math.max(1, Number.parseInt(CARDS_PER_PAGE, 10) || 20);
 }
 
+function getPromptGalleryInitialRenderCount() {
+    return Math.min(getPromptGalleryBatchSize(), PROMPT_GALLERY_INITIAL_RENDER_MAX_COUNT);
+}
+
 function prefersReducedPromptGalleryMotion() {
     return typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -6612,6 +6719,7 @@ function resetPromptGalleryInfiniteState() {
     }
     document.documentElement.classList.remove('prompt-gallery-scrolling');
     promptGalleryQueuedRenderTarget = 0;
+    disconnectPromptGalleryCardImageObserver();
     disconnectPromptGalleryCardMotionObserver();
     promptGalleryRenderedCount = 0;
     promptGalleryMasonryState = null;
@@ -6695,7 +6803,6 @@ function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
         if ('fetchPriority' in cardImage) {
             cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
         }
-        setPromptCardImageSource(cardImage, primaryImageAsset);
     }
     cardImage?.addEventListener('load', () => {
         markPromptCardImageReady(card, cardImage);
@@ -6723,6 +6830,11 @@ function createPromptGalleryCard(item, itemIndex = 0, batchIndex = 0) {
 
         markPromptCardImageReady(card, cardImage);
     });
+    if (shouldLoadImageEagerly) {
+        setPromptCardImageSource(cardImage, primaryImageAsset);
+    } else {
+        observePromptGalleryCardImage(cardImage, primaryImageAsset);
+    }
     if (cardImage?.complete && cardImage.naturalWidth > 0) {
         markPromptCardImageReady(card, cardImage);
     }
@@ -6818,7 +6930,7 @@ function renderCurrentPage(options = {}) {
     const requestedCount = Number.parseInt(options.minCount, 10) || 0;
     const targetCount = Math.min(
         totalItems,
-        Math.max(getPromptGalleryBatchSize(), requestedCount, preserveScroll ? previousRenderedCount : 0)
+        Math.max(getPromptGalleryInitialRenderCount(), requestedCount, preserveScroll ? previousRenderedCount : 0)
     );
 
     renderPromptGalleryRange(0, targetCount, { skipEntranceDelay: preserveScroll });
@@ -6947,6 +7059,10 @@ function queuePromptGalleryRenderThrough(targetIndex = 0) {
             return;
         }
 
+        if (document.documentElement.classList.contains('prompt-gallery-scrolling')) {
+            return;
+        }
+
         const nextEnd = Math.min(
             promptGalleryQueuedRenderTarget,
             promptGalleryRenderedCount + PROMPT_GALLERY_RENDER_CHUNK_SIZE
@@ -6957,15 +7073,6 @@ function queuePromptGalleryRenderThrough(targetIndex = 0) {
         });
 
         if (promptGalleryRenderedCount < promptGalleryQueuedRenderTarget) {
-            promptGalleryRenderChunkFrameId = requestAnimationFrame(renderChunk);
-            return;
-        }
-
-        if (!allCardsRendered && isPromptGalleryLoadSentinelNearViewport()) {
-            promptGalleryQueuedRenderTarget = Math.min(
-                allFilteredItems.length,
-                promptGalleryRenderedCount + getPromptGalleryProgressiveBatchSize()
-            );
             promptGalleryRenderChunkFrameId = requestAnimationFrame(renderChunk);
         }
     };
@@ -6980,16 +7087,6 @@ function queuePromptGalleryNextScrollBatch() {
     );
 }
 
-function isPromptGalleryLoadSentinelNearViewport() {
-    const sentinel = document.getElementById('promptGalleryLoadSentinel');
-    if (!sentinel) return false;
-
-    const rect = sentinel.getBoundingClientRect();
-    const viewportHeight = getPromptGalleryViewportHeight();
-    return rect.top <= viewportHeight + PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX
-        && rect.bottom >= -PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX;
-}
-
 function setupPromptGalleryLoadSentinel() {
     if (promptGalleryLoadSentinelObserver || typeof IntersectionObserver === 'undefined') return;
 
@@ -6998,6 +7095,10 @@ function setupPromptGalleryLoadSentinel() {
 
     promptGalleryLoadSentinelObserver = new IntersectionObserver((entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
+            if (document.documentElement.classList.contains('prompt-gallery-scrolling')) {
+                schedulePromptGalleryScrollIdlePreload();
+                return;
+            }
             queuePromptGalleryNextScrollBatch();
         }
     }, {
@@ -7042,6 +7143,10 @@ function schedulePromptGalleryScrollIdlePreload(delayMs = PROMPT_GALLERY_SCROLL_
     promptGalleryScrollIdleTimerId = window.setTimeout(() => {
         promptGalleryScrollIdleTimerId = null;
         document.documentElement.classList.remove('prompt-gallery-scrolling');
+        queuePromptGalleryPendingImageActivations();
+        if (promptGalleryQueuedRenderTarget > promptGalleryRenderedCount) {
+            queuePromptGalleryRenderThrough(promptGalleryQueuedRenderTarget - 1);
+        }
         preloadPromptGalleryAroundVisibleRange(promptGalleryLastScrollDirection);
     }, Math.max(PROMPT_GALLERY_SCROLL_IDLE_MS, Number.parseInt(delayMs, 10) || PROMPT_GALLERY_SCROLL_IDLE_MS));
 }
@@ -7212,16 +7317,31 @@ function getAISubTags(category) {
 
     // Sort by frequency and keep enough options to make the sub-nav useful.
     const sortedTags = Object.values(tagData)
-        .sort((a, b) => b.count - a.count)
+        .sort((a, b) => b.count - a.count || a.en.localeCompare(b.en, 'en', { sensitivity: 'base' }))
         .slice(0, PROMPT_HOT_TAG_LIMIT);
 
     return sortedTags; // Returns array of { en, zh, count }
 }
 
+function getAISubTagChineseLabel(tagObj = {}) {
+    const englishLabel = normalizePromptTagText(tagObj.en);
+    const pairedChineseLabel = normalizePromptTagText(tagObj.zh);
+    if (pairedChineseLabel) return pairedChineseLabel;
+    if (containsPromptCjkText(englishLabel)) return englishLabel;
+    return TAG_TRANSLATIONS[englishLabel] || TAG_TRANSLATIONS[englishLabel.toLowerCase()] || '';
+}
+
 // Show AI sub-tags in navigation
 function showAISubTags(category, navContainer) {
     const subTags = getAISubTags(category);
-    if (subTags.length === 0) return;
+    const isEnglish = getCurrentLanguage() === 'en';
+    const visibleSubTags = subTags
+        .map((tagObj) => ({
+            ...tagObj,
+            cn: getAISubTagChineseLabel(tagObj)
+        }))
+        .filter((tagObj) => isEnglish || tagObj.cn);
+    if (visibleSubTags.length === 0) return;
 
     isInSubNav = true;
 
@@ -7236,13 +7356,11 @@ function showAISubTags(category, navContainer) {
             </div>
         `;
 
-        subTags.forEach((tagObj, i) => {
-            // Use zh from aiTags data, fallback to TAG_TRANSLATIONS, then empty
-            const cnTranslation = tagObj.zh || TAG_TRANSLATIONS[tagObj.en] || TAG_TRANSLATIONS[tagObj.en.toLowerCase()] || '';
+        visibleSubTags.forEach((tagObj, i) => {
             subNavHTML += `
                 <div class="nav-item sub-tag ${buildPromptsStaggerClass(i)}" data-filter="${tagObj.en.toLowerCase()}">
                     <span class="en">${tagObj.en}</span>
-                    ${cnTranslation ? `<span class="cn">${cnTranslation}</span>` : ''}
+                    ${tagObj.cn ? `<span class="cn">${tagObj.cn}</span>` : ''}
                 </div>
             `;
         });

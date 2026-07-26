@@ -41,3 +41,53 @@ test('narrow English prompt navigation does not retain bilingual minimum height'
     );
     assert.match(html, /englishNavSpacing=20260725_PROMPTS_ENGLISH_NAV_SPACING_1/);
 });
+
+test('Chinese prompt navigation displays Chinese labels only', () => {
+    const html = readRepoFile('prompts.html');
+    const css = readRepoFile('prompts-poetry.css');
+
+    assert.match(
+        css,
+        /html:not\(\[lang="en"\]\) \.nav-items\s*\{\s*min-height:\s*0;/
+    );
+    assert.match(
+        css,
+        /html:not\(\[lang="en"\]\) \.nav-item \.en\s*\{\s*display:\s*none;/
+    );
+    assert.match(
+        css,
+        /html:not\(\[lang="en"\]\) \.nav-item \.cn\s*\{[\s\S]*?font-size:\s*1rem;[\s\S]*?opacity:\s*1;/
+    );
+    assert.match(css, /html\[lang="en"\] \.nav-item \.cn\s*\{\s*display:\s*none;/);
+    assert.match(html, /zhNav=20260726_PROMPTS_ZH_ONLY_NAV_1/);
+});
+
+test('Chinese prompt sub-navigation removes invisible gaps and keeps compact skeletons', () => {
+    const html = readRepoFile('prompts.html');
+    const source = readRepoFile('prompts-poetry.js');
+    const css = readRepoFile('prompts-poetry.css');
+
+    assert.match(
+        source,
+        /\.sort\(\(a, b\) => b\.count - a\.count \|\| a\.en\.localeCompare\(b\.en, 'en', \{ sensitivity: 'base' \}\)\)/
+    );
+    assert.match(
+        source,
+        /function getAISubTagChineseLabel\(tagObj = \{\}\) \{[\s\S]*?containsPromptCjkText\(englishLabel\)[\s\S]*?TAG_TRANSLATIONS/
+    );
+    assert.match(
+        source,
+        /const visibleSubTags = subTags[\s\S]*?\.filter\(\(tagObj\) => isEnglish \|\| tagObj\.cn\);/
+    );
+    assert.match(source, /visibleSubTags\.forEach\(\(tagObj, i\) => \{/);
+    assert.match(
+        css,
+        /html:not\(\[lang="en"\]\) \.nav-item \.cn:not\(\.nav-item-skeleton\)\s*\{\s*width:\s*100%;/
+    );
+    assert.match(
+        css,
+        /html:not\(\[lang="en"\]\) \.nav-item \.cn\.nav-item-skeleton\s*\{\s*width:\s*2rem;/
+    );
+    assert.match(html, /navTagLayout=20260726_PROMPTS_NAV_TAG_LAYOUT_2/);
+    assert.match(html, /subTagOrder=20260726_PROMPTS_SUBTAG_ORDER_1/);
+});
