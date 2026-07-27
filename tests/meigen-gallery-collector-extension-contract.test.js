@@ -18,6 +18,13 @@ function extractSimpleFunction(source, functionName) {
     return match[0];
 }
 
+function extractAsyncFunction(source, functionName) {
+    const pattern = new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n    \\}`);
+    const match = source.match(pattern);
+    assert.ok(match, `Expected to find ${functionName}`);
+    return match[0];
+}
+
 test('Meigen collector Chrome extension declares the expected surfaces', () => {
     const manifest = JSON.parse(readExtensionFile('manifest.json'));
 
@@ -44,7 +51,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
     assert.equal(manifest.host_permissions.includes('https://images.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.47');
+    assert.equal(manifest.version, '0.1.49');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -89,6 +96,76 @@ test('Meigen collector preflights video etags and poster hashes before staging',
     assert.match(background, /crypto\.subtle\.digest\('SHA-256', buffer\)/);
     assert.match(background, /poster-sha256:\$\{hex\}/);
     assert.match(background, /await enrichPayloadVideoFingerprints\(payload\)/);
+});
+
+test('Meigen collector retries transient import timeouts before committing checked candidates', async () => {
+    const content = readExtensionFile('content.js');
+    const retryLog = [];
+    let requestCount = 0;
+    const context = {
+        chrome: {
+            runtime: {
+                async sendMessage() {
+                    requestCount += 1;
+                    if (requestCount < 3) {
+                        return { ok: false, message: 'canceling statement due to statement timeout' };
+                    }
+                    return { ok: true, result: { checkedCount: 1 } };
+                }
+            }
+        },
+        retryLog
+    };
+    vm.runInNewContext([
+        'const IMPORT_REQUEST_MAX_ATTEMPTS = 3;',
+        'const IMPORT_REQUEST_RETRY_BASE_DELAY_MS = 1;',
+        'function logDiagnostic(step, details) { retryLog.push({ step, details }); }',
+        'async function sleep() {}',
+        extractSimpleFunction(content, 'isTransientImportRequestError'),
+        extractAsyncFunction(content, 'sendImportRuntimeMessageWithRetry'),
+        'globalThis.isTransientImportRequestError = isTransientImportRequestError;',
+        'globalThis.sendImportRuntimeMessageWithRetry = sendImportRuntimeMessageWithRetry;'
+    ].join('\n'), context);
+
+    assert.equal(context.isTransientImportRequestError('canceling statement due to statement timeout'), true);
+    assert.equal(context.isTransientImportRequestError('Gateway 504'), true);
+    assert.equal(context.isTransientImportRequestError('Unauthorized'), false);
+    const response = await context.sendImportRuntimeMessageWithRetry({}, 'duplicate-preflight');
+    assert.equal(response.ok, true);
+    assert.equal(requestCount, 3);
+    assert.equal(retryLog.length, 2);
+    assert.equal(retryLog.every((entry) => entry.step === 'import-request-retry'), true);
+    assert.match(content, /const IMPORT_REQUEST_MAX_ATTEMPTS = 3/);
+    assert.match(content, /logDiagnostic\('import-request-retry'/);
+    assert.match(content, /sendImportRuntimeMessageWithRetry\([\s\S]{0,220}'duplicate-preflight'/);
+    assert.match(content, /\}, 'stream-stage'\);/);
+    assert.match(content, /const response = await sendImportRuntimeMessageWithRetry\([\s\S]{0,260}commitPendingChecks\(\)/);
+    assert.doesNotMatch(content, /checkedKeys\.add\(key\);[\s\S]{0,180}const response = await sendImportRuntimeMessageWithRetry/);
+});
+
+test('Meigen collector binds community detail identities before preflight and detail polling', () => {
+    const content = readExtensionFile('content.js');
+    const context = {
+        URL,
+        window: { location: { href: 'https://www.meigen.ai/' } }
+    };
+    vm.runInNewContext([
+        extractSimpleFunction(content, 'getPromptIdentityFromUrl'),
+        'globalThis.getPromptIdentityFromUrl = getPromptIdentityFromUrl;'
+    ].join('\n'), context);
+
+    assert.equal(
+        context.getPromptIdentityFromUrl('https://www.meigen.ai/prompt/community_c8077334-3753-4d52-bcfa-a771de2c2683'),
+        'community_c8077334-3753-4d52-bcfa-a771de2c2683'
+    );
+    assert.equal(context.getPromptIdentityFromUrl('https://www.meigen.ai/prompt/2080518616131469475'), '2080518616131469475');
+    assert.match(content, /function bindCollectedItemsToVisibleCardDetails/);
+    assert.match(content, /function bindItemToDetailUrl/);
+    assert.match(content, /source_item_id:\s*promptIdentity/);
+    assert.match(content, /return bindItemToDetailUrl\(item, item\.source_page_url\)/);
+    assert.match(content, /openedPromptIdentity !== getPromptIdentityFromUrl\(effectiveDetailUrl\)/);
+    assert.match(content, /logDiagnostic\('detail-current-target-bound'/);
+    assert.match(content, /currentDetailUrlMatchesTarget\(effectiveItem, window\.location\.href\)/);
 });
 
 test('Meigen collector reserves retry slots without blocking ordinary new candidates', () => {
@@ -229,7 +306,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function isStreamItemRevisionImproved/);
     assert.match(content, /sentRevisions:\s*new Map\(\)/);
     assert.match(content, /checkedRevisions:\s*new Map\(\)/);
-    assert.match(content, /checkedKeys\.has\(key\)[\s\S]{0,100}&& !wasCapacityDeferred[\s\S]{0,100}&& !isStreamItemRevisionImproved\(checkedRevisions\.get\(key\), revision\)/);
+    assert.match(content, /checkedKeys\.has\(key\) \|\| pendingRevisions\.has\(key\)[\s\S]{0,120}!isStreamItemRevisionImproved\(previousRevision, revision\)/);
     assert.doesNotMatch(content, /streamStageState\.stagedCount >= maxItems/);
     assert.match(content, /getStreamFulfilledCount\(\) < maxItems/);
     assert.match(content, /logDiagnostic\('over-capacity-batch-recovery'/);
@@ -420,7 +497,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-25\.96'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-27\.98'/);
     assert.match(collector, /!videoCollectionContext && !videoSources\.length/);
     assert.match(collector, /function extractMediaPromptBlocks/);
     assert.match(collector, /function formatMediaPromptBlocks/);
@@ -535,8 +612,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /const extractedPrompt = getCompletePromptTextFromDocument\(promptRoot, collector\);/);
     assert.match(content, /if \(!shouldAttemptPromptCopyClick\(documentRef\)\) continue;/);
     assert.match(content, /readPromptFromCopyButton\(promptPanel, collector\)/);
-    assert.match(content, /source_item_id:\s*item\.source_item_id \|\| detailItem\.source_item_id/);
-    assert.match(content, /source_page_url:\s*item\.source_page_url \|\| ''/);
+    assert.match(content, /source_item_id:\s*effectiveItem\.source_item_id \|\| detailItem\.source_item_id/);
+    assert.match(content, /source_page_url:\s*effectiveItem\.source_page_url \|\| detailItem\.source_page_url/);
     assert.match(content, /function enrichItemsWithCopiedPrompt/);
     assert.match(content, /function hasCompletePromptData/);
     assert.match(content, /function promptNeedsDetailEnrichment/);

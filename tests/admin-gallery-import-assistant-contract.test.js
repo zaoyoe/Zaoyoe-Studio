@@ -19,8 +19,11 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     const migration = readRepoFile(path.join('supabase', 'migrations', '20260709_prompt_gallery_import_staging.sql'));
     const promptIdFixMigration = readRepoFile(path.join('supabase', 'migrations', '20260709_prompt_gallery_import_prompt_ids_text.sql'));
     const dedupeMigration = readRepoFile(path.join('supabase', 'migrations', '20260725_prompt_gallery_import_dedupe_rpc.sql'));
+    const dedupeTimeoutFixMigration = readRepoFile(path.join('supabase', 'migrations', '20260727_prompt_gallery_import_dedupe_timeout_fix.sql'));
     assert.equal(html.includes('meigenRetryRecovery=20260724_MEIGEN_RETRY_RECOVERY_1'), true);
     assert.equal(html.includes('meigenPromptDedupe=20260725_MEIGEN_VIDEO_FINGERPRINT_2'), true);
+    assert.equal(html.includes('meigenReferenceImageDedupe=20260727_MEIGEN_REFERENCE_IMAGE_DEDUPE_1'), true);
+    assert.equal(html.includes('meigenPreflightRetry=20260727_MEIGEN_PREFLIGHT_TIMEOUT_RETRY_1'), true);
 
     const htmlMarkers = [
         'data-view="create"',
@@ -107,7 +110,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-25.96';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-27.98';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -420,6 +423,24 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
     ];
     for (const marker of dedupeMigrationMarkers) {
         assert.equal(dedupeMigration.includes(marker), true, `dedupe migration should contain ${marker}`);
+    }
+
+    const dedupeTimeoutFixMarkers = [
+        'idx_prompts_primary_video_sha256_prefixed_import_dedupe',
+        'CREATE OR REPLACE FUNCTION public.fn_admin_find_prompt_duplicates',
+        "cardinality(coalesce(p_source_urls, '{}'::TEXT[])) > 0",
+        'p.prompt_text IS NOT NULL',
+        "btrim(p.prompt_text) <> ''",
+        "cardinality(coalesce(p_video_fingerprints, '{}'::TEXT[])) > 0",
+        "cardinality(coalesce(p_video_poster_hashes, '{}'::TEXT[])) > 0",
+        'GRANT EXECUTE ON FUNCTION public.fn_admin_find_prompt_duplicates(TEXT[], TEXT[], TEXT[], TEXT[], TEXT[]) TO service_role'
+    ];
+    for (const marker of dedupeTimeoutFixMarkers) {
+        assert.equal(
+            dedupeTimeoutFixMigration.includes(marker),
+            true,
+            `dedupe timeout fix migration should contain ${marker}`
+        );
     }
 });
 

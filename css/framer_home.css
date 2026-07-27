@@ -1645,6 +1645,9 @@ html[lang^="en"] .hero-subtitle {
     position: relative;
     z-index: 3;
     pointer-events: auto;
+    /* 20260727_HOME_HERO_NATIVE_SWIPE_1 */
+    touch-action: pan-x pan-y pinch-zoom;
+    overscroll-behavior-x: contain;
 }
 
 .hero-section[data-home-hero-centering="1"] .hero-carousel {
@@ -1656,6 +1659,11 @@ html[lang^="en"] .hero-subtitle {
 /* Enable scroll-snap only after user interaction */
 .hero-carousel.is-snapping {
     scroll-snap-type: x mandatory;
+}
+
+.hero-carousel.is-dragging {
+    scroll-behavior: auto;
+    scroll-snap-type: none;
 }
 
 .hero-carousel::-webkit-scrollbar {

@@ -6763,11 +6763,42 @@ const FramerHome = {
       });
     };
 
+    const getEarlyRequestedCardIndex = () => {
+      const cardList = Array.from(cards);
+      const markedIndex = cardList.findIndex((card) => card.getAttribute('data-home-early-center-requested') === '1');
+      if (markedIndex >= 0) {
+        return markedIndex;
+      }
+
+      const requestedHref = String(heroSection?.dataset?.homeHeroEarlyEntryHref || '');
+      if (requestedHref) {
+        const hrefIndex = cardList.findIndex((card) => String(card.getAttribute('href') || '') === requestedHref);
+        if (hrefIndex >= 0) {
+          return hrefIndex;
+        }
+      }
+
+      const requestedIndex = Number.parseInt(heroSection?.dataset?.homeHeroEarlyEntryIndex || '', 10);
+      return Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < cardCount
+        ? requestedIndex
+        : -1;
+    };
+    const clearEarlyRequestedCard = () => {
+      cards.forEach((card) => card.removeAttribute('data-home-early-center-requested'));
+      if (heroSection?.dataset) {
+        delete heroSection.dataset.homeHeroEarlyEntryIndex;
+        delete heroSection.dataset.homeHeroEarlyEntryHref;
+      }
+    };
     const applyInitialCenter = () => {
       // Skip if node was replaced by a later render.
       if (!document.body.contains(carousel)) return;
       const maxScroll = Math.max(0, carousel.scrollWidth - carousel.clientWidth);
-      carousel.scrollLeft = maxScroll / 2;
+      const requestedIndex = getEarlyRequestedCardIndex();
+      const requestedCard = requestedIndex >= 0 ? cards[requestedIndex] : null;
+      carousel.scrollLeft = requestedCard
+        ? Math.max(0, Math.min(maxScroll, requestedCard.offsetLeft + requestedCard.offsetWidth / 2 - carousel.clientWidth / 2))
+        : maxScroll / 2;
       updateCarousel();
     };
 
@@ -6775,6 +6806,7 @@ const FramerHome = {
     applyInitialCenter();
     requestAnimationFrame(() => {
       applyInitialCenter();
+      clearEarlyRequestedCard();
       isInitializing = false;
       requestAnimationFrame(releaseHeroCenteringLock);
     });
@@ -6791,33 +6823,142 @@ const FramerHome = {
     };
 
 
-    // Touch swipe support for mobile
+    // 20260727_HOME_HERO_NATIVE_SWIPE_1: let the browser own touch scrolling,
+    // then settle the gesture onto a card and suppress the synthetic tap.
     let touchStartX = 0;
-    let touchStartScrollLeft = 0;
+    let touchStartY = 0;
+    let touchLastX = 0;
+    let touchLastY = 0;
+    let touchStartTime = 0;
+    let touchStartCardIndex = 0;
+    let touchAxis = '';
+    let isTouching = false;
+    let suppressClickUntil = 0;
+    const touchAxisLockThreshold = 8;
+    const touchSwipeDistanceThreshold = 32;
+    const touchSwipeVelocityThreshold = 0.35;
 
-    // Enable snapping and highlight on first user interaction
-    const enableSnapping = () => {
+    const getClosestCardIndex = () => {
+      const viewportCenter = getCarouselViewportCenter();
+      let closestIndex = 0;
+      let closestDistance = Number.POSITIVE_INFINITY;
+
+      cards.forEach((card, index) => {
+        const rect = card.getBoundingClientRect();
+        const distance = Math.abs((rect.left + rect.width / 2) - viewportCenter);
+        if (distance < closestDistance) {
+          closestIndex = index;
+          closestDistance = distance;
+        }
+      });
+
+      return closestIndex;
+    };
+
+    const markUserInteraction = () => {
       if (!hasUserInteracted) {
         hasUserInteracted = true;
-        carousel.classList.add('is-snapping');
       }
     };
 
+    // Enable snapping and highlight on first user interaction
+    const enableSnapping = () => {
+      markUserInteraction();
+      carousel.classList.add('is-snapping');
+    };
+
     carousel.addEventListener('touchstart', (e) => {
-      enableSnapping();
-      touchStartX = e.touches[0].clientX;
-      touchStartScrollLeft = carousel.scrollLeft;
+      if (e.touches.length !== 1) return;
+
+      const touch = e.touches[0];
+      markUserInteraction();
+      isTouching = true;
+      touchAxis = '';
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      touchLastX = touch.clientX;
+      touchLastY = touch.clientY;
+      touchStartTime = performance.now();
+      touchStartCardIndex = getClosestCardIndex();
+      carousel.classList.remove('is-snapping');
+      carousel.classList.add('is-dragging');
     }, { passive: true });
 
     carousel.addEventListener('touchmove', (e) => {
-      const deltaX = touchStartX - e.touches[0].clientX;
-      carousel.scrollLeft = touchStartScrollLeft + deltaX;
-      updateCarousel();
+      if (!isTouching || e.touches.length !== 1) return;
+
+      const touch = e.touches[0];
+      touchLastX = touch.clientX;
+      touchLastY = touch.clientY;
+      const distanceX = touchLastX - touchStartX;
+      const distanceY = touchLastY - touchStartY;
+
+      if (!touchAxis && (Math.abs(distanceX) >= touchAxisLockThreshold || Math.abs(distanceY) >= touchAxisLockThreshold)) {
+        touchAxis = Math.abs(distanceX) > Math.abs(distanceY) * 1.1 ? 'horizontal' : 'vertical';
+      }
+
+      if (touchAxis === 'horizontal') {
+        suppressClickUntil = performance.now() + 600;
+        activateThumb();
+      }
+    }, { passive: true });
+
+    carousel.addEventListener('touchend', (e) => {
+      if (!isTouching) return;
+
+      const finalTouch = e.changedTouches[0];
+      if (finalTouch) {
+        touchLastX = finalTouch.clientX;
+        touchLastY = finalTouch.clientY;
+      }
+
+      const distanceX = touchLastX - touchStartX;
+      const distanceY = touchLastY - touchStartY;
+      const elapsed = Math.max(1, performance.now() - touchStartTime);
+      const velocityX = Math.abs(distanceX) / elapsed;
+      const isHorizontalSwipe = touchAxis === 'horizontal'
+        && Math.abs(distanceX) > Math.abs(distanceY);
+
+      isTouching = false;
+      carousel.classList.remove('is-dragging');
+
+      if (!isHorizontalSwipe) {
+        enableSnapping();
+        return;
+      }
+
+      suppressClickUntil = performance.now() + 600;
+      clearHomepageHeroGuestbookArmedState();
+      const nearestIndex = getClosestCardIndex();
+      const qualifiesForAdjacentCard = Math.abs(distanceX) >= touchSwipeDistanceThreshold
+        || velocityX >= touchSwipeVelocityThreshold;
+      let targetIndex = nearestIndex;
+
+      if (qualifiesForAdjacentCard) {
+        const direction = distanceX < 0 ? 1 : -1;
+        const adjacentIndex = Math.max(0, Math.min(cardCount - 1, touchStartCardIndex + direction));
+        targetIndex = direction > 0
+          ? Math.max(nearestIndex, adjacentIndex)
+          : Math.min(nearestIndex, adjacentIndex);
+      }
+
+      requestAnimationFrame(() => {
+        enableSnapping();
+        centerCard(targetIndex);
+        activateThumb();
+      });
+    }, { passive: true });
+
+    carousel.addEventListener('touchcancel', () => {
+      isTouching = false;
+      touchAxis = '';
+      carousel.classList.remove('is-dragging');
+      enableSnapping();
     }, { passive: true });
 
     // Scroll event for smooth updates (don't trigger interaction during initialization)
     carousel.addEventListener('scroll', () => {
-      if (!isInitializing) {
+      if (!isInitializing && !isTouching) {
         enableSnapping();
       }
       updateCarousel();
@@ -6828,6 +6969,12 @@ const FramerHome = {
 
     cards.forEach((card) => {
       card.addEventListener('click', (e) => {
+        if (performance.now() < suppressClickUntil) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
         const isDelegatedGuestbookTrigger = card.getAttribute('data-home-open-guestbook') === '1';
         if (isDelegatedGuestbookTrigger) {
           return;
@@ -6875,6 +7022,10 @@ const FramerHome = {
         }
       });
     });
+
+    if (heroSection?.dataset) {
+      heroSection.dataset.homeHeroEntryRuntimeReady = '1';
+    }
 
     // Initial update (safe no-op if already centered)
     requestAnimationFrame(updateCarousel);
