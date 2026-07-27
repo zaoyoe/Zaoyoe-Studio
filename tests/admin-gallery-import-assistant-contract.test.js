@@ -110,7 +110,7 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "normalizedView === 'import'",
         "const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';",
         "const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';",
-        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-27.98';",
+        "const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-27.99';",
         'const GALLERY_IMPORT_FAILURE_STAGES = Object.freeze({',
         'function normalizeGalleryImportFailureMessage(errorOrMessage = \'\', fallback = \'处理失败\')',
         'Codex Relay 当前上游账号被限流或暂无可用账号，系统将延迟重试',
@@ -136,6 +136,8 @@ test('admin gallery exposes Meigen import assistant workflow and progress UI', (
         "mode: 'crawl_only'",
         'function parseGalleryImportRawInput(rawText = \'\')',
         'function getGalleryImportAuthorHandle(item = {}, originalWorkUrl = \'\')',
+        'function hasCompleteGalleryImportCommunityVideoIdentity(item = {})',
+        'const sourceAttributionOptional = hasCompleteGalleryImportCommunityVideoIdentity(item);',
         'function runGalleryImportUploadQueue(options = {})',
         'function isGalleryImportItemAutoUploadable(item = {})',
         'function setGalleryImportAutoDetectionEnabled(enabled, options = {})',
@@ -645,7 +647,7 @@ test('prompt import batch deletion blocks active worker records', async () => {
     );
 });
 
-test('prompt import payload requires source attribution, prompt, and images', () => {
+test('prompt import payload requires source attribution except for verified Meigen community videos', () => {
     const { _private } = require('../server/api-handlers/admin/prompts/imports');
     const item = _private.normalizeImportItemPayload({
         prompt: 'A tiny city inside a crystal apple',
@@ -725,6 +727,44 @@ test('prompt import payload requires source attribution, prompt, and images', ()
     assert.equal(missingSource.error_summary.includes('缺少 X 原帖链接'), true);
     assert.equal(missingSource.error_summary.includes('缺少原作者昵称'), true);
     assert.equal(missingSource.error_summary.includes('缺少原作者 ID'), true);
+
+    const communityMediaId = 'community_eb580831-862f-403d-90d9-20a94c7f67b5';
+    const sourceLessCommunityVideo = _private.normalizeImportItemPayload({
+        source: 'meigen',
+        source_item_id: 'meigen-1965320396',
+        prompt: 'A complete Seedance community video prompt with enough detail for import.',
+        author_name: 'Media Preview',
+        images: [{
+            url: `https://images.meigen.ai/cdn-cgi/media/mode=frame,time=1s,format=jpg,width=1280/generations/2026-07/${communityMediaId}.mp4`
+        }],
+        video_sources: [{
+            url: `https://images.meigen.ai/generations/2026-07/${communityMediaId}.mp4`
+        }]
+    }, { max_images_per_item: 12, max_videos_per_item: 4 });
+    assert.equal(sourceLessCommunityVideo.status, 'staged');
+    assert.equal(sourceLessCommunityVideo.error_summary, '');
+    assert.equal(_private.hasCompleteMeigenCommunityVideoIdentity(sourceLessCommunityVideo), true);
+    assert.equal(_private.getImportSourceUrl(sourceLessCommunityVideo), 'https://www.meigen.ai/');
+
+    const communityPromptPayload = _private.buildPromptPayloadFromImportItem(sourceLessCommunityVideo, {
+        imageAssets: [{ original: 'https://cdn.fatherkey.com/prompts/imports/community-poster.webp' }],
+        videoAssets: [{ original: 'https://cdn.fatherkey.com/prompts/imports/community-video.mp4' }],
+        defaultStatus: 'review'
+    });
+    assert.equal(communityPromptPayload.source_url, 'https://www.meigen.ai/');
+    assert.equal(communityPromptPayload.source_author_name, 'Media Preview');
+    assert.equal(communityPromptPayload.source_author_handle, '');
+
+    const mismatchedCommunityPoster = _private.normalizeImportItemPayload({
+        source: 'meigen',
+        prompt: 'A complete-looking prompt with mismatched community media.',
+        images: ['https://images.meigen.ai/generations/2026-07/community_other.mp4'],
+        video_sources: [{
+            url: `https://images.meigen.ai/generations/2026-07/${communityMediaId}.mp4`
+        }]
+    }, { max_images_per_item: 12, max_videos_per_item: 4 });
+    assert.equal(mismatchedCommunityPoster.status, 'needs_review');
+    assert.match(mismatchedCommunityPoster.error_summary, /缺少 X 原帖链接/);
 
     const expectedCountItem = _private.normalizeImportItemPayload({
         prompt: 'A tiny city inside a crystal apple',

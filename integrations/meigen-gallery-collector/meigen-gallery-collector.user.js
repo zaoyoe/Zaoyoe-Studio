@@ -1,7 +1,7 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-27.98';
+    const VERSION = '2026-07-27.99';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 1000;
     const MAX_IMAGES_PER_ITEM = 24;

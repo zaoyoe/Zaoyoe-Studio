@@ -51,7 +51,7 @@ test('Meigen collector Chrome extension declares the expected surfaces', () => {
     assert.equal(manifest.permissions.includes('tabs'), true);
     assert.equal(manifest.host_permissions.includes('https://www.meigen.ai/*'), true);
     assert.equal(manifest.host_permissions.includes('https://images.meigen.ai/*'), true);
-    assert.equal(manifest.version, '0.1.49');
+    assert.equal(manifest.version, '0.1.50');
     const adminBridgeScript = manifest.content_scripts.find((entry) => entry.js.includes('admin-bridge.js'));
     assert.equal(adminBridgeScript.matches.every((pattern) => pattern.includes('/admin-studio')), true);
     assert.equal(manifest.host_permissions.includes('https://www.fatherkey.com/*'), true);
@@ -87,6 +87,89 @@ test('Meigen collector does not restore cleaned repository duplicates as retry c
         content,
         /String\(item\?\.status \|\| ''\) === 'cleaned'[\s\S]{0,180}!String\(item\?\.duplicate_of_prompt_id \|\| ''\)\.trim\(\)/
     );
+});
+
+test('Meigen collector accepts complete source-less Seedance community videos', () => {
+    const content = readExtensionFile('content.js');
+    const context = {};
+    vm.runInNewContext([
+        'const MEDIA_PROMPT_HEADER_PATTERN = /\\[(?:IMAGE|VIDEO)\\s*·\\s*\\d{1,3}\\]/i;',
+        'const COLLAPSED_PROMPT_MARKER_PATTERN = /(\\.\\.\\.|…)\\s*$/;',
+        'function normalizeText(value) { return String(value || "").trim(); }',
+        extractSimpleFunction(content, 'promptNeedsDetailEnrichment'),
+        extractSimpleFunction(content, 'itemPromptNeedsDetailEnrichment'),
+        extractSimpleFunction(content, 'getMeigenCommunityMediaIdentity'),
+        extractSimpleFunction(content, 'hasCompleteMeigenCommunityVideoIdentity'),
+        extractSimpleFunction(content, 'needsRequiredDetail'),
+        'globalThis.needsRequiredDetail = needsRequiredDetail;',
+        'globalThis.hasCompleteMeigenCommunityVideoIdentity = hasCompleteMeigenCommunityVideoIdentity;'
+    ].join('\n'), context);
+
+    const mediaId = 'community_eb580831-862f-403d-90d9-20a94c7f67b5';
+    const item = {
+        source_item_id: 'meigen-1965320396',
+        source_page_url: '',
+        original_work_url: '',
+        author_name: 'Media Preview',
+        author_handle: '',
+        prompt_text: 'A'.repeat(6063),
+        prompt_complete: true,
+        expected_image_count: 1,
+        detail_expected_count_authoritative: true,
+        image_sources: [{
+            url: `https://images.meigen.ai/cdn-cgi/media/mode=frame,time=1s,format=jpg,width=1280/generations/2026-07/${mediaId}.mp4`
+        }],
+        video_sources: [{
+            url: `https://images.meigen.ai/generations/2026-07/${mediaId}.mp4`
+        }]
+    };
+
+    assert.equal(context.hasCompleteMeigenCommunityVideoIdentity(item), true);
+    assert.equal(context.needsRequiredDetail(item), false);
+    assert.equal(context.needsRequiredDetail({ ...item, prompt_complete: false }), true);
+    assert.equal(context.needsRequiredDetail({
+        ...item,
+        image_sources: [{
+            url: 'https://images.meigen.ai/generations/2026-07/community_other.mp4'
+        }]
+    }), true);
+    assert.equal(context.needsRequiredDetail({
+        ...item,
+        image_sources: [{ url: 'https://images.meigen.ai/videos/123/thumb.jpg' }],
+        video_sources: [{ url: 'https://images.meigen.ai/videos/123/video.mp4' }]
+    }), true);
+});
+
+test('Meigen collector only rechecks retry candidates after their revision improves', () => {
+    const content = readExtensionFile('content.js');
+    const context = {};
+    vm.runInNewContext([
+        extractSimpleFunction(content, 'isStreamItemRevisionImproved'),
+        extractSimpleFunction(content, 'shouldCheckStreamCandidate'),
+        'globalThis.shouldCheckStreamCandidate = shouldCheckStreamCandidate;'
+    ].join('\n'), context);
+
+    assert.equal(context.shouldCheckStreamCandidate({
+        alreadyChecked: true,
+        wasCapacityDeferred: true,
+        isRetryCandidate: true,
+        previousRevision: '6063:1:1:0:1:0:0',
+        revision: '6063:1:1:0:1:0:0'
+    }), false);
+    assert.equal(context.shouldCheckStreamCandidate({
+        alreadyChecked: true,
+        wasCapacityDeferred: true,
+        isRetryCandidate: true,
+        previousRevision: '100:1:1:0:1:0:0',
+        revision: '6063:1:1:0:1:0:1'
+    }), true);
+    assert.equal(context.shouldCheckStreamCandidate({
+        alreadyChecked: true,
+        wasCapacityDeferred: true,
+        isRetryCandidate: false,
+        previousRevision: '100:1:0:0:0:0:0',
+        revision: '100:1:0:0:0:0:0'
+    }), true);
 });
 
 test('Meigen collector preflights video etags and poster hashes before staging', () => {
@@ -306,7 +389,9 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function isStreamItemRevisionImproved/);
     assert.match(content, /sentRevisions:\s*new Map\(\)/);
     assert.match(content, /checkedRevisions:\s*new Map\(\)/);
-    assert.match(content, /checkedKeys\.has\(key\) \|\| pendingRevisions\.has\(key\)[\s\S]{0,120}!isStreamItemRevisionImproved\(previousRevision, revision\)/);
+    assert.match(content, /alreadyChecked:\s*checkedKeys\.has\(key\) \|\| pendingRevisions\.has\(key\)/);
+    assert.match(content, /const isRetryCandidate = message\.streamToQueue[\s\S]{0,100}streamStageState\.retryItems\.has\(key\)/);
+    assert.match(content, /shouldCheckStreamCandidate\(\{[\s\S]{0,220}isRetryCandidate/);
     assert.doesNotMatch(content, /streamStageState\.stagedCount >= maxItems/);
     assert.match(content, /getStreamFulfilledCount\(\) < maxItems/);
     assert.match(content, /logDiagnostic\('over-capacity-batch-recovery'/);
@@ -419,10 +504,10 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /message\?\.type === MESSAGE_AUTOMATION_STATUS/);
     assert.match(popup, /streamToQueue:\s*true/);
     assert.match(popup, /state\.streamedBatchId/);
-    assert.match(popup, /目标完成 \$\{status\.fulfilled\}\/\$\{status\.target/);
+    assert.match(popup, /批次完成 \$\{status\.fulfilled\}\/\$\{status\.target/);
     assert.match(popup, /可处理 \$\{status\.processable\}/);
-    assert.match(popup, /仓库已有 \$\{status\.repositoryDuplicates\}/);
-    assert.match(popup, /当前扫描重复 \$\{status\.candidateDuplicates\}/);
+    assert.match(popup, /仓库重复 \$\{status\.repositoryDuplicates\}/);
+    assert.match(popup, /本轮扫描重复 \$\{status\.candidateDuplicates\}/);
     assert.match(popup, /重采预留 \$\{status\.retryReserved\}/);
     assert.match(popup, /待后续候选 \$\{status\.deferredCandidates\}/);
     assert.doesNotMatch(popup, /历史顽固/);
@@ -497,7 +582,7 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(content, /function itemPromptNeedsDetailEnrichment/);
     assert.match(content, /targetAuthorMatchesPrompt/);
     assert.match(content, /extractPromptText\?\.\(target\)/);
-    assert.match(collector, /VERSION\s*=\s*'2026-07-27\.98'/);
+    assert.match(collector, /VERSION\s*=\s*'2026-07-27\.99'/);
     assert.match(collector, /!videoCollectionContext && !videoSources\.length/);
     assert.match(collector, /function extractMediaPromptBlocks/);
     assert.match(collector, /function formatMediaPromptBlocks/);
@@ -744,7 +829,8 @@ test('Meigen collector extension can collect, download, and stage import payload
     assert.match(html, /全自动采集并入队/);
     assert.match(html, /滚动采集/);
     assert.match(html, /停止任务/);
-    assert.match(popup, /检查唯一作品/);
+    assert.match(popup, /批次累计检查/);
+    assert.match(popup, /当前缓存作品/);
     assert.match(popup, /视频源/);
     assert.match(html, /翻页采集/);
     assert.match(html, /停止翻页/);

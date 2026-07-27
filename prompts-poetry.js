@@ -4454,6 +4454,7 @@ let promptGalleryCardMotionObserver = null;
 let promptGalleryLoadSentinelObserver = null;
 let promptGalleryRenderChunkFrameId = null;
 let promptGalleryQueuedRenderTarget = 0;
+let promptGallerySentinelFillRequested = false;
 const PROMPT_GALLERY_SCROLL_PRELOAD_COUNT = 8;
 const PROMPT_GALLERY_RENDER_CHUNK_SIZE = 2;
 const PROMPT_GALLERY_DESKTOP_PREFETCH_ROWS = 2;
@@ -6719,6 +6720,7 @@ function resetPromptGalleryInfiniteState() {
     }
     document.documentElement.classList.remove('prompt-gallery-scrolling');
     promptGalleryQueuedRenderTarget = 0;
+    promptGallerySentinelFillRequested = false;
     disconnectPromptGalleryCardImageObserver();
     disconnectPromptGalleryCardMotionObserver();
     promptGalleryRenderedCount = 0;
@@ -7029,6 +7031,15 @@ function isPromptGalleryNearDocumentBottom() {
     return getPromptGalleryDocumentBottomDistance() <= threshold;
 }
 
+function isPromptGalleryLoadSentinelNearViewport() {
+    const sentinel = document.getElementById('promptGalleryLoadSentinel');
+    if (!sentinel) return false;
+
+    const rect = sentinel.getBoundingClientRect();
+    const viewportHeight = getPromptGalleryViewportHeight();
+    return rect.top <= viewportHeight + PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX;
+}
+
 function getPromptGalleryProgressiveBatchSize() {
     if (isPromptGalleryMobileMasonryLayout()) {
         return PROMPT_GALLERY_SCROLL_PRELOAD_COUNT;
@@ -7042,7 +7053,7 @@ function getPromptGalleryProgressiveBatchSize() {
     );
 }
 
-function queuePromptGalleryRenderThrough(targetIndex = 0) {
+function queuePromptGalleryRenderThrough(targetIndex = 0, options = {}) {
     if (allCardsRendered || !promptGalleryMasonryState) return 0;
 
     const targetCount = Math.min(
@@ -7050,16 +7061,23 @@ function queuePromptGalleryRenderThrough(targetIndex = 0) {
         Math.max(promptGalleryRenderedCount, (Number.parseInt(targetIndex, 10) || 0) + 1)
     );
     promptGalleryQueuedRenderTarget = Math.max(promptGalleryQueuedRenderTarget, targetCount);
+    if (options.continueWhileSentinelNear === true) {
+        promptGallerySentinelFillRequested = true;
+    }
     if (promptGalleryRenderChunkFrameId || targetCount <= promptGalleryRenderedCount) return 0;
 
     const renderChunk = () => {
         promptGalleryRenderChunkFrameId = null;
         if (allCardsRendered || !promptGalleryMasonryState) {
             promptGalleryQueuedRenderTarget = promptGalleryRenderedCount;
+            promptGallerySentinelFillRequested = false;
             return;
         }
 
-        if (document.documentElement.classList.contains('prompt-gallery-scrolling')) {
+        if (
+            document.documentElement.classList.contains('prompt-gallery-scrolling')
+            && !promptGallerySentinelFillRequested
+        ) {
             return;
         }
 
@@ -7074,6 +7092,17 @@ function queuePromptGalleryRenderThrough(targetIndex = 0) {
 
         if (promptGalleryRenderedCount < promptGalleryQueuedRenderTarget) {
             promptGalleryRenderChunkFrameId = requestAnimationFrame(renderChunk);
+            return;
+        }
+
+        const shouldContinueSentinelFill = promptGallerySentinelFillRequested;
+        promptGallerySentinelFillRequested = false;
+        if (
+            shouldContinueSentinelFill
+            && !allCardsRendered
+            && isPromptGalleryLoadSentinelNearViewport()
+        ) {
+            queuePromptGalleryNextScrollBatch({ continueWhileSentinelNear: true });
         }
     };
 
@@ -7081,9 +7110,10 @@ function queuePromptGalleryRenderThrough(targetIndex = 0) {
     return targetCount - promptGalleryRenderedCount;
 }
 
-function queuePromptGalleryNextScrollBatch() {
+function queuePromptGalleryNextScrollBatch(options = {}) {
     return queuePromptGalleryRenderThrough(
-        promptGalleryRenderedCount + getPromptGalleryProgressiveBatchSize() - 1
+        promptGalleryRenderedCount + getPromptGalleryProgressiveBatchSize() - 1,
+        options
     );
 }
 
@@ -7095,11 +7125,7 @@ function setupPromptGalleryLoadSentinel() {
 
     promptGalleryLoadSentinelObserver = new IntersectionObserver((entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-            if (document.documentElement.classList.contains('prompt-gallery-scrolling')) {
-                schedulePromptGalleryScrollIdlePreload();
-                return;
-            }
-            queuePromptGalleryNextScrollBatch();
+            queuePromptGalleryNextScrollBatch({ continueWhileSentinelNear: true });
         }
     }, {
         root: null,

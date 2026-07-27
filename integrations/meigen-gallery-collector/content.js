@@ -206,6 +206,18 @@
         return right.some((value, index) => value > (left[index] || 0));
     }
 
+    function shouldCheckStreamCandidate({
+        alreadyChecked = false,
+        wasCapacityDeferred = false,
+        isRetryCandidate = false,
+        previousRevision = '',
+        revision = ''
+    } = {}) {
+        if (!alreadyChecked) return true;
+        if (wasCapacityDeferred && !isRetryCandidate) return true;
+        return isStreamItemRevisionImproved(previousRevision, revision);
+    }
+
     function isTransientImportRequestError(value = '') {
         return /(canceling statement due to statement timeout|statement timeout|timed?\s*out|timeout|temporar(?:y|ily)|network|failed to fetch|gateway|\b50[234]\b)/i
             .test(String(value?.message || value || ''));
@@ -255,10 +267,16 @@
             const revision = getStreamItemRevision(item);
             const wasCapacityDeferred = message.streamToQueue
                 && streamStageState.capacityDeferredKeys.has(key);
+            const isRetryCandidate = message.streamToQueue
+                && streamStageState.retryItems.has(key);
             const previousRevision = pendingRevisions.get(key) || checkedRevisions.get(key);
-            if ((checkedKeys.has(key) || pendingRevisions.has(key))
-                && !wasCapacityDeferred
-                && !isStreamItemRevisionImproved(previousRevision, revision)) return false;
+            if (!shouldCheckStreamCandidate({
+                alreadyChecked: checkedKeys.has(key) || pendingRevisions.has(key),
+                wasCapacityDeferred,
+                isRetryCandidate,
+                previousRevision,
+                revision
+            })) return false;
             pendingRevisions.set(key, revision);
             if (wasCapacityDeferred) pendingCapacityDeferredKeys.add(key);
             if (getMeigenIdentityConflictReason(item)) {
@@ -388,6 +406,10 @@
         streamStageState.capacityDeferredKeys.delete(key);
         streamStageState.retryReservationDeferredKeys.clear();
         if (!streamStageState.retryItems.size) streamStageState.retryReservationActive = false;
+    }
+
+    function isCollectionStopRequested() {
+        return automationJob.stopRequested || scrollJob.stopRequested || pageBatchJob.stopRequested;
     }
 
     function resetStreamStageState(batchId = '') {
@@ -1933,6 +1955,7 @@
             .slice(0, targetLimit);
         const seen = new Set();
         for (const target of targets) {
+            if (isCollectionStopRequested()) break;
             if (seen.has(target)) continue;
             seen.add(target);
             dispatchHoverEvents(target);
@@ -2980,6 +3003,11 @@
             if (getPromptIdentityFromUrl(item?.source_page_url || '')) {
                 return bindItemToDetailUrl(item, item.source_page_url);
             }
+            const hasStableExternalIdentity = Boolean(
+                String(item?.original_work_url || '').trim()
+                && String(item?.author_handle || '').trim()
+            );
+            if (hasStableExternalIdentity && !needsRequiredDetail(item)) return item;
             const scope = findCurrentPageCardScopeForItem(item, collector);
             const detailUrl = getCardDetailUrl(scope, item);
             if (!detailUrl) return item;
@@ -3215,9 +3243,10 @@
         const imageCountIncomplete = hasAuthoritativeImageCount
             ? images.length < Math.max(1, expectedImageCount)
             : (videos.length > 0 ? images.length < 1 : images.length <= 1);
-        const missingSource = !String(item.original_work_url || '').trim()
-            || !String(item.author_name || '').trim()
-            || !String(item.author_handle || '').trim();
+        const missingSource = !hasCompleteMeigenCommunityVideoIdentity(item)
+            && (!String(item.original_work_url || '').trim()
+                || !String(item.author_name || '').trim()
+                || !String(item.author_handle || '').trim());
         return itemPromptNeedsDetailEnrichment(item)
             || imageCountIncomplete
             || missingSource
@@ -3236,13 +3265,30 @@
         const confirmedMissingImages = hasAuthoritativeImageCount
             && expectedImageCount > 0
             && images.length < expectedImageCount;
-        const missingSource = !String(item.original_work_url || '').trim()
-            || !String(item.author_name || '').trim()
-            || !String(item.author_handle || '').trim();
+        const missingSource = !hasCompleteMeigenCommunityVideoIdentity(item)
+            && (!String(item.original_work_url || '').trim()
+                || !String(item.author_name || '').trim()
+                || !String(item.author_handle || '').trim());
         return itemPromptNeedsDetailEnrichment(item)
             || missingRequiredMedia
             || confirmedMissingImages
             || missingSource;
+    }
+
+    function getMeigenCommunityMediaIdentity(value = '') {
+        return String(value || '').match(/\/generations\/(?:[^/?#\s]+\/)*(community_[a-z0-9-]+)\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i)?.[1]?.toLowerCase() || '';
+    }
+
+    function hasCompleteMeigenCommunityVideoIdentity(item = {}) {
+        const videoIdentities = new Set((Array.isArray(item.video_sources) ? item.video_sources : [])
+            .map((entry) => getMeigenCommunityMediaIdentity(entry?.url || ''))
+            .filter(Boolean));
+        const imageIdentities = new Set((Array.isArray(item.image_sources) ? item.image_sources : [])
+            .map((entry) => getMeigenCommunityMediaIdentity(entry?.url || ''))
+            .filter(Boolean));
+        return videoIdentities.size === 1
+            && imageIdentities.size === 1
+            && imageIdentities.has(Array.from(videoIdentities)[0]);
     }
 
     function hasBetterDetailThanBase(detailItems = [], item = {}, collector = getCollector()) {
@@ -3297,6 +3343,7 @@
             }
             activateCardDetailTarget(target);
             await sleep(700);
+            if (isCollectionStopRequested()) return [];
             await refreshStructuredDataCache();
             const openedDetailUrl = normalizeBatchUrl(window.location.href);
             const openedPromptIdentity = getPromptIdentityFromUrl(openedDetailUrl);
@@ -3324,6 +3371,7 @@
             let lastItems = [];
             const startedAt = Date.now();
             while (Date.now() - startedAt < DETAIL_FRAME_TIMEOUT_MS) {
+                if (isCollectionStopRequested()) return [];
                 const dialog = getOpenDetailDialog(document);
                 const detailRoot = dialog || document;
                 const promptPanel = findDetailPromptPanel(detailRoot);
@@ -3476,6 +3524,7 @@
             });
 
             while (Date.now() - startedAt < DETAIL_FRAME_TIMEOUT_MS) {
+                if (isCollectionStopRequested()) return [];
                 let documentRef = null;
                 try {
                     documentRef = frame.contentDocument;
@@ -3674,6 +3723,7 @@
                 await waitWhilePaused();
                 try {
                     const currentDetailItems = await collectDetailItemsFromCurrentCard(item, collector);
+                    if (automationJob.stopRequested) break;
                     const hasReliableDetail = hasUsefulDetailData(currentDetailItems)
                         && (hasCompletePromptData(currentDetailItems, collector) || !itemPromptNeedsDetailEnrichment(item))
                         && hasExpectedDetailImages(currentDetailItems);

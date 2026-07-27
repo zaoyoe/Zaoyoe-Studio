@@ -392,6 +392,32 @@ function getMeigenVideoStatusIdFromUrl(value = '') {
     }
 }
 
+function getMeigenCommunityVideoIdentity(value = '') {
+    return String(value || '').match(/\/generations\/(?:[^/?#\s]+\/)*(community_[a-z0-9-]+)\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i)?.[1]?.toLowerCase() || '';
+}
+
+function hasCompleteMeigenCommunityVideoIdentity(item = {}) {
+    if (normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE) !== 'meigen') return false;
+    const videoIdentities = new Set(normalizeVideoSources(
+        item.video_sources || item.videoSources || item.videos || [],
+        MAX_VIDEO_COUNT
+    ).map((entry) => getMeigenCommunityVideoIdentity(entry.url)).filter(Boolean));
+    const imageIdentities = new Set(normalizeImageSources(
+        item.image_sources || item.imageSources || item.images || [],
+        MAX_IMAGE_COUNT
+    ).map((entry) => getMeigenCommunityVideoIdentity(entry.url)).filter(Boolean));
+    return videoIdentities.size === 1
+        && imageIdentities.size === 1
+        && imageIdentities.has(Array.from(videoIdentities)[0]);
+}
+
+function getImportSourceUrl(item = {}) {
+    const originalWorkUrl = normalizeOptionalUrl(item.original_work_url || item.originalWorkUrl || '');
+    if (originalWorkUrl) return originalWorkUrl;
+    if (!hasCompleteMeigenCommunityVideoIdentity(item)) return '';
+    return normalizeOptionalUrl(item.source_page_url || item.sourcePageUrl || '') || 'https://www.meigen.ai/';
+}
+
 function getMeigenImportIdentityConflictReason(item = {}) {
     if (normalizeImportSource(item.source || DEFAULT_IMPORT_SOURCE) !== 'meigen') return '';
     const sourceItemId = /^\d{12,25}$/.test(String(item.source_item_id || item.sourceItemId || '').trim())
@@ -481,13 +507,19 @@ function normalizeImportItemPayload(rawItem = {}, settings = {}) {
     const authorName = normalizeText(item.author_name || item.authorName || item.nickname || item.creator || '', 200);
     const authorHandle = normalizeAuthorHandle(item.author_handle || item.authorHandle || item.author_id || item.authorId || item.handle || '')
         || deriveAuthorHandleFromOriginalWorkUrl(originalWorkUrl);
+    const sourceAttributionOptional = hasCompleteMeigenCommunityVideoIdentity({
+        ...item,
+        source: item.source || settings.source || DEFAULT_IMPORT_SOURCE,
+        image_sources: imageSources,
+        video_sources: videoSources
+    });
     const missingReasons = [];
 
     if (!promptText) missingReasons.push('没有抓到提示词');
     if (!imageSources.length && !videoSources.length) missingReasons.push('没有可保存的媒体');
-    if (!originalWorkUrl) missingReasons.push('缺少 X 原帖链接');
-    if (!authorName) missingReasons.push('缺少原作者昵称');
-    if (!authorHandle) missingReasons.push('缺少原作者 ID');
+    if (!sourceAttributionOptional && !originalWorkUrl) missingReasons.push('缺少 X 原帖链接');
+    if (!sourceAttributionOptional && !authorName) missingReasons.push('缺少原作者昵称');
+    if (!sourceAttributionOptional && !authorHandle) missingReasons.push('缺少原作者 ID');
     if (item.stream_pending_detail === true || item.streamPendingDetail === true) missingReasons.push('等待详情补全');
 
     return {
@@ -536,13 +568,14 @@ function getImportItemUploadBlockReason(item = {}) {
     const authorName = normalizeText(item.author_name || '', 200);
     const authorHandle = normalizeAuthorHandle(item.author_handle || '')
         || deriveAuthorHandleFromOriginalWorkUrl(originalWorkUrl);
+    const sourceAttributionOptional = hasCompleteMeigenCommunityVideoIdentity(item);
     const reasons = [];
 
     if (!promptText) reasons.push('没有抓到提示词');
     if (!imageSources.length && !videoSources.length) reasons.push('没有可保存的媒体');
-    if (!originalWorkUrl) reasons.push('缺少 X 原帖链接');
-    if (!authorName) reasons.push('缺少原作者昵称');
-    if (!authorHandle) reasons.push('缺少原作者 ID');
+    if (!sourceAttributionOptional && !originalWorkUrl) reasons.push('缺少 X 原帖链接');
+    if (!sourceAttributionOptional && !authorName) reasons.push('缺少原作者昵称');
+    if (!sourceAttributionOptional && !authorHandle) reasons.push('缺少原作者 ID');
 
     return reasons.join('；');
 }
@@ -1251,8 +1284,9 @@ function buildPromptPayloadFromImportItem(item, {
         primary_video_sha256: videoAssets[0]?.content_hash?.startsWith('sha256:')
             ? videoAssets[0].content_hash.slice('sha256:'.length)
             : null,
-        source_url: normalizeOptionalUrl(item.original_work_url || ''),
-        source_author_name: normalizeText(item.author_name || '', 200),
+        source_url: getImportSourceUrl(item),
+        source_author_name: normalizeText(item.author_name || '', 200)
+            || (hasCompleteMeigenCommunityVideoIdentity(item) ? 'Meigen Community' : ''),
         source_author_handle: normalizeAuthorHandle(item.author_handle || '')
             || deriveAuthorHandleFromOriginalWorkUrl(item.original_work_url || ''),
         ai_tags: aiTags,
@@ -2767,6 +2801,8 @@ module.exports._private = {
     getMeigenCoverIdentityKeys,
     filterImageSourcesForImportIdentity,
     getMeigenImportIdentityConflictReason,
+    hasCompleteMeigenCommunityVideoIdentity,
+    getImportSourceUrl,
     deriveAuthorHandleFromOriginalWorkUrl,
     normalizeImportItemPayload,
     importSingleItem,

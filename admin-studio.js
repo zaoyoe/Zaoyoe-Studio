@@ -17696,7 +17696,7 @@ const galleryImportState = {
 
 const GALLERY_IMPORT_SOURCE_URL = 'https://www.meigen.ai';
 const GALLERY_IMPORT_COLLECTOR_SCRIPT_PATH = '/integrations/meigen-gallery-collector/meigen-gallery-collector.user.js';
-const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-27.98';
+const GALLERY_IMPORT_COLLECTOR_VERSION = '2026-07-27.99';
 const GALLERY_IMPORT_PIPELINE_VERSION = '20260710_GALLERY_FULL_ANALYSIS_BILINGUAL_2';
 const GALLERY_IMPORT_MAX_PARALLELISM = 10;
 const GALLERY_IMPORT_DEFAULT_PARALLELISM = 8;
@@ -18129,6 +18129,23 @@ function getGalleryImportAuthorHandle(item = {}, originalWorkUrl = '') {
     } catch (_) {
         return '';
     }
+}
+
+function getGalleryImportCommunityVideoIdentity(value = '') {
+    return String(value || '').match(/\/generations\/(?:[^/?#\s]+\/)*(community_[a-z0-9-]+)\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i)?.[1]?.toLowerCase() || '';
+}
+
+function hasCompleteGalleryImportCommunityVideoIdentity(item = {}) {
+    if (String(item?.source || 'meigen').trim().toLowerCase() !== 'meigen') return false;
+    const videoIdentities = new Set((Array.isArray(item?.video_sources) ? item.video_sources : [])
+        .map((entry) => getGalleryImportCommunityVideoIdentity(typeof entry === 'string' ? entry : entry?.url || ''))
+        .filter(Boolean));
+    const imageIdentities = new Set((Array.isArray(item?.image_sources) ? item.image_sources : [])
+        .map((entry) => getGalleryImportCommunityVideoIdentity(typeof entry === 'string' ? entry : entry?.url || ''))
+        .filter(Boolean));
+    return videoIdentities.size === 1
+        && imageIdentities.size === 1
+        && imageIdentities.has(Array.from(videoIdentities)[0]);
 }
 
 function parseGalleryImportRawInput(rawText = '') {
@@ -18776,6 +18793,7 @@ function getGalleryImportItemReadinessIssue(item = {}) {
     const authorName = String(item?.author_name || item?.authorName || item?.nickname || item?.creator || '').trim();
     const authorHandle = getGalleryImportAuthorHandle(item, originalWorkUrl);
     const status = String(item?.status || '').trim();
+    const sourceAttributionOptional = hasCompleteGalleryImportCommunityVideoIdentity(item);
 
     if (finalPromptId || duplicatePromptId) {
         return '';
@@ -18786,13 +18804,13 @@ function getGalleryImportItemReadinessIssue(item = {}) {
     if (!imageCount && !videoCount) {
         return '缺少媒体，已跳过';
     }
-    if (!originalWorkUrl) {
+    if (!sourceAttributionOptional && !originalWorkUrl) {
         return '缺少 X 原帖链接，已跳过';
     }
-    if (!authorName) {
+    if (!sourceAttributionOptional && !authorName) {
         return '缺少原作者昵称，已跳过';
     }
-    if (!authorHandle) {
+    if (!sourceAttributionOptional && !authorHandle) {
         return '缺少原作者 ID，已跳过';
     }
     if (status === 'duplicate' || duplicatePromptId) {
