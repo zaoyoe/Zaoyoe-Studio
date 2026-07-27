@@ -130,6 +130,7 @@ api/wallet/verify-log.js
 !server/
 server/*
 !server/prompt-image-palette.js
+!server/prompt-video-poster.js
 !server/api-handlers/
 !server/api-handlers/**
 !supabase/
