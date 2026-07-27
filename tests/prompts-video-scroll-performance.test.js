@@ -39,10 +39,20 @@ test('video gallery defers media work without removing card motion', () => {
         /Math\.max\(getPromptGalleryInitialRenderCount\(\), requestedCount, preserveScroll \? previousRenderedCount : 0\)/,
         'initial rendering should remain bounded even when remote items_per_page is large'
     );
+    assert.match(
+        runtime,
+        /shouldContinueSentinelFill[\s\S]*?!allCardsRendered[\s\S]*?isPromptGalleryLoadSentinelNearViewport\(\)[\s\S]*?queuePromptGalleryNextScrollBatch\(\{ continueWhileSentinelNear: true \}\);/,
+        'one sentinel trigger should keep filling bounded batches until new content moves it past the prefetch margin'
+    );
+    assert.match(
+        runtime,
+        /classList\.contains\('prompt-gallery-scrolling'\)\s*&& !promptGallerySentinelFillRequested/,
+        'only the sentinel refill may append lightweight card DOM while scrolling'
+    );
     assert.doesNotMatch(
         runtime,
-        /if \(!allCardsRendered && isPromptGalleryLoadSentinelNearViewport\(\)\)/,
-        'one sentinel trigger should not recursively append every nearby batch'
+        /renderPromptGalleryRange\([^;]+allFilteredItems\.length/,
+        'sentinel refill should never synchronously render the full filtered collection'
     );
     assert.match(
         styles,

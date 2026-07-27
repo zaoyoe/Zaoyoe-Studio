@@ -182,8 +182,8 @@
         const summaryEl = getElement('summary');
         if (summaryEl) {
             summaryEl.innerHTML = [
-                `<span>作品 ${total}</span>`,
-                `<span>图片 ${images}</span>`,
+                `<span>当前缓存 ${total}</span>`,
+                `<span>封面/图片源 ${images}</span>`,
                 `<span>视频源 ${videos}</span>`,
                 `<span>待补 ${missing}</span>`,
                 `<span>失败 ${failures}</span>`
@@ -282,8 +282,10 @@
         } else if (status.phase === 'paging') {
             current = status.pageProcessed;
             total = status.pageTotal || total;
-        } else if (status.phase === 'enriching') {
-            current = status.detailProcessed;
+        } else if (status.phase === 'enriching' || status.phase === 'retrying') {
+            current = status.running && status.detailTotal > status.detailProcessed
+                ? status.detailProcessed + 1
+                : status.detailProcessed;
             total = status.detailTotal || Math.max(1, status.missingDetailCount);
         } else if (status.phase === 'recovering') {
             current = status.staged;
@@ -292,15 +294,19 @@
             current = total;
         }
         const percent = Math.max(0, Math.min(100, Math.round((current / Math.max(1, total)) * 100)));
-        getElement('automationPhase').textContent = labels[status.phase] || '采集任务状态';
+        const phaseLabel = status.stopRequested
+            ? '正在停止当前操作'
+            : (labels[status.phase] || '采集任务状态');
+        getElement('automationPhase').textContent = phaseLabel;
         getElement('automationUpdatedAt').textContent = formatActivityTime(status.updatedAt);
         getElement('automationProgressBar').style.width = `${percent}%`;
+        const scopeDetail = `批次累计检查 ${status.checkedCandidates} · 当前缓存作品 ${status.discovered} · 仓库重复 ${status.repositoryDuplicates} · 本轮扫描重复 ${status.candidateDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 批次完成 ${status.fulfilled}/${status.target || '--'} · 可处理 ${status.processable} · 已发布 ${status.published} · 待详情 ${status.pendingDetail} · 待重新采集 ${status.retryPending} · 重采预留 ${status.retryReserved} · 待后续候选 ${status.deferredCandidates} · 未接收 ${status.rejected}`;
         getElement('automationProgressDetail').textContent = status.lastError
             ? `错误：${status.lastError}`
-            : `检查唯一作品 ${status.checkedCandidates} · 当前作品 ${status.discovered} · 仓库已有 ${status.repositoryDuplicates} · 当前扫描重复 ${status.candidateDuplicates} · 入队重复 ${status.stageDuplicates} · 身份冲突 ${status.identityRejected} · 目标完成 ${status.fulfilled}/${status.target || '--'} · 可处理 ${status.processable} · 已发布 ${status.published} · 待详情 ${status.pendingDetail} · 待重新采集 ${status.retryPending} · 重采预留 ${status.retryReserved} · 待后续候选 ${status.deferredCandidates} · 未接收 ${status.rejected}`;
+            : `${status.stopRequested ? '停止请求已接收，当前操作退出后停止 · ' : ''}${scopeDetail}`;
 
         if (status.running) {
-            setStatus(`${labels[status.phase] || '全自动采集中'}；${getElement('automationProgressDetail').textContent}`);
+            setStatus(`${phaseLabel}；${getElement('automationProgressDetail').textContent}`);
         } else if (status.phase === 'completed') {
             setStatus(`全自动任务完成：服务端已接收 ${status.staged} 条，可处理 ${status.processable} 条，待详情 ${status.pendingDetail} 条；关闭插件不影响后台任务`);
         } else if (status.phase === 'failed') {
@@ -1032,13 +1038,30 @@
         const favoriteCount = Number(item?.favorite_count || 0);
         const favoriteFilter = getFavoriteFilterSettings();
         const requireFavoriteCount = favoriteFilter.minFavorites > 0 || favoriteFilter.maxFavorites > 0;
-        const missingSource = !String(item?.original_work_url || '').trim()
-            || !String(item?.author_name || '').trim()
-            || !String(item?.author_handle || '').trim();
+        const missingSource = !hasCompleteMeigenCommunityVideoIdentity(item)
+            && (!String(item?.original_work_url || '').trim()
+                || !String(item?.author_name || '').trim()
+                || !String(item?.author_handle || '').trim());
         return promptNeedsDetailEnrichment(item?.prompt_text || '')
             || imageCountIncomplete
             || missingSource
             || (requireFavoriteCount && favoriteCount <= 0);
+    }
+
+    function getMeigenCommunityMediaIdentity(value = '') {
+        return String(value || '').match(/\/generations\/(?:[^/?#\s]+\/)*(community_[a-z0-9-]+)\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i)?.[1]?.toLowerCase() || '';
+    }
+
+    function hasCompleteMeigenCommunityVideoIdentity(item = {}) {
+        const videoIdentities = new Set((Array.isArray(item.video_sources) ? item.video_sources : [])
+            .map((entry) => getMeigenCommunityMediaIdentity(entry?.url || ''))
+            .filter(Boolean));
+        const imageIdentities = new Set((Array.isArray(item.image_sources) ? item.image_sources : [])
+            .map((entry) => getMeigenCommunityMediaIdentity(entry?.url || ''))
+            .filter(Boolean));
+        return videoIdentities.size === 1
+            && imageIdentities.size === 1
+            && imageIdentities.has(Array.from(videoIdentities)[0]);
     }
 
     function payloadNeedsDetailEnrichment(payload = {}) {

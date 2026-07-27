@@ -32,12 +32,16 @@ test('prompts gallery uses progressive fixed-batch loading instead of synchronou
         'const startIndex = Math.max(0, visibleRange.minIndex - preloadCount);',
         'return preloadPromptGalleryItems(startIndex, visibleRange.minIndex);',
         'function isPromptGalleryNearDocumentBottom() {',
+        'function isPromptGalleryLoadSentinelNearViewport() {',
+        'rect.top <= viewportHeight + PROMPT_GALLERY_SENTINEL_PREFETCH_MARGIN_PX',
         "if (direction !== 'up' && isPromptGalleryNearDocumentBottom()) {",
         'return queuePromptGalleryNextScrollBatch();',
-        'function queuePromptGalleryRenderThrough(targetIndex = 0) {',
+        'function queuePromptGalleryRenderThrough(targetIndex = 0, options = {}) {',
+        'options.continueWhileSentinelNear === true',
         'promptGalleryRenderedCount + PROMPT_GALLERY_RENDER_CHUNK_SIZE',
         'warmImages: false',
-        'function queuePromptGalleryNextScrollBatch() {',
+        'function queuePromptGalleryNextScrollBatch(options = {}) {',
+        'queuePromptGalleryNextScrollBatch({ continueWhileSentinelNear: true });',
         'function getPromptGalleryProgressiveBatchSize() {',
         'columnCount * PROMPT_GALLERY_DESKTOP_PREFETCH_ROWS',
         'function setupPromptGalleryLoadSentinel() {',
@@ -116,6 +120,11 @@ test('prompts gallery uses progressive fixed-batch loading instead of synchronou
         promptsHtml.includes('bottomSentinel=20260712_PROMPTS_PROGRESSIVE_SENTINEL_2'),
         true,
         'prompts should cache-bust the progressive bottom-sentinel loader'
+    );
+    assert.equal(
+        promptsHtml.includes('sentinelFill=20260727_PROMPTS_SENTINEL_FILL_1'),
+        true,
+        'prompts should cache-bust the continuous sentinel refill fix'
     );
     assert.equal(
         promptsHtml.includes('id="promptGalleryLoadSentinel"'),
