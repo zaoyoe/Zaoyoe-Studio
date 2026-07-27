@@ -248,9 +248,19 @@ test('vercel admin function includes the prompt image palette runtime dependency
     const config = JSON.parse(readRepoFile('vercel.json'));
     const vercelIgnore = readRepoFile('.vercelignore');
     const includeFiles = String(config.functions?.['api/admin.js']?.includeFiles || '');
+    const promptRuntimeFiles = fs.readdirSync(path.resolve(__dirname, '..', 'server'))
+        .filter((filename) => /^prompt-.*\.js$/.test(filename));
 
     assert.equal(includeFiles.includes('server/prompt-*.js'), true);
-    assert.match(vercelIgnore, /!server\/prompt-image-palette\.js/);
+    assert.equal(promptRuntimeFiles.includes('prompt-image-palette.js'), true);
+    assert.equal(promptRuntimeFiles.includes('prompt-video-poster.js'), true);
+    promptRuntimeFiles.forEach((filename) => {
+        assert.equal(
+            vercelIgnore.includes(`!server/${filename}`),
+            true,
+            `.vercelignore must allow ${filename} into the Vercel function bundle`
+        );
+    });
 });
 
 test('vercel admin function traces the prompt video poster runtime and FFmpeg dependency', () => {
