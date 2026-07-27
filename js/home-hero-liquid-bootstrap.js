@@ -8,9 +8,74 @@
     var ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
     var previousRuntime = window.__homeHeroLiquidBootstrap;
 
+    function bindEarlyHeroEntryClicks() {
+        if (root.dataset.homeHeroEarlyEntryClickBound === '1') {
+            return;
+        }
+
+        root.dataset.homeHeroEarlyEntryClickBound = '1';
+        document.addEventListener('click', function (event) {
+            if (
+                event.defaultPrevented
+                || event.button !== 0
+                || event.metaKey
+                || event.ctrlKey
+                || event.shiftKey
+                || event.altKey
+            ) {
+                return;
+            }
+
+            var target = event.target && event.target.closest
+                ? event.target
+                : event.target && event.target.parentElement;
+            var card = target && target.closest
+                ? target.closest('.hero-carousel .entry-card')
+                : null;
+            var carousel = card && card.closest ? card.closest('.hero-carousel') : null;
+            var hero = carousel && carousel.closest ? carousel.closest('.hero-section') : null;
+
+            if (!card || !carousel || !hero || hero.dataset.homeHeroEntryRuntimeReady === '1') {
+                return;
+            }
+
+            if (card.getAttribute('data-action') && card.getAttribute('data-home-open-guestbook') !== '1') {
+                return;
+            }
+
+            var cardRect = card.getBoundingClientRect();
+            var carouselRect = carousel.getBoundingClientRect();
+            var cardCenter = cardRect.left + (cardRect.width / 2);
+            var viewportCenter = carouselRect.left + (carouselRect.width / 2);
+            var distanceFromCenter = Math.abs(cardCenter - viewportCenter);
+
+            if (distanceFromCenter <= 50) {
+                return;
+            }
+
+            var cards = carousel.querySelectorAll('.entry-card');
+            var requestedIndex = Array.prototype.indexOf.call(cards, card);
+            Array.prototype.forEach.call(cards, function (entry) {
+                entry.removeAttribute('data-home-early-center-requested');
+            });
+            card.setAttribute('data-home-early-center-requested', '1');
+            hero.dataset.homeHeroEarlyEntryIndex = String(Math.max(0, requestedIndex));
+            hero.dataset.homeHeroEarlyEntryHref = card.getAttribute('href') || '';
+
+            event.preventDefault();
+            event.stopPropagation();
+            carousel.scrollTo({
+                left: carousel.scrollLeft + (cardCenter - viewportCenter),
+                behavior: 'smooth'
+            });
+        }, true);
+    }
+
     if (previousRuntime && typeof previousRuntime.stop === 'function') {
         previousRuntime.stop();
     }
+
+    bindEarlyHeroEntryClicks();
 
     if (!section || !canvas || !ctx || typeof window.requestAnimationFrame !== 'function') {
         return;

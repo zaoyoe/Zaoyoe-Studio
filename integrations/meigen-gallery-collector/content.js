@@ -44,6 +44,8 @@
     const AUTOMATION_RETRY_RESERVATION_MIN_DEFERRED = 12;
     const AUTOMATION_RETRY_RESERVATION_MULTIPLIER = 3;
     const AUTOMATION_RETRY_RESERVATION_MAX_DEFERRED = 60;
+    const IMPORT_REQUEST_MAX_ATTEMPTS = 3;
+    const IMPORT_REQUEST_RETRY_BASE_DELAY_MS = 1200;
     const PAGE_BATCH_DELAY_MS = 1500;
     const PAGE_BATCH_MAX_PAGES = 5;
     const PROMPT_COPY_CLICK_DELAY_MS = 650;
@@ -204,6 +206,39 @@
         return right.some((value, index) => value > (left[index] || 0));
     }
 
+    function isTransientImportRequestError(value = '') {
+        return /(canceling statement due to statement timeout|statement timeout|timed?\s*out|timeout|temporar(?:y|ily)|network|failed to fetch|gateway|\b50[234]\b)/i
+            .test(String(value?.message || value || ''));
+    }
+
+    async function sendImportRuntimeMessageWithRetry(request = {}, operation = 'import-request') {
+        let lastError = null;
+        for (let attempt = 1; attempt <= IMPORT_REQUEST_MAX_ATTEMPTS; attempt += 1) {
+            let response = null;
+            try {
+                response = await chrome.runtime.sendMessage(request);
+            } catch (error) {
+                lastError = error;
+            }
+            if (response?.ok) return response;
+            const message = response?.message || lastError?.message || 'Admin Studio 请求失败';
+            lastError = new Error(message);
+            if (!isTransientImportRequestError(message) || attempt >= IMPORT_REQUEST_MAX_ATTEMPTS) {
+                throw lastError;
+            }
+            const delayMs = IMPORT_REQUEST_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1));
+            logDiagnostic('import-request-retry', {
+                operation,
+                attempt,
+                maxAttempts: IMPORT_REQUEST_MAX_ATTEMPTS,
+                delayMs,
+                message
+            });
+            await sleep(delayMs);
+        }
+        throw lastError || new Error('Admin Studio 请求失败');
+    }
+
     async function filterRepositoryDuplicates(
         items = [],
         message = {},
@@ -212,18 +247,20 @@
     ) {
         let identityConflictCount = 0;
         const identityConflictSourceItemIds = [];
+        const pendingRevisions = new Map();
+        const pendingCapacityDeferredKeys = new Set();
         const candidates = (Array.isArray(items) ? items : []).filter((item) => {
             const key = getImportIdentityKey(item);
             if (!key) return false;
             const revision = getStreamItemRevision(item);
             const wasCapacityDeferred = message.streamToQueue
                 && streamStageState.capacityDeferredKeys.has(key);
-            if (checkedKeys.has(key)
+            const previousRevision = pendingRevisions.get(key) || checkedRevisions.get(key);
+            if ((checkedKeys.has(key) || pendingRevisions.has(key))
                 && !wasCapacityDeferred
-                && !isStreamItemRevisionImproved(checkedRevisions.get(key), revision)) return false;
-            if (wasCapacityDeferred) streamStageState.capacityDeferredKeys.delete(key);
-            checkedKeys.add(key);
-            checkedRevisions.set(key, revision);
+                && !isStreamItemRevisionImproved(previousRevision, revision)) return false;
+            pendingRevisions.set(key, revision);
+            if (wasCapacityDeferred) pendingCapacityDeferredKeys.add(key);
             if (getMeigenIdentityConflictReason(item)) {
                 identityConflictCount += 1;
                 identityConflictSourceItemIds.push(String(item.source_item_id || ''));
@@ -231,7 +268,15 @@
             }
             return true;
         });
+        const commitPendingChecks = () => {
+            pendingRevisions.forEach((revision, key) => {
+                checkedKeys.add(key);
+                checkedRevisions.set(key, revision);
+            });
+            pendingCapacityDeferredKeys.forEach((key) => streamStageState.capacityDeferredKeys.delete(key));
+        };
         if (!candidates.length) {
+            commitPendingChecks();
             if (message.streamToQueue) {
                 streamStageState.checkedCandidateCount = checkedKeys.size;
                 streamStageState.identityRejectedCount += identityConflictCount;
@@ -246,13 +291,13 @@
                 identityConflictCount
             };
         }
-        const response = await chrome.runtime.sendMessage({
+        const response = await sendImportRuntimeMessageWithRetry({
             type: MESSAGE_CHECK_DUPLICATES,
             payload: { source: 'meigen', items: candidates },
             adminBaseUrl: message.adminBaseUrl,
             maxItems: candidates.length
-        });
-        if (!response?.ok) throw new Error(response?.message || '提示词仓库去重预检失败');
+        }, 'duplicate-preflight');
+        commitPendingChecks();
         const duplicateIds = new Set((response.result?.duplicateSourceItemIds || []).map((value) => String(value || '')));
         const hasDuplicateBreakdown = Array.isArray(response.result?.repositoryDuplicateSourceItemIds)
             || Array.isArray(response.result?.candidateDuplicateSourceItemIds);
@@ -488,7 +533,7 @@
                 if (!stagedItems.length) break;
                 streamStageState.attemptedCount += stagedItems.length;
                 try {
-                    const response = await chrome.runtime.sendMessage({
+                    const response = await sendImportRuntimeMessageWithRetry({
                         type: MESSAGE_STAGE,
                         payload: { source: 'meigen', items: stagedItems },
                         batchId: streamStageState.batchId,
@@ -498,8 +543,7 @@
                         maxItems: message.maxItems,
                         minFavorites: message.minFavorites,
                         maxFavorites: message.maxFavorites
-                    });
-                    if (!response?.ok) throw new Error(response?.message || '流式送入队列失败');
+                    }, 'stream-stage');
                     const result = response.result || {};
                     const acceptedCount = Number(result.stagedCount ?? result.items?.length ?? 0);
                     const duplicateCount = Number(result.skippedDuplicateCount || 0);
@@ -720,13 +764,12 @@
         );
         const previousPendingDetailCount = streamStageState.pendingDetailCount;
         pendingPayloadItems.forEach((item) => rememberStreamRetryItem(item));
-        const response = await chrome.runtime.sendMessage({
+        const response = await sendImportRuntimeMessageWithRetry({
             type: MESSAGE_CLEANUP_PENDING,
             batchId: streamStageState.batchId,
             adminBaseUrl: message.adminBaseUrl,
             site: message.site
-        });
-        if (!response?.ok) throw new Error(response?.message || '清理未补全占位项失败');
+        }, 'pending-detail-cleanup');
         const result = response.result || {};
         const cleanedKeys = new Set((Array.isArray(result.items) ? result.items : [])
             .map((item) => getStreamItemKey(item))
@@ -2365,6 +2408,11 @@
     function currentDetailUrlMatchesTarget(item = {}, currentUrl = window.location.href) {
         const targetUrl = normalizeBatchUrl(item.source_page_url || '');
         const current = normalizeBatchUrl(currentUrl || '');
+        const targetPromptIdentity = getPromptIdentityFromUrl(targetUrl);
+        const currentPromptIdentity = getPromptIdentityFromUrl(current);
+        if (targetPromptIdentity && currentPromptIdentity) {
+            return targetPromptIdentity === currentPromptIdentity;
+        }
         const targetPromptId = getPromptIdFromUrl(targetUrl)
             || getLongNumericIdFromText(item.original_work_url || '')
             || getLongNumericIdFromText(item.source_item_id || '');
@@ -2870,6 +2918,15 @@
         }
     }
 
+    function getPromptIdentityFromUrl(value = '') {
+        try {
+            const url = new URL(String(value || ''), window.location.href);
+            return url.pathname.match(/\/prompt\/([a-z0-9_-]{5,})\/?$/i)?.[1]?.toLowerCase() || '';
+        } catch (_) {
+            return String(value || '').match(/\/prompt\/([a-z0-9_-]{5,})(?:[/?#]|$)/i)?.[1]?.toLowerCase() || '';
+        }
+    }
+
     function getBestCardScopeFromDetailLink(detailUrl = '') {
         const targetUrl = normalizeBatchUrl(detailUrl);
         const targetId = getPromptIdFromUrl(targetUrl);
@@ -2888,7 +2945,47 @@
         if (!scope?.querySelectorAll) return [];
         return Array.from(scope.querySelectorAll('a[href]'))
             .map((link) => normalizeBatchUrl(link.getAttribute('href') || link.href || ''))
-            .filter(Boolean);
+            .filter((url) => Boolean(getPromptIdentityFromUrl(url)));
+    }
+
+    function getCardDetailUrl(scope, item = {}) {
+        if (!scope) return '';
+        const target = getCardDetailClickTarget(scope, item);
+        const targetAnchor = target?.closest?.('a[href]');
+        const candidates = [
+            targetAnchor?.getAttribute?.('href'),
+            targetAnchor?.href,
+            ...Array.from(scope.querySelectorAll?.('a[href]') || [])
+                .flatMap((link) => [link.getAttribute?.('href'), link.href])
+        ];
+        return candidates
+            .map((value) => normalizeBatchUrl(value || ''))
+            .find((url) => Boolean(getPromptIdentityFromUrl(url))) || '';
+    }
+
+    function bindItemToDetailUrl(item = {}, detailUrl = '') {
+        const normalizedDetailUrl = normalizeBatchUrl(detailUrl || '');
+        const promptIdentity = getPromptIdentityFromUrl(normalizedDetailUrl);
+        if (!promptIdentity) return item;
+        return {
+            ...item,
+            source_item_id: promptIdentity,
+            source_page_url: normalizedDetailUrl
+        };
+    }
+
+    function bindCollectedItemsToVisibleCardDetails(items = [], collector = getCollector()) {
+        if (!collector?.mergeCollectedItems) return Array.isArray(items) ? items : [];
+        const boundItems = (Array.isArray(items) ? items : []).map((item) => {
+            if (getPromptIdentityFromUrl(item?.source_page_url || '')) {
+                return bindItemToDetailUrl(item, item.source_page_url);
+            }
+            const scope = findCurrentPageCardScopeForItem(item, collector);
+            const detailUrl = getCardDetailUrl(scope, item);
+            if (!detailUrl) return item;
+            return bindItemToDetailUrl(item, detailUrl);
+        });
+        return collector.mergeCollectedItems(boundItems);
     }
 
     function getMediaNodeStatusIds(node) {
@@ -3181,6 +3278,11 @@
         const target = getCardDetailClickTarget(scope, item);
         const beforeUrl = window.location.href;
         const navigationAnchor = target?.closest?.('a[href]');
+        const itemDetailUrl = normalizeBatchUrl(item.source_page_url || '');
+        let effectiveDetailUrl = getPromptIdentityFromUrl(itemDetailUrl)
+            ? itemDetailUrl
+            : getCardDetailUrl(scope, item);
+        let effectiveItem = bindItemToDetailUrl(item, effectiveDetailUrl);
         if (navigationAnchor) {
             logDiagnostic('detail-current-navigation-guarded', {
                 sourceItemId: item.source_item_id || '',
@@ -3196,14 +3298,25 @@
             activateCardDetailTarget(target);
             await sleep(700);
             await refreshStructuredDataCache();
+            const openedDetailUrl = normalizeBatchUrl(window.location.href);
+            const openedPromptIdentity = getPromptIdentityFromUrl(openedDetailUrl);
+            if (openedPromptIdentity
+                && openedPromptIdentity !== getPromptIdentityFromUrl(effectiveDetailUrl)) {
+                effectiveDetailUrl = openedDetailUrl;
+                effectiveItem = bindItemToDetailUrl(item, effectiveDetailUrl);
+                logDiagnostic('detail-current-target-bound', {
+                    sourceItemId: effectiveItem.source_item_id || '',
+                    detailUrl: effectiveDetailUrl
+                });
+            }
             const openedDialog = getOpenDetailDialog(document);
             logDiagnostic('detail-current-opened', {
                 beforeUrl,
                 currentUrl: window.location.href,
                 hasPromptPanel: Boolean(findDetailPromptPanel(openedDialog || document)),
-                currentMatchesTarget: currentDetailUrlMatchesTarget(item, window.location.href)
-                    || detailDialogMatchesTarget(openedDialog, item),
-                dialogMatchesTarget: detailDialogMatchesTarget(openedDialog, item),
+                currentMatchesTarget: currentDetailUrlMatchesTarget(effectiveItem, window.location.href)
+                    || detailDialogMatchesTarget(openedDialog, effectiveItem),
+                dialogMatchesTarget: detailDialogMatchesTarget(openedDialog, effectiveItem),
                 observedStatusIds: Array.from(getScopeMediaStatusIds(openedDialog))
             });
 
@@ -3214,10 +3327,10 @@
                 const dialog = getOpenDetailDialog(document);
                 const detailRoot = dialog || document;
                 const promptPanel = findDetailPromptPanel(detailRoot);
-                const currentMatchesTarget = currentDetailUrlMatchesTarget(item, window.location.href)
+                const currentMatchesTarget = currentDetailUrlMatchesTarget(effectiveItem, window.location.href)
                     || (window.location.href === beforeUrl
                         && Boolean(promptPanel)
-                        && detailDialogMatchesTarget(dialog, item));
+                        && detailDialogMatchesTarget(dialog, effectiveItem));
                 const detailExpectedCount = currentMatchesTarget ? getDetailExpectedCountFromDocument(detailRoot) : 0;
                 if (promptPanel && currentMatchesTarget) await expandPromptSection(promptPanel);
                 if (!copiedPrompt && promptPanel && currentMatchesTarget) {
@@ -3227,13 +3340,13 @@
                 if (!detailViewReady) {
                     lastItems = [];
                     logDiagnostic('detail-current-not-ready', {
-                        sourceItemId: item.source_item_id || '',
-                        targetUrl: item.source_page_url || '',
+                        sourceItemId: effectiveItem.source_item_id || '',
+                        targetUrl: effectiveItem.source_page_url || '',
                         currentUrl: window.location.href,
                         currentMatchesTarget,
                         hasPromptPanel: Boolean(promptPanel),
                         hasDialog: Boolean(dialog),
-                        dialogMatchesTarget: detailDialogMatchesTarget(dialog, item),
+                        dialogMatchesTarget: detailDialogMatchesTarget(dialog, effectiveItem),
                         observedStatusIds: Array.from(getScopeMediaStatusIds(dialog)),
                         detailExpectedCount
                     });
@@ -3242,21 +3355,21 @@
                 }
                 lastItems = collector.collectMeigenGalleryItems(detailRoot, buildCollectionOptions({
                     baseUrl: window.location.href,
-                    expectedDetailUrl: item.source_page_url || '',
+                    expectedDetailUrl: effectiveItem.source_page_url || '',
                     expectedDetailImageCount: detailExpectedCount,
                     detailFavoriteCount: getDetailFavoriteCountFromPromptPanel(detailRoot, collector),
                     detailOnly: true,
                     structuredEntries: []
-                }, item));
+                }, effectiveItem));
                 lastItems = mergeDetailItemsWithCopiedPrompt(lastItems, copiedPrompt, collector);
                 lastItems = expandDetailItemsToExpectedCount(lastItems, detailExpectedCount, collector);
                 lastItems = enrichDetailItemsWithVisibleAuthor(lastItems, detailRoot, collector);
-                lastItems = selectBestDetailItemsForTarget(lastItems, item, {
+                lastItems = selectBestDetailItemsForTarget(lastItems, effectiveItem, {
                     expectedCount: detailExpectedCount
                 }).map((detailItem) => ({
                     ...detailItem,
-                    source_item_id: item.source_item_id || detailItem.source_item_id || '',
-                    source_page_url: item.source_page_url || detailItem.source_page_url || '',
+                    source_item_id: effectiveItem.source_item_id || detailItem.source_item_id || '',
+                    source_page_url: effectiveItem.source_page_url || detailItem.source_page_url || '',
                     detail_identity_verified: true
                 }));
                 lastItems = filterUsableDetailItems(lastItems, collector);
@@ -3289,9 +3402,9 @@
             }
             logDiagnostic('detail-current-timeout', {
                 itemCount: lastItems.length,
-                targetUrl: item.source_page_url || '',
+                targetUrl: effectiveItem.source_page_url || '',
                 currentUrl: window.location.href,
-                currentMatchesTarget: currentDetailUrlMatchesTarget(item, window.location.href),
+                currentMatchesTarget: currentDetailUrlMatchesTarget(effectiveItem, window.location.href),
                 promptLengths: lastItems.map((detailItem) => String(detailItem.prompt_text || '').trim().length),
                 imageUrls: lastItems.map((detailItem) => getItemImageUrlPreview(detailItem, 4))
             });
@@ -3475,7 +3588,11 @@
         const collector = getCollector();
         if (!collector?.mergeCollectedItems) return basePayload;
 
-        const baseItems = Array.isArray(basePayload.items) ? basePayload.items : [];
+        const baseItems = bindCollectedItemsToVisibleCardDetails(
+            Array.isArray(basePayload.items) ? basePayload.items : [],
+            collector
+        );
+        basePayload = { ...basePayload, items: baseItems };
         const retryDetailUrls = retryFailed
             ? detailJob.failed.map((failure) => failure.url).filter(Boolean)
             : [];
@@ -3712,10 +3829,13 @@
         const checkedRevisions = message.streamToQueue ? streamStageState.checkedRevisions : new Map();
         const repositoryDuplicateKeys = new Set();
         let repositoryDuplicateCount = 0;
-        const initialPayload = collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions({
-            ...favoriteRange,
-            viewportOnly: true
-        })));
+        const initialPayload = collector.buildPayload(bindCollectedItemsToVisibleCardDetails(
+            collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+                ...favoriteRange,
+                viewportOnly: true
+            })),
+            collector
+        ));
         const initialCollectFinishedAt = Date.now();
         const initialCheck = message.preflightDuplicates
             ? await filterRepositoryDuplicates(initialPayload.items, message, checkedKeys, checkedRevisions)
@@ -3791,10 +3911,13 @@
                 const hoverFinishedAt = Date.now();
                 await refreshStructuredDataCache();
                 const cacheFinishedAt = Date.now();
-                const currentItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions({
-                    ...favoriteRange,
-                    viewportOnly: true
-                }));
+                const currentItems = bindCollectedItemsToVisibleCardDetails(
+                    collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+                        ...favoriteRange,
+                        viewportOnly: true
+                    })),
+                    collector
+                );
                 const collectFinishedAt = Date.now();
                 const duplicateCheck = message.preflightDuplicates
                     ? await filterRepositoryDuplicates(currentItems, message, checkedKeys, checkedRevisions)
@@ -3870,10 +3993,13 @@
                 if (targetCount >= streamTarget) {
                     await waitForVisibleGalleryBatch();
                     await refreshStructuredDataCache();
-                    const verificationItems = collector.collectMeigenGalleryItems(document, buildCollectionOptions({
-                        ...favoriteRange,
-                        viewportOnly: true
-                    }));
+                    const verificationItems = bindCollectedItemsToVisibleCardDetails(
+                        collector.collectMeigenGalleryItems(document, buildCollectionOptions({
+                            ...favoriteRange,
+                            viewportOnly: true
+                        })),
+                        collector
+                    );
                     const verificationCheck = message.preflightDuplicates
                         ? await filterRepositoryDuplicates(verificationItems, message, checkedKeys, checkedRevisions)
                         : { uniqueItems: verificationItems, duplicateCount: 0 };
@@ -4018,7 +4144,10 @@
                     : continuablePayload.items
             }, { maxItems, favoriteRange })
             : applyPayloadLimits(
-                collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange))),
+                collector.buildPayload(bindCollectedItemsToVisibleCardDetails(
+                    collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)),
+                    collector
+                )),
                 { maxItems, favoriteRange }
             );
         let currentUrl = window.location.href;
@@ -4227,7 +4356,10 @@
         const hasFavoriteRange = Number(favoriteRange.min || 0) > 0 || Number(favoriteRange.max || 0) > 0;
         let payload = (message.enrichDetails || message.retryFailed)
             ? getLatestPayload(collector)
-            : collector.buildPayload(collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)));
+            : collector.buildPayload(bindCollectedItemsToVisibleCardDetails(
+                collector.collectMeigenGalleryItems(document, buildCollectionOptions(favoriteRange)),
+                collector
+            ));
         payload = applyPayloadLimits(payload, {
             maxItems,
             favoriteRange: (message.enrichDetails || message.retryFailed || hasFavoriteRange) ? {} : favoriteRange

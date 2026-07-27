@@ -1,7 +1,7 @@
 (function meigenGalleryCollectorBootstrap(global) {
     'use strict';
 
-    const VERSION = '2026-07-25.96';
+    const VERSION = '2026-07-27.98';
     const SOURCE = 'meigen';
     const MAX_ITEMS = 1000;
     const MAX_IMAGES_PER_ITEM = 24;
@@ -85,6 +85,7 @@
         if (!url) return '';
         try {
             const parsed = new URL(url);
+            if (isMeigenUploadImageUrl(parsed.toString())) return '';
             if (parsed.hash && !IMAGE_URL_PATTERN.test(parsed.pathname)) return '';
             if (NON_ART_IMAGE_URL_PATTERN.test(parsed.pathname)) return '';
             if (!IMAGE_URL_PATTERN.test(parsed.pathname) && !/image|img|cdn|media|assets|uploads/i.test(url)) {
@@ -93,6 +94,16 @@
             return parsed.toString();
         } catch (_) {
             return '';
+        }
+    }
+
+    function isMeigenUploadImageUrl(value = '') {
+        try {
+            const parsed = new URL(String(value || ''), getBaseUrl());
+            return parsed.hostname.toLowerCase() === 'images.meigen.ai'
+                && /\/uploads\/[^/?#\s]+/i.test(parsed.pathname);
+        } catch (_) {
+            return /(?:^|\/)uploads\/[^/?#\s]+/i.test(String(value || ''));
         }
     }
 
@@ -2171,9 +2182,6 @@
             if (Number.isFinite(score)) {
                 candidates.push({ scope: node, score, depth });
             }
-            if (node.matches?.(ITEM_SCOPE_SELECTOR) && score >= 90) {
-                return node;
-            }
             if (isLikelyListContainerScope(node, options)) break;
             node = node.parentElement;
         }
@@ -2285,13 +2293,22 @@
         imageUrls = [],
         videoSources = []
     } = {}) {
+        const hasNoBoundSource = !String(detailUrl || '').trim()
+            && !String(originalWorkUrl || '').trim()
+            && (!Array.isArray(videoSources) || videoSources.length === 0);
+        const hasImages = Array.isArray(imageUrls) && imageUrls.length > 0;
+        const hasOnlyReferenceUploads = hasImages
+            && imageUrls.every((url) => isMeigenUploadImageUrl(url));
+        if (hasNoBoundSource && hasOnlyReferenceUploads) return true;
         return !String(detailUrl || '').trim()
             && !String(promptText || '').trim()
             && !String(originalWorkUrl || '').trim()
             && (!Array.isArray(videoSources) || videoSources.length === 0)
-            && Array.isArray(imageUrls)
-            && imageUrls.length > 0
-            && imageUrls.every((url) => isLikelyUnboundMeigenCommunityImageUrl(url));
+            && hasImages
+            && imageUrls.every((url) => (
+                isLikelyUnboundMeigenCommunityImageUrl(url)
+                || isMeigenUploadImageUrl(url)
+            ));
     }
 
     function buildSourceItemId(scope, detailUrl, imageUrls, index, fallbackId = '', videoSources = []) {
@@ -2493,7 +2510,17 @@
         const grouped = new Map();
         for (const item of items) {
             if (!item) continue;
-            const itemImages = Array.isArray(item.image_sources) ? item.image_sources : [];
+            const rawItemImages = Array.isArray(item.image_sources) ? item.image_sources : [];
+            if (isUnresolvablePlaceholderItem({
+                detailUrl: item.source_page_url,
+                promptText: item.prompt_text,
+                originalWorkUrl: item.original_work_url,
+                imageUrls: rawItemImages.map((entry) => entry?.url),
+                videoSources: item.video_sources
+            })) continue;
+            const itemImages = rawItemImages
+                .map((entry) => ({ ...entry, url: normalizeImageUrl(entry?.url || '') }))
+                .filter((entry) => entry.url);
             const itemVideos = Array.isArray(item.video_sources) ? item.video_sources : [];
             const promptKey = normalizeText(item.prompt_text || '').toLowerCase();
             const primaryMediaUrl = String(itemImages[0]?.url || itemVideos[0]?.url || '').trim();
@@ -2652,6 +2679,7 @@
             normalizeText,
             getScopeBaseUrl,
             normalizeImageUrl,
+            isMeigenUploadImageUrl,
             cleanPromptText,
             mergeCollectedItems,
             collectDetailArtworkImageUrls,
@@ -2695,7 +2723,8 @@
             isCommunityDetailUrl,
             isImageUrlTrustedForStatus,
             filterDetailImageUrlsByIdentity,
-            isLikelyListContainerScope
+            isLikelyListContainerScope,
+            findItemScopeFromImage
         }
     };
 

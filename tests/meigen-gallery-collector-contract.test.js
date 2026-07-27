@@ -27,6 +27,7 @@ test('Meigen browser collector exports import-compatible payload helpers', () =>
     assert.equal(typeof collector._private.collectStructuredItemCandidates, 'function');
     assert.equal(typeof collector._private.getBestStructuredCandidate, 'function');
     assert.equal(typeof collector._private.isLikelyUnboundMeigenCommunityImageUrl, 'function');
+    assert.equal(typeof collector._private.isMeigenUploadImageUrl, 'function');
     assert.equal(typeof collector._private.isImageUrlTrustedForStatus, 'function');
     assert.equal(typeof collector._private.isUnresolvablePlaceholderItem, 'function');
     assert.equal(typeof collector._private.getMeigenGenerationImageIdentity, 'function');
@@ -38,6 +39,7 @@ test('Meigen browser collector exports import-compatible payload helpers', () =>
     assert.equal(typeof collector._private.isVideoCollectionContext, 'function');
     assert.equal(typeof collector._private.getActiveCollectionPanel, 'function');
     assert.equal(typeof collector._private.buildSourceItemId, 'function');
+    assert.equal(typeof collector._private.findItemScopeFromImage, 'function');
     assert.equal(typeof collector._private.extractMediaPromptBlocks, 'function');
     assert.equal(typeof collector._private.formatMediaPromptBlocks, 'function');
 });
@@ -431,6 +433,110 @@ test('Meigen browser collector skips cards without detail, prompt, or source ide
         originalWorkUrl: '',
         imageUrls: ['https://images.meigen.ai/generations/2026-07/community_example.png']
     }), false);
+    assert.equal(collector._private.isUnresolvablePlaceholderItem({
+        detailUrl: '',
+        promptText: '',
+        originalWorkUrl: '',
+        imageUrls: ['https://images.meigen.ai/uploads/98b66970-f838-4605-a878-bd51564e3bbb.png']
+    }), true);
+});
+
+test('Meigen browser collector excludes reference uploads from restored and mixed community items', () => {
+    const uploadUrl = 'https://images.meigen.ai/uploads/98b66970-f838-4605-a878-bd51564e3bbb.png';
+    const generationUrl = 'https://images.meigen.ai/generations/2026-07/community_c8077334-3753-4d52-bcfa-a771de2c2683.png';
+    const detailUrl = 'https://www.meigen.ai/prompt/community_c8077334-3753-4d52-bcfa-a771de2c2683';
+
+    assert.equal(collector._private.isMeigenUploadImageUrl(uploadUrl), true);
+    assert.equal(collector._private.normalizeImageUrl(uploadUrl), '');
+    assert.deepEqual(collector.mergeCollectedItems([{
+        source_item_id: 'meigen-31532477',
+        source_page_url: '',
+        prompt_text: 'Stale neighboring card text must not turn a reference input into a work.',
+        original_work_url: '',
+        image_sources: [{ url: uploadUrl }]
+    }]), []);
+
+    const mixed = collector.mergeCollectedItems([{
+        source_item_id: 'community_c8077334-3753-4d52-bcfa-a771de2c2683',
+        source_page_url: detailUrl,
+        prompt_text: 'A complete prompt for the generated community artwork.',
+        image_sources: [{ url: generationUrl }, { url: uploadUrl }]
+    }]);
+    assert.equal(mixed.length, 1);
+    assert.deepEqual(mixed[0].image_sources, [{ url: generationUrl }]);
+});
+
+test('Meigen browser collector selects the complete linked card over a nested reference tile', () => {
+    const detailUrl = 'https://www.meigen.ai/prompt/community_c8077334-3753-4d52-bcfa-a771de2c2683';
+    const generationUrl = 'https://images.meigen.ai/generations/2026-07/community_c8077334-3753-4d52-bcfa-a771de2c2683.png';
+    const detailLink = {
+        href: detailUrl,
+        parentElement: null,
+        getAttribute(name) {
+            return name === 'href' ? detailUrl : '';
+        },
+        querySelectorAll() {
+            return [];
+        }
+    };
+    const card = {
+        tagName: 'DIV',
+        className: 'prompt-card',
+        innerText: 'Community artwork card with enough visible metadata to identify the complete work.',
+        textContent: '',
+        parentElement: null,
+        matches(selector) {
+            return String(selector).includes('[class*="card" i]');
+        },
+        querySelectorAll(selector) {
+            if (selector === 'img') return [image];
+            if (selector === 'a[href]') return [detailLink];
+            return [];
+        },
+        getBoundingClientRect() {
+            return { width: 520, height: 620, top: 100, left: 20 };
+        }
+    };
+    const nestedTile = {
+        tagName: 'DIV',
+        className: 'reference-item',
+        innerText: 'Reference image tile with enough descriptive text to previously win the early scope return.',
+        textContent: '',
+        parentElement: card,
+        matches(selector) {
+            return String(selector).includes('[class*="item" i]');
+        },
+        querySelectorAll(selector) {
+            return selector === 'img' ? [image] : [];
+        },
+        getBoundingClientRect() {
+            return { width: 240, height: 240, top: 120, left: 40 };
+        }
+    };
+    const image = {
+        currentSrc: generationUrl,
+        src: generationUrl,
+        naturalWidth: 1024,
+        naturalHeight: 1024,
+        className: '',
+        id: '',
+        parentElement: nestedTile,
+        matches() {
+            return false;
+        },
+        closest(selector) {
+            return selector === 'a[href]' ? null : null;
+        },
+        getAttribute(name) {
+            return name === 'src' ? generationUrl : '';
+        },
+        getBoundingClientRect() {
+            return { width: 220, height: 220, top: 130, left: 50 };
+        }
+    };
+    detailLink.parentElement = card;
+
+    assert.equal(collector._private.findItemScopeFromImage(image), card);
 });
 
 test('Meigen browser collector dedupes direct and proxied community generation images', () => {

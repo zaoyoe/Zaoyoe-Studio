@@ -52,7 +52,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&heroSwipe=20260727_HOME_HERO_NATIVE_SWIPE_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
