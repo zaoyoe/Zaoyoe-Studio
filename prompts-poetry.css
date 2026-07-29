@@ -6,6 +6,14 @@ canvas#starryCanvas,
     will-change: transform;
 }
 
+html.ai-image-workbench-open canvas#starryCanvas,
+html.ai-image-workbench-open .starry-sky-canvas {
+    visibility: hidden;
+    transform: none;
+    -webkit-transform: none;
+    will-change: auto;
+}
+
 :root {
     --bg-color: #ffffff;
     --text-main: #1e293b;
@@ -121,6 +129,11 @@ html.prompt-gallery-resizing body.prompts-page .gallery-container--masonry .prom
 }
 
 html.prompt-gallery-scrolling body.prompts-page .gallery-container--masonry .prompt-card.breathing {
+    animation-play-state: paused !important;
+    will-change: auto;
+}
+
+html.ai-image-workbench-open body.prompts-page .gallery-container .prompt-card.breathing {
     animation-play-state: paused !important;
     will-change: auto;
 }

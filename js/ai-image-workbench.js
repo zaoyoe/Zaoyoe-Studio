@@ -9597,7 +9597,7 @@
 
         overlay.innerHTML = `
             <section class="ai-image-shell ${modelPricingView.open ? 'is-model-pricing' : ''}" role="dialog" aria-modal="true" aria-label="AI 图片工作台">
-                <button class="ai-image-shell-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭">
+                <button class="ai-image-shell-close" type="button" data-aiw-action="${modelPricingView.open ? 'close-model-pricing' : 'close'}" aria-label="${modelPricingView.open ? '关闭模型价格' : '关闭 AI 工作台'}" title="${modelPricingView.open ? '关闭模型价格' : '关闭'}">
                     <i class="fas fa-times" aria-hidden="true"></i>
                 </button>
                 <div class="${getLayoutClasses()}">
@@ -10397,20 +10397,20 @@
         }
     }
 
-    function formatUsdModelPrice(value) {
+    function formatModelPriceValue(value) {
         const number = Number(value);
         if (!Number.isFinite(number) || number < 0) return '--';
         const maximumFractionDigits = number >= 100 ? 2 : (number >= 1 ? 4 : 6);
-        return `$${number.toLocaleString('en-US', {
+        return number.toLocaleString('en-US', {
             minimumFractionDigits: 0,
             maximumFractionDigits
-        })}`;
+        });
     }
 
-    function formatEffectiveMultiplier(value) {
-        const multiplier = Number(value);
-        if (!Number.isFinite(multiplier)) return '';
-        return `x${String(Math.round(multiplier * 10000) / 10000)}`;
+    function shouldShowModelTechnicalName(displayLabel = '', technicalName = '') {
+        const label = String(displayLabel || '').trim().toLowerCase();
+        const name = String(technicalName || '').trim().toLowerCase();
+        return Boolean(name && name !== label);
     }
 
     function getPricingModelOption(group = 'chat', modelId = '', providerId = '') {
@@ -10484,29 +10484,32 @@
             <div class="ai-image-model-price-table ai-image-model-price-table--text" role="table" aria-label="文本对话模型价格">
                 <div class="ai-image-model-price-table-head" role="row">
                     <span role="columnheader">模型</span>
-                    <span role="columnheader">输入</span>
-                    <span role="columnheader">输出</span>
-                    <span role="columnheader">缓存读取</span>
+                    <span role="columnheader">输入（积分 / 百万 Token）</span>
+                    <span role="columnheader">输出（积分 / 百万 Token）</span>
+                    <span role="columnheader">缓存读取（积分 / 百万 Token）</span>
                 </div>
-                ${rows.map((row) => getTextPriceVariants(row.price).map((variant, variantIndex) => {
+                ${rows.map((row) => getTextPriceVariants(row.price).map((variant) => {
                     const price = variant.price;
                     const billingModel = String(row.price?.billingModel || row.price?.billing_model || row.id).trim();
-                    const multiplier = formatEffectiveMultiplier(row.price?.effectiveMultiplier ?? row.price?.effective_multiplier);
+                    const displayLabel = String(row.label || row.id).trim();
+                    const showBillingModel = shouldShowModelTechnicalName(displayLabel, billingModel);
+                    const isAvailable = Boolean(price) && row.price?.available !== false;
                     return `
-                        <div class="ai-image-model-price-row ${price ? '' : 'is-unavailable'}" role="row">
+                        <div class="ai-image-model-price-row ${isAvailable ? '' : 'is-unavailable'}" role="row">
                             <div class="ai-image-model-price-name" role="cell">
-                                <strong>${escapeHtml(row.label)}</strong>
-                                <span>${escapeHtml(billingModel)}</span>
-                                <em>${escapeHtml([row.providerLabel, variant.label, variantIndex === 0 ? multiplier : ''].filter(Boolean).join(' · '))}</em>
+                                <strong>${escapeHtml(displayLabel)}</strong>
+                                ${showBillingModel ? `<span>${escapeHtml(billingModel)}</span>` : ''}
+                                ${variant.label ? `<em>${escapeHtml(variant.label)}</em>` : ''}
                             </div>
-                            <span role="cell" data-label="输入">${escapeHtml(formatUsdModelPrice(price?.input_price_per_million))}</span>
-                            <span role="cell" data-label="输出">${escapeHtml(formatUsdModelPrice(price?.output_price_per_million))}</span>
-                            <span role="cell" data-label="缓存读取">${escapeHtml(formatUsdModelPrice(price?.cache_read_price_per_million))}</span>
+                            ${isAvailable ? `
+                                <span role="cell" data-label="输入（积分 / 百万 Token）">${escapeHtml(formatModelPriceValue(price?.input_price_per_million))}</span>
+                                <span role="cell" data-label="输出（积分 / 百万 Token）">${escapeHtml(formatModelPriceValue(price?.output_price_per_million))}</span>
+                                <span role="cell" data-label="缓存读取（积分 / 百万 Token）">${escapeHtml(formatModelPriceValue(price?.cache_read_price_per_million))}</span>
+                            ` : '<span class="ai-image-model-price-unavailable" role="cell">价格未配置</span>'}
                         </div>
                     `;
                 }).join('')).join('')}
             </div>
-            <p class="ai-image-model-price-unit">USD / 百万 Token</p>
         `;
     }
 
@@ -10565,17 +10568,19 @@
                     <span role="columnheader">规格</span>
                     <span role="columnheader">价格</span>
                 </div>
-                ${rows.map((row) => `
-                    <div class="ai-image-model-price-row" role="row">
-                        <div class="ai-image-model-price-name" role="cell">
-                            <strong>${escapeHtml(row.label)}</strong>
-                            <span>${escapeHtml(row.id)}</span>
-                            ${row.providerLabel ? `<em>${escapeHtml(row.providerLabel)}</em>` : ''}
+                ${rows.map((row) => {
+                    const showModelId = shouldShowModelTechnicalName(row.label, row.id);
+                    return `
+                        <div class="ai-image-model-price-row" role="row">
+                            <div class="ai-image-model-price-name" role="cell">
+                                <strong>${escapeHtml(row.label)}</strong>
+                                ${showModelId ? `<span>${escapeHtml(row.id)}</span>` : ''}
+                            </div>
+                            <span role="cell" data-label="规格">${escapeHtml(row.variant)}</span>
+                            <strong class="ai-image-model-price-points" role="cell" data-label="价格">${escapeHtml(formatPoints(row.points))} 积分</strong>
                         </div>
-                        <span role="cell" data-label="规格">${escapeHtml(row.variant)}</span>
-                        <strong class="ai-image-model-price-points" role="cell" data-label="价格">${escapeHtml(formatPoints(row.points))} 积分</strong>
-                    </div>
-                `).join('')}
+                    `;
+                }).join('')}
             </div>
         `;
     }
@@ -10619,7 +10624,6 @@
                         <span><i class="fas fa-tags"></i></span>
                         <div><strong>模型价格</strong><em>${escapeHtml(modelPricingView.tab === 'chat' ? '实际价格' : '积分价格')}</em></div>
                     </div>
-                    <button type="button" data-aiw-action="close-model-pricing" aria-label="关闭模型价格" title="关闭模型价格"><i class="fas fa-xmark"></i></button>
                 </header>
                 <div class="ai-image-model-pricing-tabs" role="tablist" aria-label="模型类型">
                     ${tabs.map((tab) => `
