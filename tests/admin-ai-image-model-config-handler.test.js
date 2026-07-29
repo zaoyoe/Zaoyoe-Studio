@@ -90,6 +90,7 @@ async function withAiImageModelConfigHandler(options, callback) {
                             imageModels: call.metadata.imageModels || call.metadata.image_models || call.metadata.models || [],
                             chatModels: call.metadata.chatModels || call.metadata.chat_models || [],
                             videoModels: call.metadata.videoModels || call.metadata.video_models || [],
+                            modelDisplayNames: call.metadata.modelDisplayNames || call.metadata.model_display_names || {},
                             detectedImageModels: call.metadata.detectedImageModels || call.metadata.detected_image_models || [],
                             detectedChatModels: call.metadata.detectedChatModels || call.metadata.detected_chat_models || call.metadata.chatModels || call.metadata.chat_models || [],
                             detectedVideoModels: call.metadata.detectedVideoModels || call.metadata.detected_video_models || call.metadata.videoModels || call.metadata.video_models || [],
@@ -359,6 +360,10 @@ test('ai image model config handler can add an additional provider without repla
                 model: 'flux-pro',
                 models: 'flux-pro,flux-kontext',
                 imageModels: 'flux-pro,flux-kontext',
+                modelDisplayNames: {
+                    'flux-pro': 'FLUX 专业版',
+                    'flux-kontext': 'FLUX 上下文版'
+                },
                 displayOrder: 20
             }
         }, res);
@@ -373,8 +378,15 @@ test('ai image model config handler can add an additional provider without repla
         assert.equal(state.upsertCalls[0].metadata.model, 'flux-pro');
         assert.deepEqual(state.upsertCalls[0].metadata.models, ['flux-pro', 'flux-kontext']);
         assert.deepEqual(state.upsertCalls[0].metadata.imageModels, ['flux-pro', 'flux-kontext']);
+        assert.deepEqual(state.upsertCalls[0].metadata.modelDisplayNames, {
+            'flux-pro': 'FLUX 专业版',
+            'flux-kontext': 'FLUX 上下文版'
+        });
         assert.equal(state.upsertCalls[0].metadata.modelGroup, 'image');
-        assert.equal(payload.providers.some((provider) => provider.providerId === 'flux'), true);
+        assert.deepEqual(payload.providers.find((provider) => provider.providerId === 'flux')?.modelDisplayNames, {
+            'flux-pro': 'FLUX 专业版',
+            'flux-kontext': 'FLUX 上下文版'
+        });
         assert.equal(JSON.stringify(payload).includes('sk-flux-provider-key'), false);
     });
 });

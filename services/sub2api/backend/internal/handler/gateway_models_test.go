@@ -7,11 +7,21 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type gatewayPricingRateRepoStub struct {
+	service.UserGroupRateRepository
+	rate *float64
+}
+
+func (s *gatewayPricingRateRepoStub) GetByUserAndGroup(context.Context, int64, int64) (*float64, error) {
+	return s.rate, nil
+}
 
 type gatewayModelsAccountRepoStub struct {
 	service.AccountRepository
@@ -50,6 +60,68 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHand
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		),
 	}
+}
+
+func newGatewayPricingHandlerForTest(repo service.AccountRepository, rateRepo service.UserGroupRateRepository) *GatewayHandler {
+	cfg := &config.Config{Default: config.DefaultConfig{RateMultiplier: 1}}
+	billing := service.NewBillingService(cfg, nil)
+	resolver := service.NewModelPricingResolver(nil, billing)
+	return &GatewayHandler{
+		gatewayService: service.NewGatewayService(
+			repo,
+			nil, nil, nil, nil, nil, rateRepo, nil, cfg, nil, nil, billing, nil, nil,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, resolver, nil, nil,
+		),
+	}
+}
+
+func TestGatewayModelPricingReturnsEffectivePricesWithoutInternalFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(31)
+	userRate := 1.5
+	h := newGatewayPricingHandlerForTest(
+		&gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+			groupID: {{
+				ID:       1,
+				Platform: service.PlatformOpenAI,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"gpt-5.4": "gpt-5.4"},
+				},
+			}},
+		}},
+		&gatewayPricingRateRepoStub{rate: &userRate},
+	)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models/pricing", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		UserID:  88,
+		GroupID: &groupID,
+		Group: &service.Group{
+			ID:             groupID,
+			Platform:       service.PlatformOpenAI,
+			RateMultiplier: 1.2,
+		},
+	})
+
+	h.ModelPricing(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var payload struct {
+		Object string                      `json:"object"`
+		Data   []service.ModelPricingQuote `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	require.Equal(t, "list", payload.Object)
+	require.Len(t, payload.Data, 1)
+	require.Equal(t, "gpt-5.4", payload.Data[0].ID)
+	require.True(t, payload.Data[0].Available)
+	require.InDelta(t, 1.5, payload.Data[0].EffectiveMultiplier, 1e-12)
+	require.NotNil(t, payload.Data[0].InputPricePerMillion)
+	require.NotContains(t, rec.Body.String(), "account_id")
+	require.NotContains(t, rec.Body.String(), "channel_id")
+	require.NotContains(t, rec.Body.String(), "group_id")
+	require.NotContains(t, rec.Body.String(), "user_id")
 }
 
 func TestGatewayModels_GeminiGroupFallsBackToGeminiModels(t *testing.T) {

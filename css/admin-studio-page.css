@@ -63181,6 +63181,67 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
     min-width: 0;
 }
 
+#module-ai-creation .ai-image-admin-visible-model-item {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    gap: 7px;
+}
+
+#module-ai-creation .ai-image-admin-visible-model-item.is-selected {
+    flex: 1 1 420px;
+}
+
+#module-ai-creation .ai-image-admin-visible-model-item.is-selected .ai-image-admin-visible-model-pill {
+    flex: 0 1 auto;
+    max-width: 48%;
+}
+
+#module-ai-creation .ai-image-admin-model-display-name {
+    position: relative;
+    display: flex;
+    flex: 1 1 220px;
+    min-width: 180px;
+    align-items: center;
+}
+
+#module-ai-creation .ai-image-admin-model-display-name > i {
+    position: absolute;
+    left: 11px;
+    z-index: 1;
+    color: #64748b;
+    font-size: 11px;
+    pointer-events: none;
+}
+
+#module-ai-creation .ai-image-admin-model-display-name > input {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 0 11px 0 31px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    outline: none;
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--admin-text, #0f172a);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+#module-ai-creation .ai-image-admin-model-display-name > input::placeholder {
+    color: #94a3b8;
+    font-weight: 650;
+}
+
+#module-ai-creation .ai-image-admin-model-display-name > input:focus {
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
 #module-ai-creation .ai-image-admin-visible-model-pill {
     display: inline-flex;
     min-width: 0;
@@ -63197,6 +63258,21 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
     line-height: 1.2;
     cursor: pointer;
     transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+@media (max-width: 640px) {
+    #module-ai-creation .ai-image-admin-visible-model-item.is-selected {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+    }
+
+    #module-ai-creation .ai-image-admin-visible-model-item.is-selected .ai-image-admin-visible-model-pill,
+    #module-ai-creation .ai-image-admin-model-display-name {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
 }
 
 #module-ai-creation .ai-image-admin-visible-model-pill:hover {

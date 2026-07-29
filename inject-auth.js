@@ -666,6 +666,17 @@
                                             })}
                                         </div>
 
+                                        <div class="auth-sheet-field">
+                                            <span class="auth-sheet-label" data-i18n="auth.setPassword">设置密码</span>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'reg-password',
+                                                type: 'password',
+                                                placeholder: t('auth.setPassword', '设置密码'),
+                                                placeholderKey: 'auth.setPassword',
+                                                inputAttributes: 'autocomplete="new-password" data-auth-form="registerForm" required'
+                                            })}
+                                        </div>
+
                                         <div class="auth-sheet-field auth-sheet-field--code">
                                             <span class="auth-sheet-label" data-i18n="auth.codeLabel">验证码</span>
                                             <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
@@ -680,17 +691,6 @@
                                                 })}
                                                 <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getShort">获取</button>
                                             </div>
-                                        </div>
-
-                                        <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.setPassword">设置密码</span>
-                                            ${buildPortaledInputControlHTML({
-                                                id: 'reg-password',
-                                                type: 'password',
-                                                placeholder: t('auth.setPassword', '设置密码'),
-                                                placeholderKey: 'auth.setPassword',
-                                                inputAttributes: 'autocomplete="new-password" data-auth-form="registerForm" required'
-                                            })}
                                         </div>
 
                                         <label class="auth-sheet-check auth-sheet-check--start">

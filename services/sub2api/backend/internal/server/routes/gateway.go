@@ -148,6 +148,7 @@ func RegisterGatewayRoutes(
 		// /models endpoint with a client_version query and expect the ChatGPT
 		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
+		gateway.GET("/models/pricing", h.Gateway.ModelPricing)
 		gateway.GET("/usage/requests/:request_id", h.Gateway.UsageRequest)
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform

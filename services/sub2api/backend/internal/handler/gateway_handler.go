@@ -1047,6 +1047,49 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	})
 }
 
+// ModelPricing returns API-key-scoped effective model prices.
+// GET /v1/models/pricing
+func (h *GatewayHandler) ModelPricing(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	modelIDs := h.pricingModelIDs(c, apiKey)
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   h.gatewayService.GetModelPricingQuotes(c.Request.Context(), apiKey, modelIDs),
+	})
+}
+
+func (h *GatewayHandler) pricingModelIDs(c *gin.Context, apiKey *service.APIKey) []string {
+	var groupID *int64
+	var platform string
+	if apiKey != nil && apiKey.Group != nil {
+		groupID = &apiKey.Group.ID
+		platform = apiKey.Group.Platform
+	}
+	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
+		platform = forcedPlatform
+	}
+
+	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+	customListEnabled := apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled()
+	if customListEnabled {
+		fallbackModels := defaultModelIDsForPlatform(platform)
+		availableModels = filterModelsByCustomList(
+			customModelsListSource(platform, availableModels, fallbackModels),
+			fallbackModels,
+			apiKey.Group.ModelsListConfig.Models,
+		)
+		return availableModels
+	}
+	if len(availableModels) > 0 {
+		return availableModels
+	}
+	return defaultModelIDsForPlatform(platform)
+}
+
 func writeModelsList(c *gin.Context, modelIDs []string) {
 	models := make([]claude.Model, 0, len(modelIDs))
 	for _, modelID := range modelIDs {

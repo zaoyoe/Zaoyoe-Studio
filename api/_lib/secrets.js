@@ -491,6 +491,18 @@ function normalizeAiImageModelsList(...values) {
     return models;
 }
 
+function normalizeAiImageModelDisplayNames(value = {}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const displayNames = {};
+    Object.entries(value).forEach(([rawModel, rawDisplayName]) => {
+        const model = String(rawModel || '').trim().slice(0, 160);
+        const displayName = String(rawDisplayName || '').trim().slice(0, 120);
+        if (!model || !displayName || displayName === model) return;
+        displayNames[model] = displayName;
+    });
+    return displayNames;
+}
+
 function hasAiImageModelsListValue(...values) {
     return values.some((value) => parseDelimitedList(value).length > 0);
 }
@@ -620,6 +632,13 @@ function normalizeAiImageProviderMetadata(metadata = {}, fallback = {}) {
         || fallback.video_generation_endpoint
     );
     const endpoints = normalizeAiImageEndpoints(source.endpoints || fallback.endpoints);
+    const modelDisplayNames = normalizeAiImageModelDisplayNames(
+        source.modelDisplayNames
+        ?? source.model_display_names
+        ?? fallback.modelDisplayNames
+        ?? fallback.model_display_names
+        ?? {}
+    );
     return {
         providerId,
         label: String(source.label || fallback.label || providerId).trim().slice(0, 120) || providerId,
@@ -629,6 +648,8 @@ function normalizeAiImageProviderMetadata(metadata = {}, fallback = {}) {
         imageModels: scopedModels.imageModels,
         chatModels: scopedModels.chatModels,
         videoModels: scopedModels.videoModels,
+        modelDisplayNames,
+        model_display_names: modelDisplayNames,
         detectedImageModels,
         detected_image_models: detectedImageModels,
         detectedChatModels,
@@ -760,6 +781,9 @@ async function resolveAiImageRuntimeSecretConfig(supabase, options = {}) {
             ? configuredModelGroup
             : inferAiImageModelGroup(configuredModelGroup, imageModels, chatModels, videoModels, videoModels.length && !chatModels.length ? 'video' : (chatModels.length ? 'both' : 'image'));
         const scopedModels = scopeAiImageModelsByModelGroup(modelGroup, imageModels, chatModels, videoModels);
+        const modelDisplayNames = normalizeAiImageModelDisplayNames(
+            metadata.modelDisplayNames ?? metadata.model_display_names ?? {}
+        );
 
         return {
             configured: Boolean(apiKey && baseUrl),
@@ -775,6 +799,8 @@ async function resolveAiImageRuntimeSecretConfig(supabase, options = {}) {
             chat_models: scopedModels.chatModels,
             videoModels: scopedModels.videoModels,
             video_models: scopedModels.videoModels,
+            modelDisplayNames,
+            model_display_names: modelDisplayNames,
             modelGroup: scopedModels.modelGroup,
             model_group: scopedModels.modelGroup,
             model,
@@ -812,6 +838,8 @@ function serializeAiImageProviderSecret(row = {}, options = {}) {
         chat_models: metadata.chatModels,
         videoModels: metadata.videoModels,
         video_models: metadata.videoModels,
+        modelDisplayNames: metadata.modelDisplayNames,
+        model_display_names: metadata.modelDisplayNames,
         detectedImageModels: metadata.detectedImageModels,
         detected_image_models: metadata.detectedImageModels,
         detectedChatModels: metadata.detectedChatModels,
@@ -953,6 +981,8 @@ async function resolveAiImageRuntimePublicMetadata(supabase, options = {}) {
             chat_models: metadata.chatModels,
             videoModels: metadata.videoModels,
             video_models: metadata.videoModels,
+            modelDisplayNames: metadata.modelDisplayNames,
+            model_display_names: metadata.modelDisplayNames,
             detectedImageModels: metadata.detectedImageModels,
             detected_image_models: metadata.detectedImageModels,
             detectedChatModels: metadata.detectedChatModels,
@@ -1020,6 +1050,8 @@ async function resolveAiImageRuntimePublicMetadata(supabase, options = {}) {
         chat_models: metadata.chatModels,
         videoModels: metadata.videoModels,
         video_models: metadata.videoModels,
+        modelDisplayNames: metadata.modelDisplayNames,
+        model_display_names: metadata.modelDisplayNames,
         detectedImageModels: metadata.detectedImageModels,
         detected_image_models: metadata.detectedImageModels,
         detectedChatModels: metadata.detectedChatModels,

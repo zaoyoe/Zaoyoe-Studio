@@ -55,6 +55,10 @@ test('admin studio exposes AI creation as a dedicated module with segmented mana
     assert.match(adminHtml, /id="aiImageDetectedUnknownModelsInput"/);
     assert.match(adminHtml, /id="aiImageVisionModelsInput"/);
     assert.match(adminJs, /前台可见模型/);
+    assert.match(adminJs, /前台展示名称（默认同模型 ID）/);
+    assert.match(adminJs, /data-admin-input-action="settings-edit-ai-image-model-display-name"/);
+    assert.match(adminJs, /function updateAiImageModelDisplayName\(model = '', value = '', providerId = ''\)/);
+    assert.match(adminCss, /\.ai-image-admin-model-display-name/);
     assert.match(adminHtml, /保存前台可见/);
     assert.doesNotMatch(adminHtml, /保存前台可见模型/);
     assert.match(adminHtml, /data-admin-action="settings-create-ai-image-model-provider"/);
@@ -202,7 +206,7 @@ test('admin studio loads and mutates AI image config through admin scoped APIs',
     assert.match(adminJs, /设为文本/);
     assert.match(adminJs, /设为生图/);
     assert.match(adminJs, /设为视频/);
-    assert.match(adminJs, /function renderAiImageVisibleModelPill\(model = '', group = 'image', selectedModels = \[\], providerId = ''\) \{[\s\S]*data-provider-id="\$\{escapeHtml\(providerId \|\| ''\)\}"/);
+    assert.match(adminJs, /function renderAiImageVisibleModelPill\(model = '', group = 'image', selectedModels = \[\], providerId = '', modelDisplayNames = \{\}\) \{[\s\S]*data-provider-id="\$\{escapeHtml\(providerId \|\| ''\)\}"/);
     assert.match(adminJs, /function renderAiImageDiscoveredModelButton\(model = '', group = 'unknown', providerId = ''\) \{[\s\S]*data-provider-id="\$\{escapeHtml\(providerId \|\| ''\)\}"/);
     assert.match(adminJs, /renderAiImageDiscoveredModelButton\(model, group\.group, provider\.providerId \|\| ''\)/);
     assert.match(adminJs, /function getAiImageProbeUpstreamText\(upstream = \{\}\)/);

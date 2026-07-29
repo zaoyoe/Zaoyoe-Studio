@@ -2776,7 +2776,8 @@ function createPromptGalleryMasonryState(grid) {
     const isMobileMasonry = isPromptGalleryMobileMasonryLayout();
     const columnCount = getPromptGalleryMasonryColumnCount(grid);
 
-    grid.classList.remove('gallery-container--standard');
+    grid.classList.remove('gallery-container--standard', 'gallery-container--initial-skeleton');
+    grid.removeAttribute('data-initial-prompt-skeleton');
     grid.classList.add('gallery-container--masonry');
     grid.classList.toggle('gallery-container--mobile-masonry', isMobileMasonry);
     grid.classList.toggle('gallery-container--desktop-masonry', !isMobileMasonry);

@@ -107,6 +107,18 @@ function normalizeModelsList(value = '', fallbackModel = '') {
     return models;
 }
 
+function normalizeModelDisplayNames(value = {}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const displayNames = {};
+    Object.entries(value).forEach(([rawModel, rawDisplayName]) => {
+        const model = normalizeOptionalModel(rawModel);
+        const displayName = String(rawDisplayName || '').trim().slice(0, 120);
+        if (!model || !displayName || displayName === model) return;
+        displayNames[model] = displayName;
+    });
+    return displayNames;
+}
+
 function hasModelsListValue(...values) {
     return values.some((value) => {
         if (Array.isArray(value)) {
@@ -267,6 +279,9 @@ function serializeProvider(provider = {}) {
         provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name
         || (String(rawVendor || '').trim().toLowerCase() === 'sub2api' ? 'Sub2API' : '')
     );
+    const modelDisplayNames = normalizeModelDisplayNames(
+        provider.modelDisplayNames ?? provider.model_display_names ?? {}
+    );
     const serialized = {
         providerId,
         provider_id: providerId,
@@ -281,6 +296,8 @@ function serializeProvider(provider = {}) {
         chat_models: scopedModels.chatModels,
         videoModels: scopedModels.videoModels,
         video_models: scopedModels.videoModels,
+        modelDisplayNames,
+        model_display_names: modelDisplayNames,
         detectedImageModels: normalizeModelsList(
             hasExplicitProperty(provider, ['detectedImageModels', 'detected_image_models', 'discoveredImageModels', 'discovered_image_models'])
                 ? firstExplicitModelList(provider, ['detectedImageModels', 'detected_image_models', 'discoveredImageModels', 'discovered_image_models'])
@@ -393,6 +410,8 @@ function serializeConfig(config = {}, providers = []) {
         chat_models: primary.chatModels || primary.chat_models || [],
         videoModels: primary.videoModels || primary.video_models || [],
         video_models: primary.videoModels || primary.video_models || [],
+        modelDisplayNames: primary.modelDisplayNames || primary.model_display_names || {},
+        model_display_names: primary.modelDisplayNames || primary.model_display_names || {},
         detectedImageModels: primary.detectedImageModels || primary.detected_image_models || [],
         detected_image_models: primary.detectedImageModels || primary.detected_image_models || [],
         detectedChatModels: primary.detectedChatModels || primary.detected_chat_models || primary.chatModels || primary.chat_models || [],
@@ -1520,6 +1539,12 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
         body.visionModels || body.vision_models || body.chatVisionModels || body.chat_vision_models || existingProvider?.visionModels || existingProvider?.vision_models,
         ''
     );
+    const modelDisplayNameKeys = ['modelDisplayNames', 'model_display_names'];
+    const modelDisplayNames = normalizeModelDisplayNames(
+        hasExplicitProperty(body, modelDisplayNameKeys)
+            ? (body.modelDisplayNames ?? body.model_display_names)
+            : (existingProvider?.modelDisplayNames ?? existingProvider?.model_display_names ?? {})
+    );
     const vendor = normalizeProviderVendor(body.vendor || existingProvider?.vendor || existingProvider?.provider, 'openai');
     const vendorLabel = normalizeProviderVendorLabel(
         body.vendorLabel || body.vendor_label || body.vendorName || body.vendor_name
@@ -1588,6 +1613,10 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
         displayOrder: normalizeInteger(body.displayOrder ?? body.display_order ?? existingProvider?.displayOrder, 0),
         saved_via: 'admin_studio'
     };
+    if (Object.keys(modelDisplayNames).length) {
+        metadata.modelDisplayNames = modelDisplayNames;
+        metadata.model_display_names = modelDisplayNames;
+    }
     if (vendorLabel) {
         metadata.vendorLabel = vendorLabel;
         metadata.vendor_label = vendorLabel;
@@ -1628,6 +1657,7 @@ async function upsertProvider({ supabase, user, body, currentConfig }) {
             imageModels,
             chatModels,
             videoModels,
+            modelDisplayNames,
             detectedImageModels,
             detectedChatModels,
             detectedVideoModels,
