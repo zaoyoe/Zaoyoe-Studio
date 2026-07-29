@@ -3815,6 +3815,7 @@ test('shop storefront keeps product card media at the generated 3:2 ratio', () =
 });
 
 test('shop product entrance keeps idle breathe continuous through grid transitions', () => {
+    const shopHtmlSource = readRepoFile('shop.html');
     const shopCssSource = readRepoFile('css/shop-page.css');
     const shopClientSource = readRepoFile('js/shop-client.js');
 
@@ -3840,8 +3841,13 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopCssSource,
-        /@keyframes breathe\s*\{[\s\S]*?0%,\s*100%\s*\{[\s\S]*?transform:\s*translateY\(0px\);[\s\S]*?50%\s*\{[\s\S]*?transform:\s*translateY\(-6px\);/,
-        'shop card breathe should match the prompts page vertical motion on a stable frame'
+        /@keyframes breathe\s*\{[\s\S]*?0%,\s*100%\s*\{[\s\S]*?transform:\s*translateY\(0px\);[\s\S]*?50%\s*\{[\s\S]*?transform:\s*translateY\(-3px\);/,
+        'shop card breathe should use a subtle three-pixel vertical motion on a stable frame'
+    );
+    assert.equal(
+        shopHtmlSource.includes('shopCardBreatheAmplitude=20260729_SHOP_CARD_BREATHE_AMPLITUDE_1'),
+        true,
+        'shop.html should bust the stylesheet cache for the reduced product card breathe amplitude'
     );
     assert.match(
         shopCssSource,

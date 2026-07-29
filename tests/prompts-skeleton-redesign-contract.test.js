@@ -101,3 +101,32 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
         'prompts should cache-bust both static skeleton styles and runtime'
     );
 });
+
+test('prompts initial HTML paints the complete loading skeleton before runtime starts', () => {
+    const promptsHtml = readRepoFile('prompts.html');
+    const promptsJs = readRepoFile('prompts-poetry.js');
+    const promptsCss = readRepoFile('prompts-poetry.css');
+
+    assert.match(promptsHtml, /class="nav-items nav-items--skeleton" id="navItems"/);
+    assert.match(
+        promptsHtml,
+        /class="featured-banner featured-banner--visible featured-banner--loading" id="featuredBanner"/
+    );
+    assert.match(
+        promptsHtml,
+        /class="gallery-container gallery-container--initial-skeleton visible" data-initial-prompt-skeleton="true"/
+    );
+    assert.equal(
+        (promptsHtml.match(/class="prompt-card prompt-card--skeleton/g) || []).length,
+        6,
+        'the initial document should include a full first row of gallery skeleton cards'
+    );
+    assert.equal(promptsCss.includes('.gallery-container--initial-skeleton {'), true);
+    assert.equal(promptsCss.includes('display: grid;'), true);
+    assert.equal(
+        promptsJs.includes("classList.remove('gallery-container--standard', 'gallery-container--initial-skeleton')"),
+        true
+    );
+    assert.equal(promptsJs.includes("removeAttribute('data-initial-prompt-skeleton')"), true);
+    assert.match(promptsHtml, /initialSkeleton=20260729_PROMPTS_INITIAL_SKELETON_1/);
+});

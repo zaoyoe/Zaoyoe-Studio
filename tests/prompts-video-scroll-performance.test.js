@@ -64,3 +64,16 @@ test('video gallery defers media work without removing card motion', () => {
     assert.match(styles, /\.prompt-card\.card-visible\s*\{[\s\S]*?transform:\s*translateY\(0\);/);
     assert.equal((html.match(/videoScrollPerf=20260726_PROMPT_VIDEO_SCROLL_PERF_1/g) || []).length, 2);
 });
+
+test('prompt and shop cards share the same compact breathe height', () => {
+    const promptsStyles = read('prompts-poetry.css');
+    const shopStyles = read('css/shop-page.css');
+    const promptsHtml = read('prompts.html');
+    const adminHtml = read('admin-studio.html');
+    const compactBreathe = /@keyframes breathe\s*\{[\s\S]*?0%,\s*100%\s*\{[\s\S]*?translateY\(0px\);[\s\S]*?50%\s*\{[\s\S]*?translateY\(-3px\);/;
+
+    assert.match(promptsStyles, compactBreathe);
+    assert.match(shopStyles, compactBreathe);
+    assert.equal(promptsHtml.includes('cardBreathe=20260729_PROMPT_CARD_BREATHE_AMPLITUDE_1'), true);
+    assert.equal(adminHtml.includes('cardBreathe=20260729_PROMPT_CARD_BREATHE_AMPLITUDE_1'), true);
+});

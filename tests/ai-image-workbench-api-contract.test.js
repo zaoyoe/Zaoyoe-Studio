@@ -16,6 +16,7 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
     assert.match(source, /scope:\s*'ai-image'/);
     assert.doesNotMatch(source, /requestAiImage\('agents'/);
     assert.match(source, /requestAiImage\('pricing'/);
+    assert.match(source, /requestAiImage\('model-prices'/);
     assert.match(source, /requestAiImage\('tasks'/);
     assert.match(source, /requestAiImage\('upload'/);
     assert.match(source, /requestAiImage\('download'/);
@@ -31,7 +32,7 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260715_AI_IMAGE_WORKBENCH_PROXY_LIFECYCLE_24/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260729_AI_MODEL_PRICING_26/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
 });
 
@@ -223,6 +224,8 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(source, /runtimeAdminModelProviders = \[\];/);
     assert.match(source, /function getRuntimeProviderFallbackLabel\(apiBaseUrl = state\.apiBaseUrl\)/);
     assert.match(source, /function normalizeRuntimeProviderLabel\(label = '', fallbackLabel = '当前上游'\)/);
+    assert.match(source, /function getRuntimeProviderModelOption\(model = '', provider = \{\}\)/);
+    assert.match(source, /provider\.modelDisplayNames \|\| provider\.model_display_names/);
     assert.match(source, /if \(!normalized \|\| \/\^检测到的上游模型\$\/i\.test\(normalized\)\) return fallbackLabel;/);
     assert.match(source, /label: getRuntimeProviderFallbackLabel\(apiBaseUrl\)/);
     assert.match(source, /function applyRuntimeModelSelectionDefaults\(/);
@@ -1913,6 +1916,29 @@ test('ai image workbench applies admin pricing rules to point estimates', () => 
     assert.match(source, /modelProviderId: providerId,\s*model_provider_id: providerId,\s*providerId,\s*provider_id: providerId/);
     assert.match(source, /modelProviderId: activeModelProviderId,\s*providerId: activeModelProviderId/);
     assert.match(source, /const selectedModel = selectedGroup\?\.models\?\.find\(\(model\) => model\.id === selected\)/);
+});
+
+test('ai image workbench opens model pricing from points billing in the main content area', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(source, /class="ai-image-model-pricing-link"[^>]+data-aiw-action="open-model-pricing"/);
+    assert.match(source, /<span>模型价格<\/span>/);
+    assert.match(source, /function openModelPricingView\(\)/);
+    assert.match(source, /requestAiImage\('model-prices',\s*\{[\s\S]*auth: false/);
+    assert.match(source, /function renderModelPricingView\(\)/);
+    assert.match(source, /function renderTextModelPricing\(\)/);
+    assert.match(source, /function renderAdminModelPricing\(group = 'image'\)/);
+    assert.match(source, /if \(modelPricingView\.open\) \{[\s\S]*ai-image-canvas is-model-pricing[\s\S]*renderModelPricingView\(\)/);
+    assert.match(source, /data-aiw-action="set-model-pricing-tab"/);
+    assert.match(source, /ai-image-shell \$\{modelPricingView\.open \? 'is-model-pricing' : ''\}/);
+    assert.match(source, /input_price_per_million/);
+    assert.match(source, /cache_read_price_per_million/);
+    assert.match(source, /getRuntimePricingRuleEstimate\(rule, quantity\)/);
+    assert.match(cssSource, /\.ai-image-billing-card-shell \.ai-image-billing-card\s*\{[\s\S]*padding-bottom: 34px;/);
+    assert.match(cssSource, /\.ai-image-model-pricing-link\s*\{[\s\S]*bottom: 8px;[\s\S]*left: 10px;/);
+    assert.match(cssSource, /\.ai-image-shell\.is-model-pricing > \.ai-image-shell-close,[\s\S]*\.ai-image-shell\.is-model-pricing \.ai-image-rail-close\s*\{[\s\S]*display: none;/);
+    assert.match(cssSource, /\.ai-image-model-pricing-head > button\s*\{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*border-radius: 999px;/);
+    assert.match(cssSource, /\.ai-image-model-price-table--text \.ai-image-model-price-row/);
+    assert.match(cssSource, /@media \(max-width: 720px\) \{[\s\S]*\.ai-image-model-price-table-head\s*\{[\s\S]*display: none;/);
 });
 
 test('ai image history supports multi-select delete pin and accent controls', () => {

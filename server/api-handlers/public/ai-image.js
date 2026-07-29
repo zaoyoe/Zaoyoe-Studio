@@ -330,6 +330,149 @@ function isSub2ApiGatewayBaseUrl(value = '') {
     }
 }
 
+function buildSub2ApiModelPricingUrl(baseUrl = '') {
+    const normalized = normalizeApiBaseUrl(baseUrl);
+    if (!normalized) return '';
+    const url = new URL(normalized);
+    let pathname = url.pathname.replace(/\/+$/, '');
+    if (!pathname.endsWith('/v1')) {
+        pathname = `${pathname}/v1`;
+    }
+    url.pathname = `${pathname}/models/pricing`.replace(/\/{2,}/g, '/');
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+}
+
+function normalizeOptionalPriceNumber(value) {
+    if (value === null || value === undefined || value === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function serializeTextModelPrice(row = {}, provider = {}) {
+    const id = normalizeText(row.id || row.model, 180);
+    if (!id) return null;
+    const displayName = getPublicModelDisplayName(provider, id);
+    const payload = {
+        id,
+        label: displayName || id,
+        providerId: normalizeText(provider.providerId || provider.provider_id, 80),
+        provider_id: normalizeText(provider.providerId || provider.provider_id, 80),
+        providerLabel: normalizeText(provider.label, 120),
+        provider_label: normalizeText(provider.label, 120),
+        billingModel: normalizeText(row.billing_model || row.billingModel || id, 180) || id,
+        billing_model: normalizeText(row.billing_model || row.billingModel || id, 180) || id,
+        billingMode: normalizeText(row.billing_mode || row.billingMode || 'token', 40) || 'token',
+        billing_mode: normalizeText(row.billing_mode || row.billingMode || 'token', 40) || 'token',
+        effectiveMultiplier: normalizeOptionalPriceNumber(row.effective_multiplier ?? row.effectiveMultiplier) ?? 1,
+        effective_multiplier: normalizeOptionalPriceNumber(row.effective_multiplier ?? row.effectiveMultiplier) ?? 1,
+        available: row.available !== false
+    };
+    [
+        'input_price_per_million',
+        'output_price_per_million',
+        'cache_write_price_per_million',
+        'cache_write_5m_price_per_million',
+        'cache_write_1h_price_per_million',
+        'cache_read_price_per_million',
+        'image_output_price_per_million',
+        'per_request_price'
+    ].forEach((field) => {
+        const value = normalizeOptionalPriceNumber(row[field]);
+        if (value !== undefined) payload[field] = value;
+    });
+    payload.intervals = (Array.isArray(row.intervals) ? row.intervals : []).map((interval) => {
+        const item = {
+            min_tokens: normalizePositiveInt(interval?.min_tokens, 0, { min: 0, max: 100000000 }),
+            max_tokens: interval?.max_tokens === null || interval?.max_tokens === undefined
+                ? null
+                : normalizePositiveInt(interval.max_tokens, 0, { min: 0, max: 100000000 }),
+            tier_label: normalizeText(interval?.tier_label, 80)
+        };
+        [
+            'input_price_per_million',
+            'output_price_per_million',
+            'cache_write_price_per_million',
+            'cache_read_price_per_million',
+            'per_request_price'
+        ].forEach((field) => {
+            const value = normalizeOptionalPriceNumber(interval?.[field]);
+            if (value !== undefined) item[field] = value;
+        });
+        return item;
+    });
+    return payload;
+}
+
+async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = globalThis.fetch } = {}) {
+    if (typeof fetchImpl !== 'function' || typeof listStoredAiImageProviderSecrets !== 'function') {
+        return { prices: [], statuses: [] };
+    }
+    const providers = await listStoredAiImageProviderSecrets(supabase, {
+        env,
+        allowDecryptFailure: true
+    }).catch(() => []);
+    const chatProviders = (Array.isArray(providers) ? providers : []).filter((provider) => (
+        provider?.configured
+        && provider?.isActive !== false
+        && providerSupportsPublicModelGroup(provider, 'chat')
+        && normalizePublicModelsList(provider.chatModels || provider.chat_models).length
+        && isSub2ApiGatewayBaseUrl(provider.baseUrl || provider.base_url)
+    ));
+    const timeoutMs = normalizePositiveInt(env.AI_IMAGE_MODEL_PRICING_TIMEOUT_MS, 8000, { min: 1000, max: 20000 });
+    const results = await Promise.all(chatProviders.map(async (provider) => {
+        const providerId = normalizeText(provider.providerId || provider.provider_id, 80);
+        const configuredModels = normalizePublicModelsList(provider.chatModels || provider.chat_models);
+        const configuredSet = new Set(configuredModels.map((model) => model.toLowerCase()));
+        const url = buildSub2ApiModelPricingUrl(provider.baseUrl || provider.base_url);
+        try {
+            const response = await fetchWithTimeout(fetchImpl, url, {
+                method: 'GET',
+                headers: {
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${provider.apiKey}`
+                }
+            }, timeoutMs);
+            if (!response?.ok) {
+                throw new Error(`Sub2API pricing request failed (${Number(response?.status || 502)})`);
+            }
+            const payload = await response.json();
+            const rows = Array.isArray(payload?.data) ? payload.data : [];
+            const prices = rows
+                .filter((row) => configuredSet.has(normalizeText(row?.id || row?.model, 180).toLowerCase()))
+                .map((row) => serializeTextModelPrice(row, provider))
+                .filter(Boolean);
+            return {
+                prices,
+                status: {
+                    providerId,
+                    provider_id: providerId,
+                    available: true,
+                    modelCount: prices.length,
+                    model_count: prices.length
+                }
+            };
+        } catch (_) {
+            return {
+                prices: [],
+                status: {
+                    providerId,
+                    provider_id: providerId,
+                    available: false,
+                    modelCount: 0,
+                    model_count: 0,
+                    message: '文本模型实时价格暂不可用'
+                }
+            };
+        }
+    }));
+    return {
+        prices: results.flatMap((result) => result.prices),
+        statuses: results.map((result) => result.status)
+    };
+}
+
 function normalizeSub2ApiCost(value, fallback = 0) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
@@ -865,6 +1008,28 @@ function normalizePublicModelsList(value = []) {
     return models;
 }
 
+function normalizePublicModelDisplayNames(value = {}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const displayNames = {};
+    Object.entries(value).forEach(([rawModel, rawDisplayName]) => {
+        const model = normalizeText(rawModel, 160);
+        const displayName = normalizeText(rawDisplayName, 120);
+        if (!model || !displayName || displayName === model) return;
+        displayNames[model] = displayName;
+    });
+    return displayNames;
+}
+
+function getPublicModelDisplayName(provider = {}, model = '') {
+    const modelId = normalizeText(model, 160);
+    const displayNames = provider.modelDisplayNames || provider.model_display_names || {};
+    if (!modelId || !displayNames || typeof displayNames !== 'object') return modelId;
+    const exact = normalizeText(displayNames[modelId], 120);
+    if (exact) return exact;
+    const matchedKey = Object.keys(displayNames).find((key) => key.toLowerCase() === modelId.toLowerCase());
+    return normalizeText(matchedKey ? displayNames[matchedKey] : '', 120) || modelId;
+}
+
 function serializePublicModelProvider(provider = {}) {
     const providerId = normalizeText(provider.providerId || provider.provider_id || provider.id, 80) || 'default';
     const model = normalizeText(provider.model, 160);
@@ -885,6 +1050,9 @@ function serializePublicModelProvider(provider = {}) {
     const scopedImageModels = modelGroup === 'chat' || modelGroup === 'video' ? [] : imageModels;
     const scopedChatModels = modelGroup === 'image' || modelGroup === 'video' ? [] : chatModels;
     const scopedVideoModels = videoModels;
+    const modelDisplayNames = normalizePublicModelDisplayNames(
+        provider.modelDisplayNames ?? provider.model_display_names ?? {}
+    );
     return {
         providerId,
         provider_id: providerId,
@@ -903,6 +1071,8 @@ function serializePublicModelProvider(provider = {}) {
         chat_models: scopedChatModels,
         videoModels: scopedVideoModels,
         video_models: scopedVideoModels,
+        modelDisplayNames,
+        model_display_names: modelDisplayNames,
         visionModels,
         vision_models: visionModels,
         isActive: provider.isActive !== false && provider.is_active !== false,
@@ -6057,7 +6227,7 @@ function createAiImageHandlers({
                     .filter((provider) => providerSupportsPublicModelGroup(provider, 'image'))
                     .flatMap((provider) => provider.imageModels.map((model) => ({
                         id: model,
-                        label: model,
+                        label: getPublicModelDisplayName(provider, model),
                         providerId: provider.providerId,
                         providerLabel: provider.label,
                         vendorLabel: provider.vendorLabel || provider.vendor_label || '',
@@ -6069,7 +6239,7 @@ function createAiImageHandlers({
                     .filter((provider) => providerSupportsPublicModelGroup(provider, 'chat'))
                     .flatMap((provider) => provider.chatModels.map((model) => ({
                         id: model,
-                        label: model,
+                        label: getPublicModelDisplayName(provider, model),
                         providerId: provider.providerId,
                         providerLabel: provider.label,
                         vendorLabel: provider.vendorLabel || provider.vendor_label || '',
@@ -6087,7 +6257,7 @@ function createAiImageHandlers({
                     .filter((provider) => providerSupportsPublicModelGroup(provider, 'video'))
                     .flatMap((provider) => provider.videoModels.map((model) => ({
                         id: model,
-                        label: model,
+                        label: getPublicModelDisplayName(provider, model),
                         providerId: provider.providerId,
                         providerLabel: provider.label,
                         vendorLabel: provider.vendorLabel || provider.vendor_label || '',
@@ -6095,6 +6265,34 @@ function createAiImageHandlers({
                         vendor: provider.vendor,
                         protocol: provider.protocol
                     })))
+            });
+        } catch (error) {
+            return sendError(sendJson, res, error);
+        }
+    }
+
+    async function modelPricesHandler(req, res) {
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        try {
+            const supabase = await resolveOptionalSupabase();
+            const { prices, statuses } = await loadEffectiveTextModelPrices(supabase, {
+                env,
+                fetchImpl
+            });
+            return sendJson(res, 200, {
+                success: true,
+                textModelPrices: prices,
+                text_model_prices: prices,
+                providerStatuses: statuses,
+                provider_statuses: statuses,
+                partial: statuses.some((status) => status.available === false)
             });
         } catch (error) {
             return sendError(sendJson, res, error);
@@ -6264,6 +6462,8 @@ function createAiImageHandlers({
         'task-prefs': taskPrefsHandler,
         agents: agentsHandler,
         pricing: pricingHandler,
+        modelPrices: modelPricesHandler,
+        'model-prices': modelPricesHandler,
         models: modelsHandler,
         usage: usageHandler
     };
@@ -6276,5 +6476,6 @@ module.exports = {
     resolveModel,
     resolveModelGroup,
     resolveAllowedApiBaseUrls,
+    buildSub2ApiModelPricingUrl,
     serializeTask
 };

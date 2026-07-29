@@ -5914,6 +5914,13 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-edit-ai-image-model-provider':
                 window.handleAiImageModelProviderDraftInput?.(actionEl);
                 break;
+            case 'settings-edit-ai-image-model-display-name':
+                window.updateAiImageModelDisplayName?.(
+                    actionEl.dataset.model || '',
+                    actionEl.value,
+                    actionEl.dataset.providerId || actionEl.dataset.provider_id || ''
+                );
+                break;
             default:
                 break;
         }
@@ -9105,6 +9112,7 @@ const DEFAULT_AI_IMAGE_MODEL_CONFIG = Object.freeze({
     imageModels: [],
     chatModels: [],
     videoModels: [],
+    modelDisplayNames: {},
     visionModels: [],
     detectedImageModels: [],
     detectedChatModels: [],
@@ -9245,6 +9253,27 @@ function normalizeAiImageModelsList(value, fallbackModel = '') {
     return models;
 }
 
+function normalizeAiImageModelDisplayNames(value = {}) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const displayNames = {};
+    Object.entries(value).forEach(([rawModel, rawDisplayName]) => {
+        const model = normalizeAiImageOptionalModelName(rawModel).slice(0, 160);
+        const displayName = String(rawDisplayName || '').trim().slice(0, 120);
+        if (!model || !displayName || displayName === model) return;
+        displayNames[model] = displayName;
+    });
+    return displayNames;
+}
+
+function getAiImageModelDisplayName(model = '', displayNames = {}) {
+    const modelId = normalizeAiImageOptionalModelName(model);
+    const normalizedDisplayNames = normalizeAiImageModelDisplayNames(displayNames);
+    const exact = normalizedDisplayNames[modelId];
+    if (exact) return exact;
+    const matchedKey = Object.keys(normalizedDisplayNames).find((key) => key.toLowerCase() === modelId.toLowerCase());
+    return matchedKey ? normalizedDisplayNames[matchedKey] : '';
+}
+
 function mergeAiImageModelsList(existing = '', model = '') {
     return normalizeAiImageModelsList([
         ...normalizeAiImageModelsList(existing, ''),
@@ -9318,6 +9347,7 @@ function createEmptyAiImageModelProviderDraft() {
         imageModels: [],
         chatModels: [],
         videoModels: [],
+        modelDisplayNames: {},
         visionModels: [],
         detectedImageModels: [],
         detectedChatModels: [],
@@ -9364,21 +9394,35 @@ function setAiImageHiddenModelInputValues(provider = {}) {
     }
 }
 
-function renderAiImageVisibleModelPill(model = '', group = 'image', selectedModels = [], providerId = '') {
+function renderAiImageVisibleModelPill(model = '', group = 'image', selectedModels = [], providerId = '', modelDisplayNames = {}) {
     const label = String(model || '').trim();
     if (!label) return '';
     const selectedSet = new Set(normalizeAiImageModelsList(selectedModels, '').map((item) => item.toLowerCase()));
     const isSelected = selectedSet.has(label.toLowerCase());
+    const displayName = getAiImageModelDisplayName(label, modelDisplayNames);
     return `
-        <button class="ai-image-admin-visible-model-pill ${isSelected ? 'is-selected' : ''}" type="button"
-            data-admin-action="settings-toggle-ai-image-visible-model"
-            data-model="${escapeHtml(label)}"
-            data-model-group="${escapeHtml(group)}"
-            data-provider-id="${escapeHtml(providerId || '')}"
-            aria-pressed="${isSelected ? 'true' : 'false'}">
-            <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
-            <span>${escapeHtml(label)}</span>
-        </button>
+        <div class="ai-image-admin-visible-model-item ${isSelected ? 'is-selected' : ''}">
+            <button class="ai-image-admin-visible-model-pill ${isSelected ? 'is-selected' : ''}" type="button"
+                data-admin-action="settings-toggle-ai-image-visible-model"
+                data-model="${escapeHtml(label)}"
+                data-model-group="${escapeHtml(group)}"
+                data-provider-id="${escapeHtml(providerId || '')}"
+                aria-pressed="${isSelected ? 'true' : 'false'}">
+                <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i>
+                <span>${escapeHtml(label)}</span>
+            </button>
+            ${isSelected ? `
+                <label class="ai-image-admin-model-display-name">
+                    <i class="fas fa-tag" aria-hidden="true"></i>
+                    <input type="text" value="${escapeHtml(displayName)}" maxlength="120"
+                        placeholder="前台展示名称（默认同模型 ID）"
+                        aria-label="${escapeHtml(`${label} 的前台展示名称`)}"
+                        data-admin-input-action="settings-edit-ai-image-model-display-name"
+                        data-model="${escapeHtml(label)}"
+                        data-provider-id="${escapeHtml(providerId || '')}">
+                </label>
+            ` : ''}
+        </div>
     `;
 }
 
@@ -9420,11 +9464,12 @@ function renderAiImageVisibleModelSection({
     group = 'image',
     detectedModels = [],
     selectedModels = [],
-    providerId = ''
+    providerId = '',
+    modelDisplayNames = {}
 } = {}) {
     const detected = mergeAiImageModelCandidates(detectedModels, selectedModels);
     const selectedCount = normalizeAiImageModelsList(selectedModels, '').length;
-    const pills = detected.map((model) => renderAiImageVisibleModelPill(model, group, selectedModels, providerId)).join('');
+    const pills = detected.map((model) => renderAiImageVisibleModelPill(model, group, selectedModels, providerId, modelDisplayNames)).join('');
     return `
         <div class="ai-image-admin-visible-model-section" data-model-picker-section="${escapeHtml(group)}">
             <div class="ai-image-admin-visible-model-section__header">
@@ -9450,6 +9495,7 @@ function renderAiImageProviderVisibleModelSection(provider = {}) {
     const detectedVideoModels = mergeAiImageModelCandidates(provider.detectedVideoModels, provider.detected_video_models, videoModels);
     const detectedUnknownModels = mergeAiImageModelCandidates(provider.detectedUnknownModels, provider.detected_unknown_models)
         .filter((model) => ![...imageModels, ...chatModels, ...videoModels].some((selected) => selected.toLowerCase() === model.toLowerCase()));
+    const modelDisplayNames = normalizeAiImageModelDisplayNames(provider.modelDisplayNames || provider.model_display_names || {});
     const visibleModelGroups = [
         {
             title: '文本对话',
@@ -9484,7 +9530,8 @@ function renderAiImageProviderVisibleModelSection(provider = {}) {
             <div class="ai-image-admin-visible-models__grid">
                 ${visibleModelGroups.map((group) => renderAiImageVisibleModelSection({
                     ...group,
-                    providerId: provider.providerId || ''
+                    providerId: provider.providerId || '',
+                    modelDisplayNames
                 })).join('')}
             </div>
         ` : `
@@ -9849,6 +9896,9 @@ function normalizeAiImageModelProvider(provider = {}) {
         provider.chatVisionModels,
         provider.chat_vision_models
     );
+    const modelDisplayNames = normalizeAiImageModelDisplayNames(
+        provider.modelDisplayNames || provider.model_display_names || {}
+    );
     const rawVendor = provider.vendor || provider.provider;
     const vendor = normalizeAiImageModelVendor(rawVendor, DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
     const vendorLabel = normalizeAiImageModelVendorLabel(
@@ -9876,6 +9926,8 @@ function normalizeAiImageModelProvider(provider = {}) {
         chat_models: scopedModels.chatModels,
         videoModels: scopedModels.videoModels,
         video_models: scopedModels.videoModels,
+        modelDisplayNames,
+        model_display_names: modelDisplayNames,
         detectedImageModels,
         detected_image_models: detectedImageModels,
         detectedChatModels,
@@ -9986,6 +10038,13 @@ function getAiImageModelConfig() {
         imageModels: scopedModels.imageModels,
         chatModels: scopedModels.chatModels,
         videoModels: scopedModels.videoModels,
+        modelDisplayNames: normalizeAiImageModelDisplayNames(
+            selected.modelDisplayNames
+            || selected.model_display_names
+            || current?.modelDisplayNames
+            || current?.model_display_names
+            || {}
+        ),
         detectedImageModels,
         detectedChatModels,
         detectedVideoModels,
@@ -10614,6 +10673,7 @@ function readAiImageModelDraftConfig() {
     const detectedVideoModels = mergeAiImageModelCandidates(detectedVideoModelsInput?.value, provider.detectedVideoModels, videoModels);
     const detectedUnknownModels = mergeAiImageModelCandidates(detectedUnknownModelsInput?.value, provider.detectedUnknownModels);
     const visionModels = mergeAiImageModelCandidates(visionModelsInput?.value, provider.visionModels, provider.vision_models);
+    const modelDisplayNames = normalizeAiImageModelDisplayNames(provider.modelDisplayNames || provider.model_display_names || {});
     const vendor = normalizeAiImageModelVendor(vendorInput?.value || provider.vendor || current.vendor || DEFAULT_AI_IMAGE_MODEL_CONFIG.vendor);
     const vendorLabel = isAiImageCustomVendor(vendor)
         ? normalizeAiImageModelVendorLabel(vendorLabelInput?.value || provider.vendorLabel || provider.vendor_label || current.vendorLabel || current.vendor_label)
@@ -10637,6 +10697,8 @@ function readAiImageModelDraftConfig() {
         chat_models: chatModels,
         videoModels,
         video_models: videoModels,
+        modelDisplayNames,
+        model_display_names: modelDisplayNames,
         detectedImageModels,
         detected_image_models: detectedImageModels,
         detectedChatModels,
@@ -10748,6 +10810,30 @@ function handleAiImageModelProviderDraftInput(target) {
         return false;
     }
     setAiImageEditingModelProviderDraft(updates);
+    return true;
+}
+
+function updateAiImageModelDisplayName(model = '', value = '', providerId = '') {
+    const normalizedModel = normalizeAiImageOptionalModelName(model);
+    if (!normalizedModel) return false;
+    const normalizedProviderId = normalizeAiImageProviderId(
+        providerId || adminAiImageState.selectedModelProviderId || getAiImageModelConfig().providerId || 'default'
+    );
+    const provider = getAiImageEditingModelProvider(getAiImageModelConfig());
+    if (normalizeAiImageProviderId(provider.providerId || provider.provider_id || '') !== normalizedProviderId) return false;
+
+    const nextDisplayNames = normalizeAiImageModelDisplayNames(provider.modelDisplayNames || provider.model_display_names || {});
+    Object.keys(nextDisplayNames).forEach((key) => {
+        if (key.toLowerCase() === normalizedModel.toLowerCase()) delete nextDisplayNames[key];
+    });
+    const displayName = String(value || '').trim().slice(0, 120);
+    if (displayName && displayName !== normalizedModel) {
+        nextDisplayNames[normalizedModel] = displayName;
+    }
+    setAiImageEditingModelProviderDraft({
+        modelDisplayNames: nextDisplayNames,
+        model_display_names: nextDisplayNames
+    });
     return true;
 }
 
@@ -13282,6 +13368,7 @@ window.fetchAiImageModelConfig = fetchAiImageModelConfig;
 window.selectAiImageModelProvider = selectAiImageModelProvider;
 window.createAiImageModelProviderDraft = createAiImageModelProviderDraft;
 window.handleAiImageModelProviderDraftInput = handleAiImageModelProviderDraftInput;
+window.updateAiImageModelDisplayName = updateAiImageModelDisplayName;
 window.toggleAiImageVisibleModel = toggleAiImageVisibleModel;
 window.cloneAiImageModelProvider = cloneAiImageModelProvider;
 window.applyAiImageDiscoveredModel = applyAiImageDiscoveredModel;

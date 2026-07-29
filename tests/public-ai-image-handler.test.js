@@ -480,6 +480,7 @@ test('ai image pricing config exposes image and chat model groups separately', a
                             model: 'gpt-image-2',
                             models: ['gpt-image-2'],
                             imageModels: ['gpt-image-2'],
+                            modelDisplayNames: { 'gpt-image-2': 'Nano Banana Pro' },
                             chatModels: []
                         },
                         {
@@ -537,6 +538,8 @@ test('ai image pricing config exposes image and chat model groups separately', a
         assert.deepEqual(payload.image_models.map((item) => item.id), ['gpt-image-2']);
         assert.deepEqual(payload.chat_models.map((item) => item.id), ['gpt-4o-mini', 'gpt-4.1']);
         assert.equal(payload.image_models[0].providerId, 'image-provider');
+        assert.equal(payload.image_models[0].label, 'Nano Banana Pro');
+        assert.equal(payload.model_providers[0].modelDisplayNames['gpt-image-2'], 'Nano Banana Pro');
         assert.equal(payload.chat_models[0].providerId, 'vision-provider');
         assert.equal(payload.chat_models[0].supportsImageInput, undefined);
         assert.equal(payload.chat_models[1].supportsImageInput, true);
@@ -686,6 +689,128 @@ test('ai image pricing config uses public provider metadata without decrypting p
         assert.deepEqual(payload.image_models.map((item) => item.id), ['gpt-image-2']);
         assert.match(res.headers['server-timing'], /providers;dur=\d+/);
         assert.match(res.headers['server-timing'], /total;dur=\d+/);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
+test('ai image model prices publicly proxy effective Sub2API quotes without exposing provider keys', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    const providerKey = 'sk-admin-provider-price-secret-12345678';
+    const failedProviderKey = 'sk-admin-provider-failed-secret-87654321';
+    const fetchCalls = [];
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderSecrets() {
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'chat-provider',
+                            label: 'Sub2API Chat',
+                            baseUrl: 'https://sub2api.fatherkey.com/v1',
+                            apiKey: providerKey,
+                            modelGroup: 'chat',
+                            chatModels: ['gpt-5.4', 'not-returned']
+                        },
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'failed-provider',
+                            label: 'Sub2API Backup',
+                            baseUrl: 'https://sub2api.zaoyoe.xyz/v1',
+                            apiKey: failedProviderKey,
+                            modelGroup: 'chat',
+                            chatModels: ['claude-sonnet-4']
+                        }
+                    ];
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {};
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            fetchImpl: async (url, options = {}) => {
+                fetchCalls.push({ url, options });
+                if (url.includes('zaoyoe')) {
+                    throw new Error('upstream unavailable');
+                }
+                return {
+                    ok: true,
+                    status: 200,
+                    async json() {
+                        return {
+                            object: 'list',
+                            data: [
+                                {
+                                    id: 'gpt-5.4',
+                                    billing_model: 'gpt-5.4-2026-07-01',
+                                    billing_mode: 'token',
+                                    effective_multiplier: 1.5,
+                                    available: true,
+                                    input_price_per_million: 3.75,
+                                    output_price_per_million: 22.5,
+                                    cache_read_price_per_million: 0.375
+                                },
+                                {
+                                    id: 'internal-only-model',
+                                    billing_mode: 'token',
+                                    effective_multiplier: 1.5,
+                                    available: true,
+                                    input_price_per_million: 1
+                                }
+                            ]
+                        };
+                    }
+                };
+            },
+            admin: {
+                async requireAuthenticatedUser() {
+                    const error = new Error('Unauthorized');
+                    error.statusCode = 401;
+                    throw error;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers['model-prices']({ method: 'GET', url: '/api/public?scope=ai-image&route=model-prices' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, res.body);
+        assert.equal(fetchCalls.length, 2);
+        assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/models/pricing');
+        assert.equal(fetchCalls[0].options.headers.Authorization, `Bearer ${providerKey}`);
+        assert.deepEqual(payload.text_model_prices.map((item) => item.id), ['gpt-5.4']);
+        assert.equal(payload.text_model_prices[0].billing_model, 'gpt-5.4-2026-07-01');
+        assert.equal(payload.text_model_prices[0].effective_multiplier, 1.5);
+        assert.equal(payload.text_model_prices[0].input_price_per_million, 3.75);
+        assert.equal(payload.partial, true);
+        assert.equal(payload.provider_statuses.length, 2);
+        assert.equal(payload.provider_statuses[1].available, false);
+        assert.equal(res.body.includes(providerKey), false);
+        assert.equal(res.body.includes(failedProviderKey), false);
+        assert.equal(res.body.includes('internal-only-model'), false);
+        assert.equal(res.body.includes('channel_id'), false);
+        assert.equal(res.body.includes('account_id'), false);
     } finally {
         delete require.cache[handlerPath];
     }

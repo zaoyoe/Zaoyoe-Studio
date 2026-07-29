@@ -341,6 +341,15 @@
         message: '',
         tone: ''
     };
+    let modelPricingView = {
+        open: false,
+        loading: false,
+        loaded: false,
+        error: '',
+        tab: 'chat',
+        textPrices: [],
+        providerStatuses: []
+    };
     let historyPrefsSyncInFlight = 0;
     let historyPrefsMutationSerial = 0;
     let activitySummary = {
@@ -1188,6 +1197,19 @@
         };
     }
 
+    function getRuntimeProviderModelOption(model = '', provider = {}) {
+        if (model && typeof model === 'object' && !Array.isArray(model)) {
+            return normalizeRuntimeModelOption(model, provider);
+        }
+        const id = String(model || '').trim();
+        const displayNames = provider.modelDisplayNames || provider.model_display_names || {};
+        const matchedKey = displayNames && typeof displayNames === 'object'
+            ? Object.keys(displayNames).find((key) => key.toLowerCase() === id.toLowerCase())
+            : '';
+        const label = String(matchedKey ? displayNames[matchedKey] : '').trim();
+        return normalizeRuntimeModelOption(label ? { id, label } : id, provider);
+    }
+
     function uniqueModelOptions(options = []) {
         const seen = new Set();
         return options.filter((item) => {
@@ -1312,13 +1334,13 @@
             (Array.isArray(provider.imageModels || provider.image_models)
                 ? (provider.imageModels || provider.image_models)
                 : (Array.isArray(provider.models) ? provider.models : []))
-                .map((model) => normalizeRuntimeModelOption(model, { ...provider, providerId, label, vendorLabel }))
+                .map((model) => getRuntimeProviderModelOption(model, { ...provider, providerId, label, vendorLabel }))
                 .filter(Boolean)
         ), 'image');
         const chatModels = modelGroup === 'image' || modelGroup === 'video' ? [] : filterRuntimeModelsByGroup(uniqueModelOptions(
             (Array.isArray(provider.chatModels || provider.chat_models) ? (provider.chatModels || provider.chat_models) : [])
                 .map((model) => {
-	                    const option = normalizeRuntimeModelOption(model, { ...provider, providerId, label, vendorLabel });
+	                    const option = getRuntimeProviderModelOption(model, { ...provider, providerId, label, vendorLabel });
 	                    if (!option) return null;
 	                    if (option.supportsImageInput === null && visionModelSet.has(String(option.id || '').trim().toLowerCase())) {
 	                        option.supportsImageInput = true;
@@ -1329,7 +1351,7 @@
         ), 'chat');
         const videoModels = uniqueModelOptions(
             (Array.isArray(provider.videoModels || provider.video_models) ? (provider.videoModels || provider.video_models) : [])
-                .map((model) => normalizeRuntimeModelOption(model, { ...provider, providerId, label, vendorLabel }))
+                .map((model) => getRuntimeProviderModelOption(model, { ...provider, providerId, label, vendorLabel }))
                 .filter(Boolean)
         );
         if (!imageModels.length && !chatModels.length && !videoModels.length) return null;
@@ -5664,6 +5686,7 @@
 
     function closeWorkbench() {
         openSelect = '';
+        modelPricingView.open = false;
         clearDeferredImageLoadTimer();
         clearImagePreviewLoadTimer();
         imagePreview = null;
@@ -6182,6 +6205,7 @@
                 syncHistorySelectionUi();
                 return;
             }
+            modelPricingView.open = false;
             state.activeTaskId = taskId;
             markTaskThreadSeen(taskId);
             openSelect = '';
@@ -6486,6 +6510,27 @@
             renderSidebarTransition();
             return;
         }
+        if (action === 'open-model-pricing') {
+            openModelPricingView();
+            return;
+        }
+        if (action === 'close-model-pricing') {
+            modelPricingView.open = false;
+            render({ preserveStageScroll: false, preservePromptFocus: false });
+            return;
+        }
+        if (action === 'retry-model-pricing') {
+            loadModelPricing({ force: true });
+            return;
+        }
+        if (action === 'set-model-pricing-tab') {
+            const tab = String(element?.dataset?.pricingTab || '').trim();
+            if (['chat', 'image', 'video'].includes(tab)) {
+                modelPricingView.tab = tab;
+                render({ preserveStageScroll: false, preservePromptFocus: false });
+            }
+            return;
+        }
         if (action === 'toggle-sidebar') {
             setSidebarView(sidebarView ? '' : 'history');
             renderSidebarTransition();
@@ -6528,6 +6573,7 @@
             return;
         }
         if (action === 'new-chat') {
+            modelPricingView.open = false;
             resetConversationDraft({ preserveToolMode: true });
             render();
             persistState();
@@ -6926,6 +6972,7 @@
                     syncHistorySelectionUi();
                     return;
                 }
+                modelPricingView.open = false;
                 state.activeTaskId = taskId;
                 markTaskThreadSeen(taskId);
                 openSelect = '';
@@ -6976,6 +7023,12 @@
                 if (imagePreview) {
                     event.preventDefault();
                     closeImagePreview();
+                    return;
+                }
+                if (modelPricingView.open) {
+                    event.preventDefault();
+                    modelPricingView.open = false;
+                    render({ preserveStageScroll: false, preservePromptFocus: false });
                     return;
                 }
                 if (openSelect) {
@@ -9543,7 +9596,7 @@
         }
 
         overlay.innerHTML = `
-            <section class="ai-image-shell" role="dialog" aria-modal="true" aria-label="AI 图片工作台">
+            <section class="ai-image-shell ${modelPricingView.open ? 'is-model-pricing' : ''}" role="dialog" aria-modal="true" aria-label="AI 图片工作台">
                 <button class="ai-image-shell-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭">
                     <i class="fas fa-times" aria-hidden="true"></i>
                 </button>
@@ -10299,7 +10352,299 @@
         `;
     }
 
+    function getModelPricingTabForCurrentTool() {
+        const tool = getCurrentWorkbenchToolMode();
+        return ['chat', 'image', 'video'].includes(tool) ? tool : 'chat';
+    }
+
+    function openModelPricingView() {
+        modelPricingView.open = true;
+        modelPricingView.tab = getModelPricingTabForCurrentTool();
+        openSelect = '';
+        if (isMobileWorkbenchViewport()) {
+            sidebarView = '';
+            sidebarEnteredView = '';
+        }
+        render({ preserveStageScroll: false, preservePromptFocus: false });
+        loadRemoteConfig();
+        loadModelPricing();
+    }
+
+    async function loadModelPricing({ force = false } = {}) {
+        if (modelPricingView.loading || (modelPricingView.loaded && !force)) return;
+        modelPricingView.loading = true;
+        modelPricingView.error = '';
+        render({ preserveStageScroll: false, preservePromptFocus: false });
+        try {
+            const payload = await requestAiImage('model-prices', {
+                query: { site: getRuntimeSite() },
+                auth: false
+            });
+            modelPricingView.textPrices = Array.isArray(payload?.textModelPrices)
+                ? payload.textModelPrices
+                : (Array.isArray(payload?.text_model_prices) ? payload.text_model_prices : []);
+            modelPricingView.providerStatuses = Array.isArray(payload?.providerStatuses)
+                ? payload.providerStatuses
+                : (Array.isArray(payload?.provider_statuses) ? payload.provider_statuses : []);
+            modelPricingView.loaded = true;
+        } catch (error) {
+            modelPricingView.error = String(error?.message || '模型价格加载失败');
+        } finally {
+            modelPricingView.loading = false;
+            if (modelPricingView.open) {
+                render({ preserveStageScroll: false, preservePromptFocus: false });
+            }
+        }
+    }
+
+    function formatUsdModelPrice(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number < 0) return '--';
+        const maximumFractionDigits = number >= 100 ? 2 : (number >= 1 ? 4 : 6);
+        return `$${number.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits
+        })}`;
+    }
+
+    function formatEffectiveMultiplier(value) {
+        const multiplier = Number(value);
+        if (!Number.isFinite(multiplier)) return '';
+        return `x${String(Math.round(multiplier * 10000) / 10000)}`;
+    }
+
+    function getPricingModelOption(group = 'chat', modelId = '', providerId = '') {
+        const normalizedModel = String(modelId || '').trim().toLowerCase();
+        const normalizedProvider = String(providerId || '').trim().toLowerCase();
+        const options = group === 'chat'
+            ? runtimeAdminTextModels
+            : (group === 'video' ? runtimeAdminVideoModels : runtimeAdminImageModels);
+        return options.find((model) => (
+            String(model?.id || '').trim().toLowerCase() === normalizedModel
+            && (!normalizedProvider || String(model?.providerId || '').trim().toLowerCase() === normalizedProvider)
+        )) || options.find((model) => String(model?.id || '').trim().toLowerCase() === normalizedModel) || null;
+    }
+
+    function getTextModelPricingRows() {
+        const prices = Array.isArray(modelPricingView.textPrices) ? modelPricingView.textPrices : [];
+        const configured = runtimeAdminTextModels.length
+            ? runtimeAdminTextModels
+            : prices.map((price) => ({
+                id: price.id,
+                label: price.label || price.id,
+                providerId: price.providerId || price.provider_id,
+                providerLabel: price.providerLabel || price.provider_label
+            }));
+        const rows = [];
+        const seen = new Set();
+        configured.forEach((model) => {
+            const id = String(model?.id || '').trim();
+            const providerId = String(model?.providerId || '').trim();
+            const key = `${providerId.toLowerCase()}:${id.toLowerCase()}`;
+            if (!id || seen.has(key)) return;
+            seen.add(key);
+            const exact = prices.find((price) => (
+                String(price?.id || '').toLowerCase() === id.toLowerCase()
+                && String(price?.providerId || price?.provider_id || '').toLowerCase() === providerId.toLowerCase()
+            ));
+            const sameModelPrices = prices.filter((price) => String(price?.id || '').toLowerCase() === id.toLowerCase());
+            const price = exact || (sameModelPrices.length === 1 ? sameModelPrices[0] : null);
+            rows.push({
+                id,
+                label: model.label || price?.label || id,
+                providerId,
+                providerLabel: model.providerLabel || price?.providerLabel || price?.provider_label || '',
+                price
+            });
+        });
+        return rows;
+    }
+
+    function getTextPriceVariants(price = null) {
+        if (!price) return [{ label: '', price: null }];
+        const intervals = Array.isArray(price.intervals) ? price.intervals : [];
+        if (!intervals.length) return [{ label: '', price }];
+        return intervals.map((interval) => {
+            const min = Number(interval?.min_tokens || 0);
+            const max = interval?.max_tokens === null || interval?.max_tokens === undefined
+                ? ''
+                : formatCompactNumber(interval.max_tokens);
+            const range = interval?.tier_label
+                || (max ? `${formatCompactNumber(min)}-${max} Token` : `${formatCompactNumber(min)}+ Token`);
+            return { label: range, price: interval };
+        });
+    }
+
+    function renderTextModelPricing() {
+        const rows = getTextModelPricingRows();
+        if (!rows.length) {
+            return renderModelPricingEmpty('fa-comments', '暂无文本模型价格');
+        }
+        return `
+            <div class="ai-image-model-price-table ai-image-model-price-table--text" role="table" aria-label="文本对话模型价格">
+                <div class="ai-image-model-price-table-head" role="row">
+                    <span role="columnheader">模型</span>
+                    <span role="columnheader">输入</span>
+                    <span role="columnheader">输出</span>
+                    <span role="columnheader">缓存读取</span>
+                </div>
+                ${rows.map((row) => getTextPriceVariants(row.price).map((variant, variantIndex) => {
+                    const price = variant.price;
+                    const billingModel = String(row.price?.billingModel || row.price?.billing_model || row.id).trim();
+                    const multiplier = formatEffectiveMultiplier(row.price?.effectiveMultiplier ?? row.price?.effective_multiplier);
+                    return `
+                        <div class="ai-image-model-price-row ${price ? '' : 'is-unavailable'}" role="row">
+                            <div class="ai-image-model-price-name" role="cell">
+                                <strong>${escapeHtml(row.label)}</strong>
+                                <span>${escapeHtml(billingModel)}</span>
+                                <em>${escapeHtml([row.providerLabel, variant.label, variantIndex === 0 ? multiplier : ''].filter(Boolean).join(' · '))}</em>
+                            </div>
+                            <span role="cell" data-label="输入">${escapeHtml(formatUsdModelPrice(price?.input_price_per_million))}</span>
+                            <span role="cell" data-label="输出">${escapeHtml(formatUsdModelPrice(price?.output_price_per_million))}</span>
+                            <span role="cell" data-label="缓存读取">${escapeHtml(formatUsdModelPrice(price?.cache_read_price_per_million))}</span>
+                        </div>
+                    `;
+                }).join('')).join('')}
+            </div>
+            <p class="ai-image-model-price-unit">USD / 百万 Token</p>
+        `;
+    }
+
+    function getAdminPricingRows(group = 'image') {
+        const site = getRuntimeSite();
+        const allowedModes = group === 'video' ? new Set(['video']) : new Set(['text', 'image', 'agent']);
+        const seen = new Set();
+        return (Array.isArray(runtimePricingRules) ? runtimePricingRules : [])
+            .filter((rule) => {
+                const ruleSite = String(rule?.site || 'all').trim().toLowerCase();
+                const billingMode = String(rule?.billing_mode || rule?.billingMode || '').trim().toLowerCase();
+                const mode = String(rule?.mode || '').trim().toLowerCase();
+                return rule?.is_active !== false
+                    && (ruleSite === 'all' || ruleSite === site)
+                    && billingMode === 'points'
+                    && allowedModes.has(mode);
+            })
+            .map((rule) => {
+                const modelId = String(rule.model || '*').trim() || '*';
+                const providerId = getPricingRuleProviderId(rule);
+                const model = modelId === '*' ? null : getPricingModelOption(group, modelId, providerId);
+                const metadata = rule?.metadata && typeof rule.metadata === 'object' ? rule.metadata : {};
+                const resolution = String(rule.resolution || '*').trim().toLowerCase();
+                const ratio = String(rule.ratio || '*').trim();
+                const quantity = clampNumber(rule.quantity, 1, 8, 1);
+                const duration = String(metadata.duration || metadata.video_duration || metadata.seconds || '').trim();
+                const variant = [
+                    resolution !== '*' ? resolution.toUpperCase() : '',
+                    ratio !== '*' ? ratio : '',
+                    duration ? `${duration}s` : '',
+                    quantity > 1 ? `${quantity}${group === 'video' ? ' 次' : ' 张'}` : ''
+                ].filter(Boolean).join(' · ') || '标准';
+                const key = [group, providerId, modelId.toLowerCase(), variant, rule.points].join(':');
+                if (seen.has(key)) return null;
+                seen.add(key);
+                return {
+                    id: modelId,
+                    label: model?.label || (modelId === '*' ? '默认价格' : modelId),
+                    providerLabel: model?.providerLabel || '',
+                    variant,
+                    points: getRuntimePricingRuleEstimate(rule, quantity)
+                };
+            })
+            .filter(Boolean);
+    }
+
+    function renderAdminModelPricing(group = 'image') {
+        const rows = getAdminPricingRows(group);
+        if (!rows.length) {
+            return renderModelPricingEmpty(group === 'video' ? 'fa-film' : 'fa-image', group === 'video' ? '暂无视频模型价格' : '暂无图片模型价格');
+        }
+        return `
+            <div class="ai-image-model-price-table ai-image-model-price-table--points" role="table" aria-label="${group === 'video' ? '视频' : '图片'}模型价格">
+                <div class="ai-image-model-price-table-head" role="row">
+                    <span role="columnheader">模型</span>
+                    <span role="columnheader">规格</span>
+                    <span role="columnheader">价格</span>
+                </div>
+                ${rows.map((row) => `
+                    <div class="ai-image-model-price-row" role="row">
+                        <div class="ai-image-model-price-name" role="cell">
+                            <strong>${escapeHtml(row.label)}</strong>
+                            <span>${escapeHtml(row.id)}</span>
+                            ${row.providerLabel ? `<em>${escapeHtml(row.providerLabel)}</em>` : ''}
+                        </div>
+                        <span role="cell" data-label="规格">${escapeHtml(row.variant)}</span>
+                        <strong class="ai-image-model-price-points" role="cell" data-label="价格">${escapeHtml(formatPoints(row.points))} 积分</strong>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderModelPricingEmpty(icon, copy) {
+        return `
+            <div class="ai-image-model-price-empty">
+                <i class="fas ${escapeHtml(icon)}"></i>
+                <span>${escapeHtml(copy)}</span>
+            </div>
+        `;
+    }
+
+    function renderModelPricingView() {
+        const tabs = [
+            { id: 'chat', label: '文本对话', icon: 'fa-comments' },
+            { id: 'image', label: '图片生成', icon: 'fa-image' },
+            { id: 'video', label: '视频生成', icon: 'fa-film' }
+        ];
+        const hasPartialTextPricing = modelPricingView.providerStatuses.some((status) => status?.available === false);
+        let content = '';
+        if (modelPricingView.tab === 'chat' && modelPricingView.loading && !modelPricingView.loaded) {
+            content = renderModelPricingEmpty('fa-circle-notch fa-spin', '正在读取模型价格');
+        } else if (modelPricingView.tab === 'chat' && modelPricingView.error) {
+            content = `
+                <div class="ai-image-model-price-empty is-error">
+                    <i class="fas fa-circle-exclamation"></i>
+                    <span>${escapeHtml(modelPricingView.error)}</span>
+                    <button type="button" data-aiw-action="retry-model-pricing" aria-label="重新加载" title="重新加载"><i class="fas fa-rotate-right"></i></button>
+                </div>
+            `;
+        } else if (modelPricingView.tab === 'chat') {
+            content = `${hasPartialTextPricing ? '<div class="ai-image-model-price-status"><i class="fas fa-circle-info"></i><span>部分文本模型价格暂不可用</span></div>' : ''}${renderTextModelPricing()}`;
+        } else {
+            content = renderAdminModelPricing(modelPricingView.tab);
+        }
+        return `
+            <section class="ai-image-model-pricing-view" aria-label="模型价格">
+                <header class="ai-image-model-pricing-head">
+                    <div>
+                        <span><i class="fas fa-tags"></i></span>
+                        <div><strong>模型价格</strong><em>${escapeHtml(modelPricingView.tab === 'chat' ? '实际价格' : '积分价格')}</em></div>
+                    </div>
+                    <button type="button" data-aiw-action="close-model-pricing" aria-label="关闭模型价格" title="关闭模型价格"><i class="fas fa-xmark"></i></button>
+                </header>
+                <div class="ai-image-model-pricing-tabs" role="tablist" aria-label="模型类型">
+                    ${tabs.map((tab) => `
+                        <button class="${modelPricingView.tab === tab.id ? 'is-active' : ''}" type="button" role="tab" aria-selected="${modelPricingView.tab === tab.id ? 'true' : 'false'}" data-aiw-action="set-model-pricing-tab" data-pricing-tab="${escapeHtml(tab.id)}">
+                            <i class="fas ${escapeHtml(tab.icon)}"></i><span>${escapeHtml(tab.label)}</span>
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="ai-image-model-pricing-content">${content}</div>
+            </section>
+        `;
+    }
+
     function renderStage() {
+        if (modelPricingView.open) {
+            return `
+                <main class="ai-image-canvas is-model-pricing">
+                    <div class="ai-image-stage">
+                        <div class="ai-image-stage-inner is-model-pricing">
+                            ${renderModelPricingView()}
+                        </div>
+                    </div>
+                </main>
+            `;
+        }
         const activeTask = getTaskThreadRoot(getActiveTask()) || getActiveTask();
         const stageStateClass = activeTask ? 'has-task' : 'is-empty';
         return `
@@ -11191,11 +11536,16 @@
 
                 <div class="ai-image-billing-panel">
                     <div class="ai-image-billing-choice">
-                        <button class="ai-image-billing-card ${state.billingMode === 'points' ? 'is-active' : ''}" type="button" data-aiw-chip="billing:points">
-                            <span><i class="fas fa-coins"></i></span>
-                            <strong>积分计费</strong>
-                            <em>使用本站后台定价，任务成功后扣除积分。</em>
-                        </button>
+                        <div class="ai-image-billing-card-shell">
+                            <button class="ai-image-billing-card ${state.billingMode === 'points' ? 'is-active' : ''}" type="button" data-aiw-chip="billing:points">
+                                <span><i class="fas fa-coins"></i></span>
+                                <strong>积分计费</strong>
+                                <em>使用本站后台定价，任务成功后扣除积分。</em>
+                            </button>
+                            <button class="ai-image-model-pricing-link" type="button" data-aiw-action="open-model-pricing">
+                                <i class="fas fa-tags"></i><span>模型价格</span><i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
                         <button class="ai-image-billing-card ${state.billingMode === 'api' ? 'is-active' : ''}" type="button" data-aiw-chip="billing:api">
                             <span><i class="fas fa-key"></i></span>
                             <strong>我的 API</strong>
