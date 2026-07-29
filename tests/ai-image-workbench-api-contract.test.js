@@ -32,7 +32,9 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260729_AI_MODEL_PRICING_26/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260729_AI_MODEL_PRICING_36/);
+    assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
+    assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
 });
 
@@ -1930,14 +1932,44 @@ test('ai image workbench opens model pricing from points billing in the main con
     assert.match(source, /if \(modelPricingView\.open\) \{[\s\S]*ai-image-canvas is-model-pricing[\s\S]*renderModelPricingView\(\)/);
     assert.match(source, /data-aiw-action="set-model-pricing-tab"/);
     assert.match(source, /ai-image-shell \$\{modelPricingView\.open \? 'is-model-pricing' : ''\}/);
+    assert.match(source, /class="ai-image-shell-close"[^>]+data-aiw-action="\$\{modelPricingView\.open \? 'close-model-pricing' : 'close'\}"/);
+    assert.doesNotMatch(source, /class="ai-image-model-pricing-head">[\s\S]*data-aiw-action="close-model-pricing"/);
     assert.match(source, /input_price_per_million/);
     assert.match(source, /cache_read_price_per_million/);
+    assert.match(source, /function formatModelPriceValue\(value\)/);
+    assert.match(source, /<span role="columnheader">输入（积分 \/ 百万 Token）<\/span>/);
+    assert.match(source, /<span role="columnheader">输出（积分 \/ 百万 Token）<\/span>/);
+    assert.match(source, /<span role="columnheader">缓存读取（积分 \/ 百万 Token）<\/span>/);
+    assert.match(source, /data-label="输入（积分 \/ 百万 Token）"/);
+    assert.match(source, /data-label="输出（积分 \/ 百万 Token）"/);
+    assert.match(source, /data-label="缓存读取（积分 \/ 百万 Token）"/);
+    assert.doesNotMatch(source, /return `\$\{formatted\} 积分`;/);
+    assert.doesNotMatch(source, /ai-image-model-price-unit/);
+    assert.doesNotMatch(source, /function formatUsdModelPrice\(value\)/);
+    assert.doesNotMatch(source, /USD \/ 百万 Token/);
+    assert.match(source, /function shouldShowModelTechnicalName\(displayLabel = '', technicalName = ''\)/);
+    assert.match(source, /const showBillingModel = shouldShowModelTechnicalName\(displayLabel, billingModel\)/);
+    assert.match(source, /const showModelId = shouldShowModelTechnicalName\(row\.label, row\.id\)/);
+    assert.match(source, /variant\.label \? `<em>\$\{escapeHtml\(variant\.label\)\}<\/em>` : ''/);
+    assert.doesNotMatch(source, /\[row\.providerLabel, variant\.label\]/);
+    assert.doesNotMatch(source, /row\.providerLabel \? `<em>/);
+    assert.match(source, /row\.price\?\.available !== false/);
+    assert.match(source, /ai-image-model-price-unavailable/);
+    assert.match(source, /价格未配置/);
+    assert.doesNotMatch(source, /function formatEffectiveMultiplier/);
     assert.match(source, /getRuntimePricingRuleEstimate\(rule, quantity\)/);
     assert.match(cssSource, /\.ai-image-billing-card-shell \.ai-image-billing-card\s*\{[\s\S]*padding-bottom: 34px;/);
     assert.match(cssSource, /\.ai-image-model-pricing-link\s*\{[\s\S]*bottom: 8px;[\s\S]*left: 10px;/);
-    assert.match(cssSource, /\.ai-image-shell\.is-model-pricing > \.ai-image-shell-close,[\s\S]*\.ai-image-shell\.is-model-pricing \.ai-image-rail-close\s*\{[\s\S]*display: none;/);
-    assert.match(cssSource, /\.ai-image-model-pricing-head > button\s*\{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*border-radius: 999px;/);
+    assert.match(cssSource, /\.ai-image-shell\.is-model-pricing \.ai-image-rail-close\s*\{[\s\S]*display: none;/);
+    assert.doesNotMatch(cssSource, /\.ai-image-shell\.is-model-pricing > \.ai-image-shell-close,[\s\S]*display: none;/);
+    assert.doesNotMatch(cssSource, /\.ai-image-model-pricing-head > button/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-shell\.is-model-pricing > \.ai-image-shell-close\s*\{[\s\S]*display: inline-flex;/);
+    assert.match(cssSource, /\.ai-image-overlay\s*\{[\s\S]*background: var\(--app-modal-backdrop, rgba\(24, 32, 43, 0\.42\)\);[\s\S]*backdrop-filter: var\(--app-modal-backdrop-filter, blur\(8px\) saturate\(112%\)\);[\s\S]*pointer-events: auto;/);
+    assert.doesNotMatch(cssSource, /\.ai-image-overlay::before\s*\{/);
+    assert.doesNotMatch(cssSource, /\.ai-image-overlay\.is-model-pricing\s*\{[\s\S]*backdrop-filter: none;/);
+    assert.match(cssSource, /\.ai-image-canvas\.is-model-pricing \.ai-image-stage\s*\{[\s\S]*overflow-x: hidden;[\s\S]*overscroll-behavior: contain;[\s\S]*contain: layout paint;/);
     assert.match(cssSource, /\.ai-image-model-price-table--text \.ai-image-model-price-row/);
+    assert.match(cssSource, /\.ai-image-model-price-unavailable\s*\{[\s\S]*grid-column: 2 \/ -1;/);
     assert.match(cssSource, /@media \(max-width: 720px\) \{[\s\S]*\.ai-image-model-price-table-head\s*\{[\s\S]*display: none;/);
 });
 

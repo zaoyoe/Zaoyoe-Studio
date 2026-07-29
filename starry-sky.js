@@ -181,7 +181,12 @@ function initStarrySky() {
 
     function animate(timestamp = 0) {
         requestAnimationFrame(animate);
-        if (document.hidden || pageScrolling || document.documentElement.dataset.theme !== 'dark') return;
+        if (
+            document.hidden
+            || pageScrolling
+            || document.documentElement.dataset.theme !== 'dark'
+            || document.documentElement.classList.contains('ai-image-workbench-open')
+        ) return;
         if (reducedMotion && hasRenderedFrame) return;
         if (hasRenderedFrame && timestamp - lastFrameAt < frameIntervalMs) return;
 

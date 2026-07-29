@@ -14515,7 +14515,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'function schedulePromptIdleTask(taskName, task, options = {}) {',
         'function schedulePromptSearchIndexWarmup() {',
         "schedulePromptIdleTask('comment-count-prefetch'",
-        "script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';",
+        "script.src = 'starry-sky.js?v=20260729_AI_WORKBENCH_SCROLL_PERF_1';",
         'function lockPromptModalCommentModeGeometry({ force = false, defer = false } = {}) {',
         'function releasePromptModalCommentModeGeometry() {',
         'function refreshPromptsTextareaCaret(input) {',

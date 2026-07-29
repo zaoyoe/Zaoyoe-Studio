@@ -3287,7 +3287,7 @@ function loadPromptStarrySkyRuntime(options = {}) {
 
     promptStarrySkyRuntimePromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';
+        script.src = 'starry-sky.js?v=20260729_AI_WORKBENCH_SCROLL_PERF_1';
         script.async = true;
         script.dataset.promptStarrySky = '1';
         script.addEventListener('load', () => resolve(script), { once: true });

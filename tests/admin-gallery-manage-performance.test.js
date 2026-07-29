@@ -42,9 +42,9 @@ test('shared starry sky pauses while scrolling and outside dark mode', () => {
     const runtime = readRepoFile('starry-sky.js');
 
     assert.equal(runtime.includes('const frameIntervalMs = 1000 / 30;'), true);
-    assert.equal(
-        runtime.includes("if (document.hidden || pageScrolling || document.documentElement.dataset.theme !== 'dark') return;"),
-        true
-    );
+    assert.equal(runtime.includes('document.hidden'), true);
+    assert.equal(runtime.includes('pageScrolling'), true);
+    assert.equal(runtime.includes("document.documentElement.dataset.theme !== 'dark'"), true);
+    assert.equal(runtime.includes("document.documentElement.classList.contains('ai-image-workbench-open')"), true);
     assert.equal(runtime.includes('pageScrolling = true;'), true);
 });

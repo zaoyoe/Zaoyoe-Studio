@@ -59,10 +59,14 @@ test('shared theme toggle wakes dark-mode starry sky on prompts and shop pages',
 test('shared starry sky throttles drawing during scroll and background activity', () => {
     const starrySource = readRepoFile('starry-sky.js');
     const promptsSource = readRepoFile('prompts-poetry.js');
+    const promptsCss = readRepoFile('prompts-poetry.css');
 
     [
         'const frameIntervalMs = 1000 / 30;',
-        "if (document.hidden || pageScrolling || document.documentElement.dataset.theme !== 'dark') return;",
+        'document.hidden',
+        'pageScrolling',
+        "document.documentElement.dataset.theme !== 'dark'",
+        "document.documentElement.classList.contains('ai-image-workbench-open')",
         "window.addEventListener('scroll', handleScrollActivity, { passive: true });",
         'pageScrolling = true;',
         "document.documentElement.classList.add('starry-scroll-active');",
@@ -73,9 +77,19 @@ test('shared starry sky throttles drawing during scroll and background activity'
     });
 
     assert.equal(
-        promptsSource.includes("script.src = 'starry-sky.js?v=20260712_PROMPTS_SCROLL_PERF_1';"),
+        promptsSource.includes("script.src = 'starry-sky.js?v=20260729_AI_WORKBENCH_SCROLL_PERF_1';"),
         true,
         'prompts should cache-bust the throttled starry runtime'
+    );
+    assert.match(
+        promptsCss,
+        /html\.ai-image-workbench-open body\.prompts-page \.gallery-container \.prompt-card\.breathing\s*\{[\s\S]*animation-play-state:\s*paused !important;[\s\S]*will-change:\s*auto;/,
+        'AI workbench should pause the obscured prompt card animations'
+    );
+    assert.match(
+        promptsCss,
+        /html\.ai-image-workbench-open canvas#starryCanvas,\s*\nhtml\.ai-image-workbench-open \.starry-sky-canvas\s*\{[\s\S]*visibility:\s*hidden;[\s\S]*transform:\s*none;[\s\S]*will-change:\s*auto;/,
+        'AI workbench should release the covered starry canvas GPU layer'
     );
 });
 
