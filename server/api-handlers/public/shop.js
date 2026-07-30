@@ -78,14 +78,51 @@ function shouldBypassShopCatalogHotCache(req, requestUrl) {
 function buildShopCatalogCacheKey({
     site = 'cn',
     category = 'all',
-    language = 'zh'
+    language = 'zh',
+    view = 'full'
 } = {}) {
     return [
         'shop-catalog',
         String(site || 'cn').trim().toLowerCase(),
         String(category || 'all').trim().toLowerCase(),
-        String(language || 'zh').trim().toLowerCase()
+        String(language || 'zh').trim().toLowerCase(),
+        String(view || 'full').trim().toLowerCase()
     ].join(':');
+}
+
+function normalizeShopCatalogView(value = '') {
+    return String(value || '').trim().toLowerCase() === 'home' ? 'home' : 'full';
+}
+
+function buildHomepageShopCatalogProduct(product = {}) {
+    const fields = [
+        'id',
+        'name',
+        'name_en',
+        'name_intl',
+        'name_intl_zh',
+        'description',
+        'description_en',
+        'icon_url',
+        'price_points',
+        'price_points_intl',
+        'image_assets',
+        'stock_count',
+        'manual_delivery',
+        'category',
+        'is_active',
+        'display_order',
+        'image_cache_version',
+        'updated_at',
+        'created_at'
+    ];
+
+    return fields.reduce((summary, field) => {
+        if (Object.prototype.hasOwnProperty.call(product, field)) {
+            summary[field] = product[field];
+        }
+        return summary;
+    }, {});
 }
 
 function maybeLogSlowShopCatalogRequest({
@@ -751,6 +788,84 @@ function createShopHandlers({
             throw error;
         }
         return Array.isArray(data) ? data : [];
+    }
+
+    async function loadHomepageShopProducts(dataSupabase, {
+        category = 'all',
+        currentSite = 'cn',
+        language = ''
+    } = {}) {
+        const selectAttempts = [
+            [
+                'id',
+                'name',
+                'name_en',
+                'name_intl',
+                'name_intl_zh',
+                'description',
+                'description_en',
+                'description_intl',
+                'description_intl_zh',
+                'icon_url',
+                'image_assets',
+                'price_points',
+                'price_points_intl',
+                'stock_count',
+                'manual_delivery',
+                'category',
+                'display_order',
+                'is_active',
+                'updated_at',
+                'created_at'
+            ].join(', '),
+            [
+                'id',
+                'name',
+                'name_en',
+                'description',
+                'description_en',
+                'icon_url',
+                'image_assets',
+                'price_points',
+                'price_points_intl',
+                'stock_count',
+                'manual_delivery',
+                'category',
+                'display_order',
+                'is_active',
+                'updated_at',
+                'created_at'
+            ].join(', '),
+            'id, name, description, icon_url, price_points, stock_count, category, display_order, is_active'
+        ];
+
+        let lastError = null;
+        for (const selectClause of selectAttempts) {
+            let query = dataSupabase
+                .from('shop_products')
+                .select(selectClause)
+                .eq('is_active', true)
+                .order('display_order', { ascending: false })
+                .limit(120);
+
+            if (category !== 'all') {
+                query = query.eq('category', category);
+            }
+
+            const { data, error } = await query;
+            if (!error) {
+                return (Array.isArray(data) ? data : [])
+                    .map((product) => normalizeShopCatalogProductForSite(product, currentSite, language))
+                    .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite));
+            }
+
+            lastError = error;
+            if (!shouldRetryShopCatalogSelect(error)) {
+                throw error;
+            }
+        }
+
+        throw lastError || new Error('Failed to load homepage shop catalog');
     }
 
     async function loadPublicShopProducts(dataSupabase, {
@@ -3151,6 +3266,7 @@ function createShopHandlers({
             let currentSite = 'cn';
             let currentLanguage = 'zh';
             let category = 'all';
+            let catalogView = 'full';
             let cacheStatus = 'miss';
             let loadMs = 0;
 
@@ -3190,24 +3306,38 @@ function createShopHandlers({
                     currentSite
                 );
                 category = normalizeShopCatalogCategory(requestUrl.searchParams.get('category') || 'all');
+                catalogView = normalizeShopCatalogView(requestUrl.searchParams.get('view'));
                 const bypassHotCache = shouldBypassShopCatalogHotCache(req, requestUrl);
                 const cacheKey = buildShopCatalogCacheKey({
                     site: currentSite,
                     category,
-                    language: currentLanguage
+                    language: currentLanguage,
+                    view: catalogView
                 });
                 const loadStartedAt = Date.now();
                 const cachedResult = await shopCatalogCache.getOrLoad(cacheKey, async () => {
-                    const allCategories = await loadShopCategoriesForCatalog(adminSupabase);
+                    const [allCategories, loadedProducts] = await Promise.all([
+                        loadShopCategoriesForCatalog(adminSupabase),
+                        catalogView === 'home'
+                            ? loadHomepageShopProducts(adminSupabase, {
+                                category,
+                                currentSite,
+                                language: currentLanguage
+                            })
+                            : loadPublicShopProducts(adminSupabase, {
+                                category,
+                                currentSite,
+                                language: currentLanguage,
+                                hiddenCategoryNames: []
+                            })
+                    ]);
                     const publicCategories = allCategories.filter((category) => isPublicShopCategory(category));
                     const hiddenCategoryNames = getHiddenShopCategoryNames(allCategories);
-                    const products = await loadPublicShopProducts(adminSupabase, {
-                        category,
-                        currentSite,
-                        language: currentLanguage,
-                        hiddenCategoryNames
-                    });
-                    const categorySourceProducts = category === 'all'
+                    const products = category !== 'all' && hiddenCategoryNames.has(category)
+                        ? []
+                        : (Array.isArray(loadedProducts) ? loadedProducts : [])
+                            .filter((product) => !hiddenCategoryNames.has(normalizeText(product?.category, 120)));
+                    const categorySourceProducts = category === 'all' || catalogView === 'home'
                         ? products
                         : await loadPublicShopProducts(adminSupabase, {
                             category: 'all',
@@ -3216,17 +3346,21 @@ function createShopHandlers({
                             hiddenCategoryNames
                         });
                     const categories = filterShopCategoriesWithVisibleProducts(publicCategories, categorySourceProducts);
+                    const responseProducts = catalogView === 'home'
+                        ? products.slice(0, 24).map(buildHomepageShopCatalogProduct)
+                        : products;
 
                     return {
                         success: true,
                         site: currentSite,
                         language: currentLanguage,
                         category,
+                        view: catalogView,
                         categories,
-                        products,
+                        products: responseProducts,
                         data: {
                             categories,
-                            products
+                            products: responseProducts
                         }
                     };
                 }, {

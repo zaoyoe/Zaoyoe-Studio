@@ -2327,6 +2327,70 @@ html[lang="en"] .nav-item .en {
     contain: strict;
 }
 
+.prompt-gallery-load-status {
+    min-height: 44px;
+    margin: 10px auto 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: rgba(36, 49, 68, 0.68);
+    font-size: 0.9rem;
+}
+
+.prompt-gallery-load-status[hidden] {
+    display: none;
+}
+
+.prompt-gallery-load-status--error {
+    color: #b42318;
+}
+
+.prompt-gallery-load-retry {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(36, 49, 68, 0.16);
+    border-radius: 6px;
+    background: #ffffff;
+    color: #243144;
+    cursor: pointer;
+}
+
+.prompt-gallery-load-retry[hidden] {
+    display: none;
+}
+
+.prompt-gallery-load-retry span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.prompt-gallery-load-retry:hover {
+    border-color: rgba(35, 121, 219, 0.52);
+    color: #2379db;
+}
+
+[data-theme="dark"] .prompt-gallery-load-status {
+    color: rgba(226, 232, 240, 0.72);
+}
+
+[data-theme="dark"] .prompt-gallery-load-status--error {
+    color: #fda29b;
+}
+
+[data-theme="dark"] .prompt-gallery-load-retry {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: #151d29;
+    color: #f8fafc;
+}
+
 .prompt-gallery-column {
     flex: 1 1 0;
     min-width: 0;

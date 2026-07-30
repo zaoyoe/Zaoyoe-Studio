@@ -65,33 +65,30 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260715_HOME_PROMPTS_LIVE_ONLY_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
-const HOMEPAGE_PROMPT_LIVE_SELECT = [
+const HOMEPAGE_PROMPT_SUMMARY_LIMIT = 40;
+const HOMEPAGE_PROMPT_CONFIGURED_LIMIT = 24;
+const HOMEPAGE_PROMPT_SUMMARY_SELECT = [
   'id',
   'title',
   'title_zh',
   'title_en',
-  'description',
-  'description_zh',
-  'description_en',
-  'prompt_text',
-  'prompt_text_zh',
-  'prompt_text_en',
   'images',
   'image_assets',
-  'dominant_colors',
-  'ai_tags',
   'tags',
+  'gallery_status',
   'created_at',
   'updated_at'
 ].join(', ');
-const HOMEPAGE_PROMPT_LIVE_LEGACY_SELECT = HOMEPAGE_PROMPT_LIVE_SELECT
+const HOMEPAGE_PROMPT_SUMMARY_LEGACY_SELECT = [
+  ...HOMEPAGE_PROMPT_SUMMARY_SELECT
   .split(', ')
-  .filter((field) => field !== 'image_assets')
-  .join(', ');
+  .filter((field) => !['image_assets', 'gallery_status'].includes(field)),
+  'ai_tags'
+].join(', ');
 const HomepageContract = window.HomepageContract || null;
 const HOME_DEFAULT_SECTION_ORDER = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
   ? [...HomepageContract.MANAGED_SECTION_ORDER]
@@ -185,33 +182,52 @@ function buildHomepagePublicApiUrl(pathname, params = {}) {
   }
 }
 
-async function fetchHomepageShopCatalogPayload(site = getHomepageRuntimeSite()) {
-  const relativeUrl = `/api/shop/catalog?site=${encodeURIComponent(site)}`;
-  const directUrl = buildHomepagePublicApiUrl('/api/shop/catalog', { site });
-  const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
-  let lastError = null;
+const homepageShopCatalogPayloadPromises = new Map();
 
-  for (const url of candidates) {
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: url.startsWith('http') ? 'omit' : 'same-origin',
-        headers: {
-          Accept: 'application/json'
-        }
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.success === false) {
-        throw new Error(payload?.message || 'shop catalog api failed');
-      }
-      return payload;
-    } catch (error) {
-      lastError = error;
-      if (url === relativeUrl) break;
-    }
+async function fetchHomepageShopCatalogPayload(site = getHomepageRuntimeSite()) {
+  const language = getHomepageRuntimeLanguage();
+  const requestKey = `${site}:${language}:home`;
+  if (homepageShopCatalogPayloadPromises.has(requestKey)) {
+    return homepageShopCatalogPayloadPromises.get(requestKey);
   }
 
-  throw lastError || new Error('shop catalog api failed');
+  const query = new URLSearchParams({ site, language, view: 'home' });
+  const relativeUrl = `/api/shop/catalog?${query.toString()}`;
+  const directUrl = buildHomepagePublicApiUrl('/api/shop/catalog', { site, language, view: 'home' });
+  const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
+  const loadPromise = (async () => {
+    let lastError = null;
+
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          credentials: url.startsWith('http') ? 'omit' : 'same-origin',
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.success === false) {
+          throw new Error(payload?.message || 'shop catalog api failed');
+        }
+        return payload;
+      } catch (error) {
+        lastError = error;
+        if (url === relativeUrl) break;
+      }
+    }
+
+    throw lastError || new Error('shop catalog api failed');
+  })();
+
+  homepageShopCatalogPayloadPromises.set(requestKey, loadPromise);
+  try {
+    return await loadPromise;
+  } catch (error) {
+    homepageShopCatalogPayloadPromises.delete(requestKey);
+    throw error;
+  }
 }
 
 function hasHomepageShopCategoryPublicFlag(category = {}) {
@@ -804,6 +820,7 @@ function isMissingPromptImageAssetsColumnError(error) {
   const message = String(error?.message || '').toLowerCase();
   return Boolean(message && (
     message.includes('image_assets')
+    || message.includes('gallery_status')
     || message.includes('column of "prompts"')
     || message.includes("column of 'prompts'")
   ));
@@ -1215,7 +1232,11 @@ function normalizeHomePromptRecord(prompt = {}) {
       ? prompt.dominant_colors
       : (Array.isArray(prompt?.dominantColors) ? prompt.dominantColors : []),
     aiTags,
-    ai_tags: aiTags
+    ai_tags: aiTags,
+    galleryStatus: String(prompt?.galleryStatus || prompt?.gallery_status || '').trim().toLowerCase(),
+    gallery_status: String(prompt?.gallery_status || prompt?.galleryStatus || '').trim().toLowerCase(),
+    homepageSummary: prompt?.homepageSummary === true || prompt?.homepage_summary === true,
+    homepage_summary: prompt?.homepage_summary === true || prompt?.homepageSummary === true
   };
 }
 
@@ -1329,6 +1350,11 @@ function bindHomepagePromptCardAspectRatioRelease(section) {
 }
 
 function getHomePromptAdminVisibilityStatus(prompt = {}) {
+  const materializedStatus = String(prompt?.galleryStatus || prompt?.gallery_status || '').trim().toLowerCase();
+  if (materializedStatus) {
+    return materializedStatus;
+  }
+
   const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
     ? prompt.aiTags
     : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
@@ -1365,6 +1391,66 @@ function filterHomeVisiblePrompts(prompts = []) {
   return (Array.isArray(prompts) ? prompts : [])
     .map((prompt) => normalizeHomePromptRecord(prompt))
     .filter((prompt) => isHomePromptVisible(prompt));
+}
+
+function normalizeHomepagePromptSummaryRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    ...row,
+    homepageSummary: true,
+    homepage_summary: true
+  }));
+}
+
+function collectHomepageConfiguredPromptIds(config = {}) {
+  const ids = new Set();
+  const collectItems = (items) => {
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const id = String(item?.id || '').trim();
+      if (id) ids.add(id);
+    });
+  };
+
+  collectItems(config?.featured_items);
+  (Array.isArray(config?.experiments) ? config.experiments : []).forEach((experiment) => {
+    if (String(experiment?.field || '').trim() !== 'featured_items') return;
+    collectItems(experiment?.control_value);
+    collectItems(experiment?.variant_value);
+  });
+
+  return Array.from(ids).slice(0, HOMEPAGE_PROMPT_CONFIGURED_LIMIT);
+}
+
+function buildHomepagePromptSummaryQuery(selectFields, ids = []) {
+  let query = window.supabaseClient
+    .from('prompts')
+    .select(selectFields)
+    .not('prompt_text', 'is', null)
+    .neq('prompt_text', '');
+
+  const normalizedIds = (Array.isArray(ids) ? ids : []).map((id) => String(id || '').trim()).filter(Boolean);
+  if (normalizedIds.length > 0) {
+    return query
+      .in('id', normalizedIds)
+      .limit(Math.min(normalizedIds.length, HOMEPAGE_PROMPT_CONFIGURED_LIMIT));
+  }
+
+  return query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(HOMEPAGE_PROMPT_SUMMARY_LIMIT);
+}
+
+async function fetchHomepagePromptSummaryRows(ids = []) {
+  let { data, error } = await buildHomepagePromptSummaryQuery(HOMEPAGE_PROMPT_SUMMARY_SELECT, ids);
+
+  if (error && isMissingPromptImageAssetsColumnError(error)) {
+    const fallback = await buildHomepagePromptSummaryQuery(HOMEPAGE_PROMPT_SUMMARY_LEGACY_SELECT, ids);
+    data = fallback.data;
+    error = fallback.error;
+  }
+
+  if (error) throw error;
+  return normalizeHomepagePromptSummaryRows(data);
 }
 
 function getHomepageExperimentAssignmentStorageKey(experimentId = '') {
@@ -2152,6 +2238,7 @@ const FramerHome = {
   supplementalDataScheduled: false,
   supplementalDataPromise: null,
   supplementalDataLoaded: false,
+  shopCatalogLoadPromise: null,
   deferredSectionRenderScheduled: false,
   deferredSectionRenderComplete: false,
   deferredSectionRenderObserver: null,
@@ -2235,7 +2322,31 @@ const FramerHome = {
     return Array.isArray(this.promptPool) ? this.promptPool : [];
   },
 
-  async fetchVisiblePromptPool() {
+  async hydrateConfiguredPromptPool(config = {}, promptPool = []) {
+    const currentPool = Array.isArray(promptPool) ? promptPool : [];
+    const configuredIds = collectHomepageConfiguredPromptIds(config);
+    if (configuredIds.length === 0) {
+      return currentPool;
+    }
+
+    const existingIds = new Set(currentPool
+      .map((prompt) => String(prompt?.supabaseId || prompt?.id || '').trim())
+      .filter(Boolean));
+    const missingIds = configuredIds.filter((id) => !existingIds.has(id));
+    if (missingIds.length === 0) {
+      return currentPool;
+    }
+
+    try {
+      const configuredRows = await fetchHomepagePromptSummaryRows(missingIds);
+      return filterHomeVisiblePrompts([...currentPool, ...configuredRows]);
+    } catch (error) {
+      console.warn('Failed to fetch configured homepage prompt summaries:', error?.message || error);
+      return currentPool;
+    }
+  },
+
+  async fetchVisiblePromptPool(config = null) {
     if (!window.supabaseClient) {
       await waitForHomepageSupabaseClientReady();
     }
@@ -2247,27 +2358,11 @@ const FramerHome = {
     }
 
     try {
-      let { data, error } = await window.supabaseClient
-        .from('prompts')
-        .select(HOMEPAGE_PROMPT_LIVE_SELECT)
-        .order('updated_at', { ascending: false })
-        .limit(80);
-
-      if (error && isMissingPromptImageAssetsColumnError(error)) {
-        const fallbackResult = await window.supabaseClient
-          .from('prompts')
-          .select(HOMEPAGE_PROMPT_LIVE_LEGACY_SELECT)
-          .order('updated_at', { ascending: false })
-          .limit(80);
-        data = fallbackResult.data;
-        error = fallbackResult.error;
-      }
-
-      if (error) {
-        throw error;
-      }
-
-      const livePool = filterHomeVisiblePrompts(data);
+      const summaryRows = await fetchHomepagePromptSummaryRows();
+      const basePool = filterHomeVisiblePrompts(summaryRows);
+      const livePool = config
+        ? await this.hydrateConfiguredPromptPool(config, basePool)
+        : basePool;
       this.promptPool = livePool;
       window.PROMPTS = livePool;
       return livePool;
@@ -2298,7 +2393,7 @@ const FramerHome = {
 
     try {
       const previousSignature = buildHomepagePromptRenderSignature(this.cachedData?.prompts || []);
-      const livePromptPool = await this.fetchVisiblePromptPool();
+      const livePromptPool = await this.fetchVisiblePromptPool(this.config.prompts || {});
       const nextPrompts = await this.aggregatePrompts(this.config.prompts || {});
       const nextSignature = buildHomepagePromptRenderSignature(nextPrompts);
 
@@ -2359,6 +2454,10 @@ const FramerHome = {
     if (window.i18n?.ready) {
       await window.i18n.ready();
     }
+
+    // Start the below-fold catalog request early so it overlaps homepage config
+    // and prompt summary loading without delaying first-paint rendering.
+    void this.fetchShopProductCatalog();
 
     // Load configuration and data (uses sessionStorage prefetch if available)
     await this.loadAll();
@@ -2524,38 +2623,50 @@ const FramerHome = {
     this.supplementalDataPromise = new Promise((resolve) => {
       const kickoff = async () => {
         try {
-          const previousShopRenderSignature = buildHomepageShopRenderSignature(
-            this.cachedData?.shop || [],
-            this.config?.shop || {},
-            this.config?.ticker?.shop_scroll_speed || 30
-          );
-          const [shop, guestbook, shopCategories] = await Promise.all([
-            this.aggregateShop(this.config.shop || {}),
-            this.aggregateGuestbook(this.config.guestbook || {}),
-            this.fetchShopCategories()
-          ]);
-          const nextShopRenderSignature = buildHomepageShopRenderSignature(
-            shop,
-            this.config?.shop || {},
-            this.config?.ticker?.shop_scroll_speed || 30
-          );
-          const shouldRenderShop = previousShopRenderSignature !== nextShopRenderSignature
-            || !document.querySelector('#shop-section [data-home-shop-id]');
-
           this.cachedData = this.cachedData || {};
-          this.cachedData.shop = shop;
-          this.cachedData.guestbook = guestbook;
-          this.cachedData.shopCategories = shopCategories;
+          const shopTask = (async () => {
+            const previousSignature = buildHomepageShopRenderSignature(
+              this.cachedData?.shop || [],
+              this.config?.shop || {},
+              this.config?.ticker?.shop_scroll_speed || 30
+            );
+            const shop = await this.aggregateShop(this.config.shop || {});
+            const nextSignature = buildHomepageShopRenderSignature(
+              shop,
+              this.config?.shop || {},
+              this.config?.ticker?.shop_scroll_speed || 30
+            );
+            this.cachedData.shop = shop;
+            if (previousSignature !== nextSignature || !document.querySelector('#shop-section [data-home-shop-id]')) {
+              this.renderShop();
+            }
+          })();
+          const guestbookTask = (async () => {
+            this.cachedData.guestbook = await this.aggregateGuestbook(this.config.guestbook || {});
+            this.renderGuestbook();
+          })();
+          const shopCategoriesTask = (async () => {
+            this.cachedData.shopCategories = await this.fetchShopCategories();
+            this.initNavDropdowns();
+          })();
+
+          const results = await Promise.allSettled([shopTask, guestbookTask, shopCategoriesTask]);
+          results.forEach((result) => {
+            if (result.status === 'rejected') {
+              console.warn('Failed to load supplemental homepage section:', result.reason);
+            }
+          });
           this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
           this.supplementalDataLoaded = true;
 
-          if (shouldRenderShop) {
+          if (!document.querySelector('#shop-section [data-home-shop-id]')) {
             this.renderShop();
           }
-          this.renderGuestbook();
+          if (!document.querySelector('#guestbook-section [data-home-guestbook-card]')) {
+            this.renderGuestbook();
+          }
           this.renderTicker();
           this.scheduleScrollAnimationsInit();
-          this.initNavDropdowns();
           this.persistHomepagePrefetch('complete');
         } catch (error) {
           console.warn('Failed to load supplemental homepage data:', error);
@@ -2583,11 +2694,11 @@ const FramerHome = {
       if (typeof window.requestIdleCallback === 'function') {
         window.requestIdleCallback(() => {
           void kickoff();
-        }, { timeout: 1500 });
+        }, { timeout: 600 });
       } else {
         window.setTimeout(() => {
           void kickoff();
-        }, 180);
+        }, 60);
       }
     });
 
@@ -2991,12 +3102,16 @@ const FramerHome = {
           // Use if < 5 minutes old and contains actual translated text
           if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && canUsePrefetch) {
             this.cachedData = {
-              ...prefetch.cachedData,
-              prompts: []
+              ...prefetch.cachedData
             };
             this.config = prefetch.config;
-            this.promptPool = [];
-            window.PROMPTS = [];
+            this.promptPool = filterHomeVisiblePrompts(
+              Array.isArray(prefetch.promptPool) && prefetch.promptPool.length > 0
+                ? prefetch.promptPool
+                : prefetch.cachedData.prompts
+            );
+            this.cachedData.prompts = filterHomeVisiblePrompts(prefetch.cachedData.prompts);
+            window.PROMPTS = this.promptPool;
             this.sectionRows = prefetch.sectionRows || {};
             this.sectionOrder = Array.isArray(prefetch.sectionOrder) && prefetch.sectionOrder.length
               ? prefetch.sectionOrder
@@ -3008,14 +3123,13 @@ const FramerHome = {
             this.resolveSectionExperiments('gongyi', this.config.gongyi || {});
             this.resolveSectionExperiments('verify', this.config.verify || {});
             this.resolveSectionExperiments('guestbook', this.config.guestbook || {});
-            this.promptPool = await this.fetchVisiblePromptPool();
-            this.cachedData.prompts = await this.aggregatePrompts(this.config.prompts || {});
             this.cachedData.gongyi = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
             this.cachedData.shop = Array.isArray(this.cachedData.shop) ? this.cachedData.shop : [];
             this.cachedData.guestbook = Array.isArray(this.cachedData.guestbook) ? this.cachedData.guestbook : [];
             this.cachedData.shopCategories = Array.isArray(this.cachedData.shopCategories) ? this.cachedData.shopCategories : [];
             this.writeHeroTextCache(this.cachedData.hero);
             void this.scheduleSupplementalHomepageDataLoad();
+            this.schedulePromptPoolLiveSync({ reason: 'cache-stale-while-revalidate' });
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
           } else {
@@ -3029,10 +3143,15 @@ const FramerHome = {
     }
 
     try {
-      const config = await this.fetchHomepageConfig();
+      const promptPoolPromise = this.fetchVisiblePromptPool();
+      const [config, basePromptPool] = await Promise.all([
+        this.fetchHomepageConfig(),
+        promptPoolPromise
+      ]);
       this.config = config;
       this.resetActiveExperiments();
-      this.promptPool = await this.fetchVisiblePromptPool();
+      this.promptPool = await this.hydrateConfiguredPromptPool(this.config.prompts || {}, basePromptPool);
+      window.PROMPTS = this.promptPool;
       const prompts = await this.aggregatePrompts(this.config.prompts || {});
 
       this.cachedData = {
@@ -3270,8 +3389,8 @@ const FramerHome = {
     if (sortStrategy === 'popular') {
       // Sort by number of AI tags (rough popularity metric)
       sorted.sort((a, b) => {
-        const aCount = Object.values(a.aiTags || {}).flat().length;
-        const bCount = Object.values(b.aiTags || {}).flat().length;
+        const aCount = Object.values(a.aiTags || {}).flat().length || (Array.isArray(a.tags) ? a.tags.length : 0);
+        const bCount = Object.values(b.aiTags || {}).flat().length || (Array.isArray(b.tags) ? b.tags.length : 0);
         return bCount - aCount;
       });
     } else if (sortStrategy === 'latest') {
@@ -3292,56 +3411,64 @@ const FramerHome = {
    * Aggregate shop products from Supabase (with cache)
    */
   async fetchShopProductCatalog() {
-    try {
-      return await Cache.loadWithCache('shop_products_image_cache_1', async () => {
-        const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, is_active, display_order, updated_at, created_at';
-        try {
-          const payload = await fetchHomepageShopCatalogPayload(getHomepageRuntimeSite());
-          const products = Array.isArray(payload?.products)
-            ? payload.products
-            : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
-          return products.slice(0, 120);
-        } catch (apiError) {
-          console.warn('Failed to fetch shop catalog from API route, falling back to direct query:', apiError?.message || apiError);
-        }
-
-        let query = window.supabaseClient
-          .from('shop_products')
-          .select(`${baseFields}, image_assets`)
-          .order('display_order', { ascending: false })
-          .limit(120);
-        let { data, error } = await query;
-
-        if (error && ['image_assets', 'manual_delivery', 'updated_at', 'created_at'].some((field) => String(error?.message || '').toLowerCase().includes(field))) {
-          const fallbackFields = baseFields
-            .replace(', manual_delivery', '')
-            .replace(', updated_at, created_at', '');
-          const fallback = await window.supabaseClient
-            .from('shop_products')
-            .select(fallbackFields)
-            .order('display_order', { ascending: false })
-            .limit(120);
-          data = fallback.data;
-          error = fallback.error;
-        }
-
-        if (error) throw error;
-        const categoryResult = await window.supabaseClient
-          .from('shop_categories')
-          .select('*')
-          .order('sort_order');
-        const hiddenCategoryNames = new Set(
-          ((categoryResult.error ? [] : categoryResult.data) || [])
-            .filter(c => c?.is_public === false)
-            .map(c => String(c?.name || '').trim())
-            .filter(Boolean)
-        );
-        return (data || []).filter(product => !hiddenCategoryNames.has(String(product?.category || '').trim()));
-      }, 15);
-    } catch (error) {
-      console.error('Failed to fetch shop catalog:', error);
-      return [];
+    if (this.shopCatalogLoadPromise) {
+      return this.shopCatalogLoadPromise;
     }
+
+    this.shopCatalogLoadPromise = (async () => {
+      try {
+        return await Cache.loadWithCache('shop_products_home_summary_1', async () => {
+          const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, is_active, display_order, updated_at, created_at';
+          try {
+            const payload = await fetchHomepageShopCatalogPayload(getHomepageRuntimeSite());
+            const products = Array.isArray(payload?.products)
+              ? payload.products
+              : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
+            return products.slice(0, 24);
+          } catch (apiError) {
+            console.warn('Failed to fetch shop catalog from API route, falling back to direct query:', apiError?.message || apiError);
+          }
+
+          let query = window.supabaseClient
+            .from('shop_products')
+            .select(`${baseFields}, image_assets`)
+            .order('display_order', { ascending: false })
+            .limit(24);
+          let { data, error } = await query;
+
+          if (error && ['image_assets', 'manual_delivery', 'updated_at', 'created_at'].some((field) => String(error?.message || '').toLowerCase().includes(field))) {
+            const fallbackFields = baseFields
+              .replace(', manual_delivery', '')
+              .replace(', updated_at, created_at', '');
+            const fallback = await window.supabaseClient
+              .from('shop_products')
+              .select(fallbackFields)
+              .order('display_order', { ascending: false })
+              .limit(24);
+            data = fallback.data;
+            error = fallback.error;
+          }
+
+          if (error) throw error;
+          const categoryResult = await window.supabaseClient
+            .from('shop_categories')
+            .select('*')
+            .order('sort_order');
+          const hiddenCategoryNames = new Set(
+            ((categoryResult.error ? [] : categoryResult.data) || [])
+              .filter(c => c?.is_public === false)
+              .map(c => String(c?.name || '').trim())
+              .filter(Boolean)
+          );
+          return (data || []).filter(product => !hiddenCategoryNames.has(String(product?.category || '').trim()));
+        }, 15);
+      } catch (error) {
+        console.error('Failed to fetch shop catalog:', error);
+        return [];
+      }
+    })();
+
+    return this.shopCatalogLoadPromise;
   },
 
   resolveShopCuratedItem(productCatalog = [], item = {}) {
@@ -4923,13 +5050,18 @@ const FramerHome = {
 
         const allTags = new Set();
         prompts.forEach(p => {
+          let foundAiTag = false;
           if (p.aiTags) {
             // Extract from aiTags with language-specific keys
             ['styles', 'objects', 'scenes', 'mood'].forEach(c => {
               const langTags = p.aiTags[c]?.[langKey];
-              filterHomepageDataTextList(langTags).forEach(t => allTags.add(t));
+              filterHomepageDataTextList(langTags).forEach(t => {
+                foundAiTag = true;
+                allTags.add(t);
+              });
             });
-          } else if (p.tags) {
+          }
+          if (!foundAiTag && p.tags) {
             // Fallback to simple tags field with language support
             const tagsField = lang === 'en' ? 'tags_en' : 'tags';
             filterHomepageDataTextList(p[tagsField] || p.tags || []).forEach(t => allTags.add(t));

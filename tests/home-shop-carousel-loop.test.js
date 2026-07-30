@@ -26,10 +26,9 @@ test('homepage shop supplemental refresh keeps the carousel DOM when products ar
     const script = fs.readFileSync(framerHomeScriptPath, 'utf8');
 
     assert.match(script, /function buildHomepageShopRenderSignature\(products = \[\], config = \{\}, speedValue = ''\)/);
-    assert.match(script, /const previousShopRenderSignature = buildHomepageShopRenderSignature\(/);
-    assert.match(script, /const nextShopRenderSignature = buildHomepageShopRenderSignature\(/);
-    assert.match(script, /const shouldRenderShop = previousShopRenderSignature !== nextShopRenderSignature[\s\S]*document\.querySelector\('#shop-section \[data-home-shop-id\]'\)/);
-    assert.match(script, /if \(shouldRenderShop\) \{\s*this\.renderShop\(\);\s*\}/);
+    assert.match(script, /const previousSignature = buildHomepageShopRenderSignature\(/);
+    assert.match(script, /const nextSignature = buildHomepageShopRenderSignature\(/);
+    assert.match(script, /if \(previousSignature !== nextSignature \|\| !document\.querySelector\('#shop-section \[data-home-shop-id\]'\)\) \{\s*this\.renderShop\(\);\s*\}/);
 });
 
 test('homepage shop carousel styles animate by measured cycle width', () => {

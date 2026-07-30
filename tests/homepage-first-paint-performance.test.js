@@ -27,7 +27,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260715_HOME_PROMPTS_LIVE_ONLY_1'),
+        indexSource.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -656,8 +656,8 @@ test('homepage prompt masonry renders live rows only while warming thumbnails af
     );
     assert.match(
         framerSource,
-        /this\.promptPool = await this\.fetchVisiblePromptPool\(\);\s*const prompts = await this\.aggregatePrompts/,
-        'homepage prompt cards should wait for the live prompt pool before aggregation'
+        /const promptPoolPromise = this\.fetchVisiblePromptPool\(\);[\s\S]*const \[config, basePromptPool\] = await Promise\.all\([\s\S]*this\.promptPool = await this\.hydrateConfiguredPromptPool\([\s\S]*const prompts = await this\.aggregatePrompts/,
+        'cold homepage loads should fetch config and a compact prompt summary in parallel before aggregation'
     );
     assert.doesNotMatch(
         framerSource,
@@ -671,8 +671,8 @@ test('homepage prompt masonry renders live rows only while warming thumbnails af
     );
     assert.match(
         framerSource,
-        /this\.cachedData = \{\s*\.\.\.prefetch\.cachedData,\s*prompts: \[\]\s*\};[\s\S]*this\.promptPool = await this\.fetchVisiblePromptPool\(\);[\s\S]*this\.cachedData\.prompts = await this\.aggregatePrompts/,
-        'homepage should discard cached prompt cards and validate them against the live table before render'
+        /this\.cachedData = \{\s*\.\.\.prefetch\.cachedData\s*\};[\s\S]*this\.cachedData\.prompts = filterHomeVisiblePrompts\(prefetch\.cachedData\.prompts\);[\s\S]*this\.schedulePromptPoolLiveSync\(\{ reason: 'cache-stale-while-revalidate' \}\);/,
+        'warm homepage loads should paint cached prompt cards immediately and refresh them in the background'
     );
     assert.match(
         framerSource,
@@ -696,8 +696,8 @@ test('homepage prompt masonry renders live rows only while warming thumbnails af
     );
     assert.match(
         framerSource,
-        /const \[shop, guestbook, shopCategories\] = await Promise\.all\(/,
-        'homepage shop data should load with supplemental data after prompt cards can paint'
+        /const shopTask = \(async \(\) => \{[\s\S]*this\.renderShop\(\);[\s\S]*const results = await Promise\.allSettled\(\[shopTask, guestbookTask, shopCategoriesTask\]\);/,
+        'homepage shop data should render independently without waiting for guestbook or category tasks'
     );
     assert.match(
         framerSource,
@@ -802,7 +802,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260715_HOME_PROMPTS_LIVE_ONLY_1'),
+        indexSource.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
