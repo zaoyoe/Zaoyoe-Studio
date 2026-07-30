@@ -2913,7 +2913,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['verify.html', 'css/verify-page.css?v=20260614_VERIFY_WIDGET_SUBTLE_SHADOW_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
-        ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
+        ['privacy.html', 'css/privacy-page.css?v=20260730_LEGAL_POLICIES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
         ['shop.html', 'css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'],

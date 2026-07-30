@@ -32,7 +32,19 @@
   </url>
   <url>
     <loc>https://www.fatherkey.com/privacy.html</loc>
-    <lastmod>2026-03-02</lastmod>
+    <lastmod>2026-07-30</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://www.fatherkey.com/terms.html</loc>
+    <lastmod>2026-07-30</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://www.fatherkey.com/refund-policy.html</loc>
+    <lastmod>2026-07-30</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>

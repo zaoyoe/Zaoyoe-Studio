@@ -137,7 +137,7 @@ test('public prompt cards preserve source attribution fields from Supabase to ho
         'function getPromptFavoriteActionLabel(isSaved = false)',
         "getPromptActionCopy('unsavePrompt', '取消收藏', 'Unsave')",
         'function getPromptSourceActionLabel()',
-        "getPromptActionCopy('viewOriginalAuthor', '去看原作者', 'View original author')",
+        "getPromptActionCopy('viewOriginalAuthor', '查看原贴', 'View original post')",
         "getPromptActionCopy('viewSameStylePrompts', '相同风格', 'Same style')",
         "getPromptActionCopy('sharePrompt', '分享', 'Share')",
         "getPromptActionCopy('promptShareCopied', '分享链接已复制', 'Share link copied')",

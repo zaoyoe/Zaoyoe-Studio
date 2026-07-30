@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="color-scheme" content="light dark">
+    <script src="./js/section-visibility-preload.js?v=20260528_GONGYI_SITE_AWARE_1"></script>
+    <script src="/api/runtime/section-visibility-preload" async></script>
+    <script src="./js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1"></script>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Zaoyoe Studio 服务条款，适用于提示词图库、AI 工作台、积分与数字服务。" data-legal-description="服务条款，适用于提示词图库、AI 工作台、积分与数字服务。">
+    <title>服务条款 - Zaoyoe Studio</title>
+    <link rel="canonical" href="https://www.fatherkey.com/terms.html">
+    <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="stylesheet" href="./css/auth-popup-handoff.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
+    <script src="./js/auth-popup-handoff.js?v=20260501_IOS_GOOGLE_REDIRECT_1"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://verify-api.fatherkey.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="vendor/fontawesome/6.4.0/css/all.min.css?v=20260519_VENDOR_PUBLIC_1">
+
+    <link rel="stylesheet" href="css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&authStagger=20260619_AUTH_SHEET_TOP_DOWN_STAGGER_1">
+    <link rel="stylesheet" href="css/profile-modal.css?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1">
+    <link rel="stylesheet" href="avatar-fix.css?v=20260430_NAV_AVATAR_FAST_1">
+    <link rel="stylesheet" href="css/framer_home.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1&themeChrome=20260428_IOS_SAFARI_SYNTH_MENU_TAP_6&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1">
+    <link rel="stylesheet" href="css/prompt-shell-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
+    <link rel="stylesheet" href="css/privacy-page.css?v=20260730_LEGAL_POLICIES_1">
+</head>
+
+<body class="privacy-page prompt-shell-page">
+    <canvas id="ambientCanvas"></canvas>
+    <canvas id="starryCanvas"></canvas>
+
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
+
+    <nav class="framer-nav">
+        <div class="nav-container">
+            <a href="/index.html" class="nav-logo">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+            </a>
+
+            <div class="nav-menu">
+                <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
+                <a href="/verify.html" data-i18n="nav.verify">Gemini Pro</a>
+                <a href="https://sub2api.fatherkey.com" data-i18n="nav.gongyi">核心秘钥</a>
+                <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
+                <a href="javascript:void(0)" class="nav-trigger" data-dropdown="support" data-i18n="nav.support">支持</a>
+            </div>
+
+            <div class="nav-actions">
+                <div id="auth-container"></div>
+                <button class="nav-hamburger">
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="mobile-menu">
+        <div class="mobile-menu-items">
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="prompts-mobile">
+                    <span data-i18n="nav.prompts">提示词</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="prompts-mobile"></div>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/verify.html" class="mobile-menu-link" data-i18n="nav.verify">Gemini Pro</a>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="https://sub2api.fatherkey.com" class="mobile-menu-link" data-i18n="nav.gongyi">核心秘钥</a>
+            </div>
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="shop-mobile">
+                    <span data-i18n="nav.shop">商城</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="shop-mobile"></div>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/guestbook.html" class="mobile-menu-link" data-i18n="nav.guestbook">留言板</a>
+            </div>
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="support-mobile">
+                    <span data-i18n="nav.support">支持</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="support-mobile" data-site-layout-support-list="mobile_nav">
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram" class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram_group" class="mobile-menu-link"><span data-i18n="nav.tgGroup">TG群组</span></a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main id="main-content" role="main">
+        <section class="privacy-container">
+            <a class="legal-brand" href="/index.html" aria-label="返回 Zaoyoe Studio 首页" data-legal-brand-home-link>
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+                <span><span data-legal-brand-name>Zaoyoe Studio</span><small>早鸟工作室</small></span>
+            </a>
+            <p class="privacy-eyebrow" data-legal-brand-name>Zaoyoe Studio</p>
+            <h1>服务条款</h1>
+            <div class="legal-meta"><span><strong>生效日期</strong>：2026年7月30日</span><span><strong>适用服务</strong>：<span data-legal-brand-name>Zaoyoe Studio</span> 网站及 AI 工作台</span></div>
+            <nav class="legal-policy-nav" aria-label="平台政策">
+                <a href="/terms.html" aria-current="page">服务条款</a>
+                <a href="/privacy.html">隐私政策</a>
+                <a href="/refund-policy.html">退款政策</a>
+            </nav>
+
+            <div class="content">
+                <h2>1. 服务内容与协议生效</h2>
+                <h3>1.1 服务内容</h3>
+                <p>欢迎使用 <span data-legal-brand-name>Zaoyoe Studio</span>（早鸟工作室，以下简称“我们”或“本站”）。本站目前提供以下服务：</p>
+                <ul>
+                    <li><strong>AI 提示词图库</strong>：本站对来自 X 等公开分享渠道的 AI 作品、提示词、图片及提示词卡片进行收集、整理、分类、索引和存档，帮助用户搜索创作灵感并发现原创作者。图库在提示词缩略图及详情页中标注内容来源、原作者名称和账号 ID，并提供“查看原贴”入口，跳转至系统保存的原始发布页面。本站当前免费提供提示词文本的查看和复制，无需购买积分。</li>
+                    <li><strong>AI 图片与视频生成</strong>：用户可以通过网站及移动网页中的 AI 工作台提交文字、参考图片和生成参数，以生成图片、视频或其他 AI 内容。AI 输出具有随机性，实际结果可能因模型、输入内容、参数和上游服务状态而异。</li>
+                    <li><strong>积分</strong>：积分是用于计量和兑换站内数字服务的虚拟权益，可通过充值、活动赠送或页面标明的其他方式获得。积分不是货币、存款或投资工具，不可提现，其使用与返还规则以本站页面说明及<a href="/refund-policy.html">退款政策</a>为准。</li>
+                    <li><strong>其他数字服务</strong>：本站还可能提供 AI 文本对话、资源商城、数字商品交付、账号登录、留言互动、客服支持及页面展示的其他功能。</li>
+                </ul>
+
+                <h3>1.2 协议生效</h3>
+                <p>当您注册、登录、充值、购买、提交生成任务、点击“同意”或实际使用本站服务时，即表示您已阅读、理解并同意本服务条款、<a href="/privacy.html">隐私政策</a>和<a href="/refund-policy.html">退款政策</a>。如您不同意相关条款，请停止使用本站服务。</p>
+
+                <h2>2. 账户与使用资格</h2>
+                <ul>
+                    <li>您应提供真实、有效且有权使用的注册信息，并妥善保管登录凭证。通过您的账户完成的操作原则上视为您本人操作。</li>
+                    <li>我们的服务不面向 16 周岁以下未成年人。其他未成年人应在监护人同意和指导下使用，涉及购买、充值或数字商品时由监护人承担监督责任。</li>
+                    <li>不得转让、出租、出售账户，不得批量注册、共享受限凭证、冒用他人身份或以技术手段规避风控、地域、频率、计费及访问限制。</li>
+                    <li>发现账户被盗、凭证泄露或异常扣费时，请立即修改可用凭证并联系我们。</li>
+                </ul>
+
+                <h2>3. AI 工作台</h2>
+                <p>AI 工作台可提供文本对话、提示词辅助、图片/视频生成、参考素材续作、历史记录和下载等能力。实际可用模型、功能、价格、速度、分辨率及输出数量以界面展示和任务结果为准，并可能因上游服务调整而变化。</p>
+                <ul>
+                    <li><strong>第三方处理</strong>：为完成任务，提示词、问题、参考素材、生成参数及必要上下文可能被传输至所选 AI 模型提供商、API 中转服务或技术合作方。</li>
+                    <li><strong>积分模式</strong>：使用平台配置的模型并按页面展示的规则扣减积分。提交前的金额为预估，最终以任务记录中的实际扣减为准。</li>
+                    <li><strong>自有 API Key 模式</strong>：使用您配置的上游接口和额度。您应确保有权使用该密钥，并自行承担上游费用、限额、内容政策、数据处理及账户风险。</li>
+                    <li><strong>结果不确定性</strong>：AI 输出具有随机性，可能不准确、不完整、不符合预期或包含偏差。预览效果、提示词描述和示例不构成结果保证。</li>
+                </ul>
+
+                <h2>4. 用户内容、参考素材与输出</h2>
+                <ul>
+                    <li>您保留对自己合法提交内容所享有的权利，并确认已取得处理提示词、图片、视频、人物肖像、商标、作品及其他素材所需的授权。</li>
+                    <li>为执行请求、保存记录、提供下载、排查故障和维护安全，您授予我们及必要服务提供商一项非独占、仅限提供服务所需范围的处理许可。</li>
+                    <li>对 AI 输出可享有何种权利取决于适用法律、输入素材权利和上游模型条款。我们不保证输出具有独创性、可登记性、排他性、不侵权性或适合商业使用。</li>
+                    <li>在公开发布、商用、广告投放、客户交付、出版、再分发或模型训练前，您应自行进行事实核验、人工审查和权利清理。</li>
+                    <li>除非您主动使用明确的公开投稿或发布功能，我们不会仅因您在 AI 工作台生成内容而获得对外公开展示该内容的许可。</li>
+                </ul>
+
+                <h2>5. 禁止行为与内容</h2>
+                <p>您不得利用本站实施违法、侵权、欺诈、骚扰、攻击或损害他人及平台安全的行为，包括但不限于：</p>
+                <ul>
+                    <li>生成或传播涉及未成年人性化、露骨色情、非自愿私密内容、仇恨歧视、恐怖主义、严重血腥暴力、自残诱导或其他违法有害内容；</li>
+                    <li>未经许可冒充真实人物、制作欺骗性深度伪造内容，或侵犯著作权、商标权、肖像权、隐私权及其他合法权益；</li>
+                    <li>制作诈骗、恶意软件、武器或毒品制造指南，攻击系统、绕过安全措施、窃取凭证或危害网络安全；</li>
+                    <li>未经书面许可进行自动化抓取、批量采集、镜像、压测、转售接口、绕过频率限制或干扰服务正常运行；</li>
+                    <li>恶意套取赠送积分、利用支付或退款漏洞、提交虚假售后材料或协同滥用多个账户。</li>
+                </ul>
+                <p>我们及上游服务商可能使用自动或人工方式审核请求。对涉嫌违规的内容或账户，我们可拒绝任务、限制功能、保留证据、暂停或终止服务，并在法律要求时配合主管机关。</p>
+
+                <h2>6. 提示词图库与知识产权</h2>
+                <p>本站提示词图库包含从 X 等公开分享渠道收集、整理、分类、索引或存档的 AI 作品、提示词、图片及提示词卡片，也可能包含本站生成、人工整理或用户投稿的内容。对于具有公开来源的图库内容，本站通过缩略图和详情页展示来源、原作者名称及账号 ID，并通过“查看原贴”入口链接至系统保存的原始发布页面。</p>
+                <ul>
+                    <li>除本站原创内容或另有明确说明外，相关作品、图片、提示词卡片及其他内容的著作权、商标权、署名权和其他合法权益仍归原作者或相应权利人所有。本站不因收集、整理、索引、存档或展示相关内容而主张其原创权利。</li>
+                    <li>公开发布不当然表示相关内容属于公有领域，也不代表原作者已经授权商业使用、改编、再分发、二次销售或模型训练。本站的来源标注和原贴跳转功能不构成对第三方权利状态的保证。</li>
+                    <li>本站免费提供提示词文本的查看和复制功能，不就第三方提示词收取授权费用，也不表示本站拥有或向用户授予相关知识产权许可。用户将提示词用于个人或商业创作前，应结合原作者公开声明、适用法律及所用 AI 服务条款，自行判断并取得必要授权。</li>
+                    <li>提示词文本的免费查看和复制，不表示用户同时取得其展示图片、完整提示词卡片、商标、人物形象或其他第三方作品的商业许可。用户不得仅因提示词可以免费复制，就直接复制、销售或再分发相关第三方作品。</li>
+                    <li>用户如需将原作者的展示图片、完整提示词卡片或其他第三方作品用于商业项目、广告、出版、客户交付、再分发、二次销售或模型训练，应自行联系相应权利人并取得必要授权。</li>
+                    <li>如作者或权利人认为来源、名称、账号 ID 或原始链接存在错误，或希望补充署名、修改来源、限制展示或删除内容，可通过本页邮箱提交原始发布链接、权属证明及具体处理要求。核验后，我们将采取更正、补充署名、屏蔽、删除、断开链接或停止展示等适当措施。</li>
+                </ul>
+
+                <h2>7. 积分、支付与数字商品</h2>
+                <ul>
+                    <li>积分是用于计量和兑换站内数字服务的虚拟权益，不是存款、货币或投资工具，不可提现、计息或擅自转让。</li>
+                    <li>付费积分、赠送积分的适用范围、有效期和消耗顺序以购买页面、活动规则及账户显示为准。赠送权益可设定有效期、适用模型或其他使用条件。</li>
+                    <li>价格、优惠、模型费率和预计用量可能调整；已提交任务按系统实际接受该任务时适用的规则结算。</li>
+                    <li>数字商品可能即时展示、复制、下载或自动发货。购买前请核对商品说明、适用地区、交付方式和售后条件。</li>
+                    <li>退款、积分返还和异常扣费处理以<a href="/refund-policy.html">退款政策</a>及法律法规的强制性规定为准。</li>
+                </ul>
+
+                <h2>8. 服务变更、中断与终止</h2>
+                <p>我们可基于安全、维护、上游变化、成本、合规或产品调整新增、变更、暂停或终止部分服务，并在合理可行时提供提示。互联网及第三方 AI 服务存在不稳定性，我们不保证服务始终不中断、无错误或满足特定目的。</p>
+                <p>您可停止使用服务。若您严重违反条款、危害平台或他人、实施欺诈或违法行为，我们可限制或终止相关账户与服务。付费权益的处理仍受适用法律及退款政策约束。</p>
+
+                <h2>9. 免责声明与责任边界</h2>
+                <p>在法律允许的范围内，服务按“现状”和“可获得”提供。您应对输入内容、输出选择、发布行为和使用后果负责。本站不对 AI 输出的准确性、可用性、独创性、合法性、特定效果或第三方平台审核结果作出保证。</p>
+                <p>我们不会排除或限制法律明确不得排除或限制的责任。对于可依法限制的责任范围，我们不对间接、附带、特殊或后果性损失承担责任；具体争议将结合过错、实际损失、可预见性和适用法律处理。</p>
+
+                <h2>10. 条款更新与争议处理</h2>
+                <p>我们可能根据服务、价格、技术、上游政策或法律法规变化更新本条款，并在页面标注生效日期。重大变更会尽合理努力通过站内提示或公告告知。变更生效后继续使用相关服务，视为接受更新内容；法律另有规定的除外。</p>
+                <p>如发生争议，请先通过客服邮箱与我们协商。协商不成的，双方可依法向有管辖权的争议解决机构主张权利。</p>
+
+                <h2>11. 联系我们</h2>
+                <div class="contact-box">
+                    <p>服务咨询、内容投诉、知识产权通知或争议沟通，请发送邮件并附上必要信息和证据。</p>
+                    <p><strong>邮箱</strong>：<a href="mailto:zaoyoe@gmail.com">zaoyoe@gmail.com</a></p>
+                </div>
+            </div>
+            <footer class="legal-footer">
+                <span>© 2026 <span data-legal-brand-name>Zaoyoe Studio</span>（早鸟工作室）</span>
+                <nav aria-label="法律文件"><a href="/terms.html">服务条款</a><a href="/privacy.html">隐私政策</a><a href="/refund-policy.html">退款政策</a></nav>
+            </footer>
+        </section>
+    </main>
+
+    <script src="vendor/supabase/2.95.3/supabase.js?v=20260519_VENDOR_PUBLIC_1"></script>
+    <script src="/api/runtime/supabase-config"></script>
+    <script src="./js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1"></script>
+    <script src="./supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1"></script>
+    <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1"></script>
+    <script src="./js/legal-policy-page.js?v=20260730_LEGAL_SITE_BRAND_1"></script>
+    <script src="./js/site-layout-runtime.js?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1"></script>
+    <script src="js/ambient-light.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1"></script>
+    <script src="starry-sky.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1"></script>
+
+    <script src="js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1" defer></script>
+    <script src="./js/avatar-uploader.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1" defer></script>
+    <script src="./js/admin-access.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1" defer></script>
+    <script src="supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1" defer></script>
+    <script src="js/public-scrollbar-auto-hide.js?v=20260430_PUBLIC_SCROLLBAR_FULL_HIDE_1" defer></script>
+    <script src="js/profile-modal-loader.js?v=20260707_PROFILE_MODAL_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1" defer></script>
+    <script src="js/ios-scroll-lock.js?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6" defer></script>
+    <script src="inject-auth.js?v=20260620_THEME_STARRY_EVENT_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
+    <script src="js/framer-nav-runtime.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1" defer></script>
+    <script src="js/wallet-modal-loader.js?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1" defer></script>
+    <link rel="stylesheet" href="css/notification-client.css?v=20260513_NOTIFICATION_MOBILE_STAGGER_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1">
+    <script src="js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" data-load-notification="1" defer></script>
+
+    <link rel="stylesheet" href="css/chat-widget.css?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1">
+    <script src="js/chat-widget-loader.js?v=20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1"></script>
+</body>
+
+</html>

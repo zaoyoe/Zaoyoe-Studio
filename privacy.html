@@ -11,8 +11,8 @@
     <script src="/api/runtime/section-visibility-preload" async></script>
     <script src="./js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1"></script>
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="description" content="Zaoyoe 隐私政策，说明个人信息收集、使用、存储与保护方式。">
-    <title>隐私政策 - Zaoyoe</title>
+    <meta name="description" content="Zaoyoe Studio 隐私政策，说明 AI 工作台、提示词、账号、交易与数字服务中的信息处理方式。" data-legal-description="隐私政策，说明 AI 工作台、提示词、账号、交易与数字服务中的信息处理方式。">
+    <title>隐私政策 - Zaoyoe Studio</title>
     <link rel="canonical" href="https://www.fatherkey.com/privacy.html">
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="./css/auth-popup-handoff.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
@@ -33,7 +33,7 @@
     <link rel="stylesheet" href="avatar-fix.css?v=20260430_NAV_AVATAR_FAST_1">
     <link rel="stylesheet" href="css/framer_home.css?v=20260617_AVATAR_MENU_ICON_HOVER_BLUE_1&themeChrome=20260428_IOS_SAFARI_SYNTH_MENU_TAP_6&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1">
     <link rel="stylesheet" href="css/prompt-shell-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
-    <link rel="stylesheet" href="css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
+    <link rel="stylesheet" href="css/privacy-page.css?v=20260730_LEGAL_POLICIES_1">
 
 </head>
 
@@ -132,14 +132,30 @@
 
     <main id="main-content" role="main">
         <section class="privacy-container">
-            <p class="privacy-eyebrow">Zaoyoe Studio</p>
+            <a class="legal-brand" href="/index.html" aria-label="返回 Zaoyoe Studio 首页" data-legal-brand-home-link>
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+                <span><span data-legal-brand-name>Zaoyoe Studio</span><small>早鸟工作室</small></span>
+            </a>
+            <p class="privacy-eyebrow" data-legal-brand-name>Zaoyoe Studio</p>
             <h1>隐私政策</h1>
-            <div class="update-date">最后更新: 2026年4月27日</div>
+            <div class="legal-meta"><span><strong>生效日期</strong>：2026年7月30日</span><span><strong>适用服务</strong>：<span data-legal-brand-name>Zaoyoe Studio</span> 网站及 AI 工作台</span></div>
+            <nav class="legal-policy-nav" aria-label="平台政策">
+                <a href="/terms.html">服务条款</a>
+                <a href="/privacy.html" aria-current="page">隐私政策</a>
+                <a href="/refund-policy.html">退款政策</a>
+            </nav>
 
             <div class="content">
                 <h2>1. 概述</h2>
-                <p>欢迎使用 Zaoyoe（以下简称“我们”或“本站”）。我们深知个人信息、账号安全、数字资源合规使用与知识产权保护的重要性。本隐私政策旨在说明我们如何收集、使用、存储、保护您的信息，并同步说明本站提示词、数字商品、账号、卡密等内容的使用范围与免责声明。</p>
-                <p>本站现阶段主要提供 AI 提示词展示与参考、资源商城、积分/充值、订单与自动发货、账号登录、留言互动、客服支持、验证与后台管理等功能。您访问、注册、登录、兑换、购买、下载、复制或使用本站内容，即表示您已阅读并理解本政策。</p>
+                <p>欢迎使用 <span data-legal-brand-name>Zaoyoe Studio</span>（以下简称“我们”或“本站”）。我们深知个人信息、账号安全、数字资源合规使用与知识产权保护的重要性。本隐私政策旨在说明我们如何收集、使用、存储、保护您的信息，并同步说明本站提示词、数字商品、账号、卡密等内容的使用范围与免责声明。</p>
+                <p>本站现阶段主要提供 AI 提示词展示与参考、AI 文本对话与图片/视频生成工作台、资源商城、积分/充值、订单与自动发货、账号登录、留言互动、客服支持、验证与后台管理等功能。您访问、注册、登录、兑换、购买、下载、复制或使用本站内容，即表示您已阅读并理解本政策。</p>
 
                 <h2>2. 我们收集的信息</h2>
                 <p>在您使用我们的服务时，我们可能会收集以下信息：</p>
@@ -149,7 +165,10 @@
                     <li><strong>订单与交易信息</strong>：商品 ID、商品名称快照、购买数量、积分或支付记录、优惠券/卡券使用记录、订单状态、发货状态、退款状态、充值记录、支付渠道回调状态等。</li>
                     <li><strong>数字商品交付信息</strong>：购买后向您展示或交付的账号、卡密、兑换码、API 类资源、使用说明、注意事项、库存批次与交付日志。普通用户仅能查看自己订单对应的交付内容。</li>
                     <li><strong>设备与安全信息</strong>：IP 地址、浏览器类型、操作系统、语言、访问时间、请求来源、会话标识、异常请求记录、登录与支付风控信号等。</li>
-                    <li><strong>使用数据</strong>：提示词浏览、搜索、解锁、评论、收藏、商城浏览、购物车、兑换、客服与站内互动行为等。</li>
+                    <li><strong>使用数据</strong>：提示词浏览、搜索、复制、分享、评论、收藏、商城浏览、购物车、兑换、客服与站内互动行为等。</li>
+                    <li><strong>公开来源与作者署名信息</strong>：为整理、索引和存档提示词图库，我们会保存来自 X 等公开分享渠道的原始发布链接、原作者公开名称、公开账号 ID，以及与相关作品和提示词之间的对应关系。</li>
+                    <li><strong>AI 工作台内容</strong>：您提交的提示词、问题、参考图片、生成参数、模型选择、生成结果、任务状态、错误信息、操作记录及对话历史。请勿提交密码、证件、银行卡、商业秘密或其他不必要的敏感信息。</li>
+                    <li><strong>AI 计费与接口信息</strong>：计费模式、积分预估与实际扣减、模型用量、接口地址配置；当您选择自有 API Key 模式时，密钥可能由后端加密保存，前端仅显示必要的状态或尾号。</li>
                 </ul>
 
                 <h2>3. 信息的使用方式</h2>
@@ -158,7 +177,8 @@
                     <li>提供、维护和改进我们的服务</li>
                     <li>处理您的注册和登录请求</li>
                     <li>完成积分、充值、商品兑换、订单履约、自动发货、售后核验与退款处理</li>
-                    <li>向您展示订单、余额、优惠、提示词解锁、客服工单等与账号相关的状态</li>
+                    <li>向您展示订单、余额、优惠、提示词收藏、客服工单等与账号相关的状态</li>
+                    <li>处理 AI 对话、图片或视频生成请求，保存任务进度与结果，提供历史记录、下载、续作、故障恢复和用量核对</li>
                     <li>发送重要通知（如服务变更、安全提醒）</li>
                     <li>检测和防止欺诈、滥用行为</li>
                     <li><span class="highlight">多账号关联检测</span>、批量注册识别、支付异常识别、库存滥用识别与其他必要的安全风控</li>
@@ -178,6 +198,8 @@
                 <h2>5. 第三方服务与信息共享</h2>
                 <p>我们不会出售您的个人信息。但为了实现本站功能，部分服务可能由第三方基础设施或服务商提供，例如账号认证、数据库、文件存储、支付接口、邮件通知、统计分析、客服支持、API中转或外部交流群链接等。</p>
                 <ul>
+                    <li>为完成 AI 推理，您的提示词、问题、参考素材、生成参数及必要上下文可能被传输至所选模型提供商、API 中转服务或相关技术合作方。其处理行为同时受相应第三方政策约束。</li>
+                    <li>当您使用自有 API Key 模式时，请同时遵守对应上游服务条款。我们仅在提供连接、加密保存、任务执行和用量展示所必要的范围内处理相关配置。</li>
                     <li>在获得您的明确同意，或为完成您主动请求的交易、支付、发货、售后、客服处理时，我们可能向必要第三方传递最小必要信息。</li>
                     <li>支付、充值、回调、订单核验等环节可能由支付渠道、收款平台或相关服务商处理，具体以对应页面和渠道规则为准。</li>
                     <li>当法律法规、司法机关、行政机关或监管要求需要时，我们可能依法提供必要信息。</li>
@@ -203,12 +225,14 @@
                 </ul>
 
                 <h2>8. 提示词、AI 内容与知识产权声明</h2>
-                <p>本站展示的提示词、图片、案例、标题、分类、说明文字及相关灵感内容，可能由 AI 生成、人工整理、用户投稿、公开网络资料启发或二次编辑形成。我们尊重并严格遵守知识产权相关法律法规，不主动复制、搬运、售卖或规避原作者授权。</p>
+                <p>本站提示词图库包含从 X 等公开分享渠道收集、整理、分类、索引或存档的 AI 作品、提示词、图片及提示词卡片，也可能包含本站生成、人工整理或用户投稿的内容。对于具有公开来源的图库内容，本站在提示词缩略图及详情页中展示内容来源、原作者名称和账号 ID，并提供“查看原贴”入口，链接至系统保存的原始发布页面。</p>
                 <ul>
-                    <li>提示词与展示图片主要用于学习、研究、参考、审美探索、创作启发与个人非商业使用，不构成对任何特定效果、可商用性、权利完整性或第三方平台审核结果的承诺。</li>
-                    <li>如果您将本站提示词、图片、商品说明或其他内容用于商业项目、广告投放、出版发行、客户交付、模型训练、二次分发或其他公开用途，请自行确认版权、商标、肖像、模型输出、素材授权、第三方平台规则及适用法律风险。</li>
-                    <li>因用户自行商用、再分发、改编、训练、公开传播或用于第三方平台而引发的侵权、合同、平台处罚或其他法律纠纷，由用户自行承担相应责任。</li>
-                    <li>如权利人认为本站内容侵犯其合法权益，请通过本页联系方式提交权属证明、侵权链接、初步证据和处理诉求。我们将在核验后依法采取删除、屏蔽、断开链接、下架、停止交易或补充署名等必要措施。</li>
+                    <li>除本站原创内容或另有明确说明外，相关作品、图片、提示词卡片及其他内容的著作权、商标权、署名权和其他合法权益仍归原作者或相应权利人所有。本站不因收集、整理、索引、存档或展示相关内容而主张其原创权利。</li>
+                    <li>公开发布不当然表示相关内容属于公有领域，也不代表原作者已经授权商业使用、改编、再分发、二次销售或模型训练。本站的来源标注和原贴跳转功能不构成对第三方权利状态的保证。</li>
+                    <li>本站免费提供提示词文本的查看和复制功能，不就第三方提示词收取授权费用，也不表示本站拥有或向用户授予相关知识产权许可。用户将提示词用于个人或商业创作前，应结合原作者公开声明、适用法律及所用 AI 服务条款，自行判断并取得必要授权。</li>
+                    <li>提示词文本的免费查看和复制，不表示用户同时取得其展示图片、完整提示词卡片、商标、人物形象或其他第三方作品的商业许可。用户不得仅因提示词可以免费复制，就直接复制、销售或再分发相关第三方作品。</li>
+                    <li>用户如需将原作者的展示图片、完整提示词卡片或其他第三方作品用于商业项目、广告、出版、客户交付、再分发、二次销售或模型训练，应自行联系相应权利人并取得必要授权。</li>
+                    <li>如作者或权利人认为来源、名称、账号 ID 或原始链接存在错误，或希望补充署名、修改来源、限制展示或删除内容，可通过本页联系方式提交原始发布链接、权属证明及具体处理要求。核验后，我们将采取更正、补充署名、屏蔽、删除、断开链接或停止展示等适当措施。</li>
                 </ul>
 
                 <h2>9. 禁止用途与违规处理</h2>
@@ -229,6 +253,7 @@
                     <li>咨询个人信息处理规则、投诉处理结果、商品交付记录或售后核验依据</li>
                     <li>如涉及订单、支付、库存、发货、退款、违法违规调查、争议解决或法定义务，我们可能依法保留必要记录至合理期限届满</li>
                 </ul>
+                <p>AI 工作台中的本地偏好可能存储在您的浏览器中；服务端任务、计费、结果及安全日志将按提供服务、故障排查、对账和合规所需的合理期限保存。删除界面中的记录可能仅影响展示状态；如需申请删除与账号关联的数据，请通过本页联系方式提出。</p>
 
                 <h2>11. 未成年人保护</h2>
                 <p>我们的服务不面向 16 周岁以下的未成年人。未成年人应在监护人同意和指导下使用互联网服务，不应购买、兑换或使用不适合其年龄、身份或法律能力的数字商品。如我们发现未经监护人同意收集了未成年人的个人信息，将会依法尽快删除或采取其他必要措施。</p>
@@ -242,6 +267,10 @@
                     <p><strong>邮箱</strong>：<a href="mailto:zaoyoe@gmail.com" data-site-layout-contact="email">zaoyoe@gmail.com</a></p>
                 </div>
             </div>
+            <footer class="legal-footer">
+                <span>© 2026 <span data-legal-brand-name>Zaoyoe Studio</span>（早鸟工作室）</span>
+                <nav aria-label="法律文件"><a href="/terms.html">服务条款</a><a href="/privacy.html">隐私政策</a><a href="/refund-policy.html">退款政策</a></nav>
+            </footer>
         </section>
     </main>
 
@@ -251,6 +280,7 @@
     <script src="./js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1"></script>
     <script src="./supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1"></script>
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1"></script>
+    <script src="./js/legal-policy-page.js?v=20260730_LEGAL_SITE_BRAND_1"></script>
     <script src="./js/site-layout-runtime.js?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1"></script>
     <script src="js/ambient-light.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1"></script>
     <script src="starry-sky.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1"></script>
