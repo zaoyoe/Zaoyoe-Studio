@@ -4903,12 +4903,17 @@ body.site-layout-support-detail-open {
 
 #guestbook-section .home-guestbook-center__actions {
     display: flex;
+    align-items: center;
     justify-content: center;
+    width: min(560px, calc(100vw - 64px));
+    margin-left: 50%;
     gap: 72px;
     margin-top: 82px;
-    flex-wrap: wrap;
+    transform: translateX(-50%);
+    flex-wrap: nowrap;
     pointer-events: auto;
     transition:
+        width 560ms cubic-bezier(0.22, 1, 0.36, 1),
         gap 560ms cubic-bezier(0.22, 1, 0.36, 1),
         margin-top 560ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -5139,6 +5144,8 @@ body.site-layout-support-detail-open {
 }
 
 #guestbook-section .guestbook-action-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -5402,7 +5409,11 @@ body.site-layout-support-detail-open {
     }
 
     #guestbook-section .home-guestbook-center__actions {
+        width: 100%;
+        margin-left: 0;
         gap: 12px;
+        transform: none;
+        flex-wrap: wrap;
     }
 
     #guestbook-section .home-guestbook-center__actions .btn {

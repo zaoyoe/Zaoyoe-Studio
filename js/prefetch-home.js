@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260730_HOME_PROMPT_MASK_AI_TAGS_2';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_SUMMARY_LIMIT = 40;
     const HOMEPAGE_PROMPT_CONFIGURED_LIMIT = 24;
@@ -24,6 +24,7 @@
         'images',
         'image_assets',
         'tags',
+        'ai_tags',
         'gallery_status',
         'created_at',
         'updated_at'
@@ -31,8 +32,7 @@
     const HOMEPAGE_PROMPT_SUMMARY_LEGACY_SELECT = [
         ...HOMEPAGE_PROMPT_SUMMARY_SELECT
             .split(', ')
-            .filter((field) => !['image_assets', 'gallery_status'].includes(field)),
-        'ai_tags'
+            .filter((field) => !['image_assets', 'gallery_status'].includes(field))
     ].join(', ');
 
     // Only run on sub-pages (not homepage)
@@ -896,6 +896,28 @@
             : items;
     }
 
+    function collectHomepagePromptTickerTags(prompt = {}, lang = 'zh') {
+        const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+            ? prompt.aiTags
+            : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+                ? prompt.ai_tags
+                : {});
+        const localizedAiTags = ['styles', 'objects', 'scenes', 'mood'].flatMap((category) => {
+            const categoryTags = aiTags?.[category];
+            if (!categoryTags || typeof categoryTags !== 'object' || Array.isArray(categoryTags)) {
+                return [];
+            }
+            return Array.isArray(categoryTags[lang])
+                ? categoryTags[lang]
+                : (lang === 'en' ? [] : (Array.isArray(categoryTags.zh) ? categoryTags.zh : []));
+        });
+        const compactSummaryTags = lang === 'en' && Array.isArray(prompt?.tags_en) && prompt.tags_en.length > 0
+            ? prompt.tags_en
+            : (Array.isArray(prompt?.tags) ? prompt.tags : []);
+
+        return sanitizeTickerItems([...localizedAiTags, ...compactSummaryTags]);
+    }
+
     function getGongyiModelLabelFallback(item = {}) {
         const source = typeof item === 'string' ? { label: item } : (item || {});
         const normalizedId = String(source.id || '').trim().toLowerCase();
@@ -928,12 +950,7 @@
         if ((config.enable_auto !== false || top.length === 0) && config.enable_prompts !== false) {
             const tagSet = new Set(top);
             prompts.forEach((prompt) => {
-                if (prompt?.aiTags && typeof prompt.aiTags === 'object') {
-                    ['styles', 'objects', 'scenes', 'mood'].forEach((category) => {
-                        const tags = prompt.aiTags[category]?.[lang] || (lang === 'en' ? [] : (prompt.aiTags[category]?.zh || []));
-                        tags.forEach((tag) => tagSet.add(tag));
-                    });
-                }
+                collectHomepagePromptTickerTags(prompt, lang).forEach((tag) => tagSet.add(tag));
             });
             top = sanitizeTickerItems(Array.from(tagSet)).slice(0, 20);
         } else if (config.enable_prompts === false) {

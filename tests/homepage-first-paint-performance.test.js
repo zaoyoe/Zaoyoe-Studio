@@ -27,7 +27,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
+        indexSource.includes('homeDataPerf=20260730_HOME_PROMPT_MASK_AI_TAGS_2'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -52,7 +52,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&heroSwipe=20260727_HOME_HERO_NATIVE_SWIPE_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260620_HOME_SHOP_MOBILE_HEADER_CENTER_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&heroSwipe=20260727_HOME_HERO_NATIVE_SWIPE_1&guestbookActions=20260730_HOME_GUESTBOOK_ACTION_ROW_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
@@ -656,8 +656,8 @@ test('homepage prompt masonry renders live rows only while warming thumbnails af
     );
     assert.match(
         framerSource,
-        /const promptPoolPromise = this\.fetchVisiblePromptPool\(\);[\s\S]*const \[config, basePromptPool\] = await Promise\.all\([\s\S]*this\.promptPool = await this\.hydrateConfiguredPromptPool\([\s\S]*const prompts = await this\.aggregatePrompts/,
-        'cold homepage loads should fetch config and a compact prompt summary in parallel before aggregation'
+        /const \[, config, basePromptPool\] = await Promise\.all\(\[\s*localizationReady,\s*this\.fetchHomepageConfig\(\),\s*this\.fetchVisiblePromptPool\(\)\s*\]\);[\s\S]*this\.promptPool = await this\.hydrateConfiguredPromptPool\([\s\S]*const prompts = await this\.aggregatePrompts/,
+        'cold homepage loads should fetch localization, config, and compact prompt summaries in parallel before aggregation'
     );
     assert.doesNotMatch(
         framerSource,
@@ -802,7 +802,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
+        indexSource.includes('homeDataPerf=20260730_HOME_PROMPT_MASK_AI_TAGS_2'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
@@ -815,6 +815,7 @@ test('homepage shop title paints before delayed product cards', () => {
 
 test('homepage defers noncritical data boot scripts so HTML can reach the first-paint shell', () => {
     const indexSource = readRepoFile('index.html');
+    const framerSource = readRepoFile('js/framer_home.js');
     const i18nSource = readRepoFile('js/i18n.js');
     const guestbookLoaderSource = readRepoFile('js/homepage-guestbook-modal-loader.js');
     const engagementLoaderSource = readRepoFile('js/engagement-runtime-loader.js');
@@ -827,7 +828,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1',
-        './js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1',
+        './js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1&cacheMode=20260730_HOME_CRITICAL_BOOT_1',
         './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1'
     ];
 
@@ -873,8 +874,32 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         engagementLoaderSource,
-        /const ANNOUNCEMENT_BOOT_DELAY_MS = 0;[\s\S]*document\.addEventListener\('DOMContentLoaded', \(\) => \{[\s\S]*warmAnnouncementEagerly\(\);/,
-        'homepage announcement runtime should warm soon after DOM readiness instead of waiting for the full page load'
+        /const HOMEPAGE_FIRST_PAINT_EVENT = 'zaoyoe:homepage-first-paint-ready';[\s\S]*function warmAnnouncementAfterHomepageFirstPaint\(\)[\s\S]*global\.addEventListener\(HOMEPAGE_FIRST_PAINT_EVENT, releaseGate, \{ once: true \}\);/,
+        'homepage announcement runtime should wait for the first-paint card signal with a bounded fallback'
+    );
+    assert.match(
+        indexSource,
+        /data-homepage-first-paint-gated="1"/,
+        'homepage should gate the announcement runtime behind its first-paint signal'
+    );
+    assert.equal(
+        indexSource.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"'),
+        false,
+        'homepage should not compete with card data by preloading the announcement runtime'
+    );
+    assert.ok(
+        indexSource.indexOf('./js/framer_home.js?') < indexSource.indexOf('./supabase-auth-functions.js?'),
+        'homepage core runtime should execute before the large auth runtime chain'
+    );
+    assert.match(
+        indexSource,
+        /<script src="\/api\/runtime\/section-visibility-preload" async><\/script>/,
+        'remote section visibility refresh should not block HTML parsing'
+    );
+    assert.match(
+        framerSource,
+        /this\.renderAll\(\{ phase: 'first-paint' \}\);[\s\S]*signalHomepageFirstPaintReady\(\);[\s\S]*this\.scheduleSupplementalHomepageDataLoad\(\);/,
+        'homepage should release deferred chrome and start shop loading only after prompt cards mount'
     );
     assert.equal(
         i18nSource.includes('/lang/${lang}.json?v=${Date.now()}'),
@@ -888,8 +913,8 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         i18nSource,
-        /fetch\(`\/lang\/\$\{lang\}\.json\?v=\$\{encodeURIComponent\(I18N_ASSET_VERSION\)\}`,\s*\{\s*cache: 'no-cache'\s*\}\)/,
-        'i18n should revalidate language JSON so stale browser caches cannot overwrite fresh static nav copy'
+        /fetch\(`\/lang\/\$\{lang\}\.json\?v=\$\{encodeURIComponent\(I18N_ASSET_VERSION\)\}`,\s*\{\s*cache: 'force-cache'\s*\}\)/,
+        'versioned i18n JSON should use the immutable browser cache instead of revalidating on every refresh'
     );
     assert.ok(
         vercelConfig.headers.some((entry) => {
@@ -917,4 +942,32 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
             `${src} should be deferred on the homepage`
         );
     }
+});
+
+test('homepage guestbook keeps both desktop actions on one row across languages', () => {
+    const styles = readRepoFile('css/framer_home.css');
+    const indexSource = readRepoFile('index.html');
+    const desktopActionStart = styles.indexOf('#guestbook-section .home-guestbook-center__actions {');
+    const desktopActionEnd = styles.indexOf('}', desktopActionStart);
+    const desktopActionStyles = styles.slice(desktopActionStart, desktopActionEnd);
+    const mobileStart = styles.indexOf('@media (max-width: 760px)');
+    const mobileEnd = styles.indexOf('@media (max-width: 520px)', mobileStart);
+    const mobileStyles = styles.slice(mobileStart, mobileEnd);
+
+    assert.notEqual(desktopActionStart, -1);
+    assert.match(desktopActionStyles, /width:\s*min\(560px, calc\(100vw - 64px\)\)/);
+    assert.match(desktopActionStyles, /flex-wrap:\s*nowrap/);
+    assert.match(
+        styles,
+        /#guestbook-section \.guestbook-action-btn\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?white-space:\s*nowrap;/
+    );
+    assert.match(
+        mobileStyles,
+        /#guestbook-section \.home-guestbook-center__actions\s*\{[\s\S]*?width:\s*100%;[\s\S]*?margin-left:\s*0;[\s\S]*?transform:\s*none;[\s\S]*?flex-wrap:\s*wrap;/
+    );
+    assert.equal(
+        indexSource.includes('guestbookActions=20260730_HOME_GUESTBOOK_ACTION_ROW_1'),
+        true,
+        'homepage should cache-bust the unified guestbook action layout'
+    );
 });

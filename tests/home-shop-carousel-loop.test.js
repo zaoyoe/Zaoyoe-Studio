@@ -49,6 +49,9 @@ test('homepage ticker script uses product categories and measured loop groups', 
     assert.match(script, /prefetch\.timestamp \|\| 0\) >= configUpdatedAt/);
     assert.match(script, /this\.cachedData\.ticker = await this\.buildTickerData\(this\.config\.ticker \|\| \{\}\);/);
     assert.match(script, /const productCategories = Array\.from\(new Set/);
+    assert.match(script, /function collectHomepagePromptTickerTags\(prompt = \{\}, lang = 'zh'\)/);
+    assert.match(script, /const compactSummaryTags = lang === 'en'/);
+    assert.match(script, /collectHomepagePromptTickerTags\(prompt, lang\)\.forEach\(\(tag\) => tagSet\.add\(tag\)\)/);
     assert.match(script, /shopScrollSpeed: config\.shop_scroll_speed \|\| config\.speed \|\| 30/);
     assert.match(script, /const tickerSpeed = data\.speed \|\| 30/);
     assert.match(script, /data-home-speed-value="\$\{tickerSpeed\}"/);
@@ -78,7 +81,30 @@ test('homepage prefetch script stores ticker data with current speed keys and ca
     assert.match(script, /function getHomepageConfigLastUpdatedKey\(site = getCurrentSite\(\)\)/);
     assert.match(script, /sessionStorage\.setItem\(getHomepagePrefetchCacheKey\(currentSite\), JSON\.stringify\(/);
     assert.match(script, /const productCategories = Array\.from\(new Set/);
+    assert.match(script, /function collectHomepagePromptTickerTags\(prompt = \{\}, lang = 'zh'\)/);
+    assert.match(script, /const compactSummaryTags = lang === 'en'/);
+    assert.match(script, /collectHomepagePromptTickerTags\(prompt, lang\)\.forEach\(\(tag\) => tagSet\.add\(tag\)\)/);
     assert.match(script, /bottom: productCategories/);
     assert.match(script, /speed: config\.ticker\?\.speed \|\| 30/);
     assert.match(script, /shopScrollSpeed: config\.ticker\?\.shop_scroll_speed \|\| config\.ticker\?\.speed \|\| 30/);
+});
+
+test('homepage prompt mask keeps structured tags in lightweight prompt summaries', () => {
+    const runtimeScript = fs.readFileSync(framerHomeScriptPath, 'utf8');
+    const prefetchScript = fs.readFileSync(prefetchHomeScriptPath, 'utf8');
+
+    for (const script of [runtimeScript, prefetchScript]) {
+        const selectStart = script.indexOf('const HOMEPAGE_PROMPT_SUMMARY_SELECT = [');
+        const selectEnd = script.indexOf("].join(', ');", selectStart);
+        assert.notEqual(selectStart, -1);
+        assert.notEqual(selectEnd, -1);
+
+        const summarySelect = script.slice(selectStart, selectEnd);
+        assert.match(summarySelect, /'ai_tags'/);
+        assert.doesNotMatch(summarySelect, /'prompt_text'|'description'|'dominant_colors'/);
+    }
+
+    assert.match(runtimeScript, /const tagList = Array\.from\(allTags\)\.slice\(0, 8\)/);
+    assert.match(runtimeScript, /const row1 = shuffled\.slice\(0, 4\)/);
+    assert.match(runtimeScript, /const row2 = shuffled\.slice\(4, 8\)/);
 });

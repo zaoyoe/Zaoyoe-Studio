@@ -4,6 +4,30 @@
  * ==========================================
  */
 
+function markHomepagePerformance(name) {
+  const nowMs = Math.round(window.performance?.now?.() || 0);
+  try {
+    window.performance?.mark?.(name);
+  } catch (_) {
+    // Performance marks are diagnostic only.
+  }
+  return nowMs;
+}
+
+function signalHomepageFirstPaintReady() {
+  if (document.documentElement.dataset.homepageFirstPaintReady === '1') {
+    return;
+  }
+
+  document.documentElement.dataset.homepageFirstPaintReady = '1';
+  document.documentElement.dataset.homepageFirstPaintMs = String(
+    markHomepagePerformance('homepage-first-paint-ready')
+  );
+  window.dispatchEvent(new CustomEvent('zaoyoe:homepage-first-paint-ready'));
+}
+
+markHomepagePerformance('homepage-runtime-evaluated');
+
 // Utility: keep Safari's top chrome aligned with the active mobile menu theme.
 window.toggleMobileThemeColor = function (isActive) {
   let metaTheme = document.querySelector('meta[name="theme-color"]');
@@ -65,7 +89,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260730_HOME_PROMPT_MASK_AI_TAGS_2';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
@@ -79,6 +103,7 @@ const HOMEPAGE_PROMPT_SUMMARY_SELECT = [
   'images',
   'image_assets',
   'tags',
+  'ai_tags',
   'gallery_status',
   'created_at',
   'updated_at'
@@ -86,8 +111,7 @@ const HOMEPAGE_PROMPT_SUMMARY_SELECT = [
 const HOMEPAGE_PROMPT_SUMMARY_LEGACY_SELECT = [
   ...HOMEPAGE_PROMPT_SUMMARY_SELECT
   .split(', ')
-  .filter((field) => !['image_assets', 'gallery_status'].includes(field)),
-  'ai_tags'
+  .filter((field) => !['image_assets', 'gallery_status'].includes(field))
 ].join(', ');
 const HomepageContract = window.HomepageContract || null;
 const HOME_DEFAULT_SECTION_ORDER = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
@@ -773,6 +797,28 @@ function sanitizeTickerItems(value, { allowCjk = false } = {}) {
   return getHomepageRuntimeLanguage() === 'en' && !allowCjk
     ? items.filter((item) => !containsHomeCjkText(item))
     : items;
+}
+
+function collectHomepagePromptTickerTags(prompt = {}, lang = 'zh') {
+  const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
+    ? prompt.aiTags
+    : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
+      ? prompt.ai_tags
+      : {});
+  const localizedAiTags = ['styles', 'objects', 'scenes', 'mood'].flatMap((category) => {
+    const categoryTags = aiTags?.[category];
+    if (!categoryTags || typeof categoryTags !== 'object' || Array.isArray(categoryTags)) {
+      return [];
+    }
+    return Array.isArray(categoryTags[lang])
+      ? categoryTags[lang]
+      : (lang === 'en' ? [] : (Array.isArray(categoryTags.zh) ? categoryTags.zh : []));
+  });
+  const compactSummaryTags = lang === 'en' && Array.isArray(prompt?.tags_en) && prompt.tags_en.length > 0
+    ? prompt.tags_en
+    : (Array.isArray(prompt?.tags) ? prompt.tags : []);
+
+  return sanitizeTickerItems([...localizedAiTags, ...compactSummaryTags]);
 }
 
 function getHomepageProductCategoryLabel(category) {
@@ -2443,6 +2489,7 @@ const FramerHome = {
 
     this._initPromise = (async () => {
     console.log('🚀 Initializing Framer Home...');
+    markHomepagePerformance('homepage-init-start');
 
     // The head bootstrap owns the initial reload reset. Avoid forcing the
     // viewport here because deferred runtime init can happen after the user
@@ -2450,21 +2497,23 @@ const FramerHome = {
     // Check performance and apply degradation if needed
     this.checkPerformance();
 
-    // Wait for i18n to be ready before loading data
-    if (window.i18n?.ready) {
-      await window.i18n.ready();
-    }
+    const localizationReady = window.i18n?.ready
+      ? window.i18n.ready()
+      : Promise.resolve();
 
     // Start the below-fold catalog request early so it overlaps homepage config
     // and prompt summary loading without delaying first-paint rendering.
     void this.fetchShopProductCatalog();
 
     // Load configuration and data (uses sessionStorage prefetch if available)
-    await this.loadAll();
+    await this.loadAll({ localizationReady });
+    markHomepagePerformance('homepage-data-ready');
 
     // Keep first paint narrow: hero and prompt cards render first, while
     // below-fold sections mount on idle or as the user nears them.
     this.renderAll({ phase: 'first-paint' });
+    signalHomepageFirstPaintReady();
+    void this.scheduleSupplementalHomepageDataLoad();
     this.scheduleDeferredSectionRender();
 
     bindHomepageStaticDelegates();
@@ -2621,26 +2670,34 @@ const FramerHome = {
     this.supplementalDataScheduled = true;
     this.supplementalDataLoaded = false;
     this.supplementalDataPromise = new Promise((resolve) => {
+      this.cachedData = this.cachedData || {};
+      const shopTask = (async () => {
+        const previousSignature = buildHomepageShopRenderSignature(
+          this.cachedData?.shop || [],
+          this.config?.shop || {},
+          this.config?.ticker?.shop_scroll_speed || 30
+        );
+        const shop = await this.aggregateShop(this.config.shop || {});
+        const nextSignature = buildHomepageShopRenderSignature(
+          shop,
+          this.config?.shop || {},
+          this.config?.ticker?.shop_scroll_speed || 30
+        );
+        this.cachedData.shop = shop;
+        if (previousSignature !== nextSignature || !document.querySelector('#shop-section [data-home-shop-id]')) {
+          this.renderShop();
+        }
+        document.documentElement.dataset.homepageShopReadyMs = String(
+          markHomepagePerformance('homepage-shop-ready')
+        );
+      })();
+
+      // The idle callback below owns final error reporting, but attach a
+      // handler immediately so a fast API failure is never reported as unhandled.
+      void shopTask.catch(() => {});
+
       const kickoff = async () => {
         try {
-          this.cachedData = this.cachedData || {};
-          const shopTask = (async () => {
-            const previousSignature = buildHomepageShopRenderSignature(
-              this.cachedData?.shop || [],
-              this.config?.shop || {},
-              this.config?.ticker?.shop_scroll_speed || 30
-            );
-            const shop = await this.aggregateShop(this.config.shop || {});
-            const nextSignature = buildHomepageShopRenderSignature(
-              shop,
-              this.config?.shop || {},
-              this.config?.ticker?.shop_scroll_speed || 30
-            );
-            this.cachedData.shop = shop;
-            if (previousSignature !== nextSignature || !document.querySelector('#shop-section [data-home-shop-id]')) {
-              this.renderShop();
-            }
-          })();
           const guestbookTask = (async () => {
             this.cachedData.guestbook = await this.aggregateGuestbook(this.config.guestbook || {});
             this.renderGuestbook();
@@ -3073,7 +3130,8 @@ const FramerHome = {
   /**
    * Load all configuration and aggregate data
    */
-  async loadAll() {
+  async loadAll(options = {}) {
+    const localizationReady = options.localizationReady || Promise.resolve();
     // === Check sessionStorage for prefetched data ===
     try {
         const prefetch = readHomepagePrefetchCache();
@@ -3128,7 +3186,6 @@ const FramerHome = {
             this.cachedData.guestbook = Array.isArray(this.cachedData.guestbook) ? this.cachedData.guestbook : [];
             this.cachedData.shopCategories = Array.isArray(this.cachedData.shopCategories) ? this.cachedData.shopCategories : [];
             this.writeHeroTextCache(this.cachedData.hero);
-            void this.scheduleSupplementalHomepageDataLoad();
             this.schedulePromptPoolLiveSync({ reason: 'cache-stale-while-revalidate' });
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
@@ -3143,10 +3200,10 @@ const FramerHome = {
     }
 
     try {
-      const promptPoolPromise = this.fetchVisiblePromptPool();
-      const [config, basePromptPool] = await Promise.all([
+      const [, config, basePromptPool] = await Promise.all([
+        localizationReady,
         this.fetchHomepageConfig(),
-        promptPoolPromise
+        this.fetchVisiblePromptPool()
       ]);
       this.config = config;
       this.resetActiveExperiments();
@@ -3168,7 +3225,6 @@ const FramerHome = {
 
       console.log('📦 Data aggregated:', this.cachedData);
       this.persistHomepagePrefetch('partial');
-      void this.scheduleSupplementalHomepageDataLoad();
     } catch (error) {
       console.error('❌ Failed to load data:', error);
       // Use fallback default data
@@ -4059,6 +4115,9 @@ const FramerHome = {
   async buildTickerData(config = {}) {
     const lang = window.i18n?.getCurrentLanguage() || 'zh';
     const promptPool = this.getPromptPool();
+    const tickerPromptPool = promptPool.length > 0
+      ? promptPool
+      : (Array.isArray(this.cachedData?.prompts) ? this.cachedData.prompts : []);
     const promptTagSeed = [
       ...sanitizeTickerItems(config.prompt_tags),
       ...sanitizeTickerItems(config.activity_keywords),
@@ -4074,13 +4133,8 @@ const FramerHome = {
 
     if ((config.enable_auto !== false || tags.length === 0) && config.enable_prompts !== false) {
       const tagSet = new Set(tags);
-      promptPool.forEach(p => {
-        if (p.aiTags && typeof p.aiTags === 'object') {
-          ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
-            const promptTags = p.aiTags[cat]?.[lang] || (lang === 'en' ? [] : (p.aiTags[cat]?.zh || []));
-            promptTags.forEach(tag => tagSet.add(tag));
-          });
-        }
+      tickerPromptPool.forEach((prompt) => {
+        collectHomepagePromptTickerTags(prompt, lang).forEach((tag) => tagSet.add(tag));
       });
       tags = sanitizeTickerItems(Array.from(tagSet)).slice(0, 20);
     }

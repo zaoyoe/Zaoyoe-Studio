@@ -11,12 +11,16 @@
     const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1';
     const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;
     const ANNOUNCEMENT_BOOT_DELAY_MS = 0;
+    const HOMEPAGE_FIRST_PAINT_EVENT = 'zaoyoe:homepage-first-paint-ready';
+    const HOMEPAGE_ANNOUNCEMENT_FALLBACK_MS = 3200;
 
     let notificationWarmPromise = null;
     let announcementWarmPromise = null;
     let notificationIdleWarmScheduled = false;
     let announcementIdleWarmScheduled = false;
     let notificationInitScheduled = false;
+    let announcementGateBound = false;
+    let announcementGateTimer = null;
 
     function getBootstrapScript() {
         return document.currentScript
@@ -27,6 +31,7 @@
     const bootstrapScript = getBootstrapScript();
     const shouldLoadNotification = bootstrapScript?.dataset.loadNotification !== '0';
     const shouldLoadAnnouncement = bootstrapScript?.dataset.loadAnnouncement === '1';
+    const shouldGateAnnouncementForHomepage = bootstrapScript?.dataset.homepageFirstPaintGated === '1';
 
     function loadScript(src) {
         const existing = document.querySelector(`script[src="${src}"]`);
@@ -174,6 +179,35 @@
         run();
     }
 
+    function warmAnnouncementAfterHomepageFirstPaint() {
+        if (!shouldGateAnnouncementForHomepage) {
+            warmAnnouncementEagerly();
+            return;
+        }
+
+        if (document.documentElement?.dataset.homepageFirstPaintReady === '1') {
+            warmAnnouncementEagerly();
+            return;
+        }
+
+        if (announcementGateBound) {
+            return;
+        }
+        announcementGateBound = true;
+
+        const releaseGate = () => {
+            if (announcementGateTimer) {
+                global.clearTimeout(announcementGateTimer);
+                announcementGateTimer = null;
+            }
+            global.removeEventListener(HOMEPAGE_FIRST_PAINT_EVENT, releaseGate);
+            warmAnnouncementEagerly();
+        };
+
+        global.addEventListener(HOMEPAGE_FIRST_PAINT_EVENT, releaseGate, { once: true });
+        announcementGateTimer = global.setTimeout(releaseGate, HOMEPAGE_ANNOUNCEMENT_FALLBACK_MS);
+    }
+
     function warmOnInteraction() {
         void ensureEngagementRuntime({ includeAnnouncement: false });
     }
@@ -184,22 +218,13 @@
 
     if (document.readyState === 'complete') {
         warmNotificationOnIdle();
-        warmAnnouncementEagerly();
     } else {
         global.addEventListener('load', () => {
             warmNotificationOnIdle();
         }, { once: true });
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                warmAnnouncementEagerly();
-            }, { once: true });
-        } else {
-            warmAnnouncementEagerly();
-        }
     }
 
-    warmAnnouncementEagerly();
+    warmAnnouncementAfterHomepageFirstPaint();
 
     global.ZaoyoeEngagementRuntimeBootstrap = Object.freeze({
         version: VERSION,
@@ -209,8 +234,10 @@
         config: Object.freeze({
             notification: shouldLoadNotification,
             announcement: shouldLoadAnnouncement,
+            homepageFirstPaintGated: shouldGateAnnouncementForHomepage,
             notificationIdleTimeoutMs: NOTIFICATION_IDLE_TIMEOUT_MS,
-            announcementBootDelayMs: ANNOUNCEMENT_BOOT_DELAY_MS
+            announcementBootDelayMs: ANNOUNCEMENT_BOOT_DELAY_MS,
+            homepageAnnouncementFallbackMs: HOMEPAGE_ANNOUNCEMENT_FALLBACK_MS
         })
     });
 }(typeof window !== 'undefined' ? window : globalThis));
