@@ -29,6 +29,9 @@ test('prompt gallery exposes image and video media filters with image selected b
         runtime,
         /function setPromptMediaFilter[\s\S]*?renderCurrentPage\(\{ preserveScroll: true \}\);/
     );
+    assert.match(runtime, /hydratePromptSupabaseCategory\(currentFilter, normalizedFilter\)/);
+    assert.match(runtime, /query\.neq\('video_assets', '\[\]'\)/);
+    assert.match(runtime, /query\.eq\('video_assets', '\[\]'\)/);
     assert.match(runtime, /function setupPromptMediaFilters/);
     assert.match(styles, /\.prompt-media-filter-bar\s*\{[\s\S]*?max-width:\s*1600px;[\s\S]*?padding:\s*0 10px 8px;/);
     assert.match(styles, /\.prompt-media-filter-bar\s*\{[\s\S]*?justify-content:\s*space-between;/);

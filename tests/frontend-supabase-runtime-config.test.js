@@ -1010,7 +1010,7 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     assert.deepEqual(violations, [], violations.join('\n'));
 });
 
-test('public pages lazy-load notifications and head-preload announcement runtime through the shared engagement loader', () => {
+test('public pages lazy-load notifications while homepage gates announcement work behind first paint', () => {
     const engagementLoaderSource = readRepoFile('js/engagement-runtime-loader.js');
     const notificationPages = [
         'index.html',
@@ -1048,7 +1048,10 @@ test('public pages lazy-load notifications and head-preload announcement runtime
         if (/<script[^>]+src=["'][^"']*announcement-loader\.js\?v=/.test(source)) {
             violations.push(`${relativePath} should not execute announcement-loader.js outside the shared engagement loader`);
         }
-        if (!source.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"')) {
+        if (relativePath === 'index.html' && source.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"')) {
+            violations.push('index.html should not preload announcement-loader.js before homepage cards');
+        }
+        if (relativePath !== 'index.html' && !source.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"')) {
             violations.push(`${relativePath} should preload announcement-loader.js from the document head`);
         }
         const headEndIndex = source.indexOf('</head>');
@@ -1056,7 +1059,7 @@ test('public pages lazy-load notifications and head-preload announcement runtime
         if (headEndIndex === -1 || engagementIndex === -1 || engagementIndex > headEndIndex) {
             violations.push(`${relativePath} should start the shared engagement loader from the document head`);
         }
-        if (!/js\/engagement-runtime-loader\.js\?v=20260519_ANNOUNCEMENT_HAIRLINE_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
+        if (!/js\/engagement-runtime-loader\.js\?v=20260519_ANNOUNCEMENT_HAIRLINE_1[^\"]*"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
             violations.push(`${relativePath} should run the announcement engagement bootstrap asynchronously from the head`);
         }
     }
@@ -1067,16 +1070,20 @@ test('public pages lazy-load notifications and head-preload announcement runtime
         "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
+        "const HOMEPAGE_FIRST_PAINT_EVENT = 'zaoyoe:homepage-first-paint-ready';",
+        'const HOMEPAGE_ANNOUNCEMENT_FALLBACK_MS = 3200;',
         "const shouldLoadNotification = bootstrapScript?.dataset.loadNotification !== '0';",
         "const shouldLoadAnnouncement = bootstrapScript?.dataset.loadAnnouncement === '1';",
+        "const shouldGateAnnouncementForHomepage = bootstrapScript?.dataset.homepageFirstPaintGated === '1';",
         'function scheduleNotificationInit() {',
         'function ensureNotificationRuntime() {',
         'function ensureAnnouncementRuntime() {',
         'function ensureEngagementRuntime(options = {}) {',
         'warmAnnouncementEagerly();',
         'if (ANNOUNCEMENT_BOOT_DELAY_MS > 0) {',
+        'function warmAnnouncementAfterHomepageFirstPaint() {',
+        'global.addEventListener(HOMEPAGE_FIRST_PAINT_EVENT, releaseGate, { once: true });',
         'void ensureEngagementRuntime({ includeAnnouncement: false });',
-        "document.addEventListener('DOMContentLoaded', () => {",
         'warmAnnouncement: ensureAnnouncementRuntime,',
         'global.ZaoyoeEngagementRuntimeBootstrap = Object.freeze({'
     ];
@@ -3131,6 +3138,11 @@ test('theme bootstraps default first visits to light instead of system dark', ()
         /const SITE_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-site-modal-theme-restore';[\s\S]*const PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-prompt-modal-theme-restore';[\s\S]*function hasPromptThemeRestoreAttribute\(meta\)[\s\S]*meta\?\.hasAttribute\(SITE_MODAL_THEME_RESTORE_ATTRIBUTE\)[\s\S]*meta\?\.hasAttribute\(PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE\)[\s\S]*if \(hasPromptThemeRestoreAttribute\(meta\)\) \{[\s\S]*return meta;[\s\S]*new MutationObserver\(\(\) => \{[\s\S]*if \(hasPromptThemeRestoreAttribute\(meta\)\) \{[\s\S]*return;/,
         'prompts head bootstrap should not reinsert the black theme-color while modal close cleanup is active'
     );
+    assert.match(
+        promptsHeadSource,
+        /document\.documentElement\.scrollTop = 0;\s*if \(document\.body\) \{\s*document\.body\.scrollTop = 0;/,
+        'prompts head bootstrap should tolerate running before the body element exists'
+    );
     assert.doesNotMatch(
         themePreloadSource,
         /const IOS_REPAINT_COLORS[\s\S]*light: '#fffffe'[\s\S]*const repaintColor = IOS_REPAINT_COLORS\[theme\]/,
@@ -4478,7 +4490,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260730_HOME_PROMPT_MASK_AI_TAGS_2';",
         "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
@@ -4487,7 +4499,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'invalidateStaleHomepageConfigCache();',
         'const HOMEPAGE_PROMPT_SUMMARY_LIMIT = 40;',
         'async fetchVisiblePromptPool(config = null) {',
-        'const [config, basePromptPool] = await Promise.all([',
+        'const [, config, basePromptPool] = await Promise.all([',
         'schedulePromptPoolLiveSync(options = {}) {',
         'async syncPromptPoolFromLiveSourceInBackground(options = {}) {',
         'const nextPrompts = await this.aggregatePrompts(this.config.prompts || {});',
@@ -4578,7 +4590,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
+        homepageSource.includes('homeDataPerf=20260730_HOME_PROMPT_MASK_AI_TAGS_2'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4644,14 +4656,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
+            source.includes('homeDataPerf=20260730_HOME_PROMPT_MASK_AI_TAGS_2'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260730_HOME_PROMPT_MASK_AI_TAGS_2';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );

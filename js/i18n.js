@@ -71,7 +71,7 @@
 
         try {
             const response = await fetch(`/lang/${lang}.json?v=${encodeURIComponent(I18N_ASSET_VERSION)}`, {
-                cache: 'no-cache'
+                cache: 'force-cache'
             });
             if (!response.ok) throw new Error(`Failed to load ${lang}.json`);
             translations[lang] = normalizeLoadedTranslations(lang, await response.json());

@@ -1899,6 +1899,11 @@ const PROMPT_NAV_SKELETON_ITEMS = [
     ['Animation', '动画'],
     ['Saved', '收藏']
 ];
+const PROMPT_NAV_CATEGORY_ITEMS = Object.freeze(
+    PROMPT_NAV_SKELETON_ITEMS.slice(1, -1).map(([englishLabel, chineseLabel]) => (
+        Object.freeze([englishLabel, chineseLabel])
+    ))
+);
 let promptNavFontReadyPromise = null;
 const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;
 const PROMPT_GALLERY_INITIAL_RENDER_MAX_COUNT = 20;
@@ -2119,6 +2124,8 @@ let promptSupabasePageLoadPromise = null;
 let promptSupabasePageLoadBlocked = false;
 let promptSupabaseSearchRpcAvailable = null;
 const promptSupabaseSearchOnlyIds = new Set();
+const promptSupabaseCategoryLoadPromises = new Map();
+const promptSupabaseHydratedCategoryMediaKeys = new Set();
 
 function isMissingPromptImageAssetsColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
@@ -2667,6 +2674,115 @@ async function fetchPromptSupabaseSummaryPage(cursor = null) {
         cursor: rows.length > 0 ? normalizePromptSupabasePageCursor(rows[rows.length - 1]) : cursor,
         hasMore: rows.length === PROMPT_SUPABASE_PAGE_SIZE
     };
+}
+
+function getCanonicalPromptCategory(category = '') {
+    const normalizedCategory = String(category || '').trim().toLowerCase();
+    return PROMPT_NAV_CATEGORY_ITEMS.find(([englishLabel]) => (
+        englishLabel.toLowerCase() === normalizedCategory
+    ))?.[0] || '';
+}
+
+function normalizePromptMediaFilter(mediaFilter = 'image') {
+    return mediaFilter === 'video' ? 'video' : 'image';
+}
+
+function getPromptSupabaseCategoryMediaKey(category = '', mediaFilter = 'image') {
+    const canonicalCategory = getCanonicalPromptCategory(category);
+    if (!canonicalCategory) return '';
+    return `${canonicalCategory.toLowerCase()}:${normalizePromptMediaFilter(mediaFilter)}`;
+}
+
+function buildPromptSupabaseCategoryQuery(selectFields, category, mediaFilter = 'image', options = {}) {
+    let query = window.supabaseClient
+        .from('prompts')
+        .select(selectFields)
+        .contains('tags', [category])
+        .not('prompt_text', 'is', null)
+        .neq('prompt_text', '')
+        .not('created_at', 'is', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
+
+    if (options.filterByMedia !== false) {
+        query = normalizePromptMediaFilter(mediaFilter) === 'video'
+            ? query.neq('video_assets', '[]')
+            : query.eq('video_assets', '[]');
+    }
+
+    return query.limit(PROMPT_SUPABASE_SEARCH_RESULT_LIMIT);
+}
+
+async function hydratePromptSupabaseCategory(category = '', mediaFilter = currentPromptMediaFilter) {
+    const canonicalCategory = getCanonicalPromptCategory(category);
+    const normalizedMediaFilter = normalizePromptMediaFilter(mediaFilter);
+    const categoryMediaKey = getPromptSupabaseCategoryMediaKey(canonicalCategory, normalizedMediaFilter);
+    if (
+        !categoryMediaKey
+        || !window.supabaseClient
+        || promptSupabaseHydratedCategoryMediaKeys.has(categoryMediaKey)
+    ) {
+        return 0;
+    }
+    if (promptSupabaseCategoryLoadPromises.has(categoryMediaKey)) {
+        return promptSupabaseCategoryLoadPromises.get(categoryMediaKey);
+    }
+
+    const loadPromise = (async () => {
+        let { data, error } = await buildPromptSupabaseCategoryQuery(
+            PROMPTS_SUPABASE_SUMMARY_SELECT,
+            canonicalCategory,
+            normalizedMediaFilter
+        );
+        if (error && isMissingPromptImageAssetsColumnError(error)) {
+            const fallbackResult = await buildPromptSupabaseCategoryQuery(
+                PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT,
+                canonicalCategory,
+                normalizedMediaFilter,
+                { filterByMedia: false }
+            );
+            data = fallbackResult.data;
+            error = fallbackResult.error;
+        }
+        if (error) throw error;
+
+        const normalizedRows = (Array.isArray(data) ? data : []).map((item, index) => (
+            normalizeSupabasePromptSummary(item, PROMPTS.length + index)
+        )).filter((item) => promptMatchesMediaFilter(item, normalizedMediaFilter));
+        const appendedPrompts = appendPromptDataset(normalizedRows);
+        promptSupabaseHydratedCategoryMediaKeys.add(categoryMediaKey);
+
+        if (
+            getPromptSupabaseCategoryMediaKey(currentFilter, currentPromptMediaFilter)
+            === categoryMediaKey
+        ) {
+            setPromptGalleryLoadStatus('idle');
+            promptGalleryBaseFilteredItems = filterPromptGalleryBaseItems(PROMPTS, canonicalCategory);
+            allFilteredItems = applyPromptGalleryFiltersAndSort();
+            renderCurrentPage({ preserveScroll: true });
+        }
+
+        return appendedPrompts.length;
+    })().catch((error) => {
+        console.warn(`Failed to hydrate prompt category ${canonicalCategory}:`, error?.message || error);
+        if (
+            getPromptSupabaseCategoryMediaKey(currentFilter, currentPromptMediaFilter)
+            === categoryMediaKey
+        ) {
+            setPromptGalleryLoadStatus('error', {
+                onRetry: () => {
+                    setPromptGalleryLoadStatus('loading');
+                    void hydratePromptSupabaseCategory(canonicalCategory, normalizedMediaFilter);
+                }
+            });
+        }
+        return 0;
+    }).finally(() => {
+        promptSupabaseCategoryLoadPromises.delete(categoryMediaKey);
+    });
+
+    promptSupabaseCategoryLoadPromises.set(categoryMediaKey, loadPromise);
+    return loadPromise;
 }
 
 function isMissingPromptSearchRpcError(error) {
@@ -4312,24 +4428,6 @@ async function generateDynamicNav() {
     // Check for active seasonal holiday
     const activeHoliday = getActiveSeasonalHoliday();
 
-    // Count tag frequency
-    const tagCounts = {};
-    PROMPTS.forEach(prompt => {
-        if (prompt.tags && Array.isArray(prompt.tags)) {
-            prompt.tags.forEach(tag => {
-                tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-            });
-        }
-    });
-
-    // Sort by frequency and take top categories
-    // If seasonal holiday is active, take 5 regular tags; otherwise take 6
-    const maxRegularTags = activeHoliday ? 5 : 6;
-    const topTags = Object.entries(tagCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, maxRegularTags)
-        .map(([tag]) => tag);
-
     // Build nav HTML
     let navHTML = `
         <div class="nav-item active" data-filter="all">
@@ -4350,8 +4448,7 @@ async function generateDynamicNav() {
         `;
     }
 
-    topTags.forEach(tag => {
-        const cn = TAG_TRANSLATIONS[tag] || tag;
+    PROMPT_NAV_CATEGORY_ITEMS.forEach(([tag, cn]) => {
         navHTML += `
             <div class="nav-item" data-filter="${tag}">
                 <span class="en">${tag}</span>
@@ -6759,7 +6856,7 @@ function bindPromptCardActivation(card, promptId) {
 
 // --- Render Gallery ---
 function promptMatchesMediaFilter(item, mediaFilter = currentPromptMediaFilter) {
-    const normalizedFilter = ['image', 'video'].includes(mediaFilter) ? mediaFilter : 'image';
+    const normalizedFilter = normalizePromptMediaFilter(mediaFilter);
 
     const hasVideo = getPromptVideoAssets(item).length > 0;
     if (normalizedFilter === 'video') return hasVideo;
@@ -6887,13 +6984,24 @@ function syncPromptMediaFilterButtons() {
 }
 
 function setPromptMediaFilter(mediaFilter = 'image') {
-    const normalizedFilter = ['image', 'video'].includes(mediaFilter) ? mediaFilter : 'image';
+    const normalizedFilter = normalizePromptMediaFilter(mediaFilter);
     if (normalizedFilter === currentPromptMediaFilter && promptGalleryHasRendered) return;
 
     currentPromptMediaFilter = normalizedFilter;
+    const canonicalCategory = getCanonicalPromptCategory(currentFilter);
+    const categoryMediaKey = getPromptSupabaseCategoryMediaKey(canonicalCategory, normalizedFilter);
+    const categoryLoadPromise = canonicalCategory
+        ? hydratePromptSupabaseCategory(currentFilter, normalizedFilter)
+        : null;
+    setPromptGalleryLoadStatus(
+        categoryMediaKey && promptSupabaseCategoryLoadPromises.has(categoryMediaKey)
+            ? 'loading'
+            : 'idle'
+    );
     syncPromptMediaFilterButtons();
     allFilteredItems = applyPromptGalleryFiltersAndSort();
     renderCurrentPage({ preserveScroll: true });
+    void categoryLoadPromise;
 }
 
 function setupPromptMediaFilters() {
@@ -6958,7 +7066,13 @@ function filterPromptGalleryBaseItems(items = [], filter = currentFilter) {
 }
 
 function canLoadMorePromptSupabasePages() {
+    const categoryMediaKey = getPromptSupabaseCategoryMediaKey(currentFilter, currentPromptMediaFilter);
+    const categoryQueryActiveOrComplete = Boolean(categoryMediaKey) && (
+        promptSupabaseCategoryLoadPromises.has(categoryMediaKey)
+        || promptSupabaseHydratedCategoryMediaKeys.has(categoryMediaKey)
+    );
     return currentFilter !== 'search'
+        && !categoryQueryActiveOrComplete
         && promptSupabaseHasMorePages
         && !promptSupabasePageLoadBlocked;
 }
@@ -7646,8 +7760,20 @@ function handleNavClick(filterType, clickedItem) {
         showAISubTags(filterType, navContainer);
     }
 
+    const canonicalCategory = getCanonicalPromptCategory(filterType);
+    const categoryMediaKey = getPromptSupabaseCategoryMediaKey(canonicalCategory, currentPromptMediaFilter);
+    const categoryLoadPromise = canonicalCategory
+        ? hydratePromptSupabaseCategory(canonicalCategory, currentPromptMediaFilter)
+        : null;
+    setPromptGalleryLoadStatus(
+        categoryMediaKey && promptSupabaseCategoryLoadPromises.has(categoryMediaKey)
+            ? 'loading'
+            : 'idle'
+    );
+
     // Always reset to page 1 and render
     renderGallery(filterType, true);
+    void categoryLoadPromise;
 }
 
 // Get AI-derived sub-tags for a category (with Chinese translations from aiTags)

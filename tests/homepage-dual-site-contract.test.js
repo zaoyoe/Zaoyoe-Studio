@@ -65,7 +65,7 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.match(framerSource, /function buildHomepagePromptRenderSignature\(prompts = \[\]\)/);
     assert.match(framerSource, /schedulePromptPoolLiveSync\(options = \{\}\)/);
     assert.match(framerSource, /async syncPromptPoolFromLiveSourceInBackground\(options = \{\}\)/);
-    assert.match(framerSource, /const \[config, basePromptPool\] = await Promise\.all\(/);
+    assert.match(framerSource, /const \[, config, basePromptPool\] = await Promise\.all\(\[\s*localizationReady,/);
     assert.match(framerSource, /schedulePromptPoolLiveSync\(\{ reason: 'cache-stale-while-revalidate' \}\)/);
     assert.match(framerSource, /view: 'home'/);
     assert.match(framerSource, /prompt\?\.image_url/);
@@ -142,7 +142,7 @@ test('public nav shop dropdown only exposes current-site priced categories', () 
     assert.match(framerSource, /return Array\.isArray\(categories\) \? categories : \[\];/);
     assert.doesNotMatch(framerSource, /'全部商品', 'API密钥', '会员服务', '资源包'/);
 
-    assert.match(indexSource, /js\/framer_home\.js\?[^"']*homeDataPerf=20260729_HOME_SUMMARY_SWR_1/);
+    assert.match(indexSource, /js\/framer_home\.js\?[^"']*homeDataPerf=20260730_HOME_PROMPT_MASK_AI_TAGS_2/);
     navSubpageSources.forEach((source) => {
         assert.match(source, /js\/framer-nav-runtime\.js\?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1/);
     });

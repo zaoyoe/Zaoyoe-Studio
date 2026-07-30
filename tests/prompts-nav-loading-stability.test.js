@@ -21,6 +21,9 @@ test('prompt category skeletons reuse label geometry and wait for stable font me
         source,
         /async function generateDynamicNav\(\) \{[\s\S]*?await waitForPromptNavFont\(\);[\s\S]*?classList\.remove\('nav-items--skeleton'\)/
     );
+    assert.match(source, /const PROMPT_NAV_CATEGORY_ITEMS = Object\.freeze\(/);
+    assert.match(source, /PROMPT_NAV_CATEGORY_ITEMS\.forEach\(\(\[tag, cn\]\) => \{/);
+    assert.doesNotMatch(source, /const topTags = Object\.entries\(tagCounts\)/);
     assert.match(
         source,
         /renderPromptNavSkeletons\(\);\s*void waitForPromptNavFont\(\);[\s\S]*?await loadPromptsFromSupabase\(\);/
@@ -90,4 +93,5 @@ test('Chinese prompt sub-navigation removes invisible gaps and keeps compact ske
     );
     assert.match(html, /navTagLayout=20260726_PROMPTS_NAV_TAG_LAYOUT_2/);
     assert.match(html, /subTagOrder=20260726_PROMPTS_SUBTAG_ORDER_1/);
+    assert.match(html, /categoryCompleteness=20260730_PROMPTS_CATEGORY_COMPLETENESS_1/);
 });

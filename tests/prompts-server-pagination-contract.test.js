@@ -29,6 +29,10 @@ test('public prompt gallery uses bounded keyset pages and capped retries', () =>
         "window.supabaseClient.rpc('search_public_prompts'",
         'function discardPromptSupabaseSearchOnlyItems() {',
         'async function hydrateFeaturedBannerDescription(featured = {}) {',
+        "function buildPromptSupabaseCategoryQuery(selectFields, category, mediaFilter = 'image', options = {}) {",
+        ".contains('tags', [category])",
+        "async function hydratePromptSupabaseCategory(category = '', mediaFilter = currentPromptMediaFilter) {",
+        'hydratePromptSupabaseCategory(canonicalCategory, currentPromptMediaFilter)',
         "setPromptGalleryLoadStatus('error'",
         'attempt > PROMPT_SUPABASE_MAX_AUTO_RETRIES',
         'PROMPT_SUPABASE_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1))'
@@ -52,6 +56,33 @@ test('public prompt gallery uses bounded keyset pages and capped retries', () =>
         true,
         'pagination runtime and styles should be cache-busted together'
     );
+});
+
+test('prompt category queries filter media before their result limit and stop generic page scans', () => {
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const promptsHtml = readRepoFile('prompts.html');
+
+    assert.match(
+        promptsSource,
+        /function buildPromptSupabaseCategoryQuery[\s\S]*?query\.neq\('video_assets', '\[\]'\)[\s\S]*?query\.eq\('video_assets', '\[\]'\)[\s\S]*?return query\.limit\(PROMPT_SUPABASE_SEARCH_RESULT_LIMIT\);/,
+        'category media filtering must happen in PostgREST before the bounded result limit'
+    );
+    assert.match(
+        promptsSource,
+        /function getPromptSupabaseCategoryMediaKey[\s\S]*?normalizePromptMediaFilter\(mediaFilter\)/,
+        'category hydration should cache image and video modes separately'
+    );
+    assert.match(
+        promptsSource,
+        /function setPromptMediaFilter[\s\S]*?hydratePromptSupabaseCategory\(currentFilter, normalizedFilter\)/,
+        'switching media modes should hydrate the active category directly'
+    );
+    assert.match(
+        promptsSource,
+        /function canLoadMorePromptSupabasePages[\s\S]*?categoryQueryActiveOrComplete[\s\S]*?!categoryQueryActiveOrComplete/,
+        'a targeted category query should not fall back to scanning generic 40-row pages'
+    );
+    assert.match(promptsHtml, /categoryMedia=20260730_PROMPTS_CATEGORY_MEDIA_1/);
 });
 
 test('prompt gallery migration limits public rows and indexes the keyset cursor', () => {

@@ -173,7 +173,7 @@ test('shared-nav public pages include the section visibility preload before firs
         );
         assert.match(
             source,
-            /<script src="\/api\/runtime\/section-visibility-preload"><\/script>/
+            /<script src="\/api\/runtime\/section-visibility-preload" async><\/script>/
         );
     });
 });
