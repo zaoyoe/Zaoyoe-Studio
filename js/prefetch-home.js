@@ -12,31 +12,28 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260715_HOME_PROMPTS_LIVE_ONLY_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
-    const HOMEPAGE_PROMPT_LIVE_SELECT = [
+    const HOMEPAGE_PROMPT_SUMMARY_LIMIT = 40;
+    const HOMEPAGE_PROMPT_CONFIGURED_LIMIT = 24;
+    const HOMEPAGE_PROMPT_SUMMARY_SELECT = [
         'id',
         'title',
         'title_zh',
         'title_en',
-        'description',
-        'description_zh',
-        'description_en',
-        'prompt_text',
-        'prompt_text_zh',
-        'prompt_text_en',
         'images',
         'image_assets',
-        'dominant_colors',
-        'ai_tags',
         'tags',
+        'gallery_status',
         'created_at',
         'updated_at'
     ].join(', ');
-    const HOMEPAGE_PROMPT_LIVE_LEGACY_SELECT = HOMEPAGE_PROMPT_LIVE_SELECT
-        .split(', ')
-        .filter((field) => field !== 'image_assets')
-        .join(', ');
+    const HOMEPAGE_PROMPT_SUMMARY_LEGACY_SELECT = [
+        ...HOMEPAGE_PROMPT_SUMMARY_SELECT
+            .split(', ')
+            .filter((field) => !['image_assets', 'gallery_status'].includes(field)),
+        'ai_tags'
+    ].join(', ');
 
     // Only run on sub-pages (not homepage)
     if (window.location.pathname === '/' || window.location.pathname === '/index.html') return;
@@ -69,8 +66,10 @@
     }
 
     async function fetchPublicShopCatalogPayload(site = getCurrentSite()) {
-        const relativeUrl = `/api/shop/catalog?site=${encodeURIComponent(site)}`;
-        const directUrl = buildPublicApiUrl('/api/shop/catalog', { site });
+        const language = getCurrentLanguage();
+        const query = new URLSearchParams({ site, language, view: 'home' });
+        const relativeUrl = `/api/shop/catalog?${query.toString()}`;
+        const directUrl = buildPublicApiUrl('/api/shop/catalog', { site, language, view: 'home' });
         const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
         let lastError = null;
 
@@ -395,6 +394,7 @@
         const message = String(error?.message || '').toLowerCase();
         return Boolean(message && (
             message.includes('image_assets')
+            || message.includes('gallery_status')
             || message.includes('column of "prompts"')
             || message.includes("column of 'prompts'")
         ));
@@ -514,11 +514,20 @@
                 ? prompt.dominant_colors
                 : (Array.isArray(prompt?.dominantColors) ? prompt.dominantColors : []),
             aiTags,
-            ai_tags: aiTags
+            ai_tags: aiTags,
+            galleryStatus: String(prompt?.galleryStatus || prompt?.gallery_status || '').trim().toLowerCase(),
+            gallery_status: String(prompt?.gallery_status || prompt?.galleryStatus || '').trim().toLowerCase(),
+            homepageSummary: prompt?.homepageSummary === true || prompt?.homepage_summary === true,
+            homepage_summary: prompt?.homepage_summary === true || prompt?.homepageSummary === true
         };
     }
 
     function getHomepagePromptAdminVisibilityStatus(prompt = {}) {
+        const materializedStatus = String(prompt?.galleryStatus || prompt?.gallery_status || '').trim().toLowerCase();
+        if (materializedStatus) {
+            return materializedStatus;
+        }
+
         const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
             ? prompt.aiTags
             : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
@@ -543,8 +552,9 @@
         }
 
         const normalizedPrompt = normalizeHomepagePromptRecord(prompt);
+        const isHomepageSummary = prompt?.homepage_summary === true || prompt?.homepageSummary === true;
         const hasBaseTitle = hasHomepagePromptVisibleCopy(normalizedPrompt?.title);
-        const hasPromptText = hasHomepagePromptVisibleCopy(normalizedPrompt?.prompt_text || normalizedPrompt?.prompt);
+        const hasPromptText = isHomepageSummary || hasHomepagePromptVisibleCopy(normalizedPrompt?.prompt_text || normalizedPrompt?.prompt);
         const hasImages = Array.isArray(normalizedPrompt?.images) && normalizedPrompt.images.some((item) => hasHomepagePromptVisibleCopy(item));
 
         return hasBaseTitle && hasPromptText && hasImages;
@@ -556,7 +566,55 @@
             .filter((prompt) => isHomepagePromptVisible(prompt));
     }
 
-    async function fetchVisiblePromptPool() {
+    function collectConfiguredPromptIds(config = {}) {
+        const ids = new Set();
+        const collectItems = (items) => {
+            (Array.isArray(items) ? items : []).forEach((item) => {
+                const id = String(item?.id || '').trim();
+                if (id) ids.add(id);
+            });
+        };
+
+        collectItems(config?.featured_items);
+        (Array.isArray(config?.experiments) ? config.experiments : []).forEach((experiment) => {
+            if (String(experiment?.field || '').trim() !== 'featured_items') return;
+            collectItems(experiment?.control_value);
+            collectItems(experiment?.variant_value);
+        });
+        return Array.from(ids).slice(0, HOMEPAGE_PROMPT_CONFIGURED_LIMIT);
+    }
+
+    function buildPromptSummaryQuery(selectFields, ids = []) {
+        let query = window.supabaseClient
+            .from('prompts')
+            .select(selectFields)
+            .not('prompt_text', 'is', null)
+            .neq('prompt_text', '');
+        if (ids.length > 0) {
+            return query.in('id', ids).limit(Math.min(ids.length, HOMEPAGE_PROMPT_CONFIGURED_LIMIT));
+        }
+        return query
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(HOMEPAGE_PROMPT_SUMMARY_LIMIT);
+    }
+
+    async function fetchPromptSummaryRows(ids = []) {
+        let { data, error } = await buildPromptSummaryQuery(HOMEPAGE_PROMPT_SUMMARY_SELECT, ids);
+        if (error && isMissingPromptImageAssetsColumnError(error)) {
+            const fallback = await buildPromptSummaryQuery(HOMEPAGE_PROMPT_SUMMARY_LEGACY_SELECT, ids);
+            data = fallback.data;
+            error = fallback.error;
+        }
+        if (error) throw error;
+        return (Array.isArray(data) ? data : []).map((row) => ({
+            ...row,
+            homepageSummary: true,
+            homepage_summary: true
+        }));
+    }
+
+    async function fetchVisiblePromptPool(config = {}) {
         if (!window.supabaseClient) {
             return {
                 items: [],
@@ -565,28 +623,16 @@
         }
 
         try {
-            let { data, error } = await window.supabaseClient
-                .from('prompts')
-                .select(HOMEPAGE_PROMPT_LIVE_SELECT)
-                .order('updated_at', { ascending: false })
-                .limit(80);
-
-            if (error && isMissingPromptImageAssetsColumnError(error)) {
-                const fallbackResult = await window.supabaseClient
-                    .from('prompts')
-                    .select(HOMEPAGE_PROMPT_LIVE_LEGACY_SELECT)
-                    .order('updated_at', { ascending: false })
-                    .limit(80);
-                data = fallbackResult.data;
-                error = fallbackResult.error;
-            }
-
-            if (error) {
-                throw error;
+            const rows = await fetchPromptSummaryRows();
+            const configuredIds = collectConfiguredPromptIds(config);
+            const existingIds = new Set(rows.map((row) => String(row?.id || '').trim()).filter(Boolean));
+            const missingIds = configuredIds.filter((id) => !existingIds.has(id));
+            if (missingIds.length > 0) {
+                rows.push(...await fetchPromptSummaryRows(missingIds));
             }
 
             return {
-                items: filterVisibleHomepagePrompts(data),
+                items: filterVisibleHomepagePrompts(rows),
                 source: 'live'
             };
         } catch (error) {
@@ -698,8 +744,8 @@
 
         if (sortStrategy === 'popular') {
             sorted.sort((left, right) => {
-                const leftCount = Object.values(left.aiTags || {}).flat().length;
-                const rightCount = Object.values(right.aiTags || {}).flat().length;
+                const leftCount = Object.values(left.aiTags || {}).flat().length || (Array.isArray(left.tags) ? left.tags.length : 0);
+                const rightCount = Object.values(right.aiTags || {}).flat().length || (Array.isArray(right.tags) ? right.tags.length : 0);
                 return rightCount - leftCount;
             });
         } else if (sortStrategy === 'latest') {
@@ -1190,19 +1236,20 @@
             const config = Contract?.buildConfigMap?.(rows) || {};
             const sectionRows = Contract?.mapRowsBySection?.(rows) || {};
             const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
-            const { items: promptPool, source: promptPoolSource } = await fetchVisiblePromptPool();
+            const { items: promptPool, source: promptPoolSource } = await fetchVisiblePromptPool(config.prompts || {});
 
             const [shopCatalog, guestbookMessages] = await Promise.all([
                 fetchPublicShopCatalogPayload(getCurrentSite()).catch(async (apiError) => {
                     console.warn('Homepage shop catalog API prefetch failed, using direct fetch:', apiError?.message || apiError);
                     const [categoryResult, productResult] = await Promise.all([
-                    window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
-                    window.supabaseClient
-                        .from('shop_products')
-                        .select('*')
-                        .eq('is_active', true)
-                        .order('display_order', { ascending: false })
-                ]);
+                        window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
+                        window.supabaseClient
+                            .from('shop_products')
+                            .select('*')
+                            .eq('is_active', true)
+                            .order('display_order', { ascending: false })
+                            .limit(24)
+                    ]);
                     if (categoryResult.error) throw categoryResult.error;
                     if (productResult.error) throw productResult.error;
                     return filterPublicShopCatalog(categoryResult.data || [], productResult.data || []);

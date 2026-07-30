@@ -51,6 +51,9 @@ function createThenableQuery(getResult, onAwait) {
         order() {
             return this;
         },
+        limit() {
+            return this;
+        },
         then(resolve, reject) {
             if (typeof onAwait === 'function') {
                 onAwait();
@@ -209,6 +212,111 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
     assert.equal(refreshRes.json().products[0].manual_delivery, false);
     assert.equal(finalRes.json().products[0].id, 'product-2');
     assert.match(secondRes.headers['server-timing'], /shop-catalog-cache;dur=\d+;desc="hit"/);
+});
+
+test('public shop catalog home view is compact and cached separately from the full catalog', async () => {
+    let categoryReads = 0;
+    let productReads = 0;
+    let skuReads = 0;
+    let inventoryReads = 0;
+    const products = Array.from({ length: 30 }, (_, index) => ({
+        id: `product-${index + 1}`,
+        name: `Product ${index + 1}`,
+        description: `Description ${index + 1}`,
+        price_points: 10,
+        stock_count: 5,
+        manual_delivery: false,
+        category: 'tools',
+        display_order: 30 - index,
+        is_active: true,
+        show_purchase_notes: true,
+        purchase_notes: `Purchase notes ${index + 1}`,
+        show_usage_instructions: true,
+        usage_instructions: `Usage instructions ${index + 1}`
+    }));
+    const skus = products.map((product, index) => ({
+        id: `sku-${index + 1}`,
+        product_id: product.id,
+        sku_name: 'Default',
+        price_points: 10,
+        stock_count: 5,
+        is_default: true,
+        is_active: true,
+        sort_order: 0
+    }));
+    const supabase = {
+        from(table) {
+            if (table === 'shop_categories') {
+                return createThenableQuery(() => ({
+                    data: [{ id: 'category-tools', name: 'tools', sort_order: 1, is_public: true }],
+                    error: null
+                }), () => {
+                    categoryReads += 1;
+                });
+            }
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({ data: skus, error: null }), () => {
+                    skuReads += 1;
+                });
+            }
+            if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({ data: [], error: null }), () => {
+                    inventoryReads += 1;
+                });
+            }
+
+            assert.equal(table, 'shop_products');
+            return createThenableQuery(() => ({ data: products, error: null }), () => {
+                productReads += 1;
+            });
+        }
+    };
+    const handler = createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                return String(value || 'cn').trim().toLowerCase() || 'cn';
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '60000'
+        }
+    }).catalog;
+
+    const homeRes = createMockResponse();
+    await handler({ method: 'GET', url: '/api/shop/catalog?site=cn&view=home', headers: {} }, homeRes);
+    const fullRes = createMockResponse();
+    await handler({ method: 'GET', url: '/api/shop/catalog?site=cn', headers: {} }, fullRes);
+    const cachedHomeRes = createMockResponse();
+    await handler({ method: 'GET', url: '/api/shop/catalog?site=cn&view=home', headers: {} }, cachedHomeRes);
+
+    assert.equal(homeRes.statusCode, 200);
+    assert.equal(fullRes.statusCode, 200);
+    assert.equal(homeRes.json().view, 'home');
+    assert.equal(fullRes.json().view, 'full');
+    assert.equal(homeRes.json().products.length, 24);
+    assert.equal(fullRes.json().products.length, 30);
+    assert.equal(Object.hasOwn(homeRes.json().products[0], 'purchase_notes'), false);
+    assert.equal(Object.hasOwn(homeRes.json().products[0], 'usage_instructions'), false);
+    assert.equal(Object.hasOwn(homeRes.json().products[0], 'skus'), false);
+    assert.equal(fullRes.json().products[0].purchase_notes, 'Purchase notes 1');
+    assert.equal(fullRes.json().products[0].usage_instructions, 'Usage instructions 1');
+    assert.equal(fullRes.json().products[0].skus.length, 1);
+    assert.equal(homeRes.headers['x-zaoyoe-cache'], 'miss');
+    assert.equal(fullRes.headers['x-zaoyoe-cache'], 'miss');
+    assert.equal(cachedHomeRes.headers['x-zaoyoe-cache'], 'hit');
+    assert.equal(categoryReads, 2);
+    assert.equal(productReads, 2);
+    assert.equal(skuReads, 1);
+    assert.equal(inventoryReads, 1);
 });
 
 test('public shop catalog hides private categories and their products', async () => {

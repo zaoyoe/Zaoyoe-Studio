@@ -1922,7 +1922,10 @@ const PROMPT_GALLERY_RESIZE_PRELOAD_IDLE_MS = 620;
 const PROMPT_GALLERY_RESIZE_LIGHT_MODE_MS = 680;
 const PROMPT_GALLERY_RESIZE_LIGHT_MODE_CLASS = 'prompt-gallery-resizing';
 const PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS = 12000;
-const PROMPT_SUPABASE_RETRY_DELAY_MS = 2800;
+const PROMPT_SUPABASE_PAGE_SIZE = 40;
+const PROMPT_SUPABASE_SEARCH_RESULT_LIMIT = 80;
+const PROMPT_SUPABASE_MAX_AUTO_RETRIES = 2;
+const PROMPT_SUPABASE_RETRY_BASE_DELAY_MS = 1400;
 const promptGalleryImageWarmCache = new Set();
 const promptGalleryDeferredImageAssets = new WeakMap();
 const promptGalleryPendingImageActivations = new Set();
@@ -1934,6 +1937,11 @@ let promptGalleryResizeLightModeTimerId = null;
 let promptGalleryMasonryHeightSyncFrameId = null;
 
 function getPromptAdminVisibilityStatus(prompt = {}) {
+    const materializedStatus = String(prompt?.galleryStatus || prompt?.gallery_status || '').trim().toLowerCase();
+    if (materializedStatus) {
+        return materializedStatus;
+    }
+
     const aiTags = prompt?.aiTags && typeof prompt.aiTags === 'object' && !Array.isArray(prompt.aiTags)
         ? prompt.aiTags
         : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
@@ -2023,19 +2031,15 @@ const PROMPTS_SUPABASE_SUMMARY_SELECT = [
     'title_en',
     'title_zh',
     'tags',
-    'description',
-    'description_en',
-    'description_zh',
     'images',
     'image_assets',
-    'image_palettes',
     'video_assets',
     'dominant_colors',
-    'ai_tags',
     'source_url',
     'source_author_name',
     'source_author_handle',
     'source_author_avatar_url',
+    'gallery_status',
     'created_at'
 ].join(',');
 const PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS = [
@@ -2044,10 +2048,15 @@ const PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS = [
     'source_author_handle',
     'source_author_avatar_url'
 ];
-const PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT = PROMPTS_SUPABASE_SUMMARY_SELECT
-    .split(',')
-    .filter((field) => !['image_assets', 'image_palettes', 'video_assets'].includes(field) && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field))
-    .join(',');
+const PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT = [
+    ...PROMPTS_SUPABASE_SUMMARY_SELECT
+        .split(',')
+        .filter((field) => (
+            !['image_assets', 'video_assets', 'gallery_status'].includes(field)
+            && !PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.includes(field)
+        )),
+    'ai_tags'
+].join(',');
 const PROMPTS_SUPABASE_DETAIL_SELECT = [
     'id',
     'title',
@@ -2104,6 +2113,12 @@ let promptSearchDetailsHydrated = false;
 const promptDetailLoadPromises = new Map();
 let promptPageInitialRenderStarted = false;
 let promptLiveDataRetryTimer = null;
+let promptSupabasePageCursor = null;
+let promptSupabaseHasMorePages = true;
+let promptSupabasePageLoadPromise = null;
+let promptSupabasePageLoadBlocked = false;
+let promptSupabaseSearchRpcAvailable = null;
+const promptSupabaseSearchOnlyIds = new Set();
 
 function isMissingPromptImageAssetsColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
@@ -2111,6 +2126,7 @@ function isMissingPromptImageAssetsColumnError(error) {
         message.includes('image_assets')
         || message.includes('image_palettes')
         || message.includes('video_assets')
+        || message.includes('gallery_status')
         || PROMPTS_SOURCE_ATTRIBUTION_FIELD_KEYS.some((field) => message.includes(field))
         || message.includes('column of "prompts"')
         || message.includes("column of 'prompts'")
@@ -2130,11 +2146,68 @@ function replacePromptDataset(nextPrompts = []) {
     }
 
     visiblePrompts.forEach((prompt) => PROMPTS.push(prompt));
+    promptSupabaseSearchOnlyIds.clear();
     window.PROMPTS = PROMPTS;
     promptSearchDetailsHydrated = false;
     promptSearchDetailHydrationPromise = null;
     invalidatePromptSearchCaches();
     return visiblePrompts;
+}
+
+function appendPromptDataset(nextPrompts = []) {
+    const existingPromptIds = new Set(
+        PROMPTS.map((prompt) => String(prompt?.supabaseId || prompt?.supabase_id || '').trim()).filter(Boolean)
+    );
+    const visiblePrompts = filterVisiblePromptsForPromptsPage(nextPrompts)
+        .filter((prompt) => {
+            const promptId = String(prompt?.supabaseId || prompt?.supabase_id || '').trim();
+            return Boolean(promptId && !existingPromptIds.has(promptId));
+        })
+        .map((prompt, offset) => ({
+            ...prompt,
+            id: PROMPTS.length + offset,
+            supabaseId: prompt?.supabaseId || prompt?.supabase_id || prompt?.id || null,
+            supabase_id: prompt?.supabase_id || prompt?.supabaseId || prompt?.id || null
+        }));
+
+    visiblePrompts.forEach((prompt) => PROMPTS.push(prompt));
+    window.PROMPTS = PROMPTS;
+    promptSearchDetailsHydrated = false;
+    promptSearchDetailHydrationPromise = null;
+    invalidatePromptSearchCaches();
+    return visiblePrompts;
+}
+
+function resetPromptSupabasePaginationState() {
+    promptSupabasePageCursor = null;
+    promptSupabaseHasMorePages = true;
+    promptSupabasePageLoadPromise = null;
+    promptSupabasePageLoadBlocked = false;
+}
+
+function discardPromptSupabaseSearchOnlyItems() {
+    if (!promptSupabaseSearchOnlyIds.size) return 0;
+
+    const retainedPrompts = PROMPTS.filter((prompt) => {
+        const promptId = String(prompt?.supabaseId || prompt?.supabase_id || '').trim();
+        return !promptSupabaseSearchOnlyIds.has(promptId);
+    });
+    const removedCount = PROMPTS.length - retainedPrompts.length;
+    if (!removedCount) {
+        promptSupabaseSearchOnlyIds.clear();
+        return 0;
+    }
+
+    PROMPTS.splice(0, PROMPTS.length, ...retainedPrompts);
+    PROMPTS.forEach((prompt, index) => {
+        prompt.id = index;
+    });
+    promptSupabaseSearchOnlyIds.clear();
+    window.PROMPTS = PROMPTS;
+    promptSearchDetailsHydrated = false;
+    promptSearchDetailHydrationPromise = null;
+    invalidatePromptSearchCaches();
+    return removedCount;
 }
 
 function normalizeSupabasePromptSummary(item = {}, index = 0) {
@@ -2171,6 +2244,8 @@ function normalizeSupabasePromptSummary(item = {}, index = 0) {
         source_author_handle: item.source_author_handle || '',
         sourceAuthorAvatarUrl: item.source_author_avatar_url || '',
         source_author_avatar_url: item.source_author_avatar_url || '',
+        galleryStatus: item.gallery_status || '',
+        gallery_status: item.gallery_status || '',
         createdAt: item.created_at || '',
         hasPromptDetail: true,
         promptSummaryOnly: true,
@@ -2541,6 +2616,130 @@ async function ensurePromptDetailLoaded(item = {}) {
     return loadPromise;
 }
 
+function normalizePromptSupabasePageCursor(row = {}) {
+    const promptId = String(row?.id || '').trim();
+    const createdAtDate = new Date(String(row?.created_at || '').trim());
+    if (!promptId || Number.isNaN(createdAtDate.getTime())) return null;
+    return {
+        id: promptId,
+        createdAt: createdAtDate.toISOString()
+    };
+}
+
+function buildPromptSupabaseSummaryQuery(selectFields, cursor = null) {
+    let query = window.supabaseClient
+        .from('prompts')
+        .select(selectFields)
+        .not('prompt_text', 'is', null)
+        .neq('prompt_text', '')
+        .not('created_at', 'is', null)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(PROMPT_SUPABASE_PAGE_SIZE);
+
+    if (cursor?.createdAt && cursor?.id) {
+        query = query.or(
+            `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+        );
+    }
+
+    return query;
+}
+
+async function fetchPromptSupabaseSummaryPage(cursor = null) {
+    let { data, error } = await buildPromptSupabaseSummaryQuery(PROMPTS_SUPABASE_SUMMARY_SELECT, cursor);
+
+    if (error && isMissingPromptImageAssetsColumnError(error)) {
+        const fallbackResult = await buildPromptSupabaseSummaryQuery(PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT, cursor);
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+    }
+
+    if (error) {
+        return { ok: false, error, rows: [], cursor, hasMore: true };
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    return {
+        ok: true,
+        error: null,
+        rows,
+        cursor: rows.length > 0 ? normalizePromptSupabasePageCursor(rows[rows.length - 1]) : cursor,
+        hasMore: rows.length === PROMPT_SUPABASE_PAGE_SIZE
+    };
+}
+
+function isMissingPromptSearchRpcError(error) {
+    const code = String(error?.code || '').trim().toUpperCase();
+    const message = String(error?.message || '').toLowerCase();
+    return code === 'PGRST202'
+        || code === '42883'
+        || message.includes('search_public_prompts');
+}
+
+function getPromptSupabaseSearchTerms(query = '') {
+    const normalizedQuery = normalizePromptSearchText(query);
+    if (!normalizedQuery) return [];
+
+    return Array.from(new Set([normalizedQuery, ...expandSynonyms(normalizedQuery)]))
+        .map((term) => normalizePromptSearchText(term))
+        .filter((term) => term.length >= 2)
+        .slice(0, 12);
+}
+
+async function fetchPromptSupabaseSearchResults(query = '') {
+    if (!window.supabaseClient || promptSupabaseSearchRpcAvailable === false) {
+        return { available: false, matchedIds: new Set() };
+    }
+
+    const searchTerms = getPromptSupabaseSearchTerms(query);
+    if (!searchTerms.length) {
+        return { available: true, matchedIds: new Set() };
+    }
+
+    const { data, error } = await window.supabaseClient.rpc('search_public_prompts', {
+        p_terms: searchTerms,
+        p_limit: PROMPT_SUPABASE_SEARCH_RESULT_LIMIT
+    });
+
+    if (error) {
+        if (isMissingPromptSearchRpcError(error)) {
+            promptSupabaseSearchRpcAvailable = false;
+        } else {
+            console.warn('Supabase prompt search failed:', error?.message || error);
+        }
+        return { available: false, matchedIds: new Set() };
+    }
+
+    promptSupabaseSearchRpcAvailable = true;
+    const rows = (Array.isArray(data) ? data : [])
+        .map((row) => row?.item || row)
+        .filter((row) => row && typeof row === 'object');
+    const existingPromptIds = new Set(
+        PROMPTS.map((item) => String(item?.supabaseId || item?.supabase_id || '').trim()).filter(Boolean)
+    );
+    const normalizedRows = rows.map((item, index) => (
+        normalizeSupabasePromptSummary(item, PROMPTS.length + index)
+    ));
+    appendPromptDataset(normalizedRows);
+
+    const resultIds = new Set(rows.map((row) => String(row?.id || '').trim()).filter(Boolean));
+    resultIds.forEach((promptId) => {
+        if (!existingPromptIds.has(promptId)) {
+            promptSupabaseSearchOnlyIds.add(promptId);
+        }
+    });
+    const matchedIds = new Set();
+    PROMPTS.forEach((item, index) => {
+        const promptId = String(item?.supabaseId || item?.supabase_id || '').trim();
+        if (promptId && resultIds.has(promptId)) {
+            matchedIds.add(item?.id ?? index);
+        }
+    });
+
+    return { available: true, matchedIds };
+}
+
 async function loadPromptsFromSupabase(options = {}) {
     const clientReadyTimeoutMs = Number.isFinite(options.clientReadyTimeoutMs)
         ? options.clientReadyTimeoutMs
@@ -2562,41 +2761,28 @@ async function loadPromptsFromSupabase(options = {}) {
     }
 
     try {
-        let { data, error } = await window.supabaseClient
-            .from('prompts')
-            .select(PROMPTS_SUPABASE_SUMMARY_SELECT)
-            .not('prompt_text', 'is', null)
-            .neq('prompt_text', '')
-            .order('created_at', { ascending: false });
-
-        if (error && isMissingPromptImageAssetsColumnError(error)) {
-            const fallbackResult = await window.supabaseClient
-                .from('prompts')
-                .select(PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT)
-                .not('prompt_text', 'is', null)
-                .neq('prompt_text', '')
-                .order('created_at', { ascending: false });
-            data = fallbackResult.data;
-            error = fallbackResult.error;
-        }
-
-        if (error) {
-            console.error('Supabase fetch error:', error);
-            replacePromptDataset([]);
+        resetPromptSupabasePaginationState();
+        const page = await fetchPromptSupabaseSummaryPage();
+        if (!page.ok) {
+            console.error('Supabase fetch error:', page.error);
             return false;
         }
 
-        if (data && data.length > 0) {
+        promptSupabasePageCursor = page.cursor;
+        promptSupabaseHasMorePages = page.hasMore;
+
+        if (page.rows.length > 0) {
             // Transform Supabase data to match PROMPTS format
-            const supabasePrompts = data.map((item, index) => normalizeSupabasePromptSummary(item, index));
+            const supabasePrompts = page.rows.map((item, index) => normalizeSupabasePromptSummary(item, index));
             const visibleSupabasePrompts = filterVisiblePromptsForPromptsPage(supabasePrompts);
             const normalizedSupabasePrompts = replacePromptDataset(visibleSupabasePrompts);
 
-            console.log(`Loaded ${normalizedSupabasePrompts.length} visible prompts from Supabase (filtered ${Math.max(0, supabasePrompts.length - visibleSupabasePrompts.length)} hidden prompts)`);
+            console.log(`Loaded first prompt page with ${normalizedSupabasePrompts.length} visible records (filtered ${Math.max(0, supabasePrompts.length - visibleSupabasePrompts.length)} hidden records)`);
             return true;
         }
 
         replacePromptDataset([]);
+        promptSupabaseHasMorePages = false;
         console.log('Loaded 0 visible prompts from Supabase');
         return true;
     } catch (err) {
@@ -2604,6 +2790,54 @@ async function loadPromptsFromSupabase(options = {}) {
         replacePromptDataset([]);
         return false;
     }
+}
+
+async function loadNextPromptSupabasePage() {
+    if (!window.supabaseClient || !promptSupabaseHasMorePages || promptSupabasePageLoadBlocked) return 0;
+    if (promptSupabasePageLoadPromise) return promptSupabasePageLoadPromise;
+
+    setPromptGalleryLoadStatus('loading');
+    promptSupabasePageLoadPromise = (async () => {
+        const page = await fetchPromptSupabaseSummaryPage(promptSupabasePageCursor);
+        if (!page.ok) {
+            promptSupabasePageLoadBlocked = true;
+            setPromptGalleryLoadStatus('error', {
+                onRetry: retryPromptSupabasePageLoad
+            });
+            console.error('Supabase prompt page fetch error:', page.error);
+            return 0;
+        }
+
+        promptSupabasePageCursor = page.cursor;
+        promptSupabaseHasMorePages = page.hasMore;
+        promptSupabasePageLoadBlocked = false;
+
+        const normalizedRows = page.rows.map((item, index) => (
+            normalizeSupabasePromptSummary(item, PROMPTS.length + index)
+        ));
+        const appendedPrompts = appendPromptDataset(normalizedRows);
+        appendPromptGalleryPageItems(appendedPrompts);
+        setPromptGalleryLoadStatus('idle');
+        return appendedPrompts.length;
+    })().catch((error) => {
+        promptSupabasePageLoadBlocked = true;
+        setPromptGalleryLoadStatus('error', {
+            onRetry: retryPromptSupabasePageLoad
+        });
+        console.error('Error loading next prompt page:', error);
+        return 0;
+    }).finally(() => {
+        promptSupabasePageLoadPromise = null;
+    });
+
+    return promptSupabasePageLoadPromise;
+}
+
+function retryPromptSupabasePageLoad() {
+    if (promptSupabasePageLoadPromise) return;
+    promptSupabasePageLoadBlocked = false;
+    setPromptGalleryLoadStatus('idle');
+    queuePromptGalleryNextScrollBatch({ continueWhileSentinelNear: true });
 }
 
 function buildPromptCardSkeletonMarkup(index = 0) {
@@ -2676,6 +2910,7 @@ function renderFeaturedBannerSkeleton() {
     const image = document.getElementById('featuredImage');
     if (!banner) return;
 
+    banner.hidden = false;
     banner.classList.add('featured-banner--visible', 'featured-banner--loading');
     banner.classList.remove('featured-banner--revealed', 'featured-banner--interactive');
     banner.onclick = null;
@@ -2924,6 +3159,63 @@ function renderPromptGallerySkeletons(count = PROMPT_GALLERY_SKELETON_COUNT) {
         card.innerHTML = buildPromptCardSkeletonMarkup(index);
         appendPromptGalleryCard(grid, card, index, masonryState);
     });
+}
+
+function setPromptGalleryLoadStatus(state = 'idle', options = {}) {
+    const status = document.getElementById('promptGalleryLoadStatus');
+    const message = document.getElementById('promptGalleryLoadStatusMessage');
+    const retryButton = document.getElementById('promptGalleryLoadRetry');
+    if (!status || !message || !retryButton) return;
+
+    const normalizedState = ['loading', 'error'].includes(state) ? state : 'idle';
+    const isZh = getCurrentLanguage() === 'zh';
+    status.hidden = normalizedState === 'idle';
+    status.setAttribute('aria-hidden', normalizedState === 'idle' ? 'true' : 'false');
+    status.classList.toggle('prompt-gallery-load-status--error', normalizedState === 'error');
+    message.textContent = normalizedState === 'error'
+        ? (isZh ? '加载失败，请重试' : 'Failed to load. Please retry.')
+        : (isZh ? '正在加载更多内容...' : 'Loading more...');
+    retryButton.hidden = normalizedState !== 'error';
+    retryButton.onclick = normalizedState === 'error' && typeof options.onRetry === 'function'
+        ? options.onRetry
+        : null;
+}
+
+function renderPromptGalleryInitialLoadError(initialFilter = 'all', tagParam = '') {
+    const grid = document.querySelector('.gallery-container');
+    if (grid) {
+        resetPromptGalleryInfiniteState();
+        grid.replaceChildren();
+        grid.classList.remove('gallery-container--initial-skeleton');
+        grid.classList.add('visible');
+        grid.removeAttribute('data-initial-prompt-skeleton');
+    }
+
+    const banner = document.getElementById('featuredBanner');
+    if (banner) {
+        banner.classList.remove('featured-banner--loading');
+        banner.hidden = true;
+    }
+
+    setPromptGalleryLoadStatus('error', {
+        onRetry: () => retryPromptGalleryInitialLoad(initialFilter, tagParam)
+    });
+}
+
+async function retryPromptGalleryInitialLoad(initialFilter = 'all', tagParam = '') {
+    if (promptPageInitialRenderStarted) return;
+    setPromptGalleryLoadStatus('idle');
+    renderPromptNavSkeletons();
+    renderFeaturedBannerSkeleton();
+    renderPromptGallerySkeletons();
+
+    const loaded = await loadPromptsFromSupabase();
+    if (loaded) {
+        await completePromptPageInitialRender(initialFilter, tagParam);
+        return;
+    }
+
+    schedulePromptLiveDataRetry(initialFilter, tagParam);
 }
 
 function markPromptCardImageReady(card, cardImage) {
@@ -3425,8 +3717,13 @@ async function completePromptPageInitialRender(initialFilter = 'all', tagParam =
     handleUrlPromptParam();
 }
 
-function schedulePromptLiveDataRetry(initialFilter = 'all', tagParam = '') {
+function schedulePromptLiveDataRetry(initialFilter = 'all', tagParam = '', attempt = 1) {
     if (promptPageInitialRenderStarted || promptLiveDataRetryTimer) {
+        return;
+    }
+
+    if (attempt > PROMPT_SUPABASE_MAX_AUTO_RETRIES) {
+        renderPromptGalleryInitialLoadError(initialFilter, tagParam);
         return;
     }
 
@@ -3441,8 +3738,8 @@ function schedulePromptLiveDataRetry(initialFilter = 'all', tagParam = '') {
             return;
         }
 
-        schedulePromptLiveDataRetry(initialFilter, tagParam);
-    }, PROMPT_SUPABASE_RETRY_DELAY_MS);
+        schedulePromptLiveDataRetry(initialFilter, tagParam, attempt + 1);
+    }, PROMPT_SUPABASE_RETRY_BASE_DELAY_MS * (2 ** (attempt - 1)));
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -3458,8 +3755,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const { tagParam, initialFilter } = getPromptInitialFilterFromLocation();
 
-    // Try to load from Supabase first. If it is slow or temporarily unavailable,
-    // keep the skeletons instead of showing deleted cards from an old static snapshot.
+    // Try live data first; retries are bounded so a database incident cannot leave
+    // the page in an infinite request/skeleton loop.
     const loaded = await loadPromptsFromSupabase();
     if (!loaded) {
         schedulePromptLiveDataRetry(initialFilter, tagParam);
@@ -4303,6 +4600,28 @@ function getFeaturedBannerModalPromptId(featured = {}) {
     return featured?.supabaseId ?? featured?.supabase_id ?? featured?.id ?? '';
 }
 
+async function hydrateFeaturedBannerDescription(featured = {}) {
+    if (!featured?.promptSummaryOnly || buildFeaturedBannerDescription(featured)) return;
+
+    const expectedPromptId = String(featured?.supabaseId || featured?.supabase_id || featured?.id || '').trim();
+    if (!expectedPromptId) return;
+
+    try {
+        await ensurePromptDetailLoaded(featured);
+    } catch (error) {
+        console.warn('[Prompts] Failed to hydrate featured prompt detail:', error?.message || error);
+        return;
+    }
+
+    const banner = document.getElementById('featuredBanner');
+    const description = document.getElementById('featuredDescription');
+    if (!banner || !description || String(banner.dataset.promptId || '').trim() !== expectedPromptId) {
+        return;
+    }
+
+    description.textContent = buildFeaturedBannerDescription(featured);
+}
+
 function applyFeaturedBannerPrompt(featured = null) {
     const banner = document.getElementById('featuredBanner');
     const image = document.getElementById('featuredImage');
@@ -4359,6 +4678,9 @@ function applyFeaturedBannerPrompt(featured = null) {
 
     if (description) {
         description.textContent = buildFeaturedBannerDescription(featured);
+        if (!description.textContent) {
+            void hydrateFeaturedBannerDescription(featured);
+        }
     }
 
     // Click to open modal
@@ -6604,45 +6926,71 @@ function setupPromptMediaFilters() {
     syncPromptSortButtons();
 }
 
+function filterPromptGalleryBaseItems(items = [], filter = currentFilter) {
+    const sourceItems = Array.isArray(items) ? items : [];
+    if (filter === 'favorites') {
+        return isPromptFavoriteUserAuthenticated()
+            ? sourceItems.filter((prompt) => isPromptFavoriteSaved(getPromptFavoriteIdForItem(prompt)))
+            : [];
+    }
+    if (filter === 'all') return [...sourceItems];
+    if (filter === 'search') return [];
+
+    const filterLower = String(filter || '').toLowerCase();
+    return sourceItems.filter((prompt) => {
+        if (prompt.tags?.some((tag) => String(tag || '').toLowerCase() === filterLower)) {
+            return true;
+        }
+
+        if (!prompt.aiTags) return false;
+        const checkTags = (tags) => {
+            if (!tags) return false;
+            return ['en', 'zh'].some((language) => (
+                Array.isArray(tags[language])
+                && tags[language].some((tag) => String(tag || '').toLowerCase().includes(filterLower))
+            ));
+        };
+        return checkTags(prompt.aiTags.styles)
+            || checkTags(prompt.aiTags.mood)
+            || checkTags(prompt.aiTags.scenes)
+            || checkTags(prompt.aiTags.objects);
+    });
+}
+
+function canLoadMorePromptSupabasePages() {
+    return currentFilter !== 'search'
+        && promptSupabaseHasMorePages
+        && !promptSupabasePageLoadBlocked;
+}
+
+function syncPromptGalleryCompletionState() {
+    allCardsRendered = promptGalleryRenderedCount >= allFilteredItems.length
+        && !canLoadMorePromptSupabasePages();
+    return allCardsRendered;
+}
+
+function appendPromptGalleryPageItems(items = []) {
+    const nextBaseItems = filterPromptGalleryBaseItems(items, currentFilter);
+    if (nextBaseItems.length > 0) {
+        promptGalleryBaseFilteredItems.push(...nextBaseItems);
+        const nextVisibleItems = applyPromptSort(applyPromptMediaFilter(nextBaseItems));
+        allFilteredItems.push(...nextVisibleItems);
+    }
+    syncPromptGalleryCompletionState();
+    return nextBaseItems.length;
+}
+
 function renderGallery(filter, reset = true) {
     const grid = document.querySelector('.gallery-container');
     if (!grid) return;
 
+    if (filter !== 'search') {
+        discardPromptSupabaseSearchOnlyItems();
+    }
     currentFilter = filter;
 
     if (reset) {
-        if (filter === 'favorites') {
-            promptGalleryBaseFilteredItems = isPromptFavoriteUserAuthenticated()
-                ? PROMPTS.filter((prompt) => isPromptFavoriteSaved(getPromptFavoriteIdForItem(prompt)))
-                : [];
-        } else if (filter === 'all') {
-            promptGalleryBaseFilteredItems = [...PROMPTS];
-        } else {
-            // Filter by category tag OR AI tags (for sub-tag filtering)
-            const filterLower = filter.toLowerCase();
-            promptGalleryBaseFilteredItems = PROMPTS.filter(p => {
-                // Check main tags array
-                if (p.tags && p.tags.some(t => t.toLowerCase() === filterLower)) {
-                    return true;
-                }
-                // Check AI tags (styles, mood, scenes, objects)
-                if (p.aiTags) {
-                    const checkTags = (tags) => {
-                        if (!tags) return false;
-                        return ['en', 'zh'].some(lang =>
-                            tags[lang] && tags[lang].some(t => t.toLowerCase().includes(filterLower))
-                        );
-                    };
-                    if (checkTags(p.aiTags.styles) ||
-                        checkTags(p.aiTags.mood) ||
-                        checkTags(p.aiTags.scenes) ||
-                        checkTags(p.aiTags.objects)) {
-                        return true;
-                    }
-                }
-                return false;
-            });
-        }
+        promptGalleryBaseFilteredItems = filterPromptGalleryBaseItems(PROMPTS, filter);
     }
 
     allFilteredItems = applyPromptGalleryFiltersAndSort();
@@ -6881,7 +7229,7 @@ function renderPromptGalleryRange(startIndex = 0, endIndex = 0, options = {}) {
     const safeEnd = Math.max(safeStart, Math.min(Number.parseInt(endIndex, 10) || 0, allFilteredItems.length));
     const itemsToLoad = allFilteredItems.slice(safeStart, safeEnd);
     if (!itemsToLoad.length) {
-        allCardsRendered = promptGalleryRenderedCount >= allFilteredItems.length;
+        syncPromptGalleryCompletionState();
         return 0;
     }
 
@@ -6910,7 +7258,7 @@ function renderPromptGalleryRange(startIndex = 0, endIndex = 0, options = {}) {
     });
 
     promptGalleryRenderedCount = Math.max(promptGalleryRenderedCount, safeEnd);
-    allCardsRendered = promptGalleryRenderedCount >= allFilteredItems.length;
+    syncPromptGalleryCompletionState();
     isLoading = false;
     return itemsToLoad.length;
 }
@@ -7112,10 +7460,27 @@ function queuePromptGalleryRenderThrough(targetIndex = 0, options = {}) {
 }
 
 function queuePromptGalleryNextScrollBatch(options = {}) {
-    return queuePromptGalleryRenderThrough(
+    const progressiveBatchSize = getPromptGalleryProgressiveBatchSize();
+    const queuedCount = queuePromptGalleryRenderThrough(
         promptGalleryRenderedCount + getPromptGalleryProgressiveBatchSize() - 1,
         options
     );
+
+    const needsDatabasePage = promptGalleryRenderedCount + progressiveBatchSize >= allFilteredItems.length;
+    if (needsDatabasePage && canLoadMorePromptSupabasePages()) {
+        void loadNextPromptSupabasePage().then(() => {
+            syncPromptGalleryCompletionState();
+            if (
+                options.continueWhileSentinelNear === true
+                && !allCardsRendered
+                && isPromptGalleryLoadSentinelNearViewport()
+            ) {
+                queuePromptGalleryNextScrollBatch(options);
+            }
+        });
+    }
+
+    return queuedCount;
 }
 
 function setupPromptGalleryLoadSentinel() {
@@ -7217,7 +7582,7 @@ function handlePromptGalleryTouchMove(event) {
 }
 
 function loadMoreCards() {
-    return ensurePromptGalleryRenderedThrough(promptGalleryRenderedCount + getPromptGalleryBatchSize() - 1);
+    return queuePromptGalleryNextScrollBatch();
 }
 
 // --- Infinite Scroll ---
@@ -7512,11 +7877,27 @@ async function filterBySearch(query) {
     const localResults = performLocalSearch(normalizedQuery, searchingForColor);
     console.log(`🔍 Local search: found ${localResults.size} results for "${normalizedQuery}"`);
 
-    // If local search found results, use them directly
+    // Show local matches immediately, then merge indexed database matches without
+    // loading every prompt record into the first page.
     if (localResults.size > 0) {
         applySearchResults(localResults, searchingForColor);
         if (shouldPromptSearchHydrateDetails(normalizedQuery)) {
-            void refinePromptSearchWithDetails(normalizedQuery, searchingForColor, localResults, searchRequestId);
+            void (async () => {
+                const serverSearch = await refinePromptSearchWithServer(
+                    normalizedQuery,
+                    searchingForColor,
+                    localResults,
+                    searchRequestId
+                );
+                if (!serverSearch.available && isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+                    await refinePromptSearchWithDetails(
+                        normalizedQuery,
+                        searchingForColor,
+                        serverSearch.results,
+                        searchRequestId
+                    );
+                }
+            })();
         }
         return;
     }
@@ -7527,9 +7908,30 @@ async function filterBySearch(query) {
         return;
     }
 
-    await refinePromptSearchWithDetails(normalizedQuery, searchingForColor, localResults, searchRequestId);
+    const serverSearch = await refinePromptSearchWithServer(
+        normalizedQuery,
+        searchingForColor,
+        localResults,
+        searchRequestId
+    );
     if (!isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
         return;
+    }
+
+    if (serverSearch.results.size > 0) {
+        return;
+    }
+
+    if (!serverSearch.available) {
+        await refinePromptSearchWithDetails(
+            normalizedQuery,
+            searchingForColor,
+            serverSearch.results,
+            searchRequestId
+        );
+        if (!isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+            return;
+        }
     }
 
     const hydratedResults = performLocalSearch(normalizedQuery, searchingForColor);
@@ -7732,6 +8134,21 @@ async function refinePromptSearchWithDetails(normalizedQuery, searchingForColor,
     }
 
     return baseResults;
+}
+
+async function refinePromptSearchWithServer(normalizedQuery, searchingForColor, baseResults = new Set(), searchRequestId = PROMPT_SEARCH_REQUEST_ID) {
+    const serverSearch = await fetchPromptSupabaseSearchResults(normalizedQuery);
+    if (!isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+        return { available: serverSearch.available, results: baseResults };
+    }
+
+    const combinedResults = new Set(baseResults);
+    serverSearch.matchedIds.forEach((id) => combinedResults.add(id));
+    if (combinedResults.size > baseResults.size) {
+        applySearchResults(combinedResults, searchingForColor);
+    }
+
+    return { available: serverSearch.available, results: combinedResults };
 }
 
 // Check AI search rate limit (returns true if allowed)

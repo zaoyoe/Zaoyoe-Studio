@@ -4478,22 +4478,26 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260715_HOME_PROMPTS_LIVE_ONLY_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';",
         "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
         'function getHomepageConfigCacheStorageKey(site = getHomepageRuntimeSite()) {',
         'function invalidateStaleHomepageConfigCache() {',
         'invalidateStaleHomepageConfigCache();',
-        'async fetchVisiblePromptPool() {',
-        "this.promptPool = await this.fetchVisiblePromptPool();",
+        'const HOMEPAGE_PROMPT_SUMMARY_LIMIT = 40;',
+        'async fetchVisiblePromptPool(config = null) {',
+        'const [config, basePromptPool] = await Promise.all([',
         'schedulePromptPoolLiveSync(options = {}) {',
         'async syncPromptPoolFromLiveSourceInBackground(options = {}) {',
-        'this.cachedData.prompts = await this.aggregatePrompts(this.config.prompts || {});',
-        'HOMEPAGE_PROMPT_LIVE_SELECT',
+        'const nextPrompts = await this.aggregatePrompts(this.config.prompts || {});',
+        'HOMEPAGE_PROMPT_SUMMARY_SELECT',
         'function getPromptR2VariantUrl(url, variant = \'\') {',
         "const variantPath = { thumb: 'thumb', featured: 'featured', home: 'home', card: 'card' }[String(variant || '').trim()];",
-        "filterHomeVisiblePrompts(data)",
+        'filterHomeVisiblePrompts(summaryRows)',
+        "this.schedulePromptPoolLiveSync({ reason: 'cache-stale-while-revalidate' });",
+        "const query = new URLSearchParams({ site, language, view: 'home' });",
+        'const results = await Promise.allSettled([shopTask, guestbookTask, shopCategoriesTask]);',
         'schemaVersion: HOMEPAGE_PREFETCH_SCHEMA_VERSION',
         'const isFreshPromptPool = !promptPoolUpdatedAt || (prefetch.timestamp || 0) >= promptPoolUpdatedAt;',
         "element.classList.toggle('home-hover-lift-active', isHovered)",
@@ -4574,7 +4578,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260715_HOME_PROMPTS_LIVE_ONLY_1'),
+        homepageSource.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4640,14 +4644,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1'),
+            source.includes('homeDataPerf=20260729_HOME_SUMMARY_SWR_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260715_HOME_PROMPTS_LIVE_ONLY_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260729_HOME_SUMMARY_SWR_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );

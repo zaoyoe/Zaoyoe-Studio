@@ -157,19 +157,35 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         'prompts runtime should keep full static prompt data for detail fallback only'
     );
     assert.equal(
-        promptsSource.includes(".select(PROMPTS_SUPABASE_SUMMARY_SELECT)"),
+        promptsSource.includes('buildPromptSupabaseSummaryQuery(PROMPTS_SUPABASE_SUMMARY_SELECT'),
         true,
         'Supabase first-paint query should request only summary fields'
     );
+    const summarySelectBlock = promptsSource.match(/const PROMPTS_SUPABASE_SUMMARY_SELECT = \[([\s\S]*?)\]\.join\(','\);/)?.[1] || '';
+    ['description', 'description_en', 'description_zh', 'image_palettes', 'ai_tags'].forEach((field) => {
+        assert.equal(
+            summarySelectBlock.includes(`'${field}'`),
+            false,
+            `Supabase first-paint summary should defer ${field} until detail load`
+        );
+    });
+    ['id', 'title', 'tags', 'images', 'image_assets', 'video_assets', 'gallery_status', 'created_at'].forEach((field) => {
+        assert.equal(
+            summarySelectBlock.includes(`'${field}'`),
+            true,
+            `Supabase first-paint summary should keep card field ${field}`
+        );
+    });
     assert.equal(
-        /const PROMPTS_SUPABASE_SUMMARY_SELECT = \[[\s\S]*?'image_palettes'/.test(promptsSource),
+        /PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT[\s\S]*?\['image_assets', 'video_assets', 'gallery_status'\][\s\S]*?'ai_tags'/.test(promptsSource),
         true,
-        'Supabase summary should include compact palette data for first-frame modal rendering'
+        'legacy summary fallback should preserve draft filtering until gallery_status exists'
     );
     assert.equal(
-        /PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT[\s\S]*?\['image_assets', 'image_palettes', 'video_assets'\]/.test(promptsSource),
+        promptsSource.includes('const PROMPT_SUPABASE_PAGE_SIZE = 40;')
+            && promptsSource.includes('.limit(PROMPT_SUPABASE_PAGE_SIZE);'),
         true,
-        'legacy summary fallback should omit image palettes when the column is unavailable'
+        'first paint should use a bounded database page instead of loading the full prompt table'
     );
     assert.equal(
         promptsSource.includes("createdAt: item.created_at || ''"),
