@@ -4849,6 +4849,15 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     justify-content: center;
 }
 
+.related-prompt-grid--loading {
+    align-items: center;
+    justify-content: center;
+}
+
+.related-prompt-grid--loading .prompt-detail-loading-dots {
+    margin: auto;
+}
+
 .related-prompt-column {
     flex: 1 1 0;
     min-width: 0;

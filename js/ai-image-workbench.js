@@ -11460,6 +11460,11 @@
                         <i class="fas ${escapeHtml(statusIcon)}"></i>
                         ${badgeValue ? `<span>${escapeHtml(badgeValue)}</span>` : ''}
                     </button>
+                    <nav class="ai-image-rail-legal ai-image-rail-legal--desktop" aria-label="平台政策">
+                        <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" title="服务条款" data-rail-label="条款">
+                            <i class="fas fa-file-contract" aria-hidden="true"></i>
+                        </a>
+                    </nav>
                     <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" title="计费方式" data-rail-label="计费">
                         <i class="fas fa-gem"></i>
                     </button>
@@ -11469,6 +11474,11 @@
                 </div>
 
                 <div class="ai-image-history-expanded">
+                    <nav class="ai-image-rail-legal ai-image-rail-legal--mobile" aria-label="平台政策">
+                        <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" title="服务条款" data-rail-label="条款">
+                            <i class="fas fa-file-contract" aria-hidden="true"></i>
+                        </a>
+                    </nav>
                     ${isBillingView ? renderBillingPanel() : renderHistoryListPanel(statusText, historyRows)}
                 </div>
             </aside>

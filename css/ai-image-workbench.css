@@ -1867,8 +1867,74 @@ html[data-theme="dark"] .ai-image-shell-close:focus-visible {
     line-height: 1;
 }
 
-.ai-image-rail-wallet {
+.ai-image-rail-legal {
+    display: grid;
+    width: 42px;
     margin-top: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.ai-image-rail-legal--mobile {
+    display: none;
+}
+
+.ai-image-rail-legal-link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 30px;
+    color: var(--aiw-muted);
+    font-size: 12px;
+    text-decoration: none;
+    transition: color 0.18s ease, background 0.18s ease;
+}
+
+.ai-image-rail-legal-link::after {
+    content: attr(data-rail-label);
+    overflow: hidden;
+    max-width: 0;
+    color: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    transition: max-width 0.22s ease, opacity 0.18s ease;
+}
+
+.ai-image-history-sidebar.is-collapsed:hover .ai-image-rail-legal {
+    width: 108px;
+}
+
+.ai-image-history-sidebar.is-collapsed:hover .ai-image-rail-legal-link {
+    width: 106px;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 12px;
+}
+
+.ai-image-history-sidebar.is-collapsed:hover .ai-image-rail-legal-link::after {
+    max-width: 48px;
+    opacity: 1;
+}
+
+.ai-image-rail-legal-link:hover,
+.ai-image-rail-legal-link:focus-visible {
+    color: var(--aiw-blue);
+    background: rgba(95, 143, 188, 0.10);
+    outline: none;
+}
+
+.ai-image-rail-legal-link:active {
+    transform: scale(0.98);
+}
+
+.ai-image-rail-wallet {
+    margin-top: 0;
 }
 
 .ai-image-rail-close {
@@ -3021,6 +3087,20 @@ html[data-theme="dark"] .ai-image-rail-brand.is-sidebar-open:focus-visible {
     color: rgba(255, 255, 255, 0.92);
     background: rgba(255, 255, 255, 0.10);
     box-shadow: none;
+}
+
+html[data-theme="dark"] .ai-image-rail-legal {
+    background: transparent;
+}
+
+html[data-theme="dark"] .ai-image-rail-legal-link {
+    color: rgba(255, 255, 255, 0.62);
+}
+
+html[data-theme="dark"] .ai-image-rail-legal-link:hover,
+html[data-theme="dark"] .ai-image-rail-legal-link:focus-visible {
+    color: rgba(255, 255, 255, 0.94);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .ai-image-stage {
@@ -7509,6 +7589,45 @@ html[data-theme="dark"] .ai-image-task-select {
         color: var(--aiw-muted);
         background: rgba(102, 112, 133, 0.08);
         font-size: 15px;
+    }
+
+    .ai-image-rail-legal--desktop {
+        display: none;
+    }
+
+    .ai-image-rail-legal--mobile {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: auto;
+        justify-content: center;
+        width: 100%;
+        margin: 0;
+        padding: 8px 12px;
+        border: 0;
+        border-bottom: 1px solid var(--aiw-border);
+        border-radius: 0;
+        background: var(--aiw-surface-strong);
+    }
+
+    .ai-image-rail-legal-link {
+        width: auto;
+        height: 42px;
+        gap: 6px;
+        padding: 0 9px;
+        border-radius: 10px;
+        font-size: 12px;
+    }
+
+    .ai-image-rail-legal-link::after,
+    .ai-image-history-sidebar.is-collapsed:hover .ai-image-rail-legal-link::after {
+        max-width: 48px;
+        opacity: 1;
+    }
+
+    .ai-image-history-sidebar.is-collapsed .ai-image-rail-legal--mobile {
+        display: none;
     }
 
     .ai-image-rail-btn:hover,

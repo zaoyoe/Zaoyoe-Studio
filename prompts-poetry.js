@@ -685,7 +685,7 @@ function getPromptFavoriteActionLabel(isSaved = false) {
 }
 
 function getPromptSourceActionLabel() {
-    return getPromptActionCopy('viewOriginalAuthor', '去看原作者', 'View original author');
+    return getPromptActionCopy('viewOriginalAuthor', '查看原贴', 'View original post');
 }
 
 function getPromptRelatedActionLabel() {
@@ -1929,6 +1929,7 @@ const PROMPT_GALLERY_RESIZE_LIGHT_MODE_CLASS = 'prompt-gallery-resizing';
 const PROMPT_SUPABASE_CLIENT_READY_TIMEOUT_MS = 12000;
 const PROMPT_SUPABASE_PAGE_SIZE = 40;
 const PROMPT_SUPABASE_SEARCH_RESULT_LIMIT = 80;
+const PROMPT_RELATED_METADATA_BATCH_SIZE = 80;
 const PROMPT_SUPABASE_MAX_AUTO_RETRIES = 2;
 const PROMPT_SUPABASE_RETRY_BASE_DELAY_MS = 1400;
 const promptGalleryImageWarmCache = new Set();
@@ -2062,6 +2063,10 @@ const PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT = [
         )),
     'ai_tags'
 ].join(',');
+const PROMPTS_SUPABASE_RELATED_METADATA_SELECT = [
+    'id',
+    'ai_tags'
+].join(',');
 const PROMPTS_SUPABASE_DETAIL_SELECT = [
     'id',
     'title',
@@ -2126,6 +2131,8 @@ let promptSupabaseSearchRpcAvailable = null;
 const promptSupabaseSearchOnlyIds = new Set();
 const promptSupabaseCategoryLoadPromises = new Map();
 const promptSupabaseHydratedCategoryMediaKeys = new Set();
+let promptRelatedMetadataHydrationPromise = null;
+let promptRelatedMetadataRevision = 0;
 
 function isMissingPromptImageAssetsColumnError(error) {
     const message = String(error?.message || '').toLowerCase();
@@ -2419,6 +2426,7 @@ function mergePromptDetailIntoItem(item = {}, detail = {}) {
         promptSummaryOnly: false,
         promptDetailLoaded: hasPromptDetailBody(detail) || hasPromptDetailBody(item)
     });
+    invalidatePromptRelatedProfile(item);
 
     return item;
 }
@@ -2499,6 +2507,91 @@ async function fetchSupabasePromptDetail(item = {}) {
     }
 
     return data ? normalizeSupabasePromptDetail(data) : null;
+}
+
+function getPromptRelatedMetadataId(item = {}) {
+    return String(item?.supabaseId || item?.supabase_id || '').trim();
+}
+
+function hasPromptRelatedMetadata(item = {}) {
+    return item?.promptRelatedMetadataLoaded === true || Object.keys(getPromptAiTags(item)).length > 0;
+}
+
+async function fetchPromptRelatedMetadataRows(promptIds = []) {
+    if (!window.supabaseClient || !Array.isArray(promptIds) || promptIds.length === 0) {
+        return [];
+    }
+
+    const { data, error } = await window.supabaseClient
+        .from('prompts')
+        .select(PROMPTS_SUPABASE_RELATED_METADATA_SELECT)
+        .in('id', promptIds);
+
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data) ? data : [];
+}
+
+async function hydratePromptRelatedMetadata() {
+    if (!window.supabaseClient || !Array.isArray(PROMPTS) || PROMPTS.length === 0) {
+        return 0;
+    }
+    if (promptRelatedMetadataHydrationPromise) {
+        return promptRelatedMetadataHydrationPromise;
+    }
+
+    const targetPrompts = PROMPTS.filter((item) => {
+        if (item?.detailSource !== 'supabase') return false;
+        const promptId = getPromptRelatedMetadataId(item);
+        if (!promptId) return false;
+        if (hasPromptRelatedMetadata(item)) {
+            item.promptRelatedMetadataLoaded = true;
+            return false;
+        }
+        return true;
+    });
+    if (!targetPrompts.length) {
+        return 0;
+    }
+
+    const promptsById = new Map(targetPrompts.map((item) => [getPromptRelatedMetadataId(item), item]));
+    const promptIds = Array.from(promptsById.keys());
+    promptRelatedMetadataHydrationPromise = (async () => {
+        let changedCount = 0;
+
+        for (let offset = 0; offset < promptIds.length; offset += PROMPT_RELATED_METADATA_BATCH_SIZE) {
+            const batchIds = promptIds.slice(offset, offset + PROMPT_RELATED_METADATA_BATCH_SIZE);
+            const rows = await fetchPromptRelatedMetadataRows(batchIds);
+            rows.forEach((row) => {
+                const promptId = String(row?.id || '').trim();
+                const item = promptsById.get(promptId);
+                if (!item) return;
+                const aiTags = row?.ai_tags && typeof row.ai_tags === 'object' && !Array.isArray(row.ai_tags)
+                    ? row.ai_tags
+                    : {};
+                item.aiTags = aiTags;
+                item.ai_tags = aiTags;
+                item.promptRelatedMetadataLoaded = true;
+                invalidatePromptRelatedProfile(item);
+                changedCount += 1;
+            });
+            batchIds.forEach((promptId) => {
+                const item = promptsById.get(promptId);
+                if (item) item.promptRelatedMetadataLoaded = true;
+            });
+        }
+
+        if (changedCount > 0) {
+            promptRelatedMetadataRevision += 1;
+        }
+        return changedCount;
+    })().finally(() => {
+        promptRelatedMetadataHydrationPromise = null;
+    });
+
+    return promptRelatedMetadataHydrationPromise;
 }
 
 async function fetchSupabasePromptSearchDetails() {
@@ -5696,6 +5789,39 @@ const PROMPT_RELATED_FACET_DEFINITIONS = [
 ];
 const PROMPT_RELATED_PROFILE_CACHE = new WeakMap();
 
+function invalidatePromptRelatedProfile(item = {}) {
+    if (item && typeof item === 'object') {
+        PROMPT_RELATED_PROFILE_CACHE.delete(item);
+    }
+}
+
+async function preparePromptRelatedMatchingData(item = {}) {
+    const tasks = [hydratePromptRelatedMetadata()];
+    if (item && !hasPromptDetailBody(item)) {
+        tasks.push(ensurePromptDetailLoaded(item));
+    }
+
+    const results = await Promise.allSettled(tasks);
+    const failedResult = results.find((result) => result.status === 'rejected');
+    if (failedResult) {
+        console.warn('Failed to hydrate prompt related metadata:', failedResult.reason?.message || failedResult.reason);
+    }
+    invalidatePromptRelatedProfile(item);
+    return item;
+}
+
+function isPromptRelatedMatchingDataReady(item = {}) {
+    if (promptRelatedMetadataHydrationPromise || (item && !hasPromptDetailBody(item))) {
+        return false;
+    }
+
+    return !PROMPTS.some((candidate) => (
+        candidate?.detailSource === 'supabase'
+        && Boolean(getPromptRelatedMetadataId(candidate))
+        && !hasPromptRelatedMetadata(candidate)
+    ));
+}
+
 function normalizePromptRelatedToken(value = '') {
     return normalizePromptSearchText(value)
         .replace(/[^\p{L}\p{N}\u3400-\u9fff]+/gu, ' ')
@@ -5970,7 +6096,7 @@ let lastRenderedRelatedPromptKey = '';
 function getRelatedPromptRenderKey(item = findPromptAnalyticsItem()) {
     const promptId = getPromptStableOpenId(item) || String(currentPromptId ?? '').trim();
     const detailState = item?.promptDetailLoaded ? 'detail' : 'summary';
-    return `${promptId}:${detailState}`;
+    return `${promptId}:${detailState}:${promptRelatedMetadataRevision}`;
 }
 
 function getRelatedPromptImageUrl(item = {}) {
@@ -6095,6 +6221,8 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
     }
     lastRenderedRelatedPromptKey = renderKey;
     clearRelatedPromptImageObserver();
+    grid.classList.remove('related-prompt-grid--loading');
+    grid.removeAttribute('aria-busy');
 
     const relatedItems = getRelatedPrompts(item, 14);
     if (!relatedItems.length) {
@@ -6138,6 +6266,16 @@ function renderRelatedPrompts(item = findPromptAnalyticsItem()) {
             }
         });
     });
+}
+
+function renderRelatedPromptLoadingState() {
+    const grid = document.getElementById('relatedPromptGrid');
+    if (!grid || (grid.children.length > 0 && !grid.classList.contains('related-prompt-grid--empty'))) return;
+
+    grid.classList.remove('related-prompt-grid--empty');
+    grid.classList.add('related-prompt-grid--loading');
+    grid.setAttribute('aria-busy', 'true');
+    grid.innerHTML = '<div class="prompt-detail-loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>';
 }
 
 function clearRelatedPromptGridEntryAnimation() {
@@ -6187,8 +6325,11 @@ function scheduleRelatedPromptsRender(item = findPromptAnalyticsItem()) {
     cancelScheduledRelatedPromptRender();
     const token = promptRelatedRenderToken;
     const shouldDelayFirstRender = isPromptModalMobileLayout() && !isRelatedPromptRenderReady(item);
-    const render = () => {
+    const render = async () => {
         promptRelatedRenderTimerId = null;
+        if (token !== promptRelatedRenderToken || !isRelatedMode) return;
+        renderRelatedPromptLoadingState();
+        await preparePromptRelatedMatchingData(item);
         if (token !== promptRelatedRenderToken || !isRelatedMode) return;
         promptRelatedRenderFrameId = requestAnimationFrame(() => {
             promptRelatedRenderFrameId = null;
@@ -6245,8 +6386,10 @@ function getRelatedPromptImagesInVisualOrder(grid) {
     return orderedImages;
 }
 
-function warmRelatedPromptsForModal(item = findPromptAnalyticsItem()) {
+async function warmRelatedPromptsForModal(item = findPromptAnalyticsItem()) {
     const token = promptRelatedRenderToken;
+    await preparePromptRelatedMatchingData(item);
+    if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
     requestAnimationFrame(() => {
         if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
         renderRelatedPrompts(item);
@@ -6264,7 +6407,7 @@ function scheduleRelatedPromptWarmup(item = findPromptAnalyticsItem()) {
         promptRelatedWarmupIdleId = null;
         promptRelatedWarmupTimerId = null;
         if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
-        warmRelatedPromptsForModal(item);
+        void warmRelatedPromptsForModal(item);
     };
 
     if (typeof window.requestIdleCallback === 'function') {
@@ -6364,6 +6507,10 @@ function renderRelatedPromptsForActiveMode(item = findPromptAnalyticsItem(), opt
 
     clearRelatedModeDeferredRender();
     if (!isRelatedPromptRenderReady(item)) {
+        scheduleRelatedPromptsRender(item);
+        return;
+    }
+    if (!isPromptRelatedMatchingDataReady(item)) {
         scheduleRelatedPromptsRender(item);
         return;
     }

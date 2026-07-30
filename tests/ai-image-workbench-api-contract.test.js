@@ -32,10 +32,27 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260729_AI_MODEL_PRICING_36/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260730_AI_WORKBENCH_LEGAL_3/);
     assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
+    assert.match(promptsSource, /legalPolicies=20260730_AI_WORKBENCH_LEGAL_2/);
     assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
+});
+
+test('ai image workbench keeps one compact terms entry visible in the sidebar', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(source, /class="ai-image-rail-legal ai-image-rail-legal--desktop"/);
+    assert.match(source, /class="ai-image-rail-legal ai-image-rail-legal--mobile"/);
+    assert.match(source, /href="\/terms\.html"[^>]+target="_blank"[^>]+rel="noopener noreferrer"/);
+    assert.match(source, /data-rail-label="条款"/);
+    assert.equal((source.match(/class="ai-image-rail-legal-link"/g) || []).length, 2);
+    assert.doesNotMatch(source, /data-rail-label="隐私"/);
+    assert.doesNotMatch(source, /data-rail-label="退款"/);
+    assert.match(cssSource, /\.ai-image-rail-legal\s*\{[\s\S]*margin-top: auto;/);
+    assert.match(cssSource, /\.ai-image-rail-legal\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;/);
+    assert.match(cssSource, /html\[data-theme="dark"\] \.ai-image-rail-legal\s*\{[\s\S]*background: transparent;/);
+    assert.match(cssSource, /\.ai-image-history-sidebar\.is-collapsed:hover \.ai-image-rail-legal-link::after\s*\{[\s\S]*opacity: 1;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal--mobile\s*\{[\s\S]*display: grid;[\s\S]*grid-template-columns: auto;/);
 });
 
 test('ai image dock drops behind the auth sheet while login is open', () => {
