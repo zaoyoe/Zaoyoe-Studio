@@ -24,6 +24,7 @@ const OPS_ALERT_SECRET_KEYS = {
 };
 const SUPPORTED_PAYMENT_SECRET_SITES = new Set(SUPPORTED_SITES || ['cn', 'intl']);
 const AI_IMAGE_SECRET_CACHE_TTL_MS = 15000;
+const AI_IMAGE_PROVIDER_RUNTIME_STALE_TTL_MS = 5 * 60 * 1000;
 const AI_IMAGE_SECRET_CACHE_MAX_ENTRIES = 32;
 const aiImageRuntimeSecretConfigCache = createTimedCloneCache({
     ttlMs: AI_IMAGE_SECRET_CACHE_TTL_MS,
@@ -39,6 +40,7 @@ const aiImageProviderPublicMetadataCache = createTimedCloneCache({
 });
 const aiImageProviderRuntimeConfigCache = createTimedCloneCache({
     ttlMs: AI_IMAGE_SECRET_CACHE_TTL_MS,
+    staleTtlMs: AI_IMAGE_PROVIDER_RUNTIME_STALE_TTL_MS,
     maxEntries: AI_IMAGE_SECRET_CACHE_MAX_ENTRIES
 });
 
@@ -58,14 +60,21 @@ function cloneSecretCacheValue(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
-function createTimedCloneCache({ ttlMs = 0, maxEntries = 32 } = {}) {
+function createTimedCloneCache({ ttlMs = 0, staleTtlMs = 0, maxEntries = 32, now = Date.now } = {}) {
     const entries = new Map();
+    const effectiveStaleTtlMs = Math.max(Number(ttlMs) || 0, Number(staleTtlMs) || 0);
 
-    function isFresh(entry, nowMs = Date.now()) {
+    function isFresh(entry, nowMs = now()) {
         return Boolean(entry?.hasValue) && ttlMs > 0 && nowMs - Number(entry.cachedAt || 0) <= ttlMs;
     }
 
-    function trim(nowMs = Date.now()) {
+    function isStaleUsable(entry, nowMs = now()) {
+        return Boolean(entry?.hasValue)
+            && effectiveStaleTtlMs > ttlMs
+            && nowMs - Number(entry.cachedAt || 0) <= effectiveStaleTtlMs;
+    }
+
+    function trim(nowMs = now()) {
         if (entries.size <= maxEntries) return;
 
         for (const [key, entry] of entries.entries()) {
@@ -90,11 +99,43 @@ function createTimedCloneCache({ ttlMs = 0, maxEntries = 32 } = {}) {
             };
         }
 
-        const nowMs = Date.now();
+        const nowMs = now();
         const existing = entries.get(normalizedKey);
         if (isFresh(existing, nowMs)) {
             return {
                 status: 'hit',
+                value: cloneSecretCacheValue(existing.value)
+            };
+        }
+
+        if (isStaleUsable(existing, nowMs)) {
+            const alreadyRefreshing = Boolean(existing.promise);
+            if (!alreadyRefreshing) {
+                const staleEntry = existing;
+                const refreshPromise = Promise.resolve()
+                    .then(loader)
+                    .then((value) => {
+                        const cachedValue = cloneSecretCacheValue(value);
+                        entries.set(normalizedKey, {
+                            cachedAt: now(),
+                            hasValue: true,
+                            value: cachedValue
+                        });
+                        trim();
+                        return cachedValue;
+                    }, (error) => {
+                        entries.set(normalizedKey, staleEntry);
+                        throw error;
+                    });
+                entries.set(normalizedKey, {
+                    ...existing,
+                    promise: refreshPromise
+                });
+                // The stale caller does not await refresh; keep refresh failures contained.
+                refreshPromise.catch(() => {});
+            }
+            return {
+                status: alreadyRefreshing ? 'stale-wait' : 'stale-refresh',
                 value: cloneSecretCacheValue(existing.value)
             };
         }
@@ -118,7 +159,7 @@ function createTimedCloneCache({ ttlMs = 0, maxEntries = 32 } = {}) {
             const value = await loadPromise;
             const cachedValue = cloneSecretCacheValue(value);
             entries.set(normalizedKey, {
-                cachedAt: Date.now(),
+                cachedAt: now(),
                 hasValue: true,
                 value: cachedValue
             });
@@ -1232,11 +1273,16 @@ async function resolveAiImageProviderRuntimeConfig(supabase, options = {}) {
         };
     });
 
-    return cached.value;
+    return {
+        ...cached.value,
+        cacheStatus: cached.status,
+        cache_status: cached.status
+    };
 }
 
 module.exports = {
     __testUtils: {
+        createTimedCloneCache,
         getEncryptionKey,
         isSecretDecryptAuthenticationError,
         readIndependentSecret

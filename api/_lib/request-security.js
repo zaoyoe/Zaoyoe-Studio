@@ -471,6 +471,90 @@ async function takePersistentRateLimitToken({
     }
 }
 
+function isMissingBatchRateLimitRpc(error = {}) {
+    const signal = [error?.code, error?.message, error?.details, error?.hint]
+        .filter(Boolean)
+        .join(' ');
+    return /PGRST202|take_rate_limit_tokens|schema cache|function .* does not exist/i.test(signal);
+}
+
+async function takeRateLimitTokens({
+    supabase,
+    checks = [],
+    store = sharedRateLimitStore,
+    now = Date.now(),
+    env = process.env
+} = {}) {
+    const normalizedChecks = (Array.isArray(checks) ? checks : [])
+        .map((check = {}) => ({
+            scope: String(check.scope || '').trim(),
+            key: String(check.key || '').trim(),
+            limit: Math.max(1, Number(check.limit) || 1),
+            windowMs: Math.max(1000, Number(check.windowMs || check.window_ms) || 60_000)
+        }))
+        .filter((check) => check.key);
+    if (!normalizedChecks.length) return [];
+
+    const numericNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    if (supabase?.rpc && shouldUsePersistentRateLimitStore(env)) {
+        try {
+            const { data, error } = await supabase.rpc('take_rate_limit_tokens', {
+                p_checks: normalizedChecks.map((check) => ({
+                    scope: check.scope,
+                    key: check.key,
+                    limit: check.limit,
+                    window_ms: check.windowMs
+                })),
+                p_now: new Date(numericNow).toISOString()
+            });
+            if (error) throw error;
+            const batchStoppedAtDenial = Array.isArray(data)
+                && data.length > 0
+                && data.length < normalizedChecks.length
+                && data[data.length - 1]?.allowed === false;
+            if (!Array.isArray(data) || data.length === 0 || (data.length < normalizedChecks.length && !batchStoppedAtDenial)) {
+                throw new Error('Persistent batch rate limit RPC returned no data');
+            }
+            return data.map((result = {}, index) => ({
+                scope: String(result.scope || normalizedChecks[index]?.scope || '').trim(),
+                allowed: result.allowed !== false,
+                limit: Math.max(1, Number(result.limit ?? result.limit_value) || normalizedChecks[index]?.limit || 1),
+                remaining: Math.max(0, Number(result.remaining) || 0),
+                resetAt: Number.isFinite(Date.parse(result.reset_at || result.resetAt || ''))
+                    ? Date.parse(result.reset_at || result.resetAt)
+                    : numericNow + (normalizedChecks[index]?.windowMs || 60_000),
+                retryAfterSeconds: Math.max(1, Number(result.retry_after_seconds ?? result.retryAfterSeconds) || 1)
+            }));
+        } catch (error) {
+            if (!isMissingBatchRateLimitRpc(error)) {
+                return normalizedChecks.map((check) => ({
+                    scope: check.scope,
+                    ...takeLocalRateLimitToken({
+                        store,
+                        key: check.key,
+                        limit: check.limit,
+                        windowMs: check.windowMs,
+                        now: numericNow
+                    })
+                }));
+            }
+        }
+    }
+
+    return Promise.all(normalizedChecks.map(async (check) => ({
+        scope: check.scope,
+        ...await takePersistentRateLimitToken({
+            supabase,
+            store,
+            key: check.key,
+            limit: check.limit,
+            windowMs: check.windowMs,
+            now: numericNow,
+            env
+        })
+    })));
+}
+
 function takeRateLimitToken(options = {}) {
     if (options?.supabase) {
         return takePersistentRateLimitToken(options);
@@ -504,6 +588,7 @@ module.exports = {
     resolveClientIp,
     splitIpRules,
     takeRateLimitToken,
+    takeRateLimitTokens,
     _private: {
         extractForwardedIps,
         ipToBuffer,

@@ -4871,3 +4871,60 @@ test('ai image secret resolution caches the provider chain and invalidates after
         }
     }
 });
+
+test('timed clone cache serves stale values immediately while one refresh runs in background', async () => {
+    const { createTimedCloneCache } = require('../api/_lib/secrets').__testUtils;
+    let nowMs = 0;
+    let loadCount = 0;
+    let releaseRefresh;
+    const cache = createTimedCloneCache({
+        ttlMs: 10,
+        staleTtlMs: 100,
+        now: () => nowMs
+    });
+    const loader = async () => {
+        loadCount += 1;
+        if (loadCount === 1) return { version: 1 };
+        return new Promise((resolve) => {
+            releaseRefresh = () => resolve({ version: 2 });
+        });
+    };
+
+    const first = await cache.getOrLoad('provider-1', loader);
+    assert.equal(first.status, 'miss');
+    assert.deepEqual(first.value, { version: 1 });
+
+    nowMs = 20;
+    const stale = await cache.getOrLoad('provider-1', loader);
+    const concurrent = await cache.getOrLoad('provider-1', loader);
+    assert.equal(stale.status, 'stale-refresh');
+    assert.equal(concurrent.status, 'stale-wait');
+    assert.deepEqual(stale.value, { version: 1 });
+    assert.deepEqual(concurrent.value, { version: 1 });
+    assert.equal(loadCount, 2);
+
+    releaseRefresh();
+    await new Promise((resolve) => setImmediate(resolve));
+    const refreshed = await cache.getOrLoad('provider-1', loader);
+    assert.equal(refreshed.status, 'hit');
+    assert.deepEqual(refreshed.value, { version: 2 });
+    assert.equal(loadCount, 2);
+});
+
+test('timed clone cache stops serving stale values after the stale window', async () => {
+    const { createTimedCloneCache } = require('../api/_lib/secrets').__testUtils;
+    let nowMs = 0;
+    let loadCount = 0;
+    const cache = createTimedCloneCache({
+        ttlMs: 10,
+        staleTtlMs: 100,
+        now: () => nowMs
+    });
+
+    await cache.getOrLoad('provider-2', async () => ({ version: ++loadCount }));
+    nowMs = 101;
+    const refreshed = await cache.getOrLoad('provider-2', async () => ({ version: ++loadCount }));
+
+    assert.equal(refreshed.status, 'refresh');
+    assert.deepEqual(refreshed.value, { version: 2 });
+});

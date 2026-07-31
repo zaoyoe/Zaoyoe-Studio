@@ -674,7 +674,7 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260715_AI_IMAGE_WORKBENCH_PROXY_LIFECYCLE_24/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260731_AI_WORKBENCH_CONTENT_DONE_1/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -1212,13 +1212,23 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /status: inferredMode === 'chat' \? 'streaming' : 'queued'/);
     assert.match(source, /submitChatStreamTask\(task, threadRoot, chatThreadMessages, draftChatAttachments\)/);
     assert.match(source, /messages/);
+	    assert.match(source, /const pricingRule = findRuntimePricingRule\(\{/);
+	    assert.match(source, /payload\.pricingRuleId = pricingRuleId/);
+	    assert.match(source, /payload\.pricingRuleUpdatedAt = pricingRuleUpdatedAt/);
+	    assert.match(source, /async function refreshPricingAfterChange\(error = \{\}\)/);
+	    assert.match(source, /await loadRemoteConfig\(\{ force: true \}\)/);
 	    assert.match(source, /eventName === 'delta'/);
 	    assert.match(source, /eventName === 'reasoning'/);
+	    assert.match(source, /eventName === 'content_done'/);
+	    assert.match(source, /currentTask\.generationCompletedAt = contentCompletedAt/);
+	    assert.match(source, /stream_finalizing: true/);
+	    assert.match(source, /const endAt = generationCompletedAt/);
 	    assert.match(source, /eventName === 'billing'/);
 	    assert.match(source, /currentTask\.cost = currentTask\.chargedPoints/);
 	    assert.match(source, /if \(remoteTask\.status !== 'cancelled'\) \{\s*remoteTask\.status = 'streaming';/);
 	    assert.match(source, /const wasCancelled = localTask\?\.status === 'cancelled'/);
-	    assert.match(source, /if \(!wasCancelled && remoteTask\.status !== 'cancelled'\) \{\s*remoteTask\.resultPrompt = payload\.text \|\| remoteTask\.resultPrompt \|\| receivedText;\s*remoteTask\.status = 'succeeded';/);
+	    assert.match(source, /if \(!wasCancelled && remoteTask\.status === 'succeeded'\) \{\s*remoteTask\.resultPrompt = payload\.text \|\| remoteTask\.resultPrompt \|\| receivedText;\s*\}/);
+	    assert.match(source, /if \(isBusyTask\(remoteTask\)\) scheduleRemoteRecordsPoll\(\);/);
 	    assert.doesNotMatch(source, /if \(localTask\?\.status === 'cancelled'\) return;/);
 	    assert.match(source, /function shouldRecoverChatStreamError\(error\)/);
 	    assert.match(source, /async function recoverRemoteTaskByClientId\(localTask = \{\}\)/);

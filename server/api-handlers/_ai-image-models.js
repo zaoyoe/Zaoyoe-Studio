@@ -1763,6 +1763,7 @@ async function resolveAiImageRuntimeConfig({
 } = {}) {
     const resolveStartedAt = nowMs();
     let providerConfigMs = 0;
+    let providerConfigCacheStatus = '';
     let runtimeSecretMs = 0;
     let codexConfigMs = 0;
     let storedAiImageConfig = null;
@@ -1774,6 +1775,7 @@ async function resolveAiImageRuntimeConfig({
         const providerStartedAt = nowMs();
         try {
             const providerConfig = await resolveAiImageProviderRuntimeConfig(supabase, { task, env });
+            providerConfigCacheStatus = normalizeText(providerConfig?.cacheStatus || providerConfig?.cache_status, 40);
             if (providerConfig?.apiKey && providerConfig?.baseUrl) {
                 storedAiImageConfig = providerConfig;
             }
@@ -1856,6 +1858,7 @@ async function resolveAiImageRuntimeConfig({
         timing: {
             total_ms: elapsedMs(resolveStartedAt),
             provider_config_ms: providerConfigMs,
+            provider_config_cache_status: providerConfigCacheStatus,
             runtime_secret_ms: runtimeSecretMs,
             codex_config_ms: codexConfigMs
         }

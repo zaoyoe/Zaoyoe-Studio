@@ -8,6 +8,7 @@ const {
     normalizeIp,
     resolveClientIp,
     takeRateLimitToken,
+    takeRateLimitTokens,
     _private
 } = require('../api/_lib/request-security');
 
@@ -226,4 +227,109 @@ test('takeRateLimitToken can use a persistent Supabase-backed limiter when provi
     assert.equal(second.remaining, 0);
     assert.equal(third.allowed, false);
     assert.equal(third.retryAfterSeconds, 1);
+});
+
+test('takeRateLimitTokens batches persistent checks into one database request', async () => {
+    const calls = [];
+    const supabase = {
+        async rpc(name, args) {
+            calls.push({ name, args });
+            return {
+                data: args.p_checks.map((check, index) => ({
+                    scope: check.scope,
+                    allowed: index === 0,
+                    limit: check.limit,
+                    remaining: index === 0 ? check.limit - 1 : 0,
+                    reset_at: '2026-07-31T12:01:00.000Z',
+                    retry_after_seconds: index === 0 ? 1 : 30
+                })),
+                error: null
+            };
+        }
+    };
+
+    const results = await takeRateLimitTokens({
+        supabase,
+        now: Date.parse('2026-07-31T12:00:00.000Z'),
+        checks: [
+            { scope: 'submit:global', key: 'global', limit: 20, windowMs: 60_000 },
+            { scope: 'submit:user', key: 'user:1', limit: 3, windowMs: 60_000 }
+        ]
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, 'take_rate_limit_tokens');
+    assert.equal(calls[0].args.p_checks.length, 2);
+    assert.equal(results[0].scope, 'submit:global');
+    assert.equal(results[0].allowed, true);
+    assert.equal(results[1].scope, 'submit:user');
+    assert.equal(results[1].allowed, false);
+    assert.equal(results[1].retryAfterSeconds, 30);
+});
+
+test('takeRateLimitTokens falls back to parallel single checks before the batch migration exists', async () => {
+    const calls = [];
+    const supabase = {
+        rpc(name, args) {
+            calls.push({ name, args });
+            if (name === 'take_rate_limit_tokens') {
+                return Promise.resolve({
+                    data: null,
+                    error: { code: 'PGRST202', message: 'function take_rate_limit_tokens does not exist' }
+                });
+            }
+            return Promise.resolve({
+                data: {
+                    allowed: true,
+                    limit_value: args.p_limit,
+                    remaining: args.p_limit - 1,
+                    reset_at: '2026-07-31T12:01:00.000Z',
+                    retry_after_seconds: 1
+                },
+                error: null
+            });
+        }
+    };
+
+    const results = await takeRateLimitTokens({
+        supabase,
+        now: Date.parse('2026-07-31T12:00:00.000Z'),
+        checks: [
+            { scope: 'submit:global', key: 'global', limit: 20, windowMs: 60_000 },
+            { scope: 'submit:user', key: 'user:1', limit: 3, windowMs: 60_000 }
+        ]
+    });
+
+    assert.deepEqual(calls.map((call) => call.name), [
+        'take_rate_limit_tokens',
+        'take_rate_limit_token',
+        'take_rate_limit_token'
+    ]);
+    assert.equal(results.length, 2);
+    assert.equal(results.every((result) => result.allowed), true);
+});
+
+test('takeRateLimitTokens does not treat an invalid empty batch response as unlimited access', async () => {
+    const store = new Map();
+    const supabase = {
+        async rpc() {
+            return { data: [], error: null };
+        }
+    };
+
+    const first = await takeRateLimitTokens({
+        supabase,
+        store,
+        now: 1_000,
+        checks: [{ scope: 'submit:user', key: 'user:1', limit: 1, windowMs: 60_000 }]
+    });
+    const second = await takeRateLimitTokens({
+        supabase,
+        store,
+        now: 1_100,
+        checks: [{ scope: 'submit:user', key: 'user:1', limit: 1, windowMs: 60_000 }]
+    });
+
+    assert.equal(first[0].allowed, true);
+    assert.equal(second[0].allowed, false);
 });

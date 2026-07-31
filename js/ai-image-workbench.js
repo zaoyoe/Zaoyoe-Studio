@@ -2263,6 +2263,7 @@
     }
 
     function shouldRecoverChatStreamError(error) {
+        if (String(error?.code || '').trim() === 'pricing_changed') return false;
         const message = String(error?.message || error || '');
         return !/请先登录|unauthorized|billing_mode_required|insufficient|余额|积分不足/i.test(message);
     }
@@ -2276,6 +2277,9 @@
         }
         if (/reference_image_requires_upload|请先上传参考图片/i.test(raw)) {
             return '续作底图仍是临时预览，系统会先上传为正式参考图后再提交。请重新发送一次。';
+        }
+        if (/pricing_changed|计价标准已更新/i.test(raw)) {
+            return '计价标准刚刚更新，请确认最新价格后重新提交。';
         }
         if (/(generated images? (?:appear|appears|were|was|are|is) (?:to be )?unsafe|unsafe generated images?|safety (?:filter|system|policy)|content policy|policy violation|moderation|blocked by (?:the )?safety|violat(?:e|ed|ion).*policy|try modifying the prompts? or the seeds?)/i.test(raw)) {
             return '上游安全审核未通过，请降低性感、暴露、真实人物相关描述后重试。';
@@ -2374,6 +2378,21 @@
         const completedAt = task.completedAt || task.completed_at
             ? normalizeTimestamp(task.completedAt || task.completed_at, 0)
             : 0;
+        const rawGenerationCompletedAt = task.generationCompletedAt
+            || task.generation_completed_at
+            || metadata.content_completed_at
+            || metadata.contentCompletedAt;
+        const generationElapsedMs = Number(
+            task.generationElapsedMs
+            ?? task.generation_elapsed_ms
+            ?? metadata.timing?.generation_elapsed_ms
+            ?? metadata.generation_elapsed_ms
+        );
+        const generationCompletedAt = rawGenerationCompletedAt
+            ? normalizeTimestamp(rawGenerationCompletedAt, 0)
+            : (startedAt && Number.isFinite(generationElapsedMs) && generationElapsedMs >= 0
+                ? startedAt + generationElapsedMs
+                : 0);
         const updatedAt = task.updatedAt || task.updated_at
             ? normalizeTimestamp(task.updatedAt || task.updated_at, 0)
             : 0;
@@ -2474,6 +2493,7 @@
             createdAt,
             startedAt,
             completedAt,
+            generationCompletedAt,
             updatedAt,
             images: Array.isArray(serverImages) ? serverImages.slice(0, 4).map((image, index) => normalizeResultImage(image, index, task)).filter(Boolean) : [],
             deliveredImageCount: Number.isFinite(deliveredImageCount) && deliveredImageCount >= 0 ? deliveredImageCount : 0,
@@ -2653,6 +2673,7 @@
             createdAt: keepLocalRuntimeClock ? (localTask.createdAt || remoteTask.createdAt || 0) : (remoteTask.createdAt || localTask.createdAt || 0),
             startedAt: nextStartedAt,
             completedAt: keepLocalSucceeded ? (localTask.completedAt || remoteTask.completedAt || 0) : (remoteTask.completedAt || localTask.completedAt || 0),
+            generationCompletedAt: remoteTask.generationCompletedAt || localTask.generationCompletedAt || 0,
             updatedAt: Math.max(Number(localTask.updatedAt || 0), Number(remoteTask.updatedAt || 0)),
             status: finalStatus,
             progress: nextProgress,
@@ -3246,8 +3267,8 @@
             || composerWarningChanged;
     }
 
-    async function loadRemoteConfig() {
-        if (remoteConfigLoaded) return;
+    async function loadRemoteConfig({ force = false } = {}) {
+        if (remoteConfigLoaded && !force) return;
         try {
             const site = getRuntimeSite();
             const pricingPayload = await requestAiImage('pricing', { query: { site }, auth: 'optional' }).catch(() => null);
@@ -3262,6 +3283,14 @@
             remoteConfigLoaded = true;
             console.warn('[AIImageWorkbench] Remote config unavailable, using local defaults:', error?.message || error);
         }
+    }
+
+    async function refreshPricingAfterChange(error = {}) {
+        if (String(error?.code || '').trim() !== 'pricing_changed') return false;
+        remoteConfigLoaded = false;
+        await loadRemoteConfig({ force: true });
+        setComposerError('计价标准刚刚更新，请确认最新价格后重新提交。');
+        return true;
     }
 
     async function discoverRuntimeApiModels() {
@@ -4457,7 +4486,10 @@
         if (isTextVisionTask(task)) {
             if (task?.status === 'succeeded') return '文本完成';
             if (task?.status === 'queued') return getTaskQueuedStepLabel(task);
-            if (task?.status === 'processing' || task?.status === 'streaming') return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
+            if (task?.status === 'processing' || task?.status === 'streaming') {
+                if (task?.metadata?.stream_finalizing) return '正在完成';
+                return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
+            }
             if (task?.status === 'cancelled') return '已取消';
             if (isTaskReloadableBillingRecord(task)) return '重新加载中';
             return '处理失败';
@@ -4474,9 +4506,9 @@
         if (!task) return 0;
         const startedAt = Number(task.startedAt || task.createdAt || 0);
         const finishedAt = Number(task.completedAt || 0);
-        const endAt = ['succeeded', 'failed', 'cancelled'].includes(task.status) && finishedAt
-            ? finishedAt
-            : Date.now();
+        const generationCompletedAt = Number(task.generationCompletedAt || 0);
+        const endAt = generationCompletedAt
+            || (['succeeded', 'failed', 'cancelled'].includes(task.status) && finishedAt ? finishedAt : Date.now());
         if (!startedAt || endAt < startedAt) return 0;
         return Math.max(0, Math.floor((endAt - startedAt) / 1000));
     }
@@ -4529,7 +4561,10 @@
         if (!task) return '待开始';
         if (task.status === 'queued') return getTaskQueuedStepLabel(task);
         if (task.status === 'processing' || task.status === 'streaming') {
-            if (isTextVisionTask(task)) return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
+            if (isTextVisionTask(task)) {
+                if (task?.metadata?.stream_finalizing) return '正在完成';
+                return task.mode === 'reverse' ? '视觉分析中' : '对话生成中';
+            }
             if (isVideoMode(task.mode)) return '视频生成中';
             return getImageTaskProcessingStepLabel(task);
         }
@@ -7610,8 +7645,28 @@
 	            memoryMessageLimit: getChatMemoryOption().messageLimit,
 	            memoryTokenBudget: getChatMemoryOption().tokenBudget,
 	            clientTaskId: task.id,
-		            output: isTextVisionMode(task.mode) ? 'text' : (isVideoMode(task.mode) ? 'video' : 'image')
+	            output: isTextVisionMode(task.mode) ? 'text' : (isVideoMode(task.mode) ? 'video' : 'image')
 	        };
+	        if (task.billingMode === 'points') {
+	            const pricingRule = findRuntimePricingRule({
+	                site: getRuntimeSite(),
+	                mode: task.mode,
+	                billingMode: task.billingMode,
+	                model: task.model,
+	                providerId,
+	                resolution: task.resolution,
+	                ratio: task.ratio,
+	                quantity: task.quantity
+	            });
+	            const pricingRuleId = String(pricingRule?.id || '').trim();
+	            const pricingRuleUpdatedAt = String(pricingRule?.updated_at || pricingRule?.updatedAt || '').trim();
+	            if (pricingRuleId && pricingRuleUpdatedAt) {
+	                payload.pricingRuleId = pricingRuleId;
+	                payload.pricing_rule_id = pricingRuleId;
+	                payload.pricingRuleUpdatedAt = pricingRuleUpdatedAt;
+	                payload.pricing_rule_updated_at = pricingRuleUpdatedAt;
+	            }
+	        }
 	        const reasoningEffort = getCapabilityValue('reasoning', state.chatReasoningEffort);
 	        const geminiThinkingLevel = getCapabilityValue('geminiThinking', state.chatGeminiThinkingLevel);
 	        const claudeThinkingBudget = getCapabilityValue('claudeThinkingBudget', state.chatClaudeThinkingBudget);
@@ -7746,6 +7801,7 @@
                 apiModelGroup: localTask?.apiModelGroup || '',
                 payload: error?.payload || null
             });
+            await refreshPricingAfterChange(error);
             if (isRequestTimeoutError(error)) {
                 recoverSubmitTimeout(localTask).catch((recoverError) => {
                     console.warn('[AIImageWorkbench] Submit timeout recovery failed:', recoverError?.message || recoverError);
@@ -7849,6 +7905,26 @@
                         }
                         return;
                     }
+                    if (eventName === 'content_done') {
+                        if (!currentTask || currentTask.status === 'cancelled') return;
+                        const contentCompletedAt = normalizeTimestamp(
+                            payload.contentCompletedAt || payload.content_completed_at,
+                            Date.now()
+                        );
+                        currentTask.generationCompletedAt = contentCompletedAt;
+                        currentTask.progress = Math.max(Number(currentTask.progress || 0), 97);
+                        currentTask.progressKnown = true;
+                        currentTask.metadata = {
+                            ...(currentTask.metadata || {}),
+                            stream_finalizing: true,
+                            content_completed_at: payload.content_completed_at || payload.contentCompletedAt || new Date(contentCompletedAt).toISOString(),
+                            generation_elapsed_ms: Number(payload.generation_elapsed_ms ?? payload.generationElapsedMs ?? 0) || 0,
+                            protocol_done_signal: String(payload.terminal_signal || '')
+                        };
+                        persistState();
+                        render();
+                        return;
+                    }
                     if (eventName === 'billing') {
                         if (!currentTask) return;
                         const chargedPoints = Number(payload.chargedPoints ?? payload.charged_points);
@@ -7884,12 +7960,12 @@
                         const wasCancelled = localTask?.status === 'cancelled';
                         const remoteTask = replaceTask(task.id, payload.task);
                         if (remoteTask) {
-                            if (!wasCancelled && remoteTask.status !== 'cancelled') {
+                            if (!wasCancelled && remoteTask.status === 'succeeded') {
                                 remoteTask.resultPrompt = payload.text || remoteTask.resultPrompt || receivedText;
-                                remoteTask.status = 'succeeded';
                             }
                             persistState();
                             render();
+                            if (isBusyTask(remoteTask)) scheduleRemoteRecordsPoll();
                             if (!wasCancelled && remoteTask.status !== 'cancelled') scrollChatStageToBottom();
                         } else if (storedApiKeyChanged) {
                             persistState();
@@ -7903,7 +7979,10 @@
                         if (payload.task) {
                             replaceTask(task.id, payload.task);
                         }
-                        throw new Error(message);
+                        const streamError = new Error(message);
+                        streamError.code = payload.code || '';
+                        streamError.payload = payload;
+                        throw streamError;
                     }
                 }
             });
@@ -7912,6 +7991,7 @@
             }
         } catch (error) {
             console.warn('[AIImageWorkbench] Chat stream failed:', error?.message || error);
+            await refreshPricingAfterChange(error);
             if (shouldRecoverChatStreamError(error)) {
                 const recoveredTask = await recoverChatStreamTask(task);
                 if (recoveredTask && recoveredTask.status !== 'failed') {

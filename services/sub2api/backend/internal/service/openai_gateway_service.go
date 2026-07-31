@@ -236,11 +236,13 @@ type OpenAIForwardResult struct {
 	ServiceTier *string
 	// ReasoningEffort is extracted from request body (reasoning.effort) or derived from model suffix.
 	// Stored for usage records display; nil means not provided / not applicable.
-	ReasoningEffort    *string
-	Stream             bool
-	OpenAIWSMode       bool
-	ResponseHeaders    http.Header
-	Duration           time.Duration
+	ReasoningEffort *string
+	Stream          bool
+	OpenAIWSMode    bool
+	ResponseHeaders http.Header
+	Duration        time.Duration
+	// FirstTokenMs measures the first non-empty text, reasoning, or tool output,
+	// excluding protocol lifecycle and role-only stream events.
 	FirstTokenMs       *int
 	ClientDisconnect   bool
 	ImageCount         int
