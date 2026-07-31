@@ -4,6 +4,9 @@ const {
     resolveAiImageRuntimeSecretConfig,
     resolveCodexRuntimeConfig
 } = require('../../api/_lib/secrets');
+const {
+    createPaletteImagePipeline
+} = require('../prompt-image-palette');
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
@@ -3348,10 +3351,11 @@ async function normalizeReverseReferenceImageBuffer(buffer, mimeType = '') {
     }
 
     try {
-        // AVIF is common for stored prompt assets, but is not accepted by all
-        // OpenAI-compatible vision gateways. Convert it to a broadly supported JPEG.
-        const sharp = require('sharp');
-        const converted = await sharp(buffer, { failOn: 'none' })
+        // Use the WASM AVIF decoder shared with prompt palette extraction. Some
+        // production libvips builds can read AVIF metadata but cannot decode the
+        // image bitstream, while the vision gateways require JPEG/PNG/WebP.
+        const pipeline = await createPaletteImagePipeline(buffer);
+        const converted = await pipeline
             .rotate()
             .flatten({ background: '#ffffff' })
             .jpeg({ quality: 88 })
