@@ -1388,20 +1388,32 @@
         return state.billingMode === 'api' ? runtimeApiModelsLockedToDiscovery : runtimeAdminModelsConfigured;
     }
 
+    function filterRuntimeModelGroupsForMode(groups = [], mode = inferWorkbenchMode()) {
+        if (mode !== 'reverse') return groups;
+        return groups.map((group) => ({
+            ...group,
+            models: (Array.isArray(group.models) ? group.models : []).filter((model) => {
+                if (model.supportsImageInput === false) return false;
+                if (model.supportsImageInput === true) return true;
+                return modelLikelySupportsChatImageInput(model.id);
+            })
+        })).filter((group) => group.models.length);
+    }
+
     function getRuntimeModelGroups(mode = inferWorkbenchMode(), providers = getRuntimeModelProvidersForBillingMode()) {
         const isTextMode = isTextVisionMode(mode);
         const isVideo = isVideoMode(mode);
-        const groups = groupRuntimeModelsByFamily(providers, mode);
+        const groups = filterRuntimeModelGroupsForMode(groupRuntimeModelsByFamily(providers, mode), mode);
         if (groups.length) return groups;
         if (providers.length || isRuntimeModelSourceLockedForBillingMode()) return [];
         if (isVideo) return [];
         if (isTextMode) {
             if (state.billingMode !== 'api') return [];
-            return [buildFallbackRuntimeModelProvider({
+            return filterRuntimeModelGroupsForMode([buildFallbackRuntimeModelProvider({
                 providerId: 'default-chat',
                 label: '默认对话模型',
                 chatModels: runtimeApiTextModels.length ? runtimeApiTextModels : API_TEXT_MODELS
-            })].map((provider) => ({ providerId: provider.providerId, label: provider.label, models: provider.chatModels }));
+            })].map((provider) => ({ providerId: provider.providerId, label: provider.label, models: provider.chatModels })), mode);
         }
         if (state.billingMode === 'api') {
             return [buildFallbackRuntimeModelProvider({
