@@ -6,6 +6,7 @@ const Module = require('node:module');
 const {
     createAiImageHandlers,
     inferMode,
+    inferProviderIdFromPublicModelProviders,
     resolveModel,
     resolveModelGroup,
     resolveAllowedApiBaseUrls
@@ -526,6 +527,34 @@ test('ai image mode inference keeps image, reverse, chat, and text flows distinc
     assert.equal(inferMode({ billingMode: 'api', prompt: '写一段文案' }), 'chat');
     assert.equal(inferMode({ billingMode: 'points', apiModelGroup: 'chat', prompt: '写一段文案' }), 'chat');
     assert.equal(inferMode({ agentSlug: 'background-remover', prompt: '换成海边背景' }), 'agent');
+});
+
+test('ai image request infers a unique provider for a configured reverse model', () => {
+    const providers = [
+        {
+            providerId: 'provider-3',
+            chatModels: ['gemini-3.5-flash']
+        },
+        {
+            providerId: 'provider-4',
+            chatModels: ['claude-opus-4-6']
+        }
+    ];
+    assert.equal(
+        inferProviderIdFromPublicModelProviders(providers, { model: 'claude-opus-4-6', mode: 'reverse' }),
+        'provider-4'
+    );
+    assert.equal(
+        inferProviderIdFromPublicModelProviders(providers, { model: 'missing-model', mode: 'reverse' }),
+        ''
+    );
+    assert.equal(
+        inferProviderIdFromPublicModelProviders([
+            { providerId: 'provider-a', chatModels: ['shared-model'] },
+            { providerId: 'provider-b', chatModels: ['shared-model'] }
+        ], { model: 'shared-model', mode: 'reverse' }),
+        ''
+    );
 });
 
 test('reverse prompt defaults to text vision model and chat model group', () => {

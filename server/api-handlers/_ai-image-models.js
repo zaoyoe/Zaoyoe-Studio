@@ -76,6 +76,9 @@ const REVERSE_REFERENCE_IMAGE_MIME_TYPES = Object.freeze(new Set([
     'image/gif',
     'image/webp'
 ]));
+const REVERSE_REFERENCE_TRANSCODE_MIME_TYPES = Object.freeze(new Set([
+    'image/avif'
+]));
 const DEFAULT_TRUSTED_REFERENCE_IMAGE_HOSTS = Object.freeze([
     'cdn.fatherkey.com',
     'cdn.zaoyoe.com',
@@ -3321,7 +3324,7 @@ function normalizeReferenceImageMimeType(value = '', sourceUrl = '') {
         'image/x-png': 'image/png'
     };
     const direct = aliases[normalized] || normalized;
-    if (REVERSE_REFERENCE_IMAGE_MIME_TYPES.has(direct)) return direct;
+    if (REVERSE_REFERENCE_IMAGE_MIME_TYPES.has(direct) || REVERSE_REFERENCE_TRANSCODE_MIME_TYPES.has(direct)) return direct;
     if (direct && !['application/octet-stream', 'binary/octet-stream'].includes(direct)) return '';
 
     let pathname = '';
@@ -3334,7 +3337,40 @@ function normalizeReferenceImageMimeType(value = '', sourceUrl = '') {
     if (/\.png$/.test(pathname)) return 'image/png';
     if (/\.gif$/.test(pathname)) return 'image/gif';
     if (/\.webp$/.test(pathname)) return 'image/webp';
+    if (/\.avif$/.test(pathname)) return 'image/avif';
     return '';
+}
+
+async function normalizeReverseReferenceImageBuffer(buffer, mimeType = '') {
+    const normalizedMimeType = normalizeMimeType(mimeType, 'image/png');
+    if (!REVERSE_REFERENCE_TRANSCODE_MIME_TYPES.has(normalizedMimeType)) {
+        return { buffer, mimeType: normalizedMimeType };
+    }
+
+    try {
+        // AVIF is common for stored prompt assets, but is not accepted by all
+        // OpenAI-compatible vision gateways. Convert it to a broadly supported JPEG.
+        const sharp = require('sharp');
+        const converted = await sharp(buffer, { failOn: 'none' })
+            .rotate()
+            .flatten({ background: '#ffffff' })
+            .jpeg({ quality: 88 })
+            .toBuffer();
+        if (converted?.length) {
+            return { buffer: converted, mimeType: 'image/jpeg' };
+        }
+    } catch (cause) {
+        const error = new Error('反推参考图片转码失败，请重新上传图片');
+        error.statusCode = 415;
+        error.code = 'ai_image_reference_transcode_failed';
+        error.cause = cause;
+        throw error;
+    }
+
+    const error = new Error('反推参考图片转码失败，请重新上传图片');
+    error.statusCode = 415;
+    error.code = 'ai_image_reference_transcode_failed';
+    throw error;
 }
 
 function addReferenceImageHost(hosts, value = '') {
@@ -3475,19 +3511,36 @@ async function fetchReverseReferenceImage(referenceImageUrl, {
     );
     let currentUrl = assertTrustedReferenceImageUrl(referenceImageUrl, env);
     let response = null;
+    const dnsRetryCount = normalizePositiveInt(
+        env.AI_IMAGE_REFERENCE_DNS_RETRIES,
+        2,
+        { min: 0, max: 4 }
+    );
 
     for (let redirectCount = 0; redirectCount <= MAX_REVERSE_REFERENCE_REDIRECTS; redirectCount += 1) {
-        response = await fetchProviderResponse(fetchImpl, currentUrl.toString(), {
-            method: 'GET',
-            redirect: 'manual',
-            headers: {
-                Accept: 'image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8'
-            },
-            ...(signal ? { signal } : {})
-        }, {
-            env,
-            label: 'AI 图片反推参考图下载'
-        });
+        for (let attempt = 0; ; attempt += 1) {
+            try {
+                response = await fetchProviderResponse(fetchImpl, currentUrl.toString(), {
+                    method: 'GET',
+                    redirect: 'manual',
+                    headers: {
+                        Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8'
+                    },
+                    ...(signal ? { signal } : {})
+                }, {
+                    env,
+                    label: 'AI 图片反推参考图下载'
+                });
+                break;
+            } catch (error) {
+                const signalText = extractFetchErrorSignal(error).toLowerCase();
+                const retryableDns = error?.code === 'ai_image_provider_dns_failed'
+                    && /(eai_again|enotfound|dns)/.test(signalText)
+                    && !signal?.aborted;
+                if (!retryableDns || attempt >= dnsRetryCount) throw error;
+                await sleep(250 * (attempt + 1));
+            }
+        }
         if (![301, 302, 303, 307, 308].includes(Number(response.status || 0))) break;
         const location = response.headers?.get?.('location') || '';
         abortResponseBody(response);
@@ -3512,16 +3565,18 @@ async function fetchReverseReferenceImage(referenceImageUrl, {
     );
     if (!mimeType) {
         abortResponseBody(response);
-        const error = new Error('反推参考图片格式不受支持，请使用 JPEG、PNG、GIF 或 WebP');
+        const error = new Error('反推参考图片格式不受支持，请使用 JPEG、PNG、GIF、WebP 或 AVIF');
         error.statusCode = 415;
         error.code = 'ai_image_reference_url_not_image';
         throw error;
     }
     const buffer = await readLimitedReferenceImageBuffer(response, { env, maxBytes, signal });
+    const normalizedImage = await normalizeReverseReferenceImageBuffer(buffer, mimeType);
     return {
-        dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
-        mimeType,
-        bytes: buffer.length
+        dataUrl: `data:${normalizedImage.mimeType};base64,${normalizedImage.buffer.toString('base64')}`,
+        mimeType: normalizedImage.mimeType,
+        bytes: normalizedImage.buffer.length,
+        sourceMimeType: mimeType
     };
 }
 
@@ -5716,6 +5771,7 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
             reference_fetch_ms: referenceFetchMs,
             reference_image_bytes: reverseReferenceImage?.bytes || 0,
             reference_image_mime_type: reverseReferenceImage?.mimeType || '',
+            reference_image_source_mime_type: reverseReferenceImage?.sourceMimeType || reverseReferenceImage?.mimeType || '',
             reference_image_transport: reverseReferenceImage ? 'data_uri' : '',
             upstream_ms: upstreamMs,
             upstream_request_ms: upstreamRequestMs,
