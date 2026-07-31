@@ -15,7 +15,8 @@ function createMockResponse() {
     const state = {
         statusCode: 200,
         headers: {},
-        body: ''
+        body: '',
+        flushCount: 0
     };
 
     return {
@@ -34,6 +35,9 @@ function createMockResponse() {
         flushHeaders() {
             return undefined;
         },
+        flush() {
+            state.flushCount += 1;
+        },
         end(payload = '') {
             state.body += String(payload || '');
             return this;
@@ -49,6 +53,9 @@ function createMockResponse() {
         },
         get body() {
             return state.body;
+        },
+        get flushCount() {
+            return state.flushCount;
         }
     };
 }
@@ -2197,6 +2204,7 @@ test('points chat stream uses server provider key, streams deltas, and charges p
         assert.match(res.body, /"terminal_signal":"sse_done"/);
         assert.match(res.body, /积分流式已开启/);
         assert.match(res.body, /event: done/);
+        assert.ok(res.flushCount > 0);
         assert.equal(requests.length, 1);
         assert.equal(requests[0].url, 'https://api.example.com/v1/chat/completions');
         assert.equal(requests[0].headers.Authorization, 'Bearer sk-server-stream-key');

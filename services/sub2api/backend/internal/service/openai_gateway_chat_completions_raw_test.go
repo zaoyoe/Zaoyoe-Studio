@@ -82,6 +82,7 @@ func TestBuildOpenAIResponsesURL_ProbeURL(t *testing.T) {
 
 func TestChatChunkStartsResponsesOutputRequiresVisibleOutput(t *testing.T) {
 	empty := ""
+	whitespace := " \n\t"
 	text := "hello"
 	reasoning := "thinking"
 
@@ -100,6 +101,12 @@ func TestChatChunkStartsResponsesOutputRequiresVisibleOutput(t *testing.T) {
 			name: "empty content and reasoning",
 			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
 				Delta: apicompat.ChatDelta{Content: &empty, ReasoningContent: &empty},
+			}}},
+		},
+		{
+			name: "whitespace content is not visible output",
+			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
+				Delta: apicompat.ChatDelta{Content: &whitespace},
 			}}},
 		},
 		{

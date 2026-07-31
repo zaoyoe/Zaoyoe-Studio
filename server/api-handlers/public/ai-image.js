@@ -3950,8 +3950,10 @@ function extractUpstreamErrorMessage(payload = {}, fallback = '上游对话模�
 
 function writeSse(res, event, data = {}) {
     if (!res || typeof res.write !== 'function') return;
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    if (typeof res.flush === 'function') {
+        res.flush();
+    }
 }
 
 function getChatStreamIdleTimeoutMs(env = {}) {

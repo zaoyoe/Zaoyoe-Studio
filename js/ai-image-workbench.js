@@ -25,6 +25,11 @@
     const WORKBENCH_NARROW_QUERY = '(max-width: 1120px)';
     const CHAT_NAVIGATION_MIN_ITEMS = 2;
     const CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX = 96;
+    const CHAT_STREAM_PROGRESSIVE_THRESHOLD_CHARS = 48;
+    const CHAT_STREAM_PROGRESSIVE_FIRST_CHARS = 18;
+    const CHAT_STREAM_PROGRESSIVE_MAX_FRAMES = 10;
+    const CHAT_STREAM_PROGRESSIVE_TARGET_CHARS = 48;
+    const CHAT_STREAM_PERSIST_DELAY_MS = 120;
     const MOBILE_HISTORY_PANEL_COMPOSER_GAP_PX = 12;
     const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
     const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
@@ -1938,7 +1943,7 @@
         }
         const decoder = new TextDecoder();
         let buffer = '';
-        const dispatchEventBlock = (block = '') => {
+        const dispatchEventBlock = async (block = '') => {
             const lines = String(block || '').split(/\r?\n/);
             let eventName = 'message';
             const dataLines = [];
@@ -1957,7 +1962,7 @@
                 data = { text: dataLines.join('\n') };
             }
             if (typeof onEvent === 'function') {
-                onEvent(eventName, data);
+                await onEvent(eventName, data);
             }
             return { event: eventName, data };
         };
@@ -1968,11 +1973,50 @@
             buffer += decoder.decode(chunk.value, { stream: true });
             const blocks = buffer.split(/\n\n|\r\n\r\n/);
             buffer = blocks.pop() || '';
-            blocks.forEach(dispatchEventBlock);
+            for (const block of blocks) {
+                await dispatchEventBlock(block);
+            }
         }
         if (buffer.trim()) {
-            dispatchEventBlock(buffer);
+            await dispatchEventBlock(buffer);
         }
+    }
+
+    function splitProgressiveChatDelta(value = '') {
+        const chars = Array.from(String(value || ''));
+        if (chars.length <= CHAT_STREAM_PROGRESSIVE_THRESHOLD_CHARS) {
+            return chars.length ? [chars.join('')] : [];
+        }
+        const first = chars.splice(0, CHAT_STREAM_PROGRESSIVE_FIRST_CHARS).join('');
+        const remainingFrames = Math.min(
+            CHAT_STREAM_PROGRESSIVE_MAX_FRAMES,
+            Math.max(1, Math.ceil(chars.length / CHAT_STREAM_PROGRESSIVE_TARGET_CHARS))
+        );
+        const chunkSize = Math.max(1, Math.ceil(chars.length / remainingFrames));
+        const chunks = [first];
+        while (chars.length) {
+            chunks.push(chars.splice(0, chunkSize).join(''));
+        }
+        return chunks.filter(Boolean);
+    }
+
+    function waitForChatStreamPaint() {
+        return new Promise((resolve) => {
+            const afterFrame = () => {
+                if (typeof global.setTimeout === 'function') {
+                    global.setTimeout(resolve, 0);
+                } else {
+                    resolve();
+                }
+            };
+            if (typeof global.requestAnimationFrame === 'function') {
+                global.requestAnimationFrame(afterFrame);
+            } else if (typeof global.setTimeout === 'function') {
+                global.setTimeout(resolve, 16);
+            } else {
+                resolve();
+            }
+        });
     }
 
     function getNowId(prefix = 'img') {
@@ -7838,6 +7882,63 @@
         try {
             let finalTaskFromStream = null;
             let receivedText = '';
+            let displayedText = '';
+            let hasPaintedVisibleText = false;
+            let unpaintedCharCount = 0;
+            let persistTimer = 0;
+            const persistStreamState = ({ immediate = false } = {}) => {
+                if (persistTimer) {
+                    global.clearTimeout?.(persistTimer);
+                    persistTimer = 0;
+                }
+                if (immediate) {
+                    persistState();
+                    return;
+                }
+                persistTimer = global.setTimeout?.(() => {
+                    persistTimer = 0;
+                    persistState();
+                }, CHAT_STREAM_PERSIST_DELAY_MS) || 0;
+            };
+            const updateVisibleChatAnswer = (currentTask, text) => {
+                if (!currentTask) return false;
+                const normalizedTaskId = String(currentTask.id || '').trim();
+                const escapedTaskId = global.CSS?.escape
+                    ? global.CSS.escape(normalizedTaskId)
+                    : normalizedTaskId.replace(/"/g, '\\"');
+                const turn = overlay?.querySelector?.(`[data-aiw-chat-turn-id="${escapedTaskId}"]`);
+                const output = turn?.querySelector?.('[data-aiw-chat-output]');
+                const answer = output?.querySelector?.('[data-aiw-chat-answer-text]');
+                if (!answer) return false;
+                output.querySelector?.('.chat-loading-dots')?.remove();
+                answer.hidden = false;
+                answer.textContent = text;
+                const actions = output.querySelector?.('[data-aiw-chat-answer-actions]');
+                if (actions) actions.hidden = !text;
+                return true;
+            };
+            const revealChatDelta = async (currentTask, delta) => {
+                const chunks = splitProgressiveChatDelta(delta);
+                for (let index = 0; index < chunks.length; index += 1) {
+                    displayedText += chunks[index];
+                    unpaintedCharCount += Array.from(chunks[index]).length;
+                    if (currentTask) {
+                        currentTask.resultPrompt = displayedText;
+                        if (!updateVisibleChatAnswer(currentTask, displayedText)) {
+                            render();
+                        }
+                        scrollChatStageToBottom();
+                    }
+                    const shouldYieldForPaint = !hasPaintedVisibleText
+                        || index < chunks.length - 1
+                        || unpaintedCharCount >= CHAT_STREAM_PROGRESSIVE_TARGET_CHARS;
+                    if (shouldYieldForPaint) {
+                        await waitForChatStreamPaint();
+                        hasPaintedVisibleText = hasPaintedVisibleText || displayedText.trim() !== '';
+                        unpaintedCharCount = 0;
+                    }
+                }
+            };
             const normalizedChatAttachments = normalizeChatAttachmentList(chatAttachments);
             const messages = Array.isArray(chatThreadMessages) ? chatThreadMessages : getChatThreadMessages(threadRoot);
             await requestAiImageStream('chat-stream', {
@@ -7848,7 +7949,7 @@
                     messages
                 },
                 auth: true,
-                onEvent(eventName, payload = {}) {
+                async onEvent(eventName, payload = {}) {
                     if (eventName === 'task' && payload.task) {
                         const storedApiKeyChanged = applyStoredApiKeyFromPayload(payload);
                         const remoteTask = replaceTask(task.id, payload.task);
@@ -7897,16 +7998,15 @@
                             currentTask.status = 'streaming';
                             currentTask.progress = Math.min(96, Math.max(currentTask.progress || 12, 16 + Math.round(receivedText.length / 12)));
                             currentTask.progressKnown = true;
-                            currentTask.resultPrompt = receivedText;
                             currentTask.completedAt = 0;
-                            persistState();
-                            render();
-                            scrollChatStageToBottom();
                         }
+                        await revealChatDelta(currentTask, delta);
+                        persistStreamState();
                         return;
                     }
                     if (eventName === 'content_done') {
                         if (!currentTask || currentTask.status === 'cancelled') return;
+                        persistStreamState({ immediate: true });
                         const contentCompletedAt = normalizeTimestamp(
                             payload.contentCompletedAt || payload.content_completed_at,
                             Date.now()
@@ -7927,6 +8027,7 @@
                     }
                     if (eventName === 'billing') {
                         if (!currentTask) return;
+                        persistStreamState({ immediate: true });
                         const chargedPoints = Number(payload.chargedPoints ?? payload.charged_points);
                         if (Number.isFinite(chargedPoints)) {
                             currentTask.chargedPoints = Math.max(0, chargedPoints);
@@ -7954,6 +8055,7 @@
                         return;
                     }
                     if (eventName === 'done' && payload.task) {
+                        persistStreamState({ immediate: true });
                         finalTaskFromStream = payload.task;
                         const storedApiKeyChanged = applyStoredApiKeyFromPayload(payload);
                         const localTask = state.tasks.find((item) => item.id === task.id || item.clientTaskId === task.id || item.clientTaskId === task.clientTaskId);
@@ -7975,6 +8077,7 @@
                         return;
                     }
                     if (eventName === 'error') {
+                        persistStreamState({ immediate: true });
                         const message = payload.message || '对话生成失败，请稍后重试';
                         if (payload.task) {
                             replaceTask(task.id, payload.task);
@@ -11180,17 +11283,16 @@
                             </div>
                         ` : ''}
                     </div>
-                    <div class="ai-image-chat-output">
+                    <div class="ai-image-chat-output" data-aiw-chat-output>
                         ${reasoningBlock}
-                        ${showLoadingDots ? renderChatLoadingDots() : (outputText ? `<p>${escapeHtml(outputText)}</p>` : '')}
+                        ${showLoadingDots ? renderChatLoadingDots() : ''}
+                        <p data-aiw-chat-answer-text ${outputText ? '' : 'hidden'}>${escapeHtml(outputText)}</p>
                         ${renderChatCancelledNotice(task)}
-                        ${showAnswerActions ? `
-	                            <div class="ai-image-chat-actions ai-image-chat-actions--answer">
+                        <div class="ai-image-chat-actions ai-image-chat-actions--answer" data-aiw-chat-answer-actions ${showAnswerActions ? '' : 'hidden'}>
 	                                <button class="ai-image-chat-copy ai-image-chat-copy--answer" type="button" data-aiw-action="copy-chat-text" data-task-id="${escapeHtml(task.id)}" data-copy-kind="answer" aria-label="复制回答" title="复制回答">
 	                                    <i class="fas fa-copy"></i>
 	                                </button>
-	                            </div>
-	                        ` : ''}
+	                        </div>
                     </div>
                 </div>
             </article>
