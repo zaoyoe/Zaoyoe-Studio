@@ -199,6 +199,32 @@ function createSupabaseStub(state = {}) {
     return {
         rpc(name, args = {}) {
             state.rpcCalls.push({ name, args: clone(args) });
+            if (name === 'take_rate_limit_tokens' && state.batchRateLimitEnabled) {
+                const results = [];
+                for (const check of (Array.isArray(args.p_checks) ? args.p_checks : [])) {
+                    const result = typeof state.rateLimitHandler === 'function'
+                        ? state.rateLimitHandler({
+                            p_key: check.key,
+                            p_limit: check.limit,
+                            p_window_ms: check.window_ms,
+                            p_now: args.p_now
+                        })
+                        : {
+                            allowed: true,
+                            limit_value: check.limit,
+                            remaining: Math.max(0, Number(check.limit || 1) - 1),
+                            reset_at: '2026-06-21T12:01:00.000Z',
+                            retry_after_seconds: 1,
+                            hit_count: 1
+                        };
+                    results.push({
+                        scope: check.scope,
+                        ...result
+                    });
+                    if (result.allowed === false) break;
+                }
+                return Promise.resolve({ data: results, error: null });
+            }
             if (name === 'take_rate_limit_token') {
                 const result = typeof state.rateLimitHandler === 'function'
                     ? state.rateLimitHandler(args)
@@ -212,6 +238,36 @@ function createSupabaseStub(state = {}) {
                     };
                 return Promise.resolve({
                     data: result,
+                    error: null
+                });
+            }
+            if (name === 'fn_admit_ai_workbench_task' && state.fastAdmissionEnabled) {
+                const taskPayload = clone(args.p_task || {});
+                const existingTask = taskPayload.client_task_id
+                    ? state.tasks.find((task) => task.user_id === taskPayload.user_id
+                        && task.site === taskPayload.site
+                        && task.client_task_id === taskPayload.client_task_id)
+                    : null;
+                if (existingTask) {
+                    return Promise.resolve({
+                        data: { success: true, duplicate: true, task: clone(existingTask) },
+                        error: null
+                    });
+                }
+                const now = '2026-06-21T12:00:00.000Z';
+                const task = {
+                    id: taskPayload.id || `00000000-0000-4000-8000-${String(state.taskSeq).padStart(12, '0')}`,
+                    created_at: now,
+                    updated_at: now,
+                    ...taskPayload,
+                    status: args.p_target_status || 'queued',
+                    started_at: args.p_target_status === 'running' ? (args.p_started_at || now) : null
+                };
+                state.taskSeq += 1;
+                state.insertedTasks.push(task);
+                state.tasks.unshift(task);
+                return Promise.resolve({
+                    data: { success: true, duplicate: false, task: clone(task) },
                     error: null
                 });
             }
@@ -397,6 +453,27 @@ function createHandlers({
                     retryAfterSeconds: Math.max(1, Number(payload?.retry_after_seconds || 1))
                 };
             },
+            ...(state.batchRateLimitEnabled ? {
+                async takeRateLimitTokens({ supabase: rateLimitSupabase, checks = [] }) {
+                    const { data } = await rateLimitSupabase.rpc('take_rate_limit_tokens', {
+                        p_checks: checks.map((check) => ({
+                            scope: check.scope,
+                            key: check.key,
+                            limit: check.limit,
+                            window_ms: check.windowMs
+                        })),
+                        p_now: '2026-06-21T12:00:00.000Z'
+                    });
+                    return (Array.isArray(data) ? data : []).map((payload, index) => ({
+                        scope: payload.scope || checks[index]?.scope || '',
+                        allowed: payload.allowed !== false,
+                        limit: Number(payload.limit_value || payload.limit || checks[index]?.limit || 1),
+                        remaining: Math.max(0, Number(payload.remaining || 0)),
+                        resetAt: Date.parse(payload.reset_at || '2026-06-21T12:01:00.000Z'),
+                        retryAfterSeconds: Math.max(1, Number(payload.retry_after_seconds || 1))
+                    }));
+                }
+            } : {}),
             applyRateLimitHeaders(res, result = {}) {
                 res.setHeader('X-RateLimit-Limit', String(result.limit || 0));
                 res.setHeader('X-RateLimit-Remaining', String(result.remaining || 0));
@@ -905,6 +982,36 @@ test('ai image pricing config is available without login but omits user key stat
     }
 });
 
+test('ai image pricing config exposes the rule revision used for submission checks', async () => {
+    const updatedAt = '2026-07-31T10:20:30.000Z';
+    const { handlers } = createHandlers({
+        state: {
+            pricingRules: [{
+                id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                site: 'cn',
+                mode: 'text',
+                billing_mode: 'points',
+                model: '*',
+                resolution: '*',
+                ratio: '*',
+                quantity: 1,
+                points: 8,
+                priority: 10,
+                metadata: {},
+                is_active: true,
+                updated_at: updatedAt
+            }]
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.pricing({ method: 'GET', url: '/api/public/ai-image/pricing?site=cn' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.pricing[0].updated_at, updatedAt);
+});
+
 test('ai image API model discovery detects upstream models for current user key', async () => {
     const plaintextKey = 'sk-user-model-discovery-only-12345678';
     const fetchCalls = [];
@@ -1317,6 +1424,127 @@ test('ai image submit applies layered rate limits before creating point tasks', 
     assert.ok(state.rpcCalls.some((call) => String(call.args.p_key).includes('ai-image:submit:heavy-user:cn:user-ai-1:4k')));
 });
 
+test('ai image submit batches layered rate limits into one database request', async () => {
+    const state = { batchRateLimitEnabled: true };
+    const { handlers } = createHandlers({
+        state,
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '生成一张商品主图',
+            model: 'gpt-image-2',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    const batchCalls = state.rpcCalls.filter((call) => call.name === 'take_rate_limit_tokens');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(batchCalls.length, 1);
+    assert.equal(batchCalls[0].args.p_checks.some((check) => check.scope === 'submit:global'), true);
+    assert.equal(batchCalls[0].args.p_checks.some((check) => check.scope === 'submit:user'), true);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'take_rate_limit_token'), false);
+});
+
+test('ai image submit rejects a stale displayed pricing revision before task creation', async () => {
+    const ruleId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const state = {
+        pricingRules: [{
+            id: ruleId,
+            site: 'cn',
+            mode: 'text',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 12,
+            priority: 10,
+            metadata: {},
+            is_active: true,
+            updated_at: '2026-07-31T12:00:00.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '生成一张商品主图',
+            model: 'gpt-image-2',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            pricingRuleId: ruleId,
+            pricingRuleUpdatedAt: '2026-07-31T11:00:00.000Z'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 409);
+    assert.equal(payload.success, false);
+    assert.equal(payload.code, 'pricing_changed');
+    assert.equal(state.insertedTasks.length, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admit_ai_workbench_task'), false);
+});
+
+test('ai image submit accepts the current pricing revision and snapshots it on the task', async () => {
+    const ruleId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const updatedAt = '2026-07-31T12:00:00.000Z';
+    const state = {
+        pricingRules: [{
+            id: ruleId,
+            site: 'cn',
+            mode: 'text',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 12,
+            priority: 10,
+            metadata: {},
+            is_active: true,
+            updated_at: updatedAt
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '生成一张商品主图',
+            model: 'gpt-image-2',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            pricingRuleId: ruleId,
+            pricingRuleUpdatedAt: updatedAt
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(state.insertedTasks[0].estimated_points, 12);
+    assert.equal(state.insertedTasks[0].metadata.pricing.matched_rule.id, ruleId);
+    assert.equal(state.insertedTasks[0].metadata.pricing.matched_rule.updated_at, updatedAt);
+    assert.equal(state.insertedTasks[0].metadata.pricing.revision, updatedAt);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admit_ai_workbench_task'), true);
+});
+
 test('ai image submit creates video tasks with video model group and single output', async () => {
     const state = {};
     const { handlers } = createHandlers({
@@ -1361,6 +1589,102 @@ test('ai image submit creates video tasks with video model group and single outp
     assert.equal(state.insertedTasks[0].metadata.generate_audio, true);
     assert.equal(state.insertedTasks[0].metadata.watermark, false);
     assert.equal(state.insertedTasks[0].metadata.camera_fixed, false);
+});
+
+test('image and video submissions use the same fast admission RPC path', async () => {
+    for (const mode of ['text', 'video']) {
+        const state = { fastAdmissionEnabled: true };
+        const { handlers } = createHandlers({
+            state,
+            body: {
+                site: 'cn',
+                billingMode: 'points',
+                mode,
+                output: mode === 'video' ? 'video' : 'image',
+                apiModelGroup: mode === 'video' ? 'video' : 'image',
+                prompt: mode === 'video' ? '生成五秒产品展示视频' : '生成一张产品主图',
+                model: mode === 'video' ? 'veo-3.0-generate-preview' : 'gpt-image-2',
+                ratio: '16:9',
+                resolution: mode === 'video' ? '720p' : '1k',
+                quantity: 1
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+        const payload = res.json();
+        const admissionCall = state.rpcCalls.find((call) => call.name === 'fn_admit_ai_workbench_task');
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.ok(admissionCall);
+        assert.equal(admissionCall.args.p_task.mode, mode);
+        assert.equal(admissionCall.args.p_target_status, 'queued');
+        assert.match(res.headers['server-timing'], /preflight;dur=\d+/);
+        assert.match(res.headers['server-timing'], /admission;dur=\d+/);
+    }
+});
+
+test('duplicate media admission returns the existing task without another upstream request', async () => {
+    const clientTaskId = 'client-video-idempotency-1';
+    const existingTask = {
+        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        site: 'cn',
+        user_id: 'user-ai-1',
+        client_task_id: clientTaskId,
+        mode: 'video',
+        billing_mode: 'api',
+        status: 'running',
+        model: 'veo-3.0-generate-preview',
+        api_model_group: 'video',
+        ratio: '16:9',
+        resolution: '720p',
+        quantity: 1,
+        prompt: '生成五秒产品展示视频',
+        estimated_points: 0,
+        charged_points: 0,
+        metadata: { output: 'video' },
+        created_at: '2026-07-31T12:00:00.000Z',
+        updated_at: '2026-07-31T12:00:00.000Z'
+    };
+    let upstreamRequests = 0;
+    const state = {
+        fastAdmissionEnabled: true,
+        tasks: [existingTask]
+    };
+    const { handlers } = createHandlers({
+        state,
+        fetchImpl: async () => {
+            upstreamRequests += 1;
+            throw new Error('duplicate task must not reach upstream');
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-video-idempotency-12345678',
+            clientTaskId,
+            mode: 'video',
+            output: 'video',
+            apiModelGroup: 'video',
+            prompt: existingTask.prompt,
+            model: existingTask.model,
+            ratio: existingTask.ratio,
+            resolution: existingTask.resolution
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.submit({ method: 'POST', url: '/api/public/ai-image/submit' }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.duplicate, true);
+    assert.equal(payload.task.id, existingTask.id);
+    assert.equal(payload.task.status, 'running');
+    assert.equal(upstreamRequests, 0);
+    assert.equal(state.insertedTasks.length, 0);
 });
 
 test('ai image submit writes diagnostics for video task enqueue', async () => {
@@ -1869,6 +2193,8 @@ test('points chat stream uses server provider key, streams deltas, and charges p
         assert.equal(res.statusCode, 200);
         assert.match(res.headers['content-type'], /text\/event-stream/);
         assert.match(res.body, /event: delta/);
+        assert.match(res.body, /event: content_done/);
+        assert.match(res.body, /"terminal_signal":"sse_done"/);
         assert.match(res.body, /积分流式已开启/);
         assert.match(res.body, /event: done/);
         assert.equal(requests.length, 1);
@@ -1890,6 +2216,13 @@ test('points chat stream uses server provider key, streams deltas, and charges p
         assert.equal(persistedTask.metadata.provider_source, 'environment');
         assert.equal(persistedTask.metadata.memory_mode, 'model');
         assert.equal(persistedTask.metadata.memory_message_count, 20);
+        assert.equal(typeof persistedTask.metadata.preflight_ms, 'number');
+        assert.equal(typeof persistedTask.metadata.config_resolve_ms, 'number');
+        assert.equal(typeof persistedTask.metadata.timing.preflight_ms, 'number');
+        assert.equal(typeof persistedTask.metadata.timing.config_resolve_ms, 'number');
+        assert.equal(typeof persistedTask.metadata.timing.last_visible_ms, 'number');
+        assert.equal(typeof persistedTask.metadata.timing.protocol_done_ms, 'number');
+        assert.equal(typeof persistedTask.metadata.timing.final_usage_lookup_ms, 'number');
         assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), true);
         assert.equal(JSON.stringify(state).includes('sk-server-stream-key'), false);
         const chatLogs = logs
@@ -1900,6 +2233,72 @@ test('points chat stream uses server provider key, streams deltas, and charges p
     } finally {
         console.info = originalInfo;
     }
+});
+
+test('chat stream emits content_done before delayed upstream connection close', { timeout: 1000 }, async () => {
+    const encoder = new TextEncoder();
+    let controller = null;
+    const state = {
+        pricingRules: [{
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 1,
+            priority: 10,
+            is_active: true
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-content-done-key',
+            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+            AI_IMAGE_CHAT_MODEL: 'gpt-5.5'
+        },
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            body: new ReadableStream({
+                start(streamController) {
+                    controller = streamController;
+                    streamController.enqueue(encoder.encode(
+                        'data: {"id":"chatcmpl-content-done","choices":[{"delta":{"content":"回答完成。"}}]}\n\n'
+                    ));
+                    streamController.enqueue(encoder.encode(
+                        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+                    ));
+                }
+            })
+        }),
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证内容完成事件',
+            model: 'gpt-5.5',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+    const handlerPromise = handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.match(res.body, /event: content_done/);
+    assert.match(res.body, /"terminal_signal":"finish_reason:stop"/);
+    assert.doesNotMatch(res.body, /event: done/);
+
+    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+    controller.close();
+    await handlerPromise;
+
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.match(res.body, /event: done/);
+    assert.equal(persistedTask.metadata.timing.protocol_done_signal, 'finish_reason:stop');
+    assert.equal(typeof persistedTask.metadata.timing.last_visible_ms, 'number');
+    assert.equal(typeof persistedTask.metadata.content_completed_at, 'string');
 });
 
 test('points chat stream charges Sub2API actual cost after stream closes', async () => {

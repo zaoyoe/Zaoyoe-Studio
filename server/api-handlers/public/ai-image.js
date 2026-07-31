@@ -1776,7 +1776,9 @@ function buildPricingEstimatePayload({
         quantity: normalizePositiveInt(matchedRule.quantity, 1, { min: 1, max: 8 }),
         points: normalizeNumber(matchedRule.points, 0),
         priority: Number(matchedRule.priority || 100),
-        metadata: normalizeAiImagePricingMetadata(matchedRule.metadata || {})
+        metadata: normalizeAiImagePricingMetadata(matchedRule.metadata || {}),
+        updatedAt: normalizeText(matchedRule.updated_at || matchedRule.updatedAt, 120),
+        updated_at: normalizeText(matchedRule.updated_at || matchedRule.updatedAt, 120)
     } : null;
 
     return {
@@ -1794,9 +1796,51 @@ function buildPricingEstimatePayload({
                 ratio,
                 quantity: normalizePositiveInt(quantity, 1, { min: 1, max: 8 })
             },
-            matched_rule: normalizedMatchedRule
+            matched_rule: normalizedMatchedRule,
+            revision: normalizedMatchedRule?.updated_at || ''
         }
     };
+}
+
+function normalizeExpectedPricingRule(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    return {
+        id: normalizeText(
+            source.pricingRuleId
+            || source.pricing_rule_id
+            || source.expectedPricingRuleId
+            || source.expected_pricing_rule_id,
+            160
+        ),
+        updatedAt: normalizeText(
+            source.pricingRuleUpdatedAt
+            || source.pricing_rule_updated_at
+            || source.pricingRevision
+            || source.pricing_revision
+            || source.expectedPricingRuleUpdatedAt
+            || source.expected_pricing_rule_updated_at,
+            120
+        )
+    };
+}
+
+function assertExpectedPricingRule(matchedRule = null, expectedRule = {}) {
+    const expected = normalizeExpectedPricingRule(expectedRule);
+    if (!expected.id && !expected.updatedAt) return;
+    const actualId = normalizeText(matchedRule?.id, 160);
+    const actualUpdatedAt = normalizeText(matchedRule?.updated_at || matchedRule?.updatedAt, 120);
+    if (actualId === expected.id && actualUpdatedAt === expected.updatedAt) return;
+
+    const error = new Error('计价标准已更新，请确认最新价格后重新提交');
+    error.statusCode = 409;
+    error.code = 'pricing_changed';
+    error.pricing = {
+        expected_rule_id: expected.id,
+        expected_updated_at: expected.updatedAt,
+        current_rule_id: actualId,
+        current_updated_at: actualUpdatedAt
+    };
+    throw error;
 }
 
 function pricingRuleScore(rule = {}, { site, mode, model, providerId = '', resolution, ratio, quantity } = {}) {
@@ -1822,7 +1866,8 @@ async function estimatePointsFromRules(supabase, {
     providerId = '',
     resolution,
     ratio,
-    quantity
+    quantity,
+    expectedPricingRule = null
 } = {}) {
     if (!supabase?.from || billingMode !== 'points') {
         return buildPricingEstimatePayload({
@@ -1843,7 +1888,7 @@ async function estimatePointsFromRules(supabase, {
         const pricingRuleModes = getAiImagePricingRuleModes(mode);
         const { data, error } = await supabase
             .from('ai_image_pricing_rules')
-            .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, metadata, is_active')
+            .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, metadata, is_active, updated_at')
             .in('site', [site, 'all'])
             .in('mode', pricingRuleModes)
             .eq('billing_mode', billingMode)
@@ -1872,6 +1917,8 @@ async function estimatePointsFromRules(supabase, {
 
         const matched = candidates
             .sort((left, right) => pricingRuleScore(right, { site, mode, model, providerId, resolution, ratio, quantity }) - pricingRuleScore(left, { site, mode, model, providerId, resolution, ratio, quantity }))[0];
+
+        assertExpectedPricingRule(matched || null, expectedPricingRule || {});
 
         if (matched) {
             const ruleEstimate = estimateAiImageRulePoints(matched, quantity);
@@ -3792,6 +3839,26 @@ function extractClaudeMessagesDelta(payload = {}, { thoughts = false } = {}) {
     return '';
 }
 
+function getChatStreamTerminalSignal(payload = {}) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return '';
+    const type = normalizeText(payload.type || payload.event_type, 120).toLowerCase();
+    if (type === 'message_stop') return 'claude_message_stop';
+    if (type === 'response.completed' || type === 'response.done') return `openai_${type.replace('.', '_')}`;
+    if (payload.done === true) return 'payload_done';
+
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    const finishReason = choices
+        .map((choice) => normalizeText(choice?.finish_reason ?? choice?.finishReason, 80))
+        .find(Boolean);
+    if (finishReason) return `finish_reason:${finishReason}`;
+
+    const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+    const geminiFinishReason = candidates
+        .map((candidate) => normalizeText(candidate?.finishReason ?? candidate?.finish_reason, 80))
+        .find((value) => value && value.toUpperCase() !== 'FINISH_REASON_UNSPECIFIED');
+    return geminiFinishReason ? `gemini_finish_reason:${geminiFinishReason}` : '';
+}
+
 function extractChatReasoningDelta(payload = {}) {
     if (!payload || typeof payload !== 'object') return '';
     if (typeof payload.reasoning_content === 'string') return payload.reasoning_content;
@@ -4023,7 +4090,8 @@ function createAiImageHandlers({
     const {
         applyRateLimitHeaders,
         resolveClientIp,
-        takeRateLimitToken
+        takeRateLimitToken,
+        takeRateLimitTokens
     } = requestSecurity || {};
 
     async function resolveAuthenticatedContext(req) {
@@ -4127,13 +4195,14 @@ function createAiImageHandlers({
         model = '',
         resolution = '',
         quantity = 1,
-        resourceId = ''
+        resourceId = '',
+        rateLimitConfig = null
     } = {}) {
-        const rateLimitConfig = await loadAiImageGuardrailsFromSystemConfig(supabase, {
+        const resolvedRateLimitConfig = rateLimitConfig || await loadAiImageGuardrailsFromSystemConfig(supabase, {
             site,
             env
         });
-        const config = rateLimitConfig[action] || {};
+        const config = resolvedRateLimitConfig[action] || {};
         const clientIp = normalizeRateLimitKeyPart(getClientIp(req));
         const normalizedSite = normalizeRateLimitKeyPart(site, 'cn');
         const normalizedUser = normalizeRateLimitKeyPart(userId);
@@ -4187,17 +4256,29 @@ function createAiImageHandlers({
             });
         }
 
-        for (const check of checks) {
-            // eslint-disable-next-line no-await-in-loop
-            await consumeRateLimit({
+        if (typeof takeRateLimitTokens === 'function' && checks.length) {
+            const results = await takeRateLimitTokens({
                 supabase,
-                key: check.key,
-                limit: check.limit,
-                windowMs: check.windowMs,
-                scope: check.scope,
-                res
+                checks,
+                env
             });
+            for (const result of results) {
+                applyOptionalRateLimitHeaders(applyRateLimitHeaders, res, result);
+                if (result?.allowed === false) {
+                    throw buildRateLimitedError(result.scope || action, result);
+                }
+            }
+            return;
         }
+
+        await Promise.all(checks.map((check) => consumeRateLimit({
+            supabase,
+            key: check.key,
+            limit: check.limit,
+            windowMs: check.windowMs,
+            scope: check.scope,
+            res
+        })));
     }
 
     async function countUserTasksByStatus(supabase, {
@@ -4217,12 +4298,12 @@ function createAiImageHandlers({
         return Array.isArray(data) ? data.length : 0;
     }
 
-    async function assertUserTaskCapacity(supabase, { userId, site } = {}) {
-        const rateLimitConfig = await loadAiImageGuardrailsFromSystemConfig(supabase, {
+    async function assertUserTaskCapacity(supabase, { userId, site, rateLimitConfig = null } = {}) {
+        const resolvedRateLimitConfig = rateLimitConfig || await loadAiImageGuardrailsFromSystemConfig(supabase, {
             site,
             env
         });
-        const limits = rateLimitConfig.tasks;
+        const limits = resolvedRateLimitConfig.tasks;
         const [runningCount, queuedCount] = await Promise.all([
             countUserTasksByStatus(supabase, {
                 userId,
@@ -4284,6 +4365,119 @@ function createAiImageHandlers({
             };
             throw error;
         }
+    }
+
+    let fastAdmissionSupported = null;
+
+    function isFastAdmissionUnavailable(error = {}) {
+        const signal = [error?.code, error?.message, error?.details, error?.hint]
+            .filter(Boolean)
+            .join(' ');
+        return /PGRST202|fn_admit_ai_workbench_task|schema cache|function .* does not exist|Unexpected RPC/i.test(signal);
+    }
+
+    function buildFastAdmissionError(payload = {}) {
+        const error = new Error(payload.message || 'AI 工作台任务准入失败');
+        error.statusCode = Number(payload.status_code || payload.statusCode) || 503;
+        error.code = normalizeText(payload.code || 'ai_workbench_admission_failed', 120);
+        error.scope = normalizeText(payload.scope, 120);
+        if (error.statusCode === 429) {
+            error.rateLimit = {
+                ...DEFAULT_RATE_LIMIT_HEADERS,
+                allowed: false,
+                retryAfterSeconds: Math.max(1, Number(payload.retry_after_seconds || payload.retryAfterSeconds) || 1),
+                resetAt: Date.now() + Math.max(1, Number(payload.retry_after_seconds || payload.retryAfterSeconds) || 1) * 1000
+            };
+        }
+        if (payload.task && typeof payload.task === 'object') {
+            error.task = payload.task;
+        }
+        return error;
+    }
+
+    async function createAdmittedTask({
+        supabase,
+        taskPayload,
+        targetStatus = 'queued',
+        startedAt = '',
+        rateLimitConfig = null
+    } = {}) {
+        const admissionStartedAt = Date.now();
+        const limits = rateLimitConfig?.tasks || {};
+        const billingV2 = getAiWorkbenchBillingV2Metadata(taskPayload);
+        const matchedRule = safeObject(safeObject(taskPayload?.metadata).pricing).matched_rule;
+        const matchedRuleId = normalizeText(matchedRule?.id, 160);
+        const matchedRuleUpdatedAt = normalizeText(matchedRule?.updated_at || matchedRule?.updatedAt, 120);
+
+        if (fastAdmissionSupported !== false && typeof supabase?.rpc === 'function') {
+            const { data, error } = await supabase.rpc('fn_admit_ai_workbench_task', {
+                p_task: taskPayload,
+                p_target_status: targetStatus,
+                p_started_at: startedAt || null,
+                p_authorization_points: normalizeBillablePoints(billingV2.authorization_points, 0),
+                p_authorization_required: billingV2.enabled === true && billingV2.authorization_required !== false,
+                p_running_limit: Math.max(1, Number(limits.running) || 2),
+                p_queued_limit: Math.max(1, Number(limits.queued) || 5),
+                p_active_limit: Math.max(1, Number(limits.active) || 6),
+                p_pricing_rule_id: isUuid(matchedRuleId) ? matchedRuleId : null,
+                p_pricing_rule_updated_at: isUuid(matchedRuleId) && matchedRuleUpdatedAt ? matchedRuleUpdatedAt : null
+            });
+            if (!error) {
+                fastAdmissionSupported = true;
+                if (!data || data.success !== true) {
+                    throw buildFastAdmissionError(data || {});
+                }
+                if (!data.task || typeof data.task !== 'object') {
+                    throw buildFastAdmissionError({
+                        code: 'ai_workbench_admission_empty_task',
+                        message: 'AI 工作台任务准入未返回任务记录'
+                    });
+                }
+                return {
+                    task: data.task,
+                    duplicate: data.duplicate === true,
+                    path: 'fast-rpc',
+                    elapsedMs: Math.max(0, Date.now() - admissionStartedAt)
+                };
+            }
+            if (!isFastAdmissionUnavailable(error)) {
+                throw buildFastAdmissionError({
+                    code: error.code || 'ai_workbench_admission_rpc_failed',
+                    message: error.message || 'AI 工作台任务准入失败',
+                    status_code: 503
+                });
+            }
+            fastAdmissionSupported = false;
+        }
+
+        await assertUserTaskCapacity(supabase, {
+            userId: taskPayload.user_id,
+            site: taskPayload.site,
+            rateLimitConfig
+        });
+        const { data, error } = await supabase
+            .from('ai_image_tasks')
+            .insert(taskPayload)
+            .select(TASK_SELECT)
+            .single();
+        if (error || !data) {
+            const dbError = new Error(error?.message || '创建生成任务失败');
+            dbError.statusCode = 500;
+            dbError.code = error?.code || 'ai_image_task_insert_failed';
+            dbError.details = error?.details || '';
+            dbError.hint = error?.hint || '';
+            throw dbError;
+        }
+        const task = await authorizeConfiguredAiWorkbenchTask(supabase, data, {
+            targetStatus,
+            startedAt
+        });
+        return {
+            task,
+            duplicate: false,
+            path: 'legacy-fallback',
+            elapsedMs: Math.max(0, Date.now() - admissionStartedAt)
+        };
     }
 
     async function submitHandler(req, res) {
@@ -4364,6 +4558,7 @@ function createAiImageHandlers({
                     storedApiKey: null
                 };
             const apiKey = resolvedUserApiKey.apiKey;
+            const preflightStartedAt = Date.now();
 
             const previewPayload = buildTaskPayload({
                 body,
@@ -4380,6 +4575,38 @@ function createAiImageHandlers({
                 estimatedPoints: 0
             });
             validateTaskPayload(previewPayload);
+            const pricingEstimatePromise = billingMode === 'points'
+                ? estimatePointsFromRules(supabase, {
+                    site,
+                    mode,
+                    billingMode,
+                    model,
+                    providerId,
+                    resolution: previewPayload.resolution || '1k',
+                    ratio: previewPayload.ratio || '1:1',
+                    quantity: previewPayload.quantity || 1,
+                    expectedPricingRule: body
+                })
+                : Promise.resolve(buildPricingEstimatePayload({
+                    estimatedPoints: 0,
+                    source: 'not_points_billing',
+                    site,
+                    mode,
+                    billingMode,
+                    model,
+                    providerId,
+                    resolution: previewPayload.resolution || '1k',
+                    ratio: previewPayload.ratio || '1:1',
+                    quantity: previewPayload.quantity || 1
+                }));
+            const guardrailsPromise = loadAiImageGuardrailsFromSystemConfig(supabase, {
+                site,
+                env
+            });
+            const [pricingEstimate, rateLimitConfig] = await Promise.all([
+                pricingEstimatePromise,
+                guardrailsPromise
+            ]);
             await consumeAiImageRateLimits({
                 req,
                 res,
@@ -4391,36 +4618,9 @@ function createAiImageHandlers({
                 billingMode,
                 model,
                 resolution: previewPayload.resolution || '',
-                quantity: previewPayload.quantity || 1
+                quantity: previewPayload.quantity || 1,
+                rateLimitConfig
             });
-            await assertUserTaskCapacity(supabase, {
-                userId: user.id,
-                site
-            });
-
-            const pricingEstimate = billingMode === 'points'
-                ? await estimatePointsFromRules(supabase, {
-                    site,
-                    mode,
-                    billingMode,
-                    model,
-                    providerId,
-                    resolution: previewPayload.resolution || '1k',
-                    ratio: previewPayload.ratio || '1:1',
-                    quantity: previewPayload.quantity || 1
-                })
-                : buildPricingEstimatePayload({
-                    estimatedPoints: 0,
-                    source: 'not_points_billing',
-                    site,
-                    mode,
-                    billingMode,
-                    model,
-                    providerId,
-                    resolution: previewPayload.resolution || '1k',
-                    ratio: previewPayload.ratio || '1:1',
-                    quantity: previewPayload.quantity || 1
-                });
             const estimatedPoints = pricingEstimate.estimatedPoints;
             const taskPayload = configureAiWorkbenchBillingV2TaskPayload(buildTaskPayload({
                 body,
@@ -4448,29 +4648,39 @@ function createAiImageHandlers({
                 videoCameraFixed: taskPayload.metadata?.video_camera_fixed ?? ''
             });
 
-            const { data, error } = await supabase
-                .from('ai_image_tasks')
-                .insert(taskPayload)
-                .select(TASK_SELECT)
-                .single();
-
-            if (error || !data) {
-                const dbError = new Error(error?.message || '创建生成任务失败');
-                dbError.statusCode = 500;
-                dbError.code = error?.code || 'ai_image_task_insert_failed';
-                dbError.details = error?.details || '';
-                dbError.hint = error?.hint || '';
-                throw dbError;
-            }
-            const preparedTask = await authorizeConfiguredAiWorkbenchTask(supabase, data, {
-                targetStatus: 'queued'
+            const admission = await createAdmittedTask({
+                supabase,
+                taskPayload,
+                targetStatus: 'queued',
+                rateLimitConfig
             });
+            const preparedTask = admission.task;
+            const preflightMs = Math.max(0, Date.now() - preflightStartedAt);
             logSubmitDiagnostic('submit_inserted', {
                 ...submitDiagnostics,
                 taskId: preparedTask.id,
                 status: preparedTask.status,
-                estimatedPoints: preparedTask.estimated_points
+                estimatedPoints: preparedTask.estimated_points,
+                admission_path: admission.path,
+                admission_ms: admission.elapsedMs,
+                preflight_ms: preflightMs,
+                duplicate: admission.duplicate
             });
+            if (typeof res.setHeader === 'function') {
+                res.setHeader('Server-Timing', `preflight;dur=${preflightMs}, admission;dur=${admission.elapsedMs}`);
+            }
+
+            if (admission.duplicate) {
+                const results = await loadTaskResults(supabase, preparedTask);
+                return sendJson(res, 200, {
+                    success: preparedTask.status === 'succeeded' || preparedTask.status === 'queued' || preparedTask.status === 'running',
+                    duplicate: true,
+                    task: serializeTask(preparedTask, results),
+                    task_id: preparedTask.id,
+                    status: preparedTask.status,
+                    estimated_points: normalizeBillablePoints(preparedTask.estimated_points, 0)
+                });
+            }
 
             if (billingMode === 'api') {
                 const executorOptions = {
@@ -4630,8 +4840,29 @@ function createAiImageHandlers({
                     storedApiKey: null
                 };
             const apiKey = resolvedUserApiKey.apiKey;
-            const pricingEstimate = billingMode === 'points'
-                ? await estimatePointsFromRules(supabase, {
+            const preflightStartedAt = Date.now();
+            const runtimeTaskPreview = buildTaskPayload({
+                body,
+                userId: user.id,
+                site,
+                mode,
+                billingMode,
+                model,
+                modelGroup,
+                apiBaseUrl,
+                apiKeyTail: resolvedUserApiKey.apiKeyTail,
+                apiKeyFingerprint: resolvedUserApiKey.apiKeyFingerprint,
+                providerId,
+                estimatedPoints: 0
+            });
+            const runtimeConfigStartedAt = Date.now();
+            const runtimeConfigPromise = billingMode === 'points'
+                ? resolveExecutorRuntimeConfig({ supabase, task: runtimeTaskPreview, env })
+                    .then((value) => ({ value, error: null, elapsedMs: Math.max(0, Date.now() - runtimeConfigStartedAt) }))
+                    .catch((error) => ({ value: null, error, elapsedMs: Math.max(0, Date.now() - runtimeConfigStartedAt) }))
+                : Promise.resolve({ value: null, error: null, elapsedMs: 0 });
+            const pricingEstimatePromise = billingMode === 'points'
+                ? estimatePointsFromRules(supabase, {
                     site,
                     mode,
                     billingMode,
@@ -4639,9 +4870,10 @@ function createAiImageHandlers({
                     providerId,
                     resolution: '1k',
                     ratio: '1:1',
-                    quantity: 1
+                    quantity: 1,
+                    expectedPricingRule: body
                 })
-                : buildPricingEstimatePayload({
+                : Promise.resolve(buildPricingEstimatePayload({
                     estimatedPoints: 0,
                     source: 'not_points_billing',
                     site,
@@ -4652,7 +4884,15 @@ function createAiImageHandlers({
                     resolution: '1k',
                     ratio: '1:1',
                     quantity: 1
-                });
+                }));
+            const guardrailsPromise = loadAiImageGuardrailsFromSystemConfig(supabase, {
+                site,
+                env
+            });
+            const [pricingEstimate, rateLimitConfig] = await Promise.all([
+                pricingEstimatePromise,
+                guardrailsPromise
+            ]);
 
             const startedAt = new Date().toISOString();
             const previewPayload = configureAiWorkbenchBillingV2TaskPayload({
@@ -4688,33 +4928,26 @@ function createAiImageHandlers({
                 billingMode,
                 model,
                 resolution: '',
-                quantity: 1
-            });
-            await assertUserTaskCapacity(supabase, {
-                userId: user.id,
-                site
+                quantity: 1,
+                rateLimitConfig
             });
 
-            const { data, error } = await supabase
-                .from('ai_image_tasks')
-                .insert(previewPayload)
-                .select(TASK_SELECT)
-                .single();
-            if (error || !data) {
-                const dbError = new Error(error?.message || '创建对话任务失败');
-                dbError.statusCode = 500;
-                throw dbError;
-            }
-
-            task = await authorizeConfiguredAiWorkbenchTask(supabase, data, {
+            const admission = await createAdmittedTask({
+                supabase,
+                taskPayload: previewPayload,
                 targetStatus: 'running',
-                startedAt
+                startedAt,
+                rateLimitConfig
             });
+            task = admission.task;
             logChatStreamDiagnostic('task_inserted', {
                 ...chatDiagnostics,
                 task_id: task.id,
                 status: task.status,
-                estimatedPoints: task.estimated_points
+                estimatedPoints: task.estimated_points,
+                admission_path: admission.path,
+                admission_ms: admission.elapsedMs,
+                duplicate: admission.duplicate
             });
 
             setSseHeaders(res);
@@ -4727,6 +4960,18 @@ function createAiImageHandlers({
                 storedApiKey: resolvedUserApiKey.storedApiKey,
                 stored_api_key: resolvedUserApiKey.storedApiKey
             });
+
+            if (admission.duplicate) {
+                writeSse(res, 'done', {
+                    success: task.status !== 'failed' && task.status !== 'cancelled',
+                    duplicate: true,
+                    task: serializeTask(task, []),
+                    task_id: task.id,
+                    status: task.status,
+                    text: task.result_prompt || ''
+                });
+                return res.end();
+            }
 
 	            const prompt = normalizeText(body.prompt || body.message || body.input, 8000);
 	            const requestedServiceTier = normalizeText(body.serviceTier || body.service_tier || env.AI_IMAGE_CHAT_SERVICE_TIER || '', 40).toLowerCase() || 'unset';
@@ -4741,9 +4986,9 @@ function createAiImageHandlers({
 	            const claudeThinkingBudget = normalizeClaudeThinkingBudget(requestedClaudeThinkingBudget);
 	            const thinkingMode = normalizeChatThinkingMode(body.thinkingMode || body.thinking_mode);
 	            const imageInputMode = normalizeChatImageInputMode(body.imageInputMode || body.image_input_mode);
-	            const runtimeConfig = billingMode === 'points'
-	                ? await resolveExecutorRuntimeConfig({ supabase, task, env })
-	                : null;
+	            const runtimeConfigResult = await runtimeConfigPromise;
+	            if (runtimeConfigResult.error) throw runtimeConfigResult.error;
+	            const runtimeConfig = runtimeConfigResult.value;
             if (billingMode === 'points' && !runtimeConfig?.configured) {
                 const error = new Error('AI 图片文本/视觉模型 API Key 或 Base URL 未配置');
                 error.statusCode = 503;
@@ -4754,6 +4999,9 @@ function createAiImageHandlers({
 	            const upstreamApiKey = billingMode === 'points' ? runtimeConfig.apiKey : apiKey;
 	            const upstreamRequestModel = billingMode === 'points' ? runtimeConfig.model : model;
 	            const providerSource = billingMode === 'points' ? runtimeConfig.source : 'user-api';
+	            const configCacheStatus = billingMode === 'points'
+	                ? normalizeText(runtimeConfig?.timing?.provider_config_cache_status || runtimeConfig?.cacheStatus || runtimeConfig?.cache_status, 40)
+	                : 'user-api';
 	            const supportsImageInput = resolveChatSupportsImageInput({
 	                billingMode,
 	                runtimeConfig,
@@ -4799,6 +5047,8 @@ function createAiImageHandlers({
             const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
                 ? { 'X-Client-Request-ID': sub2ApiClientRequestId }
                 : {};
+            const configResolveMs = runtimeConfigResult.elapsedMs;
+            const preflightMs = Math.max(0, Date.now() - preflightStartedAt);
             const upstreamStartedAt = Date.now();
 	            const configuredMaxTokens = normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, 0, {
 	                min: 64,
@@ -4931,7 +5181,10 @@ function createAiImageHandlers({
 	                attached_image_count: attachedImageCount,
                 attached_file_count: chatAttachmentSummary.length,
                 attached_file_chars: chatAttachmentChars,
-                sub2api_client_request_id: sub2ApiClientRequestId
+                sub2api_client_request_id: sub2ApiClientRequestId,
+                preflight_ms: preflightMs,
+                config_resolve_ms: configResolveMs,
+                config_cache_status: configCacheStatus
             });
 	            const upstreamResponse = await fetchImpl(upstreamRequest.url, {
 	                method: 'POST',
@@ -4980,6 +5233,10 @@ function createAiImageHandlers({
             let streamVisibleIdleTimedOut = false;
             let streamUsageReadyFinished = false;
             let lastUserVisibleAt = 0;
+            let contentDoneEmitted = false;
+            let contentCompletedAt = 0;
+            let protocolDoneAt = 0;
+            let protocolDoneSignal = '';
             let sub2apiUsageProbeAt = 0;
             let sub2apiUsageReadyAt = 0;
             let sub2apiUsageLookupMissLogged = false;
@@ -5007,13 +5264,37 @@ function createAiImageHandlers({
                     || '700'
             };
             const upstreamDeltaKeySamples = [];
+            const taskStartedAtMs = Date.parse(task.started_at || startedAt) || upstreamStartedAt;
+            const emitContentDone = (signal = 'stream_end') => {
+                if (contentDoneEmitted) return;
+                const now = Date.now();
+                protocolDoneAt = protocolDoneAt || now;
+                protocolDoneSignal = protocolDoneSignal || signal;
+                contentCompletedAt = lastUserVisibleAt || protocolDoneAt;
+                contentDoneEmitted = true;
+                writeSse(res, 'content_done', {
+                    success: true,
+                    task_id: task.id,
+                    taskId: task.id,
+                    content_completed_at: new Date(contentCompletedAt).toISOString(),
+                    contentCompletedAt: new Date(contentCompletedAt).toISOString(),
+                    generation_elapsed_ms: Math.max(0, contentCompletedAt - taskStartedAtMs),
+                    generationElapsedMs: Math.max(0, contentCompletedAt - taskStartedAtMs),
+                    upstream_last_visible_ms: Math.max(0, contentCompletedAt - upstreamStartedAt),
+                    upstream_done_ms: Math.max(0, protocolDoneAt - upstreamStartedAt),
+                    terminal_signal: protocolDoneSignal
+                });
+            };
             const processLine = (line = '') => {
                 const trimmed = String(line || '').trim();
                 if (!trimmed || trimmed.startsWith(':')) return false;
                 if (!trimmed.startsWith('data:')) return false;
                 const dataText = trimmed.slice(5).trim();
                 if (!dataText) return false;
-                if (dataText === '[DONE]') return true;
+                if (dataText === '[DONE]') {
+                    emitContentDone('sse_done');
+                    return true;
+                }
                 upstreamSseDataLines += 1;
                 let payload = null;
                 try {
@@ -5100,6 +5381,8 @@ function createAiImageHandlers({
                         task_id: task.id
                     });
                 }
+                const terminalSignal = getChatStreamTerminalSignal(payload);
+                if (terminalSignal) emitContentDone(terminalSignal);
                 return false;
             };
             const lookupSub2ApiUsageOnce = async () => {
@@ -5222,7 +5505,14 @@ function createAiImageHandlers({
             if (streamIdleTimedOut || streamVisibleIdleTimedOut) {
                 await reader.cancel().catch(() => {});
             }
+            if (!contentDoneEmitted) {
+                emitContentDone(streamVisibleIdleTimedOut
+                    ? 'visible_idle_timeout'
+                    : (streamIdleTimedOut ? 'stream_idle_timeout' : 'stream_eof'));
+            }
+            const streamReadEndedAt = Date.now();
 
+            const finalUsageLookupStartedAt = Date.now();
             if (captureSub2ApiBilling && !sub2apiUsageRecord) {
                 sub2apiUsageRecord = await fetchSub2ApiUsageRecord({
                     baseUrl: upstreamBaseUrl,
@@ -5238,6 +5528,7 @@ function createAiImageHandlers({
                 });
                 if (!sub2apiUsageRecord) logSub2ApiUsageLookupMiss();
             }
+            const finalUsageLookupMs = Math.max(0, Date.now() - finalUsageLookupStartedAt);
             const usageWithBilling = captureSub2ApiBilling
                 ? attachSub2ApiBillingToUsage(usage, sub2apiUsageRecord, upstreamResponse, {
                     id: providerTaskId,
@@ -5247,7 +5538,9 @@ function createAiImageHandlers({
                 : usage;
             const normalizedUsage = normalizeStreamUsage(usageWithBilling, { messages, output: outputText });
             const existingMetadata = safeObject(task.metadata);
-            const upstreamTotalMs = Math.max(0, Date.now() - upstreamStartedAt);
+            const upstreamTotalMs = Math.max(0, streamReadEndedAt - upstreamStartedAt);
+            const lastVisibleMs = Math.max(0, contentCompletedAt - upstreamStartedAt);
+            const protocolDoneMs = Math.max(0, protocolDoneAt - upstreamStartedAt);
             const upstreamFirstResponseSafeMs = Math.max(0, upstreamFirstResponseMs);
             const reasoningDiagnostic = {
                 expected: thinkingReasoningEnabled,
@@ -5263,6 +5556,9 @@ function createAiImageHandlers({
                 content_chars: upstreamContentChars,
                 first_reasoning_ms: Math.max(0, firstReasoningMs),
                 first_content_ms: Math.max(0, firstTokenMs),
+                last_visible_ms: lastVisibleMs,
+                protocol_done_ms: protocolDoneMs,
+                protocol_done_signal: protocolDoneSignal,
                 visible_idle_timed_out: streamVisibleIdleTimedOut,
                 visible_idle_timeout_ms: streamVisibleIdleTimeoutMs,
                 usage_ready_finished: streamUsageReadyFinished,
@@ -5283,6 +5579,10 @@ function createAiImageHandlers({
                 upstream_ms: upstreamTotalMs,
                 first_reasoning_ms: Math.max(0, firstReasoningMs),
                 first_content_ms: Math.max(0, firstTokenMs),
+                last_visible_ms: lastVisibleMs,
+                protocol_done_ms: protocolDoneMs,
+                protocol_done_signal: protocolDoneSignal,
+                final_usage_lookup_ms: finalUsageLookupMs,
                 stream_idle_timed_out: streamIdleTimedOut,
                 stream_idle_timeout_ms: streamIdleTimeoutMs,
                 stream_visible_idle_timed_out: streamVisibleIdleTimedOut,
@@ -5331,13 +5631,20 @@ function createAiImageHandlers({
 	                memory_mode: normalizeChatMemoryMode(body.memoryMode || body.memory_mode),
 	                memory_message_count: Math.max(0, messages.length - 2),
 	                memory_token_estimate: estimateTextTokens(messages.map((message) => getChatMessageContentText(message.content)).join('\n')),
-                reasoning_content: normalizeText(reasoningText, 12000),
-                reasoning_tokens_estimate: estimateTextTokens(reasoningText),
-                reasoning_diagnostic: reasoningDiagnostic,
-                preflight_ms: 0,
-                config_resolve_ms: 0,
+	                reasoning_content: normalizeText(reasoningText, 12000),
+	                reasoning_tokens_estimate: estimateTextTokens(reasoningText),
+	                reasoning_diagnostic: reasoningDiagnostic,
+	                config_cache_status: configCacheStatus,
+	                preflight_ms: preflightMs,
+	                config_resolve_ms: configResolveMs,
                 upstream_ms: upstreamTotalMs,
-                upstream_request_ms: upstreamFirstResponseSafeMs,
+	                upstream_request_ms: upstreamFirstResponseSafeMs,
+                content_completed_at: new Date(contentCompletedAt).toISOString(),
+                last_visible_ms: lastVisibleMs,
+                protocol_done_ms: protocolDoneMs,
+                protocol_done_signal: protocolDoneSignal,
+                final_usage_lookup_ms: finalUsageLookupMs,
+                generation_elapsed_ms: Math.max(0, contentCompletedAt - taskStartedAtMs),
 	                upstream_response_ms: 0,
 	                upstream_response_body_ms: 0,
 	                upstream_response_text_ms: 0,
@@ -5354,8 +5661,16 @@ function createAiImageHandlers({
                 timing: {
                     ...safeObject(existingMetadata.timing),
                     executor_ms: upstreamTotalMs,
+                    preflight_ms: preflightMs,
+                    config_resolve_ms: configResolveMs,
+	                    config_cache_status: configCacheStatus,
                     upstream_request_ms: upstreamFirstResponseSafeMs,
                     first_token_ms: Math.max(0, firstTokenMs),
+                    last_visible_ms: lastVisibleMs,
+                    protocol_done_ms: protocolDoneMs,
+                    protocol_done_signal: protocolDoneSignal,
+                    final_usage_lookup_ms: finalUsageLookupMs,
+                    generation_elapsed_ms: Math.max(0, contentCompletedAt - taskStartedAtMs),
                     upstream_ms: upstreamTotalMs,
                     stream_idle_timed_out: streamIdleTimedOut,
                     stream_idle_timeout_ms: streamIdleTimeoutMs,
@@ -5380,6 +5695,7 @@ function createAiImageHandlers({
 
             streamedResultText = outputText;
             streamedTokenUsage = normalizedUsage.raw;
+            const completeTaskStartedAt = Date.now();
             const completion = await completeTask(supabase, task, {
                 status: 'succeeded',
                 resultPrompt: outputText,
@@ -5388,6 +5704,7 @@ function createAiImageHandlers({
                 providerTaskId,
                 metadata: streamMetadata
             });
+            const completeTaskMs = Math.max(0, Date.now() - completeTaskStartedAt);
             const updatedTask = completion.task;
             const pricingCharge = safeObject(safeObject(updatedTask.metadata).pricing_charge);
             const chargedPoints = normalizeBillablePoints(updatedTask.charged_points, 0);
@@ -5408,6 +5725,7 @@ function createAiImageHandlers({
                 }
             });
 
+            const doneEventMs = Math.max(0, Date.now() - upstreamStartedAt);
             writeSse(res, 'done', {
                 success: true,
                 task: serializeTask(updatedTask, []),
@@ -5419,12 +5737,31 @@ function createAiImageHandlers({
                 text: outputText,
                 storedApiKey: resolvedUserApiKey.storedApiKey,
                 stored_api_key: resolvedUserApiKey.storedApiKey,
+                timing: {
+                    last_visible_ms: lastVisibleMs,
+                    protocol_done_ms: protocolDoneMs,
+                    stream_read_ms: upstreamTotalMs,
+                    final_usage_lookup_ms: finalUsageLookupMs,
+                    complete_task_ms: completeTaskMs,
+                    done_event_ms: doneEventMs
+                },
                 token_usage: {
                     input_tokens: normalizedUsage.input_tokens,
                     output_tokens: normalizedUsage.output_tokens,
                     total_tokens: normalizedUsage.total_tokens,
                     cached_tokens: normalizedUsage.cached_tokens
                 }
+            });
+            logChatStreamDiagnostic('stream_completed', {
+                task_id: updatedTask.id,
+                provider_model: upstreamRequestModel,
+                last_visible_ms: lastVisibleMs,
+                protocol_done_ms: protocolDoneMs,
+                protocol_done_signal: protocolDoneSignal,
+                stream_read_ms: upstreamTotalMs,
+                final_usage_lookup_ms: finalUsageLookupMs,
+                complete_task_ms: completeTaskMs,
+                done_event_ms: doneEventMs
             });
             res.end();
         } catch (error) {
@@ -6176,7 +6513,7 @@ function createAiImageHandlers({
 
             const pricingRulesPromise = supabase
                 .from('ai_image_pricing_rules')
-                .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, metadata')
+                .select('id, site, mode, billing_mode, model, resolution, ratio, quantity, points, priority, metadata, updated_at')
                 .in('site', [site, 'all'])
                 .eq('is_active', true)
                 .order('priority', { ascending: true })

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -77,6 +78,147 @@ func TestBuildOpenAIResponsesURL_ProbeURL(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestChatChunkStartsResponsesOutputRequiresVisibleOutput(t *testing.T) {
+	empty := ""
+	text := "hello"
+	reasoning := "thinking"
+
+	tests := []struct {
+		name  string
+		chunk apicompat.ChatCompletionsChunk
+		want  bool
+	}{
+		{
+			name: "role only",
+			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
+				Delta: apicompat.ChatDelta{Role: "assistant"},
+			}}},
+		},
+		{
+			name: "empty content and reasoning",
+			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
+				Delta: apicompat.ChatDelta{Content: &empty, ReasoningContent: &empty},
+			}}},
+		},
+		{
+			name: "text",
+			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
+				Delta: apicompat.ChatDelta{Content: &text},
+			}}},
+			want: true,
+		},
+		{
+			name: "reasoning",
+			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
+				Delta: apicompat.ChatDelta{ReasoningContent: &reasoning},
+			}}},
+			want: true,
+		},
+		{
+			name: "tool call",
+			chunk: apicompat.ChatCompletionsChunk{Choices: []apicompat.ChatChunkChoice{{
+				Delta: apicompat.ChatDelta{ToolCalls: []apicompat.ChatToolCall{{}}},
+			}}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, chatChunkStartsResponsesOutput(&tt.chunk))
+		})
+	}
+}
+
+func TestHandleChatStreamingResponse_FirstTokenWaitsForVisibleOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const visibleDelay = 80 * time.Millisecond
+	pr, pw := io.Pipe()
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		defer func() { _ = pw.Close() }()
+		_, _ = pw.Write([]byte("data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_ttft\",\"model\":\"gpt-5.5\"}}\n\n"))
+		time.Sleep(visibleDelay)
+		_, _ = pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_ttft\",\"model\":\"gpt-5.5\",\"status\":\"completed\"}}\n\n"))
+	}()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       pr,
+	}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+
+	result, err := svc.handleChatStreamingResponse(
+		resp,
+		c,
+		rawChatCompletionsTestAccount(),
+		"gpt-5.5",
+		"gpt-5.5",
+		"gpt-5.5",
+		time.Now(),
+		0,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.FirstTokenMs)
+	require.GreaterOrEqual(t, *result.FirstTokenMs, int(visibleDelay.Milliseconds()/2))
+	require.Contains(t, rec.Body.String(), `"content":"hello"`)
+	<-writerDone
+}
+
+func TestStreamRawChatCompletions_FirstTokenWaitsForVisibleOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	const visibleDelay = 80 * time.Millisecond
+	pr, pw := io.Pipe()
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		defer func() { _ = pw.Close() }()
+		_, _ = pw.Write([]byte("data: {\"id\":\"chatcmpl_ttft\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"id\":\"chatcmpl_ttft\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\",\"reasoning_content\":\"\"}}]}\n\n"))
+		time.Sleep(visibleDelay)
+		_, _ = pw.Write([]byte("data: {\"id\":\"chatcmpl_ttft\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n"))
+		_, _ = pw.Write([]byte("data: [DONE]\n\n"))
+	}()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       pr,
+	}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig()}
+
+	result, err := svc.streamRawChatCompletions(
+		c,
+		resp,
+		rawChatCompletionsTestAccount(),
+		"gpt-5.5",
+		"gpt-5.5",
+		"gpt-5.5",
+		nil,
+		nil,
+		time.Now(),
+		0,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.FirstTokenMs)
+	require.GreaterOrEqual(t, *result.FirstTokenMs, int(visibleDelay.Milliseconds()/2))
+	require.Contains(t, rec.Body.String(), `"content":"hello"`)
+	<-writerDone
 }
 
 func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDownstream(t *testing.T) {

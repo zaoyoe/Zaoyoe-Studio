@@ -255,7 +255,9 @@ func chatChunkStartsResponsesOutput(chunk *apicompat.ChatCompletionsChunk) bool 
 		return false
 	}
 	for _, choice := range chunk.Choices {
-		if choice.Delta.Content != nil || choice.Delta.ReasoningContent != nil || len(choice.Delta.ToolCalls) > 0 {
+		hasContent := choice.Delta.Content != nil && *choice.Delta.Content != ""
+		hasReasoning := choice.Delta.ReasoningContent != nil && *choice.Delta.ReasoningContent != ""
+		if hasContent || hasReasoning || len(choice.Delta.ToolCalls) > 0 {
 			return true
 		}
 	}

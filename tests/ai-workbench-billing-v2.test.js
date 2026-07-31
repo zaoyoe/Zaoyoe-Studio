@@ -15,6 +15,7 @@ const {
 } = require('../server/api-handlers/_ai-image-runtime');
 
 const migrationPath = path.resolve(__dirname, '../supabase/migrations/20260715_ai_workbench_billing_v2.sql');
+const fastAdmissionMigrationPath = path.resolve(__dirname, '../supabase/migrations/20260731_ai_workbench_fast_admission.sql');
 const walletHandlerPath = path.resolve(__dirname, '../server/api-handlers/public/wallet.js');
 const pointsServicePath = path.resolve(__dirname, '../js/services/PointsService.js');
 const walletModalPath = path.resolve(__dirname, '../js/components/WalletModal.js');
@@ -163,6 +164,30 @@ test('AI workbench billing migration enforces exact authorization and idempotent
         );
     }
     assert.doesNotMatch(migration, /actual_deducted\s*:=\s*ROUND\(LEAST/);
+});
+
+test('AI workbench fast admission migration batches limits and locks pricing with task creation', () => {
+    const migration = fs.readFileSync(fastAdmissionMigrationPath, 'utf8');
+
+    assert.match(migration, /CREATE OR REPLACE FUNCTION public\.take_rate_limit_tokens/);
+    assert.match(migration, /CREATE OR REPLACE FUNCTION public\.fn_admit_ai_workbench_task/);
+    assert.match(migration, /pg_advisory_xact_lock\(hashtextextended\([\s\S]*'ai-workbench-admit:' \|\| v_site \|\| ':' \|\| v_user_id::TEXT/);
+    assert.match(migration, /FROM public\.ai_image_pricing_rules[\s\S]*FOR SHARE/);
+    assert.match(migration, /v_current_pricing_updated_at <> p_pricing_rule_updated_at/);
+    assert.match(migration, /'code', 'pricing_changed'/);
+    assert.match(migration, /INSERT INTO public\.ai_image_tasks/);
+    assert.match(migration, /public\.fn_authorize_ai_workbench_points/);
+    assert.match(migration, /'duplicate', true/);
+    for (const role of ['PUBLIC', 'anon', 'authenticated']) {
+        assert.match(
+            migration,
+            new RegExp(`REVOKE ALL ON FUNCTION public\\.fn_admit_ai_workbench_task\\([^;]+FROM ${role};`)
+        );
+        assert.match(
+            migration,
+            new RegExp(`REVOKE ALL ON FUNCTION public\\.take_rate_limit_tokens\\([^;]+FROM ${role};`)
+        );
+    }
 });
 
 test('wallet and workbench contracts preserve micro-point precision end to end', () => {
