@@ -318,7 +318,24 @@ app.use(cors({
     origin: allOrigins,
     credentials: true
 }));
-app.use(express.json());
+const defaultJsonBodyParser = express.json();
+const aiImageUploadJsonBodyParser = express.json({ limit: '18mb' });
+
+function isAiImageReferenceUploadRequest(req = {}) {
+    if (String(req.method || '').toUpperCase() !== 'POST') return false;
+    const requestPath = String(req.path || req.originalUrl || '').split('?')[0].replace(/\/+$/, '');
+    if (requestPath !== '/api/public') return false;
+    const query = req.query && typeof req.query === 'object' ? req.query : {};
+    return String(query.scope || '').trim() === 'ai-image'
+        && String(query.route || '').trim() === 'upload';
+}
+
+app.use((req, res, next) => {
+    const parser = isAiImageReferenceUploadRequest(req)
+        ? aiImageUploadJsonBodyParser
+        : defaultJsonBodyParser;
+    return parser(req, res, next);
+});
 app.use(express.urlencoded({ extended: false }));
 
 function dispatchSharedApiHandler(handler) {
@@ -6653,6 +6670,20 @@ app.all([
     '/api/admin/*'
 ], dispatchSharedApiHandler(adminApiHandler));
 
+app.use((error, req, res, next) => {
+    if (error?.type !== 'entity.too.large' && Number(error?.status || error?.statusCode) !== 413) {
+        return next(error);
+    }
+    const isReferenceUpload = isAiImageReferenceUploadRequest(req);
+    return res.status(413).json({
+        success: false,
+        code: 'request_body_too_large',
+        message: isReferenceUpload
+            ? '图片大小超出限制，请上传 12MB 以内的图片'
+            : '请求内容过大'
+    });
+});
+
 function startServer(port = PORT) {
     return app.listen(port, () => {
         console.log(`🚀 Verify proxy server running on port ${port}`);
@@ -6687,5 +6718,6 @@ if (require.main === module) {
 
 module.exports = {
     app,
+    isAiImageReferenceUploadRequest,
     startServer
 };

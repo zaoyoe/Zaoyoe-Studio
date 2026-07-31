@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const workbenchPath = path.resolve(__dirname, '../js/ai-image-workbench.js');
 const source = fs.readFileSync(workbenchPath, 'utf8');
+const verifyServerSource = fs.readFileSync(path.resolve(__dirname, '../server/index.js'), 'utf8');
 
 function loadProgressiveChatDeltaSplitter() {
     const constantNames = [
@@ -73,6 +74,14 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
     assert.match(source, /requestAiImage\('pricing', \{ query: \{ site \}, auth: 'optional' \}\)/);
     assert.match(source, /if \(!token && auth !== 'optional'\)/);
     assert.match(source, /if \(token\) \{\s*headers\.Authorization = `Bearer \$\{token\}`;\s*\}/);
+});
+
+test('verify server accepts the documented reference image upload size', () => {
+    assert.match(verifyServerSource, /const aiImageUploadJsonBodyParser = express\.json\(\{ limit: '18mb' \}\)/);
+    assert.match(verifyServerSource, /function isAiImageReferenceUploadRequest\(req = \{\}\)/);
+    assert.match(verifyServerSource, /query\.scope[\s\S]*=== 'ai-image'[\s\S]*query\.route[\s\S]*=== 'upload'/);
+    assert.match(verifyServerSource, /code: 'request_body_too_large'/);
+    assert.match(verifyServerSource, /图片大小超出限制，请上传 12MB 以内的图片/);
 });
 
 test('prompts page loads ai image workbench assets', () => {
