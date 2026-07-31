@@ -3390,7 +3390,7 @@ test('qwen chat stream forwards official enable_thinking flag and reasoning cont
 test('grok chat stream forwards official reasoning_effort without thinking flags', async () => {
     const requests = [];
     const encoder = new TextEncoder();
-    const { handlers } = createHandlers({
+    const { handlers, state } = createHandlers({
         fetchImpl: async (_url, options = {}) => {
             requests.push({ body: JSON.parse(options.body) });
             return {
@@ -3399,7 +3399,8 @@ test('grok chat stream forwards official reasoning_effort without thinking flags
                 body: new ReadableStream({
                     start(controller) {
                         [
-                            'data: {"id":"chatcmpl-grok-1","model":"grok-4.3","choices":[{"delta":{"content":"Grok 答案。"}}]}\n\n',
+                            'data: {"id":"chatcmpl-grok-1","model":"grok-4.3","choices":[{"delta":{"reasoning_content":"Grok 先思考。"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"Grok 答案。"}}]}\n\n',
                             'data: [DONE]\n\n'
                         ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
                         controller.close();
@@ -3424,10 +3425,16 @@ test('grok chat stream forwards official reasoning_effort without thinking flags
     await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
 
     assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: reasoning/);
+    assert.match(res.body, /Grok 先思考。/);
     assert.match(res.body, /Grok 答案。/);
     assert.equal(requests[0].body.reasoning_effort, 'high');
     assert.equal(Object.hasOwn(requests[0].body, 'thinking'), false);
     assert.equal(Object.hasOwn(requests[0].body, 'enable_thinking'), false);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.result_prompt, 'Grok 答案。');
+    assert.equal(persistedTask.metadata.reasoning_content, 'Grok 先思考。');
+    assert.equal(persistedTask.metadata.thinking_enabled, true);
 });
 
 test('grok chat stream drops unsupported reasoning effort values', async () => {
