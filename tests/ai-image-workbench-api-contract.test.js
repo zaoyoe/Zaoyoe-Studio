@@ -2,9 +2,34 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const workbenchPath = path.resolve(__dirname, '../js/ai-image-workbench.js');
 const source = fs.readFileSync(workbenchPath, 'utf8');
+
+function loadProgressiveChatDeltaSplitter() {
+    const constantNames = [
+        'CHAT_STREAM_PROGRESSIVE_THRESHOLD_CHARS',
+        'CHAT_STREAM_PROGRESSIVE_FIRST_CHARS',
+        'CHAT_STREAM_PROGRESSIVE_MAX_FRAMES',
+        'CHAT_STREAM_PROGRESSIVE_TARGET_CHARS'
+    ];
+    const constantDeclarations = constantNames.map((name) => {
+        const match = source.match(new RegExp(`const ${name} = [^;]+;`));
+        assert.ok(match, `missing ${name}`);
+        return match[0];
+    });
+    const functionMatch = source.match(/function splitProgressiveChatDelta\(value = ''\) \{[\s\S]*?\n    \}(?=\n\n    function waitForChatStreamPaint)/);
+    assert.ok(functionMatch, 'missing splitProgressiveChatDelta');
+
+    const context = {};
+    vm.runInNewContext([
+        ...constantDeclarations,
+        functionMatch[0],
+        'globalThis.splitProgressiveChatDelta = splitProgressiveChatDelta;'
+    ].join('\n'), context);
+    return context.splitProgressiveChatDelta;
+}
 
 function getCssRuleBlock(cssSource, selector) {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -34,6 +59,7 @@ test('prompts page loads ai image workbench assets', () => {
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
     assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260730_AI_WORKBENCH_LEGAL_3/);
     assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
+    assert.match(promptsSource, /v=20260731_AI_WORKBENCH_PROGRESSIVE_STREAM_1/);
     assert.match(promptsSource, /legalPolicies=20260730_AI_WORKBENCH_LEGAL_2/);
     assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
@@ -674,7 +700,7 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260731_AI_WORKBENCH_CONTENT_DONE_1/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260731_AI_WORKBENCH_PROGRESSIVE_STREAM_1/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -1218,6 +1244,17 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /async function refreshPricingAfterChange\(error = \{\}\)/);
 	    assert.match(source, /await loadRemoteConfig\(\{ force: true \}\)/);
 	    assert.match(source, /eventName === 'delta'/);
+	    assert.match(source, /function splitProgressiveChatDelta\(value = ''\)/);
+	    assert.match(source, /const first = chars\.splice\(0, CHAT_STREAM_PROGRESSIVE_FIRST_CHARS\)\.join\(''\)/);
+	    assert.match(source, /for \(const block of blocks\) \{\s*await dispatchEventBlock\(block\);\s*\}/);
+	    assert.match(source, /async onEvent\(eventName, payload = \{\}\)/);
+	    assert.match(source, /await revealChatDelta\(currentTask, delta\)/);
+	    assert.match(source, /data-aiw-chat-answer-text/);
+	    assert.match(source, /answer\.textContent = text/);
+	    assert.match(source, /persistStreamState\(\)/);
+	    assert.match(source, /persistStreamState\(\{ immediate: true \}\)/);
+	    assert.match(source, /const shouldYieldForPaint = !hasPaintedVisibleText/);
+	    assert.match(source, /hasPaintedVisibleText = hasPaintedVisibleText \|\| displayedText\.trim\(\) !== ''/);
 	    assert.match(source, /eventName === 'reasoning'/);
 	    assert.match(source, /eventName === 'content_done'/);
 	    assert.match(source, /currentTask\.generationCompletedAt = contentCompletedAt/);
@@ -1483,6 +1520,20 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.doesNotMatch(cssSource, /\.ai-image-text-result/);
     assert.doesNotMatch(cssSource, /\.ai-image-text-stats/);
     assert.doesNotMatch(cssSource, /\.ai-image-chat-bubble/);
+});
+
+test('ai image workbench progressively reveals large chat deltas without changing text', () => {
+    const splitProgressiveChatDelta = loadProgressiveChatDeltaSplitter();
+    const shortText = '短消息🙂';
+    const longText = `第一句话🙂${'连续输出'.repeat(40)}`;
+    const shortChunks = Array.from(splitProgressiveChatDelta(shortText));
+    const longChunks = Array.from(splitProgressiveChatDelta(longText));
+
+    assert.deepEqual(shortChunks, [shortText]);
+    assert.ok(longChunks.length > 1);
+    assert.ok(longChunks.length <= 11);
+    assert.equal(Array.from(longChunks[0]).length, 18);
+    assert.equal(longChunks.join(''), longText);
 });
 
 test('ai image workbench minimizes without rebuilding loaded image DOM', () => {
