@@ -80,6 +80,32 @@ func TestBuildOpenAIResponsesURL_ProbeURL(t *testing.T) {
 	}
 }
 
+func TestNewStreamHeaderWriterDisablesSSECompression(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := rawChatCompletionsTestConfig()
+	svc := &OpenAIGatewayService{
+		cfg:                  cfg,
+		responseHeaderFilter: compileResponseHeaderFilter(cfg),
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	upstream := http.Header{
+		"Content-Encoding":  []string{"gzip"},
+		"Cache-Control":     []string{"upstream"},
+		"Content-Type":      []string{"application/custom"},
+		"X-Accel-Buffering": []string{"yes"},
+	}
+
+	svc.newStreamHeaderWriter(c, upstream)()
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Header().Get("Content-Encoding"))
+	require.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+	require.Equal(t, "no-cache, no-transform", rec.Header().Get("Cache-Control"))
+	require.Equal(t, "no", rec.Header().Get("X-Accel-Buffering"))
+}
+
 func TestChatChunkStartsResponsesOutputRequiresVisibleOutput(t *testing.T) {
 	empty := ""
 	whitespace := " \n\t"

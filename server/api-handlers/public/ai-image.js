@@ -5073,10 +5073,10 @@ function createAiImageHandlers({
 	            const geminiThinkingLevelCapable = geminiNativeCapable && supportsGeminiThinkingLevel(upstreamRequestModel);
 	            const geminiThoughtsEnabled = geminiThinkingLevelCapable && Boolean(geminiThinkingLevel);
 	            const claudeThinkingEnabled = claudeNativeCapable && thinkingMode === 'enabled';
-	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled' || kimiThinkingEnabled === true || qwenThinkingEnabled === true || geminiThoughtsEnabled || claudeThinkingEnabled || (openAiNativeCapable && Boolean(normalizeOpenAiResponsesReasoningEffort(reasoningEffort)));
 	            const upstreamReasoningEffort = deepSeekCapable && reasoningEffort
 	                ? normalizeDeepSeekReasoningEffort(reasoningEffort)
 	                : (grokReasoningCapable ? normalizeXaiReasoningEffort(reasoningEffort) : (openAiReasoningCapable ? (openAiNativeCapable ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort) : reasoningEffort) : ''));
+	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled' || kimiThinkingEnabled === true || qwenThinkingEnabled === true || geminiThoughtsEnabled || claudeThinkingEnabled || (grokReasoningCapable && Boolean(upstreamReasoningEffort)) || (openAiNativeCapable && Boolean(upstreamReasoningEffort));
 	            const messages = buildChatStreamMessages({ body, prompt, model: upstreamRequestModel, baseUrl: upstreamBaseUrl, site, supportsImageInput });
 	            const attachedImageCount = Array.isArray(messages[messages.length - 1]?.content)
 	                ? messages[messages.length - 1].content.filter((part) => part?.type === 'image_url').length
