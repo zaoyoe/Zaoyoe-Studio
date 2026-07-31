@@ -1179,6 +1179,38 @@ async function loadPublicModelProviders(supabase, { env = {} } = {}) {
         .filter((provider) => provider.model || provider.imageModels.length || provider.chatModels.length || provider.videoModels.length);
 }
 
+function inferProviderIdFromPublicModelProviders(providers = [], { model = '', mode = 'text' } = {}) {
+    const normalizedModel = normalizeText(model, 160).toLowerCase();
+    if (!normalizedModel) return '';
+    const modelGroup = TEXT_VISION_MODES.has(mode)
+        ? 'chat'
+        : (VIDEO_MODES.has(mode) ? 'video' : 'image');
+    const candidates = (Array.isArray(providers) ? providers : [])
+        .filter((provider) => {
+            const models = modelGroup === 'chat'
+                ? (provider.chatModels || provider.chat_models || [])
+                : (modelGroup === 'video'
+                    ? (provider.videoModels || provider.video_models || [])
+                    : (provider.imageModels || provider.image_models || provider.models || []));
+            return (Array.isArray(models) ? models : []).some((item) => normalizeText(item, 160).toLowerCase() === normalizedModel);
+        })
+        .map((provider) => normalizeProviderId(provider.providerId || provider.provider_id || provider.id))
+        .filter(Boolean);
+    return candidates.length === 1 ? candidates[0] : '';
+}
+
+async function resolveRequestProviderId(supabase, {
+    providerId = '',
+    model = '',
+    mode = 'text',
+    env = {}
+} = {}) {
+    const explicitProviderId = normalizeProviderId(providerId);
+    if (explicitProviderId) return explicitProviderId;
+    const providers = await loadPublicModelProviders(supabase, { env });
+    return inferProviderIdFromPublicModelProviders(providers, { model, mode });
+}
+
 function buildFallbackApiBaseUrlRows({ site = 'cn', env = {} } = {}) {
     return resolveAllowedApiBaseUrls(env).map((baseUrl, index) => {
         const normalized = normalizeApiBaseUrl(baseUrl);
@@ -4532,7 +4564,14 @@ function createAiImageHandlers({
             const mode = inferMode(body);
             const model = resolveModel({ body, mode });
             const modelGroup = resolveModelGroup({ body, mode });
-            const providerId = normalizeProviderId(body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id);
+            const providerId = billingMode === 'points'
+                ? await resolveRequestProviderId(supabase, {
+                    providerId: body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id,
+                    model,
+                    mode,
+                    env
+                })
+                : normalizeProviderId(body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id);
             Object.assign(submitDiagnostics, {
                 mode,
                 model,
@@ -4816,7 +4855,14 @@ function createAiImageHandlers({
             const mode = 'chat';
             const model = resolveModel({ body, mode });
             const modelGroup = resolveModelGroup({ body, mode });
-            const providerId = normalizeProviderId(body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id);
+            const providerId = billingMode === 'points'
+                ? await resolveRequestProviderId(supabase, {
+                    providerId: body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id,
+                    model,
+                    mode,
+                    env
+                })
+                : normalizeProviderId(body.providerId || body.provider_id || body.modelProviderId || body.model_provider_id);
             Object.assign(chatDiagnostics, {
                 mode,
                 model,
@@ -6811,6 +6857,7 @@ function createAiImageHandlers({
 module.exports = {
     createAiImageHandlers,
     inferMode,
+    inferProviderIdFromPublicModelProviders,
     normalizeApiBaseUrl,
     resolveModel,
     resolveModelGroup,

@@ -164,7 +164,13 @@
         text: { label: '文生图', sub: '从文字开始', icon: 'fa-wand-magic-sparkles', cost: 8 },
         video: { label: '生成视频', sub: '文字生成视频', icon: 'fa-film', cost: 60 },
         image: { label: '图像发散', sub: '参考图创作', icon: 'fa-images', cost: 12 },
-        reverse: { label: '反推提示词', sub: '图片转描述', icon: 'fa-quote-left', cost: 3 }
+        reverse: { label: '反推提示词', sub: '图片转描述', icon: 'fa-quote-left', cost: 0 }
+    });
+
+    const PRICING_MODE_ALIASES = Object.freeze({
+        image: 'text',
+        agent: 'text',
+        reverse: 'chat'
     });
 
     const HISTORY_ACCENTS = Object.freeze([
@@ -335,10 +341,14 @@
         ...DEFAULT_STATE
     };
 
+    const AI_IMAGE_UPLOAD_API_BASE_URL = 'https://verify-api.fatherkey.com/api/public';
+
     let referenceUploadBusy = false;
     let pdfJsModulePromise = null;
     let runtimePricingRules = [];
     let remoteConfigLoaded = false;
+    let remoteConfigAvailable = false;
+    let remoteConfigPromise = null;
     let remoteRecordsLoaded = false;
     let remoteHistoryPrefsLoaded = false;
     let modelDiscoveryState = {
@@ -1741,8 +1751,15 @@
         return host.includes('zaoyoe') ? 'intl' : 'cn';
     }
 
+    function getRuntimePricingRuleModes(mode = 'text') {
+        const normalizedMode = normalizePricingText(mode, 40).toLowerCase();
+        const canonicalMode = PRICING_MODE_ALIASES[normalizedMode] || normalizedMode;
+        return [...new Set([normalizedMode, canonicalMode].filter(Boolean))];
+    }
+
     function pricingRuleScore(rule = {}, request = {}) {
         let score = 0;
+        if (rule.mode === request.mode) score += 64;
         if (rule.site === request.site) score += 32;
         if (rule.model === request.model) score += 16;
         const ruleProviderId = getPricingRuleProviderId(rule);
@@ -1768,6 +1785,7 @@
         const request = {
             site,
             mode,
+            pricingModes: getRuntimePricingRuleModes(mode),
             billingMode,
             model: normalizePricingModel(model),
             providerId: normalizePricingProviderId(providerId),
@@ -1790,7 +1808,7 @@
                     || ruleProviderId === '*'
                     || (request.providerId && ruleProviderId === request.providerId);
                 return (ruleSite === request.site || ruleSite === 'all')
-                    && ruleMode === request.mode
+                    && request.pricingModes.includes(ruleMode)
                     && ruleBillingMode === request.billingMode
                     && (ruleModel === '*' || ruleModel === request.model)
                     && providerMatches
@@ -1900,7 +1918,10 @@
             }
         }
 
-        const response = await withTimeout(fetch(`/api/public?${params.toString()}`, {
+        const requestUrl = route === 'upload'
+            ? `${AI_IMAGE_UPLOAD_API_BASE_URL}?${params.toString()}`
+            : `/api/public?${params.toString()}`;
+        const response = await withTimeout(fetch(requestUrl, {
             method,
             headers,
             ...(body ? { body: JSON.stringify(body) } : {})
@@ -3324,21 +3345,34 @@
     }
 
     async function loadRemoteConfig({ force = false } = {}) {
-        if (remoteConfigLoaded && !force) return;
-        try {
-            const site = getRuntimeSite();
-            const pricingPayload = await requestAiImage('pricing', { query: { site }, auth: 'optional' }).catch(() => null);
-            runtimePricingRules = Array.isArray(pricingPayload?.pricing) ? pricingPayload.pricing : runtimePricingRules;
-            updateRuntimeApiBaseProfiles(pricingPayload?.api_base_urls || []);
-            updateRuntimeApiModels(pricingPayload || {}, { target: 'admin' });
-            applyRuntimeModelCache(state.apiBaseUrl);
-            updateStoredApiKeyStatuses(pricingPayload?.storedApiKeys || pricingPayload?.stored_api_keys || []);
-            remoteConfigLoaded = true;
-            render();
-        } catch (error) {
-            remoteConfigLoaded = true;
-            console.warn('[AIImageWorkbench] Remote config unavailable, using local defaults:', error?.message || error);
-        }
+        if (remoteConfigLoaded && !force) return remoteConfigAvailable;
+        if (remoteConfigPromise) return remoteConfigPromise;
+
+        remoteConfigPromise = (async () => {
+            try {
+                const site = getRuntimeSite();
+                const pricingPayload = await requestAiImage('pricing', { query: { site }, auth: 'optional' });
+                if (!pricingPayload || pricingPayload.success === false || !Array.isArray(pricingPayload.pricing)) {
+                    throw new Error('价格配置响应无效');
+                }
+                runtimePricingRules = pricingPayload.pricing;
+                updateRuntimeApiBaseProfiles(pricingPayload.api_base_urls || []);
+                updateRuntimeApiModels(pricingPayload || {}, { target: 'admin' });
+                applyRuntimeModelCache(state.apiBaseUrl);
+                updateStoredApiKeyStatuses(pricingPayload.storedApiKeys || pricingPayload.stored_api_keys || []);
+                remoteConfigAvailable = true;
+                return true;
+            } catch (error) {
+                remoteConfigAvailable = false;
+                console.warn('[AIImageWorkbench] Remote config unavailable:', error?.message || error);
+                return false;
+            } finally {
+                remoteConfigLoaded = true;
+                remoteConfigPromise = null;
+                render();
+            }
+        })();
+        return remoteConfigPromise;
     }
 
     async function refreshPricingAfterChange(error = {}) {
@@ -4289,6 +4323,18 @@
         return 'image';
     }
 
+    function getRuntimePointPricingRule(mode = inferWorkbenchMode()) {
+        if (state.billingMode !== 'points' || !remoteConfigLoaded || !remoteConfigAvailable) return null;
+        return findRuntimePricingRule({
+            mode,
+            billingMode: state.billingMode,
+            model: getActiveModelValue(mode),
+            resolution: getActiveResolution(mode),
+            ratio: getActiveRatio(mode),
+            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2)
+        });
+    }
+
     function applyWorkbenchToolMode(value = 'chat', { allowUnavailableVideo = false } = {}) {
         const normalized = String(value || '').trim();
         if (normalized === 'video' && (allowUnavailableVideo || getActiveModelOptions('video').length)) {
@@ -4311,21 +4357,15 @@
 
     function getCostEstimate(modeOverride = state.mode) {
         if (state.billingMode === 'api') return 0;
+        if (!remoteConfigLoaded || !remoteConfigAvailable) return 0;
         const mode = MODE_META[modeOverride] ? modeOverride : state.mode;
         const quantity = mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2);
         const resolution = getActiveResolution(mode);
-        const ratio = getActiveRatio(mode);
-        const matchedRule = findRuntimePricingRule({
-            mode,
-            billingMode: state.billingMode,
-            model: getActiveModelValue(mode),
-            resolution,
-            ratio,
-            quantity
-        });
+        const matchedRule = getRuntimePointPricingRule(mode);
         if (matchedRule) {
             return getRuntimePricingRuleEstimate(matchedRule, quantity);
         }
+        if (mode === 'reverse') return 0;
         const modeCost = MODE_META[mode]?.cost ?? 8;
         const resolutionMultiplier = isVideoMode(mode)
             ? ({
@@ -4380,14 +4420,10 @@
     function getMainCostCopy(mode = inferWorkbenchMode()) {
         if (!state.billingMode) return '请选择计费方式';
         if (state.billingMode === 'api') return isTextVisionMode(mode) ? '消耗 API token' : (isVideoMode(mode) ? '消耗 API 视频额度' : '消耗 API 图片额度');
-        const matchedRule = findRuntimePricingRule({
-            mode,
-            billingMode: state.billingMode,
-            model: getActiveModelValue(mode),
-            resolution: getActiveResolution(mode),
-            ratio: getActiveRatio(mode),
-            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2)
-        });
+        if (!remoteConfigLoaded) return '价格加载中';
+        if (!remoteConfigAvailable) return '价格暂不可用';
+        const matchedRule = getRuntimePointPricingRule(mode);
+        if (mode === 'reverse' && !matchedRule) return '价格未配置';
         if (matchedRule && getRuntimePricingRuleStrategy(matchedRule) === 'token_sub2api' && getRuntimePricingRuleEstimate(matchedRule, 1) <= 0) {
             return '按实际用量扣费';
         }
@@ -4397,14 +4433,10 @@
     function getComposerCostValue(mode = inferWorkbenchMode()) {
         if (!state.billingMode) return '选择计费';
         if (state.billingMode === 'api') return isTextVisionMode(mode) ? 'API token' : (isVideoMode(mode) ? 'API 视频' : 'API 图片');
-        const matchedRule = findRuntimePricingRule({
-            mode,
-            billingMode: state.billingMode,
-            model: getActiveModelValue(mode),
-            resolution: getActiveResolution(mode),
-            ratio: getActiveRatio(mode),
-            quantity: mode === 'reverse' || isVideoMode(mode) ? 1 : clampNumber(state.quantity, 1, 4, 2)
-        });
+        if (!remoteConfigLoaded) return '价格加载中';
+        if (!remoteConfigAvailable) return '价格暂不可用';
+        const matchedRule = getRuntimePointPricingRule(mode);
+        if (mode === 'reverse' && !matchedRule) return '价格未配置';
         if (matchedRule && getRuntimePricingRuleStrategy(matchedRule) === 'token_sub2api' && getRuntimePricingRuleEstimate(matchedRule, 1) <= 0) {
             return '实际扣费';
         }
@@ -4440,7 +4472,8 @@
         if (referenceUploadBusy) return false;
         if (!state.billingMode) return false;
         if (state.billingMode === 'api') return Boolean(getActiveModelValue() && isConfiguredApiBaseUrl() && hasUsableApiKey());
-        return Boolean(MODE_META[mode]);
+        return Boolean(remoteConfigLoaded && remoteConfigAvailable && MODE_META[mode] && getActiveModelValue(mode)
+            && (mode !== 'reverse' || getRuntimePointPricingRule(mode)));
     }
 
     function getStatusLabel(task) {
@@ -8159,6 +8192,24 @@
             setSidebarView('billing');
             render();
             persistState();
+            return;
+        }
+        if (state.billingMode === 'points' && !remoteConfigLoaded) {
+            const loaded = await loadRemoteConfig();
+            if (!loaded) {
+                setComposerError('模型与价格配置加载失败，请刷新页面后重试。');
+                render();
+                return;
+            }
+        }
+        if (state.billingMode === 'points' && !remoteConfigAvailable) {
+            setComposerError('模型与价格配置暂不可用，请刷新页面后重试。');
+            render();
+            return;
+        }
+        if (state.billingMode === 'points' && inferredMode === 'reverse' && !getRuntimePointPricingRule(inferredMode)) {
+            setComposerError('当前模型没有可用的反推价格配置，请切换模型后重试。');
+            render();
             return;
         }
         if (state.billingMode === 'api' && !hasUsableApiKey()) {

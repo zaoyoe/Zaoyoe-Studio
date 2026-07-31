@@ -31,6 +31,25 @@ function loadProgressiveChatDeltaSplitter() {
     return context.splitProgressiveChatDelta;
 }
 
+function loadRuntimePricingRuleModes() {
+    const aliasesMatch = source.match(/const PRICING_MODE_ALIASES = Object\.freeze\(\{[\s\S]*?\n    \}\);/);
+    assert.ok(aliasesMatch, 'missing PRICING_MODE_ALIASES');
+    const functionMatch = source.match(/function getRuntimePricingRuleModes\(mode = 'text'\) \{[\s\S]*?\n    \}/);
+    assert.ok(functionMatch, 'missing getRuntimePricingRuleModes');
+
+    const context = {
+        normalizePricingText(value = '', maxLength = 120) {
+            return String(value || '').trim().slice(0, maxLength);
+        }
+    };
+    vm.runInNewContext([
+        aliasesMatch[0],
+        functionMatch[0],
+        'globalThis.getRuntimePricingRuleModes = getRuntimePricingRuleModes;'
+    ].join('\n'), context);
+    return context.getRuntimePricingRuleModes;
+}
+
 function getCssRuleBlock(cssSource, selector) {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = cssSource.match(new RegExp(`(^|\\n)${escaped}\\s*\\{[\\s\\S]*?\\n\\}`));
@@ -49,6 +68,8 @@ test('ai image workbench calls public ai-image APIs for config, records, and sub
     assert.match(source, /requestAiImage\('submit'/);
     assert.match(source, /requestAiImage\('cancel'/);
     assert.match(source, /requestAiImage\('models'/);
+    assert.match(source, /const AI_IMAGE_UPLOAD_API_BASE_URL = 'https:\/\/verify-api\.fatherkey\.com\/api\/public'/);
+    assert.match(source, /const requestUrl = route === 'upload'[\s\S]*AI_IMAGE_UPLOAD_API_BASE_URL/);
     assert.match(source, /requestAiImage\('pricing', \{ query: \{ site \}, auth: 'optional' \}\)/);
     assert.match(source, /if \(!token && auth !== 'optional'\)/);
     assert.match(source, /if \(token\) \{\s*headers\.Authorization = `Bearer \$\{token\}`;\s*\}/);
@@ -59,7 +80,7 @@ test('prompts page loads ai image workbench assets', () => {
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
     assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260730_AI_WORKBENCH_LEGAL_3/);
     assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
-    assert.match(promptsSource, /v=20260731_AI_WORKBENCH_PROGRESSIVE_STREAM_1/);
+    assert.match(promptsSource, /v=20260731_AI_WORKBENCH_REVERSE_UPLOAD_2/);
     assert.match(promptsSource, /legalPolicies=20260730_AI_WORKBENCH_LEGAL_2/);
     assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
@@ -122,7 +143,7 @@ test('ai image workbench does not persist user API key to localStorage snapshot'
     assert.match(persistStateMatch[0], /runtimeApiModelCacheByBaseUrl: serializeRuntimeModelCache\(\)/);
     assert.match(source, /const apiKey = String\(state\.apiKey \|\| ''\)\.trim\(\);/);
     assert.match(source, /if \(task\.billingMode === 'api' && apiKey\) \{[\s\S]*?payload\.apiKey = apiKey;/);
-    assert.match(source, /updateStoredApiKeyStatuses\(pricingPayload\?\.storedApiKeys \|\| pricingPayload\?\.stored_api_keys \|\| \[\]\)/);
+    assert.match(source, /updateStoredApiKeyStatuses\(pricingPayload\.storedApiKeys \|\| pricingPayload\.stored_api_keys \|\| \[\]\)/);
 });
 
 test('ai image workbench waits for server results instead of locally fabricating completed images', () => {
@@ -705,7 +726,7 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260731_AI_WORKBENCH_PROGRESSIVE_STREAM_1/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260731_AI_WORKBENCH_REVERSE_UPLOAD_2/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -1983,7 +2004,14 @@ test('ai image workbench renders reverse prompt results as a left-aligned image 
 });
 
 test('ai image workbench applies admin pricing rules to point estimates', () => {
+    const getRuntimePricingRuleModes = loadRuntimePricingRuleModes();
+    assert.deepEqual(Array.from(getRuntimePricingRuleModes('image')), ['image', 'text']);
+    assert.deepEqual(Array.from(getRuntimePricingRuleModes('reverse')), ['reverse', 'chat']);
+    assert.deepEqual(Array.from(getRuntimePricingRuleModes('video')), ['video']);
     assert.match(source, /function findRuntimePricingRule\(/);
+    assert.match(source, /pricingModes: getRuntimePricingRuleModes\(mode\)/);
+    assert.match(source, /request\.pricingModes\.includes\(ruleMode\)/);
+    assert.match(source, /if \(rule\.mode === request\.mode\) score \+= 64;/);
     assert.match(source, /normalizePricingModel\(model\)/);
     assert.match(source, /function normalizePricingProviderId/);
     assert.match(source, /function getPricingRuleProviderId\(rule = \{\}\)/);
@@ -2001,6 +2029,11 @@ test('ai image workbench applies admin pricing rules to point estimates', () => 
     assert.match(source, /modelProviderId: providerId,\s*model_provider_id: providerId,\s*providerId,\s*provider_id: providerId/);
     assert.match(source, /modelProviderId: activeModelProviderId,\s*providerId: activeModelProviderId/);
     assert.match(source, /const selectedModel = selectedGroup\?\.models\?\.find\(\(model\) => model\.id === selected\)/);
+    assert.match(source, /if \(!remoteConfigLoaded\) return '价格加载中';/);
+    assert.match(source, /if \(mode === 'reverse'\) return 0;/);
+    assert.match(source, /return Boolean\(remoteConfigLoaded && remoteConfigAvailable && MODE_META\[mode\] && getActiveModelValue\(mode\)[\s\S]*mode !== 'reverse' \|\| getRuntimePointPricingRule\(mode\)/);
+    assert.match(source, /if \(state\.billingMode === 'points' && !remoteConfigLoaded\)[\s\S]*await loadRemoteConfig\(\)/);
+    assert.match(source, /当前模型没有可用的反推价格配置/);
 });
 
 test('ai image workbench opens model pricing from points billing in the main content area', () => {

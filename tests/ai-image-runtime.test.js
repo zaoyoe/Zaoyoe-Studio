@@ -3908,6 +3908,70 @@ test('openai compatible text vision executor reverses an image prompt through ch
     assert.equal(execution.metadata.reference_image_transport, 'data_uri');
 });
 
+test('openai compatible text vision executor retries transient CDN DNS and transcodes AVIF references', async () => {
+    const sharp = require('sharp');
+    const avif = await sharp({
+        create: {
+            width: 2,
+            height: 2,
+            channels: 3,
+            background: { r: 20, g: 80, b: 180 }
+        }
+    }).avif().toBuffer();
+    const task = {
+        id: 'task-reverse-avif',
+        site: 'cn',
+        user_id: 'user-1',
+        mode: 'reverse',
+        billing_mode: 'points',
+        status: 'running',
+        model: 'claude-opus-4-6',
+        prompt: '请反推图片提示词',
+        reference_image_url: 'https://cdn.example.com/reference.avif',
+        metadata: {}
+    };
+    let referenceFetches = 0;
+    let upstreamRequest = null;
+    const execution = await executeOpenAiCompatibleTextVision(task, {
+        env: {
+            AI_IMAGE_API_KEY: 'sk-test',
+            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+            AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
+        },
+        fetchImpl: async (url, options = {}) => {
+            if (String(url) === task.reference_image_url) {
+                referenceFetches += 1;
+                if (referenceFetches === 1) {
+                    const cause = new Error('getaddrinfo EAI_AGAIN cdn.example.com');
+                    cause.code = 'EAI_AGAIN';
+                    const fetchError = new TypeError('fetch failed');
+                    fetchError.cause = cause;
+                    throw fetchError;
+                }
+                return buildImageFetchResponse(avif, 'image/avif');
+            }
+            upstreamRequest = JSON.parse(options.body);
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    id: 'chatcmpl-reverse-avif',
+                    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+                    choices: [{ message: { content: 'AVIF converted prompt.' } }]
+                })
+            };
+        }
+    });
+
+    assert.equal(referenceFetches, 2);
+    assert.ok(upstreamRequest);
+    const imageUrl = upstreamRequest.messages[0].content[1].image_url.url;
+    assert.match(imageUrl, /^data:image\/jpeg;base64,/);
+    assert.equal(execution.resultPrompt, 'AVIF converted prompt.');
+    assert.equal(execution.metadata.reference_image_mime_type, 'image/jpeg');
+    assert.equal(execution.metadata.reference_image_source_mime_type, 'image/avif');
+});
+
 test('openai compatible text vision executor rejects untrusted reverse image URLs before calling the model', async () => {
     let fetchCalls = 0;
     await assert.rejects(
