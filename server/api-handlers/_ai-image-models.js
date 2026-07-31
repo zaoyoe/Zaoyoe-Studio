@@ -11,6 +11,9 @@ const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 const DEFAULT_VIDEO_MODEL = 'default-video-model';
 const DEFAULT_PROVIDER_TIMEOUT_MS = 120000;
 const DEFAULT_REVERSE_MAX_TOKENS = 520;
+const DEFAULT_REVERSE_REFERENCE_MAX_BYTES = 5 * 1024 * 1024;
+const MAX_REVERSE_REFERENCE_MAX_BYTES = 20 * 1024 * 1024;
+const MAX_REVERSE_REFERENCE_REDIRECTS = 3;
 const DEFAULT_VIDEO_POLL_INTERVAL_MS = 3000;
 const DEFAULT_VIDEO_POLL_MAX_ATTEMPTS = 160;
 const MAX_VIDEO_POLL_MAX_ATTEMPTS = 240;
@@ -67,6 +70,17 @@ const SUPPORTED_GEMINI_IMAGE_ASPECT_RATIOS = Object.freeze(new Set([
 const URL_RESPONSE_FORMAT_UNSUPPORTED_RE = /response[_ -]?format|b64_json|url|unknown parameter|unsupported|not supported|invalid.*format|invalid.*parameter|unrecognized.*parameter/i;
 const GEMINI_IMAGE_URL_BRIDGE_HEADER = 'X-Zaoyoe-Gemini-Image-Url-Bridge';
 const GEMINI_IMAGE_URL_BRIDGE_UNAVAILABLE_TTL_MS = 10 * 60 * 1000;
+const REVERSE_REFERENCE_IMAGE_MIME_TYPES = Object.freeze(new Set([
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp'
+]));
+const DEFAULT_TRUSTED_REFERENCE_IMAGE_HOSTS = Object.freeze([
+    'cdn.fatherkey.com',
+    'cdn.zaoyoe.com',
+    'cdn.zaoyoe.xyz'
+]);
 const geminiImageUrlBridgeUnavailableUntil = new Map();
 
 function normalizeText(value, maxLength = 4000) {
@@ -1910,18 +1924,18 @@ function buildChatPromptInstruction(task = {}) {
     return normalizeText(task.prompt, 8000) || '请继续处理当前 AI 图片工作台对话。';
 }
 
-function buildOpenAiChatMessages(task = {}) {
+function buildOpenAiChatMessages(task = {}, { referenceImageUrl = '' } = {}) {
     if (task.mode === 'reverse') {
         const content = [{
             type: 'text',
             text: buildReversePromptInstruction(task)
         }];
-        const referenceImageUrl = normalizeText(task.reference_image_url, 4000);
-        if (referenceImageUrl) {
+        const resolvedReferenceImageUrl = referenceImageUrl || normalizeText(task.reference_image_url, 4000);
+        if (resolvedReferenceImageUrl) {
             content.push({
                 type: 'image_url',
                 image_url: {
-                    url: referenceImageUrl
+                    url: resolvedReferenceImageUrl
                 }
             });
         }
@@ -3298,6 +3312,217 @@ async function fetchReferenceImagesForEdit(referenceImageUrls = [], {
         }));
     }
     return images;
+}
+
+function normalizeReferenceImageMimeType(value = '', sourceUrl = '') {
+    const normalized = normalizeMimeType(value, '').toLowerCase();
+    const aliases = {
+        'image/jpg': 'image/jpeg',
+        'image/x-png': 'image/png'
+    };
+    const direct = aliases[normalized] || normalized;
+    if (REVERSE_REFERENCE_IMAGE_MIME_TYPES.has(direct)) return direct;
+    if (direct && !['application/octet-stream', 'binary/octet-stream'].includes(direct)) return '';
+
+    let pathname = '';
+    try {
+        pathname = new URL(sourceUrl).pathname.toLowerCase();
+    } catch (_) {
+        pathname = '';
+    }
+    if (/\.jpe?g$/.test(pathname)) return 'image/jpeg';
+    if (/\.png$/.test(pathname)) return 'image/png';
+    if (/\.gif$/.test(pathname)) return 'image/gif';
+    if (/\.webp$/.test(pathname)) return 'image/webp';
+    return '';
+}
+
+function addReferenceImageHost(hosts, value = '') {
+    const raw = normalizeText(value, 1000);
+    if (!raw) return;
+    try {
+        const parsed = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+        const hostname = parsed.hostname.toLowerCase();
+        if (hostname) hosts.add(hostname);
+    } catch (_) {
+        // Invalid optional host configuration is ignored.
+    }
+}
+
+function getTrustedReferenceImageHosts(env = {}) {
+    const hosts = new Set(DEFAULT_TRUSTED_REFERENCE_IMAGE_HOSTS);
+    [
+        env.AI_IMAGE_R2_PUBLIC_URL,
+        env.R2_PUBLIC_URL,
+        env.SUPABASE_URL,
+        env.NEXT_PUBLIC_SUPABASE_URL,
+        env.PUBLIC_SUPABASE_URL
+    ].forEach((value) => addReferenceImageHost(hosts, value));
+    String(env.AI_IMAGE_REFERENCE_IMAGE_HOSTS || env.AI_IMAGE_TRUSTED_REFERENCE_HOSTS || '')
+        .split(/[,\s]+/)
+        .forEach((value) => addReferenceImageHost(hosts, value));
+    return hosts;
+}
+
+function isBlockedReferenceImageHostname(value = '') {
+    const hostname = normalizeText(value, 500).toLowerCase().replace(/^\[|\]$/g, '');
+    return !hostname
+        || hostname === 'localhost'
+        || hostname.endsWith('.localhost')
+        || hostname.endsWith('.local')
+        || hostname === 'metadata.google.internal'
+        || hostname === '::1'
+        || hostname === '::'
+        || /^f[cd][0-9a-f]{0,2}:/.test(hostname)
+        || /^fe[89ab][0-9a-f]:/.test(hostname)
+        || hostname.startsWith('::ffff:127.')
+        || hostname.startsWith('::ffff:10.')
+        || hostname.startsWith('::ffff:192.168.')
+        || hostname === '0.0.0.0'
+        || hostname.startsWith('127.')
+        || hostname.startsWith('10.')
+        || hostname.startsWith('192.168.')
+        || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+        || hostname === '169.254.169.254';
+}
+
+function assertTrustedReferenceImageUrl(value = '', env = {}) {
+    let parsed;
+    try {
+        parsed = new URL(normalizeText(value, 4000));
+    } catch (_) {
+        parsed = null;
+    }
+    const trustedHosts = getTrustedReferenceImageHosts(env);
+    if (
+        !parsed
+        || parsed.protocol !== 'https:'
+        || parsed.username
+        || parsed.password
+        || isBlockedReferenceImageHostname(parsed.hostname)
+        || !trustedHosts.has(parsed.hostname.toLowerCase())
+    ) {
+        const error = new Error('反推参考图片地址不在受信任的图片存储域名中，请重新上传图片');
+        error.statusCode = 400;
+        error.code = 'ai_image_reference_url_not_trusted';
+        throw error;
+    }
+    return parsed;
+}
+
+function buildReferenceImageSizeError(maxBytes) {
+    const error = new Error(`反推参考图片超过 ${Math.max(1, Math.floor(maxBytes / 1024 / 1024))} MiB 限制，请压缩后重试`);
+    error.statusCode = 413;
+    error.code = 'ai_image_reference_too_large';
+    return error;
+}
+
+async function readLimitedReferenceImageBuffer(response, {
+    env = process.env,
+    maxBytes = DEFAULT_REVERSE_REFERENCE_MAX_BYTES,
+    signal = null
+} = {}) {
+    const contentLength = Number(response.headers?.get?.('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+        abortResponseBody(response);
+        throw buildReferenceImageSizeError(maxBytes);
+    }
+
+    const readBuffer = async () => {
+        const reader = response.body?.getReader?.();
+        if (!reader) {
+            return Buffer.from(await response.arrayBuffer());
+        }
+        const chunks = [];
+        let totalBytes = 0;
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            totalBytes += value?.byteLength || 0;
+            if (totalBytes > maxBytes) {
+                await reader.cancel().catch(() => {});
+                throw buildReferenceImageSizeError(maxBytes);
+            }
+            chunks.push(Buffer.from(value || []));
+        }
+        return Buffer.concat(chunks, totalBytes);
+    };
+
+    const buffer = await readResponseBodyWithTimeout(response, readBuffer, {
+        env,
+        label: 'AI 图片反推参考图下载响应体',
+        signal
+    });
+    if (buffer.length > maxBytes) throw buildReferenceImageSizeError(maxBytes);
+    if (!buffer.length) {
+        const error = new Error('反推参考图片为空，请重新上传图片');
+        error.statusCode = 400;
+        error.code = 'ai_image_reference_url_empty';
+        throw error;
+    }
+    return buffer;
+}
+
+async function fetchReverseReferenceImage(referenceImageUrl, {
+    env = process.env,
+    fetchImpl = globalThis.fetch,
+    signal = null
+} = {}) {
+    const maxBytes = normalizePositiveInt(
+        env.AI_IMAGE_REVERSE_REFERENCE_MAX_BYTES || env.AI_IMAGE_REFERENCE_MAX_BYTES,
+        DEFAULT_REVERSE_REFERENCE_MAX_BYTES,
+        { min: 1024, max: MAX_REVERSE_REFERENCE_MAX_BYTES }
+    );
+    let currentUrl = assertTrustedReferenceImageUrl(referenceImageUrl, env);
+    let response = null;
+
+    for (let redirectCount = 0; redirectCount <= MAX_REVERSE_REFERENCE_REDIRECTS; redirectCount += 1) {
+        response = await fetchProviderResponse(fetchImpl, currentUrl.toString(), {
+            method: 'GET',
+            redirect: 'manual',
+            headers: {
+                Accept: 'image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8'
+            },
+            ...(signal ? { signal } : {})
+        }, {
+            env,
+            label: 'AI 图片反推参考图下载'
+        });
+        if (![301, 302, 303, 307, 308].includes(Number(response.status || 0))) break;
+        const location = response.headers?.get?.('location') || '';
+        abortResponseBody(response);
+        if (!location || redirectCount === MAX_REVERSE_REFERENCE_REDIRECTS) {
+            const error = new Error('反推参考图片跳转次数过多，请重新上传图片');
+            error.statusCode = 400;
+            error.code = 'ai_image_reference_redirect_limit';
+            throw error;
+        }
+        currentUrl = assertTrustedReferenceImageUrl(new URL(location, currentUrl).toString(), env);
+    }
+
+    if (!response?.ok) {
+        throw buildUpstreamError(response || { status: 502 }, {
+            code: 'ai_image_reference_url_unavailable',
+            message: `反推参考图片不可访问，HTTP ${response?.status || 502}`
+        });
+    }
+    const mimeType = normalizeReferenceImageMimeType(
+        response.headers?.get?.('content-type') || '',
+        currentUrl.toString()
+    );
+    if (!mimeType) {
+        abortResponseBody(response);
+        const error = new Error('反推参考图片格式不受支持，请使用 JPEG、PNG、GIF 或 WebP');
+        error.statusCode = 415;
+        error.code = 'ai_image_reference_url_not_image';
+        throw error;
+    }
+    const buffer = await readLimitedReferenceImageBuffer(response, { env, maxBytes, signal });
+    return {
+        dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+        mimeType,
+        bytes: buffer.length
+    };
 }
 
 function buildImageEditFormData({
@@ -5374,6 +5599,29 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         throw error;
     }
 
+    if (
+        task.mode === 'reverse'
+        && config.visionModels.length
+        && !config.visionModels.some((model) => model.toLowerCase() === config.model.toLowerCase())
+    ) {
+        const error = new Error(`模型 ${config.model} 未配置视觉输入能力，请选择支持图片的模型`);
+        error.statusCode = 409;
+        error.code = 'ai_image_model_vision_not_supported';
+        throw error;
+    }
+
+    let reverseReferenceImage = null;
+    let referenceFetchMs = 0;
+    if (task.mode === 'reverse') {
+        const referenceFetchStartedAt = nowMs();
+        reverseReferenceImage = await fetchReverseReferenceImage(task.reference_image_url, {
+            env,
+            fetchImpl,
+            signal
+        });
+        referenceFetchMs = elapsedMs(referenceFetchStartedAt);
+    }
+
     const maxTokens = task.mode === 'reverse'
         ? normalizePositiveInt(env.AI_IMAGE_CHAT_MAX_TOKENS, DEFAULT_REVERSE_MAX_TOKENS, {
             min: 64,
@@ -5385,7 +5633,9 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         });
     const requestBody = {
         model: config.model,
-        messages: buildOpenAiChatMessages(task),
+        messages: buildOpenAiChatMessages(task, {
+            referenceImageUrl: reverseReferenceImage?.dataUrl || ''
+        }),
         stream: false
     };
     if (maxTokens > 0) {
@@ -5463,7 +5713,10 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
             request_type: task.mode,
             preflight_ms: preflightMs,
             config_resolve_ms: configResolveMs,
-            reference_fetch_ms: 0,
+            reference_fetch_ms: referenceFetchMs,
+            reference_image_bytes: reverseReferenceImage?.bytes || 0,
+            reference_image_mime_type: reverseReferenceImage?.mimeType || '',
+            reference_image_transport: reverseReferenceImage ? 'data_uri' : '',
             upstream_ms: upstreamMs,
             upstream_request_ms: upstreamRequestMs,
             upstream_response_ms: upstreamResponseMs,
@@ -5474,7 +5727,7 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
             timing: {
                 preflight_ms: preflightMs,
                 config_resolve_ms: configResolveMs,
-                reference_fetch_ms: 0,
+                reference_fetch_ms: referenceFetchMs,
                 upstream_ms: upstreamMs,
                 upstream_request_ms: upstreamRequestMs,
                 upstream_response_ms: upstreamResponseMs,

@@ -67,6 +67,15 @@ R2_BUCKET_NAME=
 R2_PUBLIC_URL=
 ```
 
+反推提示词会先从上述 CDN 或 Supabase 域名读取参考图，再以内联图片发送给视觉模型。自定义图片域名和大小上限可选配置：
+
+```bash
+AI_IMAGE_REFERENCE_IMAGE_HOSTS=images.example.com
+AI_IMAGE_REVERSE_REFERENCE_MAX_BYTES=5242880
+```
+
+默认仅接受 HTTPS 的 JPEG、PNG、GIF、WebP，单图上限 5 MiB。参考图校验失败时不会调用模型或扣除任务积分。
+
 仅本地开发可临时使用：
 
 ```bash

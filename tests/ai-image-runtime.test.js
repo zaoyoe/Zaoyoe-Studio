@@ -28,6 +28,23 @@ function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function buildImageFetchResponse(bytes = 'reference-image-bytes', mimeType = 'image/png') {
+    const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+    return {
+        ok: true,
+        status: 200,
+        headers: {
+            get(name = '') {
+                const normalized = String(name).toLowerCase();
+                if (normalized === 'content-type') return mimeType;
+                if (normalized === 'content-length') return String(buffer.length);
+                return '';
+            }
+        },
+        arrayBuffer: async () => buffer
+    };
+}
+
 function buildMp4Box(type, ...payloads) {
     const body = Buffer.concat(payloads.map((payload) => Buffer.isBuffer(payload) ? payload : Buffer.from(payload || [])));
     const header = Buffer.alloc(8);
@@ -3794,9 +3811,13 @@ test('openai compatible text vision executor classifies provider dns failures', 
         executeOpenAiCompatibleTextVision(task, {
             env: {
                 AI_IMAGE_API_KEY: 'sk-test',
-                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1'
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
             },
-            fetchImpl: async () => {
+            fetchImpl: async (url) => {
+                if (String(url) === task.reference_image_url) {
+                    return buildImageFetchResponse();
+                }
                 throw fetchError;
             }
         }),
@@ -3832,9 +3853,14 @@ test('openai compatible text vision executor reverses an image prompt through ch
         env: {
             AI_IMAGE_API_KEY: 'sk-test',
             AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
-            AI_IMAGE_CHAT_MODEL: 'gpt-4o-mini'
+            AI_IMAGE_CHAT_MODEL: 'gpt-4o-mini',
+            AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
         },
         fetchImpl: async (url, options = {}) => {
+            if (String(url) === task.reference_image_url) {
+                requests.push({ url: String(url), method: options.method });
+                return buildImageFetchResponse('reference-image-bytes', 'image/png');
+            }
             requests.push({
                 url,
                 headers: options.headers,
@@ -3860,19 +3886,124 @@ test('openai compatible text vision executor reverses an image prompt through ch
         }
     });
 
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, 'https://api.example.com/v1/chat/completions');
-    assert.equal(requests[0].body.model, 'gpt-4o-mini');
-    assert.equal(requests[0].body.messages[0].content[0].type, 'text');
-    assert.equal(requests[0].body.messages[0].content[1].type, 'image_url');
-    assert.equal(requests[0].body.messages[0].content[1].image_url.url, 'https://cdn.example.com/reference.png');
-    assert.match(requests[0].body.messages[0].content[0].text, /反推/);
-    assert.equal(requests[0].body.max_tokens, 520);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].url, task.reference_image_url);
+    assert.equal(requests[1].url, 'https://api.example.com/v1/chat/completions');
+    assert.equal(requests[1].body.model, 'gpt-4o-mini');
+    assert.equal(requests[1].body.messages[0].content[0].type, 'text');
+    assert.equal(requests[1].body.messages[0].content[1].type, 'image_url');
+    assert.equal(
+        requests[1].body.messages[0].content[1].image_url.url,
+        `data:image/png;base64,${Buffer.from('reference-image-bytes').toString('base64')}`
+    );
+    assert.match(requests[1].body.messages[0].content[0].text, /反推/);
+    assert.equal(requests[1].body.max_tokens, 520);
     assert.equal(execution.resultPrompt, 'A cinematic neon city poster, reflective rain street, bold commercial composition.');
     assert.equal(execution.images.length, 0);
     assert.equal(execution.tokenUsage.total_tokens, 200);
     assert.equal(execution.metadata.executor, 'openai-compatible-chat');
     assert.equal(execution.metadata.request_type, 'reverse');
+    assert.equal(execution.metadata.reference_image_bytes, Buffer.byteLength('reference-image-bytes'));
+    assert.equal(execution.metadata.reference_image_mime_type, 'image/png');
+    assert.equal(execution.metadata.reference_image_transport, 'data_uri');
+});
+
+test('openai compatible text vision executor rejects untrusted reverse image URLs before calling the model', async () => {
+    let fetchCalls = 0;
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision({
+            id: 'task-reverse-untrusted',
+            mode: 'reverse',
+            billing_mode: 'points',
+            model: 'claude-opus-4-6',
+            reference_image_url: 'https://untrusted.example.net/reference.png'
+        }, {
+            env: {
+                AI_IMAGE_API_KEY: 'sk-test',
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1'
+            },
+            fetchImpl: async () => {
+                fetchCalls += 1;
+                return buildImageFetchResponse();
+            }
+        }),
+        (error) => {
+            assert.equal(error.code, 'ai_image_reference_url_not_trusted');
+            assert.equal(error.statusCode, 400);
+            return true;
+        }
+    );
+    assert.equal(fetchCalls, 0);
+});
+
+test('openai compatible text vision executor rejects non-image and oversized reverse references before model spend', async () => {
+    const task = {
+        id: 'task-reverse-invalid-image',
+        mode: 'reverse',
+        billing_mode: 'points',
+        model: 'claude-opus-4-6',
+        reference_image_url: 'https://cdn.example.com/reference.png'
+    };
+    const baseOptions = {
+        env: {
+            AI_IMAGE_API_KEY: 'sk-test',
+            AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+            AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
+        }
+    };
+
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision(task, {
+            ...baseOptions,
+            fetchImpl: async () => buildImageFetchResponse('<html>not an image</html>', 'text/html')
+        }),
+        (error) => error.code === 'ai_image_reference_url_not_image' && error.statusCode === 415
+    );
+
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision(task, {
+            ...baseOptions,
+            env: {
+                ...baseOptions.env,
+                AI_IMAGE_REVERSE_REFERENCE_MAX_BYTES: '1024'
+            },
+            fetchImpl: async () => buildImageFetchResponse(Buffer.alloc(1025), 'image/png')
+        }),
+        (error) => error.code === 'ai_image_reference_too_large' && error.statusCode === 413
+    );
+});
+
+test('openai compatible text vision executor rejects models outside an explicit vision model list', async () => {
+    let fetchCalls = 0;
+    await assert.rejects(
+        executeOpenAiCompatibleTextVision({
+            id: 'task-reverse-text-only',
+            mode: 'reverse',
+            billing_mode: 'points',
+            model: 'deepseek-chat',
+            reference_image_url: 'https://cdn.example.com/reference.png'
+        }, {
+            runtimeConfig: {
+                apiKey: 'sk-test',
+                baseUrl: 'https://api.example.com/v1',
+                model: 'deepseek-chat',
+                visionModels: ['claude-opus-4-6']
+            },
+            env: {
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
+            },
+            fetchImpl: async () => {
+                fetchCalls += 1;
+                return buildImageFetchResponse();
+            }
+        }),
+        (error) => {
+            assert.equal(error.code, 'ai_image_model_vision_not_supported');
+            assert.equal(error.statusCode, 409);
+            return true;
+        }
+    );
+    assert.equal(fetchCalls, 0);
 });
 
 test('openai compatible text vision executor handles chat mode without image output', async () => {
@@ -4091,9 +4222,12 @@ test('ai image runtime can complete reverse prompt with real text vision executo
             ...runtimeOptions,
             env: {
                 AI_IMAGE_API_KEY: 'sk-test',
-                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1'
+                AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+                AI_IMAGE_REFERENCE_IMAGE_HOSTS: 'cdn.example.com'
             },
-            fetchImpl: async () => ({
+            fetchImpl: async (url) => String(url) === 'https://cdn.example.com/reference.png'
+                ? buildImageFetchResponse()
+                : ({
                 ok: true,
                 status: 200,
                 text: async () => JSON.stringify({

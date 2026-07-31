@@ -23,6 +23,29 @@ func ccChainToAnthropic(t *testing.T, ccReq *ChatCompletionsRequest) []Anthropic
 	return anthReq.Messages
 }
 
+func TestCCChain_DataURIImageSurvivesAnthropicCompatibilityConversion(t *testing.T) {
+	msgs := ccChainToAnthropic(t, &ChatCompletionsRequest{
+		Model: "claude-opus-4-6",
+		Messages: []ChatMessage{{
+			Role: "user",
+			Content: json.RawMessage(`[
+				{"type":"text","text":"Reverse this image into a prompt"},
+				{"type":"image_url","image_url":{"url":"data:image/png;base64,aW1hZ2UtYnl0ZXM="}}
+			]`),
+		}},
+	})
+
+	require.Len(t, msgs, 1)
+	blocks := parseContentBlocks(msgs[0].Content)
+	require.Len(t, blocks, 2)
+	require.Equal(t, "text", blocks[0].Type)
+	require.Equal(t, "image", blocks[1].Type)
+	require.NotNil(t, blocks[1].Source)
+	require.Equal(t, "base64", blocks[1].Source.Type)
+	require.Equal(t, "image/png", blocks[1].Source.MediaType)
+	require.Equal(t, "aW1hZ2UtYnl0ZXM=", blocks[1].Source.Data)
+}
+
 // Reproduces the production 400:
 //
 //	unexpected ...content.0: tool_use_id found in tool_result blocks:

@@ -289,6 +289,11 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(source, /return 'Gemini';/);
     assert.match(source, /return 'ChatGPT';/);
     assert.match(source, /function groupRuntimeModelsByFamily\(providers = \[\], mode = inferWorkbenchMode\(\)\)/);
+    assert.match(source, /function filterRuntimeModelGroupsForMode\(groups = \[\], mode = inferWorkbenchMode\(\)\)/);
+    assert.match(source, /if \(model\.supportsImageInput === false\) return false;/);
+    assert.match(source, /if \(model\.supportsImageInput === true\) return true;/);
+    assert.match(source, /return modelLikelySupportsChatImageInput\(model\.id\);/);
+    assert.match(source, /filterRuntimeModelGroupsForMode\(groupRuntimeModelsByFamily\(providers, mode\), mode\)/);
     assert.match(source, /function getRuntimeModelProvidersForBillingMode\(\)/);
     assert.match(source, /return state\.billingMode === 'api' \? runtimeApiModelProviders : runtimeAdminModelProviders;/);
     assert.match(source, /function getRuntimeModelGroups\(mode = inferWorkbenchMode\(\), providers = getRuntimeModelProvidersForBillingMode\(\)\)/);
