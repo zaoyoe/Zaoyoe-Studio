@@ -1830,13 +1830,20 @@ async function resolveAiImageRuntimeConfig({
 
     const apiKey = envAiImageApiKey || storedAiImageConfig?.apiKey || sharedEnvApiKey || storedCodexConfig?.apiKey || '';
     const envVideoEndpoint = readFirstEnv(env, ['AI_IMAGE_VIDEO_ENDPOINT', 'AI_VIDEO_ENDPOINT', 'AI_IMAGE_VIDEO_GENERATION_ENDPOINT']);
-    const baseUrl = normalizeBaseUrl(
+    const configuredBaseUrl = normalizeBaseUrl(
         readFirstEnv(env, ['AI_IMAGE_API_BASE_URL'])
         || storedAiImageConfig?.baseUrl
         || readFirstEnv(env, ['OPENAI_API_BASE_URL', 'OPENAI_BASE_URL', 'CODEX_API_BASE_URL'])
         || storedCodexConfig?.baseUrl
         || DEFAULT_OPENAI_BASE_URL
     );
+    const localPreviewBaseUrl = normalizeBaseUrl(readFirstEnv(env, ['LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL']));
+    const baseUrl = localPreviewBaseUrl
+        && storedAiImageConfig?.baseUrl
+        && isSub2ApiGatewayBaseUrl(storedAiImageConfig.baseUrl)
+        && !readFirstEnv(env, ['AI_IMAGE_API_BASE_URL'])
+        ? localPreviewBaseUrl
+        : configuredBaseUrl;
     const defaultModel = readFirstEnv(env, ['AI_IMAGE_MODEL'])
         || storedAiImageConfig?.model
         || readFirstEnv(env, ['OPENAI_IMAGE_MODEL'])

@@ -9,6 +9,7 @@ const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-confi
 
 const DEFAULT_SMOKE_RESULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_LOCAL_PREVIEW_BODY_LIMIT = '25mb';
+const DEFAULT_LOCAL_SUB2API_BASE_URL = 'http://127.0.0.1:18080/v1';
 const LOCAL_PREVIEW_NO_STORE_EXTENSIONS = new Set([
     '.html',
     '.js',
@@ -298,18 +299,25 @@ function applyPreviewEnvToProcess(envValues = {}) {
 }
 
 function withLocalPreviewEnvDefaults(envValues = {}) {
+    const localSub2ApiBaseUrl = String(
+        envValues?.LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL || DEFAULT_LOCAL_SUB2API_BASE_URL
+    ).trim() || DEFAULT_LOCAL_SUB2API_BASE_URL;
+    const previewEnv = {
+        ...envValues,
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: localSub2ApiBaseUrl
+    };
     const hasExplicitRateLimitStore = [
-        envValues?.RATE_LIMIT_BACKEND,
-        envValues?.RATE_LIMIT_STORE,
-        envValues?.DISABLE_PERSISTENT_RATE_LIMITS
+        previewEnv.RATE_LIMIT_BACKEND,
+        previewEnv.RATE_LIMIT_STORE,
+        previewEnv.DISABLE_PERSISTENT_RATE_LIMITS
     ].some((value) => String(value || '').trim());
 
     if (hasExplicitRateLimitStore) {
-        return { ...envValues };
+        return previewEnv;
     }
 
     return {
-        ...envValues,
+        ...previewEnv,
         RATE_LIMIT_BACKEND: 'memory'
     };
 }
@@ -700,6 +708,7 @@ module.exports = {
     createSmokeResultStore,
     createLocalPreviewApp,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
+    DEFAULT_LOCAL_SUB2API_BASE_URL,
     getDefaultEnvFiles,
     loadFreshAdminApiHandler,
     loadFreshPaymentsApiHandler,

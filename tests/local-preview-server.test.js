@@ -11,6 +11,7 @@ const {
     clearRequireCacheByPrefixes,
     createSmokeResultStore,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
+    DEFAULT_LOCAL_SUB2API_BASE_URL,
     getDefaultEnvFiles,
     loadPreviewEnv,
     loadFreshAdminApiHandler,
@@ -380,25 +381,54 @@ test('local preview server defaults rate limiting to memory unless explicitly co
         SUPABASE_URL: 'https://preview.supabase.co'
     }), {
         SUPABASE_URL: 'https://preview.supabase.co',
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: DEFAULT_LOCAL_SUB2API_BASE_URL,
         RATE_LIMIT_BACKEND: 'memory'
     });
 
     assert.deepEqual(withLocalPreviewEnvDefaults({
         RATE_LIMIT_BACKEND: 'supabase'
     }), {
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: DEFAULT_LOCAL_SUB2API_BASE_URL,
         RATE_LIMIT_BACKEND: 'supabase'
     });
 
     assert.deepEqual(withLocalPreviewEnvDefaults({
         RATE_LIMIT_STORE: 'supabase'
     }), {
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: DEFAULT_LOCAL_SUB2API_BASE_URL,
         RATE_LIMIT_STORE: 'supabase'
     });
 
     assert.deepEqual(withLocalPreviewEnvDefaults({
         DISABLE_PERSISTENT_RATE_LIMITS: '1'
     }), {
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: DEFAULT_LOCAL_SUB2API_BASE_URL,
         DISABLE_PERSISTENT_RATE_LIMITS: '1'
+    });
+});
+
+test('local preview server routes AI workbench requests through local Sub2API by default', () => {
+    assert.equal(
+        withLocalPreviewEnvDefaults({}).LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL,
+        'http://127.0.0.1:18080/v1'
+    );
+    assert.equal(
+        withLocalPreviewEnvDefaults({
+            LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: 'http://127.0.0.1:28080/v1'
+        }).LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL,
+        'http://127.0.0.1:28080/v1'
+    );
+});
+
+test('local preview server keeps explicit and local AI workbench upstreams separate', () => {
+    assert.deepEqual(withLocalPreviewEnvDefaults({
+        AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: 'http://127.0.0.1:28080/v1',
+        RATE_LIMIT_BACKEND: 'memory'
+    }), {
+        AI_IMAGE_API_BASE_URL: 'https://api.example.com/v1',
+        LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: 'http://127.0.0.1:28080/v1',
+        RATE_LIMIT_BACKEND: 'memory'
     });
 });
 

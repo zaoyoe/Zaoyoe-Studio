@@ -4640,6 +4640,83 @@ test('ai image model config normalizes bare environment base URL to v1', async (
     assert.equal(config.baseUrl, 'https://image.example.com/v1');
 });
 
+test('ai image model config redirects a stored Sub2API provider to local preview without replacing its key', async () => {
+    const originalSecretsExports = require.cache[require.resolve('../api/_lib/secrets')]?.exports;
+    const secretsPath = require.resolve('../api/_lib/secrets');
+    const modelsPath = require.resolve('../server/api-handlers/_ai-image-models');
+
+    require.cache[secretsPath].exports = {
+        ...originalSecretsExports,
+        async resolveAiImageProviderRuntimeConfig() {
+            return {
+                configured: true,
+                source: 'ai-image-provider-stored',
+                providerId: 'provider-3',
+                label: 'Gemini',
+                apiKey: 'stored-gemini-key',
+                baseUrl: 'https://sub2api.fatherkey.com/v1',
+                model: 'gemini-3.5-flash'
+            };
+        }
+    };
+    delete require.cache[modelsPath];
+
+    try {
+        const { resolveAiImageRuntimeConfig: resolveRuntimeConfig } = require('../server/api-handlers/_ai-image-models');
+        const config = await resolveRuntimeConfig({
+            supabase: { from() {} },
+            task: { mode: 'chat', model: 'gemini-3.5-flash', providerId: 'provider-3' },
+            env: { LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: 'http://127.0.0.1:18080/v1' }
+        });
+
+        assert.equal(config.configured, true);
+        assert.equal(config.apiKey, 'stored-gemini-key');
+        assert.equal(config.baseUrl, 'http://127.0.0.1:18080/v1');
+        assert.equal(config.providerId, 'provider-3');
+    } finally {
+        require.cache[secretsPath].exports = originalSecretsExports;
+        delete require.cache[modelsPath];
+    }
+});
+
+test('ai image model config does not redirect a non-Sub2API provider to local preview', async () => {
+    const originalSecretsExports = require.cache[require.resolve('../api/_lib/secrets')]?.exports;
+    const secretsPath = require.resolve('../api/_lib/secrets');
+    const modelsPath = require.resolve('../server/api-handlers/_ai-image-models');
+
+    require.cache[secretsPath].exports = {
+        ...originalSecretsExports,
+        async resolveAiImageProviderRuntimeConfig() {
+            return {
+                configured: true,
+                source: 'ai-image-provider-stored',
+                providerId: 'external-image',
+                label: 'External image',
+                apiKey: 'stored-external-key',
+                baseUrl: 'https://image.example.com/v1',
+                model: 'image-model'
+            };
+        }
+    };
+    delete require.cache[modelsPath];
+
+    try {
+        const { resolveAiImageRuntimeConfig: resolveRuntimeConfig } = require('../server/api-handlers/_ai-image-models');
+        const config = await resolveRuntimeConfig({
+            supabase: { from() {} },
+            task: { mode: 'text', model: 'image-model', providerId: 'external-image' },
+            env: { LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: 'http://127.0.0.1:18080/v1' }
+        });
+
+        assert.equal(config.configured, true);
+        assert.equal(config.baseUrl, 'https://image.example.com/v1');
+        assert.equal(config.providerId, 'external-image');
+    } finally {
+        require.cache[secretsPath].exports = originalSecretsExports;
+        delete require.cache[modelsPath];
+    }
+});
+
 test('ai image model config uses stored image key before shared environment key', async () => {
     const state = {
         adminSecrets: [{
