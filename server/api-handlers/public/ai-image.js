@@ -3356,13 +3356,16 @@ function trimChatHistoryMessages(messages = [], {
     return selected;
 }
 
-function buildWorkbenchChatSystemPrompt({ site = 'cn', model = '' } = {}) {
+function buildWorkbenchChatSystemPrompt({ site = 'cn', model = '', thinkingMode = 'unset', reasoningEnabled = false } = {}) {
     const brand = site === 'intl' ? 'Zaoyoe' : 'FatherKey';
     const requestedModel = normalizeText(model, 120);
     return [
         `你是 ${brand} AI 工作台的文本对话助手。`,
         requestedModel ? `本次请求传给上游的 model 字段是：${requestedModel}。如果用户询问你使用的是什么模型、当前模型、模型名称或模型 ID，必须直接回答这个精确值，不要改写、泛化为供应商名称，也不要根据训练身份推测。` : '',
         '不要声称自己运行在 Codex CLI、终端式编码助手或任何与当前 FatherKey/Zaoyoe 工作台无关的环境中。',
+        '所有用户可见内容（包括思考摘要和最终答案）必须使用用户当前提问的主要语言；用户使用中文提问时，思考摘要和最终答案都必须使用中文。',
+        reasoningEnabled ? '思考摘要已经由界面单独展示。最终答案区域只输出结论和正文，不要重复输出分析、计划、草稿、推理过程或“思考过程：”等标题，也不要复述思考摘要。' : '',
+        thinkingMode === 'disabled' ? '当前已关闭思考模式。不要输出分析、计划、复盘、草稿或思考过程，只输出最终答案。' : '',
         '保持上下文连续，优先直接回答用户问题。'
     ].filter(Boolean).join('\n');
 }
@@ -3478,7 +3481,7 @@ function buildChatUserContent({ prompt = '', imageUrls = [], attachments = [] } 
     ];
 }
 
-function buildChatStreamMessages({ body = {}, prompt = '', model = '', baseUrl = '', site = 'cn', supportsImageInput = null } = {}) {
+function buildChatStreamMessages({ body = {}, prompt = '', model = '', baseUrl = '', site = 'cn', supportsImageInput = null, reasoningEnabled = false } = {}) {
     const memoryMode = normalizeChatMemoryMode(body.memoryMode || body.memory_mode);
     const memoryLimits = getChatMemoryLimits(body, memoryMode);
     const historyMessages = trimChatHistoryMessages(
@@ -3489,7 +3492,8 @@ function buildChatStreamMessages({ body = {}, prompt = '', model = '', baseUrl =
         }
     );
     const currentPrompt = normalizeText(prompt || body.prompt || body.message || body.input, 8000);
-    const systemPrompt = buildWorkbenchChatSystemPrompt({ site, model });
+    const thinkingMode = normalizeChatThinkingMode(body.thinkingMode || body.thinking_mode);
+    const systemPrompt = buildWorkbenchChatSystemPrompt({ site, model, thinkingMode, reasoningEnabled });
     const imageInputMode = normalizeChatImageInputMode(body.imageInputMode || body.image_input_mode);
     const imageUrls = shouldAttachChatImages({ imageInputMode, model, baseUrl, supportsImageInput })
         ? normalizeChatImageReferences(body)
@@ -3795,6 +3799,48 @@ function extractChatDelta(payload = {}) {
     )).filter(Boolean).join('');
 }
 
+const CHAT_REASONING_LEAK_HEADINGS = Object.freeze([
+    '思考过程',
+    '分析过程',
+    '推理过程',
+    'analysis process',
+    'reasoning process',
+    'thought process',
+    'thinking process'
+]);
+const CHAT_REASONING_LEAK_HEADING_RE = /^\s*(?:#{1,6}\s*)?(?:(?:\*\*)?(?:思考过程|分析过程|推理过程|(?:analysis|reasoning|thought|thinking)\s+process)(?:\*\*)?)\s*[:：]\s*/i;
+const CHAT_REASONING_LEAK_TAG_RE = /^\s*<(think|thinking|analysis|reasoning)>/i;
+
+function isPotentialChatReasoningHeadingPrefix(value = '') {
+    const rawFirstLine = String(value || '').trimStart().split(/\r?\n/, 1)[0].trim().toLowerCase();
+    const firstLine = rawFirstLine.replace(/^#{1,6}\s*/, '').replace(/^\*{1,2}/, '').trimStart();
+    if (!firstLine && /^[#*\s]*$/.test(rawFirstLine)) return true;
+    if (!firstLine || firstLine.length > 40) return false;
+    return CHAT_REASONING_LEAK_HEADINGS.some((heading) => heading.startsWith(firstLine));
+}
+
+function sanitizeChatAnswerText(value = '', { reasoningEnabled = false, final = false } = {}) {
+    const text = String(value || '');
+    if (!text || !reasoningEnabled) return text;
+
+    const tagMatch = text.match(CHAT_REASONING_LEAK_TAG_RE);
+    if (tagMatch) {
+        const closingTag = new RegExp(`</${tagMatch[1]}>`, 'i');
+        const closingMatch = text.slice(tagMatch[0].length).match(closingTag);
+        if (!closingMatch) return '';
+        return text.slice(tagMatch[0].length + closingMatch.index + closingMatch[0].length).trimStart();
+    }
+
+    const headingMatch = text.match(CHAT_REASONING_LEAK_HEADING_RE);
+    if (!headingMatch) {
+        return !final && isPotentialChatReasoningHeadingPrefix(text) ? '' : text;
+    }
+    const remainder = text.slice(headingMatch[0].length);
+    const separatorMatch = remainder.match(/\r?\n\s*\r?\n/);
+    if (!separatorMatch) return '';
+    return remainder.slice(separatorMatch.index + separatorMatch[0].length).trimStart();
+}
+
 function extractChatFullOutputText(payload = {}) {
     if (!payload || typeof payload !== 'object') return '';
     const type = normalizeText(payload.type || payload.event_type, 120);
@@ -3927,6 +3973,10 @@ function shouldEnableQwenThinking(model = '', baseUrl = '') {
 
 function shouldEnableGrokReasoning(model = '', baseUrl = '') {
     return /grok|xai|x\.ai/i.test(`${model} ${baseUrl}`);
+}
+
+function shouldEnableGeminiThinking(model = '', baseUrl = '') {
+    return /gemini|generativelanguage\.googleapis\.com/i.test(`${model} ${baseUrl}`);
 }
 
 function isOpenAiNativeBaseUrl(baseUrl = '') {
@@ -5029,10 +5079,12 @@ function createAiImageHandlers({
 	            const requestedReasoningEffort = rawReasoningEffort || envReasoningEffort || 'auto';
 	            const reasoningEffort = normalizeChatReasoningEffort(rawReasoningEffort || envReasoningEffort);
 	            const requestedGeminiThinkingLevel = normalizeText(body.geminiThinkingLevel || body.gemini_thinking_level || env.AI_IMAGE_CHAT_GEMINI_THINKING_LEVEL || '', 40).toLowerCase() || 'medium';
-	            const geminiThinkingLevel = normalizeGeminiThinkingLevel(requestedGeminiThinkingLevel);
+	            const normalizedGeminiThinkingLevel = normalizeGeminiThinkingLevel(requestedGeminiThinkingLevel);
 	            const requestedClaudeThinkingBudget = normalizeText(body.claudeThinkingBudget || body.claude_thinking_budget || env.AI_IMAGE_CHAT_CLAUDE_THINKING_BUDGET || '', 40) || '1024';
 	            const claudeThinkingBudget = normalizeClaudeThinkingBudget(requestedClaudeThinkingBudget);
 	            const thinkingMode = normalizeChatThinkingMode(body.thinkingMode || body.thinking_mode);
+	            // A disabled mode must win over a stale level saved by an older client.
+	            const geminiThinkingLevel = thinkingMode === 'disabled' ? '' : normalizedGeminiThinkingLevel;
 	            const imageInputMode = normalizeChatImageInputMode(body.imageInputMode || body.image_input_mode);
 	            const runtimeConfigResult = await runtimeConfigPromise;
 	            if (runtimeConfigResult.error) throw runtimeConfigResult.error;
@@ -5060,8 +5112,10 @@ function createAiImageHandlers({
 	            const kimiThinkingCapable = shouldEnableKimiThinking(upstreamRequestModel, upstreamBaseUrl);
 	            const qwenThinkingCapable = shouldEnableQwenThinking(upstreamRequestModel, upstreamBaseUrl);
 	            const grokReasoningCapable = shouldEnableGrokReasoning(upstreamRequestModel, upstreamBaseUrl);
+	            const geminiModelCapable = shouldEnableGeminiThinking(upstreamRequestModel, upstreamBaseUrl);
 	            const openAiReasoningCapable = shouldEnableOpenAiReasoning(upstreamRequestModel, upstreamBaseUrl);
 	            const geminiNativeCapable = isGeminiNativeBaseUrl(upstreamBaseUrl);
+	            const geminiCompatibleCapable = geminiModelCapable && !geminiNativeCapable;
 	            const openAiNativeCapable = isOpenAiNativeBaseUrl(upstreamBaseUrl);
 	            const claudeNativeCapable = isClaudeNativeBaseUrl(upstreamBaseUrl);
 	            const upstreamProvider = geminiNativeCapable
@@ -5073,11 +5127,36 @@ function createAiImageHandlers({
 	            const geminiThinkingLevelCapable = geminiNativeCapable && supportsGeminiThinkingLevel(upstreamRequestModel);
 	            const geminiThoughtsEnabled = geminiThinkingLevelCapable && Boolean(geminiThinkingLevel);
 	            const claudeThinkingEnabled = claudeNativeCapable && thinkingMode === 'enabled';
+	            const geminiCompatibleReasoningEffort = geminiCompatibleCapable
+	                ? (thinkingMode === 'disabled'
+	                    ? 'none'
+	                    : (thinkingMode === 'enabled' ? (GEMINI_THINKING_LEVELS.has(geminiThinkingLevel) ? geminiThinkingLevel : 'medium') : ''))
+	                : '';
+	            const grokEnabledReasoningEffort = normalizeXaiReasoningEffort(reasoningEffort);
 	            const upstreamReasoningEffort = deepSeekCapable && reasoningEffort
 	                ? normalizeDeepSeekReasoningEffort(reasoningEffort)
-	                : (grokReasoningCapable ? normalizeXaiReasoningEffort(reasoningEffort) : (openAiReasoningCapable ? (openAiNativeCapable ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort) : reasoningEffort) : ''));
-	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled' || kimiThinkingEnabled === true || qwenThinkingEnabled === true || geminiThoughtsEnabled || claudeThinkingEnabled || (grokReasoningCapable && Boolean(upstreamReasoningEffort)) || (openAiNativeCapable && Boolean(upstreamReasoningEffort));
-	            const messages = buildChatStreamMessages({ body, prompt, model: upstreamRequestModel, baseUrl: upstreamBaseUrl, site, supportsImageInput });
+	                : (grokReasoningCapable
+	                    ? (thinkingMode === 'disabled'
+	                        ? 'none'
+	                        : (thinkingMode === 'enabled' ? (grokEnabledReasoningEffort && grokEnabledReasoningEffort !== 'none' ? grokEnabledReasoningEffort : 'medium') : grokEnabledReasoningEffort))
+	                    : (geminiCompatibleReasoningEffort || (openAiReasoningCapable ? (openAiNativeCapable ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort) : reasoningEffort) : '')));
+	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled'
+	                || kimiThinkingEnabled === true
+	                || qwenThinkingEnabled === true
+	                || geminiThoughtsEnabled
+	                || claudeThinkingEnabled
+	                || (grokReasoningCapable && upstreamReasoningEffort !== 'none' && Boolean(upstreamReasoningEffort))
+	                || (geminiCompatibleCapable && thinkingMode === 'enabled')
+	                || (openAiNativeCapable && Boolean(upstreamReasoningEffort));
+            const messages = buildChatStreamMessages({
+                body,
+                prompt,
+                model: upstreamRequestModel,
+                baseUrl: upstreamBaseUrl,
+                site,
+                supportsImageInput,
+                reasoningEnabled: thinkingReasoningEnabled
+            });
 	            const attachedImageCount = Array.isArray(messages[messages.length - 1]?.content)
 	                ? messages[messages.length - 1].content.filter((part) => part?.type === 'image_url').length
 	                : 0;
@@ -5262,6 +5341,7 @@ function createAiImageHandlers({
 
             let buffer = '';
             let outputText = '';
+            let upstreamOutputText = '';
             let reasoningText = '';
             let providerTaskId = '';
             let upstreamModel = '';
@@ -5313,8 +5393,26 @@ function createAiImageHandlers({
             };
             const upstreamDeltaKeySamples = [];
             const taskStartedAtMs = Date.parse(task.started_at || startedAt) || upstreamStartedAt;
+            const flushFinalAnswer = () => {
+                const finalizedOutputText = sanitizeChatAnswerText(upstreamOutputText, {
+                    reasoningEnabled: thinkingReasoningEnabled,
+                    final: true
+                });
+                if (finalizedOutputText === outputText) return;
+                const visibleDelta = finalizedOutputText.startsWith(outputText)
+                    ? finalizedOutputText.slice(outputText.length)
+                    : finalizedOutputText;
+                outputText = finalizedOutputText;
+                if (!visibleDelta) return;
+                lastUserVisibleAt = Date.now();
+                writeSse(res, 'delta', {
+                    delta: visibleDelta,
+                    task_id: task.id
+                });
+            };
             const emitContentDone = (signal = 'stream_end') => {
                 if (contentDoneEmitted) return;
+                flushFinalAnswer();
                 const now = Date.now();
                 protocolDoneAt = protocolDoneAt || now;
                 protocolDoneSignal = protocolDoneSignal || signal;
@@ -5412,22 +5510,31 @@ function createAiImageHandlers({
 	                            : extractChatDelta(payload)));
                 if (!delta) {
                     const fullOutputText = extractChatFullOutputText(payload);
-                    if (fullOutputText && fullOutputText !== outputText) {
-                        delta = fullOutputText.startsWith(outputText)
-                            ? fullOutputText.slice(outputText.length)
-                            : (outputText ? '' : fullOutputText);
+                    if (fullOutputText && fullOutputText !== upstreamOutputText) {
+                        delta = fullOutputText.startsWith(upstreamOutputText)
+                            ? fullOutputText.slice(upstreamOutputText.length)
+                            : (upstreamOutputText ? '' : fullOutputText);
                     }
                 }
                 if (delta) {
                     upstreamContentPayloads += 1;
                     upstreamContentChars += delta.length;
                     if (!firstTokenMs) firstTokenMs = Date.now() - upstreamStartedAt;
-                    outputText += delta;
-                    lastUserVisibleAt = Date.now();
-                    writeSse(res, 'delta', {
-                        delta,
-                        task_id: task.id
+                    upstreamOutputText += delta;
+                    const sanitizedOutputText = sanitizeChatAnswerText(upstreamOutputText, {
+                        reasoningEnabled: thinkingReasoningEnabled
                     });
+                    const visibleDelta = sanitizedOutputText.startsWith(outputText)
+                        ? sanitizedOutputText.slice(outputText.length)
+                        : (outputText ? '' : sanitizedOutputText);
+                    outputText = sanitizedOutputText;
+                    if (visibleDelta) {
+                        lastUserVisibleAt = Date.now();
+                        writeSse(res, 'delta', {
+                            delta: visibleDelta,
+                            task_id: task.id
+                        });
+                    }
                 }
                 const terminalSignal = getChatStreamTerminalSignal(payload);
                 if (terminalSignal) emitContentDone(terminalSignal);
@@ -5550,6 +5657,7 @@ function createAiImageHandlers({
             if (buffer.trim()) {
                 processLine(buffer);
             }
+            flushFinalAnswer();
             if (streamIdleTimedOut || streamVisibleIdleTimedOut) {
                 await reader.cancel().catch(() => {});
             }

@@ -1372,6 +1372,8 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /DeepSeek 推理强度/);
 	    assert.match(source, /Kimi 思考模式/);
 	    assert.match(source, /Qwen 思考模式/);
+	    assert.match(source, /Grok 思考模式/);
+	    assert.match(source, /Gemini 思考模式/);
 	    assert.match(source, /xAI 推理强度/);
 	    assert.match(source, /OpenAI 推理强度/);
 	    assert.match(source, /OpenAI 服务档位/);
