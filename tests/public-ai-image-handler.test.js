@@ -3437,6 +3437,94 @@ test('grok chat stream forwards official reasoning_effort without thinking flags
     assert.equal(persistedTask.metadata.thinking_enabled, true);
 });
 
+test('thinking chat stream removes an explicit reasoning section repeated in final content', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-grok-duplicate-thinking","model":"grok-4.3","choices":[{"delta":{"reasoning_content":"The user said hello."}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"思"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"考过程"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"：\\n用户发送了“你好”，这是一个简单的中文问候。"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"\\n\\n你好！有什么我可以帮您的吗？"}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-grok-key-12345678',
+            prompt: '你好',
+            model: 'grok-4.3',
+            apiModelGroup: 'chat',
+            reasoningEffort: 'high',
+            thinkingMode: 'enabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.match(requests[0].body.messages[0].content, /思考摘要已经由界面单独展示/);
+    assert.match(res.body, /The user said hello\./);
+    assert.match(res.body, /你好！有什么我可以帮您的吗？/);
+    assert.doesNotMatch(res.body, /用户发送了“你好”，这是一个简单的中文问候/);
+    assert.ok(res.body.indexOf('你好！有什么我可以帮您的吗？') < res.body.indexOf('event: content_done'));
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.result_prompt, '你好！有什么我可以帮您的吗？');
+});
+
+test('thinking chat stream preserves a normal answer whose content starts with analysis', async () => {
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            body: new ReadableStream({
+                start(controller) {
+                    [
+                        'data: {"choices":[{"delta":{"reasoning_content":"Review the metrics first."}}]}\n\n',
+                        'data: {"choices":[{"delta":{"content":"Analysis: Revenue increased 12% year over year."}}]}\n\n',
+                        'data: [DONE]\n\n'
+                    ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                    controller.close();
+                }
+            })
+        }),
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-grok-key-12345678',
+            prompt: '分析收入数据',
+            model: 'grok-4.3',
+            apiModelGroup: 'chat',
+            reasoningEffort: 'high',
+            thinkingMode: 'enabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.match(res.body, /Analysis: Revenue increased 12% year over year\./);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.result_prompt, 'Analysis: Revenue increased 12% year over year.');
+});
+
 test('grok chat stream disables reasoning when thinking mode is off', async () => {
     const requests = [];
     const encoder = new TextEncoder();
