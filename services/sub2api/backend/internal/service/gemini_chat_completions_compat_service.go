@@ -567,6 +567,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	openBlockIndex := -1
 	openBlockType := ""
 	seenText := ""
+	seenThinking := ""
 	openToolIndex := -1
 	openToolName := ""
 	seenToolJSON := ""
@@ -622,41 +623,56 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 
 						for _, part := range extractGeminiParts(geminiResp) {
 							if text, ok := part["text"].(string); ok && text != "" {
+								isThought, _ := part["thought"].(bool)
 								if openToolIndex >= 0 {
 									if closeOpenTool() {
 										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
 									}
 								}
-								delta, newSeen := computeGeminiTextDelta(seenText, text)
-								seenText = newSeen
+								seen := seenText
+								if isThought {
+									seen = seenThinking
+								}
+								delta, newSeen := computeGeminiTextDelta(seen, text)
+								if isThought {
+									seenThinking = newSeen
+								} else {
+									seenText = newSeen
+								}
 								if delta == "" {
 									continue
 								}
-								if openBlockType != "text" {
+								blockType := "text"
+								if isThought {
+									blockType = "thinking"
+								}
+								if openBlockType != blockType {
 									if closeOpenBlock() {
 										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
 									}
 									idx := nextBlockIndex
 									nextBlockIndex++
 									openBlockIndex = idx
-									openBlockType = "text"
+									openBlockType = blockType
+									contentBlock := &apicompat.AnthropicContentBlock{Type: "text", Text: ""}
+									if isThought {
+										contentBlock = &apicompat.AnthropicContentBlock{Type: "thinking", Thinking: ""}
+									}
 									if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
-										Type:  "content_block_start",
-										Index: &idx,
-										ContentBlock: &apicompat.AnthropicContentBlock{
-											Type: "text",
-											Text: "",
-										},
+										Type:         "content_block_start",
+										Index:        &idx,
+										ContentBlock: contentBlock,
 									}) {
 										return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
 									}
 								}
+								deltaBlock := &apicompat.AnthropicDelta{Type: "text_delta", Text: delta}
+								if isThought {
+									deltaBlock = &apicompat.AnthropicDelta{Type: "thinking_delta", Thinking: delta}
+								}
 								if emitAnthropicEvent(&apicompat.AnthropicStreamEvent{
-									Type: "content_block_delta",
-									Delta: &apicompat.AnthropicDelta{
-										Type: "text_delta",
-										Text: delta,
-									},
+									Type:  "content_block_delta",
+									Delta: deltaBlock,
 								}) {
 									return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
 								}

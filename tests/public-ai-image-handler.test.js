@@ -3667,6 +3667,7 @@ test('gemini native chat stream uses Interactions API and thinking summaries', a
     assert.equal(requests[0].body.generation_config.thinking_level, 'high');
     assert.equal(requests[0].body.generation_config.thinking_summaries, 'auto');
     assert.equal(requests[0].body.input.at(-1).type, 'user_input');
+    assert.match(requests[0].body.system_instruction, /思考摘要和最终答案都必须使用中文/);
     assert.match(res.body, /event: reasoning/);
     assert.match(res.body, /Gemini 先思考。/);
     assert.match(res.body, /Gemini 最终答案。/);

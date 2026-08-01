@@ -170,6 +170,73 @@ func TestGeminiForwardAsChatCompletions_StreamsOpenAIChunksFromGeminiSSE(t *test
 	require.Contains(t, out, "data: [DONE]")
 }
 
+func TestGeminiForwardAsChatCompletions_StreamsThoughtPartsAsReasoningContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamBody := `data: {"candidates":[{"content":{"parts":[{"text":"正在分析","thought":true}]}}]}` + "\n\n" +
+		`data: {"candidates":[{"content":{"parts":[{"text":"正在分析问题","thought":true},{"text":"最终答案。"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"thoughtsTokenCount":4}}` + "\n\n" +
+		"data: [DONE]\n\n"
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{
+		httpUpstream: httpStub,
+		cfg:          &config.Config{},
+	}
+	account := &Account{
+		ID:       103,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+		Concurrency: 1,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gemini-3.5-flash","stream":true,"messages":[{"role":"user","content":"请回答"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 6, result.Usage.OutputTokens)
+
+	out := rec.Body.String()
+	require.Contains(t, out, `"reasoning_content":"正在分析"`)
+	require.Contains(t, out, `"reasoning_content":"问题"`)
+	require.Contains(t, out, `"content":"最终答案。"`)
+	require.NotContains(t, out, `"content":"正在分析`)
+}
+
+func TestGeminiResponseToChatCompletions_PreservesThoughtParts(t *testing.T) {
+	geminiResp := map[string]any{
+		"candidates": []any{map[string]any{
+			"content": map[string]any{
+				"parts": []any{
+					map[string]any{"text": "先理解用户的问题。", "thought": true},
+					map[string]any{"text": "这是最终答案。"},
+				},
+			},
+			"finishReason": "STOP",
+		}},
+	}
+
+	chatResp, _, err := geminiResponseToChatCompletions(geminiResp, "gemini-3.5-flash", []byte(`{}`), nil)
+	require.NoError(t, err)
+	require.Len(t, chatResp.Choices, 1)
+	require.Equal(t, "先理解用户的问题。", chatResp.Choices[0].Message.ReasoningContent)
+
+	var content string
+	require.NoError(t, json.Unmarshal(chatResp.Choices[0].Message.Content, &content))
+	require.Equal(t, "这是最终答案。", content)
+}
+
 // TestConvertClaudeToolsToGeminiTools_CustomType 测试custom类型工具转换
 func TestConvertClaudeToolsToGeminiTools_CustomType(t *testing.T) {
 	tests := []struct {
