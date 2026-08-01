@@ -25,6 +25,10 @@ type geminiCompatHTTPUpstreamStub struct {
 	lastReq  *http.Request
 }
 
+func intPointer(value int) *int {
+	return &value
+}
+
 func (s *geminiCompatHTTPUpstreamStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	s.calls++
 	s.lastReq = req
@@ -160,6 +164,7 @@ func TestGeminiForwardAsChatCompletions_StreamsOpenAIChunksFromGeminiSSE(t *test
 	require.NotNil(t, httpStub.lastReq)
 	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse")
 	require.Equal(t, "gemini-api-key", httpStub.lastReq.Header.Get("x-goog-api-key"))
+	require.Equal(t, "no-cache, no-transform", rec.Header().Get("Cache-Control"))
 
 	out := rec.Body.String()
 	require.Contains(t, out, `"object":"chat.completion.chunk"`)
@@ -235,6 +240,44 @@ func TestGeminiResponseToChatCompletions_PreservesThoughtParts(t *testing.T) {
 	var content string
 	require.NoError(t, json.Unmarshal(chatResp.Choices[0].Message.Content, &content))
 	require.Equal(t, "这是最终答案。", content)
+}
+
+func TestConvertClaudeGenerationConfig_MapsThinkingEffort(t *testing.T) {
+	tests := []struct {
+		name            string
+		effort          string
+		wantLevel       string
+		wantBudget      *int
+		includeThoughts bool
+		model           string
+	}{
+		{name: "disabled", effort: "none", includeThoughts: false, model: "gemini-3.5-flash"},
+		{name: "low", effort: "low", wantLevel: "low", includeThoughts: true, model: "gemini-3.5-flash"},
+		{name: "medium", effort: "medium", wantLevel: "medium", includeThoughts: true, model: "gemini-3.5-flash"},
+		{name: "high", effort: "high", wantLevel: "high", includeThoughts: true, model: "gemini-3.5-flash"},
+		{name: "max", effort: "max", wantLevel: "high", includeThoughts: true, model: "gemini-3.5-flash"},
+		{name: "Gemini 2.5 uses budget", effort: "medium", wantBudget: intPointer(4096), includeThoughts: true, model: "gemini-2.5-flash"},
+		{name: "Gemini 2.5 disabled uses zero budget", effort: "none", wantBudget: intPointer(0), includeThoughts: false, model: "gemini-2.5-flash"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := convertClaudeGenerationConfig(map[string]any{
+				"model":         tt.model,
+				"output_config": map[string]any{"effort": tt.effort},
+			})
+			thinkingConfig, ok := got["thinkingConfig"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, tt.includeThoughts, thinkingConfig["includeThoughts"])
+			if tt.wantLevel != "" {
+				require.Equal(t, tt.wantLevel, thinkingConfig["thinkingLevel"])
+			} else if tt.wantBudget != nil {
+				require.Equal(t, *tt.wantBudget, thinkingConfig["thinkingBudget"])
+			} else {
+				require.NotContains(t, thinkingConfig, "thinkingBudget")
+			}
+		})
+	}
 }
 
 // TestConvertClaudeToolsToGeminiTools_CustomType 测试custom类型工具转换
