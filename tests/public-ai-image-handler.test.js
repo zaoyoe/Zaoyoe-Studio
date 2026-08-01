@@ -3786,6 +3786,54 @@ test('gemini compatible chat stream sends an explicit disabled reasoning mode', 
     assert.equal(persistedTask.metadata.thinking_enabled, false);
 });
 
+test('gemini compatible chat stream hides English reasoning for a Chinese prompt and disables compression', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ headers: options.headers, body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"choices":[{"delta":{"reasoning_content":"Interpreting the user inquiry before answering."}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"这是中文最终答案。"}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-gemini-key-12345678',
+            prompt: '请用中文解释',
+            model: 'gemini-3.5-flash',
+            apiModelGroup: 'chat',
+            geminiThinkingLevel: 'minimal',
+            thinkingMode: 'enabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(requests[0].headers['Accept-Encoding'], 'identity');
+    assert.equal(requests[0].body.reasoning_effort, 'minimal');
+    assert.doesNotMatch(res.body, /event: reasoning/);
+    assert.match(res.body, /这是中文最终答案。/);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.metadata.reasoning_content, '');
+    assert.equal(persistedTask.metadata.reasoning_language_mismatch, true);
+    assert.equal(Object.hasOwn(persistedTask.metadata, 'reasoning_raw_content'), false);
+});
+
 test('openai native chat stream uses Responses API reasoning summaries', async () => {
     const requests = [];
     const encoder = new TextEncoder();
@@ -4498,6 +4546,7 @@ test('api chat stream normalizes fast service tier and custom reasoning effort',
     assert.equal(requests[0].body.service_tier, 'priority');
     assert.equal(requests[0].body.reasoning_effort, 'medium');
     assert.equal(requests[0].body.stream_options.include_usage, true);
+	assert.equal(requests[0].headers['Accept-Encoding'], 'identity');
 });
 
 test('api billing mode can execute image generation immediately and record image usage', async () => {

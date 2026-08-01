@@ -2012,7 +2012,7 @@ func (s *GeminiMessagesCompatService) handleNonStreamingResponse(c *gin.Context,
 
 func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, resp *http.Response, startTime time.Time, originalModel string) (*geminiStreamResult, error) {
 	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
+	c.Header("Cache-Control", "no-cache, no-transform")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
@@ -2598,7 +2598,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 	}
 
 	c.Status(resp.StatusCode)
-	c.Header("Cache-Control", "no-cache")
+	c.Header("Cache-Control", "no-cache, no-transform")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
@@ -3509,6 +3509,8 @@ func cleanToolSchema(schema any) any {
 
 func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 	out := make(map[string]any)
+	model, _ := req["model"].(string)
+	isGemini25 := strings.Contains(strings.ToLower(model), "gemini-2.5")
 	if mt, ok := asInt(req["max_tokens"]); ok && mt > 0 {
 		out["maxOutputTokens"] = mt
 	}
@@ -3521,10 +3523,53 @@ func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 	if stopSeq, ok := req["stop_sequences"].([]any); ok && len(stopSeq) > 0 {
 		out["stopSequences"] = stopSeq
 	}
+	if thinking, ok := req["thinking"].(map[string]any); ok {
+		thinkingType, _ := thinking["type"].(string)
+		if strings.EqualFold(strings.TrimSpace(thinkingType), "disabled") {
+			thinkingConfig := map[string]any{"includeThoughts": false}
+			if isGemini25 {
+				thinkingConfig["thinkingBudget"] = 0
+			}
+			out["thinkingConfig"] = thinkingConfig
+		}
+	}
+	if outputConfig, ok := req["output_config"].(map[string]any); ok {
+		effort, _ := outputConfig["effort"].(string)
+		effort = strings.ToLower(strings.TrimSpace(effort))
+		if effort == "xhigh" || effort == "max" {
+			effort = "high"
+		}
+		if effort == "none" {
+			thinkingConfig := map[string]any{"includeThoughts": false}
+			if isGemini25 {
+				thinkingConfig["thinkingBudget"] = 0
+			}
+			out["thinkingConfig"] = thinkingConfig
+		} else if effort == "minimal" || effort == "low" || effort == "medium" || effort == "high" {
+			thinkingConfig := map[string]any{"includeThoughts": true}
+			if isGemini25 {
+				thinkingConfig["thinkingBudget"] = defaultGeminiThinkingBudget(effort)
+			} else {
+				thinkingConfig["thinkingLevel"] = effort
+			}
+			out["thinkingConfig"] = thinkingConfig
+		}
+	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func defaultGeminiThinkingBudget(effort string) int {
+	switch effort {
+	case "minimal", "low":
+		return 1024
+	case "medium":
+		return 4096
+	default:
+		return 10240
+	}
 }
 
 func (s *GeminiMessagesCompatService) extractImageInputSize(body []byte) string {

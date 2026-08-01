@@ -237,6 +237,19 @@ function normalizeText(value, maxLength = 2000) {
     return normalized ? normalized.slice(0, maxLength) : '';
 }
 
+function containsHanText(value = '') {
+    return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/u.test(String(value || ''));
+}
+
+function getDominantLetterScript(value = '') {
+    const text = String(value || '');
+    const hanCount = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/gu) || []).length;
+    const latinCount = (text.match(/[A-Za-z]/g) || []).length;
+    if (hanCount >= 2 && hanCount >= Math.ceil(latinCount / 2)) return 'han';
+    if (latinCount >= 20 && hanCount === 0) return 'latin';
+    return '';
+}
+
 function normalizeSite(value = 'cn') {
     const normalized = String(value || '').trim().toLowerCase();
     return normalized === 'intl' || normalized === 'en' ? 'intl' : 'cn';
@@ -5315,7 +5328,10 @@ function createAiImageHandlers({
             });
 	            const upstreamResponse = await fetchImpl(upstreamRequest.url, {
 	                method: 'POST',
-	                headers: upstreamRequest.headers,
+	                headers: {
+	                    ...upstreamRequest.headers,
+	                    'Accept-Encoding': 'identity'
+	                },
 	                body: JSON.stringify(upstreamRequest.body)
 	            });
             const upstreamFirstResponseMs = Date.now() - upstreamStartedAt;
@@ -5343,6 +5359,8 @@ function createAiImageHandlers({
             let outputText = '';
             let upstreamOutputText = '';
             let reasoningText = '';
+	            let pendingReasoningText = '';
+	            let reasoningLanguageMismatch = false;
             let providerTaskId = '';
             let upstreamModel = '';
             let usage = {};
@@ -5493,14 +5511,35 @@ function createAiImageHandlers({
                     upstreamReasoningChars += upstreamReasoningDelta.length;
                     if (!firstReasoningMs) firstReasoningMs = Date.now() - upstreamStartedAt;
                 }
-                if (thinkingReasoningEnabled && upstreamReasoningDelta) {
-                    reasoningText += upstreamReasoningDelta;
-                    lastUserVisibleAt = Date.now();
-                    writeSse(res, 'reasoning', {
-                        delta: upstreamReasoningDelta,
-                        task_id: task.id
-                    });
-                }
+	                if (thinkingReasoningEnabled && upstreamReasoningDelta) {
+	                    let visibleReasoningDelta = upstreamReasoningDelta;
+	                    if ((geminiNativeCapable || geminiCompatibleCapable) && containsHanText(prompt)) {
+	                        if (reasoningLanguageMismatch) {
+	                            visibleReasoningDelta = '';
+	                        } else if (!reasoningText) {
+	                            pendingReasoningText += upstreamReasoningDelta;
+	                            const dominantReasoningScript = getDominantLetterScript(pendingReasoningText);
+	                            if (dominantReasoningScript === 'han') {
+	                                visibleReasoningDelta = pendingReasoningText;
+	                                pendingReasoningText = '';
+	                            } else if (dominantReasoningScript === 'latin') {
+	                                reasoningLanguageMismatch = true;
+	                                pendingReasoningText = '';
+	                                visibleReasoningDelta = '';
+	                            } else {
+	                                visibleReasoningDelta = '';
+	                            }
+	                        }
+	                    }
+	                    if (visibleReasoningDelta) {
+	                        reasoningText += visibleReasoningDelta;
+	                        lastUserVisibleAt = Date.now();
+	                        writeSse(res, 'reasoning', {
+	                            delta: visibleReasoningDelta,
+	                            task_id: task.id
+	                        });
+	                    }
+	                }
 	                let delta = geminiNativeCapable
 	                    ? extractGeminiTextDelta(payload, { thoughts: false })
 	                    : (openAiNativeCapable
@@ -5657,6 +5696,10 @@ function createAiImageHandlers({
             if (buffer.trim()) {
                 processLine(buffer);
             }
+	            if (pendingReasoningText && !containsHanText(pendingReasoningText)) {
+	                reasoningLanguageMismatch = true;
+	                pendingReasoningText = '';
+	            }
             flushFinalAnswer();
             if (streamIdleTimedOut || streamVisibleIdleTimedOut) {
                 await reader.cancel().catch(() => {});
@@ -5708,6 +5751,7 @@ function createAiImageHandlers({
 	                sse_data_lines: upstreamSseDataLines,
                 reasoning_payloads: upstreamReasoningPayloads,
                 reasoning_chars: upstreamReasoningChars,
+	            reasoning_language_mismatch: reasoningLanguageMismatch,
                 content_payloads: upstreamContentPayloads,
                 content_chars: upstreamContentChars,
                 first_reasoning_ms: Math.max(0, firstReasoningMs),
@@ -5788,6 +5832,7 @@ function createAiImageHandlers({
 	                memory_message_count: Math.max(0, messages.length - 2),
 	                memory_token_estimate: estimateTextTokens(messages.map((message) => getChatMessageContentText(message.content)).join('\n')),
 	                reasoning_content: normalizeText(reasoningText, 12000),
+	                reasoning_language_mismatch: reasoningLanguageMismatch,
 	                reasoning_tokens_estimate: estimateTextTokens(reasoningText),
 	                reasoning_diagnostic: reasoningDiagnostic,
 	                config_cache_status: configCacheStatus,

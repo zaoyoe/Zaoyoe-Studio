@@ -46,6 +46,38 @@ func TestCCChain_DataURIImageSurvivesAnthropicCompatibilityConversion(t *testing
 	require.Equal(t, "aW1hZ2UtYnl0ZXM=", blocks[1].Source.Data)
 }
 
+func TestCCChain_GeminiThinkingEffortPreservesEnabledAndDisabledModes(t *testing.T) {
+	tests := []struct {
+		name         string
+		effort       string
+		wantEffort   string
+		wantThinking string
+	}{
+		{name: "minimal maps to low", effort: "minimal", wantEffort: "low", wantThinking: "enabled"},
+		{name: "low stays enabled", effort: "low", wantEffort: "low", wantThinking: "enabled"},
+		{name: "medium stays enabled", effort: "medium", wantEffort: "medium", wantThinking: "enabled"},
+		{name: "high stays enabled", effort: "high", wantEffort: "high", wantThinking: "enabled"},
+		{name: "none disables", effort: "none", wantEffort: "none", wantThinking: "disabled"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			responsesReq, err := ChatCompletionsToResponses(&ChatCompletionsRequest{
+				Model:           "gemini-3.5-flash",
+				ReasoningEffort: tt.effort,
+				Messages:        []ChatMessage{{Role: "user", Content: json.RawMessage(`"请回答"`)}},
+			})
+			require.NoError(t, err)
+			anthropicReq, err := ResponsesToAnthropicRequest(responsesReq)
+			require.NoError(t, err)
+			require.NotNil(t, anthropicReq.OutputConfig)
+			require.Equal(t, tt.wantEffort, anthropicReq.OutputConfig.Effort)
+			require.NotNil(t, anthropicReq.Thinking)
+			require.Equal(t, tt.wantThinking, anthropicReq.Thinking.Type)
+		})
+	}
+}
+
 // Reproduces the production 400:
 //
 //	unexpected ...content.0: tool_use_id found in tool_result blocks:

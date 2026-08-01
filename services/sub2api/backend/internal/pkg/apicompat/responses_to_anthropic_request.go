@@ -55,8 +55,9 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
 		effort := mapResponsesEffortToAnthropic(req.Reasoning.Effort)
 		out.OutputConfig = &AnthropicOutputConfig{Effort: effort}
-		// Enable thinking for non-low efforts
-		if effort != "low" {
+		if effort == "none" {
+			out.Thinking = &AnthropicThinking{Type: "disabled"}
+		} else {
 			out.Thinking = &AnthropicThinking{
 				Type:         "enabled",
 				BudgetTokens: defaultThinkingBudget(effort),
@@ -70,6 +71,8 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 // defaultThinkingBudget returns a sensible thinking budget based on effort level.
 func defaultThinkingBudget(effort string) int {
 	switch effort {
+	case "minimal":
+		return 1024
 	case "low":
 		return 1024
 	case "medium":
@@ -91,6 +94,10 @@ func defaultThinkingBudget(effort string) int {
 //	high   → high
 //	xhigh  → max
 func mapResponsesEffortToAnthropic(effort string) string {
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	if effort == "minimal" {
+		return "low"
+	}
 	if effort == "xhigh" {
 		return "max"
 	}
