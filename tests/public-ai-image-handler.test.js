@@ -3437,6 +3437,53 @@ test('grok chat stream forwards official reasoning_effort without thinking flags
     assert.equal(persistedTask.metadata.thinking_enabled, true);
 });
 
+test('grok chat stream disables reasoning when thinking mode is off', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-grok-off-1","model":"grok-4.3","choices":[{"delta":{"reasoning_content":"Grok 不应展示。"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"Grok 直接回答。"}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-grok-key-12345678',
+            prompt: '解释一下',
+            model: 'grok-4.3',
+            apiModelGroup: 'chat',
+            reasoningEffort: 'high',
+            thinkingMode: 'disabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.doesNotMatch(res.body, /event: reasoning/);
+    assert.match(res.body, /Grok 直接回答。/);
+    assert.equal(requests[0].body.reasoning_effort, 'none');
+    assert.match(requests[0].body.messages[0].content, /当前已关闭思考模式/);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.metadata.reasoning_content, '');
+    assert.equal(persistedTask.metadata.thinking_enabled, false);
+});
+
 test('grok chat stream drops unsupported reasoning effort values', async () => {
     const requests = [];
     const encoder = new TextEncoder();
@@ -3542,6 +3589,112 @@ test('gemini native chat stream uses Interactions API and thinking summaries', a
     assert.equal(persistedTask.metadata.gemini_thinking_level, 'high');
     assert.equal(persistedTask.metadata.reasoning_content, 'Gemini 先思考。');
     assert.equal(persistedTask.total_tokens, 18);
+});
+
+test('gemini native chat stream omits thinking configuration when thinking mode is off', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        state: {
+            apiBaseUrls: [{
+                id: 'api-base-gemini-cn',
+                site: 'cn',
+                label: 'Gemini API',
+                base_url: 'https://generativelanguage.googleapis.com/v1beta',
+                is_active: true,
+                display_order: 10,
+                metadata: {}
+            }]
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"event_type":"step.delta","delta":{"type":"thought_summary","content":[{"text":"Gemini 不应展示。"}]}}\n\n',
+                            'data: {"event_type":"step.delta","delta":{"type":"text","text":"Gemini 直接回答。"}}\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+            apiKey: 'gemini-live-key-12345678',
+            prompt: '解释一下',
+            model: 'gemini-3.5-flash',
+            apiModelGroup: 'chat',
+            geminiThinkingLevel: 'high',
+            thinkingMode: 'disabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(Object.hasOwn(requests[0].body.generation_config, 'thinking_level'), false);
+    assert.equal(Object.hasOwn(requests[0].body.generation_config, 'thinking_summaries'), false);
+    assert.match(requests[0].body.system_instruction, /当前已关闭思考模式/);
+    assert.doesNotMatch(res.body, /event: reasoning/);
+    assert.match(res.body, /Gemini 直接回答。/);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.metadata.gemini_thinking_level, '');
+    assert.equal(persistedTask.metadata.reasoning_content, '');
+    assert.equal(persistedTask.metadata.thinking_enabled, false);
+});
+
+test('gemini compatible chat stream sends an explicit disabled reasoning mode', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"choices":[{"delta":{"reasoning_content":"Gemini 不应展示。"}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"Gemini 兼容接口直接回答。"}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-gemini-key-12345678',
+            prompt: '解释一下',
+            model: 'gemini-3.5-flash',
+            apiModelGroup: 'chat',
+            geminiThinkingLevel: 'high',
+            thinkingMode: 'disabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(requests[0].body.reasoning_effort, 'none');
+    assert.doesNotMatch(res.body, /event: reasoning/);
+    assert.match(res.body, /Gemini 兼容接口直接回答。/);
+    assert.match(requests[0].body.messages[0].content, /当前已关闭思考模式/);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.metadata.reasoning_content, '');
+    assert.equal(persistedTask.metadata.thinking_enabled, false);
 });
 
 test('openai native chat stream uses Responses API reasoning summaries', async () => {

@@ -237,6 +237,14 @@
 	        { id: 'medium', label: 'medium', shortLabel: 'medium', hint: 'Gemini thinking_level 官方值' },
 	        { id: 'high', label: 'high', shortLabel: 'high', hint: 'Gemini thinking_level 官方值，等待可能更久' }
 	    ]);
+	    const GROK_THINKING_OPTIONS = Object.freeze([
+	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 Grok 思考模式，直接回答' },
+	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启 Grok 思考模式并展示思考过程' }
+	    ]);
+	    const GEMINI_THINKING_OPTIONS = Object.freeze([
+	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 Gemini 思考展示，直接回答' },
+	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启 Gemini 思考模式并展示思考过程' }
+	    ]);
 	    const CLAUDE_THINKING_BUDGET_OPTIONS = Object.freeze([
 	        { id: '1024', label: 'low', shortLabel: 'low', hint: 'Claude 官方最低思考预算，1024 tokens' },
 	        { id: '4096', label: 'medium', shortLabel: 'medium', hint: 'Claude 官方思考预算，4096 tokens' },
@@ -3874,7 +3882,7 @@
 	    }
 
 	    function getChatThinkingOption(mode = state.chatThinkingMode) {
-	        return [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS].find((option) => option.id === mode) || DEEPSEEK_THINKING_OPTIONS[0];
+	        return [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].find((option) => option.id === mode) || DEEPSEEK_THINKING_OPTIONS[0];
 	    }
 
 	    function getChatImageInputOption(mode = state.chatImageInput) {
@@ -3954,6 +3962,13 @@
 	            });
 	        } else if (isGrok) {
 	            controls.push({
+	                id: 'thinking',
+	                icon: 'fa-lightbulb',
+	                label: 'Grok 思考模式',
+	                activeValue: state.chatThinkingMode,
+	                options: GROK_THINKING_OPTIONS
+	            });
+	            controls.push({
 	                id: 'reasoning',
 	                icon: 'fa-gauge-high',
 	                label: 'xAI 推理强度',
@@ -3961,6 +3976,13 @@
 	                options: XAI_REASONING_EFFORT_OPTIONS
 	            });
 	        } else if (isGemini && isGeminiThinkingLevel) {
+	            controls.push({
+	                id: 'thinking',
+	                icon: 'fa-lightbulb',
+	                label: 'Gemini 思考模式',
+	                activeValue: state.chatThinkingMode,
+	                options: GEMINI_THINKING_OPTIONS
+	            });
 	            controls.push({
 	                id: 'geminiThinking',
 	                icon: 'fa-brain',
@@ -6307,7 +6329,7 @@
 	            if (field === 'geminiThinking' && GEMINI_THINKING_LEVEL_OPTIONS.some((option) => option.id === value)) state.chatGeminiThinkingLevel = value;
 	            if (field === 'claudeThinkingBudget' && CLAUDE_THINKING_BUDGET_OPTIONS.some((option) => option.id === value)) state.chatClaudeThinkingBudget = value;
 	            if (field === 'serviceTier' && OPENAI_SERVICE_TIER_OPTIONS.some((option) => option.id === value)) state.chatServiceTier = value;
-	            if (field === 'thinking' && [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS].some((option) => option.id === value)) state.chatThinkingMode = value;
+	            if (field === 'thinking' && [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].some((option) => option.id === value)) state.chatThinkingMode = value;
             if (field === 'imageInput' && OPENAI_IMAGE_INPUT_OPTIONS.some((option) => option.id === value)) state.chatImageInput = value;
             openSelect = target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : '';
             if (openSelect === 'chatSettings') openChatSettingsSection = field || openChatSettingsSection;
@@ -7764,7 +7786,7 @@
 	        const imageInputMode = getCapabilityValue('imageInput', state.chatImageInput);
 	        const chatModelOption = task.mode === 'chat' ? getChatModelOption(task.model || getActiveModelValue('chat')) : null;
 	        if (reasoningEffort) payload.reasoningEffort = reasoningEffort;
-	        if (geminiThinkingLevel) payload.geminiThinkingLevel = geminiThinkingLevel;
+	        if (geminiThinkingLevel && thinkingMode !== 'disabled') payload.geminiThinkingLevel = geminiThinkingLevel;
 	        if (claudeThinkingBudget) payload.claudeThinkingBudget = claudeThinkingBudget;
 	        if (serviceTier) payload.serviceTier = serviceTier;
 	        if (thinkingMode) payload.thinkingMode = thinkingMode;

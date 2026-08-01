@@ -3356,13 +3356,14 @@ function trimChatHistoryMessages(messages = [], {
     return selected;
 }
 
-function buildWorkbenchChatSystemPrompt({ site = 'cn', model = '' } = {}) {
+function buildWorkbenchChatSystemPrompt({ site = 'cn', model = '', thinkingMode = 'unset' } = {}) {
     const brand = site === 'intl' ? 'Zaoyoe' : 'FatherKey';
     const requestedModel = normalizeText(model, 120);
     return [
         `你是 ${brand} AI 工作台的文本对话助手。`,
         requestedModel ? `本次请求传给上游的 model 字段是：${requestedModel}。如果用户询问你使用的是什么模型、当前模型、模型名称或模型 ID，必须直接回答这个精确值，不要改写、泛化为供应商名称，也不要根据训练身份推测。` : '',
         '不要声称自己运行在 Codex CLI、终端式编码助手或任何与当前 FatherKey/Zaoyoe 工作台无关的环境中。',
+        thinkingMode === 'disabled' ? '当前已关闭思考模式。不要输出分析、计划、复盘、草稿或思考过程，只输出最终答案。' : '',
         '保持上下文连续，优先直接回答用户问题。'
     ].filter(Boolean).join('\n');
 }
@@ -3489,7 +3490,8 @@ function buildChatStreamMessages({ body = {}, prompt = '', model = '', baseUrl =
         }
     );
     const currentPrompt = normalizeText(prompt || body.prompt || body.message || body.input, 8000);
-    const systemPrompt = buildWorkbenchChatSystemPrompt({ site, model });
+    const thinkingMode = normalizeChatThinkingMode(body.thinkingMode || body.thinking_mode);
+    const systemPrompt = buildWorkbenchChatSystemPrompt({ site, model, thinkingMode });
     const imageInputMode = normalizeChatImageInputMode(body.imageInputMode || body.image_input_mode);
     const imageUrls = shouldAttachChatImages({ imageInputMode, model, baseUrl, supportsImageInput })
         ? normalizeChatImageReferences(body)
@@ -3927,6 +3929,10 @@ function shouldEnableQwenThinking(model = '', baseUrl = '') {
 
 function shouldEnableGrokReasoning(model = '', baseUrl = '') {
     return /grok|xai|x\.ai/i.test(`${model} ${baseUrl}`);
+}
+
+function shouldEnableGeminiThinking(model = '', baseUrl = '') {
+    return /gemini|generativelanguage\.googleapis\.com/i.test(`${model} ${baseUrl}`);
 }
 
 function isOpenAiNativeBaseUrl(baseUrl = '') {
@@ -5029,10 +5035,12 @@ function createAiImageHandlers({
 	            const requestedReasoningEffort = rawReasoningEffort || envReasoningEffort || 'auto';
 	            const reasoningEffort = normalizeChatReasoningEffort(rawReasoningEffort || envReasoningEffort);
 	            const requestedGeminiThinkingLevel = normalizeText(body.geminiThinkingLevel || body.gemini_thinking_level || env.AI_IMAGE_CHAT_GEMINI_THINKING_LEVEL || '', 40).toLowerCase() || 'medium';
-	            const geminiThinkingLevel = normalizeGeminiThinkingLevel(requestedGeminiThinkingLevel);
+	            const normalizedGeminiThinkingLevel = normalizeGeminiThinkingLevel(requestedGeminiThinkingLevel);
 	            const requestedClaudeThinkingBudget = normalizeText(body.claudeThinkingBudget || body.claude_thinking_budget || env.AI_IMAGE_CHAT_CLAUDE_THINKING_BUDGET || '', 40) || '1024';
 	            const claudeThinkingBudget = normalizeClaudeThinkingBudget(requestedClaudeThinkingBudget);
 	            const thinkingMode = normalizeChatThinkingMode(body.thinkingMode || body.thinking_mode);
+	            // A disabled mode must win over a stale level saved by an older client.
+	            const geminiThinkingLevel = thinkingMode === 'disabled' ? '' : normalizedGeminiThinkingLevel;
 	            const imageInputMode = normalizeChatImageInputMode(body.imageInputMode || body.image_input_mode);
 	            const runtimeConfigResult = await runtimeConfigPromise;
 	            if (runtimeConfigResult.error) throw runtimeConfigResult.error;
@@ -5060,8 +5068,10 @@ function createAiImageHandlers({
 	            const kimiThinkingCapable = shouldEnableKimiThinking(upstreamRequestModel, upstreamBaseUrl);
 	            const qwenThinkingCapable = shouldEnableQwenThinking(upstreamRequestModel, upstreamBaseUrl);
 	            const grokReasoningCapable = shouldEnableGrokReasoning(upstreamRequestModel, upstreamBaseUrl);
+	            const geminiModelCapable = shouldEnableGeminiThinking(upstreamRequestModel, upstreamBaseUrl);
 	            const openAiReasoningCapable = shouldEnableOpenAiReasoning(upstreamRequestModel, upstreamBaseUrl);
 	            const geminiNativeCapable = isGeminiNativeBaseUrl(upstreamBaseUrl);
+	            const geminiCompatibleCapable = geminiModelCapable && !geminiNativeCapable;
 	            const openAiNativeCapable = isOpenAiNativeBaseUrl(upstreamBaseUrl);
 	            const claudeNativeCapable = isClaudeNativeBaseUrl(upstreamBaseUrl);
 	            const upstreamProvider = geminiNativeCapable
@@ -5073,10 +5083,27 @@ function createAiImageHandlers({
 	            const geminiThinkingLevelCapable = geminiNativeCapable && supportsGeminiThinkingLevel(upstreamRequestModel);
 	            const geminiThoughtsEnabled = geminiThinkingLevelCapable && Boolean(geminiThinkingLevel);
 	            const claudeThinkingEnabled = claudeNativeCapable && thinkingMode === 'enabled';
+	            const geminiCompatibleReasoningEffort = geminiCompatibleCapable
+	                ? (thinkingMode === 'disabled'
+	                    ? 'none'
+	                    : (thinkingMode === 'enabled' ? (GEMINI_THINKING_LEVELS.has(geminiThinkingLevel) ? geminiThinkingLevel : 'medium') : ''))
+	                : '';
+	            const grokEnabledReasoningEffort = normalizeXaiReasoningEffort(reasoningEffort);
 	            const upstreamReasoningEffort = deepSeekCapable && reasoningEffort
 	                ? normalizeDeepSeekReasoningEffort(reasoningEffort)
-	                : (grokReasoningCapable ? normalizeXaiReasoningEffort(reasoningEffort) : (openAiReasoningCapable ? (openAiNativeCapable ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort) : reasoningEffort) : ''));
-	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled' || kimiThinkingEnabled === true || qwenThinkingEnabled === true || geminiThoughtsEnabled || claudeThinkingEnabled || (grokReasoningCapable && Boolean(upstreamReasoningEffort)) || (openAiNativeCapable && Boolean(upstreamReasoningEffort));
+	                : (grokReasoningCapable
+	                    ? (thinkingMode === 'disabled'
+	                        ? 'none'
+	                        : (thinkingMode === 'enabled' ? (grokEnabledReasoningEffort && grokEnabledReasoningEffort !== 'none' ? grokEnabledReasoningEffort : 'medium') : grokEnabledReasoningEffort))
+	                    : (geminiCompatibleReasoningEffort || (openAiReasoningCapable ? (openAiNativeCapable ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort) : reasoningEffort) : '')));
+	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled'
+	                || kimiThinkingEnabled === true
+	                || qwenThinkingEnabled === true
+	                || geminiThoughtsEnabled
+	                || claudeThinkingEnabled
+	                || (grokReasoningCapable && upstreamReasoningEffort !== 'none' && Boolean(upstreamReasoningEffort))
+	                || (geminiCompatibleCapable && thinkingMode === 'enabled')
+	                || (openAiNativeCapable && Boolean(upstreamReasoningEffort));
 	            const messages = buildChatStreamMessages({ body, prompt, model: upstreamRequestModel, baseUrl: upstreamBaseUrl, site, supportsImageInput });
 	            const attachedImageCount = Array.isArray(messages[messages.length - 1]?.content)
 	                ? messages[messages.length - 1].content.filter((part) => part?.type === 'image_url').length
