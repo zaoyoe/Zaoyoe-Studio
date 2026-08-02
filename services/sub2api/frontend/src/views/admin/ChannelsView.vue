@@ -422,11 +422,11 @@
               <div class="mb-1 flex items-center justify-between">
                 <label class="input-label text-xs mb-0">{{ t('admin.channels.form.modelPricing', 'Model Pricing') }}</label>
                 <div class="flex flex-wrap items-center justify-end gap-2">
-                  <label v-if="editingChannel" class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                    <span>{{ t('admin.channels.form.upstreamPricingGroup') }}</span>
+                  <label v-if="editingChannel" class="flex items-center gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-200">
+                    <span class="whitespace-nowrap">{{ t('admin.channels.form.upstreamPricingGroup') }}</span>
                     <select
                       v-model="selectedUpstreamPricingGroup[section.platform]"
-                      class="h-7 max-w-56 rounded border border-gray-200 bg-white px-2 text-xs text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300"
+                      class="h-8 min-w-48 max-w-64 rounded-md border border-primary-300 bg-white px-2 text-xs font-medium text-gray-700 outline-none transition-colors focus:border-primary-500 focus:ring-1 focus:ring-primary-500 dark:border-primary-700 dark:bg-dark-800 dark:text-gray-200"
                       :disabled="loadingUpstreamPricingGroups || syncingPricingPlatform === section.platform"
                       :title="t('admin.channels.form.upstreamPricingGroupHint')"
                     >
@@ -448,9 +448,14 @@
                     type="button"
                     @click="syncUpstreamPricing(sIdx)"
                     :disabled="!editingChannel || syncingPricingPlatform === section.platform"
-                    class="text-xs text-gray-500 hover:text-primary-600 disabled:opacity-50"
+                    class="inline-flex h-8 items-center gap-1 rounded-md border border-primary-500 px-2.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
                     :title="t('admin.channels.form.syncUpstreamPricingHint')"
                   >
+                    <Icon
+                      name="refresh"
+                      size="xs"
+                      :class="syncingPricingPlatform === section.platform ? 'animate-spin' : ''"
+                    />
                     {{ syncingPricingPlatform === section.platform
                       ? t('admin.channels.form.syncingUpstreamPricing')
                       : t('admin.channels.form.syncUpstreamPricing') }}
@@ -1433,6 +1438,9 @@ async function openEditDialog(channel: Channel) {
   // Must load groups first so apiToForm can map groupID → platform
   await Promise.all([loadGroups(), loadAllChannelsForConflict(), loadUpstreamPricingGroups()])
   form.platforms = apiToForm(channel)
+  selectedUpstreamPricingGroup.value = Object.fromEntries(
+    form.platforms.map(section => [section.platform, ''])
+  )
 
   // Distribute channel-level rules into per-platform sections
   distributeRulesToPlatforms(channel.account_stats_pricing_rules || [])
