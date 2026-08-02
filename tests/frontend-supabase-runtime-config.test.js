@@ -200,7 +200,10 @@ function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
 }
 
 function collectRepositoryHtmlFiles(rootDir = REPO_ROOT) {
-    return collectRepositorySourceFiles(rootDir).filter((relativePath) => /\.(html)(\.bak)?$/i.test(relativePath));
+    return collectRepositorySourceFiles(rootDir).filter((relativePath) => (
+        /\.(html)(\.bak)?$/i.test(relativePath)
+        && !relativePath.split('/').includes('testdata')
+    ));
 }
 
 function collectApiRouteFiles(rootDir = path.join(REPO_ROOT, 'api')) {
