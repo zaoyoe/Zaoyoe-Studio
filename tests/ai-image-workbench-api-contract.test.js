@@ -87,9 +87,10 @@ test('verify server accepts the documented reference image upload size', () => {
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260730_AI_WORKBENCH_LEGAL_3/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260801_AI_WORKBENCH_COMPOSER_WIDE_1/);
     assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
-    assert.match(promptsSource, /v=20260731_AI_WORKBENCH_REVERSE_UPLOAD_2/);
+    assert.match(promptsSource, /js\/ai-chat-model-capabilities\.js\?v=20260801_AI_CHAT_MODEL_CAPABILITIES_1/);
+    assert.match(promptsSource, /v=20260801_AI_WORKBENCH_COMPOSER_WIDE_1/);
     assert.match(promptsSource, /legalPolicies=20260730_AI_WORKBENCH_LEGAL_2/);
     assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
@@ -427,7 +428,7 @@ test('ai image chat thread includes a Codex-style quick navigation rail', () => 
     assert.match(source, /chatNavigationResizeObserver = new ResizeObserver\(scheduleChatNavigationPosition\)/);
     assert.match(source, /overlay\?\.querySelector\?\.\('\.ai-image-history-sidebar'\)/);
     assert.doesNotMatch(source, /function flipStageShift/);
-    assert.match(source, /chatNavigationScrollTarget\.addEventListener\('scroll', scheduleChatNavigationPosition, \{ passive: true \}\)/);
+    assert.doesNotMatch(source, /chatNavigationScrollTarget\.addEventListener\('scroll', scheduleChatNavigationPosition, \{ passive: true \}\)/);
     assert.match(source, /task\?\.metadata\?\.userPrompt/);
     assert.doesNotMatch(source, /items\.some\(\(task\) => task\.mode !== 'chat'\) \? 1 : CHAT_NAVIGATION_MIN_ITEMS/);
     assert.match(source, /items\.length < CHAT_NAVIGATION_MIN_ITEMS/);
@@ -449,8 +450,13 @@ test('ai image chat thread includes a Codex-style quick navigation rail', () => 
     assert.match(source, /shell\.style\.setProperty\('--aiw-chat-nav-avoid-left', `\$\{avoidOffset\}px`\)/);
     assert.match(source, /if \(isMobileWorkbenchViewport\(\)\) \{/);
     assert.match(source, /rail\.style\.removeProperty\('--aiw-chat-nav-left'\)/);
-    assert.match(source, /const baseComposerWidth = Math\.max\(0, chatRect\.width\)/);
-    assert.match(source, /const composerMarginLeft = Math\.max\(0, chatRect\.left - canvasRect\.left \+ avoidOffset\)/);
+    assert.match(source, /const composerSideBleed = 30/);
+    assert.match(source, /const visibleChatLeft = chatRect\.left \+ avoidOffset/);
+    assert.match(source, /const visibleChatRight = chatRect\.right/);
+    assert.match(source, /const composerLeft = Math\.max\(canvasRect\.left, visibleChatLeft - composerSideBleed\)/);
+    assert.match(source, /const composerRight = Math\.min\(canvasRect\.right, visibleChatRight \+ composerSideBleed\)/);
+    assert.match(source, /const composerWidth = Math\.max\(0, composerRight - composerLeft\)/);
+    assert.match(source, /const composerMarginLeft = Math\.max\(0, composerLeft - canvasRect\.left\)/);
     assert.match(source, /shell\.style\.setProperty\('--aiw-chat-nav-composer-width', `\$\{Math\.round\(composerWidth\)\}px`\)/);
     assert.match(source, /shell\.style\.setProperty\('--aiw-chat-nav-composer-margin-left', `\$\{Math\.round\(composerMarginLeft\)\}px`\)/);
     assert.match(source, /function showChatNavigationPreview\(button\)/);
@@ -730,12 +736,12 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /const touchCount = Number\(event\?\.touches\?\.length \|\| 0\)/);
     assert.match(source, /if \(!isGestureEvent && touchCount < 2\) return;/);
     assert.match(source, /event\.preventDefault\?\.\(\)/);
-    assert.match(source, /document\.addEventListener\('touchstart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(source, /document\.addEventListener\('touchmove', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
+    assert.doesNotMatch(source, /root\.addEventListener\('touchstart', handleWorkbenchViewportGesture/);
+    assert.doesNotMatch(source, /root\.addEventListener\('touchmove', handleWorkbenchViewportGesture/);
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260731_AI_WORKBENCH_REVERSE_UPLOAD_2/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260801_AI_WORKBENCH_COMPOSER_WIDE_1/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -761,7 +767,10 @@ test('ai image workbench renders lightweight activity summary in history sidebar
 test('ai image workbench renders a scrollable history locator above the record list', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
     const historyPreviewSource = source.match(/function showHistoryLocatorPreview\(button\)[\s\S]*?function scrollToHistoryRow\(taskId = ''\)/)?.[0] || '';
-    assert.match(source, /root\.addEventListener\('wheel', handleRootWheel, \{ passive: false \}\)/);
+    assert.doesNotMatch(source, /root\.addEventListener\('wheel', handleRootWheel, \{ passive: false \}\)/);
+    assert.match(source, /function syncNavigationWheelListeners\(\)/);
+    assert.match(source, /chatNavigationWheelTarget\?\.addEventListener\('wheel', handleRootWheel, \{ passive: false \}\)/);
+    assert.match(source, /historyLocatorWheelTarget\?\.addEventListener\('wheel', handleRootWheel, \{ passive: false \}\)/);
     assert.match(source, /function handleRootWheel\(event\)/);
     assert.match(source, /target\?\.closest\?\.\('\[data-aiw-history-locator\]'\)/);
     assert.match(source, /track\.scrollLeft \+= delta/);
@@ -1321,12 +1330,20 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.match(source, /restoreRenderContinuity\(continuitySnapshot, \{ preserveStageScroll, preservePromptFocus \}\)/);
     assert.match(source, /shouldKeepChatStagePinnedToBottom\(continuitySnapshot, \{ force: forceChatBottom \}\)/);
     assert.match(source, /function isChatStageNearBottom\(stage = overlay\?\.querySelector\?\.\('\.ai-image-stage'\)\)/);
-    assert.match(source, /return getChatStageBottomDistance\(stage\) <= CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX/);
+    assert.match(source, /const stageScrollState = stage \? updateChatStageScrollState\(stage\) : null/);
+    assert.match(source, /if \(chatStageScrollState\.element === stage\) return chatStageScrollState\.nearBottom/);
+    assert.match(source, /function syncChatStageScrollListener\(\)/);
+    assert.match(source, /chatStageScrollTarget\.addEventListener\('scroll', handleChatStageScroll, \{ passive: true \}\)/);
+    assert.match(source, /const activeChatStreamTaskIds = new Set\(\)/);
+    assert.match(source, /function getRemotePollBusyTasks\(\)/);
+    assert.match(source, /const preserveActiveChatStream = hasActiveChatStreamInCurrentThread\(\)/);
+    assert.match(source, /renderRemoteSyncWithoutChat/);
     assert.match(source, /render\(\{ preserveStageScroll: true, preservePromptFocus: true \}\)/);
     assert.match(source, /const pinToBottom = \(\) => \{[\s\S]*?nextStage\.scrollTop = Math\.max\(0, nextStage\.scrollHeight - nextStage\.clientHeight\);[\s\S]*?\};/);
     assert.match(source, /const shouldScroll = force \|\| \(typeof wasNearBottom === 'boolean' \? wasNearBottom : isChatStageNearBottom\(stage\)\);/);
     assert.match(source, /if \(!shouldScroll\) return;/);
-    assert.match(source, /pinToBottom\(\);[\s\S]*?window\.requestAnimationFrame\(\(\) => \{[\s\S]*?pinToBottom\(\);[\s\S]*?window\.requestAnimationFrame\(pinToBottom\);[\s\S]*?\}\);/);
+    assert.match(source, /if \(chatStagePinFrame\) return/);
+    assert.match(source, /chatStagePinFrame = global\.requestAnimationFrame\(pinToBottom\)/);
     assert.match(source, /renderChatThread\(task\)/);
     assert.match(source, /function renderChatTurn\(task, index = 0, \{ showDuration = false \} = \{\}\)/);
     assert.match(source, /if \(task\.status === 'processing' \|\| task\.status === 'streaming'\) \{/);
@@ -1343,7 +1360,23 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /function getChatTaskAnswerText\(task = \{\}\)/);
 	    assert.match(source, /function renderChatReasoningBlock\(task = \{\}\)/);
 	    assert.match(source, /ai-image-chat-reasoning/);
-	    assert.match(source, /思考过程/);
+	    assert.match(source, /function getChatReasoningDurationMs\(task = \{\}\)/);
+	    assert.match(source, /first_reasoning_ms \?\? diagnostic\.firstReasoningMs/);
+	    assert.match(source, /first_content_ms \?\? diagnostic\.firstContentMs/);
+	    assert.match(source, /label: active \? '思考中' : \(durationSeconds \? `思考了 \$\{durationSeconds\} 秒` : '思考完成'\)/);
+	    assert.match(source, /data-aiw-reasoning-toggle/);
+	    assert.match(source, /aria-expanded="\$\{presentation\.expanded \? 'true' : 'false'\}"/);
+	    assert.match(source, /aria-hidden="\$\{presentation\.expanded \? 'false' : 'true'\}"/);
+	    assert.match(source, /function updateVisibleChatReasoning\(task = \{\}\)/);
+	    assert.match(source, /block\.classList\.toggle\('is-expanded', presentation\.expanded\)/);
+	    assert.match(source, /const isFirstReasoningDelta = !getChatTaskReasoningText\(currentTask\)/);
+	    assert.match(source, /currentTask\.reasoningExpanded = true/);
+	    assert.match(source, /const reasoningWasCompleted = completeChatReasoning\(currentTask, Date\.now\(\)\)/);
+	    assert.match(source, /if \(Number\(task\.reasoningCompletedAt \|\| 0\)\) return false/);
+	    assert.match(source, /persistStreamState\(\);\s*if \(!updateVisibleChatReasoning\(currentTask\)\) render\(\);/);
+	    assert.match(source, /let chatStagePinFrame = 0/);
+	    assert.match(source, /if \(chatStagePinFrame\) return/);
+	    assert.match(source, /chatStagePinFrame = global\.requestAnimationFrame\(pinToBottom\)/);
 	    assert.match(source, /function getChatModelCapabilities/);
 	    assert.match(source, /function renderChatModelCapabilityControls/);
 	    assert.match(source, /const CHAT_SETTINGS_CAPABILITY_IDS = Object\.freeze\(\['thinking', 'reasoning', 'geminiThinking', 'claudeThinkingBudget'\]\)/);
@@ -1365,8 +1398,8 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /function taskHasReasoningCapability\(task = \{\}\)/);
 	    assert.match(source, /reasoning_payloads \?\? diagnostic\.reasoningPayloads/);
 	    assert.match(source, /state\.verifiedKimiThinkingModels = normalizeStringList\(\[key, \.\.\.existing\], 100\)/);
-	    assert.match(source, /const kimiThinkingVerified = isKimi[\s\S]*isKimiThinkingCapabilityVerified\(\{ model: modelId \}\)[\s\S]*!isKimiThinkingVerificationInFlight\(\{ model: modelId \}\)/);
-	    assert.match(source, /\} else if \(isKimi && kimiThinkingVerified\) \{/);
+	    assert.match(source, /global\.AIChatModelCapabilities\?\.resolveAiChatModelCapabilities/);
+	    assert.match(source, /\} else if \(isKimi && capabilityProfile\.supportsThinking\) \{/);
 	    assert.doesNotMatch(source, /\} else if \(isKimi\) \{\s*controls\.push\(\{\s*id: 'thinking'/);
 	    assert.match(source, /DeepSeek 思考模式/);
 	    assert.match(source, /DeepSeek 推理强度/);
@@ -1374,8 +1407,12 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /Qwen 思考模式/);
 	    assert.match(source, /Grok 思考模式/);
 	    assert.match(source, /Gemini 思考模式/);
+	    assert.match(source, /GLM 思考模式/);
+	    assert.match(source, /MiniMax 思考模式/);
+	    assert.match(source, /豆包思考模式/);
 	    assert.match(source, /xAI 推理强度/);
 	    assert.match(source, /OpenAI 推理强度/);
+	    assert.match(source, /OpenAI 思考模式/);
 	    assert.match(source, /OpenAI 服务档位/);
 	    assert.match(source, /OpenAI 图片输入/);
 	    assert.doesNotMatch(source, /当前模型暂无可调选项/);
@@ -1515,6 +1552,19 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(cssSource, /\.ai-image-chat-output p/);
 	    assert.match(cssSource, /\.ai-image-chat-reasoning/);
 	    assert.match(cssSource, /\.ai-image-chat-reasoning-head/);
+	    assert.match(cssSource, /\.ai-image-chat-reasoning-body/);
+	    assert.match(cssSource, /grid-template-rows: 0fr/);
+	    assert.match(cssSource, /grid-template-rows: 1fr/);
+	    assert.match(cssSource, /grid-template-rows 240ms/);
+	    assert.match(cssSource, /transition: transform 220ms/);
+	    assert.match(cssSource, /border-left: 1px solid/);
+	    assert.match(cssSource, /\.ai-image-chat-reasoning-head \{[\s\S]*font-size: 13px/);
+	    assert.match(cssSource, /\.ai-image-overlay \{[\s\S]*backdrop-filter: var\(--app-modal-backdrop-filter, blur\(8px\) saturate\(112%\)\);/);
+	    assert.match(cssSource, /\.ai-image-overlay \{[\s\S]*isolation: isolate;[\s\S]*contain: paint;[\s\S]*transform: translate3d\(0, 0, 0\);[\s\S]*will-change: opacity;/);
+	    assert.match(cssSource, /html\[data-theme="dark"\] \.ai-image-chat-reasoning-head \{[\s\S]*color: #8edbd0/);
+	    const reasoningRule = getCssRuleBlock(cssSource, '.ai-image-chat-reasoning');
+	    assert.doesNotMatch(reasoningRule, /background:/);
+	    assert.doesNotMatch(reasoningRule, /border:/);
 	    assert.match(cssSource, /\.ai-image-capability-control/);
 	    assert.match(cssSource, /\.ai-image-capability-menu/);
     const memoryMenuRule = getCssRuleBlock(cssSource, '.ai-image-memory-menu,\n.ai-image-capability-menu');
@@ -1540,6 +1590,8 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(cssSource, /\.ai-image-main-submit-action\s*\{[\s\S]*justify-content: flex-end/);
 	    assert.match(cssSource, /\.ai-image-main-submit\s*\{[\s\S]*width: 30px/);
 	    assert.match(cssSource, /\.ai-image-main-cost\s*\{[\s\S]*min-width: 72px;[\s\S]*height: 28px;[\s\S]*margin-left: auto;[\s\S]*font-size: 11px/);
+	    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-memory-control,[\s\S]*\.ai-image-main-tools \.ai-image-capability-control\s*\{[\s\S]*height: 28px;[\s\S]*min-height: 28px;[\s\S]*background: rgba\(102, 112, 133, 0\.10\);/);
+	    assert.match(cssSource, /\.ai-image-main-tools \.ai-image-memory-trigger,[\s\S]*\.ai-image-main-tools \.ai-image-capability-trigger\s*\{[\s\S]*height: 100%;[\s\S]*min-height: 0;[\s\S]*padding: 0 10px;[\s\S]*font-size: 11px;/);
 	    assert.match(cssSource, /\.ai-image-chat-step\s*\{[\s\S]*gap: 22px/);
     assert.match(cssSource, /\.chat-loading-dots\s*\{[\s\S]*animation/);
     assert.match(cssSource, /@keyframes chat-widget-loading-dots/);
@@ -1659,8 +1711,9 @@ test('ai image result thread does not repeat original prompt above the first ima
     assert.match(source, /renderTaskImageEntry\(entry, index, aspect, \{ navigationAnchor \}\)/);
 });
 
-test('ai image result track matches composer visible width', () => {
+test('ai image composer extends beyond the result track on desktop', () => {
     const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(cssSource, /--aiw-composer-width:\s*min\(1040px, calc\(100% - 32px\)\)/);
     assert.match(cssSource, /--aiw-stage-track-width:\s*min\(980px, 100%\)/);
     assert.match(cssSource, /\.ai-image-live-task,\s*\n\.ai-image-result-view\s*\{[\s\S]*width: var\(--aiw-stage-track-width\)/);
     assert.match(cssSource, /\.ai-image-live-task,\s*\n\.ai-image-result-view\s*\{[\s\S]*margin-right: auto;[\s\S]*margin-left: auto;/);
@@ -1678,7 +1731,11 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-sidebar\.is-expanded\s*\{[\s\S]*height: auto;[\s\S]*max-height: var\(--aiw-mobile-history-panel-max-height, min\(68dvh, 560px\)\);[\s\S]*overflow: hidden;[\s\S]*border-radius: 0 0 14px 14px;[\s\S]*background: var\(--aiw-surface-strong\);/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-expanded\s*\{[\s\S]*max-height: calc\(var\(--aiw-mobile-history-panel-max-height, min\(68dvh, 560px\)\) - 60px\);[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;[\s\S]*-webkit-overflow-scrolling: touch;[\s\S]*animation: aiw-mobile-panel-drop 0\.22s ease both;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-canvas\s*\{[\s\S]*grid-row: 1;[\s\S]*overflow: hidden;[\s\S]*padding-top: 60px;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-stage\s*\{[\s\S]*overflow-y: auto;[\s\S]*overflow-x: hidden;[\s\S]*overscroll-behavior: contain;[\s\S]*padding: 14px 14px calc\(176px \+ env\(safe-area-inset-bottom, 0px\)\);/);
+    assert.match(cssSource, /\.ai-image-stage\s*\{[\s\S]*overscroll-behavior: contain;[\s\S]*scrollbar-gutter: stable;/);
+    assert.doesNotMatch(cssSource, /\.ai-image-stage\s*\{[\s\S]*contain: layout;/);
+    assert.match(cssSource, /\.ai-image-stage-inner\.has-task\s*\{[\s\S]*display: block;[\s\S]*height: max-content;[\s\S]*overflow: visible;/);
+    assert.match(cssSource, /\.ai-image-result-view--chat\s*\{[\s\S]*height: auto;[\s\S]*min-height: 0;[\s\S]*overflow: visible;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-stage\s*\{[\s\S]*overflow-y: auto;[\s\S]*overflow-x: hidden;[\s\S]*overscroll-behavior: contain;[\s\S]*scrollbar-gutter: stable;[\s\S]*padding: 14px 14px calc\(176px \+ env\(safe-area-inset-bottom, 0px\)\);/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-chat-nav-rail\s*\{[\s\S]*top: 74px;[\s\S]*left: 50%;[\s\S]*z-index: 62;[\s\S]*display: flex;[\s\S]*transform: translateX\(-50%\);/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-layout\.is-history-open ~ \.ai-image-chat-nav-layer \.ai-image-chat-nav-rail\s*\{[\s\S]*opacity: 0;[\s\S]*pointer-events: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-chat-nav-list\s*\{[\s\S]*flex-direction: row;[\s\S]*border-radius: 999px;/);
@@ -1730,6 +1787,7 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-memory-control\[data-aiw-chat-settings-source="memory"\],[\s\S]*\.ai-image-main-tools \.ai-image-capability-control\[data-aiw-chat-settings-source="claudeThinkingBudget"\]\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \[data-aiw-select="model"\],[\s\S]*\.ai-image-main-tools \[data-aiw-select="apiModel"\]\s*\{[\s\S]*order: 3;[\s\S]*width: 126px;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-cost\s*\{[\s\S]*order: 4;[\s\S]*flex: 0 0 auto;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-trigger,[\s\S]*\.ai-image-main-tools \.ai-image-capability-control\s*\{[\s\S]*height: 30px;[\s\S]*min-height: 30px;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-wallet\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-close\s*\{[\s\S]*display: inline-flex;[\s\S]*margin-left: auto;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-history-sidebar\.is-expanded \.ai-image-rail-close\s*\{[\s\S]*display: none;/);

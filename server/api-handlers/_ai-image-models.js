@@ -1865,6 +1865,7 @@ async function resolveAiImageRuntimeConfig({
         model,
         providerId: storedAiImageConfig?.providerId || '',
         providerLabel: storedAiImageConfig?.label || '',
+        vendor: normalizeText(storedAiImageConfig?.vendor, 80).toLowerCase(),
         protocol: normalizeProviderProtocol(storedAiImageConfig?.protocol || storedAiImageConfig?.adapter),
         asyncResult: storedAiImageConfig?.asyncResult || storedAiImageConfig?.async_result || null,
         async_result: storedAiImageConfig?.asyncResult || storedAiImageConfig?.async_result || null,

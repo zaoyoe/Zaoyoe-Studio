@@ -88,6 +88,11 @@ test('shared starry sky throttles drawing during scroll and background activity'
     );
     assert.match(
         promptsCss,
+        /body\.prompts-page\.modal-open \.gallery-container,[\s\S]*animation:\s*none !important;[\s\S]*transition:\s*none !important;[\s\S]*will-change:\s*auto !important;/,
+        'prompt detail should demote obscured gallery compositor layers'
+    );
+    assert.match(
+        promptsCss,
         /html\.ai-image-workbench-open canvas#starryCanvas,\s*\nhtml\.ai-image-workbench-open \.starry-sky-canvas\s*\{[\s\S]*visibility:\s*hidden;[\s\S]*transform:\s*none;[\s\S]*will-change:\s*auto;/,
         'AI workbench should release the covered starry canvas GPU layer'
     );

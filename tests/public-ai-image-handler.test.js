@@ -3387,6 +3387,134 @@ test('qwen chat stream forwards official enable_thinking flag and reasoning cont
     assert.equal(persistedTask.metadata.thinking_enabled, true);
 });
 
+test('glm chat stream forwards thinking mode and supported reasoning effort', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"model":"glm-5.2","choices":[{"delta":{"reasoning_content":"GLM reasoning."}}]}\n\n',
+                            'data: {"choices":[{"delta":{"content":"GLM answer."}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-glm-key-12345678',
+            prompt: '解释一下',
+            model: 'glm-5.2',
+            apiModelGroup: 'chat',
+            reasoningEffort: 'max',
+            thinkingMode: 'enabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(requests[0].body.thinking, { type: 'enabled' });
+    assert.equal(requests[0].body.reasoning_effort, 'max');
+    assert.match(res.body, /GLM reasoning\./);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.metadata.model_family, 'glm');
+    assert.equal(persistedTask.metadata.thinking_capability, 'thinking_object');
+});
+
+test('minimax chat stream uses the vendor adaptive thinking value', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"reasoning_content":"Think."}}]}\n\n'));
+                        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Answer."}}]}\n\n'));
+                        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-minimax-key-12345678',
+            prompt: 'Explain',
+            model: 'MiniMax-M3',
+            apiModelGroup: 'chat',
+            thinkingMode: 'enabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(requests[0].body.thinking, { type: 'adaptive' });
+    assert.equal(Object.hasOwn(requests[0].body, 'reasoning_effort'), false);
+    assert.match(res.body, /event: reasoning/);
+});
+
+test('openai reasoning model sends none when the thinking switch is off', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const { handlers, state } = createHandlers({
+        fetchImpl: async (_url, options = {}) => {
+            requests.push({ body: JSON.parse(options.body) });
+            return {
+                ok: true,
+                status: 200,
+                body: new ReadableStream({
+                    start(controller) {
+                        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"reasoning_content":"Hidden."}}]}\n\n'));
+                        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Direct answer."}}]}\n\n'));
+                        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'api',
+            apiBaseUrl: 'https://sub2api.fatherkey.com/v1',
+            apiKey: 'sk-live-openai-key-12345678',
+            prompt: 'Explain',
+            model: 'gpt-5.6-sol',
+            apiModelGroup: 'chat',
+            reasoningEffort: 'high',
+            thinkingMode: 'disabled'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(requests[0].body.reasoning_effort, 'none');
+    assert.doesNotMatch(res.body, /event: reasoning/);
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(persistedTask.metadata.thinking_enabled, false);
+});
+
 test('grok chat stream forwards official reasoning_effort without thinking flags', async () => {
     const requests = [];
     const encoder = new TextEncoder();
@@ -3786,7 +3914,7 @@ test('gemini compatible chat stream sends an explicit disabled reasoning mode', 
     assert.equal(persistedTask.metadata.thinking_enabled, false);
 });
 
-test('gemini compatible chat stream hides English reasoning for a Chinese prompt and disables compression', async () => {
+test('gemini compatible chat stream preserves English reasoning for a Chinese prompt and disables compression', async () => {
     const requests = [];
     const encoder = new TextEncoder();
     const { handlers, state } = createHandlers({
@@ -3826,15 +3954,16 @@ test('gemini compatible chat stream hides English reasoning for a Chinese prompt
     assert.equal(res.statusCode, 200);
     assert.equal(requests[0].headers['Accept-Encoding'], 'identity');
     assert.equal(requests[0].body.reasoning_effort, 'minimal');
-    assert.doesNotMatch(res.body, /event: reasoning/);
+    assert.match(res.body, /event: reasoning/);
+    assert.match(res.body, /Interpreting the user inquiry before answering\./);
     assert.match(res.body, /这是中文最终答案。/);
     const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
-    assert.equal(persistedTask.metadata.reasoning_content, '');
-    assert.equal(persistedTask.metadata.reasoning_language_mismatch, true);
+    assert.equal(persistedTask.metadata.reasoning_content, 'Interpreting the user inquiry before answering.');
+    assert.equal(Object.hasOwn(persistedTask.metadata, 'reasoning_language_mismatch'), false);
     assert.equal(Object.hasOwn(persistedTask.metadata, 'reasoning_raw_content'), false);
 });
 
-test('openai native chat stream uses Responses API reasoning summaries', async () => {
+test('openai native chat stream uses Responses API reasoning summaries and xhigh effort', async () => {
     const requests = [];
     const encoder = new TextEncoder();
     const { handlers, state } = createHandlers({
@@ -3878,7 +4007,7 @@ test('openai native chat stream uses Responses API reasoning summaries', async (
             prompt: '解释一下',
             model: 'gpt-5.5',
             apiModelGroup: 'chat',
-            reasoningEffort: 'high',
+            reasoningEffort: 'xhigh',
             serviceTier: 'priority'
         }
     });
@@ -3889,7 +4018,7 @@ test('openai native chat stream uses Responses API reasoning summaries', async (
     assert.equal(res.statusCode, 200);
     assert.match(requests[0].url, /\/responses$/);
     assert.equal(requests[0].headers.Authorization, 'Bearer sk-live-openai-key-12345678');
-    assert.equal(requests[0].body.reasoning.effort, 'high');
+    assert.equal(requests[0].body.reasoning.effort, 'xhigh');
     assert.equal(requests[0].body.reasoning.summary, 'auto');
     assert.equal(requests[0].body.service_tier, 'priority');
     assert.match(res.body, /OpenAI 先思考。/);

@@ -138,6 +138,32 @@ html.ai-image-workbench-open body.prompts-page .gallery-container .prompt-card.b
     will-change: auto;
 }
 
+/* The workbench backdrop samples this page. Freeze every card transition so
+   the backdrop-filter compositor cannot stitch different animation frames
+   into visible vertical bands. */
+html.ai-image-workbench-open body.prompts-page .gallery-container,
+html.ai-image-workbench-open body.prompts-page .prompt-card,
+html.ai-image-workbench-open body.prompts-page .prompt-card *,
+html.ai-image-workbench-open body.prompts-page .card-image,
+body.prompts-page.modal-open .gallery-container,
+body.prompts-page.modal-open .prompt-card,
+body.prompts-page.modal-open .prompt-card *,
+body.prompts-page.modal-open .card-image {
+    animation: none !important;
+    animation-play-state: paused !important;
+    transition: none !important;
+    will-change: auto !important;
+}
+
+html.ai-image-workbench-open body.prompts-page .gallery-container,
+html.ai-image-workbench-open body.prompts-page .prompt-card,
+html.ai-image-workbench-open body.prompts-page .card-image,
+body.prompts-page.modal-open .gallery-container,
+body.prompts-page.modal-open .prompt-card,
+body.prompts-page.modal-open .card-image {
+    transform: none !important;
+}
+
 /* Disable breathing during filtering to allow FLIP animations */
 .prompt-card.filtering {
     animation: none !important;
@@ -3236,6 +3262,10 @@ body.prompts-page .prompt-card--loading .card-share-btn {
     /* Force independent GPU compositor layer to prevent Safari purple star tearing */
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
+    isolation: isolate;
+    contain: paint;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
     will-change: opacity;
     z-index: 10000;
     opacity: 0;
@@ -4116,8 +4146,19 @@ html:not([data-theme="dark"]) .modal-inner.related-mode .modal-image-col .modal-
     min-height: 120px;
     max-height: 120px;
     overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    contain: layout paint style;
     padding-right: 0;
     box-sizing: border-box;
+}
+
+/* Keep the prompt reader on its own native scroll path. The modal also has a
+   scrollable content column, so relying on scroll chaining makes touch and
+   trackpad gestures intermittently land on the wrong container. */
+body.prompts-page #modalPromptText {
+    touch-action: pan-y;
 }
 
 .prompt-text.prompt-text--loading {
