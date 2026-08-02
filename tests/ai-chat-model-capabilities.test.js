@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-    resolveAiChatModelCapabilities
+    resolveAiChatModelCapabilities,
+    resolveAiChatImageInputPolicy
 } = require('../js/ai-chat-model-capabilities');
 
 const EXPECTED_CAPABILITIES = [
@@ -99,4 +100,60 @@ test('OpenAI reasoning effort choices follow the selected model', () => {
             model
         );
     }
+});
+
+test('chat image input requires a verified result for the selected channel', () => {
+    const verified = resolveAiChatImageInputPolicy({
+        model: 'deepseek-v4-pro',
+        providerId: 'channel-2',
+        supportsImageInput: true
+    });
+    assert.equal(verified.status, 'channel_verified');
+    assert.equal(verified.available, true);
+    assert.deepEqual(verified.formats, ['JPG', 'PNG', 'WebP']);
+    assert.equal(verified.maxCount, 16);
+    assert.equal(verified.maxFileBytes, 12 * 1024 * 1024);
+
+    const unsupported = resolveAiChatImageInputPolicy({
+        model: 'gpt-4.1',
+        providerId: 'channel-1',
+        supportsImageInput: false
+    });
+    assert.equal(unsupported.status, 'channel_unsupported');
+    assert.equal(unsupported.available, false);
+    assert.equal(unsupported.officialSourceLabel, 'OpenAI 官方模型文档');
+});
+
+test('official multimodal families remain unavailable until the current channel is verified', () => {
+    for (const [model, source] of [
+        ['gpt-4.1', 'OpenAI 官方模型文档'],
+        ['gemini-2.5-flash', 'Google Gemini 官方模型文档'],
+        ['claude-sonnet-4', 'Anthropic Claude 官方视觉文档'],
+        ['qwen2.5-vl-72b-instruct', '通义千问官方模型文档']
+    ]) {
+        const policy = resolveAiChatImageInputPolicy({ model });
+        assert.equal(policy.status, 'official_unverified', model);
+        assert.equal(policy.available, false, model);
+        assert.equal(policy.officialSourceLabel, source, model);
+    }
+});
+
+test('plain text model families are not treated as official vision models by name alone', () => {
+    for (const model of ['deepseek-chat', 'deepseek-v4-pro', 'qwen3.7-plus', 'glm-5.2', 'kimi-k2.5', 'claude-2.1']) {
+        const policy = resolveAiChatImageInputPolicy({ model });
+        assert.equal(policy.status, 'unverified', model);
+        assert.equal(policy.available, false, model);
+        assert.equal(policy.officialSourceLabel, '', model);
+    }
+});
+
+test('Claude image limits use the intersection of official and workbench limits', () => {
+    const policy = resolveAiChatImageInputPolicy({
+        model: 'claude-sonnet-4',
+        supportsImageInput: true
+    });
+    assert.equal(policy.maxCount, 16);
+    assert.equal(policy.officialMaxCount, 20);
+    assert.equal(policy.maxFileBytes, 5 * 1024 * 1024);
+    assert.equal(policy.workbenchMaxFileBytes, 12 * 1024 * 1024);
 });

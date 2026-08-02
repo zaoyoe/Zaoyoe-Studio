@@ -75,6 +75,7 @@ test('admin studio exposes AI creation as a dedicated module with segmented mana
     assert.match(adminHtml, /class="[^"]*ai-image-admin-model-provider-list[^"]*" id="aiImageModelProviderList"/);
     assert.match(adminHtml, /id="aiImageModelProviderDetail"/);
     assert.match(adminHtml, /id="aiImageModelProbeButton"/);
+    assert.match(adminHtml, /id="aiImageFailedModelProbeButton"/);
     assert.match(adminHtml, /id="aiImageModelDiscoveryButton"/);
     assert.match(adminHtml, /id="aiImageModelDeleteButton"/);
     assert.match(adminHtml, /id="aiImageModelDeleteButton"[\s\S]*data-admin-action="settings-save-ai-image-model-config"/);
@@ -192,10 +193,15 @@ test('admin studio loads and mutates AI image config through admin scoped APIs',
     assert.match(adminJs, /discoverModels:\s*true/);
     assert.match(adminJs, /const probeModes = draft\.modelGroup === 'chat'[\s\S]*\['chat', 'vision'\]/);
     assert.match(adminJs, /const nextVisionModels = mergeAiImageModelCandidates\(/);
+    assert.doesNotMatch(adminJs, /mergeAiImageModelCandidates\(\s*draft\.visionModels,\s*draft\.vision_models,\s*check\.visionModels/);
     assert.match(adminJs, /setAiImageModelsInputValue\(document\.getElementById\('aiImageVisionModelsInput'\)/);
     assert.match(adminJs, /payload\?\.matrix === true && data\?\.check/);
     assert.match(adminJs, /resolutions:\s*\['1k', '2k', '4k'\]/);
     assert.match(adminJs, /ai-image-admin-probe-item/);
+    assert.match(adminJs, /\[item\.model \|\| '', modeLabel/);
+    assert.match(adminJs, /verificationStatus === 'unverified'/);
+    assert.match(adminJs, /is-warning/);
+    assert.match(adminJs, /项未验证/);
     assert.match(adminJs, /ai-image-admin-probe-discovery/);
     assert.match(adminJs, /settings-apply-ai-image-discovered-model/);
     assert.match(adminJs, /settings-classify-ai-image-unknown-model/);
@@ -252,6 +258,14 @@ test('admin studio loads and mutates AI image config through admin scoped APIs',
     assert.doesNotMatch(adminJs, /<i class="fas fa-clone"><\/i> 复制新建/);
     assert.match(adminJs, /settings-test-ai-image-model-provider-full/);
     assert.match(adminHtml, /<i class="fas fa-stethoscope"><\/i> 模型自检/);
+    assert.match(adminJs, /settings-test-ai-image-model-provider-failed/);
+    assert.match(adminHtml, /<i class="fas fa-rotate"><\/i> 自检故障模型/);
+    assert.match(adminJs, /function retryAiImageFailedModelChecks\(providerId = ''\)/);
+    assert.match(adminJs, /probe\.checks\.filter\(\(item\) => !item\.ok\)/);
+    assert.match(adminJs, /probeTargets,[\s\S]*\.\.\.draft/);
+    assert.match(adminJs, /getAiImageModelProbeCheckKey\(item = \{\}\)[\s\S]*item\.model[\s\S]*item\.mode[\s\S]*item\.resolution/);
+    assert.match(adminJs, /const mergedChecks = probe\.checks\.map\(\(item\) => retriedCheckMap\.get\(getAiImageModelProbeCheckKey\(item\)\) \|\| item\)/);
+    assert.match(adminJs, /window\.retryAiImageFailedModelChecks = retryAiImageFailedModelChecks/);
     assert.match(adminHtml, /<i class="fas fa-magnifying-glass"><\/i> 检测上游支持模型/);
     assert.doesNotMatch(adminJs, /data-admin-action="settings-test-ai-image-model-provider"/);
     assert.doesNotMatch(adminJs, /<i class="fas fa-plug"><\/i> 连通性/);
@@ -325,6 +339,7 @@ test('AI image admin settings keep scoped styling and worker command contract', 
     assert.match(adminCss, /#module-ai-creation \.ai-image-admin-select \.select-options/);
     assert.match(adminCss, /#module-ai-creation \.ai-image-admin-probe-grid/);
     assert.match(adminCss, /#module-ai-creation \.ai-image-admin-probe-item\.is-error/);
+    assert.match(adminCss, /#module-ai-creation \.ai-image-admin-probe-item\.is-warning/);
     assert.match(adminCss, /#module-ai-creation \.ai-image-admin-probe-discovery/);
     assert.match(adminCss, /#module-ai-creation \.ai-image-admin-visible-models/);
     assert.match(adminCss, /#module-ai-creation \.ai-image-admin-model-workspace \{[\s\S]*grid-template-columns: minmax\(260px, 0\.34fr\) minmax\(0, 1fr\);/);

@@ -16,6 +16,8 @@
     const RELOADABLE_BILLING_RECORD_MIN_AGE_MS = 5 * 60 * 1000;
     const INCOMPLETE_SUCCEEDED_IMAGE_RESULT_GRACE_MS = 5 * 60 * 1000;
     const MAX_REFERENCE_IMAGE_INPUTS = 16;
+    const MAX_REFERENCE_IMAGE_FILE_BYTES = 12 * 1024 * 1024;
+    const MAX_VIDEO_REFERENCE_IMAGE_INPUTS = 4;
     const MAX_CHAT_ATTACHMENT_COUNT = 8;
     const MAX_CHAT_ATTACHMENT_TEXT_CHARS = 50000;
     const MAX_CHAT_ATTACHMENT_TOTAL_CHARS = 120000;
@@ -117,10 +119,16 @@
         storedApiKeys: [],
         apiImageTool: false,
         pointsTextModel: '',
+        pointsTextModelProviderId: '',
         pointsVideoModel: '',
+        pointsVideoModelProviderId: '',
+        pointsImageModelProviderId: '',
 	        apiTextModel: 'gpt-4.1-api',
+        apiTextModelProviderId: '',
 	        apiImageModel: 'gemini-image-api',
+        apiImageModelProviderId: '',
 	        apiVideoModel: '',
+        apiVideoModelProviderId: '',
 	        chatMemoryMode: 'fast',
 	        chatReasoningEffort: 'auto',
 	        chatGeminiThinkingLevel: 'medium',
@@ -129,7 +137,6 @@
 	        chatThinkingMode: 'disabled',
 	        chatFastDefaultsVersion: 1,
 	        verifiedKimiThinkingModels: [],
-	        chatImageInput: 'auto',
         mode: 'text',
         ratio: '1:1',
         resolution: '1k',
@@ -294,10 +301,6 @@
 	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启豆包思考模式并展示思考过程' },
 	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭豆包思考模式，直接回答' },
 	        { id: 'unset', label: '默认', shortLabel: '默认', hint: '使用豆包默认思考设置' }
-	    ]);
-	    const OPENAI_IMAGE_INPUT_OPTIONS = Object.freeze([
-	        { id: 'auto', label: '允许读图', shortLabel: '读图', hint: '模型支持视觉时，会把图片作为对话输入' },
-	        { id: 'off', label: '仅文字', shortLabel: '文字', hint: '只发送文字内容，不发送图片' }
 	    ]);
     const CHAT_SETTINGS_CAPABILITY_IDS = Object.freeze(['thinking', 'reasoning', 'geminiThinking', 'claudeThinkingBudget']);
 
@@ -1277,8 +1280,10 @@
         const seen = new Set();
         return options.filter((item) => {
             const key = String(item?.id || '').trim().toLowerCase();
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
+            const providerId = String(item?.providerId || item?.provider_id || '').trim().toLowerCase();
+            const dedupeKey = `${providerId}:${key}`;
+            if (!key || seen.has(dedupeKey)) return false;
+            seen.add(dedupeKey);
             return true;
         });
     }
@@ -1452,15 +1457,41 @@
         return state.billingMode === 'api' ? runtimeApiModelsLockedToDiscovery : runtimeAdminModelsConfigured;
     }
 
+    function resolveChatImageInputPolicyForOption(model = {}, modelId = model?.id || '') {
+        const resolver = global.AIChatModelCapabilities?.resolveAiChatImageInputPolicy;
+        if (typeof resolver === 'function') {
+            return resolver({
+                model: modelId,
+                vendor: model?.vendor,
+                protocol: model?.protocol,
+                providerLabel: model?.providerLabel,
+                providerId: model?.providerId,
+                supportsImageInput: model?.supportsImageInput,
+                billingMode: state.billingMode,
+                apiBaseUrl: state.billingMode === 'api' ? state.apiBaseUrl : ''
+            });
+        }
+        const available = model?.supportsImageInput === true;
+        return {
+            status: available ? 'channel_verified' : (model?.supportsImageInput === false ? 'channel_unsupported' : 'unverified'),
+            available,
+            family: 'unknown',
+            officialSourceLabel: '',
+            formats: ['JPG', 'PNG', 'WebP'],
+            maxCount: MAX_REFERENCE_IMAGE_INPUTS,
+            maxFileBytes: MAX_REFERENCE_IMAGE_FILE_BYTES,
+            workbenchMaxCount: MAX_REFERENCE_IMAGE_INPUTS,
+            workbenchMaxFileBytes: MAX_REFERENCE_IMAGE_FILE_BYTES
+        };
+    }
+
     function filterRuntimeModelGroupsForMode(groups = [], mode = inferWorkbenchMode()) {
         if (mode !== 'reverse') return groups;
         return groups.map((group) => ({
             ...group,
-            models: (Array.isArray(group.models) ? group.models : []).filter((model) => {
-                if (model.supportsImageInput === false) return false;
-                if (model.supportsImageInput === true) return true;
-                return modelLikelySupportsChatImageInput(model.id);
-            })
+            models: (Array.isArray(group.models) ? group.models : []).filter((model) => (
+                resolveChatImageInputPolicyForOption(model).available
+            ))
         })).filter((group) => group.models.length);
     }
 
@@ -1491,6 +1522,33 @@
 
     function getRuntimeModelGroupOptions(mode = inferWorkbenchMode()) {
         return getRuntimeModelGroups(mode).flatMap((group) => group.models);
+    }
+
+    function getModelSelectionStateKeys(mode = inferWorkbenchMode(), target = state.billingMode === 'api' ? 'api' : 'admin') {
+        const isApi = target === 'api';
+        if (isTextVisionMode(mode)) {
+            return isApi
+                ? { modelKey: 'apiTextModel', providerKey: 'apiTextModelProviderId' }
+                : { modelKey: 'pointsTextModel', providerKey: 'pointsTextModelProviderId' };
+        }
+        if (isVideoMode(mode)) {
+            return isApi
+                ? { modelKey: 'apiVideoModel', providerKey: 'apiVideoModelProviderId' }
+                : { modelKey: 'pointsVideoModel', providerKey: 'pointsVideoModelProviderId' };
+        }
+        return isApi
+            ? { modelKey: 'apiImageModel', providerKey: 'apiImageModelProviderId' }
+            : { modelKey: 'model', providerKey: 'pointsImageModelProviderId' };
+    }
+
+    function getStoredModelProviderId(mode = inferWorkbenchMode()) {
+        const { providerKey } = getModelSelectionStateKeys(mode);
+        return String(state[providerKey] || '').trim();
+    }
+
+    function setStoredModelProviderId(mode = inferWorkbenchMode(), providerId = '') {
+        const { providerKey } = getModelSelectionStateKeys(mode);
+        state[providerKey] = String(providerId || '').trim();
     }
 
     function normalizeRuntimeModelCacheEntry(entry = null) {
@@ -1565,27 +1623,29 @@
         target = 'api',
         explicit = false
     } = {}) {
-        if (target === 'admin') {
-            if (!textModels.some((model) => model.id === state.pointsTextModel)) {
-                state.pointsTextModel = textModels[0]?.id || '';
+        const applyDefault = (models, mode, fallback) => {
+            const { modelKey, providerKey } = getModelSelectionStateKeys(mode, target);
+            const currentModel = String(state[modelKey] || '').trim();
+            const currentProviderId = String(state[providerKey] || '').trim().toLowerCase();
+            const current = (Array.isArray(models) ? models : []).find((model) => (
+                model?.id === currentModel
+                && (!currentProviderId || String(model.providerId || '').trim().toLowerCase() === currentProviderId)
+            ));
+            const selected = current
+                || (Array.isArray(models) ? models.find((model) => model?.id === currentModel) : null)
+                || (Array.isArray(models) ? models[0] : null);
+            if (selected?.id) {
+                state[modelKey] = selected.id;
+                state[providerKey] = String(selected.providerId || selected.provider_id || '').trim();
+            } else {
+                state[modelKey] = explicit ? '' : fallback;
+                state[providerKey] = '';
             }
-            if (!imageModels.some((model) => model.id === state.model)) {
-                state.model = imageModels[0]?.id || (explicit ? '' : DEFAULT_STATE.model);
-            }
-            if (!videoModels.some((model) => model.id === state.pointsVideoModel)) {
-                state.pointsVideoModel = videoModels[0]?.id || '';
-            }
-            return;
-        }
-        if (!textModels.some((model) => model.id === state.apiTextModel)) {
-            state.apiTextModel = textModels[0]?.id || (explicit ? '' : DEFAULT_STATE.apiTextModel);
-        }
-        if (!imageModels.some((model) => model.id === state.apiImageModel)) {
-            state.apiImageModel = imageModels[0]?.id || (explicit ? '' : DEFAULT_STATE.apiImageModel);
-        }
-        if (!videoModels.some((model) => model.id === state.apiVideoModel)) {
-            state.apiVideoModel = videoModels[0]?.id || '';
-        }
+        };
+
+        applyDefault(textModels, 'chat', target === 'admin' ? '' : DEFAULT_STATE.apiTextModel);
+        applyDefault(imageModels, 'text', target === 'admin' ? (explicit ? '' : DEFAULT_STATE.model) : DEFAULT_STATE.apiImageModel);
+        applyDefault(videoModels, 'video', '');
     }
 
     function applyRuntimeModelCache(apiBaseUrl = state.apiBaseUrl) {
@@ -2182,10 +2242,16 @@
                 billingMode: state.billingMode,
                 apiImageTool: state.apiImageTool,
         pointsTextModel: state.pointsTextModel,
+                pointsTextModelProviderId: state.pointsTextModelProviderId,
                 pointsVideoModel: state.pointsVideoModel,
+                pointsVideoModelProviderId: state.pointsVideoModelProviderId,
+                pointsImageModelProviderId: state.pointsImageModelProviderId,
 	                apiTextModel: state.apiTextModel,
+                apiTextModelProviderId: state.apiTextModelProviderId,
 	                apiImageModel: state.apiImageModel,
+                apiImageModelProviderId: state.apiImageModelProviderId,
 	                apiVideoModel: state.apiVideoModel,
+                apiVideoModelProviderId: state.apiVideoModelProviderId,
 	                chatMemoryMode: state.chatMemoryMode,
 	                chatReasoningEffort: state.chatReasoningEffort,
 	                chatGeminiThinkingLevel: state.chatGeminiThinkingLevel,
@@ -2194,7 +2260,6 @@
 	                chatThinkingMode: state.chatThinkingMode,
 	                chatFastDefaultsVersion: DEFAULT_STATE.chatFastDefaultsVersion,
 	                verifiedKimiThinkingModels: normalizeStringList(state.verifiedKimiThinkingModels, 100),
-	                chatImageInput: state.chatImageInput,
 	                runtimeApiModelCacheByBaseUrl: serializeRuntimeModelCache(),
                 mode: state.mode,
                 ratio: state.ratio,
@@ -2305,10 +2370,16 @@
         runtimeApiModelCacheByBaseUrl = normalizeRuntimeModelCache(stored.runtimeApiModelCacheByBaseUrl || stored.runtime_api_model_cache_by_base_url || {});
         applyRuntimeModelCache(state.apiBaseUrl);
         state.pointsTextModel = String(stored.pointsTextModel || stored.points_text_model || '').trim();
+        state.pointsTextModelProviderId = String(stored.pointsTextModelProviderId || stored.points_text_model_provider_id || '').trim();
         state.pointsVideoModel = String(stored.pointsVideoModel || stored.points_video_model || '').trim();
+        state.pointsVideoModelProviderId = String(stored.pointsVideoModelProviderId || stored.points_video_model_provider_id || '').trim();
+        state.pointsImageModelProviderId = String(stored.pointsImageModelProviderId || stored.points_image_model_provider_id || '').trim();
         state.apiTextModel = runtimeApiTextModels.some((model) => model.id === stored.apiTextModel) ? stored.apiTextModel : (runtimeApiTextModels[0]?.id || '');
+        state.apiTextModelProviderId = String(stored.apiTextModelProviderId || stored.api_text_model_provider_id || '').trim();
 	        state.apiImageModel = runtimeApiImageModels.some((model) => model.id === stored.apiImageModel) ? stored.apiImageModel : (runtimeApiImageModels[0]?.id || '');
+        state.apiImageModelProviderId = String(stored.apiImageModelProviderId || stored.api_image_model_provider_id || '').trim();
 	        state.apiVideoModel = runtimeApiVideoModels.some((model) => model.id === stored.apiVideoModel) ? stored.apiVideoModel : (runtimeApiVideoModels[0]?.id || '');
+        state.apiVideoModelProviderId = String(stored.apiVideoModelProviderId || stored.api_video_model_provider_id || '').trim();
 	        state.chatMemoryMode = CHAT_MEMORY_OPTIONS.some((option) => option.id === stored.chatMemoryMode || option.id === stored.chat_memory_mode)
 	            ? (stored.chatMemoryMode || stored.chat_memory_mode)
 	            : DEFAULT_STATE.chatMemoryMode;
@@ -2318,7 +2389,6 @@
 	        const storedServiceTier = String(stored.chatServiceTier || stored.chat_service_tier || '').trim();
 	        const storedThinkingMode = String(stored.chatThinkingMode || stored.chat_thinking_mode || '').trim();
 	        const storedFastDefaultsVersion = Number(stored.chatFastDefaultsVersion ?? stored.chat_fast_defaults_version ?? 0) || 0;
-	        const storedImageInput = String(stored.chatImageInput || stored.chat_image_input || '').trim();
 	        state.chatReasoningEffort = [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...GLM_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].some((option) => option.id === storedReasoningEffort)
 	            ? storedReasoningEffort
 	            : DEFAULT_STATE.chatReasoningEffort;
@@ -2338,9 +2408,6 @@
 	            state.chatThinkingMode = DEFAULT_STATE.chatThinkingMode;
 	        }
 	        state.verifiedKimiThinkingModels = normalizeStringList(stored.verifiedKimiThinkingModels || stored.verified_kimi_thinking_models, 100);
-	        state.chatImageInput = OPENAI_IMAGE_INPUT_OPTIONS.some((option) => option.id === storedImageInput)
-	            ? storedImageInput
-	            : (storedImageInput === 'on' ? 'auto' : (storedImageInput === 'off' ? 'off' : DEFAULT_STATE.chatImageInput));
         state.mode = ['chat', 'text', 'image', 'video', 'reverse'].includes(stored.mode) ? stored.mode : DEFAULT_STATE.mode;
         state.ratio = RATIO_META[stored.ratio] ? stored.ratio : DEFAULT_STATE.ratio;
         state.resolution = RESOLUTION_META[stored.resolution] ? stored.resolution : '1k';
@@ -4008,33 +4075,195 @@
 	        return [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GLM_THINKING_OPTIONS, ...MINIMAX_THINKING_OPTIONS, ...DOUBAO_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...OPENAI_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].find((option) => option.id === mode) || DEEPSEEK_THINKING_OPTIONS[0];
 	    }
 
-	    function getChatImageInputOption(mode = state.chatImageInput) {
-	        return OPENAI_IMAGE_INPUT_OPTIONS.find((option) => option.id === mode) || OPENAI_IMAGE_INPUT_OPTIONS[0];
-	    }
-
-	    function modelLikelySupportsChatImageInput(modelId = getActiveModelValue('chat')) {
-	        const model = String(modelId || '').toLowerCase();
-	        const baseUrl = String(state.billingMode === 'api' ? state.apiBaseUrl : '').toLowerCase();
-	        return /gpt-4o|gpt-4\.1|gpt-5|o\d|gemini|claude|qwen-vl|vision|multimodal/.test(`${model} ${baseUrl}`);
-	    }
-
-	    function getChatModelOption(modelId = getActiveModelValue('chat')) {
+	    function getChatModelOption(modelId = getActiveModelValue('chat'), providerId = getStoredModelProviderId('chat')) {
 	        const normalized = String(modelId || '').trim();
-	        return getRuntimeModelGroupOptions('chat').find((model) => model.id === normalized)
-	            || getActiveModelOptions('chat').find((model) => model.id === normalized)
+	        const normalizedProviderId = String(providerId || '').trim();
+	        const options = getRuntimeModelGroupOptions('chat');
+	        const activeOptions = getActiveModelOptions('chat');
+	        if (normalizedProviderId) {
+	            return options.find((model) => model.id === normalized && model.providerId === normalizedProviderId)
+	                || activeOptions.find((model) => model.id === normalized && model.providerId === normalizedProviderId)
+	                || null;
+	        }
+	        return options.find((model) => model.id === normalized)
+	            || activeOptions.find((model) => model.id === normalized)
 	            || null;
 	    }
 
-	    function shouldExposeChatImageInput(modelId = getActiveModelValue('chat')) {
-	        if (state.chatImageInput === 'off') return false;
-	        const option = getChatModelOption(modelId);
-	        if (option?.supportsImageInput === true) return true;
-	        if (option?.supportsImageInput === false) return false;
-	        return modelLikelySupportsChatImageInput(modelId);
+	    function getChatImageInputPolicy(modelId = getActiveModelValue('chat'), providerId = getStoredModelProviderId('chat')) {
+	        const option = getChatModelOption(modelId, providerId) || { id: modelId, providerId };
+	        return resolveChatImageInputPolicyForOption(option, modelId);
 	    }
 
-	    function getChatModelCapabilities(modelId = getActiveModelValue('chat')) {
-	        const modelOption = getChatModelOption(modelId) || {};
+	    function shouldExposeChatImageInput(modelId = getActiveModelValue('chat'), providerId = getStoredModelProviderId('chat')) {
+	        return getChatImageInputPolicy(modelId, providerId).available;
+	    }
+
+        function getReferenceImageInputLimit(mode = inferWorkbenchMode()) {
+            return isVideoMode(mode) ? MAX_VIDEO_REFERENCE_IMAGE_INPUTS : MAX_REFERENCE_IMAGE_INPUTS;
+        }
+
+        function getReferenceImageFileByteLimit(mode = inferWorkbenchMode()) {
+            if (mode === 'chat' || mode === 'reverse') {
+                return getChatImageInputPolicy(
+                    getActiveModelValue(mode),
+                    getStoredModelProviderId(mode)
+                ).maxFileBytes || MAX_REFERENCE_IMAGE_FILE_BYTES;
+            }
+            return MAX_REFERENCE_IMAGE_FILE_BYTES;
+        }
+
+        function getSelectedModelOption(mode = inferWorkbenchMode()) {
+            const modelId = getActiveModelValue(mode);
+            const providerId = getStoredModelProviderId(mode);
+            const options = getActiveModelOptions(mode);
+            if (providerId) {
+                return options.find((model) => model.id === modelId && model.providerId === providerId) || null;
+            }
+            return options.find((model) => model.id === modelId) || null;
+        }
+
+        function getCanonicalUpstreamModelId(modelId = '') {
+            return String(modelId || '').trim().toLowerCase().split(/[/:]/).filter(Boolean).pop() || '';
+        }
+
+        function getComposerUploadReferenceStandard(mode = inferWorkbenchMode()) {
+            const modelId = getActiveModelValue(mode);
+            const modelOption = getSelectedModelOption(mode);
+            const providerId = getStoredModelProviderId(mode);
+            const providerLabel = String(modelOption?.providerLabel
+                || getRuntimeModelGroups(mode).find((group) => group.providerId === providerId)?.label
+                || '').trim();
+            const modelLabel = String(modelOption?.label || modelId || '尚未选择模型').trim();
+            const contextLabel = [providerLabel, modelLabel].filter(Boolean).join(' · ');
+            const title = `${contextLabel || '当前模型'} · 上传参考`;
+            const canonicalModelId = getCanonicalUpstreamModelId(modelId);
+
+            if (!modelId) {
+                return {
+                    tone: 'unsupported',
+                    title,
+                    lead: '当前没有可用模型，无法确认或读取上传文件。',
+                    items: [],
+                    note: '请先选择计费方式和模型。'
+                };
+            }
+
+            if (mode === 'chat') {
+                const imagePolicy = getChatImageInputPolicy(modelId, providerId);
+                const imageFormats = imagePolicy.formats.join('、');
+                const imageLimit = imagePolicy.maxCount || MAX_REFERENCE_IMAGE_INPUTS;
+                const imageSize = formatFileSize(imagePolicy.maxFileBytes || MAX_REFERENCE_IMAGE_FILE_BYTES);
+                const leadByStatus = {
+                    channel_verified: '当前渠道已通过读图自检，可以把上传图片发送给所选模型。',
+                    channel_unsupported: '当前渠道已明确标记为不支持图片输入，工作台不会把图片发送给该模型。',
+                    official_unverified: '官方模型系列支持图片输入，但当前渠道尚未通过读图自检。验证前工作台暂不开放图片上传。',
+                    unverified: '未找到当前模型明确的上游或官方读图标准，当前渠道也未验证，暂不开放图片上传。'
+                };
+                const imageItems = imagePolicy.available ? [
+                    {
+                        label: '图片',
+                        value: `${imageFormats}，最多 ${imageLimit} 张（含续作底图），单张不超过 ${imageSize}`
+                    },
+                    {
+                        label: '判定依据',
+                        value: imagePolicy.officialSourceLabel
+                            ? `当前渠道读图自检 + ${imagePolicy.officialSourceLabel}`
+                            : '当前渠道读图自检；官方未提供可核对的精确上限时，以工作台上限为准'
+                    }
+                ] : (imagePolicy.officialSourceLabel ? [
+                    {
+                        label: '官方参考',
+                        value: `${imagePolicy.officialSourceLabel}确认该系列支持图片输入`
+                    },
+                    {
+                        label: '验证后上限',
+                        value: `${imageFormats}，最多 ${imageLimit} 张，单张不超过 ${imageSize}`
+                    }
+                ] : []);
+                return {
+                    tone: imagePolicy.available ? 'supported' : (imagePolicy.status === 'channel_unsupported' ? 'unsupported' : 'pending'),
+                    title,
+                    lead: leadByStatus[imagePolicy.status] || leadByStatus.unverified,
+                    items: [
+                        ...imageItems,
+                        {
+                            label: '文档',
+                            value: `TXT、MD、CSV、JSON、HTML、XML、LOG、PDF，最多 ${MAX_CHAT_ATTACHMENT_COUNT} 个，单个不超过 8 MB`
+                        },
+                        {
+                            label: '文本提取',
+                            value: '单文件最多 5 万字符，全部附件合计最多 12 万字符'
+                        }
+                    ],
+                    note: '文档由工作台在浏览器本地提取文本后发送，并非模型原生文件上传。最终图片能力取上游/渠道验证、模型官方标准与工作台承载上限的交集。'
+                };
+            }
+
+            if (mode === 'reverse') {
+                const imagePolicy = getChatImageInputPolicy(modelId, providerId);
+                return {
+                    tone: imagePolicy.available ? 'supported' : (imagePolicy.status === 'channel_unsupported' ? 'unsupported' : 'pending'),
+                    title,
+                    lead: imagePolicy.available
+                        ? '当前渠道已通过读图自检，可以用于图片反推。'
+                        : (imagePolicy.status === 'official_unverified'
+                            ? '官方模型系列支持图片输入，但当前渠道尚未通过读图自检，暂不能用于图片反推。'
+                            : '当前渠道没有已验证的图片输入能力，不能用于图片反推。'),
+                    items: imagePolicy.available ? [{
+                        label: '图片',
+                        value: `${imagePolicy.formats.join('、')}，最多 ${imagePolicy.maxCount} 张，单张不超过 ${formatFileSize(imagePolicy.maxFileBytes)}`
+                    }] : (imagePolicy.officialSourceLabel ? [{
+                        label: '官方参考',
+                        value: imagePolicy.officialSourceLabel
+                    }] : []),
+                    note: '反推模式不接收文档、视频或音频。'
+                };
+            }
+
+            if (isVideoMode(mode)) {
+                const documentedModels = ['video-ds-2.0', 'video-ds-2.0-fast', 'as-sd2.0-fast'];
+                const isDocumented = documentedModels.includes(canonicalModelId);
+                return {
+                    tone: isDocumented ? 'supported' : 'unsupported',
+                    title,
+                    lead: isDocumented
+                        ? '该模型在上游文档的参考素材支持名单内。'
+                        : '当前模型不在上游文档已确认的参考素材模型名单内，无法确认其会读取上传文件。',
+                    items: isDocumented ? [
+                        { label: '图片', value: 'JPG、PNG、WebP，最多 4 张' },
+                        { label: '视频', value: 'MP4、MOV、WebM，最多 3 个，建议 3-10 秒' },
+                        { label: '音频', value: 'MP3、M4A、WAV、AAC、OGG，最多 1 个，建议 2-15 秒且小于 15 MB' }
+                    ] : [{
+                        label: '文档已确认',
+                        value: documentedModels.join('、')
+                    }],
+                    note: '当前工作台加号仅直接上传图片；视频和音频需先取得公网 URL，再通过上游 API 的 videos、audios 数组传入。'
+                };
+            }
+
+            const supportsDocumentedImageEdits = ['gpt-image-2', 'gpt-image-2-all'].includes(canonicalModelId);
+            const isDocumentedGeminiGeneration = canonicalModelId === 'gemini-3.1-flash-image';
+            return {
+                tone: supportsDocumentedImageEdits ? 'supported' : 'unsupported',
+                title,
+                lead: supportsDocumentedImageEdits
+                    ? '上游文档确认该模型支持图片编辑/换图。'
+                    : (isDocumentedGeminiGeneration
+                        ? '上游文档只确认该模型可生成图片，未给出参考图读取或编辑标准。'
+                        : '当前模型不在上游文档已确认的图片编辑模型名单内，不保证会读取上传图片。'),
+                items: supportsDocumentedImageEdits ? [
+                    { label: '图片', value: 'JPG、PNG、WebP；上游字段为 image 或 image[]' },
+                    { label: '数量', value: `上游未注明上限；当前工作台最多 ${MAX_REFERENCE_IMAGE_INPUTS} 张（含续作底图）` }
+                ] : [],
+                note: supportsDocumentedImageEdits
+                    ? '该模式不接收文档、视频或音频。'
+                    : '如模型仅支持文生图，上传图片不会形成可靠的模型输入。'
+            };
+        }
+
+	    function getChatModelCapabilities(modelId = getActiveModelValue('chat'), providerId = getStoredModelProviderId('chat')) {
+	        const modelOption = getChatModelOption(modelId, providerId) || {};
 	        const resolver = global.AIChatModelCapabilities?.resolveAiChatModelCapabilities;
 	        const capabilityProfile = typeof resolver === 'function'
 	            ? resolver({
@@ -4052,7 +4281,7 @@
 	        const isGemini = family === 'gemini';
 	        const isClaude = family === 'claude';
 	        const isOpenAiLike = family === 'openai';
-	        const isVisionLikely = modelLikelySupportsChatImageInput(modelId);
+	        const imageInputPolicy = getChatImageInputPolicy(modelId, providerId);
 	        const controls = [];
 		        if (isDeepSeek && capabilityProfile.supportsThinking) {
 		            controls.push({
@@ -4195,21 +4424,13 @@
 	                activeValue: state.chatServiceTier,
 	                options: OPENAI_SERVICE_TIER_OPTIONS
 	            });
-	            if (isVisionLikely) {
-		                controls.push({
-		                    id: 'imageInput',
-		                    icon: 'fa-image',
-		                    label: 'OpenAI 图片输入',
-		                    activeValue: state.chatImageInput,
-		                    options: OPENAI_IMAGE_INPUT_OPTIONS
-		                });
-	            }
 	        }
 
         return {
 	            provider: family,
 	            profile: capabilityProfile,
-            supportsImageInput: isVisionLikely,
+            supportsImageInput: imageInputPolicy.available,
+            imageInputPolicy,
             controls
         };
 	    }
@@ -4523,6 +4744,7 @@
     function inferWorkbenchMode() {
         const imageContext = getCurrentImageContext();
         if (state.mode === 'video') return 'video';
+        if (state.mode === 'chat' && !state.apiImageTool) return 'chat';
         if (!imageContext.image) return !state.apiImageTool ? 'chat' : 'text';
         if (state.referenceIntent === 'variation') return 'image';
         const prompt = String(state.prompt || '').trim().toLowerCase();
@@ -6529,6 +6751,7 @@
             clearComposerError();
             const field = selectOption.getAttribute('data-aiw-select-field') || '';
             const value = selectOption.getAttribute('data-aiw-select-value') || '';
+            const selectedProviderId = selectOption.getAttribute('data-aiw-select-provider') || '';
             const isComposerOption = Boolean(selectOption.closest('.ai-image-main-composer'));
             if (field === 'ratio' && RATIO_META[value]) state.ratio = value;
             if (field === 'resolution' && RESOLUTION_META[value]) state.resolution = value;
@@ -6549,6 +6772,9 @@
                 } else if (activeModelOptions.some((model) => model.id === value)) {
                     state.model = value;
                 }
+                if (activeModelOptions.some((model) => model.id === value)) {
+                    setStoredModelProviderId(activeMode, selectedProviderId);
+                }
             }
             if (field === 'apiModel') {
                 const activeMode = inferWorkbenchMode();
@@ -6556,6 +6782,9 @@
                 if (isVideoMode(activeMode) && activeModelOptions.some((model) => model.id === value)) state.apiVideoModel = value;
                 if (!isTextVisionMode(activeMode) && !isVideoMode(activeMode) && activeModelOptions.some((model) => model.id === value)) state.apiImageModel = value;
                 if (isTextVisionMode(activeMode) && activeModelOptions.some((model) => model.id === value)) state.apiTextModel = value;
+                if (activeModelOptions.some((model) => model.id === value)) {
+                    setStoredModelProviderId(activeMode, selectedProviderId);
+                }
             }
             if (field === 'model' || field === 'apiModel') openModelProvider = '';
             openSelect = target.closest('[data-aiw-image-settings]') ? 'imageSettings' : (target.closest('[data-aiw-video-settings]') ? 'videoSettings' : (target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : ''));
@@ -6624,8 +6853,7 @@
 	            if (field === 'claudeThinkingBudget' && CLAUDE_THINKING_BUDGET_OPTIONS.some((option) => option.id === value)) state.chatClaudeThinkingBudget = value;
 	            if (field === 'serviceTier' && OPENAI_SERVICE_TIER_OPTIONS.some((option) => option.id === value)) state.chatServiceTier = value;
 	            if (field === 'thinking' && [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GLM_THINKING_OPTIONS, ...MINIMAX_THINKING_OPTIONS, ...DOUBAO_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...OPENAI_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].some((option) => option.id === value)) state.chatThinkingMode = value;
-            if (field === 'imageInput' && OPENAI_IMAGE_INPUT_OPTIONS.some((option) => option.id === value)) state.chatImageInput = value;
-            openSelect = target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : '';
+	            openSelect = target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : '';
             if (openSelect === 'chatSettings') openChatSettingsSection = field || openChatSettingsSection;
             if (openSelect === 'chatSettings') {
                 renderMainComposerOnly();
@@ -6949,6 +7177,31 @@
 
     function handleAction(action, element) {
         openSelect = '';
+        if (action === 'set-workbench-tool-mode') {
+            const mode = String(element?.getAttribute?.('data-aiw-tool-mode') || '').trim();
+            if (!['chat', 'image', 'video'].includes(mode)) return;
+            if (mode === 'video' && !getActiveModelOptions('video').length) {
+                setComposerError(remoteConfigLoaded ? '当前未配置可用的视频模型。' : '视频模型配置加载中，请稍后重试。');
+                if (modelPricingView.open || !overlay?.querySelector?.('.ai-image-main-composer')) {
+                    render();
+                } else {
+                    renderMainComposerOnly();
+                }
+                return;
+            }
+            clearComposerError();
+            modelPricingView.open = false;
+            setWorkbenchToolMode(mode);
+            state.agent = '';
+            if (!overlay?.querySelector?.('.ai-image-main-composer')) {
+                render();
+            } else {
+                renderMainComposerOnly();
+                syncWorkbenchRailModeState();
+            }
+            persistState();
+            return;
+        }
         if (action === 'toggle-history') {
             setSidebarView(sidebarView === 'history' ? '' : 'history');
             renderSidebarTransition();
@@ -7554,7 +7807,10 @@
                 const unsupportedFiles = files.filter((file) => !imageFiles.includes(file) && !documentFiles.includes(file));
                 if (unsupportedFiles.length) {
                     const firstName = unsupportedFiles[0]?.name || '文件';
-                    setComposerError(`${firstName} 暂不支持；对话支持图片、TXT/Markdown/CSV/JSON/HTML/XML/LOG/PDF`);
+                    const supportedCopy = inferredMode === 'chat' && !canAttachImages
+                        ? '当前模型不支持读取图片；仅支持 TXT/Markdown/CSV/JSON/HTML/XML/LOG/PDF'
+                        : '支持 JPG/PNG/WebP；对话模式还支持 TXT/Markdown/CSV/JSON/HTML/XML/LOG/PDF';
+                    setComposerError(`${firstName} 暂不支持；${supportedCopy}`);
                     input.value = '';
                     render();
                     return;
@@ -7574,10 +7830,11 @@
                         state.continuationImage = continuationImage;
                     }
                 }
-                const availableSlots = Math.max(0, MAX_REFERENCE_IMAGE_INPUTS - getReferenceInputCount());
+                const imageInputLimit = getReferenceImageInputLimit(inferredMode);
+                const availableSlots = Math.max(0, imageInputLimit - getReferenceInputCount());
                 if (imageFiles.length && availableSlots <= 0) {
                     input.value = '';
-                    setComposerError(`参考图最多 ${MAX_REFERENCE_IMAGE_INPUTS} 张（包含续作基底图）`);
+                    setComposerError(`参考图最多 ${imageInputLimit} 张（包含续作基底图）`);
                     render();
                     return;
                 }
@@ -7792,8 +8049,9 @@
         if (!/^image\/(png|jpe?g|webp)$/i.test(file.type || '')) {
             throw new Error('仅支持 JPG、PNG、WebP 图片');
         }
-        if (file.size > 12 * 1024 * 1024) {
-            throw new Error('图片大小超出限制，请上传 12MB 以内的图片');
+        const maxFileBytes = getReferenceImageFileByteLimit();
+        if (file.size > maxFileBytes) {
+            throw new Error(`图片大小超出限制，请上传 ${formatFileSize(maxFileBytes)} 以内的图片`);
         }
 
         const imageData = await fileToDataUrl(file);
@@ -8024,7 +8282,7 @@
 
 	    function buildSubmitPayload(task, { chatAttachments = [] } = {}) {
 	        const providerId = normalizePricingProviderId(task.modelProviderId || task.model_provider_id || task.providerId || task.provider_id || getActiveModelProviderId(task.mode));
-	        const chatCapabilities = getChatModelCapabilities(task.model || getActiveModelValue('chat'));
+	        const chatCapabilities = getChatModelCapabilities(task.model || getActiveModelValue('chat'), providerId);
 	        const getCapabilityValue = (id, storedValue) => {
 	            const control = chatCapabilities.controls.find((item) => item.id === id);
 	            if (!control) return '';
@@ -8096,8 +8354,9 @@
 	        const claudeThinkingBudget = getCapabilityValue('claudeThinkingBudget', state.chatClaudeThinkingBudget);
 	        const serviceTier = getCapabilityValue('serviceTier', state.chatServiceTier);
 	        const thinkingMode = getCapabilityValue('thinking', state.chatThinkingMode);
-	        const imageInputMode = getCapabilityValue('imageInput', state.chatImageInput);
-	        const chatModelOption = task.mode === 'chat' ? getChatModelOption(task.model || getActiveModelValue('chat')) : null;
+	        const chatModelOption = task.mode === 'chat'
+	            ? getChatModelOption(task.model || getActiveModelValue('chat'), task.modelProviderId || task.providerId)
+	            : null;
 	        if (chatModelOption?.vendor) payload.modelVendor = chatModelOption.vendor;
 	        if (chatModelOption?.protocol) payload.modelProtocol = chatModelOption.protocol;
 	        if (chatModelOption?.providerLabel) payload.modelProviderLabel = chatModelOption.providerLabel;
@@ -8106,8 +8365,8 @@
 	        if (claudeThinkingBudget) payload.claudeThinkingBudget = claudeThinkingBudget;
 	        if (serviceTier) payload.serviceTier = serviceTier;
 	        if (thinkingMode) payload.thinkingMode = thinkingMode;
-	        if (imageInputMode) payload.imageInputMode = imageInputMode;
-	        if (chatModelOption?.supportsImageInput !== null && chatModelOption?.supportsImageInput !== undefined) {
+	        if (task.mode === 'chat') payload.imageInputMode = 'auto';
+        if (chatModelOption?.supportsImageInput !== null && chatModelOption?.supportsImageInput !== undefined) {
 	            payload.supportsImageInput = Boolean(chatModelOption.supportsImageInput);
 	        }
 	        const normalizedChatAttachments = task.mode === 'chat'
@@ -8607,6 +8866,13 @@
             return;
         }
 
+        const referenceImageInputLimit = getReferenceImageInputLimit(inferredMode);
+        if (getReferenceInputCount() > referenceImageInputLimit) {
+            setComposerError(`当前${isVideoMode(inferredMode) ? '视频模型' : '模型'}最多读取 ${referenceImageInputLimit} 张参考图，请先移除多余图片。`);
+            render();
+            return;
+        }
+
         let extraReferenceImages = getExtraReferenceImages();
         const shouldResolveReferences = Boolean(
             inferredMode === 'image'
@@ -8675,6 +8941,8 @@
         const taskId = getNowId('aiw');
         const activeModelValue = getActiveModelValue(inferredMode);
         const activeModelProviderId = normalizePricingProviderId(getActiveModelProviderId(inferredMode));
+        const canSubmitReferenceImages = inferredMode !== 'chat'
+            || shouldExposeChatImageInput(activeModelValue, activeModelProviderId);
         const activeModelGroup = isTextVisionMode(inferredMode) ? 'chat' : (isVideoMode(inferredMode) ? 'video' : (state.billingMode === 'api' ? 'image' : ''));
         const activeTool = isVideoMode(state.mode) && getActiveModelOptions('video').length
             ? 'video'
@@ -8690,12 +8958,12 @@
             progress: inferredMode === 'chat' ? 10 : (isVideoMode(inferredMode) ? 8 : 0),
             progressKnown: inferredMode === 'chat',
             prompt,
-            referenceImage: imageContext.image,
-            referenceTitle: imageContext.title,
-            referenceTaskId: imageContext.sourceTask?.id || explicitContinuationTaskId || '',
-            referenceResultId: state.continuationImage?.resultId || imageContext.resultId || '',
-            referenceResultIndex: state.continuationImage?.resultIndex || imageContext.resultIndex || '',
-            referenceImages: extraReferenceImages,
+            referenceImage: canSubmitReferenceImages ? imageContext.image : '',
+            referenceTitle: canSubmitReferenceImages ? imageContext.title : '',
+            referenceTaskId: canSubmitReferenceImages ? (imageContext.sourceTask?.id || explicitContinuationTaskId || '') : '',
+            referenceResultId: canSubmitReferenceImages ? (state.continuationImage?.resultId || imageContext.resultId || '') : '',
+            referenceResultIndex: canSubmitReferenceImages ? (state.continuationImage?.resultIndex || imageContext.resultIndex || '') : '',
+            referenceImages: canSubmitReferenceImages ? extraReferenceImages : [],
             ratio: getActiveRatio(inferredMode),
             resolution: getActiveResolution(inferredMode),
             videoDuration: isVideoMode(inferredMode) ? state.videoDuration : '',
@@ -9156,9 +9424,16 @@
     function getActiveModelProviderId(mode = inferWorkbenchMode()) {
         const groups = getRuntimeModelGroups(mode);
         const selected = getActiveModelValue(mode);
-        const selectedGroup = groups.find((group) => group.models.some((model) => model.id === selected));
+        const storedProviderId = getStoredModelProviderId(mode).toLowerCase();
+        const matchesSelectedModel = (model) => (
+            model?.id === selected
+            && (!storedProviderId || String(model.providerId || '').trim().toLowerCase() === storedProviderId)
+        );
+        const selectedGroup = groups.find((group) => group.models.some(matchesSelectedModel));
         const selectedModel = selectedGroup?.models?.find((model) => model.id === selected);
-        return selectedModel?.providerId
+        const providerSelectedModel = selectedGroup?.models?.find(matchesSelectedModel);
+        const activeSelectedModel = providerSelectedModel || selectedModel;
+        return activeSelectedModel?.providerId
             || selectedGroup?.providerId
             || groups[0]?.models?.[0]?.providerId
             || groups[0]?.providerId
@@ -9184,6 +9459,15 @@
         restoreRenderContinuity(continuitySnapshot, {
             preserveStageScroll: true,
             preservePromptFocus: true
+        });
+    }
+
+    function syncWorkbenchRailModeState() {
+        const currentToolMode = getCurrentWorkbenchToolMode();
+        root?.querySelectorAll?.('.ai-image-rail-mode-btn')?.forEach((button) => {
+            const active = button.getAttribute('data-aiw-tool-mode') === currentToolMode;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
     }
 
@@ -10424,8 +10708,7 @@
 	            reasoning: state.chatReasoningEffort,
 	            geminiThinking: state.chatGeminiThinkingLevel,
 	            serviceTier: state.chatServiceTier,
-	            thinking: state.chatThinkingMode,
-	            imageInput: state.chatImageInput
+	            thinking: state.chatThinkingMode
 	        };
 
 	        return `
@@ -10519,15 +10802,40 @@
 
     function renderComposerUploadButton(inferredMode = inferWorkbenchMode()) {
         const isChatMode = inferredMode === 'chat';
+	        const imageLimit = getReferenceImageInputLimit(inferredMode);
 	        const label = isChatMode
 	            ? (shouldExposeChatImageInput() ? '上传图片或文档/PDF' : '上传文档/PDF')
-	            : '上传图片';
+	            : `上传图片（最多 ${imageLimit} 张）`;
 	        return `
                     <button class="ai-image-main-plus" type="button" data-aiw-action="upload-reference" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
                         <i class="fas fa-plus"></i>
                     </button>
 	        `;
 	    }
+
+        function renderComposerUploadHelp(inferredMode = inferWorkbenchMode()) {
+            const standard = getComposerUploadReferenceStandard(inferredMode);
+            const tooltipId = 'ai-image-upload-reference-tooltip';
+            return `
+                <div class="ai-image-upload-help" data-support="${escapeHtml(standard.tone)}">
+                    <button class="ai-image-upload-help-trigger" type="button" aria-label="查看当前模型支持的上传参考标准" aria-describedby="${tooltipId}">
+                        <span aria-hidden="true">?</span>
+                    </button>
+                    <div class="ai-image-upload-help-tooltip" id="${tooltipId}" role="tooltip">
+                        <strong>${escapeHtml(standard.title)}</strong>
+                        <p>${escapeHtml(standard.lead)}</p>
+                        ${standard.items.length ? `
+                            <ul>
+                                ${standard.items.map((item) => `
+                                    <li><b>${escapeHtml(item.label)}</b><span>${escapeHtml(item.value)}</span></li>
+                                `).join('')}
+                            </ul>
+                        ` : ''}
+                        ${standard.note ? `<small>${escapeHtml(standard.note)}</small>` : ''}
+                    </div>
+                </div>
+            `;
+        }
 
 	    function renderChatAttachmentChips(chatAttachments = []) {
 	        const attachments = normalizeChatAttachmentList(chatAttachments);
@@ -10792,8 +11100,16 @@
         const normalizedValue = String(value || '');
         const isLoading = isModelOptionsLoading(mode);
         const emptyModelLabel = isLoading ? '模型加载中' : '模型未配置';
-        const selected = options.find((option) => option.id === normalizedValue) || options[0] || { id: '', label: emptyModelLabel };
-        const selectedGroup = groups.find((group) => group.models.some((model) => model.id === selected.id));
+        const storedProviderId = getStoredModelProviderId(mode).toLowerCase();
+        const selected = options.find((option) => (
+            option.id === normalizedValue
+            && (!storedProviderId || String(option.providerId || '').trim().toLowerCase() === storedProviderId)
+        )) || options.find((option) => option.id === normalizedValue) || options[0] || { id: '', label: emptyModelLabel };
+        const selectedProviderId = String(selected.providerId || '').trim();
+        const selectedGroup = groups.find((group) => group.models.some((model) => (
+            model.id === selected.id
+            && (!selectedProviderId || String(model.providerId || '').trim() === selectedProviderId)
+        )));
         const hasOptions = options.length > 0;
         const isDisabled = disabled || !hasOptions;
         const isOpen = openSelect === field && !isDisabled;
@@ -10820,7 +11136,8 @@
                     <div class="ai-image-select-menu ai-image-model-menu" role="menu" aria-label="${escapeHtml(label)}">
                         ${groups.map((group, index) => {
                             const groupActive = group.providerId === selectedGroup?.providerId;
-                            const groupOpen = openModelProvider === group.providerId;
+                            const groupOpen = openModelProvider === group.providerId
+                                || group.models.some((model) => model.id === selected.id && model.providerId === openModelProvider);
                             return `
                                 <div class="ai-image-model-provider ${groupActive ? 'is-active' : ''} ${groupOpen ? 'is-open' : ''}" tabindex="0" role="menuitem" data-aiw-model-provider="${escapeHtml(group.providerId)}">
                                     <button class="ai-image-model-provider-trigger" type="button" tabindex="-1" aria-expanded="${groupOpen ? 'true' : 'false'}">
@@ -10829,9 +11146,9 @@
                                     </button>
                                     <div class="ai-image-model-submenu" role="menu" aria-label="${escapeHtml(group.label)}">
                                         ${group.models.map((model) => `
-                                            <button class="ai-image-select-option ${model.id === selected.id ? 'is-active' : ''}" type="button" role="menuitemradio" aria-checked="${model.id === selected.id ? 'true' : 'false'}" data-aiw-select-option data-aiw-select-field="${escapeHtml(field)}" data-aiw-select-value="${escapeHtml(model.id)}">
+                                            <button class="ai-image-select-option ${model.id === selected.id && (!selectedProviderId || model.providerId === selectedProviderId) ? 'is-active' : ''}" type="button" role="menuitemradio" aria-checked="${model.id === selected.id && (!selectedProviderId || model.providerId === selectedProviderId) ? 'true' : 'false'}" data-aiw-select-option data-aiw-select-field="${escapeHtml(field)}" data-aiw-select-value="${escapeHtml(model.id)}" data-aiw-select-provider="${escapeHtml(model.providerId || '')}">
                                                 <span>${escapeHtml(model.label || model.id)}</span>
-                                                ${model.id === selected.id ? '<i class="fas fa-check"></i>' : ''}
+                                                ${model.id === selected.id && (!selectedProviderId || model.providerId === selectedProviderId) ? '<i class="fas fa-check"></i>' : ''}
                                             </button>
                                         `).join('')}
                                     </div>
@@ -10868,6 +11185,9 @@
         const imageContext = getCurrentImageContext();
         const extraReferences = getExtraReferenceImages();
         const hasImage = Boolean(imageContext.image);
+        const canUseComposerImages = inferredMode !== 'chat' || shouldExposeChatImageInput();
+        const hasVisibleImage = hasImage && canUseComposerImages;
+        const visibleExtraReferences = canUseComposerImages ? extraReferences : [];
         const isImplicitContinuation = Boolean(imageContext.isContinuation);
         const modeLabel = getModeLabel(inferredMode);
         const canSubmit = canSubmitWorkbench(inferredMode);
@@ -10877,7 +11197,7 @@
         const submitLabel = inferredMode === 'chat' ? '发送消息' : modeLabel;
         const busyTask = getActiveDisplayTask();
         const canCancel = Boolean(busyTask && isBusyTask(busyTask));
-        const promptPlaceholder = hasImage
+        const promptPlaceholder = hasVisibleImage
             ? (inferredMode === 'chat'
                 ? '围绕已上传图片提问，或继续输入你的问题'
                 : (isImplicitContinuation ? '基于上方生成图继续描述你的调整方向' : (isVariationReference ? '描述你希望基于这张图发散出的方向' : '描述你想如何处理这张图，或输入“反推提示词”')))
@@ -10889,21 +11209,22 @@
             ? getResultPreviewPayload(continuationMatch?.task || imageContext.sourceTask, continuationMatch?.image, imageContext.image)
             : null;
         const uploadButtonHtml = renderComposerUploadButton(inferredMode);
+        const uploadHelpHtml = uploadButtonHtml ? renderComposerUploadHelp(inferredMode) : '';
         const chatAttachments = inferredMode === 'chat' ? normalizeChatAttachmentList(state.chatAttachments) : [];
         return `
             <div class="ai-image-main-composer">
-                ${hasImage || extraReferences.length || chatAttachments.length ? `
+                ${hasVisibleImage || visibleExtraReferences.length || chatAttachments.length ? `
                     <div class="ai-image-main-attachments">
-                        ${hasImage ? `
+                        ${hasVisibleImage ? `
                             <div class="ai-image-main-reference ${isImplicitContinuation ? 'is-implicit' : ''}" role="button" tabindex="0" data-aiw-reference-preview="${isImplicitContinuation ? 'continuation' : 'reference'}" data-aiw-preview-src="${escapeHtml(continuationPreview?.previewSrc || imageContext.image)}" data-aiw-preview-original-src="${escapeHtml(continuationPreview?.originalSrc || imageContext.image)}" data-aiw-preview-bytes="${escapeHtml(continuationPreview?.previewBytes || 0)}" data-aiw-original-bytes="${escapeHtml(continuationPreview?.originalBytes || 0)}" data-aiw-original-ready="${continuationPreview?.originalReady ? 'true' : 'false'}" data-aiw-original-status="${escapeHtml(continuationPreview?.originalStatus || '')}" data-aiw-preview-title="${escapeHtml(continuationPreview?.title || imageContext.title || '参考图片')}" data-aiw-preview-meta="${escapeHtml(continuationPreview?.meta || '参考图片')}" data-task-id="${escapeHtml(imageContext.sourceTask?.id || state.continuationImage?.taskId || '')}" data-result-id="${escapeHtml(imageContext.resultId || state.continuationImage?.resultId || '')}" data-result-index="${escapeHtml(imageContext.resultIndex || state.continuationImage?.resultIndex || '')}" aria-label="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}" title="${escapeHtml(isImplicitContinuation ? '定位自动续作底图' : '预览参考图片')}">
                                 <span><img src="${escapeHtml(imageContext.image)}" alt="参考图片"></span>
                                 ${isImplicitContinuation ? '' : `<strong>${escapeHtml(isVariationReference ? '图像发散' : (imageContext.title || '参考图片'))}</strong>`}
                                 ${isImplicitContinuation ? '<em>自动续作</em>' : '<button type="button" data-aiw-action="clear-reference" aria-label="清除参考图片"><i class="fas fa-xmark"></i></button>'}
                             </div>
                         ` : ''}
-                        ${extraReferences.length ? `
+                        ${visibleExtraReferences.length ? `
                             <div class="ai-image-main-reference-list" aria-label="额外参考图">
-                                ${extraReferences.map((item, index) => `
+                                ${visibleExtraReferences.map((item, index) => `
                                     <span class="ai-image-main-reference-chip" role="button" tabindex="0" data-aiw-reference-preview="reference" data-aiw-preview-src="${escapeHtml(item.image)}" data-aiw-preview-original-src="${escapeHtml(item.image)}" data-aiw-original-ready="true" data-aiw-preview-title="${escapeHtml(`参考 ${index + 1}`)}" data-aiw-preview-meta="参考图片" aria-label="预览参考图 ${index + 1}" title="预览参考图 ${index + 1}">
                                         <img src="${escapeHtml(item.image)}" alt="参考图 ${index + 1}">
                                         <em>${escapeHtml(`参考 ${index + 1}`)}</em>
@@ -10925,6 +11246,7 @@
                 ` : ''}
                 <div class="ai-image-main-composer-input ${uploadButtonHtml ? '' : 'has-no-upload'}">
                     <div class="ai-image-main-attach-action">
+                        ${uploadHelpHtml}
                         ${uploadButtonHtml}
                     </div>
                     <textarea class="ai-image-main-prompt" data-aiw-prompt rows="1" placeholder="${escapeHtml(promptPlaceholder)}"${isMobileKeyboardDevice() ? ' readonly inputmode="none" tabindex="-1" role="button" aria-haspopup="dialog"' : ''}>${escapeHtml(state.prompt)}</textarea>
@@ -10935,41 +11257,42 @@
                     </div>
                 </div>
                 <div class="ai-image-main-tools">
-                    <span class="ai-image-main-billing ${state.billingMode ? '' : 'is-missing'}" data-aiw-action="toggle-billing"><i class="fas fa-gem"></i>${escapeHtml(getActiveBillingLabel())}</span>
-                    ${isVideoMode(inferredMode) ? `${renderVideoComposerControls({ compactLabels: true })}${renderVideoSettingsSelect()}` : ''}
-                    ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderImageSettingsSelect() : ''}
-                    ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
-                        field: 'ratio',
-                        label: '比例',
-                        icon: 'fa-crop-simple',
-                        value: state.ratio,
-                        options: Object.entries(RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
-                    }) : ''}
-                    ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
-                        field: 'resolution',
-                        label: '分辨率',
-                        icon: 'fa-expand',
-                        value: state.resolution,
-                        options: Object.entries(RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
-                    }) : ''}
-                    ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
-                        field: 'quantity',
-                        label: '数量',
-                        icon: 'fa-layer-group',
-                        value: String(state.quantity),
-                        options: [1, 2, 4].map((value) => ({ value: String(value), label: `${value} 张` }))
-                    }) : ''}
-                    ${renderModelProviderSelect({
-                        field: modelField,
-                        label: '模型',
-                        icon: 'fa-microchip',
-                        value: getActiveModelValue(inferredMode),
-                        mode: inferredMode,
-                        disabled: !modelOptions.length,
-	                    })}
-                    ${inferredMode === 'chat' ? renderChatSettingsSelect() : ''}
-                    ${inferredMode === 'chat' ? renderChatMemoryControl() : ''}
-                    ${inferredMode === 'chat' ? renderChatModelCapabilityControls() : ''}
+                    <div class="ai-image-main-tool-options">
+                        ${isVideoMode(inferredMode) ? `${renderVideoComposerControls({ compactLabels: true })}${renderVideoSettingsSelect()}` : ''}
+                        ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderImageSettingsSelect() : ''}
+                        ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
+                            field: 'ratio',
+                            label: '比例',
+                            icon: 'fa-crop-simple',
+                            value: state.ratio,
+                            options: Object.entries(RATIO_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                        }) : ''}
+                        ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
+                            field: 'resolution',
+                            label: '分辨率',
+                            icon: 'fa-expand',
+                            value: state.resolution,
+                            options: Object.entries(RESOLUTION_META).map(([id, meta]) => ({ value: id, label: meta.label }))
+                        }) : ''}
+                        ${!isTextVisionMode(inferredMode) && !isVideoMode(inferredMode) ? renderCustomSelect({
+                            field: 'quantity',
+                            label: '数量',
+                            icon: 'fa-layer-group',
+                            value: String(state.quantity),
+                            options: [1, 2, 4].map((value) => ({ value: String(value), label: `${value} 张` }))
+                        }) : ''}
+                        ${renderModelProviderSelect({
+                            field: modelField,
+                            label: '模型',
+                            icon: 'fa-microchip',
+                            value: getActiveModelValue(inferredMode),
+                            mode: inferredMode,
+                            disabled: !modelOptions.length,
+                        })}
+                        ${inferredMode === 'chat' ? renderChatSettingsSelect() : ''}
+                        ${inferredMode === 'chat' ? renderChatMemoryControl() : ''}
+                        ${inferredMode === 'chat' ? renderChatModelCapabilityControls() : ''}
+                    </div>
                     <span class="ai-image-main-cost"${canCancel && busyTask?.id ? ` data-aiw-live-status-task-id="${escapeHtml(busyTask.id)}" data-aiw-live-status-kind="composer"` : ''}>${escapeHtml(canCancel ? (busyTask?.mode === 'chat' ? getComposerBusyLabel(busyTask) : getStatusLabel(busyTask)) : getComposerCostValue(inferredMode))}</span>
                 </div>
             </div>
@@ -12065,6 +12388,12 @@
         const badgeValue = busyCount || '';
         const isHistoryView = sidebarView === 'history';
         const isBillingView = sidebarView === 'billing';
+        const currentToolMode = getCurrentWorkbenchToolMode();
+        const railModeOptions = [
+            { id: 'chat', label: '聊天', icon: 'fa-comments' },
+            { id: 'image', label: '图片', icon: 'fa-image' },
+            { id: 'video', label: '视频', icon: 'fa-film', available: getActiveModelOptions('video').length > 0 }
+        ];
 
         return `
             <aside class="ai-image-history-sidebar ${sidebarView ? 'is-expanded' : 'is-collapsed'}" aria-label="${isBillingView ? '计费方式' : '生成记录'}">
@@ -12083,17 +12412,31 @@
                         <i class="fas ${escapeHtml(statusIcon)}"></i>
                         ${badgeValue ? `<span>${escapeHtml(badgeValue)}</span>` : ''}
                     </button>
-                    <nav class="ai-image-rail-legal ai-image-rail-legal--desktop" aria-label="平台政策">
-                        <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" title="服务条款" data-rail-label="条款">
-                            <i class="fas fa-file-contract" aria-hidden="true"></i>
-                        </a>
-                    </nav>
-                    <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" title="计费方式" data-rail-label="计费">
-                        <i class="fas fa-gem"></i>
-                    </button>
-                    <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭" data-rail-label="关闭">
-                        <i class="fas fa-xmark"></i>
-                    </button>
+                    <div class="ai-image-rail-mode-switcher" role="group" aria-label="工作模式">
+                        ${railModeOptions.map((item) => {
+                            const available = item.available !== false;
+                            const active = currentToolMode === item.id;
+                            const title = available ? `切换到${item.label}` : '暂未配置视频模型';
+                            return `
+                                <button class="ai-image-rail-btn ai-image-rail-mode-btn ${active ? 'is-active' : ''} ${available ? '' : 'is-disabled'}" type="button" data-aiw-action="set-workbench-tool-mode" data-aiw-tool-mode="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.label)}" aria-pressed="${active ? 'true' : 'false'}" title="${escapeHtml(title)}" data-rail-label="${escapeHtml(item.label)}" ${available ? '' : 'disabled'}>
+                                    <i class="fas ${escapeHtml(item.icon)}" aria-hidden="true"></i>
+                                </button>
+                            `;
+                        }).join('')}
+                    </div>
+                    <div class="ai-image-rail-footer">
+                        <nav class="ai-image-rail-legal ai-image-rail-legal--desktop" aria-label="平台政策">
+                            <a class="ai-image-rail-legal-link" href="/terms.html" target="_blank" rel="noopener noreferrer" aria-label="查看服务条款" title="服务条款" data-rail-label="条款">
+                                <i class="fas fa-file-contract" aria-hidden="true"></i>
+                            </a>
+                        </nav>
+                        <button class="ai-image-rail-btn ai-image-rail-wallet ${isBillingView ? 'is-active' : ''}" type="button" data-aiw-action="toggle-billing" aria-label="${isBillingView ? '收起计费方式' : '展开计费方式'}" aria-expanded="${isBillingView ? 'true' : 'false'}" title="计费方式" data-rail-label="计费">
+                            <i class="fas fa-gem"></i>
+                        </button>
+                        <button class="ai-image-rail-btn ai-image-rail-close" type="button" data-aiw-action="close" aria-label="关闭 AI 工作台" title="关闭" data-rail-label="关闭">
+                            <i class="fas fa-xmark"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="ai-image-history-expanded">
@@ -12125,39 +12468,6 @@
         const discoveryMessage = String(modelDiscoveryState.message || '').trim();
         const discoveryToneClass = modelDiscoveryState.tone ? ` is-${modelDiscoveryState.tone}` : '';
         const canDiscoverModels = apiBaseConfigured && (hasTypedApiKey || Boolean(storedApiKey));
-        const currentToolMode = getCurrentWorkbenchToolMode();
-        const toolChatCopy = state.billingMode === 'api'
-            ? '使用当前 API Key 的对话模型，消耗 API token。'
-            : '使用后台对话模型，按积分规则计费。';
-        const toolImageCopy = state.billingMode === 'api'
-            ? '使用当前 API Key 的生图模型，消耗 API 图片额度。'
-            : '使用后台生图模型，按积分规则计费。';
-        const toolVideoCopy = state.billingMode === 'api'
-            ? '使用当前 API Key 的视频模型，消耗 API 视频额度。'
-            : '使用后台视频模型，按积分规则计费。';
-        const toolCards = [
-            {
-                id: 'chat',
-                icon: 'fa-comments',
-                label: '文本对话',
-                copy: toolChatCopy,
-                visible: getActiveModelOptions('chat').length > 0 || !isRuntimeModelSourceLockedForBillingMode()
-            },
-            {
-                id: 'image',
-                icon: 'fa-image',
-                label: '生成图片',
-                copy: toolImageCopy,
-                visible: getActiveModelOptions('text').length > 0 || !isRuntimeModelSourceLockedForBillingMode()
-            },
-            {
-                id: 'video',
-                icon: 'fa-film',
-                label: '生成视频',
-                copy: toolVideoCopy,
-                visible: getActiveModelOptions('video').length > 0
-            }
-        ].filter((item) => item.visible);
         return `
             <div class="ai-image-history-scroll">
                 <div class="ai-image-history-head">
@@ -12194,18 +12504,6 @@
                         <div class="ai-image-billing-note">
                             <i class="fas fa-circle-info"></i>
                             <span>积分模式按后台价格规则计费，任务成功后扣除积分，失败不扣费。</span>
-                        </div>
-                    ` : ''}
-
-                    ${state.billingMode ? `
-                        <div class="ai-image-billing-choice ai-image-billing-choice--tool">
-                            ${toolCards.map((item) => `
-                                <button class="ai-image-billing-card ${currentToolMode === item.id ? 'is-active' : ''}" type="button" data-aiw-chip="apiTool:${escapeHtml(item.id)}">
-                                    <span><i class="fas ${escapeHtml(item.icon)}"></i></span>
-                                    <strong>${escapeHtml(item.label)}</strong>
-                                    <em>${escapeHtml(item.copy)}</em>
-                                </button>
-                            `).join('')}
                         </div>
                     ` : ''}
 

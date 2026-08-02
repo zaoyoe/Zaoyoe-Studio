@@ -3603,6 +3603,16 @@ function bindAdminStudioDelegatedControls() {
                     compact: true
                 });
                 break;
+            case 'settings-test-ai-image-model-provider-failed':
+                runAdminStudioActionFeedback(actionEl, () => window.retryAiImageFailedModelChecks?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || ''), {
+                    loadingText: '重检中...',
+                    successText: '重检完成',
+                    errorText: '仍有故障',
+                    restoreOnNull: true,
+                    silentErrors: true,
+                    compact: true
+                });
+                break;
             case 'settings-discover-ai-image-model-provider':
                 runAdminStudioActionFeedback(actionEl, () => window.discoverAiImageModelConfig?.(actionEl.dataset.providerId || actionEl.dataset.provider_id || ''), {
                     loadingText: '检测中...',
@@ -9656,7 +9666,9 @@ function getAiImageProviderProbeStatus(probe = null, provider = {}) {
             tone: 'loading',
             text: isDiscoveryProbe
                 ? `正在检测「${probe.providerLabel || providerLabel}」上游支持模型...`
-                : `正在运行「${probe.providerLabel || providerLabel}」模型可用性自检...`
+                : (probe.retryFailedOnly
+                    ? `正在重新检测「${probe.providerLabel || providerLabel}」的故障模型...`
+                    : `正在运行「${probe.providerLabel || providerLabel}」模型可用性自检...`)
         };
     }
 
@@ -9689,9 +9701,18 @@ function getAiImageProviderProbeStatus(probe = null, provider = {}) {
         };
     }
     if (Array.isArray(probe.checks) && probe.checks.length) {
+        const unverified = Number(probe.unverified || probe.checks.filter((item) => item.verificationStatus === 'unverified').length || 0);
+        const unsupported = Number(probe.unsupported || probe.checks.filter((item) => item.verificationStatus === 'unsupported').length || 0);
+        const failed = Number(probe.failed || probe.checks.filter((item) => !item.ok).length || 0);
+        const otherFailures = Math.max(0, failed - unverified - unsupported);
+        const failureSummary = [
+            unverified ? `${unverified} 项未验证` : '',
+            unsupported ? `${unsupported} 项明确不支持` : '',
+            otherFailures ? `${otherFailures} 项失败` : ''
+        ].filter(Boolean).join('，');
         return {
-            tone: 'error',
-            text: `模型自检完成：${probe.passed || 0}/${probe.total || probe.checks.length} 项通过，${probe.failed || 0} 项失败`
+            tone: unverified > 0 && unsupported === 0 && otherFailures === 0 ? 'warning' : 'error',
+            text: `模型自检完成：${probe.passed || 0}/${probe.total || probe.checks.length} 项通过，${failureSummary || `${failed} 项失败`}`
         };
     }
     return {
@@ -9753,14 +9774,16 @@ function renderAiImageProbeGridHtml(probe = null, provider = {}) {
         const latency = Number(item.latencyMs || 0)
             ? `${(Number(item.latencyMs) / 1000).toFixed(1)}s`
             : '-';
-        const statusLabel = item.ok ? '可用' : '失败';
+        const verificationStatus = String(item.verificationStatus || '').trim().toLowerCase();
+        const isUnverified = !item.ok && verificationStatus === 'unverified';
+        const statusLabel = item.ok ? '可用' : (isUnverified ? '未验证' : (verificationStatus === 'unsupported' ? '不支持' : '失败'));
         const upstreamText = getAiImageProbeUpstreamText(item.upstream);
         const detail = item.ok
-            ? `${item.model || ''} · ${item.endpoint || ''} · ${item.size || ''} · ${item.resultType || '结果'} · ${latency}${upstreamText ? ` · ${upstreamText}` : ''}`
-            : `${item.code || 'probe_failed'} · ${item.message || '上游不可用'}${upstreamText ? ` · ${upstreamText}` : ''}`;
+            ? `${item.model || ''} · ${item.endpoint || ''}${item.fallbackFrom ? `（由 ${item.fallbackFrom} 回退）` : ''} · ${item.size || ''} · ${item.resultType || '结果'} · ${latency}${upstreamText ? ` · ${upstreamText}` : ''}`
+            : `${item.model || ''} · ${item.code || 'probe_failed'} · ${item.message || '上游不可用'}${upstreamText ? ` · ${upstreamText}` : ''}`;
         return `
-            <div class="ai-image-admin-probe-item ${item.ok ? 'is-ok' : 'is-error'}">
-                <strong>${escapeHtml([modeLabel, String(item.resolution || '').toUpperCase()].filter(Boolean).join(' · '))}</strong>
+            <div class="ai-image-admin-probe-item ${item.ok ? 'is-ok' : (isUnverified ? 'is-warning' : 'is-error')}">
+                <strong>${escapeHtml([item.model || '', modeLabel, String(item.resolution || '').toUpperCase()].filter(Boolean).join(' · '))}</strong>
                 <span>${escapeHtml(statusLabel)}</span>
                 <em>${escapeHtml(detail)}</em>
             </div>
@@ -10493,6 +10516,7 @@ function renderAiImageModelConfigPanel() {
     const providerList = document.getElementById('aiImageModelProviderList');
     const providerDetail = document.getElementById('aiImageModelProviderDetail');
     const probeButton = document.getElementById('aiImageModelProbeButton');
+    const failedProbeButton = document.getElementById('aiImageFailedModelProbeButton');
     const discoveryButton = document.getElementById('aiImageModelDiscoveryButton');
     const deleteButton = document.getElementById('aiImageModelDeleteButton');
 
@@ -10601,12 +10625,26 @@ function renderAiImageModelConfigPanel() {
     }
 
     const canProbe = Boolean(provider.configured);
+    const providerProbe = getAiImageProviderProbe(provider.providerId || '');
+    const failedProbeCount = Array.isArray(providerProbe?.checks)
+        ? providerProbe.checks.filter((item) => !item.ok).length
+        : 0;
+    const canRetryFailedProbe = canProbe && !providerProbe?.pending && failedProbeCount > 0;
     const canDelete = provider.source === 'stored';
     [
         {
             button: probeButton,
             enabled: canProbe,
             title: canProbe ? '检测当前上游的前台可见模型可用性' : '请先录入并保存 API Key 后再运行模型自检'
+        },
+        {
+            button: failedProbeButton,
+            enabled: canRetryFailedProbe,
+            title: canRetryFailedProbe
+                ? `只重新检测当前 ${failedProbeCount} 个失败或未验证项目，跳过绿色可用项目`
+                : (providerProbe?.pending
+                    ? '请等待当前模型自检完成'
+                    : '当前没有需要重新检测的失败或未验证项目')
         },
         {
             button: discoveryButton,
@@ -11020,21 +11058,14 @@ async function testAiImageModelConfig(providerId = '') {
             ...draft
         });
         const check = payload.check && typeof payload.check === 'object' ? payload.check : {};
-        const nextVisionModels = mergeAiImageModelCandidates(
-            draft.visionModels,
-            draft.vision_models,
-            check.visionModels,
-            check.vision_models
-        );
-        if (nextVisionModels.length) {
-            const nextDraft = {
-                ...draft,
-                visionModels: nextVisionModels,
-                vision_models: nextVisionModels
-            };
-            updateAiImageModelProviderInConfig(draft.providerId, nextDraft);
-            setAiImageHiddenModelInputValues(nextDraft);
-        }
+        const nextVisionModels = mergeAiImageModelCandidates(check.visionModels, check.vision_models);
+        const nextDraft = {
+            ...draft,
+            visionModels: nextVisionModels,
+            vision_models: nextVisionModels
+        };
+        updateAiImageModelProviderInConfig(draft.providerId, nextDraft);
+        setAiImageHiddenModelInputValues(nextDraft);
         setAiImageModelProbe({
             ok: check.ok !== false,
             providerId: draft.providerId,
@@ -11044,6 +11075,8 @@ async function testAiImageModelConfig(providerId = '') {
             latencyMs: check.latencyMs || 0,
             passed: Number(check.passed || 0),
             failed: Number(check.failed || 0),
+            unverified: Number(check.unverified || 0),
+            unsupported: Number(check.unsupported || 0),
             total: Number(check.total || 0),
             checks: Array.isArray(check.checks) ? check.checks : [],
             visionModels: nextVisionModels,
@@ -11065,6 +11098,117 @@ async function testAiImageModelConfig(providerId = '') {
         });
         renderAiImageModelConfigPanel();
         showAdminStudioToast(err.message || 'AI 图片模型可用性自检失败', 'error');
+        return false;
+    }
+}
+
+function getAiImageModelProbeCheckKey(item = {}) {
+    return [
+        String(item.model || '').trim().toLowerCase(),
+        String(item.mode || '').trim().toLowerCase(),
+        String(item.resolution || '').trim().toLowerCase()
+    ].join('\u0000');
+}
+
+function summarizeAiImageModelProbeChecks(checks = []) {
+    const normalizedChecks = Array.isArray(checks) ? checks : [];
+    const passed = normalizedChecks.filter((item) => item.ok).length;
+    const failed = normalizedChecks.length - passed;
+    const unverified = normalizedChecks.filter((item) => !item.ok && item.verificationStatus === 'unverified').length;
+    const unsupported = normalizedChecks.filter((item) => !item.ok && item.verificationStatus === 'unsupported').length;
+    return {
+        ok: failed === 0,
+        passed,
+        failed,
+        unverified,
+        unsupported,
+        total: normalizedChecks.length,
+        checks: normalizedChecks
+    };
+}
+
+async function retryAiImageFailedModelChecks(providerId = '') {
+    const { draft, provider } = getAiImageProviderDraftForAction(providerId);
+    const probe = getAiImageProviderProbe(draft.providerId);
+    const failedChecks = Array.isArray(probe?.checks)
+        ? probe.checks.filter((item) => !item.ok)
+        : [];
+
+    if (!failedChecks.length) {
+        showAdminStudioToast('当前没有失败或未验证项目需要重新检测。', 'info');
+        return null;
+    }
+    if (!provider?.configured) {
+        showAdminStudioToast('请先录入并保存 AI 图片 API Key，再重新检测故障模型。', 'warning');
+        return false;
+    }
+
+    const probeTargets = failedChecks.map((item) => ({
+        model: item.model,
+        mode: item.mode,
+        resolution: item.resolution || ''
+    }));
+    setAiImageModelProbe({
+        ...probe,
+        pending: true,
+        retryFailedOnly: true,
+        providerId: draft.providerId,
+        providerLabel: draft.label || provider.label || draft.providerId
+    });
+    renderAiImageModelConfigPanel();
+
+    try {
+        showAdminStudioToast(`正在重新检测 ${probeTargets.length} 个失败和未验证项目...`, 'info');
+        const payload = await postAiImageModelConfig({
+            action: 'test-model',
+            matrix: true,
+            discoverModels: false,
+            probeTargets,
+            ...draft
+        });
+        const check = payload.check && typeof payload.check === 'object' ? payload.check : {};
+        const retriedChecks = Array.isArray(check.checks) ? check.checks : [];
+        const retriedCheckMap = new Map(retriedChecks.map((item) => [getAiImageModelProbeCheckKey(item), item]));
+        const mergedChecks = probe.checks.map((item) => retriedCheckMap.get(getAiImageModelProbeCheckKey(item)) || item);
+        const summary = summarizeAiImageModelProbeChecks(mergedChecks);
+        const nextVisionModels = mergeAiImageModelCandidates(
+            mergedChecks
+                .filter((item) => item.ok && item.mode === 'vision')
+                .map((item) => item.model)
+        );
+        const nextDraft = {
+            ...draft,
+            visionModels: nextVisionModels,
+            vision_models: nextVisionModels
+        };
+        updateAiImageModelProviderInConfig(draft.providerId, nextDraft);
+        setAiImageHiddenModelInputValues(nextDraft);
+        setAiImageModelProbe({
+            ...probe,
+            ...summary,
+            pending: false,
+            retryFailedOnly: false,
+            providerId: draft.providerId,
+            providerLabel: draft.label || provider.label || draft.providerId,
+            visionModels: nextVisionModels,
+            vision_models: nextVisionModels
+        });
+        renderAiImageModelConfigPanel();
+        showAdminStudioToast(
+            summary.ok ? '故障模型自检完成，所有项目现已可用。' : `故障模型自检完成，仍有 ${summary.failed} 个项目未通过。`,
+            summary.ok ? 'success' : 'warning'
+        );
+        return summary.ok;
+    } catch (err) {
+        console.error('Failed to retry AI image model checks:', err);
+        setAiImageModelProbe({
+            ...probe,
+            pending: false,
+            retryFailedOnly: false,
+            message: err.message || probe.message || '故障模型自检失败'
+        });
+        renderAiImageModelConfigPanel();
+        showAdminStudioToast(err.message || '故障模型自检失败', 'error');
         return false;
     }
 }
@@ -13376,6 +13520,7 @@ window.classifyAiImageUnknownModel = classifyAiImageUnknownModel;
 window.promptForAiImageModelKey = promptForAiImageModelKey;
 window.saveAiImageModelConfig = saveAiImageModelConfig;
 window.testAiImageModelConfig = testAiImageModelConfig;
+window.retryAiImageFailedModelChecks = retryAiImageFailedModelChecks;
 window.discoverAiImageModelConfig = discoverAiImageModelConfig;
 window.deleteAiImageModelConfig = deleteAiImageModelConfig;
 window.saveAiImageApiBaseUrl = saveAiImageApiBaseUrl;

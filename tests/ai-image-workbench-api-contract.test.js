@@ -51,6 +51,17 @@ function loadRuntimePricingRuleModes() {
     return context.getRuntimePricingRuleModes;
 }
 
+function loadUniqueModelOptions() {
+    const functionMatch = source.match(/function uniqueModelOptions\(options = \[\]\) \{[\s\S]*?\n    \}/);
+    assert.ok(functionMatch, 'missing uniqueModelOptions');
+    const context = {};
+    vm.runInNewContext([
+        functionMatch[0],
+        'globalThis.uniqueModelOptions = uniqueModelOptions;'
+    ].join('\n'), context);
+    return context.uniqueModelOptions;
+}
+
 function getCssRuleBlock(cssSource, selector) {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = cssSource.match(new RegExp(`(^|\\n)${escaped}\\s*\\{[\\s\\S]*?\\n\\}`));
@@ -87,10 +98,10 @@ test('verify server accepts the documented reference image upload size', () => {
 test('prompts page loads ai image workbench assets', () => {
     const promptsSource = fs.readFileSync(path.resolve(__dirname, '../prompts.html'), 'utf8');
     assert.match(promptsSource, /<link[^>]+href="css\/ai-image-workbench\.css\?v=[^"]+"/);
-    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260801_AI_WORKBENCH_COMPOSER_WIDE_1/);
+    assert.match(promptsSource, /css\/ai-image-workbench\.css\?v=20260802_AI_WORKBENCH_RAIL_MODES_8/);
     assert.match(promptsSource, /modelPricing=20260729_AI_MODEL_PRICING_36/);
-    assert.match(promptsSource, /js\/ai-chat-model-capabilities\.js\?v=20260801_AI_CHAT_MODEL_CAPABILITIES_1/);
-    assert.match(promptsSource, /v=20260801_AI_WORKBENCH_COMPOSER_WIDE_1/);
+    assert.match(promptsSource, /js\/ai-chat-model-capabilities\.js\?v=20260802_AI_CHAT_IMAGE_INPUT_POLICY_1/);
+    assert.match(promptsSource, /v=20260802_AI_WORKBENCH_RAIL_MODES_5/);
     assert.match(promptsSource, /legalPolicies=20260730_AI_WORKBENCH_LEGAL_2/);
     assert.match(promptsSource, /workbenchPerf=20260729_AI_WORKBENCH_SCROLL_PERF_2/);
     assert.match(promptsSource, /<script[^>]+src="js\/ai-image-workbench\.js\?v=[^"]+"[^>]+defer><\/script>/);
@@ -105,11 +116,40 @@ test('ai image workbench keeps one compact terms entry visible in the sidebar', 
     assert.equal((source.match(/class="ai-image-rail-legal-link"/g) || []).length, 2);
     assert.doesNotMatch(source, /data-rail-label="隐私"/);
     assert.doesNotMatch(source, /data-rail-label="退款"/);
-    assert.match(cssSource, /\.ai-image-rail-legal\s*\{[\s\S]*margin-top: auto;/);
+    assert.match(cssSource, /\.ai-image-rail-mode-switcher\s*\{[\s\S]*flex-direction: column;[\s\S]*margin: auto 0;/);
+    assert.match(cssSource, /\.ai-image-rail-footer\s*\{[\s\S]*flex-direction: column;/);
+    assert.match(cssSource, /\.ai-image-rail-legal\s*\{[\s\S]*margin-top: 0;/);
     assert.match(cssSource, /\.ai-image-rail-legal\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;/);
     assert.match(cssSource, /html\[data-theme="dark"\] \.ai-image-rail-legal\s*\{[\s\S]*background: transparent;/);
+    assert.match(cssSource, /\.ai-image-rail-legal-link\s*\{[\s\S]*font-size:\s*16px;/);
+    assert.match(cssSource, /\.ai-image-rail-legal-link::after\s*\{[\s\S]*font-size:\s*12px;/);
+    assert.match(cssSource, /\.ai-image-rail-legal-link\s*\{[\s\S]*border:\s*1px solid transparent;[\s\S]*border-radius:\s*8px;/);
+    assert.match(cssSource, /\.ai-image-rail-legal-link:hover,\s*\.ai-image-rail-legal-link:focus-visible\s*\{[\s\S]*border-color:\s*rgba\(95, 143, 188, 0\.38\);/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal-link\s*\{[\s\S]*font-size:\s*15px;/);
     assert.match(cssSource, /\.ai-image-history-sidebar\.is-collapsed:hover \.ai-image-rail-legal-link::after\s*\{[\s\S]*opacity: 1;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-legal--mobile\s*\{[\s\S]*display: grid;[\s\S]*grid-template-columns: auto;/);
+});
+
+test('ai image workbench exposes chat image and video switches in the sidebar rail', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(source, /const currentToolMode = getCurrentWorkbenchToolMode\(\);/);
+    assert.match(source, /class="ai-image-rail-mode-switcher" role="group" aria-label="工作模式"/);
+    assert.match(source, /data-aiw-action="set-workbench-tool-mode" data-aiw-tool-mode="\$\{escapeHtml\(item\.id\)\}"/);
+    assert.match(source, /\{ id: 'chat', label: '聊天', icon: 'fa-comments' \}/);
+    assert.match(source, /\{ id: 'image', label: '图片', icon: 'fa-image' \}/);
+    assert.match(source, /\{ id: 'video', label: '视频', icon: 'fa-film', available: getActiveModelOptions\('video'\)\.length > 0 \}/);
+    assert.match(source, /if \(action === 'set-workbench-tool-mode'\) \{/);
+    assert.match(source, /setWorkbenchToolMode\(mode\);[\s\S]*renderMainComposerOnly\(\);[\s\S]*syncWorkbenchRailModeState\(\);[\s\S]*persistState\(\);/);
+    assert.match(source, /function syncWorkbenchRailModeState\(\)/);
+    assert.match(source, /if \(state\.mode === 'chat' && !state\.apiImageTool\) return 'chat';/);
+    assert.match(cssSource, /\.ai-image-rail-mode-btn\.is-active,[\s\S]*border-color: transparent;[\s\S]*background: transparent;/);
+    assert.match(cssSource, /html\[data-theme="dark"\] \.ai-image-rail-mode-btn\.is-active,[\s\S]*border-color: transparent;[\s\S]*background: transparent;/);
+    assert.match(cssSource, /\.ai-image-rail-btn\.ai-image-rail-mode-btn:not\(:disabled\):hover,[\s\S]*border-color: transparent;[\s\S]*color: var\(--aiw-blue\);[\s\S]*background: transparent;/);
+    assert.match(cssSource, /\.ai-image-rail-mode-btn i\s*\{[\s\S]*width: 26px;[\s\S]*min-width: 26px;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-mode-switcher\s*\{[\s\S]*position: absolute;[\s\S]*top: 50%;[\s\S]*left: 50%;[\s\S]*transform: translate\(-50%, -50%\);/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-btn\.ai-image-rail-mode-btn,[\s\S]*border-color: transparent;[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
+    assert.match(cssSource, /\.ai-image-rail-mode-btn\.is-disabled,[\s\S]*\.ai-image-rail-mode-btn:disabled\s*\{[\s\S]*cursor: not-allowed;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-mode-switcher\s*\{[\s\S]*flex-direction: row;[\s\S]*margin: 0;/);
 });
 
 test('ai image dock drops behind the auth sheet while login is open', () => {
@@ -306,7 +346,8 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(source, /label: getRuntimeProviderFallbackLabel\(apiBaseUrl\)/);
     assert.match(source, /function applyRuntimeModelSelectionDefaults\(/);
     assert.match(source, /target === 'admin'/);
-    assert.match(source, /state\.pointsTextModel = textModels\[0\]\?\.id \|\| '';/);
+    assert.match(source, /applyDefault\(textModels, 'chat', target === 'admin' \? '' : DEFAULT_STATE\.apiTextModel\)/);
+    assert.match(source, /state\[providerKey\] = String\(selected\.providerId \|\| selected\.provider_id \|\| ''\)/);
     assert.match(source, /const hasExplicitProviders = Array\.isArray\(payload\?\.model_providers \|\| payload\?\.image_model_providers\);/);
     assert.match(source, /const hasExplicitDiscoveryResult = cache === true \|\| payload\?\.discovery \|\| payload\?\.source === 'upstream_discovery' \|\| hasExplicitProviders;/);
     assert.match(source, /runtimeApiImageModels = hasExplicitDiscoveryResult \? imageModels : \(imageModels\.length \? imageModels : API_IMAGE_MODELS\.slice\(\)\);/);
@@ -320,10 +361,9 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(source, /return 'Gemini';/);
     assert.match(source, /return 'ChatGPT';/);
     assert.match(source, /function groupRuntimeModelsByFamily\(providers = \[\], mode = inferWorkbenchMode\(\)\)/);
+    assert.match(source, /const dedupeKey = `\$\{providerId\}:\$\{key\}`;/);
     assert.match(source, /function filterRuntimeModelGroupsForMode\(groups = \[\], mode = inferWorkbenchMode\(\)\)/);
-    assert.match(source, /if \(model\.supportsImageInput === false\) return false;/);
-    assert.match(source, /if \(model\.supportsImageInput === true\) return true;/);
-    assert.match(source, /return modelLikelySupportsChatImageInput\(model\.id\);/);
+    assert.match(source, /resolveChatImageInputPolicyForOption\(model\)\.available/);
     assert.match(source, /filterRuntimeModelGroupsForMode\(groupRuntimeModelsByFamily\(providers, mode\), mode\)/);
     assert.match(source, /function getRuntimeModelProvidersForBillingMode\(\)/);
     assert.match(source, /return state\.billingMode === 'api' \? runtimeApiModelProviders : runtimeAdminModelProviders;/);
@@ -333,6 +373,8 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(source, /let openModelProvider = ''/);
     assert.match(source, /function getActiveModelProviderId\(mode = inferWorkbenchMode\(\)\)/);
     assert.match(source, /function renderModelProviderSelect\(\{ field, label, icon, value, mode = inferWorkbenchMode\(\), disabled = false, wide = false \}\)/);
+    assert.match(source, /data-aiw-select-provider/);
+    assert.match(source, /setStoredModelProviderId\(activeMode, selectedProviderId\)/);
     assert.match(source, /const options = getRuntimeModelGroupOptions\(mode\);/);
     assert.match(source, /function isModelOptionsLoading\(mode = inferWorkbenchMode\(\)\)/);
     assert.match(source, /const isLoading = isModelOptionsLoading\(mode\);/);
@@ -357,15 +399,12 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.match(source, /modelDiscoveryState\.loading/);
     assert.match(source, /if \(group === 'image'\) return looksLikeImageModelId\(id\) \|\| !looksLikeTextModelId\(id\);/);
     assert.match(source, /return !looksLikeImageModelId\(id\);/);
-    assert.match(source, /const toolChatCopy = state\.billingMode === 'api'/);
-    assert.match(source, /使用后台对话模型，按积分规则计费。/);
-    assert.match(source, /使用后台生图模型，按积分规则计费。/);
-    assert.match(source, /使用后台视频模型，按积分规则计费。/);
-    assert.match(source, /data-aiw-chip="apiTool:\$\{escapeHtml\(item\.id\)\}"/);
-    assert.match(source, /id: 'chat',\s*icon: 'fa-comments',\s*label: '文本对话'/);
-    assert.match(source, /id: 'image',\s*icon: 'fa-image',\s*label: '生成图片'/);
-    assert.match(source, /id: 'video',\s*icon: 'fa-film',\s*label: '生成视频'/);
-    assert.match(source, /visible: getActiveModelOptions\('video'\)\.length > 0/);
+    assert.doesNotMatch(source, /const toolCards = \[/);
+    assert.doesNotMatch(source, /class="ai-image-billing-choice ai-image-billing-choice--tool"/);
+    assert.doesNotMatch(source, /class="ai-image-main-billing/);
+    assert.doesNotMatch(source, /data-aiw-chip="apiTool:\$\{escapeHtml\(item\.id\)\}"/);
+    assert.match(source, /class="ai-image-rail-mode-switcher"/);
+    assert.match(source, /data-aiw-action="set-workbench-tool-mode"/);
     assert.match(source, /if \(field === 'apiTool'\) setWorkbenchToolMode\(value\);/);
     assert.match(source, /function getCurrentWorkbenchToolMode\(mode = inferWorkbenchMode\(\)\)/);
     assert.match(source, /if \(isVideoMode\(mode\)\) return 'video';/);
@@ -386,6 +425,15 @@ test('ai image workbench can discover upstream API models and refresh runtime op
     assert.doesNotMatch(cssSource, /\.ai-image-model-provider:hover > \.ai-image-model-provider-trigger,\s*\.ai-image-model-provider:focus-within > \.ai-image-model-provider-trigger,\s*\.ai-image-model-provider\.is-active > \.ai-image-model-provider-trigger/);
     assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-submenu\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /\.ai-image-main-tools \.ai-image-model-provider\.is-open > \.ai-image-model-submenu\s*\{[\s\S]*display: grid;/);
+});
+
+test('ai image workbench keeps same model IDs when they belong to different providers', () => {
+    const uniqueModelOptions = loadUniqueModelOptions();
+    const first = { id: 'gpt-image-2', providerId: 'channel-one', label: 'Channel One' };
+    const second = { id: 'gpt-image-2', providerId: 'channel-two', label: 'Channel Two' };
+    const duplicate = { id: 'gpt-image-2', providerId: 'channel-one', label: 'Duplicate' };
+
+    assert.deepEqual(uniqueModelOptions([first, second, duplicate]), [first, second]);
 });
 
 test('ai image new chat preserves current tool and billing mode', () => {
@@ -741,7 +789,7 @@ test('ai image workbench disables mobile pinch zoom only while open', () => {
     assert.match(source, /global\.addEventListener\?\.\('gesturestart', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gesturechange', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
     assert.match(source, /global\.addEventListener\?\.\('gestureend', handleWorkbenchViewportGesture, \{ passive: false \}\)/);
-    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260801_AI_WORKBENCH_COMPOSER_WIDE_1/);
+    assert.match(promptsSource, /js\/ai-image-workbench\.js\?v=20260802_AI_WORKBENCH_RAIL_MODES_5/);
 });
 
 test('ai image result cards always render compressed preview instead of original source', () => {
@@ -1234,14 +1282,15 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /chatThinkingMode: 'disabled'/);
 	    assert.match(source, /chatFastDefaultsVersion: 1/);
 	    assert.match(source, /storedFastDefaultsVersion < 1 && state\.chatThinkingMode === 'enabled'/);
-	    assert.match(source, /chatImageInput/);
+	    assert.doesNotMatch(source, /chatImageInput/);
 	    assert.match(source, /payload\.supportsImageInput = Boolean\(chatModelOption\.supportsImageInput\);/);
 	    assert.match(source, /Gemini 思考等级/);
 	    assert.match(source, /payload\.geminiThinkingLevel = geminiThinkingLevel/);
 	    assert.match(source, /Claude Extended Thinking/);
 	    assert.match(source, /Claude thinking budget_tokens/);
 	    assert.match(source, /payload\.claudeThinkingBudget = claudeThinkingBudget/);
-	    assert.match(source, /function modelLikelySupportsChatImageInput/);
+	    assert.doesNotMatch(source, /function modelLikelySupportsChatImageInput/);
+	    assert.match(source, /function getChatImageInputPolicy/);
 	    assert.match(source, /function shouldExposeChatImageInput/);
 	    assert.match(source, /function renderComposerUploadButton/);
 	    assert.match(source, /shouldExposeChatImageInput\(\) \? '上传图片或文档\/PDF' : '上传文档\/PDF'/);
@@ -1254,7 +1303,7 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /if \(reasoningEffort\) payload\.reasoningEffort = reasoningEffort/);
 	    assert.match(source, /if \(serviceTier\) payload\.serviceTier = serviceTier/);
 	    assert.match(source, /if \(thinkingMode\) payload\.thinkingMode = thinkingMode/);
-	    assert.match(source, /if \(imageInputMode\) payload\.imageInputMode = imageInputMode/);
+	    assert.match(source, /if \(task\.mode === 'chat'\) payload\.imageInputMode = 'auto';/);
 	    assert.match(source, /function getActiveChatThreadRoot\(\)/);
     assert.match(source, /function shouldKeepChatStagePinnedToBottom\(renderSnapshot = null, \{ force = false \} = \{\}\)/);
     assert.match(source, /const hasBusyChatTask = getTaskThread\(rootTask\)\.some\(\(task\) => task\.mode === 'chat' && isBusyTask\(task\)\)/);
@@ -1379,6 +1428,8 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /chatStagePinFrame = global\.requestAnimationFrame\(pinToBottom\)/);
 	    assert.match(source, /function getChatModelCapabilities/);
 	    assert.match(source, /function renderChatModelCapabilityControls/);
+	    assert.doesNotMatch(source, /id: 'imageInput'/);
+	    assert.doesNotMatch(source, /label: 'OpenAI 图片输入'/);
 	    assert.match(source, /const CHAT_SETTINGS_CAPABILITY_IDS = Object\.freeze\(\['thinking', 'reasoning', 'geminiThinking', 'claudeThinkingBudget'\]\)/);
 	    assert.match(source, /let openChatSettingsSection = 'memory'/);
 	    assert.match(source, /function getChatSettingsSections\(\)/);
@@ -1414,7 +1465,7 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /OpenAI 推理强度/);
 	    assert.match(source, /OpenAI 思考模式/);
 	    assert.match(source, /OpenAI 服务档位/);
-	    assert.match(source, /OpenAI 图片输入/);
+	    assert.doesNotMatch(source, /OpenAI 图片输入/);
 	    assert.doesNotMatch(source, /当前模型暂无可调选项/);
 	    assert.match(source, /label: 'minimal'/);
 	    assert.match(source, /label: 'low'/);
@@ -1585,6 +1636,7 @@ test('ai image workbench streams api chat in the current conversation thread', (
 	    assert.match(source, /function getComposerCostValue\(mode = inferWorkbenchMode\(\)\)/);
 	    assert.match(source, /return `\$\{formatPoints\(getCostEstimate\(mode\)\)\}积分`/);
 	    assert.match(source, /<div class="ai-image-main-submit-action">[\s\S]*ai-image-main-submit[\s\S]*<\/div>[\s\S]*<div class="ai-image-main-tools">[\s\S]*ai-image-main-cost[\s\S]*getComposerCostValue\(inferredMode\)/);
+	    assert.match(source, /<div class="ai-image-main-tools">\s*<div class="ai-image-main-tool-options">[\s\S]*<\/div>\s*<span class="ai-image-main-cost"/);
 	    assert.match(cssSource, /\.ai-image-main-composer-input\s*\{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\) auto/);
 	    assert.match(cssSource, /\.ai-image-main-attach-action\s*\{[\s\S]*justify-content: flex-start/);
 	    assert.match(cssSource, /\.ai-image-main-submit-action\s*\{[\s\S]*justify-content: flex-end/);
@@ -1609,6 +1661,37 @@ test('ai image workbench streams api chat in the current conversation thread', (
     assert.doesNotMatch(cssSource, /\.ai-image-text-result/);
     assert.doesNotMatch(cssSource, /\.ai-image-text-stats/);
     assert.doesNotMatch(cssSource, /\.ai-image-chat-bubble/);
+});
+
+test('ai image workbench explains model-specific upload standards above the plus button', () => {
+    const cssSource = fs.readFileSync(path.resolve(__dirname, '../css/ai-image-workbench.css'), 'utf8');
+    assert.match(source, /function getComposerUploadReferenceStandard\(mode = inferWorkbenchMode\(\)\)/);
+    assert.match(source, /function getSelectedModelOption\(mode = inferWorkbenchMode\(\)\)[\s\S]*model\.providerId === providerId/);
+    assert.match(source, /function getChatModelOption\(modelId = getActiveModelValue\('chat'\), providerId = getStoredModelProviderId\('chat'\)\)/);
+    assert.match(source, /当前渠道已通过读图自检/);
+    assert.match(source, /官方模型系列支持图片输入，但当前渠道尚未通过读图自检/);
+    assert.match(source, /未找到当前模型明确的上游或官方读图标准/);
+    assert.match(source, /TXT、MD、CSV、JSON、HTML、XML、LOG、PDF，最多 \$\{MAX_CHAT_ATTACHMENT_COUNT\} 个，单个不超过 8 MB/);
+    assert.match(source, /单文件最多 5 万字符，全部附件合计最多 12 万字符/);
+    assert.match(source, /文档由工作台在浏览器本地提取文本后发送，并非模型原生文件上传/);
+    assert.match(source, /最终图片能力取上游\/渠道验证、模型官方标准与工作台承载上限的交集/);
+    assert.match(source, /documentedModels = \['video-ds-2\.0', 'video-ds-2\.0-fast', 'as-sd2\.0-fast'\]/);
+    assert.match(source, /MP4、MOV、WebM，最多 3 个，建议 3-10 秒/);
+    assert.match(source, /MP3、M4A、WAV、AAC、OGG，最多 1 个，建议 2-15 秒且小于 15 MB/);
+    assert.match(source, /当前工作台加号仅直接上传图片；视频和音频需先取得公网 URL/);
+    assert.match(source, /supportsDocumentedImageEdits = \['gpt-image-2', 'gpt-image-2-all'\]\.includes/);
+    assert.match(source, /上游字段为 image 或 image\[\]/);
+    assert.match(source, /上游未注明上限；当前工作台最多 \$\{MAX_REFERENCE_IMAGE_INPUTS\} 张/);
+    assert.match(source, /MAX_VIDEO_REFERENCE_IMAGE_INPUTS = 4/);
+    assert.match(source, /const imageInputLimit = getReferenceImageInputLimit\(inferredMode\);[\s\S]*const availableSlots = Math\.max\(0, imageInputLimit - getReferenceInputCount\(\)\)/);
+    assert.match(source, /当前\$\{isVideoMode\(inferredMode\) \? '视频模型' : '模型'\}最多读取 \$\{referenceImageInputLimit\} 张参考图/);
+    assert.match(source, /class="ai-image-upload-help-trigger"[\s\S]*aria-describedby="\$\{tooltipId\}"/);
+    assert.match(source, /class="ai-image-upload-help-tooltip" id="\$\{tooltipId\}" role="tooltip"/);
+    assert.match(source, /<div class="ai-image-main-attach-action">\s*\$\{uploadHelpHtml\}\s*\$\{uploadButtonHtml\}/);
+    assert.match(cssSource, /\.ai-image-main-attach-action\s*\{[\s\S]*flex-direction: column;[\s\S]*gap: 2px/);
+    assert.match(cssSource, /\.ai-image-upload-help-tooltip\s*\{[\s\S]*bottom: calc\(100% \+ 6px\);[\s\S]*width: min\(350px, calc\(100vw - 40px\)\)/);
+    assert.match(cssSource, /\.ai-image-upload-help:hover \.ai-image-upload-help-tooltip/);
+    assert.match(cssSource, /\.ai-image-upload-help:focus-within \.ai-image-upload-help-tooltip/);
 });
 
 test('ai image workbench progressively reveals large chat deltas without changing text', () => {
@@ -1780,13 +1863,14 @@ test('ai image workbench uses a stable full-screen mobile layout', () => {
     assert.match(cssSource, /\.ai-image-composer-settings-menu\s*\{[\s\S]*width: min\(340px, calc\(100vw - 40px\)\)/);
     assert.match(cssSource, /\.ai-image-composer-settings-section-head\s*\{[\s\S]*grid-template-columns: auto minmax\(0, 1fr\) auto/);
     assert.match(cssSource, /\.ai-image-composer-settings-section\.is-open \.ai-image-composer-settings-section-head i\s*\{[\s\S]*transform: rotate\(90deg\)/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools\s*\{[\s\S]*display: flex;[\s\S]*flex-wrap: nowrap;[\s\S]*overflow-x: auto;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools\s*\{[\s\S]*display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*overflow: visible;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tool-options\s*\{[\s\S]*display: flex;[\s\S]*flex-wrap: nowrap;[\s\S]*overflow-x: auto;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \[data-aiw-select="videoRatio"\],[\s\S]*\.ai-image-main-tools \[data-aiw-select="videoCameraFixed"\]\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \[data-aiw-select="ratio"\],[\s\S]*\.ai-image-main-tools \[data-aiw-select="quantity"\]\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-image-settings-select,[\s\S]*\.ai-image-video-settings-select,[\s\S]*\.ai-image-chat-settings-select\s*\{[\s\S]*order: 2;[\s\S]*display: block;[\s\S]*flex: 0 0 auto;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-memory-control\[data-aiw-chat-settings-source="memory"\],[\s\S]*\.ai-image-main-tools \.ai-image-capability-control\[data-aiw-chat-settings-source="claudeThinkingBudget"\]\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \[data-aiw-select="model"\],[\s\S]*\.ai-image-main-tools \[data-aiw-select="apiModel"\]\s*\{[\s\S]*order: 3;[\s\S]*width: 126px;/);
-    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-cost\s*\{[\s\S]*order: 4;[\s\S]*flex: 0 0 auto;/);
+    assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-cost\s*\{[\s\S]*grid-column: 2;[\s\S]*align-self: end;[\s\S]*margin-left: 0;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-main-tools \.ai-image-select-trigger,[\s\S]*\.ai-image-main-tools \.ai-image-capability-control\s*\{[\s\S]*height: 30px;[\s\S]*min-height: 30px;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-wallet\s*\{[\s\S]*display: none;/);
     assert.match(cssSource, /@media \(max-width: 1120px\) \{[\s\S]*\.ai-image-rail-close\s*\{[\s\S]*display: inline-flex;[\s\S]*margin-left: auto;/);

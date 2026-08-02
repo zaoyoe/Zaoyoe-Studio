@@ -19,7 +19,9 @@ const {
 
 const DEFAULT_MODEL_TEST_TIMEOUT_MS = 90000;
 const MODEL_PROBE_RESOLUTIONS = Object.freeze(['1k', '2k', '4k']);
-const MODEL_PROBE_TRANSPARENT_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+const MODEL_PROBE_REMOTE_IMAGE_URL = 'https://www.fatherkey.com/assets/prompts-home/____1_1.webp';
+const MODEL_PROBE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAVElEQVR42u3PMQ0AMAgAMOTw4GraeTCBhF18TWqg0VWn8s2pEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD4WRCtuTyrF4HwAAAAAElFTkSuQmCC';
+const MODEL_PROBE_DATA_IMAGE_URL = `data:image/png;base64,${MODEL_PROBE_PNG_BASE64}`;
 const MODEL_PROBE_SIZE_BY_RESOLUTION = Object.freeze({
     '1k': '1024x1024',
     '2k': '2048x2048',
@@ -443,7 +445,15 @@ async function readUpstreamJson(response) {
     try {
         return JSON.parse(text);
     } catch (_) {
-        return { message: text.slice(0, 1000) };
+        const contentType = readResponseHeader(response, ['content-type']).toLowerCase();
+        const isHtml = contentType.includes('text/html') || /^\s*(?:<!doctype\s+html|<html\b)/i.test(text);
+        return {
+            message: isHtml
+                ? `上游返回非 JSON 网关响应（HTTP ${response?.status || 502}）`
+                : text.slice(0, 1000),
+            nonJson: true,
+            isHtml
+        };
     }
 }
 
@@ -453,6 +463,9 @@ function hasImageResult(payload = {}) {
 }
 
 function getUpstreamErrorMessage(payload = {}, response) {
+    if (payload?.isHtml) {
+        return `上游返回非 JSON 网关错误（HTTP ${response?.status || 502}）`;
+    }
     return String(
         payload?.error?.message
         || payload?.message
@@ -820,7 +833,7 @@ function createProbeEditFormData({ model, prompt, size } = {}) {
     form.append('prompt', prompt);
     form.append('n', '1');
     form.append('size', size);
-    form.append('image', new Blob([Buffer.from(MODEL_PROBE_TRANSPARENT_PNG_BASE64, 'base64')], {
+    form.append('image', new Blob([Buffer.from(MODEL_PROBE_PNG_BASE64, 'base64')], {
         type: 'image/png'
     }), 'probe-reference.png');
     return form;
@@ -862,21 +875,67 @@ function normalizeProbeResolutions(value = '') {
     return resolutions.length ? resolutions : MODEL_PROBE_RESOLUTIONS.slice();
 }
 
-function buildProbeChatMessages(mode = 'chat') {
+function normalizeProbeTargets(value = [], { imageModels = [], chatModels = [] } = {}) {
+    if (!Array.isArray(value)) return [];
+    const imageModelMap = new Map(normalizeModelsList(imageModels, '').map((model) => [model.toLowerCase(), model]));
+    const chatModelMap = new Map(normalizeModelsList(chatModels, '').map((model) => [model.toLowerCase(), model]));
+    const allowedModes = new Set(['text', 'image', 'chat', 'vision']);
+    const targets = [];
+    const seen = new Set();
+
+    for (const item of value.slice(0, 200)) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+        const mode = String(item.mode || '').trim().toLowerCase();
+        const rawModel = String(item.model || '').trim();
+        if (!allowedModes.has(mode) || !rawModel) continue;
+        const requestedModel = normalizeModel(rawModel);
+        const modelMap = mode === 'chat' || mode === 'vision' ? chatModelMap : imageModelMap;
+        const model = modelMap.get(requestedModel.toLowerCase());
+        if (!model) continue;
+        const resolution = mode === 'chat' || mode === 'vision'
+            ? ''
+            : normalizeProbeResolution(item.resolution);
+        const key = `${model.toLowerCase()}\u0000${mode}\u0000${resolution}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        targets.push({ model, mode, resolution });
+    }
+
+    return targets;
+}
+
+function getVisionProbeFixture(imageSource = 'remote-url') {
+    return imageSource === 'data-url'
+        ? {
+            imageSource: 'data-url',
+            imageUrl: MODEL_PROBE_DATA_IMAGE_URL,
+            prompt: '请观察图片，只回答图片左侧和右侧分别是什么颜色，格式为“左X右Y”，并用中文颜色词替换 X 和 Y。',
+            expected: 'red-blue'
+        }
+        : {
+            imageSource: 'remote-url',
+            imageUrl: MODEL_PROBE_REMOTE_IMAGE_URL,
+            prompt: '请观察图片，只回答图片上方气球的颜色，使用一个中文颜色词。',
+            expected: 'red-balloon'
+        };
+}
+
+function buildProbeChatMessages(mode = 'chat', imageSource = 'remote-url') {
     const normalizedMode = String(mode || '').trim().toLowerCase() === 'vision' ? 'vision' : 'chat';
     if (normalizedMode === 'vision') {
+        const fixture = getVisionProbeFixture(imageSource);
         return [
             {
                 role: 'user',
                 content: [
                     {
                         type: 'text',
-                        text: '用一句中文描述这张图片。'
+                        text: fixture.prompt
                     },
                     {
                         type: 'image_url',
                         image_url: {
-                            url: `data:image/png;base64,${MODEL_PROBE_TRANSPARENT_PNG_BASE64}`
+                            url: fixture.imageUrl
                         }
                     }
                 ]
@@ -889,6 +948,192 @@ function buildProbeChatMessages(mode = 'chat') {
             content: '用一句中文回复：模型可用性自检通过。'
         }
     ];
+}
+
+function buildProbeResponsesInput(imageSource = 'remote-url') {
+    const fixture = getVisionProbeFixture(imageSource);
+    return [{
+        role: 'user',
+        content: [
+            {
+                type: 'input_text',
+                text: fixture.prompt
+            },
+            {
+                type: 'input_image',
+                image_url: fixture.imageUrl
+            }
+        ]
+    }];
+}
+
+function readProbeResponseText(payload = {}) {
+    const directText = payload?.choices?.[0]?.message?.content
+        || payload?.choices?.[0]?.text
+        || payload?.output_text;
+    if (typeof directText === 'string' && directText.trim()) return directText.trim();
+    if (Array.isArray(directText)) {
+        const contentText = directText
+            .map((item) => typeof item === 'string' ? item : (item?.text || item?.content || ''))
+            .filter(Boolean)
+            .join('\n')
+            .trim();
+        if (contentText) return contentText;
+    }
+    return (Array.isArray(payload?.output) ? payload.output : [])
+        .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+        .map((item) => typeof item?.text === 'string' ? item.text : (item?.text?.value || ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+}
+
+function isVisionProbeAnswerCorrect(text = '', imageSource = 'remote-url') {
+    const normalized = String(text || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (getVisionProbeFixture(imageSource).expected === 'red-balloon') {
+        return /红|red/i.test(normalized);
+    }
+    const redIndex = Math.max(normalized.indexOf('红'), normalized.indexOf('red'));
+    const blueIndex = Math.max(normalized.indexOf('蓝'), normalized.indexOf('blue'));
+    return redIndex >= 0 && blueIndex > redIndex;
+}
+
+function normalizeChatProbeError(error, timeoutMs, startedAt) {
+    if (error?.isUpstreamHttp) return error;
+    const signal = [
+        error?.name,
+        error?.code,
+        error?.message,
+        error?.cause?.name,
+        error?.cause?.code,
+        error?.cause?.message
+    ].filter(Boolean).join(' | ');
+    const timeout = /abort|timeout|timed out|und_err_headers_timeout|etimedout/i.test(signal);
+    const nextError = new Error(timeout
+        ? `对话/视觉模型自检超时（${Math.round(timeoutMs / 1000)} 秒），上游未及时返回文本结果。`
+        : (error?.message || '对话/视觉模型自检失败'));
+    nextError.statusCode = timeout ? 504 : (error?.statusCode || 502);
+    nextError.code = timeout ? 'ai_image_chat_model_probe_timeout' : (error?.code || 'ai_image_chat_model_probe_failed');
+    nextError.latencyMs = error?.latencyMs || (Date.now() - startedAt);
+    nextError.upstream = error?.upstream || null;
+    nextError.endpoint = error?.endpoint || '';
+    nextError.imageSource = error?.imageSource || '';
+    nextError.details = signal;
+    return nextError;
+}
+
+function isExplicitVisionUnsupported(error = {}) {
+    const signal = `${error.code || ''} ${error.message || ''}`.toLowerCase();
+    return /(?:image|vision|图片|图像).{0,50}(?:does? not support|not support(?:ed)?|unsupported|不支持|无法处理)|(?:does? not support|not support(?:ed)?|unsupported|不支持).{0,50}(?:image|vision|图片|图像)/i.test(signal);
+}
+
+function createVisionProbeFailure(errors = [], startedAt = Date.now()) {
+    const attempts = errors.filter(Boolean).map((error) => ({
+        endpoint: error.endpoint || '',
+        imageSource: error.imageSource || '',
+        code: error.code || 'ai_image_chat_model_probe_failed',
+        message: String(error.message || '视觉自检失败').slice(0, 300),
+        statusCode: error.statusCode || 502,
+        upstream: error.upstream || null
+    }));
+    const explicitlyUnsupported = attempts.length > 0 && errors.filter(Boolean).every(isExplicitVisionUnsupported);
+    const error = new Error(explicitlyUnsupported
+        ? '上游已明确拒绝该模型的图片输入，当前渠道不支持使用此模型读图。'
+        : `视觉自检链路未完成：${attempts.map((item) => `${item.endpoint || '上游'}：${item.message}`).join('；')}。这不能据此判定模型不支持读图。`);
+    error.statusCode = explicitlyUnsupported ? 422 : 502;
+    error.code = explicitlyUnsupported
+        ? 'ai_image_vision_input_unsupported'
+        : 'ai_image_vision_probe_unverified';
+    error.verificationStatus = explicitlyUnsupported ? 'unsupported' : 'unverified';
+    error.latencyMs = Date.now() - startedAt;
+    error.endpoint = attempts.map((item) => item.endpoint).filter(Boolean).join(' → ');
+    error.upstream = attempts.at(-1)?.upstream || null;
+    error.attempts = attempts;
+    return error;
+}
+
+async function requestChatProbe({
+    apiKey,
+    baseUrl,
+    model,
+    mode,
+    endpoint,
+    imageSource = 'remote-url',
+    fetchImpl,
+    signal
+}) {
+    const requestStartedAt = Date.now();
+    const usesResponses = endpoint === 'responses';
+    const response = await fetchImpl(`${baseUrl}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(usesResponses ? {
+            model,
+            input: buildProbeResponsesInput(imageSource),
+            stream: false,
+            max_output_tokens: 512
+        } : {
+            model,
+            messages: buildProbeChatMessages(mode, imageSource),
+            stream: false,
+            max_tokens: 80
+        }),
+        ...(signal ? { signal } : {})
+    });
+    const latencyMs = Date.now() - requestStartedAt;
+    const upstream = getProbeResponseMeta(response);
+    const payload = await readUpstreamJson(response);
+    if (!response.ok) {
+        const error = new Error(getUpstreamErrorMessage(payload, response));
+        error.statusCode = response.status >= 400 && response.status < 600 ? response.status : 502;
+        error.code = payload?.error?.code || payload?.code || 'ai_image_chat_model_probe_failed';
+        error.latencyMs = latencyMs;
+        error.endpoint = endpoint;
+        error.imageSource = imageSource;
+        error.upstream = upstream;
+        error.isUpstreamHttp = true;
+        throw error;
+    }
+
+    const text = readProbeResponseText(payload);
+    if (!text) {
+        const error = new Error('上游响应成功，但没有返回文本内容');
+        error.statusCode = 502;
+        error.code = 'ai_image_chat_model_probe_empty_result';
+        error.latencyMs = latencyMs;
+        error.endpoint = endpoint;
+        error.imageSource = imageSource;
+        error.upstream = upstream;
+        throw error;
+    }
+    if (mode === 'vision' && !isVisionProbeAnswerCorrect(text, imageSource)) {
+        const expectedDescription = getVisionProbeFixture(imageSource).expected === 'red-balloon'
+            ? '探测图上方的红色气球'
+            : '探测图的左红右蓝';
+        const error = new Error(`模型返回了文本，但未能正确识别${expectedDescription}，读图能力尚未验证。`);
+        error.statusCode = 422;
+        error.code = 'ai_image_vision_probe_answer_mismatch';
+        error.latencyMs = latencyMs;
+        error.endpoint = endpoint;
+        error.imageSource = imageSource;
+        error.upstream = upstream;
+        throw error;
+    }
+
+    return {
+        ok: true,
+        latencyMs,
+        mode,
+        endpoint,
+        imageSource: mode === 'vision' ? imageSource : '',
+        upstream,
+        resultType: 'text',
+        providerTaskId: String(payload.id || payload.task_id || '').slice(0, 160),
+        message: text.slice(0, 500)
+    };
 }
 
 async function runChatAvailabilityCheck({
@@ -909,78 +1154,52 @@ async function runChatAvailabilityCheck({
 
     try {
         const normalizedMode = String(mode || '').trim().toLowerCase() === 'vision' ? 'vision' : 'chat';
-        const response = await fetchImpl(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
+        if (normalizedMode !== 'vision') {
+            return await requestChatProbe({
+                apiKey,
+                baseUrl,
                 model,
-                messages: buildProbeChatMessages(normalizedMode),
-                stream: false,
-                max_tokens: 80
-            }),
-            ...(controller ? { signal: controller.signal } : {})
-        });
-        const latencyMs = Date.now() - startedAt;
-        const upstream = getProbeResponseMeta(response);
-        const payload = await readUpstreamJson(response);
-        if (!response.ok) {
-            const error = new Error(getUpstreamErrorMessage(payload, response));
-            error.statusCode = response.status >= 400 && response.status < 600 ? response.status : 502;
-            error.code = payload?.error?.code || payload?.code || 'ai_image_chat_model_probe_failed';
-            error.latencyMs = latencyMs;
-            error.upstream = upstream;
-            error.isUpstreamHttp = true;
-            throw error;
+                mode: normalizedMode,
+                endpoint: 'chat/completions',
+                fetchImpl,
+                signal: controller?.signal
+            });
         }
 
-        const text = String(
-            payload?.choices?.[0]?.message?.content
-            || payload?.choices?.[0]?.text
-            || payload?.output_text
-            || ''
-        ).trim();
-        if (!text) {
-            const error = new Error('上游响应成功，但没有返回文本内容');
-            error.statusCode = 502;
-            error.code = 'ai_image_chat_model_probe_empty_result';
-            error.latencyMs = latencyMs;
-            throw error;
+        const attempts = [];
+        const strategies = [
+            { imageSource: 'remote-url', endpoint: 'chat/completions' },
+            { imageSource: 'remote-url', endpoint: 'responses' },
+            { imageSource: 'data-url', endpoint: 'chat/completions' },
+            { imageSource: 'data-url', endpoint: 'responses' }
+        ];
+        for (const strategy of strategies) {
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                const check = await requestChatProbe({
+                    apiKey,
+                    baseUrl,
+                    model,
+                    mode: normalizedMode,
+                    endpoint: strategy.endpoint,
+                    imageSource: strategy.imageSource,
+                    fetchImpl,
+                    signal: controller?.signal
+                });
+                return {
+                    ...check,
+                    latencyMs: Date.now() - startedAt,
+                    fallbackFrom: attempts.length
+                        ? (strategy.imageSource === 'data-url'
+                            ? '公网图片 URL'
+                            : 'chat/completions')
+                        : ''
+                };
+            } catch (error) {
+                attempts.push(normalizeChatProbeError(error, timeoutMs, startedAt));
+            }
         }
-
-        return {
-            ok: true,
-            latencyMs,
-            mode: normalizedMode,
-            endpoint: 'chat/completions',
-            upstream,
-            resultType: 'text',
-            providerTaskId: String(payload.id || payload.task_id || '').slice(0, 160),
-            message: text.slice(0, 500)
-        };
-    } catch (error) {
-        if (error.isUpstreamHttp) {
-            throw error;
-        }
-        const signal = [
-            error.name,
-            error.code,
-            error.message,
-            error.cause?.name,
-            error.cause?.code,
-            error.cause?.message
-        ].filter(Boolean).join(' | ');
-        const timeout = /abort|timeout|timed out|und_err_headers_timeout|etimedout/i.test(signal);
-        const nextError = new Error(timeout
-            ? `对话/视觉模型自检超时（${Math.round(timeoutMs / 1000)} 秒），上游未及时返回文本结果。`
-            : (error.message || '对话/视觉模型自检失败'));
-        nextError.statusCode = timeout ? 504 : (error.statusCode || 502);
-        nextError.code = timeout ? 'ai_image_chat_model_probe_timeout' : (error.code || 'ai_image_chat_model_probe_failed');
-        nextError.latencyMs = error.latencyMs || (Date.now() - startedAt);
-        nextError.details = signal;
-        throw nextError;
+        throw createVisionProbeFailure(attempts, startedAt);
     } finally {
         if (timer) clearTimeout(timer);
     }
@@ -1114,118 +1333,136 @@ async function runModelAvailabilityMatrix({
     model,
     chatModel,
     imageModel,
+    chatModels = [],
+    imageModels = [],
     modelGroup = 'image',
     modes,
     resolutions,
+    probeTargets = null,
     fetchImpl = globalThis.fetch,
     timeoutMs = DEFAULT_MODEL_TEST_TIMEOUT_MS
 } = {}) {
     const requestedModes = normalizeProbeModesForModelGroup(modes, modelGroup);
     const requestedResolutions = normalizeProbeResolutions(resolutions);
     const checks = [];
-
-    for (const mode of requestedModes) {
+    const requestedChatModels = normalizeModelsList(chatModels, chatModel || model);
+    const requestedImageModels = normalizeModelsList(imageModels, imageModel || model);
+    const normalizedTargets = Array.isArray(probeTargets)
+        ? normalizeProbeTargets(probeTargets, {
+            imageModels: requestedImageModels,
+            chatModels: requestedChatModels
+        })
+        : null;
+    const targets = normalizedTargets || requestedModes.flatMap((mode) => {
         if (mode === 'chat' || mode === 'vision') {
-            try {
-                // eslint-disable-next-line no-await-in-loop
-                const check = await runModelAvailabilityCheck({
-                    apiKey,
-                    baseUrl,
-                    model: chatModel || model,
-                    mode,
-                    fetchImpl,
-                    timeoutMs
-                });
-                checks.push({
-                    ok: true,
-                    mode,
-                    model: chatModel || model,
-                    resolution: '',
-                    endpoint: check.endpoint,
-                    upstream: check.upstream || null,
-                    size: '',
-                    latencyMs: check.latencyMs,
-                    resultType: check.resultType,
-                    providerTaskId: check.providerTaskId,
-                    revisedPrompt: '',
-                    message: check.message,
-                    code: ''
-                });
-            } catch (error) {
-                checks.push({
-                    ok: false,
-                    mode,
-                    model: chatModel || model,
-                    resolution: '',
-                    endpoint: 'chat/completions',
-                    upstream: error.upstream || null,
-                    size: '',
-                    latencyMs: error.latencyMs || 0,
-                    resultType: '',
-                    providerTaskId: '',
-                    revisedPrompt: '',
-                    code: error.code || 'ai_image_chat_model_probe_failed',
-                    message: String(error.message || '对话/视觉模型自检失败').slice(0, 1000),
-                    statusCode: error.statusCode || 502
-                });
-            }
-            continue;
+            return requestedChatModels.map((currentModel) => ({
+                model: currentModel,
+                mode,
+                resolution: ''
+            }));
         }
-        for (const resolution of requestedResolutions) {
-            try {
-                // Keep requests sequential to avoid a self-test stampede against the paid upstream.
-                // eslint-disable-next-line no-await-in-loop
-                const check = await runModelAvailabilityCheck({
-                    apiKey,
-                    baseUrl,
-                    model: imageModel || model,
-                    mode,
-                    resolution,
-                    fetchImpl,
-                    timeoutMs
-                });
-                checks.push({
-                    ok: true,
-                    mode,
-                    model: imageModel || model,
-                    resolution,
-                    endpoint: check.endpoint,
-                    upstream: check.upstream || null,
-                    size: check.size,
-                    latencyMs: check.latencyMs,
-                    resultType: check.resultType,
-                    providerTaskId: check.providerTaskId,
-                    revisedPrompt: check.revisedPrompt,
-                    code: '',
-                    message: ''
-                });
-            } catch (error) {
-                checks.push({
-                    ok: false,
-                    mode,
-                    model: imageModel || model,
-                    resolution,
-                    endpoint: mode === 'image' ? 'images/edits' : 'images/generations',
-                    upstream: error.upstream || null,
-                    size: getProbeSize(resolution),
-                    latencyMs: error.latencyMs || 0,
-                    resultType: '',
-                    providerTaskId: '',
-                    revisedPrompt: '',
-                    code: error.code || 'ai_image_model_probe_failed',
-                    message: String(error.message || '模型自检失败').slice(0, 1000),
-                    statusCode: error.statusCode || 502
-                });
-            }
+        return requestedImageModels.flatMap((currentModel) => requestedResolutions.map((resolution) => ({
+            model: currentModel,
+            mode,
+            resolution
+        })));
+    });
+
+    for (const target of targets) {
+        const { mode, model: currentModel, resolution } = target;
+        const isChatMode = mode === 'chat' || mode === 'vision';
+        try {
+            // Keep requests sequential to avoid a self-test stampede against the paid upstream.
+            // eslint-disable-next-line no-await-in-loop
+            const check = await runModelAvailabilityCheck({
+                apiKey,
+                baseUrl,
+                model: currentModel,
+                mode,
+                ...(isChatMode ? {} : { resolution }),
+                fetchImpl,
+                timeoutMs
+            });
+            checks.push(isChatMode ? {
+                ok: true,
+                mode,
+                model: currentModel,
+                resolution: '',
+                endpoint: check.endpoint,
+                fallbackFrom: check.fallbackFrom || '',
+                imageSource: check.imageSource || '',
+                verificationStatus: 'verified',
+                upstream: check.upstream || null,
+                size: '',
+                latencyMs: check.latencyMs,
+                resultType: check.resultType,
+                providerTaskId: check.providerTaskId,
+                revisedPrompt: '',
+                message: check.message,
+                code: ''
+            } : {
+                ok: true,
+                mode,
+                model: currentModel,
+                resolution,
+                endpoint: check.endpoint,
+                upstream: check.upstream || null,
+                size: check.size,
+                latencyMs: check.latencyMs,
+                resultType: check.resultType,
+                providerTaskId: check.providerTaskId,
+                revisedPrompt: check.revisedPrompt,
+                code: '',
+                message: ''
+            });
+        } catch (error) {
+            checks.push(isChatMode ? {
+                ok: false,
+                mode,
+                model: currentModel,
+                resolution: '',
+                endpoint: error.endpoint || 'chat/completions',
+                fallbackFrom: '',
+                verificationStatus: error.verificationStatus || 'failed',
+                upstream: error.upstream || null,
+                size: '',
+                latencyMs: error.latencyMs || 0,
+                resultType: '',
+                providerTaskId: '',
+                revisedPrompt: '',
+                code: error.code || 'ai_image_chat_model_probe_failed',
+                message: String(error.message || '对话/视觉模型自检失败').slice(0, 1000),
+                statusCode: error.statusCode || 502,
+                attempts: Array.isArray(error.attempts) ? error.attempts : []
+            } : {
+                ok: false,
+                mode,
+                model: currentModel,
+                resolution,
+                endpoint: mode === 'image' ? 'images/edits' : 'images/generations',
+                upstream: error.upstream || null,
+                size: getProbeSize(resolution),
+                latencyMs: error.latencyMs || 0,
+                resultType: '',
+                providerTaskId: '',
+                revisedPrompt: '',
+                code: error.code || 'ai_image_model_probe_failed',
+                message: String(error.message || '模型自检失败').slice(0, 1000),
+                statusCode: error.statusCode || 502
+            });
         }
     }
 
     const passed = checks.filter((item) => item.ok).length;
     const failed = checks.length - passed;
+    const unverified = checks.filter((item) => item.verificationStatus === 'unverified').length;
+    const unsupported = checks.filter((item) => item.verificationStatus === 'unsupported').length;
     return {
         ok: failed === 0,
         passed,
         failed,
+        unverified,
+        unsupported,
         total: checks.length,
         checks
     };
@@ -1298,15 +1535,30 @@ async function handleModelAvailabilityCheck({ body, currentConfig, sendJson, res
     const wantsMatrix = body.matrix === true || String(body.matrix || '').trim().toLowerCase() === 'true';
 
     if (wantsMatrix) {
+        const hasExplicitProbeTargets = Object.prototype.hasOwnProperty.call(body, 'probeTargets')
+            || Object.prototype.hasOwnProperty.call(body, 'probe_targets');
+        const probeTargets = hasExplicitProbeTargets
+            ? normalizeProbeTargets(body.probeTargets || body.probe_targets, { imageModels, chatModels })
+            : null;
+        if (hasExplicitProbeTargets && !probeTargets.length) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '没有可重检的故障模型项目，请刷新配置后重试。',
+                code: 'ai_image_model_probe_targets_invalid'
+            });
+        }
         const matrix = await runModelAvailabilityMatrix({
             apiKey,
             baseUrl,
             model,
             imageModel,
             chatModel,
+            imageModels,
+            chatModels,
             modelGroup,
             modes: body.modes || body.mode,
             resolutions: body.resolutions || body.resolution,
+            probeTargets,
             fetchImpl,
             timeoutMs
         });
@@ -1317,11 +1569,18 @@ async function handleModelAvailabilityCheck({ body, currentConfig, sendJson, res
             ''
         );
         const status = matrix.ok ? 200 : 207;
+        const failureSummary = [
+            matrix.unverified ? `${matrix.unverified} 项未验证` : '',
+            matrix.unsupported ? `${matrix.unsupported} 项明确不支持` : '',
+            matrix.failed - matrix.unverified - matrix.unsupported > 0
+                ? `${matrix.failed - matrix.unverified - matrix.unsupported} 项失败`
+                : ''
+        ].filter(Boolean).join('，');
         return sendJson(res, status, {
             success: matrix.ok,
             message: matrix.ok
                 ? `模型矩阵自检通过：${matrix.passed}/${matrix.total} 项可用。`
-                : `模型矩阵自检完成：${matrix.passed}/${matrix.total} 项通过，${matrix.failed} 项失败。`,
+                : `模型矩阵自检完成：${matrix.passed}/${matrix.total} 项通过，${failureSummary || `${matrix.failed} 项失败`}。`,
             check: {
                 ok: matrix.ok,
                 providerId,
@@ -1340,6 +1599,8 @@ async function handleModelAvailabilityCheck({ body, currentConfig, sendJson, res
                 } : null,
                 passed: matrix.passed,
                 failed: matrix.failed,
+                unverified: matrix.unverified,
+                unsupported: matrix.unsupported,
                 total: matrix.total,
                 checks: matrix.checks
             }

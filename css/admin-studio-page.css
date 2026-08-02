@@ -63447,6 +63447,11 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
     background: rgba(254, 242, 242, 0.78);
 }
 
+#module-ai-creation .ai-image-admin-probe-item.is-warning {
+    border-color: rgba(245, 158, 11, 0.26);
+    background: rgba(255, 251, 235, 0.82);
+}
+
 #module-ai-creation .ai-image-admin-probe-discovery {
     grid-column: 1 / -1;
     display: grid;
@@ -63494,6 +63499,10 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
 
 #module-ai-creation .ai-image-admin-probe-item.is-error span {
     color: #b91c1c;
+}
+
+#module-ai-creation .ai-image-admin-probe-item.is-warning span {
+    color: #b45309;
 }
 
 #module-ai-creation .ai-image-admin-probe-item em,
@@ -64007,6 +64016,11 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
 #module-ai-creation .ai-image-admin-probe-item.is-error:is(:hover, :focus-within, :active) {
     border-color: rgba(239, 68, 68, 0.22) !important;
     background: rgba(254, 242, 242, 0.78) !important;
+}
+
+#module-ai-creation .ai-image-admin-probe-item.is-warning:is(:hover, :focus-within, :active) {
+    border-color: rgba(245, 158, 11, 0.26) !important;
+    background: rgba(255, 251, 235, 0.82) !important;
 }
 
 #module-ai-creation .ai-image-admin-probe-discovery:is(:hover, :focus-within, :active) {

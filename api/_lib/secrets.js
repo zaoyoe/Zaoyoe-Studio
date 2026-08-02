@@ -662,6 +662,16 @@ function normalizeAiImageProviderMetadata(metadata = {}, fallback = {}) {
         source.unknownModels,
         source.unknown_models
     );
+    const visionModels = normalizeAiImageModelsList(
+        source.visionModels,
+        source.vision_models,
+        source.chatVisionModels,
+        source.chat_vision_models,
+        fallback.visionModels,
+        fallback.vision_models,
+        fallback.chatVisionModels,
+        fallback.chat_vision_models
+    );
     const videoEndpoint = normalizeAiImageEndpointPath(
         source.videoEndpoint
         || source.video_endpoint
@@ -699,6 +709,8 @@ function normalizeAiImageProviderMetadata(metadata = {}, fallback = {}) {
         detected_video_models: detectedVideoModels,
         detectedUnknownModels,
         detected_unknown_models: detectedUnknownModels,
+        visionModels,
+        vision_models: visionModels,
         modelGroup: scopedModels.modelGroup,
         model_group: scopedModels.modelGroup,
         vendor: String(source.vendor || fallback.vendor || source.provider || fallback.provider || 'openai').trim().toLowerCase().slice(0, 80) || 'openai',
@@ -825,6 +837,12 @@ async function resolveAiImageRuntimeSecretConfig(supabase, options = {}) {
         const modelDisplayNames = normalizeAiImageModelDisplayNames(
             metadata.modelDisplayNames ?? metadata.model_display_names ?? {}
         );
+        const visionModels = normalizeAiImageModelsList(
+            metadata.visionModels,
+            metadata.vision_models,
+            metadata.chatVisionModels,
+            metadata.chat_vision_models
+        );
 
         return {
             configured: Boolean(apiKey && baseUrl),
@@ -840,6 +858,8 @@ async function resolveAiImageRuntimeSecretConfig(supabase, options = {}) {
             chat_models: scopedModels.chatModels,
             videoModels: scopedModels.videoModels,
             video_models: scopedModels.videoModels,
+            visionModels,
+            vision_models: visionModels,
             modelDisplayNames,
             model_display_names: modelDisplayNames,
             modelGroup: scopedModels.modelGroup,
@@ -889,6 +909,8 @@ function serializeAiImageProviderSecret(row = {}, options = {}) {
         detected_video_models: metadata.detectedVideoModels,
         detectedUnknownModels: metadata.detectedUnknownModels,
         detected_unknown_models: metadata.detectedUnknownModels,
+        visionModels: metadata.visionModels,
+        vision_models: metadata.visionModels,
         modelGroup: metadata.modelGroup,
         model_group: metadata.modelGroup,
         vendor: metadata.vendor,
@@ -1032,6 +1054,8 @@ async function resolveAiImageRuntimePublicMetadata(supabase, options = {}) {
             detected_video_models: metadata.detectedVideoModels,
             detectedUnknownModels: metadata.detectedUnknownModels,
             detected_unknown_models: metadata.detectedUnknownModels,
+            visionModels: metadata.visionModels,
+            vision_models: metadata.visionModels,
             modelGroup: metadata.modelGroup,
             model_group: metadata.modelGroup,
             vendor: metadata.vendor,
@@ -1101,6 +1125,8 @@ async function resolveAiImageRuntimePublicMetadata(supabase, options = {}) {
         detected_video_models: metadata.detectedVideoModels,
         detectedUnknownModels: metadata.detectedUnknownModels,
         detected_unknown_models: metadata.detectedUnknownModels,
+        visionModels: metadata.visionModels,
+        vision_models: metadata.visionModels,
         modelGroup: metadata.modelGroup,
         model_group: metadata.modelGroup,
         vendor: metadata.vendor,
