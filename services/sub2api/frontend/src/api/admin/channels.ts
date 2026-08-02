@@ -170,6 +170,41 @@ export interface SyncPricingModelsResult {
   models: string[]
 }
 
+export interface SyncUpstreamPricingRequest {
+  platform: string
+  group?: string
+  models?: string[]
+}
+
+export interface UpstreamPricingGroupOption {
+  name: string
+  ratio: number
+}
+
+export interface UpstreamPricingGroupsResult {
+  groups: UpstreamPricingGroupOption[]
+  pricing_version: string
+}
+
+export interface SyncUpstreamPricingResult {
+  channel: Channel
+  platform: string
+  pricing_version: string
+  updated: number
+  unchanged: number
+  missing: number
+  skipped: number
+  groups: Record<string, number>
+  warnings: string[]
+  details: Array<{
+    model: string
+    status: 'updated' | 'unchanged' | 'missing' | 'skipped'
+    group?: string
+    group_ratio?: number
+    reason?: string
+  }>
+}
+
 /**
  * Fetch the latest model names from the LiteLLM pricing catalog for the given platform
  */
@@ -180,5 +215,37 @@ export async function syncPricingModels(platform: string): Promise<SyncPricingMo
   return data
 }
 
-const channelsAPI = { list, getById, create, update, remove, getModelDefaultPricing, syncPricingModels }
+/**
+ * Synchronize the fixed upstream model-plaza pricing into a saved channel.
+ * The channel's own group rate multipliers are left untouched by this call.
+ */
+export async function syncUpstreamPricing(
+  id: number,
+  req: SyncUpstreamPricingRequest,
+): Promise<SyncUpstreamPricingResult> {
+  const { data } = await apiClient.post<SyncUpstreamPricingResult>(
+    `/admin/channels/${id}/pricing/sync-upstream`,
+    req,
+  )
+  return data
+}
+
+export async function listUpstreamPricingGroups(): Promise<UpstreamPricingGroupsResult> {
+  const { data } = await apiClient.get<UpstreamPricingGroupsResult>(
+    '/admin/channels/pricing/upstream-groups',
+  )
+  return data
+}
+
+const channelsAPI = {
+  list,
+  getById,
+  create,
+  update,
+  remove,
+  getModelDefaultPricing,
+  syncPricingModels,
+  syncUpstreamPricing,
+  listUpstreamPricingGroups,
+}
 export default channelsAPI

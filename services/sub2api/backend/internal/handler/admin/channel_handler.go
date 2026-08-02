@@ -135,6 +135,12 @@ type pricingIntervalResponse struct {
 	SortOrder       int      `json:"sort_order"`
 }
 
+type syncUpstreamPricingRequest struct {
+	Platform string   `json:"platform" binding:"required,max=50"`
+	Group    string   `json:"group" binding:"max=120"`
+	Models   []string `json:"models" binding:"max=500"`
+}
+
 type accountStatsPricingRuleResponse struct {
 	ID         int64                         `json:"id"`
 	Name       string                        `json:"name"`
@@ -537,4 +543,77 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 
 	models := h.pricingService.ListModelNamesByProvider(provider)
 	response.Success(c, gin.H{"models": models})
+}
+
+// ListUpstreamPricingGroups 返回固定上游模型广场声明的计费分组及倍率。
+// GET /api/v1/admin/channels/pricing/upstream-groups
+func (h *ChannelHandler) ListUpstreamPricingGroups(c *gin.Context) {
+	groups, pricingVersion, err := h.channelService.ListUpstreamPricingGroups(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"groups":          groups,
+		"pricing_version": pricingVersion,
+	})
+}
+
+// SyncUpstreamPricing 读取固定的 zzone.cc.cd 模型广场定价，并写入当前渠道的原生模型定价。
+// POST /api/v1/admin/channels/:id/pricing/sync-upstream
+func (h *ChannelHandler) SyncUpstreamPricing(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_CHANNEL_ID", "Invalid channel ID"))
+		return
+	}
+
+	var req syncUpstreamPricingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	platform := strings.ToLower(strings.TrimSpace(req.Platform))
+	if _, ok := platformToLiteLLMProvider[platform]; !ok {
+		response.ErrorFrom(c, infraerrors.BadRequest("UNSUPPORTED_PLATFORM", fmt.Sprintf("unsupported platform: %s", platform)))
+		return
+	}
+	if len(req.Models) > 500 {
+		response.ErrorFrom(c, infraerrors.BadRequest("TOO_MANY_MODELS", "models must contain no more than 500 items"))
+		return
+	}
+	models := make([]string, 0, len(req.Models))
+	for _, model := range req.Models {
+		model = strings.TrimSpace(model)
+		if len(model) > 200 {
+			response.ErrorFrom(c, infraerrors.BadRequest("MODEL_NAME_TOO_LONG", "model name must be no more than 200 characters"))
+			return
+		}
+		if model != "" {
+			models = append(models, model)
+		}
+	}
+
+	result, err := h.channelService.SyncUpstreamPricing(c.Request.Context(), id, service.UpstreamPricingSyncRequest{
+		Platform: platform,
+		Group:    strings.TrimSpace(req.Group),
+		Models:   models,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"channel":         channelToResponse(result.Channel),
+		"platform":        result.Platform,
+		"pricing_version": result.PricingVersion,
+		"updated":         result.Updated,
+		"unchanged":       result.Unchanged,
+		"missing":         result.Missing,
+		"skipped":         result.Skipped,
+		"groups":          result.Groups,
+		"warnings":        result.Warnings,
+		"details":         result.Details,
+	})
 }

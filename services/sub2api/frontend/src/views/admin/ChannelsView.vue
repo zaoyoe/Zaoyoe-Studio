@@ -421,7 +421,21 @@
             <div>
               <div class="mb-1 flex items-center justify-between">
                 <label class="input-label text-xs mb-0">{{ t('admin.channels.form.modelPricing', 'Model Pricing') }}</label>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                  <label v-if="editingChannel" class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span>{{ t('admin.channels.form.upstreamPricingGroup') }}</span>
+                    <select
+                      v-model="selectedUpstreamPricingGroup[section.platform]"
+                      class="h-7 max-w-56 rounded border border-gray-200 bg-white px-2 text-xs text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300"
+                      :disabled="loadingUpstreamPricingGroups || syncingPricingPlatform === section.platform"
+                      :title="t('admin.channels.form.upstreamPricingGroupHint')"
+                    >
+                      <option value="">{{ t('admin.channels.form.upstreamPricingGroupAuto') }}</option>
+                      <option v-for="group in upstreamPricingGroups" :key="group.name" :value="group.name">
+                        {{ group.name }} ({{ group.ratio }}x)
+                      </option>
+                    </select>
+                  </label>
                   <button
                     type="button"
                     @click="syncLatestModels(sIdx)"
@@ -429,6 +443,17 @@
                     class="text-xs text-gray-500 hover:text-primary-600 disabled:opacity-50"
                   >
                     {{ syncingPlatform === section.platform ? t('admin.channels.form.syncingModels') : t('admin.channels.form.syncLatestModels') }}
+                  </button>
+                  <button
+                    type="button"
+                    @click="syncUpstreamPricing(sIdx)"
+                    :disabled="!editingChannel || syncingPricingPlatform === section.platform"
+                    class="text-xs text-gray-500 hover:text-primary-600 disabled:opacity-50"
+                    :title="t('admin.channels.form.syncUpstreamPricingHint')"
+                  >
+                    {{ syncingPricingPlatform === section.platform
+                      ? t('admin.channels.form.syncingUpstreamPricing')
+                      : t('admin.channels.form.syncUpstreamPricing') }}
                   </button>
                   <button type="button" @click="addPricingEntry(sIdx)" class="text-xs text-primary-600 hover:text-primary-700">
                     + {{ t('common.add', 'Add') }}
@@ -745,6 +770,9 @@ const groupsLoading = ref(false)
 
 // All channels for group-conflict detection (independent of current page)
 const allChannelsForConflict = ref<Channel[]>([])
+const upstreamPricingGroups = ref<Array<{ name: string; ratio: number }>>([])
+const loadingUpstreamPricingGroups = ref(false)
+const selectedUpstreamPricingGroup = ref<Record<string, string>>({})
 
 // Form data
 const form = reactive({
@@ -863,6 +891,7 @@ function addPricingEntry(sectionIdx: number) {
 }
 
 const syncingPlatform = ref<string | null>(null)
+const syncingPricingPlatform = ref<string | null>(null)
 
 async function syncLatestModels(sectionIdx: number) {
   const platform = form.platforms[sectionIdx].platform
@@ -898,6 +927,48 @@ async function syncLatestModels(sectionIdx: number) {
     appStore.showError(extractApiErrorMessage(error, t('admin.channels.form.syncModelsError')))
   } finally {
     syncingPlatform.value = null
+  }
+}
+
+async function syncUpstreamPricing(sectionIdx: number) {
+  const channel = editingChannel.value
+  const section = form.platforms[sectionIdx]
+  if (!channel || !section || syncingPricingPlatform.value) return
+
+  syncingPricingPlatform.value = section.platform
+  try {
+    const result = await adminAPI.channels.syncUpstreamPricing(channel.id, {
+      platform: section.platform,
+      group: selectedUpstreamPricingGroup.value[section.platform] || undefined,
+    })
+
+    // The endpoint persists the native channel pricing. Refresh only this
+    // platform's pricing section so unrelated unsaved form fields remain intact.
+    const syncedSection = apiToForm(result.channel).find(item => item.platform === section.platform)
+    if (syncedSection) {
+      section.model_pricing = syncedSection.model_pricing
+    }
+    editingChannel.value = result.channel
+
+    const groups = Object.entries(result.groups || {})
+      .map(([name, count]) => `${name} ${count}`)
+      .join('、')
+    const summary = t('admin.channels.form.syncUpstreamPricingSuccess', {
+      updated: result.updated,
+      unchanged: result.unchanged,
+      missing: result.missing,
+      skipped: result.skipped,
+      groups: groups || t('admin.channels.form.syncUpstreamPricingAutoGroup'),
+    })
+    if (result.updated > 0 || result.unchanged > 0) {
+      appStore.showSuccess(summary)
+    } else {
+      appStore.showError(summary)
+    }
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.channels.form.syncUpstreamPricingError')))
+  } finally {
+    syncingPricingPlatform.value = null
   }
 }
 
@@ -1289,6 +1360,19 @@ async function loadAllChannelsForConflict() {
   }
 }
 
+async function loadUpstreamPricingGroups() {
+  if (upstreamPricingGroups.value.length > 0 || loadingUpstreamPricingGroups.value) return
+  loadingUpstreamPricingGroups.value = true
+  try {
+    const result = await adminAPI.channels.listUpstreamPricingGroups()
+    upstreamPricingGroups.value = result.groups || []
+  } catch (error) {
+    console.error('Error loading upstream pricing groups:', error)
+  } finally {
+    loadingUpstreamPricingGroups.value = false
+  }
+}
+
 let searchTimeout: ReturnType<typeof setTimeout>
 function handleSearch() {
   clearTimeout(searchTimeout)
@@ -1347,7 +1431,7 @@ async function openEditDialog(channel: Channel) {
   form.billing_model_source = channel.billing_model_source || 'channel_mapped'
   form.apply_pricing_to_account_stats = channel.apply_pricing_to_account_stats || false
   // Must load groups first so apiToForm can map groupID → platform
-  await Promise.all([loadGroups(), loadAllChannelsForConflict()])
+  await Promise.all([loadGroups(), loadAllChannelsForConflict(), loadUpstreamPricingGroups()])
   form.platforms = apiToForm(channel)
 
   // Distribute channel-level rules into per-platform sections
