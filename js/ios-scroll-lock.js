@@ -250,6 +250,15 @@
     function findScrollableParent(el) {
         if (!el || !currentModal) return null;
         let node = getPortaledInputProxy(el) || el;
+
+        // The prompt reader is the hottest scroll target in the gallery modal.
+        // Avoid a getComputedStyle call on every touchmove frame while keeping
+        // the same height check used by the generic ancestor walk.
+        const promptReader = node.closest?.('#modalPromptText');
+        if (promptReader && promptReader.scrollHeight > promptReader.clientHeight) {
+            return promptReader;
+        }
+
         while (node && node !== document.body) {
             const style = window.getComputedStyle(node);
             const overflowY = style.overflowY;

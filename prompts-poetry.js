@@ -6303,6 +6303,7 @@ function cancelScheduledRelatedPromptRender() {
 }
 
 function cancelRelatedPromptWarmup() {
+    promptRelatedWarmupToken += 1;
     if (promptRelatedWarmupIdleId && typeof window.cancelIdleCallback === 'function') {
         window.cancelIdleCallback(promptRelatedWarmupIdleId);
     }
@@ -6386,15 +6387,15 @@ function getRelatedPromptImagesInVisualOrder(grid) {
     return orderedImages;
 }
 
-async function warmRelatedPromptsForModal(item = findPromptAnalyticsItem()) {
+async function warmRelatedPromptsForModal(item = findPromptAnalyticsItem(), warmupToken = promptRelatedWarmupToken) {
     const token = promptRelatedRenderToken;
     await preparePromptRelatedMatchingData(item);
-    if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
+    if (warmupToken !== promptRelatedWarmupToken || token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
     requestAnimationFrame(() => {
-        if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
+        if (warmupToken !== promptRelatedWarmupToken || token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
         renderRelatedPrompts(item);
         requestAnimationFrame(() => {
-            if (token !== promptRelatedRenderToken) return;
+            if (warmupToken !== promptRelatedWarmupToken || token !== promptRelatedRenderToken) return;
             warmRelatedPromptImages();
         });
     });
@@ -6402,12 +6403,15 @@ async function warmRelatedPromptsForModal(item = findPromptAnalyticsItem()) {
 
 function scheduleRelatedPromptWarmup(item = findPromptAnalyticsItem()) {
     cancelRelatedPromptWarmup();
+    const promptText = document.getElementById('modalPromptText');
+    if (promptText?.dataset.relatedWarmupBlocked === '1') return;
+    const warmupToken = promptRelatedWarmupToken;
     const token = promptRelatedRenderToken;
     const run = () => {
         promptRelatedWarmupIdleId = null;
         promptRelatedWarmupTimerId = null;
-        if (token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
-        void warmRelatedPromptsForModal(item);
+        if (warmupToken !== promptRelatedWarmupToken || token !== promptRelatedRenderToken || isPromptDetailSideModeActive()) return;
+        void warmRelatedPromptsForModal(item, warmupToken);
     };
 
     if (typeof window.requestIdleCallback === 'function') {
@@ -6416,6 +6420,29 @@ function scheduleRelatedPromptWarmup(item = findPromptAnalyticsItem()) {
     }
 
     promptRelatedWarmupTimerId = window.setTimeout(run, 120);
+}
+
+function bindPromptDetailScrollWarmupGuard() {
+    const promptText = document.getElementById('modalPromptText');
+    if (!promptText || promptText.dataset.relatedWarmupGuardBound === '1') return;
+
+    promptText.dataset.relatedWarmupGuardBound = '1';
+    promptText.addEventListener('scroll', () => {
+        const modal = document.getElementById('promptModal');
+        if (!modal?.classList.contains('active') || isPromptDetailSideModeActive()) return;
+
+        // A user reading the prompt takes priority over hidden related-card
+        // hydration and image decoding. The related panel renders lazily when
+        // it is explicitly opened.
+        promptText.dataset.relatedWarmupBlocked = '1';
+        cancelRelatedPromptWarmup();
+        const relatedGrid = document.getElementById('relatedPromptGrid');
+        if (relatedGrid?.children.length) {
+            clearRelatedPromptImageObserver();
+            relatedGrid.replaceChildren();
+            lastRenderedRelatedPromptKey = '';
+        }
+    }, { passive: true });
 }
 
 function playRelatedPromptGridEntryAnimation(options = {}) {
@@ -8584,6 +8611,7 @@ let promptRelatedRenderFrameId = null;
 let promptRelatedRenderTimerId = null;
 let promptRelatedWarmupIdleId = null;
 let promptRelatedWarmupTimerId = null;
+let promptRelatedWarmupToken = 0;
 let promptRelatedRenderToken = 0;
 let promptModalLayoutWasMobile = null;
 let promptModalLayoutSyncFrameId = null;
@@ -10253,6 +10281,8 @@ function openPromptModal(id, options = {}) {
 
     modal.classList.add('active');
     modal.classList.add('modal-opening');
+    promptText?.removeAttribute('data-related-warmup-blocked');
+    bindPromptDetailScrollWarmupGuard();
     scheduleRelatedPromptWarmup(item);
     if (window.iOSScrollLock && modalInner) {
         window.iOSScrollLock.lockLight(modalInner);

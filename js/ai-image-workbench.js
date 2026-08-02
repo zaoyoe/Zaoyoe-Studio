@@ -210,7 +210,8 @@
 	        { id: 'minimal', label: 'minimal', shortLabel: 'minimal', hint: 'OpenAI reasoning.effort 官方值，优先速度' },
 	        { id: 'low', label: 'low', shortLabel: 'low', hint: 'OpenAI reasoning.effort 官方值' },
 	        { id: 'medium', label: 'medium', shortLabel: 'medium', hint: 'OpenAI reasoning.effort 官方值' },
-	        { id: 'high', label: 'high', shortLabel: 'high', hint: 'OpenAI reasoning.effort 官方值，等待可能更久' }
+	        { id: 'high', label: 'high', shortLabel: 'high', hint: 'OpenAI reasoning.effort 官方值，等待可能更久' },
+	        { id: 'xhigh', label: 'xhigh', shortLabel: 'xhigh', hint: 'OpenAI 最高推理强度，等待和消耗都会增加' }
 	    ]);
 	    const OPENAI_SERVICE_TIER_OPTIONS = Object.freeze([
 	        { id: 'unset', label: '默认', shortLabel: '默认', hint: '使用项目或上游默认服务档位' },
@@ -223,6 +224,11 @@
 	        { id: 'auto', label: 'auto', shortLabel: 'auto', hint: '不额外指定 reasoning_effort，使用 DeepSeek 默认设置' },
 	        { id: 'high', label: 'high', shortLabel: 'high', hint: 'DeepSeek reasoning_effort 官方值' },
 	        { id: 'max', label: 'max', shortLabel: 'max', hint: 'DeepSeek reasoning_effort 官方值，等待可能更久' }
+	    ]);
+	    const GLM_REASONING_EFFORT_OPTIONS = Object.freeze([
+	        { id: 'auto', label: 'auto', shortLabel: 'auto', hint: '不额外指定推理强度，使用 GLM 默认设置' },
+	        { id: 'high', label: 'high', shortLabel: 'high', hint: 'GLM 官方推理强度，适合一般复杂任务' },
+	        { id: 'max', label: 'max', shortLabel: 'max', hint: 'GLM 官方最高推理强度，等待可能更久' }
 	    ]);
 	    const XAI_REASONING_EFFORT_OPTIONS = Object.freeze([
 	        { id: 'auto', label: 'auto', shortLabel: 'auto', hint: '不额外指定 reasoning_effort，使用 Grok 默认设置' },
@@ -240,6 +246,10 @@
 	    const GROK_THINKING_OPTIONS = Object.freeze([
 	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 Grok 思考模式，直接回答' },
 	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启 Grok 思考模式并展示思考过程' }
+	    ]);
+	    const OPENAI_THINKING_OPTIONS = Object.freeze([
+	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 OpenAI 推理模式，直接回答' },
+	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启 OpenAI 推理模式并展示官方思考摘要' }
 	    ]);
 	    const GEMINI_THINKING_OPTIONS = Object.freeze([
 	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 Gemini 思考展示，直接回答' },
@@ -269,6 +279,21 @@
 	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '展示 Qwen 思考过程' },
 	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 Qwen 思考过程展示，直接回答' },
 	        { id: 'unset', label: '默认', shortLabel: '默认', hint: '不额外指定 Qwen 思考模式，使用模型默认设置' }
+	    ]);
+	    const GLM_THINKING_OPTIONS = Object.freeze([
+	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启 GLM 思考模式并展示思考过程' },
+	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 GLM 思考模式，直接回答' },
+	        { id: 'unset', label: '默认', shortLabel: '默认', hint: '使用 GLM 默认思考设置' }
+	    ]);
+	    const MINIMAX_THINKING_OPTIONS = Object.freeze([
+	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启 MiniMax 自适应思考并展示思考过程' },
+	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭 MiniMax 思考模式，直接回答' },
+	        { id: 'unset', label: '默认', shortLabel: '默认', hint: '使用 MiniMax 默认思考设置' }
+	    ]);
+	    const DOUBAO_THINKING_OPTIONS = Object.freeze([
+	        { id: 'enabled', label: '思考', shortLabel: '思考', hint: '开启豆包思考模式并展示思考过程' },
+	        { id: 'disabled', label: '关闭', shortLabel: '关闭', hint: '关闭豆包思考模式，直接回答' },
+	        { id: 'unset', label: '默认', shortLabel: '默认', hint: '使用豆包默认思考设置' }
 	    ]);
 	    const OPENAI_IMAGE_INPUT_OPTIONS = Object.freeze([
 	        { id: 'auto', label: '允许读图', shortLabel: '读图', hint: '模型支持视觉时，会把图片作为对话输入' },
@@ -418,6 +443,16 @@
     let chatNavigationResizeObserver = null;
     let chatNavigationScrollTarget = null;
     let chatNavigationPositionFrame = 0;
+    let chatNavigationWheelTarget = null;
+    let historyLocatorWheelTarget = null;
+    let chatStageScrollTarget = null;
+    let chatStageScrollStateFrame = 0;
+    let chatStageScrollState = {
+        element: null,
+        bottomDistance: Number.POSITIVE_INFINITY,
+        nearBottom: true
+    };
+    let chatStagePinFrame = 0;
     let chatNavigationResizeBound = false;
     let suppressNextChatNavigationClick = false;
     let mobileWorkbenchStaticHeight = 0;
@@ -440,6 +475,7 @@
     const progressVisualCache = new Map();
     const originalReadyPollCounts = new Map();
     const busyClientTaskRecoveryAt = new Map();
+    const activeChatStreamTaskIds = new Set();
     let lastBusyTaskCount = 0;
     let lastDockTerminalSignature = '';
     let dockAnimationRateFrame = 0;
@@ -1201,6 +1237,8 @@
         if (!id) return null;
         const providerLabel = String(item.providerLabel || item.provider_label || fallbackProvider.label || '').trim();
         const vendorLabel = String(item.vendorLabel || item.vendor_label || fallbackProvider.vendorLabel || fallbackProvider.vendor_label || '').trim();
+        const vendor = String(item.vendor || fallbackProvider.vendor || '').trim().toLowerCase();
+        const protocol = String(item.protocol || item.adapter || fallbackProvider.protocol || fallbackProvider.adapter || '').trim().toLowerCase();
         const label = normalizeRuntimeModelLabel(String(item.label || item.displayName || item.display_name || id).trim());
         const providerId = String(item.providerId || item.provider_id || fallbackProvider.providerId || fallbackProvider.provider_id || '').trim();
         const rawSupportsImageInput = item.supportsImageInput ?? item.supports_image_input ?? item.vision ?? item.vision_input ?? null;
@@ -1216,6 +1254,8 @@
             providerId,
             providerLabel,
             vendorLabel,
+            vendor,
+            protocol,
             supportsImageInput
         };
     }
@@ -1321,7 +1361,9 @@
                     ...model,
                     providerId: provider.providerId,
                     providerLabel: provider.label,
-                    vendorLabel: provider.vendorLabel || ''
+                    vendorLabel: provider.vendorLabel || '',
+                    vendor: model.vendor || provider.vendor || '',
+                    protocol: model.protocol || provider.protocol || ''
                 });
             });
         });
@@ -1347,6 +1389,8 @@
             provider.vendorLabel || provider.vendor_label || provider.vendorName || provider.vendor_name || '',
             ''
         );
+        const vendor = String(provider.vendor || '').trim().toLowerCase();
+        const protocol = String(provider.protocol || provider.adapter || '').trim().toLowerCase();
         const modelGroup = String(provider.modelGroup || provider.model_group || '').trim().toLowerCase();
         const visionModelSet = new Set((Array.isArray(provider.visionModels || provider.vision_models || provider.chatVisionModels || provider.chat_vision_models)
             ? (provider.visionModels || provider.vision_models || provider.chatVisionModels || provider.chat_vision_models)
@@ -1382,6 +1426,8 @@
             providerId,
             label,
             vendorLabel,
+            vendor,
+            protocol,
             imageModels,
             chatModels,
             videoModels
@@ -2273,7 +2319,7 @@
 	        const storedThinkingMode = String(stored.chatThinkingMode || stored.chat_thinking_mode || '').trim();
 	        const storedFastDefaultsVersion = Number(stored.chatFastDefaultsVersion ?? stored.chat_fast_defaults_version ?? 0) || 0;
 	        const storedImageInput = String(stored.chatImageInput || stored.chat_image_input || '').trim();
-	        state.chatReasoningEffort = [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].some((option) => option.id === storedReasoningEffort)
+	        state.chatReasoningEffort = [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...GLM_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].some((option) => option.id === storedReasoningEffort)
 	            ? storedReasoningEffort
 	            : DEFAULT_STATE.chatReasoningEffort;
 	        state.chatGeminiThinkingLevel = GEMINI_THINKING_LEVEL_OPTIONS.some((option) => option.id === storedGeminiThinkingLevel)
@@ -2285,7 +2331,7 @@
 	        state.chatServiceTier = OPENAI_SERVICE_TIER_OPTIONS.some((option) => option.id === storedServiceTier)
 	            ? storedServiceTier
 	            : DEFAULT_STATE.chatServiceTier;
-	        state.chatThinkingMode = [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS].some((option) => option.id === storedThinkingMode)
+	        state.chatThinkingMode = [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GLM_THINKING_OPTIONS, ...MINIMAX_THINKING_OPTIONS, ...DOUBAO_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...OPENAI_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].some((option) => option.id === storedThinkingMode)
 	            ? storedThinkingMode
 	            : (storedThinkingMode === 'show' ? 'enabled' : (storedThinkingMode === 'hide' ? 'unset' : DEFAULT_STATE.chatThinkingMode));
 	        if (storedFastDefaultsVersion < 1 && state.chatThinkingMode === 'enabled') {
@@ -2584,6 +2630,11 @@
             deliveredImageCount: Number.isFinite(deliveredImageCount) && deliveredImageCount >= 0 ? deliveredImageCount : 0,
             resultPrompt: String(task.resultPrompt || task.result_prompt || ''),
             reasoningText: String(task.reasoningText || task.reasoning_text || metadata.reasoning_content || metadata.reasoningContent || '').slice(0, 12000),
+            reasoningStartedAt: Number(task.reasoningStartedAt || task.reasoning_started_at || 0) || 0,
+            reasoningCompletedAt: Number(task.reasoningCompletedAt || task.reasoning_completed_at || 0) || 0,
+            reasoningExpanded: typeof task.reasoningExpanded === 'boolean'
+                ? task.reasoningExpanded
+                : (typeof task.reasoning_expanded === 'boolean' ? task.reasoning_expanded : undefined),
             metadata,
             errorCode,
             errorMessage,
@@ -2772,6 +2823,11 @@
                 ? (localTask.resultPrompt || remoteTask.resultPrompt || '')
                 : (remoteTask.resultPrompt || localTask.resultPrompt || '')),
             reasoningText: remoteTask.reasoningText || localTask.reasoningText || '',
+            reasoningStartedAt: localTask.reasoningStartedAt || remoteTask.reasoningStartedAt || 0,
+            reasoningCompletedAt: localTask.reasoningCompletedAt || remoteTask.reasoningCompletedAt || 0,
+            reasoningExpanded: typeof localTask.reasoningExpanded === 'boolean'
+                ? localTask.reasoningExpanded
+                : remoteTask.reasoningExpanded,
             metadata: {
                 ...(localTask.metadata || {}),
                 ...(remoteTask.metadata || {})
@@ -2908,7 +2964,7 @@
     }
 
     function shouldPollRemoteRecords() {
-        return getBusyTasks().length > 0 || getPendingOriginalTasks().length > 0;
+        return getRemotePollBusyTasks().length > 0 || getPendingOriginalTasks().length > 0;
     }
 
     function getBusyImageGenerationTasks() {
@@ -3514,7 +3570,7 @@
         if (remoteRecordsLoaded && !force) return;
         try {
             const beforeActivitySignature = getActivitySummarySignature();
-            const beforeBusyCount = getBusyTasks().length;
+            const beforeBusyCount = getRemotePollBusyTasks().length;
             const [payload, usagePayload] = await Promise.all([
                 requestAiImage('tasks', {
                     query: {
@@ -3541,19 +3597,30 @@
                 preloadImagePreviewOriginal();
             }
             remoteRecordsLoaded = true;
-            const afterBusyCount = getBusyTasks().length;
+            const afterBusyCount = getRemotePollBusyTasks().length;
             const busySettled = beforeBusyCount > 0 && afterBusyCount === 0;
             lastBusyTaskCount = afterBusyCount;
+            const preserveActiveChatStream = hasActiveChatStreamInCurrentThread();
+            const renderRemoteSyncWithoutChat = () => {
+                renderDock();
+                if (state.open) renderHistoryPanelOnly();
+            };
             if (tasksChanged || activityChanged || previewChanged) {
                 persistState();
-                render();
-                if (state.open && getActiveTask()?.mode === 'chat') {
+                if (preserveActiveChatStream && state.open) {
+                    renderRemoteSyncWithoutChat();
+                } else {
+                    render();
+                }
+                if (!preserveActiveChatStream && state.open && getActiveTask()?.mode === 'chat') {
                     scrollChatStageToBottom();
                 }
             }
             if (busySettled) {
                 if (!state.open && getCompletedUnreadTasks().length) {
                     showDoneNotice();
+                } else if (preserveActiveChatStream && state.open) {
+                    renderRemoteSyncWithoutChat();
                 } else {
                     render();
                     if (state.open && getActiveTask()?.mode === 'chat') {
@@ -3615,7 +3682,7 @@
     }
 
     async function recoverBusyTasksByClientId({ limit = 4 } = {}) {
-        const candidates = getBusyTasks()
+        const candidates = getRemotePollBusyTasks()
             .filter(shouldRecoverBusyTaskByClientId)
             .slice(0, limit);
         if (!candidates.length) return false;
@@ -3842,13 +3909,69 @@
         return rootTask?.mode === 'chat' ? rootTask : null;
     }
 
+    function updateChatStageScrollState(stage = overlay?.querySelector?.('.ai-image-stage')) {
+        if (!stage) {
+            chatStageScrollState = {
+                element: null,
+                bottomDistance: Number.POSITIVE_INFINITY,
+                nearBottom: true
+            };
+            return chatStageScrollState;
+        }
+        const bottomDistance = Math.max(0, Number(stage.scrollHeight || 0) - Number(stage.clientHeight || 0) - Number(stage.scrollTop || 0));
+        chatStageScrollState = {
+            element: stage,
+            bottomDistance,
+            nearBottom: bottomDistance <= CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX
+        };
+        return chatStageScrollState;
+    }
+
+    function scheduleChatStageScrollState(stage = overlay?.querySelector?.('.ai-image-stage')) {
+        if (!stage || chatStageScrollStateFrame) return;
+        const update = () => {
+            chatStageScrollStateFrame = 0;
+            if (stage.isConnected && stage === overlay?.querySelector?.('.ai-image-stage')) {
+                updateChatStageScrollState(stage);
+            }
+        };
+        if (typeof global.requestAnimationFrame === 'function') {
+            chatStageScrollStateFrame = global.requestAnimationFrame(update);
+        } else {
+            chatStageScrollStateFrame = global.setTimeout?.(update, 16) || 0;
+        }
+    }
+
+    function handleChatStageScroll() {
+        scheduleChatStageScrollState(chatStageScrollTarget);
+    }
+
+    function syncChatStageScrollListener() {
+        const nextStage = overlay?.querySelector?.('.ai-image-stage');
+        if (chatStageScrollTarget === nextStage) {
+            if (nextStage && chatStageScrollState.element !== nextStage) updateChatStageScrollState(nextStage);
+            return;
+        }
+        chatStageScrollTarget?.removeEventListener('scroll', handleChatStageScroll);
+        chatStageScrollTarget = nextStage || null;
+        if (!chatStageScrollTarget) {
+            updateChatStageScrollState(null);
+            return;
+        }
+        chatStageScrollTarget.addEventListener('scroll', handleChatStageScroll, { passive: true });
+        updateChatStageScrollState(chatStageScrollTarget);
+    }
+
     function getChatStageBottomDistance(stage = overlay?.querySelector?.('.ai-image-stage')) {
         if (!stage) return Number.POSITIVE_INFINITY;
-        return Math.max(0, Number(stage.scrollHeight || 0) - Number(stage.clientHeight || 0) - Number(stage.scrollTop || 0));
+        if (chatStageScrollState.element === stage) return chatStageScrollState.bottomDistance;
+        return updateChatStageScrollState(stage).bottomDistance;
     }
 
     function isChatStageNearBottom(stage = overlay?.querySelector?.('.ai-image-stage')) {
-        return getChatStageBottomDistance(stage) <= CHAT_STAGE_BOTTOM_STICKY_THRESHOLD_PX;
+        if (!stage) return true;
+        if (chatStageScrollState.element === stage) return chatStageScrollState.nearBottom;
+        return updateChatStageScrollState(stage).nearBottom;
     }
 
     function shouldKeepChatStagePinnedToBottom(renderSnapshot = null, { force = false } = {}) {
@@ -3873,7 +3996,7 @@
 	    }
 
 	    function getChatReasoningOption(mode = state.chatReasoningEffort) {
-	        return [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].find((option) => option.id === mode)
+	        return [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...GLM_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].find((option) => option.id === mode)
 	            || OPENAI_REASONING_EFFORT_OPTIONS[0];
 	    }
 
@@ -3882,7 +4005,7 @@
 	    }
 
 	    function getChatThinkingOption(mode = state.chatThinkingMode) {
-	        return [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].find((option) => option.id === mode) || DEEPSEEK_THINKING_OPTIONS[0];
+	        return [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GLM_THINKING_OPTIONS, ...MINIMAX_THINKING_OPTIONS, ...DOUBAO_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...OPENAI_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].find((option) => option.id === mode) || DEEPSEEK_THINKING_OPTIONS[0];
 	    }
 
 	    function getChatImageInputOption(mode = state.chatImageInput) {
@@ -3911,25 +4034,27 @@
 	    }
 
 	    function getChatModelCapabilities(modelId = getActiveModelValue('chat')) {
-	        const model = String(modelId || '').toLowerCase();
-	        const baseUrl = String(state.billingMode === 'api' ? state.apiBaseUrl : '').toLowerCase();
-	        const profile = `${model} ${baseUrl}`;
-	        const isDeepSeek = /deepseek/.test(profile);
-	        const isKimi = /kimi|moonshot/.test(profile);
-	        const kimiThinkingVerified = isKimi
-	            && isKimiThinkingCapabilityVerified({ model: modelId })
-	            && !isKimiThinkingVerificationInFlight({ model: modelId });
-	        const isQwen = /qwen|dashscope|aliyuncs/.test(profile);
-	        const isGrok = /grok|xai|x\.ai/.test(profile);
-	        const isGemini = /gemini|generativelanguage\.googleapis\.com/.test(profile);
-	        const isGeminiThinkingLevel = /(?:^|[-_/])gemini[-_/]?(?:2\.5|2-5|2_5|3|3\.|3-|3_)/.test(model);
-	        const isClaude = /claude|anthropic/.test(profile);
-	        const isClaudeThinking = /claude-(?:3\.7|3-7|4|sonnet-4|opus-4)/.test(model) || /api\.anthropic\.com/.test(profile);
-	        const isOpenAiLike = /gpt|openai|o\d|chatgpt/.test(profile);
-	        const isOpenAiReasoning = /(?:^|[-_/])(o\d|o\d-mini|o\d-pro|gpt-5(?:[.\-_]|$)|gpt-5\.\d|gpt-5-\d)(?:[-_/]|$)?/.test(model);
+	        const modelOption = getChatModelOption(modelId) || {};
+	        const resolver = global.AIChatModelCapabilities?.resolveAiChatModelCapabilities;
+	        const capabilityProfile = typeof resolver === 'function'
+	            ? resolver({
+	                model: modelId,
+	                vendor: modelOption.vendor,
+	                protocol: modelOption.protocol,
+	                providerLabel: modelOption.providerLabel
+	            })
+	            : { family: 'unknown', supportsThinking: false };
+	        const family = capabilityProfile.family;
+	        const isDeepSeek = family === 'deepseek';
+	        const isKimi = family === 'kimi';
+	        const isQwen = family === 'qwen';
+	        const isGrok = family === 'grok';
+	        const isGemini = family === 'gemini';
+	        const isClaude = family === 'claude';
+	        const isOpenAiLike = family === 'openai';
 	        const isVisionLikely = modelLikelySupportsChatImageInput(modelId);
 	        const controls = [];
-		        if (isDeepSeek) {
+		        if (isDeepSeek && capabilityProfile.supportsThinking) {
 		            controls.push({
 		                id: 'thinking',
 		                icon: 'fa-lightbulb',
@@ -3944,7 +4069,7 @@
 		                activeValue: state.chatReasoningEffort,
 			                options: DEEPSEEK_REASONING_EFFORT_OPTIONS
 			            });
-	        } else if (isKimi && kimiThinkingVerified) {
+	        } else if (isKimi && capabilityProfile.supportsThinking) {
 	            controls.push({
 	                id: 'thinking',
 	                icon: 'fa-lightbulb',
@@ -3952,7 +4077,7 @@
 	                activeValue: state.chatThinkingMode,
 	                options: KIMI_THINKING_OPTIONS
 	            });
-	        } else if (isQwen) {
+	        } else if (isQwen && capabilityProfile.supportsThinking) {
 	            controls.push({
 	                id: 'thinking',
 	                icon: 'fa-lightbulb',
@@ -3960,7 +4085,40 @@
 	                activeValue: state.chatThinkingMode,
 	                options: QWEN_ENABLE_THINKING_OPTIONS
 	            });
-	        } else if (isGrok) {
+	        } else if (family === 'glm' && capabilityProfile.supportsThinking) {
+	            controls.push({
+	                id: 'thinking',
+	                icon: 'fa-lightbulb',
+	                label: 'GLM 思考模式',
+	                activeValue: state.chatThinkingMode,
+	                options: GLM_THINKING_OPTIONS
+	            });
+	            if (capabilityProfile.reasoningEffortProfile === 'glm') {
+	                controls.push({
+	                    id: 'reasoning',
+	                    icon: 'fa-gauge-high',
+	                    label: 'GLM 推理强度',
+	                    activeValue: state.chatReasoningEffort,
+	                    options: GLM_REASONING_EFFORT_OPTIONS
+	                });
+	            }
+	        } else if (family === 'minimax' && capabilityProfile.supportsThinking) {
+	            controls.push({
+	                id: 'thinking',
+	                icon: 'fa-lightbulb',
+	                label: 'MiniMax 思考模式',
+	                activeValue: state.chatThinkingMode,
+	                options: MINIMAX_THINKING_OPTIONS
+	            });
+	        } else if (family === 'doubao' && capabilityProfile.supportsThinking) {
+	            controls.push({
+	                id: 'thinking',
+	                icon: 'fa-lightbulb',
+	                label: '豆包思考模式',
+	                activeValue: state.chatThinkingMode,
+	                options: DOUBAO_THINKING_OPTIONS
+	            });
+	        } else if (isGrok && capabilityProfile.supportsThinking) {
 	            controls.push({
 	                id: 'thinking',
 	                icon: 'fa-lightbulb',
@@ -3975,7 +4133,7 @@
 	                activeValue: state.chatReasoningEffort,
 	                options: XAI_REASONING_EFFORT_OPTIONS
 	            });
-	        } else if (isGemini && isGeminiThinkingLevel) {
+	        } else if (isGemini && capabilityProfile.supportsThinking) {
 	            controls.push({
 	                id: 'thinking',
 	                icon: 'fa-lightbulb',
@@ -3983,15 +4141,17 @@
 	                activeValue: state.chatThinkingMode,
 	                options: GEMINI_THINKING_OPTIONS
 	            });
-	            controls.push({
-	                id: 'geminiThinking',
-	                icon: 'fa-brain',
-	                label: 'Gemini 思考等级',
-	                activeValue: state.chatGeminiThinkingLevel,
-	                options: GEMINI_THINKING_LEVEL_OPTIONS
-	            });
+	            if (capabilityProfile.thinkingLevelProfile === 'gemini') {
+	                controls.push({
+	                    id: 'geminiThinking',
+	                    icon: 'fa-brain',
+	                    label: 'Gemini 思考等级',
+	                    activeValue: state.chatGeminiThinkingLevel,
+	                    options: GEMINI_THINKING_LEVEL_OPTIONS
+	                });
+	            }
 	        } else if (isClaude) {
-	            if (isClaudeThinking) {
+	            if (capabilityProfile.supportsThinking) {
 	                controls.push({
 	                    id: 'thinking',
 	                    icon: 'fa-lightbulb',
@@ -4008,13 +4168,24 @@
 	                });
 	            }
 	        } else if (isOpenAiLike) {
-	            if (isOpenAiReasoning) {
+	            if (capabilityProfile.reasoningEffortProfile === 'openai') {
+	                const supportedReasoningEfforts = new Set(capabilityProfile.reasoningEfforts || []);
+	                const reasoningOptions = OPENAI_REASONING_EFFORT_OPTIONS.filter((option) => (
+	                    option.id === 'auto' || supportedReasoningEfforts.has(option.id)
+	                ));
+	                controls.push({
+	                    id: 'thinking',
+	                    icon: 'fa-lightbulb',
+	                    label: 'OpenAI 思考模式',
+	                    activeValue: state.chatThinkingMode,
+	                    options: OPENAI_THINKING_OPTIONS
+	                });
 	                controls.push({
 	                    id: 'reasoning',
 	                    icon: 'fa-gauge-high',
 	                    label: 'OpenAI 推理强度',
 	                    activeValue: state.chatReasoningEffort,
-	                    options: OPENAI_REASONING_EFFORT_OPTIONS
+	                    options: reasoningOptions
 	                });
 	            }
 	            controls.push({
@@ -4036,7 +4207,8 @@
 	        }
 
         return {
-	            provider: isDeepSeek ? 'deepseek' : (isKimi ? 'kimi' : (isQwen ? 'qwen' : (isGrok ? 'xai' : (isGemini ? 'gemini' : (isClaude ? 'claude' : (isOpenAiLike ? 'openai-compatible' : 'unknown')))))),
+	            provider: family,
+	            profile: capabilityProfile,
             supportsImageInput: isVisionLikely,
             controls
         };
@@ -4320,6 +4492,28 @@
 
     function getBusyTasks() {
         return state.tasks.filter(isBusyTask);
+    }
+
+    function isActiveChatStreamTask(task = {}) {
+        if (!task || task.mode !== 'chat') return false;
+        const taskId = String(task.id || '').trim();
+        const clientTaskId = String(task.clientTaskId || '').trim();
+        return Boolean(
+            (taskId && activeChatStreamTaskIds.has(taskId))
+            || (clientTaskId && activeChatStreamTaskIds.has(clientTaskId))
+        );
+    }
+
+    function getRemotePollBusyTasks() {
+        return getBusyTasks().filter((task) => !isActiveChatStreamTask(task));
+    }
+
+    function hasActiveChatStreamInCurrentThread() {
+        if (!state.open) return false;
+        const activeTask = getActiveTask();
+        if (!activeTask || activeTask.mode !== 'chat') return false;
+        const rootTask = getTaskThreadRoot(activeTask) || activeTask;
+        return getTaskThread(rootTask).some((task) => isActiveChatStreamTask(task));
     }
 
     function getCompletedUnreadTasks() {
@@ -5039,18 +5233,110 @@
         return String(task?.reasoningText || task?.metadata?.reasoning_content || task?.metadata?.reasoningContent || '').trim();
     }
 
+    function getChatReasoningDurationMs(task = {}) {
+        const startedAt = Number(task?.reasoningStartedAt || task?.reasoning_started_at || 0);
+        const completedAt = Number(task?.reasoningCompletedAt || task?.reasoning_completed_at || 0);
+        if (startedAt > 0 && completedAt >= startedAt) return completedAt - startedAt;
+
+        const diagnostic = getTaskReasoningDiagnostic(task);
+        const firstReasoningMs = Number(diagnostic.first_reasoning_ms ?? diagnostic.firstReasoningMs);
+        const firstContentMs = Number(diagnostic.first_content_ms ?? diagnostic.firstContentMs);
+        if (Number.isFinite(firstReasoningMs) && firstReasoningMs >= 0
+            && Number.isFinite(firstContentMs) && firstContentMs >= firstReasoningMs) {
+            return firstContentMs - firstReasoningMs;
+        }
+
+        const reasoningEndMs = Number(
+            diagnostic.last_visible_ms
+            ?? diagnostic.lastVisibleMs
+            ?? diagnostic.protocol_done_ms
+            ?? diagnostic.protocolDoneMs
+        );
+        if (Number.isFinite(firstReasoningMs) && firstReasoningMs >= 0
+            && Number.isFinite(reasoningEndMs) && reasoningEndMs >= firstReasoningMs) {
+            return reasoningEndMs - firstReasoningMs;
+        }
+        return 0;
+    }
+
+    function isChatReasoningActive(task = {}) {
+        return Boolean(
+            getChatTaskReasoningText(task)
+            && isBusyTask(task)
+            && !getChatTaskAnswerText(task)
+            && !Number(task?.reasoningCompletedAt || task?.reasoning_completed_at || 0)
+        );
+    }
+
+    function getChatReasoningPresentation(task = {}) {
+        const active = isChatReasoningActive(task);
+        const hasExplicitExpandedState = typeof task?.reasoningExpanded === 'boolean';
+        const expanded = hasExplicitExpandedState ? task.reasoningExpanded : active;
+        const durationMs = getChatReasoningDurationMs(task);
+        const diagnostic = getTaskReasoningDiagnostic(task);
+        const firstReasoningMs = Number(diagnostic.first_reasoning_ms ?? diagnostic.firstReasoningMs);
+        const firstContentMs = Number(diagnostic.first_content_ms ?? diagnostic.firstContentMs);
+        const hasCompletedTiming = Number(task?.reasoningCompletedAt || task?.reasoning_completed_at || 0) > 0
+            || (Number.isFinite(firstReasoningMs) && firstReasoningMs >= 0
+                && Number.isFinite(firstContentMs) && firstContentMs >= firstReasoningMs);
+        const durationSeconds = hasCompletedTiming ? Math.max(1, Math.ceil(durationMs / 1000)) : 0;
+        return {
+            active,
+            expanded,
+            label: active ? '思考中' : (durationSeconds ? `思考了 ${durationSeconds} 秒` : '思考完成')
+        };
+    }
+
+    function completeChatReasoning(task = {}, completedAt = Date.now(), { collapse = true } = {}) {
+        if (!task || !getChatTaskReasoningText(task)) return false;
+        if (!Number(task.reasoningStartedAt || 0)) task.reasoningStartedAt = completedAt;
+        if (Number(task.reasoningCompletedAt || 0)) return false;
+        task.reasoningCompletedAt = completedAt;
+        if (collapse) task.reasoningExpanded = false;
+        return true;
+    }
+
     function renderChatReasoningBlock(task = {}) {
         const reasoningText = getChatTaskReasoningText(task);
         if (!reasoningText) return '';
+        const presentation = getChatReasoningPresentation(task);
+        const taskId = String(task?.id || task?.clientTaskId || '').trim();
+        const bodyId = `aiw-chat-reasoning-${taskId || 'current'}`;
         return `
-            <div class="ai-image-chat-reasoning">
-                <div class="ai-image-chat-reasoning-head">
-                    <i class="fas fa-brain"></i>
-                    <span>思考过程</span>
+            <div class="ai-image-chat-reasoning ${presentation.expanded ? 'is-expanded' : 'is-collapsed'}">
+                <button class="ai-image-chat-reasoning-head" type="button" data-aiw-reasoning-toggle data-task-id="${escapeHtml(taskId)}" aria-expanded="${presentation.expanded ? 'true' : 'false'}" aria-controls="${escapeHtml(bodyId)}">
+                    <i class="fas fa-brain" aria-hidden="true"></i>
+                    <span>${escapeHtml(presentation.label)}</span>
+                    <i class="fas fa-chevron-down ai-image-chat-reasoning-chevron" aria-hidden="true"></i>
+                </button>
+                <div class="ai-image-chat-reasoning-body" id="${escapeHtml(bodyId)}" aria-hidden="${presentation.expanded ? 'false' : 'true'}">
+                    <p>${escapeHtml(reasoningText)}</p>
                 </div>
-                <p>${escapeHtml(reasoningText)}</p>
             </div>
         `;
+    }
+
+    function updateVisibleChatReasoning(task = {}) {
+        if (!task) return false;
+        const normalizedTaskId = String(task.id || task.clientTaskId || '').trim();
+        const escapedTaskId = global.CSS?.escape
+            ? global.CSS.escape(normalizedTaskId)
+            : normalizedTaskId.replace(/"/g, '\\"');
+        const turn = overlay?.querySelector?.(`[data-aiw-chat-turn-id="${escapedTaskId}"]`);
+        const block = turn?.querySelector?.('.ai-image-chat-reasoning');
+        const toggle = block?.querySelector?.('[data-aiw-reasoning-toggle]');
+        const body = block?.querySelector?.('.ai-image-chat-reasoning-body');
+        if (!block || !toggle || !body) return false;
+        const presentation = getChatReasoningPresentation(task);
+        block.classList.toggle('is-expanded', presentation.expanded);
+        block.classList.toggle('is-collapsed', !presentation.expanded);
+        toggle.setAttribute('aria-expanded', presentation.expanded ? 'true' : 'false');
+        body.setAttribute('aria-hidden', presentation.expanded ? 'false' : 'true');
+        const label = toggle.querySelector('span');
+        if (label) label.textContent = presentation.label;
+        const reasoningParagraph = body.querySelector('p');
+        if (reasoningParagraph) reasoningParagraph.textContent = getChatTaskReasoningText(task);
+        return true;
     }
 
     function renderChatLoadingDots() {
@@ -5980,9 +6266,6 @@
         root.addEventListener('pointermove', handleRootPointerMove);
         root.addEventListener('pointerup', handleRootPointerUp);
         root.addEventListener('pointercancel', handleRootPointerUp);
-        root.addEventListener('touchstart', handleWorkbenchViewportGesture, { passive: false });
-        root.addEventListener('touchmove', handleWorkbenchViewportGesture, { passive: false });
-        root.addEventListener('wheel', handleRootWheel, { passive: false });
         root.addEventListener('input', handleRootInput);
         root.addEventListener('change', handleRootChange);
         root.addEventListener('focusin', handleRootFocusIn);
@@ -5998,8 +6281,6 @@
         root.addEventListener('canplaythrough', handleRootVideoLoaded, true);
         window.addEventListener('resize', handleWorkbenchWindowResize, { passive: true });
         window.addEventListener('orientationchange', handleWorkbenchOrientationChange, { passive: true });
-        document.addEventListener('touchstart', handleWorkbenchViewportGesture, { passive: false });
-        document.addEventListener('touchmove', handleWorkbenchViewportGesture, { passive: false });
         global.addEventListener?.('gesturestart', handleWorkbenchViewportGesture, { passive: false });
         global.addEventListener?.('gesturechange', handleWorkbenchViewportGesture, { passive: false });
         global.addEventListener?.('gestureend', handleWorkbenchViewportGesture, { passive: false });
@@ -6132,6 +6413,19 @@
                 return;
             }
             scrollToChatTurn(chatNavButton.getAttribute('data-aiw-chat-nav-id') || '');
+            return;
+        }
+
+        const reasoningToggle = target.closest('[data-aiw-reasoning-toggle]');
+        if (reasoningToggle) {
+            event.preventDefault();
+            const taskId = String(reasoningToggle.getAttribute('data-task-id') || '').trim();
+            const reasoningTask = state.tasks.find((item) => item.id === taskId || item.clientTaskId === taskId);
+            if (!reasoningTask) return;
+            const presentation = getChatReasoningPresentation(reasoningTask);
+            reasoningTask.reasoningExpanded = !presentation.expanded;
+            persistState();
+            if (!updateVisibleChatReasoning(reasoningTask)) renderPreservingStageScroll();
             return;
         }
 
@@ -6325,11 +6619,11 @@
 	            if (field === 'billing' && ['points', 'api'].includes(value)) state.billingMode = value;
 	            if (field === 'apiTool') setWorkbenchToolMode(value);
 	            if (field === 'memory' && CHAT_MEMORY_OPTIONS.some((option) => option.id === value)) state.chatMemoryMode = value;
-	            if (field === 'reasoning' && [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].some((option) => option.id === value)) state.chatReasoningEffort = value;
+	            if (field === 'reasoning' && [...OPENAI_REASONING_EFFORT_OPTIONS, ...DEEPSEEK_REASONING_EFFORT_OPTIONS, ...GLM_REASONING_EFFORT_OPTIONS, ...XAI_REASONING_EFFORT_OPTIONS].some((option) => option.id === value)) state.chatReasoningEffort = value;
 	            if (field === 'geminiThinking' && GEMINI_THINKING_LEVEL_OPTIONS.some((option) => option.id === value)) state.chatGeminiThinkingLevel = value;
 	            if (field === 'claudeThinkingBudget' && CLAUDE_THINKING_BUDGET_OPTIONS.some((option) => option.id === value)) state.chatClaudeThinkingBudget = value;
 	            if (field === 'serviceTier' && OPENAI_SERVICE_TIER_OPTIONS.some((option) => option.id === value)) state.chatServiceTier = value;
-	            if (field === 'thinking' && [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].some((option) => option.id === value)) state.chatThinkingMode = value;
+	            if (field === 'thinking' && [...DEEPSEEK_THINKING_OPTIONS, ...KIMI_THINKING_OPTIONS, ...CLAUDE_THINKING_OPTIONS, ...QWEN_ENABLE_THINKING_OPTIONS, ...GLM_THINKING_OPTIONS, ...MINIMAX_THINKING_OPTIONS, ...DOUBAO_THINKING_OPTIONS, ...GROK_THINKING_OPTIONS, ...OPENAI_THINKING_OPTIONS, ...GEMINI_THINKING_OPTIONS].some((option) => option.id === value)) state.chatThinkingMode = value;
             if (field === 'imageInput' && OPENAI_IMAGE_INPUT_OPTIONS.some((option) => option.id === value)) state.chatImageInput = value;
             openSelect = target.closest('[data-aiw-chat-settings]') ? 'chatSettings' : '';
             if (openSelect === 'chatSettings') openChatSettingsSection = field || openChatSettingsSection;
@@ -6497,6 +6791,25 @@
         event.stopPropagation();
         if (list.scrollWidth > list.clientWidth) {
             list.scrollLeft += delta;
+        }
+    }
+
+    function syncNavigationWheelListeners() {
+        const nextChatTarget = state.open
+            ? overlay?.querySelector?.('.ai-image-chat-nav-list') || null
+            : null;
+        const nextHistoryTarget = state.open
+            ? overlay?.querySelector?.('[data-aiw-history-locator-track]') || null
+            : null;
+        if (chatNavigationWheelTarget !== nextChatTarget) {
+            chatNavigationWheelTarget?.removeEventListener('wheel', handleRootWheel);
+            chatNavigationWheelTarget = nextChatTarget;
+            chatNavigationWheelTarget?.addEventListener('wheel', handleRootWheel, { passive: false });
+        }
+        if (historyLocatorWheelTarget !== nextHistoryTarget) {
+            historyLocatorWheelTarget?.removeEventListener('wheel', handleRootWheel);
+            historyLocatorWheelTarget = nextHistoryTarget;
+            historyLocatorWheelTarget?.addEventListener('wheel', handleRootWheel, { passive: false });
         }
     }
 
@@ -7785,6 +8098,9 @@
 	        const thinkingMode = getCapabilityValue('thinking', state.chatThinkingMode);
 	        const imageInputMode = getCapabilityValue('imageInput', state.chatImageInput);
 	        const chatModelOption = task.mode === 'chat' ? getChatModelOption(task.model || getActiveModelValue('chat')) : null;
+	        if (chatModelOption?.vendor) payload.modelVendor = chatModelOption.vendor;
+	        if (chatModelOption?.protocol) payload.modelProtocol = chatModelOption.protocol;
+	        if (chatModelOption?.providerLabel) payload.modelProviderLabel = chatModelOption.providerLabel;
 	        if (reasoningEffort) payload.reasoningEffort = reasoningEffort;
 	        if (geminiThinkingLevel && thinkingMode !== 'disabled') payload.geminiThinkingLevel = geminiThinkingLevel;
 	        if (claudeThinkingBudget) payload.claudeThinkingBudget = claudeThinkingBudget;
@@ -7946,6 +8262,8 @@
 
     async function submitChatStreamTask(localTask, threadRoot = null, chatThreadMessages = null, chatAttachments = []) {
         const task = localTask;
+        if (task?.id) activeChatStreamTaskIds.add(task.id);
+        if (task?.clientTaskId) activeChatStreamTaskIds.add(task.clientTaskId);
         try {
             let finalTaskFromStream = null;
             let receivedText = '';
@@ -8021,6 +8339,8 @@
                         const storedApiKeyChanged = applyStoredApiKeyFromPayload(payload);
                         const remoteTask = replaceTask(task.id, payload.task);
                         if (remoteTask) {
+                            if (remoteTask.id) activeChatStreamTaskIds.add(remoteTask.id);
+                            if (remoteTask.clientTaskId) activeChatStreamTaskIds.add(remoteTask.clientTaskId);
                             if (remoteTask.status !== 'cancelled') {
                                 remoteTask.status = 'streaming';
                                 remoteTask.resultPrompt = receivedText || remoteTask.resultPrompt || '';
@@ -8040,6 +8360,12 @@
                         if (!delta) return;
                         if (currentTask) {
                             if (currentTask.status === 'cancelled') return;
+                            const isFirstReasoningDelta = !getChatTaskReasoningText(currentTask);
+                            if (isFirstReasoningDelta) {
+                                currentTask.reasoningStartedAt = Date.now();
+                                currentTask.reasoningCompletedAt = 0;
+                                currentTask.reasoningExpanded = true;
+                            }
                             currentTask.status = 'streaming';
                             currentTask.progress = Math.min(96, Math.max(currentTask.progress || 12, 12 + Math.round((currentTask.reasoningText || '').length / 18)));
                             currentTask.progressKnown = true;
@@ -8050,8 +8376,8 @@
                             };
                             maybeRememberKimiThinkingCapability(currentTask);
                             currentTask.completedAt = 0;
-                            persistState();
-                            render();
+                            persistStreamState();
+                            if (!updateVisibleChatReasoning(currentTask)) render();
                             scrollChatStageToBottom();
                         }
                         return;
@@ -8062,10 +8388,12 @@
                         receivedText += delta;
                         if (currentTask) {
                             if (currentTask.status === 'cancelled') return;
+                            const reasoningWasCompleted = completeChatReasoning(currentTask, Date.now());
                             currentTask.status = 'streaming';
                             currentTask.progress = Math.min(96, Math.max(currentTask.progress || 12, 16 + Math.round(receivedText.length / 12)));
                             currentTask.progressKnown = true;
                             currentTask.completedAt = 0;
+                            if (reasoningWasCompleted && !updateVisibleChatReasoning(currentTask)) render();
                         }
                         await revealChatDelta(currentTask, delta);
                         persistStreamState();
@@ -8079,6 +8407,7 @@
                             Date.now()
                         );
                         currentTask.generationCompletedAt = contentCompletedAt;
+                        const reasoningWasCompleted = completeChatReasoning(currentTask, contentCompletedAt);
                         currentTask.progress = Math.max(Number(currentTask.progress || 0), 97);
                         currentTask.progressKnown = true;
                         currentTask.metadata = {
@@ -8089,7 +8418,7 @@
                             protocol_done_signal: String(payload.terminal_signal || '')
                         };
                         persistState();
-                        render();
+                        if (reasoningWasCompleted && !updateVisibleChatReasoning(currentTask)) render();
                         return;
                     }
                     if (eventName === 'billing') {
@@ -8129,6 +8458,7 @@
                         const wasCancelled = localTask?.status === 'cancelled';
                         const remoteTask = replaceTask(task.id, payload.task);
                         if (remoteTask) {
+                            completeChatReasoning(remoteTask, remoteTask.generationCompletedAt || remoteTask.completedAt || Date.now());
                             if (!wasCancelled && remoteTask.status === 'succeeded') {
                                 remoteTask.resultPrompt = payload.text || remoteTask.resultPrompt || receivedText;
                             }
@@ -8176,6 +8506,7 @@
             if (currentTask) {
                 currentTask.remoteError = getFriendlyTaskError(error?.message || error || '', '', currentTask.mode).slice(0, 240);
                 if (currentTask.status !== 'cancelled') {
+                    completeChatReasoning(currentTask, Date.now());
                     currentTask.status = 'failed';
                     currentTask.progress = 0;
                     currentTask.progressKnown = true;
@@ -8187,6 +8518,18 @@
                 render();
                 scrollChatStageToBottom();
             }
+        } finally {
+            const currentTask = state.tasks.find((item) => (
+                item.id === task.id
+                || item.clientTaskId === task.id
+                || item.id === task.clientTaskId
+                || item.clientTaskId === task.clientTaskId
+            ));
+            [task.id, task.clientTaskId, currentTask?.id, currentTask?.clientTaskId]
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+                .forEach((value) => activeChatStreamTaskIds.delete(value));
+            if (shouldPollRemoteRecords()) scheduleRemoteRecordsPoll();
         }
     }
 
@@ -8384,6 +8727,10 @@
             completedAt: 0,
             images: [],
             resultPrompt: '',
+            reasoningText: '',
+            reasoningStartedAt: 0,
+            reasoningCompletedAt: 0,
+            reasoningExpanded: false,
             source: 'local-preview',
             seen: false
         };
@@ -8501,6 +8848,7 @@
         task.status = 'cancelled';
         task.progress = clampNumber(task.progress, 0, 100, 0);
         task.completedAt = Date.now();
+        completeChatReasoning(task, task.completedAt);
         task.resultPrompt = task.resultPrompt || '';
         task.metadata = {
             ...(task.metadata || {}),
@@ -8549,7 +8897,7 @@
             const count = originalReadyPollCounts.get(task.id) || 0;
             return count < ORIGINAL_READY_POLL_LIMIT;
         });
-        if (!getBusyTasks().length && !shouldContinueOriginalPolling) return;
+        if (!getRemotePollBusyTasks().length && !shouldContinueOriginalPolling) return;
         const nextDelayMs = getRemoteRecordsPollDelayMs();
         const nextDueAt = Date.now() + nextDelayMs;
         if (remotePollTimer) {
@@ -8565,15 +8913,15 @@
         remotePollTimer = global.setTimeout(async () => {
             remotePollTimer = null;
             remotePollDueAt = 0;
-            const beforeBusyCount = getBusyTasks().length;
+            const beforeBusyCount = getRemotePollBusyTasks().length;
             await loadRemoteRecords({
                 force: true,
                 includeUsage: shouldIncludeUsageForRemotePoll(scheduledDelayMs)
             });
-            if (getBusyTasks().length) {
+            if (getRemotePollBusyTasks().length) {
                 await recoverBusyTasksByClientId();
             }
-            const afterBusyCount = getBusyTasks().length;
+            const afterBusyCount = getRemotePollBusyTasks().length;
             if (shouldPollRemoteRecords()) {
                 scheduleRemoteRecordsPoll();
             } else if (beforeBusyCount > 0) {
@@ -8606,6 +8954,7 @@
 
     function getRenderContinuitySnapshot() {
         const stage = overlay?.querySelector?.('.ai-image-stage');
+        const stageScrollState = stage ? updateChatStageScrollState(stage) : null;
         const activeElement = document.activeElement instanceof Element ? document.activeElement : null;
         const prompt = activeElement instanceof HTMLTextAreaElement && activeElement.matches('[data-aiw-prompt]')
             ? activeElement
@@ -8614,7 +8963,7 @@
             stage: stage ? {
                 scrollTop: Number(stage.scrollTop || 0),
                 scrollLeft: Number(stage.scrollLeft || 0),
-                wasNearBottom: isChatStageNearBottom(stage)
+                wasNearBottom: Boolean(stageScrollState?.nearBottom)
             } : null,
             prompt: prompt ? {
                 focused: true,
@@ -8661,6 +9010,8 @@
         const reusableVideos = collectReusableRenderedVideos();
         renderDock();
         renderOverlay();
+        syncChatStageScrollListener();
+        syncNavigationWheelListeners();
         restoreReusableRenderedImages(reusableImages);
         restoreReusableRenderedVideos(reusableVideos);
         syncRenderedImageLoadStates();
@@ -8841,16 +9192,19 @@
         if (!stage) return;
         const shouldScroll = force || (typeof wasNearBottom === 'boolean' ? wasNearBottom : isChatStageNearBottom(stage));
         if (!shouldScroll) return;
+        if (chatStagePinFrame) return;
         const pinToBottom = () => {
+            chatStagePinFrame = 0;
             const nextStage = overlay?.querySelector?.('.ai-image-stage');
             if (!nextStage) return;
             nextStage.scrollTop = Math.max(0, nextStage.scrollHeight - nextStage.clientHeight);
+            updateChatStageScrollState(nextStage);
         };
-        pinToBottom();
-        window.requestAnimationFrame(() => {
-            pinToBottom();
-            window.requestAnimationFrame(pinToBottom);
-        });
+        if (typeof global.requestAnimationFrame === 'function') {
+            chatStagePinFrame = global.requestAnimationFrame(pinToBottom);
+        } else {
+            chatStagePinFrame = global.setTimeout?.(pinToBottom, 16) || 0;
+        }
     }
 
     function syncRenderedImageLoadStates() {
@@ -9127,9 +9481,13 @@
         const viewportTop = stageRect.top + stageRect.height / 2;
         const top = Math.max(76, viewportTop - shellRect.top);
         const maxHeight = Math.max(180, Math.min(stageRect.height - 144, 560));
-        const baseComposerWidth = Math.max(0, chatRect.width);
-        const composerWidth = Math.max(0, baseComposerWidth - avoidOffset);
-        const composerMarginLeft = Math.max(0, chatRect.left - canvasRect.left + avoidOffset);
+        const composerSideBleed = 30;
+        const visibleChatLeft = chatRect.left + avoidOffset;
+        const visibleChatRight = chatRect.right;
+        const composerLeft = Math.max(canvasRect.left, visibleChatLeft - composerSideBleed);
+        const composerRight = Math.min(canvasRect.right, visibleChatRight + composerSideBleed);
+        const composerWidth = Math.max(0, composerRight - composerLeft);
+        const composerMarginLeft = Math.max(0, composerLeft - canvasRect.left);
 
         rail.style.setProperty('--aiw-chat-nav-left', `${Math.round(left)}px`);
         rail.style.setProperty('--aiw-chat-nav-top', `${Math.round(top)}px`);
@@ -9211,8 +9569,6 @@
         ensureChatNavigationResizeListener();
         positionChatNavigationRail();
         observeChatNavigationLayout();
-        chatNavigationScrollTarget = stage;
-        chatNavigationScrollTarget.addEventListener('scroll', scheduleChatNavigationPosition, { passive: true });
 
         const visibleIds = new Set();
         const orderedIds = turnNodes

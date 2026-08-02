@@ -1,5 +1,8 @@
 const crypto = require('node:crypto');
 const {
+    resolveAiChatModelCapabilities
+} = require('../../../js/ai-chat-model-capabilities');
+const {
     completeTask,
     executeAiImageTask,
     getAiWorkbenchLedgerReason,
@@ -3959,26 +3962,6 @@ function extractChatReasoningDelta(payload = {}) {
     )).filter(Boolean).join('');
 }
 
-function shouldEnableDeepSeekThinking(model = '', baseUrl = '') {
-    return /deepseek/i.test(`${model} ${baseUrl}`);
-}
-
-function shouldEnableKimiThinking(model = '', baseUrl = '') {
-    return /kimi|moonshot/i.test(`${model} ${baseUrl}`);
-}
-
-function shouldEnableQwenThinking(model = '', baseUrl = '') {
-    return /qwen|dashscope|aliyuncs/i.test(`${model} ${baseUrl}`);
-}
-
-function shouldEnableGrokReasoning(model = '', baseUrl = '') {
-    return /grok|xai|x\.ai/i.test(`${model} ${baseUrl}`);
-}
-
-function shouldEnableGeminiThinking(model = '', baseUrl = '') {
-    return /gemini|generativelanguage\.googleapis\.com/i.test(`${model} ${baseUrl}`);
-}
-
 function isOpenAiNativeBaseUrl(baseUrl = '') {
     try {
         return /(^|\.)api\.openai\.com$/i.test(new URL(normalizeApiBaseUrl(baseUrl)).host);
@@ -3995,11 +3978,11 @@ function isClaudeNativeBaseUrl(baseUrl = '') {
     }
 }
 
-function shouldEnableOpenAiReasoning(model = '', baseUrl = '') {
-    const normalizedModel = normalizeText(model, 160).toLowerCase();
-    if (!/(openai|chatgpt|gpt|o\d)/i.test(`${model} ${baseUrl}`)) return false;
-    return /(?:^|[-_/])o\d(?:[-_/]|$)/i.test(normalizedModel)
-        || /^gpt-5(?:[.\-_]|$)/i.test(normalizedModel);
+function normalizeGlmReasoningEffort(value = '') {
+    const normalized = normalizeChatReasoningEffort(value);
+    if (normalized === 'xhigh') return 'max';
+    if (normalized === 'max' || normalized === 'high') return normalized;
+    return '';
 }
 
 function normalizeDeepSeekReasoningEffort(value = '') {
@@ -4016,7 +3999,7 @@ function normalizeXaiReasoningEffort(value = '') {
 
 function normalizeOpenAiResponsesReasoningEffort(value = '') {
     const normalized = normalizeChatReasoningEffort(value);
-    return ['minimal', 'low', 'medium', 'high'].includes(normalized) ? normalized : '';
+    return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(normalized) ? normalized : '';
 }
 
 function extractUpstreamErrorMessage(payload = {}, fallback = '上游对话模型返回错误') {
@@ -5108,16 +5091,36 @@ function createAiImageHandlers({
 	                body,
 	                model: upstreamRequestModel
 	            });
-	            const deepSeekCapable = shouldEnableDeepSeekThinking(upstreamRequestModel, upstreamBaseUrl);
-	            const kimiThinkingCapable = shouldEnableKimiThinking(upstreamRequestModel, upstreamBaseUrl);
-	            const qwenThinkingCapable = shouldEnableQwenThinking(upstreamRequestModel, upstreamBaseUrl);
-	            const grokReasoningCapable = shouldEnableGrokReasoning(upstreamRequestModel, upstreamBaseUrl);
-	            const geminiModelCapable = shouldEnableGeminiThinking(upstreamRequestModel, upstreamBaseUrl);
-	            const openAiReasoningCapable = shouldEnableOpenAiReasoning(upstreamRequestModel, upstreamBaseUrl);
+	            const requestedModelVendor = billingMode === 'points'
+	                ? runtimeConfig?.vendor
+	                : normalizeText(body.modelVendor || body.model_vendor, 80);
+	            const requestedModelProtocol = normalizeText(billingMode === 'points'
+	                ? runtimeConfig?.protocol
+	                : (body.modelProtocol || body.model_protocol), 80).toLowerCase();
+	            const requestedModelProviderLabel = billingMode === 'points'
+	                ? runtimeConfig?.providerLabel
+	                : normalizeText(body.modelProviderLabel || body.model_provider_label, 120);
+	            const chatModelCapabilities = resolveAiChatModelCapabilities({
+	                model: upstreamRequestModel,
+	                vendor: requestedModelVendor,
+	                protocol: requestedModelProtocol,
+	                providerLabel: requestedModelProviderLabel
+	            });
+	            const deepSeekCapable = chatModelCapabilities.family === 'deepseek' && chatModelCapabilities.supportsThinking;
+	            const kimiThinkingCapable = chatModelCapabilities.family === 'kimi' && chatModelCapabilities.supportsThinking;
+	            const qwenThinkingCapable = chatModelCapabilities.thinkingRequest === 'enable_thinking';
+	            const grokReasoningCapable = chatModelCapabilities.family === 'grok' && chatModelCapabilities.supportsThinking;
+	            const geminiModelCapable = chatModelCapabilities.family === 'gemini' && chatModelCapabilities.supportsThinking;
+	            const openAiReasoningCapable = chatModelCapabilities.reasoningEffortProfile === 'openai';
+	            const thinkingObjectCapable = ['thinking_object', 'thinking_object_adaptive'].includes(chatModelCapabilities.thinkingRequest);
+	            const thinkingObjectType = thinkingObjectCapable && ['enabled', 'disabled'].includes(thinkingMode)
+	                ? (thinkingMode === 'enabled' && chatModelCapabilities.thinkingRequest === 'thinking_object_adaptive' ? 'adaptive' : thinkingMode)
+	                : '';
 	            const geminiNativeCapable = isGeminiNativeBaseUrl(upstreamBaseUrl);
 	            const geminiCompatibleCapable = geminiModelCapable && !geminiNativeCapable;
 	            const openAiNativeCapable = isOpenAiNativeBaseUrl(upstreamBaseUrl);
-	            const claudeNativeCapable = isClaudeNativeBaseUrl(upstreamBaseUrl);
+	            const claudeNativeCapable = isClaudeNativeBaseUrl(upstreamBaseUrl)
+	                || requestedModelProtocol === 'anthropic-native';
 	            const upstreamProvider = geminiNativeCapable
 	                ? 'gemini-native'
 	                : (openAiNativeCapable ? 'openai-native' : (claudeNativeCapable ? 'claude-native' : 'openai-compatible'));
@@ -5126,28 +5129,41 @@ function createAiImageHandlers({
 	            const qwenThinkingEnabled = qwenThinkingCapable && ['enabled', 'disabled'].includes(thinkingMode) ? thinkingMode === 'enabled' : null;
 	            const geminiThinkingLevelCapable = geminiNativeCapable && supportsGeminiThinkingLevel(upstreamRequestModel);
 	            const geminiThoughtsEnabled = geminiThinkingLevelCapable && Boolean(geminiThinkingLevel);
-	            const claudeThinkingEnabled = claudeNativeCapable && thinkingMode === 'enabled';
+	            const claudeThinkingEnabled = claudeNativeCapable
+	                && chatModelCapabilities.thinkingRequest === 'claude_thinking'
+	                && thinkingMode === 'enabled';
 	            const geminiCompatibleReasoningEffort = geminiCompatibleCapable
 	                ? (thinkingMode === 'disabled'
 	                    ? 'none'
 	                    : (thinkingMode === 'enabled' ? (GEMINI_THINKING_LEVELS.has(geminiThinkingLevel) ? geminiThinkingLevel : 'medium') : ''))
 	                : '';
 	            const grokEnabledReasoningEffort = normalizeXaiReasoningEffort(reasoningEffort);
+	            const openAiEnabledReasoningEffort = openAiNativeCapable
+	                ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort)
+	                : reasoningEffort;
 	            const upstreamReasoningEffort = deepSeekCapable && reasoningEffort
 	                ? normalizeDeepSeekReasoningEffort(reasoningEffort)
+	                : (chatModelCapabilities.reasoningEffortProfile === 'glm' && reasoningEffort
+	                    ? normalizeGlmReasoningEffort(reasoningEffort)
 	                : (grokReasoningCapable
 	                    ? (thinkingMode === 'disabled'
 	                        ? 'none'
 	                        : (thinkingMode === 'enabled' ? (grokEnabledReasoningEffort && grokEnabledReasoningEffort !== 'none' ? grokEnabledReasoningEffort : 'medium') : grokEnabledReasoningEffort))
-	                    : (geminiCompatibleReasoningEffort || (openAiReasoningCapable ? (openAiNativeCapable ? normalizeOpenAiResponsesReasoningEffort(reasoningEffort) : reasoningEffort) : '')));
+	                    : (geminiCompatibleReasoningEffort || (openAiReasoningCapable
+	                        ? (thinkingMode === 'disabled'
+	                            ? 'none'
+	                            : (thinkingMode === 'enabled' ? (openAiEnabledReasoningEffort || 'medium') : openAiEnabledReasoningEffort))
+	                        : ''))));
 	            const thinkingReasoningEnabled = deepSeekThinkingType === 'enabled'
 	                || kimiThinkingEnabled === true
 	                || qwenThinkingEnabled === true
+	                || thinkingObjectType === 'enabled'
+	                || thinkingObjectType === 'adaptive'
 	                || geminiThoughtsEnabled
 	                || claudeThinkingEnabled
 	                || (grokReasoningCapable && upstreamReasoningEffort !== 'none' && Boolean(upstreamReasoningEffort))
 	                || (geminiCompatibleCapable && thinkingMode === 'enabled')
-	                || (openAiNativeCapable && Boolean(upstreamReasoningEffort));
+	                || (openAiReasoningCapable && upstreamReasoningEffort !== 'none' && Boolean(upstreamReasoningEffort));
             const messages = buildChatStreamMessages({
                 body,
                 prompt,
@@ -5201,12 +5217,15 @@ function createAiImageHandlers({
 	            if (serviceTier) {
 	                requestBody.service_tier = serviceTier;
 	            }
-		            if (deepSeekThinkingType) {
-		                requestBody.thinking = { type: deepSeekThinkingType };
-		            }
-		            if (kimiThinkingEnabled !== null) {
-		                requestBody.thinking = { type: kimiThinkingEnabled ? 'enabled' : 'disabled' };
-		            }
+	            if (deepSeekThinkingType) {
+	                requestBody.thinking = { type: deepSeekThinkingType };
+	            }
+	            if (kimiThinkingEnabled !== null) {
+	                requestBody.thinking = { type: kimiThinkingEnabled ? 'enabled' : 'disabled' };
+	            }
+	            if (thinkingObjectType) {
+	                requestBody.thinking = { type: thinkingObjectType };
+	            }
 		            if (qwenThinkingEnabled !== null) {
 		                requestBody.enable_thinking = qwenThinkingEnabled;
 		            }
@@ -5289,8 +5308,10 @@ function createAiImageHandlers({
                         return '';
                     }
                 })(),
-                thinking_mode: thinkingMode,
-                thinking_request_type: requestBody.thinking?.type || '',
+	                thinking_mode: thinkingMode,
+	                model_family: chatModelCapabilities.family,
+	                thinking_capability: chatModelCapabilities.thinkingRequest,
+	                thinking_request_type: requestBody.thinking?.type || '',
 	                enable_thinking: requestBody.enable_thinking ?? null,
 	                reasoning_effort: requestBody.reasoning_effort || '',
 	                upstream_provider: upstreamProvider,
@@ -5315,7 +5336,10 @@ function createAiImageHandlers({
             });
 	            const upstreamResponse = await fetchImpl(upstreamRequest.url, {
 	                method: 'POST',
-	                headers: upstreamRequest.headers,
+	                headers: {
+	                    ...upstreamRequest.headers,
+	                    'Accept-Encoding': 'identity'
+	                },
 	                body: JSON.stringify(upstreamRequest.body)
 	            });
             const upstreamFirstResponseMs = Date.now() - upstreamStartedAt;
@@ -5493,14 +5517,14 @@ function createAiImageHandlers({
                     upstreamReasoningChars += upstreamReasoningDelta.length;
                     if (!firstReasoningMs) firstReasoningMs = Date.now() - upstreamStartedAt;
                 }
-                if (thinkingReasoningEnabled && upstreamReasoningDelta) {
-                    reasoningText += upstreamReasoningDelta;
-                    lastUserVisibleAt = Date.now();
-                    writeSse(res, 'reasoning', {
-                        delta: upstreamReasoningDelta,
-                        task_id: task.id
-                    });
-                }
+	                if (thinkingReasoningEnabled && upstreamReasoningDelta) {
+	                    reasoningText += upstreamReasoningDelta;
+	                    lastUserVisibleAt = Date.now();
+	                    writeSse(res, 'reasoning', {
+	                        delta: upstreamReasoningDelta,
+	                        task_id: task.id
+	                    });
+	                }
 	                let delta = geminiNativeCapable
 	                    ? extractGeminiTextDelta(payload, { thoughts: false })
 	                    : (openAiNativeCapable
@@ -5764,7 +5788,9 @@ function createAiImageHandlers({
 	                reasoning_effort: upstreamReasoningEffort,
 	                requested_reasoning_effort: requestedReasoningEffort,
 	                thinking_mode: thinkingMode,
-	                thinking_type: deepSeekThinkingType,
+	                model_family: chatModelCapabilities.family,
+	                thinking_capability: chatModelCapabilities.thinkingRequest,
+	                thinking_type: requestBody.thinking?.type || '',
 		                thinking_enabled: thinkingReasoningEnabled,
 		                kimi_thinking_enabled: kimiThinkingEnabled,
 		                qwen_enable_thinking: qwenThinkingEnabled,
