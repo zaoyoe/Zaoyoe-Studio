@@ -182,7 +182,16 @@ export default {
          syncingModels: 'Syncing...',
          syncModelsSuccess: 'Synced {count} new model(s)',
          syncModelsAlreadyUpToDate: 'Models already up to date',
-         syncModelsError: 'Failed to sync models'
+         syncModelsError: 'Failed to sync models',
+         syncUpstreamPricing: 'Update Upstream Pricing',
+         syncingUpstreamPricing: 'Updating...',
+         syncUpstreamPricingHint: 'Read the fixed upstream model-plaza prices and write them to this channel. Your group multipliers are unchanged. Save the channel first.',
+         upstreamPricingGroup: 'Upstream group',
+         upstreamPricingGroupAuto: 'Auto: lowest ratio',
+         upstreamPricingGroupHint: 'This is the upstream cost ratio, not your customer-facing group multiplier. Select the actual upstream group to avoid an incorrect automatic ratio.',
+         syncUpstreamPricingSuccess: 'Upstream pricing processed: {updated} updated, {unchanged} unchanged, {missing} missing, {skipped} skipped ({groups})',
+         syncUpstreamPricingAutoGroup: 'the lowest available upstream ratio per model',
+         syncUpstreamPricingError: 'Failed to update upstream pricing'
        }
      },
 
