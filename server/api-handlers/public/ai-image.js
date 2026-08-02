@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const {
-    resolveAiChatModelCapabilities
+    resolveAiChatModelCapabilities,
+    resolveAiChatImageInputPolicy
 } = require('../../../js/ai-chat-model-capabilities');
 const {
     completeTask,
@@ -3378,10 +3379,6 @@ function normalizeChatImageInputMode(value = '') {
     return CHAT_IMAGE_INPUT_MODES.has(normalized) ? normalized : 'auto';
 }
 
-function modelLikelySupportsChatImageInput(model = '', baseUrl = '') {
-    return /gpt-4o|gpt-4\.1|gpt-5|o\d|gemini|claude|qwen-vl|vision|multimodal/i.test(`${model} ${baseUrl}`);
-}
-
 function normalizeOptionalBoolean(value) {
     if (value === true || value === false) return value;
     const normalized = String(value ?? '').trim().toLowerCase();
@@ -3409,10 +3406,11 @@ function resolveChatSupportsImageInput({ billingMode = 'api', runtimeConfig = nu
 function shouldAttachChatImages({ imageInputMode = 'auto', model = '', baseUrl = '', supportsImageInput = null } = {}) {
     const normalized = normalizeChatImageInputMode(imageInputMode);
     if (normalized === 'off') return false;
-    if (normalized === 'on') return true;
-    const explicitSupport = normalizeOptionalBoolean(supportsImageInput);
-    if (explicitSupport !== null) return explicitSupport;
-    return modelLikelySupportsChatImageInput(model, baseUrl);
+    return resolveAiChatImageInputPolicy({
+        model,
+        apiBaseUrl: baseUrl,
+        supportsImageInput
+    }).available;
 }
 
 function normalizeChatImageReferences(body = {}) {
@@ -3666,6 +3664,33 @@ function buildOpenAiResponsesRequest({ messages = [], reasoningEffort = '', serv
     return body;
 }
 
+function chatContentToClaudeContent(content = '', { assistant = false } = {}) {
+    if (typeof content === 'string') return normalizeText(content, 12000);
+    if (!Array.isArray(content)) return normalizeText(getChatMessageContentText(content), 12000);
+    const blocks = [];
+    content.forEach((part) => {
+        if (!part || typeof part !== 'object') return;
+        const text = normalizeText(part.text || part.input_text, 12000);
+        if (text) {
+            blocks.push({ type: 'text', text });
+            return;
+        }
+        if (assistant) return;
+        const imageUrl = normalizeText(part.image_url?.url || part.imageUrl?.url || part.image_url || part.url, 4000);
+        if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
+            blocks.push({
+                type: 'image',
+                source: {
+                    type: 'url',
+                    url: imageUrl
+                }
+            });
+        }
+    });
+    if (blocks.length) return blocks;
+    return normalizeText(getChatMessageContentText(content), 12000);
+}
+
 function buildClaudeMessagesRequest({ messages = [], thinkingEnabled = false, thinkingBudget = 1024, maxTokens = 0, model = '' } = {}) {
     const systemMessages = messages.filter((message) => message.role === 'system');
     const chatMessages = messages.filter((message) => message.role !== 'system');
@@ -3677,8 +3702,8 @@ function buildClaudeMessagesRequest({ messages = [], thinkingEnabled = false, th
         max_tokens: thinkingEnabled ? Math.max(effectiveMaxTokens, normalizedBudget + 1024) : effectiveMaxTokens,
         messages: chatMessages.map((message) => ({
             role: message.role === 'assistant' ? 'assistant' : 'user',
-            content: getChatMessageContentText(message.content)
-        })).filter((message) => message.content)
+            content: chatContentToClaudeContent(message.content, { assistant: message.role === 'assistant' })
+        })).filter((message) => Array.isArray(message.content) ? message.content.length : message.content)
     };
     const systemText = systemMessages.map((message) => getChatMessageContentText(message.content)).filter(Boolean).join('\n\n');
     if (systemText) body.system = systemText;

@@ -749,11 +749,12 @@ test('ai image pricing config uses public provider metadata without decrypting p
                             label: 'Fast Public Provider',
                             vendor: 'openai',
                             protocol: 'openai-compatible',
-                            modelGroup: 'image',
-                            model: 'gpt-image-2',
-                            models: ['gpt-image-2'],
-                            imageModels: ['gpt-image-2'],
-                            chatModels: []
+                            modelGroup: 'chat',
+                            model: 'grok-4.3',
+                            models: [],
+                            imageModels: [],
+                            chatModels: ['grok-4.3'],
+                            visionModels: ['grok-4.3']
                         }
                     ];
                 },
@@ -799,7 +800,10 @@ test('ai image pricing config uses public provider metadata without decrypting p
         assert.equal(res.statusCode, 200);
         assert.equal(publicMetadataCalls, 1);
         assert.equal(secretDecryptListCalls, 0);
-        assert.deepEqual(payload.image_models.map((item) => item.id), ['gpt-image-2']);
+        assert.deepEqual(payload.image_models.map((item) => item.id), []);
+        assert.deepEqual(payload.chat_models.map((item) => item.id), ['grok-4.3']);
+        assert.equal(payload.chat_models[0].providerId, 'fast-public-provider');
+        assert.equal(payload.chat_models[0].supportsImageInput, true);
         assert.match(res.headers['server-timing'], /providers;dur=\d+/);
         assert.match(res.headers['server-timing'], /total;dur=\d+/);
     } finally {
@@ -4029,7 +4033,7 @@ test('openai native chat stream uses Responses API reasoning summaries and xhigh
     assert.equal(persistedTask.total_tokens, 21);
 });
 
-test('claude native chat stream uses Messages API extended thinking', async () => {
+test('claude native chat stream uses Messages API extended thinking and preserves verified image URLs', async () => {
     const requests = [];
     const encoder = new TextEncoder();
     const { handlers, state } = createHandlers({
@@ -4074,7 +4078,9 @@ test('claude native chat stream uses Messages API extended thinking', async () =
             model: 'claude-sonnet-4',
             apiModelGroup: 'chat',
             thinkingMode: 'enabled',
-            claudeThinkingBudget: '4096'
+            claudeThinkingBudget: '4096',
+            supportsImageInput: true,
+            referenceImageUrl: 'https://cdn.example.com/claude-reference.webp'
         }
     });
     const res = createMockResponse();
@@ -4088,6 +4094,15 @@ test('claude native chat stream uses Messages API extended thinking', async () =
     assert.equal(requests[0].body.thinking.type, 'enabled');
     assert.equal(requests[0].body.thinking.budget_tokens, 4096);
     assert.equal(requests[0].body.max_tokens >= 5120, true);
+    const claudeUserContent = requests[0].body.messages.at(-1).content;
+    assert.equal(Array.isArray(claudeUserContent), true);
+    assert.deepEqual(claudeUserContent[1], {
+        type: 'image',
+        source: {
+            type: 'url',
+            url: 'https://cdn.example.com/claude-reference.webp'
+        }
+    });
     assert.match(res.body, /Claude 先思考。/);
     assert.match(res.body, /Claude 最终答案。/);
     const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
@@ -4096,7 +4111,7 @@ test('claude native chat stream uses Messages API extended thinking', async () =
     assert.equal(persistedTask.total_tokens, 26);
 });
 
-test('non-reasoning openai chat models drop reasoning effort and can attach images', async () => {
+test('non-reasoning openai chat models drop reasoning effort and do not attach unverified images', async () => {
     const requests = [];
     const encoder = new TextEncoder();
     const { handlers, state } = createHandlers({
@@ -4125,7 +4140,7 @@ test('non-reasoning openai chat models drop reasoning effort and can attach imag
             model: 'gpt-4.1',
             apiModelGroup: 'chat',
             reasoningEffort: 'high',
-            imageInputMode: 'auto',
+            imageInputMode: 'on',
             referenceImageUrl: 'https://cdn.example.com/reference.png'
         }
     });
@@ -4136,13 +4151,11 @@ test('non-reasoning openai chat models drop reasoning effort and can attach imag
     assert.equal(res.statusCode, 200);
     assert.equal(requests[0].body.reasoning_effort, undefined);
     const lastMessage = requests[0].body.messages.at(-1);
-    assert.equal(Array.isArray(lastMessage.content), true);
-    assert.equal(lastMessage.content[0].type, 'text');
-    assert.equal(lastMessage.content[1].type, 'image_url');
-    assert.equal(lastMessage.content[1].image_url.url, 'https://cdn.example.com/reference.png');
+    assert.equal(lastMessage.content, '描述这张图');
     const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
-    assert.equal(persistedTask.metadata.image_input_mode, 'auto');
-    assert.equal(persistedTask.metadata.attached_image_count, 1);
+    assert.equal(persistedTask.metadata.image_input_mode, 'on');
+    assert.equal(persistedTask.metadata.supports_image_input, null);
+    assert.equal(persistedTask.metadata.attached_image_count, 0);
 });
 
 test('api chat stream attaches images when selected model explicitly supports image input', async () => {

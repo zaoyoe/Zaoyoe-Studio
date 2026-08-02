@@ -4888,6 +4888,7 @@ test('ai image runtime resolves chat provider by model group without default pro
                 baseUrl: 'https://chat.example.com/v1',
                 model: 'gpt-4o-mini',
                 chatModels: ['gpt-4o-mini', 'gpt-4.1'],
+                visionModels: ['gpt-4.1'],
                 modelGroup: 'chat',
                 isActive: true,
                 displayOrder: 20
@@ -4908,6 +4909,8 @@ test('ai image runtime resolves chat provider by model group without default pro
         assert.equal(config.apiKey, 'sk-chat-provider-1234567890');
         assert.equal(config.baseUrl, 'https://chat.example.com/v1');
         assert.equal(config.model, 'gpt-4.1');
+        assert.deepEqual(config.visionModels, ['gpt-4.1']);
+        assert.deepEqual(config.vision_models, ['gpt-4.1']);
     } finally {
         if (previousAdminKey === undefined) {
             delete process.env.ADMIN_CONFIG_ENCRYPTION_KEY;
@@ -5014,7 +5017,9 @@ test('ai image public provider metadata includes legacy default with provider ro
                 baseUrl: 'https://sub2api.fatherkey.com/v1',
                 model: 'gemini-3.1-flash-image',
                 imageModels: ['gemini-3.1-flash-image'],
-                modelGroup: 'image',
+                chatModels: ['grok-4.3'],
+                visionModels: ['grok-4.3'],
+                modelGroup: 'both',
                 vendor: 'gemini',
                 protocol: 'gemini-native',
                 isActive: true,
@@ -5038,6 +5043,9 @@ test('ai image public provider metadata includes legacy default with provider ro
         assert.deepEqual(legacyProvider.imageModels, ['gpt-image-2']);
         assert.equal(bananaProvider?.configured, true);
         assert.deepEqual(bananaProvider.imageModels, ['gemini-3.1-flash-image']);
+        assert.deepEqual(bananaProvider.chatModels, ['grok-4.3']);
+        assert.deepEqual(bananaProvider.visionModels, ['grok-4.3']);
+        assert.deepEqual(bananaProvider.vision_models, ['grok-4.3']);
     } finally {
         if (previousAdminKey === undefined) {
             delete process.env.ADMIN_CONFIG_ENCRYPTION_KEY;

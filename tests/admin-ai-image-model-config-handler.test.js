@@ -757,6 +757,8 @@ test('ai image model config handler runs chat and vision probes for chat model g
         const originalFetch = globalThis.fetch;
         globalThis.fetch = async (url, options = {}) => {
             state.fetchCalls.push({ url: String(url), options });
+            const requestBody = JSON.parse(options.body);
+            const hasImage = Array.isArray(requestBody.messages?.[0]?.content);
             return {
                 ok: true,
                 status: 200,
@@ -773,7 +775,7 @@ test('ai image model config handler runs chat and vision probes for chat model g
                 text: async () => JSON.stringify({
                     id: `chat-probe-${state.fetchCalls.length}`,
                     choices: [{
-                        message: { content: '模型可用' }
+                        message: { content: hasImage ? '红色' : '模型可用' }
                     }]
                 })
             };
@@ -811,7 +813,485 @@ test('ai image model config handler runs chat and vision probes for chat model g
             'https://api.example.com/v1/chat/completions'
         ]);
         assert.equal(JSON.parse(state.fetchCalls[1].options.body).messages[0].content[1].type, 'image_url');
+        assert.equal(
+            JSON.parse(state.fetchCalls[1].options.body).messages[0].content[1].image_url.url,
+            'https://www.fatherkey.com/assets/prompts-home/____1_1.webp'
+        );
         assert.equal(JSON.stringify(payload).includes('sk-existing-ai-image-key'), false);
+    });
+});
+
+test('ai image model config handler uses a remote image for Gemini vision probes', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'gemini-2.5-flash'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    id: 'gemini-vision-probe',
+                    choices: [{ message: { content: '红色' } }]
+                })
+            };
+        };
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modes: ['vision'],
+                    modelGroup: 'chat',
+                    chatModels: ['gemini-2.5-flash'],
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'gemini-2.5-flash'
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        const requestBody = JSON.parse(state.fetchCalls[0].options.body);
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.check.checks[0].verificationStatus, 'verified');
+        assert.equal(payload.check.checks[0].imageSource, 'remote-url');
+        assert.deepEqual(payload.check.visionModels, ['gemini-2.5-flash']);
+        assert.equal(
+            requestBody.messages[0].content[1].image_url.url,
+            'https://www.fatherkey.com/assets/prompts-home/____1_1.webp'
+        );
+        assert.doesNotMatch(requestBody.messages[0].content[1].image_url.url, /^data:/);
+    });
+});
+
+test('ai image model config handler falls back to a data URL for any vision model', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'qwen-vl-max'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            const requestBody = JSON.parse(options.body);
+            const imageUrl = String(url).endsWith('/responses')
+                ? requestBody.input[0].content[1].image_url
+                : requestBody.messages[0].content[1].image_url.url;
+            if (!imageUrl.startsWith('data:')) {
+                return {
+                    ok: false,
+                    status: 502,
+                    text: async () => JSON.stringify({
+                        error: { code: 'image_fetch_failed', message: 'Unable to fetch remote image URL' }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    id: 'qwen-data-url-probe',
+                    choices: [{ message: { content: '左红右蓝' } }]
+                })
+            };
+        };
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modes: ['vision'],
+                    modelGroup: 'chat',
+                    chatModels: ['qwen-vl-max'],
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'qwen-vl-max'
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        const imageUrls = state.fetchCalls.map((call) => {
+            const requestBody = JSON.parse(call.options.body);
+            return call.url.endsWith('/responses')
+                ? requestBody.input[0].content[1].image_url
+                : requestBody.messages[0].content[1].image_url.url;
+        });
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(state.fetchCalls.map((call) => call.url), [
+            'https://api.example.com/v1/chat/completions',
+            'https://api.example.com/v1/responses',
+            'https://api.example.com/v1/chat/completions'
+        ]);
+        assert.equal(imageUrls[0], 'https://www.fatherkey.com/assets/prompts-home/____1_1.webp');
+        assert.equal(imageUrls[1], 'https://www.fatherkey.com/assets/prompts-home/____1_1.webp');
+        assert.match(imageUrls[2], /^data:image\/png;base64,/);
+        assert.equal(payload.check.checks[0].imageSource, 'data-url');
+        assert.equal(payload.check.checks[0].fallbackFrom, '公网图片 URL');
+        assert.deepEqual(payload.check.visionModels, ['qwen-vl-max']);
+    });
+});
+
+test('ai image model config handler probes every selected chat model independently', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'kimi-k3'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            const requestBody = JSON.parse(options.body);
+            const hasImage = Array.isArray(requestBody.messages?.[0]?.content);
+            const isVisionModel = requestBody.model === 'qwen-vl-max';
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    id: `multi-model-${state.fetchCalls.length}`,
+                    choices: [{
+                        message: { content: hasImage ? (isVisionModel ? '左红右蓝' : '无法识别') : '模型可用' }
+                    }]
+                })
+            };
+        };
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modelGroup: 'chat',
+                    chatModels: ['kimi-k3', 'qwen-vl-max'],
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'kimi-k3'
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 207);
+        assert.equal(payload.check.total, 4);
+        assert.deepEqual(payload.check.checks.map((item) => `${item.model}:${item.mode}`), [
+            'kimi-k3:chat',
+            'qwen-vl-max:chat',
+            'kimi-k3:vision',
+            'qwen-vl-max:vision'
+        ]);
+        assert.deepEqual(payload.check.visionModels, ['qwen-vl-max']);
+        assert.equal(state.fetchCalls.length, 7);
+        assert.equal(JSON.parse(state.fetchCalls[0].options.body).model, 'kimi-k3');
+        assert.equal(JSON.parse(state.fetchCalls[1].options.body).model, 'qwen-vl-max');
+    });
+});
+
+test('ai image model config handler retries only explicit failed probe targets', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'gpt-image-2'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            if (String(url).includes('/images/')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => JSON.stringify({ data: [{ b64_json: Buffer.from('probe-image').toString('base64') }] })
+                };
+            }
+            const requestBody = JSON.parse(options.body);
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    choices: [{ message: { content: Array.isArray(requestBody.messages?.[0]?.content) ? '红色' : '模型可用' } }]
+                })
+            };
+        };
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modelGroup: 'both',
+                    imageModels: ['gpt-image-2'],
+                    chatModels: ['gpt-4o-mini', 'gpt-4.1'],
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'gpt-image-2',
+                    probeTargets: [
+                        { model: 'gpt-4o-mini', mode: 'vision', resolution: '' },
+                        { model: 'gpt-image-2', mode: 'image', resolution: '2k' },
+                        { model: 'not-selected', mode: 'chat', resolution: '' }
+                    ]
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.check.total, 2);
+        assert.deepEqual(payload.check.checks.map((item) => `${item.model}:${item.mode}:${item.resolution}`), [
+            'gpt-4o-mini:vision:',
+            'gpt-image-2:image:2k'
+        ]);
+        assert.deepEqual(state.fetchCalls.map((call) => call.url), [
+            'https://api.example.com/v1/chat/completions',
+            'https://api.example.com/v1/images/edits'
+        ]);
+        assert.equal(state.fetchCalls[1].options.body.get('size'), '2048x2048');
+    });
+});
+
+test('ai image model config handler rejects an empty explicit retry target list', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'gpt-image-2'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'test-model',
+                matrix: true,
+                modelGroup: 'chat',
+                chatModels: ['gpt-4o-mini'],
+                baseUrl: 'https://api.example.com/v1',
+                model: 'gpt-4o-mini',
+                probeTargets: []
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.code, 'ai_image_model_probe_targets_invalid');
+        assert.equal(state.fetchCalls.length, 0);
+    });
+});
+
+test('ai image model config handler falls back to responses for vision probes', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'gpt-5.4'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            if (String(url).endsWith('/chat/completions')) {
+                return {
+                    ok: false,
+                    status: 502,
+                    text: async () => JSON.stringify({
+                        error: { code: 'image_upload_failed', message: 'Failed to upload image' }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({
+                    id: 'resp-vision-probe',
+                    output: [{
+                        type: 'message',
+                        content: [{ type: 'output_text', text: '红色' }]
+                    }]
+                })
+            };
+        };
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modes: ['vision'],
+                    modelGroup: 'chat',
+                    chatModels: 'gpt-5.4',
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'gpt-5.4'
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(payload.check.visionModels, ['gpt-5.4']);
+        assert.equal(payload.check.checks[0].endpoint, 'responses');
+        assert.equal(payload.check.checks[0].fallbackFrom, 'chat/completions');
+        assert.equal(payload.check.checks[0].verificationStatus, 'verified');
+        assert.deepEqual(state.fetchCalls.map((call) => call.url), [
+            'https://api.example.com/v1/chat/completions',
+            'https://api.example.com/v1/responses'
+        ]);
+        const responsesBody = JSON.parse(state.fetchCalls[1].options.body);
+        assert.equal(responsesBody.input[0].content[0].type, 'input_text');
+        assert.equal(responsesBody.input[0].content[1].type, 'input_image');
+        assert.equal(responsesBody.input[0].content[1].image_url, 'https://www.fatherkey.com/assets/prompts-home/____1_1.webp');
+        assert.equal(responsesBody.max_output_tokens, 512);
+    });
+});
+
+test('ai image model config handler reports gateway vision failures as unverified', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'gpt-5.4'
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options = {}) => {
+            state.fetchCalls.push({ url: String(url), options });
+            if (String(url).endsWith('/chat/completions')) {
+                return {
+                    ok: false,
+                    status: 502,
+                    headers: { get: (name) => String(name).toLowerCase() === 'content-type' ? 'text/html' : '' },
+                    text: async () => '<!DOCTYPE html><html><body>gateway failure</body></html>'
+                };
+            }
+            return {
+                ok: false,
+                status: 502,
+                text: async () => JSON.stringify({
+                    error: { code: 'image_upload_failed', message: 'Failed to upload image' }
+                })
+            };
+        };
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modes: ['vision'],
+                    modelGroup: 'chat',
+                    chatModels: 'gpt-5.4',
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'gpt-5.4'
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 207);
+        assert.equal(payload.success, false);
+        assert.equal(payload.check.unverified, 1);
+        assert.equal(payload.check.unsupported, 0);
+        assert.deepEqual(payload.check.visionModels, []);
+        assert.equal(payload.check.checks[0].verificationStatus, 'unverified');
+        assert.equal(payload.check.checks[0].code, 'ai_image_vision_probe_unverified');
+        assert.match(payload.check.checks[0].message, /不能据此判定模型不支持读图/);
+        assert.match(payload.check.checks[0].message, /非 JSON 网关错误/);
+        assert.match(payload.message, /1 项未验证/);
+        assert.doesNotMatch(JSON.stringify(payload), /DOCTYPE|<html|gateway failure/);
+    });
+});
+
+test('ai image model config handler marks explicit image rejection as unsupported', async () => {
+    await withAiImageModelConfigHandler({
+        runtimeConfig: {
+            source: 'stored',
+            apiKey: 'sk-existing-ai-image-key-1234567890',
+            baseUrl: 'https://api.example.com/v1',
+            model: 'text-only-model'
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async () => ({
+            ok: false,
+            status: 400,
+            text: async () => JSON.stringify({
+                error: { code: 'unsupported_content_type', message: 'This model does not support image input' }
+            })
+        });
+
+        try {
+            await handler({
+                method: 'POST',
+                headers: {},
+                body: {
+                    action: 'test-model',
+                    matrix: true,
+                    modes: ['vision'],
+                    modelGroup: 'chat',
+                    chatModels: 'text-only-model',
+                    baseUrl: 'https://api.example.com/v1',
+                    model: 'text-only-model'
+                }
+            }, res);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 207);
+        assert.equal(payload.check.unverified, 0);
+        assert.equal(payload.check.unsupported, 1);
+        assert.equal(payload.check.checks[0].verificationStatus, 'unsupported');
+        assert.equal(payload.check.checks[0].code, 'ai_image_vision_input_unsupported');
+        assert.match(payload.check.checks[0].message, /当前渠道不支持使用此模型读图/);
+        assert.match(payload.message, /1 项明确不支持/);
     });
 });
 
@@ -847,7 +1327,11 @@ test('ai image model config handler discovers upstream models during probe', asy
                 text: async () => JSON.stringify({
                     id: `probe-${state.fetchCalls.length}`,
                     choices: [{
-                        message: { content: '模型可用' }
+                        message: {
+                            content: Array.isArray(JSON.parse(options.body).messages?.[0]?.content)
+                                ? '红色'
+                                : '模型可用'
+                        }
                     }]
                 })
             };
