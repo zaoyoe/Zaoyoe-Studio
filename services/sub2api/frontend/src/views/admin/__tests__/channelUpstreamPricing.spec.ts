@@ -12,6 +12,8 @@ describe('channel upstream pricing sync surface', () => {
     expect(viewSource).toContain('@click="syncUpstreamPricing(sIdx)"')
     expect(viewSource).toContain(':disabled="!editingChannel || syncingPricingPlatform === section.platform"')
     expect(viewSource).toContain('v-model="selectedUpstreamPricingGroup[section.platform]"')
+    expect(viewSource).toContain("form.platforms.map(section => [section.platform, ''])")
+    expect(viewSource).toContain('border border-primary-500')
     expect(viewSource).toContain('group: selectedUpstreamPricingGroup.value[section.platform] || undefined')
   })
 
