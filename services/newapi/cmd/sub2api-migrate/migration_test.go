@@ -2,16 +2,230 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func newMigrationSQLMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	return db, mock
+}
+
+func expectBridgeRepairPreamble(t *testing.T, mock sqlmock.Sqlmock, total int, managed int, active int, routable int) {
+	t.Helper()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(migrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(defaultMigrationMark))
+	mock.ExpectQuery(regexp.QuoteMeta(bridgeChannelStateQuery)).
+		WithArgs(constant.ChannelTypeSub2API, bridgeChannelTagPrefix+"%").
+		WillReturnRows(sqlmock.NewRows([]string{"total", "managed", "active", "routable"}).AddRow(total, managed, active, routable))
+}
+
+func expectBridgeChannelInsert(mock sqlmock.Sqlmock, group bridgeGroup, channelID int) {
+	tag := fmt.Sprintf("%s%d", bridgeChannelTagPrefix, group.ID)
+	mock.ExpectQuery(`INSERT INTO channels`).
+		WithArgs(
+			constant.ChannelTypeSub2API,
+			group.BridgeKey,
+			"Legacy bridge - "+group.Name,
+			sqlmock.AnyArg(),
+			group.BridgeBaseURL,
+			strings.Join(group.Models, ","),
+			group.Name,
+			tag,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(channelID))
+	for _, model := range group.Models {
+		mock.ExpectExec(`INSERT INTO abilities`).
+			WithArgs(group.Name, model, channelID, tag).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+}
+
+func TestCountMigratableLegacyGroupsRequiresAnActiveStandardSourceGroup(t *testing.T) {
+	source, mock := newMigrationSQLMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta(migratableLegacyGroupCountQuery)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(13))
+	count, err := countMigratableLegacyGroups(context.Background(), source)
+	require.NoError(t, err)
+	assert.Equal(t, 13, count)
+
+	mock.ExpectQuery(regexp.QuoteMeta(migratableLegacyGroupCountQuery)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	_, err = countMigratableLegacyGroups(context.Background(), source)
+	require.ErrorContains(t, err, "no active standard groups")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRestoresMissingRowsAndThenNoOps(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{
+		{
+			ID:            7,
+			Name:          "Legacy Pro",
+			BridgeKey:     "sk-bridge-pro",
+			Models:        []string{"claude-sonnet", "gpt-5"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+		{
+			ID:            9,
+			Name:          "Legacy Basic",
+			BridgeKey:     "sk-bridge-basic",
+			Models:        []string{"gpt-4.1-mini"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+	}
+
+	expectBridgeRepairPreamble(t, mock, 0, 0, 0, 0)
+	mock.ExpectExec(`DELETE FROM abilities AS a`).
+		WithArgs(bridgeChannelTagPrefix+"%", constant.ChannelTypeSub2API).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	expectBridgeChannelInsert(mock, groups[0], 101)
+	expectBridgeChannelInsert(mock, groups[1], 102)
+	mock.ExpectQuery(regexp.QuoteMeta(bridgeRepairValidationQuery)).
+		WithArgs(constant.ChannelTypeSub2API, bridgeChannelTagPrefix+"%").
+		WillReturnRows(sqlmock.NewRows([]string{"channels", "abilities"}).AddRow(2, 3))
+	mock.ExpectCommit()
+
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+
+	expectBridgeRepairPreamble(t, mock, 2, 2, 2, 2)
+	mock.ExpectCommit()
+	repaired, err = repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRefusesToEnableExistingDisabledRows(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{{
+		ID:            7,
+		Name:          "Legacy Pro",
+		BridgeKey:     "sk-bridge-pro",
+		Models:        []string{"gpt-5"},
+		BridgeBaseURL: "http://legacy-sub2api:8080",
+	}}
+
+	expectBridgeRepairPreamble(t, mock, 1, 1, 0, 0)
+	mock.ExpectRollback()
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "got 1 migration-managed channels (0 active, 0 routable), expected 1")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRefusesPartialActiveRows(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{
+		{
+			ID:            7,
+			Name:          "Legacy Pro",
+			BridgeKey:     "sk-bridge-pro",
+			Models:        []string{"gpt-5"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+		{
+			ID:            9,
+			Name:          "Legacy Basic",
+			BridgeKey:     "sk-bridge-basic",
+			Models:        []string{"gpt-4.1-mini"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+	}
+
+	expectBridgeRepairPreamble(t, mock, 1, 1, 1, 1)
+	mock.ExpectRollback()
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "got 1 migration-managed channels (1 active, 1 routable), expected 2")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRefusesRowsWithoutEnabledAbilities(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{{
+		ID:            7,
+		Name:          "Legacy Pro",
+		BridgeKey:     "sk-bridge-pro",
+		Models:        []string{"gpt-5"},
+		BridgeBaseURL: "http://legacy-sub2api:8080",
+	}}
+
+	expectBridgeRepairPreamble(t, mock, 1, 1, 1, 0)
+	mock.ExpectRollback()
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "got 1 migration-managed channels (1 active, 0 routable), expected 1")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRollsBackWhenAbilityInsertFails(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	group := bridgeGroup{
+		ID:            7,
+		Name:          "Legacy Pro",
+		BridgeKey:     "sk-bridge-pro",
+		Models:        []string{"gpt-5"},
+		BridgeBaseURL: "http://legacy-sub2api:8080",
+	}
+
+	expectBridgeRepairPreamble(t, mock, 0, 0, 0, 0)
+	mock.ExpectExec(`DELETE FROM abilities AS a`).
+		WithArgs(bridgeChannelTagPrefix+"%", constant.ChannelTypeSub2API).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	tag := fmt.Sprintf("%s%d", bridgeChannelTagPrefix, group.ID)
+	mock.ExpectQuery(`INSERT INTO channels`).
+		WithArgs(
+			constant.ChannelTypeSub2API,
+			group.BridgeKey,
+			"Legacy bridge - "+group.Name,
+			sqlmock.AnyArg(),
+			group.BridgeBaseURL,
+			strings.Join(group.Models, ","),
+			group.Name,
+			tag,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(101))
+	mock.ExpectExec(`INSERT INTO abilities`).
+		WithArgs(group.Name, group.Models[0], 101, tag).
+		WillReturnError(errors.New("ability write failed"))
+	mock.ExpectRollback()
+
+	repaired, err := repairMissingBridgeChannels(
+		context.Background(),
+		target,
+		[]bridgeGroup{group},
+		defaultMigrationMark,
+	)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "ability write failed")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
 
 func TestQuotaFromUSDPreservesSub2APIBalanceUnits(t *testing.T) {
 	quota, err := quotaFromUSD(12.345678)

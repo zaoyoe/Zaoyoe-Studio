@@ -164,6 +164,7 @@ require (
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.32.0
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/QuantumNous/new-api/relaykit v0.0.0
 )
 

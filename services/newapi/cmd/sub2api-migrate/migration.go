@@ -26,10 +26,43 @@ import (
 )
 
 const (
-	migrationOptionKey = "Sub2APIMigrationVersion"
-	bridgeUserEmail    = "newapi-bridge@internal.invalid"
-	bridgeUserBalance  = int64(999_999_999_999)
-	quotaPerUSD        = 500_000.0
+	migrationOptionKey      = "Sub2APIMigrationVersion"
+	bridgeChannelTagPrefix  = "sub2api-bridge:"
+	bridgeUserEmail         = "newapi-bridge@internal.invalid"
+	bridgeUserBalance       = int64(999_999_999_999)
+	quotaPerUSD             = 500_000.0
+	bridgeChannelStateQuery = `
+		SELECT
+			count(*),
+			count(*) FILTER (WHERE c.tag LIKE $2),
+			count(*) FILTER (WHERE c.tag LIKE $2 AND c.status = 1),
+			count(*) FILTER (
+				WHERE c.tag LIKE $2
+				  AND c.status = 1
+				  AND EXISTS (
+					SELECT 1
+					FROM abilities AS a
+					WHERE a.channel_id = c.id
+					  AND a.enabled
+					  AND a.tag = c.tag
+				  )
+			)
+		FROM channels AS c
+		WHERE c.type = $1
+	`
+	bridgeRepairValidationQuery = `
+		SELECT
+			(SELECT count(*) FROM channels WHERE type = $1 AND status = 1 AND tag LIKE $2),
+			(SELECT count(*) FROM abilities WHERE enabled AND tag LIKE $2)
+	`
+	migratableLegacyGroupCountQuery = `
+		SELECT count(*)
+		FROM groups
+		WHERE deleted_at IS NULL
+		  AND status = 'active'
+		  AND NOT is_exclusive
+		  AND subscription_type = 'standard'
+	`
 )
 
 type legacyUser struct {
@@ -104,7 +137,18 @@ type modelListResponse struct {
 	} `json:"data"`
 }
 
-func migrationCompleted(ctx context.Context, target *sql.DB, version string) (bool, error) {
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+type bridgeChannelState struct {
+	Total           int
+	Managed         int
+	ManagedActive   int
+	ManagedRoutable int
+}
+
+func migrationCompleted(ctx context.Context, target rowQuerier, version string) (bool, error) {
 	var value string
 	err := target.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, migrationOptionKey).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -117,6 +161,45 @@ func migrationCompleted(ctx context.Context, target *sql.DB, version string) (bo
 		return false, fmt.Errorf("target has migration marker %q, expected %q", value, version)
 	}
 	return true, nil
+}
+
+func loadBridgeChannelState(ctx context.Context, target rowQuerier) (bridgeChannelState, error) {
+	var state bridgeChannelState
+	err := target.QueryRowContext(
+		ctx,
+		bridgeChannelStateQuery,
+		constant.ChannelTypeSub2API,
+		bridgeChannelTagPrefix+"%",
+	).Scan(&state.Total, &state.Managed, &state.ManagedActive, &state.ManagedRoutable)
+	if err != nil {
+		return bridgeChannelState{}, fmt.Errorf("read target Sub2API bridge channel state: %w", err)
+	}
+	return state, nil
+}
+
+func bridgeChannelsNeedRepair(ctx context.Context, target rowQuerier, expectedGroups int) (bool, error) {
+	if expectedGroups <= 0 {
+		return false, errors.New("legacy database has no active standard groups to validate against")
+	}
+	state, err := loadBridgeChannelState(ctx, target)
+	if err != nil {
+		return false, err
+	}
+	if state.Managed == expectedGroups &&
+		state.ManagedActive == expectedGroups &&
+		state.ManagedRoutable == expectedGroups {
+		return false, nil
+	}
+	if state.Total == 0 {
+		return true, nil
+	}
+	return false, fmt.Errorf(
+		"target Sub2API bridge state is incomplete: got %d migration-managed channels (%d active, %d routable), expected %d; refusing automatic repair",
+		state.Managed,
+		state.ManagedActive,
+		state.ManagedRoutable,
+		expectedGroups,
+	)
 }
 
 func requireEmptyTarget(ctx context.Context, target *sql.DB) error {
@@ -634,6 +717,17 @@ func shouldMigrateGlobalGroup(deleted bool, status string, exclusive bool, subsc
 	return !deleted && status == "active" && !exclusive && subscriptionType == "standard"
 }
 
+func countMigratableLegacyGroups(ctx context.Context, source rowQuerier) (int, error) {
+	var count int
+	if err := source.QueryRowContext(ctx, migratableLegacyGroupCountQuery).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count migratable legacy groups: %w", err)
+	}
+	if count == 0 {
+		return 0, errors.New("legacy database has no active standard groups")
+	}
+	return count, nil
+}
+
 func ensureBridgeUser(ctx context.Context, source *sql.DB) (int64, error) {
 	var userID int64
 	err := source.QueryRowContext(ctx, `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`, bridgeUserEmail).Scan(&userID)
@@ -1127,6 +1221,132 @@ func settingOrDefault(settings map[string]string, key string, fallback string) s
 	return value
 }
 
+func insertBridgeChannels(ctx context.Context, tx *sql.Tx, groups []bridgeGroup) error {
+	for _, group := range groups {
+		tag := fmt.Sprintf("%s%d", bridgeChannelTagPrefix, group.ID)
+		var channelID int
+		err := tx.QueryRowContext(ctx, `
+			INSERT INTO channels (
+				type, key, status, name, weight, created_time, test_time,
+				response_time, base_url, other, balance, balance_updated_time,
+				models, "group", used_quota, model_mapping, status_code_mapping,
+				priority, auto_ban, other_info, tag, setting, param_override,
+				header_override, channel_info, settings
+			)
+			VALUES (
+				$1, $2, 1, $3, 0, $4, 0,
+				0, $5, '', 0, 0,
+				$6, $7, 0, NULL, NULL,
+				0, 0, '', $8, NULL, NULL,
+				NULL, '{}'::json, ''
+			)
+			RETURNING id
+		`,
+			constant.ChannelTypeSub2API,
+			group.BridgeKey,
+			"Legacy bridge - "+group.Name,
+			time.Now().Unix(),
+			group.BridgeBaseURL,
+			strings.Join(group.Models, ","),
+			group.Name,
+			tag,
+		).Scan(&channelID)
+		if err != nil {
+			return fmt.Errorf("insert bridge channel for group %q: %w", group.Name, err)
+		}
+		for _, model := range group.Models {
+			_, err := tx.ExecContext(ctx, `
+				INSERT INTO abilities ("group", model, channel_id, enabled, priority, weight, tag)
+				VALUES ($1, $2, $3, true, 0, 0, $4)
+			`, group.Name, model, channelID, tag)
+			if err != nil {
+				return fmt.Errorf("insert ability for group %q model %q: %w", group.Name, model, err)
+			}
+		}
+	}
+	return nil
+}
+
+func repairMissingBridgeChannels(ctx context.Context, target *sql.DB, groups []bridgeGroup, version string) (bool, error) {
+	if len(groups) == 0 {
+		return false, errors.New("cannot repair Sub2API bridge channels without legacy groups")
+	}
+	expectedAbilities := 0
+	for _, group := range groups {
+		if len(group.Models) == 0 {
+			return false, fmt.Errorf("cannot repair Sub2API bridge channel for group %q without models", group.Name)
+		}
+		expectedAbilities += len(group.Models)
+	}
+
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin bridge channel repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock bridge channel repair: %w", err)
+	}
+	completed, err := migrationCompleted(ctx, tx, version)
+	if err != nil {
+		return false, fmt.Errorf("recheck migration marker before bridge channel repair: %w", err)
+	}
+	if !completed {
+		return false, errors.New("target migration marker disappeared before bridge channel repair")
+	}
+	needsRepair, err := bridgeChannelsNeedRepair(ctx, tx, len(groups))
+	if err != nil {
+		return false, err
+	}
+	if !needsRepair {
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit bridge channel repair no-op: %w", err)
+		}
+		return false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM abilities AS a
+		WHERE a.tag LIKE $1
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM channels AS c
+			WHERE c.id = a.channel_id
+			  AND c.type = $2
+			  AND c.tag = a.tag
+		  )
+	`, bridgeChannelTagPrefix+"%", constant.ChannelTypeSub2API); err != nil {
+		return false, fmt.Errorf("delete orphaned Sub2API bridge abilities: %w", err)
+	}
+	if err := insertBridgeChannels(ctx, tx, groups); err != nil {
+		return false, err
+	}
+
+	var channelCount int
+	var abilityCount int
+	if err := tx.QueryRowContext(
+		ctx,
+		bridgeRepairValidationQuery,
+		constant.ChannelTypeSub2API,
+		bridgeChannelTagPrefix+"%",
+	).Scan(&channelCount, &abilityCount); err != nil {
+		return false, fmt.Errorf("validate repaired Sub2API bridge channels: %w", err)
+	}
+	if channelCount != len(groups) || abilityCount != expectedAbilities {
+		return false, fmt.Errorf(
+			"repaired Sub2API bridge state is incomplete: got %d channels and %d abilities, expected %d and %d",
+			channelCount,
+			abilityCount,
+			len(groups),
+			expectedAbilities,
+		)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit bridge channel repair: %w", err)
+	}
+	return true, nil
+}
+
 func migrateTarget(ctx context.Context, target *sql.DB, data *migrationData, version string) error {
 	tx, err := target.BeginTx(ctx, nil)
 	if err != nil {
@@ -1252,47 +1472,8 @@ func migrateTarget(ctx context.Context, target *sql.DB, data *migrationData, ver
 		}
 	}
 
-	for _, group := range data.Groups {
-		tag := fmt.Sprintf("sub2api-bridge:%d", group.ID)
-		var channelID int
-		err := tx.QueryRowContext(ctx, `
-			INSERT INTO channels (
-				type, key, status, name, weight, created_time, test_time,
-				response_time, base_url, other, balance, balance_updated_time,
-				models, "group", used_quota, model_mapping, status_code_mapping,
-				priority, auto_ban, other_info, tag, setting, param_override,
-				header_override, channel_info, settings
-			)
-			VALUES (
-				$1, $2, 1, $3, 0, $4, 0,
-				0, $5, '', 0, 0,
-				$6, $7, 0, NULL, NULL,
-				0, 0, '', $8, NULL, NULL,
-				NULL, '{}'::json, ''
-			)
-			RETURNING id
-		`,
-			constant.ChannelTypeSub2API,
-			group.BridgeKey,
-			"Legacy bridge - "+group.Name,
-			time.Now().Unix(),
-			group.BridgeBaseURL,
-			strings.Join(group.Models, ","),
-			group.Name,
-			tag,
-		).Scan(&channelID)
-		if err != nil {
-			return fmt.Errorf("insert bridge channel for group %q: %w", group.Name, err)
-		}
-		for _, model := range group.Models {
-			_, err := tx.ExecContext(ctx, `
-				INSERT INTO abilities ("group", model, channel_id, enabled, priority, weight, tag)
-				VALUES ($1, $2, $3, true, 0, 0, $4)
-			`, group.Name, model, channelID, tag)
-			if err != nil {
-				return fmt.Errorf("insert ability for group %q model %q: %w", group.Name, model, err)
-			}
-		}
+	if err := insertBridgeChannels(ctx, tx, data.Groups); err != nil {
+		return err
 	}
 
 	optionKeys := make([]string, 0, len(data.Options))
