@@ -424,13 +424,47 @@ install_managed_caddy_config() {
   rm -f "$stripped_path" "$rendered_path" "$candidate_path"
 }
 
+cleanup_regional_smoke_user() {
+  local deleted_smoke_user_id
+
+  if [[ "${smoke_user_cleanup_pending:-0}" == "1" ]]; then
+    if ! deleted_smoke_user_id="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+      psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -Atc \
+      "DELETE FROM users WHERE id = $smoke_user_id AND username = '$smoke_username' AND access_token = '$smoke_dashboard_token' RETURNING id")"; then
+      return 1
+    fi
+    [[ "$deleted_smoke_user_id" == "$smoke_user_id" ]] || return 1
+    smoke_user_cleanup_pending=0
+  fi
+
+  if [[ "${smoke_user_cache_cleanup_pending:-0}" == "1" ]]; then
+    flush_newapi_redis || return 1
+    smoke_user_cache_cleanup_pending=0
+  fi
+}
+
 fail_after_public_open() {
   local message="$1"
+  local ingress_reblocked=0
+  local smoke_user_removed=0
 
   if install_managed_caddy_config "$newapi_regional_edge_secret" maintenance; then
-    die "$message; public traffic was re-blocked and the NewAPI database was preserved"
+    ingress_reblocked=1
   fi
-  die "$message; CRITICAL: automatic rollback was forbidden and the attempt to re-block public traffic failed"
+  if cleanup_regional_smoke_user; then
+    smoke_user_removed=1
+  fi
+
+  if [[ "$ingress_reblocked" == "1" && "$smoke_user_removed" == "1" ]]; then
+    die "$message; public traffic was re-blocked, temporary credentials were removed, and the NewAPI database was preserved"
+  fi
+  if [[ "$ingress_reblocked" == "1" ]]; then
+    die "$message; public traffic was re-blocked and the NewAPI database was preserved, but temporary credential cleanup failed"
+  fi
+  if [[ "$smoke_user_removed" == "1" ]]; then
+    die "$message; CRITICAL: temporary credentials were removed, but automatic rollback was forbidden and the attempt to re-block public traffic failed"
+  fi
+  die "$message; CRITICAL: automatic rollback was forbidden, the attempt to re-block public traffic failed, and temporary credential cleanup failed"
 }
 
 [[ -n "${KVM4_SUB2API_ROOT:-}" ]] || die "KVM4_SUB2API_ROOT missing"
@@ -944,9 +978,10 @@ smoke_username="s2smoke-$smoke_suffix"
 smoke_email="$smoke_username@internal.invalid"
 smoke_aff_code="$(openssl rand -hex 8)"
 smoke_token_secret="$(openssl rand -hex 32)"
+smoke_dashboard_token="$(openssl rand -hex 16)"
 if ! smoke_ids="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
   psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-  "WITH smoke_user AS (INSERT INTO users (username, password, display_name, role, status, email, github_id, discord_id, oidc_id, wechat_id, telegram_id, linux_do_id, quota, relay_concurrency, used_quota, request_count, \"group\", aff_code, aff_count, aff_quota, aff_history, inviter_id, setting, created_at, last_login_at, auth_version) VALUES ('$smoke_username', '!smoke-disabled!', '$smoke_username', 1, 1, '$smoke_email', '', '', '', '', '', '', 5000000, 1, 0, 0, 'default', '$smoke_aff_code', 0, 0, 0, 0, '{}', EXTRACT(EPOCH FROM now())::bigint, 0, 1) RETURNING id), smoke_token AS (INSERT INTO tokens (user_id, key, status, name, created_time, accessed_time, expired_time, remain_quota, unlimited_quota, model_limits_enabled, model_limits, allow_ips, used_quota, \"group\", cross_group_retry, auto_groups) SELECT id, '$smoke_token_secret', 1, 'Deployment relay smoke test', EXTRACT(EPOCH FROM now())::bigint, 0, EXTRACT(EPOCH FROM now() + interval '10 minutes')::bigint, 5000000, false, false, '', '', 0, convert_from(decode('$smoke_group_b64', 'base64'), 'UTF8'), false, '' FROM smoke_user RETURNING id, user_id) SELECT user_id, id FROM smoke_token")"; then
+  "WITH smoke_user AS (INSERT INTO users (username, password, display_name, role, status, email, github_id, discord_id, oidc_id, wechat_id, telegram_id, linux_do_id, quota, relay_concurrency, used_quota, request_count, \"group\", aff_code, aff_count, aff_quota, aff_history, inviter_id, setting, created_at, last_login_at, auth_version, access_token) VALUES ('$smoke_username', '!smoke-disabled!', '$smoke_username', 1, 1, '$smoke_email', '', '', '', '', '', '', 5000000, 1, 0, 0, 'default', '$smoke_aff_code', 0, 0, 0, 0, '{}', EXTRACT(EPOCH FROM now())::bigint, 0, 1, '$smoke_dashboard_token') RETURNING id), smoke_token AS (INSERT INTO tokens (user_id, key, status, name, created_time, accessed_time, expired_time, remain_quota, unlimited_quota, model_limits_enabled, model_limits, allow_ips, used_quota, \"group\", cross_group_retry, auto_groups) SELECT id, '$smoke_token_secret', 1, 'Deployment relay smoke test', EXTRACT(EPOCH FROM now())::bigint, 0, EXTRACT(EPOCH FROM now() + interval '10 minutes')::bigint, 5000000, false, false, '', '', 0, convert_from(decode('$smoke_group_b64', 'base64'), 'UTF8'), false, '' FROM smoke_user RETURNING id, user_id) SELECT user_id, id FROM smoke_token")"; then
   rollback
   die "failed to create isolated NewAPI smoke-test credentials"
 fi
@@ -955,6 +990,8 @@ IFS=$'\t' read -r smoke_user_id smoke_token_id <<<"$smoke_ids"
   rollback
   die "NewAPI returned invalid smoke-test credential IDs"
 }
+smoke_user_cleanup_pending=1
+smoke_user_cache_cleanup_pending=1
 smoke_key="sk-$smoke_token_secret"
 
 if ! models_payload="$(curl -fsS --max-time 30 -H "Authorization: Bearer $smoke_key" http://127.0.0.1:8080/v1/models)"; then
@@ -995,15 +1032,19 @@ done
   die "provider chat smoke test completed without a positive NewAPI billing log"
 }
 
-if ! docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -c \
-  "DELETE FROM tokens WHERE id = $smoke_token_id AND user_id = $smoke_user_id; DELETE FROM users WHERE id = $smoke_user_id AND username = '$smoke_username'" >/dev/null; then
+if ! deleted_smoke_token_id="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -Atc \
+  "DELETE FROM tokens WHERE id = $smoke_token_id AND user_id = $smoke_user_id RETURNING id")"; then
   rollback
-  die "failed to remove isolated smoke-test credentials"
+  die "failed to remove isolated smoke-test API key"
+fi
+if [[ "$deleted_smoke_token_id" != "$smoke_token_id" ]]; then
+  rollback
+  die "isolated smoke-test API key deletion did not remove exactly the expected key"
 fi
 if ! flush_newapi_redis; then
   rollback
-  die "failed to clear NewAPI caches after removing smoke-test credentials"
+  die "failed to clear NewAPI caches after removing the smoke-test API key"
 fi
 if ! docker compose --env-file .env -f docker-compose.local.yml up -d --no-deps --force-recreate sub2api; then
   rollback
@@ -1016,6 +1057,7 @@ if ! healthcheck; then
 fi
 
 if ! local_edge_region_payload="$(curl -fsS --max-time 10 \
+  -H "Authorization: Bearer $smoke_dashboard_token" \
   -H "X-NewAPI-Edge-Secret: $newapi_regional_edge_secret" \
   -H 'X-NewAPI-Edge-Country: CN' \
   'http://127.0.0.1:8080/api/token/regional-restriction?scope=api_key_page')"; then
@@ -1045,7 +1087,9 @@ if [[ "$direct_origin_status" != "403" ]]; then
   fail_after_public_open "direct Caddy origin request was not rejected"
 fi
 
-if ! edge_region_payload="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+if ! edge_region_payload="$(curl -fsS --max-time 20 \
+  -H "Authorization: Bearer $smoke_dashboard_token" \
+  -H 'Cache-Control: no-cache' \
   "https://sub2api.fatherkey.com/api/token/regional-restriction?scope=api_key_page&probe=$RELEASE_ID")"; then
   fail_after_public_open "Cloudflare-routed NewAPI regional status check failed"
 fi
@@ -1055,6 +1099,10 @@ if ! jq -e '
   (.data.country_code | test("^[A-Z]{2}$"))
 ' >/dev/null <<<"$edge_region_payload"; then
   fail_after_public_open "Cloudflare did not provide an authenticated country to NewAPI"
+fi
+
+if ! cleanup_regional_smoke_user; then
+  fail_after_public_open "failed to remove the regional smoke-test user or clear its cached credentials"
 fi
 
 if [[ -n "$previous_src" ]]; then
