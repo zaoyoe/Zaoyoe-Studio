@@ -61,7 +61,32 @@ func run(ctx context.Context) error {
 		return err
 	}
 	if completed {
-		fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
+		expectedBridgeGroups, err := countMigratableLegacyGroups(ctx, source)
+		if err != nil {
+			return err
+		}
+		needsRepair, err := bridgeChannelsNeedRepair(ctx, target, expectedBridgeGroups)
+		if err != nil {
+			return err
+		}
+		if !needsRepair {
+			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
+			return nil
+		}
+
+		groups, err := loadBridgeGroups(ctx, source, strings.TrimRight(sourceBaseURL, "/"), bridgeBaseURL)
+		if err != nil {
+			return err
+		}
+		repaired, err := repairMissingBridgeChannels(ctx, target, groups, migrationMark)
+		if err != nil {
+			return err
+		}
+		if repaired {
+			fmt.Printf("Sub2API migration %s repaired: %d bridge groups restored.\n", migrationMark, len(groups))
+		} else {
+			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
+		}
 		return nil
 	}
 
