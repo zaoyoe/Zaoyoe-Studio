@@ -170,13 +170,21 @@ func scanModelPricingRows(rows *sql.Rows) ([]service.ChannelModelPricing, []int6
 	for rows.Next() {
 		var p service.ChannelModelPricing
 		var modelsJSON []byte
+		var upstreamPricingGroup sql.NullString
+		var upstreamPricingVersion sql.NullString
 		if err := rows.Scan(
 			&p.ID, &p.ChannelID, &p.Platform, &modelsJSON, &p.BillingMode,
 			&p.InputPrice, &p.OutputPrice, &p.CacheWritePrice, &p.CacheReadPrice,
 			&p.ImageInputPrice, &p.ImageOutputPrice, &p.PerRequestPrice, &p.UpstreamCostMultiplier,
-			&p.UpstreamPricingGroup, &p.UpstreamPricingVersion, &p.CreatedAt, &p.UpdatedAt,
+			&upstreamPricingGroup, &upstreamPricingVersion, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan model pricing: %w", err)
+		}
+		if upstreamPricingGroup.Valid {
+			p.UpstreamPricingGroup = upstreamPricingGroup.String
+		}
+		if upstreamPricingVersion.Valid {
+			p.UpstreamPricingVersion = upstreamPricingVersion.String
 		}
 		if err := json.Unmarshal(modelsJSON, &p.Models); err != nil {
 			p.Models = []string{}
