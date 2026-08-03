@@ -80,5 +80,8 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          curl -fsS --retry 5 --retry-delay 3 https://sub2api.fatherkey.com/health > /tmp/kvm4-sub2api-health.json
-          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-sub2api-health.json','utf8')); if (payload.status !== 'ok') throw new Error('NewAPI health failed in Sub2API slot'); console.log(JSON.stringify({newapi_sub2api_slot_health: payload.status}));"
+          curl -fsS --retry 5 --retry-delay 3 https://new.fatherkey.com/health > /tmp/kvm4-newapi-health.json
+          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-newapi-health.json','utf8')); if (payload.status !== 'ok') throw new Error('NewAPI canonical route health failed'); console.log(JSON.stringify({newapi_canonical_health: payload.status}));"
+
+          curl -fsS --retry 5 --retry-delay 3 https://sub2api.fatherkey.com/health > /tmp/kvm4-sub2api-compat-health.json
+          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-sub2api-compat-health.json','utf8')); if (payload.status !== 'ok') throw new Error('NewAPI compatibility route health failed'); console.log(JSON.stringify({newapi_sub2api_compat_health: payload.status}));"

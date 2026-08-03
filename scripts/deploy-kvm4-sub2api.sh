@@ -283,7 +283,8 @@ install_managed_caddy_config() {
   local rendered_path
   local candidate_path
   local template_token_count
-  local site_count
+  local canonical_site_count
+  local compatibility_site_count
   local caddy_user
   local caddy_group
 
@@ -361,7 +362,7 @@ install_managed_caddy_config() {
       next
     }
     top_depth == 0 && $0 !~ /^[[:space:]]*#/ &&
-      $0 ~ /sub2api[.](fatherkey[.]com|zaoyoe[.](com|xyz))/ && index($0, "{") {
+      $0 ~ /(new[.]fatherkey[.]com|sub2api[.](fatherkey[.]com|zaoyoe[.](com|xyz)))/ && index($0, "{") {
       skipping_site = 1
       site_depth = brace_delta($0)
       if (site_depth <= 0) {
@@ -396,8 +397,10 @@ install_managed_caddy_config() {
     return 1
   fi
 
-  site_count="$(awk '/sub2api[.]fatherkey[.]com/ { count++ } END { print count + 0 }' "$candidate_path")"
-  if [[ "$site_count" != "1" ]] || grep -q '__NEWAPI_REGIONAL_EDGE_SECRET__' "$candidate_path"; then
+  canonical_site_count="$(awk '/new[.]fatherkey[.]com/ { count++ } END { print count + 0 }' "$candidate_path")"
+  compatibility_site_count="$(awk '/sub2api[.]fatherkey[.]com/ { count++ } END { print count + 0 }' "$candidate_path")"
+  if [[ "$canonical_site_count" != "1" ]] || [[ "$compatibility_site_count" != "1" ]] ||
+    grep -q '__NEWAPI_REGIONAL_EDGE_SECRET__' "$candidate_path"; then
     rm -f "$stripped_path" "$rendered_path" "$candidate_path"
     return 1
   fi
@@ -799,15 +802,15 @@ if ! install_managed_caddy_config "$newapi_regional_edge_secret" maintenance; th
   die "failed to install the temporary Sub2API maintenance ingress"
 fi
 maintenance_status="$(curl -sS --noproxy '*' --max-time 10 -o /dev/null -w '%{http_code}' \
-  --resolve sub2api.fatherkey.com:443:127.0.0.1 \
-  https://sub2api.fatherkey.com/health || true)"
+  --resolve new.fatherkey.com:443:127.0.0.1 \
+  https://new.fatherkey.com/health || true)"
 if [[ "$maintenance_status" != "403" ]]; then
   rollback
   die "temporary Sub2API maintenance ingress did not reject direct origin traffic with HTTP 403"
 fi
 maintenance_edge_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
   -o /dev/null -w '%{http_code}' \
-  "https://sub2api.fatherkey.com/health?maintenance=$RELEASE_ID" || true)"
+  "https://new.fatherkey.com/health?maintenance=$RELEASE_ID" || true)"
 if [[ "$maintenance_edge_status" != "503" ]]; then
   rollback
   die "temporary Sub2API maintenance ingress did not return HTTP 503 through Cloudflare"
@@ -1069,7 +1072,7 @@ if ! jq -e '.success == true and .data.unknown_region == false and .data.country
   die "NewAPI did not accept the authenticated local regional edge country"
 fi
 
-echo "Installing Cloudflare-only Caddy ingress for the three Sub2API domains"
+echo "Installing Cloudflare-only Caddy ingress for the canonical NewAPI domain and compatibility domains"
 if ! install_managed_caddy_config "$newapi_regional_edge_secret"; then
   rollback
   die "failed to install or reload the managed Caddy ingress"
@@ -1081,8 +1084,8 @@ caddy_restore_needed=0
 trap - ERR
 
 direct_origin_status="$(curl -sS --noproxy '*' --max-time 10 -o /dev/null -w '%{http_code}' \
-  --resolve sub2api.fatherkey.com:443:127.0.0.1 \
-  https://sub2api.fatherkey.com/health || true)"
+  --resolve new.fatherkey.com:443:127.0.0.1 \
+  https://new.fatherkey.com/health || true)"
 if [[ "$direct_origin_status" != "403" ]]; then
   fail_after_public_open "direct Caddy origin request was not rejected"
 fi
@@ -1090,7 +1093,7 @@ fi
 if ! edge_region_payload="$(curl -fsS --max-time 20 \
   -H "Authorization: Bearer $smoke_dashboard_token" \
   -H 'Cache-Control: no-cache' \
-  "https://sub2api.fatherkey.com/api/token/regional-restriction?scope=api_key_page&probe=$RELEASE_ID")"; then
+  "https://new.fatherkey.com/api/token/regional-restriction?scope=api_key_page&probe=$RELEASE_ID")"; then
   fail_after_public_open "Cloudflare-routed NewAPI regional status check failed"
 fi
 if ! jq -e '

@@ -39,13 +39,18 @@ workflow `Deploy KVM4 Sub2API`. The workflow and `/opt/sub2api` names are stable
 deployment identifiers; they no longer mean that legacy Sub2API is the public
 application. After a PR merges into `main`, the workflow runs
 `npm run deploy:kvm4:sub2api` and verifies
-`https://sub2api.fatherkey.com/health`. Use manual KVM4 deploys only from latest
-clean `main` for emergency follow-up or workflow recovery.
+`https://new.fatherkey.com/health` as the canonical route and
+`https://sub2api.fatherkey.com/health` as a temporary compatibility route. Use
+manual KVM4 deploys only from latest clean `main` for emergency follow-up or
+workflow recovery.
 
 The phase-one Sub2API service-slot topology is:
 
-- The public `sub2api` container and `https://sub2api.fatherkey.com` run NewAPI
-  from `services/newapi` with the local image `zaoyoe/newapi:local`.
+- The public `sub2api` container and canonical `https://new.fatherkey.com` route
+  run NewAPI from `services/newapi` with the local image
+  `zaoyoe/newapi:local`. `https://sub2api.fatherkey.com` remains a temporary
+  compatibility alias for existing clients and sessions; it is not the public
+  product name.
 - The `legacy-sub2api` service runs `zaoyoe/sub2api:legacy` only as a private,
   loopback/internal compatibility bridge for upstream account scheduling that
   has not yet moved to NewAPI. It must never receive public ingress.
