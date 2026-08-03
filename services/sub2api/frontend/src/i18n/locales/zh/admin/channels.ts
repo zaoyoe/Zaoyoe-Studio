@@ -61,6 +61,17 @@ export default {
       createError: '创建渠道失败',
       updateError: '更新渠道失败',
       deleteError: '删除渠道失败',
+      globalPricing: {
+        title: '全局官方价格表',
+        models: '个模型',
+        updatedAt: '最后更新',
+        schedule: '每 {hours} 小时自动更新',
+        lastUpdateFailed: '本次更新失败，当前继续使用上一次成功的价格。',
+        updateNow: '立即更新官方价格',
+        updating: '更新中...',
+        updateSuccess: '官方价格表更新成功',
+        updateError: '更新官方价格表失败'
+      },
       nameRequired: '请输入渠道名称',
       duplicateModels: '模型「{0}」在多个定价条目中重复',
       modelConflict: "模型模式 '{model1}' 和 '{model2}' 冲突：匹配范围重叠。模型名称按大小写不敏感匹配，已有条目已覆盖其所有大小写变体，无需重复添加。",

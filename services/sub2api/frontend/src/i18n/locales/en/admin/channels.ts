@@ -61,6 +61,17 @@ export default {
       createError: 'Failed to create channel',
       updateError: 'Failed to update channel',
       deleteError: 'Failed to delete channel',
+      globalPricing: {
+        title: 'Global official pricing',
+        models: 'models',
+        updatedAt: 'Updated',
+        schedule: 'Auto update every {hours}h',
+        lastUpdateFailed: 'The update failed; the previous successful pricing remains active.',
+        updateNow: 'Update official pricing',
+        updating: 'Updating...',
+        updateSuccess: 'Official pricing updated',
+        updateError: 'Failed to update official pricing'
+      },
       nameRequired: 'Please enter a channel name',
       duplicateModels: 'Model "{0}" appears in multiple pricing entries',
       modelConflict: "Model patterns '{model1}' and '{model2}' conflict: overlapping match range. Model names are matched case-insensitively, so an existing entry already covers all case variants — no need to add the variant separately.",

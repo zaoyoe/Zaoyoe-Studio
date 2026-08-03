@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -10,6 +11,22 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+type testPricingRemoteClient struct {
+	body []byte
+	err  error
+}
+
+func (c *testPricingRemoteClient) FetchPricingJSON(context.Context, string) ([]byte, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c.body, nil
+}
+
+func (c *testPricingRemoteClient) FetchHashText(context.Context, string) (string, error) {
+	return "", c.err
+}
 
 func TestPricingSchedulerBlankRemoteURLDoesNotStart(t *testing.T) {
 	svc := NewPricingService(&config.Config{Pricing: config.PricingConfig{RemoteURL: "  \t  "}}, nil)
@@ -39,6 +56,35 @@ func TestPricingNonEmptyInvalidRemoteURLStillReturnsValidationError(t *testing.T
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid pricing url")
+}
+
+func TestPricingForceUpdateKeepsPreviousSuccessfulPriceOnFailure(t *testing.T) {
+	client := &testPricingRemoteClient{body: []byte(`{
+		"demo-model": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000002,
+			"litellm_provider": "demo",
+			"mode": "chat"
+		}
+	}`)}
+	svc := NewPricingService(&config.Config{Pricing: config.PricingConfig{
+		RemoteURL: "https://pricing.example/models.json",
+		DataDir:   t.TempDir(),
+	}}, client)
+
+	require.NoError(t, svc.ForceUpdate())
+	pricingFile := filepath.Join(svc.cfg.Pricing.DataDir, "model_pricing.json")
+	previousBody, err := os.ReadFile(pricingFile)
+	require.NoError(t, err)
+	require.NotNil(t, svc.GetModelPricing("demo-model"))
+
+	client.err = context.DeadlineExceeded
+	require.Error(t, svc.ForceUpdate())
+	currentBody, err := os.ReadFile(pricingFile)
+	require.NoError(t, err)
+	require.Equal(t, previousBody, currentBody)
+	require.NotEmpty(t, svc.GetStatus()["last_update_error"])
+	require.NotNil(t, svc.GetModelPricing("demo-model"))
 }
 
 func TestParsePricingData_ParsesPriorityAndServiceTierFields(t *testing.T) {
