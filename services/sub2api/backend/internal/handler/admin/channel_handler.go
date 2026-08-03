@@ -608,6 +608,7 @@ func (h *ChannelHandler) SyncUpstreamPricing(c *gin.Context) {
 		"channel":         channelToResponse(result.Channel),
 		"platform":        result.Platform,
 		"pricing_version": result.PricingVersion,
+		"added":           result.Added,
 		"updated":         result.Updated,
 		"unchanged":       result.Unchanged,
 		"missing":         result.Missing,

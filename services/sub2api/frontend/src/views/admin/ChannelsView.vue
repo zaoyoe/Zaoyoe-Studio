@@ -959,6 +959,7 @@ async function syncUpstreamPricing(sectionIdx: number) {
       .map(([name, count]) => `${name} ${count}`)
       .join('、')
     const summary = t('admin.channels.form.syncUpstreamPricingSuccess', {
+      added: result.added,
       updated: result.updated,
       unchanged: result.unchanged,
       missing: result.missing,

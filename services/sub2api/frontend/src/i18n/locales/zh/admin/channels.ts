@@ -189,7 +189,7 @@ export default {
         upstreamPricingGroup: '上游分组',
         upstreamPricingGroupAuto: '自动选择最低倍率',
         upstreamPricingGroupHint: '这是上游实际成本倍率，不是你为用户设置的分组倍率。选择具体分组可避免自动倍率与上游账号不一致。',
-        syncUpstreamPricingSuccess: '上游计费已处理：更新 {updated} 条，未变化 {unchanged} 条，缺失 {missing} 条，跳过 {skipped} 条（{groups}）',
+        syncUpstreamPricingSuccess: '上游计费已处理：新增 {added} 条，更新 {updated} 条，未变化 {unchanged} 条，缺失 {missing} 条，跳过 {skipped} 条（{groups}）',
         syncUpstreamPricingAutoGroup: '按模型可用的最低上游倍率自动选择分组',
         syncUpstreamPricingError: '更新上游计费失败'
       }

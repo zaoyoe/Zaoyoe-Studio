@@ -190,6 +190,7 @@ export interface SyncUpstreamPricingResult {
   channel: Channel
   platform: string
   pricing_version: string
+  added: number
   updated: number
   unchanged: number
   missing: number
