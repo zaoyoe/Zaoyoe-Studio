@@ -95,6 +95,7 @@ type UpstreamPricingSyncResult struct {
 	Channel        *Channel                    `json:"-"`
 	Platform       string                      `json:"platform"`
 	PricingVersion string                      `json:"pricing_version"`
+	Added          int                         `json:"added"`
 	Updated        int                         `json:"updated"`
 	Unchanged      int                         `json:"unchanged"`
 	Missing        int                         `json:"missing"`
@@ -159,6 +160,31 @@ func fetchUpstreamPricingCatalog(ctx context.Context) (*upstreamPricingCatalog, 
 
 func normalizePricingModelName(model string) string {
 	return strings.ToLower(strings.TrimSpace(model))
+}
+
+// pricingPatternCoversModel reports whether an existing exact or trailing-
+// wildcard channel pricing entry already covers a concrete upstream model.
+// Wildcards must be checked before adding catalog models, otherwise a sync
+// would create conflicting exact entries beneath an intentional catch-all.
+func pricingPatternCoversModel(pattern, model string) bool {
+	pattern = normalizePricingModelName(pattern)
+	model = normalizePricingModelName(model)
+	if pattern == "" || model == "" {
+		return false
+	}
+	if strings.HasSuffix(pattern, "*") {
+		return strings.HasPrefix(model, strings.TrimSuffix(pattern, "*"))
+	}
+	return pattern == model
+}
+
+func pricingPatternsCoverModel(patterns []string, model string) bool {
+	for _, pattern := range patterns {
+		if pricingPatternCoversModel(pattern, model) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseUpstreamTiers(expression string) ([]upstreamTier, error) {
@@ -415,6 +441,22 @@ func (s *ChannelService) SyncUpstreamPricing(ctx context.Context, channelID int6
 		result.Warnings = append(result.Warnings, "未指定上游分组时，每个模型使用其可用分组中倍率最低的一档；不会修改 Sub2API 自有分组倍率。")
 	}
 
+	// Keep the existing channel model list authoritative for custom aliases and
+	// wildcards, while allowing this sync to add catalog models that were never
+	// entered into channel pricing. Without this pass, the model plaza can list
+	// a model but has no channel-native price to display for it.
+	existingPatterns := make([]string, 0)
+	for _, entry := range channel.ModelPricing {
+		entryPlatform := strings.ToLower(strings.TrimSpace(entry.Platform))
+		if entryPlatform == "" {
+			entryPlatform = PlatformAnthropic
+		}
+		if entryPlatform != platform {
+			continue
+		}
+		existingPatterns = append(existingPatterns, entry.Models...)
+	}
+
 	newPricing := make([]ChannelModelPricing, 0, len(channel.ModelPricing))
 	changed := false
 	for _, entry := range channel.ModelPricing {
@@ -469,6 +511,57 @@ func (s *ChannelService) SyncUpstreamPricing(ctx context.Context, channelID int6
 			result.Groups[group]++
 			newPricing = append(newPricing, next)
 		}
+	}
+
+	for _, upstreamModel := range catalog.Data {
+		modelKey := normalizePricingModelName(upstreamModel.ModelName)
+		if modelKey == "" || pricingPatternsCoverModel(existingPatterns, modelKey) {
+			continue
+		}
+		if len(requestedModels) > 0 && !requestedModels[modelKey] {
+			continue
+		}
+
+		// With an explicit group, only add models that are actually enabled in
+		// that group. Models from other providers remain available to a later
+		// sync targeting their own upstream group.
+		if strings.TrimSpace(req.Group) != "" {
+			if _, _, err := chooseUpstreamGroup(upstreamModel, catalog, req.Group); err != nil {
+				continue
+			}
+		}
+		group, ratio, groupErr := chooseUpstreamGroup(upstreamModel, catalog, req.Group)
+		if groupErr != nil {
+			result.Skipped++
+			appendSyncDetail(result, UpstreamPricingSyncDetail{Model: upstreamModel.ModelName, Status: "skipped", Reason: groupErr.Error()})
+			continue
+		}
+		candidate, buildErr := buildUpstreamPricingCandidate(upstreamModel, ratio)
+		if buildErr != nil {
+			result.Skipped++
+			appendSyncDetail(result, UpstreamPricingSyncDetail{Model: upstreamModel.ModelName, Status: "skipped", Group: group, GroupRatio: ratio, Reason: buildErr.Error()})
+			continue
+		}
+		if candidate.Warning != "" {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s：%s", upstreamModel.ModelName, candidate.Warning))
+		}
+		next := ChannelModelPricing{
+			Platform: platform,
+			Models:   []string{upstreamModel.ModelName},
+		}
+		applyUpstreamCandidate(&next, candidate)
+		newPricing = append(newPricing, next)
+		existingPatterns = append(existingPatterns, upstreamModel.ModelName)
+		result.Added++
+		result.Groups[group]++
+		appendSyncDetail(result, UpstreamPricingSyncDetail{
+			Model:      upstreamModel.ModelName,
+			Status:     "updated",
+			Group:      group,
+			GroupRatio: ratio,
+			Reason:     "新增上游模型定价",
+		})
+		changed = true
 	}
 
 	if changed {

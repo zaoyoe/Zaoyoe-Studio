@@ -175,9 +175,80 @@ func TestSyncUpstreamPricingWritesChannelNativePricesWithoutChangingGroups(t *te
 	result, err := svc.SyncUpstreamPricing(context.Background(), channel.ID, UpstreamPricingSyncRequest{Platform: PlatformOpenAI})
 	require.NoError(t, err)
 	require.Equal(t, "test-version", result.PricingVersion)
+	require.Zero(t, result.Added)
 	require.Equal(t, 1, result.Updated)
 	require.Len(t, persisted, 1)
 	require.Equal(t, []int64{42}, result.Channel.GroupIDs)
 	require.InDelta(t, 0.192/1_000_000, *persisted[0].InputPrice, 1e-15)
 	require.Equal(t, 256000, persisted[0].Intervals[1].MinTokens)
+}
+
+func TestSyncUpstreamPricingAddsMissingCatalogModelsForSelectedGroup(t *testing.T) {
+	originalLoader := loadUpstreamPricingCatalog
+	t.Cleanup(func() { loadUpstreamPricingCatalog = originalLoader })
+	loadUpstreamPricingCatalog = func(_ context.Context) (*upstreamPricingCatalog, error) {
+		return &upstreamPricingCatalog{
+			Success:        true,
+			PricingVersion: "test-add-version",
+			GroupRatio: map[string]float64{
+				"国产模型":    0.26,
+				"GPT pro": 0.1,
+			},
+			Data: []upstreamPricingModel{
+				{
+					ModelName:       "qwen3.6-flash",
+					ModelRatio:      0.6,
+					CompletionRatio: 6,
+					CacheRatio:      0.1,
+					EnableGroups:    []string{"国产模型"},
+				},
+				{
+					ModelName:       "codex-auto-review",
+					ModelRatio:      2.5,
+					CompletionRatio: 6,
+					CacheRatio:      0.1,
+					EnableGroups:    []string{"GPT pro"},
+				},
+			},
+		}, nil
+	}
+
+	channel := &Channel{
+		ID: 9,
+		ModelPricing: []ChannelModelPricing{{
+			Platform:    PlatformOpenAI,
+			Models:      []string{"custom-alias"},
+			BillingMode: BillingModeToken,
+		}},
+	}
+	var persisted []ChannelModelPricing
+	repo := &mockChannelRepository{
+		getByIDFn: func(_ context.Context, _ int64) (*Channel, error) { return channel, nil },
+		replaceModelPricingFn: func(_ context.Context, _ int64, pricing []ChannelModelPricing) error {
+			persisted = pricing
+			channel.ModelPricing = pricing
+			return nil
+		},
+		listAllFn: func(_ context.Context) ([]Channel, error) { return []Channel{*channel}, nil },
+	}
+
+	result, err := newTestChannelService(repo).SyncUpstreamPricing(context.Background(), channel.ID, UpstreamPricingSyncRequest{
+		Platform: PlatformOpenAI,
+		Group:    "国产模型",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Added)
+	require.Zero(t, result.Updated)
+	require.Equal(t, 1, result.Missing)
+	require.Len(t, persisted, 2)
+	require.Equal(t, "qwen3.6-flash", persisted[1].Models[0])
+	require.Equal(t, PlatformOpenAI, persisted[1].Platform)
+	require.Equal(t, BillingModeToken, persisted[1].BillingMode)
+	require.InDelta(t, 0.6*2*0.26/1_000_000, *persisted[1].InputPrice, 1e-15)
+}
+
+func TestPricingPatternsCoverExactAndWildcardModels(t *testing.T) {
+	require.True(t, pricingPatternsCoverModel([]string{"qwen3.6-flash", "claude-opus-*"}, "QWEN3.6-FLASH"))
+	require.True(t, pricingPatternsCoverModel([]string{"qwen3.6-flash", "claude-opus-*"}, "claude-opus-4-7"))
+	require.False(t, pricingPatternsCoverModel([]string{"qwen3.6-flash", "claude-opus-*"}, "qwen3.7-plus"))
 }

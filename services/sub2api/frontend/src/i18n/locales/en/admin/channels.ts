@@ -189,7 +189,7 @@ export default {
          upstreamPricingGroup: 'Upstream group',
          upstreamPricingGroupAuto: 'Auto: lowest ratio',
          upstreamPricingGroupHint: 'This is the upstream cost ratio, not your customer-facing group multiplier. Select the actual upstream group to avoid an incorrect automatic ratio.',
-         syncUpstreamPricingSuccess: 'Upstream pricing processed: {updated} updated, {unchanged} unchanged, {missing} missing, {skipped} skipped ({groups})',
+         syncUpstreamPricingSuccess: 'Upstream pricing processed: {added} added, {updated} updated, {unchanged} unchanged, {missing} missing, {skipped} skipped ({groups})',
          syncUpstreamPricingAutoGroup: 'the lowest available upstream ratio per model',
          syncUpstreamPricingError: 'Failed to update upstream pricing'
        }

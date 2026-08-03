@@ -21,6 +21,7 @@ describe('channel upstream pricing sync surface', () => {
     expect(apiSource).toContain('`/admin/channels/${id}/pricing/sync-upstream`')
     expect(apiSource).toContain("'/admin/channels/pricing/upstream-groups'")
     expect(viewSource).toContain('section.model_pricing = syncedSection.model_pricing')
+    expect(viewSource).toContain('added: result.added')
     expect(viewSource).not.toContain('form.platforms = apiToForm(result.channel)')
   })
 })
