@@ -10,12 +10,13 @@ import (
 //
 // 优先级（先命中为准）：
 //  1. 自定义规则（始终尝试，不依赖 ApplyPricingToAccountStats 开关）
-//  2. ApplyPricingToAccountStats 启用时，直接使用本次请求的客户计费（倍率前的 totalCost）
-//  3. 模型定价文件（LiteLLM）中上游模型的默认价格
-//  4. nil → 走默认公式（total_cost × account_rate_multiplier）
+//  2. 渠道定价中记录的上游成本倍率（totalCost × upstream ratio）
+//  3. ApplyPricingToAccountStats 启用时，直接使用本次请求的客户计费（倍率前的 totalCost）
+//  4. 模型定价文件（LiteLLM）中上游模型的默认价格
+//  5. nil → 走默认公式（total_cost × account_rate_multiplier）
 //
 // upstreamModel 是最终发往上游的模型 ID。
-// totalCost 是本次请求的客户计费（倍率前），用于优先级 2。
+// totalCost 是本次请求的官方/渠道基础计费（用户倍率前），用于上游成本换算。
 func resolveAccountStatsCost(
 	ctx context.Context,
 	channelService *ChannelService,
@@ -42,7 +43,15 @@ func resolveAccountStatsCost(
 		return cost
 	}
 
-	// 优先级 2：渠道开启"应用模型定价到账号统计"时，直接使用客户计费（倍率前）
+	// 上游同步的渠道定价保存官方/参考基础价，倍率单独保存为成本元数据。
+	// 账号统计应反映实际上游成本，而不是把用户分组倍率再次叠加到成本上。
+	if pricing := findPricingForModel(channel.ModelPricing, platform, strings.ToLower(upstreamModel)); pricing != nil {
+		if cost := applyUpstreamCostMultiplier(totalCost, pricing.UpstreamCostMultiplier); cost != nil {
+			return cost
+		}
+	}
+
+	// 优先级 3：渠道开启"应用模型定价到账号统计"时，直接使用客户计费（倍率前）
 	if channel.ApplyPricingToAccountStats {
 		cost := totalCost
 		if cost <= 0 {
@@ -51,12 +60,26 @@ func resolveAccountStatsCost(
 		return &cost
 	}
 
-	// 优先级 3：模型定价文件（LiteLLM）默认价格
+	// 优先级 4：模型定价文件（LiteLLM）默认价格
 	if billingService != nil {
 		return tryModelFilePricing(billingService, upstreamModel, tokens)
 	}
 
 	return nil
+}
+
+// applyUpstreamCostMultiplier converts the channel's customer-facing base
+// cost into an upstream cost. Invalid or missing metadata deliberately
+// returns nil so legacy/manual pricing keeps the existing fallback behavior.
+func applyUpstreamCostMultiplier(totalCost float64, multiplier *float64) *float64 {
+	if totalCost <= 0 || multiplier == nil || !isFinitePositive(*multiplier) || *multiplier > 1000 {
+		return nil
+	}
+	cost := totalCost * *multiplier
+	if !isFinitePositive(cost) {
+		return nil
+	}
+	return &cost
 }
 
 // tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的标准价格计算费用。
@@ -223,7 +246,7 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 
 // applyAccountStatsCost resolves the account stats cost for a usage log entry.
 // It resolves the upstream model (falling back to the requested model) and calls
-// the 4-level priority chain via resolveAccountStatsCost.
+// the priority chain via resolveAccountStatsCost.
 func applyAccountStatsCost(
 	ctx context.Context,
 	usageLog *UsageLog,

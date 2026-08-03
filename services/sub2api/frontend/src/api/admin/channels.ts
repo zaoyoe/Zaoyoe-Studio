@@ -33,6 +33,10 @@ export interface ChannelModelPricing {
   image_input_price: number | null
   image_output_price: number | null
   per_request_price: number | null
+  /** Official/reference price metadata captured from the upstream catalog. */
+  upstream_cost_multiplier?: number | null
+  upstream_pricing_group?: string
+  upstream_pricing_version?: string
   intervals: PricingInterval[]
 }
 

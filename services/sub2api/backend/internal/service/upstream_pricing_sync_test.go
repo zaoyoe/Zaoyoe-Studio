@@ -79,10 +79,12 @@ func TestParseUpstreamTiersUsesSub2APIBoundaries(t *testing.T) {
 	require.Equal(t, 256000, *candidate.Intervals[0].MaxTokens)
 	require.Equal(t, 256000, candidate.Intervals[1].MinTokens)
 	require.Nil(t, candidate.Intervals[1].MaxTokens)
-	require.InDelta(t, 0.192/1_000_000, *candidate.Intervals[0].InputPrice, 1e-15)
-	require.InDelta(t, 1.152/1_000_000, *candidate.Intervals[0].OutputPrice, 1e-15)
-	require.InDelta(t, 0.768/1_000_000, *candidate.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 4.608/1_000_000, *candidate.Intervals[1].OutputPrice, 1e-15)
+	// The candidate stores the official/reference price. The selected upstream
+	// group ratio is persisted separately by applyUpstreamCandidate.
+	require.InDelta(t, 1.2/1_000_000, *candidate.Intervals[0].InputPrice, 1e-15)
+	require.InDelta(t, 7.2/1_000_000, *candidate.Intervals[0].OutputPrice, 1e-15)
+	require.InDelta(t, 4.8/1_000_000, *candidate.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, 28.8/1_000_000, *candidate.Intervals[1].OutputPrice, 1e-15)
 }
 
 func TestBuildUpstreamStaticPricingConvertsPerMillionToPerToken(t *testing.T) {
@@ -94,10 +96,20 @@ func TestBuildUpstreamStaticPricingConvertsPerMillionToPerToken(t *testing.T) {
 	}, 0.16)
 	require.NoError(t, err)
 	require.Equal(t, BillingModeToken, candidate.BillingMode)
-	require.InDelta(t, 0.96/1_000_000, candidate.Input, 1e-15)
-	require.InDelta(t, 2.88/1_000_000, candidate.Output, 1e-15)
-	require.InDelta(t, 0.096/1_000_000, candidate.CacheRead, 1e-15)
-	require.InDelta(t, 1.2/1_000_000, candidate.CacheWrite, 1e-15)
+	require.InDelta(t, 6.0/1_000_000, candidate.Input, 1e-15)
+	require.InDelta(t, 18.0/1_000_000, candidate.Output, 1e-15)
+	require.InDelta(t, 0.6/1_000_000, candidate.CacheRead, 1e-15)
+	require.InDelta(t, 7.5/1_000_000, candidate.CacheWrite, 1e-15)
+}
+
+func TestBuildUpstreamPerRequestPricingKeepsReferencePrice(t *testing.T) {
+	candidate, err := buildUpstreamPricingCandidate(upstreamPricingModel{
+		QuotaType:  1,
+		ModelPrice: 0.25,
+	}, 0.16)
+	require.NoError(t, err)
+	require.Equal(t, BillingModePerRequest, candidate.BillingMode)
+	require.InDelta(t, 0.25, candidate.PerRequest, 1e-15)
 }
 
 func TestChooseUpstreamGroupPrefersRequestedAndOtherwiseLowestRatio(t *testing.T) {
@@ -179,7 +191,11 @@ func TestSyncUpstreamPricingWritesChannelNativePricesWithoutChangingGroups(t *te
 	require.Equal(t, 1, result.Updated)
 	require.Len(t, persisted, 1)
 	require.Equal(t, []int64{42}, result.Channel.GroupIDs)
-	require.InDelta(t, 0.192/1_000_000, *persisted[0].InputPrice, 1e-15)
+	require.InDelta(t, 1.2/1_000_000, *persisted[0].Intervals[0].InputPrice, 1e-15)
+	require.InDelta(t, 7.2/1_000_000, *persisted[0].Intervals[0].OutputPrice, 1e-15)
+	require.Equal(t, 0.16, *persisted[0].UpstreamCostMultiplier)
+	require.Equal(t, "补贴分组-国产模型", persisted[0].UpstreamPricingGroup)
+	require.Equal(t, "test-version", persisted[0].UpstreamPricingVersion)
 	require.Equal(t, 256000, persisted[0].Intervals[1].MinTokens)
 }
 
@@ -244,7 +260,10 @@ func TestSyncUpstreamPricingAddsMissingCatalogModelsForSelectedGroup(t *testing.
 	require.Equal(t, "qwen3.6-flash", persisted[1].Models[0])
 	require.Equal(t, PlatformOpenAI, persisted[1].Platform)
 	require.Equal(t, BillingModeToken, persisted[1].BillingMode)
-	require.InDelta(t, 0.6*2*0.26/1_000_000, *persisted[1].InputPrice, 1e-15)
+	require.InDelta(t, 0.6*2/1_000_000, *persisted[1].InputPrice, 1e-15)
+	require.Equal(t, 0.26, *persisted[1].UpstreamCostMultiplier)
+	require.Equal(t, "国产模型", persisted[1].UpstreamPricingGroup)
+	require.Equal(t, "test-add-version", persisted[1].UpstreamPricingVersion)
 }
 
 func TestPricingPatternsCoverExactAndWildcardModels(t *testing.T) {

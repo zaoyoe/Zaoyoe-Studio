@@ -125,6 +125,44 @@ func TestCalculateCostUnified_PerRequestMode(t *testing.T) {
 	require.Equal(t, string(BillingModePerRequest), cost.BillingMode)
 }
 
+func TestCalculateCostUnified_SeparatesUpstreamCostRatioFromCustomerMultiplier(t *testing.T) {
+	upstreamRatio := 0.5
+	cs := newTestChannelServiceWithCache(t, &channelCache{
+		pricingByGroupModel: map[channelModelKey]*ChannelModelPricing{
+			{groupID: 1, platform: PlatformOpenAI, model: "gpt-4o-mini"}: {
+				BillingMode:            BillingModePerRequest,
+				PerRequestPrice:        testPtrFloat64(1.0),
+				UpstreamCostMultiplier: &upstreamRatio,
+			},
+		},
+		channelByGroupID:        map[int64]*Channel{1: {ID: 1, Status: StatusActive}},
+		groupPlatform:           map[int64]string{1: PlatformOpenAI},
+		wildcardByGroupPlatform: map[channelGroupPlatformKey][]*wildcardPricingEntry{},
+		mappingByGroupModel:     map[channelModelKey]string{},
+		wildcardMappingByGP:     map[channelGroupPlatformKey][]*wildcardMappingEntry{},
+		byID:                    map[int64]*Channel{},
+	})
+
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(cs, bs)
+	groupID := int64(1)
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Ctx:            context.Background(),
+		Model:          "gpt-4o-mini",
+		GroupID:        &groupID,
+		RequestCount:   1,
+		RateMultiplier: 0.7,
+		Resolver:       resolver,
+	})
+	require.NoError(t, err)
+
+	// The channel price is the official/reference price. The user's 0.7x
+	// group multiplier applies to it; the upstream 0.5x cost ratio is used
+	// only when calculating account statistics.
+	require.InDelta(t, 1.0, cost.TotalCost, 1e-10)
+	require.InDelta(t, 0.7, cost.ActualCost, 1e-10)
+}
+
 func TestCalculateCostUnified_ImageMode(t *testing.T) {
 	cs := newTestChannelServiceWithCache(t, &channelCache{
 		pricingByGroupModel: map[channelModelKey]*ChannelModelPricing{

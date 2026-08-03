@@ -653,6 +653,33 @@ func TestResolveAccountStatsCost_ApplyPricingToAccountStats_UsesTotalCost(t *tes
 	require.InDelta(t, 0.75, *result, 1e-12)
 }
 
+func TestResolveAccountStatsCost_UsesUpstreamCostMultiplierWithoutCustomerMultiplier(t *testing.T) {
+	multiplier := 0.5
+	channel := &Channel{
+		ID:                         1,
+		Status:                     StatusActive,
+		ApplyPricingToAccountStats: true,
+		ModelPricing: []ChannelModelPricing{{
+			Platform:               PlatformAnthropic,
+			Models:                 []string{"claude-sonnet-4"},
+			InputPrice:             testPtrFloat64(1),
+			UpstreamCostMultiplier: &multiplier,
+		}},
+	}
+	cs := newTestChannelServiceForStats(t, channel, 10, PlatformAnthropic)
+
+	result := resolveAccountStatsCost(
+		context.Background(),
+		cs, nil,
+		1, 10, "claude-sonnet-4",
+		UsageTokens{InputTokens: 1}, 1, 1.0,
+	)
+	require.NotNil(t, result)
+	// totalCost is the official/reference base. The customer group multiplier
+	// is intentionally not involved in the account's upstream cost.
+	require.InDelta(t, 0.5, *result, 1e-12)
+}
+
 func TestResolveAccountStatsCost_ApplyPricingToAccountStats_ZeroTotalCost_ReturnsNil(t *testing.T) {
 	channel := &Channel{
 		ID:                         1,

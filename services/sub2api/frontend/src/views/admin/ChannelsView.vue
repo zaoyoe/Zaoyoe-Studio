@@ -1190,6 +1190,9 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         image_input_price: mTokToPerToken(entry.image_input_price),
         image_output_price: mTokToPerToken(entry.image_output_price),
         per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
+        upstream_cost_multiplier: entry.upstream_cost_multiplier ?? null,
+        upstream_pricing_group: entry.upstream_pricing_group || '',
+        upstream_pricing_version: entry.upstream_pricing_version || '',
         intervals: formIntervalsToAPI(entry.intervals || [])
       })
     }
@@ -1287,6 +1290,9 @@ function apiToForm(channel: Channel): PlatformSection[] {
         image_input_price: perTokenToMTok(p.image_input_price),
         image_output_price: perTokenToMTok(p.image_output_price),
         per_request_price: p.per_request_price,
+        upstream_cost_multiplier: p.upstream_cost_multiplier ?? null,
+        upstream_pricing_group: p.upstream_pricing_group || '',
+        upstream_pricing_version: p.upstream_pricing_version || '',
         intervals: apiIntervalsToForm(p.intervals || [])
       } as PricingFormEntry))
 
