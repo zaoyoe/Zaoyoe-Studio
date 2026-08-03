@@ -60,6 +60,19 @@ const HomepageAdmin = (() => {
         { key: 'guestbook', label: '留言板', path: '/guestbook.html' },
         { key: 'gongyi', label: 'API中转', path: 'https://new.fatherkey.com' }
     ]);
+    const HOMEPAGE_GONGYI_TARGET_URL = 'https://new.fatherkey.com';
+    const HOMEPAGE_GONGYI_HOSTS = new Set([
+        'new.fatherkey.com',
+        'sub2api.fatherkey.com',
+        'sub2api.zaoyoe.com',
+        'gongyi.zaoyoe.com',
+        'www.gongyi.zaoyoe.com'
+    ]);
+    const HOMEPAGE_LEGACY_GONGYI_HOSTS = new Set([
+        'sub2api.fatherkey.com',
+        'gongyi.zaoyoe.com',
+        'www.gongyi.zaoyoe.com'
+    ]);
     const HOMEPAGE_SITE_LAYOUT_PAGE_KEYS = new Set(HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS.map((option) => option.key));
     const HOMEPAGE_SITE_LAYOUT_LOGO_MODES = new Set(['follow_root', 'custom']);
     const HOMEPAGE_SECTION_LOCALIZED_FIELDS = Object.freeze({
@@ -1392,16 +1405,34 @@ const HomepageAdmin = (() => {
     function isHomepageGongyiHeroEntry(item) {
         const normalizedId = String(item?.id || '').trim().toLowerCase();
         const normalizedSection = String(item?.section || '').trim().toLowerCase();
-        const normalizedLink = String(item?.link || '').trim().toLowerCase();
-        return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('new.fatherkey.com') || normalizedLink.includes('sub2api.fatherkey.com') || normalizedLink.includes('sub2api.zaoyoe.com') || normalizedLink.includes('gongyi.zaoyoe.com');
+        if (normalizedId === 'gongyi' || normalizedSection === 'gongyi') {
+            return true;
+        }
+
+        try {
+            return HOMEPAGE_GONGYI_HOSTS.has(new URL(String(item?.link || '').trim()).hostname.toLowerCase());
+        } catch (_error) {
+            return false;
+        }
     }
 
     function normalizeHomepageGongyiUrl(value) {
         const normalized = String(value || '').trim();
-        return normalized.replace(
-            /^https?:\/\/(?:sub2api\.fatherkey\.com|(?:www\.)?gongyi\.zaoyoe\.com)/i,
-            'https://new.fatherkey.com'
-        );
+        if (!normalized) {
+            return '';
+        }
+
+        try {
+            const parsed = new URL(normalized);
+            if (HOMEPAGE_LEGACY_GONGYI_HOSTS.has(parsed.hostname.toLowerCase())) {
+                const path = parsed.pathname === '/' ? '' : parsed.pathname;
+                return `${HOMEPAGE_GONGYI_TARGET_URL}${path}${parsed.search}${parsed.hash}`;
+            }
+        } catch (_error) {
+            // Keep non-absolute URLs unchanged.
+        }
+
+        return normalized;
     }
 
     function withHomepageRequiredHeroEntries(items = []) {

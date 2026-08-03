@@ -111,6 +111,20 @@ test('homepage normalizers rewrite legacy API relay links to the NewAPI domain',
     assert.equal(sharedGongyi.cta_link, 'https://new.fatherkey.com/dashboard');
 });
 
+test('homepage relay normalizers require an exact legacy hostname', () => {
+    const contract = loadBrowserHomepageContract();
+    const attackerUrl = 'https://sub2api.fatherkey.com.attacker.example/dashboard?tab=keys#top';
+    const browserGongyi = contract.normalizeContent('gongyi', { cta_link: attackerUrl });
+    const sharedGongyi = homepageShared.normalizeHomepageContent('gongyi', { cta_link: attackerUrl });
+    const adminSource = fs.readFileSync(adminHomepagePath, 'utf8');
+
+    assert.equal(browserGongyi.cta_link, attackerUrl);
+    assert.equal(sharedGongyi.cta_link, attackerUrl);
+    assert.match(adminSource, /HOMEPAGE_LEGACY_GONGYI_HOSTS\.has\(parsed\.hostname\.toLowerCase\(\)\)/);
+    assert.match(adminSource, /HOMEPAGE_GONGYI_HOSTS\.has\(new URL\([\s\S]*?\.hostname\.toLowerCase\(\)\)/);
+    assert.doesNotMatch(adminSource, /normalized\.replace\(\s*\/\^https\?:\\\/\\\//);
+});
+
 test('homepage admin save path seeds the current site localized fallback', () => {
     const source = fs.readFileSync(adminHomepagePath, 'utf8');
 
