@@ -46,7 +46,7 @@
     const REMOTE_RECORDS_FAST_POLL_ROUNDS = 48;
     const REMOTE_RECORDS_FAST_POLL_FAST_ROUNDS = 6;
     const DEFAULT_API_BASE_PROFILES = Object.freeze([
-        { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://sub2api.fatherkey.com/v1' },
+        { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://new.fatherkey.com/v1' },
         { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://sub2api.zaoyoe.xyz/v1' }
     ]);
     let runtimeApiBaseProfiles = DEFAULT_API_BASE_PROFILES.slice();
@@ -1203,7 +1203,13 @@
                 const baseUrl = normalizeApiBaseUrl(row.baseUrl || row.base_url);
                 if (!baseUrl) return null;
                 const label = String(row.label || '').trim()
-                    || (baseUrl.includes('generativelanguage.googleapis.com') ? 'Gemini API' : (baseUrl.includes('zaoyoe') ? 'Zaoyoe Sub2API' : (baseUrl.includes('fatherkey') ? 'FatherKey Sub2API' : 'API')));
+                    || (baseUrl.includes('generativelanguage.googleapis.com')
+                        ? 'Gemini API'
+                        : (baseUrl.includes('zaoyoe')
+                            ? 'Zaoyoe Sub2API'
+                            : (baseUrl.includes('new.fatherkey.com')
+                                ? 'FatherKey NewAPI'
+                                : (baseUrl.includes('sub2api.fatherkey.com') ? 'FatherKey Legacy API' : 'API'))));
                 const id = String(row.id || label || baseUrl || index)
                     .trim()
                     .toLowerCase()

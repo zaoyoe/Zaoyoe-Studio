@@ -4,8 +4,8 @@
     const MANAGED_SECTION_ORDER = Object.freeze(['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker']);
     const LEGACY_SECTIONS = Object.freeze(['footer']);
     const VISIBILITY_SECTION_ORDER = Object.freeze([...MANAGED_SECTION_ORDER, ...LEGACY_SECTIONS]);
-    const GONGYI_TARGET_URL = 'https://sub2api.fatherkey.com';
-    const LEGACY_GONGYI_HOSTS = new Set(['gongyi.zaoyoe.com', 'www.gongyi.zaoyoe.com']);
+    const GONGYI_TARGET_URL = 'https://new.fatherkey.com';
+    const LEGACY_GONGYI_HOSTS = new Set(['sub2api.fatherkey.com', 'gongyi.zaoyoe.com', 'www.gongyi.zaoyoe.com']);
     const SECTION_ALIAS_MAP = Object.freeze({
         gallery: 'prompts'
     });

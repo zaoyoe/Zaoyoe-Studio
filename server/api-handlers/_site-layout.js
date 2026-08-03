@@ -29,7 +29,7 @@ const SITE_LAYOUT_PAGE_OPTIONS = Object.freeze([
     Object.freeze({
         key: 'gongyi',
         label: 'API中转',
-        path: 'https://sub2api.fatherkey.com'
+        path: 'https://new.fatherkey.com'
     })
 ]);
 

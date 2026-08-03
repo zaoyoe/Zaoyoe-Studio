@@ -168,8 +168,8 @@ function createDefaultApiBaseUrls() {
         {
             id: 'api-base-default-cn',
             site: 'cn',
-            label: 'FatherKey Sub2API',
-            base_url: 'https://sub2api.fatherkey.com/v1',
+            label: 'FatherKey NewAPI',
+            base_url: 'https://new.fatherkey.com/v1',
             is_active: true,
             display_order: 10,
             metadata: {}
@@ -565,6 +565,10 @@ test('reverse prompt defaults to text vision model and chat model group', () => 
 });
 
 test('ai image allowed API base URLs come from admin-controlled env', () => {
+    assert.deepEqual(
+        resolveAllowedApiBaseUrls({}),
+        ['https://new.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
+    );
     assert.deepEqual(
         resolveAllowedApiBaseUrls({
             AI_IMAGE_ALLOWED_API_BASE_URLS: 'https://sub2api.fatherkey.com/v1, https://sub2api.zaoyoe.xyz/v1/'
@@ -4961,7 +4965,7 @@ test('api billing mode rejects when admin has no enabled API base URLs', async (
     assert.equal(payload.code, 'api_base_url_not_configured');
 });
 
-test('api billing mode accepts admin configured Sub2API base URLs', async () => {
+test('api billing mode accepts an admin-configured legacy Sub2API compatibility URL', async () => {
     const requests = [];
     const { handlers, state } = createHandlers({
         state: {

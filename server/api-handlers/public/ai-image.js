@@ -51,8 +51,11 @@ const {
 } = require('../admin/ai-image/model-config');
 
 const DEFAULT_ALLOWED_API_BASE_URLS = Object.freeze([
-    'https://sub2api.fatherkey.com/v1',
+    'https://new.fatherkey.com/v1',
     'https://sub2api.zaoyoe.xyz/v1'
+]);
+const LEGACY_COMPATIBLE_API_BASE_URLS = Object.freeze([
+    'https://sub2api.fatherkey.com/v1'
 ]);
 const SUPPORTED_MODES = Object.freeze(new Set(['text', 'image', 'video', 'reverse', 'chat', 'agent']));
 const IMAGE_MODES = Object.freeze(new Set(['text', 'image', 'agent']));
@@ -951,7 +954,7 @@ function resolveApiBaseUrl(inputValue, { site = 'cn', env = {} } = {}) {
         return resolveDefaultApiBaseUrl({ site, env });
     }
 
-    if (allowed.includes(normalizedInput)) {
+    if (allowed.includes(normalizedInput) || LEGACY_COMPATIBLE_API_BASE_URLS.includes(normalizedInput)) {
         return normalizedInput;
     }
 
@@ -964,8 +967,10 @@ function resolveApiBaseUrl(inputValue, { site = 'cn', env = {} } = {}) {
 function inferApiBaseUrlLabel(baseUrl = '') {
     const normalized = normalizeApiBaseUrl(baseUrl).toLowerCase();
     if (normalized.includes('zaoyoe')) return 'Zaoyoe Sub2API';
-    if (normalized.includes('fatherkey')) return 'FatherKey Sub2API';
-    return 'Sub2API';
+    if (normalized.includes('new.fatherkey.com')) return 'FatherKey NewAPI';
+    if (normalized.includes('sub2api.fatherkey.com')) return 'FatherKey Legacy API';
+    if (normalized.includes('fatherkey')) return 'FatherKey API';
+    return 'AI API';
 }
 
 function serializeApiBaseUrl(row = {}) {
@@ -1342,7 +1347,7 @@ async function resolveApiBaseUrlFromAdminConfig(supabase, inputValue, { site = '
         throw error;
     }
 
-    if (allowed.includes(normalizedInput)) {
+    if (allowed.includes(normalizedInput) || LEGACY_COMPATIBLE_API_BASE_URLS.includes(normalizedInput)) {
         return normalizedInput;
     }
 
@@ -6743,7 +6748,10 @@ function createAiImageHandlers({
                 measure('keys', storedApiKeysPromise)
             ]);
             if (error) throw error;
-            const allowedApiBaseUrlSet = new Set(apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean));
+            const allowedApiBaseUrlSet = new Set([
+                ...apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean),
+                ...LEGACY_COMPATIBLE_API_BASE_URLS
+            ]);
             const storedApiKeys = (Array.isArray(rawStoredApiKeys) ? rawStoredApiKeys : []).filter((row) => {
                 if (!allowedApiBaseUrlSet.size) return true;
                 return allowedApiBaseUrlSet.has(normalizeApiBaseUrl(row.apiBaseUrl || row.api_base_url));

@@ -885,6 +885,29 @@ test('admin ai image config saves user API base URL allowlist entries', async ()
     });
 });
 
+test('admin ai image config infers the NewAPI label for the canonical FatherKey URL', async () => {
+    const state = {};
+
+    await withHandler({
+        state,
+        body: {
+            action: 'save-api-base-url',
+            site: 'cn',
+            label: '',
+            baseUrl: 'https://new.fatherkey.com/v1/'
+        }
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', url: '/api/admin/ai-image/config' }, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.api_base_url.base_url, 'https://new.fatherkey.com/v1');
+        assert.equal(payload.api_base_url.label, 'FatherKey NewAPI');
+    });
+});
+
 test('admin ai image config saves site scoped guardrails', async () => {
     const state = {
         systemConfig: [{

@@ -28,10 +28,11 @@
     };
     const CANONICAL_AVATAR_CDN_ORIGIN = 'https://cdn.fatherkey.com';
     const GONGYI_ORIGINS = {
-        cn: 'https://sub2api.fatherkey.com',
+        cn: 'https://new.fatherkey.com',
         intl: 'https://sub2api.zaoyoe.xyz'
     };
     const GONGYI_HOSTS = new Set([
+        'new.fatherkey.com',
         'sub2api.fatherkey.com',
         'sub2api.zaoyoe.com',
         'sub2api.zaoyoe.xyz',

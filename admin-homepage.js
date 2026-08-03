@@ -58,7 +58,7 @@ const HomepageAdmin = (() => {
         { key: 'prompts', label: '提示词', path: '/prompts.html' },
         { key: 'verify', label: 'Gemini Pro', path: '/verify.html' },
         { key: 'guestbook', label: '留言板', path: '/guestbook.html' },
-        { key: 'gongyi', label: 'API中转', path: 'https://sub2api.fatherkey.com' }
+        { key: 'gongyi', label: 'API中转', path: 'https://new.fatherkey.com' }
     ]);
     const HOMEPAGE_SITE_LAYOUT_PAGE_KEYS = new Set(HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS.map((option) => option.key));
     const HOMEPAGE_SITE_LAYOUT_LOGO_MODES = new Set(['follow_root', 'custom']);
@@ -1375,7 +1375,7 @@ const HomepageAdmin = (() => {
     function getHomepageDefaultHeroEntries() {
         return [
             { id: 'prompts', text: '提示词', text_en: 'Prompts', icon: 'fa-wand-magic-sparkles', color: '#f472b6', link: '/prompts.html', section: 'prompts' },
-            { id: 'gongyi', text: '核心秘钥', text_en: 'Father Key', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://sub2api.fatherkey.com', section: 'gongyi' },
+            { id: 'gongyi', text: '核心秘钥', text_en: 'Father Key', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://new.fatherkey.com', section: 'gongyi' },
             { id: 'shop', text: '商城', text_en: 'Shop', icon: 'fa-store', color: '#4ade80', link: '/shop.html', section: 'shop' },
             { id: 'verify', text: 'Gemini Pro', text_en: 'Gemini Pro', icon: 'fa-shield-check', color: '#60a5fa', link: '/verify.html?source=homepage_verify', section: 'verify' },
             { id: 'guestbook', text: '留言板', text_en: 'Guestbook', icon: 'fa-comment-dots', color: '#f59e0b', link: '#', action: 'openGuestbookModal', section: 'guestbook' }
@@ -1393,14 +1393,15 @@ const HomepageAdmin = (() => {
         const normalizedId = String(item?.id || '').trim().toLowerCase();
         const normalizedSection = String(item?.section || '').trim().toLowerCase();
         const normalizedLink = String(item?.link || '').trim().toLowerCase();
-        return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('sub2api.fatherkey.com') || normalizedLink.includes('sub2api.zaoyoe.com') || normalizedLink.includes('gongyi.zaoyoe.com');
+        return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('new.fatherkey.com') || normalizedLink.includes('sub2api.fatherkey.com') || normalizedLink.includes('sub2api.zaoyoe.com') || normalizedLink.includes('gongyi.zaoyoe.com');
     }
 
     function normalizeHomepageGongyiUrl(value) {
         const normalized = String(value || '').trim();
-        return normalized.includes('gongyi.zaoyoe.com')
-            ? normalized.replace(/^https?:\/\/(?:www\.)?gongyi\.zaoyoe\.com/i, 'https://sub2api.fatherkey.com')
-            : normalized;
+        return normalized.replace(
+            /^https?:\/\/(?:sub2api\.fatherkey\.com|(?:www\.)?gongyi\.zaoyoe\.com)/i,
+            'https://new.fatherkey.com'
+        );
     }
 
     function withHomepageRequiredHeroEntries(items = []) {
