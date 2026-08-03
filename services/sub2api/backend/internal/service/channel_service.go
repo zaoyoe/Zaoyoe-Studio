@@ -748,6 +748,9 @@ func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) 
 	if err := validateChannelConfig(channel.ModelPricing, channel.ModelMapping); err != nil {
 		return nil, err
 	}
+	if err := validateUpstreamPricingSource(ResolveUpstreamPricingSource(channel.FeaturesConfig)); err != nil {
+		return nil, err
+	}
 	for i, rule := range channel.AccountStatsPricingRules {
 		if err := validatePricingEntries(rule.Pricing); err != nil {
 			return nil, fmt.Errorf("account stats pricing rule #%d: %w", i+1, err)
@@ -790,6 +793,9 @@ func (s *ChannelService) Update(ctx context.Context, id int64, input *UpdateChan
 	}
 
 	if err := validateChannelConfig(channel.ModelPricing, channel.ModelMapping); err != nil {
+		return nil, err
+	}
+	if err := validateUpstreamPricingSource(ResolveUpstreamPricingSource(channel.FeaturesConfig)); err != nil {
 		return nil, err
 	}
 	for i, rule := range channel.AccountStatsPricingRules {

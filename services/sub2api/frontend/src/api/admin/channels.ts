@@ -56,6 +56,10 @@ export interface Channel {
   billing_model_source: BillingModelSource
   restrict_models: boolean
   features_config?: Record<string, unknown>
+  upstream_pricing_source?: {
+    type: string
+    endpoint: string
+  }
   group_ids: number[]
   model_pricing: ChannelModelPricing[]
   model_mapping: Record<string, Record<string, string>> // platform → {src→dst}
@@ -178,6 +182,7 @@ export interface SyncUpstreamPricingRequest {
   platform: string
   group?: string
   models?: string[]
+  endpoint?: string
 }
 
 export interface UpstreamPricingGroupOption {
@@ -221,7 +226,7 @@ export async function syncPricingModels(platform: string): Promise<SyncPricingMo
 }
 
 /**
- * Synchronize the fixed upstream model-plaza pricing into a saved channel.
+ * Synchronize the selected channel's upstream model-plaza pricing.
  * The channel's own group rate multipliers are left untouched by this call.
  */
 export async function syncUpstreamPricing(
@@ -235,9 +240,10 @@ export async function syncUpstreamPricing(
   return data
 }
 
-export async function listUpstreamPricingGroups(): Promise<UpstreamPricingGroupsResult> {
+export async function listUpstreamPricingGroups(endpoint?: string): Promise<UpstreamPricingGroupsResult> {
   const { data } = await apiClient.get<UpstreamPricingGroupsResult>(
     '/admin/channels/pricing/upstream-groups',
+    { params: endpoint ? { endpoint } : undefined },
   )
   return data
 }
