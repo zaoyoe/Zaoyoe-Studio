@@ -12,9 +12,11 @@ usage() {
   cat <<'EOF'
 Usage: scripts/rollback-kvm4-sub2api.sh [release-id]
 
-Rollback the KVM4 Sub2API app container to a previous release. If release-id is
-omitted, the script uses /opt/sub2api/.previous-src when available, or the
-newest release that is not currently active.
+Rollback the KVM4 Sub2API service slot to a previous release. Releases may be
+the legacy Sub2API application or NewAPI after the migration, but a rollback
+may only target the currently active application family. If release-id is
+omitted, the script uses a same-family /opt/sub2api/.previous-src when
+available, or the newest same-family release that is not currently active.
 EOF
 }
 
@@ -50,21 +52,61 @@ healthcheck() {
   return 1
 }
 
+source_family() {
+  case "$(basename "$1")" in
+    newapi)
+      printf '%s\n' newapi
+      ;;
+    sub2api)
+      printf '%s\n' legacy
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 [[ -d "$KVM4_SUB2API_ROOT/releases" ]] || die "release directory missing"
 current_src=""
 if [[ -L "$KVM4_SUB2API_ROOT/src" ]]; then
   current_src="$(readlink -f "$KVM4_SUB2API_ROOT/src" || true)"
 fi
+[[ -d "$current_src" ]] || die "current release source is unavailable"
+current_family="$(source_family "$current_src")" || die "cannot determine current application family from $current_src"
+if [[ "$current_family" == "newapi" ]]; then
+  grep -q 'zaoyoe/newapi:local' "$KVM4_SUB2API_ROOT/docker-compose.local.yml" ||
+    die "current source is NewAPI but the active compose file is not"
+elif grep -q 'zaoyoe/newapi:local' "$KVM4_SUB2API_ROOT/docker-compose.local.yml"; then
+  die "current source is legacy Sub2API but the active compose file is NewAPI"
+fi
 
 target_src=""
 if [[ -n "${TARGET_RELEASE:-}" ]]; then
-  target_src="$KVM4_SUB2API_ROOT/releases/$TARGET_RELEASE/sub2api"
+  target_root="$KVM4_SUB2API_ROOT/releases/$TARGET_RELEASE"
+  if [[ -d "$target_root/newapi" ]]; then
+    target_src="$target_root/newapi"
+  else
+    target_src="$target_root/sub2api"
+  fi
 elif [[ -f "$KVM4_SUB2API_ROOT/.previous-src" ]]; then
-  target_src="$(cat "$KVM4_SUB2API_ROOT/.previous-src")"
-else
+  previous_src="$(cat "$KVM4_SUB2API_ROOT/.previous-src")"
+  previous_family="$(source_family "$previous_src" 2>/dev/null || true)"
+  if [[ -d "$previous_src" && "$previous_src" != "$current_src" && "$previous_family" == "$current_family" ]]; then
+    target_src="$previous_src"
+  fi
+fi
+
+if [[ -z "$target_src" && -z "${TARGET_RELEASE:-}" ]]; then
   while IFS= read -r candidate; do
-    if [[ "$candidate/sub2api" != "$current_src" && -d "$candidate/sub2api" ]]; then
-      target_src="$candidate/sub2api"
+    candidate_src=""
+    if [[ -d "$candidate/newapi" ]]; then
+      candidate_src="$candidate/newapi"
+    elif [[ -d "$candidate/sub2api" ]]; then
+      candidate_src="$candidate/sub2api"
+    fi
+    candidate_family="$(source_family "$candidate_src" 2>/dev/null || true)"
+    if [[ -n "$candidate_src" && "$candidate_src" != "$current_src" && "$candidate_family" == "$current_family" ]]; then
+      target_src="$candidate_src"
       break
     fi
   done < <(find "$KVM4_SUB2API_ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | awk '{print $2}')
@@ -73,12 +115,26 @@ fi
 [[ -d "$target_src" ]] || die "target source not found: $target_src"
 target_root="$(dirname "$target_src")"
 [[ -f "$target_root/docker-compose.local.yml" ]] || die "target compose file missing"
+target_family="$(source_family "$target_src")" || die "cannot determine target application family from $target_src"
+[[ "$target_family" == "$current_family" ]] ||
+  die "cross-family rollback from $current_family to $target_family is forbidden because their user, key, and quota databases diverge after cutover"
+if [[ "$target_family" == "newapi" ]]; then
+  grep -q 'zaoyoe/newapi:local' "$target_root/docker-compose.local.yml" ||
+    die "target source is NewAPI but its compose file is not"
+elif grep -q 'zaoyoe/newapi:local' "$target_root/docker-compose.local.yml"; then
+  die "target source is legacy Sub2API but its compose file is NewAPI"
+fi
 
 cd "$KVM4_SUB2API_ROOT"
 ln -sfn "$target_src" "$KVM4_SUB2API_ROOT/src"
 install -o root -g root -m 0644 "$target_root/docker-compose.local.yml" "$KVM4_SUB2API_ROOT/docker-compose.local.yml"
 
 docker compose --env-file .env -f docker-compose.local.yml build sub2api
+if grep -q 'legacy-sub2api:' docker-compose.local.yml; then
+  docker compose --env-file .env -f docker-compose.local.yml up -d postgres redis legacy-sub2api
+else
+  docker rm -f sub2api-legacy >/dev/null 2>&1 || true
+fi
 docker compose --env-file .env -f docker-compose.local.yml up -d --no-deps --force-recreate sub2api
 healthcheck || die "healthcheck failed after rollback"
 

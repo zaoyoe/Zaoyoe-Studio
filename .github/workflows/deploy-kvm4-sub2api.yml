@@ -1,5 +1,8 @@
 name: Deploy KVM4 Sub2API
 
+# `Sub2API` is the stable deployment-slot name. The public service runs NewAPI;
+# phase one keeps legacy Sub2API only as a private compatibility bridge.
+
 on:
   push:
     branches:
@@ -15,7 +18,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy latest main Sub2API to KVM4
+    name: Deploy latest main NewAPI in Sub2API slot to KVM4
     runs-on: ubuntu-latest
     timeout-minutes: 60
     if: github.ref == 'refs/heads/main'
@@ -69,13 +72,13 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           printf 'Checked out main commit %s\n' "$GITHUB_SHA"
 
-      - name: Deploy KVM4 Sub2API
+      - name: Deploy NewAPI in KVM4 Sub2API slot
         run: npm run deploy:kvm4:sub2api
 
-      - name: Verify Sub2API public route
+      - name: Verify NewAPI public route in Sub2API slot
         shell: bash
         run: |
           set -Eeuo pipefail
 
           curl -fsS --retry 5 --retry-delay 3 https://sub2api.fatherkey.com/health > /tmp/kvm4-sub2api-health.json
-          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-sub2api-health.json','utf8')); if (payload.status !== 'ok') throw new Error('sub2api health failed'); console.log(JSON.stringify({sub2api_health: payload.status}));"
+          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-sub2api-health.json','utf8')); if (payload.status !== 'ok') throw new Error('NewAPI health failed in Sub2API slot'); console.log(JSON.stringify({newapi_sub2api_slot_health: payload.status}));"

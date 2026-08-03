@@ -13,9 +13,10 @@ When the user asks Codex to deploy:
 7. Verify Vercel production is `Ready`.
 8. Verify the GitHub Actions workflow `Deploy KVM4 Verify Server` succeeds.
 9. Verify the GitHub Actions workflow `Deploy KVM4 Sub2API` succeeds.
-10. SSH to KVM4 and confirm both verify and Sub2API `.current-release` files
-    equal the latest `main` commit, `/health` is healthy, and related
-    `docker ps` containers are healthy.
+10. SSH to KVM4 and confirm both verify and the Sub2API service-slot
+    `.current-release` files equal the latest `main` commit, `/health` is
+    healthy, and the public NewAPI, private legacy bridge, PostgreSQL, and Redis
+    containers are healthy.
 11. Report the final result in Chinese with three deployment chains: Vercel
     production, KVM4 Verify Server, and KVM4 Sub2API.
 
@@ -33,69 +34,88 @@ workflow runs `npm run deploy:kvm4:verify` and verifies the public routes. Use
 manual KVM4 deploys only from latest clean `main` for emergency follow-up or
 workflow recovery.
 
-KVM4 Sub2API deploys are automated from `main` by the GitHub Actions workflow
-`Deploy KVM4 Sub2API`. After a PR merges into `main`, the workflow runs
-`npm run deploy:kvm4:sub2api` and verifies `https://sub2api.fatherkey.com/health`.
-Use manual Sub2API KVM4 deploys only from latest clean `main` for emergency
-follow-up or workflow recovery. The deploy updates only the Sub2API app
-container and must preserve the existing PostgreSQL and Redis data directories.
+KVM4 Sub2API service-slot deploys are automated from `main` by the GitHub Actions
+workflow `Deploy KVM4 Sub2API`. The workflow and `/opt/sub2api` names are stable
+deployment identifiers; they no longer mean that legacy Sub2API is the public
+application. After a PR merges into `main`, the workflow runs
+`npm run deploy:kvm4:sub2api` and verifies
+`https://sub2api.fatherkey.com/health`. Use manual KVM4 deploys only from latest
+clean `main` for emergency follow-up or workflow recovery.
 
-Sub2API upstream updates must preserve local security customizations. When
-updating `services/sub2api` from upstream, do not blindly overwrite the local
-regional restriction feature. Re-apply and verify the controls that restrict
-only registration, OAuth new-account signup, API key page confirmation, and API
-key creation. Do not block the whole site or existing login/session access.
-VPN users must remain allowed when their current request IP is not detected as a
-blocked country. Unknown region policy should remain configurable and default to
-allow unless the admin setting explicitly changes it.
+The phase-one Sub2API service-slot topology is:
 
-Sub2API upstream updates must also preserve local Father Key product
-customizations. The sidebar brand/logo and public home logo must link back to
-the main site: `https://www.fatherkey.com/` for the China/domestic site and
-`https://www.zaoyoe.xyz/` for the international site. Regular users should keep
-the sidebar brand hint `返回主站充值` / `Recharge on main site`. Preserve CC Switch
-Claude model slot import parameters (`haikuModel`, `sonnetModel`, `opusModel`),
-and keep request error detail modals defaulting to `all` while upstream error
-detail modals default to `errors`. Sub2API deploy templates should keep the
-local image `zaoyoe/sub2api:local` and URL allowlist default enabled (`true`);
-production KVM4 deploys must continue using the repository-level
-`deploy/kvm4/docker-compose.sub2api.yml`.
+- The public `sub2api` container and `https://sub2api.fatherkey.com` run NewAPI
+  from `services/newapi` with the local image `zaoyoe/newapi:local`.
+- The `legacy-sub2api` service runs `zaoyoe/sub2api:legacy` only as a private,
+  loopback/internal compatibility bridge for upstream account scheduling that
+  has not yet moved to NewAPI. It must never receive public ingress.
+- NewAPI uses its own `NEWAPI_DB_NAME` database and `newapi_data` directory. All
+  deploys and rollbacks must preserve the existing `postgres_data`,
+  `redis_data`, legacy `data`, and NewAPI `newapi_data` directories.
+- Production must keep using the repository-level
+  `deploy/kvm4/docker-compose.sub2api.yml`. Do not switch the public service back
+  to a legacy Sub2API image. Do not remove the private bridge until all of its
+  remaining scheduler responsibilities have verified NewAPI replacements.
 
-After every Sub2API upstream update, verify these local files or equivalent
-logic still exist before deploy:
+NewAPI upstream updates must preserve the local regional-restriction security
+customization. When updating `services/newapi` from upstream, do not blindly
+overwrite this feature. Re-apply and verify controls that restrict only
+registration, OAuth new-account signup, the API key page confirmation, and API
+key creation. Do not add a site-wide middleware or affect existing login,
+refresh, passkey, 2FA, or session access. A VPN user remains allowed when the
+current request country is not blocked. Unknown or unrecognized regions remain
+configurable and default to allow unless the administrator explicitly selects
+deny. A regional-status lookup failure must not turn into a client-side
+site-wide denial.
 
-- `services/sub2api/backend/internal/handler/regional_restriction.go`
-- `services/sub2api/backend/internal/handler/regional_restriction_test.go`
-- `services/sub2api/backend/internal/handler/api_key_handler.go`
-- `services/sub2api/backend/internal/handler/auth_handler.go`
-- `services/sub2api/backend/internal/handler/auth_email_oauth.go`
-- `services/sub2api/backend/internal/handler/auth_oauth_pending_flow.go`
-- `services/sub2api/backend/internal/handler/auth_linuxdo_oauth.go`
-- `services/sub2api/backend/internal/handler/auth_oidc_oauth.go`
-- `services/sub2api/backend/internal/handler/auth_dingtalk_oauth.go`
-- `services/sub2api/backend/internal/handler/auth_wechat_oauth.go`
-- `services/sub2api/backend/internal/server/routes/user.go`
-- `services/sub2api/backend/internal/server/api_contract_test.go`
-- `services/sub2api/backend/internal/handler/admin/setting_handler.go`
-- `services/sub2api/backend/internal/service/domain_constants.go`
-- `services/sub2api/backend/internal/service/setting_service.go`
-- `services/sub2api/backend/internal/service/settings_view.go`
-- `services/sub2api/backend/internal/handler/dto/settings.go`
-- `services/sub2api/frontend/src/views/admin/SettingsView.vue`
-- `services/sub2api/frontend/src/views/user/KeysView.vue`
-- `services/sub2api/frontend/src/views/HomeView.vue`
-- `services/sub2api/frontend/src/components/layout/AppSidebar.vue`
-- `services/sub2api/frontend/src/views/admin/ops/components/OpsErrorDetailsModal.vue`
-- `services/sub2api/frontend/src/utils/ccswitchImport.ts`
-- `services/sub2api/frontend/src/utils/__tests__/ccswitchImport.spec.ts`
-- `services/sub2api/frontend/src/i18n/locales/en.ts`
-- `services/sub2api/frontend/src/i18n/locales/zh.ts`
-- `services/sub2api/frontend/src/api/keys.ts`
-- `services/sub2api/frontend/src/api/admin/settings.ts`
-- `services/sub2api/frontend/src/types/index.ts`
-- `services/sub2api/deploy/docker-compose.local.yml`
-- `services/sub2api/deploy/docker-compose.yml`
+After every NewAPI upstream update, verify these local files or equivalent logic
+still exist before deploy:
 
-The API key page confirmation copy should remain the original English wording,
-including `API Key Use Confirmation` and the restricted-regions notice. Run the
-focused Go and frontend tests for these flows after re-applying upstream changes.
+- `services/newapi/controller/regional_restriction.go`
+- `services/newapi/controller/regional_restriction_test.go`
+- `services/newapi/controller/user.go`
+- `services/newapi/controller/misc.go`
+- `services/newapi/controller/oauth.go`
+- `services/newapi/controller/wechat.go`
+- `services/newapi/controller/token.go`
+- `services/newapi/router/api-router.go`
+- `services/newapi/model/option.go`
+- `services/newapi/model/option_regional_restriction_test.go`
+- `services/newapi/setting/system_setting/regional_restriction.go`
+- `services/newapi/setting/system_setting/regional_restriction_test.go`
+- `services/newapi/web/src/features/keys/api.ts`
+- `services/newapi/web/src/features/keys/types.ts`
+- `services/newapi/web/src/features/keys/index.tsx`
+- `services/newapi/web/src/features/keys/components/api-keys-provider.tsx`
+- `services/newapi/web/src/features/keys/components/api-keys-dialogs.tsx`
+- `services/newapi/web/src/features/keys/components/api-keys-mutate-drawer.tsx`
+- `services/newapi/web/src/features/keys/components/regional-restriction-gate.tsx`
+- `services/newapi/web/src/features/keys/components/__tests__/api-keys-mutate-drawer.test.tsx`
+- `services/newapi/web/src/features/keys/components/__tests__/regional-restriction-gate.test.tsx`
+- `services/newapi/web/src/features/system-settings/security/index.tsx`
+- `services/newapi/web/src/features/system-settings/security/section-registry.tsx`
+- `services/newapi/web/src/features/system-settings/security/regional-restriction-section.tsx`
+- `services/newapi/web/src/features/system-settings/types.ts`
+- `services/newapi/web/src/i18n/locales/en.json`
+- `services/newapi/web/src/i18n/locales/zh.json`
+- `services/newapi/cmd/sub2api-migrate/migration.go`
+- `services/newapi/cmd/sub2api-migrate/migration_test.go`
+
+The API key page confirmation copy must retain the original English wording,
+including `API Key Use Confirmation` and the restricted-regions notice. After
+re-applying an upstream update, run the focused Go and frontend tests for the
+four protected flows, validate the administrator configuration entry, and
+confirm the English copy remains covered by a frontend contract test.
+
+While the phase-one bridge remains, updates to `services/sub2api` must preserve
+the private scheduler compatibility behavior and existing Father Key product
+customizations so emergency rollback remains viable. The sidebar brand/logo and
+public home logo must still link to `https://www.fatherkey.com/` for the
+China/domestic site and `https://www.zaoyoe.xyz/` for the international site.
+Regular users must retain `返回主站充值` / `Recharge on main site`. Preserve CC
+Switch Claude model slot import parameters (`haikuModel`, `sonnetModel`,
+`opusModel`), and keep request error detail modals defaulting to `all` while
+upstream error detail modals default to `errors`. Legacy Sub2API deploy templates
+keep the URL allowlist enabled by default. The production bridge image remains
+`zaoyoe/sub2api:legacy`, and the bridge must stay inaccessible from the public
+network.

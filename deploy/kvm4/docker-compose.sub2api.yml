@@ -3,17 +3,59 @@ services:
     build:
       context: ./src
       dockerfile: Dockerfile
-      args:
-        COMMIT: ${SUB2API_COMMIT:-kvm4}
-    image: zaoyoe/sub2api:local
+    image: zaoyoe/newapi:local
     container_name: sub2api
     restart: unless-stopped
+    stop_grace_period: 130s
     ulimits:
       nofile:
         soft: 100000
         hard: 100000
     ports:
-      - "${BIND_HOST:-127.0.0.1}:${SERVER_PORT:-8080}:8080"
+      - "${BIND_HOST:-127.0.0.1}:${SERVER_PORT:-8080}:3000"
+    volumes:
+      - ./newapi_data:/data
+    environment:
+      - PORT=3000
+      - GIN_MODE=release
+      - SQL_DSN=postgresql://${POSTGRES_USER:-sub2api}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${NEWAPI_DB_NAME:-newapi}?sslmode=disable
+      - REDIS_CONN_STRING=${NEWAPI_REDIS_CONN_STRING:-redis://redis:6379/1}
+      - SESSION_SECRET=${NEWAPI_SESSION_SECRET:?NEWAPI_SESSION_SECRET is required}
+      - NEWAPI_REGIONAL_EDGE_SECRET=${NEWAPI_REGIONAL_EDGE_SECRET:?NEWAPI_REGIONAL_EDGE_SECRET is required}
+      - SESSION_COOKIE_SECURE=true
+      - SESSION_COOKIE_TRUSTED_URL=https://sub2api.fatherkey.com
+      - BATCH_UPDATE_ENABLED=true
+      - MEMORY_CACHE_ENABLED=true
+      - TZ=${TZ:-Asia/Shanghai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      legacy-sub2api:
+        condition: service_healthy
+    networks:
+      - sub2api-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  # Phase-one compatibility bridge. NewAPI owns the public port and all user,
+  # key, quota, and regional-policy state. The legacy process remains private
+  # only while its upstream account scheduler is migrated separately.
+  legacy-sub2api:
+    image: zaoyoe/sub2api:legacy
+    container_name: sub2api-legacy
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
+    expose:
+      - "8080"
     volumes:
       - ./data:/app/data
     environment:
@@ -128,11 +170,11 @@ services:
         ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}'
     environment:
       - TZ=${TZ:-Asia/Shanghai}
-      - REDISCLI_AUTH=${REDIS_PASSWORD:-}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     networks:
       - sub2api-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping; else unset REDISCLI_AUTH; redis-cli ping; fi"]
       interval: 10s
       timeout: 5s
       retries: 5
