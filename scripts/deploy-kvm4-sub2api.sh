@@ -429,7 +429,7 @@ cleanup_regional_smoke_user() {
 
   if [[ "${smoke_user_cleanup_pending:-0}" == "1" ]]; then
     if ! deleted_smoke_user_id="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-      psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -Atc \
+      psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -qAtc \
       "DELETE FROM users WHERE id = $smoke_user_id AND username = '$smoke_username' AND access_token = '$smoke_dashboard_token' RETURNING id")"; then
       return 1
     fi
@@ -1033,7 +1033,7 @@ done
 }
 
 if ! deleted_smoke_token_id="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -Atc \
+  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -qAtc \
   "DELETE FROM tokens WHERE id = $smoke_token_id AND user_id = $smoke_user_id RETURNING id")"; then
   rollback
   die "failed to remove isolated smoke-test API key"
