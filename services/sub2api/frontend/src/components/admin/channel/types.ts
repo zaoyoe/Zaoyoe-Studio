@@ -24,6 +24,10 @@ export interface PricingFormEntry {
   image_input_price: number | string | null
   image_output_price: number | string | null
   per_request_price: number | string | null
+  /** Read-only metadata from the upstream pricing sync. */
+  upstream_cost_multiplier?: number | null
+  upstream_pricing_group?: string
+  upstream_pricing_version?: string
   intervals: IntervalFormEntry[]
 }
 

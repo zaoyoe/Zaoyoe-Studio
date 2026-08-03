@@ -94,6 +94,26 @@
           </div>
         </div>
 
+        <!-- Upstream cost metadata is informational; customer prices remain editable above. -->
+        <div
+          v-if="entry.upstream_cost_multiplier != null || entry.upstream_pricing_group || entry.upstream_pricing_version"
+          class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400"
+          :title="t('admin.channels.form.upstreamPricingMetadataHint')"
+        >
+          <span v-if="entry.upstream_cost_multiplier != null">
+            {{ t('admin.channels.form.upstreamCostMultiplier') }}:
+            <strong class="font-medium text-gray-700 dark:text-gray-300">
+              {{ formatUpstreamMultiplier(entry.upstream_cost_multiplier) }}
+            </strong>
+          </span>
+          <span v-if="entry.upstream_pricing_group">
+            {{ t('admin.channels.form.upstreamPricingGroup') }}: {{ entry.upstream_pricing_group }}
+          </span>
+          <span v-if="entry.upstream_pricing_version">
+            {{ t('admin.channels.form.upstreamPricingVersion') }}: {{ entry.upstream_pricing_version }}
+          </span>
+        </div>
+
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
           <!-- Default prices (fallback when no interval matches) -->
@@ -271,6 +291,11 @@ const billingModeLabel = computed(() => {
 
 function emitField(field: keyof PricingFormEntry, value: string) {
   emit('update', { ...props.entry, [field]: value === '' ? null : value })
+}
+
+function formatUpstreamMultiplier(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-'
+  return `${Number(value.toPrecision(6))}x`
 }
 
 function addInterval() {

@@ -57,17 +57,20 @@ type updateChannelRequest struct {
 }
 
 type channelModelPricingRequest struct {
-	Platform         string                   `json:"platform" binding:"omitempty,max=50"`
-	Models           []string                 `json:"models" binding:"required,min=1,max=100"`
-	BillingMode      string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image"`
-	InputPrice       *float64                 `json:"input_price" binding:"omitempty,min=0"`
-	OutputPrice      *float64                 `json:"output_price" binding:"omitempty,min=0"`
-	CacheWritePrice  *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
-	CacheReadPrice   *float64                 `json:"cache_read_price" binding:"omitempty,min=0"`
-	ImageInputPrice  *float64                 `json:"image_input_price" binding:"omitempty,min=0"`
-	ImageOutputPrice *float64                 `json:"image_output_price" binding:"omitempty,min=0"`
-	PerRequestPrice  *float64                 `json:"per_request_price" binding:"omitempty,min=0"`
-	Intervals        []pricingIntervalRequest `json:"intervals"`
+	Platform               string                   `json:"platform" binding:"omitempty,max=50"`
+	Models                 []string                 `json:"models" binding:"required,min=1,max=100"`
+	BillingMode            string                   `json:"billing_mode" binding:"omitempty,oneof=token per_request image"`
+	InputPrice             *float64                 `json:"input_price" binding:"omitempty,min=0"`
+	OutputPrice            *float64                 `json:"output_price" binding:"omitempty,min=0"`
+	CacheWritePrice        *float64                 `json:"cache_write_price" binding:"omitempty,min=0"`
+	CacheReadPrice         *float64                 `json:"cache_read_price" binding:"omitempty,min=0"`
+	ImageInputPrice        *float64                 `json:"image_input_price" binding:"omitempty,min=0"`
+	ImageOutputPrice       *float64                 `json:"image_output_price" binding:"omitempty,min=0"`
+	PerRequestPrice        *float64                 `json:"per_request_price" binding:"omitempty,min=0"`
+	UpstreamCostMultiplier *float64                 `json:"upstream_cost_multiplier" binding:"omitempty,min=0"`
+	UpstreamPricingGroup   string                   `json:"upstream_pricing_group" binding:"omitempty,max=120"`
+	UpstreamPricingVersion string                   `json:"upstream_pricing_version" binding:"omitempty,max=120"`
+	Intervals              []pricingIntervalRequest `json:"intervals"`
 }
 
 type pricingIntervalRequest struct {
@@ -108,18 +111,21 @@ type channelResponse struct {
 }
 
 type channelModelPricingResponse struct {
-	ID               int64                     `json:"id"`
-	Platform         string                    `json:"platform"`
-	Models           []string                  `json:"models"`
-	BillingMode      string                    `json:"billing_mode"`
-	InputPrice       *float64                  `json:"input_price"`
-	OutputPrice      *float64                  `json:"output_price"`
-	CacheWritePrice  *float64                  `json:"cache_write_price"`
-	CacheReadPrice   *float64                  `json:"cache_read_price"`
-	ImageInputPrice  *float64                  `json:"image_input_price"`
-	ImageOutputPrice *float64                  `json:"image_output_price"`
-	PerRequestPrice  *float64                  `json:"per_request_price"`
-	Intervals        []pricingIntervalResponse `json:"intervals"`
+	ID                     int64                     `json:"id"`
+	Platform               string                    `json:"platform"`
+	Models                 []string                  `json:"models"`
+	BillingMode            string                    `json:"billing_mode"`
+	InputPrice             *float64                  `json:"input_price"`
+	OutputPrice            *float64                  `json:"output_price"`
+	CacheWritePrice        *float64                  `json:"cache_write_price"`
+	CacheReadPrice         *float64                  `json:"cache_read_price"`
+	ImageInputPrice        *float64                  `json:"image_input_price"`
+	ImageOutputPrice       *float64                  `json:"image_output_price"`
+	PerRequestPrice        *float64                  `json:"per_request_price"`
+	UpstreamCostMultiplier *float64                  `json:"upstream_cost_multiplier"`
+	UpstreamPricingGroup   string                    `json:"upstream_pricing_group"`
+	UpstreamPricingVersion string                    `json:"upstream_pricing_version"`
+	Intervals              []pricingIntervalResponse `json:"intervals"`
 }
 
 type pricingIntervalResponse struct {
@@ -222,18 +228,21 @@ func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingRespon
 		intervals = append(intervals, intervalToResponse(iv))
 	}
 	return channelModelPricingResponse{
-		ID:               p.ID,
-		Platform:         platform,
-		Models:           models,
-		BillingMode:      billingMode,
-		InputPrice:       p.InputPrice,
-		OutputPrice:      p.OutputPrice,
-		CacheWritePrice:  p.CacheWritePrice,
-		CacheReadPrice:   p.CacheReadPrice,
-		ImageInputPrice:  p.ImageInputPrice,
-		ImageOutputPrice: p.ImageOutputPrice,
-		PerRequestPrice:  p.PerRequestPrice,
-		Intervals:        intervals,
+		ID:                     p.ID,
+		Platform:               platform,
+		Models:                 models,
+		BillingMode:            billingMode,
+		InputPrice:             p.InputPrice,
+		OutputPrice:            p.OutputPrice,
+		CacheWritePrice:        p.CacheWritePrice,
+		CacheReadPrice:         p.CacheReadPrice,
+		ImageInputPrice:        p.ImageInputPrice,
+		ImageOutputPrice:       p.ImageOutputPrice,
+		PerRequestPrice:        p.PerRequestPrice,
+		UpstreamCostMultiplier: p.UpstreamCostMultiplier,
+		UpstreamPricingGroup:   p.UpstreamPricingGroup,
+		UpstreamPricingVersion: p.UpstreamPricingVersion,
+		Intervals:              intervals,
 	}
 }
 
@@ -275,17 +284,20 @@ func pricingRequestToService(reqs []channelModelPricingRequest) []service.Channe
 			})
 		}
 		result = append(result, service.ChannelModelPricing{
-			Platform:         platform,
-			Models:           r.Models,
-			BillingMode:      billingMode,
-			InputPrice:       r.InputPrice,
-			OutputPrice:      r.OutputPrice,
-			CacheWritePrice:  r.CacheWritePrice,
-			CacheReadPrice:   r.CacheReadPrice,
-			ImageInputPrice:  r.ImageInputPrice,
-			ImageOutputPrice: r.ImageOutputPrice,
-			PerRequestPrice:  r.PerRequestPrice,
-			Intervals:        intervals,
+			Platform:               platform,
+			Models:                 r.Models,
+			BillingMode:            billingMode,
+			InputPrice:             r.InputPrice,
+			OutputPrice:            r.OutputPrice,
+			CacheWritePrice:        r.CacheWritePrice,
+			CacheReadPrice:         r.CacheReadPrice,
+			ImageInputPrice:        r.ImageInputPrice,
+			ImageOutputPrice:       r.ImageOutputPrice,
+			PerRequestPrice:        r.PerRequestPrice,
+			UpstreamCostMultiplier: r.UpstreamCostMultiplier,
+			UpstreamPricingGroup:   r.UpstreamPricingGroup,
+			UpstreamPricingVersion: r.UpstreamPricingVersion,
+			Intervals:              intervals,
 		})
 	}
 	return result

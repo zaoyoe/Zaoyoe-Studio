@@ -307,7 +307,10 @@ func buildUpstreamPricingCandidate(model upstreamPricingModel, groupRatio float6
 		}
 		return &upstreamPricingCandidate{
 			BillingMode: BillingModePerRequest,
-			PerRequest:  model.ModelPrice * groupRatio,
+			// Keep the customer-facing channel price at the upstream
+			// catalog's pre-group (official/reference) price. The selected
+			// group ratio is stored separately as upstream cost metadata.
+			PerRequest: model.ModelPrice,
 		}, nil
 	}
 	if strings.TrimSpace(model.BillingExpr) != "" {
@@ -321,10 +324,10 @@ func buildUpstreamPricingCandidate(model upstreamPricingModel, groupRatio float6
 			if tier.CacheWrite != tier.CacheWrite1H {
 				cacheWriteWarning = "上游同时提供普通与 1 小时缓存写入价；Sub2API 当前仅保存普通缓存写入价。"
 			}
-			inputM := tier.Input * groupRatio
-			outputM := tier.Output * groupRatio
-			cacheReadM := tier.CacheRead * groupRatio
-			cacheWriteM := tier.CacheWrite * groupRatio
+			inputM := tier.Input
+			outputM := tier.Output
+			cacheReadM := tier.CacheRead
+			cacheWriteM := tier.CacheWrite
 			if !isFinitePositive(inputM) || !isFinitePositive(outputM) || !isFiniteNonNegative(cacheReadM) || !isFiniteNonNegative(cacheWriteM) {
 				return nil, fmt.Errorf("tier prices exceed the supported range")
 			}
@@ -366,7 +369,7 @@ func buildUpstreamPricingCandidate(model upstreamPricingModel, groupRatio float6
 	if !isFiniteNonNegative(model.CacheRatio) || model.CacheRatio > 100_000 || !isFiniteNonNegative(model.CreateCacheRatio) || model.CreateCacheRatio > 100_000 {
 		return nil, fmt.Errorf("model has invalid cache ratios")
 	}
-	inputM := upstreamTokenBasePriceM * model.ModelRatio * groupRatio
+	inputM := upstreamTokenBasePriceM * model.ModelRatio
 	if !isFinitePositive(inputM) || !isFinitePositive(inputM*model.CompletionRatio) {
 		return nil, fmt.Errorf("model token prices exceed the supported range")
 	}
@@ -499,7 +502,7 @@ func (s *ChannelService) SyncUpstreamPricing(ctx context.Context, channelID int6
 				result.Warnings = append(result.Warnings, fmt.Sprintf("%s：%s", modelName, candidate.Warning))
 			}
 			next := clonePricingWithModels(entry, []string{modelName})
-			applyUpstreamCandidate(&next, candidate)
+			applyUpstreamCandidate(&next, candidate, group, ratio, result.PricingVersion)
 			if channelPricingEquivalent(&entry, &next) {
 				result.Unchanged++
 				appendSyncDetail(result, UpstreamPricingSyncDetail{Model: modelName, Status: "unchanged", Group: group, GroupRatio: ratio})
@@ -549,7 +552,7 @@ func (s *ChannelService) SyncUpstreamPricing(ctx context.Context, channelID int6
 			Platform: platform,
 			Models:   []string{upstreamModel.ModelName},
 		}
-		applyUpstreamCandidate(&next, candidate)
+		applyUpstreamCandidate(&next, candidate, group, ratio, result.PricingVersion)
 		newPricing = append(newPricing, next)
 		existingPatterns = append(existingPatterns, upstreamModel.ModelName)
 		result.Added++
@@ -581,8 +584,11 @@ func (s *ChannelService) SyncUpstreamPricing(ctx context.Context, channelID int6
 	return result, nil
 }
 
-func applyUpstreamCandidate(entry *ChannelModelPricing, candidate *upstreamPricingCandidate) {
+func applyUpstreamCandidate(entry *ChannelModelPricing, candidate *upstreamPricingCandidate, group string, groupRatio float64, pricingVersion string) {
 	entry.BillingMode = candidate.BillingMode
+	entry.UpstreamCostMultiplier = float64Ptr(groupRatio)
+	entry.UpstreamPricingGroup = strings.TrimSpace(group)
+	entry.UpstreamPricingVersion = strings.TrimSpace(pricingVersion)
 	entry.InputPrice = nil
 	entry.OutputPrice = nil
 	entry.CacheWritePrice = nil
@@ -605,7 +611,7 @@ func applyUpstreamCandidate(entry *ChannelModelPricing, candidate *upstreamPrici
 }
 
 func channelPricingEquivalent(left, right *ChannelModelPricing) bool {
-	if left == nil || right == nil || left.BillingMode != right.BillingMode || !floatPtrEqual(left.InputPrice, right.InputPrice) || !floatPtrEqual(left.OutputPrice, right.OutputPrice) || !floatPtrEqual(left.CacheWritePrice, right.CacheWritePrice) || !floatPtrEqual(left.CacheReadPrice, right.CacheReadPrice) || !floatPtrEqual(left.ImageInputPrice, right.ImageInputPrice) || !floatPtrEqual(left.ImageOutputPrice, right.ImageOutputPrice) || !floatPtrEqual(left.PerRequestPrice, right.PerRequestPrice) || len(left.Intervals) != len(right.Intervals) {
+	if left == nil || right == nil || left.BillingMode != right.BillingMode || !floatPtrEqual(left.InputPrice, right.InputPrice) || !floatPtrEqual(left.OutputPrice, right.OutputPrice) || !floatPtrEqual(left.CacheWritePrice, right.CacheWritePrice) || !floatPtrEqual(left.CacheReadPrice, right.CacheReadPrice) || !floatPtrEqual(left.ImageInputPrice, right.ImageInputPrice) || !floatPtrEqual(left.ImageOutputPrice, right.ImageOutputPrice) || !floatPtrEqual(left.PerRequestPrice, right.PerRequestPrice) || !floatPtrEqual(left.UpstreamCostMultiplier, right.UpstreamCostMultiplier) || left.UpstreamPricingGroup != right.UpstreamPricingGroup || left.UpstreamPricingVersion != right.UpstreamPricingVersion || len(left.Intervals) != len(right.Intervals) {
 		return false
 	}
 	for i := range left.Intervals {

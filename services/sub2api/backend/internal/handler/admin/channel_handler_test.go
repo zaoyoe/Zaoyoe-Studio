@@ -43,15 +43,18 @@ func TestChannelToResponse_FullChannel(t *testing.T) {
 		GroupIDs:           []int64{1, 2, 3},
 		ModelPricing: []service.ChannelModelPricing{
 			{
-				ID:              10,
-				Platform:        "openai",
-				Models:          []string{"gpt-4"},
-				BillingMode:     service.BillingModeToken,
-				InputPrice:      float64Ptr(0.01),
-				OutputPrice:     float64Ptr(0.03),
-				CacheWritePrice: float64Ptr(0.005),
-				CacheReadPrice:  float64Ptr(0.002),
-				PerRequestPrice: float64Ptr(0.5),
+				ID:                     10,
+				Platform:               "openai",
+				Models:                 []string{"gpt-4"},
+				BillingMode:            service.BillingModeToken,
+				InputPrice:             float64Ptr(0.01),
+				OutputPrice:            float64Ptr(0.03),
+				CacheWritePrice:        float64Ptr(0.005),
+				CacheReadPrice:         float64Ptr(0.002),
+				PerRequestPrice:        float64Ptr(0.5),
+				UpstreamCostMultiplier: float64Ptr(0.16),
+				UpstreamPricingGroup:   "补贴分组-国产模型",
+				UpstreamPricingVersion: "test-version",
 			},
 		},
 		ModelMapping: map[string]map[string]string{
@@ -87,6 +90,9 @@ func TestChannelToResponse_FullChannel(t *testing.T) {
 	require.Equal(t, float64Ptr(0.005), p.CacheWritePrice)
 	require.Equal(t, float64Ptr(0.002), p.CacheReadPrice)
 	require.Equal(t, float64Ptr(0.5), p.PerRequestPrice)
+	require.Equal(t, float64Ptr(0.16), p.UpstreamCostMultiplier)
+	require.Equal(t, "补贴分组-国产模型", p.UpstreamPricingGroup)
+	require.Equal(t, "test-version", p.UpstreamPricingVersion)
 	require.Empty(t, p.Intervals)
 }
 
@@ -320,15 +326,18 @@ func TestPricingRequestToService_Defaults(t *testing.T) {
 func TestPricingRequestToService_WithAllFields(t *testing.T) {
 	reqs := []channelModelPricingRequest{
 		{
-			Platform:         "openai",
-			Models:           []string{"gpt-4", "gpt-4o"},
-			BillingMode:      "per_request",
-			InputPrice:       float64Ptr(0.01),
-			OutputPrice:      float64Ptr(0.03),
-			CacheWritePrice:  float64Ptr(0.005),
-			CacheReadPrice:   float64Ptr(0.002),
-			ImageOutputPrice: float64Ptr(0.04),
-			PerRequestPrice:  float64Ptr(0.5),
+			Platform:               "openai",
+			Models:                 []string{"gpt-4", "gpt-4o"},
+			BillingMode:            "per_request",
+			InputPrice:             float64Ptr(0.01),
+			OutputPrice:            float64Ptr(0.03),
+			CacheWritePrice:        float64Ptr(0.005),
+			CacheReadPrice:         float64Ptr(0.002),
+			ImageOutputPrice:       float64Ptr(0.04),
+			PerRequestPrice:        float64Ptr(0.5),
+			UpstreamCostMultiplier: float64Ptr(0.26),
+			UpstreamPricingGroup:   "国产模型",
+			UpstreamPricingVersion: "v2",
 		},
 	}
 
@@ -344,6 +353,9 @@ func TestPricingRequestToService_WithAllFields(t *testing.T) {
 	require.Equal(t, float64Ptr(0.002), r.CacheReadPrice)
 	require.Equal(t, float64Ptr(0.04), r.ImageOutputPrice)
 	require.Equal(t, float64Ptr(0.5), r.PerRequestPrice)
+	require.Equal(t, float64Ptr(0.26), r.UpstreamCostMultiplier)
+	require.Equal(t, "国产模型", r.UpstreamPricingGroup)
+	require.Equal(t, "v2", r.UpstreamPricingVersion)
 }
 
 func TestPricingRequestToService_WithIntervals(t *testing.T) {
