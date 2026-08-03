@@ -23,7 +23,7 @@ services:
       - SESSION_SECRET=${NEWAPI_SESSION_SECRET:?NEWAPI_SESSION_SECRET is required}
       - NEWAPI_REGIONAL_EDGE_SECRET=${NEWAPI_REGIONAL_EDGE_SECRET:?NEWAPI_REGIONAL_EDGE_SECRET is required}
       - SESSION_COOKIE_SECURE=true
-      - SESSION_COOKIE_TRUSTED_URL=https://sub2api.fatherkey.com
+      - SESSION_COOKIE_TRUSTED_URL=https://new.fatherkey.com,https://sub2api.fatherkey.com
       - BATCH_UPDATE_ENABLED=true
       - MEMORY_CACHE_ENABLED=true
       - TZ=${TZ:-Asia/Shanghai}
