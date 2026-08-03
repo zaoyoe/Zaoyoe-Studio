@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +24,62 @@ const (
 	upstreamPricingDetailLimit = 500
 )
 
+// UpstreamPricingSource is stored in a channel's features_config under the
+// "upstream_pricing" key. The endpoint is intentionally channel-scoped: two
+// channels may point at different NewAPI-compatible upstreams without sharing
+// group ratios or changing the customer's own group multiplier.
+type UpstreamPricingSource struct {
+	Type     string `json:"type"`
+	Endpoint string `json:"endpoint"`
+}
+
+const upstreamPricingSourceKey = "upstream_pricing"
+
+// ResolveUpstreamPricingSource returns a validated source configuration. An
+// empty endpoint keeps the historical built-in zzone source for old channels.
+func ResolveUpstreamPricingSource(config map[string]any) UpstreamPricingSource {
+	source := UpstreamPricingSource{Type: "newapi_json"}
+	if config == nil {
+		return source
+	}
+	raw, ok := config[upstreamPricingSourceKey].(map[string]any)
+	if !ok {
+		return source
+	}
+	if value, ok := raw["type"].(string); ok && strings.TrimSpace(value) != "" {
+		source.Type = strings.ToLower(strings.TrimSpace(value))
+	}
+	if value, ok := raw["endpoint"].(string); ok {
+		source.Endpoint = strings.TrimSpace(value)
+	}
+	return source
+}
+
+func validateUpstreamPricingSource(source UpstreamPricingSource) error {
+	source.Type = strings.ToLower(strings.TrimSpace(source.Type))
+	if source.Type == "" {
+		source.Type = "newapi_json"
+	}
+	if source.Type != "newapi_json" {
+		return infraerrors.BadRequest("UNSUPPORTED_UPSTREAM_PRICING_SOURCE", "目前仅支持 NewAPI 兼容的 JSON 价格接口")
+	}
+	endpoint := strings.TrimSpace(source.Endpoint)
+	if endpoint == "" {
+		return nil
+	}
+	if len(endpoint) > 2048 {
+		return infraerrors.BadRequest("UPSTREAM_PRICING_ENDPOINT_TOO_LONG", "上游价格接口地址不能超过 2048 个字符")
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_PRICING_ENDPOINT", "上游价格接口必须是 http 或 https 地址")
+	}
+	if parsed.User != nil || parsed.Fragment != "" {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_PRICING_ENDPOINT", "上游价格接口地址不能包含账号信息或片段")
+	}
+	return nil
+}
+
 var upstreamPricingHTTPClient = &http.Client{
 	Timeout: upstreamPricingTimeout,
 	CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -31,6 +88,16 @@ var upstreamPricingHTTPClient = &http.Client{
 }
 
 var loadUpstreamPricingCatalog = fetchUpstreamPricingCatalog
+
+func loadPricingCatalog(ctx context.Context, source UpstreamPricingSource) (*upstreamPricingCatalog, error) {
+	if err := validateUpstreamPricingSource(source); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(source.Endpoint) == "" {
+		return loadUpstreamPricingCatalog(ctx)
+	}
+	return fetchUpstreamPricingCatalogFromEndpoint(ctx, source.Endpoint)
+}
 
 type upstreamPricingCatalog struct {
 	Success        bool                   `json:"success"`
@@ -76,6 +143,10 @@ type UpstreamPricingSyncRequest struct {
 	Platform string
 	Group    string
 	Models   []string
+	// Endpoint is optional so existing callers keep using the channel's saved
+	// source. The admin editor supplies it to make an unsaved source change
+	// effective immediately when the sync button is pressed.
+	Endpoint *string
 }
 
 type UpstreamPricingGroupOption struct {
@@ -112,10 +183,14 @@ var (
 )
 
 func fetchUpstreamPricingCatalog(ctx context.Context) (*upstreamPricingCatalog, error) {
+	return fetchUpstreamPricingCatalogFromEndpoint(ctx, upstreamPricingAPIURL)
+}
+
+func fetchUpstreamPricingCatalogFromEndpoint(ctx context.Context, endpoint string) (*upstreamPricingCatalog, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, upstreamPricingTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, upstreamPricingAPIURL, nil)
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, strings.TrimSpace(endpoint), nil)
 	if err != nil {
 		return nil, infraerrors.BadRequest("UPSTREAM_PRICING_REQUEST_FAILED", "无法创建上游定价请求").WithCause(err)
 	}
@@ -387,7 +462,13 @@ func buildUpstreamPricingCandidate(model upstreamPricingModel, groupRatio float6
 }
 
 func (s *ChannelService) ListUpstreamPricingGroups(ctx context.Context) ([]UpstreamPricingGroupOption, string, error) {
-	catalog, err := loadUpstreamPricingCatalog(ctx)
+	return s.ListUpstreamPricingGroupsForEndpoint(ctx, "")
+}
+
+// ListUpstreamPricingGroupsForEndpoint reads group options from the requested
+// source. It is used by the channel editor before a channel has been saved.
+func (s *ChannelService) ListUpstreamPricingGroupsForEndpoint(ctx context.Context, endpoint string) ([]UpstreamPricingGroupOption, string, error) {
+	catalog, err := loadPricingCatalog(ctx, UpstreamPricingSource{Type: "newapi_json", Endpoint: strings.TrimSpace(endpoint)})
 	if err != nil {
 		return nil, "", err
 	}
@@ -417,7 +498,11 @@ func (s *ChannelService) SyncUpstreamPricing(ctx context.Context, channelID int6
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := loadUpstreamPricingCatalog(ctx)
+	source := ResolveUpstreamPricingSource(channel.FeaturesConfig)
+	if req.Endpoint != nil {
+		source.Endpoint = strings.TrimSpace(*req.Endpoint)
+	}
+	catalog, err := loadPricingCatalog(ctx, source)
 	if err != nil {
 		return nil, err
 	}

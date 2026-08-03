@@ -101,6 +101,7 @@ type channelResponse struct {
 	RestrictModels             bool                              `json:"restrict_models"`
 	Features                   string                            `json:"features"`
 	FeaturesConfig             map[string]any                    `json:"features_config"`
+	UpstreamPricingSource      service.UpstreamPricingSource     `json:"upstream_pricing_source"`
 	GroupIDs                   []int64                           `json:"group_ids"`
 	ModelPricing               []channelModelPricingResponse     `json:"model_pricing"`
 	ModelMapping               map[string]map[string]string      `json:"model_mapping"`
@@ -145,6 +146,7 @@ type syncUpstreamPricingRequest struct {
 	Platform string   `json:"platform" binding:"required,max=50"`
 	Group    string   `json:"group" binding:"max=120"`
 	Models   []string `json:"models" binding:"max=500"`
+	Endpoint *string  `json:"endpoint" binding:"omitempty,max=2048"`
 }
 
 type accountStatsPricingRuleResponse struct {
@@ -160,17 +162,18 @@ func channelToResponse(ch *service.Channel) *channelResponse {
 		return nil
 	}
 	resp := &channelResponse{
-		ID:             ch.ID,
-		Name:           ch.Name,
-		Description:    ch.Description,
-		Status:         ch.Status,
-		RestrictModels: ch.RestrictModels,
-		Features:       ch.Features,
-		FeaturesConfig: ch.FeaturesConfig,
-		GroupIDs:       ch.GroupIDs,
-		ModelMapping:   ch.ModelMapping,
-		CreatedAt:      ch.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:      ch.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:                    ch.ID,
+		Name:                  ch.Name,
+		Description:           ch.Description,
+		Status:                ch.Status,
+		RestrictModels:        ch.RestrictModels,
+		Features:              ch.Features,
+		FeaturesConfig:        ch.FeaturesConfig,
+		UpstreamPricingSource: service.ResolveUpstreamPricingSource(ch.FeaturesConfig),
+		GroupIDs:              ch.GroupIDs,
+		ModelMapping:          ch.ModelMapping,
+		CreatedAt:             ch.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             ch.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 	resp.BillingModelSource = ch.BillingModelSource
 	if resp.GroupIDs == nil {
@@ -557,10 +560,11 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	response.Success(c, gin.H{"models": models})
 }
 
-// ListUpstreamPricingGroups 返回固定上游模型广场声明的计费分组及倍率。
+// ListUpstreamPricingGroups 返回指定价格源声明的计费分组及倍率。
 // GET /api/v1/admin/channels/pricing/upstream-groups
 func (h *ChannelHandler) ListUpstreamPricingGroups(c *gin.Context) {
-	groups, pricingVersion, err := h.channelService.ListUpstreamPricingGroups(c.Request.Context())
+	endpoint := strings.TrimSpace(c.Query("endpoint"))
+	groups, pricingVersion, err := h.channelService.ListUpstreamPricingGroupsForEndpoint(c.Request.Context(), endpoint)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -610,6 +614,7 @@ func (h *ChannelHandler) SyncUpstreamPricing(c *gin.Context) {
 		Platform: platform,
 		Group:    strings.TrimSpace(req.Group),
 		Models:   models,
+		Endpoint: req.Endpoint,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

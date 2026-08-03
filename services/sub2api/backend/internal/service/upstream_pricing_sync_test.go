@@ -60,6 +60,50 @@ func TestFetchUpstreamPricingCatalogUsesFixedEndpointAndRejectsInvalidResponses(
 	})
 }
 
+func TestUpstreamPricingSourceCanLoadAChannelSpecificEndpoint(t *testing.T) {
+	originalClient := upstreamPricingHTTPClient
+	t.Cleanup(func() { upstreamPricingHTTPClient = originalClient })
+	upstreamPricingHTTPClient = &http.Client{Transport: upstreamPricingRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		require.Equal(t, "https://supplier.example/api/pricing", req.URL.String())
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"success":true,"group_ratio":{"supplier":0.45},"data":[]}`)),
+		}, nil
+	})}
+
+	catalog, err := loadPricingCatalog(context.Background(), UpstreamPricingSource{
+		Type:     "newapi_json",
+		Endpoint: "https://supplier.example/api/pricing",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0.45, catalog.GroupRatio["supplier"])
+}
+
+func TestUpstreamPricingSourceRejectsUnsupportedEndpoint(t *testing.T) {
+	_, err := loadPricingCatalog(context.Background(), UpstreamPricingSource{
+		Type:     "newapi_json",
+		Endpoint: "file:///etc/passwd",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "INVALID_UPSTREAM_PRICING_ENDPOINT")
+}
+
+func TestResolveUpstreamPricingSourceDefaultsToBuiltInSource(t *testing.T) {
+	source := ResolveUpstreamPricingSource(nil)
+	require.Equal(t, "newapi_json", source.Type)
+	require.Empty(t, source.Endpoint)
+
+	source = ResolveUpstreamPricingSource(map[string]any{
+		"upstream_pricing": map[string]any{
+			"type":     "NEWAPI_JSON",
+			"endpoint": " https://supplier.example/api/pricing ",
+		},
+	})
+	require.Equal(t, "newapi_json", source.Type)
+	require.Equal(t, "https://supplier.example/api/pricing", source.Endpoint)
+}
+
 func TestParseUpstreamTiersUsesSub2APIBoundaries(t *testing.T) {
 	tiers, err := parseUpstreamTiers(`v1:len <= 256000 ? tier("input_lte_256k", p * 1.2 + cr * 0.12 + cc * 1.5 + c * 7.2) : tier("input_gt_256k", p * 4.8 + cr * 0.48 + cc * 6 + c * 28.8)`)
 	require.NoError(t, err)

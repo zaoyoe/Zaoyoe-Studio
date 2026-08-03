@@ -228,6 +228,33 @@
               </p>
             </div>
 
+            <!-- Upstream pricing source -->
+            <div class="border-t border-gray-200 pt-4 dark:border-dark-700">
+              <label class="input-label">{{ t('admin.channels.form.upstreamPricingSource', 'Upstream pricing source') }}</label>
+              <Select v-model="form.upstream_pricing_source_type" :options="upstreamPricingSourceOptions" />
+              <div class="mt-2 flex gap-2">
+                <input
+                  v-model="form.upstream_pricing_endpoint"
+                  type="url"
+                  class="input min-w-0 flex-1"
+                  :placeholder="t('admin.channels.form.upstreamPricingEndpointPlaceholder', 'https://your-upstream.example/api/pricing')"
+                />
+                <button
+                  type="button"
+                  class="btn btn-secondary whitespace-nowrap text-xs"
+                  :disabled="loadingUpstreamPricingGroups"
+                  @click="loadUpstreamPricingGroups(true)"
+                >
+                  {{ loadingUpstreamPricingGroups
+                    ? t('common.loading', 'Loading...')
+                    : t('admin.channels.form.loadUpstreamPricingGroups', 'Load groups') }}
+                </button>
+              </div>
+              <p class="mt-1 text-xs text-gray-400">
+                {{ t('admin.channels.form.upstreamPricingSourceHint', 'Leave the endpoint empty to use the built-in zzone pricing source. The endpoint must return a NewAPI-compatible /api/pricing JSON response.') }}
+              </p>
+            </div>
+
             <!-- Platform Management -->
             <div class="space-y-3">
               <label class="input-label mb-0">{{ t('admin.channels.form.platformConfig') }}</label>
@@ -655,7 +682,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -746,6 +773,10 @@ const billingModelSourceOptions = computed(() => [
   { value: 'upstream', label: t('admin.channels.form.billingModelSourceUpstream', 'Bill by final upstream model') }
 ])
 
+const upstreamPricingSourceOptions = computed(() => [
+  { value: 'newapi_json', label: t('admin.channels.form.upstreamPricingSourceNewAPI', 'NewAPI compatible JSON') }
+])
+
 // ── State ──
 const channels = ref<Channel[]>([])
 const loading = ref(false)
@@ -786,6 +817,8 @@ const form = reactive({
   status: 'active',
   restrict_models: false,
   billing_model_source: 'channel_mapped' as string,
+  upstream_pricing_source_type: 'newapi_json',
+  upstream_pricing_endpoint: '',
   platforms: [] as PlatformSection[],
   apply_pricing_to_account_stats: false,
 })
@@ -945,6 +978,7 @@ async function syncUpstreamPricing(sectionIdx: number) {
     const result = await adminAPI.channels.syncUpstreamPricing(channel.id, {
       platform: section.platform,
       group: selectedUpstreamPricingGroup.value[section.platform] || undefined,
+      endpoint: form.upstream_pricing_endpoint.trim(),
     })
 
     // The endpoint persists the native channel pricing. Refresh only this
@@ -1241,6 +1275,14 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
     delete featuresConfig.bedrock_cc_compat
   }
 
+  // Pricing source is channel-scoped. Keep it separate from customer group
+  // rates so syncing upstream costs can never rewrite the user's 0.45x/2x
+  // multiplier.
+  featuresConfig.upstream_pricing = {
+    type: form.upstream_pricing_source_type || 'newapi_json',
+    endpoint: form.upstream_pricing_endpoint.trim()
+  }
+
   return { group_ids: uniqueGroupIds, model_pricing, model_mapping, features_config: featuresConfig }
 }
 
@@ -1372,11 +1414,13 @@ async function loadAllChannelsForConflict() {
   }
 }
 
-async function loadUpstreamPricingGroups() {
-  if (upstreamPricingGroups.value.length > 0 || loadingUpstreamPricingGroups.value) return
+async function loadUpstreamPricingGroups(force = false) {
+  const endpoint = form.upstream_pricing_endpoint.trim()
+  if (!force && (upstreamPricingGroups.value.length > 0 || loadingUpstreamPricingGroups.value)) return
+  if (force) upstreamPricingGroups.value = []
   loadingUpstreamPricingGroups.value = true
   try {
-    const result = await adminAPI.channels.listUpstreamPricingGroups()
+    const result = await adminAPI.channels.listUpstreamPricingGroups(endpoint || undefined)
     upstreamPricingGroups.value = result.groups || []
   } catch (error) {
     console.error('Error loading upstream pricing groups:', error)
@@ -1384,6 +1428,11 @@ async function loadUpstreamPricingGroups() {
     loadingUpstreamPricingGroups.value = false
   }
 }
+
+watch(() => form.upstream_pricing_endpoint, () => {
+  upstreamPricingGroups.value = []
+  selectedUpstreamPricingGroup.value = {}
+})
 
 let searchTimeout: ReturnType<typeof setTimeout>
 function handleSearch() {
@@ -1419,6 +1468,8 @@ function resetForm() {
   form.status = 'active'
   form.restrict_models = false
   form.billing_model_source = 'channel_mapped'
+  form.upstream_pricing_source_type = 'newapi_json'
+  form.upstream_pricing_endpoint = ''
   form.platforms = []
   form.apply_pricing_to_account_stats = false
   activeTab.value = 'basic'
@@ -1441,8 +1492,12 @@ async function openEditDialog(channel: Channel) {
   form.status = channel.status
   form.restrict_models = channel.restrict_models || false
   form.billing_model_source = channel.billing_model_source || 'channel_mapped'
+  const pricingSource = channel.upstream_pricing_source || (channel.features_config?.upstream_pricing as { type?: string; endpoint?: string } | undefined)
+  form.upstream_pricing_source_type = pricingSource?.type || 'newapi_json'
+  form.upstream_pricing_endpoint = pricingSource?.endpoint || ''
   form.apply_pricing_to_account_stats = channel.apply_pricing_to_account_stats || false
   // Must load groups first so apiToForm can map groupID → platform
+  upstreamPricingGroups.value = []
   await Promise.all([loadGroups(), loadAllChannelsForConflict(), loadUpstreamPricingGroups()])
   form.platforms = apiToForm(channel)
   selectedUpstreamPricingGroup.value = Object.fromEntries(
