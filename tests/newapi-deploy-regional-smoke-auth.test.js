@@ -34,6 +34,7 @@ test('NewAPI deployment regional smoke keeps user auth and staged credential cle
     deploySource.indexOf('if ! local_edge_region_payload=')
   );
   assert.match(preIngressCleanup, /DELETE FROM tokens WHERE id = \$smoke_token_id AND user_id = \$smoke_user_id RETURNING id/);
+  assert.match(preIngressCleanup, /psql[\s\S]*?-qAtc[\s\S]*?DELETE FROM tokens/);
   assert.match(preIngressCleanup, /deleted_smoke_token_id[\s\S]*?!= "\$smoke_token_id"/);
   assert.doesNotMatch(preIngressCleanup, /DELETE FROM users/);
   assert.match(preIngressCleanup, /flush_newapi_redis/);
@@ -48,6 +49,7 @@ test('NewAPI deployment regional smoke keeps user auth and staged credential cle
     cleanupHelper,
     /DELETE FROM users WHERE id = \$smoke_user_id AND username = '\$smoke_username' AND access_token = '\$smoke_dashboard_token' RETURNING id/
   );
+  assert.match(cleanupHelper, /psql[\s\S]*?-qAtc[\s\S]*?DELETE FROM users/);
   assert.match(cleanupHelper, /deleted_smoke_user_id[\s\S]*?== "\$smoke_user_id"/);
   assert.match(cleanupHelper, /smoke_user_cache_cleanup_pending/);
   assert.match(cleanupHelper, /flush_newapi_redis \|\| return 1/);
