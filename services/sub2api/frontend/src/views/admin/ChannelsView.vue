@@ -45,6 +45,39 @@
             </button>
           </div>
         </div>
+
+        <div class="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 dark:border-dark-600 dark:bg-dark-800 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('admin.channels.globalPricing.title', 'Global official pricing') }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ globalPricingStatus?.model_count ?? '-' }} {{ t('admin.channels.globalPricing.models', 'models') }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.globalPricing.updatedAt', 'Updated') }}: {{ formatDateTime(globalPricingStatus?.last_updated) }}
+              </span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.globalPricing.schedule', { hours: globalPricingStatus?.update_interval_hours ?? 24 }) }}
+              </span>
+            </div>
+            <p v-if="globalPricingStatus?.last_update_error" class="mt-1 text-xs text-red-600 dark:text-red-400">
+              {{ t('admin.channels.globalPricing.lastUpdateFailed', 'Last update failed; the previous successful pricing remains active.') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary flex-shrink-0"
+            :disabled="loadingGlobalPricing"
+            @click="updateGlobalPricingNow"
+          >
+            <Icon name="refresh" size="sm" class="mr-2" :class="loadingGlobalPricing ? 'animate-spin' : ''" />
+            {{ loadingGlobalPricing
+              ? t('admin.channels.globalPricing.updating', 'Updating...')
+              : t('admin.channels.globalPricing.updateNow', 'Update official pricing') }}
+          </button>
+        </div>
       </template>
 
       <template #table>
@@ -687,7 +720,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
-import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule } from '@/api/admin/channels'
+import type { Channel, ChannelModelPricing, CreateChannelRequest, UpdateChannelRequest, AccountStatsPricingRule, GlobalPricingStatus } from '@/api/admin/channels'
 import type { PricingFormEntry } from '@/components/admin/channel/types'
 import { mTokToPerToken, perTokenToMTok, apiIntervalsToForm, formIntervalsToAPI, findModelConflict, validateIntervals } from '@/components/admin/channel/types'
 import type { AdminGroup, GroupPlatform } from '@/types'
@@ -809,6 +842,8 @@ const allChannelsForConflict = ref<Channel[]>([])
 const upstreamPricingGroups = ref<Array<{ name: string; ratio: number }>>([])
 const loadingUpstreamPricingGroups = ref(false)
 const selectedUpstreamPricingGroup = ref<Record<string, string>>({})
+const globalPricingStatus = ref<GlobalPricingStatus | null>(null)
+const loadingGlobalPricing = ref(false)
 
 // Form data
 const form = reactive({
@@ -832,6 +867,13 @@ const platformOrder: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigr
 function formatDate(value: string): string {
   if (!value) return '-'
   return new Date(value).toLocaleDateString()
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2000) return '-'
+  return date.toLocaleString()
 }
 
 // ── Platform section helpers ──
@@ -1429,6 +1471,27 @@ async function loadUpstreamPricingGroups(force = false) {
   }
 }
 
+async function loadGlobalPricingStatus() {
+  try {
+    globalPricingStatus.value = await adminAPI.channels.getGlobalPricingStatus()
+  } catch (error) {
+    console.error('Error loading global pricing status:', error)
+  }
+}
+
+async function updateGlobalPricingNow() {
+  loadingGlobalPricing.value = true
+  try {
+    globalPricingStatus.value = await adminAPI.channels.updateGlobalPricing()
+    appStore.showSuccess(t('admin.channels.globalPricing.updateSuccess', 'Official pricing updated'))
+  } catch (error: unknown) {
+    await loadGlobalPricingStatus()
+    appStore.showError(extractApiErrorMessage(error, t('admin.channels.globalPricing.updateError', 'Failed to update official pricing')))
+  } finally {
+    loadingGlobalPricing.value = false
+  }
+}
+
 watch(() => form.upstream_pricing_endpoint, () => {
   upstreamPricingGroups.value = []
   selectedUpstreamPricingGroup.value = {}
@@ -1763,6 +1826,7 @@ async function confirmDelete() {
 // ── Lifecycle ──
 onMounted(() => {
   loadChannels()
+  loadGlobalPricingStatus()
   loadGroups()
   loadWebSearchGlobalState()
   document.addEventListener('click', handleRuleAccountClickOutside)

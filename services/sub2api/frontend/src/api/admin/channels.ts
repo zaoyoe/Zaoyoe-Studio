@@ -174,6 +174,26 @@ export async function getModelDefaultPricing(model: string): Promise<ModelDefaul
   return data
 }
 
+export interface GlobalPricingStatus {
+  model_count: number
+  last_updated?: string
+  last_update_attempt?: string
+  last_update_error?: string
+  local_hash?: string
+  update_interval_hours: number
+  source?: string
+}
+
+export async function getGlobalPricingStatus(): Promise<GlobalPricingStatus> {
+  const { data } = await apiClient.get<GlobalPricingStatus>('/admin/channels/pricing/global')
+  return data
+}
+
+export async function updateGlobalPricing(): Promise<GlobalPricingStatus> {
+  const { data } = await apiClient.post<GlobalPricingStatus>('/admin/channels/pricing/global/update')
+  return data
+}
+
 export interface SyncPricingModelsResult {
   models: string[]
 }
@@ -255,6 +275,8 @@ const channelsAPI = {
   update,
   remove,
   getModelDefaultPricing,
+  getGlobalPricingStatus,
+  updateGlobalPricing,
   syncPricingModels,
   syncUpstreamPricing,
   listUpstreamPricingGroups,

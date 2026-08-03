@@ -720,6 +720,8 @@ func registerChannelRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		channels.GET("", h.Admin.Channel.List)
 		channels.GET("/model-pricing", h.Admin.Channel.GetModelDefaultPricing)
 		channels.GET("/pricing/sync-models", h.Admin.Channel.SyncPricingModels)
+		channels.GET("/pricing/global", h.Admin.Channel.GetGlobalPricingStatus)
+		channels.POST("/pricing/global/update", h.Admin.Channel.UpdateGlobalPricing)
 		channels.GET("/pricing/upstream-groups", h.Admin.Channel.ListUpstreamPricingGroups)
 		channels.POST("/:id/pricing/sync-upstream", h.Admin.Channel.SyncUpstreamPricing)
 		channels.GET("/:id", h.Admin.Channel.GetByID)

@@ -167,8 +167,11 @@ type PricingService struct {
 	cfg          *config.Config
 	remoteClient PricingRemoteClient
 	mu           sync.RWMutex
+	updateMu     sync.Mutex
 	pricingData  map[string]*LiteLLMModelPricing
 	lastUpdated  time.Time
+	lastAttempt  time.Time
+	lastError    string
 	localHash    string
 
 	// 停止信号
@@ -223,16 +226,16 @@ func (s *PricingService) startUpdateScheduler() {
 		return
 	}
 
-	// 定期检查哈希更新
-	hashInterval := time.Duration(s.cfg.Pricing.HashCheckIntervalMinutes) * time.Minute
-	if hashInterval < time.Minute {
-		hashInterval = 10 * time.Minute
+	// 官方价格表按配置周期同步。默认值为 24 小时；启动时仍会先检查本地文件是否过期。
+	updateInterval := time.Duration(s.cfg.Pricing.UpdateIntervalHours) * time.Hour
+	if updateInterval <= 0 {
+		updateInterval = 24 * time.Hour
 	}
 
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		ticker := time.NewTicker(hashInterval)
+		ticker := time.NewTicker(updateInterval)
 		defer ticker.Stop()
 
 		for {
@@ -247,7 +250,7 @@ func (s *PricingService) startUpdateScheduler() {
 		}
 	}()
 
-	logger.LegacyPrintf("service.pricing", "[Pricing] Update scheduler started (check every %v)", hashInterval)
+	logger.LegacyPrintf("service.pricing", "[Pricing] Update scheduler started (every %v)", updateInterval)
 }
 
 // checkAndUpdatePricing 检查并更新价格数据
@@ -349,10 +352,28 @@ func (s *PricingService) syncWithRemote() error {
 }
 
 // downloadPricingData 从远程下载价格数据
-func (s *PricingService) downloadPricingData() error {
+func (s *PricingService) downloadPricingData() (err error) {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+
+	s.mu.Lock()
+	s.lastAttempt = time.Now()
+	s.lastError = ""
+	s.mu.Unlock()
+	defer func() {
+		if err != nil {
+			s.mu.Lock()
+			s.lastError = err.Error()
+			s.mu.Unlock()
+		}
+	}()
+
 	remoteURL, err := s.validatePricingURL(s.cfg.Pricing.RemoteURL)
 	if err != nil {
 		return err
+	}
+	if s.remoteClient == nil {
+		return fmt.Errorf("pricing remote client is not configured")
 	}
 	logger.LegacyPrintf("service.pricing", "[Pricing] Downloading from %s", remoteURL)
 
@@ -389,10 +410,10 @@ func (s *PricingService) downloadPricingData() error {
 	}
 	data = s.mergeFallbackPricingData(data)
 
-	// 保存到本地文件
+	// 只有解析成功且文件完整写入后才替换本地价格，确保更新失败时继续使用上一份成功价格。
 	pricingFile := s.getPricingFilePath()
-	if err := os.WriteFile(pricingFile, body, 0644); err != nil {
-		logger.LegacyPrintf("service.pricing", "[Pricing] Failed to save file: %v", err)
+	if err := writePricingFileAtomically(pricingFile, body); err != nil {
+		return fmt.Errorf("save pricing file: %w", err)
 	}
 
 	// 使用远程哈希作为同步锚点，防止重复下载
@@ -402,7 +423,7 @@ func (s *PricingService) downloadPricingData() error {
 		syncHash = remoteHash
 	}
 	hashFile := s.getHashFilePath()
-	if err := os.WriteFile(hashFile, []byte(syncHash+"\n"), 0644); err != nil {
+	if err := writePricingFileAtomically(hashFile, []byte(syncHash+"\n")); err != nil {
 		logger.LegacyPrintf("service.pricing", "[Pricing] Failed to save hash: %v", err)
 	}
 
@@ -415,6 +436,30 @@ func (s *PricingService) downloadPricingData() error {
 
 	logger.LegacyPrintf("service.pricing", "[Pricing] Downloaded %d models successfully", len(data))
 	return nil
+}
+
+func writePricingFileAtomically(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".pricing-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // parsePricingData 解析价格数据（处理各种格式）
@@ -1051,12 +1096,27 @@ func (s *PricingService) generateOpenAIModelVariants(model string, datePattern *
 func (s *PricingService) GetStatus() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	remoteURL := ""
+	if s.cfg != nil {
+		remoteURL = s.cfg.Pricing.RemoteURL
+	}
 
 	return map[string]any{
-		"model_count":  len(s.pricingData),
-		"last_updated": s.lastUpdated,
-		"local_hash":   s.localHash[:min(8, len(s.localHash))],
+		"model_count":           len(s.pricingData),
+		"last_updated":          s.lastUpdated,
+		"last_update_attempt":   s.lastAttempt,
+		"last_update_error":     s.lastError,
+		"local_hash":            s.localHash[:min(8, len(s.localHash))],
+		"update_interval_hours": s.updateIntervalHours(),
+		"source":                remoteURL,
 	}
+}
+
+func (s *PricingService) updateIntervalHours() int {
+	if s == nil || s.cfg == nil || s.cfg.Pricing.UpdateIntervalHours <= 0 {
+		return 24
+	}
+	return s.cfg.Pricing.UpdateIntervalHours
 }
 
 // ForceUpdate 强制更新

@@ -560,6 +560,31 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	response.Success(c, gin.H{"models": models})
 }
 
+// GetGlobalPricingStatus 返回所有渠道共用的官方价格表状态。
+// GET /api/v1/admin/channels/pricing/global
+func (h *ChannelHandler) GetGlobalPricingStatus(c *gin.Context) {
+	if h.pricingService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("PRICING_SERVICE_UNAVAILABLE", "Global pricing service is unavailable"))
+		return
+	}
+	response.Success(c, h.pricingService.GetStatus())
+}
+
+// UpdateGlobalPricing 立即同步官方价格表。
+// POST /api/v1/admin/channels/pricing/global/update
+func (h *ChannelHandler) UpdateGlobalPricing(c *gin.Context) {
+	if h.pricingService == nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("PRICING_SERVICE_UNAVAILABLE", "Global pricing service is unavailable"))
+		return
+	}
+	if err := h.pricingService.ForceUpdate(); err != nil {
+		// ForceUpdate 只在新数据完整下载、解析并写入成功后替换旧价格。
+		response.ErrorFrom(c, infraerrors.InternalServer("PRICING_UPDATE_FAILED", fmt.Sprintf("failed to update global pricing: %v", err)))
+		return
+	}
+	response.Success(c, h.pricingService.GetStatus())
+}
+
 // ListUpstreamPricingGroups 返回指定价格源声明的计费分组及倍率。
 // GET /api/v1/admin/channels/pricing/upstream-groups
 func (h *ChannelHandler) ListUpstreamPricingGroups(c *gin.Context) {
