@@ -140,6 +140,65 @@ function isAiWorkbenchBillingV2Task(task = {}) {
     return task.billing_mode === 'points' && getAiWorkbenchBillingV2Metadata(task).enabled === true;
 }
 
+function isNewApiBillingBaseUrl(value = '') {
+    try {
+        const host = new URL(String(value || '')).hostname.toLowerCase();
+        return [
+            'new.fatherkey.com',
+            'sub2api.fatherkey.com',
+            'sub2api.zaoyoe.com',
+            'sub2api.zaoyoe.xyz'
+        ].includes(host);
+    } catch (_) {
+        return false;
+    }
+}
+
+function hasTokenUsage(value = {}) {
+    const usage = safeObject(value);
+    return [
+        usage.input_tokens,
+        usage.inputTokens,
+        usage.prompt_tokens,
+        usage.promptTokens,
+        usage.output_tokens,
+        usage.outputTokens,
+        usage.completion_tokens,
+        usage.completionTokens,
+        usage.total_tokens,
+        usage.totalTokens,
+        usage.cache_read_tokens,
+        usage.cacheReadTokens,
+        usage.cache_write_tokens,
+        usage.cacheWriteTokens,
+        usage.image_output_tokens,
+        usage.imageOutputTokens
+    ].some((value) => Number(value) > 0);
+}
+
+function getExecutionProviderBaseUrl(execution = {}) {
+    const metadata = safeObject(execution.metadata);
+    return normalizeText(
+        metadata.provider_base_url
+        || metadata.providerBaseUrl
+        || metadata.base_url
+        || metadata.baseUrl,
+        500
+    );
+}
+
+function buildNewApiTokenBillingSyncMetadata(execution = {}) {
+    const tokenUsage = execution.tokenUsage || execution.token_usage || {};
+    if (!isNewApiBillingBaseUrl(getExecutionProviderBaseUrl(execution))) return null;
+    const source = hasTokenUsage(tokenUsage) ? 'newapi_token_usage' : 'newapi_estimated_points';
+    return {
+        status: 'settled',
+        message: '扣费已同步',
+        source,
+        checked_at: new Date().toISOString()
+    };
+}
+
 async function releaseTaskAuthorizationIfNeeded(supabase, task = {}, reason = 'AI 工作台任务未完成，释放预授权') {
     if (!isAiWorkbenchBillingV2Task(task)) return null;
     return releaseAiWorkbenchPoints({
@@ -782,6 +841,16 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
     const chargeEstimate = calculateAiImageRuleChargePoints(task, execution.tokenUsage || task.token_usage || {});
     const expectedAmount = normalizeBillablePoints(chargeEstimate.points ?? task.estimated_points, 0);
     const billingV2 = getAiWorkbenchBillingV2Metadata(task);
+    const newApiBillingSync = chargeEstimate.source === 'token_sub2api_fallback'
+        ? buildNewApiTokenBillingSyncMetadata({
+            ...execution,
+            tokenUsage: execution.tokenUsage || execution.token_usage || task.token_usage || task.tokenUsage || {},
+            metadata: {
+                ...safeObject(task.metadata),
+                ...safeObject(execution.metadata)
+            }
+        })
+        : null;
     if (billingV2.enabled === true) {
         const syncStatus = normalizeText(
             safeObject(execution.metadata).sub2api_billing_sync?.status
@@ -790,7 +859,8 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
         ).toLowerCase();
         const dynamicBillingPending = billingV2.dynamic === true
             && chargeEstimate.source !== 'sub2api_actual_cost'
-            && syncStatus !== 'settled';
+            && syncStatus !== 'settled'
+            && !newApiBillingSync;
         if (dynamicBillingPending) {
             return {
                 chargedPoints: 0,
@@ -803,7 +873,8 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
             return {
                 chargedPoints: 0,
                 referenceId: '',
-                pricing: chargeEstimate
+                pricing: chargeEstimate,
+                billingSync: newApiBillingSync
             };
         }
         const settlement = await settleAiWorkbenchPoints({
@@ -828,13 +899,15 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
             chargedPoints: settledAmount,
             referenceId: expectedAmount > 0 ? task.id : '',
             pricing: chargeEstimate,
-            settlement
+            settlement,
+            billingSync: newApiBillingSync
         };
     }
     if (expectedAmount <= 0) {
         return {
             chargedPoints: 0,
-            referenceId: ''
+            referenceId: '',
+            billingSync: newApiBillingSync
         };
     }
 
@@ -843,7 +916,8 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
         return {
             chargedPoints: existingCharged,
             referenceId: task.points_ledger_reference_id || task.id,
-            pricing: chargeEstimate
+            pricing: chargeEstimate,
+            billingSync: newApiBillingSync
         };
     }
 
@@ -852,7 +926,8 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
         return {
             chargedPoints: existingDeduction,
             referenceId: task.id,
-            pricing: chargeEstimate
+            pricing: chargeEstimate,
+            billingSync: newApiBillingSync
         };
     }
 
@@ -869,7 +944,8 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
     return {
         chargedPoints: normalizeBillablePoints(data?.deducted, expectedAmount) || expectedAmount,
         referenceId: task.id,
-        pricing: chargeEstimate
+        pricing: chargeEstimate,
+        billingSync: newApiBillingSync
     };
 }
 
@@ -939,6 +1015,12 @@ async function completeTaskFromExistingResults(supabase, task = {}, results = []
                 status: charge.authorizationPending ? 'settlement_pending' : 'settled',
                 settled_points: charge.chargedPoints,
                 settled_at: charge.authorizationPending ? '' : completedAt
+            }
+        } : {}),
+        ...(charge.billingSync ? {
+            sub2api_billing_sync: {
+                ...safeObject(metadata.sub2api_billing_sync || metadata.sub2apiBillingSync),
+                ...charge.billingSync
             }
         } : {}),
         recovery: {
@@ -1106,6 +1188,12 @@ async function completeTask(supabase, task = {}, execution = {}) {
                 status: charge.authorizationPending ? 'settlement_pending' : 'settled',
                 settled_points: charge.chargedPoints,
                 settled_at: charge.authorizationPending ? '' : completedAt
+            }
+        } : {}),
+        ...(charge.billingSync ? {
+            sub2api_billing_sync: {
+                ...safeObject(baseMetadata.sub2api_billing_sync || baseMetadata.sub2apiBillingSync),
+                ...charge.billingSync
             }
         } : {}),
         delivery: {

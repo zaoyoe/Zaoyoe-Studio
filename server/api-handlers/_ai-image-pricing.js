@@ -239,10 +239,12 @@ function calculateAiImageSub2ApiTokenPoints(rule = {}, usageInput = {}) {
     const cacheReadCost = usage.cache_read_tokens * rates.cache_read / 1000000;
     const imageOutputCost = usage.image_output_tokens * rates.image_output / 1000000;
     const totalCost = pricing.request_base + inputCost + outputCost + cacheWriteCost + cacheReadCost + imageOutputCost;
-    const actualCost = totalCost * pricing.multiplier;
+    const actualCostUsd = totalCost * pricing.multiplier;
+    const pointsPerUsd = pricing.points_per_usd || 1;
+    const actualPoints = actualCostUsd * pointsPerUsd;
 
     return {
-        points: normalizePoints(actualCost, 0),
+        points: normalizePoints(actualPoints, 0),
         billing_strategy: 'token_sub2api',
         usage,
         breakdown: {
@@ -253,8 +255,10 @@ function calculateAiImageSub2ApiTokenPoints(rule = {}, usageInput = {}) {
             cache_read: normalizePoints(cacheReadCost, 0),
             image_output: normalizePoints(imageOutputCost, 0),
             total: normalizePoints(totalCost, 0),
-            actual: normalizePoints(actualCost, 0),
-            multiplier: pricing.multiplier
+            actual: normalizePoints(actualPoints, 0),
+            actual_cost_usd: normalizePoints(actualCostUsd, 0),
+            multiplier: pricing.multiplier,
+            points_per_usd: pointsPerUsd
         }
     };
 }

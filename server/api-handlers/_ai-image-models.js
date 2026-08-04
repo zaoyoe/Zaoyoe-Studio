@@ -9,6 +9,12 @@ const {
 } = require('../prompt-image-palette');
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const NEWAPI_PUBLIC_PRICING_HOSTNAMES = Object.freeze(new Set([
+    'new.fatherkey.com',
+    'sub2api.fatherkey.com',
+    'sub2api.zaoyoe.com',
+    'sub2api.zaoyoe.xyz'
+]));
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 const DEFAULT_VIDEO_MODEL = 'default-video-model';
@@ -299,6 +305,16 @@ function normalizeEndpointsConfig(value = {}) {
 function isSub2ApiGatewayBaseUrl(value = '') {
     try {
         const host = new URL(normalizeBaseUrl(value)).hostname.toLowerCase();
+        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function supportsLegacySub2ApiUsageLookup(value = '') {
+    try {
+        const host = new URL(normalizeBaseUrl(value)).hostname.toLowerCase();
+        if (NEWAPI_PUBLIC_PRICING_HOSTNAMES.has(host)) return false;
         return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
     } catch (_) {
         return false;
@@ -646,7 +662,7 @@ async function fetchSub2ApiUsageRecordForResponse({
     env = process.env,
     signal = null
 } = {}) {
-    if (!config?.apiKey || !isSub2ApiGatewayBaseUrl(config.baseUrl) || typeof fetchImpl !== 'function') {
+    if (!config?.apiKey || !supportsLegacySub2ApiUsageLookup(config.baseUrl) || typeof fetchImpl !== 'function') {
         return null;
     }
     const hints = getSub2ApiResponseBillingHints(payload, response);
@@ -2243,10 +2259,20 @@ async function updateProviderTaskHandle(supabase, task = {}, providerTaskId = ''
         ? task.metadata
         : {};
     const sub2ApiClientRequestId = normalizeText(metadata.sub2api_client_request_id || metadata.sub2ApiClientRequestId, 160);
+    const providerBaseUrl = normalizeBaseUrl(metadata.provider_base_url || metadata.providerBaseUrl || '');
+    const billingLookupSupported = metadata.billing_lookup_supported ?? metadata.billingLookupSupported;
     const nextMetadata = {
         ...currentMetadata,
         provider_task_id: providerTaskId,
         providerTaskId: providerTaskId,
+        ...(providerBaseUrl ? {
+            provider_base_url: providerBaseUrl,
+            providerBaseUrl
+        } : {}),
+        ...(typeof billingLookupSupported === 'boolean' ? {
+            billing_lookup_supported: billingLookupSupported,
+            billingLookupSupported
+        } : {}),
         ...(sub2ApiClientRequestId ? {
             sub2api_client_request_id: sub2ApiClientRequestId,
             sub2apiClientRequestId: sub2ApiClientRequestId
@@ -3832,7 +3858,7 @@ async function requestOpenAiCompatibleImages({
         if (payload.revised_prompt && !revisedPrompt) {
             revisedPrompt = normalizeText(payload.revised_prompt, 8000);
         }
-        if (payload.usage || (captureSub2ApiBilling && isSub2ApiGatewayBaseUrl(config.baseUrl))) {
+        if (payload.usage || (captureSub2ApiBilling && supportsLegacySub2ApiUsageLookup(config.baseUrl))) {
             const batchUsage = captureSub2ApiBilling
                 ? await resolveTokenUsageWithSub2ApiBilling({
                     usage: payload.usage || {},
@@ -4002,7 +4028,7 @@ async function requestOpenAiCompatibleVideos({
     let submitEndpointPath = submitEndpoint;
     const submitFallbackUsed = false;
     const captureSub2ApiBilling = shouldCaptureTaskSub2ApiBilling(task);
-    const sub2ApiClientRequestId = captureSub2ApiBilling && isSub2ApiGatewayBaseUrl(config.baseUrl)
+    const sub2ApiClientRequestId = captureSub2ApiBilling && supportsLegacySub2ApiUsageLookup(config.baseUrl)
         ? buildSub2ApiClientRequestId(task)
         : '';
     const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
@@ -4058,6 +4084,8 @@ async function requestOpenAiCompatibleVideos({
         error.metadata = {
             executor: 'openai-compatible-videos',
             provider: 'openai-compatible',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             video_submit_endpoint: submitEndpointPath,
@@ -4127,7 +4155,7 @@ async function requestOpenAiCompatibleVideos({
     }
 
     lastPayloadSummary = lastPayloadSummary || summarizeUpstreamPayload(payload);
-    if (payload.usage || (captureSub2ApiBilling && isSub2ApiGatewayBaseUrl(config.baseUrl))) {
+    if (payload.usage || (captureSub2ApiBilling && supportsLegacySub2ApiUsageLookup(config.baseUrl))) {
         const resolvedUsage = captureSub2ApiBilling
             ? await resolveTokenUsageWithSub2ApiBilling({
                 usage: payload.usage || {},
@@ -4402,6 +4430,8 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             await updateProviderTaskHandle(supabase, task, providerTaskId, {
                 status,
                 payload_summary: payloadSummary,
+                provider_base_url: config.baseUrl,
+                billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
                 sub2api_client_request_id: normalizeText(sub2ApiClientRequestId, 160),
                 source: 'openai-compatible-videos'
             });
@@ -4428,6 +4458,8 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             },
             executor: 'openai-compatible-videos',
             provider: 'openai-compatible',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             provider_size: size.size,
@@ -4529,6 +4561,8 @@ async function executeOpenAiCompatibleVideoGeneration(task = {}, {
             executor_unaccounted_ms: 0,
             executor: 'openai-compatible-videos',
             provider: 'openai-compatible',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             provider_size: size.size,
@@ -4650,6 +4684,8 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
             await updateProviderTaskHandle(supabase, task, providerTaskId, {
                 status,
                 payload_summary: payloadSummary,
+                provider_base_url: config.baseUrl,
+                billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
                 source: 'openai-compatible-images'
             });
         }
@@ -4676,6 +4712,8 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
             },
             executor: isImageEdit ? 'openai-compatible-image-edits' : 'openai-compatible-images',
             provider: 'openai-compatible',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             provider_size: size.size,
@@ -4802,6 +4840,8 @@ async function executeOpenAiCompatibleImageGeneration(task = {}, {
             executor_unaccounted_ms: timing.executor_unaccounted_ms,
             executor: isImageEdit ? 'openai-compatible-image-edits' : 'openai-compatible-images',
             provider: 'openai-compatible',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             provider_size: size.size,
@@ -4927,6 +4967,8 @@ async function finalizeGeminiNativeImages({
                 ? (bridgeFallback ? 'gemini-native-images-url-bridge-fallback' : 'gemini-native-images-url-bridge')
                 : (stream ? 'gemini-native-images-stream' : 'gemini-native-images'),
             provider: 'gemini-native',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             provider_size: size.size,
@@ -5038,6 +5080,9 @@ function aggregateGeminiNativeImageExecutions({
             ...timing,
             executor,
             provider: 'gemini-native',
+            provider_base_url: firstMetadata.provider_base_url || config.baseUrl || '',
+            billing_lookup_supported: firstMetadata.billing_lookup_supported === true
+                || supportsLegacySub2ApiUsageLookup(firstMetadata.provider_base_url || config.baseUrl),
             provider_model: firstMetadata.provider_model || config.model || task.model || '',
             provider_source: firstMetadata.provider_source || config.source || '',
             provider_size: firstMetadata.provider_size || '',
@@ -5710,7 +5755,7 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
     }
     const preflightMs = elapsedMs(preflightStart);
 
-    const sub2ApiClientRequestId = isSub2ApiGatewayBaseUrl(config.baseUrl)
+    const sub2ApiClientRequestId = supportsLegacySub2ApiUsageLookup(config.baseUrl)
         ? buildSub2ApiClientRequestId(task)
         : '';
     const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
@@ -5775,6 +5820,8 @@ async function executeOpenAiCompatibleTextVision(task = {}, {
         metadata: {
             executor: 'openai-compatible-chat',
             provider: 'openai-compatible',
+            provider_base_url: config.baseUrl,
+            billing_lookup_supported: supportsLegacySub2ApiUsageLookup(config.baseUrl),
             provider_model: config.model,
             provider_source: config.source,
             request_type: task.mode,
