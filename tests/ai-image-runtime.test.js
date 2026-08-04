@@ -458,7 +458,7 @@ test('ai image runtime succeeds image task and charges points once on success', 
     assert.equal(state.rpcCalls[0].args.p_reference_id, 'task-points-1');
 });
 
-test('ai image runtime settles NewAPI token usage for dynamic billing tasks', async () => {
+test('ai image runtime settles NewAPI token usage from its matched consumption log', async () => {
     const state = {
         tasks: [{
             id: 'task-newapi-dynamic-billing',
@@ -511,7 +511,14 @@ test('ai image runtime settles NewAPI token usage for dynamic billing tasks', as
                 tokenUsage: {
                     input_tokens: 2000,
                     output_tokens: 1000,
-                    total_tokens: 3000
+                    total_tokens: 3000,
+                    newapi: {
+                        request_id: 'newapi-runtime-token-cost',
+                        actual_cost: 0.012,
+                        quota: 6000,
+                        quota_per_unit: 500000,
+                        billing_status: 'settled'
+                    }
                 },
                 metadata: {
                     provider_base_url: 'https://sub2api.zaoyoe.com/v1'
@@ -523,12 +530,12 @@ test('ai image runtime settles NewAPI token usage for dynamic billing tasks', as
     assert.equal(result.task.status, 'succeeded');
     assert.equal(result.task.charged_points, 1.2);
     assert.equal(result.task.metadata.sub2api_billing_sync.status, 'settled');
-    assert.equal(result.task.metadata.sub2api_billing_sync.source, 'newapi_token_usage');
+    assert.equal(result.task.metadata.sub2api_billing_sync.source, 'newapi_token_log');
     const settleCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
     assert.equal(settleCall.args.p_amount, 1.2);
 });
 
-test('ai image runtime settles NewAPI image tasks without provider token usage', async () => {
+test('ai image runtime settles NewAPI image tasks from an explicit consumption log', async () => {
     const state = {
         tasks: [{
             id: 'task-newapi-image-estimate',
@@ -554,7 +561,10 @@ test('ai image runtime settles NewAPI image tasks without provider token usage',
                         id: 'pricing-newapi-image-estimate',
                         metadata: {
                             billing_strategy: 'token_sub2api',
-                            pricing: { rates: {} }
+                            pricing: {
+                                points_per_usd: 100,
+                                rates: {}
+                            }
                         }
                     }
                 }
@@ -575,7 +585,15 @@ test('ai image runtime settles NewAPI image tasks without provider token usage',
                     image_url: 'https://cdn.example.com/newapi-image-estimate.png',
                     result_index: 0
                 }],
-                tokenUsage: {},
+                tokenUsage: {
+                    newapi: {
+                        request_id: 'newapi-runtime-image-cost',
+                        actual_cost: 0.03,
+                        quota: 15000,
+                        quota_per_unit: 500000,
+                        billing_status: 'settled'
+                    }
+                },
                 metadata: {
                     provider_base_url: 'https://new.fatherkey.com/v1'
                 }
@@ -585,9 +603,148 @@ test('ai image runtime settles NewAPI image tasks without provider token usage',
 
     assert.equal(result.task.charged_points, 3);
     assert.equal(result.task.metadata.sub2api_billing_sync.status, 'settled');
-    assert.equal(result.task.metadata.sub2api_billing_sync.source, 'newapi_estimated_points');
+    assert.equal(result.task.metadata.sub2api_billing_sync.source, 'newapi_token_log');
     const settleCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
     assert.equal(settleCall.args.p_amount, 3);
+});
+
+test('ai image runtime leaves NewAPI token billing pending when no consumption log was resolved', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-newapi-pricing-pending',
+            site: 'cn',
+            user_id: 'user-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'queued',
+            model: 'MiniMax-M3',
+            prompt: 'NewAPI 未解析消费日志',
+            estimated_points: 0,
+            charged_points: 0,
+            metadata: {
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    authorization_required: true,
+                    authorization_points: 1,
+                    status: 'authorized'
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-pending',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: { rates: { input: 0, output: 0 } }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-04T10:00:00.000Z'
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+
+    const result = await executeAiImageTask({
+        supabase,
+        task: 'task-newapi-pricing-pending',
+        executor(task) {
+            return {
+                status: 'succeeded',
+                resultPrompt: task.prompt,
+                images: [],
+                tokenUsage: {
+                    input_tokens: 370,
+                    output_tokens: 28,
+                    total_tokens: 398,
+                    newapi: {
+                        request_id: 'newapi-pending-log',
+                        billing_status: 'pricing_pending',
+                        lookup_status: 'not_found'
+                    }
+                },
+                metadata: {
+                    provider_base_url: 'https://new.fatherkey.com/v1'
+                }
+            };
+        }
+    });
+
+    assert.equal(result.task.status, 'succeeded');
+    assert.equal(result.task.charged_points, 0);
+    assert.equal(result.task.metadata.billing_v2.status, 'settlement_pending');
+    assert.equal(result.task.metadata.sub2api_billing_sync.status, 'pricing_pending');
+    assert.equal(result.task.metadata.sub2api_billing_sync.lookup_status, 'not_found');
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
+});
+
+test('ai image runtime never settles a legacy Sub2API lookup placeholder as zero cost', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-legacy-sub2api-zero-placeholder',
+            site: 'cn',
+            user_id: 'user-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'queued',
+            model: 'MiniMax-M3',
+            prompt: '旧桥接扣费仍在同步',
+            estimated_points: 0,
+            charged_points: 0,
+            metadata: {
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    authorization_required: true,
+                    authorization_points: 1,
+                    status: 'authorized'
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-legacy-sub2api-zero-placeholder',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                points_per_usd: 100,
+                                rates: { input: 2, output: 8 }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-04T10:00:00.000Z'
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+
+    const result = await executeAiImageTask({
+        supabase,
+        task: 'task-legacy-sub2api-zero-placeholder',
+        executor(task) {
+            return {
+                status: 'succeeded',
+                resultPrompt: task.prompt,
+                images: [],
+                tokenUsage: {
+                    input_tokens: 2000,
+                    output_tokens: 1000,
+                    total_tokens: 3000,
+                    sub2api: {
+                        request_id: 'legacy-sub2api-unresolved-request',
+                        actual_cost: 0,
+                        cost_source: ''
+                    }
+                },
+                metadata: {
+                    provider_base_url: 'https://sub2api.legacy.example/v1'
+                }
+            };
+        }
+    });
+
+    assert.equal(result.task.status, 'succeeded');
+    assert.equal(result.task.charged_points, 0);
+    assert.equal(result.task.metadata.billing_v2.status, 'settlement_pending');
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
 });
 
 test('ai image runtime completes with preview before deferred original upload finishes', async () => {
@@ -4703,6 +4860,126 @@ test('ai image openai-compatible executor sends one upstream request per request
     assert.equal(result.task.metadata.requested_image_count, 2);
     assert.equal(result.task.metadata.delivered_image_count, 2);
     assert.equal(result.task.metadata.delivery.partial, false);
+});
+
+test('ai image multi-request NewAPI billing stays pending when one response has no request ID', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-newapi-multi-log-pending',
+            site: 'cn',
+            user_id: 'user-1',
+            mode: 'text',
+            billing_mode: 'points',
+            status: 'queued',
+            model: 'gpt-image',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 2,
+            prompt: '两张需要逐条对账的图片',
+            estimated_points: 0,
+            charged_points: 0,
+            metadata: {
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    authorization_required: true,
+                    authorization_points: 1,
+                    status: 'authorized'
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-multi-log-pending',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                points_per_usd: 1,
+                                rates: {}
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-04T10:00:00.000Z'
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+    let generationCount = 0;
+
+    const result = await executeAiImageTask({
+        supabase,
+        task: 'task-newapi-multi-log-pending',
+        executor: (task, runtimeOptions) => executeOpenAiCompatibleImageGeneration(task, {
+            ...runtimeOptions,
+            env: {
+                AI_IMAGE_API_KEY: 'sk-newapi-multi-test',
+                AI_IMAGE_API_BASE_URL: 'https://new.fatherkey.com/v1',
+                AI_IMAGE_RESPONSE_FORMAT: 'url',
+                AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS: '1',
+                AI_IMAGE_NEWAPI_BILLING_LOOKUP_INTERVAL_MS: '0'
+            },
+            fetchImpl: async (url) => {
+                const requestUrl = String(url);
+                if (requestUrl.endsWith('/api/log/token')) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                            success: true,
+                            data: [{ type: 2, request_id: 'newapi-multi-log-1', quota: 159 }]
+                        })
+                    };
+                }
+                if (requestUrl.endsWith('/api/status')) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({ success: true, data: { quota_per_unit: 500000 } })
+                    };
+                }
+                if (requestUrl.startsWith('https://cdn.example.com/')) {
+                    return buildImageFetchResponse(`bytes:${requestUrl}`);
+                }
+                generationCount += 1;
+                const requestIndex = generationCount;
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: {
+                        get(name = '') {
+                            return String(name).toLowerCase() === 'x-oneapi-request-id' && requestIndex === 1
+                                ? 'newapi-multi-log-1'
+                                : '';
+                        }
+                    },
+                    text: async () => JSON.stringify({
+                        id: `provider-newapi-multi-${requestIndex}`,
+                        usage: {
+                            prompt_tokens: 10,
+                            completion_tokens: 0,
+                            total_tokens: 10
+                        },
+                        data: [{ url: `https://cdn.example.com/newapi-multi-${requestIndex}.png` }]
+                    })
+                };
+            },
+            uploadImageBuffer: async (_buffer, { index }) => ({
+                image_url: `https://cdn.example.com/persisted/newapi-multi-${index}.webp`,
+                original_image_url: `https://cdn.example.com/persisted/newapi-multi-${index}.png`,
+                storage_path: `ai-images/persisted/newapi-multi-${index}.webp`,
+                original_storage_path: `ai-images/persisted/newapi-multi-${index}.png`
+            })
+        })
+    });
+
+    assert.equal(result.task.status, 'succeeded');
+    assert.equal(result.results.length, 2);
+    assert.equal(result.task.charged_points, 0);
+    assert.equal(result.task.metadata.billing_v2.status, 'settlement_pending');
+    assert.equal(result.task.metadata.sub2api_billing_sync.status, 'pricing_pending');
+    assert.equal(result.task.token_usage.newapi.records.length, 2);
+    assert.equal(result.task.token_usage.newapi.records.some((record) => !record.request_id), true);
+    assert.equal(Object.hasOwn(result.task.token_usage.newapi, 'actual_cost'), false);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
 });
 
 test('ai image openai-compatible executor keeps partial image when missing-image retry fails', async () => {
