@@ -3095,17 +3095,18 @@ function hasAiImageTokenUsage(value = {}) {
     ].some((value) => Number(value) > 0);
 }
 
-function getPositiveTaskTokenValue(...values) {
+function getTaskTokenValue(...values) {
     for (const value of values) {
+        if (value === undefined || value === null || value === '') continue;
         const normalized = normalizePositiveInt(value, 0, { min: 0, max: Number.MAX_SAFE_INTEGER });
-        if (normalized > 0) return normalized;
+        if (Number.isFinite(Number(value))) return normalized;
     }
     return 0;
 }
 
 function getTaskTokenUsageForBilling(task = {}) {
     const storedUsage = safeObject(task.token_usage || task.tokenUsage);
-    const inputTokens = getPositiveTaskTokenValue(
+    const inputTokens = getTaskTokenValue(
         storedUsage.input_tokens,
         storedUsage.inputTokens,
         storedUsage.prompt_tokens,
@@ -3113,7 +3114,7 @@ function getTaskTokenUsageForBilling(task = {}) {
         task.input_tokens,
         task.inputTokens
     );
-    const outputTokens = getPositiveTaskTokenValue(
+    const outputTokens = getTaskTokenValue(
         storedUsage.output_tokens,
         storedUsage.outputTokens,
         storedUsage.completion_tokens,
@@ -3121,7 +3122,7 @@ function getTaskTokenUsageForBilling(task = {}) {
         task.output_tokens,
         task.outputTokens
     );
-    const totalTokens = getPositiveTaskTokenValue(
+    const totalTokens = getTaskTokenValue(
         storedUsage.total_tokens,
         storedUsage.totalTokens,
         task.total_tokens,

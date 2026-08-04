@@ -5698,6 +5698,83 @@ test('task list settles NewAPI history from persisted token columns when JSON us
     assert.equal(settlementCall.args.p_amount, 0.012);
 });
 
+test('task list preserves explicit zero JSON usage over stale token columns', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-newapi-explicit-zero-usage',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '明确零用量',
+            result_prompt: '已完成',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0
+            },
+            input_tokens: 2000,
+            output_tokens: 1000,
+            total_tokens: 3000,
+            metadata: {
+                provider_base_url: 'https://new.fatherkey.com/v1',
+                billing_lookup_supported: false,
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-explicit-zero-usage',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                rates: { input: 2, output: 8 }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-03T13:17:40.000Z',
+            updated_at: '2026-08-03T13:17:45.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-explicit-zero-key',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL
+        },
+        fetchImpl: async (url) => {
+            throw new Error(`unexpected NewAPI billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'settled');
+    assert.deepEqual(state.tasks[0].token_usage, {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0
+    });
+    assert.equal(settlementCall.args.p_amount, 0);
+});
+
 test('task list repairs post-cutover NewAPI compatibility-alias tasks without execution metadata', async () => {
     const state = {
         tasks: [{
