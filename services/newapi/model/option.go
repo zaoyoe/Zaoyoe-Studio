@@ -209,6 +209,9 @@ func SyncOptions(frequency int) {
 }
 
 func normalizeOptionValue(key string, value string) (string, error) {
+	if key == "TopUpLink" {
+		return common.NormalizeTopUpLink(value), nil
+	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return value, operation_setting.ValidateToolPricesJSON(value)
 	}
@@ -223,7 +226,7 @@ func normalizeOptionValue(key string, value string) (string, error) {
 
 	field := strings.TrimPrefix(key, regionalRestrictionPrefix)
 	switch field {
-	case "enabled", "registration_enabled", "oauth_signup_enabled", "api_key_page_confirmation_enabled", "api_key_create_enabled":
+	case "enabled", "login_enabled", "registration_enabled", "oauth_signup_enabled", "api_key_page_confirmation_enabled", "api_key_create_enabled":
 		normalized := strings.ToLower(strings.TrimSpace(value))
 		if normalized != "true" && normalized != "false" {
 			return "", fmt.Errorf("%s must be true or false", key)
@@ -365,6 +368,9 @@ func updateOptionMap(key string, value string) (err error) {
 		delete(common.OptionMap, key)
 		common.OptionMapRWMutex.Unlock()
 		return nil
+	}
+	if key == "TopUpLink" {
+		value = common.NormalizeTopUpLink(value)
 	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()

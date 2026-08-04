@@ -12,6 +12,7 @@ func TestRegionalRestrictionSettingsDefaults(t *testing.T) {
 	settings := GetRegionalRestrictionSettings()
 
 	assert.False(t, settings.Enabled)
+	assert.True(t, settings.LoginEnabled)
 	assert.False(t, settings.RegistrationEnabled)
 	assert.False(t, settings.OAuthSignupEnabled)
 	assert.False(t, settings.APIKeyPageConfirmationEnabled)
@@ -39,6 +40,7 @@ func TestRegionalRestrictionSettingsPersistenceRoundTrip(t *testing.T) {
 
 	values := map[string]string{
 		"regional_restriction.enabled":                           "true",
+		"regional_restriction.login_enabled":                     "true",
 		"regional_restriction.blocked_country_codes":             `["CN","US"]`,
 		"regional_restriction.unknown_region_policy":             "deny",
 		"regional_restriction.confirmation_revision":             "2026-08-03",
@@ -50,6 +52,7 @@ func TestRegionalRestrictionSettingsPersistenceRoundTrip(t *testing.T) {
 	require.NoError(t, manager.LoadFromDB(values))
 
 	assert.True(t, settings.Enabled)
+	assert.True(t, settings.LoginEnabled)
 	assert.True(t, settings.APIKeyPageConfirmationEnabled)
 	assert.True(t, settings.APIKeyCreateEnabled)
 	assert.Equal(t, []string{"CN", "US"}, settings.BlockedCountryCodes)

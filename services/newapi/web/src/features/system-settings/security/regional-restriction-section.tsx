@@ -64,6 +64,7 @@ const countryCodesSchema = z.string().refine((value) => {
 const regionalRestrictionSchema = z.object({
   regional_restriction: z.object({
     enabled: z.boolean(),
+    login_enabled: z.boolean(),
     registration_enabled: z.boolean(),
     oauth_signup_enabled: z.boolean(),
     api_key_page_confirmation_enabled: z.boolean(),
@@ -81,6 +82,7 @@ type RegionalRestrictionFormInput = z.input<typeof regionalRestrictionSchema>
 
 export type NormalizedRegionalRestrictionValues = {
   'regional_restriction.enabled': boolean
+  'regional_restriction.login_enabled': boolean
   'regional_restriction.registration_enabled': boolean
   'regional_restriction.oauth_signup_enabled': boolean
   'regional_restriction.api_key_page_confirmation_enabled': boolean
@@ -116,6 +118,7 @@ function buildFormDefaults(
   return {
     regional_restriction: {
       enabled: defaults['regional_restriction.enabled'],
+      login_enabled: defaults['regional_restriction.login_enabled'],
       registration_enabled:
         defaults['regional_restriction.registration_enabled'],
       oauth_signup_enabled:
@@ -143,6 +146,8 @@ function normalizeFormValues(
 ): NormalizedRegionalRestrictionValues {
   return {
     'regional_restriction.enabled': values.regional_restriction.enabled,
+    'regional_restriction.login_enabled':
+      values.regional_restriction.login_enabled,
     'regional_restriction.registration_enabled':
       values.regional_restriction.registration_enabled,
     'regional_restriction.oauth_signup_enabled':
@@ -228,10 +233,6 @@ export function RegionalRestrictionSection(
     baselineRef.current = normalized
   }
 
-  const confirmationFrequency = form.watch(
-    'regional_restriction.confirmation_frequency'
-  )
-
   return (
     <SettingsSection title={t('Regional Restriction')}>
       <Form {...form}>
@@ -251,7 +252,7 @@ export function RegionalRestrictionSection(
                   <FormLabel>{t('Enable regional restriction')}</FormLabel>
                   <FormDescription>
                     {t(
-                      'Apply regional checks only to registration, new OAuth accounts, API key page confirmation, and API key creation.'
+                      'Apply regional checks only to new login sessions, registration, new OAuth accounts, API key page confirmation, and API key creation.'
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>
@@ -266,6 +267,28 @@ export function RegionalRestrictionSection(
           />
 
           <SettingsControlGroup>
+            <FormField
+              control={form.control}
+              name='regional_restriction.login_enabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('New login sessions')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Restrict new password, OAuth, WeChat, Telegram, passkey, and 2FA login sessions from blocked regions.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
             <FormField
               control={form.control}
               name='regional_restriction.registration_enabled'
@@ -314,10 +337,10 @@ export function RegionalRestrictionSection(
               render={({ field }) => (
                 <SettingsSwitchItem>
                   <SettingsSwitchContent>
-                    <FormLabel>{t('API key page confirmation')}</FormLabel>
+                    <FormLabel>{t('API key password confirmation')}</FormLabel>
                     <FormDescription>
                       {t(
-                        'Require confirmation before API key management is loaded.'
+                        'Require the current account password before API key management is loaded and API keys can be created.'
                       )}
                     </FormDescription>
                   </SettingsSwitchContent>
@@ -409,95 +432,6 @@ export function RegionalRestrictionSection(
                     'Allow is recommended so missing country headers do not cause false blocks.'
                   )}
                 </FormDescription>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='regional_restriction.confirmation_revision'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Confirmation revision')}</FormLabel>
-                <FormControl>
-                  <Input {...field} className='font-mono' />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Changing the revision invalidates prior browser confirmations.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='regional_restriction.confirmation_frequency'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Confirmation frequency')}</FormLabel>
-                <Select
-                  items={[
-                    {
-                      value: 'once_per_revision',
-                      label: t('Once per confirmation revision'),
-                    },
-                    { value: 'always', label: t('Every page visit') },
-                    { value: 'interval', label: t('After an interval') },
-                  ]}
-                  value={field.value}
-                  onValueChange={field.onChange}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      <SelectItem value='once_per_revision'>
-                        {t('Once per confirmation revision')}
-                      </SelectItem>
-                      <SelectItem value='always'>
-                        {t('Every page visit')}
-                      </SelectItem>
-                      <SelectItem value='interval'>
-                        {t('After an interval')}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='regional_restriction.confirmation_interval_hours'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Confirmation interval hours')}</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    type='number'
-                    min={1}
-                    max={8760}
-                    step={1}
-                    disabled={confirmationFrequency !== 'interval'}
-                    onChange={(event) =>
-                      field.onChange(
-                        Number.parseInt(event.target.value, 10) || 1
-                      )
-                    }
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t('Used only when confirmation frequency is interval.')}
-                </FormDescription>
-                <FormMessage />
               </FormItem>
             )}
           />

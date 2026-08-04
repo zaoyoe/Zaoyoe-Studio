@@ -10,6 +10,7 @@ const RegionalRestrictionConfigName = "regional_restriction"
 
 type RegionalRestrictionSettings struct {
 	Enabled                       bool     `json:"enabled"`
+	LoginEnabled                  bool     `json:"login_enabled"`
 	RegistrationEnabled           bool     `json:"registration_enabled"`
 	OAuthSignupEnabled            bool     `json:"oauth_signup_enabled"`
 	APIKeyPageConfirmationEnabled bool     `json:"api_key_page_confirmation_enabled"`
@@ -24,6 +25,7 @@ type RegionalRestrictionSettings struct {
 var (
 	regionalRestrictionSettings = RegionalRestrictionSettings{
 		Enabled:                       false,
+		LoginEnabled:                  true,
 		RegistrationEnabled:           false,
 		OAuthSignupEnabled:            false,
 		APIKeyPageConfirmationEnabled: false,

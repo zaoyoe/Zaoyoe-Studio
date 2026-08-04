@@ -99,6 +99,8 @@ const SECURITY_SECTIONS = [
         defaultValues={{
           'regional_restriction.enabled':
             settings['regional_restriction.enabled'],
+          'regional_restriction.login_enabled':
+            settings['regional_restriction.login_enabled'],
           'regional_restriction.registration_enabled':
             settings['regional_restriction.registration_enabled'],
           'regional_restriction.oauth_signup_enabled':

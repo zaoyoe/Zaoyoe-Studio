@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -23,6 +24,7 @@ const (
 
 	regionalRestrictionScopeRegistration = "registration"
 	regionalRestrictionScopeOAuthSignup  = "oauth_signup"
+	regionalRestrictionScopeLogin        = "login"
 	regionalRestrictionScopeAPIKeyPage   = "api_key_page"
 	regionalRestrictionScopeAPIKeyCreate = "api_key_create"
 )
@@ -86,6 +88,8 @@ func evaluateRegionalRestriction(c *gin.Context, scope string) RegionalRestricti
 
 func regionalRestrictionScopeEnabled(settings system_setting.RegionalRestrictionSettings, scope string) bool {
 	switch scope {
+	case regionalRestrictionScopeLogin:
+		return settings.LoginEnabled
 	case regionalRestrictionScopeRegistration:
 		return settings.RegistrationEnabled
 	case regionalRestrictionScopeOAuthSignup:
@@ -150,12 +154,15 @@ func writeRegionalRestrictionError(c *gin.Context, err error) bool {
 	if !errors.As(err, &restrictionError) {
 		return false
 	}
+	message := i18n.T(c, i18n.MsgRegionalRestrictionBlocked)
+	evaluation := restrictionError.Evaluation
+	evaluation.Message = message
 	c.JSON(http.StatusForbidden, gin.H{
 		"success": false,
 		"code":    regionalRestrictionReason,
 		"reason":  regionalRestrictionReason,
-		"message": regionalRestrictionMessage,
-		"data":    restrictionError.Evaluation,
+		"message": message,
+		"data":    evaluation,
 	})
 	return true
 }

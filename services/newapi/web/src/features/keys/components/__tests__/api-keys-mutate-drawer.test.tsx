@@ -74,7 +74,15 @@ const reactTestGlobals = globalThis as typeof globalThis & {
 }
 reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
 
-type ApiMethod = (url: string, data?: unknown) => Promise<{ data: unknown }>
+type ApiMethod = (
+  url: string,
+  data?: unknown,
+  config?: Record<string, unknown>
+) => Promise<{ data: unknown }>
+type ApiKeyCreationAuthorization = {
+  allowed: boolean
+  securityProof?: string
+}
 type MockableApi = {
   get: ApiMethod
   post: ApiMethod
@@ -90,7 +98,10 @@ const originalGet = apiClient.get
 const originalPost = apiClient.post
 let renderedDrawer: RenderedDrawer | null = null
 
-function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
+function installApiFixtures(
+  createdPayloads: Array<Record<string, unknown>>,
+  createConfigs: Array<Record<string, unknown> | undefined> = []
+) {
   apiClient.get = async (url) => {
     switch (url) {
       case '/api/status':
@@ -119,10 +130,11 @@ function installApiFixtures(createdPayloads: Array<Record<string, unknown>>) {
         throw new Error(`Unexpected GET ${url}`)
     }
   }
-  apiClient.post = async (url, data) => {
+  apiClient.post = async (url, data, config) => {
     assert.equal(url, '/api/token/')
     assert.ok(data && typeof data === 'object')
     createdPayloads.push(data as Record<string, unknown>)
+    createConfigs.push(config)
     return { data: { success: true, data: {} } }
   }
 }
@@ -155,7 +167,7 @@ async function waitForCondition(
 }
 
 async function renderCreateDrawer(
-  onBeforeCreate?: () => Promise<boolean>
+  onBeforeCreate?: () => Promise<ApiKeyCreationAuthorization>
 ): Promise<void> {
   const host = document.createElement('div')
   document.body.append(host)
@@ -296,7 +308,7 @@ describe('API keys mutate drawer Auto group integration', () => {
     installApiFixtures(createdPayloads)
     await renderCreateDrawer(async () => {
       regionalCheckCount += 1
-      return false
+      return { allowed: false }
     })
 
     await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'blocked')
@@ -308,6 +320,33 @@ describe('API keys mutate drawer Auto group integration', () => {
 
     assert.equal(regionalCheckCount, 1)
     assert.deepEqual(createdPayloads, [])
+  })
+
+  test('sends the password proof with every batch-created API key', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
+    const createConfigs: Array<Record<string, unknown> | undefined> = []
+    let regionalCheckCount = 0
+    installApiFixtures(createdPayloads, createConfigs)
+    await renderCreateDrawer(async () => {
+      regionalCheckCount += 1
+      return { allowed: true, securityProof: 'password-proof' }
+    })
+
+    await changeInput(getControlByLabel<HTMLInputElement>('Name'), 'verified')
+    await changeInput(getControlByLabel<HTMLInputElement>('Quantity'), '2')
+    await act(async () => findButton('Save changes', true).click())
+    await act(async () =>
+      waitForCondition(
+        () => createdPayloads.length === 2,
+        'verified batch API keys were not created'
+      )
+    )
+
+    assert.equal(regionalCheckCount, 1)
+    assert.deepEqual(createConfigs, [
+      { headers: { 'X-Security-Proof': 'password-proof' } },
+      { headers: { 'X-Security-Proof': 'password-proof' } },
+    ])
   })
 
   test('inherits the root Auto order and sends an empty override for every batch-created key', async () => {

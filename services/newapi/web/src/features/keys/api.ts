@@ -25,6 +25,7 @@ import type {
   GetApiKeysResponse,
   SearchApiKeysParams,
   ApiKeyFormData,
+  ApiKeyPasswordProof,
   RegionalRestrictionScope,
   RegionalRestrictionStatus,
   TokenAutoGroupsConfig,
@@ -91,11 +92,38 @@ export async function getRegionalRestrictionStatus(
   return res.data.data
 }
 
+export async function verifyApiKeyPassword(
+  password: string
+): Promise<ApiKeyPasswordProof> {
+  const res = await api.post<ApiResponse<ApiKeyPasswordProof>>(
+    '/api/verify',
+    {
+      method: 'password',
+      password,
+      scope: 'api_key.create',
+    },
+    {
+      skipBusinessError: true,
+      skipErrorHandler: true,
+      disableDuplicate: true,
+    }
+  )
+
+  if (!res.data.success || !res.data.data?.proof_token) {
+    throw new Error(res.data.message || 'Password verification failed')
+  }
+
+  return res.data.data
+}
+
 // Create a new API key
 export async function createApiKey(
-  data: ApiKeyFormData
+  data: ApiKeyFormData,
+  securityProof?: string
 ): Promise<ApiResponse<ApiKey>> {
-  const res = await api.post('/api/token/', data)
+  const res = await api.post('/api/token/', data, {
+    headers: securityProof ? { 'X-Security-Proof': securityProof } : undefined,
+  })
   return res.data
 }
 

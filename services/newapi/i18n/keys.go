@@ -28,6 +28,11 @@ const (
 	MsgBatchTooMany      = "common.batch_too_many"
 )
 
+// Regional restriction messages
+const (
+	MsgRegionalRestrictionBlocked = "regional_restriction.blocked"
+)
+
 // Auth middleware messages
 const (
 	MsgAuthNotLoggedIn           = "auth.not_logged_in"

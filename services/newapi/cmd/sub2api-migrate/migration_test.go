@@ -337,6 +337,117 @@ func TestRepairMissingSMTPSettingsLeavesUnconfiguredSourceUntouched(t *testing.T
 	require.NoError(t, targetMock.ExpectationsWereMet())
 }
 
+func TestBuildLegacyLegalOptionsCombinesDocumentsAndMigratesPrivacy(t *testing.T) {
+	options, err := buildLegacyLegalOptions(map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"}
+		]`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t,
+		"## 服务条款\n\nTerms body\n\n---\n\n## 使用政策\n\nUsage body",
+		options["legal.user_agreement"],
+	)
+	assert.Equal(t, "## 隐私政策\n\nPrivacy body", options["legal.privacy_policy"])
+}
+
+func TestBuildLegacyLegalOptionsUsesFatherKeyPrivacyFallback(t *testing.T) {
+	options, err := buildLegacyLegalOptions(map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"}
+		]`,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, options["legal.privacy_policy"], "[Father Key 隐私政策](https://www.fatherkey.com/privacy.html)")
+	assert.Contains(t, options["legal.privacy_policy"], "[Father Key Privacy Policy](https://www.fatherkey.com/privacy.html)")
+}
+
+func TestBuildLegacyLegalOptionsRejectsInvalidDocuments(t *testing.T) {
+	_, err := buildLegacyLegalOptions(map[string]string{
+		"login_agreement_documents": `{not-json}`,
+	})
+	require.ErrorContains(t, err, "decode legacy login agreement documents")
+}
+
+func TestRepairMissingLegalSettingsCopiesMissingSettingsAndThenNoOps(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	documents := `[
+		{"id":"terms","title":"服务条款","content_md":"Terms body"},
+		{"id":"privacy","title":"隐私政策","content_md":"Privacy body"}
+	]`
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.privacy_policy", "## 隐私政策\n\nPrivacy body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.user_agreement", "## 服务条款\n\nTerms body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(legalMigrationVersion))
+	targetMock.ExpectRollback()
+
+	repaired, err = repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingLegalSettingsPreservesExistingNewAPIValues(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	documents := `[{"id":"terms","title":"服务条款","content_md":"Legacy terms"}]`
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.privacy_policy", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.user_agreement", "## 服务条款\n\nLegacy terms").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
 func TestQuotaFromUSDPreservesSub2APIBalanceUnits(t *testing.T) {
 	quota, err := quotaFromUSD(12.345678)
 	require.NoError(t, err)
@@ -529,6 +640,7 @@ func TestBuildTargetOptionsOverridesExactLegacyTokenPricing(t *testing.T) {
 	require.NoError(t, common.UnmarshalJsonStr(options["AutoGroups"], &autoGroups))
 	assert.Equal(t, []string{"Legacy Pro"}, autoGroups)
 	assert.Equal(t, "true", options["DefaultUseAutoGroup"])
+	assert.Equal(t, "true", options["regional_restriction.login_enabled"])
 	assert.Equal(t, "allow", options["regional_restriction.unknown_region_policy"])
 }
 
@@ -607,6 +719,18 @@ func TestBuildTargetOptionsLeavesSMTPForPreservingRepair(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, options, "SMTPServer")
 	assert.NotContains(t, options, "SMTPToken")
+}
+
+func TestBuildTargetOptionsIncludesLegacyLegalSettings(t *testing.T) {
+	options, err := buildTargetOptions(nil, nil, map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"}
+		]`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "## 服务条款\n\nTerms body", options["legal.user_agreement"])
+	assert.Equal(t, "## 隐私政策\n\nPrivacy body", options["legal.privacy_policy"])
 }
 
 func TestFetchGroupModelsUsesBridgeKeyAndReturnsStableUniqueModels(t *testing.T) {

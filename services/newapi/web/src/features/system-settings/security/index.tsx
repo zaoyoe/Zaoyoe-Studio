@@ -43,6 +43,7 @@ const defaultSecuritySettings: SecuritySettings = {
   'fetch_setting.apply_ip_filter_for_domain': false,
   'token_setting.max_user_tokens': 1000,
   'regional_restriction.enabled': false,
+  'regional_restriction.login_enabled': true,
   'regional_restriction.registration_enabled': false,
   'regional_restriction.oauth_signup_enabled': false,
   'regional_restriction.api_key_page_confirmation_enabled': false,

@@ -64,6 +64,7 @@ redemption.not_provided: "Redemption code not provided"
 redemption.expire_time_invalid: "Expiration time cannot be earlier than current time"
 
 # User messages
+regional_restriction.blocked: "The service is not offered to users located in restricted regions, including mainland China."
 user.password_login_disabled: "Password login has been disabled by administrator"
 user.register_disabled: "New user registration has been disabled by administrator"
 user.password_register_disabled: "Password registration has been disabled by administrator, please use third-party account verification"

@@ -65,6 +65,10 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		legalRepaired, err := repairMissingLegalSettings(ctx, source, target)
+		if err != nil {
+			return err
+		}
 		expectedBridgeGroups, err := countMigratableLegacyGroups(ctx, source)
 		if err != nil {
 			return err
@@ -73,7 +77,7 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if !needsRepair && !smtpRepaired {
+		if !needsRepair && !smtpRepaired && !legalRepaired {
 			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
 			return nil
 		}
@@ -94,6 +98,9 @@ func run(ctx context.Context) error {
 		if smtpRepaired {
 			fmt.Printf("Sub2API migration %s repaired: legacy SMTP settings copied to NewAPI.\n", migrationMark)
 		}
+		if legalRepaired {
+			fmt.Printf("Sub2API migration %s repaired: legacy legal settings copied to NewAPI.\n", migrationMark)
+		}
 		return nil
 	}
 
@@ -112,6 +119,9 @@ func run(ctx context.Context) error {
 		return err
 	}
 	if _, err := repairMissingSMTPSettings(ctx, source, target); err != nil {
+		return err
+	}
+	if _, err := repairMissingLegalSettings(ctx, source, target); err != nil {
 		return err
 	}
 
