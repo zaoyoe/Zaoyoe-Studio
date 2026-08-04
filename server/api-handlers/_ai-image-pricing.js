@@ -121,10 +121,49 @@ function pickNestedValue(source = {}, paths = []) {
     return null;
 }
 
-function extractAiImageSub2ApiActualCost(value = {}) {
+function isAuthoritativeZeroGatewayCost(usage = {}, gateway = '') {
+    const gatewayUsage = gateway === 'newapi'
+        ? toObject(usage.newapi || usage.newapi_usage || usage.newapiUsage)
+        : toObject(usage.sub2api || usage.sub2api_usage || usage.sub2apiUsage);
+    const statuses = [
+        gatewayUsage.billing_status,
+        gatewayUsage.billingStatus,
+        gatewayUsage.lookup_status,
+        gatewayUsage.lookupStatus
+    ].map((value) => String(value || '').trim().toLowerCase());
+    const billing = toObject(usage.billing);
+    const sources = [
+        gatewayUsage.actual_cost_source,
+        gatewayUsage.actualCostSource,
+        gatewayUsage.cost_source,
+        gatewayUsage.costSource,
+        usage.actual_cost_source,
+        usage.actualCostSource,
+        usage.cost_source,
+        usage.costSource,
+        billing.actual_cost_source,
+        billing.actualCostSource,
+        billing.cost_source,
+        billing.costSource
+    ].map((value) => String(value || '').trim().toLowerCase());
+    if (gateway === 'newapi') {
+        return statuses.includes('settled')
+            || statuses.includes('found')
+            || sources.includes('newapi_token_log');
+    }
+    return sources.includes('zero_cost');
+}
+
+function extractAiImageGatewayActualCost(value = {}) {
     const usage = toObject(value);
     if (!Object.keys(usage).length) return null;
     const candidate = pickNestedValue(usage, [
+        ['newapi', 'actual_cost'],
+        ['newapi', 'actualCost'],
+        ['newapi', 'actual_cost_usd'],
+        ['newapi', 'actualCostUsd'],
+        ['newapi_usage', 'actual_cost'],
+        ['newapiUsage', 'actualCost'],
         ['sub2api', 'actual_cost'],
         ['sub2api', 'actualCost'],
         ['sub2api', 'actual_cost_usd'],
@@ -147,13 +186,22 @@ function extractAiImageSub2ApiActualCost(value = {}) {
         ['sub2apiCost']
     ]);
     if (!candidate) return null;
-    const cost = normalizePoints(candidate.value, 0);
-    if (cost <= 0) return null;
+    const parsedCost = Number(candidate.value);
+    if (!Number.isFinite(parsedCost) || parsedCost < 0) return null;
+    const cost = normalizePoints(parsedCost, 0);
+    const gateway = candidate.path.startsWith('newapi')
+        || String(usage.gateway || '').trim().toLowerCase() === 'newapi'
+        ? 'newapi'
+        : 'sub2api';
+    if (cost === 0 && !isAuthoritativeZeroGatewayCost(usage, gateway)) return null;
     return {
         cost,
-        path: candidate.path
+        path: candidate.path,
+        gateway
     };
 }
+
+const extractAiImageSub2ApiActualCost = extractAiImageGatewayActualCost;
 
 function getAiImagePricingStrategy(rule = {}) {
     return normalizeAiImagePricingMetadata(rule.metadata || {}).billing_strategy;
@@ -302,18 +350,19 @@ function calculateAiImageRuleChargePoints(task = {}, usageInput = {}) {
 
     const strategy = getAiImagePricingStrategy(matchedRule);
     if (strategy === 'token_sub2api') {
-        const actual = extractAiImageSub2ApiActualCost(usageInput);
+        const actual = extractAiImageGatewayActualCost(usageInput);
         if (actual) {
             const metadata = normalizeAiImagePricingMetadata(matchedRule.metadata || {});
             const pointsPerUsd = metadata.pricing.points_per_usd || 1;
             const points = normalizePoints(actual.cost * pointsPerUsd, 0);
+            const source = actual.gateway === 'newapi' ? 'newapi_actual_cost' : 'sub2api_actual_cost';
             return {
                 points,
-                source: 'sub2api_actual_cost',
+                source,
                 pricing: {
                     billing_strategy: 'token_sub2api',
-                    source: 'sub2api_actual_cost',
-                    cost_source: 'sub2api_usage_actual_cost',
+                    source,
+                    cost_source: actual.gateway === 'newapi' ? 'newapi_token_log' : 'sub2api_usage_actual_cost',
                     actual_cost_usd: actual.cost,
                     points_per_usd: pointsPerUsd,
                     usage_cost_field: actual.path,

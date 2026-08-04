@@ -7,14 +7,13 @@ const {
 const {
     createPaletteImagePipeline
 } = require('../prompt-image-palette');
+const {
+    fetchNewApiTokenUsageRecord,
+    getNewApiRequestIds,
+    isNewApiGatewayBaseUrl
+} = require('./_newapi-billing');
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-const NEWAPI_PUBLIC_PRICING_HOSTNAMES = Object.freeze(new Set([
-    'new.fatherkey.com',
-    'sub2api.fatherkey.com',
-    'sub2api.zaoyoe.com',
-    'sub2api.zaoyoe.xyz'
-]));
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 const DEFAULT_CHAT_MODEL = 'gpt-4o-mini';
 const DEFAULT_VIDEO_MODEL = 'default-video-model';
@@ -314,7 +313,7 @@ function isSub2ApiGatewayBaseUrl(value = '') {
 function supportsLegacySub2ApiUsageLookup(value = '') {
     try {
         const host = new URL(normalizeBaseUrl(value)).hostname.toLowerCase();
-        if (NEWAPI_PUBLIC_PRICING_HOSTNAMES.has(host)) return false;
+        if (isNewApiGatewayBaseUrl(value)) return false;
         return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
     } catch (_) {
         return false;
@@ -562,7 +561,9 @@ function getSub2ApiResponseBillingHints(payload = {}, response = null) {
         || responseClientRequestId,
         160
     );
-    const upstreamRequestId = getResponseHeader(response, 'x-request-id') || getResponseHeader(response, 'request-id');
+    const upstreamRequestId = getResponseHeader(response, 'x-oneapi-request-id')
+        || getResponseHeader(response, 'x-request-id')
+        || getResponseHeader(response, 'request-id');
     const headerCost = normalizeSub2ApiCost(
         getResponseHeader(response, 'x-sub2api-actual-cost')
         || getResponseHeader(response, 'x-sub2api-cost')
@@ -662,9 +663,31 @@ async function fetchSub2ApiUsageRecordForResponse({
     env = process.env,
     signal = null
 } = {}) {
-    if (!config?.apiKey || !supportsLegacySub2ApiUsageLookup(config.baseUrl) || typeof fetchImpl !== 'function') {
+    if (!config?.apiKey || typeof fetchImpl !== 'function') {
         return null;
     }
+    if (isNewApiGatewayBaseUrl(config.baseUrl)) {
+        const lookup = await fetchNewApiTokenUsageRecord({
+            baseUrl: config.baseUrl,
+            apiKey: config.apiKey,
+            response,
+            payload,
+            fetchImpl,
+            env,
+            signal,
+            returnLookupResult: true
+        });
+        if (lookup?.record) return lookup.record;
+        const requestIds = Array.isArray(lookup?.requestIds) && lookup.requestIds.length
+            ? lookup.requestIds
+            : getNewApiRequestIds(response, payload);
+        return {
+            gateway: 'newapi',
+            lookup_status: lookup?.status || 'unavailable',
+            request_id: requestIds[0] || ''
+        };
+    }
+    if (!supportsLegacySub2ApiUsageLookup(config.baseUrl)) return null;
     const hints = getSub2ApiResponseBillingHints(payload, response);
     if (hints.headerCost > 0) {
         return {
@@ -717,6 +740,8 @@ async function fetchSub2ApiUsageRecordForResponse({
 
 function attachSub2ApiBillingToUsage(usage = {}, payload = {}, response = null, record = null) {
     const normalizedUsage = normalizeTokenUsage(usage);
+    const newApiRecord = record?.gateway === 'newapi';
+    const hasRecordCost = Boolean(record && Object.prototype.hasOwnProperty.call(record, 'actual_cost'));
     const directCost = extractSub2ApiActualCost({
         usage: normalizedUsage,
         payload,
@@ -736,7 +761,41 @@ function attachSub2ApiBillingToUsage(usage = {}, payload = {}, response = null, 
         0
     );
     const hints = getSub2ApiResponseBillingHints(payload, response);
-    const actualCost = record?.actual_cost || directCost?.cost || hints.headerCost || fallbackCost || 0;
+    const actualCost = hasRecordCost
+        ? normalizeSub2ApiCost(record.actual_cost, 0)
+        : (directCost?.cost || hints.headerCost || fallbackCost || 0);
+    if (newApiRecord) {
+        const requestIds = getNewApiRequestIds(response, payload);
+        const requestId = normalizeText(record.request_id || requestIds[0], 240);
+        const newApi = {
+            ...(normalizedUsage.newapi && typeof normalizedUsage.newapi === 'object' ? normalizedUsage.newapi : {}),
+            request_id: requestId,
+            requestId,
+            lookup_request_id: requestId,
+            lookupRequestId: requestId,
+            ...(Array.isArray(record.records) && record.records.length ? {
+                records: record.records,
+                request_ids: record.request_ids || record.requestIds || record.records.map((item) => item.request_id),
+                requestIds: record.request_ids || record.requestIds || record.records.map((item) => item.request_id)
+            } : {}),
+            billing_status: hasRecordCost ? 'settled' : 'pricing_pending',
+            billingStatus: hasRecordCost ? 'settled' : 'pricing_pending',
+            lookup_status: hasRecordCost ? 'found' : (record.lookup_status || 'unavailable'),
+            lookupStatus: hasRecordCost ? 'found' : (record.lookup_status || 'unavailable'),
+            cost_source: record.actual_cost_source || 'newapi_token_log',
+            costSource: record.actual_cost_source || 'newapi_token_log'
+        };
+        if (hasRecordCost) {
+            newApi.actual_cost = actualCost;
+            newApi.actualCost = actualCost;
+            newApi.quota = record.quota;
+            newApi.quota_per_unit = record.quota_per_unit;
+        }
+        return {
+            ...normalizedUsage,
+            newapi: newApi
+        };
+    }
     if (actualCost <= 0 && !hints.requestIds.length && !record) return normalizedUsage;
     return {
         ...normalizedUsage,
@@ -1409,10 +1468,58 @@ function addTokenUsage(left = {}, right = {}) {
     const leftCost = normalizeSub2ApiCost(normalizedLeft.sub2api_actual_cost ?? normalizedLeft.actual_cost ?? normalizedLeft.sub2api?.actual_cost, 0);
     const rightCost = normalizeSub2ApiCost(normalizedRight.sub2api_actual_cost ?? normalizedRight.actual_cost ?? normalizedRight.sub2api?.actual_cost, 0);
     const actualCost = normalizeSub2ApiCost(leftCost + rightCost, 0);
+    const leftNewApi = safeUsageObject(normalizedLeft.newapi);
+    const rightNewApi = safeUsageObject(normalizedRight.newapi);
+    const newApiRecords = [
+        ...(Array.isArray(leftNewApi.records) ? leftNewApi.records : (Object.keys(leftNewApi).length ? [leftNewApi] : [])),
+        ...(Array.isArray(rightNewApi.records) ? rightNewApi.records : (Object.keys(rightNewApi).length ? [rightNewApi] : []))
+    ].filter(Boolean);
+    const latestNewApi = Object.keys(rightNewApi).length ? rightNewApi : leftNewApi;
+    const allNewApiRecordsResolved = newApiRecords.length > 0
+        && newApiRecords.every((record) => {
+            const normalizedRecord = safeUsageObject(record);
+            return Boolean(normalizeText(normalizedRecord.request_id || normalizedRecord.requestId, 240))
+                && Object.prototype.hasOwnProperty.call(normalizedRecord, 'actual_cost');
+        });
+    const newApiCost = normalizeSub2ApiCost(
+        allNewApiRecordsResolved
+            ? newApiRecords.reduce((total, record) => total + normalizeSub2ApiCost(record?.actual_cost, 0), 0)
+            : 0,
+        0
+    );
+    const pendingNewApiRecord = newApiRecords.find((record) => {
+        const normalizedRecord = safeUsageObject(record);
+        return !normalizeText(normalizedRecord.request_id || normalizedRecord.requestId, 240)
+            || !Object.prototype.hasOwnProperty.call(normalizedRecord, 'actual_cost');
+    }) || {};
+    const newApiWithoutPartialCost = { ...latestNewApi };
+    delete newApiWithoutPartialCost.actual_cost;
+    delete newApiWithoutPartialCost.actualCost;
+    delete newApiWithoutPartialCost.actual_cost_usd;
+    delete newApiWithoutPartialCost.actualCostUsd;
     return {
         input_tokens: normalizedLeft.input_tokens + normalizedRight.input_tokens,
         output_tokens: normalizedLeft.output_tokens + normalizedRight.output_tokens,
         total_tokens: normalizedLeft.total_tokens + normalizedRight.total_tokens,
+        ...(newApiRecords.length ? {
+            newapi: {
+                ...(allNewApiRecordsResolved ? latestNewApi : newApiWithoutPartialCost),
+                records: newApiRecords,
+                ...(allNewApiRecordsResolved ? {
+                    actual_cost: newApiCost,
+                    actualCost: newApiCost,
+                    billing_status: 'settled',
+                    billingStatus: 'settled',
+                    lookup_status: 'found',
+                    lookupStatus: 'found'
+                } : {
+                    billing_status: 'pricing_pending',
+                    billingStatus: 'pricing_pending',
+                    lookup_status: pendingNewApiRecord.lookup_status || pendingNewApiRecord.lookupStatus || 'unavailable',
+                    lookupStatus: pendingNewApiRecord.lookup_status || pendingNewApiRecord.lookupStatus || 'unavailable'
+                })
+            }
+        } : {}),
         ...(actualCost > 0 ? {
             actual_cost: actualCost,
             actualCost,
@@ -3858,7 +3965,10 @@ async function requestOpenAiCompatibleImages({
         if (payload.revised_prompt && !revisedPrompt) {
             revisedPrompt = normalizeText(payload.revised_prompt, 8000);
         }
-        if (payload.usage || (captureSub2ApiBilling && supportsLegacySub2ApiUsageLookup(config.baseUrl))) {
+        if (payload.usage || (captureSub2ApiBilling && (
+            supportsLegacySub2ApiUsageLookup(config.baseUrl)
+            || isNewApiGatewayBaseUrl(config.baseUrl)
+        ))) {
             const batchUsage = captureSub2ApiBilling
                 ? await resolveTokenUsageWithSub2ApiBilling({
                     usage: payload.usage || {},
@@ -4155,7 +4265,10 @@ async function requestOpenAiCompatibleVideos({
     }
 
     lastPayloadSummary = lastPayloadSummary || summarizeUpstreamPayload(payload);
-    if (payload.usage || (captureSub2ApiBilling && supportsLegacySub2ApiUsageLookup(config.baseUrl))) {
+    if (payload.usage || (captureSub2ApiBilling && (
+        supportsLegacySub2ApiUsageLookup(config.baseUrl)
+        || isNewApiGatewayBaseUrl(config.baseUrl)
+    ))) {
         const resolvedUsage = captureSub2ApiBilling
             ? await resolveTokenUsageWithSub2ApiBilling({
                 usage: payload.usage || {},

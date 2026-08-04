@@ -187,15 +187,45 @@ function getExecutionProviderBaseUrl(execution = {}) {
     );
 }
 
-function buildNewApiTokenBillingSyncMetadata(execution = {}) {
+function isGatewayActualCostCharge(chargeEstimate = {}) {
+    return ['newapi_actual_cost', 'sub2api_actual_cost'].includes(normalizeText(chargeEstimate.source, 80));
+}
+
+function buildNewApiTokenBillingSyncMetadata(execution = {}, chargeEstimate = {}) {
     const tokenUsage = execution.tokenUsage || execution.token_usage || {};
     if (!isNewApiBillingBaseUrl(getExecutionProviderBaseUrl(execution))) return null;
-    const source = hasTokenUsage(tokenUsage) ? 'newapi_token_usage' : 'newapi_estimated_points';
+    const newApiUsage = safeObject(tokenUsage.newapi);
+    const requestId = normalizeText(
+        newApiUsage.request_id
+        || newApiUsage.requestId
+        || newApiUsage.lookup_request_id
+        || newApiUsage.lookupRequestId,
+        240
+    );
+    if (isGatewayActualCostCharge(chargeEstimate) && chargeEstimate.source === 'newapi_actual_cost') {
+        return {
+            status: 'settled',
+            message: '扣费已同步',
+            source: 'newapi_token_log',
+            checked_at: new Date().toISOString(),
+            request_id: requestId,
+            actual_cost: normalizeNumber(newApiUsage.actual_cost, 0)
+        };
+    }
+    const lookupStatus = normalizeText(
+        newApiUsage.lookup_status
+        || newApiUsage.lookupStatus
+        || newApiUsage.billing_status
+        || newApiUsage.billingStatus,
+        80
+    ).toLowerCase();
     return {
-        status: 'settled',
-        message: '扣费已同步',
-        source,
-        checked_at: new Date().toISOString()
+        status: 'pricing_pending',
+        message: '扣费正在同步',
+        source: hasTokenUsage(tokenUsage) ? 'newapi_token_log' : 'newapi_usage_pending',
+        checked_at: new Date().toISOString(),
+        request_id: requestId,
+        lookup_status: lookupStatus || 'pending'
     };
 }
 
@@ -841,7 +871,7 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
     const chargeEstimate = calculateAiImageRuleChargePoints(task, execution.tokenUsage || task.token_usage || {});
     const expectedAmount = normalizeBillablePoints(chargeEstimate.points ?? task.estimated_points, 0);
     const billingV2 = getAiWorkbenchBillingV2Metadata(task);
-    const newApiBillingSync = chargeEstimate.source === 'token_sub2api_fallback'
+    const newApiBillingSync = ['token_sub2api_fallback', 'newapi_actual_cost'].includes(chargeEstimate.source)
         ? buildNewApiTokenBillingSyncMetadata({
             ...execution,
             tokenUsage: execution.tokenUsage || execution.token_usage || task.token_usage || task.tokenUsage || {},
@@ -849,8 +879,18 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
                 ...safeObject(task.metadata),
                 ...safeObject(execution.metadata)
             }
-        })
+        }, chargeEstimate)
         : null;
+    const newApiPricingPending = Boolean(newApiBillingSync && newApiBillingSync.status !== 'settled');
+    if (newApiPricingPending) {
+        return {
+            chargedPoints: 0,
+            referenceId: '',
+            pricing: chargeEstimate,
+            authorizationPending: true,
+            billingSync: newApiBillingSync
+        };
+    }
     if (billingV2.enabled === true) {
         const syncStatus = normalizeText(
             safeObject(execution.metadata).sub2api_billing_sync?.status
@@ -858,7 +898,7 @@ async function chargeTaskIfNeeded(supabase, task = {}, execution = {}) {
             40
         ).toLowerCase();
         const dynamicBillingPending = billingV2.dynamic === true
-            && chargeEstimate.source !== 'sub2api_actual_cost'
+            && !isGatewayActualCostCharge(chargeEstimate)
             && syncStatus !== 'settled'
             && !newApiBillingSync;
         if (dynamicBillingPending) {
