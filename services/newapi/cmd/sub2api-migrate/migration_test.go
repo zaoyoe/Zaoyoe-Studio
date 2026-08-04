@@ -552,7 +552,7 @@ func TestBuildLegacySMTPOptionsMapsResendImplicitTLS(t *testing.T) {
 	assert.Equal(t, "false", options["SMTPStartTLSEnabled"])
 }
 
-func TestBuildLegacySMTPOptionsUsesStartTLSForAuthenticatedNonImplicitTLS(t *testing.T) {
+func TestBuildLegacySMTPOptionsPreservesImplicitTLSOnNonstandardPort(t *testing.T) {
 	options, configured, err := buildLegacySMTPOptions(map[string]string{
 		"smtp_host":     "smtp.example.com",
 		"smtp_port":     "587",
@@ -560,6 +560,21 @@ func TestBuildLegacySMTPOptionsUsesStartTLSForAuthenticatedNonImplicitTLS(t *tes
 		"smtp_password": "secret",
 		"smtp_from":     "noreply@example.com",
 		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "true", options["SMTPSSLEnabled"])
+	assert.Equal(t, "false", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsRequiresStartTLSForAuthenticatedPlainMode(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "false",
 	})
 	require.NoError(t, err)
 	assert.True(t, configured)
@@ -578,6 +593,20 @@ func TestBuildLegacySMTPOptionsSkipsIncompleteConfiguration(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, configured)
 	assert.Nil(t, options)
+}
+
+func TestBuildTargetOptionsLeavesSMTPForPreservingRepair(t *testing.T) {
+	options, err := buildTargetOptions(nil, nil, map[string]string{
+		"smtp_host":     "smtp.resend.com",
+		"smtp_port":     "465",
+		"smtp_username": "resend",
+		"smtp_password": "re_secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, options, "SMTPServer")
+	assert.NotContains(t, options, "SMTPToken")
 }
 
 func TestFetchGroupModelsUsesBridgeKeyAndReturnsStableUniqueModels(t *testing.T) {

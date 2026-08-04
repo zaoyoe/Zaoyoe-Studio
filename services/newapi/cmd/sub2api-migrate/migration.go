@@ -1048,8 +1048,8 @@ func buildLegacySMTPOptions(settings map[string]string) (map[string]string, bool
 		}
 		useTLS = parsedTLS
 	}
-	sslTLS := useTLS && port == 465
-	startTLS := useTLS && port != 465
+	sslTLS := useTLS
+	startTLS := !useTLS && account != "" && token != ""
 
 	return map[string]string{
 		"SMTPServer":             host,
@@ -1090,10 +1090,7 @@ func repairMissingSMTPSettings(ctx context.Context, source, target *sql.DB) (boo
 	if err := tx.QueryRowContext(ctx, `
 		SELECT count(*)
 		FROM options
-		WHERE key IN (
-			'SMTPServer', 'SMTPPort', 'SMTPAccount', 'SMTPFrom', 'SMTPToken',
-			'SMTPSSLEnabled', 'SMTPStartTLSEnabled', 'SMTPInsecureSkipVerify', 'SMTPForceAuthLogin'
-		)
+		WHERE key IN ('SMTPServer', 'SMTPAccount', 'SMTPFrom', 'SMTPToken')
 		  AND btrim(COALESCE(value, '')) <> ''
 	`).Scan(&existingValues); err != nil {
 		return false, fmt.Errorf("check existing NewAPI SMTP settings: %w", err)
@@ -1231,11 +1228,6 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 	if err != nil {
 		return nil, fmt.Errorf("encode automatic groups: %w", err)
 	}
-	smtpOptions, _, err := buildLegacySMTPOptions(source)
-	if err != nil {
-		return nil, fmt.Errorf("build legacy SMTP settings: %w", err)
-	}
-
 	options := map[string]string{
 		"QuotaPerUnit":                              "500000",
 		"ModelRatio":                                modelRatioJSON,
@@ -1262,9 +1254,6 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 		"regional_restriction.confirmation_frequency":            settingOrDefault(source, "regional_restriction_confirmation_frequency", "once_per_revision"),
 		"regional_restriction.confirmation_revision":             settingOrDefault(source, "regional_restriction_confirmation_revision", "2026-08-03"),
 		"regional_restriction.confirmation_interval_hours":       settingOrDefault(source, "regional_restriction_confirmation_interval_hours", "24"),
-	}
-	for key, value := range smtpOptions {
-		options[key] = value
 	}
 	return options, nil
 }
