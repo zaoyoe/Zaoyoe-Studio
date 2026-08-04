@@ -81,7 +81,7 @@ import {
   transformFormDataToPayload,
   transformApiKeyToFormDefaults,
 } from '../lib'
-import type { ApiKey } from '../types'
+import type { ApiKey, ApiKeyCreationAuthorization } from '../types'
 import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
@@ -93,7 +93,7 @@ type ApiKeyMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: ApiKey
-  onBeforeCreate?: () => Promise<boolean>
+  onBeforeCreate?: () => Promise<ApiKeyCreationAuthorization>
 }
 
 export function ApiKeysMutateDrawer({
@@ -282,9 +282,12 @@ export function ApiKeysMutateDrawer({
   const onSubmit = async (data: ApiKeyFormValues) => {
     setIsSubmitting(true)
     try {
+      let creationAuthorization: ApiKeyCreationAuthorization = {
+        allowed: true,
+      }
       if (!isUpdate && onBeforeCreate) {
-        const isAllowed = await onBeforeCreate()
-        if (!isAllowed) return
+        creationAuthorization = await onBeforeCreate()
+        if (!creationAuthorization.allowed) return
       }
 
       const basePayload = transformFormDataToPayload(data)
@@ -307,13 +310,16 @@ export function ApiKeysMutateDrawer({
         let successCount = 0
 
         for (let i = 0; i < count; i++) {
-          const result = await createApiKey({
-            ...basePayload,
-            name:
-              i === 0 && data.name
-                ? data.name
-                : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
-          })
+          const result = await createApiKey(
+            {
+              ...basePayload,
+              name:
+                i === 0 && data.name
+                  ? data.name
+                  : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
+            },
+            creationAuthorization.securityProof
+          )
           if (result.success) {
             successCount++
           } else {

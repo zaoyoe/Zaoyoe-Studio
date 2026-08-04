@@ -90,6 +90,7 @@ let renderedSection: RenderedSection | null = null
 
 const defaultValues = {
   'regional_restriction.enabled': true,
+  'regional_restriction.login_enabled': true,
   'regional_restriction.registration_enabled': true,
   'regional_restriction.oauth_signup_enabled': true,
   'regional_restriction.api_key_page_confirmation_enabled': true,
@@ -159,6 +160,68 @@ after(() => {
 })
 
 describe('regional restriction settings', () => {
+  test('persists the new-login-session restriction independently', async () => {
+    const requests: Array<{ key?: string; value?: unknown }> = []
+    apiClient.put = async (_url, data) => {
+      requests.push((data || {}) as { key?: string; value?: unknown })
+      return { data: { success: true, message: '' } }
+    }
+
+    await renderSection()
+
+    const loginLabel = [...document.querySelectorAll('label')].find(
+      (label) => label.textContent?.trim() === 'New login sessions'
+    )
+    assert.ok(loginLabel)
+    const loginControl = document.querySelector<HTMLInputElement>(
+      `#${loginLabel.htmlFor}`
+    )
+    assert.ok(loginControl)
+    assert.equal(loginControl.type, 'checkbox')
+    assert.equal(loginControl.checked, true)
+    const loginSwitch =
+      loginControl.parentElement?.querySelector<HTMLElement>('[role="switch"]')
+    assert.ok(loginSwitch)
+    assert.equal(loginSwitch.getAttribute('aria-checked'), 'true')
+    assert.ok(
+      [...document.querySelectorAll('label')].some(
+        (label) => label.textContent?.trim() === 'API key password confirmation'
+      )
+    )
+    assert.ok(
+      document.body.textContent?.includes(
+        'Require the current account password before API key management is loaded and API keys can be created.'
+      )
+    )
+    assert.equal(
+      document.body.textContent?.includes('Confirmation revision'),
+      false
+    )
+    assert.equal(
+      document.body.textContent?.includes('Confirmation frequency'),
+      false
+    )
+
+    await act(async () => loginSwitch.click())
+    assert.equal(loginControl.checked, false)
+    assert.equal(loginSwitch.getAttribute('aria-checked'), 'false')
+
+    const saveButton = [
+      ...document.querySelectorAll<HTMLButtonElement>('button'),
+    ].find(
+      (button) =>
+        button.textContent?.trim() === 'Save regional restriction settings'
+    )
+    assert.ok(saveButton)
+
+    await act(async () => saveButton.click())
+    await flushAsyncWork()
+
+    assert.deepEqual(requests, [
+      { key: 'regional_restriction.login_enabled', value: false },
+    ])
+  })
+
   test('stops on a business failure, retries unsaved changes, and advances the baseline only after success', async () => {
     const requests: Array<{ key?: string; value?: unknown }> = []
     apiClient.put = async (_url, data) => {
@@ -180,18 +243,23 @@ describe('regional restriction settings', () => {
     )
     assert.ok(countryCodesInput)
 
-    const revisionLabel = [...document.querySelectorAll('label')].find(
-      (label) => label.textContent?.trim() === 'Confirmation revision'
+    const registrationLabel = [...document.querySelectorAll('label')].find(
+      (label) => label.textContent?.trim() === 'Password registration'
     )
-    assert.ok(revisionLabel)
-    const revisionInput = document.querySelector<HTMLInputElement>(
-      `#${revisionLabel.htmlFor}`
+    assert.ok(registrationLabel)
+    const registrationInput = document.querySelector<HTMLInputElement>(
+      `#${registrationLabel.htmlFor}`
     )
-    assert.ok(revisionInput)
+    assert.ok(registrationInput)
+    const registrationSwitch =
+      registrationInput.parentElement?.querySelector<HTMLElement>(
+        '[role="switch"]'
+      )
+    assert.ok(registrationSwitch)
 
     await act(async () => {
       changeInputValue(countryCodesInput, 'CN, US')
-      changeInputValue(revisionInput, '2026-06-18')
+      registrationSwitch.click()
     })
 
     const saveButton = [
@@ -206,8 +274,8 @@ describe('regional restriction settings', () => {
     await flushAsyncWork()
     assert.deepEqual(requests, [
       {
-        key: 'regional_restriction.blocked_country_codes',
-        value: '["CN","US"]',
+        key: 'regional_restriction.registration_enabled',
+        value: false,
       },
     ])
 
@@ -215,16 +283,16 @@ describe('regional restriction settings', () => {
     await flushAsyncWork()
     assert.deepEqual(requests, [
       {
-        key: 'regional_restriction.blocked_country_codes',
-        value: '["CN","US"]',
+        key: 'regional_restriction.registration_enabled',
+        value: false,
+      },
+      {
+        key: 'regional_restriction.registration_enabled',
+        value: false,
       },
       {
         key: 'regional_restriction.blocked_country_codes',
         value: '["CN","US"]',
-      },
-      {
-        key: 'regional_restriction.confirmation_revision',
-        value: '2026-06-18',
       },
     ])
 

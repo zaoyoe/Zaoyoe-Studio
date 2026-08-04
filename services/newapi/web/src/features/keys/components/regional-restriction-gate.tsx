@@ -31,11 +31,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-import { getRegionalRestrictionStatus } from '../api'
-import type { RegionalRestrictionStatus } from '../types'
+import { getRegionalRestrictionStatus, verifyApiKeyPassword } from '../api'
+import type {
+  ApiKeyCreationAuthorization,
+  ApiKeyPasswordProof,
+  RegionalRestrictionStatus,
+} from '../types'
 
 type RegionalRestrictionGateMode =
   | 'checking'
@@ -45,16 +49,9 @@ type RegionalRestrictionGateMode =
 
 type RegionalRestrictionGateProps = {
   children: (controls: {
-    checkApiKeyCreation: () => Promise<boolean>
+    checkApiKeyCreation: () => Promise<ApiKeyCreationAuthorization>
   }) => ReactNode
 }
-
-type StoredConfirmation = {
-  revision?: string
-  accepted_at?: string
-}
-
-const CONFIRMATION_STORAGE_PREFIX = 'newapi.regional-restriction-confirmed:'
 
 const REGIONAL_RESTRICTION_COPY = {
   en: {
@@ -75,12 +72,14 @@ const REGIONAL_RESTRICTION_COPY = {
       refund: 'Refund',
       restrictedRegions: 'Restricted Regions',
     },
-    confirmation:
-      'I confirm that I am eligible to continue and will not use this service from a restricted region or for prohibited activity.',
-    confirmButton: 'I Confirm',
+    passwordLabel: 'Account password',
+    passwordPlaceholder: 'Enter your login password',
+    passwordHelp:
+      'Enter the password for the currently signed-in account to continue.',
+    confirmButton: 'Verify and Continue',
     backButton: 'Back',
     storageNotice:
-      'This soft confirmation is stored only in this browser. It does not create a server-side confirmation record or additional IP log.',
+      'Your password is verified securely by the server and is never stored in this browser.',
     translateAriaLabel: 'Show Chinese translation',
   },
   zh: {
@@ -101,12 +100,12 @@ const REGIONAL_RESTRICTION_COPY = {
       refund: '退款政策',
       restrictedRegions: '受限制地区',
     },
-    confirmation:
-      '我确认自己符合继续使用资格，并且不会在受限制地区使用本服务，也不会用于被禁止的活动。',
-    confirmButton: '我确认',
+    passwordLabel: '账号登录密码',
+    passwordPlaceholder: '请输入当前账号的登录密码',
+    passwordHelp: '请输入当前登录账号的密码，验证成功后方可继续。',
+    confirmButton: '验证并继续',
     backButton: '返回',
-    storageNotice:
-      '此软确认仅保存在当前浏览器中，不会创建服务器端确认记录，也不会产生额外 IP 日志。',
+    storageNotice: '密码仅发送到服务端进行安全校验，不会保存在浏览器中。',
     translateAriaLabel: '显示英文原文',
   },
 } as const
@@ -114,76 +113,54 @@ const REGIONAL_RESTRICTION_COPY = {
 const REGIONAL_RESTRICTION_LINKS = [
   { key: 'terms', href: '/user-agreement' },
   { key: 'privacy', href: '/privacy-policy' },
-  {
-    key: 'acceptableUse',
-    href: 'https://www.fatherkey.com/legal/acceptable-use',
-  },
-  { key: 'refund', href: 'https://www.fatherkey.com/legal/refund' },
-  {
-    key: 'restrictedRegions',
-    href: 'https://www.fatherkey.com/legal/restricted-regions',
-  },
+  { key: 'acceptableUse', href: '/user-agreement' },
+  { key: 'refund', href: 'https://www.fatherkey.com/refund-policy' },
+  { key: 'restrictedRegions', href: '/user-agreement' },
 ] as const
 
-function confirmationStorageKey(status: RegionalRestrictionStatus): string {
-  return `${CONFIRMATION_STORAGE_PREFIX}${status.revision || 'default'}`
-}
-
-function hasAcceptedConfirmation(status: RegionalRestrictionStatus): boolean {
-  if (!status.confirmation_required) return true
-  if (status.confirmation_frequency === 'always') return false
-
-  try {
-    const raw = window.localStorage.getItem(confirmationStorageKey(status))
-    if (!raw) return false
-
-    const stored = JSON.parse(raw) as StoredConfirmation
-    if (stored.revision !== status.revision) return false
-    if (status.confirmation_frequency !== 'interval') return true
-
-    const acceptedAt = Date.parse(stored.accepted_at || '')
-    const intervalHours = Math.max(
-      1,
-      Number(status.confirmation_interval_hours) || 24
-    )
-    return (
-      Number.isFinite(acceptedAt) &&
-      Date.now() - acceptedAt < intervalHours * 60 * 60 * 1000
-    )
-  } catch {
-    return false
-  }
-}
-
-function storeConfirmation(status: RegionalRestrictionStatus): void {
-  if (status.confirmation_frequency === 'always') return
-
-  try {
-    window.localStorage.setItem(
-      confirmationStorageKey(status),
-      JSON.stringify({
-        revision: status.revision,
-        accepted_at: new Date().toISOString(),
-      } satisfies StoredConfirmation)
-    )
-  } catch {
-    // Confirmation remains valid for the current page visit.
-  }
+function isPasswordProofActive(proof: ApiKeyPasswordProof | null): boolean {
+  return Boolean(
+    proof &&
+    Number.isFinite(proof.expires_at) &&
+    proof.expires_at * 1000 > Date.now() + 5_000
+  )
 }
 
 function RegionalRestrictionDialog(props: {
   mode: 'confirmation' | 'blocked'
   status: RegionalRestrictionStatus | null
-  onConfirm: () => void
+  onConfirm: (proof: ApiKeyPasswordProof) => void
 }) {
-  const [confirmed, setConfirmed] = useState(false)
+  const [password, setPassword] = useState('')
+  const [verificationError, setVerificationError] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
   const [language, setLanguage] = useState<'en' | 'zh'>('en')
   const isBlocked = props.mode === 'blocked'
   const copy = REGIONAL_RESTRICTION_COPY[language]
 
   useEffect(() => {
-    setConfirmed(false)
+    setPassword('')
+    setVerificationError('')
+    setIsVerifying(false)
   }, [props.mode, props.status])
+
+  const handleConfirm = async () => {
+    if (!password || isVerifying) return
+
+    setVerificationError('')
+    setIsVerifying(true)
+    try {
+      const proof = await verifyApiKeyPassword(password)
+      setPassword('')
+      props.onConfirm(proof)
+    } catch (error) {
+      setVerificationError(
+        error instanceof Error ? error.message : 'Password verification failed'
+      )
+    } finally {
+      setIsVerifying(false)
+    }
+  }
 
   return (
     <AlertDialog open>
@@ -240,19 +217,39 @@ function RegionalRestrictionDialog(props: {
         </AlertDialogHeader>
 
         {!isBlocked && (
-          <div className='border-border/70 bg-muted/30 mx-4 flex items-start gap-3 rounded-lg border p-3 sm:mx-6 sm:p-4'>
-            <Checkbox
-              id='regional-restriction-confirmation'
-              checked={confirmed}
-              onCheckedChange={(checked) => setConfirmed(checked === true)}
-              className='mt-0.5'
-            />
-            <Label
-              htmlFor='regional-restriction-confirmation'
-              className='text-sm leading-5 font-normal'
-            >
-              {copy.confirmation}
-            </Label>
+          <div className='border-border/70 bg-muted/30 mx-4 rounded-lg border p-3 sm:mx-6 sm:p-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='regional-restriction-password'>
+                {copy.passwordLabel}
+              </Label>
+              <Input
+                id='regional-restriction-password'
+                type='password'
+                autoComplete='current-password'
+                value={password}
+                placeholder={copy.passwordPlaceholder}
+                disabled={isVerifying}
+                aria-invalid={verificationError ? true : undefined}
+                aria-describedby='regional-restriction-password-help'
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return
+                  event.preventDefault()
+                  void handleConfirm()
+                }}
+              />
+              <p
+                id='regional-restriction-password-help'
+                className='text-muted-foreground text-xs leading-5'
+              >
+                {copy.passwordHelp}
+              </p>
+              {verificationError && (
+                <p className='text-destructive text-sm' role='alert'>
+                  {verificationError}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -269,9 +266,15 @@ function RegionalRestrictionDialog(props: {
           {!isBlocked && (
             <Button
               type='button'
-              disabled={!confirmed}
-              onClick={props.onConfirm}
+              disabled={!password || isVerifying}
+              onClick={() => void handleConfirm()}
             >
+              {isVerifying && (
+                <LoaderCircle
+                  className='size-4 animate-spin'
+                  aria-hidden='true'
+                />
+              )}
               {copy.confirmButton}
             </Button>
           )}
@@ -304,6 +307,8 @@ function RegionalRestrictionLoading() {
 export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
   const [mode, setMode] = useState<RegionalRestrictionGateMode>('checking')
   const [status, setStatus] = useState<RegionalRestrictionStatus | null>(null)
+  const [passwordProof, setPasswordProof] =
+    useState<ApiKeyPasswordProof | null>(null)
 
   useEffect(() => {
     let active = true
@@ -317,11 +322,7 @@ export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
           setMode('blocked')
           return
         }
-        if (
-          nextStatus.enabled &&
-          nextStatus.confirmation_required &&
-          !hasAcceptedConfirmation(nextStatus)
-        ) {
+        if (nextStatus.enabled && nextStatus.confirmation_required) {
           setMode('confirmation')
           return
         }
@@ -336,21 +337,35 @@ export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
     }
   }, [])
 
-  const checkApiKeyCreation = useCallback(async (): Promise<boolean> => {
-    try {
-      const nextStatus = await getRegionalRestrictionStatus('api_key_create')
-      if (!nextStatus.blocked) return true
+  const checkApiKeyCreation =
+    useCallback(async (): Promise<ApiKeyCreationAuthorization> => {
+      try {
+        const nextStatus = await getRegionalRestrictionStatus('api_key_create')
+        if (nextStatus.blocked) {
+          setStatus(nextStatus)
+          setMode('blocked')
+          return { allowed: false }
+        }
 
-      setStatus(nextStatus)
-      setMode('blocked')
-      return false
-    } catch {
-      return true
-    }
-  }, [])
+        if (!nextStatus.confirmation_required) return { allowed: true }
+        if (isPasswordProofActive(passwordProof)) {
+          return {
+            allowed: true,
+            securityProof: passwordProof?.proof_token,
+          }
+        }
 
-  const handleConfirm = () => {
-    if (status) storeConfirmation(status)
+        setStatus(nextStatus)
+        setPasswordProof(null)
+        setMode('confirmation')
+        return { allowed: false }
+      } catch {
+        return { allowed: true }
+      }
+    }, [passwordProof])
+
+  const handleConfirm = (proof: ApiKeyPasswordProof) => {
+    setPasswordProof(proof)
     setMode('allowed')
   }
 

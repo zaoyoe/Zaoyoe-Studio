@@ -5278,7 +5278,7 @@
     "Restrict new password-based account registration.": "Restrict new password-based account registration.",
     "Revision is required": "Revision is required",
     "Save regional restriction settings": "Save regional restriction settings",
-    "The service is not offered to users located in restricted regions, including mainland China.": "The service is not offered to users located in restricted regions, including mainland China.",
+    "The service is not offered to users located in restricted regions, including mainland China.": "本服務不向位於受限制地區的使用者提供，包括中國大陸。",
     "Unknown region policy": "Unknown region policy",
     "Use two-letter country codes separated by commas or spaces. The default is CN.": "Use two-letter country codes separated by commas or spaces. The default is CN.",
     "Use two-letter country codes separated by commas or spaces": "Use two-letter country codes separated by commas or spaces",

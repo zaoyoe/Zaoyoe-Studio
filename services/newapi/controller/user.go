@@ -42,6 +42,10 @@ func Login(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordLoginDisabled)
 		return
 	}
+	if err := ensureRegionalRestrictionAllows(c, regionalRestrictionScopeLogin); err != nil {
+		writeRegionalRestrictionError(c, err)
+		return
+	}
 	var loginRequest LoginRequest
 	err := common.DecodeJson(c.Request.Body, &loginRequest)
 	if err != nil {
@@ -156,6 +160,10 @@ func setupLogin(user *model.User, c *gin.Context) {
 }
 
 func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin.Context) {
+	if err := ensureRegionalRestrictionAllows(c, regionalRestrictionScopeLogin); err != nil {
+		writeRegionalRestrictionError(c, err)
+		return
+	}
 	if user == nil || user.Id <= 0 || user.Status != common.UserStatusEnabled {
 		common.ApiErrorI18n(c, i18n.MsgAuthUserBanned)
 		return

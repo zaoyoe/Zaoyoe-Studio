@@ -26,14 +26,17 @@ import (
 )
 
 const (
-	migrationOptionKey      = "Sub2APIMigrationVersion"
-	smtpMigrationOptionKey  = "Sub2APISMTPMigrationVersion"
-	smtpMigrationVersion    = "sub2api-to-newapi-smtp-v1"
-	bridgeChannelTagPrefix  = "sub2api-bridge:"
-	bridgeUserEmail         = "newapi-bridge@internal.invalid"
-	bridgeUserBalance       = int64(999_999_999_999)
-	quotaPerUSD             = 500_000.0
-	bridgeChannelStateQuery = `
+	migrationOptionKey        = "Sub2APIMigrationVersion"
+	smtpMigrationOptionKey    = "Sub2APISMTPMigrationVersion"
+	smtpMigrationVersion      = "sub2api-to-newapi-smtp-v1"
+	legalMigrationOptionKey   = "Sub2APILegalMigrationVersion"
+	legalMigrationVersion     = "sub2api-to-newapi-legal-v1"
+	fatherKeyPrivacyPolicyURL = "https://www.fatherkey.com/privacy.html"
+	bridgeChannelTagPrefix    = "sub2api-bridge:"
+	bridgeUserEmail           = "newapi-bridge@internal.invalid"
+	bridgeUserBalance         = int64(999_999_999_999)
+	quotaPerUSD               = 500_000.0
+	bridgeChannelStateQuery   = `
 		SELECT
 			count(*),
 			count(*) FILTER (WHERE c.tag LIKE $2),
@@ -123,6 +126,12 @@ type legacyPrice struct {
 	CacheWritePrice float64
 	CacheReadPrice  float64
 	Intervals       []legacyPriceInterval
+}
+
+type legacyLegalDocument struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	ContentMD string `json:"content_md"`
 }
 
 type migrationData struct {
@@ -1012,6 +1021,114 @@ func loadLegacySettings(ctx context.Context, source *sql.DB) (map[string]string,
 	return settings, nil
 }
 
+func buildLegacyLegalOptions(settings map[string]string) (map[string]string, error) {
+	documents := make([]legacyLegalDocument, 0)
+	if rawDocuments := strings.TrimSpace(settings["login_agreement_documents"]); rawDocuments != "" {
+		if err := common.UnmarshalJsonStr(rawDocuments, &documents); err != nil {
+			return nil, fmt.Errorf("decode legacy login agreement documents: %w", err)
+		}
+	}
+
+	agreementSections := make([]string, 0, len(documents))
+	privacyPolicy := ""
+	for _, document := range documents {
+		content := strings.TrimSpace(document.ContentMD)
+		if content == "" {
+			continue
+		}
+		title := strings.Join(strings.Fields(document.Title), " ")
+		if title != "" {
+			content = "## " + title + "\n\n" + content
+		}
+		documentID := strings.ToLower(strings.TrimSpace(document.ID))
+		if documentID == "privacy" || documentID == "privacy-policy" {
+			if privacyPolicy == "" {
+				privacyPolicy = content
+			}
+			continue
+		}
+		agreementSections = append(agreementSections, content)
+	}
+
+	if privacyPolicy == "" {
+		privacyPolicy = fmt.Sprintf(
+			"请阅读 [Father Key 隐私政策](%s)。\n\nPlease review the [Father Key Privacy Policy](%s).",
+			fatherKeyPrivacyPolicyURL,
+			fatherKeyPrivacyPolicyURL,
+		)
+	}
+	options := map[string]string{
+		"legal.privacy_policy": privacyPolicy,
+	}
+	if len(agreementSections) > 0 {
+		options["legal.user_agreement"] = strings.Join(agreementSections, "\n\n---\n\n")
+	}
+	return options, nil
+}
+
+func repairMissingLegalSettings(ctx context.Context, source, target *sql.DB) (bool, error) {
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin legal settings migration repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock legal settings migration repair: %w", err)
+	}
+
+	var marker string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, legalMigrationOptionKey).Scan(&marker)
+	if err == nil {
+		if marker != legalMigrationVersion {
+			return false, fmt.Errorf("target has legal settings migration marker %q, expected %q", marker, legalMigrationVersion)
+		}
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read legal settings migration marker: %w", err)
+	}
+
+	settings, err := loadLegacySettings(ctx, source)
+	if err != nil {
+		return false, err
+	}
+	options, err := buildLegacyLegalOptions(settings)
+	if err != nil {
+		return false, err
+	}
+	optionKeys := make([]string, 0, len(options))
+	for key := range options {
+		optionKeys = append(optionKeys, key)
+	}
+	sort.Strings(optionKeys)
+	repaired := false
+	for _, key := range optionKeys {
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+			WHERE btrim(COALESCE(options.value, '')) = ''
+		`, key, options[key])
+		if err != nil {
+			return false, fmt.Errorf("copy legacy legal option %q: %w", key, err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("read copied legal option %q result: %w", key, err)
+		}
+		repaired = repaired || rowsAffected > 0
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO options (key, value) VALUES ($1, $2)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, legalMigrationOptionKey, legalMigrationVersion); err != nil {
+		return false, fmt.Errorf("record legal settings migration marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit legal settings migration repair: %w", err)
+	}
+	return repaired, nil
+}
+
 func buildLegacySMTPOptions(settings map[string]string) (map[string]string, bool, error) {
 	host := strings.TrimSpace(settings["smtp_host"])
 	if host == "" {
@@ -1245,6 +1362,7 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 		"PasswordRegisterEnabled":                   "true",
 		"EmailVerificationEnabled":                  settingOrDefault(source, "email_verify_enabled", "false"),
 		"regional_restriction.enabled":              settingOrDefault(source, "regional_restriction_enabled", "true"),
+		"regional_restriction.login_enabled":        settingOrDefault(source, "regional_restriction_login_enabled", "true"),
 		"regional_restriction.registration_enabled": settingOrDefault(source, "regional_restriction_registration_enabled", "true"),
 		"regional_restriction.oauth_signup_enabled": settingOrDefault(source, "regional_restriction_oauth_signup_enabled", "true"),
 		"regional_restriction.api_key_page_confirmation_enabled": settingOrDefault(source, "regional_restriction_api_key_page_confirmation_enabled", "true"),
@@ -1254,6 +1372,13 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 		"regional_restriction.confirmation_frequency":            settingOrDefault(source, "regional_restriction_confirmation_frequency", "once_per_revision"),
 		"regional_restriction.confirmation_revision":             settingOrDefault(source, "regional_restriction_confirmation_revision", "2026-08-03"),
 		"regional_restriction.confirmation_interval_hours":       settingOrDefault(source, "regional_restriction_confirmation_interval_hours", "24"),
+	}
+	legalOptions, err := buildLegacyLegalOptions(source)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range legalOptions {
+		options[key] = value
 	}
 	return options, nil
 }

@@ -88,7 +88,16 @@ type ApiGet = (
   url: string,
   config?: { params?: { scope?: string } }
 ) => Promise<{ data: unknown }>
-type MockableApi = { get: ApiGet }
+type ApiPost = (
+  url: string,
+  data?: unknown,
+  config?: Record<string, unknown>
+) => Promise<{ data: unknown }>
+type MockableApi = { get: ApiGet; post: ApiPost }
+type ApiKeyCreationAuthorization = {
+  allowed: boolean
+  securityProof?: string
+}
 type RenderedGate = {
   host: HTMLDivElement
   root: ReturnType<typeof createRoot>
@@ -96,6 +105,7 @@ type RenderedGate = {
 
 const apiClient = api as unknown as MockableApi
 const originalGet = apiClient.get
+const originalPost = apiClient.post
 let renderedGate: RenderedGate | null = null
 
 const allowedStatus: RegionalResponse = {
@@ -154,7 +164,23 @@ function findButton(text: string): HTMLButtonElement | null {
   )
 }
 
-async function renderGate(onCreateAllowed = () => undefined): Promise<void> {
+async function changeInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      domWindow.HTMLInputElement.prototype,
+      'value'
+    )?.set
+    assert.ok(valueSetter)
+    valueSetter.call(input, value)
+    input.dispatchEvent(
+      new domWindow.Event('input', { bubbles: true }) as unknown as Event
+    )
+  })
+}
+
+async function renderGate(
+  onCreateAllowed = (_authorization: ApiKeyCreationAuthorization) => undefined
+): Promise<void> {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -169,8 +195,8 @@ async function renderGate(onCreateAllowed = () => undefined): Promise<void> {
               <button
                 type='button'
                 onClick={() => {
-                  void checkApiKeyCreation().then((isAllowed) => {
-                    if (isAllowed) onCreateAllowed()
+                  void checkApiKeyCreation().then((authorization) => {
+                    if (authorization.allowed) onCreateAllowed(authorization)
                   })
                 }}
               >
@@ -193,24 +219,48 @@ afterEach(async () => {
   document.body.replaceChildren()
   window.localStorage.clear()
   apiClient.get = originalGet
+  apiClient.post = originalPost
   await i18n.changeLanguage('en')
 })
 
 after(() => {
   apiClient.get = originalGet
+  apiClient.post = originalPost
   domWindow.close()
 })
 
 describe('API key regional restriction gate', () => {
   test('keeps the complete original English contract and loads management only after confirmation', async () => {
+    let creationAuthorization: ApiKeyCreationAuthorization | null = null
+    const verificationRequests: Array<{
+      url: string
+      data: unknown
+      config: Record<string, unknown> | undefined
+    }> = []
     apiClient.get = async () =>
       apiResponse({
         ...allowedStatus,
         confirmation_required: true,
       })
+    apiClient.post = async (url, data, config) => {
+      verificationRequests.push({ url, data, config })
+      return {
+        data: {
+          success: true,
+          data: {
+            proof_token: 'password-proof',
+            expires_at: Math.floor(Date.now() / 1000) + 300,
+            method: 'password',
+            scope: 'api_key.create',
+          },
+        },
+      }
+    }
     await i18n.changeLanguage('zh')
 
-    await renderGate()
+    await renderGate((authorization) => {
+      creationAuthorization = authorization
+    })
     await waitForCondition(
       () =>
         document.body.textContent?.includes('API Key Use Confirmation') ===
@@ -225,8 +275,9 @@ describe('API key regional restriction gate', () => {
       'The service is not offered to users located in restricted regions, including mainland China.',
       'You must not evade regional, payment, provider, or legal restrictions.',
       'You must comply with the Terms, Privacy Policy, Acceptable Use Policy, Refund and Suspension Policy, and Restricted Regions Notice.',
-      'I confirm that I am eligible to continue and will not use this service from a restricted region or for prohibited activity.',
-      'This soft confirmation is stored only in this browser. It does not create a server-side confirmation record or additional IP log.',
+      'Account password',
+      'Enter the password for the currently signed-in account to continue.',
+      'Your password is verified securely by the server and is never stored in this browser.',
     ]) {
       assert.ok(
         bodyText.includes(expectedCopy),
@@ -238,12 +289,9 @@ describe('API key regional restriction gate', () => {
     const expectedLinks = new Map([
       ['Terms', '/user-agreement'],
       ['Privacy', '/privacy-policy'],
-      ['Acceptable Use', 'https://www.fatherkey.com/legal/acceptable-use'],
-      ['Refund', 'https://www.fatherkey.com/legal/refund'],
-      [
-        'Restricted Regions',
-        'https://www.fatherkey.com/legal/restricted-regions',
-      ],
+      ['Acceptable Use', '/user-agreement'],
+      ['Refund', 'https://www.fatherkey.com/refund-policy'],
+      ['Restricted Regions', '/user-agreement'],
     ])
     for (const [label, href] of expectedLinks) {
       const link = [...document.querySelectorAll<HTMLAnchorElement>('a')].find(
@@ -256,13 +304,18 @@ describe('API key regional restriction gate', () => {
     }
     assert.equal(document.querySelector('[data-testid="key-management"]'), null)
 
-    const checkbox = document.querySelector<HTMLElement>('[role="checkbox"]')
-    assert.ok(checkbox)
-    const confirmButton = findButton('I Confirm')
+    assert.equal(document.querySelector('[role="checkbox"]'), null)
+    const passwordInput = document.querySelector<HTMLInputElement>(
+      '#regional-restriction-password'
+    )
+    assert.ok(passwordInput)
+    assert.equal(passwordInput.type, 'password')
+    assert.equal(passwordInput.autocomplete, 'current-password')
+    const confirmButton = findButton('Verify and Continue')
     assert.ok(confirmButton)
     assert.equal(confirmButton.disabled, true)
 
-    await act(async () => checkbox.click())
+    await changeInput(passwordInput, 'Correct Password 123')
     assert.equal(confirmButton.disabled, false)
     await act(async () => confirmButton.click())
 
@@ -270,6 +323,70 @@ describe('API key regional restriction gate', () => {
       () => document.querySelector('[data-testid="key-management"]') !== null,
       'API key management did not load after confirmation'
     )
+    assert.deepEqual(verificationRequests, [
+      {
+        url: '/api/verify',
+        data: {
+          method: 'password',
+          password: 'Correct Password 123',
+          scope: 'api_key.create',
+        },
+        config: {
+          skipBusinessError: true,
+          skipErrorHandler: true,
+          disableDuplicate: true,
+        },
+      },
+    ])
+
+    const createButton = findButton('Attempt protected creation')
+    assert.ok(createButton)
+    await act(async () => createButton.click())
+    await waitForCondition(
+      () => creationAuthorization !== null,
+      'Password proof was not authorized for API key creation'
+    )
+    assert.deepEqual(creationAuthorization, {
+      allowed: true,
+      securityProof: 'password-proof',
+    })
+  })
+
+  test('keeps the confirmation dialog closed to management after an incorrect password', async () => {
+    apiClient.get = async () =>
+      apiResponse({
+        ...allowedStatus,
+        confirmation_required: true,
+      })
+    apiClient.post = async () => ({
+      data: {
+        success: false,
+        message: 'Incorrect account password',
+      },
+    })
+
+    await renderGate()
+    await waitForCondition(
+      () => findButton('Verify and Continue') !== null,
+      'Confirmation dialog did not open'
+    )
+    const passwordInput = document.querySelector<HTMLInputElement>(
+      '#regional-restriction-password'
+    )
+    assert.ok(passwordInput)
+    await changeInput(passwordInput, 'wrong password')
+    const confirmButton = findButton('Verify and Continue')
+    assert.ok(confirmButton)
+    await act(async () => confirmButton.click())
+    await waitForCondition(
+      () =>
+        document.body.textContent?.includes('Incorrect account password') ===
+        true,
+      'Incorrect-password error was not shown'
+    )
+
+    assert.equal(document.querySelector('[data-testid="key-management"]'), null)
+    assert.equal(passwordInput.getAttribute('aria-invalid'), 'true')
   })
 
   test('switches explicitly between the default English copy and Chinese translation', async () => {
@@ -334,7 +451,8 @@ describe('API key regional restriction gate', () => {
     )
 
     assert.equal(document.querySelector('[data-testid="key-management"]'), null)
-    assert.equal(findButton('I Confirm'), null)
+    assert.equal(findButton('Verify and Continue'), null)
+    assert.equal(document.querySelector('#regional-restriction-password'), null)
   })
 
   test('checks api_key_create and prevents the protected creation action when blocked', async () => {

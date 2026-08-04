@@ -65,25 +65,33 @@ The phase-one Sub2API service-slot topology is:
 NewAPI upstream updates must preserve the local regional-restriction security
 customization. When updating `services/newapi` from upstream, do not blindly
 overwrite this feature. Re-apply and verify controls that restrict only
-registration, OAuth new-account signup, the API key page confirmation, and API
-key creation. Do not add a site-wide middleware or affect existing login,
-refresh, passkey, 2FA, or session access. A VPN user remains allowed when the
-current request country is not blocked. Unknown or unrecognized regions remain
-configurable and default to allow unless the administrator explicitly selects
-deny. A regional-status lookup failure must not turn into a client-side
-site-wide denial.
+new login-session creation, registration, OAuth new-account signup, the API key
+page password confirmation, and API key creation. Do not add a site-wide
+middleware or affect refresh, existing sessions, passkey enrollment, 2FA
+management, or other authenticated access. The login check must run before a
+new password, OAuth, WeChat, Telegram, passkey, or 2FA-completed session is
+created. A VPN user remains allowed when the current request country is not
+blocked. Unknown or unrecognized regions remain configurable and default to
+allow unless the administrator explicitly selects deny. A regional-status
+lookup failure must not turn into a client-side site-wide denial.
 
 After every NewAPI upstream update, verify these local files or equivalent logic
 still exist before deploy:
 
 - `services/newapi/controller/regional_restriction.go`
 - `services/newapi/controller/regional_restriction_test.go`
+- `services/newapi/controller/secure_verification.go`
+- `services/newapi/controller/api_key_password_confirmation_test.go`
 - `services/newapi/controller/user.go`
 - `services/newapi/controller/misc.go`
 - `services/newapi/controller/oauth.go`
 - `services/newapi/controller/wechat.go`
 - `services/newapi/controller/token.go`
 - `services/newapi/router/api-router.go`
+- `services/newapi/i18n/keys.go`
+- `services/newapi/i18n/locales/en.yaml`
+- `services/newapi/i18n/locales/zh-CN.yaml`
+- `services/newapi/i18n/locales/zh-TW.yaml`
 - `services/newapi/model/option.go`
 - `services/newapi/model/option_regional_restriction_test.go`
 - `services/newapi/setting/system_setting/regional_restriction.go`
@@ -101,16 +109,20 @@ still exist before deploy:
 - `services/newapi/web/src/features/system-settings/security/section-registry.tsx`
 - `services/newapi/web/src/features/system-settings/security/regional-restriction-section.tsx`
 - `services/newapi/web/src/features/system-settings/types.ts`
+- `services/newapi/web/src/i18n/languages.ts`
 - `services/newapi/web/src/i18n/locales/en.json`
 - `services/newapi/web/src/i18n/locales/zh.json`
+- `services/newapi/web/src/i18n/locales/zh-TW.json`
+- `services/newapi/web/src/lib/http-client.ts`
+- `services/newapi/web/src/lib/server-error-message.ts`
 - `services/newapi/cmd/sub2api-migrate/migration.go`
 - `services/newapi/cmd/sub2api-migrate/migration_test.go`
 
 The API key page confirmation copy must retain the original English wording,
 including `API Key Use Confirmation` and the restricted-regions notice. After
-re-applying an upstream update, run the focused Go and frontend tests for the
-four protected flows, validate the administrator configuration entry, and
-confirm the English copy remains covered by a frontend contract test.
+re-applying an upstream update, run the focused Go and frontend tests for all
+protected flows, validate the administrator configuration entry, and confirm
+the English copy remains covered by a frontend contract test.
 
 While the phase-one bridge remains, updates to `services/sub2api` must preserve
 the private scheduler compatibility behavior and existing Father Key product
