@@ -80,35 +80,49 @@ test('homepage browser contract preserves localized section title pairs', () => 
     assert.equal(verify.section_title_en, 'Gemini Pro');
 });
 
-test('homepage normalizers rewrite legacy API relay links to sub2api', () => {
+test('homepage normalizers rewrite legacy API relay links to the NewAPI domain', () => {
     const contract = loadBrowserHomepageContract();
     const browserHero = contract.normalizeContent('hero', {
         entries: [
             { id: 'gongyi', text: 'API中转', link: 'https://gongyi.zaoyoe.com' }
         ],
         cta: {
-            primary: { text: 'API中转', link: 'https://gongyi.zaoyoe.com' },
+            primary: { text: 'API中转', link: 'https://sub2api.fatherkey.com' },
             secondary: { text: 'Console', link: 'https://www.gongyi.zaoyoe.com/dashboard?tab=keys#top' }
         }
     });
     const browserGongyi = contract.normalizeContent('gongyi', {
-        cta_link: 'https://gongyi.zaoyoe.com'
+        cta_link: 'https://sub2api.fatherkey.com'
     });
     const sharedHero = homepageShared.normalizeHomepageContent('hero', {
         entries: [
-            { id: 'gongyi', text: 'API中转', link: 'https://gongyi.zaoyoe.com' }
+            { id: 'gongyi', text: 'API中转', link: 'https://sub2api.fatherkey.com' }
         ]
     });
     const sharedGongyi = homepageShared.normalizeHomepageContent('gongyi', {
         cta_link: 'https://www.gongyi.zaoyoe.com/dashboard'
     });
 
-    assert.equal(browserHero.entries[0].link, 'https://sub2api.fatherkey.com');
-    assert.equal(browserHero.cta.primary.link, 'https://sub2api.fatherkey.com');
-    assert.equal(browserHero.cta.secondary.link, 'https://sub2api.fatherkey.com/dashboard?tab=keys#top');
-    assert.equal(browserGongyi.cta_link, 'https://sub2api.fatherkey.com');
-    assert.equal(sharedHero.entries[0].link, 'https://sub2api.fatherkey.com');
-    assert.equal(sharedGongyi.cta_link, 'https://sub2api.fatherkey.com/dashboard');
+    assert.equal(browserHero.entries[0].link, 'https://new.fatherkey.com');
+    assert.equal(browserHero.cta.primary.link, 'https://new.fatherkey.com');
+    assert.equal(browserHero.cta.secondary.link, 'https://new.fatherkey.com/dashboard?tab=keys#top');
+    assert.equal(browserGongyi.cta_link, 'https://new.fatherkey.com');
+    assert.equal(sharedHero.entries[0].link, 'https://new.fatherkey.com');
+    assert.equal(sharedGongyi.cta_link, 'https://new.fatherkey.com/dashboard');
+});
+
+test('homepage relay normalizers require an exact legacy hostname', () => {
+    const contract = loadBrowserHomepageContract();
+    const attackerUrl = 'https://sub2api.fatherkey.com.attacker.example/dashboard?tab=keys#top';
+    const browserGongyi = contract.normalizeContent('gongyi', { cta_link: attackerUrl });
+    const sharedGongyi = homepageShared.normalizeHomepageContent('gongyi', { cta_link: attackerUrl });
+    const adminSource = fs.readFileSync(adminHomepagePath, 'utf8');
+
+    assert.equal(browserGongyi.cta_link, attackerUrl);
+    assert.equal(sharedGongyi.cta_link, attackerUrl);
+    assert.match(adminSource, /HOMEPAGE_LEGACY_GONGYI_HOSTS\.has\(parsed\.hostname\.toLowerCase\(\)\)/);
+    assert.match(adminSource, /HOMEPAGE_GONGYI_HOSTS\.has\(new URL\([\s\S]*?\.hostname\.toLowerCase\(\)\)/);
+    assert.doesNotMatch(adminSource, /normalized\.replace\(\s*\/\^https\?:\\\/\\\//);
 });
 
 test('homepage admin save path seeds the current site localized fallback', () => {

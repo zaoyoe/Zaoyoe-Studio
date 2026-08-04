@@ -9,8 +9,12 @@ const {
     inferProviderIdFromPublicModelProviders,
     resolveModel,
     resolveModelGroup,
-    resolveAllowedApiBaseUrls
+    resolveAllowedApiBaseUrls,
+    isNewApiGatewayBaseUrl,
+    supportsLegacySub2ApiUsageLookup
 } = require('../server/api-handlers/public/ai-image');
+
+const LEGACY_SUB2API_TEST_BASE_URL = 'https://sub2api.legacy.example/v1';
 
 function createMockResponse() {
     const state = {
@@ -168,8 +172,8 @@ function createDefaultApiBaseUrls() {
         {
             id: 'api-base-default-cn',
             site: 'cn',
-            label: 'FatherKey Sub2API',
-            base_url: 'https://sub2api.fatherkey.com/v1',
+            label: 'FatherKey NewAPI',
+            base_url: 'https://new.fatherkey.com/v1',
             is_active: true,
             display_order: 10,
             metadata: {}
@@ -566,11 +570,28 @@ test('reverse prompt defaults to text vision model and chat model group', () => 
 
 test('ai image allowed API base URLs come from admin-controlled env', () => {
     assert.deepEqual(
+        resolveAllowedApiBaseUrls({}),
+        ['https://new.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
+    );
+    assert.deepEqual(
         resolveAllowedApiBaseUrls({
             AI_IMAGE_ALLOWED_API_BASE_URLS: 'https://sub2api.fatherkey.com/v1, https://sub2api.zaoyoe.xyz/v1/'
         }),
         ['https://sub2api.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
     );
+});
+
+test('NewAPI pricing aliases never opt into legacy Sub2API usage lookup', () => {
+    ['https://new.fatherkey.com/v1', 'https://sub2api.fatherkey.com/v1'].forEach((baseUrl) => {
+        assert.equal(isNewApiGatewayBaseUrl(baseUrl), true);
+        assert.equal(supportsLegacySub2ApiUsageLookup(baseUrl), false);
+    });
+    ['https://sub2api.zaoyoe.xyz/v1', 'https://sub2api.example/v1', 'http://127.0.0.1:8080/v1'].forEach((baseUrl) => {
+        assert.equal(isNewApiGatewayBaseUrl(baseUrl), false);
+        assert.equal(supportsLegacySub2ApiUsageLookup(baseUrl), true);
+    });
+    assert.equal(isNewApiGatewayBaseUrl('https://new.fatherkey.com.evil.example/v1'), false);
+    assert.equal(supportsLegacySub2ApiUsageLookup('https://new.fatherkey.com.evil.example/v1'), false);
 });
 
 test('ai image pricing config exposes image and chat model groups separately', async () => {
@@ -828,7 +849,7 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
                             isActive: true,
                             providerId: 'chat-provider',
                             label: 'Sub2API Chat',
-                            baseUrl: 'https://sub2api.fatherkey.com/v1',
+                            baseUrl: 'https://sub2api.example/v1',
                             apiKey: providerKey,
                             modelGroup: 'chat',
                             chatModels: ['gpt-5.4', 'not-returned']
@@ -914,7 +935,7 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
         const payload = res.json();
         assert.equal(res.statusCode, 200, res.body);
         assert.equal(fetchCalls.length, 2);
-        assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/models/pricing');
+        assert.equal(fetchCalls[0].url, 'https://sub2api.example/v1/models/pricing');
         assert.equal(fetchCalls[0].options.headers.Authorization, `Bearer ${providerKey}`);
         assert.deepEqual(payload.text_model_prices.map((item) => item.id), ['gpt-5.4']);
         assert.equal(payload.text_model_prices[0].billing_model, 'gpt-5.4-2026-07-01');
@@ -928,6 +949,217 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
         assert.equal(res.body.includes('internal-only-model'), false);
         assert.equal(res.body.includes('channel_id'), false);
         assert.equal(res.body.includes('account_id'), false);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
+test('ai image model prices read NewAPI public pricing and convert ratios', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    const providerKey = 'sk-newapi-provider-secret-must-not-be-sent';
+    const fetchCalls = [];
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderSecrets() {
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'gemini-provider',
+                            label: 'Gemini',
+                            baseUrl: 'https://new.fatherkey.com/v1',
+                            apiKey: providerKey,
+                            modelGroup: 'chat',
+                            chatModels: ['gemini-3-flash', 'not-returned']
+                        },
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'qwen-provider',
+                            label: 'Qwen',
+                            baseUrl: 'https://sub2api.fatherkey.com/v1',
+                            apiKey: `${providerKey}-compat`,
+                            modelGroup: 'chat',
+                            chatModels: ['qwen3.7-plus']
+                        }
+                    ];
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {};
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            fetchImpl: async (url, options = {}) => {
+                fetchCalls.push({ url, options });
+                return {
+                    ok: true,
+                    status: 200,
+                    async json() {
+                        return {
+                            success: true,
+                            group_ratio: { gemini: 0.29, '国产模型': 0.4, default: 1 },
+                            data: [
+                                {
+                                    model_name: 'gemini-3-flash',
+                                    quota_type: 0,
+                                    model_ratio: 0.25,
+                                    completion_ratio: 6,
+                                    cache_ratio: 0.1,
+                                    create_cache_ratio: 0.2,
+                                    enable_groups: ['gemini', 'default']
+                                },
+                                {
+                                    model_name: 'qwen3.7-plus',
+                                    quota_type: 0,
+                                    model_ratio: 0.8,
+                                    completion_ratio: 4,
+                                    billing_mode: 'tiered_expr',
+                                    billing_expr: 'v1:len <= 256000 ? tier("short", p * 1.6 + cr * 0.16 + cc * 2 + c * 6.4) : tier("long", p * 4.8 + cr * 0.48 + cc * 6 + c * 19.2)',
+                                    enable_groups: ['国产模型']
+                                }
+                            ]
+                        };
+                    }
+                };
+            },
+            admin: {
+                async requireAuthenticatedUser() {
+                    const error = new Error('Unauthorized');
+                    error.statusCode = 401;
+                    throw error;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers['model-prices']({ method: 'GET', url: '/api/public?scope=ai-image&route=model-prices' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, res.body);
+        assert.equal(fetchCalls.length, 2);
+        assert.equal(fetchCalls[0].url, 'https://new.fatherkey.com/api/pricing');
+        assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/api/pricing');
+        fetchCalls.forEach((call) => assert.equal(call.options.headers.Authorization, undefined));
+        assert.deepEqual(payload.text_model_prices.map((item) => item.id), ['gemini-3-flash', 'qwen3.7-plus']);
+        const geminiPrice = payload.text_model_prices[0];
+        assert.ok(Math.abs(geminiPrice.input_price_per_million - 0.145) < 1e-12);
+        assert.ok(Math.abs(geminiPrice.output_price_per_million - 0.87) < 1e-12);
+        assert.ok(Math.abs(geminiPrice.cache_read_price_per_million - 0.0145) < 1e-12);
+        assert.ok(Math.abs(geminiPrice.cache_write_price_per_million - 0.029) < 1e-12);
+        assert.equal(geminiPrice.effective_multiplier, 0.29);
+        const qwenPrice = payload.text_model_prices[1];
+        assert.equal(qwenPrice.billing_mode, 'tiered_expr');
+        assert.equal(qwenPrice.effective_multiplier, 0.4);
+        assert.equal(qwenPrice.intervals.length, 2);
+        assert.equal(qwenPrice.intervals[0].max_tokens, 256000);
+        assert.equal(qwenPrice.intervals[1].min_tokens, 256000);
+        assert.ok(Math.abs(qwenPrice.intervals[0].input_price_per_million - 0.64) < 1e-12);
+        assert.ok(Math.abs(qwenPrice.intervals[1].output_price_per_million - 7.68) < 1e-12);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.source), ['newapi', 'newapi']);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.model_count), [1, 1]);
+        assert.equal(res.body.includes(providerKey), false);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
+test('ai image model prices reject HTTP 200 error payloads', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderSecrets() {
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'legacy-provider',
+                            label: 'Legacy',
+                            baseUrl: 'https://sub2api.example/v1',
+                            apiKey: 'sk-legacy-price-key',
+                            modelGroup: 'chat',
+                            chatModels: ['gpt-5.4']
+                        },
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'newapi-provider',
+                            label: 'NewAPI',
+                            baseUrl: 'https://new.fatherkey.com/v1',
+                            apiKey: 'sk-newapi-price-key',
+                            modelGroup: 'chat',
+                            chatModels: ['gpt-5.4']
+                        }
+                    ];
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {};
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            fetchImpl: async (url) => ({
+                ok: true,
+                status: 200,
+                async json() {
+                    return url.includes('new.fatherkey.com')
+                        ? { success: true, data: {} }
+                        : { error: { message: "The model 'pricing' does not exist" } };
+                }
+            }),
+            admin: {
+                async requireAuthenticatedUser() {
+                    const error = new Error('Unauthorized');
+                    error.statusCode = 401;
+                    throw error;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers['model-prices']({ method: 'GET', url: '/api/public?scope=ai-image&route=model-prices' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, res.body);
+        assert.deepEqual(payload.text_model_prices, []);
+        assert.equal(payload.provider_statuses.length, 2);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.available), [false, false]);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.source), ['sub2api', 'newapi']);
+        assert.equal(payload.partial, true);
     } finally {
         delete require.cache[handlerPath];
     }
@@ -1980,7 +2212,7 @@ test('points chat submit charges Sub2API-compatible token pricing from usage', a
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-chat-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'kimi-k2.6'
         },
         fetchImpl: async (url, options = {}) => {
@@ -2054,7 +2286,7 @@ test('points chat submit charges Sub2API-compatible token pricing from usage', a
     assert.equal(payload.task.tokenUsage.cache_read_tokens, 500);
     const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
     assert.equal(deductCall.args.p_amount, 0.137502);
     assert.equal(persistedTask.charged_points, 0.137502);
     assert.equal(persistedTask.metadata.pricing_charge.source, 'sub2api_actual_cost');
@@ -2090,7 +2322,7 @@ test('points chat submit falls back to Sub2API total cost when actual cost is de
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-chat-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'claude-opus-4-8',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -2372,7 +2604,7 @@ test('points chat stream charges Sub2API actual cost after stream closes', async
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-sub2api-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'kimi-k2.6',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -2442,7 +2674,7 @@ test('points chat stream charges Sub2API actual cost after stream closes', async
     assert.match(res.body, /"chargedPoints":0.001075/);
     const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
     assert.equal(deductCall.args.p_amount, 0.001075);
     assert.equal(persistedTask.status, 'succeeded');
     assert.equal(persistedTask.charged_points, 0.001075);
@@ -2480,7 +2712,7 @@ test('points chat stream settles zero-cost Sub2API usage without waiting forever
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-zero-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'qwen3.7-max',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -2568,7 +2800,7 @@ test('points chat stream finalizes after upstream sends content but leaves SSE o
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-idle-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_IDLE_TIMEOUT_MS: '10',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
@@ -2673,7 +2905,7 @@ test('points chat stream finalizes after visible answer when hidden reasoning ke
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-hidden-reasoning-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS: '10',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS: '0',
@@ -2758,7 +2990,7 @@ test('points chat stream finalizes after visible answer when hidden reasoning ke
     assert.match(res.body, /你好/);
     assert.match(res.body, /"chargedPoints":0.000221/);
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage?request_id=${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage?request_id=${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
     assert.equal(deductCall.args.p_amount, 0.000221);
     assert.equal(persistedTask.status, 'succeeded');
     assert.equal(persistedTask.result_prompt, '你好');
@@ -2801,7 +3033,7 @@ test('points chat stream does not truncate content after Sub2API usage is ready'
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-usage-ready-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS: '10',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS: '0',
@@ -2927,7 +3159,7 @@ test('points chat stream does not block each delta on delayed Sub2API usage look
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-nonblocking-deltas-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS: '100',
             AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS: '1000',
@@ -3063,7 +3295,7 @@ test('points chat stream can resolve Sub2API usage by raw client request id fall
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-raw-id-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'claude-opus-4-8',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -3134,7 +3366,7 @@ test('points chat stream can resolve Sub2API usage by raw client request id fall
     assert.equal(res.statusCode, 200);
     assert.match(res.body, /"chargedPoints":0.017165/);
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === `fatherkey-aiw-${state.insertedTasks[0].id}`), true);
-    assert.equal(requests.some((request) => request.url === 'https://sub2api.fatherkey.com/v1/usage?request_id=fatherkey-stream-raw-id'), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage?request_id=fatherkey-stream-raw-id`), true);
     assert.equal(deductCall.args.p_amount, 0.017165);
     assert.equal(persistedTask.charged_points, 0.017165);
     assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.017165);
@@ -4961,7 +5193,7 @@ test('api billing mode rejects when admin has no enabled API base URLs', async (
     assert.equal(payload.code, 'api_base_url_not_configured');
 });
 
-test('api billing mode accepts admin configured Sub2API base URLs', async () => {
+test('api billing mode accepts an admin-configured legacy Sub2API compatibility URL', async () => {
     const requests = [];
     const { handlers, state } = createHandlers({
         state: {
@@ -5173,7 +5405,7 @@ test('task list reconciles delayed Sub2API actual cost and deducts points once',
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
         },
@@ -5207,7 +5439,7 @@ test('task list reconciles delayed Sub2API actual cost and deducts points once',
     assert.equal(state.tasks[0].charged_points, 0.0002);
     assert.equal(state.tasks[0].metadata.pricing_charge.reconciled, true);
     assert.equal(deductCall.args.p_amount, 0.0002);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
 });
 
 test('task list treats zero-cost Sub2API usage detail as settled billing', async () => {
@@ -5259,7 +5491,7 @@ test('task list treats zero-cost Sub2API usage detail as settled billing', async
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-zero-sub2api-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0'
         },
@@ -5342,7 +5574,7 @@ test('task list keeps returning when delayed Sub2API usage lookup hangs', { time
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-timeout-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
             AI_IMAGE_SUB2API_RECONCILE_TIMEOUT_MS: '50'
@@ -5418,7 +5650,7 @@ test('task list finalizes old Sub2API billing sync when usage detail is not foun
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-old-sub2api-not-found-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
             AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS: '0'
@@ -5491,7 +5723,7 @@ test('task list marks old Sub2API billing sync missing request id when legacy ta
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-old-sub2api-missing-request-id-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
             AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS: '0'

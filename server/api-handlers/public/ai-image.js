@@ -49,10 +49,20 @@ const {
     discoverOpenAiCompatibleModels,
     isGeminiNativeBaseUrl
 } = require('../admin/ai-image/model-config');
+const {
+    projectNewApiTieredPricing
+} = require('../_newapi-pricing-projection');
 
 const DEFAULT_ALLOWED_API_BASE_URLS = Object.freeze([
-    'https://sub2api.fatherkey.com/v1',
+    'https://new.fatherkey.com/v1',
     'https://sub2api.zaoyoe.xyz/v1'
+]);
+const LEGACY_COMPATIBLE_API_BASE_URLS = Object.freeze([
+    'https://sub2api.fatherkey.com/v1'
+]);
+const NEWAPI_PUBLIC_PRICING_HOSTNAMES = Object.freeze([
+    'new.fatherkey.com',
+    'sub2api.fatherkey.com'
 ]);
 const SUPPORTED_MODES = Object.freeze(new Set(['text', 'image', 'video', 'reverse', 'chat', 'agent']));
 const IMAGE_MODES = Object.freeze(new Set(['text', 'image', 'agent']));
@@ -325,13 +335,26 @@ function getResponseHeader(response, name = '') {
     return '';
 }
 
-function isSub2ApiGatewayBaseUrl(value = '') {
+function getApiGatewayHostname(value = '') {
     try {
-        const host = new URL(normalizeApiBaseUrl(value)).hostname.toLowerCase();
-        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+        return new URL(normalizeApiBaseUrl(value)).hostname.toLowerCase();
     } catch (_) {
-        return false;
+        return '';
     }
+}
+
+function isNewApiGatewayBaseUrl(value = '') {
+    return NEWAPI_PUBLIC_PRICING_HOSTNAMES.includes(getApiGatewayHostname(value));
+}
+
+function supportsLegacySub2ApiUsageLookup(value = '') {
+    const host = getApiGatewayHostname(value);
+    if (!host || NEWAPI_PUBLIC_PRICING_HOSTNAMES.includes(host)) return false;
+    return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+}
+
+function supportsTextModelPricing(value = '') {
+    return isNewApiGatewayBaseUrl(value) || supportsLegacySub2ApiUsageLookup(value);
 }
 
 function buildSub2ApiModelPricingUrl(baseUrl = '') {
@@ -343,6 +366,16 @@ function buildSub2ApiModelPricingUrl(baseUrl = '') {
         pathname = `${pathname}/v1`;
     }
     url.pathname = `${pathname}/models/pricing`.replace(/\/{2,}/g, '/');
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+}
+
+function buildNewApiModelPricingUrl(baseUrl = '') {
+    const normalized = normalizeApiBaseUrl(baseUrl);
+    if (!normalized) return '';
+    const url = new URL(normalized);
+    url.pathname = '/api/pricing';
     url.search = '';
     url.hash = '';
     return url.toString();
@@ -398,6 +431,8 @@ function serializeTextModelPrice(row = {}, provider = {}) {
             'input_price_per_million',
             'output_price_per_million',
             'cache_write_price_per_million',
+            'cache_write_5m_price_per_million',
+            'cache_write_1h_price_per_million',
             'cache_read_price_per_million',
             'per_request_price'
         ].forEach((field) => {
@@ -407,6 +442,58 @@ function serializeTextModelPrice(row = {}, provider = {}) {
         return item;
     });
     return payload;
+}
+
+function getNewApiPublicGroupRatio(row = {}, payload = {}) {
+    const groupRatios = payload?.group_ratio && typeof payload.group_ratio === 'object'
+        ? payload.group_ratio
+        : {};
+    const ratios = (Array.isArray(row.enable_groups) ? row.enable_groups : [])
+        .map((group) => normalizeOptionalPriceNumber(groupRatios[group]))
+        .filter((ratio) => ratio !== undefined);
+    // /api/pricing is intentionally anonymous. Match NewAPI's public pricing
+    // page by showing the least expensive usable group for each model.
+    return ratios.length ? Math.min(...ratios) : 1;
+}
+
+function serializeNewApiTextModelPrice(row = {}, provider = {}, payload = {}) {
+    const id = normalizeText(row.model_name || row.model || row.id, 180);
+    if (!id) return null;
+
+    const groupRatio = getNewApiPublicGroupRatio(row, payload);
+    const quotaType = Number(row.quota_type);
+    const billingMode = normalizeText(row.billing_mode, 40).toLowerCase();
+    const converted = {
+        id,
+        billing_model: id,
+        billing_mode: quotaType === 1 ? 'per-request' : (billingMode || 'token'),
+        effective_multiplier: groupRatio,
+        available: true
+    };
+
+    if (quotaType === 1) {
+        const modelPrice = normalizeOptionalPriceNumber(row.model_price);
+        if (modelPrice === undefined) return null;
+        converted.per_request_price = modelPrice * groupRatio;
+    } else if (billingMode === 'tiered_expr') {
+        const projected = projectNewApiTieredPricing(row.billing_expr, groupRatio);
+        if (!projected) return null;
+        Object.assign(converted, projected.fields);
+        converted.intervals = projected.intervals;
+    } else {
+        const modelRatio = normalizeOptionalPriceNumber(row.model_ratio);
+        if (modelRatio === undefined) return null;
+        const inputPrice = modelRatio * 2 * groupRatio;
+        const completionRatio = normalizeOptionalPriceNumber(row.completion_ratio) ?? 0;
+        const cacheRatio = normalizeOptionalPriceNumber(row.cache_ratio);
+        const createCacheRatio = normalizeOptionalPriceNumber(row.create_cache_ratio);
+        converted.input_price_per_million = inputPrice;
+        converted.output_price_per_million = inputPrice * completionRatio;
+        if (cacheRatio !== undefined) converted.cache_read_price_per_million = inputPrice * cacheRatio;
+        if (createCacheRatio !== undefined) converted.cache_write_price_per_million = inputPrice * createCacheRatio;
+    }
+
+    return serializeTextModelPrice(converted, provider);
 }
 
 async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = globalThis.fetch } = {}) {
@@ -422,36 +509,48 @@ async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = gl
         && provider?.isActive !== false
         && providerSupportsPublicModelGroup(provider, 'chat')
         && normalizePublicModelsList(provider.chatModels || provider.chat_models).length
-        && isSub2ApiGatewayBaseUrl(provider.baseUrl || provider.base_url)
+        && supportsTextModelPricing(provider.baseUrl || provider.base_url)
     ));
     const timeoutMs = normalizePositiveInt(env.AI_IMAGE_MODEL_PRICING_TIMEOUT_MS, 8000, { min: 1000, max: 20000 });
     const results = await Promise.all(chatProviders.map(async (provider) => {
         const providerId = normalizeText(provider.providerId || provider.provider_id, 80);
         const configuredModels = normalizePublicModelsList(provider.chatModels || provider.chat_models);
         const configuredSet = new Set(configuredModels.map((model) => model.toLowerCase()));
-        const url = buildSub2ApiModelPricingUrl(provider.baseUrl || provider.base_url);
+        const baseUrl = provider.baseUrl || provider.base_url;
+        const newApi = isNewApiGatewayBaseUrl(baseUrl);
+        const url = newApi ? buildNewApiModelPricingUrl(baseUrl) : buildSub2ApiModelPricingUrl(baseUrl);
         try {
+            const headers = {
+                Accept: 'application/json'
+            };
+            if (!newApi) headers.Authorization = `Bearer ${provider.apiKey}`;
             const response = await fetchWithTimeout(fetchImpl, url, {
                 method: 'GET',
-                headers: {
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${provider.apiKey}`
-                }
+                headers
             }, timeoutMs);
             if (!response?.ok) {
-                throw new Error(`Sub2API pricing request failed (${Number(response?.status || 502)})`);
+                throw new Error(`${newApi ? 'NewAPI' : 'Sub2API'} pricing request failed (${Number(response?.status || 502)})`);
             }
             const payload = await response.json();
-            const rows = Array.isArray(payload?.data) ? payload.data : [];
+            if (payload?.error || payload?.success === false) {
+                throw new Error(`${newApi ? 'NewAPI' : 'Sub2API'} pricing response contained an error`);
+            }
+            if (!Array.isArray(payload?.data)) {
+                throw new Error(`${newApi ? 'NewAPI' : 'Sub2API'} pricing response data was invalid`);
+            }
+            const rows = payload.data;
             const prices = rows
-                .filter((row) => configuredSet.has(normalizeText(row?.id || row?.model, 180).toLowerCase()))
-                .map((row) => serializeTextModelPrice(row, provider))
+                .filter((row) => configuredSet.has(normalizeText(row?.model_name || row?.id || row?.model, 180).toLowerCase()))
+                .map((row) => newApi
+                    ? serializeNewApiTextModelPrice(row, provider, payload)
+                    : serializeTextModelPrice(row, provider))
                 .filter(Boolean);
             return {
                 prices,
                 status: {
                     providerId,
                     provider_id: providerId,
+                    source: newApi ? 'newapi' : 'sub2api',
                     available: true,
                     modelCount: prices.length,
                     model_count: prices.length
@@ -463,6 +562,7 @@ async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = gl
                 status: {
                     providerId,
                     provider_id: providerId,
+                    source: newApi ? 'newapi' : 'sub2api',
                     available: false,
                     modelCount: 0,
                     model_count: 0,
@@ -629,7 +729,7 @@ async function fetchSub2ApiUsageRecord({
             }
             : record
     );
-    if (!apiKey || !isSub2ApiGatewayBaseUrl(baseUrl) || typeof fetchImpl !== 'function') {
+    if (!apiKey || !supportsLegacySub2ApiUsageLookup(baseUrl) || typeof fetchImpl !== 'function') {
         return finish(null, 'unavailable');
     }
     const headerCost = normalizeSub2ApiCost(
@@ -951,7 +1051,7 @@ function resolveApiBaseUrl(inputValue, { site = 'cn', env = {} } = {}) {
         return resolveDefaultApiBaseUrl({ site, env });
     }
 
-    if (allowed.includes(normalizedInput)) {
+    if (allowed.includes(normalizedInput) || LEGACY_COMPATIBLE_API_BASE_URLS.includes(normalizedInput)) {
         return normalizedInput;
     }
 
@@ -964,8 +1064,10 @@ function resolveApiBaseUrl(inputValue, { site = 'cn', env = {} } = {}) {
 function inferApiBaseUrlLabel(baseUrl = '') {
     const normalized = normalizeApiBaseUrl(baseUrl).toLowerCase();
     if (normalized.includes('zaoyoe')) return 'Zaoyoe Sub2API';
-    if (normalized.includes('fatherkey')) return 'FatherKey Sub2API';
-    return 'Sub2API';
+    if (normalized.includes('new.fatherkey.com')) return 'FatherKey NewAPI';
+    if (normalized.includes('sub2api.fatherkey.com')) return 'FatherKey Legacy API';
+    if (normalized.includes('fatherkey')) return 'FatherKey API';
+    return 'AI API';
 }
 
 function serializeApiBaseUrl(row = {}) {
@@ -1342,7 +1444,7 @@ async function resolveApiBaseUrlFromAdminConfig(supabase, inputValue, { site = '
         throw error;
     }
 
-    if (allowed.includes(normalizedInput)) {
+    if (allowed.includes(normalizedInput) || LEGACY_COMPATIBLE_API_BASE_URLS.includes(normalizedInput)) {
         return normalizedInput;
     }
 
@@ -5209,7 +5311,7 @@ function createAiImageHandlers({
                 model: upstreamRequestModel,
                 apiKeyTail: task.api_key_tail || getApiKeyTail(upstreamApiKey)
             });
-            const sub2ApiClientRequestId = isSub2ApiGatewayBaseUrl(upstreamBaseUrl)
+            const sub2ApiClientRequestId = supportsLegacySub2ApiUsageLookup(upstreamBaseUrl)
                 ? buildSub2ApiClientRequestId(task)
                 : '';
             const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
@@ -6743,7 +6845,10 @@ function createAiImageHandlers({
                 measure('keys', storedApiKeysPromise)
             ]);
             if (error) throw error;
-            const allowedApiBaseUrlSet = new Set(apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean));
+            const allowedApiBaseUrlSet = new Set([
+                ...apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean),
+                ...LEGACY_COMPATIBLE_API_BASE_URLS
+            ]);
             const storedApiKeys = (Array.isArray(rawStoredApiKeys) ? rawStoredApiKeys : []).filter((row) => {
                 if (!allowedApiBaseUrlSet.size) return true;
                 return allowedApiBaseUrlSet.has(normalizeApiBaseUrl(row.apiBaseUrl || row.api_base_url));
@@ -7022,5 +7127,7 @@ module.exports = {
     resolveModelGroup,
     resolveAllowedApiBaseUrls,
     buildSub2ApiModelPricingUrl,
+    isNewApiGatewayBaseUrl,
+    supportsLegacySub2ApiUsageLookup,
     serializeTask
 };

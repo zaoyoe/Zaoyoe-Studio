@@ -2197,6 +2197,9 @@ test('ai image workbench opens model pricing from points billing in the main con
     assert.match(source, /requestAiImage\('model-prices',\s*\{[\s\S]*auth: false/);
     assert.match(source, /function renderModelPricingView\(\)/);
     assert.match(source, /function renderTextModelPricing\(\)/);
+    assert.match(source, /NewAPI 按公开可用分组最低倍率展示，实际扣费以请求结算为准/);
+    assert.match(source, /modelPricingView\.tab === 'chat' \? '公开参考价' : '积分价格'/);
+    assert.doesNotMatch(source, /modelPricingView\.tab === 'chat' \? '实际价格'/);
     assert.match(source, /function renderAdminModelPricing\(group = 'image'\)/);
     assert.match(source, /if \(modelPricingView\.open\) \{[\s\S]*ai-image-canvas is-model-pricing[\s\S]*renderModelPricingView\(\)/);
     assert.match(source, /data-aiw-action="set-model-pricing-tab"/);

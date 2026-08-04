@@ -95,7 +95,12 @@ test('external engagement policy builds deployable snippets and diagnostics', ()
     });
 
     assert.equal(policy.enabled, true);
-    assert.deepEqual(policy.allowed_origins, ['https://sub2api.fatherkey.com', 'https://sub2api.zaoyoe.xyz', 'https://custom.example.com']);
+    assert.deepEqual(policy.allowed_origins, [
+        'https://new.fatherkey.com',
+        'https://sub2api.fatherkey.com',
+        'https://sub2api.zaoyoe.xyz',
+        'https://custom.example.com'
+    ]);
     assert.equal(policy.api_origin, 'https://www.fatherkey.com');
     assert.equal(policy.asset_base, 'https://cdn.fatherkey.com/assets/');
 

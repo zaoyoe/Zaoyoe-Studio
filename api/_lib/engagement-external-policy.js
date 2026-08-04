@@ -2,8 +2,11 @@ const CONFIG_KEY = 'engagement_external_embed_policy';
 const EMBED_VERSION = '20260505_GONGYI_EXTERNAL_ENGAGEMENT_1';
 const DEFAULT_ASSET_BASE = 'https://www.fatherkey.com/';
 const DEFAULT_API_ORIGIN = 'https://www.fatherkey.com';
+const CANONICAL_FATHERKEY_API_ORIGIN = 'https://new.fatherkey.com';
+const LEGACY_FATHERKEY_API_ORIGIN = 'https://sub2api.fatherkey.com';
 const DEFAULT_EXTERNAL_EMBED_ORIGINS = Object.freeze([
-    'https://sub2api.fatherkey.com',
+    CANONICAL_FATHERKEY_API_ORIGIN,
+    LEGACY_FATHERKEY_API_ORIGIN,
     'https://sub2api.zaoyoe.xyz',
     'https://zaoyoe.com',
     'https://www.zaoyoe.com',
@@ -73,6 +76,9 @@ function normalizeExternalEmbedPolicy(value = {}) {
     const defaults = getDefaultExternalEmbedPolicy();
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const allowedOrigins = normalizeOriginArray(source.allowed_origins || source.allowedOrigins || defaults.allowed_origins);
+    if (allowedOrigins.includes(LEGACY_FATHERKEY_API_ORIGIN) && !allowedOrigins.includes(CANONICAL_FATHERKEY_API_ORIGIN)) {
+        allowedOrigins.unshift(CANONICAL_FATHERKEY_API_ORIGIN);
+    }
     const pageId = normalizeToken(source.default_page_id || source.defaultPageId, defaults.default_page_id);
     const site = normalizeToken(source.default_site || source.defaultSite, defaults.default_site);
     return {
@@ -120,7 +126,7 @@ function buildExternalEmbedSnippet(policy = {}) {
 
 function buildExternalEmbedDiagnostics(policy = {}) {
     const normalized = normalizeExternalEmbedPolicy(policy);
-    const gongyiOrigins = ['https://sub2api.fatherkey.com', 'https://sub2api.zaoyoe.xyz'];
+    const gongyiOrigins = [CANONICAL_FATHERKEY_API_ORIGIN, 'https://sub2api.zaoyoe.xyz'];
     const hasGongyiOrigin = gongyiOrigins.every((origin) => normalized.allowed_origins.includes(origin));
     return {
         status: normalized.enabled && hasGongyiOrigin ? 'ready' : 'attention',
@@ -147,7 +153,7 @@ function buildExternalEmbedDiagnostics(policy = {}) {
                 id: 'gongyi_origin',
                 label: 'API中转白名单',
                 status: hasGongyiOrigin ? 'ok' : 'warning',
-                detail: hasGongyiOrigin ? 'API中转域名已在 CORS 白名单内' : '需要加入 sub2api.fatherkey.com / sub2api.zaoyoe.xyz'
+                detail: hasGongyiOrigin ? 'API中转域名已在 CORS 白名单内' : '需要加入 new.fatherkey.com / sub2api.zaoyoe.xyz'
             },
             {
                 id: 'asset_base',
