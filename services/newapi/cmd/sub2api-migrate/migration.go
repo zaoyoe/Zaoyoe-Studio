@@ -27,6 +27,8 @@ import (
 
 const (
 	migrationOptionKey      = "Sub2APIMigrationVersion"
+	smtpMigrationOptionKey  = "Sub2APISMTPMigrationVersion"
+	smtpMigrationVersion    = "sub2api-to-newapi-smtp-v1"
 	bridgeChannelTagPrefix  = "sub2api-bridge:"
 	bridgeUserEmail         = "newapi-bridge@internal.invalid"
 	bridgeUserBalance       = int64(999_999_999_999)
@@ -1010,6 +1012,141 @@ func loadLegacySettings(ctx context.Context, source *sql.DB) (map[string]string,
 	return settings, nil
 }
 
+func buildLegacySMTPOptions(settings map[string]string) (map[string]string, bool, error) {
+	host := strings.TrimSpace(settings["smtp_host"])
+	if host == "" {
+		return nil, false, nil
+	}
+
+	port := 587
+	if rawPort := strings.TrimSpace(settings["smtp_port"]); rawPort != "" {
+		parsedPort, err := strconv.Atoi(rawPort)
+		if err != nil || parsedPort < 1 || parsedPort > 65535 {
+			return nil, false, fmt.Errorf("legacy SMTP port %q is invalid", rawPort)
+		}
+		port = parsedPort
+	}
+
+	account := strings.TrimSpace(settings["smtp_username"])
+	token := strings.TrimSpace(settings["smtp_password"])
+	if (account == "") != (token == "") {
+		return nil, false, nil
+	}
+	from := strings.TrimSpace(settings["smtp_from"])
+	if from == "" {
+		from = account
+	}
+	if from == "" || !strings.Contains(from, "@") {
+		return nil, false, nil
+	}
+
+	useTLS := false
+	if rawTLS := strings.TrimSpace(settings["smtp_use_tls"]); rawTLS != "" {
+		parsedTLS, err := strconv.ParseBool(rawTLS)
+		if err != nil {
+			return nil, false, fmt.Errorf("legacy SMTP TLS setting %q is invalid", rawTLS)
+		}
+		useTLS = parsedTLS
+	}
+	sslTLS := useTLS
+	startTLS := !useTLS && account != "" && token != ""
+
+	return map[string]string{
+		"SMTPServer":             host,
+		"SMTPPort":               strconv.Itoa(port),
+		"SMTPAccount":            account,
+		"SMTPFrom":               from,
+		"SMTPToken":              token,
+		"SMTPSSLEnabled":         strconv.FormatBool(sslTLS),
+		"SMTPStartTLSEnabled":    strconv.FormatBool(startTLS),
+		"SMTPInsecureSkipVerify": "false",
+		"SMTPForceAuthLogin":     "false",
+	}, true, nil
+}
+
+func repairMissingSMTPSettings(ctx context.Context, source, target *sql.DB) (bool, error) {
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin SMTP migration repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock SMTP migration repair: %w", err)
+	}
+
+	var marker string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, smtpMigrationOptionKey).Scan(&marker)
+	if err == nil {
+		if marker != smtpMigrationVersion {
+			return false, fmt.Errorf("target has SMTP migration marker %q, expected %q", marker, smtpMigrationVersion)
+		}
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read SMTP migration marker: %w", err)
+	}
+
+	var existingValues int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM options
+		WHERE key IN ('SMTPServer', 'SMTPAccount', 'SMTPFrom', 'SMTPToken')
+		  AND btrim(COALESCE(value, '')) <> ''
+	`).Scan(&existingValues); err != nil {
+		return false, fmt.Errorf("check existing NewAPI SMTP settings: %w", err)
+	}
+	if existingValues > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+		`, smtpMigrationOptionKey, smtpMigrationVersion); err != nil {
+			return false, fmt.Errorf("record preserved SMTP settings: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit preserved SMTP settings: %w", err)
+		}
+		return false, nil
+	}
+
+	settings, err := loadLegacySettings(ctx, source)
+	if err != nil {
+		return false, err
+	}
+	options, configured, err := buildLegacySMTPOptions(settings)
+	if err != nil {
+		return false, err
+	}
+	if !configured {
+		return false, nil
+	}
+
+	optionKeys := make([]string, 0, len(options))
+	for key := range options {
+		optionKeys = append(optionKeys, key)
+	}
+	sort.Strings(optionKeys)
+	for _, key := range optionKeys {
+		value := options[key]
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+			WHERE btrim(COALESCE(options.value, '')) = ''
+		`, key, value); err != nil {
+			return false, fmt.Errorf("copy legacy SMTP option %q: %w", key, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO options (key, value) VALUES ($1, $2)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, smtpMigrationOptionKey, smtpMigrationVersion); err != nil {
+		return false, fmt.Errorf("record SMTP migration marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit SMTP migration repair: %w", err)
+	}
+	return true, nil
+}
+
 func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[string]string) (map[string]string, error) {
 	ratio_setting.InitRatioSettings()
 	modelRatio := ratio_setting.GetModelRatioCopy()
@@ -1091,7 +1228,6 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 	if err != nil {
 		return nil, fmt.Errorf("encode automatic groups: %w", err)
 	}
-
 	options := map[string]string{
 		"QuotaPerUnit":                              "500000",
 		"ModelRatio":                                modelRatioJSON,

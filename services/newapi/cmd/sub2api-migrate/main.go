@@ -61,6 +61,10 @@ func run(ctx context.Context) error {
 		return err
 	}
 	if completed {
+		smtpRepaired, err := repairMissingSMTPSettings(ctx, source, target)
+		if err != nil {
+			return err
+		}
 		expectedBridgeGroups, err := countMigratableLegacyGroups(ctx, source)
 		if err != nil {
 			return err
@@ -69,23 +73,26 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if !needsRepair {
+		if !needsRepair && !smtpRepaired {
 			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
 			return nil
 		}
 
-		groups, err := loadBridgeGroups(ctx, source, strings.TrimRight(sourceBaseURL, "/"), bridgeBaseURL)
-		if err != nil {
-			return err
+		if needsRepair {
+			groups, err := loadBridgeGroups(ctx, source, strings.TrimRight(sourceBaseURL, "/"), bridgeBaseURL)
+			if err != nil {
+				return err
+			}
+			repaired, err := repairMissingBridgeChannels(ctx, target, groups, migrationMark)
+			if err != nil {
+				return err
+			}
+			if repaired {
+				fmt.Printf("Sub2API migration %s repaired: %d bridge groups restored.\n", migrationMark, len(groups))
+			}
 		}
-		repaired, err := repairMissingBridgeChannels(ctx, target, groups, migrationMark)
-		if err != nil {
-			return err
-		}
-		if repaired {
-			fmt.Printf("Sub2API migration %s repaired: %d bridge groups restored.\n", migrationMark, len(groups))
-		} else {
-			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
+		if smtpRepaired {
+			fmt.Printf("Sub2API migration %s repaired: legacy SMTP settings copied to NewAPI.\n", migrationMark)
 		}
 		return nil
 	}
@@ -102,6 +109,9 @@ func run(ctx context.Context) error {
 		return err
 	}
 	if err := migrateTarget(ctx, target, data, migrationMark); err != nil {
+		return err
+	}
+	if _, err := repairMissingSMTPSettings(ctx, source, target); err != nil {
 		return err
 	}
 

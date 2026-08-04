@@ -227,6 +227,116 @@ func TestRepairMissingBridgeChannelsRollsBackWhenAbilityInsertFails(t *testing.T
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestRepairMissingSMTPSettingsCopiesMissingConfigurationAndThenNoOps(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	targetMock.ExpectQuery(`SELECT count\(\*\).*FROM options`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).
+			AddRow("smtp_host", "smtp.resend.com").
+			AddRow("smtp_port", "465").
+			AddRow("smtp_username", "resend").
+			AddRow("smtp_password", "re_secret").
+			AddRow("smtp_from", "noreply@example.com").
+			AddRow("smtp_use_tls", "true"))
+	expectedOptions := []struct {
+		key   string
+		value string
+	}{
+		{key: "SMTPAccount", value: "resend"},
+		{key: "SMTPForceAuthLogin", value: "false"},
+		{key: "SMTPFrom", value: "noreply@example.com"},
+		{key: "SMTPInsecureSkipVerify", value: "false"},
+		{key: "SMTPPort", value: "465"},
+		{key: "SMTPSSLEnabled", value: "true"},
+		{key: "SMTPServer", value: "smtp.resend.com"},
+		{key: "SMTPStartTLSEnabled", value: "false"},
+		{key: "SMTPToken", value: "re_secret"},
+	}
+	for _, option := range expectedOptions {
+		targetMock.ExpectExec(`INSERT INTO options`).
+			WithArgs(option.key, option.value).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(smtpMigrationOptionKey, smtpMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(smtpMigrationVersion))
+	targetMock.ExpectRollback()
+
+	repaired, err = repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingSMTPSettingsPreservesExistingNewAPIConfiguration(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	targetMock.ExpectQuery(`SELECT count\(\*\).*FROM options`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(smtpMigrationOptionKey, smtpMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingSMTPSettingsLeavesUnconfiguredSourceUntouched(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	targetMock.ExpectQuery(`SELECT count\(\*\).*FROM options`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}))
+	targetMock.ExpectRollback()
+
+	repaired, err := repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
 func TestQuotaFromUSDPreservesSub2APIBalanceUnits(t *testing.T) {
 	quota, err := quotaFromUSD(12.345678)
 	require.NoError(t, err)
@@ -420,6 +530,83 @@ func TestBuildTargetOptionsOverridesExactLegacyTokenPricing(t *testing.T) {
 	assert.Equal(t, []string{"Legacy Pro"}, autoGroups)
 	assert.Equal(t, "true", options["DefaultUseAutoGroup"])
 	assert.Equal(t, "allow", options["regional_restriction.unknown_region_policy"])
+}
+
+func TestBuildLegacySMTPOptionsMapsResendImplicitTLS(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.resend.com",
+		"smtp_port":     "465",
+		"smtp_username": "resend",
+		"smtp_password": "re_secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "smtp.resend.com", options["SMTPServer"])
+	assert.Equal(t, "465", options["SMTPPort"])
+	assert.Equal(t, "resend", options["SMTPAccount"])
+	assert.Equal(t, "noreply@example.com", options["SMTPFrom"])
+	assert.Equal(t, "re_secret", options["SMTPToken"])
+	assert.Equal(t, "true", options["SMTPSSLEnabled"])
+	assert.Equal(t, "false", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsPreservesImplicitTLSOnNonstandardPort(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "true", options["SMTPSSLEnabled"])
+	assert.Equal(t, "false", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsRequiresStartTLSForAuthenticatedPlainMode(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "false",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "false", options["SMTPSSLEnabled"])
+	assert.Equal(t, "true", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsSkipsIncompleteConfiguration(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "",
+		"smtp_from":     "noreply@example.com",
+	})
+	require.NoError(t, err)
+	assert.False(t, configured)
+	assert.Nil(t, options)
+}
+
+func TestBuildTargetOptionsLeavesSMTPForPreservingRepair(t *testing.T) {
+	options, err := buildTargetOptions(nil, nil, map[string]string{
+		"smtp_host":     "smtp.resend.com",
+		"smtp_port":     "465",
+		"smtp_username": "resend",
+		"smtp_password": "re_secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, options, "SMTPServer")
+	assert.NotContains(t, options, "SMTPToken")
 }
 
 func TestFetchGroupModelsUsesBridgeKeyAndReturnsStableUniqueModels(t *testing.T) {
