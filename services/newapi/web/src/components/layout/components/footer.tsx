@@ -86,15 +86,15 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
   if (status?.user_agreement_enabled) {
     items.push({
       key: 'user-agreement',
-      label: t('User Agreement'),
-      href: '/user-agreement',
+      label: t('Terms of Service'),
+      href: '/legal/terms',
     })
   }
   if (status?.privacy_policy_enabled) {
     items.push({
       key: 'privacy-policy',
       label: t('Privacy Policy'),
-      href: '/privacy-policy',
+      href: '/legal/privacy',
     })
   }
   if (items.length === 0) {
@@ -272,14 +272,14 @@ export function Footer(props: FooterProps) {
           {/* Links columns */}
           {isDemoSiteMode && (
             <div className='grid grid-cols-3 gap-8 md:gap-16'>
-              {displayColumns.map((column, index) => (
-                <div key={index}>
+              {displayColumns.map((column) => (
+                <div key={column.title}>
                   <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
                     {t(column.title)}
                   </p>
                   <ul className='space-y-2.5'>
-                    {column.links.map((link, linkIndex) => (
-                      <li key={linkIndex}>
+                    {column.links.map((link) => (
+                      <li key={`${link.text}:${link.href}`}>
                         <FooterLinkItem link={link} />
                       </li>
                     ))}

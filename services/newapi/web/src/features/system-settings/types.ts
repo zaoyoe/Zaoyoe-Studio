@@ -116,6 +116,9 @@ export type SiteSettings = {
   ServerAddress: string
   'legal.user_agreement': string
   'legal.privacy_policy': string
+  'legal.acceptable_use': string
+  'legal.refund_policy': string
+  'legal.restricted_regions': string
   HeaderNavModules: string
   SidebarModulesAdmin: string
 }

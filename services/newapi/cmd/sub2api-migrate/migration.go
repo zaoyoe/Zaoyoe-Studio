@@ -30,8 +30,10 @@ const (
 	smtpMigrationOptionKey    = "Sub2APISMTPMigrationVersion"
 	smtpMigrationVersion      = "sub2api-to-newapi-smtp-v1"
 	legalMigrationOptionKey   = "Sub2APILegalMigrationVersion"
-	legalMigrationVersion     = "sub2api-to-newapi-legal-v1"
+	legalMigrationVersionV1   = "sub2api-to-newapi-legal-v1"
+	legalMigrationVersion     = "sub2api-to-newapi-legal-v2"
 	fatherKeyPrivacyPolicyURL = "https://www.fatherkey.com/privacy.html"
+	fatherKeyRefundPolicyURL  = "https://www.fatherkey.com/refund-policy.html"
 	bridgeChannelTagPrefix    = "sub2api-bridge:"
 	bridgeUserEmail           = "newapi-bridge@internal.invalid"
 	bridgeUserBalance         = int64(999_999_999_999)
@@ -132,6 +134,17 @@ type legacyLegalDocument struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	ContentMD string `json:"content_md"`
+}
+
+type renderedLegacyLegalDocument struct {
+	ID       string
+	Content  string
+	Rendered string
+}
+
+type legacyLegalOptionUpgrade struct {
+	Options           map[string]string
+	ReplaceableValues map[string][]string
 }
 
 type migrationData struct {
@@ -1022,15 +1035,33 @@ func loadLegacySettings(ctx context.Context, source *sql.DB) (map[string]string,
 }
 
 func buildLegacyLegalOptions(settings map[string]string) (map[string]string, error) {
+	upgrade, err := buildLegacyLegalOptionUpgrade(settings)
+	if err != nil {
+		return nil, err
+	}
+	return upgrade.Options, nil
+}
+
+func firstRenderedLegacyLegalDocument(documents []renderedLegacyLegalDocument, ids ...string) (renderedLegacyLegalDocument, bool) {
+	for _, id := range ids {
+		for _, document := range documents {
+			if document.ID == id {
+				return document, true
+			}
+		}
+	}
+	return renderedLegacyLegalDocument{}, false
+}
+
+func buildLegacyLegalOptionUpgrade(settings map[string]string) (legacyLegalOptionUpgrade, error) {
 	documents := make([]legacyLegalDocument, 0)
 	if rawDocuments := strings.TrimSpace(settings["login_agreement_documents"]); rawDocuments != "" {
 		if err := common.UnmarshalJsonStr(rawDocuments, &documents); err != nil {
-			return nil, fmt.Errorf("decode legacy login agreement documents: %w", err)
+			return legacyLegalOptionUpgrade{}, fmt.Errorf("decode legacy login agreement documents: %w", err)
 		}
 	}
 
-	agreementSections := make([]string, 0, len(documents))
-	privacyPolicy := ""
+	renderedDocuments := make([]renderedLegacyLegalDocument, 0, len(documents))
 	for _, document := range documents {
 		content := strings.TrimSpace(document.ContentMD)
 		if content == "" {
@@ -1038,32 +1069,128 @@ func buildLegacyLegalOptions(settings map[string]string) (map[string]string, err
 		}
 		title := strings.Join(strings.Fields(document.Title), " ")
 		if title != "" {
-			content = "## " + title + "\n\n" + content
-		}
-		documentID := strings.ToLower(strings.TrimSpace(document.ID))
-		if documentID == "privacy" || documentID == "privacy-policy" {
-			if privacyPolicy == "" {
-				privacyPolicy = content
-			}
+			renderedDocuments = append(renderedDocuments, renderedLegacyLegalDocument{
+				ID:       strings.ToLower(strings.TrimSpace(document.ID)),
+				Content:  content,
+				Rendered: "## " + title + "\n\n" + content,
+			})
 			continue
 		}
-		agreementSections = append(agreementSections, content)
+		renderedDocuments = append(renderedDocuments, renderedLegacyLegalDocument{
+			ID:       strings.ToLower(strings.TrimSpace(document.ID)),
+			Content:  content,
+			Rendered: content,
+		})
 	}
 
-	if privacyPolicy == "" {
-		privacyPolicy = fmt.Sprintf(
+	options := map[string]string{
+		"legal.privacy_policy": fatherKeyPrivacyPolicyURL,
+		"legal.refund_policy":  fatherKeyRefundPolicyURL,
+	}
+	termsSections := make([]string, 0, 2)
+	termsDocument, hasTerms := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"terms",
+		"terms-of-service",
+		"user-agreement",
+	)
+	if hasTerms {
+		termsSections = append(termsSections, termsDocument.Content)
+	}
+	serviceSpecificTerms, hasServiceSpecificTerms := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"service-specific-terms",
+	)
+	if hasServiceSpecificTerms {
+		termsSections = append(termsSections, serviceSpecificTerms.Rendered)
+	}
+	if len(termsSections) > 0 {
+		options["legal.user_agreement"] = strings.Join(termsSections, "\n\n---\n\n")
+	}
+	if privacyPolicy, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"privacy",
+		"privacy-policy",
+	); ok {
+		options["legal.privacy_policy"] = privacyPolicy.Content
+	}
+	if acceptableUse, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"acceptable-use",
+		"acceptable-use-policy",
+		"usage-policy",
+	); ok {
+		options["legal.acceptable_use"] = acceptableUse.Content
+	}
+	if refundPolicy, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"refund",
+		"refund-policy",
+	); ok {
+		options["legal.refund_policy"] = refundPolicy.Content
+	}
+	if restrictedRegions, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"restricted-regions",
+		"restricted-region",
+		"supported-regions",
+	); ok {
+		options["legal.restricted_regions"] = restrictedRegions.Content
+	}
+
+	legacyV1AgreementSections := make([]string, 0, len(renderedDocuments))
+	legacyV1PrivacyPolicy := ""
+	legacyDeployedPrivacySections := make([]string, 0, len(renderedDocuments))
+	for _, document := range renderedDocuments {
+		if document.ID == "privacy" || document.ID == "privacy-policy" {
+			if legacyV1PrivacyPolicy == "" {
+				legacyV1PrivacyPolicy = document.Rendered
+			}
+		} else {
+			legacyV1AgreementSections = append(legacyV1AgreementSections, document.Rendered)
+		}
+
+		if document.ID == "terms" || document.ID == "terms-of-service" || document.ID == "user-agreement" {
+			continue
+		}
+		if len(legacyDeployedPrivacySections) == 0 {
+			legacyDeployedPrivacySections = append(legacyDeployedPrivacySections, document.Content)
+		} else {
+			legacyDeployedPrivacySections = append(legacyDeployedPrivacySections, document.Rendered)
+		}
+	}
+	if legacyV1PrivacyPolicy == "" {
+		legacyV1PrivacyPolicy = fmt.Sprintf(
 			"请阅读 [Father Key 隐私政策](%s)。\n\nPlease review the [Father Key Privacy Policy](%s).",
 			fatherKeyPrivacyPolicyURL,
 			fatherKeyPrivacyPolicyURL,
 		)
 	}
-	options := map[string]string{
-		"legal.privacy_policy": privacyPolicy,
+	replaceableValues := map[string][]string{
+		"legal.privacy_policy": {legacyV1PrivacyPolicy},
 	}
-	if len(agreementSections) > 0 {
-		options["legal.user_agreement"] = strings.Join(agreementSections, "\n\n---\n\n")
+	if len(legacyV1AgreementSections) > 0 {
+		replaceableValues["legal.user_agreement"] = append(
+			replaceableValues["legal.user_agreement"],
+			strings.Join(legacyV1AgreementSections, "\n\n---\n\n"),
+		)
 	}
-	return options, nil
+	if hasTerms {
+		replaceableValues["legal.user_agreement"] = append(
+			replaceableValues["legal.user_agreement"],
+			termsDocument.Rendered,
+		)
+	}
+	if len(legacyDeployedPrivacySections) > 0 {
+		replaceableValues["legal.privacy_policy"] = append(
+			replaceableValues["legal.privacy_policy"],
+			strings.Join(legacyDeployedPrivacySections, "\n\n---\n\n"),
+		)
+	}
+	return legacyLegalOptionUpgrade{
+		Options:           options,
+		ReplaceableValues: replaceableValues,
+	}, nil
 }
 
 func repairMissingLegalSettings(ctx context.Context, source, target *sql.DB) (bool, error) {
@@ -1079,12 +1206,19 @@ func repairMissingLegalSettings(ctx context.Context, source, target *sql.DB) (bo
 	var marker string
 	err = tx.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, legalMigrationOptionKey).Scan(&marker)
 	if err == nil {
-		if marker != legalMigrationVersion {
-			return false, fmt.Errorf("target has legal settings migration marker %q, expected %q", marker, legalMigrationVersion)
+		switch marker {
+		case legalMigrationVersion:
+			return false, nil
+		case legalMigrationVersionV1:
+		default:
+			return false, fmt.Errorf(
+				"target has unknown legal settings migration marker %q, expected %q or %q",
+				marker,
+				legalMigrationVersionV1,
+				legalMigrationVersion,
+			)
 		}
-		return false, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("read legal settings migration marker: %w", err)
 	}
 
@@ -1092,10 +1226,11 @@ func repairMissingLegalSettings(ctx context.Context, source, target *sql.DB) (bo
 	if err != nil {
 		return false, err
 	}
-	options, err := buildLegacyLegalOptions(settings)
+	upgrade, err := buildLegacyLegalOptionUpgrade(settings)
 	if err != nil {
 		return false, err
 	}
+	options := upgrade.Options
 	optionKeys := make([]string, 0, len(options))
 	for key := range options {
 		optionKeys = append(optionKeys, key)
@@ -1103,11 +1238,25 @@ func repairMissingLegalSettings(ctx context.Context, source, target *sql.DB) (bo
 	sort.Strings(optionKeys)
 	repaired := false
 	for _, key := range optionKeys {
-		result, err := tx.ExecContext(ctx, `
+		query := `
 			INSERT INTO options (key, value) VALUES ($1, $2)
 			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
 			WHERE btrim(COALESCE(options.value, '')) = ''
-		`, key, options[key])
+		`
+		arguments := []any{key, options[key]}
+		seenCandidates := make(map[string]struct{}, len(upgrade.ReplaceableValues[key]))
+		for _, candidate := range upgrade.ReplaceableValues[key] {
+			if candidate == "" || candidate == options[key] {
+				continue
+			}
+			if _, exists := seenCandidates[candidate]; exists {
+				continue
+			}
+			seenCandidates[candidate] = struct{}{}
+			arguments = append(arguments, candidate)
+			query += fmt.Sprintf(" OR options.value = $%d", len(arguments))
+		}
+		result, err := tx.ExecContext(ctx, query, arguments...)
 		if err != nil {
 			return false, fmt.Errorf("copy legacy legal option %q: %w", key, err)
 		}

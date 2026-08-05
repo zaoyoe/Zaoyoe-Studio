@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Globe2, LoaderCircle, ShieldAlert } from 'lucide-react'
+import { ExternalLink, Globe2, LoaderCircle, ShieldAlert } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -111,11 +111,11 @@ const REGIONAL_RESTRICTION_COPY = {
 } as const
 
 const REGIONAL_RESTRICTION_LINKS = [
-  { key: 'terms', href: '/user-agreement' },
-  { key: 'privacy', href: '/privacy-policy' },
-  { key: 'acceptableUse', href: '/user-agreement' },
-  { key: 'refund', href: 'https://www.fatherkey.com/refund-policy' },
-  { key: 'restrictedRegions', href: '/user-agreement' },
+  { key: 'terms', href: '/legal/terms' },
+  { key: 'privacy', href: '/legal/privacy' },
+  { key: 'acceptableUse', href: '/legal/acceptable-use' },
+  { key: 'refund', href: '/legal/refund' },
+  { key: 'restrictedRegions', href: '/legal/restricted-regions' },
 ] as const
 
 function isPasswordProofActive(proof: ApiKeyPasswordProof | null): boolean {
@@ -200,16 +200,23 @@ function RegionalRestrictionDialog(props: {
                 <li key={bullet}>{bullet}</li>
               ))}
             </ul>
-            <div className='flex flex-wrap gap-x-4 gap-y-2 font-medium'>
+            <div
+              className='grid grid-cols-2 gap-2 pt-1 sm:grid-cols-3'
+              aria-label={copy.bullets[2]}
+            >
               {REGIONAL_RESTRICTION_LINKS.map((link) => (
                 <a
                   key={link.key}
                   href={link.href}
                   target='_blank'
                   rel='noopener noreferrer'
-                  className='text-primary hover:text-primary/80 underline-offset-4 hover:underline'
+                  className='border-border/70 bg-muted/30 text-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-primary flex min-h-10 items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors'
                 >
-                  {copy.links[link.key]}
+                  <span>{copy.links[link.key]}</span>
+                  <ExternalLink
+                    className='text-muted-foreground size-3.5 shrink-0'
+                    aria-hidden='true'
+                  />
                 </a>
               ))}
             </div>

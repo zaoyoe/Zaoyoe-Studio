@@ -123,6 +123,9 @@ func GetStatus(c *gin.Context) {
 		"setup":                       constant.Setup,
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
+		"acceptable_use_enabled":      legalSetting.AcceptableUse != "",
+		"refund_policy_enabled":       legalSetting.RefundPolicy != "",
+		"restricted_regions_enabled":  legalSetting.RestrictedRegions != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
 
 		"regional_restriction_enabled":                           regionalRestrictionSetting.Enabled,
@@ -222,6 +225,30 @@ func GetPrivacyPolicy(c *gin.Context) {
 		"data":    system_setting.GetLegalSettings().PrivacyPolicy,
 	})
 	return
+}
+
+func GetAcceptableUse(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    system_setting.GetLegalSettings().AcceptableUse,
+	})
+}
+
+func GetRefundPolicy(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    system_setting.GetLegalSettings().RefundPolicy,
+	})
+}
+
+func GetRestrictedRegions(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    system_setting.GetLegalSettings().RestrictedRegions,
+	})
 }
 
 func GetMidjourney(c *gin.Context) {

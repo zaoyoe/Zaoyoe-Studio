@@ -55,6 +55,9 @@ const _systemInfoSchema = z.object({
   legal: z.object({
     user_agreement: z.string().optional(),
     privacy_policy: z.string().optional(),
+    acceptable_use: z.string().optional(),
+    refund_policy: z.string().optional(),
+    restricted_regions: z.string().optional(),
   }),
 })
 
@@ -83,6 +86,11 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     legal: {
       user_agreement: normalizeValue(defaultValues.legal?.user_agreement),
       privacy_policy: normalizeValue(defaultValues.legal?.privacy_policy),
+      acceptable_use: normalizeValue(defaultValues.legal?.acceptable_use),
+      refund_policy: normalizeValue(defaultValues.legal?.refund_policy),
+      restricted_regions: normalizeValue(
+        defaultValues.legal?.restricted_regions
+      ),
     },
   }
 
@@ -98,6 +106,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     legal: z.object({
       user_agreement: z.string().optional(),
       privacy_policy: z.string().optional(),
+      acceptable_use: z.string().optional(),
+      refund_policy: z.string().optional(),
+      restricted_regions: z.string().optional(),
     }),
   })
 
@@ -272,7 +283,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                 name='legal.user_agreement'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('User Agreement')}</FormLabel>
+                    <FormLabel>{t('Terms of Service')}</FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder={t(
@@ -310,6 +321,81 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     <FormDescription>
                       {t(
                         'Leave empty to disable the privacy policy requirement. Supports Markdown, HTML, or a full URL to redirect users.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='legal.acceptable_use'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Acceptable Use Policy')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder={t(
+                          'Provide Markdown, HTML, or an external URL for the acceptable use policy'
+                        )}
+                        rows={6}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Supports Markdown, HTML, or a full URL to redirect users.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='legal.refund_policy'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Refund Policy')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder={t(
+                          'Provide Markdown, HTML, or an external URL for the refund policy'
+                        )}
+                        rows={6}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Supports Markdown, HTML, or a full URL to redirect users.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='legal.restricted_regions'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Restricted Regions')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder={t(
+                          'Provide Markdown, HTML, or an external URL for the restricted regions notice'
+                        )}
+                        rows={6}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Supports Markdown, HTML, or a full URL to redirect users.'
                       )}
                     </FormDescription>
                     <FormMessage />

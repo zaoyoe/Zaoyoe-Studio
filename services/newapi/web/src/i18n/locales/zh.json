@@ -5287,6 +5287,18 @@
     "Use two-letter country codes separated by commas or spaces. The default is CN.": "使用逗号或空格分隔两位国家/地区代码，默认值为 CN。",
     "Use two-letter country codes separated by commas or spaces": "使用逗号或空格分隔两位国家/地区代码",
     "Used only when confirmation frequency is interval.": "仅在确认频率设为间隔模式时使用。",
-    "You must not evade regional, provider, payment, or legal restrictions.": "不得规避地区、服务提供方、支付或法律限制。"
+    "You must not evade regional, provider, payment, or legal restrictions.": "不得规避地区、服务提供方、支付或法律限制。",
+    "Acceptable Use Policy": "可接受使用政策",
+    "Legal document not found": "未找到法律文件",
+    "Legal documents": "法律文件",
+    "Provide Markdown, HTML, or an external URL for the acceptable use policy": "提供 Markdown、HTML 或外部 URL 作为可接受使用政策",
+    "Provide Markdown, HTML, or an external URL for the refund policy": "提供 Markdown、HTML 或外部 URL 作为退款政策",
+    "Provide Markdown, HTML, or an external URL for the restricted regions notice": "提供 Markdown、HTML 或外部 URL 作为受限制地区说明",
+    "Refund Policy": "退款政策",
+    "Restricted Regions": "受限制地区",
+    "Supports Markdown, HTML, or a full URL to redirect users.": "支持 Markdown、HTML 或用于重定向用户的完整 URL。",
+    "Terms of Service": "服务条款",
+    "The requested legal document does not exist.": "请求的法律文件不存在。",
+    "This legal document has not been configured yet.": "此法律文件尚未配置。"
   }
 }
