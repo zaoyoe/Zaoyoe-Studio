@@ -337,31 +337,65 @@ func TestRepairMissingSMTPSettingsLeavesUnconfiguredSourceUntouched(t *testing.T
 	require.NoError(t, targetMock.ExpectationsWereMet())
 }
 
-func TestBuildLegacyLegalOptionsCombinesDocumentsAndMigratesPrivacy(t *testing.T) {
+func TestBuildLegacyLegalOptionsSeparatesDocumentsWithoutRepeatingPageTitles(t *testing.T) {
 	options, err := buildLegacyLegalOptions(map[string]string{
 		"login_agreement_documents": `[
 			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service-specific body"},
 			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
-			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"}
+			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"},
+			{"id":"refund","title":"退款政策","content_md":"Refund body"},
+			{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"}
 		]`,
 	})
 	require.NoError(t, err)
 	assert.Equal(t,
-		"## 服务条款\n\nTerms body\n\n---\n\n## 使用政策\n\nUsage body",
+		"Terms body\n\n---\n\n## 服务特定条款\n\nService-specific body",
 		options["legal.user_agreement"],
 	)
-	assert.Equal(t, "## 隐私政策\n\nPrivacy body", options["legal.privacy_policy"])
+	assert.Equal(t, "Privacy body", options["legal.privacy_policy"])
+	assert.Equal(t, "Usage body", options["legal.acceptable_use"])
+	assert.Equal(t, "Refund body", options["legal.refund_policy"])
+	assert.Equal(t, "Regions body", options["legal.restricted_regions"])
 }
 
-func TestBuildLegacyLegalOptionsUsesFatherKeyPrivacyFallback(t *testing.T) {
+func TestBuildLegacyLegalOptionsUsesFatherKeyPrivacyAndRefundFallbacks(t *testing.T) {
 	options, err := buildLegacyLegalOptions(map[string]string{
 		"login_agreement_documents": `[
 			{"id":"terms","title":"服务条款","content_md":"Terms body"}
 		]`,
 	})
 	require.NoError(t, err)
-	assert.Contains(t, options["legal.privacy_policy"], "[Father Key 隐私政策](https://www.fatherkey.com/privacy.html)")
-	assert.Contains(t, options["legal.privacy_policy"], "[Father Key Privacy Policy](https://www.fatherkey.com/privacy.html)")
+	assert.Equal(t, fatherKeyPrivacyPolicyURL, options["legal.privacy_policy"])
+	assert.Equal(t, fatherKeyRefundPolicyURL, options["legal.refund_policy"])
+	assert.NotContains(t, options, "legal.acceptable_use")
+	assert.NotContains(t, options, "legal.restricted_regions")
+}
+
+func TestBuildLegacyLegalOptionUpgradeRecognizesKnownV1MachineProducts(t *testing.T) {
+	upgrade, err := buildLegacyLegalOptionUpgrade(map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+			{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"},
+			{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service body"}
+		]`,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		"Terms body\n\n---\n\n## 服务特定条款\n\nService body",
+		upgrade.Options["legal.user_agreement"],
+	)
+	assert.Equal(t, "Usage body", upgrade.Options["legal.acceptable_use"])
+	assert.Equal(t, "Regions body", upgrade.Options["legal.restricted_regions"])
+	assert.ElementsMatch(t, []string{
+		"## 服务条款\n\nTerms body\n\n---\n\n## 使用政策\n\nUsage body\n\n---\n\n## 支持的国家和地区\n\nRegions body\n\n---\n\n## 服务特定条款\n\nService body",
+		"## 服务条款\n\nTerms body",
+	}, upgrade.ReplaceableValues["legal.user_agreement"])
+	assert.Contains(t, upgrade.ReplaceableValues["legal.privacy_policy"],
+		"Usage body\n\n---\n\n## 支持的国家和地区\n\nRegions body\n\n---\n\n## 服务特定条款\n\nService body",
+	)
 }
 
 func TestBuildLegacyLegalOptionsRejectsInvalidDocuments(t *testing.T) {
@@ -376,7 +410,11 @@ func TestRepairMissingLegalSettingsCopiesMissingSettingsAndThenNoOps(t *testing.
 	target, targetMock := newMigrationSQLMock(t)
 	documents := `[
 		{"id":"terms","title":"服务条款","content_md":"Terms body"},
-		{"id":"privacy","title":"隐私政策","content_md":"Privacy body"}
+		{"id":"privacy","title":"隐私政策","content_md":"Privacy body"},
+		{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+		{"id":"refund","title":"退款政策","content_md":"Refund body"},
+		{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"},
+		{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service body"}
 	]`
 
 	targetMock.ExpectBegin()
@@ -388,10 +426,24 @@ func TestRepairMissingLegalSettingsCopiesMissingSettingsAndThenNoOps(t *testing.
 	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
 		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
 	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
-		WithArgs("legal.privacy_policy", "## 隐私政策\n\nPrivacy body").
+		WithArgs("legal.acceptable_use", "Usage body").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
-		WithArgs("legal.user_agreement", "## 服务条款\n\nTerms body").
+		WithArgs("legal.privacy_policy", "Privacy body", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.refund_policy", "Refund body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.restricted_regions", "Regions body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs(
+			"legal.user_agreement",
+			"Terms body\n\n---\n\n## 服务特定条款\n\nService body",
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	targetMock.ExpectExec(`INSERT INTO options`).
 		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
@@ -431,10 +483,13 @@ func TestRepairMissingLegalSettingsPreservesExistingNewAPIValues(t *testing.T) {
 	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
 		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
 	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
-		WithArgs("legal.privacy_policy", sqlmock.AnyArg()).
+		WithArgs("legal.privacy_policy", fatherKeyPrivacyPolicyURL, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
-		WithArgs("legal.user_agreement", "## 服务条款\n\nLegacy terms").
+		WithArgs("legal.refund_policy", fatherKeyRefundPolicyURL).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.user_agreement", "Legacy terms", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	targetMock.ExpectExec(`INSERT INTO options`).
 		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
@@ -445,6 +500,74 @@ func TestRepairMissingLegalSettingsPreservesExistingNewAPIValues(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, repaired)
 	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingLegalSettingsUpgradesV1MachineProducts(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	documents := `[
+		{"id":"terms","title":"服务条款","content_md":"Terms body"},
+		{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+		{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"},
+		{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service body"}
+	]`
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(legalMigrationVersionV1))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.acceptable_use", "Usage body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.privacy_policy", fatherKeyPrivacyPolicyURL, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.refund_policy", fatherKeyRefundPolicyURL).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.restricted_regions", "Regions body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs(
+			"legal.user_agreement",
+			"Terms body\n\n---\n\n## 服务特定条款\n\nService body",
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingLegalSettingsRejectsUnknownMarker(t *testing.T) {
+	source, _ := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("sub2api-to-newapi-legal-v99"))
+	targetMock.ExpectRollback()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "unknown legal settings migration marker")
 	require.NoError(t, targetMock.ExpectationsWereMet())
 }
 
@@ -725,12 +848,17 @@ func TestBuildTargetOptionsIncludesLegacyLegalSettings(t *testing.T) {
 	options, err := buildTargetOptions(nil, nil, map[string]string{
 		"login_agreement_documents": `[
 			{"id":"terms","title":"服务条款","content_md":"Terms body"},
-			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"}
+			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"},
+			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+			{"id":"supported-regions","title":"支持地区","content_md":"Regions body"}
 		]`,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "## 服务条款\n\nTerms body", options["legal.user_agreement"])
-	assert.Equal(t, "## 隐私政策\n\nPrivacy body", options["legal.privacy_policy"])
+	assert.Equal(t, "Terms body", options["legal.user_agreement"])
+	assert.Equal(t, "Privacy body", options["legal.privacy_policy"])
+	assert.Equal(t, "Usage body", options["legal.acceptable_use"])
+	assert.Equal(t, fatherKeyRefundPolicyURL, options["legal.refund_policy"])
+	assert.Equal(t, "Regions body", options["legal.restricted_regions"])
 }
 
 func TestFetchGroupModelsUsesBridgeKeyAndReturnsStableUniqueModels(t *testing.T) {

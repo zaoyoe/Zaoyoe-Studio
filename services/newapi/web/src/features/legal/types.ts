@@ -21,3 +21,10 @@ export type LegalDocumentResponse = {
   message?: string
   data?: string
 }
+
+export type LegalDocumentId =
+  | 'terms'
+  | 'privacy'
+  | 'acceptable-use'
+  | 'refund'
+  | 'restricted-regions'

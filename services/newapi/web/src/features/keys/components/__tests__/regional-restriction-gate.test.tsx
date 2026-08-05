@@ -287,11 +287,11 @@ describe('API key regional restriction gate', () => {
     assert.equal(bodyText.includes('API 密钥使用确认'), false)
 
     const expectedLinks = new Map([
-      ['Terms', '/user-agreement'],
-      ['Privacy', '/privacy-policy'],
-      ['Acceptable Use', '/user-agreement'],
-      ['Refund', 'https://www.fatherkey.com/refund-policy'],
-      ['Restricted Regions', '/user-agreement'],
+      ['Terms', '/legal/terms'],
+      ['Privacy', '/legal/privacy'],
+      ['Acceptable Use', '/legal/acceptable-use'],
+      ['Refund', '/legal/refund'],
+      ['Restricted Regions', '/legal/restricted-regions'],
     ])
     for (const [label, href] of expectedLinks) {
       const link = [...document.querySelectorAll<HTMLAnchorElement>('a')].find(
