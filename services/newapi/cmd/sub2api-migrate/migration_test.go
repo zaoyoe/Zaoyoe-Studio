@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -77,6 +78,191 @@ func TestCountMigratableLegacyGroupsRequiresAnActiveStandardSourceGroup(t *testi
 	_, err = countMigratableLegacyGroups(context.Background(), source)
 	require.ErrorContains(t, err, "no active standard groups")
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestLoadActiveLegacyGroupOptionsRejectsInvalidRate(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		rate float64
+		want string
+	}{
+		{name: "negative", rate: -1, want: "negative rate multiplier"},
+		{name: "nan", rate: math.NaN(), want: "invalid rate multiplier"},
+		{name: "infinite", rate: math.Inf(1), want: "invalid rate multiplier"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			source, mock := newMigrationSQLMock(t)
+			mock.ExpectQuery(regexp.QuoteMeta(activeLegacyGroupOptionsQuery)).
+				WillReturnRows(sqlmock.NewRows([]string{"name", "rate_multiplier"}).AddRow("group-video", testCase.rate))
+
+			groups, err := loadActiveLegacyGroupOptions(context.Background(), source)
+			require.Error(t, err)
+			assert.Nil(t, groups)
+			assert.Contains(t, err.Error(), testCase.want)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func expectGroupOptionsSource(t *testing.T, mock sqlmock.Sqlmock, groups ...activeLegacyGroupOption) {
+	t.Helper()
+	rows := sqlmock.NewRows([]string{"name", "rate_multiplier"})
+	for _, group := range groups {
+		rows.AddRow(group.Name, group.RateMultiplier)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(activeLegacyGroupOptionsQuery)).WillReturnRows(rows)
+}
+
+func expectGroupOptionsTargetRead(t *testing.T, mock sqlmock.Sqlmock, values map[string]string) {
+	t.Helper()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	rows := sqlmock.NewRows([]string{"key", "value"})
+	for _, key := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+		if value, ok := values[key]; ok {
+			rows.AddRow(key, value)
+		}
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(`
+		SELECT key, value
+		FROM options
+		WHERE key IN ('GroupRatio', 'UserUsableGroups', 'AutoGroups')
+	`)).WillReturnRows(rows)
+}
+
+func TestRepairMissingGroupOptionsAppendsOnlyMissingGroupsAtomically(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	expectGroupOptionsSource(t, sourceMock,
+		activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5},
+		activeLegacyGroupOption{Name: "group-claude", RateMultiplier: 2},
+	)
+	expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+		"GroupRatio":       `{"group-claude":1.75,"existing":9}`,
+		"UserUsableGroups": `{"group-claude":"Custom label","existing":"Existing label"}`,
+		"AutoGroups":       `["existing","group-claude"]`,
+	})
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs("GroupRatio", `{"existing":9,"group-claude":1.75,"group-video":1.5}`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs("UserUsableGroups", `{"existing":"Existing label","group-claude":"Custom label","group-video":"group-video"}`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs("AutoGroups", `["existing","group-claude","group-video"]`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingGroupOptionsIsIdempotentWhenAllGroupsExist(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	expectGroupOptionsSource(t, sourceMock,
+		activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5},
+		activeLegacyGroupOption{Name: "group-claude", RateMultiplier: 2},
+	)
+	expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+		"GroupRatio":       `{"group-video":1.5,"group-claude":2}`,
+		"UserUsableGroups": `{"group-video":"Video","group-claude":"Claude"}`,
+		"AutoGroups":       `["group-video","group-claude"]`,
+	})
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingGroupOptionsRollsBackOnMalformedJSON(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	expectGroupOptionsSource(t, sourceMock, activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5})
+	expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+		"GroupRatio":       `{`,
+		"UserUsableGroups": `{}`,
+		"AutoGroups":       `[]`,
+	})
+	targetMock.ExpectRollback()
+
+	repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+	require.Error(t, err)
+	assert.False(t, repaired)
+	assert.Contains(t, err.Error(), "decode NewAPI GroupRatio")
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingGroupOptionsRejectsMalformedJSONForEveryOption(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		key  string
+		raw  string
+	}{
+		{name: "GroupRatio", key: "GroupRatio", raw: `{`},
+		{name: "UserUsableGroups", key: "UserUsableGroups", raw: `[]`},
+		{name: "AutoGroups", key: "AutoGroups", raw: `{}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			source, sourceMock := newMigrationSQLMock(t)
+			target, targetMock := newMigrationSQLMock(t)
+			expectGroupOptionsSource(t, sourceMock, activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5})
+			values := map[string]string{
+				"GroupRatio":       `{}`,
+				"UserUsableGroups": `{}`,
+				"AutoGroups":       `[]`,
+			}
+			values[testCase.key] = testCase.raw
+			expectGroupOptionsTargetRead(t, targetMock, values)
+			targetMock.ExpectRollback()
+
+			repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+			require.Error(t, err)
+			assert.False(t, repaired)
+			assert.Contains(t, err.Error(), "decode NewAPI "+testCase.key)
+			require.NoError(t, sourceMock.ExpectationsWereMet())
+			require.NoError(t, targetMock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestRepairMissingGroupOptionsRollsBackWhenAnyWriteFails(t *testing.T) {
+	for _, failedKey := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+		t.Run(failedKey, func(t *testing.T) {
+			source, sourceMock := newMigrationSQLMock(t)
+			target, targetMock := newMigrationSQLMock(t)
+			expectGroupOptionsSource(t, sourceMock, activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5})
+			expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+				"GroupRatio":       `{"existing":9}`,
+				"UserUsableGroups": `{"existing":"Existing label"}`,
+				"AutoGroups":       `["existing"]`,
+			})
+			for _, key := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+				expectation := targetMock.ExpectExec(`INSERT INTO options`).WithArgs(key, sqlmock.AnyArg())
+				if key == failedKey {
+					expectation.WillReturnError(fmt.Errorf("forced %s write failure", key))
+					break
+				}
+				expectation.WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+			targetMock.ExpectRollback()
+
+			repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+			require.Error(t, err)
+			assert.False(t, repaired)
+			assert.Contains(t, err.Error(), "write repaired NewAPI "+failedKey)
+			require.NoError(t, sourceMock.ExpectationsWereMet())
+			require.NoError(t, targetMock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestRepairMissingBridgeChannelsRestoresMissingRowsAndThenNoOps(t *testing.T) {
