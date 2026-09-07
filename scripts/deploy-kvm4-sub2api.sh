@@ -872,13 +872,19 @@ if [[ "$previous_was_newapi" == "1" ]]; then
 fi
 
 echo "Migrating users, balances, API keys, groups, pricing, and regional policy"
+  migration_env_args=(
+  -e "SOURCE_SQL_DSN=$source_dsn"
+  -e "TARGET_SQL_DSN=$target_dsn"
+  -e SOURCE_BASE_URL=http://legacy-sub2api:8080
+  -e BRIDGE_BASE_URL=http://legacy-sub2api:8080
+  -e MIGRATION_VERSION=sub2api-to-newapi-v1
+  )
+if [[ "$previous_was_newapi" == "1" ]]; then
+  migration_env_args+=(-e PRESERVE_PARTIAL_BRIDGE_STATE=true)
+fi
 if ! docker compose --env-file .env -f docker-compose.local.yml run --rm --no-deps \
   --entrypoint /sub2api-migrate \
-  -e SOURCE_SQL_DSN="$source_dsn" \
-  -e TARGET_SQL_DSN="$target_dsn" \
-  -e SOURCE_BASE_URL=http://legacy-sub2api:8080 \
-  -e BRIDGE_BASE_URL=http://legacy-sub2api:8080 \
-  -e MIGRATION_VERSION=sub2api-to-newapi-v1 \
+  "${migration_env_args[@]}" \
   sub2api; then
   rollback
   die "Sub2API to NewAPI data migration failed"
