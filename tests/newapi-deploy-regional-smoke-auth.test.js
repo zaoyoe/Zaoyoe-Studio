@@ -30,9 +30,19 @@ test('NewAPI deployment regional smoke keeps user auth and staged credential cle
   assert.match(deploySource, /smoke_user_cache_cleanup_pending=1/);
   assert.match(deploySource, /migration_env_args=\(/);
   assert.match(deploySource, /migration_env_args\+=\(-e PRESERVE_PARTIAL_BRIDGE_STATE=true\)/);
-  assert.match(deploySource, /c\.type = 59 OR c\.tag LIKE 'sub2api-native:%'/);
+  assert.match(deploySource, /SELECT c\.id, c\.type,[\s\S]*c\.type = 59[\s\S]*a\.model NOT LIKE 'video-%'/);
+  assert.match(deploySource, /smoke_candidate_rows=\(\)/);
+  assert.match(deploySource, /c\.tag LIKE 'sub2api-native:%'[\s\S]*c\.type = 14 AND a\.model LIKE 'claude-%'/);
   assert.match(deploySource, /c\.type = 14 AND a\.model LIKE 'claude-%'/);
   assert.match(deploySource, /a\.model NOT LIKE 'video-%'/);
+  assert.match(deploySource, /role, status, email,[\s\S]*VALUES \('[\s\S]*', 10, 1,/);
+  assert.match(deploySource, /smoke_key="sk-\$smoke_token_secret-\$candidate_channel_id"/);
+  assert.match(deploySource, /smoke_chat_status="\$\(curl -sS --max-time 120/);
+  assert.match(deploySource, /\(429\|500\|502\|503\|504\)/);
+  assert.match(deploySource, /returned HTTP \$smoke_chat_status; trying the next candidate/);
+  assert.match(deploySource, /failed with non-retryable HTTP \$smoke_chat_status/);
+  assert.match(deploySource, /all provider chat smoke candidates failed/);
+  assert.match(deploySource, /channel_id = \$smoke_channel_id/);
 
   const preIngressCleanup = deploySource.slice(
     deploySource.indexOf('if ! deleted_smoke_token_id='),

@@ -492,6 +492,9 @@ restore_watchdog() {
 
 cleanup_remote_tmp() {
   restore_watchdog
+  if [[ -n "${smoke_chat_response_file:-}" ]]; then
+    rm -f "$smoke_chat_response_file"
+  fi
   rm -rf "$REMOTE_TMP"
 }
 
@@ -957,37 +960,39 @@ if ! source_priced_models="$(docker exec -e PGPASSWORD="$postgres_password" sub2
   rollback
   die "failed to read legacy token-priced models for end-to-end verification"
 fi
-smoke_group_b64=""
-smoke_model_b64=""
+smoke_candidate_rows=()
 while IFS= read -r candidate_model; do
   [[ -n "$candidate_model" ]] || continue
   candidate_model_b64="$(printf '%s' "$candidate_model" | base64 | tr -d '\n')"
-  if ! smoke_route_row="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+  if ! smoke_route_rows="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
     psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-    "SELECT replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND c.type = 59 AND a.model = convert_from(decode('$candidate_model_b64', 'base64'), 'UTF8') ORDER BY a.channel_id LIMIT 1")"; then
+    "SELECT c.id, c.type, replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND c.type = 59 AND a.model NOT LIKE 'video-%' AND a.model = convert_from(decode('$candidate_model_b64', 'base64'), 'UTF8') ORDER BY a.channel_id, a.model")"; then
     rollback
     die "failed to select a migrated chat route for end-to-end verification"
   fi
-  if [[ -n "$smoke_route_row" ]]; then
-    IFS=$'\t' read -r smoke_group_b64 smoke_model_b64 <<<"$smoke_route_row"
-    break
-  fi
+  while IFS=$'\t' read -r candidate_channel_id candidate_channel_type candidate_group_b64 candidate_model_b64; do
+    [[ "$candidate_channel_id" =~ ^[0-9]+$ && -n "$candidate_group_b64" && -n "$candidate_model_b64" ]] || continue
+    smoke_candidate_rows+=("$candidate_channel_id"$'\t'"$candidate_channel_type"$'\t'"$candidate_group_b64"$'\t'"$candidate_model_b64")
+  done <<<"$smoke_route_rows"
 done <<<"$source_priced_models"
-if [[ -z "$smoke_group_b64" || -z "$smoke_model_b64" ]]; then
-  if ! smoke_route_row="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-    psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-    "SELECT replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND (c.type = 59 OR c.tag LIKE 'sub2api-native:%' OR (c.type = 14 AND a.model LIKE 'claude-%')) AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 14 AND a.model = 'claude-haiku-4-5-20251001' THEN 0 WHEN c.type = 14 AND a.model LIKE 'claude-%' THEN 1 WHEN c.type = 59 THEN 2 WHEN c.tag LIKE 'sub2api-native:%' THEN 3 ELSE 4 END, c.id, a.model LIMIT 1")"; then
-    rollback
-    die "failed to select a fallback migrated chat route for end-to-end verification"
-  fi
-  if [[ -n "$smoke_route_row" ]]; then
-    IFS=$'\t' read -r smoke_group_b64 smoke_model_b64 <<<"$smoke_route_row"
-  fi
+
+if ! smoke_route_rows="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
+  "SELECT c.id, c.type, replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND (c.tag LIKE 'sub2api-native:%' OR (c.type = 14 AND a.model LIKE 'claude-%')) AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 14 AND a.model = 'claude-haiku-4-5-20251001' THEN 0 WHEN c.type = 14 AND a.model LIKE 'claude-%' THEN 1 WHEN c.tag LIKE 'sub2api-native:%' THEN 2 ELSE 3 END, c.id, a.model")"; then
+  rollback
+  die "failed to select native Claude fallback routes for end-to-end verification"
 fi
-[[ -n "$smoke_group_b64" && -n "$smoke_model_b64" ]] || {
+while IFS=$'\t' read -r candidate_channel_id candidate_channel_type candidate_group_b64 candidate_model_b64; do
+  [[ "$candidate_channel_id" =~ ^[0-9]+$ && -n "$candidate_group_b64" && -n "$candidate_model_b64" ]] || continue
+  smoke_candidate_rows+=("$candidate_channel_id"$'\t'"$candidate_channel_type"$'\t'"$candidate_group_b64"$'\t'"$candidate_model_b64")
+done <<<"$smoke_route_rows"
+
+(( ${#smoke_candidate_rows[@]} > 0 )) || {
   rollback
   die "no active migrated chat model has a NewAPI ability"
 }
+
+IFS=$'\t' read -r smoke_channel_id smoke_channel_type smoke_group_b64 smoke_model_b64 <<<"${smoke_candidate_rows[0]}"
 if ! smoke_model="$(printf '%s' "$smoke_model_b64" | base64 -d)"; then
   rollback
   die "failed to decode the selected smoke-test model"
@@ -1001,7 +1006,7 @@ smoke_token_secret="$(openssl rand -hex 32)"
 smoke_dashboard_token="$(openssl rand -hex 16)"
 if ! smoke_ids="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
   psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-  "WITH smoke_user AS (INSERT INTO users (username, password, display_name, role, status, email, github_id, discord_id, oidc_id, wechat_id, telegram_id, linux_do_id, quota, relay_concurrency, used_quota, request_count, \"group\", aff_code, aff_count, aff_quota, aff_history, inviter_id, setting, created_at, last_login_at, auth_version, access_token) VALUES ('$smoke_username', '!smoke-disabled!', '$smoke_username', 1, 1, '$smoke_email', '', '', '', '', '', '', 5000000, 1, 0, 0, 'default', '$smoke_aff_code', 0, 0, 0, 0, '{}', EXTRACT(EPOCH FROM now())::bigint, 0, 1, '$smoke_dashboard_token') RETURNING id), smoke_token AS (INSERT INTO tokens (user_id, key, status, name, created_time, accessed_time, expired_time, remain_quota, unlimited_quota, model_limits_enabled, model_limits, allow_ips, used_quota, \"group\", cross_group_retry, auto_groups) SELECT id, '$smoke_token_secret', 1, 'Deployment relay smoke test', EXTRACT(EPOCH FROM now())::bigint, 0, EXTRACT(EPOCH FROM now() + interval '10 minutes')::bigint, 5000000, false, false, '', '', 0, convert_from(decode('$smoke_group_b64', 'base64'), 'UTF8'), false, '' FROM smoke_user RETURNING id, user_id) SELECT user_id, id FROM smoke_token")"; then
+  "WITH smoke_user AS (INSERT INTO users (username, password, display_name, role, status, email, github_id, discord_id, oidc_id, wechat_id, telegram_id, linux_do_id, quota, relay_concurrency, used_quota, request_count, \"group\", aff_code, aff_count, aff_quota, aff_history, inviter_id, setting, created_at, last_login_at, auth_version, access_token) VALUES ('$smoke_username', '!smoke-disabled!', '$smoke_username', 10, 1, '$smoke_email', '', '', '', '', '', '', 5000000, 1, 0, 0, convert_from(decode('$smoke_group_b64', 'base64'), 'UTF8'), '$smoke_aff_code', 0, 0, 0, 0, '{}', EXTRACT(EPOCH FROM now())::bigint, 0, 1, '$smoke_dashboard_token') RETURNING id), smoke_token AS (INSERT INTO tokens (user_id, key, status, name, created_time, accessed_time, expired_time, remain_quota, unlimited_quota, model_limits_enabled, model_limits, allow_ips, used_quota, \"group\", cross_group_retry, auto_groups) SELECT id, '$smoke_token_secret', 1, 'Deployment relay smoke test', EXTRACT(EPOCH FROM now())::bigint, 0, EXTRACT(EPOCH FROM now() + interval '10 minutes')::bigint, 5000000, false, false, '', '', 0, convert_from(decode('$smoke_group_b64', 'base64'), 'UTF8'), false, '' FROM smoke_user RETURNING id, user_id) SELECT user_id, id FROM smoke_token")"; then
   rollback
   die "failed to create isolated NewAPI smoke-test credentials"
 fi
@@ -1012,36 +1017,93 @@ IFS=$'\t' read -r smoke_user_id smoke_token_id <<<"$smoke_ids"
 }
 smoke_user_cleanup_pending=1
 smoke_user_cache_cleanup_pending=1
-smoke_key="sk-$smoke_token_secret"
+smoke_chat_response_file="$(mktemp)"
+smoke_chat_succeeded=0
+smoke_last_error=""
+for smoke_candidate in "${smoke_candidate_rows[@]}"; do
+  IFS=$'\t' read -r candidate_channel_id candidate_channel_type candidate_group_b64 candidate_model_b64 <<<"$smoke_candidate"
+  if ! candidate_model="$(printf '%s' "$candidate_model_b64" | base64 -d)"; then
+    rollback
+    die "failed to decode a smoke-test model candidate"
+  fi
 
-if ! models_payload="$(curl -fsS --max-time 30 -H "Authorization: Bearer $smoke_key" http://127.0.0.1:8080/v1/models)"; then
-  rollback
-  die "isolated smoke-test key could not authenticate against NewAPI"
-fi
-if ! jq -e --arg model "$smoke_model" '.data | type == "array" and any(.id == $model)' >/dev/null <<<"$models_payload"; then
-  rollback
-  die "selected smoke-test model is not visible through the isolated NewAPI key"
-fi
+  if [[ "$candidate_group_b64" != "$smoke_group_b64" ]]; then
+    if ! updated_smoke_ids="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+      psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -qAtF $'\t' -c \
+      "WITH updated_user AS (UPDATE users SET \"group\" = convert_from(decode('$candidate_group_b64', 'base64'), 'UTF8') WHERE id = $smoke_user_id AND username = '$smoke_username' RETURNING id), updated_token AS (UPDATE tokens SET \"group\" = convert_from(decode('$candidate_group_b64', 'base64'), 'UTF8') WHERE id = $smoke_token_id AND user_id = $smoke_user_id AND EXISTS (SELECT 1 FROM updated_user) RETURNING id) SELECT (SELECT id FROM updated_user), (SELECT id FROM updated_token)")"; then
+      rollback
+      die "failed to switch the isolated smoke-test token group"
+    fi
+    IFS=$'\t' read -r updated_smoke_user_id updated_smoke_token_id <<<"$updated_smoke_ids"
+    if [[ "$updated_smoke_user_id" != "$smoke_user_id" || "$updated_smoke_token_id" != "$smoke_token_id" ]]; then
+      rollback
+      die "isolated smoke-test user or token group update changed no record"
+    fi
+    if ! flush_newapi_redis; then
+      rollback
+      die "failed to clear NewAPI caches after switching the smoke-test token group"
+    fi
+    smoke_group_b64="$candidate_group_b64"
+  fi
 
-smoke_request="$(jq -cn --arg model "$smoke_model" '{model: $model, messages: [{role: "user", content: "Reply with OK."}], max_tokens: 1, stream: false}')"
-if ! smoke_response="$(curl -fsS --max-time 120 \
-  -H "Authorization: Bearer $smoke_key" \
-  -H 'Content-Type: application/json' \
-  --data "$smoke_request" \
-  http://127.0.0.1:8080/v1/chat/completions)"; then
+  smoke_key="sk-$smoke_token_secret-$candidate_channel_id"
+  if ! models_payload="$(curl -fsS --max-time 30 -H "Authorization: Bearer $smoke_key" http://127.0.0.1:8080/v1/models)"; then
+    rollback
+    die "isolated smoke-test key could not authenticate against NewAPI channel $candidate_channel_id"
+  fi
+  if ! jq -e --arg model "$candidate_model" '.data | type == "array" and any(.id == $model)' >/dev/null <<<"$models_payload"; then
+    rollback
+    die "smoke-test model $candidate_model is not visible through NewAPI channel $candidate_channel_id"
+  fi
+
+  smoke_request="$(jq -cn --arg model "$candidate_model" '{model: $model, messages: [{role: "user", content: "Reply with OK."}], max_tokens: 1, stream: false}')"
+  smoke_curl_exit=0
+  smoke_chat_status="$(curl -sS --max-time 120 \
+    -o "$smoke_chat_response_file" \
+    -w '%{http_code}' \
+    -H "Authorization: Bearer $smoke_key" \
+    -H 'Content-Type: application/json' \
+    --data "$smoke_request" \
+    http://127.0.0.1:8080/v1/chat/completions)" || smoke_curl_exit=$?
+  smoke_response="$(<"$smoke_chat_response_file")"
+
+  if (( smoke_curl_exit != 0 )); then
+    smoke_last_error="channel $candidate_channel_id connection failed (curl exit $smoke_curl_exit)"
+    echo "Provider chat smoke candidate $candidate_channel_id failed with a connection error; trying the next candidate" >&2
+    continue
+  fi
+  if [[ "$smoke_chat_status" =~ ^(429|500|502|503|504)$ ]]; then
+    smoke_last_error="channel $candidate_channel_id returned HTTP $smoke_chat_status"
+    echo "Provider chat smoke candidate $candidate_channel_id returned HTTP $smoke_chat_status; trying the next candidate" >&2
+    continue
+  fi
+  if [[ ! "$smoke_chat_status" =~ ^2[0-9][0-9]$ ]]; then
+    rollback
+    die "provider chat smoke candidate $candidate_channel_id failed with non-retryable HTTP $smoke_chat_status: $smoke_response"
+  fi
+  if ! jq -e '.choices | type == "array" and length > 0' >/dev/null <<<"$smoke_response"; then
+    rollback
+    die "provider chat smoke candidate $candidate_channel_id returned no completion choice"
+  fi
+
+  smoke_channel_id="$candidate_channel_id"
+  smoke_channel_type="$candidate_channel_type"
+  smoke_model="$candidate_model"
+  smoke_model_b64="$candidate_model_b64"
+  smoke_chat_succeeded=1
+  break
+done
+rm -f "$smoke_chat_response_file"
+[[ "$smoke_chat_succeeded" == "1" ]] || {
   rollback
-  die "NewAPI provider chat smoke test failed"
-fi
-if ! jq -e '.choices | type == "array" and length > 0' >/dev/null <<<"$smoke_response"; then
-  rollback
-  die "provider chat smoke test returned no completion choice"
-fi
+  die "all provider chat smoke candidates failed; last error: ${smoke_last_error:-unknown}"
+}
 
 smoke_billed=0
 for _ in $(seq 1 30); do
   if docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
     psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -Atc \
-    "SELECT count(*) FROM logs WHERE token_id = $smoke_token_id AND type = 2 AND model_name = convert_from(decode('$smoke_model_b64', 'base64'), 'UTF8') AND quota > 0" | grep -Eq '^[1-9][0-9]*$'; then
+    "SELECT count(*) FROM logs WHERE token_id = $smoke_token_id AND channel_id = $smoke_channel_id AND type = 2 AND model_name = convert_from(decode('$smoke_model_b64', 'base64'), 'UTF8') AND quota > 0" | grep -Eq '^[1-9][0-9]*$'; then
     smoke_billed=1
     break
   fi
