@@ -976,7 +976,7 @@ done <<<"$source_priced_models"
 if [[ -z "$smoke_group_b64" || -z "$smoke_model_b64" ]]; then
   if ! smoke_route_row="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
     psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-    "SELECT replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND (c.type = 59 OR c.tag LIKE 'sub2api-native:%') AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 59 THEN 0 ELSE 1 END, c.id, a.model LIMIT 1")"; then
+    "SELECT replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND (c.type = 59 OR c.tag LIKE 'sub2api-native:%' OR (c.type = 14 AND a.model LIKE 'claude-%')) AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 14 AND a.model = 'claude-haiku-4-5-20251001' THEN 0 WHEN c.type = 14 AND a.model LIKE 'claude-%' THEN 1 WHEN c.type = 59 THEN 2 WHEN c.tag LIKE 'sub2api-native:%' THEN 3 ELSE 4 END, c.id, a.model LIMIT 1")"; then
     rollback
     die "failed to select a fallback migrated chat route for end-to-end verification"
   fi
@@ -1030,7 +1030,7 @@ if ! smoke_response="$(curl -fsS --max-time 120 \
   --data "$smoke_request" \
   http://127.0.0.1:8080/v1/chat/completions)"; then
   rollback
-  die "NewAPI to legacy bridge to provider chat smoke test failed"
+  die "NewAPI provider chat smoke test failed"
 fi
 if ! jq -e '.choices | type == "array" and length > 0' >/dev/null <<<"$smoke_response"; then
   rollback
