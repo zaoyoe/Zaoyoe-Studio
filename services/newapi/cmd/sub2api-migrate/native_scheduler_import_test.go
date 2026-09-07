@@ -19,6 +19,10 @@ func TestNativeSchedulerImportFlagIsExplicitAndPlanOnlyIsMutuallyExclusive(t *te
 	}
 	for _, value := range []string{"", "0", "false", "no", "off", "random"} {
 		assert.False(t, isNativeSchedulerImport(value), value)
+		assert.False(t, isPreservePartialBridgeState(value), value)
+	}
+	for _, value := range []string{"1", "true", "TRUE", "yes", "on"} {
+		assert.True(t, isPreservePartialBridgeState(value), value)
 	}
 
 	t.Setenv("PLAN_ONLY", "true")

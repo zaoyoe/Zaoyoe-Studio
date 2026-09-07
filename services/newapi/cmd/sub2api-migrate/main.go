@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	defaultBridgeBaseURL  = "http://legacy-sub2api:8080"
-	defaultMigrationMark  = "sub2api-to-newapi-v1"
-	groupOptionsRepairEnv = "GROUP_OPTIONS_REPAIR_ONLY"
+	defaultBridgeBaseURL     = "http://legacy-sub2api:8080"
+	defaultMigrationMark     = "sub2api-to-newapi-v1"
+	groupOptionsRepairEnv    = "GROUP_OPTIONS_REPAIR_ONLY"
+	preservePartialBridgeEnv = "PRESERVE_PARTIAL_BRIDGE_STATE"
 )
 
 func main() {
@@ -82,6 +83,10 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	preservePartialBridge := isPreservePartialBridgeState(os.Getenv(preservePartialBridgeEnv))
+	if preservePartialBridge && !completed {
+		return fmt.Errorf("%s requires an existing completed migration", preservePartialBridgeEnv)
+	}
 	if completed {
 		smtpRepaired, err := repairMissingSMTPSettings(ctx, source, target)
 		if err != nil {
@@ -95,13 +100,18 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		expectedBridgeGroups, err := countMigratableLegacyGroups(ctx, source)
-		if err != nil {
-			return err
-		}
-		needsRepair, err := bridgeChannelsNeedRepair(ctx, target, expectedBridgeGroups)
-		if err != nil {
-			return err
+		needsRepair := false
+		if !preservePartialBridge {
+			expectedBridgeGroups, countErr := countMigratableLegacyGroups(ctx, source)
+			if countErr != nil {
+				return countErr
+			}
+			needsRepair, err = bridgeChannelsNeedRepair(ctx, target, expectedBridgeGroups)
+			if err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("Sub2API migration %s preserving existing partial bridge state by explicit %s=true.\n", migrationMark, preservePartialBridgeEnv)
 		}
 		if !needsRepair && !smtpRepaired && !legalRepaired && !groupOptionsRepaired {
 			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
@@ -217,6 +227,10 @@ func isNativeSchedulerPlanOnly(value string) bool {
 }
 
 func isGroupOptionsRepairOnly(value string) bool {
+	return isNativeSchedulerPlanOnly(value)
+}
+
+func isPreservePartialBridgeState(value string) bool {
 	return isNativeSchedulerPlanOnly(value)
 }
 

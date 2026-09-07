@@ -83,3 +83,9 @@ GROUP_OPTIONS_REPAIR_ONLY=true \
   SOURCE_SQL_DSN="$SOURCE_SQL_DSN" TARGET_SQL_DSN="$TARGET_SQL_DSN" \
   /sub2api-migrate
 ```
+
+The production cutover script sets `PRESERVE_PARTIAL_BRIDGE_STATE=true` only
+when the target already has a completed NewAPI migration. This keeps an
+explicitly verified partial bridge topology intact while native scheduler
+channels are being validated; a first migration still requires complete bridge
+coverage and refuses partial state.
