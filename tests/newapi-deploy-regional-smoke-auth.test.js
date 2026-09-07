@@ -31,6 +31,7 @@ test('NewAPI deployment regional smoke keeps user auth and staged credential cle
   assert.match(deploySource, /migration_env_args=\(/);
   assert.match(deploySource, /migration_env_args\+=\(-e PRESERVE_PARTIAL_BRIDGE_STATE=true\)/);
   assert.match(deploySource, /c\.type = 59 OR c\.tag LIKE 'sub2api-native:%'/);
+  assert.match(deploySource, /c\.type = 14 AND a\.model LIKE 'claude-%'/);
   assert.match(deploySource, /a\.model NOT LIKE 'video-%'/);
 
   const preIngressCleanup = deploySource.slice(
