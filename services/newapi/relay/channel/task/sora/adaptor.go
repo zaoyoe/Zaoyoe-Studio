@@ -66,6 +66,10 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	// Some OpenAI-compatible gateways expose video creation at the legacy
+	// /v1/videos/generations route while keeping status at /v1/videos/:id.
+	// The fallback is selected per request after a route-level 404.
+	legacyGenerationsEndpoint bool
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
@@ -132,6 +136,9 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	if info.Action == constant.TaskActionRemix {
 		return fmt.Sprintf("%s/v1/videos/%s/remix", a.baseURL, info.OriginTaskID), nil
+	}
+	if a.legacyGenerationsEndpoint {
+		return fmt.Sprintf("%s/v1/videos/generations", a.baseURL), nil
 	}
 	return fmt.Sprintf("%s/v1/videos", a.baseURL), nil
 }
@@ -219,9 +226,52 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	return common.ReaderOnly(storage), nil
 }
 
-// DoRequest delegates to common helper.
+// DoRequest keeps compatibility with gateways that only expose the legacy
+// /v1/videos/generations create route. Status polling remains on
+// /v1/videos/:id, matching the legacy Sub2API behavior.
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
-	return channel.DoTaskApiRequest(a, c, info, requestBody)
+	body, err := io.ReadAll(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("read task request body: %w", err)
+	}
+	response, err := channel.DoTaskApiRequest(a, c, info, bytes.NewReader(body))
+	if err != nil || response == nil || response.StatusCode != http.StatusNotFound {
+		return response, err
+	}
+
+	responseBody, readErr := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("read video endpoint fallback response: %w", readErr)
+	}
+	if !shouldFallbackVideoCreateEndpoint(responseBody) {
+		response.Body = io.NopCloser(bytes.NewReader(responseBody))
+		response.ContentLength = int64(len(responseBody))
+		return response, nil
+	}
+
+	a.legacyGenerationsEndpoint = true
+	return channel.DoTaskApiRequest(a, c, info, bytes.NewReader(body))
+}
+
+func shouldFallbackVideoCreateEndpoint(body []byte) bool {
+	if len(body) == 0 {
+		return true
+	}
+	message := strings.ToLower(string(body))
+	for _, marker := range []string{
+		"invalid url",
+		"404 page not found",
+		"page not found",
+		"route not found",
+		"no route",
+		"cannot post",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // DoResponse handles upstream response, returns taskID etc.

@@ -70,6 +70,15 @@ const (
 		  AND NOT is_exclusive
 		  AND subscription_type = 'standard'
 	`
+	activeLegacyGroupOptionsQuery = `
+		SELECT name, rate_multiplier::float8
+		FROM groups
+		WHERE deleted_at IS NULL
+		  AND status = 'active'
+		  AND NOT is_exclusive
+		  AND subscription_type = 'standard'
+		ORDER BY id
+	`
 )
 
 type legacyUser struct {
@@ -110,6 +119,11 @@ type bridgeGroup struct {
 	BridgeBaseURL   string
 	SourceModelURL  string
 	SourceAPIKeyURL string
+}
+
+type activeLegacyGroupOption struct {
+	Name           string
+	RateMultiplier float64
 }
 
 type legacyPriceInterval struct {
@@ -750,6 +764,175 @@ func countMigratableLegacyGroups(ctx context.Context, source rowQuerier) (int, e
 		return 0, errors.New("legacy database has no active standard groups")
 	}
 	return count, nil
+}
+
+func loadActiveLegacyGroupOptions(ctx context.Context, source *sql.DB) ([]activeLegacyGroupOption, error) {
+	rows, err := source.QueryContext(ctx, activeLegacyGroupOptionsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("query legacy group access options: %w", err)
+	}
+	defer rows.Close()
+
+	groups := make([]activeLegacyGroupOption, 0)
+	for rows.Next() {
+		var group activeLegacyGroupOption
+		if err := rows.Scan(&group.Name, &group.RateMultiplier); err != nil {
+			return nil, fmt.Errorf("scan legacy group access option: %w", err)
+		}
+		group.Name = strings.TrimSpace(group.Name)
+		if group.Name == "" || len(group.Name) > 64 || strings.Contains(group.Name, ",") {
+			return nil, fmt.Errorf("legacy group has an unsupported name %q", group.Name)
+		}
+		if math.IsNaN(group.RateMultiplier) || math.IsInf(group.RateMultiplier, 0) {
+			return nil, fmt.Errorf("legacy group %q has an invalid rate multiplier", group.Name)
+		}
+		if group.RateMultiplier < 0 {
+			return nil, fmt.Errorf("legacy group %q has a negative rate multiplier", group.Name)
+		}
+		groups = append(groups, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate legacy group access options: %w", err)
+	}
+	if len(groups) == 0 {
+		return nil, errors.New("legacy database has no active standard groups")
+	}
+	return groups, nil
+}
+
+func repairMissingGroupOptions(ctx context.Context, source, target *sql.DB) (bool, error) {
+	groups, err := loadActiveLegacyGroupOptions(ctx, source)
+	if err != nil {
+		return false, err
+	}
+
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin group options migration repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock group options migration repair: %w", err)
+	}
+
+	optionValues := make(map[string]string, 3)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT key, value
+		FROM options
+		WHERE key IN ('GroupRatio', 'UserUsableGroups', 'AutoGroups')
+	`)
+	if err != nil {
+		return false, fmt.Errorf("read NewAPI group access options: %w", err)
+	}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			rows.Close()
+			return false, fmt.Errorf("scan NewAPI group access option: %w", err)
+		}
+		optionValues[key] = value
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, fmt.Errorf("iterate NewAPI group access options: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return false, fmt.Errorf("close NewAPI group access options: %w", err)
+	}
+
+	groupRatios := make(map[string]float64)
+	if raw, ok := optionValues["GroupRatio"]; ok && strings.TrimSpace(raw) != "" {
+		if err := common.Unmarshal([]byte(raw), &groupRatios); err != nil {
+			return false, fmt.Errorf("decode NewAPI GroupRatio: %w", err)
+		}
+		if groupRatios == nil {
+			groupRatios = make(map[string]float64)
+		}
+	} else if _, ok := optionValues["GroupRatio"]; !ok {
+		groupRatios["default"] = 1
+	}
+	usableGroups := make(map[string]string)
+	if raw, ok := optionValues["UserUsableGroups"]; ok && strings.TrimSpace(raw) != "" {
+		if err := common.Unmarshal([]byte(raw), &usableGroups); err != nil {
+			return false, fmt.Errorf("decode NewAPI UserUsableGroups: %w", err)
+		}
+		if usableGroups == nil {
+			usableGroups = make(map[string]string)
+		}
+	} else if _, ok := optionValues["UserUsableGroups"]; !ok {
+		usableGroups["auto"] = "Auto"
+		usableGroups["default"] = "Default"
+	}
+	autoGroups := make([]string, 0)
+	if raw, ok := optionValues["AutoGroups"]; ok && strings.TrimSpace(raw) != "" {
+		if err := common.Unmarshal([]byte(raw), &autoGroups); err != nil {
+			return false, fmt.Errorf("decode NewAPI AutoGroups: %w", err)
+		}
+		if autoGroups == nil {
+			autoGroups = make([]string, 0)
+		}
+	}
+
+	containsAutoGroup := func(name string) bool {
+		for _, existing := range autoGroups {
+			if existing == name {
+				return true
+			}
+		}
+		return false
+	}
+	changed := false
+	for _, group := range groups {
+		if _, ok := groupRatios[group.Name]; !ok {
+			groupRatios[group.Name] = group.RateMultiplier
+			changed = true
+		}
+		if _, ok := usableGroups[group.Name]; !ok {
+			usableGroups[group.Name] = group.Name
+			changed = true
+		}
+		if !containsAutoGroup(group.Name) {
+			autoGroups = append(autoGroups, group.Name)
+			changed = true
+		}
+	}
+	if !changed {
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit unchanged group options migration repair: %w", err)
+		}
+		return false, nil
+	}
+
+	encoded := make(map[string]string, 3)
+	if encoded["GroupRatio"], err = marshalMigrationValue(groupRatios); err != nil {
+		return false, fmt.Errorf("encode repaired GroupRatio: %w", err)
+	}
+	if encoded["UserUsableGroups"], err = marshalMigrationValue(usableGroups); err != nil {
+		return false, fmt.Errorf("encode repaired UserUsableGroups: %w", err)
+	}
+	if encoded["AutoGroups"], err = marshalMigrationValue(autoGroups); err != nil {
+		return false, fmt.Errorf("encode repaired AutoGroups: %w", err)
+	}
+	for _, key := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+		`, key, encoded[key]); err != nil {
+			return false, fmt.Errorf("write repaired NewAPI %s: %w", key, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit group options migration repair: %w", err)
+	}
+	return true, nil
+}
+
+func marshalMigrationValue(value any) (string, error) {
+	encoded, err := common.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func ensureBridgeUser(ctx context.Context, source *sql.DB) (int64, error) {
