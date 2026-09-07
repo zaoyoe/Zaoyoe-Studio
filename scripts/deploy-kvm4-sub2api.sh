@@ -973,9 +973,20 @@ while IFS= read -r candidate_model; do
     break
   fi
 done <<<"$source_priced_models"
+if [[ -z "$smoke_group_b64" || -z "$smoke_model_b64" ]]; then
+  if ! smoke_route_row="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+    psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
+    "SELECT replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND (c.type = 59 OR c.tag LIKE 'sub2api-native:%') AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 59 THEN 0 ELSE 1 END, c.id, a.model LIMIT 1")"; then
+    rollback
+    die "failed to select a fallback migrated chat route for end-to-end verification"
+  fi
+  if [[ -n "$smoke_route_row" ]]; then
+    IFS=$'\t' read -r smoke_group_b64 smoke_model_b64 <<<"$smoke_route_row"
+  fi
+fi
 [[ -n "$smoke_group_b64" && -n "$smoke_model_b64" ]] || {
   rollback
-  die "no token-priced legacy chat model has a migrated NewAPI ability"
+  die "no active migrated chat model has a NewAPI ability"
 }
 if ! smoke_model="$(printf '%s' "$smoke_model_b64" | base64 -d)"; then
   rollback
