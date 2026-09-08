@@ -27,21 +27,12 @@ import { RichContent } from '@/components/rich-content'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useStatus } from '@/hooks/use-status'
 import { isHttpUrl, isLikelyHtml } from '@/lib/content-format'
 
 import { getLegalDocument } from './api'
+import { getVisibleLegalDocuments, LEGAL_DOCUMENTS } from './documents'
 import type { LegalDocumentId, LegalDocumentResponse } from './types'
-
-const LEGAL_DOCUMENTS = [
-  { id: 'terms', titleKey: 'Terms of Service' },
-  { id: 'privacy', titleKey: 'Privacy Policy' },
-  { id: 'acceptable-use', titleKey: 'Acceptable Use Policy' },
-  { id: 'refund', titleKey: 'Refund Policy' },
-  { id: 'restricted-regions', titleKey: 'Restricted Regions' },
-] as const satisfies ReadonlyArray<{
-  id: LegalDocumentId
-  titleKey: string
-}>
 
 type LegalDocumentProps = {
   documentId: LegalDocumentId
@@ -53,13 +44,17 @@ type LegalDocumentProps = {
 
 function LegalDocumentNavigation(props: { activeDocumentId: LegalDocumentId }) {
   const { t } = useTranslation()
+  const { status } = useStatus()
+  const visibleDocuments = getVisibleLegalDocuments(status)
+
+  if (visibleDocuments.length === 0) return null
 
   return (
     <nav
       aria-label={t('Legal documents')}
       className='border-border/70 bg-muted/35 mb-5 flex gap-1 overflow-x-auto rounded-xl border p-1.5 shadow-sm sm:mb-7'
     >
-      {LEGAL_DOCUMENTS.map((document) => {
+      {visibleDocuments.map((document) => {
         const isActive = document.id === props.activeDocumentId
         return (
           <Link

@@ -26,6 +26,7 @@ for (const key of domGlobals) {
 const { act } = await import('react')
 const { createRoot } = await import('react-dom/client')
 const { LegalDocumentArticle } = await import('../legal-document')
+const { getVisibleLegalDocuments } = await import('../documents')
 
 const reactTestGlobals = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean
@@ -45,6 +46,42 @@ after(() => {
 })
 
 describe('legal document layout', () => {
+  test('filters navigation links using the API key legal visibility settings', () => {
+    assert.deepEqual(
+      getVisibleLegalDocuments(undefined).map((document) => document.id),
+      ['terms', 'privacy', 'acceptable-use', 'refund', 'restricted-regions']
+    )
+
+    assert.deepEqual(
+      getVisibleLegalDocuments({ api_key_refund_enabled: false }).map(
+        (document) => document.id
+      ),
+      ['terms', 'privacy', 'acceptable-use', 'restricted-regions']
+    )
+
+    assert.deepEqual(
+      getVisibleLegalDocuments({
+        api_key_terms_enabled: false,
+        api_key_privacy_enabled: true,
+        api_key_acceptable_use_enabled: false,
+        api_key_refund_enabled: false,
+        api_key_restricted_regions_enabled: true,
+      }).map((document) => document.id),
+      ['privacy', 'restricted-regions']
+    )
+
+    assert.deepEqual(
+      getVisibleLegalDocuments({
+        api_key_terms_enabled: false,
+        api_key_privacy_enabled: false,
+        api_key_acceptable_use_enabled: false,
+        api_key_refund_enabled: false,
+        api_key_restricted_regions_enabled: false,
+      }),
+      []
+    )
+  })
+
   test('preserves source line breaks inside a semantic article', async () => {
     const container = document.createElement('div')
     document.body.append(container)
