@@ -69,6 +69,17 @@ describe('legal document layout', () => {
       }).map((document) => document.id),
       ['privacy', 'restricted-regions']
     )
+
+    assert.deepEqual(
+      getVisibleLegalDocuments({
+        api_key_terms_enabled: false,
+        api_key_privacy_enabled: false,
+        api_key_acceptable_use_enabled: false,
+        api_key_refund_enabled: false,
+        api_key_restricted_regions_enabled: false,
+      }),
+      []
+    )
   })
 
   test('preserves source line breaks inside a semantic article', async () => {

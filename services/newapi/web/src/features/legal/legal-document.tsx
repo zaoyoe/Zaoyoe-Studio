@@ -47,6 +47,8 @@ function LegalDocumentNavigation(props: { activeDocumentId: LegalDocumentId }) {
   const { status } = useStatus()
   const visibleDocuments = getVisibleLegalDocuments(status)
 
+  if (visibleDocuments.length === 0) return null
+
   return (
     <nav
       aria-label={t('Legal documents')}
