@@ -119,6 +119,11 @@ export type SiteSettings = {
   'legal.acceptable_use': string
   'legal.refund_policy': string
   'legal.restricted_regions': string
+  'legal.api_key_terms_enabled': boolean
+  'legal.api_key_privacy_enabled': boolean
+  'legal.api_key_acceptable_use_enabled': boolean
+  'legal.api_key_refund_enabled': boolean
+  'legal.api_key_restricted_regions_enabled': boolean
   HeaderNavModules: string
   SidebarModulesAdmin: string
 }

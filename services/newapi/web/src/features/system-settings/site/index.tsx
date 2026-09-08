@@ -37,6 +37,11 @@ const defaultSiteSettings: SiteSettings = {
   'legal.acceptable_use': '',
   'legal.refund_policy': '',
   'legal.restricted_regions': '',
+  'legal.api_key_terms_enabled': true,
+  'legal.api_key_privacy_enabled': true,
+  'legal.api_key_acceptable_use_enabled': true,
+  'legal.api_key_refund_enabled': true,
+  'legal.api_key_restricted_regions_enabled': true,
   HeaderNavModules: '',
   SidebarModulesAdmin: '',
 }

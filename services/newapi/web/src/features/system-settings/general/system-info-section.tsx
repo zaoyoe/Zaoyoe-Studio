@@ -31,6 +31,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
@@ -39,6 +40,9 @@ import {
   SettingsForm,
   SettingsFormGrid,
   SettingsFormGridItem,
+  SettingsControlGroup,
+  SettingsSwitchContent,
+  SettingsSwitchItem,
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
@@ -58,6 +62,11 @@ const _systemInfoSchema = z.object({
     acceptable_use: z.string().optional(),
     refund_policy: z.string().optional(),
     restricted_regions: z.string().optional(),
+    api_key_terms_enabled: z.boolean(),
+    api_key_privacy_enabled: z.boolean(),
+    api_key_acceptable_use_enabled: z.boolean(),
+    api_key_refund_enabled: z.boolean(),
+    api_key_restricted_regions_enabled: z.boolean(),
   }),
 })
 
@@ -91,6 +100,15 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
       restricted_regions: normalizeValue(
         defaultValues.legal?.restricted_regions
       ),
+      api_key_terms_enabled: defaultValues.legal?.api_key_terms_enabled ?? true,
+      api_key_privacy_enabled:
+        defaultValues.legal?.api_key_privacy_enabled ?? true,
+      api_key_acceptable_use_enabled:
+        defaultValues.legal?.api_key_acceptable_use_enabled ?? true,
+      api_key_refund_enabled:
+        defaultValues.legal?.api_key_refund_enabled ?? true,
+      api_key_restricted_regions_enabled:
+        defaultValues.legal?.api_key_restricted_regions_enabled ?? true,
     },
   }
 
@@ -109,6 +127,11 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
       acceptable_use: z.string().optional(),
       refund_policy: z.string().optional(),
       restricted_regions: z.string().optional(),
+      api_key_terms_enabled: z.boolean(),
+      api_key_privacy_enabled: z.boolean(),
+      api_key_acceptable_use_enabled: z.boolean(),
+      api_key_refund_enabled: z.boolean(),
+      api_key_restricted_regions_enabled: z.boolean(),
     }),
   })
 
@@ -402,6 +425,131 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                   </FormItem>
                 )}
               />
+
+              <SettingsFormGridItem span='full'>
+                <SettingsControlGroup>
+                  <SettingsFormGridItem span='full'>
+                    <div className='space-y-1'>
+                      <h3 className='text-sm font-medium'>
+                        {t('API key confirmation legal links')}
+                      </h3>
+                      <p className='text-muted-foreground text-xs'>
+                        {t(
+                          'Choose which legal links appear in the API key use confirmation dialog.'
+                        )}
+                      </p>
+                    </div>
+                  </SettingsFormGridItem>
+                  <FormField
+                    control={form.control}
+                    name='legal.api_key_terms_enabled'
+                    render={({ field }) => (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{t('Terms link')}</FormLabel>
+                          <FormDescription>
+                            {t('Show the Terms link in the API key dialog.')}
+                          </FormDescription>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='legal.api_key_privacy_enabled'
+                    render={({ field }) => (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{t('Privacy Policy link')}</FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Show the Privacy Policy link in the API key dialog.'
+                            )}
+                          </FormDescription>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='legal.api_key_acceptable_use_enabled'
+                    render={({ field }) => (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{t('Acceptable Use link')}</FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Show the Acceptable Use link in the API key dialog.'
+                            )}
+                          </FormDescription>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='legal.api_key_refund_enabled'
+                    render={({ field }) => (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{t('Refund Policy link')}</FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Show the Refund Policy link in the API key dialog.'
+                            )}
+                          </FormDescription>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='legal.api_key_restricted_regions_enabled'
+                    render={({ field }) => (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{t('Restricted Regions link')}</FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Show the Restricted Regions link in the API key dialog.'
+                            )}
+                          </FormDescription>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )}
+                  />
+                </SettingsControlGroup>
+              </SettingsFormGridItem>
             </SettingsFormGrid>
           </SettingsForm>
         </Form>

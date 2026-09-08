@@ -30,15 +30,20 @@ const (
 )
 
 type RegionalRestrictionEvaluation struct {
-	Enabled                   bool   `json:"enabled"`
-	ConfirmationRequired      bool   `json:"confirmation_required"`
-	Blocked                   bool   `json:"blocked"`
-	CountryCode               string `json:"country_code"`
-	UnknownRegion             bool   `json:"unknown_region"`
-	Revision                  string `json:"revision"`
-	ConfirmationFrequency     string `json:"confirmation_frequency"`
-	ConfirmationIntervalHours int    `json:"confirmation_interval_hours"`
-	Message                   string `json:"message,omitempty"`
+	Enabled                        bool   `json:"enabled"`
+	ConfirmationRequired           bool   `json:"confirmation_required"`
+	Blocked                        bool   `json:"blocked"`
+	CountryCode                    string `json:"country_code"`
+	UnknownRegion                  bool   `json:"unknown_region"`
+	Revision                       string `json:"revision"`
+	ConfirmationFrequency          string `json:"confirmation_frequency"`
+	ConfirmationIntervalHours      int    `json:"confirmation_interval_hours"`
+	APIKeyTermsEnabled             bool   `json:"api_key_terms_enabled"`
+	APIKeyPrivacyEnabled           bool   `json:"api_key_privacy_enabled"`
+	APIKeyAcceptableUseEnabled     bool   `json:"api_key_acceptable_use_enabled"`
+	APIKeyRefundEnabled            bool   `json:"api_key_refund_enabled"`
+	APIKeyRestrictedRegionsEnabled bool   `json:"api_key_restricted_regions_enabled"`
+	Message                        string `json:"message,omitempty"`
 }
 
 type RegionalRestrictionError struct {
@@ -60,6 +65,12 @@ func evaluateRegionalRestriction(c *gin.Context, scope string) RegionalRestricti
 		ConfirmationFrequency:     settings.ConfirmationFrequency,
 		ConfirmationIntervalHours: settings.ConfirmationIntervalHours,
 	}
+	legalSettings := system_setting.GetLegalSettings()
+	result.APIKeyTermsEnabled = legalSettings.APIKeyTermsEnabled
+	result.APIKeyPrivacyEnabled = legalSettings.APIKeyPrivacyEnabled
+	result.APIKeyAcceptableUseEnabled = legalSettings.APIKeyAcceptableUseEnabled
+	result.APIKeyRefundEnabled = legalSettings.APIKeyRefundEnabled
+	result.APIKeyRestrictedRegionsEnabled = legalSettings.APIKeyRestrictedRegionsEnabled
 	if !settings.Enabled || !regionalRestrictionScopeEnabled(settings, scope) {
 		return result
 	}
