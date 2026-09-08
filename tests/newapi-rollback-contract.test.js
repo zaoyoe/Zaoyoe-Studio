@@ -11,10 +11,10 @@ const rollbackSource = fs.readFileSync(
 
 test('KVM4 rollback remains NewAPI-only after legacy bridge removal', () => {
   assert.match(rollbackSource, /Rollback the KVM4 NewAPI service slot/);
-  assert.match(rollbackSource, /current release is not NewAPI; legacy rollback is disabled/);
-  assert.match(rollbackSource, /active compose still contains the removed legacy-sub2api bridge/);
-  assert.match(rollbackSource, /target release is not a NewAPI release; legacy rollback is disabled/);
-  assert.match(rollbackSource, /target compose still contains the removed legacy-sub2api bridge/);
+  assert.match(rollbackSource, /current release is not a NewAPI release/);
+  assert.match(rollbackSource, /active compose file still declares the removed legacy-sub2api bridge/);
+  assert.match(rollbackSource, /NewAPI rollback target not found/);
+  assert.match(rollbackSource, /target release still declares the removed legacy-sub2api bridge/);
   assert.match(rollbackSource, /docker rm -f sub2api-legacy/);
   assert.match(rollbackSource, /docker compose --env-file \.env -f docker-compose\.local\.yml up -d postgres redis/);
 

@@ -71,7 +71,7 @@ fi
 grep -q 'zaoyoe/newapi:local' "$KVM4_SUB2API_ROOT/docker-compose.local.yml" ||
   die "active compose file is not NewAPI-only"
 if grep -q 'legacy-sub2api:' "$KVM4_SUB2API_ROOT/docker-compose.local.yml"; then
-  die "active compose file still declares the removed legacy bridge"
+  die "active compose file still declares the removed legacy-sub2api bridge"
 fi
 
 target_src=""
@@ -101,7 +101,7 @@ target_root="$(dirname "$target_src")"
 grep -q 'zaoyoe/newapi:local' "$target_root/docker-compose.local.yml" ||
   die "target release is not NewAPI-only"
 if grep -q 'legacy-sub2api:' "$target_root/docker-compose.local.yml"; then
-  die "target release still declares the removed legacy bridge"
+  die "target release still declares the removed legacy-sub2api bridge"
 fi
 
 cd "$KVM4_SUB2API_ROOT"

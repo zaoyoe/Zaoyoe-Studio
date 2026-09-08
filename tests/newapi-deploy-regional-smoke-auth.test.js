@@ -28,11 +28,13 @@ test('NewAPI deployment regional smoke keeps user auth and staged credential cle
   );
   assert.match(deploySource, /smoke_user_cleanup_pending=1/);
   assert.match(deploySource, /smoke_user_cache_cleanup_pending=1/);
-  assert.match(deploySource, /migration_env_args=\(/);
-  assert.match(deploySource, /migration_env_args\+=\(-e PRESERVE_PARTIAL_BRIDGE_STATE=true\)/);
-  assert.match(deploySource, /SELECT c\.id, c\.type,[\s\S]*c\.type = 59[\s\S]*a\.model NOT LIKE 'video-%'/);
+  assert.doesNotMatch(deploySource, /legacy_healthcheck|zaoyoe\/sub2api:(legacy|local)/);
+  assert.doesNotMatch(deploySource, /SOURCE_BASE_URL|BRIDGE_BASE_URL|\/sub2api-migrate/);
+  assert.match(deploySource, /previous_was_newapi.*newapi_database_exists.*already exists before the first NewAPI cutover/s);
+  assert.match(deploySource, /UPDATE abilities SET enabled = false[\s\S]*type = 59/);
+  assert.match(deploySource, /c\.type <> 59[\s\S]*COALESCE\(c\.tag, ''\) NOT LIKE 'sub2api-bridge:%'/);
   assert.match(deploySource, /smoke_candidate_rows=\(\)/);
-  assert.match(deploySource, /c\.tag LIKE 'sub2api-native:%'[\s\S]*c\.type = 14 AND a\.model LIKE 'claude-%'/);
+  assert.match(deploySource, /c\.tag LIKE 'sub2api-native:%'/);
   assert.match(deploySource, /c\.type = 14 AND a\.model LIKE 'claude-%'/);
   assert.match(deploySource, /a\.model NOT LIKE 'video-%'/);
   assert.match(deploySource, /role, status, email,[\s\S]*VALUES \('[\s\S]*', 10, 1,/);

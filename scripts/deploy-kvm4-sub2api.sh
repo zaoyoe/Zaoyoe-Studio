@@ -16,8 +16,9 @@ usage() {
   cat <<'EOF'
 Usage: scripts/deploy-kvm4-sub2api.sh [options]
 
-Deploy NewAPI into the Hostinger KVM4 Sub2API service slot from the latest
-clean main. The public domain and /opt/sub2api root stay unchanged.
+Deploy NewAPI into the Hostinger KVM4 service slot from the latest clean main.
+The /opt/sub2api root and container name remain stable deployment identifiers;
+the public application and ingress are NewAPI-only.
 
 Options:
   --dry-run       Build the local release archive without uploading.
@@ -205,16 +206,6 @@ healthcheck() {
   return 1
 }
 
-legacy_healthcheck() {
-  for _ in $(seq 1 45); do
-    if docker exec sub2api-legacy wget -q -T 5 -O /dev/null http://127.0.0.1:8080/health 2>/dev/null; then
-      return 0
-    fi
-    sleep 2
-  done
-  return 1
-}
-
 container_health() {
   docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$1" 2>/dev/null || true
 }
@@ -284,7 +275,6 @@ install_managed_caddy_config() {
   local candidate_path
   local template_token_count
   local canonical_site_count
-  local compatibility_site_count
   local caddy_user
   local caddy_group
 
@@ -398,8 +388,7 @@ install_managed_caddy_config() {
   fi
 
   canonical_site_count="$(awk '/new[.]fatherkey[.]com/ { count++ } END { print count + 0 }' "$candidate_path")"
-  compatibility_site_count="$(awk '/sub2api[.]fatherkey[.]com/ { count++ } END { print count + 0 }' "$candidate_path")"
-  if [[ "$canonical_site_count" != "1" ]] || [[ "$compatibility_site_count" != "1" ]] ||
+  if [[ "$canonical_site_count" != "1" ]] ||
     grep -q '__NEWAPI_REGIONAL_EDGE_SECRET__' "$candidate_path"; then
     rm -f "$stripped_path" "$rendered_path" "$candidate_path"
     return 1
@@ -511,9 +500,13 @@ fi
 
 cd "$KVM4_SUB2API_ROOT"
 [[ -f docker-compose.local.yml ]] || die "$KVM4_SUB2API_ROOT/docker-compose.local.yml missing"
-[[ -d data ]] || die "$KVM4_SUB2API_ROOT/data missing"
 [[ -d postgres_data ]] || die "$KVM4_SUB2API_ROOT/postgres_data missing"
 [[ -d redis_data ]] || die "$KVM4_SUB2API_ROOT/redis_data missing"
+
+# The legacy bridge is no longer part of the runtime. Keep the old data
+# directory intact for forensic/rollback purposes, but never start the old
+# container or leave it serving requests during a NewAPI deployment.
+docker rm -f sub2api-legacy >/dev/null 2>&1 || true
 
 mkdir -p releases backups newapi_data
 release_root="$KVM4_SUB2API_ROOT/releases/$RELEASE_ID"
@@ -569,8 +562,9 @@ rollback() {
   trap - ERR
   set +e
 
-  echo "Rolling back the Sub2API service slot" >&2
+  echo "Rolling back the NewAPI service slot" >&2
   docker rm -f sub2api >/dev/null 2>&1 || true
+  docker rm -f sub2api-legacy >/dev/null 2>&1 || true
 
   if [[ "$drop_newapi_on_rollback" == "1" && "$newapi_db_name_valid" == "1" ]]; then
     echo "Discarding the incomplete NewAPI cutover snapshot" >&2
@@ -602,34 +596,31 @@ rollback() {
 
   if [[ "$newapi_runtime_started" == "1" && "$newapi_redis_ready" == "1" ]]; then
     if ! flush_newapi_redis; then
-      if [[ "$previous_was_newapi" == "1" ]]; then
-        echo "CRITICAL: failed to clear the isolated NewAPI Redis database; refusing to restart the previous NewAPI release" >&2
-        return 1
-      fi
-      echo "WARNING: failed to clear the isolated NewAPI Redis database while returning to legacy Sub2API" >&2
+      echo "CRITICAL: failed to clear the isolated NewAPI Redis database; refusing to restart the previous NewAPI release" >&2
+      return 1
     fi
   fi
 
-  if [[ -f "$previous_compose" ]]; then
+  if [[ "$previous_was_newapi" == "1" && -f "$previous_compose" ]] &&
+    ! grep -q 'legacy-sub2api:' "$previous_compose"; then
     install -o root -g root -m 0644 "$previous_compose" "$KVM4_SUB2API_ROOT/docker-compose.local.yml"
   fi
-  if [[ -f "$previous_env" ]]; then
+  if [[ "$previous_was_newapi" == "1" && -f "$previous_env" ]]; then
     install -o root -g root -m 0600 "$previous_env" "$KVM4_SUB2API_ROOT/.env"
   fi
-  if [[ -n "$previous_src" && -d "$previous_src" ]]; then
+  if [[ "$previous_was_newapi" == "1" && -n "$previous_src" && -d "$previous_src" ]]; then
     ln -sfn "$previous_src" "$KVM4_SUB2API_ROOT/src"
   fi
 
-  if grep -q 'zaoyoe/newapi:local' "$KVM4_SUB2API_ROOT/docker-compose.local.yml" 2>/dev/null; then
+  if [[ "$previous_was_newapi" == "1" ]]; then
     if docker image inspect "$previous_image" >/dev/null 2>&1; then
       docker tag "$previous_image" zaoyoe/newapi:local
     fi
-    docker compose --env-file .env -f docker-compose.local.yml up -d postgres redis legacy-sub2api || true
-    docker compose --env-file .env -f docker-compose.local.yml up -d --no-deps --force-recreate sub2api || true
-  else
-    docker rm -f sub2api-legacy >/dev/null 2>&1 || true
     docker compose --env-file .env -f docker-compose.local.yml up -d postgres redis || true
     docker compose --env-file .env -f docker-compose.local.yml up -d --no-deps --force-recreate sub2api || true
+  else
+    echo "No previous NewAPI release is available; leaving the canonical ingress in maintenance mode" >&2
+    return 0
   fi
   if healthcheck; then
     if ! restore_caddy_config; then
@@ -700,36 +691,15 @@ if ! newapi_redis_db="$(redis_db_from_url "$newapi_redis_dsn")"; then
   rollback
   die "NEWAPI_REDIS_CONN_STRING must be a redis:// or rediss:// URL with an optional numeric database path"
 fi
-legacy_redis_db="$(read_env_value REDIS_DB)"
-legacy_redis_db="${legacy_redis_db:-0}"
-[[ "$legacy_redis_db" =~ ^[0-9]+$ ]] || {
-  rollback
-  die "REDIS_DB must be a non-negative integer"
-}
-legacy_redis_db="$((10#$legacy_redis_db))"
-[[ "$newapi_redis_db" != "$legacy_redis_db" ]] || {
-  rollback
-  die "NewAPI and legacy Sub2API must use different Redis databases"
-}
 newapi_redis_ready=1
 chmod 0600 .env
 
 postgres_user="$(read_env_value POSTGRES_USER)"
 postgres_user="${postgres_user:-sub2api}"
 postgres_password="$(read_env_value POSTGRES_PASSWORD)"
-source_db_name="$(read_env_value POSTGRES_DB)"
-source_db_name="${source_db_name:-sub2api}"
 [[ "$postgres_user" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
   rollback
-  die "POSTGRES_USER is not safe for the migration DSN"
-}
-[[ "$source_db_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
-  rollback
-  die "POSTGRES_DB is not safe for the migration DSN"
-}
-[[ "$newapi_db_name" != "$source_db_name" ]] || {
-  rollback
-  die "NEWAPI_DB_NAME must differ from POSTGRES_DB"
+  die "POSTGRES_USER is not safe for the NewAPI database"
 }
 case "$newapi_db_name" in
   postgres|template0|template1)
@@ -749,14 +719,6 @@ esac
 ensure_dependency_healthy sub2api-postgres postgres
 ensure_dependency_healthy sub2api-redis redis
 
-if ! docker image inspect zaoyoe/sub2api:legacy >/dev/null 2>&1; then
-  if ! docker image inspect zaoyoe/sub2api:local >/dev/null 2>&1; then
-    rollback
-    die "legacy Sub2API image is unavailable for the phase-one compatibility bridge"
-  fi
-  docker tag zaoyoe/sub2api:local zaoyoe/sub2api:legacy
-fi
-
 echo "Building NewAPI image from $release_src"
 if ! docker compose --env-file .env -f docker-compose.local.yml config >/dev/null; then
   rollback
@@ -774,16 +736,17 @@ if docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
   newapi_database_exists=1
 fi
 
-if [[ "$previous_was_newapi" == "0" && "$newapi_database_exists" == "1" ]]; then
-  rollback
-  die "database $newapi_db_name already exists before the first NewAPI cutover; refusing to delete or overwrite an unverified database"
-fi
-
 if [[ "$previous_was_newapi" == "1" && "$newapi_database_exists" == "0" ]]; then
   rollback
   die "the active NewAPI release has no preserved database"
 fi
 
+if [[ "$previous_was_newapi" == "0" && "$newapi_database_exists" == "1" ]]; then
+  rollback
+  die "database $newapi_db_name already exists before the first NewAPI cutover; refusing to delete or overwrite an unverified database"
+fi
+
+newapi_database_created=0
 if [[ "$newapi_database_exists" == "0" ]]; then
   echo "Creating isolated NewAPI database $newapi_db_name"
   if ! docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
@@ -791,15 +754,13 @@ if [[ "$newapi_database_exists" == "0" ]]; then
     rollback
     die "failed to create isolated NewAPI database"
   fi
+  newapi_database_created=1
 fi
-if [[ "$previous_was_newapi" == "0" ]]; then
+if [[ "$newapi_database_created" == "1" ]]; then
   drop_newapi_on_rollback=1
 fi
 
-source_dsn="postgresql://${postgres_user}:${postgres_password}@postgres:5432/${source_db_name}?sslmode=disable"
-target_dsn="postgresql://${postgres_user}:${postgres_password}@postgres:5432/${newapi_db_name}?sslmode=disable"
-
-echo "Blocking public Sub2API traffic during the final migration and smoke tests"
+echo "Blocking public NewAPI traffic during the schema migration and smoke tests"
 if ! install_managed_caddy_config "$newapi_regional_edge_secret" maintenance; then
   rollback
   die "failed to install the temporary Sub2API maintenance ingress"
@@ -819,7 +780,7 @@ if [[ "$maintenance_edge_status" != "503" ]]; then
   die "temporary Sub2API maintenance ingress did not return HTTP 503 through Cloudflare"
 fi
 
-echo "Stopping the previous public app before schema or data migration"
+echo "Stopping the previous public app before the NewAPI schema migration"
 docker stop --time 130 sub2api >/dev/null 2>&1 || true
 
 if ! flush_newapi_redis; then
@@ -843,17 +804,6 @@ if [[ "$previous_was_newapi" == "1" ]]; then
   restore_newapi_on_rollback=1
 fi
 
-echo "Starting private legacy scheduler bridge"
-if ! docker compose --env-file .env -f docker-compose.local.yml up -d --no-deps legacy-sub2api; then
-  rollback
-  die "failed to start private legacy bridge"
-fi
-if ! legacy_healthcheck; then
-  docker compose --env-file .env -f docker-compose.local.yml logs --tail=120 legacy-sub2api >&2 || true
-  rollback
-  die "private legacy bridge healthcheck failed"
-fi
-
 echo "Applying NewAPI schema migrations with the dedicated migration command"
 if ! docker compose --env-file .env -f docker-compose.local.yml run --rm --no-deps \
   --entrypoint /newapi-migrate sub2api; then
@@ -861,36 +811,12 @@ if ! docker compose --env-file .env -f docker-compose.local.yml run --rm --no-de
   die "NewAPI schema migration failed"
 fi
 
-if [[ "$previous_was_newapi" == "1" ]]; then
-  if ! existing_migration_marker="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-    psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -Atc \
-    "SELECT value FROM options WHERE key = 'Sub2APIMigrationVersion'")"; then
-    rollback
-    die "failed to verify the preserved NewAPI migration marker"
-  fi
-  if [[ "$existing_migration_marker" != "sub2api-to-newapi-v1" ]]; then
-    rollback
-    die "the active NewAPI database has no compatible migration marker"
-  fi
-fi
-
-echo "Migrating users, balances, API keys, groups, pricing, and regional policy"
-  migration_env_args=(
-  -e "SOURCE_SQL_DSN=$source_dsn"
-  -e "TARGET_SQL_DSN=$target_dsn"
-  -e SOURCE_BASE_URL=http://legacy-sub2api:8080
-  -e BRIDGE_BASE_URL=http://legacy-sub2api:8080
-  -e MIGRATION_VERSION=sub2api-to-newapi-v1
-  )
-if [[ "$previous_was_newapi" == "1" ]]; then
-  migration_env_args+=(-e PRESERVE_PARTIAL_BRIDGE_STATE=true)
-fi
-if ! docker compose --env-file .env -f docker-compose.local.yml run --rm --no-deps \
-  --entrypoint /sub2api-migrate \
-  "${migration_env_args[@]}" \
-  sub2api; then
+echo "Disabling legacy bridge channels before NewAPI accepts traffic"
+if ! docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
+  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -c \
+  "BEGIN; UPDATE abilities SET enabled = false WHERE channel_id IN (SELECT id FROM channels WHERE type = 59 OR tag LIKE 'sub2api-bridge:%'); UPDATE channels SET status = 2 WHERE type = 59 OR tag LIKE 'sub2api-bridge:%'; COMMIT;"; then
   rollback
-  die "Sub2API to NewAPI data migration failed"
+  die "failed to disable legacy bridge channels"
 fi
 
 echo "Starting NewAPI on the local Sub2API service port behind maintenance ingress"
@@ -909,9 +835,9 @@ if ! setup_payload="$(curl -fsS --max-time 10 http://127.0.0.1:8080/api/setup)";
   rollback
   die "NewAPI setup endpoint is unavailable"
 fi
-if ! jq -e '.success == true and .data.status == true' >/dev/null <<<"$setup_payload"; then
+if ! jq -e '.success == true and (.data.status | type == "boolean")' >/dev/null <<<"$setup_payload"; then
   rollback
-  die "NewAPI setup state was not initialized by the migration"
+  die "NewAPI setup state is unavailable"
 fi
 
 if ! regional_status_payload="$(curl -fsS --max-time 10 http://127.0.0.1:8080/api/status)"; then
@@ -928,57 +854,10 @@ if ! jq -e '
   die "NewAPI regional restriction settings were not loaded"
 fi
 
-if ! bridge_rows="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-  "SELECT key, base_url FROM channels WHERE type = 59 AND status = 1 ORDER BY id")"; then
-  rollback
-  die "failed to read migrated Sub2API bridge channels"
-fi
-bridge_count=0
-while IFS=$'\t' read -r bridge_key bridge_url; do
-  [[ -n "$bridge_key" && -n "$bridge_url" ]] || continue
-  bridge_count=$((bridge_count + 1))
-  if ! bridge_models_payload="$(docker exec sub2api wget -q -T 30 -O - \
-    --header="Authorization: Bearer $bridge_key" \
-    "${bridge_url%/}/v1/models")"; then
-    rollback
-    die "Sub2API bridge channel $bridge_count is unreachable from NewAPI"
-  fi
-  if ! jq -e '.data | type == "array" and length > 0' >/dev/null <<<"$bridge_models_payload"; then
-    rollback
-    die "Sub2API bridge channel $bridge_count returned no models"
-  fi
-done <<<"$bridge_rows"
-if (( bridge_count == 0 )); then
-  rollback
-  die "no active Sub2API bridge channels were migrated"
-fi
-
-if ! source_priced_models="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-  psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$source_db_name" -Atc \
-  "SELECT DISTINCT jsonb_array_elements_text(models) FROM channel_model_pricing WHERE billing_mode = 'token' ORDER BY 1")"; then
-  rollback
-  die "failed to read legacy token-priced models for end-to-end verification"
-fi
 smoke_candidate_rows=()
-while IFS= read -r candidate_model; do
-  [[ -n "$candidate_model" ]] || continue
-  candidate_model_b64="$(printf '%s' "$candidate_model" | base64 | tr -d '\n')"
-  if ! smoke_route_rows="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
-    psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-    "SELECT c.id, c.type, replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND c.type = 59 AND a.model NOT LIKE 'video-%' AND a.model = convert_from(decode('$candidate_model_b64', 'base64'), 'UTF8') ORDER BY a.channel_id, a.model")"; then
-    rollback
-    die "failed to select a migrated chat route for end-to-end verification"
-  fi
-  while IFS=$'\t' read -r candidate_channel_id candidate_channel_type candidate_group_b64 candidate_model_b64; do
-    [[ "$candidate_channel_id" =~ ^[0-9]+$ && -n "$candidate_group_b64" && -n "$candidate_model_b64" ]] || continue
-    smoke_candidate_rows+=("$candidate_channel_id"$'\t'"$candidate_channel_type"$'\t'"$candidate_group_b64"$'\t'"$candidate_model_b64")
-  done <<<"$smoke_route_rows"
-done <<<"$source_priced_models"
-
 if ! smoke_route_rows="$(docker exec -e PGPASSWORD="$postgres_password" sub2api-postgres \
   psql -X -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$newapi_db_name" -AtF $'\t' -c \
-  "SELECT c.id, c.type, replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND (c.tag LIKE 'sub2api-native:%' OR (c.type = 14 AND a.model LIKE 'claude-%')) AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 14 AND a.model = 'claude-haiku-4-5-20251001' THEN 0 WHEN c.type = 14 AND a.model LIKE 'claude-%' THEN 1 WHEN c.tag LIKE 'sub2api-native:%' THEN 2 ELSE 3 END, c.id, a.model")"; then
+  "SELECT c.id, c.type, replace(encode(convert_to(a.\"group\", 'UTF8'), 'base64'), E'\\n', ''), replace(encode(convert_to(a.model, 'UTF8'), 'base64'), E'\\n', '') FROM abilities a JOIN channels c ON c.id = a.channel_id WHERE a.enabled AND c.status = 1 AND c.type <> 59 AND COALESCE(c.tag, '') NOT LIKE 'sub2api-bridge:%' AND a.model NOT LIKE 'video-%' ORDER BY CASE WHEN c.type = 14 AND a.model = 'claude-haiku-4-5-20251001' THEN 0 WHEN c.type = 14 AND a.model LIKE 'claude-%' THEN 1 WHEN c.tag LIKE 'sub2api-native:%' THEN 2 ELSE 3 END, c.id, a.model")"; then
   rollback
   die "failed to select native Claude fallback routes for end-to-end verification"
 fi
@@ -1151,7 +1030,7 @@ if ! jq -e '.success == true and .data.unknown_region == false and .data.country
   die "NewAPI did not accept the authenticated local regional edge country"
 fi
 
-echo "Installing Cloudflare-only Caddy ingress for the canonical NewAPI domain and compatibility domains"
+echo "Installing Cloudflare-only Caddy ingress for the canonical NewAPI domain"
 if ! install_managed_caddy_config "$newapi_regional_edge_secret"; then
   rollback
   die "failed to install or reload the managed Caddy ingress"
