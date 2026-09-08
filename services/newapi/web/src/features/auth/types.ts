@@ -130,6 +130,11 @@ export interface SystemStatus {
     demo_site_enabled?: boolean
     user_agreement_enabled?: boolean
     privacy_policy_enabled?: boolean
+    api_key_terms_enabled?: boolean
+    api_key_privacy_enabled?: boolean
+    api_key_acceptable_use_enabled?: boolean
+    api_key_refund_enabled?: boolean
+    api_key_restricted_regions_enabled?: boolean
     oauth_register_enabled?: boolean
     register_enabled?: boolean
     password_login_enabled?: boolean
@@ -175,6 +180,11 @@ export interface SystemStatus {
   demo_site_enabled?: boolean
   user_agreement_enabled?: boolean
   privacy_policy_enabled?: boolean
+  api_key_terms_enabled?: boolean
+  api_key_privacy_enabled?: boolean
+  api_key_acceptable_use_enabled?: boolean
+  api_key_refund_enabled?: boolean
+  api_key_restricted_regions_enabled?: boolean
   oauth_register_enabled?: boolean
   register_enabled?: boolean
   password_login_enabled?: boolean

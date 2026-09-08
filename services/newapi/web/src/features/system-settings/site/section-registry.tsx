@@ -48,6 +48,13 @@ const SITE_SECTIONS = [
             acceptable_use: settings['legal.acceptable_use'],
             refund_policy: settings['legal.refund_policy'],
             restricted_regions: settings['legal.restricted_regions'],
+            api_key_terms_enabled: settings['legal.api_key_terms_enabled'],
+            api_key_privacy_enabled: settings['legal.api_key_privacy_enabled'],
+            api_key_acceptable_use_enabled:
+              settings['legal.api_key_acceptable_use_enabled'],
+            api_key_refund_enabled: settings['legal.api_key_refund_enabled'],
+            api_key_restricted_regions_enabled:
+              settings['legal.api_key_restricted_regions_enabled'],
           },
         }}
       />

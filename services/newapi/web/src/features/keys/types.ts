@@ -124,6 +124,11 @@ export type RegionalRestrictionStatus = {
   revision: string
   confirmation_frequency: 'once_per_revision' | 'always' | 'interval'
   confirmation_interval_hours: number
+  api_key_terms_enabled?: boolean
+  api_key_privacy_enabled?: boolean
+  api_key_acceptable_use_enabled?: boolean
+  api_key_refund_enabled?: boolean
+  api_key_restricted_regions_enabled?: boolean
   message?: string
 }
 

@@ -81,6 +81,11 @@ type RegionalResponse = {
   revision: string
   confirmation_frequency: string
   confirmation_interval_hours: number
+  api_key_terms_enabled?: boolean
+  api_key_privacy_enabled?: boolean
+  api_key_acceptable_use_enabled?: boolean
+  api_key_refund_enabled?: boolean
+  api_key_restricted_regions_enabled?: boolean
   message?: string
 }
 
@@ -287,11 +292,14 @@ describe('API key regional restriction gate', () => {
     assert.equal(bodyText.includes('API 密钥使用确认'), false)
 
     const expectedLinks = new Map([
-      ['Terms', '/legal/terms'],
-      ['Privacy', '/legal/privacy'],
-      ['Acceptable Use', '/legal/acceptable-use'],
-      ['Refund', '/legal/refund'],
-      ['Restricted Regions', '/legal/restricted-regions'],
+      ['Terms', 'https://new.fatherkey.com/legal/terms'],
+      ['Privacy', 'https://new.fatherkey.com/legal/privacy'],
+      ['Acceptable Use', 'https://new.fatherkey.com/legal/acceptable-use'],
+      ['Refund', 'https://new.fatherkey.com/legal/refund'],
+      [
+        'Restricted Regions',
+        'https://new.fatherkey.com/legal/restricted-regions',
+      ],
     ])
     for (const [label, href] of expectedLinks) {
       const link = [...document.querySelectorAll<HTMLAnchorElement>('a')].find(
@@ -350,6 +358,37 @@ describe('API key regional restriction gate', () => {
       allowed: true,
       securityProof: 'password-proof',
     })
+  })
+
+  test('renders only the legal links enabled by the administrator', async () => {
+    apiClient.get = async () =>
+      apiResponse({
+        ...allowedStatus,
+        confirmation_required: true,
+        api_key_terms_enabled: false,
+        api_key_privacy_enabled: true,
+        api_key_acceptable_use_enabled: false,
+        api_key_refund_enabled: true,
+        api_key_restricted_regions_enabled: false,
+      })
+
+    await renderGate()
+    await waitForCondition(
+      () =>
+        document.body.textContent?.includes('API Key Use Confirmation') ===
+        true,
+      'Confirmation dialog did not open'
+    )
+
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('a')]
+      .filter((link) =>
+        link.getAttribute('href')?.includes('new.fatherkey.com/legal/')
+      )
+      .map((link) => [link.textContent?.trim(), link.getAttribute('href')])
+    assert.deepEqual(links, [
+      ['Privacy', 'https://new.fatherkey.com/legal/privacy'],
+      ['Refund', 'https://new.fatherkey.com/legal/refund'],
+    ])
   })
 
   test('keeps the confirmation dialog closed to management after an incorrect password', async () => {
