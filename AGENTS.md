@@ -13,10 +13,10 @@ When the user asks Codex to deploy:
 7. Verify Vercel production is `Ready`.
 8. Verify the GitHub Actions workflow `Deploy KVM4 Verify Server` succeeds.
 9. Verify the GitHub Actions workflow `Deploy KVM4 Sub2API` succeeds.
-10. SSH to KVM4 and confirm both verify and the Sub2API service-slot
+10. SSH to KVM4 and confirm both verify and the NewAPI service-slot
     `.current-release` files equal the latest `main` commit, `/health` is
-    healthy, and the public NewAPI, private legacy bridge, PostgreSQL, and Redis
-    containers are healthy.
+    healthy, and the NewAPI, PostgreSQL, and Redis containers are healthy. The
+    removed `sub2api-legacy` bridge container must not be running.
 11. Report the final result in Chinese with three deployment chains: Vercel
     production, KVM4 Verify Server, and KVM4 Sub2API.
 
@@ -39,28 +39,23 @@ workflow `Deploy KVM4 Sub2API`. The workflow and `/opt/sub2api` names are stable
 deployment identifiers; they no longer mean that legacy Sub2API is the public
 application. After a PR merges into `main`, the workflow runs
 `npm run deploy:kvm4:sub2api` and verifies
-`https://new.fatherkey.com/health` as the canonical route and
-`https://sub2api.fatherkey.com/health` as a temporary compatibility route. Use
-manual KVM4 deploys only from latest clean `main` for emergency follow-up or
-workflow recovery.
+`https://new.fatherkey.com/health` as the canonical route. Use manual KVM4
+deploys only from latest clean `main` for emergency follow-up or workflow
+recovery.
 
-The phase-one Sub2API service-slot topology is:
+The NewAPI service-slot topology is:
 
 - The public `sub2api` container and canonical `https://new.fatherkey.com` route
   run NewAPI from `services/newapi` with the local image
-  `zaoyoe/newapi:local`. `https://sub2api.fatherkey.com` remains a temporary
-  compatibility alias for existing clients and sessions; it is not the public
-  product name.
-- The `legacy-sub2api` service runs `zaoyoe/sub2api:legacy` only as a private,
-  loopback/internal compatibility bridge for upstream account scheduling that
-  has not yet moved to NewAPI. It must never receive public ingress.
+  `zaoyoe/newapi:local`. The public application no longer starts or routes to a
+  legacy Sub2API bridge.
 - NewAPI uses its own `NEWAPI_DB_NAME` database and `newapi_data` directory. All
   deploys and rollbacks must preserve the existing `postgres_data`,
-  `redis_data`, legacy `data`, and NewAPI `newapi_data` directories.
+  `redis_data`, and NewAPI `newapi_data` directories. The old `data` directory
+  may remain on disk as inert historical data but is not mounted by NewAPI.
 - Production must keep using the repository-level
-  `deploy/kvm4/docker-compose.sub2api.yml`. Do not switch the public service back
-  to a legacy Sub2API image. Do not remove the private bridge until all of its
-  remaining scheduler responsibilities have verified NewAPI replacements.
+  `deploy/kvm4/docker-compose.sub2api.yml`. Do not switch the public service to
+  a legacy Sub2API image or re-enable the removed bridge.
 
 NewAPI upstream updates must preserve the local regional-restriction security
 customization. When updating `services/newapi` from upstream, do not blindly
@@ -124,15 +119,8 @@ re-applying an upstream update, run the focused Go and frontend tests for all
 protected flows, validate the administrator configuration entry, and confirm
 the English copy remains covered by a frontend contract test.
 
-While the phase-one bridge remains, updates to `services/sub2api` must preserve
-the private scheduler compatibility behavior and existing Father Key product
-customizations so emergency rollback remains viable. The sidebar brand/logo and
-public home logo must still link to `https://www.fatherkey.com/` for the
-China/domestic site and `https://www.zaoyoe.xyz/` for the international site.
-Regular users must retain `返回主站充值` / `Recharge on main site`. Preserve CC
-Switch Claude model slot import parameters (`haikuModel`, `sonnetModel`,
-`opusModel`), and keep request error detail modals defaulting to `all` while
-upstream error detail modals default to `errors`. Legacy Sub2API deploy templates
-keep the URL allowlist enabled by default. The production bridge image remains
-`zaoyoe/sub2api:legacy`, and the bridge must stay inaccessible from the public
-network.
+The removed `services/sub2api` source and bridge are not deployment
+dependencies. The sidebar brand/logo and public home logo must still link to
+`https://www.fatherkey.com/` for the China/domestic site and
+`https://www.zaoyoe.xyz/` for the international site. Regular users must retain
+`返回主站充值` / `Recharge on main site`.

@@ -9,31 +9,41 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 }
 
-test('NewAPI canonical domain keeps the legacy ingress as a compatibility alias', () => {
+test('NewAPI ingress is restricted to the canonical domain', () => {
     for (const relativePath of [
         'deploy/kvm4/caddy/sub2api-newapi.caddy.tmpl',
         'deploy/kvm4/caddy/sub2api-maintenance.caddy.tmpl'
     ]) {
         const source = readRepoFile(relativePath);
         assert.match(source, /new\.fatherkey\.com/);
-        assert.match(source, /sub2api\.fatherkey\.com/);
+        assert.doesNotMatch(source, /sub2api\.fatherkey\.com/);
     }
 
     const compose = readRepoFile('deploy/kvm4/docker-compose.sub2api.yml');
     assert.match(
         compose,
-        /SESSION_COOKIE_TRUSTED_URL=https:\/\/new\.fatherkey\.com,https:\/\/sub2api\.fatherkey\.com/
+        /SESSION_COOKIE_TRUSTED_URL=https:\/\/new\.fatherkey\.com/
     );
+    assert.doesNotMatch(compose, /legacy-sub2api:/);
 });
 
-test('NewAPI deployment checks the canonical and compatibility public routes', () => {
+test('legacy Sub2API source and local entrypoints are removed', () => {
+    assert.equal(fs.existsSync(path.join(ROOT, 'services', 'sub2api')), false);
+
+    const packageJson = readRepoFile('package.json');
+    assert.doesNotMatch(packageJson, /services\/sub2api/);
+
+    const compose = readRepoFile('deploy/kvm4/docker-compose.sub2api.yml');
+    assert.doesNotMatch(compose, /zaoyoe\/sub2api:(?:legacy|local)/);
+});
+
+test('NewAPI deployment checks the canonical public route', () => {
     const workflow = readRepoFile('.github/workflows/deploy-kvm4-sub2api.yml');
     assert.match(workflow, /https:\/\/new\.fatherkey\.com\/health/);
-    assert.match(workflow, /https:\/\/sub2api\.fatherkey\.com\/health/);
+    assert.doesNotMatch(workflow, /https:\/\/sub2api\.fatherkey\.com\/health/);
 
     const deploy = readRepoFile('scripts/deploy-kvm4-sub2api.sh');
     assert.match(deploy, /new\.fatherkey\.com/);
-    assert.match(deploy, /sub2api\[\.\]fatherkey\[\.\]com/);
     assert.match(deploy, /canonical_site_count/);
-    assert.match(deploy, /compatibility_site_count/);
+    assert.doesNotMatch(deploy, /compatibility_site_count/);
 });

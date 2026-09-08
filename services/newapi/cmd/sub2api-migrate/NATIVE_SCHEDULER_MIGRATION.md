@@ -1,9 +1,10 @@
 # Native scheduler migration runbook
 
-This runbook migrates only legacy Sub2API accounts that are reachable through
-the migration-managed type-59 bridge groups. It does not migrate user data,
-tokens, pricing, or legal settings; those remain covered by the existing
-`sub2api-migrate` path.
+This is a historical, offline migration runbook for legacy Sub2API accounts
+that were reachable through migration-managed type-59 bridge groups. It is not
+part of the production deploy path. The public bridge has been removed; use
+this tool only against an explicitly preserved database snapshot when a one-off
+data recovery is required.
 
 ## 1. Read-only plan
 
@@ -62,9 +63,9 @@ SHADOW_COMPARE=true \
 ```
 
 The command exits non-zero for missing, unexpected, unsupported, or mismatched
-channels. Do not disable the type-59 bridge or remove `legacy-sub2api` until
-the comparison is clean and real requests have validated model mapping,
-failover, rate-limit recovery, and billing behavior.
+channels. It does not start a bridge and must never be pointed at the live
+production service. Production traffic must use configured NewAPI-native
+channels instead of type-59 bridge channels.
 
 `PLAN_ONLY`, `NATIVE_SCHEDULER_IMPORT`, and `SHADOW_COMPARE` are explicit,
 mutually exclusive modes. The normal migration command remains unchanged when
@@ -84,8 +85,6 @@ GROUP_OPTIONS_REPAIR_ONLY=true \
   /sub2api-migrate
 ```
 
-The production cutover script sets `PRESERVE_PARTIAL_BRIDGE_STATE=true` only
-when the target already has a completed NewAPI migration. This keeps an
-explicitly verified partial bridge topology intact while native scheduler
-channels are being validated; a first migration still requires complete bridge
-coverage and refuses partial state.
+The production cutover script no longer invokes this migration utility or
+preserves bridge topology. The repair mode remains available only for offline
+historical snapshots.

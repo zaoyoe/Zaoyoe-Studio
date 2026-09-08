@@ -3173,10 +3173,6 @@ test('theme bootstraps default first visits to light instead of system dark', ()
 
     const firstVisitThemeBootstraps = [
         'admin-studio.js',
-        'services/sub2api/frontend/src/main.ts',
-        'services/sub2api/frontend/src/views/HomeView.vue',
-        'services/sub2api/frontend/src/views/KeyUsageView.vue',
-        'services/sub2api/frontend/src/components/layout/AppSidebar.vue',
         'inject-auth.js'
     ];
 
