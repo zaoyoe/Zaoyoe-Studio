@@ -126,6 +126,21 @@ func TestSupportMessageListQueryCapsHistoryAtFiftyMessages(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNormalizeSupportConversationIDRequiresCanonicalUUIDShape(t *testing.T) {
+	valid, err := normalizeSupportConversationID("123e4567-e89b-12d3-a456-426614174000")
+	require.NoError(t, err)
+	assert.Equal(t, "123e4567-e89b-12d3-a456-426614174000", valid)
+
+	for _, invalid := range []string{
+		"123e4567e89b12d3a456426614174000",
+		"123e4567-e89b-62d3-a456-426614174000",
+		"123e4567-e89b-12d3-7456-426614174000",
+	} {
+		_, err := normalizeSupportConversationID(invalid)
+		assert.Error(t, err, invalid)
+	}
+}
+
 func setupSupportControllerTest(t *testing.T) (string, string) {
 	t.Helper()
 	previousDB := model.DB

@@ -24,6 +24,7 @@ import {
   FlaskConical,
   Key,
   LayoutDashboard,
+  MessageCircle,
   ListTodo,
   MessageSquare,
   Radio,
@@ -143,6 +144,11 @@ export function useSidebarData(): SidebarData {
             title: t('Subscriptions'),
             url: '/subscriptions',
             icon: CreditCard,
+          },
+          {
+            title: t('Support Inbox'),
+            url: '/support',
+            icon: MessageCircle,
           },
           {
             title: t('System Info'),

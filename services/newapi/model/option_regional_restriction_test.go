@@ -16,6 +16,7 @@ func TestNormalizeRegionalRestrictionOptionValue(t *testing.T) {
 		want  string
 	}{
 		{name: "boolean", key: "regional_restriction.enabled", value: " TRUE ", want: "true"},
+		{name: "login boolean", key: "regional_restriction.login_enabled", value: " TRUE ", want: "true"},
 		{name: "countries", key: "regional_restriction.blocked_country_codes", value: `["us"," CN ","US"]`, want: `["CN","US"]`},
 		{name: "unknown policy", key: "regional_restriction.unknown_region_policy", value: " DENY ", want: "deny"},
 		{name: "frequency", key: "regional_restriction.confirmation_frequency", value: " INTERVAL ", want: "interval"},

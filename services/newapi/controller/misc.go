@@ -134,6 +134,7 @@ func GetStatus(c *gin.Context) {
 		"checkin_enabled":                    operation_setting.GetCheckinSetting().Enabled,
 
 		"regional_restriction_enabled":                           regionalRestrictionSetting.Enabled,
+		"regional_restriction_login_enabled":                     regionalRestrictionSetting.LoginEnabled,
 		"regional_restriction_registration_enabled":              regionalRestrictionSetting.RegistrationEnabled,
 		"regional_restriction_oauth_signup_enabled":              regionalRestrictionSetting.OAuthSignupEnabled,
 		"regional_restriction_api_key_page_confirmation_enabled": regionalRestrictionSetting.APIKeyPageConfirmationEnabled,

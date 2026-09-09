@@ -1694,6 +1694,7 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 		"PasswordRegisterEnabled":                   "true",
 		"EmailVerificationEnabled":                  settingOrDefault(source, "email_verify_enabled", "false"),
 		"regional_restriction.enabled":              settingOrDefault(source, "regional_restriction_enabled", "true"),
+		"regional_restriction.login_enabled":        settingOrDefault(source, "regional_restriction_login_enabled", "true"),
 		"regional_restriction.registration_enabled": settingOrDefault(source, "regional_restriction_registration_enabled", "true"),
 		"regional_restriction.oauth_signup_enabled": settingOrDefault(source, "regional_restriction_oauth_signup_enabled", "true"),
 		"regional_restriction.api_key_page_confirmation_enabled": settingOrDefault(source, "regional_restriction_api_key_page_confirmation_enabled", "true"),

@@ -64,6 +64,7 @@ const countryCodesSchema = z.string().refine((value) => {
 const regionalRestrictionSchema = z.object({
   regional_restriction: z.object({
     enabled: z.boolean(),
+    login_enabled: z.boolean(),
     registration_enabled: z.boolean(),
     oauth_signup_enabled: z.boolean(),
     api_key_page_confirmation_enabled: z.boolean(),
@@ -81,6 +82,7 @@ type RegionalRestrictionFormInput = z.input<typeof regionalRestrictionSchema>
 
 export type NormalizedRegionalRestrictionValues = {
   'regional_restriction.enabled': boolean
+  'regional_restriction.login_enabled': boolean
   'regional_restriction.registration_enabled': boolean
   'regional_restriction.oauth_signup_enabled': boolean
   'regional_restriction.api_key_page_confirmation_enabled': boolean
@@ -116,6 +118,7 @@ function buildFormDefaults(
   return {
     regional_restriction: {
       enabled: defaults['regional_restriction.enabled'],
+      login_enabled: defaults['regional_restriction.login_enabled'],
       registration_enabled:
         defaults['regional_restriction.registration_enabled'],
       oauth_signup_enabled:
@@ -143,6 +146,8 @@ function normalizeFormValues(
 ): NormalizedRegionalRestrictionValues {
   return {
     'regional_restriction.enabled': values.regional_restriction.enabled,
+    'regional_restriction.login_enabled':
+      values.regional_restriction.login_enabled,
     'regional_restriction.registration_enabled':
       values.regional_restriction.registration_enabled,
     'regional_restriction.oauth_signup_enabled':
@@ -247,7 +252,7 @@ export function RegionalRestrictionSection(
                   <FormLabel>{t('Enable regional restriction')}</FormLabel>
                   <FormDescription>
                     {t(
-                      'Apply regional checks only to registration, new OAuth accounts, API key page confirmation, and API key creation.'
+                      'Apply regional checks only to new login sessions, registration, new OAuth accounts, API key page confirmation, and API key creation.'
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>
@@ -262,6 +267,28 @@ export function RegionalRestrictionSection(
           />
 
           <SettingsControlGroup>
+            <FormField
+              control={form.control}
+              name='regional_restriction.login_enabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('New login sessions')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Restrict new password, OAuth, WeChat, Telegram, passkey, and 2FA login sessions from blocked regions.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
             <FormField
               control={form.control}
               name='regional_restriction.registration_enabled'

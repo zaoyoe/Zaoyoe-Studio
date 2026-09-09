@@ -477,6 +477,37 @@ test('NewAPI support messages remain scoped to the mapped product conversation a
     assert.equal(result.payload.data.next_cursor, '');
     assert.equal(supabase.state.queryLog.some((entry) => entry.field === 'product' && entry.value === 'newapi'), true);
     assert.equal(supabase.state.queryLog.some((entry) => entry.field === 'session_id' && entry.value === conversation.session_id), true);
+    assert.equal(Object.hasOwn(supabase.state.conversationUpserts[0], 'updated_at'), false);
+});
+
+test('NewAPI support rejects a user idempotency key already owned by an admin reply', async () => {
+    const conversation = {
+        id: 'conversation-opaque-1',
+        product: 'newapi',
+        external_user_id: '123',
+        external_username: 'newapi-user',
+        session_id: 'newapi:70e83ef5-0181-4efd-9a7b-f827655e243f'
+    };
+    const supabase = createFakeSupabase({
+        conversation,
+        messages: [{
+            id: 'admin-message-with-colliding-id',
+            product: 'newapi',
+            session_id: conversation.session_id,
+            client_message_id: 'message-1',
+            content: 'Administrator reply',
+            is_admin: true,
+            created_at: '2026-09-09T11:00:00.000Z'
+        }]
+    });
+
+    const result = await callGateway(createHandler(supabase), requestPayload(), {
+        nonce: 'nonce-role-conflict-012345678'
+    });
+
+    assert.equal(result.res.statusCode, 409);
+    assert.equal(result.payload.code, 'client_message_id_conflict');
+    assert.equal(supabase.state.messageInserts.length, 0);
 });
 
 test('NewAPI support caps a maximum-size history page below the bridge response limit', async () => {

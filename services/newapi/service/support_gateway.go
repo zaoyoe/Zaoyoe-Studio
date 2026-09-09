@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -27,6 +28,12 @@ const (
 	defaultSupportGatewayTimeout   = 8 * time.Second
 	maxSupportGatewayTimeout       = 30 * time.Second
 	maxSupportGatewayResponseBytes = 1 << 20
+	maxSupportGatewayLimit         = 50
+	maxSupportGatewayCursorBytes   = 256
+	maxSupportGatewayTextRunes     = 4000
+	maxSupportGatewayTextBytes     = 16 << 10
+	maxSupportGatewayClientIDBytes = 128
+	maxSupportGatewayPagePathRunes = 512
 )
 
 var (
@@ -42,6 +49,12 @@ const (
 	SupportGatewayActionContext  SupportGatewayAction = "context"
 	SupportGatewayActionMessages SupportGatewayAction = "messages"
 	SupportGatewayActionSend     SupportGatewayAction = "send_message"
+	// Admin actions use the same signed gateway and Supabase data boundary as
+	// the user widget. The browser never receives the opaque session_id stored
+	// by the gateway; it addresses a conversation by its public UUID instead.
+	SupportGatewayActionAdminConversations SupportGatewayAction = "admin_conversations"
+	SupportGatewayActionAdminMessages      SupportGatewayAction = "admin_messages"
+	SupportGatewayActionAdminSend          SupportGatewayAction = "admin_send_message"
 )
 
 // SupportGatewayPrincipal deliberately contains no dashboard JWT, API key,
@@ -73,6 +86,7 @@ type SupportGatewayRequest struct {
 	ClientMessageID string                     `json:"client_message_id,omitempty"`
 	Cursor          string                     `json:"cursor,omitempty"`
 	Limit           int                        `json:"limit,omitempty"`
+	ConversationID  string                     `json:"conversation_id,omitempty"`
 }
 
 // SupportGatewayResponse contains one of the action-specific data contracts
@@ -97,6 +111,14 @@ type SupportGatewayContextData struct {
 type SupportGatewayMessagesData struct {
 	Messages   []any  `json:"messages"`
 	NextCursor string `json:"next_cursor"`
+}
+
+// SupportGatewayAdminConversationsData is returned for the administrator
+// conversation list. Conversation records intentionally contain no internal
+// session_id; the gateway keeps that value private from browser clients.
+type SupportGatewayAdminConversationsData struct {
+	Conversations []any  `json:"conversations"`
+	NextCursor    string `json:"next_cursor"`
 }
 
 type SupportGateway struct {
@@ -226,7 +248,9 @@ func (gateway *SupportGateway) Dispatch(ctx context.Context, request SupportGate
 
 func isSupportGatewayAction(action SupportGatewayAction) bool {
 	switch action {
-	case SupportGatewayActionContext, SupportGatewayActionMessages, SupportGatewayActionSend:
+	case SupportGatewayActionContext, SupportGatewayActionMessages, SupportGatewayActionSend,
+		SupportGatewayActionAdminConversations, SupportGatewayActionAdminMessages,
+		SupportGatewayActionAdminSend:
 		return true
 	default:
 		return false
@@ -239,14 +263,100 @@ func isSupportGatewayRequestValid(request SupportGatewayRequest) bool {
 	}
 	switch request.Action {
 	case SupportGatewayActionContext:
-		return request.Page != nil && strings.TrimSpace(request.Page.Path) != ""
+		return isSupportGatewayPageValid(request.Page, true)
 	case SupportGatewayActionMessages:
-		return request.Limit > 0
+		return isSupportGatewayListRequestValid(request.Limit, request.Cursor)
 	case SupportGatewayActionSend:
-		return request.Page != nil && strings.TrimSpace(request.Page.Path) != "" && strings.TrimSpace(request.Text) != "" && strings.TrimSpace(request.ClientMessageID) != ""
+		return isSupportGatewayPageValid(request.Page, true) && isSupportGatewayTextValid(request.Text) && isSupportGatewayClientMessageIDValid(request.ClientMessageID)
+	case SupportGatewayActionAdminConversations:
+		return isSupportGatewayListRequestValid(request.Limit, request.Cursor)
+	case SupportGatewayActionAdminMessages:
+		return isSupportGatewayUUID(request.ConversationID) && isSupportGatewayListRequestValid(request.Limit, request.Cursor)
+	case SupportGatewayActionAdminSend:
+		return isSupportGatewayUUID(request.ConversationID) && isSupportGatewayTextValid(request.Text) && isSupportGatewayClientMessageIDValid(request.ClientMessageID) && isSupportGatewayPageValid(request.Page, false)
 	default:
 		return false
 	}
+}
+
+func isSupportGatewayListRequestValid(limit int, cursor string) bool {
+	return limit >= 1 && limit <= maxSupportGatewayLimit && isSupportGatewayCursorValid(cursor)
+}
+
+func isSupportGatewayCursorValid(cursor string) bool {
+	if len(cursor) > maxSupportGatewayCursorBytes {
+		return false
+	}
+	for _, r := range cursor {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == '~' || r == '=') {
+			return false
+		}
+	}
+	return true
+}
+
+func isSupportGatewayPageValid(page *SupportGatewayPageContext, required bool) bool {
+	if page == nil {
+		return !required
+	}
+	path := strings.TrimSpace(page.Path)
+	if path == "" || utf8.RuneCountInString(path) > maxSupportGatewayPagePathRunes || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, `\\?#`) {
+		return false
+	}
+	for _, segment := range strings.Split(path, "/") {
+		if segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func isSupportGatewayTextValid(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed != "" && utf8.RuneCountInString(trimmed) <= maxSupportGatewayTextRunes && len([]byte(trimmed)) <= maxSupportGatewayTextBytes
+}
+
+func isSupportGatewayClientMessageIDValid(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > maxSupportGatewayClientIDBytes {
+		return false
+	}
+	for index, r := range value {
+		if index == 0 && !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ':') {
+			return false
+		}
+	}
+	return true
+}
+
+func isSupportGatewayUUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index, r := range value {
+		switch index {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+			continue
+		case 14:
+			if r < '1' || r > '5' {
+				return false
+			}
+		case 19:
+			if !((r >= '8' && r <= '9') || (r >= 'a' && r <= 'b') || (r >= 'A' && r <= 'B')) {
+				return false
+			}
+		}
+		if !((r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 func supportGatewaySignature(secret []byte, timestamp, nonce string, payload []byte) string {
@@ -312,6 +422,48 @@ func decodeSupportGatewayData(action SupportGatewayAction, raw json.RawMessage) 
 		var message map[string]any
 		if err := common.Unmarshal(raw, &message); err != nil || message == nil {
 			return nil, errors.New("support message is invalid")
+		}
+		return message, nil
+	case SupportGatewayActionAdminConversations:
+		conversationsRaw, ok := fields["conversations"]
+		if !ok {
+			return nil, errors.New("support admin conversations are missing")
+		}
+		nextCursorRaw, ok := fields["next_cursor"]
+		if !ok {
+			return nil, errors.New("support admin next cursor is missing")
+		}
+		var conversations []any
+		var nextCursor string
+		if err := common.Unmarshal(conversationsRaw, &conversations); err != nil || conversations == nil {
+			return nil, errors.New("support admin conversations are invalid")
+		}
+		if isSupportGatewayJSONNull(nextCursorRaw) || common.Unmarshal(nextCursorRaw, &nextCursor) != nil {
+			return nil, errors.New("support admin next cursor is invalid")
+		}
+		return SupportGatewayAdminConversationsData{Conversations: conversations, NextCursor: nextCursor}, nil
+	case SupportGatewayActionAdminMessages:
+		messagesRaw, ok := fields["messages"]
+		if !ok {
+			return nil, errors.New("support admin messages are missing")
+		}
+		nextCursorRaw, ok := fields["next_cursor"]
+		if !ok {
+			return nil, errors.New("support admin next cursor is missing")
+		}
+		var messages []any
+		var nextCursor string
+		if err := common.Unmarshal(messagesRaw, &messages); err != nil || messages == nil {
+			return nil, errors.New("support admin messages are invalid")
+		}
+		if isSupportGatewayJSONNull(nextCursorRaw) || common.Unmarshal(nextCursorRaw, &nextCursor) != nil {
+			return nil, errors.New("support admin next cursor is invalid")
+		}
+		return SupportGatewayMessagesData{Messages: messages, NextCursor: nextCursor}, nil
+	case SupportGatewayActionAdminSend:
+		var message map[string]any
+		if err := common.Unmarshal(raw, &message); err != nil || message == nil {
+			return nil, errors.New("support admin message is invalid")
 		}
 		return message, nil
 	default:

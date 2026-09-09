@@ -154,6 +154,10 @@ export function SidebarModulesSection({
         title: t('Subscription Management'),
         description: t('Manage subscription plans and pricing.'),
       },
+      support: {
+        title: t('Support Inbox'),
+        description: t('Read and reply to customer support conversations.'),
+      },
     },
   }
   const formDefaults = useMemo(() => config, [config])

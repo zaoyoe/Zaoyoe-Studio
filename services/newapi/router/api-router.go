@@ -166,6 +166,17 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		// NewAPI's native administrator inbox is backed by the same signed support
+		// gateway used by the user widget and Fatherkey Admin Studio. Keeping it
+		// outside /user avoids confusing operator conversations with user records.
+		supportAdminRoute := apiRouter.Group("/admin/support")
+		supportAdminRoute.Use(middleware.AdminAuth())
+		{
+			supportAdminRoute.GET("/conversations", middleware.DisableCache(), controller.GetAdminSupportConversations)
+			supportAdminRoute.GET("/conversations/:conversation_id/messages", middleware.DisableCache(), controller.GetAdminSupportMessages)
+			supportAdminRoute.POST("/conversations/:conversation_id/messages", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateAdminSupportMessage)
+		}
+
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")
 		subscriptionRoute.Use(middleware.UserAuth())

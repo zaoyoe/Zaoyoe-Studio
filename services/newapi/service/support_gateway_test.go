@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,6 +136,104 @@ func TestSupportGatewayDispatchFailsClosedForGatewayFailure(t *testing.T) {
 			assert.NotContains(t, err.Error(), "do not expose this")
 		})
 	}
+}
+
+func TestSupportGatewayDispatchSupportsAdminInboxActions(t *testing.T) {
+	const secret = "support-gateway-admin-test-secret"
+	const nonce = "admin-inbox-nonce-012345"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body := readSupportGatewayTestBody(t, request)
+		var payload SupportGatewayRequest
+		require.NoError(t, common.Unmarshal(body, &payload))
+		assert.Equal(t, SupportGatewayActionAdminMessages, payload.Action)
+		assert.Equal(t, "123e4567-e89b-12d3-a456-426614174000", payload.ConversationID)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"success":true,"data":{"messages":[],"next_cursor":""}}`))
+	}))
+	defer server.Close()
+
+	endpoint, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	gateway, err := newSupportGateway(endpoint, secret, server.Client())
+	require.NoError(t, err)
+	gateway.nonce = func() (string, error) { return nonce, nil }
+
+	response, err := gateway.Dispatch(t.Context(), SupportGatewayRequest{
+		Action:         SupportGatewayActionAdminMessages,
+		Principal:      SupportGatewayPrincipal{UserID: 7, Username: "operator"},
+		ConversationID: "123e4567-e89b-12d3-a456-426614174000",
+		Limit:          50,
+	})
+	require.NoError(t, err)
+	data, ok := response.Data.(SupportGatewayMessagesData)
+	require.True(t, ok)
+	assert.Empty(t, data.Messages)
+	assert.Empty(t, data.NextCursor)
+}
+
+func TestSupportGatewayRequestValidationRejectsOutOfContractAdminPayloads(t *testing.T) {
+	base := SupportGatewayRequest{
+		Action:         SupportGatewayActionAdminMessages,
+		Principal:      SupportGatewayPrincipal{UserID: 7, Username: "operator"},
+		ConversationID: "123e4567-e89b-12d3-a456-426614174000",
+		Limit:          50,
+	}
+	require.True(t, isSupportGatewayRequestValid(base))
+
+	tests := []struct {
+		name   string
+		mutate func(*SupportGatewayRequest)
+	}{
+		{
+			name: "invalid conversation uuid",
+			mutate: func(request *SupportGatewayRequest) {
+				request.ConversationID = "conversation-opaque-1"
+			},
+		},
+		{
+			name: "limit above wire contract",
+			mutate: func(request *SupportGatewayRequest) {
+				request.Limit = 51
+			},
+		},
+		{
+			name: "unsafe cursor",
+			mutate: func(request *SupportGatewayRequest) {
+				request.Cursor = "cursor/with/slashes"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := base
+			test.mutate(&request)
+			assert.False(t, isSupportGatewayRequestValid(request))
+		})
+	}
+}
+
+func TestSupportGatewayRequestValidationRejectsOutOfContractAdminReply(t *testing.T) {
+	base := SupportGatewayRequest{
+		Action:          SupportGatewayActionAdminSend,
+		Principal:       SupportGatewayPrincipal{UserID: 7, Username: "operator"},
+		ConversationID:  "123e4567-e89b-12d3-a456-426614174000",
+		Text:            "We can help.",
+		ClientMessageID: "reply-1",
+	}
+	require.True(t, isSupportGatewayRequestValid(base))
+
+	invalidClientID := base
+	invalidClientID.ClientMessageID = "bad id"
+	assert.False(t, isSupportGatewayRequestValid(invalidClientID))
+
+	unsafePage := base
+	unsafePage.Page = &SupportGatewayPageContext{Path: "https://evil.example/path"}
+	assert.False(t, isSupportGatewayRequestValid(unsafePage))
+
+	oversizedText := base
+	oversizedText.Text = strings.Repeat("a", maxSupportGatewayTextRunes+1)
+	assert.False(t, isSupportGatewayRequestValid(oversizedText))
 }
 
 func TestNewSupportGatewayFromEnvironmentRequiresHTTPSAndSecret(t *testing.T) {

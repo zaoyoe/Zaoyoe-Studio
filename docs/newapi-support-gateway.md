@@ -22,9 +22,14 @@ through `POST /api/newapi-support`; the legacy customer-facing widget on
 
 ## Required Configuration
 
-Apply `supabase/migrations/20260909_add_newapi_support_gateway.sql` before
-enabling the bridge. The migration adds the message metadata, opaque
-conversation mapping, nonce replay table, and indexes used by the gateway.
+Apply both migrations, in order, before enabling the bridge:
+
+1. `supabase/migrations/20260909_add_newapi_support_gateway.sql` adds the
+   message metadata, opaque conversation mapping, nonce replay table, and
+   indexes used by the gateway.
+2. `supabase/migrations/20260909133000_extend_newapi_support_admin_actions.sql`
+   permits the signed administrator actions and keeps the NewAPI inbox ordered
+   when either NewAPI or Admin Studio writes a reply.
 
 Configure the same high-entropy value on both production services:
 
@@ -40,7 +45,7 @@ the NewAPI drawer shows an unavailable state and no message is sent.
 
 ## Release Order
 
-1. Apply the Supabase migration and verify the Admin Studio service role can
+1. Apply both Supabase migrations and verify the Admin Studio service role can
    read and write the new tables.
 2. Add the HMAC secret to Vercel Production, then add the matching URL and
    secret to KVM4's `/opt/sub2api/.env`.
@@ -48,7 +53,10 @@ the NewAPI drawer shows an unavailable state and no message is sent.
    from `main` according to `AGENTS.md`.
 4. Sign in to NewAPI, send a test message, confirm it appears in Admin Studio
    with the `NewAPI` source label, reply there, and confirm the reply appears
-   in the NewAPI drawer.
+   in the NewAPI drawer and administrator inbox.
+5. Sign in as a NewAPI administrator, open Support Inbox, confirm the same
+   conversation is visible, and send a reply that arrives in Admin Studio and
+   the NewAPI customer drawer.
 
 ## Operational Notes
 

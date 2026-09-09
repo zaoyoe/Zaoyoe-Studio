@@ -42,6 +42,115 @@ type createSupportMessageRequest struct {
 	Page            *supportPageInput `json:"page"`
 }
 
+type createAdminSupportMessageRequest struct {
+	Text            string            `json:"text"`
+	Content         string            `json:"content,omitempty"`
+	ClientMessageID string            `json:"client_message_id"`
+	Page            *supportPageInput `json:"page,omitempty"`
+}
+
+// GetAdminSupportConversations exposes the shared support inbox to an
+// authenticated NewAPI administrator. The HMAC gateway remains the source of
+// truth, so this route never queries or mirrors Supabase support data locally.
+func GetAdminSupportConversations(c *gin.Context) {
+	principal, ok := requireLiveAdminSupportGatewaySession(c)
+	if !ok {
+		return
+	}
+	cursor, limit, err := supportMessageListQuery(c)
+	if err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	respondSupportGateway(c, service.SupportGatewayRequest{
+		Action:    service.SupportGatewayActionAdminConversations,
+		Principal: principal,
+		Cursor:    cursor,
+		Limit:     limit,
+	})
+}
+
+// GetAdminSupportMessages returns one opaque conversation's message history.
+// The conversation UUID is public to the NewAPI admin UI, while the gateway's
+// random chat session_id remains private to the server-side bridge.
+func GetAdminSupportMessages(c *gin.Context) {
+	principal, ok := requireLiveAdminSupportGatewaySession(c)
+	if !ok {
+		return
+	}
+	conversationID, err := normalizeSupportConversationID(c.Param("conversation_id"))
+	if err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	cursor, limit, err := supportMessageListQuery(c)
+	if err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	respondSupportGateway(c, service.SupportGatewayRequest{
+		Action:         service.SupportGatewayActionAdminMessages,
+		Principal:      principal,
+		ConversationID: conversationID,
+		Cursor:         cursor,
+		Limit:          limit,
+	})
+}
+
+// CreateAdminSupportMessage lets an administrator reply from NewAPI. The
+// resulting row is still written to chat_messages by the shared gateway, so
+// Fatherkey Admin Studio receives it through its existing realtime channel.
+func CreateAdminSupportMessage(c *gin.Context) {
+	principal, ok := requireLiveAdminSupportGatewaySession(c)
+	if !ok {
+		return
+	}
+	conversationID, err := normalizeSupportConversationID(c.Param("conversation_id"))
+	if err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	if c.Request.Body == nil {
+		writeSupportInputError(c)
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSupportMessageBodyBytes)
+
+	var input createAdminSupportMessageRequest
+	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	text, err := normalizeSupportMessageText(input.Text, input.Content)
+	if err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	clientMessageID, err := normalizeSupportClientMessageID(input.ClientMessageID)
+	if err != nil {
+		writeSupportInputError(c)
+		return
+	}
+	var page *service.SupportGatewayPageContext
+	if input.Page != nil {
+		pageContext, pageErr := normalizeSupportPageContext(input.Page)
+		if pageErr != nil {
+			writeSupportInputError(c)
+			return
+		}
+		page = &pageContext
+	}
+
+	respondSupportGateway(c, service.SupportGatewayRequest{
+		Action:          service.SupportGatewayActionAdminSend,
+		Principal:       principal,
+		ConversationID:  conversationID,
+		Page:            page,
+		Text:            text,
+		ClientMessageID: clientMessageID,
+	})
+}
+
 func GetSupportContext(c *gin.Context) {
 	principal, ok := requireLiveSupportGatewaySession(c)
 	if !ok {
@@ -138,6 +247,22 @@ func requireLiveSupportGatewaySession(c *gin.Context) (service.SupportGatewayPri
 		Username: user.Username,
 		Email:    user.Email,
 	}, true
+}
+
+func requireLiveAdminSupportGatewaySession(c *gin.Context) (service.SupportGatewayPrincipal, bool) {
+	principal, ok := requireLiveSupportGatewaySession(c)
+	if !ok {
+		return service.SupportGatewayPrincipal{}, false
+	}
+	if c.GetInt("role") < common.RoleAdminUser {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"code":    "SUPPORT_ADMIN_REQUIRED",
+			"message": "管理员权限是客服收件箱所必需的",
+		})
+		return service.SupportGatewayPrincipal{}, false
+	}
+	return principal, true
 }
 
 func respondSupportGateway(c *gin.Context, request service.SupportGatewayRequest) {
@@ -273,6 +398,34 @@ func normalizeSupportClientMessageID(raw string) (string, error) {
 	for _, r := range value {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ':') {
 			return "", errors.New("support client message id is invalid")
+		}
+	}
+	return value, nil
+}
+
+func normalizeSupportConversationID(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if len(value) != 36 || utf8.RuneCountInString(value) != 36 {
+		return "", errors.New("support conversation id is invalid")
+	}
+	for index, r := range value {
+		switch index {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return "", errors.New("support conversation id is invalid")
+			}
+			continue
+		case 14:
+			if !(r >= '1' && r <= '5') {
+				return "", errors.New("support conversation id is invalid")
+			}
+		case 19:
+			if !((r >= '8' && r <= '9') || (r >= 'a' && r <= 'b') || (r >= 'A' && r <= 'B')) {
+				return "", errors.New("support conversation id is invalid")
+			}
+		}
+		if !((r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') || (r >= '0' && r <= '9')) {
+			return "", errors.New("support conversation id is invalid")
 		}
 	}
 	return value, nil
