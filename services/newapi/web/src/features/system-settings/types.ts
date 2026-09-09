@@ -116,6 +116,11 @@ export type SiteSettings = {
   ServerAddress: string
   'legal.user_agreement': string
   'legal.privacy_policy': string
+  'legal.api_key_terms_enabled': boolean
+  'legal.api_key_privacy_enabled': boolean
+  'legal.api_key_acceptable_use_enabled': boolean
+  'legal.api_key_refund_enabled': boolean
+  'legal.api_key_restricted_regions_enabled': boolean
   HeaderNavModules: string
   SidebarModulesAdmin: string
 }

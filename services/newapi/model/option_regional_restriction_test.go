@@ -62,3 +62,20 @@ func TestValidateRegionalRestrictionOptionRejectsMalformedValues(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeAPIKeyLegalVisibilityOptionValue(t *testing.T) {
+	for _, key := range []string{
+		"legal.api_key_terms_enabled",
+		"legal.api_key_privacy_enabled",
+		"legal.api_key_acceptable_use_enabled",
+		"legal.api_key_refund_enabled",
+		"legal.api_key_restricted_regions_enabled",
+	} {
+		t.Run(key, func(t *testing.T) {
+			value, err := normalizeOptionValue(key, " TRUE ")
+			require.NoError(t, err)
+			assert.Equal(t, "true", value)
+			assert.Error(t, validateOptionValue(key, "enabled"))
+		})
+	}
+}

@@ -215,6 +215,13 @@ func normalizeOptionValue(key string, value string) (string, error) {
 	if key == "MaxTokenAutoGroups" {
 		return value, setting.ValidateMaxTokenAutoGroups(value)
 	}
+	if isAPIKeyLegalVisibilityOption(key) {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if normalized != "true" && normalized != "false" {
+			return "", fmt.Errorf("%s must be true or false", key)
+		}
+		return normalized, nil
+	}
 
 	const regionalRestrictionPrefix = system_setting.RegionalRestrictionConfigName + "."
 	if !strings.HasPrefix(key, regionalRestrictionPrefix) {
@@ -286,6 +293,19 @@ func normalizeOptionValue(key string, value string) (string, error) {
 		return strconv.Itoa(hours), nil
 	default:
 		return "", fmt.Errorf("unknown regional restriction option %q", key)
+	}
+}
+
+func isAPIKeyLegalVisibilityOption(key string) bool {
+	switch key {
+	case "legal.api_key_terms_enabled",
+		"legal.api_key_privacy_enabled",
+		"legal.api_key_acceptable_use_enabled",
+		"legal.api_key_refund_enabled",
+		"legal.api_key_restricted_regions_enabled":
+		return true
+	default:
+		return false
 	}
 }
 

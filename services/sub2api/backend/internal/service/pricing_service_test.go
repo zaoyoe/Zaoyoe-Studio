@@ -452,6 +452,28 @@ func TestGetModelPricing_Gpt53CodexFallbackStillUsesGpt52Codex(t *testing.T) {
 	require.Same(t, gpt52CodexPricing, got)
 }
 
+func TestGetModelPricing_MatchesUniqueProviderQualifiedCatalogKey(t *testing.T) {
+	qualified := &LiteLLMModelPricing{InputCostPerToken: 1.2e-6}
+	svc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"dashscope/qwen3.7-max": qualified,
+		},
+	}
+
+	require.Same(t, qualified, svc.GetModelPricing("qwen3.7-max"))
+}
+
+func TestGetModelPricing_DoesNotGuessWhenQualifiedKeyIsAmbiguous(t *testing.T) {
+	svc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"dashscope/qwen3.7-max":  {InputCostPerToken: 1.2e-6},
+			"volcengine/qwen3.7-max": {InputCostPerToken: 1.8e-6},
+		},
+	}
+
+	require.Nil(t, svc.GetModelPricing("qwen3.7-max"))
+}
+
 func TestGetModelPricing_OpenAIFallbackMatchedLoggedAsInfo(t *testing.T) {
 	logSink, restore := captureStructuredLog(t)
 	defer restore()

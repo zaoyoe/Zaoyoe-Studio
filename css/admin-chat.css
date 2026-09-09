@@ -664,6 +664,11 @@
     color: #fecaca;
 }
 
+.session-badge--newapi {
+    background: rgba(45, 212, 191, 0.16);
+    color: #99f6e4;
+}
+
 .session-time {
     font-size: 11px;
     color: #94a3b8;
@@ -2933,6 +2938,11 @@
 :root:not([data-theme="dark"]) .session-badge--danger {
     background: rgba(239, 68, 68, 0.14);
     color: #b91c1c;
+}
+
+:root:not([data-theme="dark"]) .session-badge--newapi {
+    background: rgba(13, 148, 136, 0.14);
+    color: #0f766e;
 }
 
 :root:not([data-theme="dark"]) .admin-message.received {

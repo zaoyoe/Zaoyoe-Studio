@@ -88,6 +88,11 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.UserAuth())
 			{
+				// Support endpoints perform an additional controller-level live
+				// dashboard-session check so personal API tokens cannot access them.
+				selfRoute.GET("/support/context", middleware.DisableCache(), controller.GetSupportContext)
+				selfRoute.GET("/support/messages", middleware.DisableCache(), controller.GetSupportMessages)
+				selfRoute.POST("/support/messages", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CreateSupportMessage)
 				selfRoute.GET("/sessions", middleware.DisableCache(), controller.GetLoginSessions)
 				selfRoute.DELETE("/sessions/:sid", middleware.DisableCache(), controller.DeleteLoginSession)
 				selfRoute.POST("/sessions/revoke-others", middleware.DisableCache(), controller.RevokeOtherLoginSessions)

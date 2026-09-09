@@ -48,6 +48,18 @@ func configureRegionalRestrictionTest(t *testing.T, update func(*system_setting.
 	})
 }
 
+func configureLegalSettingsTest(t *testing.T, update func(*system_setting.LegalSettings)) {
+	t.Helper()
+	settings := system_setting.GetLegalSettings()
+	original := *settings
+	if update != nil {
+		update(settings)
+	}
+	t.Cleanup(func() {
+		*settings = original
+	})
+}
+
 func applyRegionalRestrictionSettings(settings system_setting.RegionalRestrictionSettings) error {
 	values, err := config.ConfigToMap(&settings)
 	if err != nil {
@@ -215,6 +227,28 @@ func TestEvaluateRegionalRestrictionUnknownDenyAndDisabledScopes(t *testing.T) {
 	assert.False(t, masterDisabled.Blocked)
 }
 
+func TestEvaluateRegionalRestrictionExposesAPIKeyLegalLinkVisibility(t *testing.T) {
+	configureRegionalRestrictionTest(t, nil)
+	configureLegalSettingsTest(t, func(settings *system_setting.LegalSettings) {
+		settings.APIKeyTermsEnabled = false
+		settings.APIKeyPrivacyEnabled = true
+		settings.APIKeyAcceptableUseEnabled = false
+		settings.APIKeyRefundEnabled = true
+		settings.APIKeyRestrictedRegionsEnabled = false
+	})
+
+	evaluation := evaluateRegionalRestriction(
+		newRegionalRestrictionContext(trustedRegionalRestrictionHeaders("US")),
+		regionalRestrictionScopeAPIKeyPage,
+	)
+
+	assert.False(t, evaluation.APIKeyTermsEnabled)
+	assert.True(t, evaluation.APIKeyPrivacyEnabled)
+	assert.False(t, evaluation.APIKeyAcceptableUseEnabled)
+	assert.True(t, evaluation.APIKeyRefundEnabled)
+	assert.False(t, evaluation.APIKeyRestrictedRegionsEnabled)
+}
+
 func TestRegionalRestrictionStatusReturnsOKWhenBlocked(t *testing.T) {
 	configureRegionalRestrictionTest(t, nil)
 	recorder := httptest.NewRecorder()
@@ -301,6 +335,40 @@ func TestGetStatusExposesRegionalRestrictionSettings(t *testing.T) {
 	assert.Equal(t, "2026-06-17", response.Data.ConfirmationRevision)
 	assert.Equal(t, "interval", response.Data.ConfirmationFrequency)
 	assert.Equal(t, 72, response.Data.ConfirmationIntervalHours)
+}
+
+func TestGetStatusExposesAPIKeyLegalLinkVisibility(t *testing.T) {
+	configureLegalSettingsTest(t, func(settings *system_setting.LegalSettings) {
+		settings.APIKeyTermsEnabled = false
+		settings.APIKeyPrivacyEnabled = true
+		settings.APIKeyAcceptableUseEnabled = false
+		settings.APIKeyRefundEnabled = true
+		settings.APIKeyRestrictedRegionsEnabled = false
+	})
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
+
+	GetStatus(context)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			APIKeyTermsEnabled             bool `json:"api_key_terms_enabled"`
+			APIKeyPrivacyEnabled           bool `json:"api_key_privacy_enabled"`
+			APIKeyAcceptableUseEnabled     bool `json:"api_key_acceptable_use_enabled"`
+			APIKeyRefundEnabled            bool `json:"api_key_refund_enabled"`
+			APIKeyRestrictedRegionsEnabled bool `json:"api_key_restricted_regions_enabled"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	assert.False(t, response.Data.APIKeyTermsEnabled)
+	assert.True(t, response.Data.APIKeyPrivacyEnabled)
+	assert.False(t, response.Data.APIKeyAcceptableUseEnabled)
+	assert.True(t, response.Data.APIKeyRefundEnabled)
+	assert.False(t, response.Data.APIKeyRestrictedRegionsEnabled)
 }
 
 func TestRegionalRestrictionBlocksRegistrationBeforeRequestParsing(t *testing.T) {

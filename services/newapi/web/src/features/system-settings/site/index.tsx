@@ -34,6 +34,11 @@ const defaultSiteSettings: SiteSettings = {
   ServerAddress: '',
   'legal.user_agreement': '',
   'legal.privacy_policy': '',
+  'legal.api_key_terms_enabled': true,
+  'legal.api_key_privacy_enabled': true,
+  'legal.api_key_acceptable_use_enabled': true,
+  'legal.api_key_refund_enabled': true,
+  'legal.api_key_restricted_regions_enabled': true,
   HeaderNavModules: '',
   SidebarModulesAdmin: '',
 }

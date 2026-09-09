@@ -112,18 +112,39 @@ const REGIONAL_RESTRICTION_COPY = {
 } as const
 
 const REGIONAL_RESTRICTION_LINKS = [
-  { key: 'terms', href: '/user-agreement' },
-  { key: 'privacy', href: '/privacy-policy' },
+  {
+    key: 'terms',
+    href: 'https://new.fatherkey.com/legal/terms',
+    visibilityKey: 'api_key_terms_enabled',
+  },
+  {
+    key: 'privacy',
+    href: 'https://new.fatherkey.com/legal/privacy',
+    visibilityKey: 'api_key_privacy_enabled',
+  },
   {
     key: 'acceptableUse',
-    href: 'https://www.fatherkey.com/legal/acceptable-use',
+    href: 'https://new.fatherkey.com/legal/acceptable-use',
+    visibilityKey: 'api_key_acceptable_use_enabled',
   },
-  { key: 'refund', href: 'https://www.fatherkey.com/legal/refund' },
+  {
+    key: 'refund',
+    href: 'https://new.fatherkey.com/legal/refund',
+    visibilityKey: 'api_key_refund_enabled',
+  },
   {
     key: 'restrictedRegions',
-    href: 'https://www.fatherkey.com/legal/restricted-regions',
+    href: 'https://new.fatherkey.com/legal/restricted-regions',
+    visibilityKey: 'api_key_restricted_regions_enabled',
   },
 ] as const
+
+function isLegalLinkVisible(
+  status: RegionalRestrictionStatus | null,
+  visibilityKey: keyof RegionalRestrictionStatus
+): boolean {
+  return status?.[visibilityKey] !== false
+}
 
 function confirmationStorageKey(status: RegionalRestrictionStatus): string {
   return `${CONFIRMATION_STORAGE_PREFIX}${status.revision || 'default'}`
@@ -181,10 +202,6 @@ function RegionalRestrictionDialog(props: {
   const isBlocked = props.mode === 'blocked'
   const copy = REGIONAL_RESTRICTION_COPY[language]
 
-  useEffect(() => {
-    setConfirmed(false)
-  }, [props.mode, props.status])
-
   return (
     <AlertDialog open>
       <AlertDialogContent className='max-h-[min(90dvh,48rem)] w-[calc(100vw-1.5rem)] !max-w-2xl overflow-y-auto p-0 sm:w-[min(42rem,calc(100vw-3rem))]'>
@@ -224,7 +241,9 @@ function RegionalRestrictionDialog(props: {
               ))}
             </ul>
             <div className='flex flex-wrap gap-x-4 gap-y-2 font-medium'>
-              {REGIONAL_RESTRICTION_LINKS.map((link) => (
+              {REGIONAL_RESTRICTION_LINKS.filter((link) =>
+                isLegalLinkVisible(props.status, link.visibilityKey)
+              ).map((link) => (
                 <a
                   key={link.key}
                   href={link.href}
@@ -359,6 +378,7 @@ export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
   if (mode === 'confirmation' || mode === 'blocked') {
     return (
       <RegionalRestrictionDialog
+        key={`${mode}:${status?.blocked ? 'blocked' : 'confirmation'}:${status?.revision || ''}:${status?.country_code || ''}`}
         mode={mode}
         status={status}
         onConfirm={handleConfirm}

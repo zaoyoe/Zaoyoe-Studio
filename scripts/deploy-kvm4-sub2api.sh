@@ -778,6 +778,13 @@ if [[ "$maintenance_edge_status" != "503" ]]; then
   rollback
   die "temporary Sub2API maintenance ingress did not return HTTP 503 through Cloudflare"
 fi
+maintenance_new_domain_status="$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' \
+  -o /dev/null -w '%{http_code}' \
+  "https://new.fatherkey.com/health?maintenance=$RELEASE_ID" || true)"
+if [[ "$maintenance_new_domain_status" != "503" ]]; then
+  rollback
+  die "temporary NewAPI ingress did not return HTTP 503 through Cloudflare on new.fatherkey.com"
+fi
 
 echo "Stopping the previous public app before schema or data migration"
 docker stop --time 130 sub2api >/dev/null 2>&1 || true
@@ -1027,7 +1034,7 @@ if ! jq -e '.success == true and .data.unknown_region == false and .data.country
   die "NewAPI did not accept the authenticated local regional edge country"
 fi
 
-echo "Installing Cloudflare-only Caddy ingress for the three Sub2API domains"
+echo "Installing Cloudflare-only Caddy ingress for the NewAPI and legacy-compatible domains"
 if ! install_managed_caddy_config "$newapi_regional_edge_secret"; then
   rollback
   die "failed to install or reload the managed Caddy ingress"
@@ -1043,6 +1050,14 @@ direct_origin_status="$(curl -sS --noproxy '*' --max-time 10 -o /dev/null -w '%{
   https://sub2api.fatherkey.com/health || true)"
 if [[ "$direct_origin_status" != "403" ]]; then
   fail_after_public_open "direct Caddy origin request was not rejected"
+fi
+
+if ! new_domain_health_payload="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+  https://new.fatherkey.com/health)"; then
+  fail_after_public_open "new.fatherkey.com health check failed"
+fi
+if ! jq -e '.status == "ok"' >/dev/null <<<"$new_domain_health_payload"; then
+  fail_after_public_open "new.fatherkey.com did not report a healthy NewAPI service"
 fi
 
 if ! edge_region_payload="$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \

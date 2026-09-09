@@ -707,7 +707,16 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 		}
 	}
 
-	// 2. 处理常见的模型名称变体
+	// 2. Some official catalogs qualify an otherwise identical model with its
+	// provider (for example `dashscope/qwen3.7-max`). Requests from a channel
+	// commonly contain only the model ID. Resolve that form only when there is
+	// one unambiguous qualified entry; choosing arbitrarily between providers
+	// could apply the wrong official price.
+	if pricing := s.matchQualifiedModelPricing(lookupCandidates); pricing != nil {
+		return pricing
+	}
+
+	// 3. 处理常见的模型名称变体
 	// claude-opus-4-5-20251101 -> claude-opus-4.5-20251101
 	for _, candidate := range lookupCandidates {
 		normalized := strings.ReplaceAll(candidate, "-4-5-", "-4.5-")
@@ -716,7 +725,7 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 		}
 	}
 
-	// 3. 尝试模糊匹配（去掉版本号后缀）
+	// 4. 尝试模糊匹配（去掉版本号后缀）
 	// claude-opus-4-5-20251101 -> claude-opus-4.5
 	baseName := s.extractBaseName(lookupCandidates[0])
 	for key, pricing := range s.pricingData {
@@ -726,16 +735,51 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 		}
 	}
 
-	// 4. 基于模型系列匹配（Claude）
+	// 5. 基于模型系列匹配（Claude）
 	if pricing := s.matchByModelFamily(lookupCandidates[0]); pricing != nil {
 		return pricing
 	}
 
-	// 5. OpenAI 模型回退策略
+	// 6. OpenAI 模型回退策略
 	if strings.HasPrefix(lookupCandidates[0], "gpt-") {
 		return s.matchOpenAIModel(lookupCandidates[0])
 	}
 
+	return nil
+}
+
+// matchQualifiedModelPricing matches a bare model ID against provider-qualified
+// catalog keys. It deliberately returns nil for ambiguous matches so a price
+// from another provider is never silently applied.
+func (s *PricingService) matchQualifiedModelPricing(candidates []string) *LiteLLMModelPricing {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	for _, candidate := range candidates {
+		candidate = strings.ToLower(strings.TrimSpace(candidate))
+		if candidate == "" || strings.Contains(candidate, "/") {
+			continue
+		}
+
+		var matched *LiteLLMModelPricing
+		for key, pricing := range s.pricingData {
+			key = strings.ToLower(strings.TrimSpace(key))
+			if key == candidate || !strings.HasSuffix(key, "/"+candidate) {
+				continue
+			}
+			if matched != nil {
+				// More than one provider exposes this model ID. The caller must
+				// configure an explicit channel price or a qualified model name.
+				matched = nil
+				break
+			}
+			matched = pricing
+		}
+		if matched != nil {
+			return matched
+		}
+	}
 	return nil
 }
 

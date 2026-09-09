@@ -130,10 +130,17 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	return a.buildRequestURL(info, "")
+}
+
+func (a *TaskAdaptor) buildRequestURL(info *relaycommon.RelayInfo, endpoint string) (string, error) {
 	if info.Action == constant.TaskActionRemix {
 		return fmt.Sprintf("%s/v1/videos/%s/remix", a.baseURL, info.OriginTaskID), nil
 	}
-	return fmt.Sprintf("%s/v1/videos", a.baseURL), nil
+	if endpoint == "" {
+		endpoint = "/v1/videos"
+	}
+	return fmt.Sprintf("%s%s", a.baseURL, endpoint), nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -219,9 +226,78 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	return common.ReaderOnly(storage), nil
 }
 
-// DoRequest delegates to common helper.
+func (a *TaskAdaptor) newRequest(c *gin.Context, info *relaycommon.RelayInfo, body []byte, endpoint string) (*http.Request, error) {
+	fullRequestURL, err := a.buildRequestURL(info, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(c.Request.Method, fullRequestURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("new request failed: %w", err)
+	}
+	if err := a.BuildRequestHeader(c, req, info); err != nil {
+		return nil, fmt.Errorf("setup request header failed: %w", err)
+	}
+	return req, nil
+}
+
+// DoRequest sends the standard videos request and retries the legacy
+// generations route only when the upstream explicitly reports a missing or
+// invalid route. The request body is buffered once so the retry is identical.
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
-	return channel.DoTaskApiRequest(a, c, info, requestBody)
+	body, err := io.ReadAll(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("read request body failed: %w", err)
+	}
+	req, err := a.newRequest(c, info, body, "")
+	if err != nil {
+		return nil, err
+	}
+	resp, err := channel.DoRequest(c, req, info)
+	if err != nil {
+		return nil, err
+	}
+	if info.Action == constant.TaskActionRemix || c.Request.Method != http.MethodPost || !shouldFallbackToLegacyVideos(resp) {
+		return resp, nil
+	}
+
+	legacyReq, err := a.newRequest(c, info, body, "/v1/videos/generations")
+	if err != nil {
+		return nil, err
+	}
+	return channel.DoRequest(c, legacyReq, info)
+}
+
+func shouldFallbackToLegacyVideos(resp *http.Response) bool {
+	if resp == nil || resp.StatusCode != http.StatusNotFound || resp.Body == nil {
+		return false
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+	return isLegacyVideosRouteError(body)
+}
+
+func isLegacyVideosRouteError(body []byte) bool {
+	message := strings.ToLower(string(body))
+	for _, marker := range []string{
+		"invalid url",
+		"invalid_url",
+		"route not found",
+		"no route",
+		"unknown route",
+		"unrecognized route",
+		"page not found",
+		"cannot post",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // DoResponse handles upstream response, returns taskID etc.
