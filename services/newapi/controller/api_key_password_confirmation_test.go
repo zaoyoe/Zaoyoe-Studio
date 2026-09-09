@@ -52,7 +52,6 @@ func setupAPIKeyPasswordConfirmationTest(t *testing.T, rawPassword string) (*gor
 	t.Setenv(regionalRestrictionSecretEnv, apiKeyPasswordConfirmationTestSecret)
 	regionalSettings := system_setting.RegionalRestrictionSettings{
 		Enabled:                       true,
-		LoginEnabled:                  false,
 		RegistrationEnabled:           true,
 		OAuthSignupEnabled:            true,
 		APIKeyPageConfirmationEnabled: true,

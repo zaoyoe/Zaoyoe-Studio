@@ -391,7 +391,6 @@ export type SecuritySettings = {
   'fetch_setting.apply_ip_filter_for_domain': boolean
   'token_setting.max_user_tokens': number
   'regional_restriction.enabled': boolean
-  'regional_restriction.login_enabled': boolean
   'regional_restriction.registration_enabled': boolean
   'regional_restriction.oauth_signup_enabled': boolean
   'regional_restriction.api_key_page_confirmation_enabled': boolean

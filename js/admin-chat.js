@@ -214,6 +214,15 @@ class AdminChat {
             keys.push(`${prefix}:${prefix === 'email' ? normalized.toLowerCase() : normalized}`);
         };
 
+        // A NewAPI identity is external to this Supabase project. Never use an
+        // email or numeric external ID to associate it with a Father Key user.
+        if (this.isNewApiSupportSession(session)) {
+            pushKey('session', session.sessionId);
+            (Array.isArray(session.sessionIds) ? session.sessionIds : [])
+                .forEach((value) => pushKey('session', value));
+            return [...new Set(keys)];
+        }
+
         pushKey('user', session.userId || session.profile?.id);
         pushKey('email', this.resolveSessionContextEmail(session) || session.email || session.profile?.email);
         pushKey('session', session.sessionId);
@@ -244,7 +253,7 @@ class AdminChat {
     }
 
     getSessionPresenceStatusItem(session = {}) {
-        if (this.isOpsAlertSession(session)) return null;
+        if (this.isOpsAlertSession(session) || this.isNewApiSupportSession(session)) return null;
         const presence = this.getSessionPresenceState(session);
         const lastSeenAt = String(presence.lastSeenAt || '').trim();
         const lastSeenTime = Date.parse(lastSeenAt);
@@ -429,7 +438,9 @@ class AdminChat {
     }
 
     applyUserActivityRowsToSessions(rows = [], sessions = this.chatSessions) {
-        const sessionList = (Array.isArray(sessions) ? sessions : []).filter((session) => !this.isOpsAlertSession(session));
+        const sessionList = (Array.isArray(sessions) ? sessions : []).filter((session) => (
+            !this.isOpsAlertSession(session) && !this.isNewApiSupportSession(session)
+        ));
         const sessionsByUserId = new Map();
         sessionList.forEach((session) => {
             const userId = String(session?.userId || session?.profile?.id || '').trim();
@@ -467,6 +478,7 @@ class AdminChat {
 
     getUserActivitySessionIds(sessions = this.chatSessions) {
         return [...new Set((Array.isArray(sessions) ? sessions : [])
+            .filter((session) => !this.isNewApiSupportSession(session))
             .map((session) => String(session?.userId || session?.profile?.id || '').trim())
             .filter(Boolean))];
     }
@@ -1058,6 +1070,12 @@ class AdminChat {
         return this.cloneChatSessionCacheValue({
             sessionId: session.sessionId || '',
             sessionIds: Array.isArray(session.sessionIds) ? session.sessionIds : [],
+            product: session.product || 'legacy',
+            source: session.source || '',
+            externalUserId: session.externalUserId || '',
+            externalUsername: session.externalUsername || '',
+            externalEmail: session.externalEmail || '',
+            pageContext: session.pageContext || null,
             nickname: session.nickname || '',
             email: session.email || '',
             lastMessage: session.lastMessage || '',
@@ -1118,6 +1136,14 @@ class AdminChat {
                     return {
                         sessionId,
                         sessionIds,
+                        product: this.getSessionProduct(session),
+                        source: String(session.source || '').trim(),
+                        externalUserId: String(session.externalUserId || '').trim(),
+                        externalUsername: String(session.externalUsername || '').trim(),
+                        externalEmail: String(session.externalEmail || '').trim(),
+                        pageContext: session.pageContext && typeof session.pageContext === 'object'
+                            ? this.cloneChatSessionCacheValue(session.pageContext)
+                            : null,
                         nickname: String(session.nickname || '').trim(),
                         email: String(session.email || '').trim(),
                         lastMessage: String(session.lastMessage || ''),
@@ -1831,11 +1857,13 @@ class AdminChat {
 
         const userIds = [...new Set(
             safeSessions
+                .filter((session) => !this.isNewApiSupportSession(session))
                 .map((session) => String(session?.userId || '').trim())
                 .filter(Boolean)
         )];
         const emailKeys = [...new Set(
             safeSessions
+                .filter((session) => !this.isNewApiSupportSession(session))
                 .filter((session) => !String(session?.userId || '').trim())
                 .map((session) => {
                     const directEmail = String(session?.email || '').trim().toLowerCase();
@@ -1862,6 +1890,20 @@ class AdminChat {
         );
 
         const profiledSessions = safeSessions.map((session) => {
+            if (this.isNewApiSupportSession(session)) {
+                const identity = this.getNewApiSupportIdentity(session);
+                return {
+                    ...session,
+                    userId: '',
+                    profile: null,
+                    externalUserId: identity.userId,
+                    externalUsername: identity.username,
+                    externalEmail: identity.email,
+                    email: identity.email,
+                    nickname: identity.username || (identity.email ? identity.email.split('@')[0] : 'NewAPI 用户')
+                };
+            }
+
             const fallbackKey = String(session?.sessionId || '').trim();
             const sessionIds = Array.isArray(session?.sessionIds) ? session.sessionIds : [];
             const fallbackEmail = this.resolveSessionEmail(session?.profile || null, fallbackKey, sessionIds);
@@ -1906,6 +1948,24 @@ class AdminChat {
         if (preferredEmail && preferredEmail.includes('@')) return preferredEmail.split('@')[0];
         if (normalizedFallback.includes('@')) return normalizedFallback.split('@')[0];
         return this.t('chat.guest', '访客');
+    }
+
+    getSessionProduct(session = {}) {
+        return String(session?.product || '').trim().toLowerCase() === 'newapi'
+            ? 'newapi'
+            : 'legacy';
+    }
+
+    isNewApiSupportSession(session = {}) {
+        return this.getSessionProduct(session) === 'newapi';
+    }
+
+    getNewApiSupportIdentity(session = {}) {
+        return {
+            userId: String(session?.externalUserId || session?.external_user_id || '').trim(),
+            username: String(session?.externalUsername || session?.external_username || '').trim(),
+            email: String(session?.externalEmail || session?.external_email || session?.email || '').trim()
+        };
     }
 
     getActiveSiteFilter() {
@@ -3339,6 +3399,9 @@ class AdminChat {
     }
 
     getUserContextHeaderStatusItems(context = {}) {
+        if (context?.externalSupport) {
+            return [{ label: '来源', value: 'NewAPI', tone: 'neutral' }];
+        }
         return this.getUserContextHeadlineItems(context).slice(0, 3);
     }
 
@@ -3479,6 +3542,10 @@ class AdminChat {
     }
 
     buildUserContextCacheKey(session = {}) {
+        if (this.isNewApiSupportSession(session)) {
+            const identity = this.getNewApiSupportIdentity(session);
+            return `newapi:${identity.userId || String(session?.sessionId || '').trim()}`;
+        }
         const userId = String(session?.userId || session?.profile?.id || '').trim();
         const email = this.resolveSessionContextEmail(session).toLowerCase();
         const sessionId = String(session?.sessionId || '').trim();
@@ -3540,6 +3607,27 @@ class AdminChat {
         const cacheKey = this.buildUserContextCacheKey(session);
         if (this.userContextCache.has(cacheKey)) {
             return this.userContextCache.get(cacheKey);
+        }
+
+        if (this.isNewApiSupportSession(session)) {
+            const identity = this.getNewApiSupportIdentity(session);
+            const context = {
+                cacheKey,
+                externalSupport: true,
+                product: 'newapi',
+                externalUserId: identity.userId,
+                email: identity.email,
+                displayName: identity.username || (identity.email ? identity.email.split('@')[0] : 'NewAPI 用户'),
+                sessionId: String(session?.sessionId || '').trim(),
+                pageContext: session?.pageContext && typeof session.pageContext === 'object' ? session.pageContext : null,
+                accountState: 'NewAPI Dashboard',
+                orders: [],
+                payments: [],
+                verifications: [],
+                tickets: []
+            };
+            this.userContextCache.set(cacheKey, context);
+            return context;
         }
 
         const initialUserId = String(session?.userId || session?.profile?.id || '').trim();
@@ -4669,6 +4757,21 @@ class AdminChat {
         panel.replaceChildren();
         this.renderUserContextHeaderStatus(context);
         this.renderReplyTemplateBar(context);
+
+        if (context.externalSupport) {
+            const pagePath = String(context?.pageContext?.path || '').trim();
+            const pageTitle = String(context?.pageContext?.title || '').trim();
+            const externalId = String(context.externalUserId || '').trim();
+            panel.innerHTML = `<div class="chat-context-panel__state">${this.escapeHtml([
+                'NewAPI 外部账户',
+                context.displayName || '',
+                context.email || '',
+                externalId ? `用户 ID: ${externalId}` : '',
+                pageTitle || pagePath ? `当前页面: ${[pageTitle, pagePath].filter(Boolean).join(' · ')}` : ''
+            ].filter(Boolean).join(' · '))}</div>`;
+            this.updateChatContextPanelLayout();
+            return;
+        }
 
         const shell = document.createElement('section');
         shell.className = 'user-context-shell';
@@ -7680,7 +7783,7 @@ class AdminChat {
     }
 
     async fetchChatMessages({ fullHistory = false } = {}) {
-        const selectFields = 'id, session_id, user_id, is_admin, content, message_type, created_at';
+        const selectFields = 'id, session_id, user_id, is_admin, content, message_type, created_at, product, source, external_user_id, external_username, external_email, page_context';
         const applySiteFilter = (query) => {
             if (window.AdminSiteFilter) {
                 return window.AdminSiteFilter.applySiteFilter(query);
@@ -7873,12 +7976,28 @@ class AdminChat {
             const normalizedGroupKey = typeof groupKey === 'string' ? groupKey.trim() : String(groupKey || '');
             const sessionIds = Array.from(data.sessionIds);
             const profile = null;
-            const email = this.resolveSessionEmail(profile, normalizedGroupKey, sessionIds);
-            const nickname = this.resolveSessionNickname(profile, normalizedGroupKey, email);
+            const product = String(lastMsg.product || '').trim().toLowerCase() === 'newapi' ? 'newapi' : 'legacy';
+            const externalUserId = product === 'newapi' ? String(lastMsg.external_user_id || '').trim() : '';
+            const externalUsername = product === 'newapi' ? String(lastMsg.external_username || '').trim() : '';
+            const externalEmail = product === 'newapi' ? String(lastMsg.external_email || '').trim() : '';
+            const email = product === 'newapi'
+                ? externalEmail
+                : this.resolveSessionEmail(profile, normalizedGroupKey, sessionIds);
+            const nickname = product === 'newapi'
+                ? (externalUsername || (email ? email.split('@')[0] : 'NewAPI 用户'))
+                : this.resolveSessionNickname(profile, normalizedGroupKey, email);
 
             return {
                 sessionId: normalizedGroupKey,
                 sessionIds,
+                product,
+                source: String(lastMsg.source || '').trim(),
+                externalUserId,
+                externalUsername,
+                externalEmail,
+                pageContext: product === 'newapi' && lastMsg.page_context && typeof lastMsg.page_context === 'object'
+                    ? lastMsg.page_context
+                    : null,
                 nickname,
                 email,
                 lastMessage: lastMsg.message_type === 'image' ? this.t('chat.image', '[图片]') : lastMsg.content,
@@ -7931,12 +8050,18 @@ class AdminChat {
             };
         }
 
+        const isNewApiSupport = this.isNewApiSupportSession(session);
+        const externalIdentity = isNewApiSupport ? this.getNewApiSupportIdentity(session) : null;
         const resolvedEmail = this.resolveSessionContextEmail(session);
-        let displayName = session.nickname
-            || session.profile?.display_name
-            || session.profile?.username
-            || (resolvedEmail ? resolvedEmail.split('@')[0] : this.t('chat.guest', '访客'));
-        let displaySub = resolvedEmail || this.t('chat.noEmail', '无邮箱');
+        let displayName = isNewApiSupport
+            ? (externalIdentity.username || (resolvedEmail ? resolvedEmail.split('@')[0] : 'NewAPI 用户'))
+            : (session.nickname
+                || session.profile?.display_name
+                || session.profile?.username
+                || (resolvedEmail ? resolvedEmail.split('@')[0] : this.t('chat.guest', '访客')));
+        let displaySub = isNewApiSupport
+            ? (resolvedEmail || (externalIdentity.userId ? `用户 ID: ${externalIdentity.userId}` : 'NewAPI 外部会话'))
+            : (resolvedEmail || this.t('chat.noEmail', '无邮箱'));
         const presenceStatus = this.getSessionPresenceStatusItem(session);
 
         if (!resolvedEmail) {
@@ -7962,6 +8087,8 @@ class AdminChat {
             name: displayName,
             subtext: displaySub,
             preview: session.lastMessage || '',
+            sourceBadge: isNewApiSupport ? 'NewAPI' : '',
+            sourceBadgeClass: isNewApiSupport ? 'session-badge--newapi' : '',
             badge: prioritySignals[0]?.label || '',
             badgeClass: prioritySignals[0]?.badgeClass || ''
         };
@@ -7992,6 +8119,10 @@ class AdminChat {
                 session.profile?.username || '',
                 session.nickname || '',
                 session.email || '',
+                session.product || '',
+                session.externalUserId || '',
+                session.externalUsername || '',
+                session.externalEmail || '',
                 session.sessionId || '',
                 (session.sessionIds || []).join(' '),
                 prioritySignals.map((signal) => `${signal.label} ${signal.subtext || ''}`).join(' '),
@@ -8058,6 +8189,13 @@ class AdminChat {
                 nameEl.textContent = display.name;
 
                 headerMainEl.appendChild(nameEl);
+
+                if (display.sourceBadge) {
+                    const sourceBadgeEl = document.createElement('span');
+                    sourceBadgeEl.className = `session-badge${display.sourceBadgeClass ? ` ${display.sourceBadgeClass}` : ''}`;
+                    sourceBadgeEl.textContent = display.sourceBadge;
+                    headerMainEl.appendChild(sourceBadgeEl);
+                }
 
                 if (display.badge) {
                     const badgeEl = document.createElement('span');
@@ -8139,6 +8277,10 @@ class AdminChat {
             ? query.eq('session_id', normalizedSessionIds[0])
             : query.in('session_id', normalizedSessionIds);
 
+        if (this.isNewApiSupportSession(this.currentSessionInfo)) {
+            query = query.eq('product', 'newapi');
+        }
+
         return query;
     }
 
@@ -8219,12 +8361,18 @@ class AdminChat {
             tickets: []
         });
 
+        const isNewApiSupport = this.isNewApiSupportSession(session);
+        const externalIdentity = isNewApiSupport ? this.getNewApiSupportIdentity(session) : null;
         const resolvedEmail = this.resolveSessionContextEmail(session);
-        const title = session?.nickname
-            || session?.profile?.display_name
-            || session?.profile?.username
-            || (resolvedEmail ? resolvedEmail.split('@')[0] : (sessionId.startsWith('guest') ? this.t('chat.guest', '访客') : this.t('chat.user', '用户')));
-        const sub = resolvedEmail || `${this.t('chat.session', 'Session')}: ${this.currentSessionId}`;
+        const title = isNewApiSupport
+            ? (externalIdentity.username || (resolvedEmail ? resolvedEmail.split('@')[0] : 'NewAPI 用户'))
+            : (session?.nickname
+                || session?.profile?.display_name
+                || session?.profile?.username
+                || (resolvedEmail ? resolvedEmail.split('@')[0] : (sessionId.startsWith('guest') ? this.t('chat.guest', '访客') : this.t('chat.user', '用户'))));
+        const sub = isNewApiSupport
+            ? ['NewAPI', resolvedEmail || '', externalIdentity.userId ? `用户 ID: ${externalIdentity.userId}` : ''].filter(Boolean).join(' · ')
+            : (resolvedEmail || `${this.t('chat.session', 'Session')}: ${this.currentSessionId}`);
 
         document.getElementById('currentChatUser').textContent = title;
         document.getElementById('currentChatId').textContent = sub;
@@ -8517,6 +8665,11 @@ class AdminChat {
         const normalizedSessionId = String(msg.session_id || '').trim();
         const normalizedUserId = String(msg.user_id || '').trim();
         const normalizedCreatedAt = String(msg.created_at || new Date().toISOString()).trim();
+        const product = String(msg.product || '').trim().toLowerCase() === 'newapi' ? 'newapi' : 'legacy';
+        const isNewApiSupport = product === 'newapi';
+        const externalUserId = isNewApiSupport ? String(msg.external_user_id || '').trim() : '';
+        const externalUsername = isNewApiSupport ? String(msg.external_username || '').trim() : '';
+        const externalEmail = isNewApiSupport ? String(msg.external_email || '').trim() : '';
         const currentAdminUserId = String(this.currentAdminUserId || '').trim();
         if (!normalizedSessionId || !normalizedCreatedAt) {
             return false;
@@ -8534,9 +8687,10 @@ class AdminChat {
                 : [String(session?.sessionId || '').trim()].filter(Boolean);
             const normalizedSessionKey = String(session?.sessionId || '').trim();
             const normalizedSessionUserId = String(session?.userId || '').trim();
-            const matches = (normalizedUserId && (normalizedSessionUserId === normalizedUserId || normalizedSessionKey === normalizedUserId))
+            const matchesProduct = this.getSessionProduct(session) === product;
+            const matches = matchesProduct && ((normalizedUserId && (normalizedSessionUserId === normalizedUserId || normalizedSessionKey === normalizedUserId))
                 || normalizedSessionKey === normalizedSessionId
-                || sessionIds.includes(normalizedSessionId);
+                || sessionIds.includes(normalizedSessionId));
 
             if (!matches) {
                 return session;
@@ -8547,14 +8701,26 @@ class AdminChat {
                 ? sessionIds
                 : [...sessionIds, normalizedSessionId];
             const fallbackKey = normalizedUserId || normalizedSessionKey || normalizedSessionId;
-            const email = this.resolveSessionEmail(session?.profile || null, fallbackKey, nextSessionIds);
-            const nickname = this.resolveSessionNickname(session?.profile || null, fallbackKey, email);
+            const email = isNewApiSupport
+                ? externalEmail
+                : this.resolveSessionEmail(session?.profile || null, fallbackKey, nextSessionIds);
+            const nickname = isNewApiSupport
+                ? (externalUsername || (email ? email.split('@')[0] : 'NewAPI 用户'))
+                : this.resolveSessionNickname(session?.profile || null, fallbackKey, email);
 
             return {
                 ...session,
-                sessionId: normalizedUserId || normalizedSessionKey || normalizedSessionId,
+                sessionId: isNewApiSupport ? (normalizedSessionKey || normalizedSessionId) : (normalizedUserId || normalizedSessionKey || normalizedSessionId),
                 sessionIds: nextSessionIds,
-                userId: normalizedUserId || normalizedSessionUserId,
+                userId: isNewApiSupport ? '' : (normalizedUserId || normalizedSessionUserId),
+                product,
+                source: String(msg.source || session.source || '').trim(),
+                externalUserId: isNewApiSupport ? externalUserId : '',
+                externalUsername: isNewApiSupport ? externalUsername : '',
+                externalEmail: isNewApiSupport ? externalEmail : '',
+                pageContext: isNewApiSupport && msg.page_context && typeof msg.page_context === 'object'
+                    ? msg.page_context
+                    : session.pageContext || null,
                 nickname,
                 email,
                 lastMessage: preview,
@@ -8566,18 +8732,30 @@ class AdminChat {
 
         if (!matched) {
             const fallbackKey = normalizedUserId || normalizedSessionId;
-            const email = this.resolveSessionEmail(null, fallbackKey, [normalizedSessionId]);
-            const nickname = this.resolveSessionNickname(null, fallbackKey, email);
+            const email = isNewApiSupport
+                ? externalEmail
+                : this.resolveSessionEmail(null, fallbackKey, [normalizedSessionId]);
+            const nickname = isNewApiSupport
+                ? (externalUsername || (email ? email.split('@')[0] : 'NewAPI 用户'))
+                : this.resolveSessionNickname(null, fallbackKey, email);
             this.chatSessions = [
                 ...this.chatSessions,
                 {
-                    sessionId: fallbackKey,
+                    sessionId: isNewApiSupport ? normalizedSessionId : fallbackKey,
                     sessionIds: [normalizedSessionId],
+                    product,
+                    source: String(msg.source || '').trim(),
+                    externalUserId,
+                    externalUsername,
+                    externalEmail,
+                    pageContext: isNewApiSupport && msg.page_context && typeof msg.page_context === 'object'
+                        ? msg.page_context
+                        : null,
                     nickname,
                     email,
                     lastMessage: preview,
                     timestamp: new Date(normalizedCreatedAt),
-                    userId: normalizedUserId,
+                    userId: isNewApiSupport ? '' : normalizedUserId,
                     unread: 0,
                     profile: null,
                     lastUserMessageAt: normalizedCreatedAt,
@@ -8595,6 +8773,10 @@ class AdminChat {
     }
 
     scheduleRealtimeSessionHydration(message = {}) {
+        if (String(message?.product || '').trim().toLowerCase() === 'newapi') {
+            return;
+        }
+
         const userId = String(message?.user_id || '').trim();
         const sessionId = String(message?.session_id || '').trim().toLowerCase();
 
@@ -8683,6 +8865,7 @@ class AdminChat {
                 .from('chat_messages')
                 .insert({
                     session_id: this.currentSessionId,
+                    product: this.getSessionProduct(this.currentSessionInfo),
                     content: text,
                     message_type: 'text',
                     is_admin: true
@@ -8761,6 +8944,7 @@ class AdminChat {
                 .from('chat_messages')
                 .insert({
                     session_id: this.currentSessionId,
+                    product: this.getSessionProduct(this.currentSessionInfo),
                     content: imageUrl,
                     message_type: 'image',
                     is_admin: true
@@ -8808,7 +8992,11 @@ class AdminChat {
                     const activeSessionIds = Array.isArray(this.currentSessionIds) && this.currentSessionIds.length
                         ? this.currentSessionIds
                         : (this.currentSessionId ? [this.currentSessionId] : []);
-                    if (activeSessionIds.includes(newMsg.session_id) && (!newMsg.is_admin || this.isTicketSyncChatMessage(newMsg))) {
+                    const activeProduct = this.getSessionProduct(this.currentSessionInfo);
+                    const messageProduct = String(newMsg?.product || '').trim().toLowerCase() === 'newapi' ? 'newapi' : 'legacy';
+                    if (activeProduct === messageProduct
+                        && activeSessionIds.includes(newMsg.session_id)
+                        && (!newMsg.is_admin || this.isTicketSyncChatMessage(newMsg))) {
                         this.appendMessage(newMsg);
                     }
                 }
@@ -8910,12 +9098,14 @@ class AdminChat {
         if (msg?.is_admin && !this.isTicketSyncChatMessage(msg)) {
             const normalizedSessionId = String(msg.session_id || '').trim();
             const normalizedCreatedAt = String(msg.created_at || new Date().toISOString()).trim();
+            const product = String(msg.product || '').trim().toLowerCase() === 'newapi' ? 'newapi' : 'legacy';
             if (normalizedSessionId) {
                 this.chatSessions = (Array.isArray(this.chatSessions) ? this.chatSessions : []).map((session) => {
                     const sessionIds = Array.isArray(session?.sessionIds) && session.sessionIds.length
                         ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
                         : [String(session?.sessionId || '').trim()].filter(Boolean);
-                    if (!(session.sessionId === normalizedSessionId || sessionIds.includes(normalizedSessionId))) {
+                    if (this.getSessionProduct(session) !== product
+                        || !(session.sessionId === normalizedSessionId || sessionIds.includes(normalizedSessionId))) {
                         return session;
                     }
 

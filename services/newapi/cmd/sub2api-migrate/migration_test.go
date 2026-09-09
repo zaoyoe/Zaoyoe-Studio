@@ -949,7 +949,6 @@ func TestBuildTargetOptionsOverridesExactLegacyTokenPricing(t *testing.T) {
 	require.NoError(t, common.UnmarshalJsonStr(options["AutoGroups"], &autoGroups))
 	assert.Equal(t, []string{"Legacy Pro"}, autoGroups)
 	assert.Equal(t, "true", options["DefaultUseAutoGroup"])
-	assert.Equal(t, "true", options["regional_restriction.login_enabled"])
 	assert.Equal(t, "allow", options["regional_restriction.unknown_region_policy"])
 }
 

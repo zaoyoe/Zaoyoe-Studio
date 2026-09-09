@@ -470,6 +470,30 @@ describe('API key regional restriction gate', () => {
     assert.ok(document.body.textContent?.includes('API Key Use Confirmation'))
   })
 
+  test('renders only the legal links enabled by the administrator', async () => {
+    apiClient.get = async () =>
+      apiResponse({
+        ...allowedStatus,
+        confirmation_required: true,
+        api_key_terms_enabled: false,
+        api_key_privacy_enabled: true,
+        api_key_acceptable_use_enabled: false,
+        api_key_refund_enabled: true,
+        api_key_restricted_regions_enabled: false,
+      })
+
+    await renderGate()
+    await waitForCondition(
+      () => document.body.textContent?.includes('API Key Use Confirmation') === true,
+      'Confirmation dialog did not open'
+    )
+
+    const labels = [...document.querySelectorAll<HTMLAnchorElement>('a')]
+      .filter((link) => link.getAttribute('href')?.includes('/legal/'))
+      .map((link) => link.textContent?.trim())
+    assert.deepEqual(labels, ['Privacy', 'Refund'])
+  })
+
   test('does not render API key management when the current region is blocked', async () => {
     apiClient.get = async () =>
       apiResponse({

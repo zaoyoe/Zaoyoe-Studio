@@ -286,6 +286,19 @@ function loadFreshSupportApiHandler(repoRoot = path.resolve(__dirname, '..')) {
     return require(path.join(normalizedRepoRoot, 'api', 'support'));
 }
 
+function loadFreshNewApiSupportApiHandler(repoRoot = path.resolve(__dirname, '..')) {
+    const normalizedRepoRoot = path.resolve(repoRoot);
+    clearRequireCacheByPrefixes([
+        path.join(normalizedRepoRoot, 'api')
+    ]);
+    return require(path.join(normalizedRepoRoot, 'api', 'newapi-support'));
+}
+
+function shouldCaptureNewApiSupportRawBody(req = {}) {
+    const requestUrl = String(req.originalUrl || req.url || '').split('?')[0];
+    return requestUrl === '/api/newapi-support';
+}
+
 function applyPreviewEnvToProcess(envValues = {}) {
     Object.entries(envValues).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
@@ -430,7 +443,17 @@ function createLocalPreviewApp(options = {}) {
 
     app.set('etag', false);
 
-    app.use(express.json({ limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT }));
+    app.use(express.json({
+        limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
+        verify(req, _res, buffer) {
+            // The deployed endpoint disables Vercel's body parser so it can
+            // authenticate the exact signed bytes. Keep the local preview
+            // behavior equivalent before Express materializes req.body.
+            if (shouldCaptureNewApiSupportRawBody(req)) {
+                req.rawBody = Buffer.from(buffer);
+            }
+        }
+    }));
     app.use(express.urlencoded({
         extended: false,
         limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT
@@ -657,6 +680,14 @@ function createLocalPreviewApp(options = {}) {
         });
     });
 
+    app.all('/api/newapi-support', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'NewAPI support gateway',
+            loadHandler: loadFreshNewApiSupportApiHandler,
+            repoRoot
+        });
+    });
+
     app.use(express.static(repoRoot, {
         extensions: ['html'],
         etag: false,
@@ -711,6 +742,7 @@ module.exports = {
     DEFAULT_LOCAL_SUB2API_BASE_URL,
     getDefaultEnvFiles,
     loadFreshAdminApiHandler,
+    loadFreshNewApiSupportApiHandler,
     loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
     loadFreshShopApiHandler,
@@ -721,6 +753,7 @@ module.exports = {
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
+    shouldCaptureNewApiSupportRawBody,
     shouldDisableLocalPreviewCache,
     withLocalPreviewEnvDefaults,
     dispatchLocalPreviewApiRequest
