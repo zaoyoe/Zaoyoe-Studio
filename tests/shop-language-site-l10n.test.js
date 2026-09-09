@@ -152,7 +152,7 @@ test('site config rewrites canonical image CDN records to intl display origins a
     );
 
     assert.equal(cnConfig.site, 'cn');
-    assert.equal(cnConfig.getGongyiOrigin(), 'https://sub2api.fatherkey.com');
+    assert.equal(cnConfig.getGongyiOrigin(), 'https://new.fatherkey.com');
     assert.equal(
         cnConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.xyz/prompts/example.webp'),
         'https://cdn.fatherkey.com/prompts/example.webp'
@@ -163,7 +163,11 @@ test('site config rewrites canonical image CDN records to intl display origins a
     );
     assert.equal(
         cnConfig.normalizeGongyiUrlForCurrentSite('https://sub2api.zaoyoe.xyz/dashboard'),
-        'https://sub2api.fatherkey.com/dashboard'
+        'https://new.fatherkey.com/dashboard'
+    );
+    assert.equal(
+        cnConfig.normalizeGongyiUrlForCurrentSite('https://sub2api.fatherkey.com/dashboard?tab=keys#top'),
+        'https://new.fatherkey.com/dashboard?tab=keys#top'
     );
 });
 

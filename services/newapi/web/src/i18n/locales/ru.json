@@ -5254,6 +5254,7 @@
     "API key creation": "API key creation",
     "API key management is unavailable for this request.": "API key management is unavailable for this request.",
     "API key page confirmation": "API key page confirmation",
+    "API key password confirmation": "API key password confirmation",
     "API Key Use Confirmation": "API Key Use Confirmation",
     "Apply regional checks only to registration, new OAuth accounts, API key page confirmation, and API key creation.": "Apply regional checks only to registration, new OAuth accounts, API key page confirmation, and API key creation.",
     "Before creating or managing API keys, confirm that you are eligible to use this service.": "Before creating or managing API keys, confirm that you are eligible to use this service.",
@@ -5274,6 +5275,7 @@
     "Password registration": "Password registration",
     "Regional Restriction": "Regional Restriction",
     "Require confirmation before API key management is loaded.": "Require confirmation before API key management is loaded.",
+    "Require the current account password before API key management is loaded and API keys can be created.": "Require the current account password before API key management is loaded and API keys can be created.",
     "Restrict first-time OAuth account creation without affecting existing-account login.": "Restrict first-time OAuth account creation without affecting existing-account login.",
     "Restrict new password-based account registration.": "Restrict new password-based account registration.",
     "Revision is required": "Revision is required",
@@ -5283,6 +5285,18 @@
     "Use two-letter country codes separated by commas or spaces. The default is CN.": "Use two-letter country codes separated by commas or spaces. The default is CN.",
     "Use two-letter country codes separated by commas or spaces": "Use two-letter country codes separated by commas or spaces",
     "Used only when confirmation frequency is interval.": "Used only when confirmation frequency is interval.",
-    "You must not evade regional, provider, payment, or legal restrictions.": "You must not evade regional, provider, payment, or legal restrictions."
+    "You must not evade regional, provider, payment, or legal restrictions.": "You must not evade regional, provider, payment, or legal restrictions.",
+    "Acceptable Use Policy": "Acceptable Use Policy",
+    "Legal document not found": "Legal document not found",
+    "Legal documents": "Legal documents",
+    "Provide Markdown, HTML, or an external URL for the acceptable use policy": "Provide Markdown, HTML, or an external URL for the acceptable use policy",
+    "Provide Markdown, HTML, or an external URL for the refund policy": "Provide Markdown, HTML, or an external URL for the refund policy",
+    "Provide Markdown, HTML, or an external URL for the restricted regions notice": "Provide Markdown, HTML, or an external URL for the restricted regions notice",
+    "Refund Policy": "Refund Policy",
+    "Restricted Regions": "Restricted Regions",
+    "Supports Markdown, HTML, or a full URL to redirect users.": "Supports Markdown, HTML, or a full URL to redirect users.",
+    "Terms of Service": "Terms of Service",
+    "The requested legal document does not exist.": "The requested legal document does not exist.",
+    "This legal document has not been configured yet.": "This legal document has not been configured yet."
   }
 }

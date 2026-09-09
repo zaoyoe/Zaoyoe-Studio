@@ -25,6 +25,7 @@ export function PrivacyPolicy() {
   const { t } = useTranslation()
   return (
     <LegalDocument
+      documentId='privacy'
       title={t('Privacy Policy')}
       queryKey='privacy-policy'
       fetchDocument={getPrivacyPolicy}

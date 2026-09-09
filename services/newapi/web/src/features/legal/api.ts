@@ -18,7 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import type { LegalDocumentResponse } from './types'
+import type { LegalDocumentId, LegalDocumentResponse } from './types'
+
+const LEGAL_DOCUMENT_ENDPOINTS: Record<LegalDocumentId, string> = {
+  terms: '/api/user-agreement',
+  privacy: '/api/privacy-policy',
+  'acceptable-use': '/api/acceptable-use',
+  refund: '/api/refund-policy',
+  'restricted-regions': '/api/restricted-regions',
+}
 
 export async function getUserAgreement() {
   const res = await api.get<LegalDocumentResponse>('/api/user-agreement')
@@ -27,5 +35,12 @@ export async function getUserAgreement() {
 
 export async function getPrivacyPolicy() {
   const res = await api.get<LegalDocumentResponse>('/api/privacy-policy')
+  return res.data
+}
+
+export async function getLegalDocument(documentId: LegalDocumentId) {
+  const res = await api.get<LegalDocumentResponse>(
+    LEGAL_DOCUMENT_ENDPOINTS[documentId]
+  )
   return res.data
 }

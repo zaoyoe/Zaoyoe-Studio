@@ -25,7 +25,8 @@ export function UserAgreement() {
   const { t } = useTranslation()
   return (
     <LegalDocument
-      title={t('User Agreement')}
+      documentId='terms'
+      title={t('Terms of Service')}
       queryKey='user-agreement'
       fetchDocument={getUserAgreement}
       emptyMessage={t(

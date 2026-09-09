@@ -206,8 +206,8 @@ npm run ai-image:worker -- --env-file server/.env.production --once --limit 2 --
    - `API Key`：使用 AI 图片专用 Key，不和站内其它服务混用。
 
 2. 用户 API 白名单
-   - 只启用管理员认可的 Sub2API 地址。
-   - 国内站建议：`https://sub2api.fatherkey.com/v1`。
+   - 只启用管理员认可的 API 地址。
+   - 国内站建议：`https://new.fatherkey.com/v1`。
    - 国际站建议：`https://sub2api.zaoyoe.xyz/v1`。
    - 不允许用户输入任意上游地址。
 

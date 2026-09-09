@@ -96,6 +96,18 @@ export interface ApiKeyFormData {
   cross_group_retry: boolean
 }
 
+export type ApiKeyCreationAuthorization = {
+  allowed: boolean
+  securityProof?: string
+}
+
+export type ApiKeyPasswordProof = {
+  proof_token: string
+  expires_at: number
+  method: 'password'
+  scope: 'api_key.create'
+}
+
 export interface TokenAutoGroupsConfig {
   groups: string[]
   max_count: number

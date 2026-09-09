@@ -67,12 +67,12 @@
         },
         {
             "source": "/gongyi",
-            "destination": "https://sub2api.fatherkey.com",
+            "destination": "https://new.fatherkey.com",
             "permanent": false
         },
         {
             "source": "/gongyi.html",
-            "destination": "https://sub2api.fatherkey.com",
+            "destination": "https://new.fatherkey.com",
             "permanent": false
         },
         {

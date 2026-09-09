@@ -2,16 +2,760 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func newMigrationSQLMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	return db, mock
+}
+
+func expectBridgeRepairPreamble(t *testing.T, mock sqlmock.Sqlmock, total int, managed int, active int, routable int) {
+	t.Helper()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(migrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(defaultMigrationMark))
+	mock.ExpectQuery(regexp.QuoteMeta(bridgeChannelStateQuery)).
+		WithArgs(constant.ChannelTypeSub2API, bridgeChannelTagPrefix+"%").
+		WillReturnRows(sqlmock.NewRows([]string{"total", "managed", "active", "routable"}).AddRow(total, managed, active, routable))
+}
+
+func expectBridgeChannelInsert(mock sqlmock.Sqlmock, group bridgeGroup, channelID int) {
+	tag := fmt.Sprintf("%s%d", bridgeChannelTagPrefix, group.ID)
+	mock.ExpectQuery(`INSERT INTO channels`).
+		WithArgs(
+			constant.ChannelTypeSub2API,
+			group.BridgeKey,
+			"Legacy bridge - "+group.Name,
+			sqlmock.AnyArg(),
+			group.BridgeBaseURL,
+			strings.Join(group.Models, ","),
+			group.Name,
+			tag,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(channelID))
+	for _, model := range group.Models {
+		mock.ExpectExec(`INSERT INTO abilities`).
+			WithArgs(group.Name, model, channelID, tag).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+}
+
+func TestCountMigratableLegacyGroupsRequiresAnActiveStandardSourceGroup(t *testing.T) {
+	source, mock := newMigrationSQLMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta(migratableLegacyGroupCountQuery)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(13))
+	count, err := countMigratableLegacyGroups(context.Background(), source)
+	require.NoError(t, err)
+	assert.Equal(t, 13, count)
+
+	mock.ExpectQuery(regexp.QuoteMeta(migratableLegacyGroupCountQuery)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	_, err = countMigratableLegacyGroups(context.Background(), source)
+	require.ErrorContains(t, err, "no active standard groups")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestLoadActiveLegacyGroupOptionsRejectsInvalidRate(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		rate float64
+		want string
+	}{
+		{name: "negative", rate: -1, want: "negative rate multiplier"},
+		{name: "nan", rate: math.NaN(), want: "invalid rate multiplier"},
+		{name: "infinite", rate: math.Inf(1), want: "invalid rate multiplier"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			source, mock := newMigrationSQLMock(t)
+			mock.ExpectQuery(regexp.QuoteMeta(activeLegacyGroupOptionsQuery)).
+				WillReturnRows(sqlmock.NewRows([]string{"name", "rate_multiplier"}).AddRow("group-video", testCase.rate))
+
+			groups, err := loadActiveLegacyGroupOptions(context.Background(), source)
+			require.Error(t, err)
+			assert.Nil(t, groups)
+			assert.Contains(t, err.Error(), testCase.want)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func expectGroupOptionsSource(t *testing.T, mock sqlmock.Sqlmock, groups ...activeLegacyGroupOption) {
+	t.Helper()
+	rows := sqlmock.NewRows([]string{"name", "rate_multiplier"})
+	for _, group := range groups {
+		rows.AddRow(group.Name, group.RateMultiplier)
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(activeLegacyGroupOptionsQuery)).WillReturnRows(rows)
+}
+
+func expectGroupOptionsTargetRead(t *testing.T, mock sqlmock.Sqlmock, values map[string]string) {
+	t.Helper()
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	rows := sqlmock.NewRows([]string{"key", "value"})
+	for _, key := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+		if value, ok := values[key]; ok {
+			rows.AddRow(key, value)
+		}
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(`
+		SELECT key, value
+		FROM options
+		WHERE key IN ('GroupRatio', 'UserUsableGroups', 'AutoGroups')
+	`)).WillReturnRows(rows)
+}
+
+func TestRepairMissingGroupOptionsAppendsOnlyMissingGroupsAtomically(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	expectGroupOptionsSource(t, sourceMock,
+		activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5},
+		activeLegacyGroupOption{Name: "group-claude", RateMultiplier: 2},
+	)
+	expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+		"GroupRatio":       `{"group-claude":1.75,"existing":9}`,
+		"UserUsableGroups": `{"group-claude":"Custom label","existing":"Existing label"}`,
+		"AutoGroups":       `["existing","group-claude"]`,
+	})
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs("GroupRatio", `{"existing":9,"group-claude":1.75,"group-video":1.5}`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs("UserUsableGroups", `{"existing":"Existing label","group-claude":"Custom label","group-video":"group-video"}`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs("AutoGroups", `["existing","group-claude","group-video"]`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingGroupOptionsIsIdempotentWhenAllGroupsExist(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	expectGroupOptionsSource(t, sourceMock,
+		activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5},
+		activeLegacyGroupOption{Name: "group-claude", RateMultiplier: 2},
+	)
+	expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+		"GroupRatio":       `{"group-video":1.5,"group-claude":2}`,
+		"UserUsableGroups": `{"group-video":"Video","group-claude":"Claude"}`,
+		"AutoGroups":       `["group-video","group-claude"]`,
+	})
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingGroupOptionsRollsBackOnMalformedJSON(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	expectGroupOptionsSource(t, sourceMock, activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5})
+	expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+		"GroupRatio":       `{`,
+		"UserUsableGroups": `{}`,
+		"AutoGroups":       `[]`,
+	})
+	targetMock.ExpectRollback()
+
+	repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+	require.Error(t, err)
+	assert.False(t, repaired)
+	assert.Contains(t, err.Error(), "decode NewAPI GroupRatio")
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingGroupOptionsRejectsMalformedJSONForEveryOption(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		key  string
+		raw  string
+	}{
+		{name: "GroupRatio", key: "GroupRatio", raw: `{`},
+		{name: "UserUsableGroups", key: "UserUsableGroups", raw: `[]`},
+		{name: "AutoGroups", key: "AutoGroups", raw: `{}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			source, sourceMock := newMigrationSQLMock(t)
+			target, targetMock := newMigrationSQLMock(t)
+			expectGroupOptionsSource(t, sourceMock, activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5})
+			values := map[string]string{
+				"GroupRatio":       `{}`,
+				"UserUsableGroups": `{}`,
+				"AutoGroups":       `[]`,
+			}
+			values[testCase.key] = testCase.raw
+			expectGroupOptionsTargetRead(t, targetMock, values)
+			targetMock.ExpectRollback()
+
+			repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+			require.Error(t, err)
+			assert.False(t, repaired)
+			assert.Contains(t, err.Error(), "decode NewAPI "+testCase.key)
+			require.NoError(t, sourceMock.ExpectationsWereMet())
+			require.NoError(t, targetMock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestRepairMissingGroupOptionsRollsBackWhenAnyWriteFails(t *testing.T) {
+	for _, failedKey := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+		t.Run(failedKey, func(t *testing.T) {
+			source, sourceMock := newMigrationSQLMock(t)
+			target, targetMock := newMigrationSQLMock(t)
+			expectGroupOptionsSource(t, sourceMock, activeLegacyGroupOption{Name: "group-video", RateMultiplier: 1.5})
+			expectGroupOptionsTargetRead(t, targetMock, map[string]string{
+				"GroupRatio":       `{"existing":9}`,
+				"UserUsableGroups": `{"existing":"Existing label"}`,
+				"AutoGroups":       `["existing"]`,
+			})
+			for _, key := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+				expectation := targetMock.ExpectExec(`INSERT INTO options`).WithArgs(key, sqlmock.AnyArg())
+				if key == failedKey {
+					expectation.WillReturnError(fmt.Errorf("forced %s write failure", key))
+					break
+				}
+				expectation.WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+			targetMock.ExpectRollback()
+
+			repaired, err := repairMissingGroupOptions(context.Background(), source, target)
+			require.Error(t, err)
+			assert.False(t, repaired)
+			assert.Contains(t, err.Error(), "write repaired NewAPI "+failedKey)
+			require.NoError(t, sourceMock.ExpectationsWereMet())
+			require.NoError(t, targetMock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestRepairMissingBridgeChannelsRestoresMissingRowsAndThenNoOps(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{
+		{
+			ID:            7,
+			Name:          "Legacy Pro",
+			BridgeKey:     "sk-bridge-pro",
+			Models:        []string{"claude-sonnet", "gpt-5"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+		{
+			ID:            9,
+			Name:          "Legacy Basic",
+			BridgeKey:     "sk-bridge-basic",
+			Models:        []string{"gpt-4.1-mini"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+	}
+
+	expectBridgeRepairPreamble(t, mock, 0, 0, 0, 0)
+	mock.ExpectExec(`DELETE FROM abilities AS a`).
+		WithArgs(bridgeChannelTagPrefix+"%", constant.ChannelTypeSub2API).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	expectBridgeChannelInsert(mock, groups[0], 101)
+	expectBridgeChannelInsert(mock, groups[1], 102)
+	mock.ExpectQuery(regexp.QuoteMeta(bridgeRepairValidationQuery)).
+		WithArgs(constant.ChannelTypeSub2API, bridgeChannelTagPrefix+"%").
+		WillReturnRows(sqlmock.NewRows([]string{"channels", "abilities"}).AddRow(2, 3))
+	mock.ExpectCommit()
+
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+
+	expectBridgeRepairPreamble(t, mock, 2, 2, 2, 2)
+	mock.ExpectCommit()
+	repaired, err = repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRefusesToEnableExistingDisabledRows(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{{
+		ID:            7,
+		Name:          "Legacy Pro",
+		BridgeKey:     "sk-bridge-pro",
+		Models:        []string{"gpt-5"},
+		BridgeBaseURL: "http://legacy-sub2api:8080",
+	}}
+
+	expectBridgeRepairPreamble(t, mock, 1, 1, 0, 0)
+	mock.ExpectRollback()
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "got 1 migration-managed channels (0 active, 0 routable), expected 1")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRefusesPartialActiveRows(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{
+		{
+			ID:            7,
+			Name:          "Legacy Pro",
+			BridgeKey:     "sk-bridge-pro",
+			Models:        []string{"gpt-5"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+		{
+			ID:            9,
+			Name:          "Legacy Basic",
+			BridgeKey:     "sk-bridge-basic",
+			Models:        []string{"gpt-4.1-mini"},
+			BridgeBaseURL: "http://legacy-sub2api:8080",
+		},
+	}
+
+	expectBridgeRepairPreamble(t, mock, 1, 1, 1, 1)
+	mock.ExpectRollback()
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "got 1 migration-managed channels (1 active, 1 routable), expected 2")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRefusesRowsWithoutEnabledAbilities(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	groups := []bridgeGroup{{
+		ID:            7,
+		Name:          "Legacy Pro",
+		BridgeKey:     "sk-bridge-pro",
+		Models:        []string{"gpt-5"},
+		BridgeBaseURL: "http://legacy-sub2api:8080",
+	}}
+
+	expectBridgeRepairPreamble(t, mock, 1, 1, 1, 0)
+	mock.ExpectRollback()
+	repaired, err := repairMissingBridgeChannels(context.Background(), target, groups, defaultMigrationMark)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "got 1 migration-managed channels (1 active, 0 routable), expected 1")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingBridgeChannelsRollsBackWhenAbilityInsertFails(t *testing.T) {
+	target, mock := newMigrationSQLMock(t)
+	group := bridgeGroup{
+		ID:            7,
+		Name:          "Legacy Pro",
+		BridgeKey:     "sk-bridge-pro",
+		Models:        []string{"gpt-5"},
+		BridgeBaseURL: "http://legacy-sub2api:8080",
+	}
+
+	expectBridgeRepairPreamble(t, mock, 0, 0, 0, 0)
+	mock.ExpectExec(`DELETE FROM abilities AS a`).
+		WithArgs(bridgeChannelTagPrefix+"%", constant.ChannelTypeSub2API).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	tag := fmt.Sprintf("%s%d", bridgeChannelTagPrefix, group.ID)
+	mock.ExpectQuery(`INSERT INTO channels`).
+		WithArgs(
+			constant.ChannelTypeSub2API,
+			group.BridgeKey,
+			"Legacy bridge - "+group.Name,
+			sqlmock.AnyArg(),
+			group.BridgeBaseURL,
+			strings.Join(group.Models, ","),
+			group.Name,
+			tag,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(101))
+	mock.ExpectExec(`INSERT INTO abilities`).
+		WithArgs(group.Name, group.Models[0], 101, tag).
+		WillReturnError(errors.New("ability write failed"))
+	mock.ExpectRollback()
+
+	repaired, err := repairMissingBridgeChannels(
+		context.Background(),
+		target,
+		[]bridgeGroup{group},
+		defaultMigrationMark,
+	)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "ability write failed")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRepairMissingSMTPSettingsCopiesMissingConfigurationAndThenNoOps(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	targetMock.ExpectQuery(`SELECT count\(\*\).*FROM options`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).
+			AddRow("smtp_host", "smtp.resend.com").
+			AddRow("smtp_port", "465").
+			AddRow("smtp_username", "resend").
+			AddRow("smtp_password", "re_secret").
+			AddRow("smtp_from", "noreply@example.com").
+			AddRow("smtp_use_tls", "true"))
+	expectedOptions := []struct {
+		key   string
+		value string
+	}{
+		{key: "SMTPAccount", value: "resend"},
+		{key: "SMTPForceAuthLogin", value: "false"},
+		{key: "SMTPFrom", value: "noreply@example.com"},
+		{key: "SMTPInsecureSkipVerify", value: "false"},
+		{key: "SMTPPort", value: "465"},
+		{key: "SMTPSSLEnabled", value: "true"},
+		{key: "SMTPServer", value: "smtp.resend.com"},
+		{key: "SMTPStartTLSEnabled", value: "false"},
+		{key: "SMTPToken", value: "re_secret"},
+	}
+	for _, option := range expectedOptions {
+		targetMock.ExpectExec(`INSERT INTO options`).
+			WithArgs(option.key, option.value).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(smtpMigrationOptionKey, smtpMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(smtpMigrationVersion))
+	targetMock.ExpectRollback()
+
+	repaired, err = repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingSMTPSettingsPreservesExistingNewAPIConfiguration(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	targetMock.ExpectQuery(`SELECT count\(\*\).*FROM options`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(smtpMigrationOptionKey, smtpMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingSMTPSettingsLeavesUnconfiguredSourceUntouched(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(smtpMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	targetMock.ExpectQuery(`SELECT count\(\*\).*FROM options`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}))
+	targetMock.ExpectRollback()
+
+	repaired, err := repairMissingSMTPSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestBuildLegacyLegalOptionsSeparatesDocumentsWithoutRepeatingPageTitles(t *testing.T) {
+	options, err := buildLegacyLegalOptions(map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service-specific body"},
+			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"},
+			{"id":"refund","title":"退款政策","content_md":"Refund body"},
+			{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"}
+		]`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t,
+		"Terms body\n\n---\n\n## 服务特定条款\n\nService-specific body",
+		options["legal.user_agreement"],
+	)
+	assert.Equal(t, "Privacy body", options["legal.privacy_policy"])
+	assert.Equal(t, "Usage body", options["legal.acceptable_use"])
+	assert.Equal(t, "Refund body", options["legal.refund_policy"])
+	assert.Equal(t, "Regions body", options["legal.restricted_regions"])
+}
+
+func TestBuildLegacyLegalOptionsUsesFatherKeyPrivacyAndRefundFallbacks(t *testing.T) {
+	options, err := buildLegacyLegalOptions(map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"}
+		]`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, fatherKeyPrivacyPolicyURL, options["legal.privacy_policy"])
+	assert.Equal(t, fatherKeyRefundPolicyURL, options["legal.refund_policy"])
+	assert.NotContains(t, options, "legal.acceptable_use")
+	assert.NotContains(t, options, "legal.restricted_regions")
+}
+
+func TestBuildLegacyLegalOptionUpgradeRecognizesKnownV1MachineProducts(t *testing.T) {
+	upgrade, err := buildLegacyLegalOptionUpgrade(map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+			{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"},
+			{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service body"}
+		]`,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		"Terms body\n\n---\n\n## 服务特定条款\n\nService body",
+		upgrade.Options["legal.user_agreement"],
+	)
+	assert.Equal(t, "Usage body", upgrade.Options["legal.acceptable_use"])
+	assert.Equal(t, "Regions body", upgrade.Options["legal.restricted_regions"])
+	assert.ElementsMatch(t, []string{
+		"## 服务条款\n\nTerms body\n\n---\n\n## 使用政策\n\nUsage body\n\n---\n\n## 支持的国家和地区\n\nRegions body\n\n---\n\n## 服务特定条款\n\nService body",
+		"## 服务条款\n\nTerms body",
+	}, upgrade.ReplaceableValues["legal.user_agreement"])
+	assert.Contains(t, upgrade.ReplaceableValues["legal.privacy_policy"],
+		"Usage body\n\n---\n\n## 支持的国家和地区\n\nRegions body\n\n---\n\n## 服务特定条款\n\nService body",
+	)
+}
+
+func TestBuildLegacyLegalOptionsRejectsInvalidDocuments(t *testing.T) {
+	_, err := buildLegacyLegalOptions(map[string]string{
+		"login_agreement_documents": `{not-json}`,
+	})
+	require.ErrorContains(t, err, "decode legacy login agreement documents")
+}
+
+func TestRepairMissingLegalSettingsCopiesMissingSettingsAndThenNoOps(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	documents := `[
+		{"id":"terms","title":"服务条款","content_md":"Terms body"},
+		{"id":"privacy","title":"隐私政策","content_md":"Privacy body"},
+		{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+		{"id":"refund","title":"退款政策","content_md":"Refund body"},
+		{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"},
+		{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service body"}
+	]`
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.acceptable_use", "Usage body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.privacy_policy", "Privacy body", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.refund_policy", "Refund body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.restricted_regions", "Regions body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs(
+			"legal.user_agreement",
+			"Terms body\n\n---\n\n## 服务特定条款\n\nService body",
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(legalMigrationVersion))
+	targetMock.ExpectRollback()
+
+	repaired, err = repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingLegalSettingsPreservesExistingNewAPIValues(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	documents := `[{"id":"terms","title":"服务条款","content_md":"Legacy terms"}]`
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.privacy_policy", fatherKeyPrivacyPolicyURL, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.refund_policy", fatherKeyRefundPolicyURL).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.user_agreement", "Legacy terms", sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.False(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingLegalSettingsUpgradesV1MachineProducts(t *testing.T) {
+	source, sourceMock := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+	documents := `[
+		{"id":"terms","title":"服务条款","content_md":"Terms body"},
+		{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+		{"id":"supported-regions","title":"支持的国家和地区","content_md":"Regions body"},
+		{"id":"service-specific-terms","title":"服务特定条款","content_md":"Service body"}
+	]`
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(legalMigrationVersionV1))
+	sourceMock.ExpectQuery(regexp.QuoteMeta(`SELECT key, value FROM settings`)).
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).AddRow("login_agreement_documents", documents))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.acceptable_use", "Usage body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.privacy_policy", fatherKeyPrivacyPolicyURL, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.refund_policy", fatherKeyRefundPolicyURL).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs("legal.restricted_regions", "Regions body").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`(?s)INSERT INTO options.*WHERE btrim\(COALESCE\(options\.value, ''\)\) = ''`).
+		WithArgs(
+			"legal.user_agreement",
+			"Terms body\n\n---\n\n## 服务特定条款\n\nService body",
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectExec(`INSERT INTO options`).
+		WithArgs(legalMigrationOptionKey, legalMigrationVersion).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectCommit()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	require.NoError(t, err)
+	assert.True(t, repaired)
+	require.NoError(t, sourceMock.ExpectationsWereMet())
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
+
+func TestRepairMissingLegalSettingsRejectsUnknownMarker(t *testing.T) {
+	source, _ := newMigrationSQLMock(t)
+	target, targetMock := newMigrationSQLMock(t)
+
+	targetMock.ExpectBegin()
+	targetMock.ExpectExec(regexp.QuoteMeta(`SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	targetMock.ExpectQuery(regexp.QuoteMeta(`SELECT value FROM options WHERE key = $1`)).
+		WithArgs(legalMigrationOptionKey).
+		WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("sub2api-to-newapi-legal-v99"))
+	targetMock.ExpectRollback()
+
+	repaired, err := repairMissingLegalSettings(context.Background(), source, target)
+	assert.False(t, repaired)
+	require.ErrorContains(t, err, "unknown legal settings migration marker")
+	require.NoError(t, targetMock.ExpectationsWereMet())
+}
 
 func TestQuotaFromUSDPreservesSub2APIBalanceUnits(t *testing.T) {
 	quota, err := quotaFromUSD(12.345678)
@@ -206,6 +950,100 @@ func TestBuildTargetOptionsOverridesExactLegacyTokenPricing(t *testing.T) {
 	assert.Equal(t, []string{"Legacy Pro"}, autoGroups)
 	assert.Equal(t, "true", options["DefaultUseAutoGroup"])
 	assert.Equal(t, "allow", options["regional_restriction.unknown_region_policy"])
+}
+
+func TestBuildLegacySMTPOptionsMapsResendImplicitTLS(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.resend.com",
+		"smtp_port":     "465",
+		"smtp_username": "resend",
+		"smtp_password": "re_secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "smtp.resend.com", options["SMTPServer"])
+	assert.Equal(t, "465", options["SMTPPort"])
+	assert.Equal(t, "resend", options["SMTPAccount"])
+	assert.Equal(t, "noreply@example.com", options["SMTPFrom"])
+	assert.Equal(t, "re_secret", options["SMTPToken"])
+	assert.Equal(t, "true", options["SMTPSSLEnabled"])
+	assert.Equal(t, "false", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsPreservesImplicitTLSOnNonstandardPort(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "true", options["SMTPSSLEnabled"])
+	assert.Equal(t, "false", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsRequiresStartTLSForAuthenticatedPlainMode(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "false",
+	})
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, "false", options["SMTPSSLEnabled"])
+	assert.Equal(t, "true", options["SMTPStartTLSEnabled"])
+}
+
+func TestBuildLegacySMTPOptionsSkipsIncompleteConfiguration(t *testing.T) {
+	options, configured, err := buildLegacySMTPOptions(map[string]string{
+		"smtp_host":     "smtp.example.com",
+		"smtp_port":     "587",
+		"smtp_username": "user",
+		"smtp_password": "",
+		"smtp_from":     "noreply@example.com",
+	})
+	require.NoError(t, err)
+	assert.False(t, configured)
+	assert.Nil(t, options)
+}
+
+func TestBuildTargetOptionsLeavesSMTPForPreservingRepair(t *testing.T) {
+	options, err := buildTargetOptions(nil, nil, map[string]string{
+		"smtp_host":     "smtp.resend.com",
+		"smtp_port":     "465",
+		"smtp_username": "resend",
+		"smtp_password": "re_secret",
+		"smtp_from":     "noreply@example.com",
+		"smtp_use_tls":  "true",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, options, "SMTPServer")
+	assert.NotContains(t, options, "SMTPToken")
+}
+
+func TestBuildTargetOptionsIncludesLegacyLegalSettings(t *testing.T) {
+	options, err := buildTargetOptions(nil, nil, map[string]string{
+		"login_agreement_documents": `[
+			{"id":"terms","title":"服务条款","content_md":"Terms body"},
+			{"id":"privacy","title":"隐私政策","content_md":"Privacy body"},
+			{"id":"usage-policy","title":"使用政策","content_md":"Usage body"},
+			{"id":"supported-regions","title":"支持地区","content_md":"Regions body"}
+		]`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Terms body", options["legal.user_agreement"])
+	assert.Equal(t, "Privacy body", options["legal.privacy_policy"])
+	assert.Equal(t, "Usage body", options["legal.acceptable_use"])
+	assert.Equal(t, fatherKeyRefundPolicyURL, options["legal.refund_policy"])
+	assert.Equal(t, "Regions body", options["legal.restricted_regions"])
 }
 
 func TestFetchGroupModelsUsesBridgeKeyAndReturnsStableUniqueModels(t *testing.T) {

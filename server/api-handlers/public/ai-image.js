@@ -49,11 +49,23 @@ const {
     discoverOpenAiCompatibleModels,
     isGeminiNativeBaseUrl
 } = require('../admin/ai-image/model-config');
+const {
+    projectNewApiTieredPricing
+} = require('../_newapi-pricing-projection');
+const {
+    fetchNewApiTokenUsageRecord,
+    getNewApiRequestIds,
+    isNewApiGatewayBaseUrl: isNewApiBillingGatewayBaseUrl
+} = require('../_newapi-billing');
 
 const DEFAULT_ALLOWED_API_BASE_URLS = Object.freeze([
-    'https://sub2api.fatherkey.com/v1',
+    'https://new.fatherkey.com/v1',
     'https://sub2api.zaoyoe.xyz/v1'
 ]);
+const LEGACY_COMPATIBLE_API_BASE_URLS = Object.freeze([
+    'https://sub2api.fatherkey.com/v1'
+]);
+const DEFAULT_NEWAPI_COMPAT_BILLING_CUTOVER_AT = '2026-08-03T12:39:01.000Z';
 const SUPPORTED_MODES = Object.freeze(new Set(['text', 'image', 'video', 'reverse', 'chat', 'agent']));
 const IMAGE_MODES = Object.freeze(new Set(['text', 'image', 'agent']));
 const VIDEO_MODES = Object.freeze(new Set(['video']));
@@ -325,13 +337,26 @@ function getResponseHeader(response, name = '') {
     return '';
 }
 
-function isSub2ApiGatewayBaseUrl(value = '') {
+function getApiGatewayHostname(value = '') {
     try {
-        const host = new URL(normalizeApiBaseUrl(value)).hostname.toLowerCase();
-        return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+        return new URL(normalizeApiBaseUrl(value)).hostname.toLowerCase();
     } catch (_) {
-        return false;
+        return '';
     }
+}
+
+function isNewApiGatewayBaseUrl(value = '') {
+    return isNewApiBillingGatewayBaseUrl(value);
+}
+
+function supportsLegacySub2ApiUsageLookup(value = '') {
+    const host = getApiGatewayHostname(value);
+    if (!host || isNewApiGatewayBaseUrl(value)) return false;
+    return host.includes('sub2api') || host === 'localhost' || host === '127.0.0.1';
+}
+
+function supportsTextModelPricing(value = '') {
+    return isNewApiGatewayBaseUrl(value) || supportsLegacySub2ApiUsageLookup(value);
 }
 
 function buildSub2ApiModelPricingUrl(baseUrl = '') {
@@ -343,6 +368,16 @@ function buildSub2ApiModelPricingUrl(baseUrl = '') {
         pathname = `${pathname}/v1`;
     }
     url.pathname = `${pathname}/models/pricing`.replace(/\/{2,}/g, '/');
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+}
+
+function buildNewApiModelPricingUrl(baseUrl = '') {
+    const normalized = normalizeApiBaseUrl(baseUrl);
+    if (!normalized) return '';
+    const url = new URL(normalized);
+    url.pathname = '/api/pricing';
     url.search = '';
     url.hash = '';
     return url.toString();
@@ -398,6 +433,8 @@ function serializeTextModelPrice(row = {}, provider = {}) {
             'input_price_per_million',
             'output_price_per_million',
             'cache_write_price_per_million',
+            'cache_write_5m_price_per_million',
+            'cache_write_1h_price_per_million',
             'cache_read_price_per_million',
             'per_request_price'
         ].forEach((field) => {
@@ -407,6 +444,58 @@ function serializeTextModelPrice(row = {}, provider = {}) {
         return item;
     });
     return payload;
+}
+
+function getNewApiPublicGroupRatio(row = {}, payload = {}) {
+    const groupRatios = payload?.group_ratio && typeof payload.group_ratio === 'object'
+        ? payload.group_ratio
+        : {};
+    const ratios = (Array.isArray(row.enable_groups) ? row.enable_groups : [])
+        .map((group) => normalizeOptionalPriceNumber(groupRatios[group]))
+        .filter((ratio) => ratio !== undefined);
+    // /api/pricing is intentionally anonymous. Match NewAPI's public pricing
+    // page by showing the least expensive usable group for each model.
+    return ratios.length ? Math.min(...ratios) : 1;
+}
+
+function serializeNewApiTextModelPrice(row = {}, provider = {}, payload = {}) {
+    const id = normalizeText(row.model_name || row.model || row.id, 180);
+    if (!id) return null;
+
+    const groupRatio = getNewApiPublicGroupRatio(row, payload);
+    const quotaType = Number(row.quota_type);
+    const billingMode = normalizeText(row.billing_mode, 40).toLowerCase();
+    const converted = {
+        id,
+        billing_model: id,
+        billing_mode: quotaType === 1 ? 'per-request' : (billingMode || 'token'),
+        effective_multiplier: groupRatio,
+        available: true
+    };
+
+    if (quotaType === 1) {
+        const modelPrice = normalizeOptionalPriceNumber(row.model_price);
+        if (modelPrice === undefined) return null;
+        converted.per_request_price = modelPrice * groupRatio;
+    } else if (billingMode === 'tiered_expr') {
+        const projected = projectNewApiTieredPricing(row.billing_expr, groupRatio);
+        if (!projected) return null;
+        Object.assign(converted, projected.fields);
+        converted.intervals = projected.intervals;
+    } else {
+        const modelRatio = normalizeOptionalPriceNumber(row.model_ratio);
+        if (modelRatio === undefined) return null;
+        const inputPrice = modelRatio * 2 * groupRatio;
+        const completionRatio = normalizeOptionalPriceNumber(row.completion_ratio) ?? 0;
+        const cacheRatio = normalizeOptionalPriceNumber(row.cache_ratio);
+        const createCacheRatio = normalizeOptionalPriceNumber(row.create_cache_ratio);
+        converted.input_price_per_million = inputPrice;
+        converted.output_price_per_million = inputPrice * completionRatio;
+        if (cacheRatio !== undefined) converted.cache_read_price_per_million = inputPrice * cacheRatio;
+        if (createCacheRatio !== undefined) converted.cache_write_price_per_million = inputPrice * createCacheRatio;
+    }
+
+    return serializeTextModelPrice(converted, provider);
 }
 
 async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = globalThis.fetch } = {}) {
@@ -422,36 +511,48 @@ async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = gl
         && provider?.isActive !== false
         && providerSupportsPublicModelGroup(provider, 'chat')
         && normalizePublicModelsList(provider.chatModels || provider.chat_models).length
-        && isSub2ApiGatewayBaseUrl(provider.baseUrl || provider.base_url)
+        && supportsTextModelPricing(provider.baseUrl || provider.base_url)
     ));
     const timeoutMs = normalizePositiveInt(env.AI_IMAGE_MODEL_PRICING_TIMEOUT_MS, 8000, { min: 1000, max: 20000 });
     const results = await Promise.all(chatProviders.map(async (provider) => {
         const providerId = normalizeText(provider.providerId || provider.provider_id, 80);
         const configuredModels = normalizePublicModelsList(provider.chatModels || provider.chat_models);
         const configuredSet = new Set(configuredModels.map((model) => model.toLowerCase()));
-        const url = buildSub2ApiModelPricingUrl(provider.baseUrl || provider.base_url);
+        const baseUrl = provider.baseUrl || provider.base_url;
+        const newApi = isNewApiGatewayBaseUrl(baseUrl);
+        const url = newApi ? buildNewApiModelPricingUrl(baseUrl) : buildSub2ApiModelPricingUrl(baseUrl);
         try {
+            const headers = {
+                Accept: 'application/json'
+            };
+            if (!newApi) headers.Authorization = `Bearer ${provider.apiKey}`;
             const response = await fetchWithTimeout(fetchImpl, url, {
                 method: 'GET',
-                headers: {
-                    Accept: 'application/json',
-                    Authorization: `Bearer ${provider.apiKey}`
-                }
+                headers
             }, timeoutMs);
             if (!response?.ok) {
-                throw new Error(`Sub2API pricing request failed (${Number(response?.status || 502)})`);
+                throw new Error(`${newApi ? 'NewAPI' : 'Sub2API'} pricing request failed (${Number(response?.status || 502)})`);
             }
             const payload = await response.json();
-            const rows = Array.isArray(payload?.data) ? payload.data : [];
+            if (payload?.error || payload?.success === false) {
+                throw new Error(`${newApi ? 'NewAPI' : 'Sub2API'} pricing response contained an error`);
+            }
+            if (!Array.isArray(payload?.data)) {
+                throw new Error(`${newApi ? 'NewAPI' : 'Sub2API'} pricing response data was invalid`);
+            }
+            const rows = payload.data;
             const prices = rows
-                .filter((row) => configuredSet.has(normalizeText(row?.id || row?.model, 180).toLowerCase()))
-                .map((row) => serializeTextModelPrice(row, provider))
+                .filter((row) => configuredSet.has(normalizeText(row?.model_name || row?.id || row?.model, 180).toLowerCase()))
+                .map((row) => newApi
+                    ? serializeNewApiTextModelPrice(row, provider, payload)
+                    : serializeTextModelPrice(row, provider))
                 .filter(Boolean);
             return {
                 prices,
                 status: {
                     providerId,
                     provider_id: providerId,
+                    source: newApi ? 'newapi' : 'sub2api',
                     available: true,
                     modelCount: prices.length,
                     model_count: prices.length
@@ -463,6 +564,7 @@ async function loadEffectiveTextModelPrices(supabase, { env = {}, fetchImpl = gl
                 status: {
                     providerId,
                     provider_id: providerId,
+                    source: newApi ? 'newapi' : 'sub2api',
                     available: false,
                     modelCount: 0,
                     model_count: 0,
@@ -513,7 +615,9 @@ function getSub2ApiUsageRequestIds(response = null, payload = {}) {
         || responseClientRequestId,
         160
     );
-    const upstreamRequestId = getResponseHeader(response, 'x-request-id') || getResponseHeader(response, 'request-id');
+    const upstreamRequestId = getResponseHeader(response, 'x-oneapi-request-id')
+        || getResponseHeader(response, 'x-request-id')
+        || getResponseHeader(response, 'request-id');
     return {
         clientRequestId,
         upstreamRequestId,
@@ -629,9 +733,24 @@ async function fetchSub2ApiUsageRecord({
             }
             : record
     );
-    if (!apiKey || !isSub2ApiGatewayBaseUrl(baseUrl) || typeof fetchImpl !== 'function') {
+    if (!apiKey || typeof fetchImpl !== 'function') {
         return finish(null, 'unavailable');
     }
+    if (isNewApiGatewayBaseUrl(baseUrl)) {
+        const lookup = await fetchNewApiTokenUsageRecord({
+            baseUrl,
+            apiKey,
+            response,
+            payload,
+            fetchImpl,
+            env,
+            returnLookupResult: true
+        });
+        return finish(lookup?.record || null, lookup?.status || 'unavailable', {
+            requestIds: Array.isArray(lookup?.requestIds) ? lookup.requestIds : getNewApiRequestIds(response, payload)
+        });
+    }
+    if (!supportsLegacySub2ApiUsageLookup(baseUrl)) return finish(null, 'unavailable');
     const headerCost = normalizeSub2ApiCost(
         getResponseHeader(response, 'x-sub2api-actual-cost')
         || getResponseHeader(response, 'x-sub2api-cost')
@@ -705,6 +824,8 @@ async function fetchSub2ApiUsageRecord({
 
 function attachSub2ApiBillingToUsage(usage = {}, record = null, response = null, payload = {}) {
     const source = usage && typeof usage === 'object' && !Array.isArray(usage) ? usage : {};
+    const newApiRecord = record?.gateway === 'newapi';
+    const hasRecordCost = Boolean(record && Object.prototype.hasOwnProperty.call(record, 'actual_cost'));
     const directCost = normalizeSub2ApiCost(
         source.actual_cost
         ?? source.actualCost
@@ -734,7 +855,45 @@ function attachSub2ApiBillingToUsage(usage = {}, record = null, response = null,
         0
     );
     const hints = getSub2ApiUsageRequestIds(response, payload);
-    const actualCost = record?.actual_cost || directCost || fallbackCost;
+    const actualCost = hasRecordCost
+        ? normalizeSub2ApiCost(record.actual_cost, 0)
+        : (directCost || fallbackCost);
+    if (newApiRecord) {
+        const requestIds = getNewApiRequestIds(response, payload);
+        const requestId = normalizeText(record.request_id || requestIds[0], 240);
+        return {
+            ...source,
+            newapi: {
+                ...(source.newapi && typeof source.newapi === 'object' ? source.newapi : {}),
+                ...(hasRecordCost ? {
+                    actual_cost: actualCost,
+                    actualCost,
+                    quota: record.quota,
+                    quota_per_unit: record.quota_per_unit,
+                    billing_status: 'settled',
+                    billingStatus: 'settled',
+                    lookup_status: 'found',
+                    lookupStatus: 'found'
+                } : {
+                    billing_status: 'pricing_pending',
+                    billingStatus: 'pricing_pending',
+                    lookup_status: record.lookup_status || 'unavailable',
+                    lookupStatus: record.lookup_status || 'unavailable'
+                }),
+                request_id: requestId,
+                requestId,
+                lookup_request_id: requestId,
+                lookupRequestId: requestId,
+                ...(Array.isArray(record.records) && record.records.length ? {
+                    records: record.records,
+                    request_ids: record.request_ids || record.requestIds || record.records.map((item) => item.request_id),
+                    requestIds: record.request_ids || record.requestIds || record.records.map((item) => item.request_id)
+                } : {}),
+                cost_source: record.actual_cost_source || 'newapi_token_log',
+                costSource: record.actual_cost_source || 'newapi_token_log'
+            }
+        };
+    }
     if (actualCost <= 0 && !record) return source;
     return {
         ...source,
@@ -951,7 +1110,7 @@ function resolveApiBaseUrl(inputValue, { site = 'cn', env = {} } = {}) {
         return resolveDefaultApiBaseUrl({ site, env });
     }
 
-    if (allowed.includes(normalizedInput)) {
+    if (allowed.includes(normalizedInput) || LEGACY_COMPATIBLE_API_BASE_URLS.includes(normalizedInput)) {
         return normalizedInput;
     }
 
@@ -964,8 +1123,10 @@ function resolveApiBaseUrl(inputValue, { site = 'cn', env = {} } = {}) {
 function inferApiBaseUrlLabel(baseUrl = '') {
     const normalized = normalizeApiBaseUrl(baseUrl).toLowerCase();
     if (normalized.includes('zaoyoe')) return 'Zaoyoe Sub2API';
-    if (normalized.includes('fatherkey')) return 'FatherKey Sub2API';
-    return 'Sub2API';
+    if (normalized.includes('new.fatherkey.com')) return 'FatherKey NewAPI';
+    if (normalized.includes('sub2api.fatherkey.com')) return 'FatherKey Legacy API';
+    if (normalized.includes('fatherkey')) return 'FatherKey API';
+    return 'AI API';
 }
 
 function serializeApiBaseUrl(row = {}) {
@@ -1342,7 +1503,7 @@ async function resolveApiBaseUrlFromAdminConfig(supabase, inputValue, { site = '
         throw error;
     }
 
-    if (allowed.includes(normalizedInput)) {
+    if (allowed.includes(normalizedInput) || LEGACY_COMPATIBLE_API_BASE_URLS.includes(normalizedInput)) {
         return normalizedInput;
     }
 
@@ -2746,6 +2907,50 @@ function safeObject(value = {}) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function getTaskExecutionProviderBaseUrl(task = {}) {
+    const metadata = safeObject(task.metadata);
+    return normalizeApiBaseUrl(
+        metadata.provider_base_url
+        || metadata.providerBaseUrl
+        || metadata.base_url
+        || metadata.baseUrl
+        || ''
+    );
+}
+
+function getTaskBillingLookupSupport(task = {}) {
+    const metadata = safeObject(task.metadata);
+    const value = metadata.billing_lookup_supported ?? metadata.billingLookupSupported;
+    return typeof value === 'boolean' ? value : null;
+}
+
+function getNewApiCompatBillingCutoverMs(env = process.env) {
+    const configured = normalizeText(env?.AI_IMAGE_NEWAPI_COMPAT_BILLING_CUTOVER_AT, 80);
+    const parsed = Date.parse(configured || DEFAULT_NEWAPI_COMPAT_BILLING_CUTOVER_AT);
+    return Number.isFinite(parsed) ? parsed : Date.parse(DEFAULT_NEWAPI_COMPAT_BILLING_CUTOVER_AT);
+}
+
+function getTaskCreatedAtMs(task = {}) {
+    const parsed = Date.parse(task.created_at || task.createdAt || '');
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shouldSettleTaskFromNewApiUsage(task = {}, runtimeConfig = null, env = process.env) {
+    const executionBaseUrl = getTaskExecutionProviderBaseUrl(task);
+    const lookupSupported = getTaskBillingLookupSupport(task);
+
+    // Persisted execution metadata is authoritative across later provider edits.
+    if (lookupSupported === true) return false;
+    if (executionBaseUrl) return isNewApiGatewayBaseUrl(executionBaseUrl);
+
+    const runtimeBaseUrl = normalizeApiBaseUrl(runtimeConfig?.baseUrl || '');
+    if (!isNewApiGatewayBaseUrl(runtimeBaseUrl)) return false;
+
+    // Without persisted execution metadata, neither public hostname proves the
+    // task's origin. Older rows stay on the legacy reconciliation path.
+    return getTaskCreatedAtMs(task) >= getNewApiCompatBillingCutoverMs(env);
+}
+
 function getAiWorkbenchBillingV2Metadata(task = {}) {
     return safeObject(safeObject(task.metadata).billing_v2);
 }
@@ -2871,6 +3076,8 @@ function buildSub2ApiUsageLookupPayloadFromTask(task = {}) {
     const metadata = safeObject(task.metadata);
     const pricingCharge = safeObject(metadata.pricing_charge || metadata.pricingCharge);
     const sub2api = safeObject(pricingCharge.sub2api || metadata.sub2api);
+    const tokenUsage = safeObject(task.token_usage || task.tokenUsage);
+    const newapi = safeObject(tokenUsage.newapi || pricingCharge.newapi || metadata.newapi);
     const clientRequestId = normalizeText(
         metadata.sub2api_client_request_id
         || metadata.sub2apiClientRequestId
@@ -2883,10 +3090,38 @@ function buildSub2ApiUsageLookupPayloadFromTask(task = {}) {
     );
     return {
         id: normalizeText(task.provider_task_id || task.providerTaskId || metadata.provider_task_id || metadata.providerTaskId, 240),
-        request_id: pricingCharge.request_id || pricingCharge.requestId || sub2api.request_id || sub2api.requestId || '',
-        requestId: pricingCharge.request_id || pricingCharge.requestId || sub2api.request_id || sub2api.requestId || '',
-        lookup_request_id: pricingCharge.lookup_request_id || pricingCharge.lookupRequestId || sub2api.lookup_request_id || sub2api.lookupRequestId || '',
-        lookupRequestId: pricingCharge.lookup_request_id || pricingCharge.lookupRequestId || sub2api.lookup_request_id || sub2api.lookupRequestId || '',
+        request_id: pricingCharge.request_id
+            || pricingCharge.requestId
+            || newapi.request_id
+            || newapi.requestId
+            || sub2api.request_id
+            || sub2api.requestId
+            || '',
+        requestId: pricingCharge.request_id
+            || pricingCharge.requestId
+            || newapi.request_id
+            || newapi.requestId
+            || sub2api.request_id
+            || sub2api.requestId
+            || '',
+        lookup_request_id: pricingCharge.lookup_request_id
+            || pricingCharge.lookupRequestId
+            || newapi.lookup_request_id
+            || newapi.lookupRequestId
+            || newapi.request_id
+            || newapi.requestId
+            || sub2api.lookup_request_id
+            || sub2api.lookupRequestId
+            || '',
+        lookupRequestId: pricingCharge.lookup_request_id
+            || pricingCharge.lookupRequestId
+            || newapi.lookup_request_id
+            || newapi.lookupRequestId
+            || newapi.request_id
+            || newapi.requestId
+            || sub2api.lookup_request_id
+            || sub2api.lookupRequestId
+            || '',
         client_request_id: clientRequestId,
         clientRequestId: clientRequestId,
         sub2api_client_request_id: clientRequestId,
@@ -2894,7 +3129,8 @@ function buildSub2ApiUsageLookupPayloadFromTask(task = {}) {
         metadata,
         pricing_charge: pricingCharge,
         pricingCharge,
-        sub2api
+        sub2api,
+        newapi
     };
 }
 
@@ -2922,6 +3158,71 @@ function getSub2ApiBillingSyncMetadata(task = {}) {
         || pricingCharge.sub2api_billing_sync
         || pricingCharge.sub2apiBillingSync
     );
+}
+
+function hasAiImageTokenUsage(value = {}) {
+    const usage = safeObject(value);
+    return [
+        usage.input_tokens,
+        usage.inputTokens,
+        usage.prompt_tokens,
+        usage.promptTokens,
+        usage.output_tokens,
+        usage.outputTokens,
+        usage.completion_tokens,
+        usage.completionTokens,
+        usage.total_tokens,
+        usage.totalTokens,
+        usage.cache_read_tokens,
+        usage.cacheReadTokens,
+        usage.cache_write_tokens,
+        usage.cacheWriteTokens,
+        usage.image_output_tokens,
+        usage.imageOutputTokens
+    ].some((value) => Number(value) > 0);
+}
+
+function getTaskTokenValue(...values) {
+    for (const value of values) {
+        if (value === undefined || value === null || value === '') continue;
+        const normalized = normalizePositiveInt(value, 0, { min: 0, max: Number.MAX_SAFE_INTEGER });
+        if (Number.isFinite(Number(value))) return normalized;
+    }
+    return 0;
+}
+
+function getTaskTokenUsageForBilling(task = {}) {
+    const storedUsage = safeObject(task.token_usage || task.tokenUsage);
+    const inputTokens = getTaskTokenValue(
+        storedUsage.input_tokens,
+        storedUsage.inputTokens,
+        storedUsage.prompt_tokens,
+        storedUsage.promptTokens,
+        task.input_tokens,
+        task.inputTokens
+    );
+    const outputTokens = getTaskTokenValue(
+        storedUsage.output_tokens,
+        storedUsage.outputTokens,
+        storedUsage.completion_tokens,
+        storedUsage.completionTokens,
+        task.output_tokens,
+        task.outputTokens
+    );
+    const totalTokens = getTaskTokenValue(
+        storedUsage.total_tokens,
+        storedUsage.totalTokens,
+        task.total_tokens,
+        task.totalTokens,
+        inputTokens + outputTokens
+    );
+
+    return {
+        ...storedUsage,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: totalTokens
+    };
 }
 
 function getTaskReferenceTimestampMs(task = {}) {
@@ -3140,18 +3441,34 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
     if (normalizeBillablePoints(task.charged_points ?? task.chargedPoints, 0) > 0) return task;
     const status = normalizeText(task.status, 40).toLowerCase();
     if (['queued', 'running', 'processing'].includes(status)) return task;
+    if (normalizeText(getSub2ApiBillingSyncMetadata(task).status, 80).toLowerCase() === 'settled') return task;
 
     let runtimeConfig = null;
     try {
         runtimeConfig = await resolveExecutorRuntimeConfig({ supabase, task, env });
     } catch (_) {
-        return task;
     }
+
     if (!runtimeConfig?.configured) return task;
+    const executionBaseUrl = getTaskExecutionProviderBaseUrl(task);
+    const lookupSupported = getTaskBillingLookupSupport(task);
+    const lookupBaseUrl = executionBaseUrl || runtimeConfig.baseUrl;
+    const newApiTask = shouldSettleTaskFromNewApiUsage(task, runtimeConfig, env);
+    if (newApiTask && (status !== 'succeeded' || !isAiWorkbenchBillingV2Task(task))) return task;
+    if (!newApiTask && (lookupSupported === false || !supportsLegacySub2ApiUsageLookup(lookupBaseUrl))) return task;
 
     const lookupPayload = buildSub2ApiUsageLookupPayloadFromTask(task);
     const reconcileLookupEnv = {
         ...env,
+        AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS: env.AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS
+            || env.AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS
+            || '1',
+        AI_IMAGE_NEWAPI_BILLING_LOOKUP_INTERVAL_MS: env.AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS
+            || env.AI_IMAGE_NEWAPI_BILLING_LOOKUP_INTERVAL_MS
+            || '0',
+        AI_IMAGE_NEWAPI_BILLING_LOOKUP_TIMEOUT_MS: env.AI_IMAGE_NEWAPI_RECONCILE_TIMEOUT_MS
+            || env.AI_IMAGE_NEWAPI_BILLING_LOOKUP_TIMEOUT_MS
+            || '300',
         AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: env.AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS
             || env.AI_IMAGE_SUB2API_USAGE_RECONCILE_ATTEMPTS
             || '1',
@@ -3164,7 +3481,7 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
             || '300'
     };
     const usageLookupResult = await fetchSub2ApiUsageRecord({
-        baseUrl: runtimeConfig.baseUrl,
+        baseUrl: lookupBaseUrl,
         apiKey: runtimeConfig.apiKey,
         payload: lookupPayload,
         fetchImpl,
@@ -3180,6 +3497,7 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
     const chargeEstimate = calculateAiImageRuleChargePoints(task, usageWithBilling);
     const expectedPoints = normalizeBillablePoints(chargeEstimate.points, 0);
     const reconciledAt = new Date().toISOString();
+    const newApiRecord = usageRecord.gateway === 'newapi';
     const buildReconciledMetadata = (extra = {}) => ({
         ...safeObject(task.metadata),
         ...(isAiWorkbenchBillingV2Task(task) ? {
@@ -3194,20 +3512,31 @@ async function maybeReconcileSub2ApiActualCostTask(supabase, task = {}, {
             ...safeObject(chargeEstimate.pricing),
             reconciled: true,
             reconciled_at: reconciledAt,
-            sub2api: {
-                ...safeObject(usageWithBilling.sub2api),
-                request_id: usageRecord.request_id || usageWithBilling.sub2api?.request_id || '',
-                lookup_request_id: usageRecord.lookup_request_id || usageWithBilling.sub2api?.lookup_request_id || ''
-            },
+            ...(newApiRecord ? {
+                newapi: {
+                    ...safeObject(usageWithBilling.newapi),
+                    request_id: usageRecord.request_id || usageWithBilling.newapi?.request_id || '',
+                    lookup_request_id: usageRecord.request_id || usageWithBilling.newapi?.lookup_request_id || ''
+                }
+            } : {
+                sub2api: {
+                    ...safeObject(usageWithBilling.sub2api),
+                    request_id: usageRecord.request_id || usageWithBilling.sub2api?.request_id || '',
+                    lookup_request_id: usageRecord.lookup_request_id || usageWithBilling.sub2api?.lookup_request_id || ''
+                }
+            }),
             ...extra.pricingCharge
         },
         sub2api_billing_sync: {
             status: 'settled',
             message: '扣费已同步',
+            source: newApiRecord ? 'newapi_token_log' : 'sub2api_actual_cost',
             checked_at: reconciledAt,
             actual_cost: normalizeSub2ApiCost(usageRecord.actual_cost, 0),
-            request_id: usageRecord.request_id || usageWithBilling.sub2api?.request_id || '',
-            lookup_request_id: usageRecord.lookup_request_id || usageWithBilling.sub2api?.lookup_request_id || '',
+            request_id: usageRecord.request_id || (newApiRecord ? usageWithBilling.newapi?.request_id : usageWithBilling.sub2api?.request_id) || '',
+            lookup_request_id: (newApiRecord ? usageRecord.request_id : usageRecord.lookup_request_id)
+                || (newApiRecord ? usageWithBilling.newapi?.lookup_request_id : usageWithBilling.sub2api?.lookup_request_id)
+                || '',
             ...extra.billingSync
         }
     });
@@ -5209,7 +5538,7 @@ function createAiImageHandlers({
                 model: upstreamRequestModel,
                 apiKeyTail: task.api_key_tail || getApiKeyTail(upstreamApiKey)
             });
-            const sub2ApiClientRequestId = isSub2ApiGatewayBaseUrl(upstreamBaseUrl)
+            const sub2ApiClientRequestId = supportsLegacySub2ApiUsageLookup(upstreamBaseUrl)
                 ? buildSub2ApiClientRequestId(task)
                 : '';
             const sub2ApiClientRequestHeaders = sub2ApiClientRequestId
@@ -5717,9 +6046,10 @@ function createAiImageHandlers({
             }
             const streamReadEndedAt = Date.now();
 
+            let finalUsageLookupResult = null;
             const finalUsageLookupStartedAt = Date.now();
             if (captureSub2ApiBilling && !sub2apiUsageRecord) {
-                sub2apiUsageRecord = await fetchSub2ApiUsageRecord({
+                finalUsageLookupResult = await fetchSub2ApiUsageRecord({
                     baseUrl: upstreamBaseUrl,
                     apiKey: upstreamApiKey,
                     response: upstreamResponse,
@@ -5729,19 +6059,38 @@ function createAiImageHandlers({
                         clientRequestId: sub2ApiClientRequestId
                     },
                     fetchImpl,
-                    env: finalUsageLookupEnv
+                    env: finalUsageLookupEnv,
+                    returnLookupResult: true
                 });
-                if (!sub2apiUsageRecord) logSub2ApiUsageLookupMiss();
+                sub2apiUsageRecord = finalUsageLookupResult?.record || null;
+                if (!sub2apiUsageRecord && !isNewApiGatewayBaseUrl(upstreamBaseUrl)) logSub2ApiUsageLookupMiss();
             }
             const finalUsageLookupMs = Math.max(0, Date.now() - finalUsageLookupStartedAt);
+            const unresolvedNewApiUsageRecord = !sub2apiUsageRecord && isNewApiGatewayBaseUrl(upstreamBaseUrl)
+                ? {
+                    gateway: 'newapi',
+                    lookup_status: finalUsageLookupResult?.status || 'unavailable',
+                    request_id: finalUsageLookupResult?.requestIds?.[0]
+                        || getNewApiRequestIds(upstreamResponse, {
+                            id: providerTaskId,
+                            client_request_id: sub2ApiClientRequestId,
+                            clientRequestId: sub2ApiClientRequestId
+                        })[0]
+                        || ''
+                }
+                : null;
+            const usageBillingRecord = sub2apiUsageRecord || unresolvedNewApiUsageRecord;
             const usageWithBilling = captureSub2ApiBilling
-                ? attachSub2ApiBillingToUsage(usage, sub2apiUsageRecord, upstreamResponse, {
+                ? attachSub2ApiBillingToUsage(usage, usageBillingRecord, upstreamResponse, {
                     id: providerTaskId,
                     client_request_id: sub2ApiClientRequestId,
                     clientRequestId: sub2ApiClientRequestId
                 })
                 : usage;
             const normalizedUsage = normalizeStreamUsage(usageWithBilling, { messages, output: outputText });
+            const newApiBillingSource = sub2apiUsageRecord?.gateway === 'newapi'
+                ? 'newapi_token_log'
+                : (hasAiImageTokenUsage(usageWithBilling) ? 'newapi_token_usage' : 'newapi_estimated_points');
             const existingMetadata = safeObject(task.metadata);
             const upstreamTotalMs = Math.max(0, streamReadEndedAt - upstreamStartedAt);
             const lastVisibleMs = Math.max(0, contentCompletedAt - upstreamStartedAt);
@@ -5800,7 +6149,9 @@ function createAiImageHandlers({
             });
             const streamMetadata = {
 	                executor: `${upstreamProvider}-chat-stream`,
-	                provider: upstreamProvider,
+                provider: upstreamProvider,
+                provider_base_url: upstreamBaseUrl,
+                billing_lookup_supported: supportsLegacySub2ApiUsageLookup(upstreamBaseUrl),
                 provider_model: upstreamRequestModel,
                 provider_response_model: upstreamModel,
                 upstream_model: upstreamModel,
@@ -5888,14 +6239,26 @@ function createAiImageHandlers({
                     stream_usage_ready_grace_ms: streamUsageReadyGraceMs
                 }
             };
-            if (captureSub2ApiBilling && sub2apiUsageRecord) {
+            if (captureSub2ApiBilling && (sub2apiUsageRecord || isNewApiGatewayBaseUrl(upstreamBaseUrl))) {
+                const billingRecordFound = Boolean(sub2apiUsageRecord);
+                const newApiBillingFound = sub2apiUsageRecord?.gateway === 'newapi';
                 streamMetadata.sub2api_billing_sync = {
-                    status: 'settled',
-                    message: '扣费已同步',
+                    status: billingRecordFound ? 'settled' : 'pricing_pending',
+                    message: billingRecordFound ? '扣费已同步' : '扣费正在同步',
+                    source: sub2apiUsageRecord
+                        ? (newApiBillingFound ? 'newapi_token_log' : 'sub2api_actual_cost')
+                        : newApiBillingSource,
                     checked_at: new Date().toISOString(),
-                    actual_cost: normalizeSub2ApiCost(sub2apiUsageRecord.actual_cost, 0),
-                    request_id: sub2apiUsageRecord.request_id || normalizedUsage.raw?.sub2api?.request_id || '',
-                    lookup_request_id: sub2apiUsageRecord.lookup_request_id || normalizedUsage.raw?.sub2api?.lookup_request_id || '',
+                    actual_cost: normalizeSub2ApiCost(sub2apiUsageRecord?.actual_cost, 0),
+                    request_id: sub2apiUsageRecord?.request_id
+                        || normalizedUsage.raw?.newapi?.request_id
+                        || normalizedUsage.raw?.sub2api?.request_id
+                        || getResponseHeader(upstreamResponse, 'x-oneapi-request-id')
+                        || '',
+                    lookup_request_id: sub2apiUsageRecord?.lookup_request_id
+                        || normalizedUsage.raw?.newapi?.lookup_request_id
+                        || normalizedUsage.raw?.sub2api?.lookup_request_id
+                        || '',
                     client_request_id: sub2ApiClientRequestId
                 };
             }
@@ -6743,7 +7106,10 @@ function createAiImageHandlers({
                 measure('keys', storedApiKeysPromise)
             ]);
             if (error) throw error;
-            const allowedApiBaseUrlSet = new Set(apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean));
+            const allowedApiBaseUrlSet = new Set([
+                ...apiBaseUrls.map((row) => normalizeApiBaseUrl(row.baseUrl)).filter(Boolean),
+                ...LEGACY_COMPATIBLE_API_BASE_URLS
+            ]);
             const storedApiKeys = (Array.isArray(rawStoredApiKeys) ? rawStoredApiKeys : []).filter((row) => {
                 if (!allowedApiBaseUrlSet.size) return true;
                 return allowedApiBaseUrlSet.has(normalizeApiBaseUrl(row.apiBaseUrl || row.api_base_url));
@@ -7022,5 +7388,7 @@ module.exports = {
     resolveModelGroup,
     resolveAllowedApiBaseUrls,
     buildSub2ApiModelPricingUrl,
+    isNewApiGatewayBaseUrl,
+    supportsLegacySub2ApiUsageLookup,
     serializeTask
 };

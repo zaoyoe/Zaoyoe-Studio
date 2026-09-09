@@ -209,6 +209,9 @@ func SyncOptions(frequency int) {
 }
 
 func normalizeOptionValue(key string, value string) (string, error) {
+	if key == "TopUpLink" {
+		return common.NormalizeTopUpLink(value), nil
+	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return value, operation_setting.ValidateToolPricesJSON(value)
 	}
@@ -385,6 +388,9 @@ func updateOptionMap(key string, value string) (err error) {
 		delete(common.OptionMap, key)
 		common.OptionMapRWMutex.Unlock()
 		return nil
+	}
+	if key == "TopUpLink" {
+		value = common.NormalizeTopUpLink(value)
 	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()

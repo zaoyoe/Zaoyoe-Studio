@@ -99,3 +99,16 @@ export function toIntlLocale(value?: string | null): string | undefined {
     return undefined
   }
 }
+
+export function toBackendLanguage(
+  value?: string | null
+): 'en' | 'zh-CN' | 'zh-TW' {
+  switch (normalizeInterfaceLanguage(value)) {
+    case 'zhCN':
+      return 'zh-CN'
+    case 'zhTW':
+      return 'zh-TW'
+    default:
+      return 'en'
+  }
+}

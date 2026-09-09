@@ -24,7 +24,11 @@ import useDialogState from '@/hooks/use-dialog'
 
 import { fetchTokenKey, fetchTokenKeysBatch } from '../api'
 import { ERROR_MESSAGES } from '../constants'
-import type { ApiKey, ApiKeysDialogType } from '../types'
+import type {
+  ApiKey,
+  ApiKeyCreationAuthorization,
+  ApiKeysDialogType,
+} from '../types'
 
 type ApiKeysContextType = {
   open: ApiKeysDialogType | null
@@ -41,14 +45,14 @@ type ApiKeysContextType = {
   loadingKeys: Record<number, boolean>
   copiedKeyId: number | null
   markKeyCopied: (id: number) => void
-  checkApiKeyCreation: () => Promise<boolean>
+  checkApiKeyCreation: () => Promise<ApiKeyCreationAuthorization>
 }
 
 const ApiKeysContext = React.createContext<ApiKeysContextType | null>(null)
 
 type ApiKeysProviderProps = {
   children: React.ReactNode
-  checkApiKeyCreation?: () => Promise<boolean>
+  checkApiKeyCreation?: () => Promise<ApiKeyCreationAuthorization>
 }
 
 export function ApiKeysProvider(props: ApiKeysProviderProps) {
@@ -177,7 +181,8 @@ export function ApiKeysProvider(props: ApiKeysProviderProps) {
         loadingKeys,
         copiedKeyId,
         markKeyCopied,
-        checkApiKeyCreation: props.checkApiKeyCreation ?? (async () => true),
+        checkApiKeyCreation:
+          props.checkApiKeyCreation ?? (async () => ({ allowed: true })),
       }}
     >
       {props.children}

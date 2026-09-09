@@ -205,28 +205,6 @@ func TestEvaluateRegionalRestrictionPolicy(t *testing.T) {
 	}
 }
 
-func TestEvaluateRegionalRestrictionUnknownDenyAndDisabledScopes(t *testing.T) {
-	configureRegionalRestrictionTest(t, func(settings *system_setting.RegionalRestrictionSettings) {
-		settings.UnknownRegionPolicy = "deny"
-	})
-
-	unknown := evaluateRegionalRestriction(newRegionalRestrictionContext(nil), regionalRestrictionScopeAPIKeyCreate)
-	assert.True(t, unknown.Blocked)
-	assert.True(t, unknown.UnknownRegion)
-
-	settings := system_setting.GetRegionalRestrictionSettings()
-	settings.APIKeyCreateEnabled = false
-	require.NoError(t, applyRegionalRestrictionSettings(settings))
-	scopeDisabled := evaluateRegionalRestriction(newRegionalRestrictionContext(trustedRegionalRestrictionHeaders("CN")), regionalRestrictionScopeAPIKeyCreate)
-	assert.False(t, scopeDisabled.Blocked)
-
-	settings.Enabled = false
-	settings.APIKeyCreateEnabled = true
-	require.NoError(t, applyRegionalRestrictionSettings(settings))
-	masterDisabled := evaluateRegionalRestriction(newRegionalRestrictionContext(trustedRegionalRestrictionHeaders("CN")), regionalRestrictionScopeAPIKeyCreate)
-	assert.False(t, masterDisabled.Blocked)
-}
-
 func TestEvaluateRegionalRestrictionExposesAPIKeyLegalLinkVisibility(t *testing.T) {
 	configureRegionalRestrictionTest(t, nil)
 	configureLegalSettingsTest(t, func(settings *system_setting.LegalSettings) {
@@ -247,6 +225,28 @@ func TestEvaluateRegionalRestrictionExposesAPIKeyLegalLinkVisibility(t *testing.
 	assert.False(t, evaluation.APIKeyAcceptableUseEnabled)
 	assert.True(t, evaluation.APIKeyRefundEnabled)
 	assert.False(t, evaluation.APIKeyRestrictedRegionsEnabled)
+}
+
+func TestEvaluateRegionalRestrictionUnknownDenyAndDisabledScopes(t *testing.T) {
+	configureRegionalRestrictionTest(t, func(settings *system_setting.RegionalRestrictionSettings) {
+		settings.UnknownRegionPolicy = "deny"
+	})
+
+	unknown := evaluateRegionalRestriction(newRegionalRestrictionContext(nil), regionalRestrictionScopeAPIKeyCreate)
+	assert.True(t, unknown.Blocked)
+	assert.True(t, unknown.UnknownRegion)
+
+	settings := system_setting.GetRegionalRestrictionSettings()
+	settings.APIKeyCreateEnabled = false
+	require.NoError(t, applyRegionalRestrictionSettings(settings))
+	scopeDisabled := evaluateRegionalRestriction(newRegionalRestrictionContext(trustedRegionalRestrictionHeaders("CN")), regionalRestrictionScopeAPIKeyCreate)
+	assert.False(t, scopeDisabled.Blocked)
+
+	settings.Enabled = false
+	settings.APIKeyCreateEnabled = true
+	require.NoError(t, applyRegionalRestrictionSettings(settings))
+	masterDisabled := evaluateRegionalRestriction(newRegionalRestrictionContext(trustedRegionalRestrictionHeaders("CN")), regionalRestrictionScopeAPIKeyCreate)
+	assert.False(t, masterDisabled.Blocked)
 }
 
 func TestRegionalRestrictionStatusReturnsOKWhenBlocked(t *testing.T) {

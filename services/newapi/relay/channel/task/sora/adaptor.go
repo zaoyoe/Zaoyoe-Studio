@@ -66,6 +66,10 @@ type TaskAdaptor struct {
 	ChannelType int
 	apiKey      string
 	baseURL     string
+	// Some OpenAI-compatible gateways expose video creation at the legacy
+	// /v1/videos/generations route while keeping status at /v1/videos/:id.
+	// The fallback is selected per request after a route-level 404.
+	legacyGenerationsEndpoint bool
 }
 
 func (a *TaskAdaptor) Init(info *relaycommon.RelayInfo) {
@@ -130,17 +134,13 @@ func (a *TaskAdaptor) EstimateBilling(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *TaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	return a.buildRequestURL(info, "")
-}
-
-func (a *TaskAdaptor) buildRequestURL(info *relaycommon.RelayInfo, endpoint string) (string, error) {
 	if info.Action == constant.TaskActionRemix {
 		return fmt.Sprintf("%s/v1/videos/%s/remix", a.baseURL, info.OriginTaskID), nil
 	}
-	if endpoint == "" {
-		endpoint = "/v1/videos"
+	if a.legacyGenerationsEndpoint {
+		return fmt.Sprintf("%s/v1/videos/generations", a.baseURL), nil
 	}
-	return fmt.Sprintf("%s%s", a.baseURL, endpoint), nil
+	return fmt.Sprintf("%s/v1/videos", a.baseURL), nil
 }
 
 // BuildRequestHeader sets required headers.
@@ -226,71 +226,45 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	return common.ReaderOnly(storage), nil
 }
 
-func (a *TaskAdaptor) newRequest(c *gin.Context, info *relaycommon.RelayInfo, body []byte, endpoint string) (*http.Request, error) {
-	fullRequestURL, err := a.buildRequestURL(info, endpoint)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("new request failed: %w", err)
-	}
-	if err := a.BuildRequestHeader(c, req, info); err != nil {
-		return nil, fmt.Errorf("setup request header failed: %w", err)
-	}
-	return req, nil
-}
-
-// DoRequest sends the standard videos request and retries the legacy
-// generations route only when the upstream explicitly reports a missing or
-// invalid route. The request body is buffered once so the retry is identical.
+// DoRequest keeps compatibility with gateways that only expose the legacy
+// /v1/videos/generations create route. Status polling remains on
+// /v1/videos/:id, matching the legacy Sub2API behavior.
 func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	body, err := io.ReadAll(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("read request body failed: %w", err)
+		return nil, fmt.Errorf("read task request body: %w", err)
 	}
-	req, err := a.newRequest(c, info, body, "")
-	if err != nil {
-		return nil, err
-	}
-	resp, err := channel.DoRequest(c, req, info)
-	if err != nil {
-		return nil, err
-	}
-	if info.Action == constant.TaskActionRemix || c.Request.Method != http.MethodPost || !shouldFallbackToLegacyVideos(resp) {
-		return resp, nil
+	response, err := channel.DoTaskApiRequest(a, c, info, bytes.NewReader(body))
+	if err != nil || response == nil || response.StatusCode != http.StatusNotFound {
+		return response, err
 	}
 
-	legacyReq, err := a.newRequest(c, info, body, "/v1/videos/generations")
-	if err != nil {
-		return nil, err
+	responseBody, readErr := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("read video endpoint fallback response: %w", readErr)
 	}
-	return channel.DoRequest(c, legacyReq, info)
+	if !shouldFallbackVideoCreateEndpoint(responseBody) {
+		response.Body = io.NopCloser(bytes.NewReader(responseBody))
+		response.ContentLength = int64(len(responseBody))
+		return response, nil
+	}
+
+	a.legacyGenerationsEndpoint = true
+	return channel.DoTaskApiRequest(a, c, info, bytes.NewReader(body))
 }
 
-func shouldFallbackToLegacyVideos(resp *http.Response) bool {
-	if resp == nil || resp.StatusCode != http.StatusNotFound || resp.Body == nil {
-		return false
+func shouldFallbackVideoCreateEndpoint(body []byte) bool {
+	if len(body) == 0 {
+		return true
 	}
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	if err != nil {
-		return false
-	}
-	return isLegacyVideosRouteError(body)
-}
-
-func isLegacyVideosRouteError(body []byte) bool {
 	message := strings.ToLower(string(body))
 	for _, marker := range []string{
 		"invalid url",
-		"invalid_url",
+		"404 page not found",
+		"page not found",
 		"route not found",
 		"no route",
-		"unknown route",
-		"unrecognized route",
-		"page not found",
 		"cannot post",
 	} {
 		if strings.Contains(message, marker) {

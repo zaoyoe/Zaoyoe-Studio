@@ -116,6 +116,9 @@ export type SiteSettings = {
   ServerAddress: string
   'legal.user_agreement': string
   'legal.privacy_policy': string
+  'legal.acceptable_use': string
+  'legal.refund_policy': string
+  'legal.restricted_regions': string
   'legal.api_key_terms_enabled': boolean
   'legal.api_key_privacy_enabled': boolean
   'legal.api_key_acceptable_use_enabled': boolean

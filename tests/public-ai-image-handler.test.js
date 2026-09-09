@@ -9,8 +9,12 @@ const {
     inferProviderIdFromPublicModelProviders,
     resolveModel,
     resolveModelGroup,
-    resolveAllowedApiBaseUrls
+    resolveAllowedApiBaseUrls,
+    isNewApiGatewayBaseUrl,
+    supportsLegacySub2ApiUsageLookup
 } = require('../server/api-handlers/public/ai-image');
+
+const LEGACY_SUB2API_TEST_BASE_URL = 'https://sub2api.legacy.example/v1';
 
 function createMockResponse() {
     const state = {
@@ -168,8 +172,8 @@ function createDefaultApiBaseUrls() {
         {
             id: 'api-base-default-cn',
             site: 'cn',
-            label: 'FatherKey Sub2API',
-            base_url: 'https://sub2api.fatherkey.com/v1',
+            label: 'FatherKey NewAPI',
+            base_url: 'https://new.fatherkey.com/v1',
             is_active: true,
             display_order: 10,
             metadata: {}
@@ -286,6 +290,26 @@ function createSupabaseStub(state = {}) {
             ) {
                 return Promise.resolve({
                     data: { deducted: Number(args.p_amount || args.amount || 0) },
+                    error: null
+                });
+            }
+            if (name === 'fn_authorize_ai_workbench_points') {
+                return Promise.resolve({
+                    data: {
+                        success: true,
+                        status: 'authorized',
+                        authorized: Number(args.p_amount || 0)
+                    },
+                    error: null
+                });
+            }
+            if (name === 'fn_settle_ai_workbench_points') {
+                return Promise.resolve({
+                    data: {
+                        success: true,
+                        status: 'settled',
+                        deducted: Number(args.p_amount || 0)
+                    },
                     error: null
                 });
             }
@@ -566,11 +590,33 @@ test('reverse prompt defaults to text vision model and chat model group', () => 
 
 test('ai image allowed API base URLs come from admin-controlled env', () => {
     assert.deepEqual(
+        resolveAllowedApiBaseUrls({}),
+        ['https://new.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
+    );
+    assert.deepEqual(
         resolveAllowedApiBaseUrls({
             AI_IMAGE_ALLOWED_API_BASE_URLS: 'https://sub2api.fatherkey.com/v1, https://sub2api.zaoyoe.xyz/v1/'
         }),
         ['https://sub2api.fatherkey.com/v1', 'https://sub2api.zaoyoe.xyz/v1']
     );
+});
+
+test('NewAPI pricing aliases never opt into legacy Sub2API usage lookup', () => {
+    [
+        'https://new.fatherkey.com/v1',
+        'https://sub2api.fatherkey.com/v1',
+        'https://sub2api.zaoyoe.com/v1',
+        'https://sub2api.zaoyoe.xyz/v1'
+    ].forEach((baseUrl) => {
+        assert.equal(isNewApiGatewayBaseUrl(baseUrl), true);
+        assert.equal(supportsLegacySub2ApiUsageLookup(baseUrl), false);
+    });
+    ['https://sub2api.example/v1', 'http://127.0.0.1:8080/v1'].forEach((baseUrl) => {
+        assert.equal(isNewApiGatewayBaseUrl(baseUrl), false);
+        assert.equal(supportsLegacySub2ApiUsageLookup(baseUrl), true);
+    });
+    assert.equal(isNewApiGatewayBaseUrl('https://new.fatherkey.com.evil.example/v1'), false);
+    assert.equal(supportsLegacySub2ApiUsageLookup('https://new.fatherkey.com.evil.example/v1'), false);
 });
 
 test('ai image pricing config exposes image and chat model groups separately', async () => {
@@ -828,7 +874,7 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
                             isActive: true,
                             providerId: 'chat-provider',
                             label: 'Sub2API Chat',
-                            baseUrl: 'https://sub2api.fatherkey.com/v1',
+                            baseUrl: 'https://sub2api.example/v1',
                             apiKey: providerKey,
                             modelGroup: 'chat',
                             chatModels: ['gpt-5.4', 'not-returned']
@@ -914,7 +960,7 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
         const payload = res.json();
         assert.equal(res.statusCode, 200, res.body);
         assert.equal(fetchCalls.length, 2);
-        assert.equal(fetchCalls[0].url, 'https://sub2api.fatherkey.com/v1/models/pricing');
+        assert.equal(fetchCalls[0].url, 'https://sub2api.example/v1/models/pricing');
         assert.equal(fetchCalls[0].options.headers.Authorization, `Bearer ${providerKey}`);
         assert.deepEqual(payload.text_model_prices.map((item) => item.id), ['gpt-5.4']);
         assert.equal(payload.text_model_prices[0].billing_model, 'gpt-5.4-2026-07-01');
@@ -928,6 +974,217 @@ test('ai image model prices publicly proxy effective Sub2API quotes without expo
         assert.equal(res.body.includes('internal-only-model'), false);
         assert.equal(res.body.includes('channel_id'), false);
         assert.equal(res.body.includes('account_id'), false);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
+test('ai image model prices read NewAPI public pricing and convert ratios', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    const providerKey = 'sk-newapi-provider-secret-must-not-be-sent';
+    const fetchCalls = [];
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderSecrets() {
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'gemini-provider',
+                            label: 'Gemini',
+                            baseUrl: 'https://new.fatherkey.com/v1',
+                            apiKey: providerKey,
+                            modelGroup: 'chat',
+                            chatModels: ['gemini-3-flash', 'not-returned']
+                        },
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'qwen-provider',
+                            label: 'Qwen',
+                            baseUrl: 'https://sub2api.fatherkey.com/v1',
+                            apiKey: `${providerKey}-compat`,
+                            modelGroup: 'chat',
+                            chatModels: ['qwen3.7-plus']
+                        }
+                    ];
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {};
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            fetchImpl: async (url, options = {}) => {
+                fetchCalls.push({ url, options });
+                return {
+                    ok: true,
+                    status: 200,
+                    async json() {
+                        return {
+                            success: true,
+                            group_ratio: { gemini: 0.29, '国产模型': 0.4, default: 1 },
+                            data: [
+                                {
+                                    model_name: 'gemini-3-flash',
+                                    quota_type: 0,
+                                    model_ratio: 0.25,
+                                    completion_ratio: 6,
+                                    cache_ratio: 0.1,
+                                    create_cache_ratio: 0.2,
+                                    enable_groups: ['gemini', 'default']
+                                },
+                                {
+                                    model_name: 'qwen3.7-plus',
+                                    quota_type: 0,
+                                    model_ratio: 0.8,
+                                    completion_ratio: 4,
+                                    billing_mode: 'tiered_expr',
+                                    billing_expr: 'v1:len <= 256000 ? tier("short", p * 1.6 + cr * 0.16 + cc * 2 + c * 6.4) : tier("long", p * 4.8 + cr * 0.48 + cc * 6 + c * 19.2)',
+                                    enable_groups: ['国产模型']
+                                }
+                            ]
+                        };
+                    }
+                };
+            },
+            admin: {
+                async requireAuthenticatedUser() {
+                    const error = new Error('Unauthorized');
+                    error.statusCode = 401;
+                    throw error;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers['model-prices']({ method: 'GET', url: '/api/public?scope=ai-image&route=model-prices' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, res.body);
+        assert.equal(fetchCalls.length, 2);
+        assert.equal(fetchCalls[0].url, 'https://new.fatherkey.com/api/pricing');
+        assert.equal(fetchCalls[1].url, 'https://sub2api.fatherkey.com/api/pricing');
+        fetchCalls.forEach((call) => assert.equal(call.options.headers.Authorization, undefined));
+        assert.deepEqual(payload.text_model_prices.map((item) => item.id), ['gemini-3-flash', 'qwen3.7-plus']);
+        const geminiPrice = payload.text_model_prices[0];
+        assert.ok(Math.abs(geminiPrice.input_price_per_million - 0.145) < 1e-12);
+        assert.ok(Math.abs(geminiPrice.output_price_per_million - 0.87) < 1e-12);
+        assert.ok(Math.abs(geminiPrice.cache_read_price_per_million - 0.0145) < 1e-12);
+        assert.ok(Math.abs(geminiPrice.cache_write_price_per_million - 0.029) < 1e-12);
+        assert.equal(geminiPrice.effective_multiplier, 0.29);
+        const qwenPrice = payload.text_model_prices[1];
+        assert.equal(qwenPrice.billing_mode, 'tiered_expr');
+        assert.equal(qwenPrice.effective_multiplier, 0.4);
+        assert.equal(qwenPrice.intervals.length, 2);
+        assert.equal(qwenPrice.intervals[0].max_tokens, 256000);
+        assert.equal(qwenPrice.intervals[1].min_tokens, 256000);
+        assert.ok(Math.abs(qwenPrice.intervals[0].input_price_per_million - 0.64) < 1e-12);
+        assert.ok(Math.abs(qwenPrice.intervals[1].output_price_per_million - 7.68) < 1e-12);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.source), ['newapi', 'newapi']);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.model_count), [1, 1]);
+        assert.equal(res.body.includes(providerKey), false);
+    } finally {
+        delete require.cache[handlerPath];
+    }
+});
+
+test('ai image model prices reject HTTP 200 error payloads', async () => {
+    const handlerPath = path.resolve(__dirname, '../server/api-handlers/public/ai-image.js');
+    const originalLoad = Module._load;
+    delete require.cache[handlerPath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === '../../../api/_lib/secrets') {
+            return {
+                async listStoredAiImageProviderSecrets() {
+                    return [
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'legacy-provider',
+                            label: 'Legacy',
+                            baseUrl: 'https://sub2api.example/v1',
+                            apiKey: 'sk-legacy-price-key',
+                            modelGroup: 'chat',
+                            chatModels: ['gpt-5.4']
+                        },
+                        {
+                            configured: true,
+                            isActive: true,
+                            providerId: 'newapi-provider',
+                            label: 'NewAPI',
+                            baseUrl: 'https://new.fatherkey.com/v1',
+                            apiKey: 'sk-newapi-price-key',
+                            modelGroup: 'chat',
+                            chatModels: ['gpt-5.4']
+                        }
+                    ];
+                }
+            };
+        }
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let createHandlersWithMock;
+    try {
+        createHandlersWithMock = require(handlerPath).createAiImageHandlers;
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        const state = {};
+        const supabase = createSupabaseStub(state);
+        const handlers = createHandlersWithMock({
+            fetchImpl: async (url) => ({
+                ok: true,
+                status: 200,
+                async json() {
+                    return url.includes('new.fatherkey.com')
+                        ? { success: true, data: {} }
+                        : { error: { message: "The model 'pricing' does not exist" } };
+                }
+            }),
+            admin: {
+                async requireAuthenticatedUser() {
+                    const error = new Error('Unauthorized');
+                    error.statusCode = 401;
+                    throw error;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                sendJson
+            }
+        });
+        const res = createMockResponse();
+
+        await handlers['model-prices']({ method: 'GET', url: '/api/public?scope=ai-image&route=model-prices' }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200, res.body);
+        assert.deepEqual(payload.text_model_prices, []);
+        assert.equal(payload.provider_statuses.length, 2);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.available), [false, false]);
+        assert.deepEqual(payload.provider_statuses.map((status) => status.source), ['sub2api', 'newapi']);
+        assert.equal(payload.partial, true);
     } finally {
         delete require.cache[handlerPath];
     }
@@ -1980,7 +2237,7 @@ test('points chat submit charges Sub2API-compatible token pricing from usage', a
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-chat-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'kimi-k2.6'
         },
         fetchImpl: async (url, options = {}) => {
@@ -2054,7 +2311,7 @@ test('points chat submit charges Sub2API-compatible token pricing from usage', a
     assert.equal(payload.task.tokenUsage.cache_read_tokens, 500);
     const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
     assert.equal(deductCall.args.p_amount, 0.137502);
     assert.equal(persistedTask.charged_points, 0.137502);
     assert.equal(persistedTask.metadata.pricing_charge.source, 'sub2api_actual_cost');
@@ -2090,7 +2347,7 @@ test('points chat submit falls back to Sub2API total cost when actual cost is de
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-chat-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'claude-opus-4-8',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -2372,7 +2629,7 @@ test('points chat stream charges Sub2API actual cost after stream closes', async
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-sub2api-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'kimi-k2.6',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -2442,13 +2699,245 @@ test('points chat stream charges Sub2API actual cost after stream closes', async
     assert.match(res.body, /"chargedPoints":0.001075/);
     const expectedClientRequestId = `fatherkey-aiw-${state.insertedTasks[0].id}`;
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
     assert.equal(deductCall.args.p_amount, 0.001075);
     assert.equal(persistedTask.status, 'succeeded');
     assert.equal(persistedTask.charged_points, 0.001075);
     assert.equal(persistedTask.metadata.sub2api_client_request_id, expectedClientRequestId);
     assert.equal(persistedTask.metadata.pricing_charge.source, 'sub2api_actual_cost');
     assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.001075);
+});
+
+test('points chat stream settles NewAPI from its X-OneAPI request log', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    const state = {
+        pricingRules: [{
+            id: 'pricing-newapi-stream-chat-1',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    points_per_usd: 1,
+                    rates: {
+                        input: 0,
+                        output: 0
+                    }
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-stream-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.zaoyoe.xyz/v1',
+            AI_IMAGE_CHAT_MODEL: 'MiniMax-M3',
+            AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_BILLING_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: [
+                            { type: 2, request_id: 'another-newapi-request', quota: 9000 },
+                            { type: 2, request_id: 'newapi-stream-cost-159', quota: 159 }
+                        ]
+                    })
+                };
+            }
+            if (String(url).endsWith('/api/status')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: { quota_per_unit: 500000 }
+                    })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-oneapi-request-id'
+                            ? 'newapi-stream-cost-159'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-newapi-stream-1","model":"MiniMax-M3","choices":[{"delta":{"content":"NewAPI 已完成。"}}]}\n\n',
+                            'data: {"usage":{"prompt_tokens":370,"completion_tokens":28,"total_tokens":398},"choices":[{"delta":{}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证 NewAPI 消费日志结算',
+            model: 'MiniMax-M3',
+            apiModelGroup: 'chat'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, res);
+
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    const deductCall = state.rpcCalls.find((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown');
+    assert.equal(res.statusCode, 200);
+    assert.match(res.body, /event: billing/);
+    assert.match(res.body, /"billingSyncStatus":"settled"/);
+    assert.equal(persistedTask.charged_points, 0.000318);
+    assert.equal(persistedTask.metadata.sub2api_billing_sync.status, 'settled');
+    assert.equal(persistedTask.metadata.sub2api_billing_sync.source, 'newapi_token_log');
+    assert.equal(persistedTask.metadata.pricing_charge.source, 'newapi_actual_cost');
+    assert.equal(deductCall.args.p_amount, 0.000318);
+    assert.equal(requests.some((request) => request.url.includes('/usage')), false);
+    assert.equal(requests.some((request) => request.url.endsWith('/api/log/token')), true);
+    assert.equal(requests.find((request) => request.url.endsWith('/api/log/token')).headers.Authorization, 'Bearer sk-server-newapi-stream-key');
+    assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID']), false);
+});
+
+test('points chat stream keeps an unresolved NewAPI request pending for exact list reconciliation', async () => {
+    const requests = [];
+    const encoder = new TextEncoder();
+    let requestLogAvailable = false;
+    const state = {
+        pricingRules: [{
+            id: 'pricing-newapi-stream-pending-1',
+            site: 'cn',
+            mode: 'chat',
+            billing_mode: 'points',
+            model: '*',
+            resolution: '*',
+            ratio: '*',
+            quantity: 1,
+            points: 0,
+            priority: 10,
+            is_active: true,
+            metadata: {
+                billing_strategy: 'token_sub2api',
+                pricing: {
+                    points_per_usd: 1,
+                    rates: { input: 0, output: 0 }
+                }
+            }
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-stream-pending-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.zaoyoe.xyz/v1',
+            AI_IMAGE_CHAT_MODEL: 'MiniMax-M3',
+            AI_WORKBENCH_BILLING_V2_ENABLED: 'true',
+            AI_IMAGE_NEWAPI_BILLING_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_BILLING_LOOKUP_INTERVAL_MS: '0',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: requestLogAvailable
+                            ? [{ type: 2, request_id: 'newapi-stream-delayed-159', quota: 159 }]
+                            : []
+                    })
+                };
+            }
+            if (String(url).endsWith('/api/status')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ success: true, data: { quota_per_unit: 500000 } })
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                headers: {
+                    get(name = '') {
+                        return String(name).toLowerCase() === 'x-oneapi-request-id'
+                            ? 'newapi-stream-delayed-159'
+                            : '';
+                    }
+                },
+                body: new ReadableStream({
+                    start(controller) {
+                        [
+                            'data: {"id":"chatcmpl-newapi-stream-pending-1","model":"MiniMax-M3","choices":[{"delta":{"content":"日志稍后写入。"}}]}\n\n',
+                            'data: {"usage":{"prompt_tokens":370,"completion_tokens":28,"total_tokens":398},"choices":[{"delta":{}}]}\n\n',
+                            'data: [DONE]\n\n'
+                        ].forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+                        controller.close();
+                    }
+                })
+            };
+        },
+        body: {
+            site: 'cn',
+            billingMode: 'points',
+            prompt: '验证 NewAPI 延迟扣费日志',
+            model: 'MiniMax-M3',
+            apiModelGroup: 'chat'
+        }
+    });
+    const streamRes = createMockResponse();
+
+    await handlers.chatStream({ method: 'POST', url: '/api/public/ai-image/chat-stream' }, streamRes);
+
+    const persistedTask = state.tasks.find((task) => task.id === state.insertedTasks[0].id);
+    assert.equal(streamRes.statusCode, 200);
+    assert.match(streamRes.body, /"billingSyncStatus":"pricing_pending"/);
+    assert.equal(persistedTask.charged_points, 0);
+    assert.equal(persistedTask.token_usage.newapi.request_id, 'newapi-stream-delayed-159');
+    assert.equal(persistedTask.metadata.sub2api_billing_sync.status, 'pricing_pending');
+    assert.equal(persistedTask.metadata.billing_v2.status, 'settlement_pending');
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.equal(requests.filter((request) => request.url.endsWith('/api/log/token')).length, 1);
+
+    requestLogAvailable = true;
+    const listRes = createMockResponse();
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, listRes);
+
+    const payload = listRes.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(listRes.statusCode, 200);
+    assert.equal(payload.tasks[0].chargedPoints, 0.000318);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'settled');
+    assert.equal(persistedTask.token_usage.newapi.request_id, 'newapi-stream-delayed-159');
+    assert.equal(persistedTask.metadata.sub2api_billing_sync.source, 'newapi_token_log');
+    assert.equal(settlementCall.args.p_amount, 0.000318);
+    assert.equal(requests.filter((request) => request.url.endsWith('/api/log/token')).length, 2);
+    assert.equal(requests.some((request) => request.url.includes('/usage')), false);
 });
 
 test('points chat stream settles zero-cost Sub2API usage without waiting forever', async () => {
@@ -2480,7 +2969,7 @@ test('points chat stream settles zero-cost Sub2API usage without waiting forever
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-zero-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'qwen3.7-max',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -2568,7 +3057,7 @@ test('points chat stream finalizes after upstream sends content but leaves SSE o
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-idle-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_IDLE_TIMEOUT_MS: '10',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
@@ -2673,7 +3162,7 @@ test('points chat stream finalizes after visible answer when hidden reasoning ke
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-hidden-reasoning-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS: '10',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS: '0',
@@ -2758,7 +3247,7 @@ test('points chat stream finalizes after visible answer when hidden reasoning ke
     assert.match(res.body, /你好/);
     assert.match(res.body, /"chargedPoints":0.000221/);
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === expectedClientRequestId), true);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage?request_id=${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage?request_id=${encodeURIComponent(`client:${expectedClientRequestId}`)}`), true);
     assert.equal(deductCall.args.p_amount, 0.000221);
     assert.equal(persistedTask.status, 'succeeded');
     assert.equal(persistedTask.result_prompt, '你好');
@@ -2801,7 +3290,7 @@ test('points chat stream does not truncate content after Sub2API usage is ready'
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-usage-ready-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS: '10',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_GRACE_MS: '0',
@@ -2927,7 +3416,7 @@ test('points chat stream does not block each delta on delayed Sub2API usage look
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-nonblocking-deltas-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'deepseek-v4-flash',
             AI_IMAGE_CHAT_STREAM_USAGE_READY_PROBE_MS: '100',
             AI_IMAGE_CHAT_STREAM_VISIBLE_IDLE_TIMEOUT_MS: '1000',
@@ -3063,7 +3552,7 @@ test('points chat stream can resolve Sub2API usage by raw client request id fall
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-stream-raw-id-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_CHAT_MODEL: 'claude-opus-4-8',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
@@ -3134,7 +3623,7 @@ test('points chat stream can resolve Sub2API usage by raw client request id fall
     assert.equal(res.statusCode, 200);
     assert.match(res.body, /"chargedPoints":0.017165/);
     assert.equal(requests.some((request) => request.headers?.['X-Client-Request-ID'] === `fatherkey-aiw-${state.insertedTasks[0].id}`), true);
-    assert.equal(requests.some((request) => request.url === 'https://sub2api.fatherkey.com/v1/usage?request_id=fatherkey-stream-raw-id'), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage?request_id=fatherkey-stream-raw-id`), true);
     assert.equal(deductCall.args.p_amount, 0.017165);
     assert.equal(persistedTask.charged_points, 0.017165);
     assert.equal(persistedTask.metadata.pricing_charge.pricing.actual_cost_usd, 0.017165);
@@ -4961,7 +5450,7 @@ test('api billing mode rejects when admin has no enabled API base URLs', async (
     assert.equal(payload.code, 'api_base_url_not_configured');
 });
 
-test('api billing mode accepts admin configured Sub2API base URLs', async () => {
+test('api billing mode accepts an admin-configured legacy Sub2API compatibility URL', async () => {
     const requests = [];
     const { handlers, state } = createHandlers({
         state: {
@@ -5150,6 +5639,8 @@ test('task list reconciles delayed Sub2API actual cost and deducts points once',
             output_tokens: 87,
             total_tokens: 148,
             metadata: {
+                provider_base_url: LEGACY_SUB2API_TEST_BASE_URL,
+                billing_lookup_supported: true,
                 sub2api_client_request_id: 'fatherkey-aiw-task-delayed-sub2api-usage',
                 pricing: {
                     matched_rule: {
@@ -5173,7 +5664,7 @@ test('task list reconciles delayed Sub2API actual cost and deducts points once',
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: 'https://new.fatherkey.com/v1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_USAGE_LOOKUP_INTERVAL_MS: '0'
         },
@@ -5207,7 +5698,798 @@ test('task list reconciles delayed Sub2API actual cost and deducts points once',
     assert.equal(state.tasks[0].charged_points, 0.0002);
     assert.equal(state.tasks[0].metadata.pricing_charge.reconciled, true);
     assert.equal(deductCall.args.p_amount, 0.0002);
-    assert.equal(requests.some((request) => request.url === `https://sub2api.fatherkey.com/v1/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
+    assert.equal(requests.some((request) => request.url === `${LEGACY_SUB2API_TEST_BASE_URL}/usage/requests/${encodeURIComponent('client:fatherkey-aiw-task-delayed-sub2api-usage')}`), true);
+});
+
+test('task list reconciles completed NewAPI token usage from its exact request log', async () => {
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: 'task-newapi-token-usage',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好！',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 370,
+                output_tokens: 28,
+                total_tokens: 398,
+                newapi: {
+                    request_id: 'newapi-history-cost-159'
+                }
+            },
+            input_tokens: 370,
+            output_tokens: 28,
+            total_tokens: 398,
+            metadata: {
+                provider_base_url: 'https://sub2api.zaoyoe.com/v1',
+                billing_lookup_supported: false,
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-token-chat',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                points_per_usd: 1,
+                                rates: {
+                                    input: 0,
+                                    output: 0
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-06-21T12:00:00.000Z',
+            updated_at: '2026-06-21T12:00:03.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-task-key',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url) => {
+            requests.push(String(url));
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: [{ type: 2, request_id: 'newapi-history-cost-159', quota: 159 }]
+                    })
+                };
+            }
+            if (String(url).endsWith('/api/status')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ success: true, data: { quota_per_unit: 500000 } })
+                };
+            }
+            throw new Error(`unexpected NewAPI billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 1);
+    assert.equal(payload.tasks[0].chargedPoints, 0.000318);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'settled');
+    assert.equal(payload.tasks[0].billingSyncMessage, '扣费已同步');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.source, 'newapi_token_log');
+    assert.equal(state.tasks[0].metadata.pricing_charge.source, 'newapi_actual_cost');
+    assert.equal(settlementCall.args.p_amount, 0.000318);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.deepEqual(requests, [
+        'https://sub2api.zaoyoe.com/api/log/token',
+        'https://sub2api.zaoyoe.com/api/status'
+    ]);
+});
+
+test('task list settles every tracked NewAPI request and never settles an untracked sibling', async () => {
+    const providerBaseUrl = 'https://sub2api.zaoyoe.xyz/v1';
+    const makeTask = (id, records) => ({
+        id,
+        site: 'cn',
+        user_id: 'user-ai-1',
+        mode: 'text',
+        billing_mode: 'points',
+        status: 'succeeded',
+        model: 'gpt-image',
+        ratio: '1:1',
+        resolution: '1k',
+        quantity: 2,
+        prompt: '生成两张图片',
+        result_prompt: '已生成',
+        estimated_points: 0,
+        charged_points: 0,
+        token_usage: {
+            newapi: {
+                records,
+                billing_status: 'pricing_pending'
+            }
+        },
+        metadata: {
+            provider_base_url: providerBaseUrl,
+            billing_lookup_supported: false,
+            billing_v2: {
+                enabled: true,
+                dynamic: true,
+                status: 'authorized',
+                authorization_points: 1
+            },
+            pricing: {
+                matched_rule: {
+                    id: `pricing-${id}`,
+                    metadata: {
+                        billing_strategy: 'token_sub2api',
+                        pricing: {
+                            points_per_usd: 1,
+                            rates: {}
+                        }
+                    }
+                }
+            }
+        },
+        created_at: '2026-06-21T12:00:00.000Z',
+        updated_at: '2026-06-21T12:00:03.000Z',
+        completed_at: '2026-06-21T12:00:03.000Z'
+    });
+    const state = {
+        tasks: [
+            makeTask('task-newapi-multi-history', [
+                { request_id: 'newapi-multi-history-1' },
+                { request_id: 'newapi-multi-history-2' }
+            ]),
+            makeTask('task-newapi-multi-untracked', [
+                { request_id: 'newapi-multi-untracked-1', actual_cost: 0.000318 },
+                { lookup_status: 'no_request_id', billing_status: 'pricing_pending' }
+            ])
+        ]
+    };
+    const requests = [];
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-multi-history-key',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url) => {
+            requests.push(String(url));
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: [
+                            { type: 2, request_id: 'newapi-multi-history-1', quota: 159 },
+                            { type: 2, request_id: 'newapi-multi-history-2', quota: 341 },
+                            { type: 2, request_id: 'newapi-multi-untracked-1', quota: 159 }
+                        ]
+                    })
+                };
+            }
+            if (String(url).endsWith('/api/status')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ success: true, data: { quota_per_unit: 500000 } })
+                };
+            }
+            throw new Error(`unexpected NewAPI billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settledTask = state.tasks.find((task) => task.id === 'task-newapi-multi-history');
+    const untrackedTask = state.tasks.find((task) => task.id === 'task-newapi-multi-untracked');
+    const settlementCalls = state.rpcCalls.filter((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks.length, 2);
+    assert.equal(settledTask.charged_points, 0.001);
+    assert.equal(settledTask.token_usage.newapi.actual_cost, 0.001);
+    assert.deepEqual(settledTask.token_usage.newapi.request_ids, [
+        'newapi-multi-history-1',
+        'newapi-multi-history-2'
+    ]);
+    assert.equal(settledTask.metadata.sub2api_billing_sync.status, 'settled');
+    assert.equal(untrackedTask.charged_points, 0);
+    assert.equal(untrackedTask.metadata.sub2api_billing_sync.status, 'missing_request_id');
+    assert.equal(settlementCalls.length, 1);
+    assert.equal(settlementCalls[0].args.p_amount, 0.001);
+    assert.equal(requests.filter((url) => url === 'https://sub2api.zaoyoe.xyz/api/log/token').length, 1);
+    assert.equal(requests.every((url) => [
+        'https://sub2api.zaoyoe.xyz/api/log/token',
+        'https://sub2api.zaoyoe.xyz/api/status'
+    ].includes(url)), true);
+});
+
+test('task list keeps NewAPI token columns pending when its request log is unavailable', async () => {
+    const pendingAt = new Date().toISOString();
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: 'task-newapi-token-columns',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好！',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                newapi: {
+                    request_id: 'newapi-columns-without-log'
+                }
+            },
+            input_tokens: 2000,
+            output_tokens: 1000,
+            total_tokens: 3000,
+            metadata: {
+                provider_base_url: 'https://new.fatherkey.com/v1',
+                billing_lookup_supported: false,
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-token-columns',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                rates: {
+                                    input: 2,
+                                    output: 8
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: pendingAt,
+            updated_at: pendingAt
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-columns-key',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ success: true, data: [] })
+                };
+            }
+            throw new Error(`unexpected NewAPI billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'pending');
+    assert.equal(state.tasks[0].metadata.billing_v2.status, 'authorized');
+    assert.deepEqual(state.tasks[0].token_usage, {
+        newapi: {
+            request_id: 'newapi-columns-without-log'
+        }
+    });
+    assert.equal(settlementCall, undefined);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.deepEqual(requests.map((request) => request.url), ['https://new.fatherkey.com/api/log/token']);
+    assert.equal(requests[0].headers.Authorization, 'Bearer sk-server-newapi-columns-key');
+});
+
+test('task list settles an explicit zero-cost NewAPI request log over stale token columns', async () => {
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: 'task-newapi-explicit-zero-usage',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'deepseek-v4-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '明确零用量',
+            result_prompt: '已完成',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
+                newapi: {
+                    request_id: 'newapi-explicit-zero-log'
+                }
+            },
+            input_tokens: 2000,
+            output_tokens: 1000,
+            total_tokens: 3000,
+            metadata: {
+                provider_base_url: 'https://new.fatherkey.com/v1',
+                billing_lookup_supported: false,
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-explicit-zero-usage',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                rates: { input: 2, output: 8 }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-03T13:17:40.000Z',
+            updated_at: '2026-08-03T13:17:45.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-explicit-zero-key',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: [{ type: 2, request_id: 'newapi-explicit-zero-log', quota: 0 }]
+                    })
+                };
+            }
+            if (String(url).endsWith('/api/status')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ success: true, data: { quota_per_unit: 500000 } })
+                };
+            }
+            throw new Error(`unexpected NewAPI billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'settled');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.source, 'newapi_token_log');
+    assert.equal(state.tasks[0].token_usage.newapi.request_id, 'newapi-explicit-zero-log');
+    assert.equal(state.tasks[0].token_usage.newapi.actual_cost, 0);
+    assert.equal(state.tasks[0].token_usage.newapi.quota, 0);
+    assert.equal(settlementCall.args.p_amount, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.deepEqual(requests.map((request) => request.url), [
+        'https://new.fatherkey.com/api/log/token',
+        'https://new.fatherkey.com/api/status'
+    ]);
+    assert.equal(requests[0].headers.Authorization, 'Bearer sk-server-newapi-explicit-zero-key');
+});
+
+test('task list marks post-cutover NewAPI compatibility aliases without a request ID instead of charging local rates', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-newapi-compat-history',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'qwen3.6-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '你好',
+            result_prompt: '你好！',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 1000,
+                output_tokens: 500,
+                total_tokens: 1500
+            },
+            metadata: {
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-compat-history',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                rates: { input: 2, output: 8 }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-03T13:17:40.000Z',
+            updated_at: '2026-08-03T13:17:45.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-compat-key',
+            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1'
+        },
+        fetchImpl: async (url) => {
+            throw new Error(`unexpected legacy usage lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'missing_request_id');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.status, 'missing_request_id');
+    assert.equal(state.tasks[0].metadata.billing_v2.status, 'authorized');
+    assert.equal(settlementCall, undefined);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+});
+
+test('task list keeps pre-cutover tasks without execution metadata out of NewAPI settlement', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-legacy-pre-cutover-history',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'qwen3.6-flash',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '旧 bridge 记录',
+            result_prompt: '旧结果',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                input_tokens: 1000,
+                output_tokens: 500,
+                total_tokens: 1500
+            },
+            metadata: {
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-legacy-pre-cutover-history',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: {
+                                rates: { input: 2, output: 8 }
+                            }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-03T12:38:59.000Z',
+            updated_at: '2026-08-03T12:39:00.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-cutover-key',
+            AI_IMAGE_API_BASE_URL: 'https://new.fatherkey.com/v1'
+        },
+        fetchImpl: async (url) => {
+            throw new Error(`unexpected historical billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().tasks[0].chargedPoints, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.equal(state.tasks[0].metadata.billing_v2.status, 'authorized');
+});
+
+test('task list never reconciles NewAPI dynamic cost through non-atomic Billing V1', async () => {
+    const state = {
+        tasks: [{
+            id: 'task-newapi-billing-v1-history',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'chat',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'MiniMax-M3',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '旧计费任务',
+            result_prompt: '旧结果',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                newapi: {
+                    request_id: 'newapi-billing-v1-request'
+                }
+            },
+            metadata: {
+                provider_base_url: 'https://new.fatherkey.com/v1',
+                billing_lookup_supported: false,
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-billing-v1-history',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: { points_per_usd: 1, rates: {} }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-04T10:00:00.000Z',
+            updated_at: '2026-08-04T10:00:03.000Z'
+        }]
+    };
+    let fetchCount = 0;
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-billing-v1-key',
+            AI_IMAGE_API_BASE_URL: 'https://new.fatherkey.com/v1'
+        },
+        fetchImpl: async () => {
+            fetchCount += 1;
+            throw new Error('Billing V1 must not query or settle NewAPI history');
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().tasks[0].chargedPoints, 0);
+    assert.equal(fetchCount, 0);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+});
+
+test('task list settles zero-cost NewAPI history only after its exact request log is found', async () => {
+    const requests = [];
+    const state = {
+        tasks: [{
+            id: 'task-newapi-zero-history',
+            site: 'cn',
+            user_id: 'user-ai-1',
+            mode: 'image',
+            billing_mode: 'points',
+            status: 'succeeded',
+            model: 'gpt-image-2',
+            ratio: '1:1',
+            resolution: '1k',
+            quantity: 1,
+            prompt: '一张免费示例图',
+            estimated_points: 0,
+            charged_points: 0,
+            token_usage: {
+                newapi: {
+                    request_id: 'newapi-zero-history-log'
+                }
+            },
+            metadata: {
+                provider_base_url: 'https://sub2api.fatherkey.com/v1',
+                billing_lookup_supported: false,
+                billing_v2: {
+                    enabled: true,
+                    dynamic: true,
+                    status: 'authorized',
+                    authorization_points: 1
+                },
+                pricing: {
+                    matched_rule: {
+                        id: 'pricing-newapi-zero-history',
+                        metadata: {
+                            billing_strategy: 'token_sub2api',
+                            pricing: { rates: { input: 0, output: 0 } }
+                        }
+                    }
+                }
+            },
+            created_at: '2026-08-03T13:17:40.000Z',
+            updated_at: '2026-08-03T13:17:45.000Z'
+        }]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-zero-key',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_ATTEMPTS: '1',
+            AI_IMAGE_NEWAPI_RECONCILE_LOOKUP_INTERVAL_MS: '0'
+        },
+        fetchImpl: async (url, options = {}) => {
+            requests.push({ url: String(url), headers: options.headers || {} });
+            if (String(url).endsWith('/api/log/token')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        success: true,
+                        data: [{ type: 2, request_id: 'newapi-zero-history-log', quota: 0 }]
+                    })
+                };
+            }
+            if (String(url).endsWith('/api/status')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ success: true, data: { quota_per_unit: 500000 } })
+                };
+            }
+            throw new Error(`unexpected NewAPI billing lookup: ${url}`);
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    const payload = res.json();
+    const settlementCall = state.rpcCalls.find((call) => call.name === 'fn_settle_ai_workbench_points');
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.tasks[0].chargedPoints, 0);
+    assert.equal(payload.tasks[0].billingSyncStatus, 'settled');
+    assert.equal(state.tasks[0].metadata.billing_v2.status, 'settled');
+    assert.equal(state.tasks[0].metadata.sub2api_billing_sync.source, 'newapi_token_log');
+    assert.equal(state.tasks[0].token_usage.newapi.actual_cost, 0);
+    assert.equal(settlementCall.args.p_amount, 0);
+    assert.deepEqual(requests.map((request) => request.url), [
+        'https://sub2api.fatherkey.com/api/log/token',
+        'https://sub2api.fatherkey.com/api/status'
+    ]);
+    assert.equal(requests[0].headers.Authorization, 'Bearer sk-server-newapi-zero-key');
+});
+
+test('task list never reopens cancelled, refunded, or failed NewAPI tasks for settlement', async () => {
+    const makeTask = (id, status, tokenUsage = {}) => ({
+        id,
+        site: 'cn',
+        user_id: 'user-ai-1',
+        mode: 'chat',
+        billing_mode: 'points',
+        status,
+        model: 'qwen3.6-flash',
+        ratio: '1:1',
+        resolution: '1k',
+        quantity: 1,
+        prompt: '不应重新扣费',
+        estimated_points: 3,
+        charged_points: 0,
+        token_usage: tokenUsage,
+        metadata: {
+            provider_base_url: 'https://new.fatherkey.com/v1',
+            billing_lookup_supported: false,
+            billing_v2: {
+                enabled: true,
+                dynamic: true,
+                status: status === 'cancelled' ? 'released' : 'authorized',
+                authorization_points: 1
+            },
+            pricing: {
+                matched_rule: {
+                    id: `pricing-${id}`,
+                    metadata: {
+                        billing_strategy: 'token_sub2api',
+                        pricing: { rates: { input: 2, output: 8 } }
+                    }
+                }
+            }
+        },
+        created_at: '2026-08-03T13:17:40.000Z',
+        updated_at: '2026-08-03T13:17:45.000Z'
+    });
+    const state = {
+        tasks: [
+            makeTask('task-newapi-cancelled-history', 'cancelled'),
+            makeTask('task-newapi-refunded-history', 'refunded'),
+            makeTask('task-newapi-failed-history', 'failed', { input_tokens: 100, output_tokens: 100 })
+        ]
+    };
+    const { handlers } = createHandlers({
+        state,
+        env: {
+            AI_IMAGE_API_KEY: 'sk-server-newapi-terminal-key',
+            AI_IMAGE_API_BASE_URL: 'https://new.fatherkey.com/v1'
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers.tasks({ method: 'GET', url: '/api/public/ai-image/tasks?site=cn' }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().tasks.length, 3);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_settle_ai_workbench_points'), false);
+    assert.equal(state.rpcCalls.some((call) => call.name === 'fn_deduct_points_admin_site_with_breakdown'), false);
+    assert.deepEqual(state.tasks.map((task) => task.charged_points), [0, 0, 0]);
 });
 
 test('task list treats zero-cost Sub2API usage detail as settled billing', async () => {
@@ -5259,7 +6541,7 @@ test('task list treats zero-cost Sub2API usage detail as settled billing', async
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-zero-sub2api-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0'
         },
@@ -5342,7 +6624,7 @@ test('task list keeps returning when delayed Sub2API usage lookup hangs', { time
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-delayed-sub2api-timeout-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
             AI_IMAGE_SUB2API_RECONCILE_TIMEOUT_MS: '50'
@@ -5418,7 +6700,7 @@ test('task list finalizes old Sub2API billing sync when usage detail is not foun
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-old-sub2api-not-found-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
             AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS: '0'
@@ -5491,7 +6773,7 @@ test('task list marks old Sub2API billing sync missing request id when legacy ta
         state,
         env: {
             AI_IMAGE_API_KEY: 'sk-server-old-sub2api-missing-request-id-key',
-            AI_IMAGE_API_BASE_URL: 'https://sub2api.fatherkey.com/v1',
+            AI_IMAGE_API_BASE_URL: LEGACY_SUB2API_TEST_BASE_URL,
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_ATTEMPTS: '1',
             AI_IMAGE_SUB2API_RECONCILE_LOOKUP_INTERVAL_MS: '0',
             AI_IMAGE_SUB2API_USAGE_FINALIZE_MISSING_AFTER_MS: '0'

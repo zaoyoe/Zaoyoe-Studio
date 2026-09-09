@@ -38,6 +38,15 @@ describe('server error message mapping', () => {
     assert.equal(getServerErrorMessageKey({ code: 'UNKNOWN_CODE' }), null)
   })
 
+  test('maps a regional login denial to the frontend translation key', () => {
+    assert.equal(
+      getServerErrorMessageKey({
+        response: { data: { code: 'REGION_RESTRICTED' } },
+      }),
+      'The service is not offered to users located in restricted regions, including mainland China.'
+    )
+  })
+
   test('maps stable Telegram bind errors without exposing server text', () => {
     const expected = {
       TELEGRAM_BIND_DISABLED: 'Telegram binding is disabled.',

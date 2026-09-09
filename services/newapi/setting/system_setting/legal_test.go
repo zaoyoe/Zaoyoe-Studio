@@ -8,6 +8,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLegalSettingsLoadFiveDocumentsIndependently(t *testing.T) {
+	settings := GetLegalSettings()
+	originalSettings := *settings
+	t.Cleanup(func() {
+		*settings = originalSettings
+	})
+
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"legal.user_agreement":     "terms-content",
+		"legal.privacy_policy":     "privacy-content",
+		"legal.acceptable_use":     "acceptable-use-content",
+		"legal.refund_policy":      "refund-content",
+		"legal.restricted_regions": "restricted-regions-content",
+	}))
+
+	assert.Equal(t, "terms-content", settings.UserAgreement)
+	assert.Equal(t, "privacy-content", settings.PrivacyPolicy)
+	assert.Equal(t, "acceptable-use-content", settings.AcceptableUse)
+	assert.Equal(t, "refund-content", settings.RefundPolicy)
+	assert.Equal(t, "restricted-regions-content", settings.RestrictedRegions)
+}
+
 func TestLegalSettingsAPIKeyConfirmationLinkDefaultsEnabled(t *testing.T) {
 	settings := GetLegalSettings()
 
@@ -43,13 +65,9 @@ func TestLegalSettingsAPIKeyConfirmationLinkVisibilityConfigPersistence(t *testi
 		persisted[key] = value
 		return nil
 	}))
-	assert.Equal(t, values, map[string]string{
-		"legal.api_key_terms_enabled":              persisted["legal.api_key_terms_enabled"],
-		"legal.api_key_privacy_enabled":            persisted["legal.api_key_privacy_enabled"],
-		"legal.api_key_acceptable_use_enabled":     persisted["legal.api_key_acceptable_use_enabled"],
-		"legal.api_key_refund_enabled":             persisted["legal.api_key_refund_enabled"],
-		"legal.api_key_restricted_regions_enabled": persisted["legal.api_key_restricted_regions_enabled"],
-	})
+	for key, value := range values {
+		assert.Equal(t, value, persisted[key])
+	}
 
 	restored := LegalSettings{}
 	restoreManager := config.NewConfigManager()

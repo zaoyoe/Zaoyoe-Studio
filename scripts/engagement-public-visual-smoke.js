@@ -25,7 +25,7 @@ const PAGE_DEFINITIONS = Object.freeze({
         label: 'Gongyi',
         path: '/gongyi.html',
         externalRedirect: true,
-        externalHost: 'sub2api.fatherkey.com'
+        externalHost: 'new.fatherkey.com'
     }
 });
 const SCENARIO_DEFINITIONS = Object.freeze({

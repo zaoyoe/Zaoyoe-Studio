@@ -180,18 +180,23 @@ describe('regional restriction settings', () => {
     )
     assert.ok(countryCodesInput)
 
-    const revisionLabel = [...document.querySelectorAll('label')].find(
-      (label) => label.textContent?.trim() === 'Confirmation revision'
+    const registrationLabel = [...document.querySelectorAll('label')].find(
+      (label) => label.textContent?.trim() === 'Password registration'
     )
-    assert.ok(revisionLabel)
-    const revisionInput = document.querySelector<HTMLInputElement>(
-      `#${revisionLabel.htmlFor}`
+    assert.ok(registrationLabel)
+    const registrationInput = document.querySelector<HTMLInputElement>(
+      `#${registrationLabel.htmlFor}`
     )
-    assert.ok(revisionInput)
+    assert.ok(registrationInput)
+    const registrationSwitch =
+      registrationInput.parentElement?.querySelector<HTMLElement>(
+        '[role="switch"]'
+      )
+    assert.ok(registrationSwitch)
 
     await act(async () => {
       changeInputValue(countryCodesInput, 'CN, US')
-      changeInputValue(revisionInput, '2026-06-18')
+      registrationSwitch.click()
     })
 
     const saveButton = [
@@ -206,8 +211,8 @@ describe('regional restriction settings', () => {
     await flushAsyncWork()
     assert.deepEqual(requests, [
       {
-        key: 'regional_restriction.blocked_country_codes',
-        value: '["CN","US"]',
+        key: 'regional_restriction.registration_enabled',
+        value: false,
       },
     ])
 
@@ -215,16 +220,16 @@ describe('regional restriction settings', () => {
     await flushAsyncWork()
     assert.deepEqual(requests, [
       {
-        key: 'regional_restriction.blocked_country_codes',
-        value: '["CN","US"]',
+        key: 'regional_restriction.registration_enabled',
+        value: false,
+      },
+      {
+        key: 'regional_restriction.registration_enabled',
+        value: false,
       },
       {
         key: 'regional_restriction.blocked_country_codes',
         value: '["CN","US"]',
-      },
-      {
-        key: 'regional_restriction.confirmation_revision',
-        value: '2026-06-18',
       },
     ])
 

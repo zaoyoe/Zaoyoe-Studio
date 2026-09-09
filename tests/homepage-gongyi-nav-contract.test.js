@@ -31,7 +31,7 @@ test('primary pages place verify before gongyi and shop after gongyi', () => {
         const source = readRepoFile(relativePath);
         const promptsIndex = source.indexOf('href="/prompts.html"');
         const verifyIndex = source.indexOf('href="/verify.html"');
-        const gongyiIndex = source.indexOf('href="https://sub2api.fatherkey.com"');
+        const gongyiIndex = source.indexOf('href="https://new.fatherkey.com"');
         const shopIndex = source.indexOf('href="/shop.html"');
 
         assert.ok(promptsIndex >= 0, `${relativePath} should include the prompts nav link`);
@@ -79,7 +79,8 @@ test('support mobile submenu removes status and does not nest gongyi', () => {
     PAGE_PATHS.forEach((relativePath) => {
         const supportBlock = extractSupportMobileBlock(readRepoFile(relativePath));
         assert.equal(supportBlock.includes('https://status.zaoyoe.com'), false, `${relativePath} support submenu should not keep the status link`);
-        assert.equal(supportBlock.includes('https://sub2api.fatherkey.com'), false, `${relativePath} support submenu should not keep the gongyi link`);
+        assert.equal(supportBlock.includes('https://new.fatherkey.com'), false, `${relativePath} support submenu should not keep the gongyi link`);
+        assert.equal(supportBlock.includes('https://sub2api.fatherkey.com'), false, `${relativePath} support submenu should not keep the legacy gongyi link`);
     });
 });
 

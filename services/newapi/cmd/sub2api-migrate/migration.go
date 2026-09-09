@@ -26,10 +26,59 @@ import (
 )
 
 const (
-	migrationOptionKey = "Sub2APIMigrationVersion"
-	bridgeUserEmail    = "newapi-bridge@internal.invalid"
-	bridgeUserBalance  = int64(999_999_999_999)
-	quotaPerUSD        = 500_000.0
+	migrationOptionKey        = "Sub2APIMigrationVersion"
+	smtpMigrationOptionKey    = "Sub2APISMTPMigrationVersion"
+	smtpMigrationVersion      = "sub2api-to-newapi-smtp-v1"
+	legalMigrationOptionKey   = "Sub2APILegalMigrationVersion"
+	legalMigrationVersionV1   = "sub2api-to-newapi-legal-v1"
+	legalMigrationVersion     = "sub2api-to-newapi-legal-v2"
+	fatherKeyPrivacyPolicyURL = "https://www.fatherkey.com/privacy.html"
+	fatherKeyRefundPolicyURL  = "https://www.fatherkey.com/refund-policy.html"
+	bridgeChannelTagPrefix    = "sub2api-bridge:"
+	bridgeUserEmail           = "newapi-bridge@internal.invalid"
+	bridgeUserBalance         = int64(999_999_999_999)
+	quotaPerUSD               = 500_000.0
+	bridgeChannelStateQuery   = `
+		SELECT
+			count(*),
+			count(*) FILTER (WHERE c.tag LIKE $2),
+			count(*) FILTER (WHERE c.tag LIKE $2 AND c.status = 1),
+			count(*) FILTER (
+				WHERE c.tag LIKE $2
+				  AND c.status = 1
+				  AND EXISTS (
+					SELECT 1
+					FROM abilities AS a
+					WHERE a.channel_id = c.id
+					  AND a.enabled
+					  AND a.tag = c.tag
+				  )
+			)
+		FROM channels AS c
+		WHERE c.type = $1
+	`
+	bridgeRepairValidationQuery = `
+		SELECT
+			(SELECT count(*) FROM channels WHERE type = $1 AND status = 1 AND tag LIKE $2),
+			(SELECT count(*) FROM abilities WHERE enabled AND tag LIKE $2)
+	`
+	migratableLegacyGroupCountQuery = `
+		SELECT count(*)
+		FROM groups
+		WHERE deleted_at IS NULL
+		  AND status = 'active'
+		  AND NOT is_exclusive
+		  AND subscription_type = 'standard'
+	`
+	activeLegacyGroupOptionsQuery = `
+		SELECT name, rate_multiplier::float8
+		FROM groups
+		WHERE deleted_at IS NULL
+		  AND status = 'active'
+		  AND NOT is_exclusive
+		  AND subscription_type = 'standard'
+		ORDER BY id
+	`
 )
 
 type legacyUser struct {
@@ -72,6 +121,11 @@ type bridgeGroup struct {
 	SourceAPIKeyURL string
 }
 
+type activeLegacyGroupOption struct {
+	Name           string
+	RateMultiplier float64
+}
+
 type legacyPriceInterval struct {
 	MinTokens       int
 	MaxTokens       *int
@@ -90,6 +144,23 @@ type legacyPrice struct {
 	Intervals       []legacyPriceInterval
 }
 
+type legacyLegalDocument struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	ContentMD string `json:"content_md"`
+}
+
+type renderedLegacyLegalDocument struct {
+	ID       string
+	Content  string
+	Rendered string
+}
+
+type legacyLegalOptionUpgrade struct {
+	Options           map[string]string
+	ReplaceableValues map[string][]string
+}
+
 type migrationData struct {
 	Users   []legacyUser
 	Tokens  []legacyToken
@@ -104,7 +175,18 @@ type modelListResponse struct {
 	} `json:"data"`
 }
 
-func migrationCompleted(ctx context.Context, target *sql.DB, version string) (bool, error) {
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+type bridgeChannelState struct {
+	Total           int
+	Managed         int
+	ManagedActive   int
+	ManagedRoutable int
+}
+
+func migrationCompleted(ctx context.Context, target rowQuerier, version string) (bool, error) {
 	var value string
 	err := target.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, migrationOptionKey).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -117,6 +199,45 @@ func migrationCompleted(ctx context.Context, target *sql.DB, version string) (bo
 		return false, fmt.Errorf("target has migration marker %q, expected %q", value, version)
 	}
 	return true, nil
+}
+
+func loadBridgeChannelState(ctx context.Context, target rowQuerier) (bridgeChannelState, error) {
+	var state bridgeChannelState
+	err := target.QueryRowContext(
+		ctx,
+		bridgeChannelStateQuery,
+		constant.ChannelTypeSub2API,
+		bridgeChannelTagPrefix+"%",
+	).Scan(&state.Total, &state.Managed, &state.ManagedActive, &state.ManagedRoutable)
+	if err != nil {
+		return bridgeChannelState{}, fmt.Errorf("read target Sub2API bridge channel state: %w", err)
+	}
+	return state, nil
+}
+
+func bridgeChannelsNeedRepair(ctx context.Context, target rowQuerier, expectedGroups int) (bool, error) {
+	if expectedGroups <= 0 {
+		return false, errors.New("legacy database has no active standard groups to validate against")
+	}
+	state, err := loadBridgeChannelState(ctx, target)
+	if err != nil {
+		return false, err
+	}
+	if state.Managed == expectedGroups &&
+		state.ManagedActive == expectedGroups &&
+		state.ManagedRoutable == expectedGroups {
+		return false, nil
+	}
+	if state.Total == 0 {
+		return true, nil
+	}
+	return false, fmt.Errorf(
+		"target Sub2API bridge state is incomplete: got %d migration-managed channels (%d active, %d routable), expected %d; refusing automatic repair",
+		state.Managed,
+		state.ManagedActive,
+		state.ManagedRoutable,
+		expectedGroups,
+	)
 }
 
 func requireEmptyTarget(ctx context.Context, target *sql.DB) error {
@@ -634,6 +755,186 @@ func shouldMigrateGlobalGroup(deleted bool, status string, exclusive bool, subsc
 	return !deleted && status == "active" && !exclusive && subscriptionType == "standard"
 }
 
+func countMigratableLegacyGroups(ctx context.Context, source rowQuerier) (int, error) {
+	var count int
+	if err := source.QueryRowContext(ctx, migratableLegacyGroupCountQuery).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count migratable legacy groups: %w", err)
+	}
+	if count == 0 {
+		return 0, errors.New("legacy database has no active standard groups")
+	}
+	return count, nil
+}
+
+func loadActiveLegacyGroupOptions(ctx context.Context, source *sql.DB) ([]activeLegacyGroupOption, error) {
+	rows, err := source.QueryContext(ctx, activeLegacyGroupOptionsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("query legacy group access options: %w", err)
+	}
+	defer rows.Close()
+
+	groups := make([]activeLegacyGroupOption, 0)
+	for rows.Next() {
+		var group activeLegacyGroupOption
+		if err := rows.Scan(&group.Name, &group.RateMultiplier); err != nil {
+			return nil, fmt.Errorf("scan legacy group access option: %w", err)
+		}
+		group.Name = strings.TrimSpace(group.Name)
+		if group.Name == "" || len(group.Name) > 64 || strings.Contains(group.Name, ",") {
+			return nil, fmt.Errorf("legacy group has an unsupported name %q", group.Name)
+		}
+		if math.IsNaN(group.RateMultiplier) || math.IsInf(group.RateMultiplier, 0) {
+			return nil, fmt.Errorf("legacy group %q has an invalid rate multiplier", group.Name)
+		}
+		if group.RateMultiplier < 0 {
+			return nil, fmt.Errorf("legacy group %q has a negative rate multiplier", group.Name)
+		}
+		groups = append(groups, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate legacy group access options: %w", err)
+	}
+	if len(groups) == 0 {
+		return nil, errors.New("legacy database has no active standard groups")
+	}
+	return groups, nil
+}
+
+func repairMissingGroupOptions(ctx context.Context, source, target *sql.DB) (bool, error) {
+	groups, err := loadActiveLegacyGroupOptions(ctx, source)
+	if err != nil {
+		return false, err
+	}
+
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin group options migration repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock group options migration repair: %w", err)
+	}
+
+	optionValues := make(map[string]string, 3)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT key, value
+		FROM options
+		WHERE key IN ('GroupRatio', 'UserUsableGroups', 'AutoGroups')
+	`)
+	if err != nil {
+		return false, fmt.Errorf("read NewAPI group access options: %w", err)
+	}
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			rows.Close()
+			return false, fmt.Errorf("scan NewAPI group access option: %w", err)
+		}
+		optionValues[key] = value
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, fmt.Errorf("iterate NewAPI group access options: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return false, fmt.Errorf("close NewAPI group access options: %w", err)
+	}
+
+	groupRatios := make(map[string]float64)
+	if raw, ok := optionValues["GroupRatio"]; ok && strings.TrimSpace(raw) != "" {
+		if err := common.Unmarshal([]byte(raw), &groupRatios); err != nil {
+			return false, fmt.Errorf("decode NewAPI GroupRatio: %w", err)
+		}
+		if groupRatios == nil {
+			groupRatios = make(map[string]float64)
+		}
+	} else if _, ok := optionValues["GroupRatio"]; !ok {
+		groupRatios["default"] = 1
+	}
+	usableGroups := make(map[string]string)
+	if raw, ok := optionValues["UserUsableGroups"]; ok && strings.TrimSpace(raw) != "" {
+		if err := common.Unmarshal([]byte(raw), &usableGroups); err != nil {
+			return false, fmt.Errorf("decode NewAPI UserUsableGroups: %w", err)
+		}
+		if usableGroups == nil {
+			usableGroups = make(map[string]string)
+		}
+	} else if _, ok := optionValues["UserUsableGroups"]; !ok {
+		usableGroups["auto"] = "Auto"
+		usableGroups["default"] = "Default"
+	}
+	autoGroups := make([]string, 0)
+	if raw, ok := optionValues["AutoGroups"]; ok && strings.TrimSpace(raw) != "" {
+		if err := common.Unmarshal([]byte(raw), &autoGroups); err != nil {
+			return false, fmt.Errorf("decode NewAPI AutoGroups: %w", err)
+		}
+		if autoGroups == nil {
+			autoGroups = make([]string, 0)
+		}
+	}
+
+	containsAutoGroup := func(name string) bool {
+		for _, existing := range autoGroups {
+			if existing == name {
+				return true
+			}
+		}
+		return false
+	}
+	changed := false
+	for _, group := range groups {
+		if _, ok := groupRatios[group.Name]; !ok {
+			groupRatios[group.Name] = group.RateMultiplier
+			changed = true
+		}
+		if _, ok := usableGroups[group.Name]; !ok {
+			usableGroups[group.Name] = group.Name
+			changed = true
+		}
+		if !containsAutoGroup(group.Name) {
+			autoGroups = append(autoGroups, group.Name)
+			changed = true
+		}
+	}
+	if !changed {
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit unchanged group options migration repair: %w", err)
+		}
+		return false, nil
+	}
+
+	encoded := make(map[string]string, 3)
+	if encoded["GroupRatio"], err = marshalMigrationValue(groupRatios); err != nil {
+		return false, fmt.Errorf("encode repaired GroupRatio: %w", err)
+	}
+	if encoded["UserUsableGroups"], err = marshalMigrationValue(usableGroups); err != nil {
+		return false, fmt.Errorf("encode repaired UserUsableGroups: %w", err)
+	}
+	if encoded["AutoGroups"], err = marshalMigrationValue(autoGroups); err != nil {
+		return false, fmt.Errorf("encode repaired AutoGroups: %w", err)
+	}
+	for _, key := range []string{"GroupRatio", "UserUsableGroups", "AutoGroups"} {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+		`, key, encoded[key]); err != nil {
+			return false, fmt.Errorf("write repaired NewAPI %s: %w", key, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit group options migration repair: %w", err)
+	}
+	return true, nil
+}
+
+func marshalMigrationValue(value any) (string, error) {
+	encoded, err := common.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
 func ensureBridgeUser(ctx context.Context, source *sql.DB) (int64, error) {
 	var userID int64
 	err := source.QueryRowContext(ctx, `SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL`, bridgeUserEmail).Scan(&userID)
@@ -916,6 +1217,385 @@ func loadLegacySettings(ctx context.Context, source *sql.DB) (map[string]string,
 	return settings, nil
 }
 
+func buildLegacyLegalOptions(settings map[string]string) (map[string]string, error) {
+	upgrade, err := buildLegacyLegalOptionUpgrade(settings)
+	if err != nil {
+		return nil, err
+	}
+	return upgrade.Options, nil
+}
+
+func firstRenderedLegacyLegalDocument(documents []renderedLegacyLegalDocument, ids ...string) (renderedLegacyLegalDocument, bool) {
+	for _, id := range ids {
+		for _, document := range documents {
+			if document.ID == id {
+				return document, true
+			}
+		}
+	}
+	return renderedLegacyLegalDocument{}, false
+}
+
+func buildLegacyLegalOptionUpgrade(settings map[string]string) (legacyLegalOptionUpgrade, error) {
+	documents := make([]legacyLegalDocument, 0)
+	if rawDocuments := strings.TrimSpace(settings["login_agreement_documents"]); rawDocuments != "" {
+		if err := common.UnmarshalJsonStr(rawDocuments, &documents); err != nil {
+			return legacyLegalOptionUpgrade{}, fmt.Errorf("decode legacy login agreement documents: %w", err)
+		}
+	}
+
+	renderedDocuments := make([]renderedLegacyLegalDocument, 0, len(documents))
+	for _, document := range documents {
+		content := strings.TrimSpace(document.ContentMD)
+		if content == "" {
+			continue
+		}
+		title := strings.Join(strings.Fields(document.Title), " ")
+		if title != "" {
+			renderedDocuments = append(renderedDocuments, renderedLegacyLegalDocument{
+				ID:       strings.ToLower(strings.TrimSpace(document.ID)),
+				Content:  content,
+				Rendered: "## " + title + "\n\n" + content,
+			})
+			continue
+		}
+		renderedDocuments = append(renderedDocuments, renderedLegacyLegalDocument{
+			ID:       strings.ToLower(strings.TrimSpace(document.ID)),
+			Content:  content,
+			Rendered: content,
+		})
+	}
+
+	options := map[string]string{
+		"legal.privacy_policy": fatherKeyPrivacyPolicyURL,
+		"legal.refund_policy":  fatherKeyRefundPolicyURL,
+	}
+	termsSections := make([]string, 0, 2)
+	termsDocument, hasTerms := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"terms",
+		"terms-of-service",
+		"user-agreement",
+	)
+	if hasTerms {
+		termsSections = append(termsSections, termsDocument.Content)
+	}
+	serviceSpecificTerms, hasServiceSpecificTerms := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"service-specific-terms",
+	)
+	if hasServiceSpecificTerms {
+		termsSections = append(termsSections, serviceSpecificTerms.Rendered)
+	}
+	if len(termsSections) > 0 {
+		options["legal.user_agreement"] = strings.Join(termsSections, "\n\n---\n\n")
+	}
+	if privacyPolicy, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"privacy",
+		"privacy-policy",
+	); ok {
+		options["legal.privacy_policy"] = privacyPolicy.Content
+	}
+	if acceptableUse, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"acceptable-use",
+		"acceptable-use-policy",
+		"usage-policy",
+	); ok {
+		options["legal.acceptable_use"] = acceptableUse.Content
+	}
+	if refundPolicy, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"refund",
+		"refund-policy",
+	); ok {
+		options["legal.refund_policy"] = refundPolicy.Content
+	}
+	if restrictedRegions, ok := firstRenderedLegacyLegalDocument(
+		renderedDocuments,
+		"restricted-regions",
+		"restricted-region",
+		"supported-regions",
+	); ok {
+		options["legal.restricted_regions"] = restrictedRegions.Content
+	}
+
+	legacyV1AgreementSections := make([]string, 0, len(renderedDocuments))
+	legacyV1PrivacyPolicy := ""
+	legacyDeployedPrivacySections := make([]string, 0, len(renderedDocuments))
+	for _, document := range renderedDocuments {
+		if document.ID == "privacy" || document.ID == "privacy-policy" {
+			if legacyV1PrivacyPolicy == "" {
+				legacyV1PrivacyPolicy = document.Rendered
+			}
+		} else {
+			legacyV1AgreementSections = append(legacyV1AgreementSections, document.Rendered)
+		}
+
+		if document.ID == "terms" || document.ID == "terms-of-service" || document.ID == "user-agreement" {
+			continue
+		}
+		if len(legacyDeployedPrivacySections) == 0 {
+			legacyDeployedPrivacySections = append(legacyDeployedPrivacySections, document.Content)
+		} else {
+			legacyDeployedPrivacySections = append(legacyDeployedPrivacySections, document.Rendered)
+		}
+	}
+	if legacyV1PrivacyPolicy == "" {
+		legacyV1PrivacyPolicy = fmt.Sprintf(
+			"请阅读 [Father Key 隐私政策](%s)。\n\nPlease review the [Father Key Privacy Policy](%s).",
+			fatherKeyPrivacyPolicyURL,
+			fatherKeyPrivacyPolicyURL,
+		)
+	}
+	replaceableValues := map[string][]string{
+		"legal.privacy_policy": {legacyV1PrivacyPolicy},
+	}
+	if len(legacyV1AgreementSections) > 0 {
+		replaceableValues["legal.user_agreement"] = append(
+			replaceableValues["legal.user_agreement"],
+			strings.Join(legacyV1AgreementSections, "\n\n---\n\n"),
+		)
+	}
+	if hasTerms {
+		replaceableValues["legal.user_agreement"] = append(
+			replaceableValues["legal.user_agreement"],
+			termsDocument.Rendered,
+		)
+	}
+	if len(legacyDeployedPrivacySections) > 0 {
+		replaceableValues["legal.privacy_policy"] = append(
+			replaceableValues["legal.privacy_policy"],
+			strings.Join(legacyDeployedPrivacySections, "\n\n---\n\n"),
+		)
+	}
+	return legacyLegalOptionUpgrade{
+		Options:           options,
+		ReplaceableValues: replaceableValues,
+	}, nil
+}
+
+func repairMissingLegalSettings(ctx context.Context, source, target *sql.DB) (bool, error) {
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin legal settings migration repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock legal settings migration repair: %w", err)
+	}
+
+	var marker string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, legalMigrationOptionKey).Scan(&marker)
+	if err == nil {
+		switch marker {
+		case legalMigrationVersion:
+			return false, nil
+		case legalMigrationVersionV1:
+		default:
+			return false, fmt.Errorf(
+				"target has unknown legal settings migration marker %q, expected %q or %q",
+				marker,
+				legalMigrationVersionV1,
+				legalMigrationVersion,
+			)
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read legal settings migration marker: %w", err)
+	}
+
+	settings, err := loadLegacySettings(ctx, source)
+	if err != nil {
+		return false, err
+	}
+	upgrade, err := buildLegacyLegalOptionUpgrade(settings)
+	if err != nil {
+		return false, err
+	}
+	options := upgrade.Options
+	optionKeys := make([]string, 0, len(options))
+	for key := range options {
+		optionKeys = append(optionKeys, key)
+	}
+	sort.Strings(optionKeys)
+	repaired := false
+	for _, key := range optionKeys {
+		query := `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+			WHERE btrim(COALESCE(options.value, '')) = ''
+		`
+		arguments := []any{key, options[key]}
+		seenCandidates := make(map[string]struct{}, len(upgrade.ReplaceableValues[key]))
+		for _, candidate := range upgrade.ReplaceableValues[key] {
+			if candidate == "" || candidate == options[key] {
+				continue
+			}
+			if _, exists := seenCandidates[candidate]; exists {
+				continue
+			}
+			seenCandidates[candidate] = struct{}{}
+			arguments = append(arguments, candidate)
+			query += fmt.Sprintf(" OR options.value = $%d", len(arguments))
+		}
+		result, err := tx.ExecContext(ctx, query, arguments...)
+		if err != nil {
+			return false, fmt.Errorf("copy legacy legal option %q: %w", key, err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("read copied legal option %q result: %w", key, err)
+		}
+		repaired = repaired || rowsAffected > 0
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO options (key, value) VALUES ($1, $2)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, legalMigrationOptionKey, legalMigrationVersion); err != nil {
+		return false, fmt.Errorf("record legal settings migration marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit legal settings migration repair: %w", err)
+	}
+	return repaired, nil
+}
+
+func buildLegacySMTPOptions(settings map[string]string) (map[string]string, bool, error) {
+	host := strings.TrimSpace(settings["smtp_host"])
+	if host == "" {
+		return nil, false, nil
+	}
+
+	port := 587
+	if rawPort := strings.TrimSpace(settings["smtp_port"]); rawPort != "" {
+		parsedPort, err := strconv.Atoi(rawPort)
+		if err != nil || parsedPort < 1 || parsedPort > 65535 {
+			return nil, false, fmt.Errorf("legacy SMTP port %q is invalid", rawPort)
+		}
+		port = parsedPort
+	}
+
+	account := strings.TrimSpace(settings["smtp_username"])
+	token := strings.TrimSpace(settings["smtp_password"])
+	if (account == "") != (token == "") {
+		return nil, false, nil
+	}
+	from := strings.TrimSpace(settings["smtp_from"])
+	if from == "" {
+		from = account
+	}
+	if from == "" || !strings.Contains(from, "@") {
+		return nil, false, nil
+	}
+
+	useTLS := false
+	if rawTLS := strings.TrimSpace(settings["smtp_use_tls"]); rawTLS != "" {
+		parsedTLS, err := strconv.ParseBool(rawTLS)
+		if err != nil {
+			return nil, false, fmt.Errorf("legacy SMTP TLS setting %q is invalid", rawTLS)
+		}
+		useTLS = parsedTLS
+	}
+	sslTLS := useTLS
+	startTLS := !useTLS && account != "" && token != ""
+
+	return map[string]string{
+		"SMTPServer":             host,
+		"SMTPPort":               strconv.Itoa(port),
+		"SMTPAccount":            account,
+		"SMTPFrom":               from,
+		"SMTPToken":              token,
+		"SMTPSSLEnabled":         strconv.FormatBool(sslTLS),
+		"SMTPStartTLSEnabled":    strconv.FormatBool(startTLS),
+		"SMTPInsecureSkipVerify": "false",
+		"SMTPForceAuthLogin":     "false",
+	}, true, nil
+}
+
+func repairMissingSMTPSettings(ctx context.Context, source, target *sql.DB) (bool, error) {
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin SMTP migration repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock SMTP migration repair: %w", err)
+	}
+
+	var marker string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM options WHERE key = $1`, smtpMigrationOptionKey).Scan(&marker)
+	if err == nil {
+		if marker != smtpMigrationVersion {
+			return false, fmt.Errorf("target has SMTP migration marker %q, expected %q", marker, smtpMigrationVersion)
+		}
+		return false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read SMTP migration marker: %w", err)
+	}
+
+	var existingValues int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM options
+		WHERE key IN ('SMTPServer', 'SMTPAccount', 'SMTPFrom', 'SMTPToken')
+		  AND btrim(COALESCE(value, '')) <> ''
+	`).Scan(&existingValues); err != nil {
+		return false, fmt.Errorf("check existing NewAPI SMTP settings: %w", err)
+	}
+	if existingValues > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+		`, smtpMigrationOptionKey, smtpMigrationVersion); err != nil {
+			return false, fmt.Errorf("record preserved SMTP settings: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit preserved SMTP settings: %w", err)
+		}
+		return false, nil
+	}
+
+	settings, err := loadLegacySettings(ctx, source)
+	if err != nil {
+		return false, err
+	}
+	options, configured, err := buildLegacySMTPOptions(settings)
+	if err != nil {
+		return false, err
+	}
+	if !configured {
+		return false, nil
+	}
+
+	optionKeys := make([]string, 0, len(options))
+	for key := range options {
+		optionKeys = append(optionKeys, key)
+	}
+	sort.Strings(optionKeys)
+	for _, key := range optionKeys {
+		value := options[key]
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO options (key, value) VALUES ($1, $2)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+			WHERE btrim(COALESCE(options.value, '')) = ''
+		`, key, value); err != nil {
+			return false, fmt.Errorf("copy legacy SMTP option %q: %w", key, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO options (key, value) VALUES ($1, $2)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, smtpMigrationOptionKey, smtpMigrationVersion); err != nil {
+		return false, fmt.Errorf("record SMTP migration marker: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit SMTP migration repair: %w", err)
+	}
+	return true, nil
+}
+
 func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[string]string) (map[string]string, error) {
 	ratio_setting.InitRatioSettings()
 	modelRatio := ratio_setting.GetModelRatioCopy()
@@ -997,7 +1677,6 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 	if err != nil {
 		return nil, fmt.Errorf("encode automatic groups: %w", err)
 	}
-
 	options := map[string]string{
 		"QuotaPerUnit":                              "500000",
 		"ModelRatio":                                modelRatioJSON,
@@ -1024,6 +1703,13 @@ func buildTargetOptions(groups []bridgeGroup, prices []legacyPrice, source map[s
 		"regional_restriction.confirmation_frequency":            settingOrDefault(source, "regional_restriction_confirmation_frequency", "once_per_revision"),
 		"regional_restriction.confirmation_revision":             settingOrDefault(source, "regional_restriction_confirmation_revision", "2026-08-03"),
 		"regional_restriction.confirmation_interval_hours":       settingOrDefault(source, "regional_restriction_confirmation_interval_hours", "24"),
+	}
+	legalOptions, err := buildLegacyLegalOptions(source)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range legalOptions {
+		options[key] = value
 	}
 	return options, nil
 }
@@ -1125,6 +1811,132 @@ func settingOrDefault(settings map[string]string, key string, fallback string) s
 		return fallback
 	}
 	return value
+}
+
+func insertBridgeChannels(ctx context.Context, tx *sql.Tx, groups []bridgeGroup) error {
+	for _, group := range groups {
+		tag := fmt.Sprintf("%s%d", bridgeChannelTagPrefix, group.ID)
+		var channelID int
+		err := tx.QueryRowContext(ctx, `
+			INSERT INTO channels (
+				type, key, status, name, weight, created_time, test_time,
+				response_time, base_url, other, balance, balance_updated_time,
+				models, "group", used_quota, model_mapping, status_code_mapping,
+				priority, auto_ban, other_info, tag, setting, param_override,
+				header_override, channel_info, settings
+			)
+			VALUES (
+				$1, $2, 1, $3, 0, $4, 0,
+				0, $5, '', 0, 0,
+				$6, $7, 0, NULL, NULL,
+				0, 0, '', $8, NULL, NULL,
+				NULL, '{}'::json, ''
+			)
+			RETURNING id
+		`,
+			constant.ChannelTypeSub2API,
+			group.BridgeKey,
+			"Legacy bridge - "+group.Name,
+			time.Now().Unix(),
+			group.BridgeBaseURL,
+			strings.Join(group.Models, ","),
+			group.Name,
+			tag,
+		).Scan(&channelID)
+		if err != nil {
+			return fmt.Errorf("insert bridge channel for group %q: %w", group.Name, err)
+		}
+		for _, model := range group.Models {
+			_, err := tx.ExecContext(ctx, `
+				INSERT INTO abilities ("group", model, channel_id, enabled, priority, weight, tag)
+				VALUES ($1, $2, $3, true, 0, 0, $4)
+			`, group.Name, model, channelID, tag)
+			if err != nil {
+				return fmt.Errorf("insert ability for group %q model %q: %w", group.Name, model, err)
+			}
+		}
+	}
+	return nil
+}
+
+func repairMissingBridgeChannels(ctx context.Context, target *sql.DB, groups []bridgeGroup, version string) (bool, error) {
+	if len(groups) == 0 {
+		return false, errors.New("cannot repair Sub2API bridge channels without legacy groups")
+	}
+	expectedAbilities := 0
+	for _, group := range groups {
+		if len(group.Models) == 0 {
+			return false, fmt.Errorf("cannot repair Sub2API bridge channel for group %q without models", group.Name)
+		}
+		expectedAbilities += len(group.Models)
+	}
+
+	tx, err := target.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin bridge channel repair: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('newapi-sub2api-migration'))`); err != nil {
+		return false, fmt.Errorf("lock bridge channel repair: %w", err)
+	}
+	completed, err := migrationCompleted(ctx, tx, version)
+	if err != nil {
+		return false, fmt.Errorf("recheck migration marker before bridge channel repair: %w", err)
+	}
+	if !completed {
+		return false, errors.New("target migration marker disappeared before bridge channel repair")
+	}
+	needsRepair, err := bridgeChannelsNeedRepair(ctx, tx, len(groups))
+	if err != nil {
+		return false, err
+	}
+	if !needsRepair {
+		if err := tx.Commit(); err != nil {
+			return false, fmt.Errorf("commit bridge channel repair no-op: %w", err)
+		}
+		return false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM abilities AS a
+		WHERE a.tag LIKE $1
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM channels AS c
+			WHERE c.id = a.channel_id
+			  AND c.type = $2
+			  AND c.tag = a.tag
+		  )
+	`, bridgeChannelTagPrefix+"%", constant.ChannelTypeSub2API); err != nil {
+		return false, fmt.Errorf("delete orphaned Sub2API bridge abilities: %w", err)
+	}
+	if err := insertBridgeChannels(ctx, tx, groups); err != nil {
+		return false, err
+	}
+
+	var channelCount int
+	var abilityCount int
+	if err := tx.QueryRowContext(
+		ctx,
+		bridgeRepairValidationQuery,
+		constant.ChannelTypeSub2API,
+		bridgeChannelTagPrefix+"%",
+	).Scan(&channelCount, &abilityCount); err != nil {
+		return false, fmt.Errorf("validate repaired Sub2API bridge channels: %w", err)
+	}
+	if channelCount != len(groups) || abilityCount != expectedAbilities {
+		return false, fmt.Errorf(
+			"repaired Sub2API bridge state is incomplete: got %d channels and %d abilities, expected %d and %d",
+			channelCount,
+			abilityCount,
+			len(groups),
+			expectedAbilities,
+		)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit bridge channel repair: %w", err)
+	}
+	return true, nil
 }
 
 func migrateTarget(ctx context.Context, target *sql.DB, data *migrationData, version string) error {
@@ -1252,47 +2064,8 @@ func migrateTarget(ctx context.Context, target *sql.DB, data *migrationData, ver
 		}
 	}
 
-	for _, group := range data.Groups {
-		tag := fmt.Sprintf("sub2api-bridge:%d", group.ID)
-		var channelID int
-		err := tx.QueryRowContext(ctx, `
-			INSERT INTO channels (
-				type, key, status, name, weight, created_time, test_time,
-				response_time, base_url, other, balance, balance_updated_time,
-				models, "group", used_quota, model_mapping, status_code_mapping,
-				priority, auto_ban, other_info, tag, setting, param_override,
-				header_override, channel_info, settings
-			)
-			VALUES (
-				$1, $2, 1, $3, 0, $4, 0,
-				0, $5, '', 0, 0,
-				$6, $7, 0, NULL, NULL,
-				0, 0, '', $8, NULL, NULL,
-				NULL, '{}'::json, ''
-			)
-			RETURNING id
-		`,
-			constant.ChannelTypeSub2API,
-			group.BridgeKey,
-			"Legacy bridge - "+group.Name,
-			time.Now().Unix(),
-			group.BridgeBaseURL,
-			strings.Join(group.Models, ","),
-			group.Name,
-			tag,
-		).Scan(&channelID)
-		if err != nil {
-			return fmt.Errorf("insert bridge channel for group %q: %w", group.Name, err)
-		}
-		for _, model := range group.Models {
-			_, err := tx.ExecContext(ctx, `
-				INSERT INTO abilities ("group", model, channel_id, enabled, priority, weight, tag)
-				VALUES ($1, $2, $3, true, 0, 0, $4)
-			`, group.Name, model, channelID, tag)
-			if err != nil {
-				return fmt.Errorf("insert ability for group %q model %q: %w", group.Name, model, err)
-			}
-		}
+	if err := insertBridgeChannels(ctx, tx, data.Groups); err != nil {
+		return err
 	}
 
 	optionKeys := make([]string, 0, len(data.Options))

@@ -46,7 +46,7 @@
     const REMOTE_RECORDS_FAST_POLL_ROUNDS = 48;
     const REMOTE_RECORDS_FAST_POLL_FAST_ROUNDS = 6;
     const DEFAULT_API_BASE_PROFILES = Object.freeze([
-        { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://sub2api.fatherkey.com/v1' },
+        { id: 'fatherkey', label: 'FatherKey', baseUrl: 'https://new.fatherkey.com/v1' },
         { id: 'zaoyoe', label: 'Zaoyoe', baseUrl: 'https://sub2api.zaoyoe.xyz/v1' }
     ]);
     let runtimeApiBaseProfiles = DEFAULT_API_BASE_PROFILES.slice();
@@ -1203,7 +1203,13 @@
                 const baseUrl = normalizeApiBaseUrl(row.baseUrl || row.base_url);
                 if (!baseUrl) return null;
                 const label = String(row.label || '').trim()
-                    || (baseUrl.includes('generativelanguage.googleapis.com') ? 'Gemini API' : (baseUrl.includes('zaoyoe') ? 'Zaoyoe Sub2API' : (baseUrl.includes('fatherkey') ? 'FatherKey Sub2API' : 'API')));
+                    || (baseUrl.includes('generativelanguage.googleapis.com')
+                        ? 'Gemini API'
+                        : (baseUrl.includes('zaoyoe')
+                            ? 'Zaoyoe Sub2API'
+                            : (baseUrl.includes('new.fatherkey.com')
+                                ? 'FatherKey NewAPI'
+                                : (baseUrl.includes('sub2api.fatherkey.com') ? 'FatherKey Legacy API' : 'API'))));
                 const id = String(row.id || label || baseUrl || index)
                     .trim()
                     .toLowerCase()
@@ -11560,7 +11566,11 @@
                 </div>
             `;
         } else if (modelPricingView.tab === 'chat') {
-            content = `${hasPartialTextPricing ? '<div class="ai-image-model-price-status"><i class="fas fa-circle-info"></i><span>部分文本模型价格暂不可用</span></div>' : ''}${renderTextModelPricing()}`;
+            content = `
+                <div class="ai-image-model-price-status"><i class="fas fa-circle-info"></i><span>NewAPI 按公开可用分组最低倍率展示，实际扣费以请求结算为准</span></div>
+                ${hasPartialTextPricing ? '<div class="ai-image-model-price-status"><i class="fas fa-circle-info"></i><span>部分文本模型价格暂不可用</span></div>' : ''}
+                ${renderTextModelPricing()}
+            `;
         } else {
             content = renderAdminModelPricing(modelPricingView.tab);
         }
@@ -11569,7 +11579,7 @@
                 <header class="ai-image-model-pricing-head">
                     <div>
                         <span><i class="fas fa-tags"></i></span>
-                        <div><strong>模型价格</strong><em>${escapeHtml(modelPricingView.tab === 'chat' ? '实际价格' : '积分价格')}</em></div>
+                        <div><strong>模型价格</strong><em>${escapeHtml(modelPricingView.tab === 'chat' ? '公开参考价' : '积分价格')}</em></div>
                     </div>
                 </header>
                 <div class="ai-image-model-pricing-tabs" role="tablist" aria-label="模型类型">

@@ -199,8 +199,10 @@ function normalizeBaseUrl(value = '') {
 function inferApiBaseUrlLabel(baseUrl = '') {
     const normalized = normalizeBaseUrl(baseUrl).toLowerCase();
     if (normalized.includes('zaoyoe')) return 'Zaoyoe Sub2API';
-    if (normalized.includes('fatherkey')) return 'FatherKey Sub2API';
-    return 'Sub2API';
+    if (normalized.includes('new.fatherkey.com')) return 'FatherKey NewAPI';
+    if (normalized.includes('sub2api.fatherkey.com')) return 'FatherKey Legacy API';
+    if (normalized.includes('fatherkey')) return 'FatherKey API';
+    return 'AI API';
 }
 
 function isValidApiBaseUrl(value = '') {

@@ -55,14 +55,17 @@
         gongyi: {
             sections: ['#gongyi-section'],
             navDesktop: [
+                'a[href="https://new.fatherkey.com"]',
                 'a[href="https://sub2api.fatherkey.com"]',
                 'a[href="https://sub2api.zaoyoe.xyz"]'
             ],
             navMobile: [
+                'a.mobile-menu-link[href="https://new.fatherkey.com"]',
                 'a.mobile-menu-link[href="https://sub2api.fatherkey.com"]',
                 'a.mobile-menu-link[href="https://sub2api.zaoyoe.xyz"]'
             ],
             footer: [
+                'a[href="https://new.fatherkey.com"]',
                 'a[href="https://sub2api.fatherkey.com"]',
                 'a[href="https://sub2api.zaoyoe.xyz"]'
             ]

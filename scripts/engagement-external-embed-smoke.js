@@ -136,7 +136,7 @@ function buildExternalProbeHtml({
 <body>
     <main>
         <h1>公益站外部承载验收</h1>
-        <p>这个页面模拟 sub2api.fatherkey.com，通过主站 embed 加载客服机器人。</p>
+        <p>这个页面模拟 new.fatherkey.com，通过主站 embed 加载客服机器人。</p>
     </main>
     <script>
     (function () {

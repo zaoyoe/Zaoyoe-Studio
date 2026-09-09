@@ -5,6 +5,9 @@ import "github.com/QuantumNous/new-api/setting/config"
 type LegalSettings struct {
 	UserAgreement                  string `json:"user_agreement"`
 	PrivacyPolicy                  string `json:"privacy_policy"`
+	AcceptableUse                  string `json:"acceptable_use"`
+	RefundPolicy                   string `json:"refund_policy"`
+	RestrictedRegions              string `json:"restricted_regions"`
 	APIKeyTermsEnabled             bool   `json:"api_key_terms_enabled"`
 	APIKeyPrivacyEnabled           bool   `json:"api_key_privacy_enabled"`
 	APIKeyAcceptableUseEnabled     bool   `json:"api_key_acceptable_use_enabled"`
@@ -15,6 +18,9 @@ type LegalSettings struct {
 var defaultLegalSettings = LegalSettings{
 	UserAgreement:                  "",
 	PrivacyPolicy:                  "",
+	AcceptableUse:                  "",
+	RefundPolicy:                   "",
+	RestrictedRegions:              "",
 	APIKeyTermsEnabled:             true,
 	APIKeyPrivacyEnabled:           true,
 	APIKeyAcceptableUseEnabled:     true,

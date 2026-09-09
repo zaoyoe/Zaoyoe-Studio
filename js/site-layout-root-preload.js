@@ -15,7 +15,7 @@
         gongyi: 'gongyi'
     });
     const GONGYI_ORIGINS = Object.freeze({
-        cn: 'https://sub2api.fatherkey.com',
+        cn: 'https://new.fatherkey.com',
         intl: 'https://sub2api.zaoyoe.xyz'
     });
     const DEFAULT_LAYOUTS = Object.freeze({

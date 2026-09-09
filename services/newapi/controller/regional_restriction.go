@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -161,12 +162,15 @@ func writeRegionalRestrictionError(c *gin.Context, err error) bool {
 	if !errors.As(err, &restrictionError) {
 		return false
 	}
+	message := i18n.T(c, i18n.MsgRegionalRestrictionBlocked)
+	evaluation := restrictionError.Evaluation
+	evaluation.Message = message
 	c.JSON(http.StatusForbidden, gin.H{
 		"success": false,
 		"code":    regionalRestrictionReason,
 		"reason":  regionalRestrictionReason,
-		"message": regionalRestrictionMessage,
-		"data":    restrictionError.Evaluation,
+		"message": message,
+		"data":    evaluation,
 	})
 	return true
 }

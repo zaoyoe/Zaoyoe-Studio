@@ -53,7 +53,7 @@ func TestValidateRegionalRestrictionOptionRejectsMalformedValues(t *testing.T) {
 		{name: "zero interval", key: "regional_restriction.confirmation_interval_hours", value: "0"},
 		{name: "large interval", key: "regional_restriction.confirmation_interval_hours", value: "8761"},
 		{name: "fractional interval", key: "regional_restriction.confirmation_interval_hours", value: "1.5"},
-		{name: "unknown field", key: "regional_restriction.login_enabled", value: "true"},
+		{name: "unknown field", key: "regional_restriction.session_refresh_enabled", value: "true"},
 	}
 
 	for _, tt := range tests {

@@ -334,11 +334,11 @@ test('vercel public redirects send gongyi and status entry paths to dedicated su
     const statusRedirectIndex = redirects.findIndex((entry) => entry?.source === '/status');
 
     assert.ok(gongyiRedirect, 'vercel.json should redirect /gongyi to the dedicated community subdomain');
-    assert.equal(gongyiRedirect.destination, 'https://sub2api.fatherkey.com');
+    assert.equal(gongyiRedirect.destination, 'https://new.fatherkey.com');
     assert.equal(gongyiRedirect.permanent, false);
 
     assert.ok(gongyiHtmlRedirect, 'vercel.json should redirect /gongyi.html to the dedicated community subdomain');
-    assert.equal(gongyiHtmlRedirect.destination, 'https://sub2api.fatherkey.com');
+    assert.equal(gongyiHtmlRedirect.destination, 'https://new.fatherkey.com');
     assert.equal(gongyiHtmlRedirect.permanent, false);
 
     assert.ok(intlGongyiRedirect, 'vercel.json should keep the intl /gongyi route on the intl relay subdomain');
@@ -3173,10 +3173,6 @@ test('theme bootstraps default first visits to light instead of system dark', ()
 
     const firstVisitThemeBootstraps = [
         'admin-studio.js',
-        'services/sub2api/frontend/src/main.ts',
-        'services/sub2api/frontend/src/views/HomeView.vue',
-        'services/sub2api/frontend/src/views/KeyUsageView.vue',
-        'services/sub2api/frontend/src/components/layout/AppSidebar.vue',
         'inject-auth.js'
     ];
 

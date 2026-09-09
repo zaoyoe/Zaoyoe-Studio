@@ -228,10 +228,6 @@ export function RegionalRestrictionSection(
     baselineRef.current = normalized
   }
 
-  const confirmationFrequency = form.watch(
-    'regional_restriction.confirmation_frequency'
-  )
-
   return (
     <SettingsSection title={t('Regional Restriction')}>
       <Form {...form}>
@@ -314,10 +310,10 @@ export function RegionalRestrictionSection(
               render={({ field }) => (
                 <SettingsSwitchItem>
                   <SettingsSwitchContent>
-                    <FormLabel>{t('API key page confirmation')}</FormLabel>
+                    <FormLabel>{t('API key password confirmation')}</FormLabel>
                     <FormDescription>
                       {t(
-                        'Require confirmation before API key management is loaded.'
+                        'Require the current account password before API key management is loaded and API keys can be created.'
                       )}
                     </FormDescription>
                   </SettingsSwitchContent>
@@ -409,95 +405,6 @@ export function RegionalRestrictionSection(
                     'Allow is recommended so missing country headers do not cause false blocks.'
                   )}
                 </FormDescription>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='regional_restriction.confirmation_revision'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Confirmation revision')}</FormLabel>
-                <FormControl>
-                  <Input {...field} className='font-mono' />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Changing the revision invalidates prior browser confirmations.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='regional_restriction.confirmation_frequency'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Confirmation frequency')}</FormLabel>
-                <Select
-                  items={[
-                    {
-                      value: 'once_per_revision',
-                      label: t('Once per confirmation revision'),
-                    },
-                    { value: 'always', label: t('Every page visit') },
-                    { value: 'interval', label: t('After an interval') },
-                  ]}
-                  value={field.value}
-                  onValueChange={field.onChange}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      <SelectItem value='once_per_revision'>
-                        {t('Once per confirmation revision')}
-                      </SelectItem>
-                      <SelectItem value='always'>
-                        {t('Every page visit')}
-                      </SelectItem>
-                      <SelectItem value='interval'>
-                        {t('After an interval')}
-                      </SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name='regional_restriction.confirmation_interval_hours'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Confirmation interval hours')}</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    type='number'
-                    min={1}
-                    max={8760}
-                    step={1}
-                    disabled={confirmationFrequency !== 'interval'}
-                    onChange={(event) =>
-                      field.onChange(
-                        Number.parseInt(event.target.value, 10) || 1
-                      )
-                    }
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t('Used only when confirmation frequency is interval.')}
-                </FormDescription>
-                <FormMessage />
               </FormItem>
             )}
           />

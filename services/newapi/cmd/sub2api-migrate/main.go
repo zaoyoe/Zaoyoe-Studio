@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	defaultBridgeBaseURL = "http://legacy-sub2api:8080"
-	defaultMigrationMark = "sub2api-to-newapi-v1"
+	defaultBridgeBaseURL     = "http://legacy-sub2api:8080"
+	defaultMigrationMark     = "sub2api-to-newapi-v1"
+	groupOptionsRepairEnv    = "GROUP_OPTIONS_REPAIR_ONLY"
+	preservePartialBridgeEnv = "PRESERVE_PARTIAL_BRIDGE_STATE"
 )
 
 func main() {
@@ -24,6 +26,27 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+	if isNativeSchedulerShadowCompare(os.Getenv("SHADOW_COMPARE")) {
+		if isNativeSchedulerPlanOnly(os.Getenv("PLAN_ONLY")) || isNativeSchedulerImport(os.Getenv(nativeSchedulerImportEnv)) || isGroupOptionsRepairOnly(os.Getenv(groupOptionsRepairEnv)) {
+			return fmt.Errorf("SHADOW_COMPARE cannot be enabled together with PLAN_ONLY, %s, or %s", nativeSchedulerImportEnv, groupOptionsRepairEnv)
+		}
+		return runNativeSchedulerShadowCompare(ctx)
+	}
+	if isNativeSchedulerPlanOnly(os.Getenv("PLAN_ONLY")) {
+		if isNativeSchedulerImport(os.Getenv(nativeSchedulerImportEnv)) || isGroupOptionsRepairOnly(os.Getenv(groupOptionsRepairEnv)) {
+			return fmt.Errorf("PLAN_ONLY cannot be enabled together with %s or %s", nativeSchedulerImportEnv, groupOptionsRepairEnv)
+		}
+		return runNativeSchedulerPlan(ctx)
+	}
+	if isNativeSchedulerImport(os.Getenv(nativeSchedulerImportEnv)) {
+		if isGroupOptionsRepairOnly(os.Getenv(groupOptionsRepairEnv)) {
+			return fmt.Errorf("%s cannot be enabled together with %s", nativeSchedulerImportEnv, groupOptionsRepairEnv)
+		}
+		return runNativeSchedulerImport(ctx)
+	}
+	if isGroupOptionsRepairOnly(os.Getenv(groupOptionsRepairEnv)) {
+		return runGroupOptionsRepair(ctx)
+	}
 	sourceDSN, err := requiredEnv("SOURCE_SQL_DSN")
 	if err != nil {
 		return err
@@ -60,8 +83,63 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	preservePartialBridge := isPreservePartialBridgeState(os.Getenv(preservePartialBridgeEnv))
+	if preservePartialBridge && !completed {
+		return fmt.Errorf("%s requires an existing completed migration", preservePartialBridgeEnv)
+	}
 	if completed {
-		fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
+		smtpRepaired, err := repairMissingSMTPSettings(ctx, source, target)
+		if err != nil {
+			return err
+		}
+		legalRepaired, err := repairMissingLegalSettings(ctx, source, target)
+		if err != nil {
+			return err
+		}
+		groupOptionsRepaired, err := repairMissingGroupOptions(ctx, source, target)
+		if err != nil {
+			return err
+		}
+		needsRepair := false
+		if !preservePartialBridge {
+			expectedBridgeGroups, countErr := countMigratableLegacyGroups(ctx, source)
+			if countErr != nil {
+				return countErr
+			}
+			needsRepair, err = bridgeChannelsNeedRepair(ctx, target, expectedBridgeGroups)
+			if err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("Sub2API migration %s preserving existing partial bridge state by explicit %s=true.\n", migrationMark, preservePartialBridgeEnv)
+		}
+		if !needsRepair && !smtpRepaired && !legalRepaired && !groupOptionsRepaired {
+			fmt.Printf("Sub2API migration %s already completed; no data was changed.\n", migrationMark)
+			return nil
+		}
+
+		if needsRepair {
+			groups, err := loadBridgeGroups(ctx, source, strings.TrimRight(sourceBaseURL, "/"), bridgeBaseURL)
+			if err != nil {
+				return err
+			}
+			repaired, err := repairMissingBridgeChannels(ctx, target, groups, migrationMark)
+			if err != nil {
+				return err
+			}
+			if repaired {
+				fmt.Printf("Sub2API migration %s repaired: %d bridge groups restored.\n", migrationMark, len(groups))
+			}
+		}
+		if smtpRepaired {
+			fmt.Printf("Sub2API migration %s repaired: legacy SMTP settings copied to NewAPI.\n", migrationMark)
+		}
+		if legalRepaired {
+			fmt.Printf("Sub2API migration %s repaired: legacy legal settings copied to NewAPI.\n", migrationMark)
+		}
+		if groupOptionsRepaired {
+			fmt.Printf("Sub2API migration %s repaired: active legacy group access options restored to NewAPI.\n", migrationMark)
+		}
 		return nil
 	}
 
@@ -79,6 +157,15 @@ func run(ctx context.Context) error {
 	if err := migrateTarget(ctx, target, data, migrationMark); err != nil {
 		return err
 	}
+	if _, err := repairMissingSMTPSettings(ctx, source, target); err != nil {
+		return err
+	}
+	if _, err := repairMissingLegalSettings(ctx, source, target); err != nil {
+		return err
+	}
+	if _, err := repairMissingGroupOptions(ctx, source, target); err != nil {
+		return err
+	}
 
 	fmt.Printf(
 		"Sub2API migration %s completed: %d users, %d API keys, %d bridge groups.\n",
@@ -88,6 +175,63 @@ func run(ctx context.Context) error {
 		len(data.Groups),
 	)
 	return nil
+}
+
+func runGroupOptionsRepair(ctx context.Context) error {
+	sourceDSN, err := requiredEnv("SOURCE_SQL_DSN")
+	if err != nil {
+		return err
+	}
+	targetDSN, err := requiredEnv("TARGET_SQL_DSN")
+	if err != nil {
+		return err
+	}
+	source, err := openDatabase(ctx, sourceDSN)
+	if err != nil {
+		return fmt.Errorf("open source database: %w", err)
+	}
+	defer source.Close()
+	target, err := openDatabase(ctx, targetDSN)
+	if err != nil {
+		return fmt.Errorf("open target database: %w", err)
+	}
+	defer target.Close()
+	repaired, err := repairMissingGroupOptions(ctx, source, target)
+	if err != nil {
+		return err
+	}
+	if repaired {
+		fmt.Println("NewAPI group access options repaired atomically.")
+	} else {
+		fmt.Println("NewAPI group access options already contain all active legacy groups; no data was changed.")
+	}
+	return nil
+}
+
+func isNativeSchedulerShadowCompare(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNativeSchedulerPlanOnly(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGroupOptionsRepairOnly(value string) bool {
+	return isNativeSchedulerPlanOnly(value)
+}
+
+func isPreservePartialBridgeState(value string) bool {
+	return isNativeSchedulerPlanOnly(value)
 }
 
 func requiredEnv(key string) (string, error) {
