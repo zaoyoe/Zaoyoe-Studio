@@ -29,6 +29,7 @@ func configureRegionalRestrictionTest(t *testing.T, update func(*system_setting.
 	original := system_setting.GetRegionalRestrictionSettings()
 	settings := system_setting.RegionalRestrictionSettings{
 		Enabled:                       true,
+		LoginEnabled:                  true,
 		RegistrationEnabled:           true,
 		OAuthSignupEnabled:            true,
 		APIKeyPageConfirmationEnabled: true,
@@ -46,6 +47,105 @@ func configureRegionalRestrictionTest(t *testing.T, update func(*system_setting.
 	t.Cleanup(func() {
 		require.NoError(t, applyRegionalRestrictionSettings(original))
 	})
+}
+
+func TestEvaluateLoginSessionRegionalRestrictionPolicy(t *testing.T) {
+	configureRegionalRestrictionTest(t, nil)
+
+	tests := []struct {
+		name        string
+		headers     map[string]string
+		scope       string
+		wantBlocked bool
+	}{
+		{name: "blocked country is denied", headers: trustedRegionalRestrictionHeaders("CN"), scope: regionalRestrictionScopeLogin, wantBlocked: true},
+		{name: "nonblocked VPN exit is allowed", headers: trustedRegionalRestrictionHeaders("JP"), scope: regionalRestrictionScopeLogin},
+		{name: "unknown region defaults to allowed", scope: regionalRestrictionScopeLogin},
+		{name: "unrelated session scope is unaffected", headers: trustedRegionalRestrictionHeaders("CN"), scope: "refresh"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := evaluateRegionalRestriction(newRegionalRestrictionContext(test.headers), test.scope)
+			assert.Equal(t, test.wantBlocked, result.Blocked)
+		})
+	}
+
+	settings := system_setting.GetRegionalRestrictionSettings()
+	settings.UnknownRegionPolicy = "deny"
+	require.NoError(t, applyRegionalRestrictionSettings(settings))
+	unknownDenied := evaluateRegionalRestriction(newRegionalRestrictionContext(nil), regionalRestrictionScopeLogin)
+	assert.True(t, unknownDenied.Blocked)
+
+	settings.LoginEnabled = false
+	require.NoError(t, applyRegionalRestrictionSettings(settings))
+	result := evaluateRegionalRestriction(
+		newRegionalRestrictionContext(trustedRegionalRestrictionHeaders("CN")),
+		regionalRestrictionScopeLogin,
+	)
+	assert.False(t, result.Blocked)
+}
+
+func TestPasswordLoginRegionalRestrictionUsesRequestLanguage(t *testing.T) {
+	configureRegionalRestrictionTest(t, nil)
+	originalPasswordLoginEnabled := common.PasswordLoginEnabled
+	common.PasswordLoginEnabled = true
+	t.Cleanup(func() {
+		common.PasswordLoginEnabled = originalPasswordLoginEnabled
+	})
+
+	for _, language := range []string{"en-US", "zh-CN"} {
+		t.Run(language, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Request = httptest.NewRequest(
+				http.MethodPost,
+				"/api/user/login",
+				strings.NewReader(`{"username":"existing-user","password":"secret"}`),
+			)
+			context.Request.Header.Set("Content-Type", "application/json")
+			context.Request.Header.Set("Accept-Language", language)
+			setTrustedRegionalRestrictionHeaders(context.Request, "CN")
+
+			Login(context)
+
+			require.Equal(t, http.StatusForbidden, recorder.Code)
+			var response struct {
+				Success bool                          `json:"success"`
+				Code    string                        `json:"code"`
+				Message string                        `json:"message"`
+				Data    RegionalRestrictionEvaluation `json:"data"`
+			}
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+			assert.False(t, response.Success)
+			assert.Equal(t, regionalRestrictionReason, response.Code)
+			assert.NotEmpty(t, response.Message)
+			assert.True(t, response.Data.Blocked)
+		})
+	}
+}
+
+func TestSetupLoginRegionalRestrictionBlocksBeforeSessionCreation(t *testing.T) {
+	configureRegionalRestrictionTest(t, nil)
+	previousDB := model.DB
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.UserSession{}))
+	model.DB = db
+	t.Cleanup(func() { model.DB = previousDB })
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/oauth/github", nil)
+	setTrustedRegionalRestrictionHeaders(context.Request, "CN")
+
+	setupLogin(&model.User{Id: 1, Status: common.UserStatusEnabled}, context)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), regionalRestrictionReason)
+	var sessionCount int64
+	require.NoError(t, db.Model(&model.UserSession{}).Count(&sessionCount).Error)
+	assert.Zero(t, sessionCount)
 }
 
 func configureLegalSettingsTest(t *testing.T, update func(*system_setting.LegalSettings)) {
@@ -312,6 +412,7 @@ func TestGetStatusExposesRegionalRestrictionSettings(t *testing.T) {
 		Success bool `json:"success"`
 		Data    struct {
 			Enabled                   bool     `json:"regional_restriction_enabled"`
+			LoginEnabled              bool     `json:"regional_restriction_login_enabled"`
 			RegistrationEnabled       bool     `json:"regional_restriction_registration_enabled"`
 			OAuthSignupEnabled        bool     `json:"regional_restriction_oauth_signup_enabled"`
 			APIKeyPageEnabled         bool     `json:"regional_restriction_api_key_page_confirmation_enabled"`
@@ -326,6 +427,7 @@ func TestGetStatusExposesRegionalRestrictionSettings(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	require.True(t, response.Success)
 	assert.True(t, response.Data.Enabled)
+	assert.True(t, response.Data.LoginEnabled)
 	assert.True(t, response.Data.RegistrationEnabled)
 	assert.True(t, response.Data.OAuthSignupEnabled)
 	assert.True(t, response.Data.APIKeyPageEnabled)

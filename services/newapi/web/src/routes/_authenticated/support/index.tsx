@@ -16,6 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export { SupportWidget } from './support-widget'
-export { AdminSupportInbox } from './admin-inbox'
+import { AdminSupportInbox } from '@/features/support'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
+
+export const Route = createFileRoute('/_authenticated/support/')({
+  beforeLoad: () => {
+    const { auth } = useAuthStore.getState()
+
+    if (!auth.user || auth.user.role < ROLE.ADMIN) {
+      throw redirect({
+        to: '/403',
+      })
+    }
+  },
+  component: AdminSupportInbox,
+})

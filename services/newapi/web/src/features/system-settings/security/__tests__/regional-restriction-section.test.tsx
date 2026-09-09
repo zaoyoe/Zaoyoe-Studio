@@ -90,6 +90,7 @@ let renderedSection: RenderedSection | null = null
 
 const defaultValues = {
   'regional_restriction.enabled': true,
+  'regional_restriction.login_enabled': true,
   'regional_restriction.registration_enabled': true,
   'regional_restriction.oauth_signup_enabled': true,
   'regional_restriction.api_key_page_confirmation_enabled': true,

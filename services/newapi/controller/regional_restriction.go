@@ -24,6 +24,7 @@ const (
 
 	regionalRestrictionScopeRegistration = "registration"
 	regionalRestrictionScopeOAuthSignup  = "oauth_signup"
+	regionalRestrictionScopeLogin        = "login"
 	regionalRestrictionScopeAPIKeyPage   = "api_key_page"
 	regionalRestrictionScopeAPIKeyCreate = "api_key_create"
 )
@@ -98,6 +99,8 @@ func evaluateRegionalRestriction(c *gin.Context, scope string) RegionalRestricti
 
 func regionalRestrictionScopeEnabled(settings system_setting.RegionalRestrictionSettings, scope string) bool {
 	switch scope {
+	case regionalRestrictionScopeLogin:
+		return settings.LoginEnabled
 	case regionalRestrictionScopeRegistration:
 		return settings.RegistrationEnabled
 	case regionalRestrictionScopeOAuthSignup:
