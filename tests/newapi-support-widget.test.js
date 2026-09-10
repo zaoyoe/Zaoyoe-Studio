@@ -71,3 +71,22 @@ test('NewAPI support launcher keeps a solid unread badge and pinned composer', (
     assert.match(adminInbox, /h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden/);
     assert.match(adminInbox, /bg-background shrink-0/);
 });
+
+test('NewAPI admin inbox follows the same latest-message viewport as the user widget', () => {
+    const hook = readRepoFile(
+        'services/newapi/web/src/features/support/hooks/use-stick-to-latest-message.ts'
+    );
+    const userList = readRepoFile(
+        'services/newapi/web/src/features/support/components/support-message-list.tsx'
+    );
+    const adminInbox = readRepoFile(
+        'services/newapi/web/src/features/support/admin-inbox.tsx'
+    );
+
+    assert.match(hook, /list\.scrollTop = list\.scrollHeight/);
+    assert.match(hook, /shouldStickToBottomRef/);
+    assert.match(userList, /useStickToLatestMessage\(/);
+    assert.match(adminInbox, /useStickToLatestMessage\(/);
+    assert.match(adminInbox, /Jump to latest message/);
+    assert.match(adminInbox, /onClick=\{handleLoadOlderMessages\}/);
+});

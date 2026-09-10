@@ -24,14 +24,7 @@ import {
   MessageCircleMore,
   RefreshCw,
 } from 'lucide-react'
-import {
-  type UIEvent,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
+import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -39,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
+import { useStickToLatestMessage } from '../hooks/use-stick-to-latest-message'
 import type { SupportMessage } from '../types'
 
 type SupportMessageListProps = {
@@ -93,65 +87,25 @@ export function SupportMessageList({
   onRetry,
 }: SupportMessageListProps) {
   const { t } = useTranslation()
-  const messageListRef = useRef<HTMLDivElement>(null)
-  const endRef = useRef<HTMLDivElement>(null)
-  const didScrollInitialMessagesRef = useRef(false)
-  const shouldStickToBottomRef = useRef(true)
-  const olderMessagesScrollHeightRef = useRef<number | null>(null)
-  const [hasNewMessages, setHasNewMessages] = useState(false)
   const latestMessageID = messages.at(-1)?.id
-
-  const scrollToLatest = useCallback(() => {
-    endRef.current?.scrollIntoView({ block: 'end' })
-    shouldStickToBottomRef.current = true
-    setHasNewMessages(false)
-  }, [])
-
-  const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-    const { clientHeight, scrollHeight, scrollTop } = event.currentTarget
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 48
-    shouldStickToBottomRef.current = isNearBottom
-    if (isNearBottom) setHasNewMessages(false)
-  }, [])
+  const {
+    messageListRef,
+    endRef,
+    hasNewMessages,
+    scrollToLatest,
+    handleScroll,
+    captureOlderMessagesScrollHeight,
+  } = useStickToLatestMessage({
+    latestMessageID,
+    loading,
+    loadingOlderMessages,
+    messagesLength: messages.length,
+  })
 
   const handleLoadOlderMessages = useCallback(() => {
-    olderMessagesScrollHeightRef.current =
-      messageListRef.current?.scrollHeight ?? null
+    captureOlderMessagesScrollHeight()
     onLoadOlderMessages()
-  }, [onLoadOlderMessages])
-
-  useLayoutEffect(() => {
-    const list = messageListRef.current
-    const previousHeight = olderMessagesScrollHeightRef.current
-    if (!list || previousHeight === null || loadingOlderMessages) return
-
-    list.scrollTop += Math.max(0, list.scrollHeight - previousHeight)
-    olderMessagesScrollHeightRef.current = null
-  }, [loadingOlderMessages, messages.length])
-
-  useEffect(() => {
-    const frame = globalThis.requestAnimationFrame(() => {
-      if (!latestMessageID || loading) {
-        if (!latestMessageID) {
-          didScrollInitialMessagesRef.current = false
-          setHasNewMessages(false)
-        }
-        return
-      }
-
-      if (
-        !didScrollInitialMessagesRef.current ||
-        shouldStickToBottomRef.current
-      ) {
-        scrollToLatest()
-        didScrollInitialMessagesRef.current = true
-        return
-      }
-
-      setHasNewMessages(true)
-    })
-    return () => globalThis.cancelAnimationFrame(frame)
-  }, [latestMessageID, loading, scrollToLatest])
+  }, [captureOlderMessagesScrollHeight, onLoadOlderMessages])
 
   if (loading) {
     return (
@@ -210,7 +164,7 @@ export function SupportMessageList({
 
   return (
     <div
-      className='flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5'
+      className='flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5 [overflow-anchor:none]'
       role='log'
       aria-live='polite'
       aria-relevant='additions text'
