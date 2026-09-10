@@ -10401,6 +10401,10 @@ class ChatWidget {
                 background: rgba(239, 68, 68, 0.22);
                 color: #fecaca;
             }
+            .session-badge--newapi {
+                background: rgba(45, 212, 191, 0.16);
+                color: #99f6e4;
+            }
             .session-preview {
                 color: rgba(255, 255, 255, 0.5);
                 font-size: 12px;
@@ -12339,6 +12343,11 @@ class ChatWidget {
                 background: var(--chat-admin-light-danger-bg);
                 color: var(--chat-admin-light-danger-text);
                 border-color: rgba(239, 68, 68, 0.18);
+            }
+
+            html[data-theme="light"] .chat-window.admin-mode-layout .session-badge--newapi {
+                background: rgba(13, 148, 136, 0.14);
+                color: #0f766e;
             }
 
             html[data-theme="light"] .chat-window.admin-mode-layout .ops-alert-card-status--resolved,
@@ -16000,7 +16009,8 @@ class ChatWidget {
                 session.verificationSummary?.status || '',
                 session.verificationSummary?.message || '',
                 session.verificationSummary?.verification_id || '',
-                badgeText
+                badgeText,
+                this.isNewApiSupportSession(session) ? 'NewAPI' : ''
             ].filter(Boolean).join('\n').toLowerCase();
 
             const avatarEl = this.createSessionAvatarElement(session);
@@ -16016,6 +16026,13 @@ class ChatWidget {
             nameEl.textContent = displayName;
 
             nameRowEl.appendChild(nameEl);
+
+            if (this.isNewApiSupportSession(session)) {
+                const sourceBadgeEl = document.createElement('span');
+                sourceBadgeEl.className = 'session-badge session-badge--newapi';
+                sourceBadgeEl.textContent = 'NewAPI';
+                nameRowEl.appendChild(sourceBadgeEl);
+            }
 
             if (badgeText) {
                 const badgeEl = document.createElement('span');
@@ -16561,7 +16578,7 @@ class ChatWidget {
             const { data: messages, error } = await this.queryForCurrentSite(
                 this.supabase
                     .from('chat_messages')
-                    .select('session_id, created_at, content, is_admin, user_id, message_type'),
+                    .select('session_id, created_at, content, is_admin, user_id, message_type, product, source, external_user_id, external_username, external_email, page_context'),
                 this.getCurrentSite()
             )
                 .order('created_at', { ascending: false });
@@ -16630,22 +16647,39 @@ class ChatWidget {
                     ? userMapById.get(data.userId)
                     : userMapByEmail.get(normalizedGroupKey.toLowerCase()) || null;
                 const sessionIds = Array.from(data.sessionIds);
-                const resolvedEmail = this.resolveSessionEmail(userInfo, normalizedGroupKey, sessionIds);
+                const product = String(msg.product || '').trim().toLowerCase() === 'newapi' ? 'newapi' : 'legacy';
+                const isNewApiSupport = product === 'newapi';
+                const externalUserId = isNewApiSupport ? String(msg.external_user_id || '').trim() : '';
+                const externalUsername = isNewApiSupport ? String(msg.external_username || '').trim() : '';
+                const externalEmail = isNewApiSupport ? String(msg.external_email || '').trim() : '';
+                const resolvedEmail = isNewApiSupport
+                    ? externalEmail
+                    : this.resolveSessionEmail(userInfo, normalizedGroupKey, sessionIds);
 
                 // Determine display name: use username if available, else email username, else "访客" for guests
-                const displayNickname = this.resolveSessionNickname(userInfo, normalizedGroupKey, resolvedEmail);
+                const displayNickname = isNewApiSupport
+                    ? (externalUsername || (resolvedEmail ? resolvedEmail.split('@')[0] : 'NewAPI 用户'))
+                    : this.resolveSessionNickname(userInfo, normalizedGroupKey, resolvedEmail);
 
                 return {
                     id: normalizedGroupKey, // Use user_id or session_id as the identifier
                     sessionIds, // All session_ids for this user (for message loading)
+                    product,
+                    source: String(msg.source || '').trim(),
+                    externalUserId,
+                    externalUsername,
+                    externalEmail,
+                    pageContext: isNewApiSupport && msg.page_context && typeof msg.page_context === 'object'
+                        ? msg.page_context
+                        : null,
                     nickname: displayNickname,
                     email: resolvedEmail,
                     lastLogin: msg.created_at,
                     lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
                     lastTime: msg.created_at,
                     isAdmin: msg.is_admin,
-                    userId: data.userId || String(userInfo?.id || '').trim(),
-                    avatarUrl: userInfo?.avatar_url || null,
+                    userId: isNewApiSupport ? '' : (data.userId || String(userInfo?.id || '').trim()),
+                    avatarUrl: isNewApiSupport ? null : (userInfo?.avatar_url || null),
                     lastUserMessageAt: data.lastUserMessageAt || null,
                     lastAdminMessageAt: data.lastAdminMessageAt || null,
                     replySummary: this.buildSessionReplySummary(data.lastUserMessageAt, data.lastAdminMessageAt)
@@ -16801,6 +16835,11 @@ class ChatWidget {
         const normalizedUserId = String(message?.user_id || '').trim();
         const normalizedContent = String(message?.content || '').trim();
         const normalizedMessageType = String(message?.message_type || 'text').trim() || 'text';
+        const product = String(message?.product || '').trim().toLowerCase() === 'newapi' ? 'newapi' : 'legacy';
+        const isNewApiSupport = product === 'newapi';
+        const externalUserId = isNewApiSupport ? String(message?.external_user_id || '').trim() : '';
+        const externalUsername = isNewApiSupport ? String(message?.external_username || '').trim() : '';
+        const externalEmail = isNewApiSupport ? String(message?.external_email || '').trim() : '';
 
         if (!normalizedSessionId || !normalizedCreatedAt) {
             return false;
@@ -16812,16 +16851,23 @@ class ChatWidget {
 
         const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
             .filter((session) => !this.isOpsAlertSession(session));
-        const fallbackEmail = normalizedSessionId.includes('@') ? normalizedSessionId : '';
+        const fallbackEmail = isNewApiSupport
+            ? externalEmail
+            : (normalizedSessionId.includes('@') ? normalizedSessionId : '');
+        const incomingNickname = isNewApiSupport
+            ? (externalUsername || (fallbackEmail ? fallbackEmail.split('@')[0] : 'NewAPI 用户'))
+            : (normalizedUserId ? '已登录用户' : this.resolveSessionNickname(null, normalizedSessionId, fallbackEmail));
         let touched = false;
         const nextChatSessions = chatSessions.map((session) => {
             const sessionIds = Array.isArray(session?.sessionIds) && session.sessionIds.length
                 ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
                 : [String(session?.id || '').trim()].filter(Boolean);
             const normalizedSessionUserId = String(session?.userId || '').trim();
-            const isTargetSession = session.id === normalizedSessionId
+            const matchesProduct = this.getSessionProduct(session) === product;
+            const isTargetSession = matchesProduct && (session.id === normalizedSessionId
                 || sessionIds.includes(normalizedSessionId)
-                || (normalizedUserId && normalizedSessionUserId === normalizedUserId);
+                || (normalizedUserId && normalizedSessionUserId === normalizedUserId)
+                || (isNewApiSupport && externalUserId && String(session?.externalUserId || '').trim() === externalUserId));
             if (!isTargetSession) {
                 return session;
             }
@@ -16831,8 +16877,14 @@ class ChatWidget {
             return {
                 ...session,
                 sessionIds: nextSessionIds,
-                userId: normalizedSessionUserId || normalizedUserId,
-                email: session.email || fallbackEmail,
+                product,
+                source: String(message?.source || session.source || '').trim(),
+                externalUserId: isNewApiSupport ? externalUserId : '',
+                externalUsername: isNewApiSupport ? externalUsername : '',
+                externalEmail: isNewApiSupport ? externalEmail : '',
+                userId: isNewApiSupport ? '' : (normalizedSessionUserId || normalizedUserId),
+                nickname: isNewApiSupport ? incomingNickname : session.nickname,
+                email: isNewApiSupport ? fallbackEmail : (session.email || fallbackEmail),
                 lastLogin: normalizedCreatedAt,
                 lastTime: normalizedCreatedAt,
                 lastMessage: normalizedMessageType === 'image'
@@ -16845,15 +16897,20 @@ class ChatWidget {
 
         if (!touched) {
             nextChatSessions.push({
-                id: normalizedUserId || normalizedSessionId,
+                id: isNewApiSupport ? normalizedSessionId : (normalizedUserId || normalizedSessionId),
                 sessionIds: [normalizedSessionId],
-                nickname: normalizedUserId ? '已登录用户' : this.resolveSessionNickname(null, normalizedSessionId, fallbackEmail),
+                product,
+                source: String(message?.source || '').trim(),
+                externalUserId,
+                externalUsername,
+                externalEmail,
+                nickname: incomingNickname,
                 email: fallbackEmail,
                 lastLogin: normalizedCreatedAt,
                 lastMessage: normalizedMessageType === 'image' ? this.t('chat.image', '[图片]') : normalizedContent,
                 lastTime: normalizedCreatedAt,
                 isAdmin: false,
-                userId: normalizedUserId,
+                userId: isNewApiSupport ? '' : normalizedUserId,
                 avatarUrl: '',
                 lastUserMessageAt: normalizedCreatedAt,
                 lastAdminMessageAt: '',
@@ -16862,10 +16919,12 @@ class ChatWidget {
         }
 
         this.setAdminChatSessions(nextChatSessions);
-        this.scheduleAdminSessionHydration({
-            userIds: normalizedUserId ? [normalizedUserId] : [],
-            emails: !normalizedUserId && fallbackEmail ? [fallbackEmail.toLowerCase()] : []
-        });
+        if (!isNewApiSupport) {
+            this.scheduleAdminSessionHydration({
+                userIds: normalizedUserId ? [normalizedUserId] : [],
+                emails: !normalizedUserId && fallbackEmail ? [fallbackEmail.toLowerCase()] : []
+            });
+        }
         if (this.currentSessionKey) {
             const nextCurrentSession = this.sessions.find((session) => session.id === this.currentSessionKey) || null;
             if (nextCurrentSession) {
@@ -20048,6 +20107,16 @@ class ChatWidget {
         return this.t('chat.guest', '访客');
     }
 
+    getSessionProduct(session = {}) {
+        return String(session?.product || '').trim().toLowerCase() === 'newapi'
+            ? 'newapi'
+            : 'legacy';
+    }
+
+    isNewApiSupportSession(session = {}) {
+        return this.getSessionProduct(session) === 'newapi';
+    }
+
     getSessionAvatarInitial(session) {
         if (!session) return 'U';
         if (session.id && session.id.startsWith('guest_')) return 'G';
@@ -20214,9 +20283,11 @@ class ChatWidget {
         // Slide to chat view on mobile
         this.chatWindow.classList.add('chat-active');
 
-        this.loadUser360Context(sessionInfo).catch((error) => {
-            console.warn('[ChatWidget] Failed to load user 360 context:', error);
-        });
+        if (!this.isNewApiSupportSession(sessionInfo)) {
+            this.loadUser360Context(sessionInfo).catch((error) => {
+                console.warn('[ChatWidget] Failed to load user 360 context:', error);
+            });
+        }
 
         // Clear unread status for this session
         const sessionIdsToMark = sessionInfo.sessionIds || [sessionId];
@@ -20730,6 +20801,7 @@ class ChatWidget {
                 .insert({
                     session_id: this.currentSessionId,
                     site: this.getCurrentSite(),
+                    product: this.getSessionProduct(this.currentSessionInfo),
                     content: text,
                     message_type: 'text',
                     is_admin: true
@@ -20748,7 +20820,9 @@ class ChatWidget {
             });
 
             // 🔔 Create system notification for the user's bell
-            await this.createNotificationForUser(this.currentSessionId, text);
+            if (!this.isNewApiSupportSession(this.currentSessionInfo)) {
+                await this.createNotificationForUser(this.currentSessionId, text);
+            }
         } catch (err) {
             console.error('Failed to send:', err);
         }
@@ -20918,6 +20992,7 @@ class ChatWidget {
                 .insert({
                     session_id: this.currentSessionId,
                     site: this.getCurrentSite(),
+                    product: this.getSessionProduct(this.currentSessionInfo),
                     content: imageUrl,
                     message_type: 'image',
                     is_admin: true

@@ -306,7 +306,7 @@ function MessageHistory({
                 isAgent && 'justify-end'
               )}
             >
-              <span>{isAgent ? t('You') : t('Customer')}</span>
+              {isAgent ? <span>{t('You')}</span> : null}
               {timestamp && (
                 <time dateTime={message.createdAt}>{timestamp}</time>
               )}
@@ -316,7 +316,7 @@ function MessageHistory({
                 'min-w-0 w-max max-w-[84%] rounded-2xl px-3 py-2 text-left text-sm leading-6 break-words whitespace-pre-wrap',
                 isAgent
                   ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-muted text-foreground rounded-bl-sm'
+                  : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm'
               )}
             >
               {message.text}

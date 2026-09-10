@@ -324,7 +324,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260707_CHAT_WIDGET_DARK_INPUT_GRAY_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260910_CHAT_WIDGET_NEWAPI_BADGE_1';/);
     assert.match(chatWidgetCss, /--chat-input-bg: rgba\(31, 31, 31, 0\.94\);/);
     assert.match(chatWidgetCss, /--chat-input-bg-focus: rgba\(42, 42, 42, 0\.98\);/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-input \{[\s\S]*background: var\(--chat-input-bg, rgba\(31, 31, 31, 0\.94\)\);/);
