@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 import {
   ArrowDown,
   ChevronUp,
@@ -157,7 +156,7 @@ export function SupportMessageList({
   if (loading) {
     return (
       <div
-        className='flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-5'
+        className='flex flex-1 flex-col items-start gap-4 overflow-y-auto px-4 py-5'
         aria-busy='true'
         aria-label={t('Loading support conversation')}
       >
@@ -221,7 +220,7 @@ export function SupportMessageList({
       onScroll={handleScroll}
     >
       {hasOlderMessages && (
-        <div className='flex flex-col items-center gap-2'>
+        <div className='flex w-full flex-col items-center gap-2'>
           {olderMessagesError && (
             <p className='text-destructive text-xs' role='status'>
               {t('Unable to load older messages')}
@@ -260,7 +259,10 @@ export function SupportMessageList({
         return (
           <article
             key={message.id}
-            className={cn('flex flex-col gap-1', isUser && 'items-end')}
+            className={cn(
+              'flex w-fit max-w-full flex-col items-start gap-1',
+              isUser && 'ml-auto items-end'
+            )}
           >
             <div
               className={cn(
@@ -299,7 +301,7 @@ export function SupportMessageList({
             ) : (
               <p
                 className={cn(
-                  'max-w-[84%] rounded-lg px-3 py-2 text-sm leading-5 break-words whitespace-pre-wrap',
+                  'w-fit max-w-[84%] rounded-lg px-3 py-2 text-left text-sm leading-5 break-words whitespace-pre-wrap',
                   isUser && 'bg-primary text-primary-foreground rounded-tr-sm',
                   !isUser &&
                     !isSystem &&
@@ -315,7 +317,7 @@ export function SupportMessageList({
         )
       })}
       {hasNewMessages && (
-        <div className='sticky bottom-0 z-10 flex justify-center pb-1'>
+        <div className='sticky bottom-0 z-10 flex w-full justify-center pb-1'>
           <Button
             type='button'
             size='sm'

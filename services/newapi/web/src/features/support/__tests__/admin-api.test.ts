@@ -45,6 +45,7 @@ describe('admin support API contract', () => {
           external_email: 'user@example.com',
           page_context: { path: '/dashboard' },
           updated_at: '2026-09-09T12:00:00.000Z',
+          last_message_is_admin: false,
         },
       ],
     })
@@ -53,6 +54,7 @@ describe('admin support API contract', () => {
     assert.equal(conversation.userId, 42)
     assert.equal(conversation.username, 'newapi-user')
     assert.deepEqual(conversation.pageContext, { path: '/dashboard' })
+    assert.equal(conversation.lastMessageIsAdmin, false)
 
     const [message] = __adminSupportTestUtils.readMessages({
       messages: [

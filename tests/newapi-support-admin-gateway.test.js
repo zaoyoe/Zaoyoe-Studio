@@ -34,7 +34,8 @@ function createAdminFakeSupabase({ failConversationUpdate = false } = {}) {
             session_id: SESSION_ID,
             page_context: { path: '/dashboard' },
             created_at: '2026-09-09T11:00:00.000Z',
-            updated_at: '2026-09-09T12:00:00.000Z'
+            updated_at: '2026-09-09T12:00:00.000Z',
+            last_message_is_admin: false
         }],
         messages: [{
             id: 'user-message-1',
@@ -191,6 +192,7 @@ test('NewAPI admin gateway lists conversations without exposing the private chat
         page_context: { path: '/dashboard' },
         created_at: '2026-09-09T11:00:00.000Z',
         updated_at: '2026-09-09T12:00:00.000Z',
+        last_message_is_admin: false,
         status: 'open'
     });
     assert.equal(JSON.stringify(result.payload).includes(SESSION_ID), false);
@@ -217,6 +219,7 @@ test('NewAPI admin gateway reads and writes the same product conversation', asyn
     assert.equal(reply.payload.data.author, 'admin');
     assert.equal(supabase.state.messages.at(-1).is_admin, true);
     assert.equal(supabase.state.messages.at(-1).source, 'newapi_admin_gateway');
+    assert.equal(supabase.state.conversations[0].last_message_is_admin, true);
 });
 
 test('NewAPI admin gateway rejects an idempotency key already owned by a user message', async () => {

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 import { api } from '@/lib/api'
 
 import type { SupportMessage } from './types'
@@ -74,6 +73,8 @@ type AdminSupportConversationWire = {
   createdAt?: string | number
   updated_at?: string | number
   updatedAt?: string | number
+  last_message_is_admin?: boolean | null
+  lastMessageIsAdmin?: boolean | null
 }
 
 type AdminConversationsData =
@@ -110,6 +111,7 @@ export type AdminSupportConversation = {
   }
   createdAt?: string
   updatedAt?: string
+  lastMessageIsAdmin?: boolean | null
 }
 
 export type AdminSupportMessage = SupportMessage
@@ -141,6 +143,18 @@ function normalizeTimestamp(
     ).toISOString()
   }
   return typeof value === 'string' ? value : undefined
+}
+
+function normalizeLastMessageIsAdmin(
+  value: AdminSupportConversationWire
+): boolean | null {
+  if (typeof value.last_message_is_admin === 'boolean') {
+    return value.last_message_is_admin
+  }
+  if (typeof value.lastMessageIsAdmin === 'boolean') {
+    return value.lastMessageIsAdmin
+  }
+  return null
 }
 
 function normalizeMessage(
@@ -228,6 +242,7 @@ function readConversations(
         pageContext: value.page_context ?? value.pageContext,
         createdAt: normalizeTimestamp(value.created_at ?? value.createdAt),
         updatedAt: normalizeTimestamp(value.updated_at ?? value.updatedAt),
+        lastMessageIsAdmin: normalizeLastMessageIsAdmin(value),
       }
     })
     .filter(
