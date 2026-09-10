@@ -5301,6 +5301,7 @@
     "The requested legal document does not exist.": "The requested legal document does not exist.",
     "This legal document has not been configured yet.": "This legal document has not been configured yet.",
     "Support Inbox": "客服收件箱",
+    "Open support inbox": "開啟客服收件箱",
     "Support conversations": "客服對話",
     "Conversations": "對話列表",
     "Conversation messages": "對話訊息",
@@ -5330,6 +5331,7 @@
     "Unable to load older messages": "無法載入較早訊息",
     "Press Enter to send, Shift+Enter for a new line": "按 Enter 傳送，按 Shift+Enter 換行",
     "Try again": "重試",
+    "Unread support messages": "未讀客服訊息",
     "You": "你"
   }
 }

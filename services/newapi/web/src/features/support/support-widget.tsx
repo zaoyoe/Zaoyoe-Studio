@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
   CircleAlert,
@@ -44,12 +43,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { SupportApiError } from './api'
 import { SupportComposer } from './components/support-composer'
 import { SupportMessageList } from './components/support-message-list'
+import { useAdminSupportUnread } from './hooks/use-admin-support-unread'
 import { useSupportConversation } from './hooks/use-support-conversation'
 import { getSupportPageContext } from './lib/page-context'
 
@@ -98,11 +99,13 @@ export function SupportWidget() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const pathname = useLocation({ select: (location) => location.pathname })
+  const isAdmin = useIsAdmin()
   const user = useAuthStore((state) => state.auth.user)
   const bootstrapState = useAuthStore((state) => state.auth.bootstrapState)
   const isMobile = useIsMobile()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const draftClientMessageIdRef = useRef<string | null>(null)
+  const draftRef = useRef('')
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const page = useMemo(
@@ -116,9 +119,14 @@ export function SupportWidget() {
   const authenticated = Boolean(user) && bootstrapState === 'complete'
   const conversation = useSupportConversation(
     open,
-    authenticated,
+    authenticated && !isAdmin,
     page,
     user?.id
+  )
+  const adminUnreadCount = useAdminSupportUnread(
+    authenticated && isAdmin,
+    user?.id,
+    pathname
   )
   const supportError = errorMessage(
     conversation.error,
@@ -135,6 +143,33 @@ export function SupportWidget() {
     !supportError &&
     conversation.messages.length === 0
 
+  const handleAdminOpen = () => {
+    if (pathname !== '/support') {
+      void navigate({ to: '/support' })
+    }
+  }
+
+  const unreadCount = isAdmin ? adminUnreadCount : conversation.unreadCount
+  const triggerButton = (
+    <Button
+      size='icon-lg'
+      className='fixed right-4 bottom-4 z-40 rounded-full shadow-lg sm:right-6 sm:bottom-6'
+      aria-label={isAdmin ? t('Open support inbox') : t('Contact support')}
+      onClick={isAdmin ? handleAdminOpen : undefined}
+    >
+      <MessageCircleMore className='size-5' aria-hidden='true' />
+      {unreadCount > 0 && (
+        <Badge
+          variant='destructive'
+          className='absolute -top-1 -right-1 min-w-5 justify-center px-1 text-[10px] leading-none'
+          aria-label={t('Unread support messages')}
+        >
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </Badge>
+      )}
+    </Button>
+  )
+
   const setTextareaElement = useCallback(
     (element: HTMLTextAreaElement | null) => {
       textareaRef.current = element
@@ -147,6 +182,7 @@ export function SupportWidget() {
   }, [])
 
   const updateDraft = (value: string) => {
+    draftRef.current = value
     setDraft(value)
     resetDraftClientMessageId()
   }
@@ -161,47 +197,47 @@ export function SupportWidget() {
     globalThis.requestAnimationFrame(() => textareaRef.current?.focus())
   }
 
-  const handleSend = async () => {
-    const text = draft.trim()
-    if (!text || conversation.isSending || supportError) return
+  const handleSend = () => {
+    const text = draftRef.current.trim()
+    if (!text || supportError) return
 
     const clientMessageId =
       draftClientMessageIdRef.current ?? createClientMessageId()
-    draftClientMessageIdRef.current = clientMessageId
+    draftRef.current = ''
+    draftClientMessageIdRef.current = null
+    setDraft('')
 
-    try {
-      await conversation.send({
+    void conversation
+      .send({
         text,
         clientMessageId,
         page,
       })
-      setDraft('')
-      resetDraftClientMessageId()
-    } catch {
-      // The failed draft remains in the composer so the user can retry it.
-    }
+      .catch(() => {
+        if (!draftRef.current.trim()) {
+          draftRef.current = text
+          draftClientMessageIdRef.current = clientMessageId
+          setDraft(text)
+        }
+      })
+  }
+
+  if (isAdmin && pathname === '/support') {
+    return null
   }
 
   return (
     <TooltipProvider delay={250}>
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet open={isAdmin ? false : open} onOpenChange={setOpen}>
         <Tooltip>
           <TooltipTrigger
             render={
-              <SheetTrigger
-                render={
-                  <Button
-                    size='icon-lg'
-                    className='fixed right-4 bottom-4 z-40 rounded-full shadow-lg sm:right-6 sm:bottom-6'
-                    aria-label={t('Contact support')}
-                  />
-                }
-              />
+              isAdmin ? triggerButton : <SheetTrigger render={triggerButton} />
             }
-          >
-            <MessageCircleMore className='size-5' aria-hidden='true' />
-          </TooltipTrigger>
-          <TooltipContent>{t('Contact support')}</TooltipContent>
+          />
+          <TooltipContent>
+            {isAdmin ? t('Open support inbox') : t('Contact support')}
+          </TooltipContent>
         </Tooltip>
 
         <SheetContent
@@ -311,9 +347,9 @@ export function SupportWidget() {
               <SupportComposer
                 value={draft}
                 onValueChange={updateDraft}
-                onSubmit={() => void handleSend()}
+                onSubmit={handleSend}
                 onTextareaMount={setTextareaElement}
-                sending={conversation.isSending}
+                sending={false}
                 disabled={conversation.isLoading || Boolean(supportError)}
               />
             </>

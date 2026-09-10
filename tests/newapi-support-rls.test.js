@@ -66,3 +66,26 @@ test('NewAPI admin actions expand the nonce contract and keep inbox ordering cur
         /WHERE product = 'newapi'[\s\S]*AND session_id = NEW\.session_id/
     );
 });
+
+test('NewAPI administrator unread state records the latest message author', () => {
+    const unreadMigration = fs.readFileSync(
+        path.join(
+            REPO_ROOT,
+            'supabase/migrations/20260909140000_add_newapi_support_unread_state.sql'
+        ),
+        'utf8'
+    );
+
+    assert.match(
+        unreadMigration,
+        /ADD COLUMN IF NOT EXISTS last_message_is_admin boolean/
+    );
+    assert.match(
+        unreadMigration,
+        /last_message_is_admin = \([\s\S]*message\.is_admin/
+    );
+    assert.match(
+        unreadMigration,
+        /AFTER INSERT ON public\.chat_messages[\s\S]*EXECUTE FUNCTION public\.touch_newapi_support_conversation_on_message\(\)/
+    );
+});

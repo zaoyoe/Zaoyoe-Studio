@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 import {
   type InfiniteData,
   useInfiniteQuery,
@@ -80,6 +79,13 @@ import {
 const ADMIN_SUPPORT_QUERY_KEY = ['admin-support-conversations'] as const
 const ADMIN_SUPPORT_MESSAGES_QUERY_KEY = 'admin-support-messages'
 const MAX_REPLY_LENGTH = 4000
+
+function createOptimisticMessageID(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return `pending-${globalThis.crypto.randomUUID()}`
+  }
+  return `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 function mergeConversations(
   pages: AdminSupportConversationsPage[] | undefined
@@ -186,7 +192,7 @@ function MessageHistory({
   if (loading) {
     return (
       <div
-        className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-5'
+        className='flex min-h-0 flex-1 flex-col items-start gap-4 overflow-y-auto px-4 py-5'
         aria-busy='true'
         aria-label={t('Loading conversation')}
       >
@@ -245,7 +251,7 @@ function MessageHistory({
       data-testid='admin-support-message-list'
     >
       {hasOlderMessages && (
-        <div className='flex flex-col items-center gap-2'>
+        <div className='flex w-full flex-col items-center gap-2'>
           {olderMessagesError && (
             <p className='text-destructive text-xs' role='status'>
               {t('Unable to load older messages')}
@@ -279,8 +285,8 @@ function MessageHistory({
           <div
             key={message.id}
             className={cn(
-              'flex max-w-[82%] flex-col gap-1',
-              isAgent && 'self-end text-right'
+              'flex w-fit max-w-[82%] flex-col items-start gap-1',
+              isAgent && 'self-end items-end'
             )}
           >
             <div
@@ -296,7 +302,7 @@ function MessageHistory({
             </div>
             <div
               className={cn(
-                'rounded-2xl px-3 py-2 text-sm leading-6 whitespace-pre-wrap break-words',
+                'w-fit max-w-full rounded-2xl px-3 py-2 text-left text-sm leading-6 whitespace-pre-wrap break-words',
                 isAgent
                   ? 'bg-primary text-primary-foreground rounded-br-sm'
                   : 'bg-muted text-foreground rounded-bl-sm'
@@ -458,6 +464,7 @@ export function AdminSupportInbox() {
   const [selectedID, setSelectedID] = useState<string>()
   const [draft, setDraft] = useState('')
   const [showListOnMobile, setShowListOnMobile] = useState(true)
+  const draftRef = useRef('')
 
   const conversationsQuery = useInfiniteQuery({
     queryKey: ADMIN_SUPPORT_QUERY_KEY,
@@ -475,6 +482,10 @@ export function AdminSupportInbox() {
     conversations.some((conversation) => conversation.id === selectedID)
       ? selectedID
       : conversations[0]?.id
+  const activeIDRef = useRef(activeID)
+  useEffect(() => {
+    activeIDRef.current = activeID
+  }, [activeID])
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === activeID
   )
@@ -500,18 +511,92 @@ export function AdminSupportInbox() {
       conversationID: string
       text: string
     }) => sendAdminSupportMessage(conversationID, text),
-    onSuccess: (message, { conversationID }) => {
+    onMutate: async ({ conversationID, text }) => {
+      await queryClient.cancelQueries({
+        queryKey: [ADMIN_SUPPORT_MESSAGES_QUERY_KEY, conversationID],
+      })
+      const queryKey = [
+        ADMIN_SUPPORT_MESSAGES_QUERY_KEY,
+        conversationID,
+      ] as const
+      const previous =
+        queryClient.getQueryData<InfiniteData<AdminSupportMessagesPage>>(
+          queryKey
+        )
+      const optimisticMessage: AdminSupportMessage = {
+        id: createOptimisticMessageID(),
+        text,
+        author: 'agent',
+        kind: 'text',
+        createdAt: new Date().toISOString(),
+      }
+      if (previous) {
+        queryClient.setQueryData<InfiniteData<AdminSupportMessagesPage>>(
+          queryKey,
+          {
+            ...previous,
+            pages: previous.pages.map((page, index) =>
+              index === 0
+                ? { ...page, messages: [...page.messages, optimisticMessage] }
+                : page
+            ),
+          }
+        )
+      }
+      return { previous, optimisticMessageID: optimisticMessage.id }
+    },
+    onError: (_error, { conversationID }, context) => {
+      if (!context?.previous) return
+      queryClient.setQueryData(
+        [ADMIN_SUPPORT_MESSAGES_QUERY_KEY, conversationID],
+        context.previous
+      )
+    },
+    onSuccess: (message, { conversationID }, context) => {
+      const queryKey = [
+        ADMIN_SUPPORT_MESSAGES_QUERY_KEY,
+        conversationID,
+      ] as const
       if (message) {
         queryClient.setQueryData<InfiniteData<AdminSupportMessagesPage>>(
-          [ADMIN_SUPPORT_MESSAGES_QUERY_KEY, conversationID],
+          queryKey,
           (current) => {
             if (!current) return current
             return {
               ...current,
               pages: current.pages.map((page, index) =>
-                index === 0 &&
-                !page.messages.some((item) => item.id === message.id)
-                  ? { ...page, messages: [...page.messages, message] }
+                index !== 0
+                  ? page
+                  : {
+                      ...page,
+                      messages: [
+                        ...page.messages.filter(
+                          (item) => item.id !== context?.optimisticMessageID
+                        ),
+                        ...(page.messages.some((item) => item.id === message.id)
+                          ? []
+                          : [message]),
+                      ],
+                    }
+              ),
+            }
+          }
+        )
+      } else if (context?.optimisticMessageID) {
+        queryClient.setQueryData<InfiniteData<AdminSupportMessagesPage>>(
+          queryKey,
+          (current) => {
+            if (!current) return current
+            return {
+              ...current,
+              pages: current.pages.map((page, index) =>
+                index === 0
+                  ? {
+                      ...page,
+                      messages: page.messages.filter(
+                        (item) => item.id !== context.optimisticMessageID
+                      ),
+                    }
                   : page
               ),
             }
@@ -520,24 +605,33 @@ export function AdminSupportInbox() {
       }
       void queryClient.invalidateQueries({ queryKey: ADMIN_SUPPORT_QUERY_KEY })
       void queryClient.invalidateQueries({
-        queryKey: [ADMIN_SUPPORT_MESSAGES_QUERY_KEY, conversationID],
+        queryKey,
       })
     },
   })
 
   const selectConversation = (id: string) => {
     setSelectedID(id)
+    draftRef.current = ''
     setDraft('')
     if (isMobile) setShowListOnMobile(false)
   }
 
   const sendReply = () => {
-    const text = draft.trim()
-    if (!activeID || !text || sendMutation.isPending) return
+    const text = draftRef.current.trim()
+    if (!activeID || !text) return
+    draftRef.current = ''
+    setDraft('')
     sendMutation.mutate(
       { conversationID: activeID, text },
       {
-        onSuccess: () => setDraft(''),
+        onError: () => {
+          if (activeIDRef.current !== activeID || draftRef.current.trim()) {
+            return
+          }
+          draftRef.current = text
+          setDraft(text)
+        },
       }
     )
   }
@@ -736,14 +830,15 @@ export function AdminSupportInbox() {
                       <Textarea
                         id='admin-support-reply'
                         value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
+                        onChange={(event) => {
+                          draftRef.current = event.target.value
+                          setDraft(event.target.value)
+                        }}
                         onKeyDown={handleComposerKeyDown}
                         placeholder={t('Reply to customer')}
                         maxLength={MAX_REPLY_LENGTH}
                         rows={3}
-                        disabled={
-                          messagesQuery.isLoading || sendMutation.isPending
-                        }
+                        disabled={messagesQuery.isLoading}
                         className='min-h-22 resize-none pr-12'
                         aria-describedby='admin-support-reply-hint'
                       />
@@ -755,22 +850,13 @@ export function AdminSupportInbox() {
                               size='icon'
                               className='absolute right-2 bottom-2'
                               disabled={
-                                !draft.trim() ||
-                                sendMutation.isPending ||
-                                messagesQuery.isLoading
+                                !draft.trim() || messagesQuery.isLoading
                               }
                               aria-label={t('Send reply')}
                             />
                           }
                         >
-                          {sendMutation.isPending ? (
-                            <LoaderCircle
-                              className='animate-spin'
-                              aria-hidden='true'
-                            />
-                          ) : (
-                            <SendHorizontal aria-hidden='true' />
-                          )}
+                          <SendHorizontal aria-hidden='true' />
                         </TooltipTrigger>
                         <TooltipContent>{t('Send reply')}</TooltipContent>
                       </Tooltip>

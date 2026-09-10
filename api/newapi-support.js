@@ -18,7 +18,7 @@ const MAX_MESSAGE_CHARACTERS = 4000;
 const NONCE_RETENTION_SKEW_MULTIPLIER = 2;
 const NONCE_RETENTION_EXTRA_SECONDS = 60;
 const NONCE_CLEANUP_HASH_PREFIX = '00';
-const CONVERSATION_SELECT = 'id, product, external_user_id, external_username, external_email, session_id, page_context, created_at, updated_at';
+const CONVERSATION_SELECT = 'id, product, external_user_id, external_username, external_email, session_id, page_context, created_at, updated_at, last_message_is_admin';
 const MESSAGE_SELECT = 'id, content, is_admin, message_type, created_at, client_message_id';
 const SUPPORTED_ACTIONS = new Set([
     'context',
@@ -461,6 +461,7 @@ async function upsertConversation(supabase, request, nowMilliseconds) {
     // New conversations receive the table default; sends explicitly advance it.
     if (request.action === 'send_message') {
         payload.updated_at = new Date(nowMilliseconds).toISOString();
+        payload.last_message_is_admin = false;
     }
     if (request.principal.email) payload.external_email = request.principal.email;
     if (request.page) payload.page_context = request.page;
@@ -479,6 +480,23 @@ async function upsertConversation(supabase, request, nowMilliseconds) {
         });
     }
     return data;
+}
+
+async function findUserConversation(supabase, request) {
+    let query = supabase
+        .from('newapi_support_conversations')
+        .select(CONVERSATION_SELECT)
+        .eq('product', GATEWAY_PRODUCT)
+        .eq('external_user_id', request.principal.externalUserId);
+    const { data, error } = await maybeSingle(query);
+    if (error) {
+        throw gatewayError('Unable to load support conversation', {
+            statusCode: 500,
+            code: 'conversation_read_failed',
+            expose: false
+        });
+    }
+    return data || null;
 }
 
 function serializeMessage(row = {}) {
@@ -500,6 +518,9 @@ function serializeConversation(conversation = {}) {
 }
 
 function serializeAdminConversation(conversation = {}) {
+    const lastMessageIsAdmin = typeof conversation.last_message_is_admin === 'boolean'
+        ? conversation.last_message_is_admin
+        : null;
     return {
         id: String(conversation.id || ''),
         external_user_id: String(conversation.external_user_id || ''),
@@ -508,6 +529,7 @@ function serializeAdminConversation(conversation = {}) {
         page_context: isPlainObject(conversation.page_context) ? conversation.page_context : {},
         created_at: conversation.created_at || null,
         updated_at: conversation.updated_at || null,
+        last_message_is_admin: lastMessageIsAdmin,
         status: 'open'
     };
 }
@@ -720,10 +742,14 @@ async function createAdminMessage(supabase, conversation, request) {
     });
 }
 
-async function touchConversation(supabase, conversation, nowMilliseconds) {
+async function touchConversation(supabase, conversation, nowMilliseconds, lastMessageIsAdmin) {
     const table = supabase?.from?.('newapi_support_conversations');
     if (!table || typeof table.update !== 'function') return;
-    let query = table.update({ updated_at: new Date(nowMilliseconds).toISOString() });
+    const payload = { updated_at: new Date(nowMilliseconds).toISOString() };
+    if (typeof lastMessageIsAdmin === 'boolean') {
+        payload.last_message_is_admin = lastMessageIsAdmin;
+    }
+    let query = table.update(payload);
     if (typeof query.eq !== 'function') return;
     query = query.eq('id', conversation.id).eq('product', GATEWAY_PRODUCT);
     const result = await query;
@@ -806,7 +832,7 @@ function createNewApiSupportHandler(options = {}) {
                 // have not applied the trigger migration yet, so a failure
                 // here must not turn a successful reply into a retryable 500.
                 try {
-                    await touchConversation(supabase, conversation, getNowMilliseconds(now));
+                    await touchConversation(supabase, conversation, getNowMilliseconds(now), true);
                 } catch (error) {
                     console.warn('[NewAPI support gateway] Could not update conversation activity:', error?.message || error);
                 }
@@ -816,7 +842,31 @@ function createNewApiSupportHandler(options = {}) {
                 });
             }
 
-            const conversation = await upsertConversation(supabase, request, getNowMilliseconds(now));
+            let conversation;
+            if (request.action === 'send_message') {
+                conversation = await upsertConversation(supabase, request, getNowMilliseconds(now));
+            } else {
+                conversation = await findUserConversation(supabase, request);
+                if (!conversation) {
+                    if (request.action === 'context') {
+                        return sendJson(res, 200, {
+                            success: true,
+                            data: {
+                                conversation: undefined,
+                                messages: [],
+                                unread_count: 0
+                            }
+                        });
+                    }
+                    return sendJson(res, 200, {
+                        success: true,
+                        data: {
+                            messages: [],
+                            next_cursor: ''
+                        }
+                    });
+                }
+            }
 
             if (request.action === 'context') {
                 const messagePage = await listMessages(supabase, conversation, request);

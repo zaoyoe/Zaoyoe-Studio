@@ -164,6 +164,23 @@ function createFakeSupabase(initial = {}) {
         }
     });
 
+    const createConversationSelectQuery = () => {
+        const filters = [];
+        const matches = () => state.conversation && filters.every(({ field, value }) => (
+            String(state.conversation[field] ?? '') === String(value ?? '')
+        ));
+        return {
+            eq(field, value) {
+                state.queryLog.push({ type: 'eq', field, value });
+                filters.push({ field, value });
+                return this;
+            },
+            async maybeSingle() {
+                return { data: matches() ? clone(state.conversation) : null, error: null };
+            }
+        };
+    };
+
     return {
         state,
         from(table) {
@@ -194,6 +211,9 @@ function createFakeSupabase(initial = {}) {
             }
             if (table === 'newapi_support_conversations') {
                 return {
+                    select() {
+                        return createConversationSelectQuery();
+                    },
                     upsert(payload) {
                         return createConversationUpsertQuery(payload);
                     }
@@ -300,6 +320,8 @@ test('NewAPI support send_message authenticates and persists isolated conversati
         message_type: 'text',
         is_admin: false
     });
+    assert.equal(supabase.state.conversation.last_message_is_admin, false);
+    assert.equal(supabase.state.conversationUpserts[0].last_message_is_admin, false);
     assert.notEqual(supabase.state.conversation.session_id, 'newapi:user:123');
     assert.match(supabase.state.conversation.session_id, /^newapi:[0-9a-f-]{36}$/);
 });
@@ -346,6 +368,37 @@ test('NewAPI support persists nonce replay protection', async () => {
     assert.equal(replay.res.statusCode, 409);
     assert.equal(replay.payload.code, 'replayed_nonce');
     assert.equal(supabase.state.nonces.length, 1);
+});
+
+test('NewAPI support context does not create an empty conversation for an idle user', async () => {
+    const supabase = createFakeSupabase();
+    const result = await callGateway(createHandler(supabase), requestPayload({
+        action: 'context',
+        text: undefined,
+        client_message_id: undefined
+    }), { nonce: 'nonce-idle-context-012345678' });
+
+    assert.equal(result.res.statusCode, 200);
+    assert.equal(result.payload.data.conversation, undefined);
+    assert.deepEqual(result.payload.data.messages, []);
+    assert.equal(result.payload.data.unread_count, 0);
+    assert.equal(supabase.state.conversation, null);
+    assert.equal(supabase.state.conversationUpserts.length, 0);
+});
+
+test('NewAPI support messages returns an empty page before the first user message', async () => {
+    const supabase = createFakeSupabase();
+    const result = await callGateway(createHandler(supabase), requestPayload({
+        action: 'messages',
+        page: undefined,
+        text: undefined,
+        client_message_id: undefined
+    }), { nonce: 'nonce-idle-messages-012345678' });
+
+    assert.equal(result.res.statusCode, 200);
+    assert.deepEqual(result.payload.data, { messages: [], next_cursor: '' });
+    assert.equal(supabase.state.conversation, null);
+    assert.equal(supabase.state.conversationUpserts.length, 0);
 });
 
 test('NewAPI support opportunistically prunes nonce records outside the replay window', async () => {
@@ -477,7 +530,7 @@ test('NewAPI support messages remain scoped to the mapped product conversation a
     assert.equal(result.payload.data.next_cursor, '');
     assert.equal(supabase.state.queryLog.some((entry) => entry.field === 'product' && entry.value === 'newapi'), true);
     assert.equal(supabase.state.queryLog.some((entry) => entry.field === 'session_id' && entry.value === conversation.session_id), true);
-    assert.equal(Object.hasOwn(supabase.state.conversationUpserts[0], 'updated_at'), false);
+    assert.equal(supabase.state.conversationUpserts.length, 0);
 });
 
 test('NewAPI support rejects a user idempotency key already owned by an admin reply', async () => {
