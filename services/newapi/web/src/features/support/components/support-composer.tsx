@@ -69,7 +69,7 @@ export function SupportComposer({
   }
 
   return (
-    <form className='border-t p-4' onSubmit={submit}>
+    <form className='bg-background shrink-0 border-t p-4' onSubmit={submit}>
       <label className='sr-only' htmlFor='support-message'>
         {t('Message support')}
       </label>

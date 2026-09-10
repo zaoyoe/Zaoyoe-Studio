@@ -37,7 +37,7 @@ test('NewAPI support bubbles shrink to their content and keep administrator text
     );
     assert.match(
         userList,
-        /w-fit max-w-\[84%\] rounded-lg px-3 py-2 text-left/
+        /min-w-0 w-max max-w-\[84%\] rounded-lg px-3 py-2 text-left/
     );
     assert.match(
         adminInbox,
@@ -45,6 +45,29 @@ test('NewAPI support bubbles shrink to their content and keep administrator text
     );
     assert.match(
         adminInbox,
-        /w-fit max-w-full rounded-2xl px-3 py-2 text-left/
+        /min-w-0 w-max max-w-\[84%\] rounded-2xl px-3 py-2 text-left/
     );
+});
+
+test('NewAPI support launcher keeps a solid unread badge and pinned composer', () => {
+    const widget = readRepoFile('services/newapi/web/src/features/support/support-widget.tsx');
+    const composer = readRepoFile(
+        'services/newapi/web/src/features/support/components/support-composer.tsx'
+    );
+    const adminInbox = readRepoFile(
+        'services/newapi/web/src/features/support/admin-inbox.tsx'
+    );
+
+    assert.match(
+        widget,
+        /fixed right-4 bottom-6 z-40 size-11 overflow-visible rounded-full/
+    );
+    assert.match(
+        widget,
+        /bg-destructive text-destructive-foreground ring-background/
+    );
+    assert.match(widget, /bg-background shrink-0/);
+    assert.match(composer, /bg-background shrink-0 border-t p-4/);
+    assert.match(adminInbox, /h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden/);
+    assert.match(adminInbox, /bg-background shrink-0/);
 });

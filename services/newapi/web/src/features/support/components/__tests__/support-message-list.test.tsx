@@ -158,16 +158,17 @@ describe('Support message list', () => {
       'A longer customer message should remain readable.'
     )
     for (const bubble of bubbles) {
-      assert.equal(bubble.classList.contains('w-fit'), true)
+      assert.equal(bubble.classList.contains('w-max'), true)
+      assert.equal(bubble.classList.contains('max-w-[84%]'), true)
       assert.equal(bubble.classList.contains('text-left'), true)
     }
 
     const articles = [...messageList.querySelectorAll('article')]
     assert.equal(articles.length, 2)
-    assert.equal(articles[0]?.classList.contains('w-fit'), true)
-    assert.equal(articles[0]?.classList.contains('ml-auto'), false)
-    assert.equal(articles[1]?.classList.contains('w-fit'), true)
-    assert.equal(articles[1]?.classList.contains('ml-auto'), true)
+    assert.equal(articles[0]?.classList.contains('w-full'), true)
+    assert.equal(articles[0]?.classList.contains('items-start'), true)
+    assert.equal(articles[1]?.classList.contains('w-full'), true)
+    assert.equal(articles[1]?.classList.contains('items-end'), true)
 
     await act(async () => rendered.root.unmount())
     rendered.host.remove()

@@ -153,19 +153,20 @@ export function SupportWidget() {
   const triggerButton = (
     <Button
       size='icon-lg'
-      className='fixed right-4 bottom-4 z-40 rounded-full shadow-lg sm:right-6 sm:bottom-6'
+      className='fixed right-4 bottom-6 z-40 size-11 overflow-visible rounded-full shadow-lg sm:right-6 sm:bottom-8'
       aria-label={isAdmin ? t('Open support inbox') : t('Contact support')}
       onClick={isAdmin ? handleAdminOpen : undefined}
+      data-testid='support-widget-trigger'
     >
-      <MessageCircleMore className='size-5' aria-hidden='true' />
+      <MessageCircleMore className='size-6' aria-hidden='true' />
       {unreadCount > 0 && (
-        <Badge
-          variant='destructive'
-          className='absolute -top-1 -right-1 min-w-5 justify-center px-1 text-[10px] leading-none'
+        <span
+          className='bg-destructive text-destructive-foreground ring-background absolute -top-0.5 -right-0.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold tabular-nums shadow-sm ring-2'
           aria-label={t('Unread support messages')}
+          data-testid='support-unread-badge'
         >
           {unreadCount > 99 ? '99+' : unreadCount}
-        </Badge>
+        </span>
       )}
     </Button>
   )
@@ -335,23 +336,25 @@ export function SupportWidget() {
                   </section>
                 )}
               </div>
-              {sendError && (
-                <div className='px-4 pt-3'>
-                  <Alert variant='destructive'>
-                    <CircleAlert aria-hidden='true' />
-                    <AlertTitle>{t('Message was not sent')}</AlertTitle>
-                    <AlertDescription>{sendError}</AlertDescription>
-                  </Alert>
-                </div>
-              )}
-              <SupportComposer
-                value={draft}
-                onValueChange={updateDraft}
-                onSubmit={handleSend}
-                onTextareaMount={setTextareaElement}
-                sending={false}
-                disabled={conversation.isLoading || Boolean(supportError)}
-              />
+              <div className='bg-background shrink-0'>
+                {sendError && (
+                  <div className='px-4 pt-3'>
+                    <Alert variant='destructive'>
+                      <CircleAlert aria-hidden='true' />
+                      <AlertTitle>{t('Message was not sent')}</AlertTitle>
+                      <AlertDescription>{sendError}</AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+                <SupportComposer
+                  value={draft}
+                  onValueChange={updateDraft}
+                  onSubmit={handleSend}
+                  onTextareaMount={setTextareaElement}
+                  sending={false}
+                  disabled={conversation.isLoading || Boolean(supportError)}
+                />
+              </div>
             </>
           )}
         </SheetContent>

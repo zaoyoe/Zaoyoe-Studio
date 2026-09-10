@@ -285,8 +285,8 @@ function MessageHistory({
           <div
             key={message.id}
             className={cn(
-              'flex w-fit max-w-[82%] flex-col items-start gap-1',
-              isAgent && 'self-end items-end'
+              'flex w-full min-w-0 flex-col gap-1',
+              isAgent ? 'items-end' : 'items-start'
             )}
           >
             <div
@@ -302,7 +302,7 @@ function MessageHistory({
             </div>
             <div
               className={cn(
-                'w-fit max-w-full rounded-2xl px-3 py-2 text-left text-sm leading-6 whitespace-pre-wrap break-words',
+                'min-w-0 w-max max-w-[84%] rounded-2xl px-3 py-2 text-left text-sm leading-6 break-words whitespace-pre-wrap',
                 isAgent
                   ? 'bg-primary text-primary-foreground rounded-br-sm'
                   : 'bg-muted text-foreground rounded-bl-sm'
@@ -693,10 +693,10 @@ export function AdminSupportInbox() {
           </Tooltip>
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='bg-card flex min-h-0 flex-1 overflow-hidden rounded-xl border'>
+          <div className='bg-card flex h-full min-h-0 overflow-hidden rounded-xl border'>
             <section
               className={cn(
-                'min-h-0 w-full flex-col md:flex md:w-80 md:shrink-0 md:border-r',
+                'h-full min-h-0 w-full flex-col overflow-hidden md:w-80 md:shrink-0 md:border-r',
                 isMobile && !showListOnMobile ? 'hidden' : 'flex'
               )}
               aria-label={t('Support conversations')}
@@ -741,7 +741,7 @@ export function AdminSupportInbox() {
 
             <section
               className={cn(
-                'min-h-0 min-w-0 flex-1 flex-col',
+                'h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden',
                 isMobile && showListOnMobile ? 'hidden' : 'flex'
               )}
               aria-label={t('Selected conversation')}
@@ -808,71 +808,74 @@ export function AdminSupportInbox() {
                       void messagesQuery.fetchNextPage()
                     }
                   />
-                  {sendMutation.error && (
-                    <div className='px-4 pt-2'>
-                      <Alert variant='destructive'>
-                        <CircleAlert aria-hidden='true' />
-                        <AlertTitle>{t('Unable to send reply')}</AlertTitle>
-                        <AlertDescription>
-                          {t('Unable to send reply')}
-                        </AlertDescription>
-                      </Alert>
-                    </div>
-                  )}
-                  <form
-                    className='shrink-0 border-t p-4'
-                    onSubmit={handleSubmit}
-                  >
-                    <label className='sr-only' htmlFor='admin-support-reply'>
-                      {t('Reply to customer')}
-                    </label>
-                    <div className='relative'>
-                      <Textarea
-                        id='admin-support-reply'
-                        value={draft}
-                        onChange={(event) => {
-                          draftRef.current = event.target.value
-                          setDraft(event.target.value)
-                        }}
-                        onKeyDown={handleComposerKeyDown}
-                        placeholder={t('Reply to customer')}
-                        maxLength={MAX_REPLY_LENGTH}
-                        rows={3}
-                        disabled={messagesQuery.isLoading}
-                        className='min-h-22 resize-none pr-12'
-                        aria-describedby='admin-support-reply-hint'
-                      />
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type='submit'
-                              size='icon'
-                              className='absolute right-2 bottom-2'
-                              disabled={
-                                !draft.trim() || messagesQuery.isLoading
-                              }
-                              aria-label={t('Send reply')}
-                            />
-                          }
-                        >
-                          <SendHorizontal aria-hidden='true' />
-                        </TooltipTrigger>
-                        <TooltipContent>{t('Send reply')}</TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <div
-                      id='admin-support-reply-hint'
-                      className='text-muted-foreground mt-2 flex justify-between text-xs'
+                  <div className='bg-background shrink-0'>
+                    {sendMutation.error && (
+                      <div className='px-4 pt-2'>
+                        <Alert variant='destructive'>
+                          <CircleAlert aria-hidden='true' />
+                          <AlertTitle>{t('Unable to send reply')}</AlertTitle>
+                          <AlertDescription>
+                            {t('Unable to send reply')}
+                          </AlertDescription>
+                        </Alert>
+                      </div>
+                    )}
+                    <form
+                      className='border-t p-4'
+                      onSubmit={handleSubmit}
+                      data-testid='admin-support-composer'
                     >
-                      <span>
-                        {t('Press Enter to send, Shift+Enter for a new line')}
-                      </span>
-                      <span className='tabular-nums'>
-                        {draft.length}/{MAX_REPLY_LENGTH}
-                      </span>
-                    </div>
-                  </form>
+                      <label className='sr-only' htmlFor='admin-support-reply'>
+                        {t('Reply to customer')}
+                      </label>
+                      <div className='relative'>
+                        <Textarea
+                          id='admin-support-reply'
+                          value={draft}
+                          onChange={(event) => {
+                            draftRef.current = event.target.value
+                            setDraft(event.target.value)
+                          }}
+                          onKeyDown={handleComposerKeyDown}
+                          placeholder={t('Reply to customer')}
+                          maxLength={MAX_REPLY_LENGTH}
+                          rows={3}
+                          disabled={messagesQuery.isLoading}
+                          className='min-h-22 resize-none pr-12'
+                          aria-describedby='admin-support-reply-hint'
+                        />
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type='submit'
+                                size='icon'
+                                className='absolute right-2 bottom-2'
+                                disabled={
+                                  !draft.trim() || messagesQuery.isLoading
+                                }
+                                aria-label={t('Send reply')}
+                              />
+                            }
+                          >
+                            <SendHorizontal aria-hidden='true' />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('Send reply')}</TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <div
+                        id='admin-support-reply-hint'
+                        className='text-muted-foreground mt-2 flex justify-between text-xs'
+                      >
+                        <span>
+                          {t('Press Enter to send, Shift+Enter for a new line')}
+                        </span>
+                        <span className='tabular-nums'>
+                          {draft.length}/{MAX_REPLY_LENGTH}
+                        </span>
+                      </div>
+                    </form>
+                  </div>
                 </>
               ) : (
                 <Empty className='min-h-0 flex-1 rounded-none border-0'>

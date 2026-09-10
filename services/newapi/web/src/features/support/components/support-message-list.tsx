@@ -260,8 +260,8 @@ export function SupportMessageList({
           <article
             key={message.id}
             className={cn(
-              'flex w-fit max-w-full flex-col items-start gap-1',
-              isUser && 'ml-auto items-end'
+              'flex w-full min-w-0 flex-col gap-1',
+              isUser ? 'items-end' : 'items-start'
             )}
           >
             <div
@@ -301,7 +301,7 @@ export function SupportMessageList({
             ) : (
               <p
                 className={cn(
-                  'w-fit max-w-[84%] rounded-lg px-3 py-2 text-left text-sm leading-5 break-words whitespace-pre-wrap',
+                  'min-w-0 w-max max-w-[84%] rounded-lg px-3 py-2 text-left text-sm leading-5 break-words whitespace-pre-wrap',
                   isUser && 'bg-primary text-primary-foreground rounded-tr-sm',
                   !isUser &&
                     !isSystem &&
