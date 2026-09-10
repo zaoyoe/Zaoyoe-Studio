@@ -5327,6 +5327,7 @@
     "Send reply": "傳送回覆",
     "Back to conversations": "返回對話列表",
     "Load older messages": "載入較早訊息",
+    "Jump to latest message": "跳至最新訊息",
     "Loading older messages": "正在載入較早訊息",
     "Unable to load older messages": "無法載入較早訊息",
     "Press Enter to send, Shift+Enter for a new line": "按 Enter 傳送，按 Shift+Enter 換行",

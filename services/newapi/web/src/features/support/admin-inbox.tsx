@@ -23,6 +23,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import {
+  ArrowDown,
   ArrowLeft,
   ChevronDown,
   ChevronUp,
@@ -37,6 +38,7 @@ import {
 import {
   type FormEvent,
   type KeyboardEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -75,6 +77,7 @@ import {
   type AdminSupportMessage,
   type AdminSupportMessagesPage,
 } from './admin-api'
+import { useStickToLatestMessage } from './hooks/use-stick-to-latest-message'
 
 const ADMIN_SUPPORT_QUERY_KEY = ['admin-support-conversations'] as const
 const ADMIN_SUPPORT_MESSAGES_QUERY_KEY = 'admin-support-messages'
@@ -175,19 +178,25 @@ function MessageHistory({
   onLoadOlderMessages: () => void
 }) {
   const { t } = useTranslation()
-  const endRef = useRef<HTMLDivElement>(null)
-  const hasScrolledInitialMessagesRef = useRef(false)
+  const latestMessageID = messages.at(-1)?.id
+  const {
+    messageListRef,
+    endRef,
+    hasNewMessages,
+    scrollToLatest,
+    handleScroll,
+    captureOlderMessagesScrollHeight,
+  } = useStickToLatestMessage({
+    latestMessageID,
+    loading,
+    loadingOlderMessages,
+    messagesLength: messages.length,
+  })
 
-  useEffect(() => {
-    if (loading) {
-      hasScrolledInitialMessagesRef.current = false
-      return
-    }
-    if (!hasScrolledInitialMessagesRef.current && messages.length > 0) {
-      endRef.current?.scrollIntoView({ block: 'end' })
-      hasScrolledInitialMessagesRef.current = true
-    }
-  }, [loading, messages.length])
+  const handleLoadOlderMessages = useCallback(() => {
+    captureOlderMessagesScrollHeight()
+    onLoadOlderMessages()
+  }, [captureOlderMessagesScrollHeight, onLoadOlderMessages])
 
   if (loading) {
     return (
@@ -244,11 +253,13 @@ function MessageHistory({
 
   return (
     <div
-      className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-5'
+      className='flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-5 [overflow-anchor:none]'
       role='log'
       aria-live='polite'
       aria-label={t('Conversation messages')}
       data-testid='admin-support-message-list'
+      ref={messageListRef}
+      onScroll={handleScroll}
     >
       {hasOlderMessages && (
         <div className='flex w-full flex-col items-center gap-2'>
@@ -262,7 +273,7 @@ function MessageHistory({
             size='sm'
             variant='ghost'
             disabled={loadingOlderMessages}
-            onClick={onLoadOlderMessages}
+            onClick={handleLoadOlderMessages}
           >
             {loadingOlderMessages ? (
               <LoaderCircle
@@ -313,7 +324,20 @@ function MessageHistory({
           </div>
         )
       })}
-      <div ref={endRef} />
+      {hasNewMessages && (
+        <div className='sticky bottom-0 z-10 flex w-full justify-center pb-1'>
+          <Button
+            type='button'
+            size='sm'
+            className='shadow-sm'
+            onClick={scrollToLatest}
+          >
+            <ArrowDown className='size-4' aria-hidden='true' />
+            {t('Jump to latest message')}
+          </Button>
+        </div>
+      )}
+      <div ref={endRef} aria-hidden='true' />
     </div>
   )
 }
