@@ -35,3 +35,16 @@ test('Admin Studio treats a NewAPI identity as external rather than a Supabase u
         assert.equal(source.includes(marker), true, `missing NewAPI identity isolation marker: ${marker}`);
     }
 });
+
+test('homepage admin chat widget shows a NewAPI source badge next to the contact name', () => {
+    const source = readRepoFile('js/components/ChatWidget.js');
+
+    assert.equal(source.includes("sourceBadgeEl.className = 'session-badge session-badge--newapi';"), true);
+    assert.equal(source.includes("sourceBadgeEl.textContent = 'NewAPI';"), true);
+    assert.equal(source.includes('.session-badge--newapi {'), true);
+    assert.equal(source.includes("product: this.getSessionProduct(this.currentSessionInfo),"), true);
+    assert.equal(
+        source.includes(".select('session_id, created_at, content, is_admin, user_id, message_type, product, source, external_user_id, external_username, external_email, page_context'),"),
+        true
+    );
+});

@@ -90,3 +90,16 @@ test('NewAPI admin inbox follows the same latest-message viewport as the user wi
     assert.match(adminInbox, /Jump to latest message/);
     assert.match(adminInbox, /onClick=\{handleLoadOlderMessages\}/);
 });
+
+test('NewAPI admin inbox user bubbles are visibly gray and omit the customer label', () => {
+    const adminInbox = readRepoFile(
+        'services/newapi/web/src/features/support/admin-inbox.tsx'
+    );
+
+    assert.match(adminInbox, /\{isAgent \? <span>\{t\('You'\)\}<\/span> : null\}/);
+    assert.doesNotMatch(adminInbox, /isAgent \? t\('You'\) : t\('Customer'\)/);
+    assert.match(
+        adminInbox,
+        /bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm/
+    );
+});
