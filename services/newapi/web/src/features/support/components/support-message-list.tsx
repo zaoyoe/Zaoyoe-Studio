@@ -33,6 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 import { useStickToLatestMessage } from '../hooks/use-stick-to-latest-message'
+import { formatSupportMessageTime } from '../lib/format-support-message-time'
 import { getSupportImageUrl } from '../lib/support-image-url'
 import type { SupportMessage } from '../types'
 
@@ -55,18 +56,6 @@ function messageAuthorLabel(
   if (author === 'agent') return t('Support team')
   if (author === 'system') return t('Support')
   return t('You')
-}
-
-function formatMessageTime(value: string): string | null {
-  const timestamp = new Date(value)
-  if (Number.isNaN(timestamp.getTime())) return null
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(timestamp)
 }
 
 export function SupportMessageList({
@@ -195,12 +184,15 @@ export function SupportMessageList({
           </Button>
         </div>
       )}
-      {messages.map((message) => {
+      {messages.map((message, index) => {
         const isUser = message.author === 'user'
         const isSystem = message.author === 'system'
         const imageUrl =
           message.kind === 'image' ? getSupportImageUrl(message.text) : null
-        const formattedTime = formatMessageTime(message.createdAt)
+        const formattedTime = formatSupportMessageTime(
+          message.createdAt,
+          messages[index - 1]?.createdAt
+        )
 
         return (
           <article

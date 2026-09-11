@@ -137,3 +137,20 @@ test('NewAPI support widget and inbox send compressed images through the gateway
     assert.match(adminInbox, /<img/);
     assert.doesNotMatch(adminInbox, /t\('You'\)/);
 });
+
+test('NewAPI support bubbles hide the calendar date for later same-day messages', () => {
+    const userList = readRepoFile(
+        'services/newapi/web/src/features/support/components/support-message-list.tsx'
+    );
+    const adminInbox = readRepoFile(
+        'services/newapi/web/src/features/support/admin-inbox.tsx'
+    );
+    const helper = readRepoFile(
+        'services/newapi/web/src/features/support/lib/format-support-message-time.ts'
+    );
+
+    assert.match(helper, /localDayKey\(previous\) === localDayKey\(timestamp\)/);
+    assert.match(userList, /formatSupportMessageTime\(/);
+    assert.match(adminInbox, /formatSupportMessageTime\(/);
+    assert.match(adminInbox, /formatSupportConversationTime\(/);
+});

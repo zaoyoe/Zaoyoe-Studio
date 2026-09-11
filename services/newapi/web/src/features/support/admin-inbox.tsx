@@ -81,6 +81,10 @@ import {
 } from './admin-api'
 import { useStickToLatestMessage } from './hooks/use-stick-to-latest-message'
 import { compressSupportImage } from './lib/compress-support-image'
+import {
+  formatSupportConversationTime,
+  formatSupportMessageTime,
+} from './lib/format-support-message-time'
 import { getSupportImageUrl } from './lib/support-image-url'
 
 const ADMIN_SUPPORT_QUERY_KEY = ['admin-support-conversations'] as const
@@ -124,18 +128,6 @@ function mergeMessages(
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
     return timestampDifference || left.id.localeCompare(right.id)
   })
-}
-
-function formatConversationTime(value?: string): string | null {
-  if (!value) return null
-  const timestamp = new Date(value)
-  if (Number.isNaN(timestamp.getTime())) return null
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(timestamp)
 }
 
 function conversationName(conversation: AdminSupportConversation): string {
@@ -293,9 +285,12 @@ function MessageHistory({
           </Button>
         </div>
       )}
-      {messages.map((message) => {
+      {messages.map((message, index) => {
         const isAgent = message.author === 'agent'
-        const timestamp = formatConversationTime(message.createdAt)
+        const timestamp = formatSupportMessageTime(
+          message.createdAt,
+          messages[index - 1]?.createdAt
+        )
         const imageUrl =
           message.kind === 'image' ? getSupportImageUrl(message.text) : null
         return (
@@ -434,7 +429,9 @@ function ConversationList({
       <div className='space-y-1'>
         {conversations.map((conversation) => {
           const name = conversationName(conversation)
-          const timestamp = formatConversationTime(conversation.updatedAt)
+          const timestamp = formatSupportConversationTime(
+            conversation.updatedAt
+          )
           return (
             <button
               key={conversation.id}
