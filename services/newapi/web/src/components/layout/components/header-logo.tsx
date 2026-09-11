@@ -16,7 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
+
+import { isExternalUrl } from '@/lib/main-site'
 import { cn } from '@/lib/utils'
+
+type BrandHomeLinkProps = {
+  homeUrl: string
+  className?: string
+  children: ReactNode
+  onClick?: () => void
+}
 
 interface HeaderLogoProps {
   src: string
@@ -24,6 +35,36 @@ interface HeaderLogoProps {
   loading: boolean
   logoLoaded: boolean
   className?: string
+}
+
+/**
+ * Public/sidebar brand link that can point at an internal route or the main site.
+ */
+export function BrandHomeLink({
+  homeUrl,
+  className,
+  children,
+  onClick,
+}: BrandHomeLinkProps) {
+  if (isExternalUrl(homeUrl)) {
+    return (
+      <a
+        href={homeUrl}
+        target='_blank'
+        rel='noopener noreferrer'
+        className={className}
+        onClick={onClick}
+      >
+        {children}
+      </a>
+    )
+  }
+
+  return (
+    <Link to={homeUrl} className={className} onClick={onClick}>
+      {children}
+    </Link>
+  )
 }
 
 /**
