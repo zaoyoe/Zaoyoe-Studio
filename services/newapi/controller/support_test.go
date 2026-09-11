@@ -72,6 +72,24 @@ func TestSupportEndpointsRequireDashboardSessionAndFailClosed(t *testing.T) {
 			wantStatus: http.StatusServiceUnavailable,
 			wantCode:   "SUPPORT_GATEWAY_UNAVAILABLE",
 		},
+		{
+			name:       "image without text is accepted before the gateway check",
+			method:     http.MethodPost,
+			path:       "/api/user/support/messages",
+			token:      accessToken,
+			body:       `{"message_type":"image","image_data":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","client_message_id":"image-1","page":{"path":"/dashboard"}}`,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "SUPPORT_GATEWAY_UNAVAILABLE",
+		},
+		{
+			name:       "image URL is rejected instead of image_data",
+			method:     http.MethodPost,
+			path:       "/api/user/support/messages",
+			token:      accessToken,
+			body:       `{"message_type":"image","image_data":"https://cdn.fatherkey.com/chat/not-a-data-url.png","client_message_id":"image-bad","page":{"path":"/dashboard"}}`,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "SUPPORT_INVALID_REQUEST",
+		},
 	}
 
 	for _, test := range tests {
@@ -108,6 +126,16 @@ func TestNormalizeSupportMessageTextAcceptsCanonicalAndLegacyField(t *testing.T)
 
 	_, err = normalizeSupportMessageText("canonical", "different legacy content")
 	require.Error(t, err)
+}
+
+func TestParseSupportMessageWriteAcceptsImageWithoutText(t *testing.T) {
+	parsed, err := parseSupportMessageWrite([]byte(`{"message_type":"image","image_data":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","client_message_id":"image-1","page":{"path":"/dashboard"}}`), true)
+	require.NoError(t, err)
+	assert.Equal(t, "image", parsed.messageType)
+	assert.Empty(t, parsed.text)
+	assert.True(t, strings.HasPrefix(parsed.imageData, "data:image/png;base64,"))
+	require.NotNil(t, parsed.page)
+	assert.Equal(t, "/dashboard", parsed.page.Path)
 }
 
 func TestSupportMessageListQueryCapsHistoryAtFiftyMessages(t *testing.T) {

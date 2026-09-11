@@ -277,11 +277,12 @@ async function callGateway(handler, payload, {
     return { req, res, payload: res.json() };
 }
 
-function createHandler(supabase) {
+function createHandler(supabase, extra = {}) {
     return createNewApiSupportHandler({
         env: { NEWAPI_SUPPORT_GATEWAY_HMAC_SECRET: SECRET },
         now: NOW_MS,
-        getSupabaseAdmin: () => supabase
+        getSupabaseAdmin: () => supabase,
+        ...extra
     });
 }
 
@@ -679,4 +680,86 @@ test('NewAPI support rejects invalid product and external user identity', async 
 test('local preview captures only the NewAPI support gateway raw body', () => {
     assert.equal(shouldCaptureNewApiSupportRawBody({ originalUrl: '/api/newapi-support?test=1' }), true);
     assert.equal(shouldCaptureNewApiSupportRawBody({ originalUrl: '/api/support' }), false);
+});
+
+const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const IMAGE_CDN_URL = 'https://cdn.fatherkey.com/chat/newapi-session/pixel.png';
+
+test('NewAPI support send_message uploads an image and persists the public CDN URL', async () => {
+    const supabase = createFakeSupabase();
+    const uploads = [];
+    const handler = createHandler(supabase, {
+        uploadChatImage: async (input) => {
+            uploads.push(input);
+            return IMAGE_CDN_URL;
+        }
+    });
+    const result = await callGateway(handler, requestPayload({
+        text: undefined,
+        message_type: 'image',
+        image_data: PNG_DATA_URL,
+        client_message_id: 'image-1'
+    }), { nonce: 'nonce-image-upload-01234567' });
+
+    assert.equal(result.res.statusCode, 200);
+    assert.equal(result.payload.success, true);
+    assert.equal(result.payload.data.message_type, 'image');
+    assert.equal(result.payload.data.text, IMAGE_CDN_URL);
+    assert.equal(result.payload.data.author, 'user');
+    assert.equal(uploads.length, 1);
+    assert.equal(uploads[0].imageData, PNG_DATA_URL);
+    assert.match(uploads[0].sessionId, /^newapi:[0-9a-f-]{36}$/);
+    assert.equal(supabase.state.messageInserts.length, 1);
+    assert.equal(supabase.state.messageInserts[0].content, IMAGE_CDN_URL);
+    assert.equal(supabase.state.messageInserts[0].message_type, 'image');
+    assert.equal(JSON.stringify(supabase.state.messageInserts[0]).includes('image_data'), false);
+    assert.equal(JSON.stringify(supabase.state.messageInserts[0]).includes(PNG_DATA_URL), false);
+    assert.equal(JSON.stringify(supabase.state.messageInserts[0]).includes('base64,'), false);
+});
+
+test('NewAPI support does not re-upload an image for a retried client_message_id', async () => {
+    const supabase = createFakeSupabase();
+    const uploads = [];
+    const handler = createHandler(supabase, {
+        uploadChatImage: async (input) => {
+            uploads.push(input);
+            return IMAGE_CDN_URL;
+        }
+    });
+    const payload = requestPayload({
+        text: undefined,
+        message_type: 'image',
+        image_data: PNG_DATA_URL,
+        client_message_id: 'image-retry-1'
+    });
+
+    const first = await callGateway(handler, payload, { nonce: 'nonce-image-retry-01234567' });
+    const second = await callGateway(handler, payload, { nonce: 'nonce-image-retry-98765432' });
+
+    assert.equal(first.res.statusCode, 200);
+    assert.equal(second.res.statusCode, 200);
+    assert.equal(first.payload.data.id, second.payload.data.id);
+    assert.equal(uploads.length, 1);
+    assert.equal(supabase.state.messageInserts.length, 1);
+});
+
+test('NewAPI support rejects invalid image_data before uploading', async () => {
+    const supabase = createFakeSupabase();
+    const uploads = [];
+    const result = await callGateway(createHandler(supabase, {
+        uploadChatImage: async (input) => {
+            uploads.push(input);
+            return IMAGE_CDN_URL;
+        }
+    }), requestPayload({
+        text: undefined,
+        message_type: 'image',
+        image_data: 'https://cdn.fatherkey.com/chat/not-a-data-url.png',
+        client_message_id: 'image-invalid-1'
+    }), { nonce: 'nonce-image-invalid-012345' });
+
+    assert.equal(result.res.statusCode, 400);
+    assert.equal(result.payload.code, 'invalid_request');
+    assert.equal(uploads.length, 0);
+    assert.equal(supabase.state.messageInserts.length, 0);
 });

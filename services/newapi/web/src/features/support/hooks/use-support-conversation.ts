@@ -193,9 +193,12 @@ export function useSupportConversation(
     onMutate: (input) => {
       const optimisticMessage: SupportMessage = {
         id: `pending-${input.clientMessageId}`,
-        text: input.text,
+        text:
+          input.kind === 'image'
+            ? (input.imageData ?? input.text ?? '')
+            : (input.text ?? ''),
         author: 'user',
-        kind: 'text',
+        kind: input.kind === 'image' ? 'image' : 'text',
         createdAt: new Date().toISOString(),
         clientMessageId: input.clientMessageId,
       }

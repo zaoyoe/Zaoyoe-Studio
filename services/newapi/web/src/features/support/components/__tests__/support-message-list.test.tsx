@@ -29,6 +29,8 @@ const domGlobals = [
   'HTMLElement',
   'HTMLButtonElement',
   'HTMLTextAreaElement',
+  'HTMLImageElement',
+  'HTMLAnchorElement',
   'SVGElement',
   'Node',
   'Element',
@@ -88,12 +90,39 @@ const reactTestGlobals = globalThis as typeof globalThis & {
 }
 reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true
 
+type SupportMessageListMessage = {
+  id: string
+  text: string
+  author: 'user' | 'agent' | 'system'
+  kind: 'text' | 'image'
+  createdAt: string
+}
+
 type RenderedMessageList = {
   host: HTMLDivElement
   root: ReturnType<typeof createRoot>
 }
 
-async function renderMessageList(): Promise<RenderedMessageList> {
+const defaultMessages: SupportMessageListMessage[] = [
+  {
+    id: 'agent-1',
+    text: 'Hi',
+    author: 'agent',
+    kind: 'text',
+    createdAt: '2026-09-09T12:00:00.000Z',
+  },
+  {
+    id: 'user-1',
+    text: 'A longer customer message should remain readable.',
+    author: 'user',
+    kind: 'text',
+    createdAt: '2026-09-09T12:01:00.000Z',
+  },
+]
+
+async function renderMessageList(
+  messages: SupportMessageListMessage[] = defaultMessages
+): Promise<RenderedMessageList> {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -102,22 +131,7 @@ async function renderMessageList(): Promise<RenderedMessageList> {
     root.render(
       <I18nextProvider i18n={i18n}>
         <SupportMessageList
-          messages={[
-            {
-              id: 'agent-1',
-              text: 'Hi',
-              author: 'agent',
-              kind: 'text',
-              createdAt: '2026-09-09T12:00:00.000Z',
-            },
-            {
-              id: 'user-1',
-              text: 'A longer customer message should remain readable.',
-              author: 'user',
-              kind: 'text',
-              createdAt: '2026-09-09T12:01:00.000Z',
-            },
-          ]}
+          messages={messages}
           loading={false}
           error={null}
           hasOlderMessages={false}
@@ -169,6 +183,61 @@ describe('Support message list', () => {
     assert.equal(articles[0]?.classList.contains('items-start'), true)
     assert.equal(articles[1]?.classList.contains('w-full'), true)
     assert.equal(articles[1]?.classList.contains('items-end'), true)
+
+    await act(async () => rendered.root.unmount())
+    rendered.host.remove()
+  })
+
+  test('renders first-party images for both sides and falls back r2.dev URLs to text', async () => {
+    const rendered = await renderMessageList([
+      {
+        id: 'agent-image',
+        text: 'https://cdn.fatherkey.com/chat/session/agent.webp',
+        author: 'agent',
+        kind: 'image',
+        createdAt: '2026-09-09T12:00:00.000Z',
+      },
+      {
+        id: 'user-image',
+        text: 'https://cdn.fatherkey.com/chat/session/user.webp',
+        author: 'user',
+        kind: 'image',
+        createdAt: '2026-09-09T12:01:00.000Z',
+      },
+      {
+        id: 'blocked-image',
+        text: 'https://pub-123.r2.dev/chat/session/pixel.png',
+        author: 'user',
+        kind: 'image',
+        createdAt: '2026-09-09T12:02:00.000Z',
+      },
+    ])
+    const messageList = rendered.host.querySelector<HTMLElement>(
+      '[data-testid="support-message-list"]'
+    )
+    assert.ok(messageList)
+
+    const images = [...messageList.querySelectorAll('img')]
+    assert.equal(images.length, 2)
+    assert.equal(
+      images[0]?.getAttribute('src'),
+      'https://cdn.fatherkey.com/chat/session/agent.webp'
+    )
+    assert.equal(
+      images[1]?.getAttribute('src'),
+      'https://cdn.fatherkey.com/chat/session/user.webp'
+    )
+    for (const image of images) {
+      assert.equal(image.getAttribute('alt'), 'Support image')
+    }
+
+    const fallbackBubbles = [...messageList.querySelectorAll('p')]
+    assert.equal(fallbackBubbles.length, 1)
+    assert.equal(
+      fallbackBubbles[0]?.textContent,
+      'https://pub-123.r2.dev/chat/session/pixel.png'
+    )
+    assert.equal(messageList.querySelector('img[src*="r2.dev"]'), null)
 
     await act(async () => rendered.root.unmount())
     rendered.host.remove()

@@ -23,17 +23,19 @@ const (
 	SupportGatewayHMACSecretEnv     = "NEWAPI_SUPPORT_GATEWAY_HMAC_SECRET"
 	SupportGatewayTimeoutSecondsEnv = "NEWAPI_SUPPORT_GATEWAY_TIMEOUT_SECONDS"
 
-	supportGatewayProduct          = "newapi"
-	supportGatewayProtocolVersion  = 1
-	defaultSupportGatewayTimeout   = 8 * time.Second
-	maxSupportGatewayTimeout       = 30 * time.Second
-	maxSupportGatewayResponseBytes = 1 << 20
-	maxSupportGatewayLimit         = 50
-	maxSupportGatewayCursorBytes   = 256
-	maxSupportGatewayTextRunes     = 4000
-	maxSupportGatewayTextBytes     = 16 << 10
-	maxSupportGatewayClientIDBytes = 128
-	maxSupportGatewayPagePathRunes = 512
+	supportGatewayProduct           = "newapi"
+	supportGatewayProtocolVersion   = 1
+	defaultSupportGatewayTimeout    = 8 * time.Second
+	imageSupportGatewayTimeout      = 20 * time.Second
+	maxSupportGatewayTimeout        = 30 * time.Second
+	maxSupportGatewayResponseBytes  = 1 << 20
+	maxSupportGatewayLimit          = 50
+	maxSupportGatewayCursorBytes    = 256
+	maxSupportGatewayTextRunes      = 4000
+	maxSupportGatewayTextBytes      = 16 << 10
+	maxSupportGatewayImageDataBytes = 4718592
+	maxSupportGatewayClientIDBytes  = 128
+	maxSupportGatewayPagePathRunes  = 512
 )
 
 var (
@@ -83,6 +85,8 @@ type SupportGatewayRequest struct {
 	Principal       SupportGatewayPrincipal    `json:"principal"`
 	Page            *SupportGatewayPageContext `json:"page,omitempty"`
 	Text            string                     `json:"text,omitempty"`
+	MessageType     string                     `json:"message_type,omitempty"`
+	ImageData       string                     `json:"image_data,omitempty"`
 	ClientMessageID string                     `json:"client_message_id,omitempty"`
 	Cursor          string                     `json:"cursor,omitempty"`
 	Limit           int                        `json:"limit,omitempty"`
@@ -208,7 +212,7 @@ func (gateway *SupportGateway) Dispatch(ctx context.Context, request SupportGate
 	httpRequest.Header.Set("X-NewAPI-Support-Nonce", nonce)
 	httpRequest.Header.Set("X-NewAPI-Support-Signature", supportGatewaySignature(gateway.secret, timestamp, nonce, payload))
 
-	httpResponse, err := gateway.client.Do(httpRequest)
+	httpResponse, err := supportGatewayClientForRequest(gateway, request).Do(httpRequest)
 	if err != nil {
 		return nil, fmt.Errorf("%w: request failed", ErrSupportGatewayUnavailable)
 	}
@@ -267,13 +271,13 @@ func isSupportGatewayRequestValid(request SupportGatewayRequest) bool {
 	case SupportGatewayActionMessages:
 		return isSupportGatewayListRequestValid(request.Limit, request.Cursor)
 	case SupportGatewayActionSend:
-		return isSupportGatewayPageValid(request.Page, true) && isSupportGatewayTextValid(request.Text) && isSupportGatewayClientMessageIDValid(request.ClientMessageID)
+		return isSupportGatewayPageValid(request.Page, true) && isSupportGatewayClientMessageIDValid(request.ClientMessageID) && isSupportGatewaySendPayloadValid(request)
 	case SupportGatewayActionAdminConversations:
 		return isSupportGatewayListRequestValid(request.Limit, request.Cursor)
 	case SupportGatewayActionAdminMessages:
 		return isSupportGatewayUUID(request.ConversationID) && isSupportGatewayListRequestValid(request.Limit, request.Cursor)
 	case SupportGatewayActionAdminSend:
-		return isSupportGatewayUUID(request.ConversationID) && isSupportGatewayTextValid(request.Text) && isSupportGatewayClientMessageIDValid(request.ClientMessageID) && isSupportGatewayPageValid(request.Page, false)
+		return isSupportGatewayUUID(request.ConversationID) && isSupportGatewayClientMessageIDValid(request.ClientMessageID) && isSupportGatewayPageValid(request.Page, false) && isSupportGatewaySendPayloadValid(request)
 	default:
 		return false
 	}
@@ -314,6 +318,45 @@ func isSupportGatewayPageValid(page *SupportGatewayPageContext, required bool) b
 func isSupportGatewayTextValid(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	return trimmed != "" && utf8.RuneCountInString(trimmed) <= maxSupportGatewayTextRunes && len([]byte(trimmed)) <= maxSupportGatewayTextBytes
+}
+
+func isSupportGatewayImageMessage(request SupportGatewayRequest) bool {
+	return strings.EqualFold(strings.TrimSpace(request.MessageType), "image")
+}
+
+func isSupportGatewayImageDataValid(imageData string) bool {
+	trimmed := strings.TrimSpace(imageData)
+	if trimmed == "" || len(trimmed) > maxSupportGatewayImageDataBytes {
+		return false
+	}
+	prefix, data, ok := strings.Cut(trimmed, ";base64,")
+	return ok && data != "" && strings.HasPrefix(prefix, "data:image/")
+}
+
+func isSupportGatewaySendPayloadValid(request SupportGatewayRequest) bool {
+	if isSupportGatewayImageMessage(request) {
+		return isSupportGatewayImageDataValid(request.ImageData)
+	}
+	return isSupportGatewayTextValid(request.Text)
+}
+
+func supportGatewayClientForRequest(gateway *SupportGateway, request SupportGatewayRequest) *http.Client {
+	if gateway == nil || gateway.client == nil {
+		return http.DefaultClient
+	}
+	if !isSupportGatewayImageMessage(request) {
+		return gateway.client
+	}
+	timeout := imageSupportGatewayTimeout
+	if gateway.client.Timeout > timeout {
+		timeout = gateway.client.Timeout
+	}
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     gateway.client.Transport,
+		CheckRedirect: gateway.client.CheckRedirect,
+		Jar:           gateway.client.Jar,
+	}
 }
 
 func isSupportGatewayClientMessageIDValid(value string) bool {

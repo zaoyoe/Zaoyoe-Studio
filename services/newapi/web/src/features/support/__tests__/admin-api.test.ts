@@ -113,6 +113,46 @@ describe('admin support API contract', () => {
       /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
     )
     assert.equal(requests[0]?.body.text, 'Acknowledged')
+    assert.equal('message_type' in (requests[0]?.body ?? {}), false)
+    assert.equal('image_data' in (requests[0]?.body ?? {}), false)
+  })
+
+  test('sends an administrator image without a text field', async () => {
+    const imageData =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+    api.post = (async (url: string, body: Record<string, unknown>) => {
+      requests.push({ url, body })
+      return {
+        data: {
+          success: true,
+          data: {
+            id: 'message-image-1',
+            content: 'https://cdn.fatherkey.com/chat/session/pixel.webp',
+            author: 'admin',
+            message_type: 'image',
+            created_at: '2026-09-09T12:03:00.000Z',
+          },
+        },
+      }
+    }) as typeof api.post
+
+    const message = await sendAdminSupportMessage(
+      '123e4567-e89b-12d3-a456-426614174000',
+      '',
+      { kind: 'image', imageData }
+    )
+
+    assert.ok(message)
+    assert.equal(message.kind, 'image')
+    assert.equal(
+      message.text,
+      'https://cdn.fatherkey.com/chat/session/pixel.webp'
+    )
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0]?.body.message_type, 'image')
+    assert.equal(requests[0]?.body.image_data, imageData)
+    assert.equal('text' in (requests[0]?.body ?? {}), false)
   })
 
   test('forwards cursors and reads paginated administrator responses', async () => {

@@ -17,8 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { LoaderCircle, SendHorizontal } from 'lucide-react'
-import type { FormEvent, KeyboardEvent } from 'react'
+import { ImagePlus, LoaderCircle, SendHorizontal } from 'lucide-react'
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useRef,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -35,21 +40,29 @@ type SupportComposerProps = {
   value: string
   disabled: boolean
   sending: boolean
+  attachingImage?: boolean
   onTextareaMount: (element: HTMLTextAreaElement | null) => void
   onValueChange: (value: string) => void
   onSubmit: () => void
+  onImageSelected?: (file: File) => void
 }
 
 export function SupportComposer({
   value,
   disabled,
   sending,
+  attachingImage = false,
   onTextareaMount,
   onValueChange,
   onSubmit,
+  onImageSelected,
 }: SupportComposerProps) {
   const { t } = useTranslation()
-  const canSubmit = value.trim().length > 0 && !disabled && !sending
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const canSubmit =
+    value.trim().length > 0 && !disabled && !sending && !attachingImage
+  const canAttachImage =
+    Boolean(onImageSelected) && !disabled && !sending && !attachingImage
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -68,11 +81,27 @@ export function SupportComposer({
     if (canSubmit) onSubmit()
   }
 
+  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file && canAttachImage) onImageSelected?.(file)
+  }
+
   return (
     <form className='bg-background shrink-0 border-t p-4' onSubmit={submit}>
       <label className='sr-only' htmlFor='support-message'>
         {t('Message support')}
       </label>
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='image/*'
+        className='sr-only'
+        tabIndex={-1}
+        disabled={!canAttachImage}
+        aria-label={t('Attach image')}
+        onChange={handleImageChange}
+      />
       <div className='relative'>
         <Textarea
           ref={onTextareaMount}
@@ -84,9 +113,31 @@ export function SupportComposer({
           disabled={disabled || sending}
           maxLength={SUPPORT_MESSAGE_MAX_LENGTH}
           rows={3}
-          className='min-h-22 resize-none pr-12'
+          className='min-h-22 resize-none pr-24'
           aria-describedby='support-message-hint'
         />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                size='icon'
+                variant='ghost'
+                className='absolute right-12 bottom-2'
+                disabled={!canAttachImage}
+                aria-label={t('Attach image')}
+                onClick={() => fileInputRef.current?.click()}
+              />
+            }
+          >
+            {attachingImage ? (
+              <LoaderCircle className='animate-spin' aria-hidden='true' />
+            ) : (
+              <ImagePlus aria-hidden='true' />
+            )}
+          </TooltipTrigger>
+          <TooltipContent>{t('Attach image')}</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger
             render={

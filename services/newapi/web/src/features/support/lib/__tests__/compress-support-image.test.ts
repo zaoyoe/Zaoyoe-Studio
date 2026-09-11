@@ -17,31 +17,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import path from 'node:path'
 import { describe, test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 
-const inboxSource = fs.readFileSync(
-  path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '..',
-    'admin-inbox.tsx'
-  ),
-  'utf8'
-)
+import { compressSupportImage } from '../compress-support-image'
 
-describe('admin inbox presentation', () => {
-  test('incoming customer bubbles omit the customer label and use a stronger gray', () => {
-    assert.doesNotMatch(
-      inboxSource,
-      /\{isAgent \? <span>\{t\('You'\)\}<\/span> : null\}/
+describe('compress support image', () => {
+  test('rejects files that are not images before reading bytes', async () => {
+    await assert.rejects(
+      () =>
+        compressSupportImage(
+          new File(['not-an-image'], 'notes.txt', { type: 'text/plain' })
+        ),
+      /Unable to upload image/
     )
-    assert.doesNotMatch(inboxSource, /t\('You'\)/)
-    assert.doesNotMatch(inboxSource, /isAgent \? t\('You'\) : t\('Customer'\)/)
-    assert.match(
-      inboxSource,
-      /bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm/
+  })
+
+  test('rejects empty image files', async () => {
+    await assert.rejects(
+      () =>
+        compressSupportImage(new File([], 'empty.png', { type: 'image/png' })),
+      /Unable to upload image/
     )
   })
 })
