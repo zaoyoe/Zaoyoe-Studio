@@ -60,7 +60,7 @@ test('NewAPI support launcher keeps a solid unread badge and pinned composer', (
 
     assert.match(
         widget,
-        /fixed right-4 bottom-10 z-40 size-11 overflow-visible rounded-full/
+        /fixed right-4 bottom-14 z-40 size-11 overflow-visible rounded-full shadow-lg sm:right-6 sm:bottom-16/
     );
     assert.match(
         widget,
