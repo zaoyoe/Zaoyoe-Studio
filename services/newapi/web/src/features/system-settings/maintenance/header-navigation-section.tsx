@@ -53,6 +53,8 @@ const headerNavSchema = z.object({
   console: z.boolean(),
   pricingEnabled: z.boolean(),
   pricingRequireAuth: z.boolean(),
+  statusEnabled: z.boolean(),
+  statusRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
   rankingsRequireAuth: z.boolean(),
   docs: z.boolean(),
@@ -81,6 +83,14 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.pricing?.requireAuth === undefined
       ? HEADER_NAV_DEFAULT.pricing.requireAuth
       : Boolean(config.pricing.requireAuth),
+  statusEnabled:
+    config.status?.enabled === undefined
+      ? HEADER_NAV_DEFAULT.status.enabled
+      : Boolean(config.status.enabled),
+  statusRequireAuth:
+    config.status?.requireAuth === undefined
+      ? HEADER_NAV_DEFAULT.status.requireAuth
+      : Boolean(config.status.requireAuth),
   rankingsEnabled:
     config.rankings?.enabled === undefined
       ? HEADER_NAV_DEFAULT.rankings.enabled
@@ -125,6 +135,11 @@ export function HeaderNavigationSection({
         ...(config.pricing ?? HEADER_NAV_DEFAULT.pricing),
         enabled: values.pricingEnabled,
         requireAuth: values.pricingRequireAuth,
+      },
+      status: {
+        ...(config.status ?? HEADER_NAV_DEFAULT.status),
+        enabled: values.statusEnabled,
+        requireAuth: values.statusRequireAuth,
       },
       rankings: {
         ...(config.rankings ?? HEADER_NAV_DEFAULT.rankings),
@@ -178,7 +193,7 @@ export function HeaderNavigationSection({
   const accessModules: Array<{
     enabledKey: keyof HeaderNavFormValues
     requireAuthKey: keyof HeaderNavFormValues
-    requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled'
+    requireAuthDependsOn: 'pricingEnabled' | 'statusEnabled' | 'rankingsEnabled'
     title: string
     description: string
     requireAuthTitle: string
@@ -193,6 +208,19 @@ export function HeaderNavigationSection({
       requireAuthTitle: t('Require login to view models'),
       requireAuthDescription: t(
         'Visitors must authenticate before accessing the pricing directory.'
+      ),
+    },
+    {
+      enabledKey: 'statusEnabled',
+      requireAuthKey: 'statusRequireAuth',
+      requireAuthDependsOn: 'statusEnabled',
+      title: t('Channel status'),
+      description: t(
+        'Public channel status page based on live group health.'
+      ),
+      requireAuthTitle: t('Require login to view channel status'),
+      requireAuthDescription: t(
+        'Visitors must authenticate before accessing the channel status page.'
       ),
     },
     {

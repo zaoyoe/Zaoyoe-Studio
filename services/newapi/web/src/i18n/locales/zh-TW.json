@@ -5434,6 +5434,19 @@
     "Start with the actual task.": "從真正要做的事開始",
     "Top up, connect, or browse models. Account and security stay the same.": "儲值、接入或查看模型。帳戶和安全控制始終保持一致。",
     "API access": "API 接入",
-    "API management platform": "強大的 API 管理平台"
+    "API management platform": "強大的 API 管理平台",
+    "Channel status": "渠道狀態",
+    "Recent status": "最近狀態",
+    "Updated {{time}}": "更新於 {{time}}",
+    "Time range": "時間範圍",
+    "Loading channel status": "正在載入渠道狀態",
+    "Unable to load channel status": "無法載入渠道狀態",
+    "No channel groups are available": "暫無可用渠道分組",
+    "5 valid requests": "5 次有效請求",
+    "Success rate: {{rate}}": "成功率：{{rate}}",
+    "Recent": "最近",
+    "Public channel status page based on live group health.": "基於即時分組健康度的公開渠道狀態頁。",
+    "Require login to view channel status": "查看渠道狀態需登入",
+    "Visitors must authenticate before accessing the channel status page.": "訪客必須登入後才能造訪渠道狀態頁。"
   }
 }
