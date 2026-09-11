@@ -39,6 +39,7 @@ import {
 import {
   type ChangeEvent,
   type FormEvent,
+  Fragment,
   type KeyboardEvent,
   useCallback,
   useEffect,
@@ -82,6 +83,7 @@ import {
 import { useStickToLatestMessage } from './hooks/use-stick-to-latest-message'
 import { compressSupportImage } from './lib/compress-support-image'
 import {
+  formatSupportMessageDate,
   formatSupportConversationTime,
   formatSupportMessageTime,
 } from './lib/format-support-message-time'
@@ -287,59 +289,66 @@ function MessageHistory({
       )}
       {messages.map((message, index) => {
         const isAgent = message.author === 'agent'
-        const timestamp = formatSupportMessageTime(
+        const timestamp = formatSupportMessageTime(message.createdAt)
+        const dateLabel = formatSupportMessageDate(
           message.createdAt,
           messages[index - 1]?.createdAt
         )
         const imageUrl =
           message.kind === 'image' ? getSupportImageUrl(message.text) : null
         return (
-          <div
-            key={message.id}
-            className={cn(
-              'flex w-full min-w-0 flex-col gap-1',
-              isAgent ? 'items-end' : 'items-start'
-            )}
-          >
-            <div
-              className={cn(
-                'text-muted-foreground flex items-center gap-2 text-xs',
-                isAgent && 'justify-end'
-              )}
-            >
-              {timestamp && (
-                <time dateTime={message.createdAt}>{timestamp}</time>
-              )}
-            </div>
-            {imageUrl ? (
-              <a
-                href={imageUrl}
-                target='_blank'
-                rel='noreferrer'
-                className='border-border max-w-[84%] overflow-hidden rounded-lg border'
-              >
-                <img
-                  src={imageUrl}
-                  alt={t('Support image')}
-                  loading='lazy'
-                  decoding='async'
-                  referrerPolicy='no-referrer'
-                  className='max-h-80 max-w-full object-contain'
-                />
-              </a>
-            ) : (
-              <div
-                className={cn(
-                  'min-w-0 w-max max-w-[84%] rounded-2xl px-3 py-2 text-left text-sm leading-6 break-words whitespace-pre-wrap',
-                  isAgent
-                    ? 'bg-primary text-primary-foreground rounded-br-sm'
-                    : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm'
-                )}
-              >
-                {message.text}
+          <Fragment key={message.id}>
+            {dateLabel && (
+              <div className='text-muted-foreground flex w-full justify-center py-1 text-xs'>
+                <time dateTime={message.createdAt}>{dateLabel}</time>
               </div>
             )}
-          </div>
+            <div
+              className={cn(
+                'flex w-full min-w-0 flex-col gap-1',
+                isAgent ? 'items-end' : 'items-start'
+              )}
+            >
+              <div
+                className={cn(
+                  'text-muted-foreground flex items-center gap-2 text-xs',
+                  isAgent && 'justify-end'
+                )}
+              >
+                {timestamp && (
+                  <time dateTime={message.createdAt}>{timestamp}</time>
+                )}
+              </div>
+              {imageUrl ? (
+                <a
+                  href={imageUrl}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='border-border max-w-[84%] overflow-hidden rounded-lg border'
+                >
+                  <img
+                    src={imageUrl}
+                    alt={t('Support image')}
+                    loading='lazy'
+                    decoding='async'
+                    referrerPolicy='no-referrer'
+                    className='max-h-80 max-w-full object-contain'
+                  />
+                </a>
+              ) : (
+                <div
+                  className={cn(
+                    'min-w-0 w-max max-w-[84%] rounded-2xl px-3 py-2 text-left text-sm leading-6 break-words whitespace-pre-wrap',
+                    isAgent
+                      ? 'bg-primary text-primary-foreground rounded-br-sm'
+                      : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm'
+                  )}
+                >
+                  {message.text}
+                </div>
+              )}
+            </div>
+          </Fragment>
         )
       })}
       {hasNewMessages && (

@@ -24,7 +24,7 @@ import {
   MessageCircleMore,
   RefreshCw,
 } from 'lucide-react'
-import { useCallback } from 'react'
+import { Fragment, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -33,7 +33,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 import { useStickToLatestMessage } from '../hooks/use-stick-to-latest-message'
-import { formatSupportMessageTime } from '../lib/format-support-message-time'
+import {
+  formatSupportMessageDate,
+  formatSupportMessageTime,
+} from '../lib/format-support-message-time'
 import { getSupportImageUrl } from '../lib/support-image-url'
 import type { SupportMessage } from '../types'
 
@@ -189,68 +192,81 @@ export function SupportMessageList({
         const isSystem = message.author === 'system'
         const imageUrl =
           message.kind === 'image' ? getSupportImageUrl(message.text) : null
-        const formattedTime = formatSupportMessageTime(
+        const formattedDate = formatSupportMessageDate(
           message.createdAt,
           messages[index - 1]?.createdAt
         )
+        const formattedTime = formatSupportMessageTime(message.createdAt)
 
         return (
-          <article
-            key={message.id}
-            className={cn(
-              'flex w-full min-w-0 flex-col gap-1',
-              isUser ? 'items-end' : 'items-start'
+          <Fragment key={message.id}>
+            {formattedDate && (
+              <div className='text-muted-foreground flex w-full justify-center py-1 text-xs'>
+                <time
+                  dateTime={message.createdAt}
+                  data-testid='support-message-date'
+                >
+                  {formattedDate}
+                </time>
+              </div>
             )}
-          >
-            <div
+            <article
               className={cn(
-                'text-muted-foreground flex max-w-full min-w-0 items-center gap-2 text-xs',
-                isUser && 'flex-row-reverse'
+                'flex w-full min-w-0 flex-col gap-1',
+                isUser ? 'items-end' : 'items-start'
               )}
             >
-              <span>{messageAuthorLabel(message.author, t)}</span>
-              {formattedTime && (
-                <time
-                  className='shrink-0 tabular-nums'
-                  dateTime={message.createdAt}
-                  data-testid='support-message-time'
-                >
-                  {formattedTime}
-                </time>
-              )}
-            </div>
-            {imageUrl ? (
-              <a
-                href={imageUrl}
-                target='_blank'
-                rel='noreferrer'
-                className='border-border max-w-[84%] overflow-hidden rounded-lg border'
-              >
-                <img
-                  src={imageUrl}
-                  alt={t('Support image')}
-                  loading='lazy'
-                  decoding='async'
-                  referrerPolicy='no-referrer'
-                  className='max-h-80 max-w-full object-contain'
-                />
-              </a>
-            ) : (
-              <p
+              <div
                 className={cn(
-                  'min-w-0 w-max max-w-[84%] rounded-lg px-3 py-2 text-left text-sm leading-5 break-words whitespace-pre-wrap',
-                  isUser && 'bg-primary text-primary-foreground rounded-tr-sm',
-                  !isUser &&
-                    !isSystem &&
-                    'bg-muted text-foreground rounded-tl-sm',
-                  isSystem &&
-                    'border-border bg-background text-muted-foreground rounded-tl-sm border'
+                  'text-muted-foreground flex max-w-full min-w-0 items-center gap-2 text-xs',
+                  isUser && 'flex-row-reverse'
                 )}
               >
-                {message.text}
-              </p>
-            )}
-          </article>
+                <span>{messageAuthorLabel(message.author, t)}</span>
+                {formattedTime && (
+                  <time
+                    className='shrink-0 tabular-nums'
+                    dateTime={message.createdAt}
+                    data-testid='support-message-time'
+                  >
+                    {formattedTime}
+                  </time>
+                )}
+              </div>
+              {imageUrl ? (
+                <a
+                  href={imageUrl}
+                  target='_blank'
+                  rel='noreferrer'
+                  className='border-border max-w-[84%] overflow-hidden rounded-lg border'
+                >
+                  <img
+                    src={imageUrl}
+                    alt={t('Support image')}
+                    loading='lazy'
+                    decoding='async'
+                    referrerPolicy='no-referrer'
+                    className='max-h-80 max-w-full object-contain'
+                  />
+                </a>
+              ) : (
+                <p
+                  className={cn(
+                    'min-w-0 w-max max-w-[84%] rounded-lg px-3 py-2 text-left text-sm leading-5 break-words whitespace-pre-wrap',
+                    isUser &&
+                      'bg-primary text-primary-foreground rounded-tr-sm',
+                    !isUser &&
+                      !isSystem &&
+                      'bg-muted text-foreground rounded-tl-sm',
+                    isSystem &&
+                      'border-border bg-background text-muted-foreground rounded-tl-sm border'
+                  )}
+                >
+                  {message.text}
+                </p>
+              )}
+            </article>
+          </Fragment>
         )
       })}
       {hasNewMessages && (

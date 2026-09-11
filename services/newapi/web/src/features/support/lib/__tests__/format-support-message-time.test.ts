@@ -21,6 +21,7 @@ import { describe, test } from 'node:test'
 
 import {
   formatSupportConversationTime,
+  formatSupportMessageDate,
   formatSupportMessageTime,
 } from '../format-support-message-time.ts'
 
@@ -31,34 +32,45 @@ function formatTime(value: Date): string {
   }).format(value)
 }
 
-function formatDateTime(value: Date): string {
-  const dateLabel = new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-  }).format(value)
-  return `${dateLabel} ${formatTime(value)}`
-}
-
 describe('format support message time', () => {
-  test('omits the calendar date for later messages on the same local day', () => {
+  test('renders the date once per local day and keeps time on every message', () => {
     const morningDate = new Date(2026, 8, 9, 8, 5, 0)
     const afternoonDate = new Date(2026, 8, 9, 18, 41, 0)
     const nextMorningDate = new Date(2026, 8, 10, 9, 2, 0)
 
-    const first = formatSupportMessageTime(morningDate.toISOString())
-    const sameDay = formatSupportMessageTime(
+    const firstDate = formatSupportMessageDate(morningDate.toISOString())
+    const sameDayDate = formatSupportMessageDate(
       afternoonDate.toISOString(),
       morningDate.toISOString()
     )
-    const nextDay = formatSupportMessageTime(
+    const nextDayDate = formatSupportMessageDate(
       nextMorningDate.toISOString(),
       afternoonDate.toISOString()
     )
 
-    assert.equal(first, formatDateTime(morningDate))
-    assert.equal(sameDay, formatTime(afternoonDate))
-    assert.equal(nextDay, formatDateTime(nextMorningDate))
-    assert.notEqual(first, sameDay)
+    assert.equal(
+      firstDate,
+      new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+      }).format(morningDate)
+    )
+    assert.equal(sameDayDate, null)
+    assert.equal(
+      nextDayDate,
+      new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+      }).format(nextMorningDate)
+    )
+    assert.equal(
+      formatSupportMessageTime(morningDate.toISOString()),
+      formatTime(morningDate)
+    )
+    assert.equal(
+      formatSupportMessageTime(afternoonDate.toISOString()),
+      formatTime(afternoonDate)
+    )
   })
 
   test('keeps the calendar date on conversation list timestamps', () => {
@@ -76,6 +88,7 @@ describe('format support message time', () => {
 
   test('returns null for invalid timestamps', () => {
     assert.equal(formatSupportMessageTime('not-a-date'), null)
+    assert.equal(formatSupportMessageDate('not-a-date'), null)
     assert.equal(formatSupportConversationTime('not-a-date'), null)
   })
 })

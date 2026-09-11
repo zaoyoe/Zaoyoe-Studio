@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 const SUPPORT_IMAGE_MAX_WIDTH = 1920
 const SUPPORT_IMAGE_WEBP_QUALITY = 0.7
+const SUPPORT_IMAGE_MAX_BYTES = 2.75 * 1024 * 1024
 
 function readBlobAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -49,11 +50,12 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   })
 }
 
-function canvasToWebpBlob(image: HTMLImageElement): Promise<Blob> {
-  const scale =
-    image.width > SUPPORT_IMAGE_MAX_WIDTH
-      ? SUPPORT_IMAGE_MAX_WIDTH / image.width
-      : 1
+function canvasToWebpBlob(
+  image: HTMLImageElement,
+  maxWidth: number,
+  quality: number
+): Promise<Blob> {
+  const scale = image.width > maxWidth ? maxWidth / image.width : 1
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(image.width * scale))
   canvas.height = Math.max(1, Math.round(image.height * scale))
@@ -72,9 +74,28 @@ function canvasToWebpBlob(image: HTMLImageElement): Promise<Blob> {
         resolve(blob)
       },
       'image/webp',
-      SUPPORT_IMAGE_WEBP_QUALITY
+      quality
     )
   })
+}
+
+async function encodeSupportImage(image: HTMLImageElement): Promise<Blob> {
+  const widths = [SUPPORT_IMAGE_MAX_WIDTH, 1600, 1280, 1024]
+  const qualities = [SUPPORT_IMAGE_WEBP_QUALITY, 0.55, 0.4, 0.3]
+  let smallest: Blob | null = null
+
+  for (const width of widths) {
+    for (const quality of qualities) {
+      const blob = await canvasToWebpBlob(image, width, quality)
+      smallest = !smallest || blob.size < smallest.size ? blob : smallest
+      if (blob.size <= SUPPORT_IMAGE_MAX_BYTES) return blob
+    }
+  }
+
+  if (!smallest || smallest.size > SUPPORT_IMAGE_MAX_BYTES) {
+    throw new Error('Unable to upload image')
+  }
+  return smallest
 }
 
 export async function compressSupportImage(file: File): Promise<string> {
@@ -88,7 +109,7 @@ export async function compressSupportImage(file: File): Promise<string> {
 
   const originalDataUrl = await readBlobAsDataUrl(file)
   const image = await loadImage(originalDataUrl)
-  const compressed = await canvasToWebpBlob(image)
+  const compressed = await encodeSupportImage(image)
   const webpFile = new File(
     [compressed],
     `${file.name.replace(/\.[^/.]+$/, '')}.webp`,
