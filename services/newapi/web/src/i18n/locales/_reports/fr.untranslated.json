@@ -57,10 +57,10 @@
   "Use the interfaces you already know. Routing, availability, and key permissions stay here.": "Use the interfaces you already know. Routing, availability, and key permissions stay here.",
   "Pick a model, then point your app, script, or client at the same key.": "Pick a model, then point your app, script, or client at the same key.",
   "Keep your current protocol. Models, routing, and usage still land in this console.": "Keep your current protocol. Models, routing, and usage still land in this console.",
-  "Top up on the main site.": "Top up on the main site.",
-  "Keep the ledger clear.": "Keep the ledger clear.",
+  "Top up on the main site.": "Top up on the main site",
+  "Keep the ledger clear.": "Keep the ledger clear",
   "Payments stay on the main site. The console shows balance, calls, and keys.": "Payments stay on the main site. The console shows balance, calls, and keys.",
   "Your app talks to FatherKey. We route by protocol. Usage still lands in one ledger.": "Your app talks to FatherKey. We route by protocol. Usage still lands in one ledger.",
-  "Start with the actual task.": "Start with the actual task.",
+  "Start with the actual task.": "Start with the actual task",
   "Top up, connect, or browse models. Account and security stay the same.": "Top up, connect, or browse models. Account and security stay the same."
 }
