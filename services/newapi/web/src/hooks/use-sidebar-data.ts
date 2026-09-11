@@ -22,10 +22,11 @@ import {
   CreditCard,
   FileText,
   FlaskConical,
+  Images,
   Key,
   LayoutDashboard,
-  MessageCircle,
   ListTodo,
+  MessageCircle,
   MessageSquare,
   Radio,
   ServerCog,
@@ -38,6 +39,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { type SidebarData } from '@/components/layout/types'
+import { getMainSitePath } from '@/lib/main-site'
 import { ROLE } from '@/lib/roles'
 
 /**
@@ -75,6 +77,11 @@ export function useSidebarData(): SidebarData {
             title: t('Overview'),
             url: '/dashboard/overview',
             icon: Activity,
+          },
+          {
+            title: t('Visual generation'),
+            url: getMainSitePath('/prompts'),
+            icon: Images,
           },
           {
             title: t('Dashboard'),

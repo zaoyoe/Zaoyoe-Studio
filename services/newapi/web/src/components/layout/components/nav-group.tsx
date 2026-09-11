@@ -47,6 +47,8 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 
+import { isExternalUrl } from '@/lib/main-site'
+
 import { checkIsActive } from '../lib/url-utils'
 import {
   type NavCollapsible,
@@ -55,6 +57,22 @@ import {
   type NavGroup as NavGroupProps,
 } from '../types'
 import { ChatPresetsItem } from './chat-presets-item'
+
+function NavDestination({
+  url,
+  className,
+  onClick,
+}: {
+  url: NavLink['url']
+  className?: string
+  onClick?: () => void
+}) {
+  if (typeof url === 'string' && isExternalUrl(url)) {
+    return <a href={url} className={className} onClick={onClick} />
+  }
+
+  return <Link to={url} className={className} onClick={onClick} />
+}
 
 /**
  * Sidebar navigation group component
@@ -122,12 +140,18 @@ function NavBadge({ children }: { children: ReactNode }) {
  */
 function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
   const { setOpenMobile } = useSidebar()
+  const external = isExternalUrl(item.url)
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        isActive={checkIsActive(href, item)}
+        isActive={!external && checkIsActive(href, item)}
         tooltip={item.title}
-        render={<Link to={item.url} onClick={() => setOpenMobile(false)} />}
+        render={
+          <NavDestination
+            url={item.url}
+            onClick={() => setOpenMobile(false)}
+          />
+        }
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
@@ -182,9 +206,14 @@ function SidebarMenuCollapsible({
           {item.items.map((subItem) => (
             <SidebarMenuSubItem key={subItem.title}>
               <SidebarMenuSubButton
-                isActive={checkIsActive(href, subItem)}
+                isActive={
+                  !isExternalUrl(subItem.url) && checkIsActive(href, subItem)
+                }
                 render={
-                  <Link to={subItem.url} onClick={() => setOpenMobile(false)} />
+                  <NavDestination
+                    url={subItem.url}
+                    onClick={() => setOpenMobile(false)}
+                  />
                 }
               >
                 {subItem.icon && <subItem.icon className='shrink-0' />}
@@ -236,9 +265,13 @@ function SidebarMenuCollapsedDropdown({
               <DropdownMenuItem
                 key={`${sub.title}-${sub.url}`}
                 render={
-                  <Link
-                    to={sub.url}
-                    className={`${checkIsActive(href, sub) ? 'bg-secondary' : ''}`}
+                  <NavDestination
+                    url={sub.url}
+                    className={`${
+                      !isExternalUrl(sub.url) && checkIsActive(href, sub)
+                        ? 'bg-secondary'
+                        : ''
+                    }`}
                   />
                 }
               >

@@ -24,8 +24,8 @@ export function isInternationalHost(hostname: string): boolean {
   return host === 'zaoyoe.xyz' || host.endsWith('.zaoyoe.xyz')
 }
 
-export function isExternalUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value)
+export function isExternalUrl(value: unknown): boolean {
+  return typeof value === 'string' && /^https?:\/\//i.test(value)
 }
 
 export function getMainSiteUrl(
@@ -34,4 +34,17 @@ export function getMainSiteUrl(
   return isInternationalHost(hostname)
     ? INTERNATIONAL_MAIN_SITE_URL
     : DOMESTIC_MAIN_SITE_URL
+}
+
+export function getMainSitePath(
+  path: string,
+  hostname = globalThis.location?.hostname ?? ''
+): string {
+  const base = getMainSiteUrl(hostname).replace(/\/+$/, '')
+  const normalized = path.trim()
+  if (!normalized || normalized === '/') {
+    return `${base}/`
+  }
+  const suffix = normalized.startsWith('/') ? normalized : `/${normalized}`
+  return `${base}${suffix}`
 }
