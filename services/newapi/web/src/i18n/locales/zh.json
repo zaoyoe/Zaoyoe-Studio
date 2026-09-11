@@ -5447,6 +5447,7 @@
     "Recent": "最近",
     "Public channel status page based on live group health.": "基于实时分组健康度的公开渠道状态页。",
     "Require login to view channel status": "查看渠道状态需登录",
-    "Visitors must authenticate before accessing the channel status page.": "访客必须登录后才能访问渠道状态页。"
+    "Visitors must authenticate before accessing the channel status page.": "访客必须登录后才能访问渠道状态页。",
+    "Visual generation": "视觉生成"
   }
 }

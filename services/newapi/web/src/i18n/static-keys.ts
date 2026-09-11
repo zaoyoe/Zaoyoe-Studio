@@ -39,6 +39,7 @@ export const STATIC_I18N_KEYS = [
   'Public channel status page based on live group health.',
   'Require login to view channel status',
   'Visitors must authenticate before accessing the channel status page.',
+  'Visual generation',
 
   // Sidebar views (drill-in workspaces)
   'System Settings',

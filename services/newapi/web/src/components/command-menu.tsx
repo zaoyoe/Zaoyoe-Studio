@@ -34,6 +34,7 @@ import {
 import { useSearch } from '@/context/search-provider'
 import { useTheme } from '@/context/theme-provider'
 import { useSidebarData } from '@/hooks/use-sidebar-data'
+import { isExternalUrl } from '@/lib/main-site'
 
 import { getNavGroupsForPath } from './layout/lib/sidebar-view-registry'
 import { ScrollArea } from './ui/scroll-area'
@@ -58,6 +59,20 @@ export function CommandMenu() {
     [setOpen]
   )
 
+  const goToNavUrl = React.useCallback(
+    (url: string | undefined) => {
+      if (typeof url === 'string' && isExternalUrl(url)) {
+        globalThis.location.assign(url)
+        return
+      }
+      if (!url) {
+        return
+      }
+      void navigate({ to: url })
+    },
+    [navigate]
+  )
+
   return (
     <CommandDialog modal open={open} onOpenChange={setOpen}>
       <Command>
@@ -74,7 +89,7 @@ export function CommandMenu() {
                         key={`${navItem.url}-${i}`}
                         value={navItem.title}
                         onSelect={() => {
-                          runCommand(() => navigate({ to: navItem.url }))
+                          runCommand(() => goToNavUrl(navItem.url))
                         }}
                       >
                         <div className='flex size-4 items-center justify-center'>
@@ -89,7 +104,7 @@ export function CommandMenu() {
                       key={`${navItem.title}-${subItem.url}-${i}`}
                       value={`${navItem.title}-${subItem.url}`}
                       onSelect={() => {
-                        runCommand(() => navigate({ to: subItem.url }))
+                        runCommand(() => goToNavUrl(subItem.url))
                       }}
                     >
                       <div className='flex size-4 items-center justify-center'>

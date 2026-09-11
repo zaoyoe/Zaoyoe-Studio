@@ -5447,6 +5447,7 @@
     "Recent": "Recent",
     "Public channel status page based on live group health.": "Public channel status page based on live group health.",
     "Require login to view channel status": "Require login to view channel status",
-    "Visitors must authenticate before accessing the channel status page.": "Visitors must authenticate before accessing the channel status page."
+    "Visitors must authenticate before accessing the channel status page.": "Visitors must authenticate before accessing the channel status page.",
+    "Visual generation": "Visual generation"
   }
 }

@@ -17,11 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+import en from '../i18n/locales/en.json' with { type: 'json' }
+import zh from '../i18n/locales/zh.json' with { type: 'json' }
+import zhTW from '../i18n/locales/zh-TW.json' with { type: 'json' }
 
 import {
   DOMESTIC_MAIN_SITE_URL,
   INTERNATIONAL_MAIN_SITE_URL,
+  getMainSitePath,
   getMainSiteUrl,
   isExternalUrl,
   isInternationalHost,
@@ -47,5 +55,55 @@ describe('main site branding urls', () => {
     assert.equal(isExternalUrl(DOMESTIC_MAIN_SITE_URL), true)
     assert.equal(isExternalUrl('/'), false)
     assert.equal(isExternalUrl('/dashboard'), false)
+    assert.equal(isExternalUrl(undefined), false)
+    assert.equal(isExternalUrl(''), false)
+  })
+
+  test('joins main-site paths without duplicating slashes', () => {
+    assert.equal(
+      getMainSitePath('/prompts', 'new.fatherkey.com'),
+      'https://www.fatherkey.com/prompts'
+    )
+    assert.equal(
+      getMainSitePath('prompts', 'www.fatherkey.com'),
+      'https://www.fatherkey.com/prompts'
+    )
+    assert.equal(
+      getMainSitePath('/prompts', 'new.zaoyoe.xyz'),
+      'https://www.zaoyoe.xyz/prompts'
+    )
   })
 })
+
+describe('visual generation sidebar entry', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const sidebar = readFileSync(join(here, '../hooks/use-sidebar-data.ts'), 'utf8')
+  const navGroup = readFileSync(
+    join(here, '../components/layout/components/nav-group.tsx'),
+    'utf8'
+  )
+  const commandMenu = readFileSync(
+    join(here, '../components/command-menu.tsx'),
+    'utf8'
+  )
+
+  test('puts visual generation under general and points at main-site prompts', () => {
+    assert.match(sidebar, /id: 'general'/)
+    assert.match(sidebar, /title: t\('Visual generation'\)/)
+    assert.match(sidebar, /url: getMainSitePath\('\/prompts'\)/)
+  })
+
+  test('keeps chinese and english labels for visual generation', () => {
+    assert.equal(en.translation['Visual generation'], 'Visual generation')
+    assert.equal(zh.translation['Visual generation'], '视觉生成')
+    assert.equal(zhTW.translation['Visual generation'], '視覺生成')
+  })
+
+  test('opens external sidebar destinations instead of in-app routes', () => {
+    assert.match(navGroup, /function NavDestination/)
+    assert.match(navGroup, /isExternalUrl\(url\)/)
+    assert.match(commandMenu, /isExternalUrl\(url\)/)
+    assert.match(commandMenu, /globalThis\.location\.assign\(url\)/)
+  })
+})
+
