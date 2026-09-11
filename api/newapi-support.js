@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { getSupabaseAdmin, sendJson } = require('./_lib/admin');
+const { uploadChatImage: defaultUploadChatImageImpl } = require('./_lib/chat-image-upload');
 
 const GATEWAY_VERSION = 1;
 const GATEWAY_PRODUCT = 'newapi';
@@ -256,8 +257,7 @@ function isSafePublicChatImageUrl(value) {
 }
 
 async function defaultUploadChatImage(input) {
-    const { uploadChatImage } = require('./_lib/chat-image-upload');
-    return uploadChatImage(input);
+    return defaultUploadChatImageImpl(input);
 }
 
 async function resolvePersistedMessageContent(conversation, request, uploadChatImage) {
@@ -279,7 +279,7 @@ async function resolvePersistedMessageContent(conversation, request, uploadChatI
         const message = String(error?.message || 'Unable to upload image');
         const invalid = /invalid image|not allowed|does not match|exceeds 3MB|data URL/i.test(message);
         throw gatewayError(invalid ? message : 'Unable to upload image', {
-            statusCode: invalid ? 400 : 500,
+            statusCode: invalid ? 400 : 502,
             code: invalid ? 'invalid_image' : 'image_upload_failed',
             expose: invalid
         });
@@ -287,7 +287,7 @@ async function resolvePersistedMessageContent(conversation, request, uploadChatI
 
     if (!isSafePublicChatImageUrl(imageUrl)) {
         throw gatewayError('Unable to upload image', {
-            statusCode: 500,
+            statusCode: 502,
             code: 'image_upload_failed',
             expose: false
         });

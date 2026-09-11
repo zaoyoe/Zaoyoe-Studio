@@ -255,7 +255,11 @@ func writeSupportGatewayError(c *gin.Context, err error) {
 	status := http.StatusServiceUnavailable
 	code := "SUPPORT_GATEWAY_UNAVAILABLE"
 	message := "客服服务暂时不可用，请稍后再试"
-	if errors.Is(err, service.ErrSupportGatewayRejected) {
+	if errors.Is(err, service.ErrSupportImageUploadFailed) {
+		status = http.StatusBadGateway
+		code = "SUPPORT_IMAGE_UPLOAD_FAILED"
+		message = "图片发送失败，请稍后重试"
+	} else if errors.Is(err, service.ErrSupportGatewayRejected) {
 		status = http.StatusBadGateway
 		code = "SUPPORT_GATEWAY_REJECTED"
 		message = "客服服务暂时无法处理此请求，请稍后再试"

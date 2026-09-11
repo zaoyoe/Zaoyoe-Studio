@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
     calculateSignature,
@@ -762,4 +764,33 @@ test('NewAPI support rejects invalid image_data before uploading', async () => {
     assert.equal(result.payload.code, 'invalid_request');
     assert.equal(uploads.length, 0);
     assert.equal(supabase.state.messageInserts.length, 0);
+});
+
+test('NewAPI support maps R2 upload failures to image_upload_failed', async () => {
+    const supabase = createFakeSupabase();
+    const result = await callGateway(createHandler(supabase, {
+        uploadChatImage: async () => {
+            throw new Error('R2 is not configured');
+        }
+    }), requestPayload({
+        text: undefined,
+        message_type: 'image',
+        image_data: PNG_DATA_URL,
+        client_message_id: 'image-r2-missing-1'
+    }), { nonce: 'nonce-image-r2-missing-012' });
+
+    assert.equal(result.res.statusCode, 502);
+    assert.equal(result.payload.success, false);
+    assert.equal(result.payload.code, 'image_upload_failed');
+    assert.equal(supabase.state.messageInserts.length, 0);
+});
+
+test('NewAPI support statically bundles the shared chat image uploader', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../api/newapi-support.js'), 'utf8');
+    const vercel = JSON.parse(fs.readFileSync(path.join(__dirname, '../vercel.json'), 'utf8'));
+    const includeFiles = String(vercel.functions?.['api/newapi-support.js']?.includeFiles || '');
+
+    assert.match(source, /require\('\.\/_lib\/chat-image-upload'\)/);
+    assert.equal(includeFiles.includes('api/_lib/chat-image-upload.js'), true);
+    assert.equal(includeFiles.length <= 256, true);
 });

@@ -107,6 +107,12 @@ func TestSupportGatewayDispatchFailsClosedForGatewayFailure(t *testing.T) {
 			wantError: ErrSupportGatewayUnavailable,
 		},
 		{
+			name:      "gateway image upload failed",
+			status:    http.StatusBadGateway,
+			response:  `{"success":false,"code":"image_upload_failed","message":"Unable to upload image"}`,
+			wantError: ErrSupportImageUploadFailed,
+		},
+		{
 			name:      "gateway violates the messages response contract",
 			status:    http.StatusOK,
 			response:  `{"success":true,"data":{"message":{"id":"wrong-shape"}}}`,

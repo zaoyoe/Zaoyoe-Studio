@@ -62,6 +62,8 @@ function formatMessageTime(value: string): string | null {
   if (Number.isNaN(timestamp.getTime())) return null
 
   return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   }).format(timestamp)
@@ -210,17 +212,16 @@ export function SupportMessageList({
           >
             <div
               className={cn(
-                'flex items-center gap-2 text-xs',
+                'text-muted-foreground flex max-w-full min-w-0 items-center gap-2 text-xs',
                 isUser && 'flex-row-reverse'
               )}
             >
-              <span className='text-muted-foreground'>
-                {messageAuthorLabel(message.author, t)}
-              </span>
+              <span>{messageAuthorLabel(message.author, t)}</span>
               {formattedTime && (
                 <time
-                  className='text-muted-foreground/75 tabular-nums'
+                  className='shrink-0 tabular-nums'
                   dateTime={message.createdAt}
+                  data-testid='support-message-time'
                 >
                   {formattedTime}
                 </time>
