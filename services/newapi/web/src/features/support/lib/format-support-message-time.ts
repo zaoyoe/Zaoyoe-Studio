@@ -28,27 +28,32 @@ function parseTimestamp(value?: string | null): Date | null {
   return timestamp
 }
 
-export function formatSupportMessageTime(
+export function formatSupportMessageTime(value: string): string | null {
+  const timestamp = parseTimestamp(value)
+  if (!timestamp) return null
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
+}
+
+export function formatSupportMessageDate(
   value: string,
   previousValue?: string | null
 ): string | null {
   const timestamp = parseTimestamp(value)
   if (!timestamp) return null
 
-  const timeLabel = new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(timestamp)
   const previous = parseTimestamp(previousValue)
   if (previous && localDayKey(previous) === localDayKey(timestamp)) {
-    return timeLabel
+    return null
   }
 
-  const dateLabel = new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(undefined, {
     month: 'short',
     day: 'numeric',
   }).format(timestamp)
-  return `${dateLabel} ${timeLabel}`
 }
 
 export function formatSupportConversationTime(value?: string): string | null {

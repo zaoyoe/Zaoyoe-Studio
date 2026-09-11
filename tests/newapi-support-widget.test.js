@@ -150,7 +150,22 @@ test('NewAPI support bubbles hide the calendar date for later same-day messages'
     );
 
     assert.match(helper, /localDayKey\(previous\) === localDayKey\(timestamp\)/);
+    assert.match(helper, /export function formatSupportMessageDate\(/);
     assert.match(userList, /formatSupportMessageTime\(/);
     assert.match(adminInbox, /formatSupportMessageTime\(/);
+    assert.match(userList, /data-testid='support-message-date'/);
+    assert.match(userList, /justify-center/);
+    assert.match(adminInbox, /formatSupportMessageDate\(/);
+    assert.match(adminInbox, /justify-center/);
     assert.match(adminInbox, /formatSupportConversationTime\(/);
+});
+
+test('NewAPI support image compression keeps large client uploads under the gateway limit', () => {
+    const compressor = readRepoFile(
+        'services/newapi/web/src/features/support/lib/compress-support-image.ts'
+    );
+
+    assert.match(compressor, /SUPPORT_IMAGE_MAX_BYTES/);
+    assert.match(compressor, /blob\.size <= SUPPORT_IMAGE_MAX_BYTES/);
+    assert.match(compressor, /Unable to upload image/);
 });

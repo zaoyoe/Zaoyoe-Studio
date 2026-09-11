@@ -200,7 +200,13 @@ describe('Support message list', () => {
       (timestamp) => timestamp.textContent?.trim() || ''
     )
     assert.equal(labels.every(Boolean), true)
-    assert.ok((labels[0] || '').length > (labels[1] || '').length)
+    assert.notEqual(labels[0], labels[1])
+
+    const dates = [
+      ...messageList.querySelectorAll('[data-testid="support-message-date"]'),
+    ]
+    assert.equal(dates.length, 1)
+    assert.equal(dates[0]?.getAttribute('dateTime'), '2026-09-09T12:00:00.000Z')
 
     await act(async () => rendered.root.unmount())
     rendered.host.remove()
