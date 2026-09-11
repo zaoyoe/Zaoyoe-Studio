@@ -5434,6 +5434,19 @@
     "Start with the actual task.": "Start with the actual task",
     "Top up, connect, or browse models. Account and security stay the same.": "Top up, connect, or browse models. Account and security stay the same.",
     "API access": "API access",
-    "API management platform": "API management platform"
+    "API management platform": "API management platform",
+    "Channel status": "Channel status",
+    "Recent status": "Recent status",
+    "Updated {{time}}": "Updated {{time}}",
+    "Time range": "Time range",
+    "Loading channel status": "Loading channel status",
+    "Unable to load channel status": "Unable to load channel status",
+    "No channel groups are available": "No channel groups are available",
+    "5 valid requests": "5 valid requests",
+    "Success rate: {{rate}}": "Success rate: {{rate}}",
+    "Recent": "Recent",
+    "Public channel status page based on live group health.": "Public channel status page based on live group health.",
+    "Require login to view channel status": "Require login to view channel status",
+    "Visitors must authenticate before accessing the channel status page.": "Visitors must authenticate before accessing the channel status page."
   }
 }

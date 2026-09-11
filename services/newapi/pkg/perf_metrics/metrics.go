@@ -55,12 +55,14 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 }
 
 func Record(sample Sample) {
+	if sample.Group == "" {
+		sample.Group = "default"
+	}
+	recordRecent(sample.Group, sample.Success)
+
 	setting := perf_metrics_setting.GetSetting()
 	if !setting.Enabled || sample.Model == "" {
 		return
-	}
-	if sample.Group == "" {
-		sample.Group = "default"
 	}
 	if sample.LatencyMs < 0 {
 		sample.LatencyMs = 0
