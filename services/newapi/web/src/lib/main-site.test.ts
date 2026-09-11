@@ -105,5 +105,10 @@ describe('visual generation sidebar entry', () => {
     assert.match(commandMenu, /isExternalUrl\(url\)/)
     assert.match(commandMenu, /globalThis\.location\.assign\(url\)/)
   })
+
+  test('forwards render-slot props so sidebar labels keep theme color', () => {
+    assert.match(navGroup, /\{\.\.\.props\} href=\{url\}/)
+    assert.match(navGroup, /<Link \{\.\.\.props\} to=\{url\} \/>/)
+  })
 })
 
