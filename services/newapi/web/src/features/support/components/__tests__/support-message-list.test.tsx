@@ -184,6 +184,24 @@ describe('Support message list', () => {
     assert.equal(articles[1]?.classList.contains('w-full'), true)
     assert.equal(articles[1]?.classList.contains('items-end'), true)
 
+    const timestamps = [
+      ...messageList.querySelectorAll('[data-testid="support-message-time"]'),
+    ]
+    assert.equal(timestamps.length, 2)
+    assert.equal(
+      timestamps[0]?.getAttribute('dateTime'),
+      '2026-09-09T12:00:00.000Z'
+    )
+    assert.equal(
+      timestamps[1]?.getAttribute('dateTime'),
+      '2026-09-09T12:01:00.000Z'
+    )
+    for (const timestamp of timestamps) {
+      const label = timestamp.textContent?.trim() || ''
+      assert.notEqual(label, '')
+      assert.match(label, /9/)
+    }
+
     await act(async () => rendered.root.unmount())
     rendered.host.remove()
   })

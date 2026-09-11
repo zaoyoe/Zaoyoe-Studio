@@ -1,7 +1,9 @@
 'use strict';
 
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+
 const MAX_CHAT_IMAGE_BYTES = 3 * 1024 * 1024;
-const DEFAULT_BUCKET_NAME = 'zaoyoe-images';
+const DEFAULT_BUCKET_NAME = 'zaoyoeimages';
 const DEFAULT_PUBLIC_URL = 'https://cdn.fatherkey.com';
 const ALLOWED_CONTENT_TYPES = new Set([
     'image/jpeg',
@@ -106,8 +108,16 @@ function getImageExtension(contentType) {
     return 'jpg';
 }
 
+function readFirstEnv(env, keys, fallback = '') {
+    for (const key of keys) {
+        const value = String(env?.[key] || '').trim();
+        if (value) return value;
+    }
+    return fallback;
+}
+
 function getR2PublicUrlBase(env = process.env) {
-    const configured = String(env?.R2_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+    const configured = readFirstEnv(env, ['AI_IMAGE_R2_PUBLIC_URL', 'R2_PUBLIC_URL']).replace(/\/+$/, '');
     if (!configured) return DEFAULT_PUBLIC_URL;
 
     try {
@@ -122,18 +132,18 @@ function getR2PublicUrlBase(env = process.env) {
 }
 
 function getR2Endpoint(env = process.env) {
-    const configured = String(env?.R2_ENDPOINT || '').trim().replace(/\/+$/, '');
+    const configured = readFirstEnv(env, ['AI_IMAGE_R2_ENDPOINT', 'R2_ENDPOINT']).replace(/\/+$/, '');
     if (configured) return configured;
-    const accountId = String(env?.R2_ACCOUNT_ID || '').trim();
+    const accountId = readFirstEnv(env, ['AI_IMAGE_R2_ACCOUNT_ID', 'R2_ACCOUNT_ID']);
     if (!accountId) return '';
     return `https://${accountId}.r2.cloudflarestorage.com`;
 }
 
 function getR2Credentials(env = process.env) {
     return {
-        accessKeyId: String(env?.R2_ACCESS_KEY_ID || env?.R2_ACCESS_KEY || '').trim(),
-        secretAccessKey: String(env?.R2_SECRET_ACCESS_KEY || env?.R2_SECRET_KEY || '').trim(),
-        bucketName: String(env?.R2_BUCKET_NAME || DEFAULT_BUCKET_NAME).trim() || DEFAULT_BUCKET_NAME,
+        accessKeyId: readFirstEnv(env, ['AI_IMAGE_R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY']),
+        secretAccessKey: readFirstEnv(env, ['AI_IMAGE_R2_SECRET_ACCESS_KEY', 'R2_SECRET_ACCESS_KEY', 'R2_SECRET_KEY']),
+        bucketName: readFirstEnv(env, ['AI_IMAGE_R2_BUCKET_NAME', 'R2_BUCKET_NAME'], DEFAULT_BUCKET_NAME) || DEFAULT_BUCKET_NAME,
         endpoint: getR2Endpoint(env)
     };
 }
@@ -144,7 +154,6 @@ async function putObjectWithAwsSdk(env, commandInput) {
         throw new Error('R2 is not configured');
     }
 
-    const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
     const client = new S3Client({
         region: 'auto',
         endpoint: credentials.endpoint,
@@ -186,6 +195,7 @@ async function uploadChatImage({ imageData, sessionId } = {}, options = {}) {
 module.exports = {
     MAX_CHAT_IMAGE_BYTES,
     detectImageContentType,
+    getR2Credentials,
     getR2PublicUrlBase,
     parseImageDataUrl,
     sanitizeR2KeySegment,

@@ -17,7 +17,8 @@
             "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,server/prompt-*.js,supabase/migrations/*.sql}"
         },
         "api/newapi-support.js": {
-            "maxDuration": 30
+            "maxDuration": 30,
+            "includeFiles": "api/_lib/chat-image-upload.js"
         },
         "api/public.js": {
             "includeFiles": "{adapters/xianyu/core.js,api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,node_modules/@jsquash/avif/codec/dec/avif_dec.wasm,scripts/*.js,server/api-handlers/**/*.js,supabase/migrations/*.sql}"

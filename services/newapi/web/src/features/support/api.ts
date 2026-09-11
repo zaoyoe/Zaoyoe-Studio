@@ -40,6 +40,7 @@ export type SupportApiErrorCode =
   | 'AUTH_SESSION_REQUIRED'
   | 'SUPPORT_GATEWAY_REJECTED'
   | 'SUPPORT_GATEWAY_UNAVAILABLE'
+  | 'SUPPORT_IMAGE_UPLOAD_FAILED'
 
 export type SupportApiErrorFallbackKey =
   | 'Unable to load support'

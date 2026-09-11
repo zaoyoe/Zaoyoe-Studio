@@ -26,7 +26,7 @@ const (
 	supportGatewayProduct           = "newapi"
 	supportGatewayProtocolVersion   = 1
 	defaultSupportGatewayTimeout    = 8 * time.Second
-	imageSupportGatewayTimeout      = 20 * time.Second
+	imageSupportGatewayTimeout      = 30 * time.Second
 	maxSupportGatewayTimeout        = 30 * time.Second
 	maxSupportGatewayResponseBytes  = 1 << 20
 	maxSupportGatewayLimit          = 50
@@ -43,6 +43,7 @@ var (
 	ErrSupportGatewayMisconfigured = errors.New("support gateway configuration is invalid")
 	ErrSupportGatewayUnavailable   = errors.New("support gateway is unavailable")
 	ErrSupportGatewayRejected      = errors.New("support gateway rejected the request")
+	ErrSupportImageUploadFailed    = errors.New("support image upload failed")
 )
 
 type SupportGatewayAction string
@@ -223,6 +224,9 @@ func (gateway *SupportGateway) Dispatch(ctx context.Context, request SupportGate
 		return nil, fmt.Errorf("%w: invalid response body", ErrSupportGatewayUnavailable)
 	}
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusMultipleChoices {
+		if err := supportGatewayImageUploadError(responsePayload); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%w: unexpected response status", ErrSupportGatewayUnavailable)
 	}
 
@@ -248,6 +252,21 @@ func (gateway *SupportGateway) Dispatch(ctx context.Context, request SupportGate
 		Message: wireResponse.Message,
 		Data:    data,
 	}, nil
+}
+
+func supportGatewayImageUploadError(payload []byte) error {
+	var wireResponse struct {
+		Code string `json:"code"`
+	}
+	if common.Unmarshal(payload, &wireResponse) != nil {
+		return nil
+	}
+	switch strings.TrimSpace(wireResponse.Code) {
+	case "image_upload_failed", "invalid_image":
+		return fmt.Errorf("%w: %s", ErrSupportImageUploadFailed, strings.TrimSpace(wireResponse.Code))
+	default:
+		return nil
+	}
 }
 
 func isSupportGatewayAction(action SupportGatewayAction) bool {

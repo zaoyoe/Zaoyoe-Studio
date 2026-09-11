@@ -91,6 +91,8 @@ function errorMessage(
         return t(
           'Support service is temporarily unavailable. Please try again shortly.'
         )
+      case 'SUPPORT_IMAGE_UPLOAD_FAILED':
+        return t('Unable to upload image')
       default:
         return t(error.fallbackKey)
     }
