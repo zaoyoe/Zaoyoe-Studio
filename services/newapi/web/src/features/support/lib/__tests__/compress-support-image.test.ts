@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 
 import { compressSupportImage } from '../compress-support-image'
@@ -38,5 +39,17 @@ describe('compress support image', () => {
         compressSupportImage(new File([], 'empty.png', { type: 'image/png' })),
       /Unable to upload image/
     )
+  })
+
+  test('encodes JPEG and labels the output from the actual blob type', () => {
+    const source = readFileSync(
+      new URL('../compress-support-image.ts', import.meta.url),
+      'utf8'
+    )
+    assert.match(source, /'image\/jpeg'/)
+    assert.match(source, /blob\.type/)
+    assert.match(source, /application\/octet-stream/)
+    assert.doesNotMatch(source, /type: 'image\/webp'/)
+    assert.doesNotMatch(source, /canvasToWebpBlob/)
   })
 })

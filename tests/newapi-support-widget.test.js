@@ -60,7 +60,7 @@ test('NewAPI support launcher keeps a solid unread badge and pinned composer', (
 
     assert.match(
         widget,
-        /fixed right-4 bottom-6 z-40 size-11 overflow-visible rounded-full/
+        /fixed right-4 bottom-10 z-40 size-11 overflow-visible rounded-full/
     );
     assert.match(
         widget,
@@ -168,4 +168,7 @@ test('NewAPI support image compression keeps large client uploads under the gate
     assert.match(compressor, /SUPPORT_IMAGE_MAX_BYTES/);
     assert.match(compressor, /blob\.size <= SUPPORT_IMAGE_MAX_BYTES/);
     assert.match(compressor, /Unable to upload image/);
+    assert.match(compressor, /'image\/jpeg'/);
+    assert.match(compressor, /blob\.type/);
+    assert.doesNotMatch(compressor, /type: 'image\/webp'/);
 });
