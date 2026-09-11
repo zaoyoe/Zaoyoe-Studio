@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,16 +17,18 @@ import (
 )
 
 const (
-	maxSupportMessageRunes       = 4000
-	maxSupportPagePathRunes      = 512
-	maxSupportPageTitleRunes     = 160
-	maxSupportPageSectionRunes   = 80
-	maxSupportRequestIDRunes     = 128
-	maxSupportClientMessageIDLen = 128
-	maxSupportCursorLen          = 256
-	maxSupportMessageListLimit   = 50
-	defaultSupportMessageLimit   = 50
-	maxSupportMessageBodyBytes   = 16 << 10
+	maxSupportMessageRunes          = 4000
+	maxSupportPagePathRunes         = 512
+	maxSupportPageTitleRunes        = 160
+	maxSupportPageSectionRunes      = 80
+	maxSupportRequestIDRunes        = 128
+	maxSupportClientMessageIDLen    = 128
+	maxSupportCursorLen             = 256
+	maxSupportMessageListLimit      = 50
+	defaultSupportMessageLimit      = 50
+	maxSupportMessageBodyBytes      = 16 << 10
+	maxSupportImageMessageBodyBytes = 4718592
+	maxSupportImageDataBytes        = 4718592
 )
 
 type supportPageInput struct {
@@ -35,18 +38,21 @@ type supportPageInput struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
-type createSupportMessageRequest struct {
-	Text            string            `json:"text"`
-	Content         string            `json:"content,omitempty"`
-	ClientMessageID string            `json:"client_message_id"`
-	Page            *supportPageInput `json:"page"`
-}
-
-type createAdminSupportMessageRequest struct {
+type supportMessageWriteRequest struct {
 	Text            string            `json:"text"`
 	Content         string            `json:"content,omitempty"`
 	ClientMessageID string            `json:"client_message_id"`
 	Page            *supportPageInput `json:"page,omitempty"`
+	MessageType     string            `json:"message_type,omitempty"`
+	ImageData       string            `json:"image_data,omitempty"`
+}
+
+type parsedSupportMessageWrite struct {
+	text            string
+	clientMessageID string
+	messageType     string
+	imageData       string
+	page            *service.SupportGatewayPageContext
 }
 
 // GetAdminSupportConversations exposes the shared support inbox to an
@@ -110,44 +116,21 @@ func CreateAdminSupportMessage(c *gin.Context) {
 		writeSupportInputError(c)
 		return
 	}
-	if c.Request.Body == nil {
-		writeSupportInputError(c)
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSupportMessageBodyBytes)
-
-	var input createAdminSupportMessageRequest
-	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
-		writeSupportInputError(c)
-		return
-	}
-	text, err := normalizeSupportMessageText(input.Text, input.Content)
+	parsed, err := readSupportMessageWrite(c, false)
 	if err != nil {
 		writeSupportInputError(c)
 		return
-	}
-	clientMessageID, err := normalizeSupportClientMessageID(input.ClientMessageID)
-	if err != nil {
-		writeSupportInputError(c)
-		return
-	}
-	var page *service.SupportGatewayPageContext
-	if input.Page != nil {
-		pageContext, pageErr := normalizeSupportPageContext(input.Page)
-		if pageErr != nil {
-			writeSupportInputError(c)
-			return
-		}
-		page = &pageContext
 	}
 
 	respondSupportGateway(c, service.SupportGatewayRequest{
 		Action:          service.SupportGatewayActionAdminSend,
 		Principal:       principal,
 		ConversationID:  conversationID,
-		Page:            page,
-		Text:            text,
-		ClientMessageID: clientMessageID,
+		Page:            parsed.page,
+		Text:            parsed.text,
+		MessageType:     parsed.gatewayMessageType(),
+		ImageData:       parsed.imageData,
+		ClientMessageID: parsed.clientMessageID,
 	})
 }
 
@@ -191,28 +174,7 @@ func CreateSupportMessage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if c.Request.Body == nil {
-		writeSupportInputError(c)
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSupportMessageBodyBytes)
-
-	var input createSupportMessageRequest
-	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
-		writeSupportInputError(c)
-		return
-	}
-	text, err := normalizeSupportMessageText(input.Text, input.Content)
-	if err != nil {
-		writeSupportInputError(c)
-		return
-	}
-	clientMessageID, err := normalizeSupportClientMessageID(input.ClientMessageID)
-	if err != nil {
-		writeSupportInputError(c)
-		return
-	}
-	page, err := normalizeSupportPageContext(input.Page)
+	parsed, err := readSupportMessageWrite(c, true)
 	if err != nil {
 		writeSupportInputError(c)
 		return
@@ -221,9 +183,11 @@ func CreateSupportMessage(c *gin.Context) {
 	respondSupportGateway(c, service.SupportGatewayRequest{
 		Action:          service.SupportGatewayActionSend,
 		Principal:       principal,
-		Page:            &page,
-		Text:            text,
-		ClientMessageID: clientMessageID,
+		Page:            parsed.page,
+		Text:            parsed.text,
+		MessageType:     parsed.gatewayMessageType(),
+		ImageData:       parsed.imageData,
+		ClientMessageID: parsed.clientMessageID,
 	})
 }
 
@@ -367,6 +331,104 @@ func normalizeSupportContextValue(raw string, maxRunes int) (string, error) {
 		if unicode.IsControl(r) {
 			return "", errors.New("support context contains a control character")
 		}
+	}
+	return value, nil
+}
+
+func (parsed parsedSupportMessageWrite) gatewayMessageType() string {
+	if parsed.messageType == "image" {
+		return "image"
+	}
+	return ""
+}
+
+func readSupportRequestBody(c *gin.Context) ([]byte, error) {
+	if c.Request.Body == nil {
+		return nil, errors.New("support message body is required")
+	}
+	return io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxSupportImageMessageBodyBytes))
+}
+
+func readSupportMessageWrite(c *gin.Context, pageRequired bool) (parsedSupportMessageWrite, error) {
+	body, err := readSupportRequestBody(c)
+	if err != nil {
+		return parsedSupportMessageWrite{}, err
+	}
+	return parseSupportMessageWrite(body, pageRequired)
+}
+
+func parseSupportMessageWrite(body []byte, pageRequired bool) (parsedSupportMessageWrite, error) {
+	var input supportMessageWriteRequest
+	if err := common.Unmarshal(body, &input); err != nil {
+		return parsedSupportMessageWrite{}, err
+	}
+	messageType, err := normalizeSupportMessageType(input.MessageType)
+	if err != nil {
+		return parsedSupportMessageWrite{}, err
+	}
+	if messageType != "image" && int64(len(body)) > maxSupportMessageBodyBytes {
+		return parsedSupportMessageWrite{}, errors.New("support message body is too large")
+	}
+	clientMessageID, err := normalizeSupportClientMessageID(input.ClientMessageID)
+	if err != nil {
+		return parsedSupportMessageWrite{}, err
+	}
+
+	parsed := parsedSupportMessageWrite{
+		clientMessageID: clientMessageID,
+		messageType:     messageType,
+	}
+	if messageType == "image" {
+		imageData, imageErr := normalizeSupportImageData(input.ImageData)
+		if imageErr != nil {
+			return parsedSupportMessageWrite{}, imageErr
+		}
+		parsed.imageData = imageData
+	} else {
+		text, textErr := normalizeSupportMessageText(input.Text, input.Content)
+		if textErr != nil {
+			return parsedSupportMessageWrite{}, textErr
+		}
+		parsed.text = text
+	}
+
+	if pageRequired {
+		page, pageErr := normalizeSupportPageContext(input.Page)
+		if pageErr != nil {
+			return parsedSupportMessageWrite{}, pageErr
+		}
+		parsed.page = &page
+		return parsed, nil
+	}
+	if input.Page != nil {
+		page, pageErr := normalizeSupportPageContext(input.Page)
+		if pageErr != nil {
+			return parsedSupportMessageWrite{}, pageErr
+		}
+		parsed.page = &page
+	}
+	return parsed, nil
+}
+
+func normalizeSupportMessageType(raw string) (string, error) {
+	value := strings.TrimSpace(strings.ToLower(raw))
+	if value == "" || value == "text" {
+		return "text", nil
+	}
+	if value == "image" {
+		return "image", nil
+	}
+	return "", errors.New("support message type is invalid")
+}
+
+func normalizeSupportImageData(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" || len(value) > maxSupportImageDataBytes {
+		return "", errors.New("support image data is invalid")
+	}
+	prefix, data, ok := strings.Cut(value, ";base64,")
+	if !ok || data == "" || !strings.HasPrefix(prefix, "data:image/") {
+		return "", errors.New("support image data is invalid")
 	}
 	return value, nil
 }

@@ -52,6 +52,7 @@ import { SupportComposer } from './components/support-composer'
 import { SupportMessageList } from './components/support-message-list'
 import { useAdminSupportUnread } from './hooks/use-admin-support-unread'
 import { useSupportConversation } from './hooks/use-support-conversation'
+import { compressSupportImage } from './lib/compress-support-image'
 import { getSupportPageContext } from './lib/page-context'
 
 const SUGGESTION_KEYS = [
@@ -73,7 +74,10 @@ function createClientMessageId(): string {
 function errorMessage(
   error: Error | null,
   t: (key: string) => string,
-  fallbackKey: 'Unable to load support' | 'Unable to send support message'
+  fallbackKey:
+    | 'Unable to load support'
+    | 'Unable to send support message'
+    | 'Unable to upload image'
 ): string | null {
   if (!error) return null
 
@@ -108,6 +112,8 @@ export function SupportWidget() {
   const draftRef = useRef('')
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
+  const [attachingImage, setAttachingImage] = useState(false)
+  const [imageError, setImageError] = useState<Error | null>(null)
   const page = useMemo(
     () =>
       getSupportPageContext(
@@ -134,7 +140,7 @@ export function SupportWidget() {
     'Unable to load support'
   )
   const sendError = errorMessage(
-    conversation.sendError,
+    conversation.sendError ?? imageError,
     t,
     'Unable to send support message'
   )
@@ -200,7 +206,8 @@ export function SupportWidget() {
 
   const handleSend = () => {
     const text = draftRef.current.trim()
-    if (!text || supportError) return
+    if (!text || supportError || attachingImage) return
+    setImageError(null)
 
     const clientMessageId =
       draftClientMessageIdRef.current ?? createClientMessageId()
@@ -220,6 +227,33 @@ export function SupportWidget() {
           draftClientMessageIdRef.current = clientMessageId
           setDraft(text)
         }
+      })
+  }
+
+  const handleImageSelected = (file: File) => {
+    if (supportError || attachingImage) return
+
+    const clientMessageId = createClientMessageId()
+    setImageError(null)
+    setAttachingImage(true)
+    void compressSupportImage(file)
+      .then((imageData) =>
+        conversation.send({
+          kind: 'image',
+          imageData,
+          clientMessageId,
+          page,
+        })
+      )
+      .catch((error: unknown) => {
+        setImageError(
+          error instanceof SupportApiError
+            ? error
+            : new SupportApiError('Unable to upload image')
+        )
+      })
+      .finally(() => {
+        setAttachingImage(false)
       })
   }
 
@@ -351,6 +385,8 @@ export function SupportWidget() {
                   onValueChange={updateDraft}
                   onSubmit={handleSend}
                   onTextareaMount={setTextareaElement}
+                  onImageSelected={handleImageSelected}
+                  attachingImage={attachingImage}
                   sending={false}
                   disabled={conversation.isLoading || Boolean(supportError)}
                 />

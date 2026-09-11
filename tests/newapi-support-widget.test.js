@@ -96,10 +96,44 @@ test('NewAPI admin inbox user bubbles are visibly gray and omit the customer lab
         'services/newapi/web/src/features/support/admin-inbox.tsx'
     );
 
-    assert.match(adminInbox, /\{isAgent \? <span>\{t\('You'\)\}<\/span> : null\}/);
+    assert.doesNotMatch(adminInbox, /\{isAgent \? <span>\{t\('You'\)\}<\/span> : null\}/);
+    assert.doesNotMatch(adminInbox, /t\('You'\)/);
     assert.doesNotMatch(adminInbox, /isAgent \? t\('You'\) : t\('Customer'\)/);
     assert.match(
         adminInbox,
         /bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm/
     );
+});
+
+test('NewAPI support widget and inbox send compressed images through the gateway', () => {
+    const widget = readRepoFile('services/newapi/web/src/features/support/support-widget.tsx');
+    const conversation = readRepoFile(
+        'services/newapi/web/src/features/support/hooks/use-support-conversation.ts'
+    );
+    const composer = readRepoFile(
+        'services/newapi/web/src/features/support/components/support-composer.tsx'
+    );
+    const userList = readRepoFile(
+        'services/newapi/web/src/features/support/components/support-message-list.tsx'
+    );
+    const adminInbox = readRepoFile(
+        'services/newapi/web/src/features/support/admin-inbox.tsx'
+    );
+    const userApi = readRepoFile('services/newapi/web/src/features/support/api.ts');
+    const adminApi = readRepoFile('services/newapi/web/src/features/support/admin-api.ts');
+
+    assert.match(composer, /aria-label=\{t\('Attach image'\)\}/);
+    assert.match(composer, /accept='image\/\*'/);
+    assert.match(widget, /compressSupportImage\(file\)/);
+    assert.match(widget, /kind: 'image'/);
+    assert.match(conversation, /kind: input.kind === 'image' \? 'image' : 'text'/);
+    assert.match(userApi, /message_type: 'image'/);
+    assert.match(userApi, /image_data: input.imageData/);
+    assert.match(adminApi, /message_type: 'image'/);
+    assert.match(adminApi, /image_data: options.imageData/);
+    assert.match(userList, /getSupportImageUrl\(message.text\)/);
+    assert.match(adminInbox, /compressSupportImage\(file\)/);
+    assert.match(adminInbox, /getSupportImageUrl\(message.text\)/);
+    assert.match(adminInbox, /<img/);
+    assert.doesNotMatch(adminInbox, /t\('You'\)/);
 });

@@ -44,6 +44,7 @@ export type SupportApiErrorCode =
 export type SupportApiErrorFallbackKey =
   | 'Unable to load support'
   | 'Unable to send support message'
+  | 'Unable to upload image'
 
 export class SupportApiError extends Error {
   readonly code?: string
@@ -238,26 +239,38 @@ export async function getSupportMessages(
 export async function sendSupportMessage(
   input: SendSupportMessageInput
 ): Promise<SupportMessage | null> {
+  const page = {
+    path: input.page.path,
+    title: input.page.title,
+    section: input.page.section,
+    request_id: input.page.requestId,
+  }
+  const payload =
+    input.kind === 'image'
+      ? {
+          message_type: 'image',
+          image_data: input.imageData,
+          client_message_id: input.clientMessageId,
+          page,
+        }
+      : {
+          text: input.text,
+          client_message_id: input.clientMessageId,
+          page,
+        }
   const response = await requestSupport(
     () =>
       api.post<ApiEnvelope<SupportMessageWire>>(
         '/api/user/support/messages',
-        {
-          text: input.text,
-          client_message_id: input.clientMessageId,
-          page: {
-            path: input.page.path,
-            title: input.page.title,
-            section: input.page.section,
-            request_id: input.page.requestId,
-          },
-        },
+        payload,
         {
           skipBusinessError: true,
           skipErrorHandler: true,
         }
       ),
-    'Unable to send support message'
+    input.kind === 'image'
+      ? 'Unable to upload image'
+      : 'Unable to send support message'
   )
 
   return response.data ? normalizeMessage(response.data) : null

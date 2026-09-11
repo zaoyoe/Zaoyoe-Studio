@@ -310,17 +310,27 @@ export async function getAdminSupportMessages(
 
 export async function sendAdminSupportMessage(
   conversationID: string,
-  text: string
+  text: string,
+  options?: { kind?: 'image'; imageData?: string }
 ): Promise<AdminSupportMessage | null> {
+  const clientMessageId =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const payload =
+    options?.kind === 'image'
+      ? {
+          message_type: 'image',
+          image_data: options.imageData,
+          client_message_id: clientMessageId,
+        }
+      : {
+          text,
+          client_message_id: clientMessageId,
+        }
   const response = await api.post<ApiEnvelope<AdminSupportMessageWire>>(
     `/api/admin/support/conversations/${encodeURIComponent(conversationID)}/messages`,
-    {
-      text,
-      client_message_id:
-        typeof globalThis.crypto?.randomUUID === 'function'
-          ? globalThis.crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    },
+    payload,
     {
       skipBusinessError: true,
       skipErrorHandler: true,

@@ -28,6 +28,7 @@ import {
   ChevronDown,
   ChevronUp,
   CircleAlert,
+  ImagePlus,
   Inbox,
   LoaderCircle,
   MessageCircle,
@@ -36,6 +37,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import {
+  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   useCallback,
@@ -78,6 +80,8 @@ import {
   type AdminSupportMessagesPage,
 } from './admin-api'
 import { useStickToLatestMessage } from './hooks/use-stick-to-latest-message'
+import { compressSupportImage } from './lib/compress-support-image'
+import { getSupportImageUrl } from './lib/support-image-url'
 
 const ADMIN_SUPPORT_QUERY_KEY = ['admin-support-conversations'] as const
 const ADMIN_SUPPORT_MESSAGES_QUERY_KEY = 'admin-support-messages'
@@ -292,6 +296,8 @@ function MessageHistory({
       {messages.map((message) => {
         const isAgent = message.author === 'agent'
         const timestamp = formatConversationTime(message.createdAt)
+        const imageUrl =
+          message.kind === 'image' ? getSupportImageUrl(message.text) : null
         return (
           <div
             key={message.id}
@@ -306,21 +312,38 @@ function MessageHistory({
                 isAgent && 'justify-end'
               )}
             >
-              {isAgent ? <span>{t('You')}</span> : null}
               {timestamp && (
                 <time dateTime={message.createdAt}>{timestamp}</time>
               )}
             </div>
-            <div
-              className={cn(
-                'min-w-0 w-max max-w-[84%] rounded-2xl px-3 py-2 text-left text-sm leading-6 break-words whitespace-pre-wrap',
-                isAgent
-                  ? 'bg-primary text-primary-foreground rounded-br-sm'
-                  : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm'
-              )}
-            >
-              {message.text}
-            </div>
+            {imageUrl ? (
+              <a
+                href={imageUrl}
+                target='_blank'
+                rel='noreferrer'
+                className='border-border max-w-[84%] overflow-hidden rounded-lg border'
+              >
+                <img
+                  src={imageUrl}
+                  alt={t('Support image')}
+                  loading='lazy'
+                  decoding='async'
+                  referrerPolicy='no-referrer'
+                  className='max-h-80 max-w-full object-contain'
+                />
+              </a>
+            ) : (
+              <div
+                className={cn(
+                  'min-w-0 w-max max-w-[84%] rounded-2xl px-3 py-2 text-left text-sm leading-6 break-words whitespace-pre-wrap',
+                  isAgent
+                    ? 'bg-primary text-primary-foreground rounded-br-sm'
+                    : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-700 dark:text-zinc-100 rounded-bl-sm'
+                )}
+              >
+                {message.text}
+              </div>
+            )}
           </div>
         )
       })}
@@ -488,7 +511,10 @@ export function AdminSupportInbox() {
   const [selectedID, setSelectedID] = useState<string>()
   const [draft, setDraft] = useState('')
   const [showListOnMobile, setShowListOnMobile] = useState(true)
+  const [attachingImage, setAttachingImage] = useState(false)
+  const [imageError, setImageError] = useState<Error | null>(null)
   const draftRef = useRef('')
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const conversationsQuery = useInfiniteQuery({
     queryKey: ADMIN_SUPPORT_QUERY_KEY,
@@ -531,11 +557,20 @@ export function AdminSupportInbox() {
     mutationFn: ({
       conversationID,
       text,
+      kind,
+      imageData,
     }: {
       conversationID: string
       text: string
-    }) => sendAdminSupportMessage(conversationID, text),
-    onMutate: async ({ conversationID, text }) => {
+      kind?: 'image'
+      imageData?: string
+    }) =>
+      sendAdminSupportMessage(
+        conversationID,
+        text,
+        kind === 'image' ? { kind: 'image', imageData } : undefined
+      ),
+    onMutate: async ({ conversationID, text, kind, imageData }) => {
       await queryClient.cancelQueries({
         queryKey: [ADMIN_SUPPORT_MESSAGES_QUERY_KEY, conversationID],
       })
@@ -549,9 +584,9 @@ export function AdminSupportInbox() {
         )
       const optimisticMessage: AdminSupportMessage = {
         id: createOptimisticMessageID(),
-        text,
+        text: kind === 'image' ? (imageData ?? text) : text,
         author: 'agent',
-        kind: 'text',
+        kind: kind === 'image' ? 'image' : 'text',
         createdAt: new Date().toISOString(),
       }
       if (previous) {
@@ -643,7 +678,8 @@ export function AdminSupportInbox() {
 
   const sendReply = () => {
     const text = draftRef.current.trim()
-    if (!activeID || !text) return
+    if (!activeID || !text || attachingImage) return
+    setImageError(null)
     draftRef.current = ''
     setDraft('')
     sendMutation.mutate(
@@ -674,6 +710,33 @@ export function AdminSupportInbox() {
       event.preventDefault()
       sendReply()
     }
+  }
+
+  const handleImageSelected = (file: File) => {
+    if (!activeID || attachingImage || messagesQuery.isLoading) return
+    setImageError(null)
+    setAttachingImage(true)
+    void compressSupportImage(file)
+      .then((imageData) => {
+        sendMutation.mutate({
+          conversationID: activeID,
+          text: imageData,
+          kind: 'image',
+          imageData,
+        })
+      })
+      .catch(() => {
+        setImageError(new Error('Unable to upload image'))
+      })
+      .finally(() => {
+        setAttachingImage(false)
+      })
+  }
+
+  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) handleImageSelected(file)
   }
 
   const refresh = () => {
@@ -833,13 +896,23 @@ export function AdminSupportInbox() {
                     }
                   />
                   <div className='bg-background shrink-0'>
-                    {sendMutation.error && (
+                    {(sendMutation.error || imageError) && (
                       <div className='px-4 pt-2'>
                         <Alert variant='destructive'>
                           <CircleAlert aria-hidden='true' />
-                          <AlertTitle>{t('Unable to send reply')}</AlertTitle>
+                          <AlertTitle>
+                            {t(
+                              imageError
+                                ? 'Unable to upload image'
+                                : 'Unable to send reply'
+                            )}
+                          </AlertTitle>
                           <AlertDescription>
-                            {t('Unable to send reply')}
+                            {t(
+                              imageError
+                                ? 'Unable to upload image'
+                                : 'Unable to send reply'
+                            )}
                           </AlertDescription>
                         </Alert>
                       </div>
@@ -852,6 +925,16 @@ export function AdminSupportInbox() {
                       <label className='sr-only' htmlFor='admin-support-reply'>
                         {t('Reply to customer')}
                       </label>
+                      <input
+                        ref={imageInputRef}
+                        type='file'
+                        accept='image/*'
+                        className='sr-only'
+                        tabIndex={-1}
+                        disabled={messagesQuery.isLoading || attachingImage}
+                        aria-label={t('Attach image')}
+                        onChange={handleImageChange}
+                      />
                       <div className='relative'>
                         <Textarea
                           id='admin-support-reply'
@@ -865,9 +948,36 @@ export function AdminSupportInbox() {
                           maxLength={MAX_REPLY_LENGTH}
                           rows={3}
                           disabled={messagesQuery.isLoading}
-                          className='min-h-22 resize-none pr-12'
+                          className='min-h-22 resize-none pr-24'
                           aria-describedby='admin-support-reply-hint'
                         />
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Button
+                                type='button'
+                                size='icon'
+                                variant='ghost'
+                                className='absolute right-12 bottom-2'
+                                disabled={
+                                  messagesQuery.isLoading || attachingImage
+                                }
+                                aria-label={t('Attach image')}
+                                onClick={() => imageInputRef.current?.click()}
+                              />
+                            }
+                          >
+                            {attachingImage ? (
+                              <LoaderCircle
+                                className='animate-spin'
+                                aria-hidden='true'
+                              />
+                            ) : (
+                              <ImagePlus aria-hidden='true' />
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent>{t('Attach image')}</TooltipContent>
+                        </Tooltip>
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -876,7 +986,9 @@ export function AdminSupportInbox() {
                                 size='icon'
                                 className='absolute right-2 bottom-2'
                                 disabled={
-                                  !draft.trim() || messagesQuery.isLoading
+                                  !draft.trim() ||
+                                  messagesQuery.isLoading ||
+                                  attachingImage
                                 }
                                 aria-label={t('Send reply')}
                               />

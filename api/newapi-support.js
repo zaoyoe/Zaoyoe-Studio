@@ -13,6 +13,8 @@ const DEFAULT_MESSAGE_LIMIT = 50;
 // response limit. Keep this in sync with the NewAPI controller and frontend.
 const MAX_MESSAGE_LIMIT = 50;
 const MAX_RAW_BODY_BYTES = 128 * 1024;
+const MAX_IMAGE_RAW_BODY_BYTES = Math.floor(4.5 * 1024 * 1024);
+const MAX_IMAGE_DATA_CHARACTERS = MAX_IMAGE_RAW_BODY_BYTES;
 const MAX_MESSAGE_BYTES = 16 * 1024;
 const MAX_MESSAGE_CHARACTERS = 4000;
 const NONCE_RETENTION_SKEW_MULTIPLIER = 2;
@@ -233,6 +235,70 @@ function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeImageData(value) {
+    const normalized = normalizeBoundedString(value, 'image_data', MAX_IMAGE_DATA_CHARACTERS, { required: true });
+    if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/.test(normalized)) {
+        throw gatewayError('image_data is invalid', { code: 'invalid_request' });
+    }
+    return normalized;
+}
+
+function isSafePublicChatImageUrl(value) {
+    try {
+        const parsed = new URL(String(value || '').trim());
+        if (parsed.protocol !== 'https:') return false;
+        if (parsed.username || parsed.password) return false;
+        if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) return false;
+        return parsed.pathname !== '' && parsed.pathname !== '/';
+    } catch (_) {
+        return false;
+    }
+}
+
+async function defaultUploadChatImage(input) {
+    const { uploadChatImage } = require('./_lib/chat-image-upload');
+    return uploadChatImage(input);
+}
+
+async function resolvePersistedMessageContent(conversation, request, uploadChatImage) {
+    if (request.messageType !== 'image') {
+        return {
+            content: request.text,
+            messageType: 'text'
+        };
+    }
+
+    let imageUrl;
+    try {
+        imageUrl = await uploadChatImage({
+            imageData: request.imageData,
+            sessionId: conversation.session_id
+        });
+    } catch (error) {
+        if (error instanceof NewApiSupportGatewayError) throw error;
+        const message = String(error?.message || 'Unable to upload image');
+        const invalid = /invalid image|not allowed|does not match|exceeds 3MB|data URL/i.test(message);
+        throw gatewayError(invalid ? message : 'Unable to upload image', {
+            statusCode: invalid ? 400 : 500,
+            code: invalid ? 'invalid_image' : 'image_upload_failed',
+            expose: invalid
+        });
+    }
+
+    if (!isSafePublicChatImageUrl(imageUrl)) {
+        throw gatewayError('Unable to upload image', {
+            statusCode: 500,
+            code: 'image_upload_failed',
+            expose: false
+        });
+    }
+
+    return {
+        content: imageUrl,
+        messageType: 'image'
+    };
+}
+
 function normalizeBoundedString(value, fieldName, maxLength, { required = false } = {}) {
     if (value === undefined || value === null) {
         if (required) {
@@ -347,14 +413,21 @@ function normalizeRequestBody(body) {
         : '';
     let text = '';
     let clientMessageId = '';
+    let imageData = '';
+    const messageType = body.message_type === 'image' ? 'image' : 'text';
     if (action === 'send_message' || action === 'admin_send_message') {
-        text = normalizeBoundedString(body.text, 'text', MAX_MESSAGE_CHARACTERS, { required: true });
-        if (Buffer.byteLength(text, 'utf8') > MAX_MESSAGE_BYTES) {
-            throw gatewayError('text is too long', { code: 'invalid_request' });
-        }
         clientMessageId = normalizeBoundedString(body.client_message_id, 'client_message_id', 128, { required: true });
         if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(clientMessageId)) {
             throw gatewayError('client_message_id is invalid', { code: 'invalid_request' });
+        }
+        if (messageType === 'image') {
+            imageData = normalizeImageData(body.image_data);
+            text = normalizeBoundedString(body.text, 'text', MAX_MESSAGE_CHARACTERS);
+        } else {
+            text = normalizeBoundedString(body.text, 'text', MAX_MESSAGE_CHARACTERS, { required: true });
+            if (Buffer.byteLength(text, 'utf8') > MAX_MESSAGE_BYTES) {
+                throw gatewayError('text is too long', { code: 'invalid_request' });
+            }
         }
     }
 
@@ -368,6 +441,8 @@ function normalizeRequestBody(body) {
         },
         page,
         text,
+        imageData,
+        messageType,
         clientMessageId,
         conversationID,
         limit,
@@ -642,7 +717,7 @@ async function findExistingMessage(supabase, conversation, clientMessageId) {
     return data || null;
 }
 
-async function createMessage(supabase, conversation, request) {
+async function createMessage(supabase, conversation, request, uploadChatImage) {
     const existing = await findExistingMessage(supabase, conversation, request.clientMessageId);
     if (existing) {
         if (existing.is_admin === true) {
@@ -654,6 +729,7 @@ async function createMessage(supabase, conversation, request) {
         return serializeMessage(existing);
     }
 
+    const persisted = await resolvePersistedMessageContent(conversation, request, uploadChatImage);
     const row = {
         user_id: null,
         session_id: conversation.session_id,
@@ -667,8 +743,8 @@ async function createMessage(supabase, conversation, request) {
         external_email: request.principal.email,
         client_message_id: request.clientMessageId,
         page_context: request.page || {},
-        content: request.text,
-        message_type: 'text',
+        content: persisted.content,
+        message_type: persisted.messageType,
         is_admin: false
     };
 
@@ -693,7 +769,7 @@ async function createMessage(supabase, conversation, request) {
     });
 }
 
-async function createAdminMessage(supabase, conversation, request) {
+async function createAdminMessage(supabase, conversation, request, uploadChatImage) {
     const existing = await findExistingMessage(supabase, conversation, request.clientMessageId);
     if (existing) {
         if (existing.is_admin !== true) {
@@ -705,6 +781,7 @@ async function createAdminMessage(supabase, conversation, request) {
         return serializeMessage(existing);
     }
 
+    const persisted = await resolvePersistedMessageContent(conversation, request, uploadChatImage);
     const row = {
         user_id: null,
         session_id: conversation.session_id,
@@ -716,8 +793,8 @@ async function createAdminMessage(supabase, conversation, request) {
         external_email: conversation.external_email || null,
         client_message_id: request.clientMessageId,
         page_context: request.page || {},
-        content: request.text,
-        message_type: 'text',
+        content: persisted.content,
+        message_type: persisted.messageType,
         is_admin: true
     };
 
@@ -780,6 +857,7 @@ function createNewApiSupportHandler(options = {}) {
     const env = options.env || process.env;
     const now = options.now || Date.now;
     const readBody = options.readRawBody || readRawRequestBody;
+    const uploadChatImage = options.uploadChatImage || defaultUploadChatImage;
 
     return async function newApiSupportHandler(req, res) {
         try {
@@ -791,9 +869,15 @@ function createNewApiSupportHandler(options = {}) {
                 });
             }
 
-            const rawBody = await readBody(req, { maxBytes: MAX_RAW_BODY_BYTES });
+            const rawBody = await readBody(req, { maxBytes: MAX_IMAGE_RAW_BODY_BYTES });
             const authentication = validateAuthentication(req, rawBody, { env, now });
             const request = normalizeRequestBody(parseRequestBody(rawBody));
+            if (request.messageType !== 'image' && rawBody.length > MAX_RAW_BODY_BYTES) {
+                throw gatewayError('Request body is too large', {
+                    statusCode: 413,
+                    code: 'body_too_large'
+                });
+            }
             const supabase = resolveSupabase();
             if (!supabase?.from) {
                 throw gatewayError('Support data service is unavailable', {
@@ -826,7 +910,7 @@ function createNewApiSupportHandler(options = {}) {
                     });
                 }
 
-                const message = await createAdminMessage(supabase, conversation, request);
+                const message = await createAdminMessage(supabase, conversation, request, uploadChatImage);
                 // The chat message is the authoritative write. This explicit
                 // conversation update is only a fallback for deployments that
                 // have not applied the trigger migration yet, so a failure
@@ -888,7 +972,7 @@ function createNewApiSupportHandler(options = {}) {
                 });
             }
 
-            const message = await createMessage(supabase, conversation, request);
+            const message = await createMessage(supabase, conversation, request, uploadChatImage);
             return sendJson(res, 200, {
                 success: true,
                 data: message
@@ -908,7 +992,8 @@ module.exports = handler;
 module.exports.config = {
     api: {
         bodyParser: false
-    }
+    },
+    maxDuration: 30
 };
 module.exports.NewApiSupportGatewayError = NewApiSupportGatewayError;
 module.exports.calculateSignature = calculateSignature;

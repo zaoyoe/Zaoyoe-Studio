@@ -53,7 +53,9 @@ export type SupportMessagesPage = {
 }
 
 export type SendSupportMessageInput = {
-  text: string
+  text?: string
+  kind?: SupportMessageKind
+  imageData?: string
   clientMessageId: string
   page: SupportPageContext
 }

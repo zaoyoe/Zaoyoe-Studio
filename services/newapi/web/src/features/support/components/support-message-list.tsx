@@ -33,6 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 import { useStickToLatestMessage } from '../hooks/use-stick-to-latest-message'
+import { getSupportImageUrl } from '../lib/support-image-url'
 import type { SupportMessage } from '../types'
 
 type SupportMessageListProps = {
@@ -64,15 +65,6 @@ function formatMessageTime(value: string): string | null {
     hour: '2-digit',
     minute: '2-digit',
   }).format(timestamp)
-}
-
-function getSupportImageUrl(value: string): string | null {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' ? url.href : null
-  } catch {
-    return null
-  }
 }
 
 export function SupportMessageList({
@@ -205,9 +197,7 @@ export function SupportMessageList({
         const isUser = message.author === 'user'
         const isSystem = message.author === 'system'
         const imageUrl =
-          message.kind === 'image' && message.author === 'agent'
-            ? getSupportImageUrl(message.text)
-            : null
+          message.kind === 'image' ? getSupportImageUrl(message.text) : null
         const formattedTime = formatMessageTime(message.createdAt)
 
         return (

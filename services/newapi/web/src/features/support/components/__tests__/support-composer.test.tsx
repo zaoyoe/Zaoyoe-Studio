@@ -30,6 +30,8 @@ const domGlobals = [
   'HTMLElement',
   'HTMLButtonElement',
   'HTMLTextAreaElement',
+  'HTMLInputElement',
+  'File',
   'SVGElement',
   'Node',
   'Element',
@@ -70,6 +72,7 @@ await i18n.use(initReactI18next).init({
         'Describe what you need help with...':
           'Describe what you need help with...',
         'Send message': 'Send message',
+        'Attach image': 'Attach image',
         'Press Enter to send, Shift+Enter for a new line':
           'Press Enter to send, Shift+Enter for a new line',
       },
@@ -86,7 +89,9 @@ type ComposerTestProps = {
   value: string
   disabled?: boolean
   sending?: boolean
+  attachingImage?: boolean
   onSubmit: () => void
+  onImageSelected?: (file: File) => void
 }
 
 type RenderedComposer = {
@@ -112,6 +117,8 @@ async function renderComposer(
             onTextareaMount={() => undefined}
             onValueChange={() => undefined}
             onSubmit={props.onSubmit}
+            attachingImage={props.attachingImage}
+            onImageSelected={props.onImageSelected}
           />
         </TooltipProvider>
       </I18nextProvider>
@@ -191,6 +198,39 @@ describe('Support composer', () => {
 
     assert.equal(textarea.disabled, true)
     assert.equal(sendButton.disabled, true)
+
+    await act(async () => rendered.root.unmount())
+    rendered.host.remove()
+  })
+  test('exposes an image picker and forwards the selected file', async () => {
+    const selected: File[] = []
+    const rendered = await renderComposer({
+      value: '',
+      onSubmit: () => undefined,
+      onImageSelected: (file) => {
+        selected.push(file)
+      },
+    })
+    const attachButton = rendered.host.querySelector<HTMLButtonElement>(
+      'button[aria-label="Attach image"]'
+    )
+    const fileInput =
+      rendered.host.querySelector<HTMLInputElement>('input[type="file"]')
+    assert.ok(attachButton)
+    assert.ok(fileInput)
+    assert.equal(attachButton.disabled, false)
+    assert.equal(fileInput.accept, 'image/*')
+
+    const file = new File(['image-bytes'], 'photo.png', { type: 'image/png' })
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [file],
+    })
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    assert.equal(selected.length, 1)
+    assert.equal(selected[0]?.name, 'photo.png')
 
     await act(async () => rendered.root.unmount())
     rendered.host.remove()

@@ -275,3 +275,72 @@ test('NewAPI admin gateway returns the inserted reply when the activity fallback
     assert.equal(supabase.state.messages.length, 2);
     assert.equal(warnings.length, 2);
 });
+
+const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const ADMIN_IMAGE_CDN_URL = 'https://cdn.fatherkey.com/chat/newapi-admin/pixel.png';
+
+test('NewAPI admin gateway uploads an image reply and persists the public CDN URL', async () => {
+    const supabase = createAdminFakeSupabase();
+    const uploads = [];
+    const handler = createNewApiSupportHandler({
+        env: { NEWAPI_SUPPORT_GATEWAY_HMAC_SECRET: SECRET },
+        now: NOW_MS,
+        getSupabaseAdmin: () => supabase,
+        uploadChatImage: async (input) => {
+            uploads.push(input);
+            return ADMIN_IMAGE_CDN_URL;
+        }
+    });
+
+    const reply = await call(handler, adminPayload('admin_send_message', {
+        conversation_id: CONVERSATION_ID,
+        text: undefined,
+        message_type: 'image',
+        image_data: PNG_DATA_URL,
+        client_message_id: 'admin-image-1'
+    }), 'admin-image-nonce-012345');
+
+    assert.equal(reply.result.statusCode, 200);
+    assert.equal(reply.payload.success, true);
+    assert.equal(reply.payload.data.author, 'admin');
+    assert.equal(reply.payload.data.message_type, 'image');
+    assert.equal(reply.payload.data.text, ADMIN_IMAGE_CDN_URL);
+    assert.equal(uploads.length, 1);
+    assert.equal(uploads[0].imageData, PNG_DATA_URL);
+    assert.equal(uploads[0].sessionId, SESSION_ID);
+    assert.equal(supabase.state.messages.at(-1).is_admin, true);
+    assert.equal(supabase.state.messages.at(-1).content, ADMIN_IMAGE_CDN_URL);
+    assert.equal(supabase.state.messages.at(-1).message_type, 'image');
+    assert.equal(JSON.stringify(supabase.state.messages.at(-1)).includes(PNG_DATA_URL), false);
+    assert.equal(supabase.state.conversations[0].last_message_is_admin, true);
+});
+
+test('NewAPI admin gateway does not re-upload an image for a retried client_message_id', async () => {
+    const supabase = createAdminFakeSupabase();
+    const uploads = [];
+    const handler = createNewApiSupportHandler({
+        env: { NEWAPI_SUPPORT_GATEWAY_HMAC_SECRET: SECRET },
+        now: NOW_MS,
+        getSupabaseAdmin: () => supabase,
+        uploadChatImage: async (input) => {
+            uploads.push(input);
+            return ADMIN_IMAGE_CDN_URL;
+        }
+    });
+    const payload = adminPayload('admin_send_message', {
+        conversation_id: CONVERSATION_ID,
+        text: undefined,
+        message_type: 'image',
+        image_data: PNG_DATA_URL,
+        client_message_id: 'admin-image-retry-1'
+    });
+
+    const first = await call(handler, payload, 'admin-image-retry-nonce-01');
+    const second = await call(handler, payload, 'admin-image-retry-nonce-02');
+
+    assert.equal(first.result.statusCode, 200);
+    assert.equal(second.result.statusCode, 200);
+    assert.equal(first.payload.data.id, second.payload.data.id);
+    assert.equal(uploads.length, 1);
+    assert.equal(supabase.state.messages.filter((row) => row.client_message_id === 'admin-image-retry-1').length, 1);
+});

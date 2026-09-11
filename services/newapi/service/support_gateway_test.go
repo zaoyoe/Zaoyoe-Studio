@@ -46,6 +46,8 @@ func TestSupportGatewayDispatchSignsRequestAndOnlySendsSupportPrincipal(t *testi
 		assert.Equal(t, "/dashboard/keys", payload.Page.Path)
 		assert.Equal(t, "How do I rotate a key?", payload.Text)
 		assert.Equal(t, "msg-123", payload.ClientMessageID)
+		assert.NotContains(t, string(body), "message_type")
+		assert.NotContains(t, string(body), "image_data")
 
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"success":true,"data":{"id":"support-1"}}`))
@@ -234,6 +236,40 @@ func TestSupportGatewayRequestValidationRejectsOutOfContractAdminReply(t *testin
 	oversizedText := base
 	oversizedText.Text = strings.Repeat("a", maxSupportGatewayTextRunes+1)
 	assert.False(t, isSupportGatewayRequestValid(oversizedText))
+}
+
+func TestSupportGatewayRequestValidationAcceptsImagePayload(t *testing.T) {
+	const imageData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+	request := SupportGatewayRequest{
+		Action: SupportGatewayActionSend,
+		Principal: SupportGatewayPrincipal{
+			UserID:   7,
+			Username: "newapi-user",
+		},
+		Page:            &SupportGatewayPageContext{Path: "/dashboard"},
+		MessageType:     "image",
+		ImageData:       imageData,
+		ClientMessageID: "image-1",
+	}
+	assert.True(t, isSupportGatewayRequestValid(request))
+
+	missingData := request
+	missingData.ImageData = ""
+	assert.False(t, isSupportGatewayRequestValid(missingData))
+
+	urlInsteadOfData := request
+	urlInsteadOfData.ImageData = "https://cdn.fatherkey.com/chat/not-a-data-url.png"
+	assert.False(t, isSupportGatewayRequestValid(urlInsteadOfData))
+
+	adminImage := SupportGatewayRequest{
+		Action:          SupportGatewayActionAdminSend,
+		Principal:       SupportGatewayPrincipal{UserID: 7, Username: "operator"},
+		ConversationID:  "123e4567-e89b-12d3-a456-426614174000",
+		MessageType:     "image",
+		ImageData:       imageData,
+		ClientMessageID: "admin-image-1",
+	}
+	assert.True(t, isSupportGatewayRequestValid(adminImage))
 }
 
 func TestNewSupportGatewayFromEnvironmentRequiresHTTPSAndSecret(t *testing.T) {
