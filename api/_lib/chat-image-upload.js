@@ -1,6 +1,6 @@
 'use strict';
 
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const crypto = require('node:crypto');
 
 const MAX_CHAT_IMAGE_BYTES = 3 * 1024 * 1024;
 const DEFAULT_BUCKET_NAME = 'zaoyoeimages';
@@ -148,21 +148,106 @@ function getR2Credentials(env = process.env) {
     };
 }
 
-async function putObjectWithAwsSdk(env, commandInput) {
+function sha256Hex(value) {
+    return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function hmac(key, value) {
+    return crypto.createHmac('sha256', key).update(value, 'utf8').digest();
+}
+
+function encodeS3Path(key) {
+    return String(key)
+        .split('/')
+        .map((segment) => encodeURIComponent(segment).replace(/[!'()*]/g, (character) => (
+            `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+        )))
+        .join('/');
+}
+
+function toAmzDate(date) {
+    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+function buildSignedR2PutRequest(env, commandInput, signedAt) {
     const credentials = getR2Credentials(env);
     if (!credentials.endpoint || !credentials.accessKeyId || !credentials.secretAccessKey) {
         throw new Error('R2 is not configured');
     }
 
-    const client = new S3Client({
-        region: 'auto',
-        endpoint: credentials.endpoint,
-        credentials: {
-            accessKeyId: credentials.accessKeyId,
-            secretAccessKey: credentials.secretAccessKey
-        }
+    const endpoint = new URL(credentials.endpoint);
+    const host = `${credentials.bucketName}.${endpoint.host}`;
+    const canonicalUri = `/${encodeS3Path(commandInput.Key)}`;
+    const contentType = commandInput.ContentType || 'application/octet-stream';
+    const cacheControl = String(commandInput.CacheControl || '').trim();
+    const payloadHash = sha256Hex(commandInput.Body);
+    const amzDate = toAmzDate(signedAt);
+    const dateStamp = amzDate.slice(0, 8);
+    const region = 'auto';
+    const service = 's3';
+    const headerMap = {
+        'content-type': contentType,
+        host,
+        'x-amz-content-sha256': payloadHash,
+        'x-amz-date': amzDate
+    };
+    if (cacheControl) headerMap['cache-control'] = cacheControl;
+
+    const signedHeaderNames = Object.keys(headerMap).sort();
+    const canonicalHeaders = signedHeaderNames
+        .map((name) => `${name}:${headerMap[name]}\n`)
+        .join('');
+    const signedHeaders = signedHeaderNames.join(';');
+    const canonicalRequest = [
+        'PUT',
+        canonicalUri,
+        '',
+        canonicalHeaders,
+        signedHeaders,
+        payloadHash
+    ].join('\n');
+    const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+    const stringToSign = [
+        'AWS4-HMAC-SHA256',
+        amzDate,
+        credentialScope,
+        sha256Hex(canonicalRequest)
+    ].join('\n');
+    const signingKey = hmac(
+        hmac(hmac(hmac(`AWS4${credentials.secretAccessKey}`, dateStamp), region), service),
+        'aws4_request'
+    );
+    const signature = crypto.createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
+
+    return {
+        url: `${endpoint.protocol}//${host}${canonicalUri}`,
+        headers: {
+            Authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+            'Content-Type': contentType,
+            ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
+            'x-amz-content-sha256': payloadHash,
+            'x-amz-date': amzDate
+        },
+        body: commandInput.Body
+    };
+}
+
+async function putObjectWithSignedRequest(env, commandInput, options = {}) {
+    const request = buildSignedR2PutRequest(env, commandInput, options.signedAt || new Date());
+    const fetchImpl = options.fetch || globalThis.fetch;
+    if (typeof fetchImpl !== 'function') {
+        throw new Error('Unable to upload image');
+    }
+
+    const response = await fetchImpl(request.url, {
+        method: 'PUT',
+        headers: request.headers,
+        body: request.body
     });
-    await client.send(new PutObjectCommand(commandInput));
+    const status = Number(response?.status);
+    if (!Number.isFinite(status) || status < 200 || status >= 300) {
+        throw new Error('Unable to upload image');
+    }
 }
 
 async function uploadChatImage({ imageData, sessionId } = {}, options = {}) {
@@ -186,7 +271,10 @@ async function uploadChatImage({ imageData, sessionId } = {}, options = {}) {
     if (typeof options.putObject === 'function') {
         await options.putObject(commandInput);
     } else {
-        await putObjectWithAwsSdk(env, commandInput);
+        await putObjectWithSignedRequest(env, commandInput, {
+            fetch: options.fetch,
+            signedAt: new Date(timestamp)
+        });
     }
 
     return `${getR2PublicUrlBase(env)}/${key}`;
@@ -194,6 +282,7 @@ async function uploadChatImage({ imageData, sessionId } = {}, options = {}) {
 
 module.exports = {
     MAX_CHAT_IMAGE_BYTES,
+    buildSignedR2PutRequest,
     detectImageContentType,
     getR2Credentials,
     getR2PublicUrlBase,

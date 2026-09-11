@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    buildSignedR2PutRequest,
     getR2Credentials,
     getR2PublicUrlBase,
     parseImageDataUrl,
@@ -118,5 +119,91 @@ test('chat image helpers prefer AI_IMAGE_R2_* and default to the production buck
     assert.equal(
         getR2PublicUrlBase({ AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.fatherkey.com/' }),
         'https://cdn.fatherkey.com'
+    );
+});
+
+test('chat image upload signs a virtual-hosted R2 PUT without the AWS SDK', async () => {
+    const calls = [];
+    const url = await uploadChatImage(
+        {
+            imageData: PNG_DATA_URL,
+            sessionId: 'newapi:70e83ef5-0181-4efd-9a7b-f827655e243f'
+        },
+        {
+            env: {
+                AI_IMAGE_R2_ENDPOINT: 'https://abc.r2.cloudflarestorage.com',
+                AI_IMAGE_R2_ACCESS_KEY_ID: 'ai-access',
+                AI_IMAGE_R2_SECRET_ACCESS_KEY: 'ai-secret',
+                AI_IMAGE_R2_BUCKET_NAME: 'zaoyoeimages',
+                AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.fatherkey.com'
+            },
+            now: 1_725_000_000_000,
+            randomKey: () => 'randkey1',
+            fetch: async (requestUrl, init) => {
+                calls.push({ url: requestUrl, init });
+                return { status: 200 };
+            }
+        }
+    );
+
+    assert.equal(calls.length, 1);
+    assert.equal(
+        calls[0].url,
+        'https://zaoyoeimages.abc.r2.cloudflarestorage.com/chat/newapi_70e83ef5-0181-4efd-9a7b-f827655e243f/1725000000000_randkey1.png'
+    );
+    assert.equal(calls[0].init.method, 'PUT');
+    assert.equal(calls[0].init.headers['Content-Type'], 'image/png');
+    assert.match(calls[0].init.headers.Authorization, /^AWS4-HMAC-SHA256 Credential=ai-access\//);
+    assert.equal(
+        url,
+        'https://cdn.fatherkey.com/chat/newapi_70e83ef5-0181-4efd-9a7b-f827655e243f/1725000000000_randkey1.png'
+    );
+});
+
+test('chat image helpers never load the AWS SDK', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const source = fs.readFileSync(
+        path.join(__dirname, '../api/_lib/chat-image-upload.js'),
+        'utf8'
+    );
+    assert.equal(source.includes('@aws-sdk/client-s3'), false);
+    assert.equal(typeof buildSignedR2PutRequest, 'function');
+});
+
+test('chat image upload fails closed when R2 is not configured', async () => {
+    await assert.rejects(
+        () => uploadChatImage(
+            { imageData: PNG_DATA_URL, sessionId: 'session-1' },
+            {
+                env: {},
+                fetch: async () => ({ status: 200 })
+            }
+        ),
+        /R2 is not configured/
+    );
+});
+
+test('chat image upload maps a failed R2 PUT to unable to upload', async () => {
+    await assert.rejects(
+        () => uploadChatImage(
+            {
+                imageData: PNG_DATA_URL,
+                sessionId: 'newapi:70e83ef5-0181-4efd-9a7b-f827655e243f'
+            },
+            {
+                env: {
+                    AI_IMAGE_R2_ENDPOINT: 'https://abc.r2.cloudflarestorage.com',
+                    AI_IMAGE_R2_ACCESS_KEY_ID: 'ai-access',
+                    AI_IMAGE_R2_SECRET_ACCESS_KEY: 'ai-secret',
+                    AI_IMAGE_R2_BUCKET_NAME: 'zaoyoeimages',
+                    AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.fatherkey.com'
+                },
+                now: 1_725_000_000_000,
+                randomKey: () => 'randkey1',
+                fetch: async () => ({ status: 403 })
+            }
+        ),
+        /Unable to upload image/
     );
 });

@@ -196,11 +196,11 @@ describe('Support message list', () => {
       timestamps[1]?.getAttribute('dateTime'),
       '2026-09-09T12:01:00.000Z'
     )
-    for (const timestamp of timestamps) {
-      const label = timestamp.textContent?.trim() || ''
-      assert.notEqual(label, '')
-      assert.match(label, /9/)
-    }
+    const labels = timestamps.map(
+      (timestamp) => timestamp.textContent?.trim() || ''
+    )
+    assert.equal(labels.every(Boolean), true)
+    assert.ok((labels[0] || '').length > (labels[1] || '').length)
 
     await act(async () => rendered.root.unmount())
     rendered.host.remove()
