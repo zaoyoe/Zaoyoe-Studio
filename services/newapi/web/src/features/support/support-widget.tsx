@@ -161,7 +161,7 @@ export function SupportWidget() {
   const triggerButton = (
     <Button
       size='icon-lg'
-      className='fixed right-4 bottom-6 z-40 size-11 overflow-visible rounded-full shadow-lg sm:right-6 sm:bottom-8'
+      className='fixed right-4 bottom-10 z-40 size-11 overflow-visible rounded-full shadow-lg sm:right-6 sm:bottom-12'
       aria-label={isAdmin ? t('Open support inbox') : t('Contact support')}
       onClick={isAdmin ? handleAdminOpen : undefined}
       data-testid='support-widget-trigger'

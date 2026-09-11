@@ -58,11 +58,8 @@ function parseImageDataUrl(imageData) {
         throw new Error('Invalid image data URL');
     }
 
-    const declaredContentType = normalizeContentType(match[1]);
-    if (!ALLOWED_CONTENT_TYPES.has(declaredContentType)) {
-        throw new Error('Image type is not allowed');
-    }
-
+    // The declared MIME is only a client hint. Safari's canvas.toBlob('image/webp')
+    // often yields PNG or JPEG bytes while the data URL is still labeled webp.
     let bytes;
     try {
         bytes = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
@@ -78,11 +75,8 @@ function parseImageDataUrl(imageData) {
     }
 
     const detected = detectImageContentType(bytes);
-    if (!detected) {
+    if (!detected || !ALLOWED_CONTENT_TYPES.has(detected)) {
         throw new Error('Image bytes do not match a supported image format');
-    }
-    if (detected !== declaredContentType) {
-        throw new Error('Image content type does not match file bytes');
     }
 
     return {

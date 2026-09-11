@@ -207,3 +207,40 @@ test('chat image upload maps a failed R2 PUT to unable to upload', async () => {
         /Unable to upload image/
     );
 });
+
+test('chat image upload trusts magic bytes when the data URL MIME is wrong', async () => {
+    const pngBytes = PNG_DATA_URL.split(',')[1];
+    const mislabeled = `data:image/webp;base64,${pngBytes}`;
+    const parsed = parseImageDataUrl(mislabeled);
+    assert.equal(parsed.contentType, 'image/png');
+
+    const puts = [];
+    const url = await uploadChatImage(
+        {
+            imageData: mislabeled,
+            sessionId: 'newapi:70e83ef5-0181-4efd-9a7b-f827655e243f'
+        },
+        {
+            env: {
+                AI_IMAGE_R2_PUBLIC_URL: 'https://cdn.fatherkey.com',
+                AI_IMAGE_R2_BUCKET_NAME: 'zaoyoeimages'
+            },
+            now: 1_725_000_000_000,
+            randomKey: () => 'randkey1',
+            putObject: async (input) => {
+                puts.push(input);
+            }
+        }
+    );
+
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].ContentType, 'image/png');
+    assert.equal(
+        puts[0].Key,
+        'chat/newapi_70e83ef5-0181-4efd-9a7b-f827655e243f/1725000000000_randkey1.png'
+    );
+    assert.equal(
+        url,
+        'https://cdn.fatherkey.com/chat/newapi_70e83ef5-0181-4efd-9a7b-f827655e243f/1725000000000_randkey1.png'
+    );
+});
