@@ -17,10 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-import en from '../../i18n/locales/en.json'
-import zh from '../../i18n/locales/zh.json'
+import en from '../../i18n/locales/en.json' with { type: 'json' }
+import zh from '../../i18n/locales/zh.json' with { type: 'json' }
+
+const homeCss = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'type-led-home.css'),
+  'utf8'
+)
 
 describe('type-led home copy', () => {
   test('keeps the required main-site recharge wording', () => {
@@ -67,4 +75,11 @@ describe('type-led home copy', () => {
       '从真正要做的事开始'
     )
   })
+  test('keeps the 04 flow-center semi-transparent and tall enough to cover ROUTE', () => {
+    assert.match(homeCss, /background:\s*#040404e6/)
+    assert.match(homeCss, /\.fk-home \.flow-center \{[\s\S]*?min-height:\s*420px/)
+    assert.doesNotMatch(homeCss, /flow-veil/)
+    assert.doesNotMatch(homeCss, /rotate\(-90deg\)/)
+  })
 })
+
