@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Link, useLocation } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
-import { type ReactNode, useState, useEffect } from 'react'
+import { type ComponentProps, type ReactNode, useState, useEffect } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -60,18 +60,18 @@ import { ChatPresetsItem } from './chat-presets-item'
 
 function NavDestination({
   url,
-  className,
-  onClick,
+  ...props
 }: {
   url: NavLink['url']
-  className?: string
-  onClick?: () => void
-}) {
+} & ComponentProps<'a'>) {
+  // Base UI's `render` slot clones this element and injects className, ref,
+  // data attributes, and children. Those props must be forwarded or sidebar
+  // labels lose their theme color and become unreadable.
   if (typeof url === 'string' && isExternalUrl(url)) {
-    return <a href={url} className={className} onClick={onClick} />
+    return <a {...props} href={url} />
   }
 
-  return <Link to={url} className={className} onClick={onClick} />
+  return <Link {...props} to={url} />
 }
 
 /**
