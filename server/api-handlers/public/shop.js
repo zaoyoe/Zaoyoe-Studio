@@ -108,6 +108,7 @@ function buildHomepageShopCatalogProduct(product = {}) {
         'price_points_intl',
         'image_assets',
         'stock_count',
+        'sales_count',
         'manual_delivery',
         'category',
         'is_active',
@@ -360,6 +361,149 @@ function createShopHandlers({
                 || normalizedMessage.includes('undefined column')
                 || normalizedMessage.includes('schema cache')
             );
+    }
+
+    function normalizePublicShopSalesQuantity(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+            return 1;
+        }
+        return Math.max(1, Math.trunc(numericValue));
+    }
+
+    function normalizePublicShopSalesSite(value) {
+        return normalizeText(value, 20).toLowerCase() === 'intl' ? 'intl' : 'cn';
+    }
+
+    async function loadPublicShopProductSalesCounts(dataSupabase, productIds = [], currentSite = 'cn') {
+        const normalizedProductIds = [...new Set(
+            (Array.isArray(productIds) ? productIds : [])
+                .map((productId) => normalizeText(productId, 160))
+                .filter(Boolean)
+        )];
+        const salesByProductId = new Map();
+        const normalizedSite = currentSite === 'intl' ? 'intl' : 'cn';
+
+        if (!normalizedProductIds.length || !dataSupabase) {
+            return { counts: salesByProductId, available: true };
+        }
+
+        if (typeof dataSupabase.rpc === 'function') {
+            try {
+                const { data, error } = await dataSupabase.rpc('fn_public_shop_product_sales_counts', {
+                    p_product_ids: normalizedProductIds,
+                    p_site: normalizedSite
+                });
+
+                if (!error) {
+                    (Array.isArray(data) ? data : []).forEach((row) => {
+                        const productId = normalizeText(row?.product_id, 160);
+                        const salesCount = Number(row?.sales_count);
+                        if (!productId || !normalizedProductIds.includes(productId) || !Number.isFinite(salesCount)) {
+                            return;
+                        }
+                        salesByProductId.set(productId, Math.max(0, Math.trunc(salesCount)));
+                    });
+                    return { counts: salesByProductId, available: true };
+                }
+
+                if (!isMissingRpcCapabilityError(error)) {
+                    console.warn('[ShopCatalog] Public sales RPC failed; trying the compatibility query:', error?.message || error);
+                }
+            } catch (error) {
+                if (!isMissingRpcCapabilityError(error)) {
+                    console.warn('[ShopCatalog] Public sales RPC failed; trying the compatibility query:', error?.message || error);
+                }
+            }
+        }
+
+        let includeItemCount = true;
+        let includeSite = true;
+        while (true) {
+            if (!includeSite && normalizedSite === 'intl') {
+                return { counts: salesByProductId, available: false };
+            }
+
+            const selectFields = [
+                'product_id',
+                includeItemCount ? 'item_count' : '',
+                'refund_status',
+                includeSite ? 'site' : ''
+            ].filter(Boolean).join(', ');
+
+            let response;
+            try {
+                response = await dataSupabase
+                    .from('shop_orders')
+                    .select(selectFields)
+                    .in('product_id', normalizedProductIds);
+            } catch (error) {
+                if (isMissingRelationError(error, 'shop_orders')) {
+                    return { counts: salesByProductId, available: false };
+                }
+                console.warn('[ShopCatalog] Public sales compatibility query failed:', error?.message || error);
+                return { counts: salesByProductId, available: false };
+            }
+
+            const error = response?.error;
+            if (!error) {
+                (Array.isArray(response?.data) ? response.data : []).forEach((row) => {
+                    const productId = normalizeText(row?.product_id, 160);
+                    if (!productId || !normalizedProductIds.includes(productId)) return;
+                    if (includeSite && normalizePublicShopSalesSite(row?.site) !== normalizedSite) return;
+                    if (normalizeText(row?.refund_status, 40).toLowerCase() === 'refunded'
+                        || normalizeText(row?.refund_status, 40).toLowerCase() === 'full_refund') {
+                        return;
+                    }
+
+                    const quantity = includeItemCount
+                        ? normalizePublicShopSalesQuantity(row?.item_count)
+                        : 1;
+                    salesByProductId.set(productId, (salesByProductId.get(productId) || 0) + quantity);
+                });
+                return { counts: salesByProductId, available: true };
+            }
+
+            if (isMissingRelationError(error, 'shop_orders')) {
+                return { counts: salesByProductId, available: false };
+            }
+            if (isMissingColumnError(error, 'refund_status')) {
+                return { counts: salesByProductId, available: false };
+            }
+            if (includeItemCount && isMissingColumnError(error, 'item_count')) {
+                includeItemCount = false;
+                continue;
+            }
+            if (includeSite && isMissingColumnError(error, 'site')) {
+                includeSite = false;
+                continue;
+            }
+
+            console.warn('[ShopCatalog] Public sales compatibility query failed:', error?.message || error);
+            return { counts: salesByProductId, available: false };
+        }
+    }
+
+    async function attachPublicShopProductSales(dataSupabase, products = [], currentSite = 'cn') {
+        const rows = Array.isArray(products) ? products : [];
+        if (!rows.length) return rows;
+
+        const salesResult = await loadPublicShopProductSalesCounts(
+            dataSupabase,
+            rows.map((product) => product?.id),
+            currentSite
+        );
+        if (!salesResult.available) {
+            return rows;
+        }
+
+        return rows.map((product) => {
+            const productId = normalizeText(product?.id, 160);
+            return {
+                ...product,
+                sales_count: salesResult.counts.get(productId) || 0
+            };
+        });
     }
 
     function shouldRetryShopCatalogSelect(error) {
@@ -854,9 +998,10 @@ function createShopHandlers({
 
             const { data, error } = await query;
             if (!error) {
-                return (Array.isArray(data) ? data : [])
+                const products = (Array.isArray(data) ? data : [])
                     .map((product) => normalizeShopCatalogProductForSite(product, currentSite, language))
                     .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite));
+                return attachPublicShopProductSales(dataSupabase, products, currentSite);
             }
 
             lastError = error;
@@ -993,10 +1138,11 @@ function createShopHandlers({
                         inventoryStockBySkuId: stockByProductId.get(productId) || null
                     };
                 });
-                return products
+                const visibleProducts = products
                     .filter((product) => !hiddenCategoryNameSet.has(normalizeText(product?.category, 120)))
                     .map((product) => normalizeShopCatalogProductForSite(product, currentSite, language))
                     .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite));
+                return attachPublicShopProductSales(dataSupabase, visibleProducts, currentSite);
             }
 
             lastError = error;

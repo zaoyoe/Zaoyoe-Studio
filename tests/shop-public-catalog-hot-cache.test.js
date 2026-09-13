@@ -65,6 +65,71 @@ function createThenableQuery(getResult, onAwait) {
     };
 }
 
+function createCatalogHandler(supabase, env = {}) {
+    return createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                const normalized = String(value || 'cn').trim().toLowerCase();
+                if (normalized !== 'cn' && normalized !== 'intl') {
+                    const error = new Error('Unsupported site');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                return normalized;
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '0',
+            ...env
+        }
+    }).catalog;
+}
+
+function createCatalogSupabase({
+    categories = [{ id: 'category-tools', name: 'tools', sort_order: 1, is_public: true }],
+    products = [],
+    skus = [],
+    inventory = [],
+    orders = [],
+    ordersError = null,
+    rpcHandler = null
+} = {}) {
+    const rpcCalls = [];
+    const supabase = {
+        from(table) {
+            const responses = {
+                shop_categories: { data: categories, error: null },
+                shop_product_skus: { data: skus, error: null },
+                shop_inventory: { data: inventory, error: null },
+                shop_orders: { data: orders, error: ordersError },
+                shop_products: { data: products, error: null }
+            };
+            if (!Object.prototype.hasOwnProperty.call(responses, table)) {
+                throw new Error(`Unexpected table: ${table}`);
+            }
+            return createThenableQuery(() => responses[table]);
+        }
+    };
+
+    if (typeof rpcHandler === 'function') {
+        supabase.rpc = async (name, args) => {
+            rpcCalls.push({ name, args });
+            return rpcHandler({ name, args });
+        };
+    }
+
+    return { supabase, rpcCalls };
+}
+
 test('public shop catalog hot cache preserves normal hits while refresh requests reload data', async () => {
     let catalogVersion = 1;
     let categoryReads = 0;
@@ -109,6 +174,13 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
             }
 
             if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_orders') {
                 return createThenableQuery(() => ({
                     data: [],
                     error: null
@@ -265,6 +337,10 @@ test('public shop catalog home view is compact and cached separately from the fu
                 });
             }
 
+            if (table === 'shop_orders') {
+                return createThenableQuery(() => ({ data: [], error: null }));
+            }
+
             assert.equal(table, 'shop_products');
             return createThenableQuery(() => ({ data: products, error: null }), () => {
                 productReads += 1;
@@ -340,6 +416,13 @@ test('public shop catalog hides private categories and their products', async ()
             }
 
             if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_orders') {
                 return createThenableQuery(() => ({
                     data: [],
                     error: null
@@ -436,6 +519,13 @@ test('public shop catalog hides categories without products priced for the reque
             }
 
             if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_orders') {
                 return createThenableQuery(() => ({
                     data: [],
                     error: null
@@ -562,6 +652,13 @@ test('public shop catalog hides skus without a price for the requested site', as
                 }));
             }
 
+            if (table === 'shop_orders') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
             assert.equal(table, 'shop_products');
             return createThenableQuery(() => ({
                 data: [
@@ -650,6 +747,13 @@ test('public shop catalog keeps decimal default sku price even when legacy produ
             }
 
             if (table === 'shop_inventory') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_orders') {
                 return createThenableQuery(() => ({
                     data: [],
                     error: null
@@ -762,6 +866,13 @@ test('public shop catalog resolves site-scoped sku inventory source chains', asy
                 }));
             }
 
+            if (table === 'shop_orders') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
             assert.equal(table, 'shop_products');
             return createThenableQuery(() => ({
                 data: [
@@ -820,4 +931,142 @@ test('public shop catalog resolves site-scoped sku inventory source chains', asy
     assert.deepEqual(cnRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.inventory_source_sku_ids, ['sku-local', 'sku-backup']);
     assert.equal(intlRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.stock_count, 1);
     assert.deepEqual(intlRes.json().products[0].skus.find((sku) => sku.id === 'sku-local')?.inventory_source_sku_ids, []);
+});
+
+test('public shop catalog aggregates fallback sales by quantity, refund state, and site', async () => {
+    const { supabase } = createCatalogSupabase({
+        products: [
+            {
+                id: 'product-cn',
+                name: 'CN product',
+                price_points: 10,
+                price_points_intl: 1,
+                stock_count: 5,
+                category: 'tools',
+                display_order: 2,
+                is_active: true
+            },
+            {
+                id: 'product-intl',
+                name: 'INTL product',
+                price_points: 20,
+                price_points_intl: 2,
+                stock_count: 5,
+                category: 'tools',
+                display_order: 1,
+                is_active: true
+            }
+        ],
+        orders: [
+            { product_id: 'product-cn', item_count: 2, refund_status: 'none', site: 'cn' },
+            { product_id: 'product-cn', item_count: null, refund_status: 'none', site: 'cn' },
+            { product_id: 'product-cn', item_count: 0, refund_status: 'none', site: 'cn' },
+            { product_id: 'product-cn', item_count: 'invalid', refund_status: 'none', site: 'cn' },
+            { product_id: 'product-cn', item_count: 1, refund_status: 'none', site: null },
+            { product_id: 'product-cn', item_count: 10, refund_status: 'REFUNDED', site: 'cn' },
+            { product_id: 'product-cn', item_count: 10, refund_status: 'FULL_REFUND', site: 'cn' },
+            { product_id: 'product-cn', item_count: 9, refund_status: 'none', site: 'intl' },
+            { product_id: 'product-intl', item_count: 2, refund_status: 'none', site: 'cn' },
+            { product_id: 'product-intl', item_count: 3, refund_status: 'none', site: 'intl' }
+        ]
+    });
+    const handler = createCatalogHandler(supabase);
+
+    const cnRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&refresh=1',
+        headers: {}
+    }, cnRes);
+
+    const intlRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=intl&refresh=2',
+        headers: {}
+    }, intlRes);
+
+    const getSalesByProductId = (res) => Object.fromEntries(
+        res.json().products.map((product) => [product.id, product.sales_count])
+    );
+
+    assert.equal(cnRes.statusCode, 200);
+    assert.equal(intlRes.statusCode, 200);
+    assert.deepEqual(getSalesByProductId(cnRes), {
+        'product-cn': 6,
+        'product-intl': 2
+    });
+    assert.deepEqual(getSalesByProductId(intlRes), {
+        'product-cn': 9,
+        'product-intl': 3
+    });
+});
+
+test('public shop home catalog uses the sales RPC and preserves sales_count in the compact payload', async () => {
+    const { supabase, rpcCalls } = createCatalogSupabase({
+        products: [{
+            id: 'product-home',
+            name: 'Home product',
+            price_points: 10,
+            price_points_intl: 1,
+            stock_count: 5,
+            category: 'tools',
+            display_order: 1,
+            is_active: true
+        }],
+        rpcHandler({ name, args }) {
+            assert.equal(name, 'fn_public_shop_product_sales_counts');
+            assert.deepEqual(args, {
+                p_product_ids: ['product-home'],
+                p_site: 'cn'
+            });
+            return {
+                data: [{ product_id: 'product-home', sales_count: 17 }],
+                error: null
+            };
+        }
+    });
+    const handler = createCatalogHandler(supabase);
+    const res = createMockResponse();
+
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&view=home&refresh=1',
+        headers: {}
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().view, 'home');
+    assert.equal(res.json().products[0].sales_count, 17);
+    assert.equal(rpcCalls.length, 1);
+});
+
+test('public shop catalog remains available when the sales query fails', async () => {
+    const { supabase } = createCatalogSupabase({
+        products: [{
+            id: 'product-unavailable-sales',
+            name: 'Product without sales response',
+            price_points: 10,
+            stock_count: 5,
+            category: 'tools',
+            display_order: 1,
+            is_active: true
+        }],
+        ordersError: {
+            code: 'XX000',
+            message: 'temporary sales database failure'
+        }
+    });
+    const handler = createCatalogHandler(supabase);
+    const res = createMockResponse();
+
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&refresh=1',
+        headers: {}
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().products[0].id, 'product-unavailable-sales');
+    assert.equal(Object.hasOwn(res.json().products[0], 'sales_count'), false);
 });
