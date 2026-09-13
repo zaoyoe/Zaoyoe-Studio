@@ -26,7 +26,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
@@ -122,8 +122,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';/,
-        'homepage shop prefetch should use the same category-default-aware schema version'
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';/,
+        'homepage shop prefetch should use the same sales-aware schema version'
     );
     assert.match(
         homeBootstrapSource,
@@ -207,7 +207,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
+        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&cartCalm=20260912_SHOP_CART_CALM_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.equal(
