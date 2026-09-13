@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';
+    const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';
     const HOMEPAGE_DEFERRED_STYLE_GROUP = 'homepage-overlays';
 
     function activateHomepageDeferredOverlays() {

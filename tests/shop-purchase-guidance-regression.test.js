@@ -26,7 +26,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
@@ -122,8 +122,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';/,
-        'homepage shop prefetch should use the same category-default-aware schema version'
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';/,
+        'homepage shop prefetch should use the same sales-aware schema version'
     );
     assert.match(
         homeBootstrapSource,
@@ -207,7 +207,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
+        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&cartCalm=20260912_SHOP_CART_CALM_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.equal(
@@ -640,7 +640,12 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     assert.match(
         shopHtmlSource,
         /<header class="shop-cart-drawer__header">\s*<div class="shop-cart-drawer__title" aria-hidden="true"><\/div>\s*<\/header>/s,
-        'shop drawer header should render only the centered cart icon shell'
+        'shop drawer header markup can remain, but the cart icon shell is hidden in CSS'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-cart-drawer__header,\s*\.shop-cart-drawer__title \{\s*display:\s*none !important;/,
+        'opened cart drawer should hide the top cart icon'
     );
     assert.match(
         shopClientSource,
@@ -944,8 +949,38 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
+        /anchorHint: '查看购物车'/,
+        'floating cart hint should read 查看购物车'
+    );
+    assert.match(
+        shopClientSource,
+        /anchorHint: 'View cart'/,
+        'English floating cart hint should read View cart'
+    );
+    assert.match(
+        shopClientSource,
+        /anchorCount\.textContent = summary\.itemCount > 0 \? this\.formatCartCount\(summary\.itemCount\) : copy\.anchorEmptyTitle;/,
+        'floating cart count should omit the extra 商品 word'
+    );
+    assert.match(
+        shopClientSource,
         /class="shop-cart-item__remove"[\s\S]*aria-label="\$\{this\.escapeAttribute\(copy\.removeLabel\)\}"[\s\S]*class="shop-cart-item__remove-icon"/,
-        'cart items should render the remove action as a compact minus button with an accessible label'
+        'cart items should render the remove action as a compact delete control with an accessible label'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-cart-item__remove-icon \{[\s\S]*mask:\s*url\("data:image\/svg\+xml/,
+        'cart item remove control should use a trash/delete icon instead of a red X'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__remove \{[^}]*background: transparent;/,
+        'cart delete control should not sit on a pink background'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__remove \{[^}]*#fff1f2/,
+        'cart delete control must not keep the old pink fill'
     );
     assert.match(
         shopClientSource,

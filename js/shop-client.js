@@ -482,7 +482,7 @@ const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';
 const SHOP_STARRY_SKY_IDLE_DELAY_MS = 1200;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260614_SHOP_CATEGORY_DEFAULT_FIRST_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -3897,27 +3897,14 @@ const ShopClient = {
             }
 
             const existingTierBadge = imageShell.querySelector('[data-shop-card-tier-badge="true"]');
-            if (pricingState.tieredPricingBadgeHtml) {
-                if (existingTierBadge) {
-                    existingTierBadge.outerHTML = pricingState.tieredPricingBadgeHtml;
-                } else {
-                    imageShell.insertAdjacentHTML('afterbegin', pricingState.tieredPricingBadgeHtml);
-                }
-            } else {
-                existingTierBadge?.remove();
-            }
+            existingTierBadge?.remove();
 
             const existingAgentBadge = imageShell.querySelector('[data-shop-card-agent-badge="true"]');
             if (pricingState.agentBadgeHtml) {
                 if (existingAgentBadge) {
                     existingAgentBadge.outerHTML = pricingState.agentBadgeHtml;
                 } else {
-                    const stockBadge = imageShell.querySelector('.shop-stock-badge--floating');
-                    if (stockBadge instanceof HTMLElement) {
-                        stockBadge.insertAdjacentHTML('beforebegin', pricingState.agentBadgeHtml);
-                    } else {
-                        imageShell.insertAdjacentHTML('beforeend', pricingState.agentBadgeHtml);
-                    }
+                    imageShell.insertAdjacentHTML('beforeend', pricingState.agentBadgeHtml);
                 }
             } else {
                 existingAgentBadge?.remove();
@@ -3929,18 +3916,15 @@ const ShopClient = {
         const fulfillmentState = this.getShopProductCardFulfillmentState(product);
         const manualDelivery = fulfillmentState.manualDelivery;
         const noStock = fulfillmentState.soldOut;
-        const stockCount = this.getShopProductCardStockCount(product);
-        const stockLabel = manualDelivery
-            ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
-            : (noStock
-                ? (window.i18n?.t('shop.outOfStock') || '售罄')
-                : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`);
-        const stockBadge = card.querySelector('.shop-stock-badge--floating');
-        if (stockBadge instanceof HTMLElement) {
-            stockBadge.textContent = stockLabel;
-            stockBadge.classList.toggle('manual-delivery', manualDelivery);
-            stockBadge.classList.toggle('out-of-stock', !manualDelivery && noStock);
-            stockBadge.classList.toggle('in-stock', !manualDelivery && !noStock);
+        const chipsHost = card.querySelector('.list-chips');
+        const chipsMarkup = this.buildShopProductCardChipsMarkup(product, fulfillmentState, pricingState);
+        if (chipsHost instanceof HTMLElement) {
+            chipsHost.outerHTML = chipsMarkup;
+        } else {
+            const descriptionEl = card.querySelector('.shop-card-desc');
+            if (descriptionEl instanceof HTMLElement) {
+                descriptionEl.insertAdjacentHTML('afterend', chipsMarkup);
+            }
         }
         card.classList.toggle('shop-card--manual-delivery', manualDelivery);
         card.classList.toggle('shop-card--sold-out', !manualDelivery && noStock);
@@ -4006,7 +3990,7 @@ const ShopClient = {
     getCartCopy: function () {
         if (this.isEnglishShopLocale()) {
             return {
-                anchorHint: 'Open cart',
+                anchorHint: 'View cart',
                 anchorEmptyTitle: 'Cart is empty',
                 anchorEmptyBody: 'Add a few items, then review them together.',
                 drawerEyebrow: 'Floating Cart',
@@ -4047,7 +4031,7 @@ const ShopClient = {
         }
 
         return {
-            anchorHint: '点开购物车',
+            anchorHint: '查看购物车',
             anchorEmptyTitle: '购物车为空',
             anchorEmptyBody: '先加入几件，再统一看看数量和总积分。',
             drawerEyebrow: '浮动购物车',
@@ -5471,13 +5455,13 @@ const ShopClient = {
             anchor.style.opacity = shouldHideAnchor ? '0' : '';
             anchor.style.visibility = shouldHideAnchor ? 'hidden' : '';
             const anchorLabel = summary.itemCount > 0
-                ? `${copy.drawerTitle}，${this.formatCartCount(summary.itemCount, { includeProductWord: true })}，${this.formatShopPoints(summary.totalPoints)}`
+                ? `${copy.drawerTitle}，${this.formatCartCount(summary.itemCount)}，${this.formatShopPoints(summary.totalPoints)}`
                 : copy.anchorEmptyTitle;
             anchor.setAttribute('aria-label', anchorLabel);
             anchor.setAttribute('title', copy.drawerTitle);
         }
         if (anchorCount) {
-            anchorCount.textContent = summary.itemCount > 0 ? this.formatCartCount(summary.itemCount, { includeProductWord: true }) : copy.anchorEmptyTitle;
+            anchorCount.textContent = summary.itemCount > 0 ? this.formatCartCount(summary.itemCount) : copy.anchorEmptyTitle;
         }
         if (anchorTotal) {
             const hasAnchorItems = summary.itemCount > 0;
@@ -11078,6 +11062,101 @@ const ShopClient = {
         return emptyState;
     },
 
+    getShopProductCardChipCopy: function () {
+        const en = this.isEnglishShopLocale();
+        return {
+            wholesale: en ? 'Tiered' : '阶梯价',
+            auto: en ? 'Instant delivery' : '自动交付',
+            online: en ? 'Online delivery' : '在线交付',
+            stock: en ? 'Stock' : '库存',
+            sales: en ? 'Sales' : '销量',
+            soldOut: en ? 'Sold out' : '售罄',
+            low: en ? 'Low stock' : '即将售罄',
+            ok: en ? 'In stock' : '充足',
+            plenty: en ? 'Plenty' : '非常多'
+        };
+    },
+
+    getShopProductCardSalesCount: function (product = {}) {
+        const keys = ['sales_count', 'sold_count', 'units_sold', 'sales', 'purchase_count', 'total_sold'];
+        for (let i = 0; i < keys.length; i += 1) {
+            const numeric = Number(product?.[keys[i]]);
+            if (Number.isFinite(numeric) && numeric >= 0) return Math.trunc(numeric);
+        }
+        return null;
+    },
+
+    hasShopProductCardTieredPricing: function (product, pricingState) {
+        if (pricingState?.tieredPricingBadgeHtml) return true;
+        if (typeof this.getTieredPricingContext !== 'function') return false;
+        const tiered = this.getTieredPricingContext({
+            basePrice: pricingState?.currentPrice,
+            rules: typeof this.resolveQuantityPricingRulesForProductSelection === 'function'
+                ? this.resolveQuantityPricingRulesForProductSelection(product)
+                : [],
+            quantity: 1
+        });
+        return Boolean(tiered?.lowestRule);
+    },
+
+    getShopProductCardStockChipMeta: function (product, fulfillment = {}) {
+        const labels = this.getShopProductCardChipCopy();
+        if (fulfillment.manualDelivery) {
+            return { label: labels.online, kind: 'manual', chip: 'manual' };
+        }
+        const stock = this.getShopProductCardStockCount(product);
+        if (fulfillment.soldOut || stock <= 0) {
+            return { label: labels.soldOut, kind: 'sold-out', chip: 'sold' };
+        }
+        if (stock < 3) return { label: labels.low, kind: 'in-stock', chip: 'low' };
+        if (stock <= 10) return { label: labels.ok, kind: 'in-stock', chip: 'ok' };
+        return { label: labels.plenty, kind: 'in-stock', chip: 'plenty' };
+    },
+
+    buildShopProductCardChipsMarkup: function (product, fulfillment, pricingState) {
+        const fulfillmentState = fulfillment && typeof fulfillment === 'object'
+            ? fulfillment
+            : this.getShopProductCardFulfillmentState(product);
+        const labels = this.getShopProductCardChipCopy();
+        const stock = this.getShopProductCardStockChipMeta(product, fulfillmentState);
+        const chips = [];
+        if (this.hasShopProductCardTieredPricing(product, pricingState)) {
+            chips.push(`<span class="list-chip list-chip--wholesale">${this.escapeHtml(labels.wholesale)}</span>`);
+        }
+        if (!fulfillmentState.manualDelivery) {
+            chips.push(`<span class="list-chip list-chip--stock list-chip--stock-${stock.chip}">${this.escapeHtml(labels.stock)} ${this.escapeHtml(stock.label)}</span>`);
+        }
+        const sales = this.getShopProductCardSalesCount(product);
+        chips.push(`<span class="list-chip list-chip--sales">${this.escapeHtml(labels.sales)} ${sales == null ? '—' : this.escapeHtml(String(sales))}</span>`);
+        chips.push(fulfillmentState.manualDelivery
+            ? `<span class="list-chip list-chip--online">${this.escapeHtml(labels.online)}</span>`
+            : `<span class="list-chip list-chip--auto">${this.escapeHtml(labels.auto)}</span>`);
+        return `<div class="list-chips">${chips.join('')}</div>`;
+    },
+
+    refreshVisibleProductCardChips: function (agentPrices = this.agentPricesCache || {}) {
+        document.querySelectorAll('#userShopGrid .shop-card[data-product-id]').forEach((card) => {
+            if (!(card instanceof HTMLElement)) return;
+            const productId = String(card.dataset.productId || '').trim();
+            if (!productId) return;
+            const product = this.getCachedProductById(productId);
+            if (!product) return;
+            const pricingState = this.buildProductCardPricingState(product, agentPrices);
+            const fulfillmentState = this.getShopProductCardFulfillmentState(product);
+            const chipsMarkup = this.buildShopProductCardChipsMarkup(product, fulfillmentState, pricingState);
+            const chipsHost = card.querySelector('.list-chips');
+            if (chipsHost instanceof HTMLElement) {
+                if (chipsHost.outerHTML === chipsMarkup) return;
+                chipsHost.outerHTML = chipsMarkup;
+                return;
+            }
+            const descriptionEl = card.querySelector('.shop-card-desc');
+            if (descriptionEl instanceof HTMLElement) {
+                descriptionEl.insertAdjacentHTML('afterend', chipsMarkup);
+            }
+        });
+    },
+
     buildProductCardElement: function (product, agentPrices = {}, index = 0) {
         if (!product) return null;
 
@@ -11128,16 +11207,9 @@ const ShopClient = {
         const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
         const purchaseDataset = this.buildProductCardPurchaseDataset(product, currentPrice);
         const fulfillmentState = this.getShopProductCardFulfillmentState(product);
-        const stockCount = this.getShopProductCardStockCount(product);
         const manualDelivery = fulfillmentState.manualDelivery;
         const noStock = fulfillmentState.soldOut;
-        const stockLabel = manualDelivery
-            ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
-            : (noStock
-                ? (window.i18n?.t('shop.outOfStock') || '售罄')
-                : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`);
         const cartDisabled = manualDelivery || noStock;
-        const stockBadgeClass = manualDelivery ? 'manual-delivery' : (noStock ? 'out-of-stock' : 'in-stock');
         const cartTriggerAriaLabel = manualDelivery
             ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
             : (noStock
@@ -11179,17 +11251,14 @@ const ShopClient = {
                 <div class="shop-card-breathe-shell">
                     <div class="shop-card-image">
                         ${pricingState.flashSaleBadgeHtml}
-                        ${pricingState.tieredPricingBadgeHtml}
                         ${displayHtml}
                         ${pricingState.agentBadgeHtml}
-                        <div class="shop-stock-badge shop-stock-badge--floating ${stockBadgeClass}">
-                            ${stockLabel}
-                        </div>
                     </div>
 
                     <div class="shop-content-padding">
                         <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
                         ${descriptionMarkup}
+                        ${this.buildShopProductCardChipsMarkup(product, fulfillmentState, pricingState)}
 
                         <div class="shop-card-footer">
                             <div class="shop-card-price">${pricingState.priceHtml}</div>
