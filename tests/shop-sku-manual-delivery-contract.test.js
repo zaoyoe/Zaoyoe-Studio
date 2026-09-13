@@ -146,7 +146,12 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
     );
     assert.match(
         shopSource,
-        /syncProductCardPricing: function[\s\S]*const stockCount = this\.getShopProductCardStockCount\(product\);[\s\S]*buildProductCardElement: function[\s\S]*const stockCount = this\.getShopProductCardStockCount\(product\);/,
-        'both initial product cards and refreshed cards should render the aggregate SKU stock badge'
+        /getShopProductCardStockChipMeta: function[\s\S]*const stock = this\.getShopProductCardStockCount\(product\);/,
+        'storefront stock chips should still sum all visible SKU inventory pools'
+    );
+    assert.match(
+        shopSource,
+        /syncProductCardPricing: function[\s\S]*this\.buildShopProductCardChipsMarkup\(product, fulfillmentState, pricingState\)[\s\S]*buildProductCardElement: function[\s\S]*this\.buildShopProductCardChipsMarkup\(product, fulfillmentState, pricingState\)/,
+        'both initial product cards and refreshed cards should render the aggregate SKU stock chips'
     );
 });
