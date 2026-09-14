@@ -1,13 +1,13 @@
 # 任务 2.0 阶段 D：真实支付沙箱验收表
 
 > 执行合同：[`docs/guest-purchase-task-2.0.md`](./guest-purchase-task-2.0.md)  
-> 当前状态：`blocked`（20260914 SQL 已 5/5 PASS；用户已授权按 AGENTS.md 发布代码，发布进行中；发布 ≠ 启用商品；沙箱账号/测试 SKU 未确认）  
+> 当前状态：`blocked`（代码已发布到 `44b3f4203`；发布 ≠ 启用商品；仍缺沙箱账号/可见浏览器/内部测试 SKU/KVM4 游客密钥）  
 > 禁止：mock 支付、把空白行当成 PASS、写入卡密 / claim token / `recovery_code` / 支付密钥
 
 ## 解除 blocked 还缺什么
 
 - [x] 20260914 SQL verify 5/5 PASS
-- [ ] 专用分支按 AGENTS.md 合入 `main`，Vercel + KVM4 Verify 发布该 commit（发布 ≠ 启用游客商品）
+- [x] 专用分支按 AGENTS.md 合入 `main`，Vercel + KVM4 Verify 发布该 commit（发布 ≠ 启用游客商品）
 - [ ] CN ZPay 沙箱账号
 - [ ] INTL NOWPayments 沙箱账号（网络固定 `usdtbsc`）
 - [ ] 可被主线程看见的浏览器或真机

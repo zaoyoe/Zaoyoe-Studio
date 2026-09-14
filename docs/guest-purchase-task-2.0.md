@@ -15,9 +15,9 @@
 ### 0.1 进度口径
 
 - 当前总进度：**30%**
-- 当前阶段：`C 完成且 20260914 SQL 5/5 PASS` → `D 真实支付沙箱矩阵 blocked`
-- 阻断原因：D 仍缺生产拓扑上的游客购买代码发布、CN/INTL 支付沙箱账号、可见浏览器和内部测试 SKU。SQL 已不再是阻断项。
-- 当前执行者动作：用户已明确授权“按 AGENTS.md 发布游客购买代码；发布不等于启用游客商品；不要从功能分支 vercel prod deploy；不要执行 SQL”。正在走专用分支 → PR → main → Vercel Git 集成 + KVM4 工作流。发布完成后 D 仍缺沙箱账号/可见浏览器/内部测试 SKU，保持 blocked。不得用 mock 开始 D，也不得把总进度写成 99%。
+- 当前阶段：`C 完成且代码已发布到生产拓扑` → `D 真实支付沙箱矩阵 blocked`
+- 阻断原因：代码已按 AGENTS.md 发布，但 D 仍缺 CN/INTL 支付沙箱账号、可见浏览器、内部测试 SKU，以及 KVM4 上的游客专用密钥（worker 已安装但未启动）。SQL 已不再是阻断项。
+- 当前执行者动作：等待用户准备沙箱账号/内部测试 SKU，并授权把游客专用密钥写入 KVM4 `.env`（不回显、不打开商品）。未齐套前不得用 mock 开始 D，也不得把总进度写成 99%。
 - 进度按下方阶段权重计算，不按文件数量，不用“基本完成”。
 - 被用户、SQL、沙箱账号、真实设备或 KVM4 权限阻断时，状态记为 `blocked`，并写明责任人和证据缺口。禁止把 blocked 写成 99%。
 - 只有第 0.2 节全部满足，才能从任何 90%+ 数字改成 **100%**。
@@ -66,7 +66,7 @@
 | A | 分支隔离、部署规范、2.0 合同 | 8% | 已完成 | 专用分支基于最新 main；AGENTS.md 含游客发布禁令 |
 | B | 代码/自动化/恢复语义/UI 契约收口 | 12% | 已完成 | 完整测试、静态检查、readiness 契约、恢复语义测试通过 |
 | C | 后台写路径：RBAC、二次确认、审计 | 10% | 已完成 | 退款/补发/解锁有权限、确认、原因、审计测试；20260914 SQL 5/5 PASS |
-| D | 真实支付沙箱矩阵 | 18% | blocked | T3 每条都有通过证据或书面阻断；缺代码发布/沙箱账号/可见浏览器时保持 blocked |
+| D | 真实支付沙箱矩阵 | 18% | blocked | 代码已发布；仍缺沙箱账号/可见浏览器/内部测试 SKU/KVM4 游客密钥。不得用 mock 顶 D |
 | E | 真实数据库并发与限流 | 8% | 未开始 | 最后一张卡、预占释放、回调竞态有数据库证据 |
 | F | KVM4 worker 安装与健康 | 10% | 未开始 | 最新 main 上 timer/journal 证据 |
 | G | 桌面/移动视觉验收 | 8% | 未开始 | 清单状态均有截图，风格不突兀 |
@@ -190,7 +190,7 @@
   - [20260914_verify_guest_shop_admin_ops.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260914_verify_guest_shop_admin_ops.sql)
 - [x] verify 结果 5/5 `PASS`：`admin_ops_functions` / `admin_ops_grants` / `admin_ops_return_columns` / `baseline_atomic_rpcs_still_present` / `merge_metadata_volatility`
 - [x] 已通过的 20260913 迁移 **不要重跑**；未确认无游客订单时 **不得 rollback**（本轮未 rollback）
-- [ ] 游客购买代码已按 AGENTS.md 从专用分支 PR 合入最新 `main`，Vercel + KVM4 Verify 已发布该 commit。发布不等于启用游客商品，也不得在发布过程执行 SQL
+- [x] 游客购买代码已按 AGENTS.md 从专用分支 PR 合入最新 `main`，Vercel + KVM4 Verify 已发布该 commit。发布不等于启用游客商品，也不得在发布过程执行 SQL
 - [ ] 准备好 CN ZPay 沙箱账号、INTL NOWPayments 沙箱账号，以及可被主线程看见的浏览器或真机
 - [ ] 游客公开商品保持关闭。本阶段最多允许打开 **一个内部测试 SKU** 的 `allow_guest_purchase`；该 SKU 必须低价值、非共享、自动发货、不作为公开主推。D 结束后若未进入 I，必须先关掉该 SKU
 
@@ -454,6 +454,37 @@
 - `node --check` + `git diff --check` = `STATIC_OK`
 - 游客相关 + runtime/security 集合：354 passed / 0 failed
 - `allow_guest_purchase` 列默认 `false`；本次不改任何商品开关
+
+### SQL 状态
+
+本轮无新增 SQL。不重跑 20260913 / 20260914。
+
+## 18. 2026-09-14 按 AGENTS.md 发布完成（发布 ≠ 启用）
+
+用户授权后执行：专用分支 commit/push → PR #646 → 检查通过后 merge 到 `main`。未从功能分支执行 `npx vercel deploy --prod`，未执行 SQL，未打开 `allow_guest_purchase`。
+
+| 链路 | 结果 | 证据 |
+| --- | --- | --- |
+| Vercel production | Ready | 部署 `dpl_4yfSaTaLiiYZEtVFxbE5pC7cXKwu`，别名 `https://www.fatherkey.com`，Git SHA `44b3f4203` |
+| KVM4 Verify Server | success | Actions run 34823283373；`/opt/zaoyoe-verify-server/.current-release` = `44b3f4203d5183867cf0646936645e1745a12b7a`；容器 healthy；`/healthz` ok |
+| KVM4 Sub2API | success | Actions run 34823283376；`/opt/sub2api/.current-release` = `44b3f4203d5183867cf0646936645e1745a12b7a`；`https://new.fatherkey.com/health` ok；postgres/redis healthy；无 `sub2api-legacy` |
+| KVM4 guest-shop worker | installed, not started | 单元/timer 已安装且 `enabled`；`ActiveState=inactive`。缺 `GUEST_SHOP_WORKER_SECRET` 等专用密钥，按规范不 `--start` |
+
+现场探活（商品仍关闭）：
+
+- `GET /api/shop/catalog?site=cn` 200，22 个商品，catalog 未暴露已开启的 guest flag
+- `GET /api/payments/config?site=cn` 200，登录用户支付仍为 zpay
+- `GET /api/shop/guest/preview?site=cn` 400 `invalid_uuid`（路由已上线，fail-closed）
+- 容器内 `guest-shop-readiness --fail-on-invalid`：`ok=false` `ready=false` `invalid=6`。其中 3 项是生产缺少游客 pepper/worker secret；另外 3 项是 compact verify 镜像不含 `deploy/kvm4/guest-shop-worker/*`（host 上已由安装器落地，不作为启动依据）
+
+明确未做：
+
+- 未执行任何 SQL
+- 未打开任何公开或内部 SKU 的游客开关
+- 未启动 worker timer
+- 未开始真实支付沙箱矩阵，总进度仍 **30%**
+
+下一动作：用户补齐 KVM4 游客专用密钥（写入 `/opt/zaoyoe-verify-server/.env`，mode 0600，不回显），并准备 CN ZPay / INTL NOWPayments 沙箱、可见浏览器、仅一个内部测试 SKU。齐套后才能把 D 从 blocked 改为执行中。
 
 ### SQL 状态
 
