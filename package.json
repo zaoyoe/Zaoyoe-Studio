@@ -44,6 +44,7 @@
     "readiness:external-monitoring": "node scripts/external-monitoring-readiness.js",
     "readiness:financial-recovery-drill": "node scripts/financial-recovery-drill-readiness.js",
     "readiness:guest-shop": "node -- scripts/guest-shop-readiness.js",
+    "reconcile:guest-shop": "node -- scripts/guest-shop-reconcile.js",
     "readiness:payment": "node scripts/payment-readiness-gate.js",
     "readiness:payment-recovery": "node scripts/payment-readiness-gate.js --fail-on-missing",
     "rollback:kvm4:sub2api": "bash scripts/rollback-kvm4-sub2api.sh",

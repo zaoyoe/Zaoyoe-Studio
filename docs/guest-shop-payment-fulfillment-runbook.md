@@ -143,6 +143,27 @@ NOWPayments 游客网络固定为 `usdtbsc`。NOWPayments 退款暂按人工队�
 - `refund_pending_age_seconds`：超过 30 分钟告警，超过 2 小时升级财务。
 - `dead_letter_count`：任意新增即告警，不得直接批量重放。
 
+游客现金订单告警由独立模块 `api/_lib/guest-shop-alerts.js` 产生，`source` 固定为 `guest_shop_monitor`。不得并入 `shop_order_delivery` 告警，也不要给 ops-alerts 增加新的 routing key 或 mute UI。阈值只使用环境变量和模块默认值，不写入 ops-alerts runtime config。即使 ops alerts 关闭，verify server 仍会计算指标并打日志。值班入口保持本手册，后台入口是 Admin Studio → 商城 → 游客异常订单。
+
+对账默认只核对本站记录：
+
+```bash
+npm run reconcile:guest-shop
+```
+
+该命令默认 `--local-only`。只有值班明确需要核对支付渠道时才加 `--query-provider`；provider 查询失败保持 review，不得自动确认发货。对账输出禁止包含卡密、`claim_secret_hash`、`recovery_code` 或回调原文。
+
+## 数字商品退款与争议
+
+- 游客现金购买的数字商品，若卡密、账号或兑换码尚未领取/展示，可申请原路退款。
+- 卡密一旦向用户展示，不自动退款；拒付或 chargeback 期间冻结订单，不得补发。
+- NOWPayments 退款暂按人工队列核对收款地址、金额、交易哈希和出款凭证。
+- 死信只允许单笔解锁，禁止批量重放。
+
+## 隐私、保留与删除
+
+游客现金购买只保存取货口令与联系方式的 HMAC 或哈希。财务、支付、退款与争议记录在争议处理期内不删除，并依法保留至义务届满。当前设备取货凭证使用 HttpOnly Cookie。告警、对账和后台列表都不得回显明文口令或卡密。
+
 ## 回调丢失或 provider 已付款、本地未确认
 
 1. 用 provider 订单号和本站 `order_no` 查询 provider 状态。

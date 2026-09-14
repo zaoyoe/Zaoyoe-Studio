@@ -14,10 +14,10 @@
 
 ### 0.1 进度口径
 
-- 当前总进度：**40%**（A 8% + B 12% + C 10% + F 10%）
-- 当前阶段：`F KVM4 worker 已完成` → `D 真实支付沙箱矩阵 blocked`
-- 阻断原因：D 仍缺 CN ZPay 沙箱、INTL NOWPayments 沙箱（`usdtbsc`）、可见浏览器/真机、仅一个内部测试 SKU。KVM4 游客专用密钥和 worker timer 已不再是阻断项。SQL 已不再是阻断项。
-- 当前执行者动作：F 的密钥/worker/部署规范已收口。D 仍等用户提供沙箱账号/可见浏览器/内部测试 SKU。未齐套前不得用 mock 开始 D，不得打开公开游客商品。下一可执行阶段是 H（告警/对账/政策），不依赖打开游客商品。禁止把总进度写成 99%。
+- 当前总进度：**48%**（A 8% + B 12% + C 10% + F 10% + H 8%）
+- 当前阶段：`H 告警/对账/政策已完成` → `D 真实支付沙箱矩阵 blocked`；下一可执行阶段是 G（需可见浏览器截图）或等 D 输入
+- 阻断原因：D 仍缺 CN ZPay 沙箱、INTL NOWPayments 沙箱（`usdtbsc`）、可见浏览器/真机、仅一个内部测试 SKU。KVM4 游客专用密钥和 worker timer 已不再是阻断项。SQL 已不再是阻断项。H 已不再是阻断项。
+- 当前执行者动作：H 的独立告警 sweep、对账命令、值班手册和政策文本已落地。D 仍等用户提供沙箱账号/可见浏览器/内部测试 SKU。未齐套前不得用 mock 开始 D，不得打开公开游客商品。下一可执行阶段是 G（桌面/移动视觉验收，需要可见浏览器或真机截图）。禁止把总进度写成 99%。
 - 进度按下方阶段权重计算，不按文件数量，不用“基本完成”。
 - 被用户、SQL、沙箱账号、真实设备或 KVM4 权限阻断时，状态记为 `blocked`，并写明责任人和证据缺口。禁止把 blocked 写成 99%。
 - 只有第 0.2 节全部满足，才能从任何 90%+ 数字改成 **100%**。
@@ -70,7 +70,7 @@
 | E | 真实数据库并发与限流 | 8% | 未开始 | 最后一张卡、预占释放、回调竞态有数据库证据 |
 | F | KVM4 worker 安装与健康 | 10% | 已完成 | 最新 main 上 timer/journal 证据；密钥已写入且不回显；部署规范含 env_file 重建 |
 | G | 桌面/移动视觉验收 | 8% | 未开始 | 清单状态均有截图，风格不突兀 |
-| H | 告警、对账、退款/隐私政策 | 8% | 未开始 | 阈值、值班入口、政策文本就绪 |
+| H | 告警、对账、退款/隐私政策 | 8% | 已完成 | 阈值、值班入口、政策文本就绪 |
 | I | 低价值 SKU 灰度 | 10% | 未开始 | 单一 SKU、指标达标、关闭开关可停新单 |
 | J | 回滚演练与最终签署 | 8% | 未开始 | 用户签署；此时才允许打开该灰度 SKU |
 | **合计** |  | **100%** |  |  |
@@ -296,13 +296,20 @@
 
 ## H. 告警、对账、政策
 
-- [ ] `paid_unfulfilled_count` 非零 10 分钟告警
-- [ ] 履约 P95/P99 阈值
-- [ ] 金额不匹配、review、死信、退款悬挂告警
-- [ ] 对账任务：本站支付事件 vs provider
-- [ ] 数字商品退款/争议政策
-- [ ] 隐私告知、数据保留、删除范围
-- [ ] 值班手册入口保持本 runbook
+- [x] `paid_unfulfilled_count` 非零 10 分钟告警
+- [x] 履约 P95/P99 阈值
+- [x] 金额不匹配、review、死信、退款悬挂告警
+- [x] 对账任务：本站支付事件 vs provider
+- [x] 数字商品退款/争议政策
+- [x] 隐私告知、数据保留、删除范围
+- [x] 值班手册入口保持本 runbook
+
+### 完成标准
+
+- 独立模块 `api/_lib/guest-shop-alerts.js`，`source=guest_shop_monitor`，未并入 `shop_order_delivery`
+- verify server 启动 `startGuestShopAlertSweep()`，阈值只用 env + 模块默认
+- `npm run reconcile:guest-shop` 默认 `--local-only`；`--query-provider` 失败保持 review
+- 值班手册、公开退款政策、隐私政策已同步；readiness 契约覆盖上述入口
 
 ---
 
@@ -550,6 +557,35 @@
 总进度仍记 **40%**（A+B+C+F）。100% 只在第 J 节用户签署之后。
 
 下一动作：开始 H（告警、对账、退款/隐私政策）。D 仍等用户提供 CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、可见浏览器/真机、仅一个低价值非共享自动发货内部测试 SKU。
+
+### SQL 状态
+
+本轮无新增 SQL。不重跑 20260913 / 20260914。
+
+## 21. 2026-09-14 阶段 H 告警/对账/政策落地（仍不启用商品）
+
+用户指示“下一步该做什么了”。本轮完成 H：独立游客告警 sweep、本地对账脚本、值班手册与公开退款/隐私补充。不打开游客商品，不执行 SQL，不合入 `main`。
+
+| 项 | 结果 |
+| --- | --- |
+| 告警模块 | `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop-alerts.js`，`source=guest_shop_monitor`，`skipSummary: true` |
+| verify 接线 | `server/index.js` 调用 `startGuestShopAlertSweep()`，首轮 delay 7200ms；不读 ops-alerts runtime.guest_shop |
+| 对账 | `npm run reconcile:guest-shop` → `node -- scripts/guest-shop-reconcile.js`，默认 `--local-only` |
+| 值班手册 | 独立告警、对账命令、数字商品退款与争议、HMAC/财务保留 |
+| 公开政策 | `refund-policy.html` 插入无编号 h2；`privacy.html` 补充收集/存储/Cookie/删除范围，不改既有编号标题 |
+| 契约 | readiness +5→+7；alerts/reconcile/legal/worker scheduler 聚焦测试 |
+
+明确未做：
+
+- 未执行任何 SQL
+- 未打开任何公开或内部 SKU 的 `allow_guest_purchase`
+- 未开始真实支付沙箱矩阵，D 保持 `blocked`
+- 未开始 G 的可见浏览器/真机截图
+- 未把本轮合入 `main`，避免无启用授权的生产部署
+
+总进度记 **48%**（A+B+C+F+H）。100% 只在第 J 节用户签署之后。
+
+下一动作：G 需要主线程可见浏览器或真机截图；或等用户提供 D 的 CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、仅一个低价值非共享自动发货内部测试 SKU。
 
 ### SQL 状态
 
