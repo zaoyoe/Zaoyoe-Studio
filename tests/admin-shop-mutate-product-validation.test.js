@@ -108,12 +108,15 @@ function createShopProductsTableMock(state) {
                 return Promise.resolve(state.writeResults.shift());
             }
 
+            const written = state.insertPayload || state.upsertPayload || {};
             return Promise.resolve({
                 data: [{
-                    id: 'prod_saved',
-                    name: state.insertPayload?.name || state.upsertPayload?.name || 'Saved Product',
-                    category: state.insertPayload?.category || state.upsertPayload?.category || 'cards',
-                    is_active: true
+                    id: written.id || 'prod_saved',
+                    name: written.name || 'Saved Product',
+                    category: written.category || 'cards',
+                    is_active: true,
+                    manual_delivery: written.manual_delivery === true,
+                    allow_guest_purchase: written.allow_guest_purchase === true
                 }],
                 error: null
             });
@@ -1380,5 +1383,268 @@ test('shop mutate upsert rejects chained shared inventory sources', async () => 
         assert.equal(payload.success, false);
         assert.equal(payload.code, 'shop_product_sku_inventory_source_invalid');
         assert.equal(state.updatePayloadsByTable.shop_product_skus, undefined);
+    });
+});
+
+test('shop mutate upsert blocks guest purchase without a cash price', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest Goods',
+                    category: 'cards',
+                    delivery_type: 'KEY',
+                    is_active: true,
+                    allow_guest_purchase: true,
+                    guest_payment_channels: ['zpay']
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /游客现金价/);
+        assert.equal(state.insertPayload, undefined);
+        assert.equal(state.auditCalls.length, 0);
+    });
+});
+
+test('shop mutate upsert blocks guest purchase without a payment channel', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest Goods',
+                    category: 'cards',
+                    delivery_type: 'KEY',
+                    is_active: true,
+                    allow_guest_purchase: true,
+                    guest_cash_price_cny: '9.90',
+                    guest_payment_channels: []
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /游客支付通道/);
+        assert.equal(state.insertPayload, undefined);
+    });
+});
+
+test('shop mutate upsert blocks guest purchase for API delivery', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest API Goods',
+                    category: 'api',
+                    delivery_type: 'API',
+                    webhook_target: 'https://api.example.com/webhook',
+                    is_active: true,
+                    allow_guest_purchase: true,
+                    guest_cash_price_cny: '9.90',
+                    guest_payment_channels: ['zpay']
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /卡密自动发货/);
+        assert.equal(state.insertPayload, undefined);
+    });
+});
+
+test('shop mutate upsert blocks guest purchase for manual delivery', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest Manual Goods',
+                    category: 'service',
+                    delivery_type: 'KEY',
+                    manual_delivery: true,
+                    is_active: true,
+                    allow_guest_purchase: true,
+                    guest_cash_price_cny: '9.90',
+                    guest_payment_channels: ['zpay']
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /人工发货/);
+        assert.equal(state.insertPayload, undefined);
+    });
+});
+
+test('shop mutate upsert blocks mock guest payment channels even when the switch is off', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest Mock Goods',
+                    category: 'cards',
+                    delivery_type: 'KEY',
+                    is_active: true,
+                    allow_guest_purchase: false,
+                    guest_cash_price_cny: '9.90',
+                    guest_payment_channels: ['mock']
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /支付通道配置无效/);
+        assert.equal(state.insertPayload, undefined);
+    });
+});
+
+test('shop mutate upsert persists product-level guest purchase settings', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest Goods',
+                    category: 'cards',
+                    delivery_type: 'KEY',
+                    is_active: true,
+                    allow_guest_purchase: true,
+                    guest_cash_price_cny: '9.90',
+                    guest_payment_channels: ['zpay']
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayload.allow_guest_purchase, true);
+        assert.equal(state.insertPayload.guest_cash_price_cny, 9.9);
+        assert.equal(state.insertPayload.guest_cash_price_intl, undefined);
+        assert.deepEqual(state.insertPayload.guest_payment_channels, ['zpay']);
+        assert.equal(state.auditCalls[0].details.allow_guest_purchase, true);
+    });
+});
+
+test('shop mutate upsert can turn guest purchase off without cash prices', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest Off Goods',
+                    category: 'cards',
+                    delivery_type: 'KEY',
+                    is_active: true,
+                    allow_guest_purchase: false,
+                    guest_cash_price_cny: '',
+                    guest_cash_price_intl: '',
+                    guest_payment_channels: []
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayload.allow_guest_purchase, false);
+        assert.equal(state.insertPayload.guest_cash_price_cny, null);
+        assert.equal(state.insertPayload.guest_cash_price_intl, null);
+        assert.deepEqual(state.insertPayload.guest_payment_channels, []);
+        assert.equal(state.auditCalls[0].details.allow_guest_purchase, false);
+    });
+});
+
+test('shop mutate upsert does not write guest purchase fields onto SKU rows', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guest SKU Goods',
+                    category: 'cards',
+                    delivery_type: 'KEY',
+                    is_active: true,
+                    allow_guest_purchase: true,
+                    guest_cash_price_cny: '9.90',
+                    guest_payment_channels: ['zpay']
+                },
+                skus: [{
+                    sku_name: '默认规格',
+                    sku_code: 'default',
+                    price_points: 12,
+                    allow_guest_purchase: false,
+                    guest_cash_price_cny: '1.00',
+                    guest_payment_channels: ['mock'],
+                    is_default: true,
+                    is_active: true
+                }]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const skuPayload = state.insertPayloadsByTable.shop_product_skus[0];
+        assert.equal(Object.hasOwn(skuPayload, 'allow_guest_purchase'), false);
+        assert.equal(Object.hasOwn(skuPayload, 'guest_cash_price_cny'), false);
+        assert.equal(Object.hasOwn(skuPayload, 'guest_cash_price_intl'), false);
+        assert.equal(Object.hasOwn(skuPayload, 'guest_payment_channels'), false);
+        assert.equal(state.insertPayload.allow_guest_purchase, true);
     });
 });

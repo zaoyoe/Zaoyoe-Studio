@@ -5,6 +5,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    normalizeAllowedChannels
+} = require('../../../../api/_lib/payments/guest-shop-adapter');
 
 async function countAvailableInventory(supabase, productId, skuId = '') {
     let query = supabase
@@ -75,6 +78,62 @@ function normalizeNullableNumber(value) {
     }
 
     return Math.round(parsed * 100) / 100;
+}
+
+const GUEST_CASH_PRICE_MAX = 999999999999.99;
+const GUEST_CASH_PRICE_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/u;
+
+function parseGuestCashPriceField(value) {
+    if (value === null || value === undefined) {
+        return { status: 'empty', value: null };
+    }
+
+    if (typeof value === 'string' && value.trim() === '') {
+        return { status: 'empty', value: null };
+    }
+
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || value <= 0 || value > GUEST_CASH_PRICE_MAX) {
+            return { status: 'invalid', value: null };
+        }
+        const rounded = Math.round(value * 100) / 100;
+        if (rounded <= 0 || rounded > GUEST_CASH_PRICE_MAX || Math.abs(rounded - value) > 1e-8) {
+            return { status: 'invalid', value: null };
+        }
+        return { status: 'ok', value: rounded };
+    }
+
+    const text = String(value).trim();
+    if (!GUEST_CASH_PRICE_PATTERN.test(text)) {
+        return { status: 'invalid', value: null };
+    }
+
+    const amount = Number(text);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > GUEST_CASH_PRICE_MAX) {
+        return { status: 'invalid', value: null };
+    }
+
+    return { status: 'ok', value: Math.round(amount * 100) / 100 };
+}
+
+function parseGuestPaymentChannelsField(value) {
+    if (value === null || value === undefined || value === '') {
+        return { status: 'empty', value: [] };
+    }
+
+    if (!Array.isArray(value)) {
+        return { status: 'invalid', value: null };
+    }
+
+    if (!value.length) {
+        return { status: 'empty', value: [] };
+    }
+
+    try {
+        return { status: 'ok', value: normalizeAllowedChannels(value) };
+    } catch (_error) {
+        return { status: 'invalid', value: null };
+    }
 }
 
 function normalizeLegacyProductIntegerPrice(value) {
@@ -1765,6 +1824,10 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'delivery_type',
     'webhook_target',
     'manual_delivery',
+    'allow_guest_purchase',
+    'guest_cash_price_cny',
+    'guest_cash_price_intl',
+    'guest_payment_channels',
     'quantity_rules',
     'quantity_rules_intl',
     'flash_sale_price',
@@ -1911,6 +1974,20 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
     }
 
     if (hasMissing(
+        'allow_guest_purchase',
+        'guest_cash_price_cny',
+        'guest_cash_price_intl',
+        'guest_payment_channels'
+    )) {
+        removeFields([
+            'allow_guest_purchase',
+            'guest_cash_price_cny',
+            'guest_cash_price_intl',
+            'guest_payment_channels'
+        ]);
+    }
+
+    if (hasMissing(
         'quantity_rules',
         'quantity_rules_intl',
         'flash_sale_price',
@@ -2041,6 +2118,31 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
         nextPayload.price_points_intl = normalizeLegacyProductIntegerPrice(nextPayload.price_points_intl);
     }
 
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'allow_guest_purchase')) {
+        nextPayload.allow_guest_purchase = normalizeBoolean(nextPayload.allow_guest_purchase, false);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_cash_price_cny')) {
+        const parsedCny = parseGuestCashPriceField(nextPayload.guest_cash_price_cny);
+        if (parsedCny.status !== 'invalid') {
+            nextPayload.guest_cash_price_cny = parsedCny.value;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_cash_price_intl')) {
+        const parsedIntl = parseGuestCashPriceField(nextPayload.guest_cash_price_intl);
+        if (parsedIntl.status !== 'invalid') {
+            nextPayload.guest_cash_price_intl = parsedIntl.value;
+        }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_payment_channels')) {
+        const parsedChannels = parseGuestPaymentChannelsField(nextPayload.guest_payment_channels);
+        if (parsedChannels.status !== 'invalid') {
+            nextPayload.guest_payment_channels = parsedChannels.value;
+        }
+    }
+
     if (writableSite === 'intl' && !normalizedProductId) {
         const baseName = normalizeText(nextPayload.name, 160);
         const englishName = normalizeText(nextPayload.name_intl || nextPayload.name_en, 160);
@@ -2147,6 +2249,83 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
                 'webhook_target_http',
                 webhookValidation.warning,
                 'webhook_target'
+            );
+        }
+    }
+
+    const allowGuestPurchase = normalizeBoolean(safePayload.allow_guest_purchase, false);
+    const guestPriceCny = parseGuestCashPriceField(safePayload.guest_cash_price_cny);
+    const guestPriceIntl = parseGuestCashPriceField(safePayload.guest_cash_price_intl);
+    const guestChannels = parseGuestPaymentChannelsField(safePayload.guest_payment_channels);
+
+    if (guestPriceCny.status === 'invalid') {
+        appendProductValidationIssue(
+            blockingIssues,
+            'blocking',
+            'guest_cash_price_cny_invalid',
+            '游客现金价必须大于 0，最多两位小数。',
+            'guest_cash_price_cny'
+        );
+    }
+
+    if (guestPriceIntl.status === 'invalid') {
+        appendProductValidationIssue(
+            blockingIssues,
+            'blocking',
+            'guest_cash_price_intl_invalid',
+            '游客现金价必须大于 0，最多两位小数。',
+            'guest_cash_price_intl'
+        );
+    }
+
+    if (guestChannels.status === 'invalid') {
+        appendProductValidationIssue(
+            blockingIssues,
+            'blocking',
+            'guest_payment_channels_invalid',
+            '游客支付通道配置无效，仅支持 ZPay / NOWPayments，禁止 mock。',
+            'guest_payment_channels'
+        );
+    }
+
+    if (allowGuestPurchase) {
+        if (deliveryType !== 'KEY') {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'guest_purchase_requires_key',
+                '游客购买仅支持卡密自动发货，请先把发货模式改回 KEY。',
+                'allow_guest_purchase'
+            );
+        }
+
+        if (manualDelivery) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'guest_purchase_requires_auto_delivery',
+                '游客购买不支持人工发货，请先改回自动发货。',
+                'allow_guest_purchase'
+            );
+        }
+
+        if (guestPriceCny.status !== 'ok' && guestPriceIntl.status !== 'ok') {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'guest_cash_price_required',
+                '请至少填写国内或国际游客现金价。',
+                'guest_cash_price_cny'
+            );
+        }
+
+        if (guestChannels.status !== 'ok' || !guestChannels.value.length) {
+            appendProductValidationIssue(
+                blockingIssues,
+                'blocking',
+                'guest_payment_channels_required',
+                '请至少勾选一个游客支付通道。',
+                'guest_payment_channels'
             );
         }
     }
@@ -2411,6 +2590,7 @@ module.exports = async (req, res) => {
                         category: savedProduct.category,
                         is_active: savedProduct.is_active,
                         manual_delivery: savedProduct.manual_delivery === true,
+                        allow_guest_purchase: savedProduct.allow_guest_purchase === true,
                         sku_count: savedSkus.length
                     }
                 })

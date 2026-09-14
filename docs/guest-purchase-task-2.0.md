@@ -17,7 +17,7 @@
 - 当前总进度：**48%**（A 8% + B 12% + C 10% + F 10% + H 8%）
 - 当前阶段：`H 告警/对账/政策已完成` → `D 真实支付沙箱矩阵 blocked`；下一可执行阶段是 G（需可见浏览器截图）或等 D 输入
 - 阻断原因：D 仍缺 CN ZPay 沙箱、INTL NOWPayments 沙箱（`usdtbsc`）、可见浏览器/真机、仅一个内部测试 SKU。KVM4 游客专用密钥和 worker timer 已不再是阻断项。SQL 已不再是阻断项。H 已不再是阻断项。
-- 当前执行者动作：H 的独立告警 sweep、对账命令、值班手册和政策文本已落地。D 仍等用户提供沙箱账号/可见浏览器/内部测试 SKU。未齐套前不得用 mock 开始 D，不得打开公开游客商品。下一可执行阶段是 G（桌面/移动视觉验收，需要可见浏览器或真机截图）。禁止把总进度写成 99%。
+- 当前执行者动作：Admin Studio 商品编辑「允许游客购买」开关已在功能分支落地，但尚未发布到生产后台。D 仍等用户提供沙箱账号/可见浏览器，并在发布后自行打开 **一个** 低价值、非共享、自动发货内部测试商品。未齐套前不得用 mock 开始 D，不得打开公开游客商品。下一可执行阶段是：按 AGENTS.md 发布本开关，或 G（桌面/移动视觉验收，需要可见浏览器或真机截图）。禁止把总进度写成 99%。
 - 进度按下方阶段权重计算，不按文件数量，不用“基本完成”。
 - 被用户、SQL、沙箱账号、真实设备或 KVM4 权限阻断时，状态记为 `blocked`，并写明责任人和证据缺口。禁止把 blocked 写成 99%。
 - 只有第 0.2 节全部满足，才能从任何 90%+ 数字改成 **100%**。
@@ -196,7 +196,7 @@
 - [ ] 准备好 CN ZPay 沙箱账号、INTL NOWPayments 沙箱账号，以及可被主线程看见的浏览器或真机
 - [ ] 游客公开商品保持关闭。本阶段最多允许打开 **一个内部测试 SKU** 的 `allow_guest_purchase`；该 SKU 必须低价值、非共享、自动发货、不作为公开主推。D 结束后若未进入 I，必须先关掉该 SKU
 
-未满足剩余 D0 时，本阶段保持 `blocked`。总进度按已完成阶段计为 **40%**（含 F），不得把 D 计进去，禁止改成 99%。
+未满足剩余 D0 时，本阶段保持 `blocked`。总进度按已完成阶段计为 **48%**（A+B+C+F+H），不得把 D 或本轮后台开关计进去，禁止改成 99%。打开内部测试商品必须走 Admin Studio 开关，不得用 SQL 改 `allow_guest_purchase`。
 
 验收表： [guest-purchase-d-sandbox-evidence.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/guest-purchase-d-sandbox-evidence.md)
 
@@ -586,6 +586,33 @@
 总进度记 **48%**（A+B+C+F+H）。100% 只在第 J 节用户签署之后。
 
 下一动作：G 需要主线程可见浏览器或真机截图；或等用户提供 D 的 CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、仅一个低价值非共享自动发货内部测试 SKU。
+
+### SQL 状态
+
+本轮无新增 SQL。不重跑 20260913 / 20260914。
+
+## 22. 2026-09-14 Admin Studio「允许游客购买」开关（未发布，仍不启用公开商品）
+
+用户要求在后台编辑商品设置里加「允许游客购买」开关，打开后自己买一次再查日志。本轮只做商品级配置入口，不开始 D 沙箱矩阵，不打开任何 SKU，不执行 SQL，不合入 `main`。
+
+| 项 | 结果 |
+| --- | --- |
+| UI | `admin-studio.html` 发货状态后、注意事项前：开关 + CNY/USD 现金价 + 国内 ZPay / 国际 USDT-BEP20。复用现有 `toggle-switch` / `modern-form-group` / `shop-product-sku-row__toggle` |
+| 前端 | `js/admin-shop.js` 回填、新建默认关、保存前校验；打开开关时按站点默选通道，关闭不清空价格/通道 |
+| 服务端 | `upsert_product` 打开时硬拦 KEY / 非人工 / 至少一个合法价格 / 至少一个合法通道；关闭时允许空价格空通道，非法价格/mock 通道仍拦 |
+| SKU | 保存路径不写 `allow_guest_purchase` / 现金价 / 通道，继续回落到商品级 |
+| 测试 | `tests/admin-shop-mutate-product-validation.test.js` 扩 guest upsert；新增 `tests/admin-shop-guest-purchase-toggle.test.js` |
+
+明确未做：
+
+- 未执行任何 SQL
+- 未打开任何公开或内部 SKU 的 `allow_guest_purchase`
+- 未开始真实支付沙箱矩阵，D 保持 `blocked`
+- 未从功能分支生产部署，未合入 `main`。生产 Admin Studio 在发布前看不到该开关
+
+总进度仍记 **48%**（A+B+C+F+H）。本轮是 D0 的操作入口，不是 D 完成。100% 只在第 J 节用户签署之后。
+
+下一动作：用户授权按 AGENTS.md 发布本开关后，在生产后台打开 **一个** 低价值、非共享、自动发货内部测试商品，自己购买一次，只回传订单号，不要密钥/卡密/`recovery_code`。之后 Codex 查游客订单/支付/worker 日志。
 
 ### SQL 状态
 

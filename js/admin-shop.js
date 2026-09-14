@@ -896,6 +896,7 @@ const ShopAdmin = {
         }
 
         this.syncRichTextEditorsFromInputs();
+        this.refreshFormSectionHeight('guestPurchaseWrapper');
         this.refreshFormSectionHeight('purchaseNotesWrapper');
         this.refreshFormSectionHeight('usageInstructionsWrapper');
         this.updatePreview();
@@ -5509,6 +5510,9 @@ Example output format:
                 case 'product-handle-icon-upload':
                     this.handleIconUpload(actionEl);
                     break;
+                case 'product-toggle-guest-purchase':
+                    this.toggleGuestPurchase(actionEl.checked);
+                    break;
                 case 'product-toggle-purchase-notes':
                     this.togglePurchaseNotes(actionEl.checked);
                     break;
@@ -9353,6 +9357,12 @@ Example output format:
         document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
         this.toggleWebhookField(normalizedDeliveryType);
         this.setProductManualDelivery(data.manual_delivery === true || String(data.manual_delivery || '').toLowerCase() === 'true', { updatePreview: false });
+        this.setGuestPurchaseFormState({
+            allow_guest_purchase: data.allow_guest_purchase === true || String(data.allow_guest_purchase || '').toLowerCase() === 'true',
+            guest_cash_price_cny: data.guest_cash_price_cny,
+            guest_cash_price_intl: data.guest_cash_price_intl,
+            guest_payment_channels: data.guest_payment_channels
+        });
 
         const showPurchaseNotes = this.getSiteScopedProductSwitchForEdit(data, 'show_purchase_notes', false);
         document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
@@ -9483,6 +9493,135 @@ Example output format:
     // Toggle usage instructions textarea visibility with animation
     toggleUsageInstructions: function (show) {
         this.toggleFormSection('usageInstructionsWrapper', show);
+    },
+
+    normalizeGuestPaymentChannelTokens: function (value) {
+        return (Array.isArray(value) ? value : [])
+            .map((item) => String(item || '').trim().toLowerCase())
+            .filter(Boolean);
+    },
+
+    hasGuestPaymentChannel: function (channels, tokens = []) {
+        const values = this.normalizeGuestPaymentChannelTokens(channels);
+        return tokens.some((token) => values.includes(token));
+    },
+
+    collectGuestPurchasePayload: function () {
+        const parsePrice = (inputId) => {
+            const raw = String(document.getElementById(inputId)?.value || '').trim();
+            return raw || null;
+        };
+        const channels = [];
+        if (document.getElementById('prodGuestChannelZpay')?.checked) {
+            channels.push('zpay');
+        }
+        if (document.getElementById('prodGuestChannelNowpayments')?.checked) {
+            channels.push('nowpayments');
+        }
+        return {
+            allow_guest_purchase: document.getElementById('prodAllowGuestPurchase')?.checked === true,
+            guest_cash_price_cny: parsePrice('prodGuestCashPriceCny'),
+            guest_cash_price_intl: parsePrice('prodGuestCashPriceIntl'),
+            guest_payment_channels: channels
+        };
+    },
+
+    getGuestPurchaseFormError: function (payload = {}, { deliveryType = 'KEY', manualDelivery = false } = {}) {
+        const parseCashPrice = (value) => {
+            const raw = String(value ?? '').trim();
+            if (!raw) {
+                return { empty: true, invalid: false };
+            }
+            if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/u.test(raw)) {
+                return { empty: false, invalid: true };
+            }
+            const amount = Number(raw);
+            return {
+                empty: false,
+                invalid: !Number.isFinite(amount) || amount <= 0
+            };
+        };
+        const cny = parseCashPrice(payload.guest_cash_price_cny);
+        const intl = parseCashPrice(payload.guest_cash_price_intl);
+        if (cny.invalid || intl.invalid) {
+            return '游客现金价必须大于 0，最多两位小数';
+        }
+        if (payload.allow_guest_purchase !== true) {
+            return '';
+        }
+        const normalizedDeliveryType = String(deliveryType || 'KEY').trim().toUpperCase() === 'API' ? 'API' : 'KEY';
+        if (normalizedDeliveryType !== 'KEY') {
+            return '游客购买仅支持卡密自动发货，请先把发货模式改回 KEY';
+        }
+        if (manualDelivery === true) {
+            return '游客购买不支持人工发货，请先改回自动发货';
+        }
+        if (cny.empty && intl.empty) {
+            return '请至少填写国内或国际游客现金价';
+        }
+        if (!Array.isArray(payload.guest_payment_channels) || !payload.guest_payment_channels.length) {
+            return '请至少勾选一个游客支付通道';
+        }
+        return '';
+    },
+
+    ensureDefaultGuestPaymentChannels: function () {
+        const zpay = document.getElementById('prodGuestChannelZpay');
+        const nowpayments = document.getElementById('prodGuestChannelNowpayments');
+        const anyChecked = [zpay, nowpayments].some((input) => input?.checked === true);
+        if (anyChecked) {
+            return;
+        }
+        if (this.getEditSite() === 'intl') {
+            if (nowpayments) nowpayments.checked = true;
+            return;
+        }
+        if (zpay) zpay.checked = true;
+    },
+
+    toggleGuestPurchase: function (show, { applyChannelDefaults = true } = {}) {
+        this.toggleFormSection('guestPurchaseWrapper', show);
+        if (!show) {
+            return;
+        }
+        if (applyChannelDefaults) {
+            this.ensureDefaultGuestPaymentChannels();
+        }
+        const deliveryType = String(document.getElementById('prodDeliveryType')?.value || 'KEY').trim().toUpperCase();
+        const manualDelivery = document.getElementById('prodManualDelivery')?.value === 'true';
+        if (deliveryType === 'API' || manualDelivery) {
+            this.showActionToast('游客购买仅支持卡密自动发货商品', 'warning');
+        }
+    },
+
+    setGuestPurchaseFormState: function (state = {}) {
+        const allowGuestPurchase = state.allow_guest_purchase === true;
+        const checkbox = document.getElementById('prodAllowGuestPurchase');
+        if (checkbox) {
+            checkbox.checked = allowGuestPurchase;
+        }
+        this.setOptionalInputValue(
+            'prodGuestCashPriceCny',
+            state.guest_cash_price_cny != null && state.guest_cash_price_cny !== ''
+                ? state.guest_cash_price_cny
+                : ''
+        );
+        this.setOptionalInputValue(
+            'prodGuestCashPriceIntl',
+            state.guest_cash_price_intl != null && state.guest_cash_price_intl !== ''
+                ? state.guest_cash_price_intl
+                : ''
+        );
+        const channels = this.normalizeGuestPaymentChannelTokens(state.guest_payment_channels);
+        const zpay = document.getElementById('prodGuestChannelZpay');
+        const nowpayments = document.getElementById('prodGuestChannelNowpayments');
+        if (zpay) {
+            zpay.checked = this.hasGuestPaymentChannel(channels, ['zpay', 'alipay', 'wxpay', 'zpay:alipay', 'zpay:wxpay']);
+        }
+        if (nowpayments) {
+            nowpayments.checked = this.hasGuestPaymentChannel(channels, ['nowpayments', 'usdtbsc', 'nowpayments:usdtbsc']);
+        }
+        this.toggleGuestPurchase(allowGuestPurchase, { applyChannelDefaults: false });
     },
 
     buildExistingProductUpsertPayload: function (id, payload, { editSite = this.getEditSite() } = {}) {
@@ -9901,6 +10040,12 @@ Example output format:
             document.getElementById('prodWebhookTarget').value = '';
             this.toggleWebhookField('KEY');
             this.setProductManualDelivery(false, { updatePreview: false });
+            this.setGuestPurchaseFormState({
+                allow_guest_purchase: false,
+                guest_cash_price_cny: '',
+                guest_cash_price_intl: '',
+                guest_payment_channels: []
+            });
 
             // Reset purchase notes
             document.getElementById('prodShowPurchaseNotes').checked = false;
@@ -10100,6 +10245,17 @@ Example output format:
             const showPurchaseNotes = document.getElementById('prodShowPurchaseNotes').checked;
             const showProductDescription = document.getElementById('prodShowProductDescription').checked;
             const webhookTargetValue = document.getElementById('prodWebhookTarget').value.trim();
+            const guestPurchasePayload = this.collectGuestPurchasePayload();
+            const guestPurchaseError = this.getGuestPurchaseFormError(guestPurchasePayload, {
+                deliveryType: normalizedDeliveryType,
+                manualDelivery
+            });
+            if (guestPurchaseError) {
+                failSaveFeedback();
+                this.setProductSaveInlineError(guestPurchaseError);
+                this.showActionToast(guestPurchaseError, 'warning');
+                return;
+            }
             const productDescriptionSwitchField = editSite === 'intl'
                 ? 'show_product_description_intl'
                 : 'show_product_description';
@@ -10509,6 +10665,7 @@ Example output format:
                 delivery_type: normalizedDeliveryType,
                 webhook_target: normalizedDeliveryType === 'API' ? (webhookTargetValue || null) : null,
                 manual_delivery: manualDelivery,
+                ...guestPurchasePayload,
 
                 // Marketing fields
                 [marketingFields.quantityRules]: null,
