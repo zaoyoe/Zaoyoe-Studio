@@ -93,6 +93,16 @@ const SHARED_PUBLIC_FUNCTION_WRAPPERS = [
     'api/wallet/verify-log.js'
 ];
 
+const GUEST_SHOP_STANDALONE_FUNCTIONS = [
+    'api/shop/guest/claim.js',
+    'api/shop/guest/orders.js',
+    'api/shop/guest/preview.js',
+    'api/shop/guest/status.js',
+    'api/shop/guest/webhooks/nowpayments.js',
+    'api/shop/guest/webhooks/zpay.js',
+    'api/shop/guest/worker.js'
+];
+
 function getGlobalCspHeaderValue() {
     const config = readVercelConfig();
     const globalHeaders = Array.isArray(config.headers) ? config.headers : [];
@@ -181,7 +191,10 @@ function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
             const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
 
             if (entry.isDirectory()) {
-                if (['.git', '.vercel-static', 'node_modules', 'coverage', 'docs', 'tests'].includes(entry.name)) {
+                // This assertion covers repository source, not ignored build output.
+                // NewAPI's web/dist is generated and can contain minified strings
+                // that resemble HTML attributes without shipping inline handlers.
+                if (['.git', '.vercel-static', 'node_modules', 'coverage', 'docs', 'tests', 'dist', 'dist-ssr', 'build'].includes(entry.name)) {
                     continue;
                 }
                 stack.push(relativePath);
@@ -403,6 +416,13 @@ test('vercel hobby deployment routes public endpoints through the shared handler
             ignoredEntries.has(relativePath),
             true,
             `.vercelignore should exclude the standalone public wrapper ${relativePath}`
+        );
+    }
+    for (const relativePath of GUEST_SHOP_STANDALONE_FUNCTIONS) {
+        assert.equal(
+            ignoredEntries.has(relativePath),
+            true,
+            `.vercelignore should exclude the standalone guest-shop entrypoint ${relativePath}`
         );
     }
     assert.ok(

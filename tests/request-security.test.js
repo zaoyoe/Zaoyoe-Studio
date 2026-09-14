@@ -229,6 +229,43 @@ test('takeRateLimitToken can use a persistent Supabase-backed limiter when provi
     assert.equal(third.retryAfterSeconds, 1);
 });
 
+test('production guest rate limiting fails closed when the persistent store is unavailable', async () => {
+    const unavailable = await takeRateLimitToken({
+        key: 'guest-production-unavailable',
+        env: { VERCEL_ENV: 'production' },
+        requirePersistent: true,
+        now: 1_000
+    });
+    assert.equal(unavailable.allowed, false);
+    assert.equal(unavailable.unavailable, true);
+
+    const broken = await takeRateLimitToken({
+        supabase: {
+            async rpc() {
+                throw new Error('database unavailable');
+            }
+        },
+        key: 'guest-production-broken-rpc',
+        env: { VERCEL_ENV: 'production' },
+        requirePersistent: true,
+        now: 1_000
+    });
+    assert.equal(broken.allowed, false);
+    assert.equal(broken.unavailable, true);
+});
+
+test('explicit non-production rate limiting may use the local store', async () => {
+    const result = await takeRateLimitToken({
+        key: 'guest-local-explicit',
+        env: { APP_ENV: 'test' },
+        requirePersistent: false,
+        store: new Map(),
+        now: 1_000
+    });
+    assert.equal(result.allowed, true);
+    assert.equal(result.unavailable, undefined);
+});
+
 test('takeRateLimitTokens batches persistent checks into one database request', async () => {
     const calls = [];
     const supabase = {

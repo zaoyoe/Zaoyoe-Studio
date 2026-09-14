@@ -165,9 +165,32 @@ function createRouteHandlersForScope(scope) {
         const site = require('./_lib/site');
         const discountAssets = require('./_lib/discount-assets');
         const discountPricing = require('./_lib/discount-pricing');
+        const { createGuestShopPaymentAdapter } = require('./_lib/payments/guest-shop-adapter');
+        const { createGuestShopHandlers } = require('../server/api-handlers/public/guest-shop');
+        const { createGuestShopWorkerHandler } = require('../server/guest-shop-worker');
         const {
             createShopHandlers
         } = require('../server/api-handlers/public/shop');
+
+        // Guest cash payments have their own adapter and service-role client.
+        // Do not fall back to the logged-in wallet/payment adapter when this
+        // configuration is unavailable: the guest route must fail closed.
+        const guestPaymentAdapter = createGuestShopPaymentAdapter({
+            supabase: admin.getOptionalSupabaseAdmin?.() || null,
+            env: process.env
+        });
+        const guestHandlers = createGuestShopHandlers({
+            admin,
+            requestSecurity,
+            site,
+            paymentAdapter: guestPaymentAdapter,
+            env: process.env
+        });
+        const guestWorker = createGuestShopWorkerHandler({
+            admin,
+            paymentAdapter: guestPaymentAdapter,
+            env: process.env
+        });
 
         return {
             ...createShopHandlers({
@@ -177,7 +200,25 @@ function createRouteHandlersForScope(scope) {
                 discountAssets,
                 discountPricing,
                 env: process.env
-            })
+            }),
+            'guest/preview': guestHandlers.preview,
+            'guest/orders': guestHandlers.orders,
+            'guest/status': guestHandlers.status,
+            'guest/recover': guestHandlers.recover,
+            'guest/claim': guestHandlers.claim,
+            // KVM4 routes /api/shop/* through this shared dispatcher.  Keep
+            // the worker behind its dedicated secret gate in both Vercel and
+            // the shared Express path; never expose it through the regular
+            // logged-in shop handler.
+            'guest/worker': guestWorker,
+            // Keep provider-specific webhook routes explicit.  Payment
+            // adapters generate these exact paths, and the shared dispatcher
+            // must not collapse them into an unbound generic provider route.
+            'guest/webhooks/zpay': (req, res) => guestHandlers.webhook(req, res, 'zpay'),
+            'guest/webhooks/nowpayments': (req, res) => guestHandlers.webhook(req, res, 'nowpayments'),
+            // Backward-compatible internal route; callers must still provide
+            // an explicit provider query value accepted by the handler.
+            'guest/webhook': guestHandlers.webhook
         };
     }
     case 'verify': {

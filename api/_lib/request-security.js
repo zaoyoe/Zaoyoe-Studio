@@ -413,7 +413,8 @@ async function takePersistentRateLimitToken({
     limit = 60,
     windowMs = 60_000,
     now = Date.now(),
-    env = process.env
+    env = process.env,
+    requirePersistent = false
 }) {
     const normalizedKey = String(key || '').trim();
     const safeLimit = Math.max(1, Number(limit) || 1);
@@ -427,7 +428,19 @@ async function takePersistentRateLimitToken({
         now: numericNow
     });
 
+    const unavailable = () => ({
+        allowed: false,
+        unavailable: true,
+        limit: safeLimit,
+        remaining: 0,
+        resetAt: numericNow + safeWindowMs,
+        retryAfterSeconds: Math.max(1, Math.ceil(safeWindowMs / 1000))
+    });
+
     if (!normalizedKey || !supabase || typeof supabase.rpc !== 'function' || !shouldUsePersistentRateLimitStore(env)) {
+        if (requirePersistent && (!supabase || typeof supabase.rpc !== 'function' || !shouldUsePersistentRateLimitStore(env))) {
+            return unavailable();
+        }
         return fallback();
     }
 
@@ -467,6 +480,7 @@ async function takePersistentRateLimitToken({
             )
         };
     } catch (_) {
+        if (requirePersistent) return unavailable();
         return fallback();
     }
 }
@@ -556,7 +570,10 @@ async function takeRateLimitTokens({
 }
 
 function takeRateLimitToken(options = {}) {
-    if (options?.supabase) {
+    // A caller that explicitly requires a persistent store must still reach
+    // the fail-closed branch when the Supabase client is unavailable.  Do not
+    // silently route that request to the per-instance memory bucket.
+    if (options?.supabase || options?.requirePersistent) {
         return takePersistentRateLimitToken(options);
     }
 

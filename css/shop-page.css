@@ -8499,6 +8499,75 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     padding: clamp(26px, 3vw, 36px) clamp(28px, 4vw, 46px) 0 !important;
 }
 
+/* Guest cash checkout: reuse the shop modal chrome while keeping the cash
+   flow visually and behaviorally separate from points redemption. */
+.guest-shop-modal {
+    padding: 20px;
+}
+
+.guest-shop-modal__content {
+    width: min(100%, 520px) !important;
+    max-width: 520px !important;
+    max-height: min(760px, calc(100dvh - 40px)) !important;
+    padding: 24px !important;
+    text-align: left;
+    overflow-y: auto;
+}
+
+.guest-shop-modal__header,
+.guest-shop-modal__summary-row,
+.guest-shop-modal__actions,
+.guest-shop-modal__payment-meta,
+.guest-shop-modal__address-row {
+    display: flex;
+    align-items: center;
+}
+
+.guest-shop-modal__header,
+.guest-shop-modal__summary-row,
+.guest-shop-modal__payment-meta {
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.guest-shop-modal__header { margin-bottom: 18px; }
+.guest-shop-modal__eyebrow { margin: 0 0 4px; color: #93c5fd; font-size: 12px; letter-spacing: .02em; }
+.guest-shop-modal__close { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
+.guest-shop-modal__state { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(147,197,253,.16); border-radius: 10px; color: rgba(226,232,240,.78); font-size: 13px; }
+.guest-shop-modal__state[data-state="error"], .guest-shop-modal__state[data-state="manual_review"] { color: #fecaca; border-color: rgba(248,113,113,.35); }
+.guest-shop-modal__summary, .guest-shop-modal__panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; background: rgba(255,255,255,.045); }
+.guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 9px; }
+.guest-shop-modal__summary-row span, .guest-shop-modal__payment-meta span { color: rgba(226,232,240,.58); font-size: 13px; }
+.guest-shop-modal__summary-row strong { max-width: 72%; overflow-wrap: anywhere; text-align: right; }
+.guest-shop-modal__field { display: grid; gap: 7px; margin-bottom: 13px; color: rgba(226,232,240,.82); font-size: 13px; }
+.guest-shop-modal__field input, .guest-shop-modal__field select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(15,23,42,.55); color: inherit; }
+.guest-shop-modal__hint { margin: 10px 0 0; color: rgba(226,232,240,.58); font-size: 12px; line-height: 1.6; }
+.guest-shop-modal__checkout-link { display: inline-flex; margin-top: 10px; color: #93c5fd; overflow-wrap: anywhere; }
+.guest-shop-modal__address-row { gap: 8px; margin-top: 10px; }
+.guest-shop-modal__address-row code { min-width: 0; flex: 1; padding: 9px; border-radius: 8px; background: rgba(0,0,0,.22); overflow-wrap: anywhere; font-size: 12px; }
+.guest-shop-modal__copy-btn { flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
+.guest-shop-modal__delivery-title { display: flex; gap: 8px; align-items: center; color: #86efac; font-weight: 600; }
+.guest-shop-modal__delivery-content { max-height: 260px; margin: 12px 0; padding: 12px; border-radius: 8px; background: rgba(0,0,0,.22); color: rgba(248,250,252,.92); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.guest-shop-modal__copy-all { width: 100%; min-height: 40px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.07); color: inherit; cursor: pointer; }
+.guest-shop-modal__actions { justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.guest-shop-modal__actions .shop-btn { min-height: 42px; }
+
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__content { background: rgba(255,255,255,.97) !important; color: var(--shop-light-text); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__summary,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__panel { border-color: rgba(148,163,184,.2); background: rgba(248,250,252,.82); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select { background: #fff; border-color: rgba(148,163,184,.35); color: var(--shop-light-text); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__summary-row span,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-meta span,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__hint { color: rgba(51,65,85,.72); }
+
+@media (max-width: 600px) {
+    .guest-shop-modal { align-items: flex-end; padding: 12px; }
+    .guest-shop-modal__content { width: 100% !important; max-height: calc(100dvh - 24px) !important; padding: 20px !important; border-radius: 20px !important; }
+    .guest-shop-modal__actions { display: grid; grid-template-columns: 1fr; }
+    .guest-shop-modal__actions .shop-btn { width: 100%; }
+}
+
 #shopPurchaseModal .shop-purchase-stage-header {
     flex: 0 0 auto;
     margin-bottom: 18px !important;

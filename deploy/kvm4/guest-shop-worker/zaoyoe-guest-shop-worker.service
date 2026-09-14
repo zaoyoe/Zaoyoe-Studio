@@ -1,0 +1,19 @@
+[Unit]
+Description=Zaoyoe guest-shop fulfillment worker tick
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+ConditionPathExists=/opt/zaoyoe-verify-server/.env
+
+[Service]
+Type=oneshot
+EnvironmentFile=/opt/zaoyoe-verify-server/.env
+ExecStart=/usr/local/sbin/zaoyoe-guest-shop-worker
+TimeoutStartSec=75
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+# The helper is read-only; no application or secret files are written.
+ReadWritePaths=/run
+

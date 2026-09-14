@@ -8654,6 +8654,10 @@
                        >
                         订单
                     </div>
+                    <div class="shop-tab admin-studio-inline-style-attr-45" data-shop-action="shop-switch-tab" data-shop-tab="guest-exceptions"
+                       >
+                        游客异常
+                    </div>
                     <div class="shop-tab admin-studio-inline-style-attr-45" data-shop-action="shop-switch-tab" data-shop-tab="fulfillment"
                        >
                         API 履约
@@ -9508,6 +9512,64 @@
                     <div id="ordersPagination"
                         class="admin-studio-inline-style-attr-107">
                     </div>
+                </div>
+
+                <div id="shop-view-guest-exceptions" class="shop-view admin-studio-inline-style-attr-3">
+                    <div class="shop-orders-toolbar-shell shop-guest-exceptions-toolbar-shell">
+                        <div class="lookup-search-container shop-orders-search-bar shop-guest-exceptions-search-bar">
+                            <div class="lookup-search-box admin-studio-inline-style-attr-139">
+                                <i class="fas fa-search admin-studio-inline-style-attr-140"></i>
+                                <input type="text" id="guestExceptionQueryInput" placeholder="按游客订单号筛选"
+                                    data-shop-keydown="guest-exceptions-search-enter" class="admin-studio-inline-style-attr-141">
+                            </div>
+                            <select id="guestExceptionFilter" class="config-input shop-orders-filter-select"
+                                data-shop-custom-select="true" data-shop-change="guest-exceptions-filter">
+                                <option value="any">异常订单</option>
+                                <option value="all">全部扫描结果</option>
+                                <option value="paid_unfulfilled">已付款未发货</option>
+                                <option value="reservation_expired">预占超时</option>
+                                <option value="payment_review">支付待复核</option>
+                                <option value="payment_failed">支付失败</option>
+                                <option value="amount_mismatch">金额不匹配</option>
+                                <option value="refund_failed">退款异常</option>
+                                <option value="inventory_inconsistent">库存不一致</option>
+                                <option value="dead_letter">履约死信</option>
+                            </select>
+                            <select id="guestExceptionProvider" class="config-input shop-orders-filter-select"
+                                data-shop-custom-select="true" data-shop-change="guest-exceptions-provider">
+                                <option value="">全部通道</option>
+                                <option value="zpay">ZPay</option>
+                                <option value="nowpayments">NOWPayments</option>
+                            </select>
+                            <div class="shop-orders-toolbar-actions">
+                                <button class="btn btn-primary shop-theme-primary-btn" type="button" data-shop-action="guest-exceptions-search">
+                                    <i class="fas fa-filter"></i> 查询
+                                </button>
+                                <button class="btn btn-secondary" type="button" data-shop-action="guest-exceptions-refresh" title="刷新异常队列">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="guestExceptionsSummary" class="shop-guest-exceptions-summary" aria-live="polite"></div>
+                    <div id="guestExceptionsNotice" class="shop-guest-exceptions-notice" hidden></div>
+                    <div class="shop-table-container shop-table-container--orders shop-guest-exceptions-table-container">
+                        <table class="shop-table shop-table--orders shop-table--guest-exceptions">
+                            <thead>
+                                <tr>
+                                    <th>游客订单</th>
+                                    <th>商品 / 站点</th>
+                                    <th>支付</th>
+                                    <th>库存 / 履约</th>
+                                    <th>异常</th>
+                                    <th>更新时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="guestExceptionsTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="guestExceptionsPagination" class="admin-studio-inline-style-attr-107"></div>
                 </div>
 
                 <div id="shop-view-fulfillment" class="shop-view admin-studio-inline-style-attr-3">

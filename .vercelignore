@@ -86,6 +86,9 @@ admin_studio_*_preview.html
 home_light_stream_color_preview.html
 avatar_dropdown_preview.html
 shop_cart_module_preview.html
+shop_layout_toggle_preview.html
+css/shop-layout-toggle-preview.css
+js/shop-layout-toggle-preview.js
 index_old.html
 browser-sync-ai-tags.js
 sync-ai-tags-to-supabase.js
@@ -114,6 +117,14 @@ api/shop/product-guidance.js
 api/shop/purchase.js
 api/shop/remove-discount-asset.js
 api/shop/validate-discount.js
+api/shop/guest/claim.js
+api/shop/guest/orders.js
+api/shop/guest/preview.js
+api/shop/guest/status.js
+api/shop/guest/recover.js
+api/shop/guest/webhooks/nowpayments.js
+api/shop/guest/webhooks/zpay.js
+api/shop/guest/worker.js
 api/wallet/checkin.js
 api/wallet/order-detail.js
 api/wallet/overview.js
