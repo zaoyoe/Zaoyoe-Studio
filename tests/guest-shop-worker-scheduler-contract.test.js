@@ -105,3 +105,33 @@ test('installer only installs scheduler artifacts and defaults to stopped timer'
     assert.doesNotMatch(installer, /supabase|psql|guest_shop_orders|INSERT|UPDATE|DELETE/iu);
     assert.doesNotMatch(installer, /GUEST_SHOP_WORKER_SECRET\s*=/u);
 });
+
+test('deploy docs require env_file recreate after guest-shop secret changes', () => {
+    const files = [
+        'AGENTS.md',
+        'docs/kvm4-verify-server-deploy.md',
+        'docs/guest-shop-payment-fulfillment-runbook.md',
+        'docs/vercel-release-checklist.md'
+    ];
+    const recreate = /docker compose up -d --no-deps --force-recreate --no-build verify-server/;
+    const envFile = /env_file/;
+    const noRestart = /docker restart/;
+    const noCronReuse = /CRON_SECRET/;
+
+    for (const relativePath of files) {
+        const source = fs.readFileSync(path.join(root, relativePath), 'utf8');
+        assert.match(source, recreate, relativePath);
+        assert.match(source, envFile, relativePath);
+        assert.match(source, noRestart, relativePath);
+        assert.match(source, noCronReuse, relativePath);
+    }
+
+    const kvm4 = fs.readFileSync(path.join(root, 'docs/kvm4-verify-server-deploy.md'), 'utf8');
+    assert.match(kvm4, /resolvePaymentProviderSecrets/);
+    assert.match(kvm4, /deploy\/kvm4\/guest-shop-worker/);
+    assert.doesNotMatch(kvm4, /GUEST_SHOP_WORKER_SECRET\s*=\s*['\"][^'\"]+['\"]/);
+
+    const runbook = fs.readFileSync(path.join(root, 'docs/guest-shop-payment-fulfillment-runbook.md'), 'utf8');
+    assert.match(runbook, /resolvePaymentProviderSecrets/);
+    assert.match(runbook, /docker restart[\s\S]{0,80}不会重读/);
+});

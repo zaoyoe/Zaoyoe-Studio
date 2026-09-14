@@ -166,10 +166,51 @@ an instruction to execute SQL.
    `allow_guest_purchase`.
 4. Secrets stay in `/opt/zaoyoe-verify-server/.env` with mode `0600`. Do not put
    `GUEST_SHOP_WORKER_SECRET` in the unit file, shell history, or monitor labels.
-5. Default install enables the timer but does not start it. Start only after
+   Never print secret values.
+5. After adding or rotating `GUEST_SHOP_*` keys, recreate verify-server so
+   Docker Compose reloads `env_file`. A plain `docker restart` or
+   `docker compose restart` will not reread `.env`.
+6. Never reuse `CRON_SECRET` or `SUPABASE_SERVICE_ROLE_KEY` for
+   `GUEST_SHOP_CLAIM_PEPPER`, `GUEST_SHOP_CLAIM_DERIVATION_PEPPER`,
+   `GUEST_SHOP_CONTACT_HASH_PEPPER`, `GUEST_SHOP_REQUEST_HASH_PEPPER`, or
+   `GUEST_SHOP_WORKER_SECRET`.
+7. Compact verify images may omit `deploy/kvm4/guest-shop-worker/*`. Those
+   missing files are not a worker start failure; the host installer lands the
+   systemd units, and that is the start source of truth.
+8. Default install enables the timer but does not start it. Start only after
    readiness, secrets, port `127.0.0.1:3001`, and health checks.
-6. Rollback of guest checkout is closing the product/SKU switch. Rolling back a
+9. Rollback of guest checkout is closing the product/SKU switch. Rolling back a
    verify release does not by itself refund or un-fulfill guest orders.
+
+### Reload guest-shop secrets
+
+`verify-server` reads `/opt/zaoyoe-verify-server/.env` through compose
+`env_file`. Writing a new key into `.env` is not enough.
+
+```bash
+# 1. backup .env (mode 0600). Append or rotate keys without printing values.
+install -o root -g root -m 0600 /opt/zaoyoe-verify-server/.env \
+  /opt/zaoyoe-verify-server/backups/env.guest-shop-pre-secrets.$(date -u +%Y%m%d%H%M%S).bak
+
+# 2. pause watchdog so it does not fight the recreate
+systemctl stop zaoyoe-kvm4-health-watchdog.timer zaoyoe-kvm4-health-watchdog.service
+
+# 3. recreate only verify-server; do not rebuild, do not touch sibling workers
+cd /opt/zaoyoe-verify-server
+docker compose up -d --no-deps --force-recreate --no-build verify-server
+
+# 4. health then restore watchdog
+curl -fsS http://127.0.0.1:3001/healthz
+systemctl start zaoyoe-kvm4-health-watchdog.timer
+```
+
+Do not use `docker restart zaoyoe-verify-server`. Confirm inside the new
+container that the five guest-shop keys are set, strong, and distinct, without
+printing their values. Guest payment adapters call
+`resolvePaymentProviderSecrets` and prefer stored admin secrets; environment
+variables are only a fallback. Missing `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` in
+`.env` is expected when those live in stored secrets. Do not copy login-payment
+keys into guest-shop env "just in case".
 
 ### Install
 

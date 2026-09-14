@@ -35,8 +35,9 @@
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-如需隔离数据用途，再配置独立的 `GUEST_SHOP_CONTACT_HASH_PEPPER` 和
-`GUEST_SHOP_REQUEST_HASH_PEPPER`。生产禁止内存限流，必须启用持久化限流并在目标
+生产还要配置独立的 `GUEST_SHOP_CONTACT_HASH_PEPPER` 和
+`GUEST_SHOP_REQUEST_HASH_PEPPER`，用于隔离联系方式哈希和请求指纹；同样不得复用
+claim pepper、`CRON_SECRET` 或 `SUPABASE_SERVICE_ROLE_KEY`。生产禁止内存限流，必须启用持久化限流并在目标
 Supabase 中确认 `take_rate_limit_tokens` RPC、权限和存储表可用。
 
 worker 只能使用专用 `GUEST_SHOP_WORKER_SECRET` 调用：
@@ -47,6 +48,27 @@ POST /api/shop/guest/worker
 
 建议由 cron/systemd 每分钟调用一次；禁止仅依赖通用 `CRON_SECRET`。调用 503、无运行记录、
 履约积压或 `dead_letter` 增长时立即告警并暂停扩大游客商品范围。
+
+游客支付 adapter 走 `resolvePaymentProviderSecrets`：优先读后台 stored secret，
+`.env` 里的 `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` 只是回退。KVM4 `.env` 没有这两项
+不等于支付密钥缺失；登录支付能跑是预期现象。不要为了“看起来齐套”把登录支付密钥
+复制进游客专用环境变量。
+
+### 改 `.env` 后必须重建 verify-server
+
+compose `env_file` 只在创建容器时加载。写入或轮换 `GUEST_SHOP_*` 后，先停
+watchdog，再执行：
+
+```bash
+cd /opt/zaoyoe-verify-server
+docker compose up -d --no-deps --force-recreate --no-build verify-server
+curl -fsS http://127.0.0.1:3001/healthz
+```
+
+`docker restart` 不会重读 `env_file`，容器会继续用旧密钥，worker 会 401/503。
+重建时不要 `--build`，也不要顺手 recreate 其他 worker。命令、journal 和聊天里
+都不要打印 secret。compact verify 镜像可能不含 `deploy/kvm4/guest-shop-worker/*`；
+那不是启动失败，host 安装器落地的 systemd unit 才是调度来源。
 
 ### KVM4 调度器安装（仅部署准备，不替代应用发布）
 

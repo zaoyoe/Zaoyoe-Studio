@@ -945,7 +945,10 @@ function inspectRunbook(repoRoot = REPO_ROOT) {
         ['dead-letter-alert', /dead[_ -]?letter|死信/i, 'dead-letter alert'],
         ['readiness-command', /readiness:guest-shop|guest-shop-readiness/i, 'readiness command'],
         ['readiness-strict-gate', /--fail-on-not-ready/i, 'strict readiness gate'],
-        ['deploy-enable-separation', /发布不等于启用|不得打开游客商品|关闭游客/i, 'deploy does not enable guest products']
+        ['deploy-enable-separation', /发布不等于启用|不得打开游客商品|关闭游客/i, 'deploy does not enable guest products'],
+        ['env-file-recreate', /docker compose up -d --no-deps --force-recreate --no-build verify-server/i, 'verify-server env_file recreate after secret changes'],
+        ['no-docker-restart-reload', /docker restart[\s\S]{0,80}(不会重读|不会重新读取|does not reread|will not reread)/i, 'docker restart does not reload env_file'],
+        ['stored-secret-preferred', /resolvePaymentProviderSecrets/i, 'payment stored secret preferred over env']
     ];
     return requirements.map(([key, pattern, label]) => pattern.test(source)
         ? buildCheck('docs', `runbook:${key}`, true, 'documented', `运行手册已说明 ${label}。`, { relative_path: relativePath, blocking: false, severity: 'info' })

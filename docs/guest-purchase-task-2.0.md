@@ -14,10 +14,10 @@
 
 ### 0.1 进度口径
 
-- 当前总进度：**30%**
-- 当前阶段：`C 完成且代码已发布到生产拓扑` → `D 真实支付沙箱矩阵 blocked`
-- 阻断原因：代码已按 AGENTS.md 发布，但 D 仍缺 CN/INTL 支付沙箱账号、可见浏览器、内部测试 SKU，以及 KVM4 上的游客专用密钥（worker 已安装但未启动）。SQL 已不再是阻断项。
-- 当前执行者动作：等待用户准备沙箱账号/内部测试 SKU，并授权把游客专用密钥写入 KVM4 `.env`（不回显、不打开商品）。未齐套前不得用 mock 开始 D，也不得把总进度写成 99%。
+- 当前总进度：**40%**（A 8% + B 12% + C 10% + F 10%）
+- 当前阶段：`F KVM4 worker 已完成` → `D 真实支付沙箱矩阵 blocked`
+- 阻断原因：D 仍缺 CN ZPay 沙箱、INTL NOWPayments 沙箱（`usdtbsc`）、可见浏览器/真机、仅一个内部测试 SKU。KVM4 游客专用密钥和 worker timer 已不再是阻断项。SQL 已不再是阻断项。
+- 当前执行者动作：F 的密钥/worker/部署规范已收口。D 仍等用户提供沙箱账号/可见浏览器/内部测试 SKU。未齐套前不得用 mock 开始 D，不得打开公开游客商品。下一可执行阶段是 H（告警/对账/政策），不依赖打开游客商品。禁止把总进度写成 99%。
 - 进度按下方阶段权重计算，不按文件数量，不用“基本完成”。
 - 被用户、SQL、沙箱账号、真实设备或 KVM4 权限阻断时，状态记为 `blocked`，并写明责任人和证据缺口。禁止把 blocked 写成 99%。
 - 只有第 0.2 节全部满足，才能从任何 90%+ 数字改成 **100%**。
@@ -66,9 +66,9 @@
 | A | 分支隔离、部署规范、2.0 合同 | 8% | 已完成 | 专用分支基于最新 main；AGENTS.md 含游客发布禁令 |
 | B | 代码/自动化/恢复语义/UI 契约收口 | 12% | 已完成 | 完整测试、静态检查、readiness 契约、恢复语义测试通过 |
 | C | 后台写路径：RBAC、二次确认、审计 | 10% | 已完成 | 退款/补发/解锁有权限、确认、原因、审计测试；20260914 SQL 5/5 PASS |
-| D | 真实支付沙箱矩阵 | 18% | blocked | 代码已发布；仍缺沙箱账号/可见浏览器/内部测试 SKU/KVM4 游客密钥。不得用 mock 顶 D |
+| D | 真实支付沙箱矩阵 | 18% | blocked | 代码已发布、worker 已启动；仍缺沙箱账号/可见浏览器/内部测试 SKU。不得用 mock 顶 D |
 | E | 真实数据库并发与限流 | 8% | 未开始 | 最后一张卡、预占释放、回调竞态有数据库证据 |
-| F | KVM4 worker 安装与健康 | 10% | 未开始 | 最新 main 上 timer/journal 证据 |
+| F | KVM4 worker 安装与健康 | 10% | 已完成 | 最新 main 上 timer/journal 证据；密钥已写入且不回显；部署规范含 env_file 重建 |
 | G | 桌面/移动视觉验收 | 8% | 未开始 | 清单状态均有截图，风格不突兀 |
 | H | 告警、对账、退款/隐私政策 | 8% | 未开始 | 阈值、值班入口、政策文本就绪 |
 | I | 低价值 SKU 灰度 | 10% | 未开始 | 单一 SKU、指标达标、关闭开关可停新单 |
@@ -87,6 +87,7 @@
 - [x] `AGENTS.md` 增加 Guest Shop Deployment Rules：禁止功能分支 prod deploy；发布≠启用；四条链路；worker 必须等 verify 到最新 main；禁止部署时执行 SQL
 - [x] 运行手册增加“发布不等于启用”
 - [x] 本文件成为 2.0 执行合同
+- [x] 回写 `AGENTS.md` / `docs/kvm4-verify-server-deploy.md` / `docs/guest-shop-payment-fulfillment-runbook.md` / `docs/vercel-release-checklist.md`：改 `.env` 后必须 `docker compose up -d --no-deps --force-recreate --no-build verify-server` 重载 `env_file`；禁止 `docker restart`；禁止打印 secret；禁止复用 `CRON_SECRET`
 
 ### 持续约束（A 已完成，全程有效）
 
@@ -191,10 +192,11 @@
 - [x] verify 结果 5/5 `PASS`：`admin_ops_functions` / `admin_ops_grants` / `admin_ops_return_columns` / `baseline_atomic_rpcs_still_present` / `merge_metadata_volatility`
 - [x] 已通过的 20260913 迁移 **不要重跑**；未确认无游客订单时 **不得 rollback**（本轮未 rollback）
 - [x] 游客购买代码已按 AGENTS.md 从专用分支 PR 合入最新 `main`，Vercel + KVM4 Verify 已发布该 commit。发布不等于启用游客商品，也不得在发布过程执行 SQL
+- [x] KVM4 游客专用密钥已写入 `/opt/zaoyoe-verify-server/.env`（mode `0600`，不回显、不复用 `CRON_SECRET`）；verify-server 已重建加载 `env_file`；guest-shop worker timer 已启动且空 tick 成功
 - [ ] 准备好 CN ZPay 沙箱账号、INTL NOWPayments 沙箱账号，以及可被主线程看见的浏览器或真机
 - [ ] 游客公开商品保持关闭。本阶段最多允许打开 **一个内部测试 SKU** 的 `allow_guest_purchase`；该 SKU 必须低价值、非共享、自动发货、不作为公开主推。D 结束后若未进入 I，必须先关掉该 SKU
 
-未满足剩余 D0 时，本阶段保持 `blocked`，总进度停在 **30%**，禁止改成 99%。
+未满足剩余 D0 时，本阶段保持 `blocked`。总进度按已完成阶段计为 **40%**（含 F），不得把 D 计进去，禁止改成 99%。
 
 验收表： [guest-purchase-d-sandbox-evidence.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/guest-purchase-d-sandbox-evidence.md)
 
@@ -259,13 +261,14 @@
 
 前置：最新 `main` 已在 Vercel + Verify Server 发布成功；`.current-release` 等于该 commit。安装器禁止自定义 `--root`，禁止执行 SQL，禁止打开游客商品。
 
-- [ ] `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid`
-- [ ] 确认 `/opt/zaoyoe-verify-server/.env` 权限 `0600`，含独立 worker secret 和两个 claim pepper
-- [ ] `npm run install:kvm4:guest-shop-worker` **不带** `--start`
-- [ ] 核对 unit、`ConditionPathExists`、loopback `127.0.0.1:3001`、无请求体
-- [ ] 显式 `--start`
-- [ ] `systemctl status` / `list-timers` / `journalctl` 证据
-- [ ] 连续 503 先停 timer，不扩大商品范围
+- [x] 生产 readiness 对 KVM4 `/opt/zaoyoe-verify-server/.env` 执行：5 个游客专用密钥均 configured。剩余 `invalid=3` 仅为 compact verify 镜像不含 `deploy/kvm4/guest-shop-worker/*`；host 安装器已落地单元，不作为启动失败。`--fail-on-not-ready` 在沙箱证据齐前仍应 fail-closed
+- [x] `/opt/zaoyoe-verify-server/.env` 权限 `0600`，含独立 `GUEST_SHOP_WORKER_SECRET`、两个 claim pepper，以及独立 contact/request hash pepper；均不复用 `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY`
+- [x] `npm run install:kvm4:guest-shop-worker` **不带** `--start`（发布后已安装）
+- [x] 核对 unit、`ConditionPathExists=/opt/zaoyoe-verify-server/.env`、loopback `127.0.0.1:3001`、无请求体、`ProtectSystem=strict`
+- [x] 显式 `npm run install:kvm4:guest-shop-worker -- --start`
+- [x] `systemctl` / `list-timers` / `journalctl` 证据：timer `active/waiting`，oneshot 与 timer tick 均为 `Result=success`、`scanned=0`
+- [x] 连续 503 先停 timer、不扩大商品范围：该运行规则仍有效；当前 tick 为 200 空扫描，未触发
+- [x] 回写部署规范与契约：改 `.env` 后必须重建 verify-server 重载 compose `env_file`；compact 镜像缺 `deploy/kvm4/guest-shop-worker/*` 不是启动失败；guest adapter 优先 stored secret
 
 禁止：自定义 `--root`；安装器执行 SQL；把 worker secret 写进 unit。
 
@@ -485,6 +488,68 @@
 - 未开始真实支付沙箱矩阵，总进度仍 **30%**
 
 下一动作：用户补齐 KVM4 游客专用密钥（写入 `/opt/zaoyoe-verify-server/.env`，mode 0600，不回显），并准备 CN ZPay / INTL NOWPayments 沙箱、可见浏览器、仅一个内部测试 SKU。齐套后才能把 D 从 blocked 改为执行中。
+
+### SQL 状态
+
+本轮无新增 SQL。不重跑 20260913 / 20260914。
+
+## 19. 2026-09-14 写入 KVM4 游客密钥并启动 worker（仍不启用商品）
+
+用户指示“继续下一步”。本轮只补齐 D0/F 的密钥与 worker 启动，不打开游客商品，不执行 SQL，不为文档再合 `main`。
+
+| 项 | 结果 | 证据 |
+| --- | --- | --- |
+| `.env` 备份 | 已做 | `/opt/zaoyoe-verify-server/backups/env.guest-shop-pre-secrets.20260914090046.bak`（mode `0600`） |
+| 新增密钥（仅名） | 5 个独立密钥 | `GUEST_SHOP_CLAIM_PEPPER` / `GUEST_SHOP_CLAIM_DERIVATION_PEPPER` / `GUEST_SHOP_CONTACT_HASH_PEPPER` / `GUEST_SHOP_REQUEST_HASH_PEPPER` / `GUEST_SHOP_WORKER_SECRET`。值未回显，未复用 `CRON_SECRET` 或 service_role |
+| `.env` 权限 | `0600 root:root` | 写入后复核 |
+| verify 容器 | 已 `--no-deps --force-recreate --no-build` | 普通 restart 不会重读 compose `env_file`；重建后 `/healthz` ok，uptime 重新计算 |
+| 容器内密钥 | 5/5 set + strong + distinct | 不回显值 |
+| 现场探活 | 商品仍关闭 | catalog 200 / 22 商品 / `CATALOG_GUEST_TRUE=0`；payments/config 200；`GET /api/shop/guest/preview` 400 `invalid_uuid`；无密钥 POST worker 401 `invalid_worker_secret`（此前缺密钥会是 503） |
+| 容器 readiness | `ok=false` `ready=false` `invalid=3` | 3 项全是 compact 镜像缺 `deploy/kvm4/guest-shop-worker/*`。密钥相关检查全部 configured |
+| worker oneshot | success | `scanned=0 processed=0 duration_ms=104` |
+| worker timer | enabled + active/waiting | `LastTriggerUSec=2026-09-14 09:06:07 UTC`，timer tick `duration_ms=226` `scanned=0` `Result=success` |
+| `.current-release` | 未改发布 | `44b3f4203d5183867cf0646936645e1745a12b7a` |
+
+支付密钥核对：guest adapter **不是只读 env**。它走 `resolvePaymentProviderSecrets`，优先后台 stored secret，env 仅回退。KVM4 `.env` 仍无 `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY`，登录支付能跑是预期现象，不作为本轮缺口。
+
+明确未做：
+
+- 未执行任何 SQL
+- 未打开任何公开或内部 SKU 的 `allow_guest_purchase`
+- 未开始真实支付沙箱矩阵，D 保持 `blocked`
+- 未把文档再合入 `main`，避免无代码变更的生产部署
+
+总进度改记 **40%**。100% 只在第 J 节用户签署之后。
+
+下一动作：用户提供 CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、可见浏览器/真机、仅一个低价值非共享自动发货内部测试 SKU。齐套并授权打开该测试 SKU 后才能把 D 从 blocked 改为执行中。
+
+### SQL 状态
+
+本轮无新增 SQL。不重跑 20260913 / 20260914。
+
+## 20. 2026-09-14 F 部署规范收口（env_file 重建，仍不启用商品）
+
+用户指示“继续下一步”。本轮只把 F 的现场经验写进部署规范和契约测试，防止之后改密钥却用 `docker restart` 导致 worker 401/503。不打开游客商品，不执行 SQL，不把文档再合入 `main`。
+
+| 项 | 结果 |
+| --- | --- |
+| `AGENTS.md` Guest Shop extra chain | 写明 pause watchdog → `docker compose up -d --no-deps --force-recreate --no-build verify-server` → `/healthz` → 恢复 watchdog；禁止 `docker restart`；禁止打印/复用密钥 |
+| `docs/kvm4-verify-server-deploy.md` | 增加 Reload guest-shop secrets；compact 镜像缺 `deploy/` 不是启动失败；guest adapter 优先 stored secret |
+| `docs/guest-shop-payment-fulfillment-runbook.md` | 同步重建步骤、contact/request pepper、stored secret 回退 |
+| `docs/vercel-release-checklist.md` §1.1 | 同步 env_file 重建禁令 |
+| 契约 | readiness runbook 检查 + worker scheduler 文档契约覆盖上述命令 |
+
+明确未做：
+
+- 未执行任何 SQL
+- 未打开任何公开或内部 SKU 的 `allow_guest_purchase`
+- 未开始真实支付沙箱矩阵，D 保持 `blocked`
+- 未把文档再合入 `main`，避免无应用代码变更的生产部署
+- 未开始 H 的告警接线；H 是下一可执行阶段
+
+总进度仍记 **40%**（A+B+C+F）。100% 只在第 J 节用户签署之后。
+
+下一动作：开始 H（告警、对账、退款/隐私政策）。D 仍等用户提供 CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、可见浏览器/真机、仅一个低价值非共享自动发货内部测试 SKU。
 
 ### SQL 状态
 
