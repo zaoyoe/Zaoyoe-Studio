@@ -124,3 +124,67 @@ dependencies. The sidebar brand/logo and public home logo must still link to
 `https://www.fatherkey.com/` for the China/domestic site and
 `https://www.zaoyoe.xyz/` for the international site. Regular users must retain
 `返回主站充值` / `Recharge on main site`.
+
+## Guest Shop Deployment Rules
+
+游客现金直付购买的代码发布仍必须走最新 `main`，但 **发布不等于启用游客商品**。
+游客购买 API、webhook 和 worker 跑在 KVM4 Verify Server；Vercel 生产只托管前端，
+并把 `/api/shop/:path*` 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`。
+
+When the user asks Codex to deploy guest-shop related changes:
+
+1. Work only on `codex/guest-shop-cash-purchase` or a later dedicated guest-shop
+   branch. Do not stack this work onto an already-merged layout/UI branch.
+2. Do not run `npx vercel deploy --prod` from a feature branch, `codex/*`
+   branch, or any branch other than latest `main`.
+3. Push the current branch, create or update a PR into `main`, and merge only
+   after checks are acceptable.
+4. Let the Vercel Git integration deploy `main`. Never treat a preview or
+   feature-branch deployment as production.
+5. Verify the three existing production chains:
+   - Vercel production alias `https://www.fatherkey.com` is `Ready`
+   - GitHub Actions `Deploy KVM4 Verify Server` succeeds
+   - GitHub Actions `Deploy KVM4 Sub2API` succeeds
+6. SSH to KVM4 and confirm verify and NewAPI `.current-release` equal the
+   latest `main` commit, `/health` is healthy, and required containers are
+   healthy.
+7. Guest-shop extra chain, only after verify is on that commit:
+   - `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid`
+   - Worker installer uses canonical root `/opt/zaoyoe-verify-server`
+   - Do not start the timer until secrets, port and health checks are confirmed
+   - Confirm `systemctl status zaoyoe-guest-shop-worker.timer` and recent
+     `journalctl` evidence when the launch checklist actually requires the
+     worker to run
+8. Report in Chinese with four chains when guest-shop code is in the release:
+   Vercel production, KVM4 Verify Server, KVM4 Sub2API, KVM4 guest-shop worker.
+
+Hard prohibitions:
+
+- Do not enable guest products, guest SKUs, or the guest purchase switch as
+  part of a deploy.
+- Do not execute SQL during deploy. Codex never executes SQL; new SQL must be
+  written to a file, given as an absolute path, and left for the user.
+- Do not run the guest-shop worker installer before the matching `main` commit
+  is live on KVM4 Verify Server.
+- Do not pass a custom `--root` / `KVM4_ROOT` to the worker installer.
+- Do not treat automated tests, default readiness exit `0`, or a successful
+  three-chain deploy as permission to open guest checkout.
+- `--fail-on-not-ready` returning `3` is the expected fail-closed result until
+  sandbox, database, worker and manual evidence are archived. Do not bypass it
+  with `|| true`.
+- Rollback of guest checkout is closing the guest product/SKU switch, not a
+  database rollback and not a Vercel-only rollback.
+
+Canonical guest-shop deploy prompt:
+
+> 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 Sub2API，并 SSH 确认 verify/sub2api 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，也不得打开游客商品。最后用中文汇报四条链路结果。
+
+Canonical guest-shop enablement is a separate later step in
+`docs/guest-purchase-task-2.0.md`. Enablement requires Task 2.0 completion
+criteria, not merely a successful deploy.
+
+See also:
+
+- `docs/vercel-release-checklist.md` §1.1：游客购买必须走专用分支；禁止功能分支 prod deploy
+- `docs/kvm4-verify-server-deploy.md` Guest Shop Worker：worker 只能在 verify 发布对应 commit 后安装；禁止自定义 root；部署不执行 SQL
+- `docs/guest-shop-payment-fulfillment-runbook.md`：发布不等于启用，以及后台退款/补发/解锁操作

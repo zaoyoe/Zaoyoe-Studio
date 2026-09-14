@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# This helper only wakes the already-deployed verify server.  It never accepts
+# an order id, inventory payload, or provider response from the scheduler.
+# Keep the URL loopback-only so a bad environment value cannot turn the timer
+# into an outbound secret exfiltration request.
+WORKER_URL="http://127.0.0.1:3001/api/shop/guest/worker"
+WORKER_SECRET="${GUEST_SHOP_WORKER_SECRET:-}"
+
+if [[ -z "$WORKER_SECRET" ]]; then
+  echo "GUEST_SHOP_WORKER_SECRET is not configured" >&2
+  exit 78
+fi
+
+# The application enforces this same minimum in production.  Fail before
+# making a request if the unit accidentally loads a placeholder/short value.
+if (( ${#WORKER_SECRET} < 32 )); then
+  echo "GUEST_SHOP_WORKER_SECRET is too short" >&2
+  exit 78
+fi
+
+exec /usr/bin/curl \
+  --fail \
+  --silent \
+  --show-error \
+  --connect-timeout 5 \
+  --max-time 60 \
+  --request POST \
+  --header "X-Guest-Shop-Worker-Secret: ${WORKER_SECRET}" \
+  --header 'Content-Length: 0' \
+  "$WORKER_URL"

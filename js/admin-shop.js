@@ -16,6 +16,31 @@ const SHOP_PRODUCT_IMAGE_CARD_WIDTH = 480;
 const SHOP_PRODUCT_IMAGE_CARD_HEIGHT = 320;
 const SHOP_PRODUCT_IMAGE_CARD_QUALITY = 0.78;
 
+const GUEST_ORDER_EXCEPTION_META = Object.freeze({
+    any: { label: '全部异常', tone: 'muted' },
+    all: { label: '全部订单', tone: 'muted' },
+    normal: { label: '正常', tone: 'success' },
+    paid_unfulfilled: { label: '已付款未发货', tone: 'danger' },
+    reservation_expired: { label: '预占超时', tone: 'warning' },
+    payment_review: { label: '支付待复核', tone: 'warning' },
+    payment_failed: { label: '支付失败', tone: 'warning' },
+    amount_mismatch: { label: '金额不匹配', tone: 'danger' },
+    refund_failed: { label: '退款异常', tone: 'danger' },
+    inventory_inconsistent: { label: '库存不一致', tone: 'danger' },
+    dead_letter: { label: '履约死信', tone: 'danger' }
+});
+
+const GUEST_ORDER_EXCEPTION_KEYS = Object.freeze([
+    'paid_unfulfilled',
+    'reservation_expired',
+    'payment_review',
+    'payment_failed',
+    'amount_mismatch',
+    'refund_failed',
+    'inventory_inconsistent',
+    'dead_letter'
+]);
+
 // Keep auth on the custom domain client, but route shop data reads/writes
 // through the official project endpoint to avoid PATCH/DELETE fetch failures.
 const supabaseClient = (() => {
@@ -287,7 +312,7 @@ function appendShopImageUrlVersion(url, version = '') {
 
 const ShopAdmin = {
     currentTab: 'products',
-    SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'fulfillment'],
+    SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'guest-exceptions', 'fulfillment'],
     SHOP_TAB_PREFETCH_ALLOWLIST: [],
     SHOP_SKU_INVENTORY_POOL_COLORS: [
         '#6b9ece',
@@ -323,6 +348,12 @@ const ShopAdmin = {
     procurementOverviewCacheKey: '',
     procurementOverviewRequestToken: 0,
     ordersPage: 1,
+    guestExceptionsPage: 1,
+    guestExceptionsPageSize: 20,
+    guestExceptionFilter: 'any',
+    guestExceptionProvider: '',
+    guestExceptionQuery: '',
+    guestExceptionsRequestToken: 0,
     focusedOrderId: '',
     currentOrderDetailId: '',
     orderDetailRequestToken: 0,
@@ -3224,6 +3255,353 @@ Example output format:
         return payload;
     },
 
+    loadGuestOrdersViaAdminApi: async function (params = {}) {
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/guest-orders', params),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '游客异常订单加载失败');
+        }
+
+        return payload;
+    },
+
+    copyGuestExceptionOrder: async function (button) {
+        const orderNo = String(button?.dataset?.orderNo || '').trim();
+        if (!orderNo) return;
+        try {
+            await this.copyTextToClipboard(orderNo);
+            const original = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-check" aria-hidden="true"></i>';
+            button.setAttribute('aria-label', '已复制游客订单号');
+            button.title = '已复制';
+            window.setTimeout(() => {
+                if (!button.isConnected) return;
+                button.innerHTML = original;
+                button.setAttribute('aria-label', '复制游客订单号');
+                button.title = '复制游客订单号';
+            }, 1200);
+        } catch (error) {
+            console.error('[ShopAdmin] Failed to copy guest order number:', error);
+            window.alert?.('复制失败，请手动记录订单号');
+        }
+    },
+
+    getGuestExceptionWriteActions: function (row = {}) {
+        const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
+        const refund = String(row?.refund_status || '').trim().toLowerCase();
+        const exceptionKey = String(row?.exception_key || '').trim().toLowerCase();
+        const quantity = Number(row?.quantity || 1);
+        const actions = [];
+        const canRefund = (payment === 'confirmed' || fulfillment === 'paid_unfulfillable')
+            && !['refunded', 'chargeback'].includes(payment)
+            && !['pending', 'failed', 'succeeded', 'manual_review'].includes(refund);
+        if (canRefund) {
+            actions.push({
+                action: 'request_refund',
+                title: '申请退款',
+                icon: 'fa-undo',
+                modifier: 'refund'
+            });
+        }
+        const canFulfill = fulfillment === 'paid_unfulfillable'
+            && payment === 'confirmed'
+            && !['pending', 'succeeded', 'manual_review'].includes(refund)
+            && quantity === 1;
+        if (canFulfill) {
+            actions.push({
+                action: 'manual_fulfill',
+                title: '补发库存',
+                icon: 'fa-box-open',
+                modifier: 'fulfill'
+            });
+        }
+        const canUnlock = fulfillment === 'dead_letter' || exceptionKey === 'dead_letter';
+        if (canUnlock) {
+            actions.push({
+                action: 'unlock_dead_letter',
+                title: '解锁死信',
+                icon: 'fa-unlock',
+                modifier: 'unlock'
+            });
+        }
+        return actions;
+    },
+
+    getGuestExceptionWriteMeta: function (action) {
+        const catalog = {
+            request_refund: {
+                title: '申请退款',
+                confirmLabel: '确认退款',
+                hint: '确认后会把该订单加入退款队列，由履约任务向支付通道发起退款。后台不会回显卡密或取货口令。'
+            },
+            manual_fulfill: {
+                title: '补发库存',
+                confirmLabel: '确认补发',
+                hint: '确认后会从同 SKU 的可用非共享库存中领取一张并标记已发货。后台不会回显卡密。'
+            },
+            unlock_dead_letter: {
+                title: '解锁死信',
+                confirmLabel: '确认解锁',
+                hint: '确认后只解锁这一笔死信，并清掉 worker 死信标记。请确认当前没有活动履约租约。'
+            }
+        };
+        return catalog[String(action || '').trim()] || null;
+    },
+
+    renderGuestExceptionWriteButtons: function (row = {}) {
+        const orderId = String(row?.id || '').trim();
+        const orderNo = String(row?.order_no || '').trim();
+        const actions = this.getGuestExceptionWriteActions(row);
+        return actions.map((item) => (
+            `<button type="button" class="shop-guest-exception-action shop-guest-exception-action--${item.modifier}"
+                data-shop-action="guest-exception-write" data-guest-action="${this.escapeForAttr(item.action)}"
+                data-order-id="${this.escapeForAttr(orderId)}" data-order-no="${this.escapeForAttr(orderNo)}"
+                title="${this.escapeForAttr(item.title)}" aria-label="${this.escapeForAttr(item.title)}">
+                <i class="fas ${item.icon}" aria-hidden="true"></i>
+            </button>`
+        )).join('');
+    },
+
+    openGuestExceptionOpsModal: function ({ action, orderId, orderNo } = {}) {
+        const meta = this.getGuestExceptionWriteMeta(action);
+        const normalizedOrderId = String(orderId || '').trim();
+        if (!meta || !normalizedOrderId) return;
+        this.closeDynamicModal('guestExceptionOpsModal');
+        const modalHtml = `
+            <div id="guestExceptionOpsModal" data-shop-overlay-close="dynamic-modal" data-modal-id="guestExceptionOpsModal"
+                class="shop-refund-modal-overlay">
+                <div class="shop-refund-modal">
+                    <h3 class="shop-refund-modal-title">
+                        <span class="shop-refund-modal-title-icon">
+                             <i class="fas fa-exclamation-circle"></i>
+                        </span>
+                        ${this.escapeHtml(meta.title)}
+                    </h3>
+                    <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(orderNo || normalizedOrderId)}。${this.escapeHtml(meta.hint)}</p>
+                    <div class="shop-refund-modal-section shop-refund-modal-section--remark">
+                        <label class="shop-refund-modal-label" for="guestExceptionOpsReason">处理原因</label>
+                        <textarea id="guestExceptionOpsReason" class="shop-refund-modal-textarea" placeholder="请填写至少 8 个字的处理原因"></textarea>
+                        <p id="guestExceptionOpsReasonError" class="shop-guest-exception-ops-error" hidden>请填写至少 8 个字的处理原因</p>
+                    </div>
+                    <div class="shop-refund-modal-actions">
+                        <button type="button" data-shop-action="guest-exception-ops-cancel" data-modal-id="guestExceptionOpsModal" class="refund-btn-cancel">取消</button>
+                        <button type="button" class="refund-btn-confirm" data-shop-action="guest-exception-ops-confirm"
+                            data-guest-action="${this.escapeForAttr(action)}" data-order-id="${this.escapeForAttr(normalizedOrderId)}"
+                            data-order-no="${this.escapeForAttr(orderNo || '')}">${this.escapeHtml(meta.confirmLabel)}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.bindOverlayDismiss('guestExceptionOpsModal', () => {
+            this.closeDynamicModal('guestExceptionOpsModal');
+        });
+        requestAnimationFrame(() => {
+            document.getElementById('guestExceptionOpsModal')?.classList.add('is-visible');
+            document.getElementById('guestExceptionOpsReason')?.focus();
+        });
+    },
+
+    submitGuestExceptionWrite: async function (button) {
+        const action = String(button?.dataset?.guestAction || '').trim();
+        const orderId = String(button?.dataset?.orderId || '').trim();
+        const meta = this.getGuestExceptionWriteMeta(action);
+        if (!meta || !orderId) return;
+        const reasonInput = document.getElementById('guestExceptionOpsReason');
+        const reasonError = document.getElementById('guestExceptionOpsReasonError');
+        const reason = String(reasonInput?.value || '').trim();
+        if (reason.length < 8) {
+            if (reasonError) {
+                reasonError.hidden = false;
+                reasonError.textContent = '请填写至少 8 个字的处理原因';
+            }
+            reasonInput?.focus();
+            this.showActionToast('请填写至少 8 个字的处理原因', 'warning');
+            return;
+        }
+        if (reasonError) reasonError.hidden = true;
+        this.setActionButtonLoading(button, '处理中...');
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/guest-orders'),
+                {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers,
+                    body: JSON.stringify({
+                        action,
+                        orderId,
+                        confirm: true,
+                        reason,
+                        site: window.AdminSiteFilter?.getSiteFilter?.() || 'all'
+                    })
+                }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '游客订单处理失败');
+            }
+            this.finishActionButton(button, '已处理');
+            this.showActionToast(`${meta.title}已提交`, 'success');
+            this.closeDynamicModal('guestExceptionOpsModal');
+            this.invalidateShopTabCache('guest-exceptions');
+            await this.loadGuestOrderExceptions(this.guestExceptionsPage || 1);
+        } catch (error) {
+            this.failActionButton(button, '处理失败');
+            this.showActionToast(error.message || '游客订单处理失败', 'error', { durationMs: 5000 });
+        }
+    },
+
+    getGuestExceptionMeta: function (key) {
+        return GUEST_ORDER_EXCEPTION_META[String(key || '').trim().toLowerCase()]
+            || GUEST_ORDER_EXCEPTION_META.any;
+    },
+
+    formatGuestExceptionStatus: function (value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        const labels = {
+            pending: '待处理',
+            processing: '处理中',
+            confirmed: '已确认',
+            failed: '失败',
+            review: '待复核',
+            amount_mismatch: '金额异常',
+            held: '已预占',
+            released: '已释放',
+            consumed: '已消耗',
+            delivered: '已发货',
+            paid_unfulfillable: '无法履约',
+            dead_letter: '死信',
+            refunded: '已退款',
+            manual_review: '人工复核',
+            none: '无'
+        };
+        return labels[normalized] || (normalized ? normalized : '—');
+    },
+
+    renderGuestExceptionSummary: function (summary = {}, count = 0) {
+        const container = document.getElementById('guestExceptionsSummary');
+        if (!container) return;
+        const items = [
+            ['total', '当前结果', 'muted', false],
+            ['critical', '严重', 'danger', false],
+            ['warning', '警告', 'warning', false],
+            ['normal', '正常', 'success', false],
+            ...GUEST_ORDER_EXCEPTION_KEYS.map((key) => [key, this.getGuestExceptionMeta(key).label, this.getGuestExceptionMeta(key).tone, true])
+        ];
+        container.innerHTML = items.map(([key, label, tone, isFilter]) => {
+            const value = Number(summary?.[key] || (key === 'total' ? count : 0));
+            const active = isFilter && this.guestExceptionFilter === key ? ' is-active' : '';
+            const content = `<span>${this.escapeHtml(label)}</span><strong>${this.escapeHtml(String(value))}</strong>`;
+            if (!isFilter) {
+                return `<div class="shop-guest-exception-metric shop-guest-exception-metric--${tone}">${content}</div>`;
+            }
+            return `<button type="button" class="shop-guest-exception-metric shop-guest-exception-metric--${tone}${active}"
+                data-shop-action="guest-exceptions-summary-filter" data-guest-exception-filter="${this.escapeForAttr(key)}">${content}</button>`;
+        }).join('');
+    },
+
+    renderGuestExceptionRows: function (rows = []) {
+        const tbody = document.getElementById('guestExceptionsTableBody');
+        if (!tbody) return;
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">当前没有匹配的游客异常订单</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map((row) => {
+            const exceptionKey = String(row.exception_key || '').trim().toLowerCase() || 'normal';
+            const exception = this.getGuestExceptionMeta(exceptionKey);
+            const orderNo = String(row.order_no || '').trim();
+            const product = String(row.snapshot_product_name || row.product_id || '未知商品').trim();
+            const sku = String(row.snapshot_sku_name || '').trim();
+            const site = String(row.site || '').trim().toUpperCase() || '—';
+            const amount = row.total_amount == null ? '—' : `${row.currency || ''} ${row.total_amount}`.trim();
+            const updated = row.updated_at ? new Date(row.updated_at).toLocaleString('zh-CN') : '—';
+            return `<tr class="shop-order-row shop-guest-exception-row">
+                <td data-label="游客订单"><div class="shop-guest-exception-order-no">${this.escapeHtml(orderNo || '—')}</div><div class="shop-guest-exception-muted">游客现金单</div></td>
+                <td data-label="商品 / 站点"><div>${this.escapeHtml(product)}</div><div class="shop-guest-exception-muted">${this.escapeHtml(sku ? `${sku} · ${site}` : site)}</div></td>
+                <td data-label="支付"><div>${this.escapeHtml(this.formatGuestExceptionStatus(row.payment_status))}</div><div class="shop-guest-exception-muted">${this.escapeHtml(amount)}</div></td>
+                <td data-label="库存 / 履约"><div>${this.escapeHtml(this.formatGuestExceptionStatus(row.reservation_row_status || row.reservation_status))}</div><div class="shop-guest-exception-muted">${this.escapeHtml(this.formatGuestExceptionStatus(row.fulfillment_status))}</div></td>
+                <td data-label="异常"><span class="shop-guest-exception-badge shop-guest-exception-badge--${exception.tone}">${this.escapeHtml(exception.label)}</span><div class="shop-guest-exception-muted">${this.escapeHtml(row.exception_reason || (exceptionKey === 'normal' ? '未发现异常' : '需要关注'))}</div></td>
+                <td data-label="更新时间">${this.escapeHtml(updated)}</td>
+                <td data-label="操作">
+                    <div class="shop-guest-exception-actions">
+                    <button type="button" class="guest-exception-copy-order shop-guest-exception-copy-order" data-shop-action="guest-exception-copy-order"
+                        data-order-no="${this.escapeForAttr(orderNo)}" title="复制游客订单号" aria-label="复制游客订单号">
+                        <i class="fas fa-copy" aria-hidden="true"></i>
+                    </button>
+                    ${this.renderGuestExceptionWriteButtons(row)}
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+    },
+
+    loadGuestOrderExceptions: async function (page = 1, options = {}) {
+        const tbody = document.getElementById('guestExceptionsTableBody');
+        if (!tbody) return { count: 0, rows: [] };
+        const requestToken = (this.guestExceptionsRequestToken || 0) + 1;
+        this.guestExceptionsRequestToken = requestToken;
+        const loadGeneration = Number(this.shopTabLoadGeneration['guest-exceptions'] || 0);
+        this.guestExceptionsPage = Math.max(1, Number.parseInt(page, 10) || 1);
+        const queryInput = document.getElementById('guestExceptionQueryInput');
+        const query = String(options.queryOverride !== undefined ? options.queryOverride : queryInput?.value || this.guestExceptionQuery || '').trim();
+        this.guestExceptionQuery = query;
+        if (queryInput && queryInput.value !== query) queryInput.value = query;
+        const filter = String(options.filterOverride || this.guestExceptionFilter || 'any').trim().toLowerCase();
+        this.guestExceptionFilter = filter === 'all' || GUEST_ORDER_EXCEPTION_KEYS.includes(filter) ? filter : 'any';
+        const filterSelect = document.getElementById('guestExceptionFilter');
+        if (filterSelect && filterSelect.value !== this.guestExceptionFilter) filterSelect.value = this.guestExceptionFilter;
+        const providerSelect = document.getElementById('guestExceptionProvider');
+        const provider = String(this.guestExceptionProvider || '').trim().toLowerCase();
+        if (providerSelect && providerSelect.value !== provider) providerSelect.value = provider;
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">正在加载游客异常订单…</td></tr>';
+
+        try {
+            const params = {
+                site: window.AdminSiteFilter?.getSiteFilter?.() || 'all',
+                page: this.guestExceptionsPage,
+                pageSize: this.guestExceptionsPageSize
+            };
+            if (this.guestExceptionFilter !== 'any') params.exception = this.guestExceptionFilter;
+            if (provider) params.provider = provider;
+            if (query) params.orderNo = query;
+            const payload = await this.loadGuestOrdersViaAdminApi(params);
+            if (
+                requestToken !== this.guestExceptionsRequestToken
+                || loadGeneration !== Number(this.shopTabLoadGeneration['guest-exceptions'] || 0)
+            ) return { stale: true };
+            const rows = Array.isArray(payload.rows) ? payload.rows : [];
+            this.renderGuestExceptionRows(rows);
+            this.renderGuestExceptionSummary(payload.summary || {}, Number(payload.count || 0));
+            const notice = document.getElementById('guestExceptionsNotice');
+            if (notice) {
+                notice.hidden = !payload.scanTruncated;
+                notice.textContent = payload.scanTruncated
+                    ? '当前结果仅扫描最近 5000 条订单，统计可能不完整；请缩小站点、订单号或异常类型范围。'
+                    : '';
+            }
+            this.renderPagination('guestExceptionsPagination', this.guestExceptionsPage, Number(payload.count || 0), this.guestExceptionsPageSize, 'loadGuestOrderExceptions');
+            return payload;
+        } catch (error) {
+            if (
+                requestToken !== this.guestExceptionsRequestToken
+                || loadGeneration !== Number(this.shopTabLoadGeneration['guest-exceptions'] || 0)
+            ) return { stale: true };
+            tbody.innerHTML = `<tr><td colspan="7" class="text-danger">${this.escapeHtml(error.message || '游客异常订单加载失败')}</td></tr>`;
+            const summary = document.getElementById('guestExceptionsSummary');
+            if (summary) summary.textContent = '游客异常队列加载失败';
+            return { success: false, error };
+        }
+    },
+
     loadOrderDetailViaAdminApi: async function (orderId) {
         const normalizedId = String(orderId || '').trim();
         if (!normalizedId) {
@@ -3910,6 +4288,8 @@ Example output format:
                 return this.runShopTabLoader(normalizedTab, () => this.initInventoryBrowser());
             case 'orders':
                 return this.runShopTabLoader(normalizedTab, () => this.searchOrders(this.ordersPage || 1));
+            case 'guest-exceptions':
+                return this.runShopTabLoader(normalizedTab, () => this.loadGuestOrderExceptions(this.guestExceptionsPage || 1));
             case 'fulfillment':
                 return this.runShopTabLoader(normalizedTab, () => this.loadDeliveryTasks(this.deliveryTaskPage || 1));
             default:
@@ -4530,6 +4910,33 @@ Example output format:
                 case 'shop-switch-tab':
                     this.switchTab(actionEl.dataset.shopTab);
                     break;
+                case 'guest-exceptions-search':
+                    this.loadGuestOrderExceptions(1);
+                    break;
+                case 'guest-exceptions-refresh':
+                    this.invalidateShopTabCache('guest-exceptions');
+                    this.loadGuestOrderExceptions(this.guestExceptionsPage || 1);
+                    break;
+                case 'guest-exceptions-summary-filter':
+                    this.guestExceptionFilter = actionEl.dataset.guestExceptionFilter || 'any';
+                    this.loadGuestOrderExceptions(1);
+                    break;
+                case 'guest-exception-copy-order':
+                    void this.copyGuestExceptionOrder(actionEl);
+                    break;
+                case 'guest-exception-write':
+                    this.openGuestExceptionOpsModal({
+                        action: actionEl.dataset.guestAction,
+                        orderId: actionEl.dataset.orderId,
+                        orderNo: actionEl.dataset.orderNo
+                    });
+                    break;
+                case 'guest-exception-ops-cancel':
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'guestExceptionOpsModal');
+                    break;
+                case 'guest-exception-ops-confirm':
+                    void this.submitGuestExceptionWrite(actionEl);
+                    break;
                 case 'product-open-create-modal':
                     this.openProductModal();
                     break;
@@ -5091,6 +5498,14 @@ Example output format:
                     this.syncOrderFilterControls();
                     this.searchOrders(1);
                     break;
+                case 'guest-exceptions-filter':
+                    this.guestExceptionFilter = String(actionEl.value || 'any').trim().toLowerCase();
+                    this.loadGuestOrderExceptions(1);
+                    break;
+                case 'guest-exceptions-provider':
+                    this.guestExceptionProvider = String(actionEl.value || '').trim().toLowerCase();
+                    this.loadGuestOrderExceptions(1);
+                    break;
                 case 'product-handle-icon-upload':
                     this.handleIconUpload(actionEl);
                     break;
@@ -5174,6 +5589,12 @@ Example output format:
                         event.preventDefault();
                         this.clearOrderSearchContext({ preserveFilters: true });
                         this.searchOrders(1);
+                    }
+                    break;
+                case 'guest-exceptions-search-enter':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.loadGuestOrderExceptions(1);
                     }
                     break;
                 case 'product-search-enter':
@@ -5336,7 +5757,7 @@ Example output format:
 
     restoreShopUrlState: function () {
         const url = this.getShopUrlObject();
-        const validTabs = new Set(['products', 'import', 'inventory', 'orders', 'fulfillment']);
+        const validTabs = new Set(['products', 'import', 'inventory', 'orders', 'guest-exceptions', 'fulfillment']);
         if (!url) return { tabName: this.currentTab || 'products' };
 
         const search = url.searchParams;

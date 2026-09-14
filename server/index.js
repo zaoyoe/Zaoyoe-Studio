@@ -147,6 +147,11 @@ const {
 } = require('./api-handlers/_site-scoped-system-config');
 const publicApiHandler = require('../api/public');
 const adminApiHandler = require('../api/admin');
+const {
+    captureGuestShopWebhookRawBody,
+    isGuestShopWebhookRequest,
+    isGuestShopWorkerRequest
+} = require('../api/_lib/guest-shop/raw-body');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -321,6 +326,11 @@ app.use(cors({
 const defaultJsonBodyParser = express.json();
 const aiImageUploadJsonBodyParser = express.json({ limit: '18mb' });
 
+// Capture signed guest webhook bytes before any global parser can consume the
+// stream. The route-specific middleware is intentionally bounded and runs
+// only for the two provider callback paths.
+app.use(captureGuestShopWebhookRawBody());
+
 function isAiImageReferenceUploadRequest(req = {}) {
     if (String(req.method || '').toUpperCase() !== 'POST') return false;
     const requestPath = String(req.path || req.originalUrl || '').split('?')[0].replace(/\/+$/, '');
@@ -331,12 +341,17 @@ function isAiImageReferenceUploadRequest(req = {}) {
 }
 
 app.use((req, res, next) => {
+    if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();
     const parser = isAiImageReferenceUploadRequest(req)
         ? aiImageUploadJsonBodyParser
         : defaultJsonBodyParser;
     return parser(req, res, next);
 });
-app.use(express.urlencoded({ extended: false }));
+const defaultUrlencodedBodyParser = express.urlencoded({ extended: false });
+app.use((req, res, next) => {
+    if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();
+    return defaultUrlencodedBodyParser(req, res, next);
+});
 
 function dispatchSharedApiHandler(handler) {
     return (req, res, next) => {

@@ -1,5 +1,7 @@
 # Vercel 发布清单（bot -> main）
 
+游客现金直付购买不走这条“日常 `bot -> main`”捷径。涉及游客下单、支付、履约、worker 或后台游客订单的改动，必须看下面的 **§1.1** 和 `AGENTS.md` Guest Shop Deployment Rules。
+
 这份清单用于当前仓库的标准发布流程，目标是同时控制两件事：
 
 1. 减少 Vercel 免费额度被 `Preview` 自动部署吃满
@@ -64,6 +66,20 @@
 - 真正上线时，优先走 `merge -> main -> production`
 - 不把 `Promote Preview to Production` 当成常规发布路径
 
+## 1.1 游客购买专用分支（强制，防止发错生产）
+
+游客现金直付相关改动 **不得** 继续堆在 `bot`、已合并的布局/UI 分支、或其他功能分支上。
+
+- 工作分支：`codex/guest-shop-cash-purchase`，或后续从最新 `origin/main` 派生的专用 `codex/guest-shop-*` 分支
+- 唯一合法发布路径：专用分支 → PR → 最新 `main` → Vercel Git 集成创建 Production
+- **禁止**从 `codex/*`、`bot` 或其他功能分支执行 `npx vercel deploy --prod`
+- **禁止**把 Preview、功能分支部署、或 “Promote Preview to Production” 当成游客购买的生产发布
+- **发布不等于启用游客商品**。部署过程不得打开 `shop_products.allow_guest_purchase` / `shop_product_skus.allow_guest_purchase`，也不得执行 SQL
+- 生产拓扑：Vercel 只托管前端；`/api/shop/:path*` 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`。游客 API、webhook、worker 跑在 KVM4 Verify Server
+- 游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker。worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动
+- 回滚游客购买：关闭该商品/SKU 的游客开关。不是数据库 rollback，也不是 Vercel-only rollback
+- 规范正文：`AGENTS.md`、`docs/kvm4-verify-server-deploy.md`、`docs/guest-shop-payment-fulfillment-runbook.md`、`docs/guest-purchase-task-2.0.md`
+
 ## 2. 标准发布流程
 
 ### A. 开发阶段
@@ -113,13 +129,14 @@
 
 ### D. 正式发布
 
-1. 发起 `bot -> main` PR
+1. 普通改动发起 `bot -> main` PR；**游客购买改动必须从专用 `codex/guest-shop-*` 分支发 PR 到 `main`**，不要先并进 `bot` 再绕道
 2. 按 PR 清单补齐：
    - 已跑的测试
-   - 是否有 SQL migration
+   - 是否有 SQL migration（Codex 不执行；用户执行后再发依赖该 SQL 的代码）
    - 是否需要上线后补验证
 3. 合并到 `main`
 4. 等待 Vercel 的 `Production Deployment` 完成
+5. 若本次包含游客购买代码：再按 `AGENTS.md` 验证 KVM4 Verify / Sub2API / guest-shop worker。验证通过也不等于可以打开游客商品
 
 ## 3. 合并后检查
 
@@ -173,6 +190,13 @@
 - [20260418_enable_decimal_refund_reclaim_rpc.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260418_enable_decimal_refund_reclaim_rpc.sql)
   - 未执行时，“已入账订单退款”会继续保持 fail-closed
 
+游客购买后台写路径还要记住：
+
+- [20260914_guest_shop_admin_ops.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260914_guest_shop_admin_ops.sql)
+- [20260914_verify_guest_shop_admin_ops.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260914_verify_guest_shop_admin_ops.sql)
+  - 未执行时，后台退款/补发/解锁必须 503 fail-closed，不得当成可运营
+  - 部署过程不得代执行这两条 SQL，也不得重跑已通过的 20260913 迁移
+
 ## 5. 配额控制建议
 
 为了尽量省 Vercel 免费额度，默认执行这些约束：
@@ -192,3 +216,5 @@
 3. 如果问题涉及数据库 migration，不要直接假设应用回滚就能恢复数据库状态
 
 数据库相关问题要单独处理，不要把“代码回滚”和“SQL 回滚”混成一步。
+
+游客购买的标准回滚是关闭商品/SKU 的 `allow_guest_purchase`。不要把 Vercel Instant Rollback 当成游客购买回滚；也不要在仍有游客订单时执行 20260913/20260914 rollback。
