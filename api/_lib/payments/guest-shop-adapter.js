@@ -76,6 +76,33 @@ class GuestShopPaymentError extends Error {
     }
 }
 
+
+function isDefinitiveNowpaymentsCreateRejection(error) {
+    const status = Number(error?.statusCode || 0);
+    if (status >= 400 && status < 500) return true;
+    const code = String(error?.code || '').trim().toLowerCase();
+    if (code === 'nowpayments_rejected') return true;
+    const message = String(error?.message || '');
+    return /amountto is too small|too small|not allowed|bad_request/i.test(message);
+}
+
+function mapNowpaymentsCreateError(error) {
+    if (error instanceof GuestShopPaymentError) return error;
+    if (!isDefinitiveNowpaymentsCreateRejection(error)) return error;
+    const rawMessage = String(error?.message || '').trim();
+    const message = /amountto is too small/i.test(rawMessage)
+        ? '金额低于 NOWPayments 最低限额，无法创建支付'
+        : (rawMessage || 'NOWPayments 拒绝创建支付');
+    const status = Number(error?.statusCode || 0);
+    return new GuestShopPaymentError(message, {
+        code: 'guest_provider_create_failed',
+        statusCode: status >= 400 && status < 500 ? status : 400,
+        expose: true,
+        cause: error
+    });
+}
+
+
 function text(value, fallback = '', maxLength = 500) {
     if (typeof value !== 'string' && typeof value !== 'number') return fallback;
     const normalized = String(value).trim();
@@ -120,7 +147,8 @@ function normalizeSite(value) {
 }
 
 function currencyForSite(site) {
-    return normalizeSite(site) === 'cn' ? 'CNY' : 'USD';
+    normalizeSite(site);
+    return 'CNY';
 }
 
 function normalizeCurrency(value) {
@@ -409,7 +437,7 @@ function buildSafeMetadata(provider, metadata = {}) {
     const source = isPlainObject(metadata) ? metadata : {};
     const allowed = provider === 'zpay'
         ? ['provider_order_no', 'trade_no', 'gateway_order_id', 'payment_type', 'checkout_url', 'qrcode_url', 'qrcode_image_url']
-        : ['provider_order_no', 'payment_id', 'pay_address', 'pay_amount', 'pay_amount_text', 'pay_currency', 'price_amount', 'price_currency', 'network_name', 'quote_expires_at', 'is_fixed_rate', 'is_fee_paid_by_user'];
+        : ['provider_order_no', 'payment_id', 'pay_address', 'pay_amount', 'pay_amount_text', 'pay_currency', 'price_amount', 'price_currency', 'network_name', 'quote_expires_at', 'is_fixed_rate', 'is_fee_paid_by_user', 'local_currency', 'local_amount', 'cny_to_usd_rate'];
     const result = {};
     allowed.forEach((key) => {
         const value = source[key];
@@ -595,8 +623,21 @@ function getProviderConfigFromInput(config, provider) {
     return config[provider] || null;
 }
 
+function firstPresentAmount(...values) {
+    for (const value of values) {
+        if (value === null || value === undefined || value === '') continue;
+        return value;
+    }
+    return undefined;
+}
+
 function getTrustedOrderAmount(order, suppliedAmount) {
-    const source = order?.total_amount ?? order?.totalAmount ?? order?.expected_amount ?? order?.expectedAmount;
+    const source = firstPresentAmount(
+        order?.expected_amount,
+        order?.expectedAmount,
+        order?.total_amount,
+        order?.totalAmount
+    );
     const trusted = normalizeDecimalAmount(source, '订单金额');
     if (suppliedAmount !== undefined && suppliedAmount !== null && suppliedAmount !== '') {
         const supplied = normalizeDecimalAmount(suppliedAmount, '订单金额');
@@ -961,11 +1002,11 @@ function createGuestShopPaymentAdapter({
 
         let priceAmount;
         const priceCurrency = normalizeCurrency(context.integration.priceCurrency).toLowerCase();
-        if (priceCurrency === 'usd' && site === 'cn') {
+        if (priceCurrency === 'usd') {
+            // Guest settlement is always CNY. NOWPayments quotes in USD on both
+            // sites using the same recharge conversion path.
             priceAmount = convertCnyAmountToPriceAmount(amountSnapshot.amount, context.integration);
         } else if (priceCurrency === currency.toLowerCase()) {
-            priceAmount = amountSnapshot.amount;
-        } else if (priceCurrency === 'usd' && currency === 'USD') {
             priceAmount = amountSnapshot.amount;
         } else {
             throw new GuestShopPaymentError('NOWPayments 计价币种与订单不兼容', {
@@ -980,14 +1021,19 @@ function createGuestShopPaymentAdapter({
                 statusCode: 502
             });
         }
-        const result = await createNowpaymentsPayment({
-            channelConfig: context.channelConfig,
-            secretValues: context.secretValues,
-            requestOrigin: context.origin,
-            orderId: providerOrderNo,
-            priceAmount: Number(priceAmount).toFixed(2),
-            orderDescription: title
-        }, fetchDependencies);
+        let result;
+        try {
+            result = await createNowpaymentsPayment({
+                channelConfig: context.channelConfig,
+                secretValues: context.secretValues,
+                requestOrigin: context.origin,
+                orderId: providerOrderNo,
+                priceAmount: Number(priceAmount).toFixed(2),
+                orderDescription: title
+            }, fetchDependencies);
+        } catch (error) {
+            throw mapNowpaymentsCreateError(error);
+        }
         const payload = result.response?.data && typeof result.response.data === 'object' ? result.response.data : {};
         const paymentId = extractNowpaymentsPaymentId(payload);
         const payAddress = text(payload.pay_address || payload.payment_address || payload.address, '', 240);
@@ -1017,7 +1063,10 @@ function createGuestShopPaymentAdapter({
             network_name: context.channelConfig.network_name || 'BNB Smart Chain',
             quote_expires_at: quoteExpiresAt,
             is_fixed_rate: context.integration.isFixedRate,
-            is_fee_paid_by_user: context.integration.isFeePaidByUser
+            is_fee_paid_by_user: context.integration.isFeePaidByUser,
+            local_currency: 'cny',
+            local_amount: amountSnapshot.amount,
+            cny_to_usd_rate: context.integration.cnyToUsdRate
         });
         return {
             supported: true,
@@ -1394,6 +1443,7 @@ module.exports = {
     createGuestShopPaymentAdapter,
     createGuestPaymentAdapter: createGuestShopPaymentAdapter,
     defaultGuestShopPaymentAdapter: defaultAdapter,
+    getTrustedOrderAmount,
     isProductionLikeRuntime,
     normalizeAllowedChannels,
     normalizeDecimalAmount,

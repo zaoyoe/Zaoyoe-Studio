@@ -1386,7 +1386,7 @@ test('shop mutate upsert rejects chained shared inventory sources', async () => 
     });
 });
 
-test('shop mutate upsert blocks guest purchase without a cash price', async () => {
+test('shop mutate upsert enables guest purchase without leftover cash prices', async () => {
     await withShopMutateHandler({}, async ({ handler, state }) => {
         const res = createMockResponse();
 
@@ -1408,11 +1408,12 @@ test('shop mutate upsert blocks guest purchase without a cash price', async () =
         }, res);
 
         const payload = res.json();
-        assert.equal(res.statusCode, 400);
-        assert.equal(payload.success, false);
-        assert.match(payload.message, /游客现金价/);
-        assert.equal(state.insertPayload, undefined);
-        assert.equal(state.auditCalls.length, 0);
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayload.allow_guest_purchase, true);
+        assert.equal(state.insertPayload.guest_cash_price_cny, null);
+        assert.equal(state.insertPayload.guest_cash_price_intl, null);
+        assert.deepEqual(state.insertPayload.guest_payment_channels, ['zpay']);
     });
 });
 
@@ -1564,8 +1565,8 @@ test('shop mutate upsert persists product-level guest purchase settings', async 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(state.insertPayload.allow_guest_purchase, true);
-        assert.equal(state.insertPayload.guest_cash_price_cny, 9.9);
-        assert.equal(state.insertPayload.guest_cash_price_intl, undefined);
+        assert.equal(state.insertPayload.guest_cash_price_cny, null);
+        assert.equal(state.insertPayload.guest_cash_price_intl, null);
         assert.deepEqual(state.insertPayload.guest_payment_channels, ['zpay']);
         assert.equal(state.auditCalls[0].details.allow_guest_purchase, true);
     });

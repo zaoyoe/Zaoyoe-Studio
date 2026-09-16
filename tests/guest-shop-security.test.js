@@ -50,7 +50,7 @@ function expectCode(callback, code) {
 test('guest site and order input validation is strict and server-bindable', () => {
     assert.equal(normalizeGuestSite(' INTL '), 'intl');
     assert.equal(currencyForSite('cn'), 'CNY');
-    assert.equal(currencyForSite('intl'), 'USD');
+    assert.equal(currencyForSite('intl'), 'CNY');
     expectCode(() => normalizeGuestSite('unknown'), 'unsupported_site');
     expectCode(() => normalizeGuestSite(''), 'required_site');
     expectCode(() => normalizeUuid('not-a-uuid'), 'invalid_uuid');

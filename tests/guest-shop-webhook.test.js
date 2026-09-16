@@ -478,3 +478,158 @@ test('NOWPayments webhook compares actually_paid as exact decimal text at the qu
         assert.equal(state.events[0].processing_status, accepted ? 'processed' : 'rejected', actuallyPaid);
     }
 });
+
+test('NOWPayments parser USD quote still binds against stored CNY settlement', async () => {
+    const payment = {
+        id: '99999999-9999-4999-8999-999999999999',
+        guest_order_id: ORDER_ID,
+        merchant_order_no: 'GS-NOW-CNY-SETTLE',
+        purpose: 'shop_direct',
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        currency: 'CNY',
+        expected_amount: '12.34',
+        provider_order_no: 'GS-NOW-CNY-SETTLE',
+        checkout_reference: 'NP-CNY-SETTLE-1',
+        provider_metadata: {
+            price_amount: '1.73',
+            price_currency: 'usd',
+            pay_amount: '1.73',
+            pay_amount_text: '1.73',
+            local_currency: 'cny',
+            local_amount: 12.34,
+            cny_to_usd_rate: 0.14
+        }
+    };
+    const { handlers, state } = createHandlers({
+        provider: 'nowpayments',
+        payment,
+        paymentAdapter: {
+            async verifyGuestWebhook() {
+                return { valid: true, signature_version: 'HMAC-SHA512' };
+            },
+            async parseGuestWebhook({ payload }) {
+                return {
+                    merchant_order_no: payload.order_id,
+                    provider_order_no: payload.order_id,
+                    provider_payment_id: payload.payment_id,
+                    event_key: `nowpayments:${payload.payment_id}`,
+                    purpose: 'shop_direct',
+                    currency: 'USD',
+                    provider_currency: 'usd',
+                    price_amount: payload.price_amount,
+                    paid_amount: payload.price_amount,
+                    actually_paid_text: payload.actually_paid,
+                    pay_currency: payload.pay_currency,
+                    network_verified: true,
+                    final_status: 'paid'
+                };
+            }
+        }
+    });
+    const response = createResponse();
+    await handlers.webhook(makeNowpaymentsRequest({
+        payment_id: 'NP-CNY-SETTLE-1',
+        order_id: 'GS-NOW-CNY-SETTLE'
+    }), response, 'nowpayments');
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.accepted, true);
+    assert.equal(state.rpcCalls.length, 1);
+    assert.equal(state.rpcCalls[0].args.p_observed_currency, 'CNY');
+    assert.equal(state.rpcCalls[0].args.p_observed_amount, '12.34');
+    assert.equal(state.rpcCalls[0].args.p_observed_site, 'intl');
+    assert.equal(state.events[0].observed_currency, 'CNY');
+});
+
+test('a NOWPayments callback that hits a ZPay merchant order is rejected unbound', async () => {
+    const payment = {
+        id: PAYMENT_ID,
+        guest_order_id: ORDER_ID,
+        merchant_order_no: ORDER_NO,
+        purpose: 'shop_direct',
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        currency: 'CNY',
+        expected_amount: '12.34',
+        provider_order_no: 'ZPAY-TRADE-1',
+        checkout_reference: 'https://zpay.example/pay/1',
+        provider_metadata: {}
+    };
+    const { handlers, state } = createHandlers({
+        provider: 'nowpayments',
+        payment,
+        paymentAdapter: {
+            async verifyGuestWebhook() {
+                return { valid: true, signature_version: 'HMAC-SHA512' };
+            },
+            async parseGuestWebhook({ payload }) {
+                return {
+                    merchant_order_no: payload.order_id,
+                    provider_order_no: payload.order_id,
+                    provider_payment_id: payload.payment_id,
+                    event_key: `nowpayments:${payload.payment_id}`,
+                    purpose: 'shop_direct',
+                    currency: 'CNY',
+                    provider_currency: 'usd',
+                    price_amount: payload.price_amount,
+                    paid_amount: payload.price_amount,
+                    actually_paid_text: payload.actually_paid,
+                    pay_currency: payload.pay_currency,
+                    network_verified: true,
+                    final_status: 'paid'
+                };
+            }
+        }
+    });
+    const response = createResponse();
+    await handlers.webhook(makeNowpaymentsRequest({
+        payment_id: 'NP-CROSS-ZPAY-1',
+        order_id: ORDER_NO
+    }), response, 'nowpayments');
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(response.payload.accepted, false);
+    assert.equal(state.rpcCalls.length, 0);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.events[0].payment_order_id, null);
+    assert.equal(state.events[0].provider, 'nowpayments');
+    assert.equal(state.events[0].merchant_order_no, ORDER_NO);
+    assert.equal(state.events[0].processing_status, 'rejected');
+    assert.match(state.events[0].event_key, /^nowpayments:invalid-bucket:/u);
+});
+
+test('a ZPay callback that hits a NOWPayments merchant order is rejected unbound', async () => {
+    const payment = {
+        id: PAYMENT_ID,
+        guest_order_id: ORDER_ID,
+        merchant_order_no: ORDER_NO,
+        purpose: 'shop_direct',
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        currency: 'CNY',
+        expected_amount: '12.34',
+        provider_order_no: 'NP-INTL-1',
+        checkout_reference: 'NP-INTL-1',
+        provider_metadata: {}
+    };
+    const { handlers, state } = createHandlers({
+        provider: 'zpay',
+        payment
+    });
+    const response = createResponse();
+    await handlers.webhook(makeRequest('valid-signature'), response, 'zpay');
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(response.payload.accepted, false);
+    assert.equal(state.rpcCalls.length, 0);
+    assert.equal(state.events.length, 1);
+    assert.equal(state.events[0].payment_order_id, null);
+    assert.equal(state.events[0].provider, 'zpay');
+    assert.equal(state.events[0].merchant_order_no, ORDER_NO);
+    assert.equal(state.events[0].processing_status, 'rejected');
+    assert.match(state.events[0].event_key, /^zpay:invalid-bucket:/u);
+});

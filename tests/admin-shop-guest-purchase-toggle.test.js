@@ -22,12 +22,12 @@ test('admin product editor exposes a guest purchase toggle in the existing setti
     assert.match(section, /允许游客购买/);
     assert.match(section, /toggle-switch/);
     assert.match(section, /id="guestPurchaseWrapper"/);
-    assert.match(section, /id="prodGuestCashPriceCny"/);
-    assert.match(section, /id="prodGuestCashPriceIntl"/);
+    assert.doesNotMatch(section, /id="prodGuestCashPriceCny"/);
+    assert.doesNotMatch(section, /id="prodGuestCashPriceIntl"/);
     assert.match(section, /id="prodGuestChannelZpay"/);
     assert.match(section, /id="prodGuestChannelNowpayments"/);
-    assert.match(section, /国内 ZPay/);
-    assert.match(section, /国际 USDT-BEP20/);
+    assert.match(section, /ZPay（人民币）/);
+    assert.match(section, /NOWPayments USDT-BEP20/);
     assert.match(section, /shop-product-sku-row__toggle/);
     assert.match(section, /form-hint/);
     assert.doesNotMatch(section, /eyebrow|Guest checkout|cta-primary/i);

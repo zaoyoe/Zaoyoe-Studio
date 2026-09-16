@@ -336,3 +336,80 @@ test('atomic verifier preserves invoker semantics for pure helper functions', ()
         /all expected functions exist with the required security attributes/i
     );
 });
+
+test('claim and release RETURN QUERY qualify table columns so RETURNS TABLE names are not ambiguous', () => {
+    const sql = readAtomicRpcSql();
+    const claim = functionBlock(sql, 'fn_guest_shop_claim_fulfillment');
+    const release = functionBlock(sql, 'fn_guest_shop_release_reservation');
+
+    // PostgreSQL 42702: RETURNS TABLE(fulfillment_status ...) makes
+    // `SELECT fulfillment_status FROM guest_shop_orders` ambiguous.
+    assert.match(
+        claim,
+        /\(SELECT\s+o\.fulfillment_status\s+FROM\s+public\.guest_shop_orders\s+o\s+WHERE\s+o\.id\s*=\s*v_order\.id\)/i
+    );
+    assert.doesNotMatch(
+        claim,
+        /\(SELECT\s+fulfillment_status\s+FROM\s+public\.guest_shop_orders\s+WHERE/i
+    );
+    assert.match(
+        release,
+        /\(SELECT\s+r\.status\s+FROM\s+public\.guest_shop_inventory_reservations\s+r\s+WHERE\s+r\.id\s*=\s*p_reservation_id\)/i
+    );
+    assert.match(
+        release,
+        /\(SELECT\s+o\.payment_status\s+FROM\s+public\.guest_shop_orders\s+o\s+WHERE\s+o\.id\s*=\s*p_order_id\)/i
+    );
+    assert.match(
+        release,
+        /\(SELECT\s+o\.fulfillment_status\s+FROM\s+public\.guest_shop_orders\s+o\s+WHERE\s+o\.id\s*=\s*p_order_id\)/i
+    );
+    assert.match(
+        release,
+        /\(SELECT\s+o\.refund_status\s+FROM\s+public\.guest_shop_orders\s+o\s+WHERE\s+o\.id\s*=\s*p_order_id\)/i
+    );
+    assert.doesNotMatch(
+        release,
+        /\(SELECT\s+(?:status|payment_status|fulfillment_status|refund_status)\s+FROM\s+public\.(?:guest_shop_inventory_reservations|guest_shop_orders)\s+WHERE/i
+    );
+});
+
+test('atomic RPCs qualify UPDATE SET CASE arms so RETURNS TABLE names are not ambiguous', () => {
+    const sql = readAtomicRpcSql();
+    const claim = functionBlock(sql, 'fn_guest_shop_claim_fulfillment');
+    const release = functionBlock(sql, 'fn_guest_shop_release_reservation');
+    const confirm = functionBlock(sql, 'fn_guest_shop_confirm_payment');
+    const record = functionBlock(sql, 'fn_guest_shop_record_refund_result');
+
+    for (const [name, body] of [
+        ['claim', claim],
+        ['release', release],
+        ['confirm', confirm],
+        ['record', record]
+    ]) {
+        assert.doesNotMatch(
+            body,
+            /WHEN\s+(fulfillment_status|refund_status)\s*(=|IN)/i,
+            `${name} should not use unqualified WHEN status-column CASE arms`
+        );
+        assert.doesNotMatch(
+            body,
+            /(THEN|ELSE)\s+(fulfillment_status|refund_status)\b(?!\.)/i,
+            `${name} should not use unqualified THEN/ELSE status-column CASE arms`
+        );
+    }
+
+    assert.match(
+        claim,
+        /WHEN\s+v_order\.fulfillment_status\s*=\s*'delivered'\s+THEN\s+v_order\.fulfillment_status/i
+    );
+    assert.match(
+        release,
+        /WHEN\s+v_order\.refund_status\s*=\s*'succeeded'\s+THEN\s+v_order\.refund_status/i
+    );
+    assert.match(
+        confirm,
+        /WHEN\s+v_order\.fulfillment_status\s+IN\s*\(\s*'delivered'\s*,\s*'refunded'\s*\)/i
+    );
+    assert.match(record, /ELSE\s+v_order\.fulfillment_status/i);
+});

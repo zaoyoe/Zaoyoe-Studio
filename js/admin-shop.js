@@ -9507,10 +9507,6 @@ Example output format:
     },
 
     collectGuestPurchasePayload: function () {
-        const parsePrice = (inputId) => {
-            const raw = String(document.getElementById(inputId)?.value || '').trim();
-            return raw || null;
-        };
         const channels = [];
         if (document.getElementById('prodGuestChannelZpay')?.checked) {
             channels.push('zpay');
@@ -9520,32 +9516,13 @@ Example output format:
         }
         return {
             allow_guest_purchase: document.getElementById('prodAllowGuestPurchase')?.checked === true,
-            guest_cash_price_cny: parsePrice('prodGuestCashPriceCny'),
-            guest_cash_price_intl: parsePrice('prodGuestCashPriceIntl'),
+            guest_cash_price_cny: null,
+            guest_cash_price_intl: null,
             guest_payment_channels: channels
         };
     },
 
     getGuestPurchaseFormError: function (payload = {}, { deliveryType = 'KEY', manualDelivery = false } = {}) {
-        const parseCashPrice = (value) => {
-            const raw = String(value ?? '').trim();
-            if (!raw) {
-                return { empty: true, invalid: false };
-            }
-            if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/u.test(raw)) {
-                return { empty: false, invalid: true };
-            }
-            const amount = Number(raw);
-            return {
-                empty: false,
-                invalid: !Number.isFinite(amount) || amount <= 0
-            };
-        };
-        const cny = parseCashPrice(payload.guest_cash_price_cny);
-        const intl = parseCashPrice(payload.guest_cash_price_intl);
-        if (cny.invalid || intl.invalid) {
-            return '游客现金价必须大于 0，最多两位小数';
-        }
         if (payload.allow_guest_purchase !== true) {
             return '';
         }
@@ -9555,9 +9532,6 @@ Example output format:
         }
         if (manualDelivery === true) {
             return '游客购买不支持人工发货，请先改回自动发货';
-        }
-        if (cny.empty && intl.empty) {
-            return '请至少填写国内或国际游客现金价';
         }
         if (!Array.isArray(payload.guest_payment_channels) || !payload.guest_payment_channels.length) {
             return '请至少勾选一个游客支付通道';
@@ -9600,18 +9574,6 @@ Example output format:
         if (checkbox) {
             checkbox.checked = allowGuestPurchase;
         }
-        this.setOptionalInputValue(
-            'prodGuestCashPriceCny',
-            state.guest_cash_price_cny != null && state.guest_cash_price_cny !== ''
-                ? state.guest_cash_price_cny
-                : ''
-        );
-        this.setOptionalInputValue(
-            'prodGuestCashPriceIntl',
-            state.guest_cash_price_intl != null && state.guest_cash_price_intl !== ''
-                ? state.guest_cash_price_intl
-                : ''
-        );
         const channels = this.normalizeGuestPaymentChannelTokens(state.guest_payment_channels);
         const zpay = document.getElementById('prodGuestChannelZpay');
         const nowpayments = document.getElementById('prodGuestChannelNowpayments');

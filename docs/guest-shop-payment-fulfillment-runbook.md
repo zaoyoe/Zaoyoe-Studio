@@ -24,6 +24,11 @@
 
 执行合同见 `docs/guest-purchase-task-2.0.md`。
 
+## 游客应付金额
+
+游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
+
+
 ## 上线前配置与 readiness
 
 生产环境必须配置独立的 `GUEST_SHOP_CLAIM_PEPPER`、
@@ -131,8 +136,40 @@ https://<受管域名>/api/shop/guest/webhooks/zpay
 https://<受管域名>/api/shop/guest/webhooks/nowpayments
 ```
 
-NOWPayments 游客网络固定为 `usdtbsc`。NOWPayments 退款暂按人工队列处理，核对收款地址、
+NOWPayments 游客网络固定为 `usdtbsc`。游客商品标价始终是人民币（复用积分价，1 积分 = 1 元），
+国内站和国际站结算币种都是 CNY。ZPay/易支付始终收人民币；NOWPayments 始终收 USDT-BEP20，
+下单时按登录用户充值同一套逻辑把人民币折成实时等额 USD quote 再转 USDT，不得把 USD quote
+当成订单结算币种。NOWPayments 退款暂按人工队列处理，核对收款地址、
 金额、交易哈希和出款凭证后再完成退款；不把自动退款视为已就绪。
+
+20260915 积分价 SQL 已在目标库执行；verify 1-7 PASS。第 8 项 `REVIEW` 只表示当前有 1 个商品
+开了 `allow_guest_purchase`，不是约束失败。内部测试最多保留这一个低价值、非共享、自动发货 SKU；
+不得据此公开上架，也不得再跑 20260913 / 20260914 / 20260915 迁移。
+
+20260916 / 20260917 / 20260918 / 20260919 已在目标库执行（verify 分别 3/3、4/4、6/6、6/6 PASS）。
+D3-01 已用官方 unlock + 本地 worker 履约到 delivered，不要重跑 20260913 / 20260914 /
+20260915 / 20260916 / 20260917 / 20260918 / 20260919。INTL create-order 闸门已解除，但不要
+据此立刻新开 NOWPayments 扣款；网络仍固定 `usdtbsc`，标价始终 CNY。已 delivered 订单禁止再
+手工改库存或批量重放死信。
+D3-04 已验证：同一已付款 ZPay 回调重放到 `/api/shop/guest/webhooks/zpay` 必须 200
+`duplicate: true`，不得新插事件、不得二次发货、不得改 `fulfilled_at`。伪造签名属于 D3-03，
+必须进 invalid-bucket 并拒绝，不得占用业务 event_key。
+D3-05 已验证：对已 delivered 订单补发签名正确但非终态（`WAIT_BUYER_PAY`）的乱序回调，必须 202
+`accepted: false`，写入 invalid-bucket rejected 事件，`final_status_verified=false`，不得
+`confirm_payment`，不得把 `delivered` / `consumed` / `sold` 划回。
+D3-06 已验证：对已 delivered 订单补发签名正确但少付（`money=0.00` vs expected `0.01`）的终态回调，必须 202
+`accepted: false`，`amount_verified=false`，不得改 `paid_amount`，不得回退 delivered。
+D3-07 已验证：对已 delivered 订单补发签名正确但多付（`money=1.00` vs expected `0.01`）的终态回调，必须 202
+`accepted: false`，`observed_amount=1`，`amount_verified=false`，不得改 `paid_amount`，不得回退 delivered。
+D3-20 已验证：游客已付回调打到充值入口 `/api/payments/zpay/webhook` 必须 503 `payment order not ready`，不得写
+`points_ledger`，不得改游客单；充值单回调打到 `/api/shop/guest/webhooks/zpay` 必须 202 `accepted: false`，
+invalid-bucket rejected，`payment_order_id=null`，不得 `confirm_payment`。本地 preview 需要独立文件
+`api/payments/zpay/webhook.js`，与 NOWPayments 入口同构。
+同一来源 IP 的 invalid-bucket 窗口为 5 分钟；窗口内不同异常 body 会 `event_key_body_conflict`，这仍是拒绝。金额或币种异常回调同样不得回退终态。
+D3-08 已收口：CN ZPay 结算币种由站点推导为 CNY，`parseGuestWebhook` 会覆盖 payload `currency`，binding 用 `expected.currency` 对比自身，`providerQuoteChecks` 对非 NOWPayments 恒为 valid。因此 CN 错币种记 `BLOCKED+ZPay currency is site-derived`，真实错币种放到 INTL NOWPayments 的 quote / `actually_paid_currency`。
+不要用「金额正确 + 只改 currency」重放已 delivered 订单。
+D3-02 已验证：未付款单到期后只能由官方 worker 调 `fn_guest_shop_release_expired_reservations` 释放
+`held` 预占；已 `consumed` / delivered 的 D3-01 不得被划回 available。worker 入口不接受 body。
 
 ## 日常指标与告警
 

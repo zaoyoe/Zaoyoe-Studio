@@ -6,6 +6,11 @@ const express = require('express');
 const dotenv = require('dotenv');
 
 const { buildSupabaseRuntimeScript } = require('../api/_lib/public-runtime-config');
+const {
+    captureGuestShopWebhookRawBody,
+    isGuestShopWebhookRequest,
+    isGuestShopWorkerRequest
+} = require('../api/_lib/guest-shop/raw-body');
 
 const DEFAULT_SMOKE_RESULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_LOCAL_PREVIEW_BODY_LIMIT = '25mb';
@@ -299,26 +304,60 @@ function shouldCaptureNewApiSupportRawBody(req = {}) {
     return requestUrl === '/api/newapi-support';
 }
 
+function isProductionRuntimeMarker(value) {
+    return String(value || '').trim().toLowerCase() === 'production';
+}
+
+const LOCAL_PREVIEW_RUNTIME_MARKER_KEYS = new Set([
+    'VERCEL_ENV',
+    'APP_ENV',
+    'DEPLOYMENT_TIER',
+    'RAILWAY_ENVIRONMENT_NAME'
+]);
+
 function applyPreviewEnvToProcess(envValues = {}) {
     Object.entries(envValues).forEach(([key, value]) => {
         if (value === undefined || value === null || value === '') {
             return;
         }
 
-        if (!process.env[key]) {
+        const current = process.env[key];
+        const shouldReplaceProductionMarker = LOCAL_PREVIEW_RUNTIME_MARKER_KEYS.has(key)
+            && isProductionRuntimeMarker(current)
+            && !isProductionRuntimeMarker(value);
+        if (!current || shouldReplaceProductionMarker) {
             process.env[key] = String(value);
         }
     });
+}
+
+function neutralizeLocalPreviewProductionRuntime(envValues = {}) {
+    const previewEnv = { ...envValues };
+    const runtimeKeys = ['VERCEL_ENV', 'APP_ENV', 'DEPLOYMENT_TIER'];
+
+    // server/.env.staging and .vercel/.env.production.local both mark this
+    // checkout as production. Guest-shop then requires a persistent limiter
+    // and local create-order returns 503 rate_limit_unavailable.
+    for (const key of runtimeKeys) {
+        if (isProductionRuntimeMarker(previewEnv[key])) {
+            previewEnv[key] = 'preview';
+        }
+    }
+    if (isProductionRuntimeMarker(previewEnv.RAILWAY_ENVIRONMENT_NAME)) {
+        previewEnv.RAILWAY_ENVIRONMENT_NAME = '';
+    }
+
+    return previewEnv;
 }
 
 function withLocalPreviewEnvDefaults(envValues = {}) {
     const localSub2ApiBaseUrl = String(
         envValues?.LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL || DEFAULT_LOCAL_SUB2API_BASE_URL
     ).trim() || DEFAULT_LOCAL_SUB2API_BASE_URL;
-    const previewEnv = {
+    const previewEnv = neutralizeLocalPreviewProductionRuntime({
         ...envValues,
         LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL: localSub2ApiBaseUrl
-    };
+    });
     const hasExplicitRateLimitStore = [
         previewEnv.RATE_LIMIT_BACKEND,
         previewEnv.RATE_LIMIT_STORE,
@@ -443,7 +482,7 @@ function createLocalPreviewApp(options = {}) {
 
     app.set('etag', false);
 
-    app.use(express.json({
+    const defaultJsonBodyParser = express.json({
         limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
         verify(req, _res, buffer) {
             // The deployed endpoint disables Vercel's body parser so it can
@@ -453,11 +492,25 @@ function createLocalPreviewApp(options = {}) {
                 req.rawBody = Buffer.from(buffer);
             }
         }
-    }));
-    app.use(express.urlencoded({
+    });
+
+    // Guest ZPay IPN is form-urlencoded and signed over the exact wire bytes.
+    // Capture those bytes before Express parsers consume the stream, matching
+    // server/index.js. Otherwise local D3 callbacks fail with
+    // guest_webhook_raw_body_unavailable and never persist an event.
+    app.use(captureGuestShopWebhookRawBody());
+    app.use((req, res, next) => {
+        if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();
+        return defaultJsonBodyParser(req, res, next);
+    });
+    const defaultUrlencodedBodyParser = express.urlencoded({
         extended: false,
         limit: DEFAULT_LOCAL_PREVIEW_BODY_LIMIT
-    }));
+    });
+    app.use((req, res, next) => {
+        if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();
+        return defaultUrlencodedBodyParser(req, res, next);
+    });
 
     app.get('/healthz', (req, res) => {
         res.json({
@@ -749,6 +802,7 @@ module.exports = {
     loadFreshSupportApiHandler,
     loadFreshWalletApiHandler,
     loadPreviewEnv,
+    neutralizeLocalPreviewProductionRuntime,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,

@@ -625,6 +625,37 @@ test('nowpayments direct payment creation uses payment endpoint for hosted Chine
     assert.equal(result.response.data.pay_address, '0x6776ad44D571c1b24930939F8ba0f0B5601e05d0');
 });
 
+test('nowpayments create attaches 4xx status to amount-too-small rejections', async () => {
+    await assert.rejects(
+        () => createNowpaymentsPayment({
+            channelConfig: {
+                api_base_url: 'https://api.nowpayments.io',
+                pay_currency: 'usdtbsc',
+                price_currency: 'usd',
+                ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook'
+            },
+            secretValues: {
+                nowpayments_api_key: 'np-api-key',
+                nowpayments_ipn_secret: 'np-ipn-secret'
+            },
+            requestOrigin: 'https://www.fatherkey.com',
+            orderId: 'NP_DIRECT_TOO_SMALL',
+            priceAmount: '0.01',
+            orderDescription: 'too small'
+        }, {
+            fetchImpl: async () => ({
+                ok: false,
+                status: 400,
+                statusText: 'Bad Request',
+                text: async () => JSON.stringify({ message: 'amountTo is too small' })
+            })
+        }),
+        (error) => error.statusCode === 400
+            && error.code === 'nowpayments_rejected'
+            && error.message === 'amountTo is too small'
+    );
+});
+
 test('nowpayments payment query uses official payment_id endpoint with api key', async () => {
     let capturedUrl = '';
     let capturedInit = null;

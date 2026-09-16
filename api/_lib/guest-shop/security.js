@@ -13,7 +13,7 @@
 const crypto = require('crypto');
 
 const SUPPORTED_SITES = Object.freeze(['cn', 'intl']);
-const SITE_CURRENCIES = Object.freeze({ cn: 'CNY', intl: 'USD' });
+const SITE_CURRENCIES = Object.freeze({ cn: 'CNY', intl: 'CNY' });
 const DEFAULT_JSON_BODY_LIMIT = 16 * 1024;
 const DEFAULT_WEBHOOK_BODY_LIMIT = 256 * 1024;
 // Keep every route-specific reader below a hard upper bound.  This is an

@@ -2122,18 +2122,17 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
         nextPayload.allow_guest_purchase = normalizeBoolean(nextPayload.allow_guest_purchase, false);
     }
 
-    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_cash_price_cny')) {
-        const parsedCny = parseGuestCashPriceField(nextPayload.guest_cash_price_cny);
-        if (parsedCny.status !== 'invalid') {
-            nextPayload.guest_cash_price_cny = parsedCny.value;
-        }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_cash_price_intl')) {
-        const parsedIntl = parseGuestCashPriceField(nextPayload.guest_cash_price_intl);
-        if (parsedIntl.status !== 'invalid') {
-            nextPayload.guest_cash_price_intl = parsedIntl.value;
-        }
+    const guestFieldPresent = [
+        'allow_guest_purchase',
+        'guest_cash_price_cny',
+        'guest_cash_price_intl',
+        'guest_payment_channels'
+    ].some((field) => Object.prototype.hasOwnProperty.call(nextPayload, field));
+    if (guestFieldPresent) {
+        // Leftover cash-price columns stay in the schema for compatibility,
+        // but guest checkout now reuses credit/tier prices. Always clear them.
+        nextPayload.guest_cash_price_cny = null;
+        nextPayload.guest_cash_price_intl = null;
     }
 
     if (Object.prototype.hasOwnProperty.call(nextPayload, 'guest_payment_channels')) {
@@ -2254,29 +2253,7 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     }
 
     const allowGuestPurchase = normalizeBoolean(safePayload.allow_guest_purchase, false);
-    const guestPriceCny = parseGuestCashPriceField(safePayload.guest_cash_price_cny);
-    const guestPriceIntl = parseGuestCashPriceField(safePayload.guest_cash_price_intl);
     const guestChannels = parseGuestPaymentChannelsField(safePayload.guest_payment_channels);
-
-    if (guestPriceCny.status === 'invalid') {
-        appendProductValidationIssue(
-            blockingIssues,
-            'blocking',
-            'guest_cash_price_cny_invalid',
-            '游客现金价必须大于 0，最多两位小数。',
-            'guest_cash_price_cny'
-        );
-    }
-
-    if (guestPriceIntl.status === 'invalid') {
-        appendProductValidationIssue(
-            blockingIssues,
-            'blocking',
-            'guest_cash_price_intl_invalid',
-            '游客现金价必须大于 0，最多两位小数。',
-            'guest_cash_price_intl'
-        );
-    }
 
     if (guestChannels.status === 'invalid') {
         appendProductValidationIssue(
@@ -2306,16 +2283,6 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
                 'guest_purchase_requires_auto_delivery',
                 '游客购买不支持人工发货，请先改回自动发货。',
                 'allow_guest_purchase'
-            );
-        }
-
-        if (guestPriceCny.status !== 'ok' && guestPriceIntl.status !== 'ok') {
-            appendProductValidationIssue(
-                blockingIssues,
-                'blocking',
-                'guest_cash_price_required',
-                '请至少填写国内或国际游客现金价。',
-                'guest_cash_price_cny'
             );
         }
 

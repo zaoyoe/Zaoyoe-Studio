@@ -796,19 +796,19 @@ BEGIN
                     ELSE 'released'
                 END,
                 fulfillment_status = CASE
-                    WHEN fulfillment_status IN ('delivered', 'refunded') THEN fulfillment_status
+                    WHEN v_order.fulfillment_status IN ('delivered', 'refunded') THEN v_order.fulfillment_status
                     ELSE 'paid_unfulfillable'
                 END,
                 refund_status = CASE
-                    WHEN refund_status = 'succeeded' THEN refund_status
+                    WHEN v_order.refund_status = 'succeeded' THEN v_order.refund_status
                     ELSE 'pending'
                 END,
                 last_error_code = CASE
-                    WHEN fulfillment_status IN ('delivered', 'refunded') THEN last_error_code
+                    WHEN v_order.fulfillment_status IN ('delivered', 'refunded') THEN last_error_code
                     ELSE 'paid_inventory_not_reservable'
                 END,
                 last_error_message = CASE
-                    WHEN fulfillment_status IN ('delivered', 'refunded') THEN last_error_message
+                    WHEN v_order.fulfillment_status IN ('delivered', 'refunded') THEN last_error_message
                     ELSE 'payment confirmed after reservation expiry or inventory loss'
                 END,
                 updated_at = v_now
@@ -987,7 +987,7 @@ BEGIN
         SET reservation_status = 'released',
             fulfillment_status = 'paid_unfulfillable',
             refund_status = CASE
-                WHEN refund_status = 'succeeded' THEN refund_status
+                WHEN v_order.refund_status = 'succeeded' THEN v_order.refund_status
                 ELSE 'pending'
             END,
             last_error_code = 'paid_inventory_not_reservable',
@@ -1021,7 +1021,7 @@ BEGIN
         UPDATE public.guest_shop_orders
         SET reservation_status = 'released',
             fulfillment_status = 'paid_unfulfillable',
-            refund_status = CASE WHEN refund_status = 'succeeded' THEN refund_status ELSE 'pending' END,
+            refund_status = CASE WHEN v_order.refund_status = 'succeeded' THEN v_order.refund_status ELSE 'pending' END,
             last_error_code = 'paid_inventory_update_race',
             last_error_message = 'inventory could not be consumed after payment confirmation',
             updated_at = v_now
@@ -1043,7 +1043,7 @@ BEGIN
         -- compensatable state if a future trigger changes the row semantics.
         UPDATE public.guest_shop_orders
         SET fulfillment_status = 'paid_unfulfillable',
-            refund_status = CASE WHEN refund_status = 'succeeded' THEN refund_status ELSE 'pending' END,
+            refund_status = CASE WHEN v_order.refund_status = 'succeeded' THEN v_order.refund_status ELSE 'pending' END,
             last_error_code = 'guest_reservation_update_race',
             last_error_message = 'reservation could not be consumed after inventory sale',
             updated_at = v_now
@@ -1057,7 +1057,7 @@ BEGIN
     UPDATE public.guest_shop_orders
     SET reservation_status = 'consumed',
         fulfillment_status = CASE
-            WHEN fulfillment_status = 'delivered' THEN fulfillment_status
+            WHEN v_order.fulfillment_status = 'delivered' THEN v_order.fulfillment_status
             ELSE 'fulfilling'
         END,
         updated_at = v_now
@@ -1066,7 +1066,7 @@ BEGIN
 
     RETURN QUERY SELECT
         v_order.id, v_reservation.id, v_inventory.id, v_inventory.content,
-        (SELECT fulfillment_status FROM public.guest_shop_orders WHERE id = v_order.id),
+        (SELECT o.fulfillment_status FROM public.guest_shop_orders o WHERE o.id = v_order.id),
         'consumed'::TEXT;
 END;
 $$;
@@ -1114,9 +1114,9 @@ BEGIN
     END IF;
 
     SELECT * INTO v_reservation
-    FROM public.guest_shop_inventory_reservations
-    WHERE order_id = p_order_id
-      AND (p_reservation_id IS NULL OR id = p_reservation_id)
+    FROM public.guest_shop_inventory_reservations r
+    WHERE r.order_id = p_order_id
+      AND (p_reservation_id IS NULL OR r.id = p_reservation_id)
     FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'guest_reservation_not_found';
@@ -1147,13 +1147,13 @@ BEGIN
     END IF;
 
     v_fulfilled_at := COALESCE(v_order.fulfilled_at, clock_timestamp());
-    UPDATE public.guest_shop_orders
+    UPDATE public.guest_shop_orders o
     SET fulfillment_status = 'delivered',
         fulfilled_at = v_fulfilled_at,
         updated_at = clock_timestamp()
-    WHERE id = p_order_id
-      AND payment_status = 'confirmed'
-      AND fulfillment_status <> 'delivered';
+    WHERE o.id = p_order_id
+      AND o.payment_status = 'confirmed'
+      AND o.fulfillment_status <> 'delivered';
 
     RETURN QUERY SELECT
         true,
@@ -1264,9 +1264,9 @@ BEGIN
                 -- foundation CHECK requires fulfilled_at to imply delivered;
                 -- retain delivered after refund while financial columns carry
                 -- the refund terminal state.
-                WHEN fulfillment_status = 'delivered' THEN 'delivered'
-                WHEN fulfillment_status IN ('paid_unfulfillable', 'failed', 'dead_letter') THEN 'refunded'
-                ELSE fulfillment_status
+                WHEN v_order.fulfillment_status = 'delivered' THEN 'delivered'
+                WHEN v_order.fulfillment_status IN ('paid_unfulfillable', 'failed', 'dead_letter') THEN 'refunded'
+                ELSE v_order.fulfillment_status
             END,
             last_error_code = NULL,
             last_error_message = NULL,
@@ -1378,7 +1378,7 @@ BEGIN
             SET reservation_status = 'released',
                 fulfillment_status = 'paid_unfulfillable',
                 refund_status = CASE
-                    WHEN refund_status = 'succeeded' THEN refund_status
+                    WHEN v_order.refund_status = 'succeeded' THEN v_order.refund_status
                     ELSE 'pending'
                 END,
                 last_error_code = CASE
@@ -1407,10 +1407,10 @@ BEGIN
 
     RETURN QUERY SELECT
         v_released,
-        (SELECT status FROM public.guest_shop_inventory_reservations WHERE id = p_reservation_id),
-        (SELECT payment_status FROM public.guest_shop_orders WHERE id = p_order_id),
-        (SELECT fulfillment_status FROM public.guest_shop_orders WHERE id = p_order_id),
-        (SELECT refund_status FROM public.guest_shop_orders WHERE id = p_order_id);
+        (SELECT r.status FROM public.guest_shop_inventory_reservations r WHERE r.id = p_reservation_id),
+        (SELECT o.payment_status FROM public.guest_shop_orders o WHERE o.id = p_order_id),
+        (SELECT o.fulfillment_status FROM public.guest_shop_orders o WHERE o.id = p_order_id),
+        (SELECT o.refund_status FROM public.guest_shop_orders o WHERE o.id = p_order_id);
 END;
 $$;
 
