@@ -18,6 +18,7 @@ const {
 } = require('../api/_lib/guest-shop/raw-body');
 
 const verifyServerSource = fs.readFileSync(path.resolve(__dirname, '../server/index.js'), 'utf8');
+const localPreviewSource = fs.readFileSync(path.resolve(__dirname, '../scripts/local-preview-server.js'), 'utf8');
 
 function request(body, path = '/api/shop/guest/webhooks/zpay', headers = {}) {
     const stream = Readable.from([Buffer.from(body)]);
@@ -104,6 +105,21 @@ test('verify server installs route-specific capture before and around global par
     assert.ok(jsonInstallIndex > captureIndex, 'raw-body capture must run before JSON parser');
     assert.ok(jsonSkipIndex > jsonMiddlewareIndex, 'JSON parser must skip guest webhooks');
     assert.ok(urlencodedIndex > jsonSkipIndex, 'urlencoded parser must remain after JSON parser');
+    assert.ok(urlencodedSkipIndex > urlencodedIndex, 'urlencoded parser must skip guest webhooks');
+});
+
+test('local preview server captures guest webhook raw body before parsers', () => {
+    const captureIndex = localPreviewSource.indexOf('app.use(captureGuestShopWebhookRawBody());');
+    const jsonParserIndex = localPreviewSource.indexOf('const defaultJsonBodyParser = express.json({');
+    const jsonSkipIndex = localPreviewSource.indexOf('if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();', jsonParserIndex);
+    const urlencodedIndex = localPreviewSource.indexOf('const defaultUrlencodedBodyParser = express.urlencoded({');
+    const urlencodedSkipIndex = localPreviewSource.indexOf('if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();', urlencodedIndex);
+
+    assert.ok(captureIndex >= 0, 'local preview must install guest raw-body middleware');
+    assert.ok(jsonParserIndex >= 0, 'local preview must keep a JSON parser');
+    assert.ok(captureIndex < jsonSkipIndex, 'raw-body capture must run before JSON parser skip');
+    assert.ok(jsonSkipIndex > jsonParserIndex, 'JSON parser must skip guest webhooks');
+    assert.ok(urlencodedIndex > jsonSkipIndex, 'urlencoded parser must remain after JSON parser skip');
     assert.ok(urlencodedSkipIndex > urlencodedIndex, 'urlencoded parser must skip guest webhooks');
 });
 

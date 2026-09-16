@@ -207,8 +207,8 @@ test('stored checkout normalization does not serialize Infinity or unsafe fiat p
     };
     assert.equal(build(baseOrder, basePayment).price_amount, 1);
     const usdOrder = { total_amount: '1.00', currency: 'USD' };
-    assert.equal(build(usdOrder, basePayment).pay_amount, 1.23);
-    assert.equal(build(usdOrder, {
+    assert.equal(build(usdOrder, basePayment), null);
+    assert.equal(build(baseOrder, {
         ...basePayment,
         provider_metadata: { ...basePayment.provider_metadata, pay_amount: 'Infinity' }
     }), null);

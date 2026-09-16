@@ -138,17 +138,17 @@ BEGIN
         RAISE EXCEPTION 'guest_admin_not_eligible';
     END IF;
 
-    UPDATE public.guest_shop_orders
+    UPDATE public.guest_shop_orders o
     SET refund_status = CASE
-            WHEN refund_status IN ('pending', 'failed') THEN refund_status
+            WHEN v_order.refund_status IN ('pending', 'failed') THEN v_order.refund_status
             ELSE 'pending'
         END,
         last_error_code = CASE
-            WHEN refund_status = 'failed' THEN last_error_code
+            WHEN v_order.refund_status = 'failed' THEN last_error_code
             ELSE NULL
         END,
         last_error_message = CASE
-            WHEN refund_status = 'failed' THEN last_error_message
+            WHEN v_order.refund_status = 'failed' THEN last_error_message
             ELSE NULL
         END,
         metadata = public.guest_shop_merge_admin_action_metadata(
@@ -159,15 +159,15 @@ BEGIN
             jsonb_build_object('previous_refund_status', v_order.refund_status)
         ),
         updated_at = v_now
-    WHERE id = p_order_id
-      AND refund_status NOT IN ('succeeded', 'manual_review');
+    WHERE o.id = p_order_id
+      AND o.refund_status NOT IN ('succeeded', 'manual_review');
 
     -- A first-time queue must become pending so the worker candidate query
     -- can pick the order even when fulfillment is delivered or dead_letter.
-    UPDATE public.guest_shop_orders
+    UPDATE public.guest_shop_orders o
     SET refund_status = 'pending'
-    WHERE id = p_order_id
-      AND refund_status = 'none';
+    WHERE o.id = p_order_id
+      AND o.refund_status = 'none';
 
     RETURN QUERY
     SELECT o.id, o.order_no, o.payment_status, o.fulfillment_status,
@@ -262,8 +262,8 @@ BEGIN
 
     UPDATE public.guest_shop_orders
     SET fulfillment_status = CASE
-            WHEN fulfillment_status = 'dead_letter' THEN 'failed'
-            ELSE fulfillment_status
+            WHEN v_order.fulfillment_status = 'dead_letter' THEN 'failed'
+            ELSE v_order.fulfillment_status
         END,
         metadata = public.guest_shop_merge_admin_action_metadata(
             (COALESCE(metadata, '{}'::JSONB) || jsonb_build_object('__guest_shop_worker', v_worker)),
@@ -350,8 +350,8 @@ BEGIN
     END IF;
 
     SELECT * INTO v_reservation
-    FROM public.guest_shop_inventory_reservations
-    WHERE order_id = p_order_id
+    FROM public.guest_shop_inventory_reservations r
+    WHERE r.order_id = p_order_id
     FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'guest_reservation_not_found';
@@ -390,16 +390,16 @@ BEGIN
         RAISE EXCEPTION 'guest_inventory_unavailable';
     END IF;
 
-    UPDATE public.guest_shop_inventory_reservations
+    UPDATE public.guest_shop_inventory_reservations r
     SET inventory_id = v_inventory_id,
         inventory_source_sku_id = v_inventory_source_sku_id,
         status = 'consumed',
         consumed_at = COALESCE(consumed_at, v_now),
         updated_at = v_now
-    WHERE id = v_reservation.id
-      AND order_id = p_order_id;
+    WHERE r.id = v_reservation.id
+      AND r.order_id = p_order_id;
 
-    UPDATE public.guest_shop_orders
+    UPDATE public.guest_shop_orders o
     SET reservation_status = 'consumed',
         fulfillment_status = 'delivered',
         fulfilled_at = COALESCE(fulfilled_at, v_now),
@@ -417,9 +417,9 @@ BEGIN
             )
         ),
         updated_at = v_now
-    WHERE id = p_order_id
-      AND payment_status = 'confirmed'
-      AND fulfillment_status = 'paid_unfulfillable';
+    WHERE o.id = p_order_id
+      AND o.payment_status = 'confirmed'
+      AND o.fulfillment_status = 'paid_unfulfillable';
 
     RETURN QUERY
     SELECT o.id, o.order_no, o.payment_status, o.fulfillment_status,

@@ -151,6 +151,16 @@ When the user asks Codex to deploy guest-shop related changes:
 7. Guest-shop extra chain, only after verify is on that commit:
    - `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid`
    - Worker installer uses canonical root `/opt/zaoyoe-verify-server`
+   - Guest-shop secrets stay in `/opt/zaoyoe-verify-server/.env` with mode `0600`.
+     After adding or rotating `GUEST_SHOP_*` keys, pause the KVM4 health
+     watchdog and recreate verify-server so compose `env_file` is reloaded:
+     `cd /opt/zaoyoe-verify-server && docker compose up -d --no-deps --force-recreate --no-build verify-server`
+     Then confirm `/healthz` and start the watchdog again. Do not use
+     `docker restart`; it will not reread `env_file`.
+   - Never print secret values. Never reuse `CRON_SECRET` or
+     `SUPABASE_SERVICE_ROLE_KEY` for guest-shop peppers or the worker secret.
+   - Compact verify images may omit `deploy/kvm4/guest-shop-worker/*`. That is
+     not a start failure; the host installer lands the systemd units.
    - Do not start the timer until secrets, port and health checks are confirmed
    - Confirm `systemctl status zaoyoe-guest-shop-worker.timer` and recent
      `journalctl` evidence when the launch checklist actually requires the
@@ -167,6 +177,13 @@ Hard prohibitions:
 - Do not run the guest-shop worker installer before the matching `main` commit
   is live on KVM4 Verify Server.
 - Do not pass a custom `--root` / `KVM4_ROOT` to the worker installer.
+- Do not treat `docker restart zaoyoe-verify-server` or
+  `docker compose restart` as a secret reload. Compose `env_file` is only
+  reread by `docker compose up -d --no-deps --force-recreate --no-build verify-server`.
+- Do not print `GUEST_SHOP_*` values, claim tokens, card secrets, or recovery
+  codes in logs, journal, chat, or deploy output.
+- Do not reuse `CRON_SECRET` or `SUPABASE_SERVICE_ROLE_KEY` as a guest-shop
+  pepper or worker secret.
 - Do not treat automated tests, default readiness exit `0`, or a successful
   three-chain deploy as permission to open guest checkout.
 - `--fail-on-not-ready` returning `3` is the expected fail-closed result until
@@ -186,5 +203,5 @@ criteria, not merely a successful deploy.
 See also:
 
 - `docs/vercel-release-checklist.md` §1.1：游客购买必须走专用分支；禁止功能分支 prod deploy
-- `docs/kvm4-verify-server-deploy.md` Guest Shop Worker：worker 只能在 verify 发布对应 commit 后安装；禁止自定义 root；部署不执行 SQL
-- `docs/guest-shop-payment-fulfillment-runbook.md`：发布不等于启用，以及后台退款/补发/解锁操作
+- `docs/kvm4-verify-server-deploy.md` Guest Shop Worker：worker 只能在 verify 发布对应 commit 后安装；改 `.env` 后必须 `--force-recreate` 重建容器以重载 `env_file`；禁止自定义 root；部署不执行 SQL
+- `docs/guest-shop-payment-fulfillment-runbook.md`：发布不等于启用，密钥重建步骤，以及后台退款/补发/解锁操作

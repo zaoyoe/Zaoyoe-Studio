@@ -154,9 +154,25 @@ test('local preview server resolves standalone payments api routes from legacy e
         'mock/complete'
     );
     assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/payments/zpay/webhook', '/api/payments'),
+        'zpay/webhook'
+    );
+    assert.equal(
+        resolveLocalPreviewStandaloneApiRoute('/api/payments/nowpayments/webhook', '/api/payments'),
+        'nowpayments/webhook'
+    );
+    assert.equal(
         resolveLocalPreviewStandaloneApiRoute('/api/public/payments/create', '/api/payments'),
         ''
     );
+});
+
+test('local preview zpay webhook entrypoint matches nowpayments standalone pattern', () => {
+    const zpayWebhook = fs.readFileSync(path.resolve(__dirname, '../api/payments/zpay/webhook.js'), 'utf8');
+    const nowpaymentsWebhook = fs.readFileSync(path.resolve(__dirname, '../api/payments/nowpayments/webhook.js'), 'utf8');
+    assert.match(zpayWebhook, /createZpayWebhookHandler/);
+    assert.match(nowpaymentsWebhook, /createNowpaymentsWebhookHandler/);
+    assert.match(zpayWebhook, /getOptionalSupabaseAdmin/);
 });
 
 test('local preview server resolves standalone wallet api routes from legacy endpoints', () => {
@@ -407,6 +423,50 @@ test('local preview server defaults rate limiting to memory unless explicitly co
     });
 });
 
+test('local preview server does not inherit production-like runtime from env files', () => {
+    const env = withLocalPreviewEnvDefaults({
+        VERCEL_ENV: 'production',
+        APP_ENV: 'production',
+        DEPLOYMENT_TIER: 'production',
+        RAILWAY_ENVIRONMENT_NAME: 'production'
+    });
+
+    assert.equal(env.VERCEL_ENV, 'preview');
+    assert.equal(env.APP_ENV, 'preview');
+    assert.equal(env.DEPLOYMENT_TIER, 'preview');
+    assert.equal(env.RAILWAY_ENVIRONMENT_NAME, '');
+    assert.equal(env.RATE_LIMIT_BACKEND, 'memory');
+});
+
+test('local preview server overwrites production runtime markers already present in process env', () => {
+    const original = {
+        VERCEL_ENV: process.env.VERCEL_ENV,
+        APP_ENV: process.env.APP_ENV,
+        DEPLOYMENT_TIER: process.env.DEPLOYMENT_TIER
+    };
+
+    process.env.VERCEL_ENV = 'production';
+    process.env.APP_ENV = 'production';
+    process.env.DEPLOYMENT_TIER = 'production';
+
+    try {
+        applyPreviewEnvToProcess({
+            VERCEL_ENV: 'preview',
+            APP_ENV: 'preview',
+            DEPLOYMENT_TIER: 'preview'
+        });
+
+        assert.equal(process.env.VERCEL_ENV, 'preview');
+        assert.equal(process.env.APP_ENV, 'preview');
+        assert.equal(process.env.DEPLOYMENT_TIER, 'preview');
+    } finally {
+        for (const [key, value] of Object.entries(original)) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    }
+});
+
 test('local preview server routes AI workbench requests through local Sub2API by default', () => {
     assert.equal(
         withLocalPreviewEnvDefaults({}).LOCAL_PREVIEW_AI_IMAGE_API_BASE_URL,
@@ -538,4 +598,19 @@ test('local preview server cache clearing ignores unrelated modules', () => {
 
     assert.equal(Boolean(require.cache[targetModuleId]), false);
     assert.equal(Boolean(require.cache[otherModuleId]), true);
+});
+
+test('local preview server captures guest webhook raw body before global parsers', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../scripts/local-preview-server.js'), 'utf8');
+
+    assert.match(source, /captureGuestShopWebhookRawBody/);
+    assert.match(source, /isGuestShopWebhookRequest\(req\) \|\| isGuestShopWorkerRequest\(req\)/);
+    assert.match(source, /app\.use\(captureGuestShopWebhookRawBody\(\)\)/);
+
+    const captureIndex = source.indexOf('app.use(captureGuestShopWebhookRawBody());');
+    const jsonSkipIndex = source.indexOf('if (isGuestShopWebhookRequest(req) || isGuestShopWorkerRequest(req)) return next();');
+    const urlencodedIndex = source.indexOf('const defaultUrlencodedBodyParser = express.urlencoded({');
+    assert.ok(captureIndex >= 0);
+    assert.ok(jsonSkipIndex > captureIndex);
+    assert.ok(urlencodedIndex > jsonSkipIndex);
 });

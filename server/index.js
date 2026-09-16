@@ -127,6 +127,10 @@ const {
     runShopOrderDeliveryFailedSweep
 } = require('../api/_lib/shop-order-delivery-alerts');
 const {
+    normalizeGuestShopMonitorConfig,
+    runGuestShopAlertSweep
+} = require('../api/_lib/guest-shop-alerts');
+const {
     normalizeShopOrderRiskMonitorConfig,
     runShopOrderRiskSweep
 } = require('../api/_lib/shop-order-risk-alerts');
@@ -246,6 +250,8 @@ let shopInventorySweepTimer = null;
 let shopInventorySweepRunning = false;
 let shopOrderDeliverySweepTimer = null;
 let shopOrderDeliverySweepRunning = false;
+let guestShopAlertSweepTimer = null;
+let guestShopAlertSweepRunning = false;
 let shopOrderRiskSweepTimer = null;
 let shopOrderRiskSweepRunning = false;
 let adminLoginAnomalySweepTimer = null;
@@ -4762,6 +4768,66 @@ function startShopOrderDeliverySweep() {
     });
 }
 
+async function sweepGuestShopHealth() {
+    if (guestShopAlertSweepRunning) return;
+    guestShopAlertSweepRunning = true;
+
+    try {
+        const result = await runGuestShopAlertSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.alert_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.paid_unfulfilled_count || 0) > 0
+            || Number(result?.amount_mismatch_count || 0) > 0
+            || Number(result?.payment_review_count || 0) > 0
+            || Number(result?.dead_letter_count || 0) > 0
+            || Number(result?.refund_hanging_count || 0) > 0
+            || Number(result?.reservation_expired_count || 0) > 0
+            || Number(result?.skipped_enqueue || 0) > 0
+        ) {
+            console.log('[GuestShopMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[GuestShopMonitor] Sweep failed:', error);
+    } finally {
+        guestShopAlertSweepRunning = false;
+    }
+}
+
+async function queueNextGuestShopAlertSweep(delayMs = null) {
+    if (guestShopAlertSweepTimer) return;
+
+    // Thresholds stay in env + module defaults. Do not read ops-alerts runtime.guest_shop.
+    const monitorConfig = normalizeGuestShopMonitorConfig({}, process.env);
+    const nextDelay = delayMs == null
+        ? Math.max(10000, Number(monitorConfig.sweep_interval_ms || 60 * 1000))
+        : Math.max(1000, Number(delayMs));
+
+    guestShopAlertSweepTimer = setTimeout(() => {
+        guestShopAlertSweepTimer = null;
+        sweepGuestShopHealth()
+            .catch((error) => {
+                console.error('[GuestShopMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextGuestShopAlertSweep().catch((error) => {
+                    console.error('[GuestShopMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startGuestShopAlertSweep() {
+    if (guestShopAlertSweepTimer) return;
+
+    queueNextGuestShopAlertSweep(7200).catch((error) => {
+        console.error('[GuestShopMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepShopOrderRiskHealth() {
     if (shopOrderRiskSweepRunning) return;
     shopOrderRiskSweepRunning = true;
@@ -6719,6 +6785,7 @@ function startServer(port = PORT) {
         startTicketSlaSweep();
         startShopInventorySweep();
         startShopOrderDeliverySweep();
+        startGuestShopAlertSweep();
         startShopOrderRiskSweep();
         startAdminLoginAnomalySweep();
         startCustomerChatMessageSweep();

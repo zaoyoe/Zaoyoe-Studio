@@ -147,6 +147,28 @@ test('legal policies describe the implemented prompt source attribution flow tru
     assert.doesNotMatch(privacy, /提示词解锁/);
 });
 
+test('guest cash purchase refund and privacy notices keep existing numbered headings', () => {
+    const refund = pages['refund-policy.html'];
+    const privacy = pages['privacy.html'];
+
+    assert.match(refund, /<h2>3\. 可申请退款或更正的情形<\/h2>/);
+    assert.match(refund, /<h2>4\. 通常不予退款的情形<\/h2>/);
+    assert.match(refund, /<h2>5\. 申请方式<\/h2>/);
+    assert.match(refund, /<h2>游客现金购买的数字商品退款与争议<\/h2>/);
+    assert.match(refund, /尚未领取或展示/);
+    assert.match(refund, /一旦向您展示/);
+    assert.match(refund, /NOWPayments/);
+    assert.match(refund, /拒付/);
+
+    assert.match(privacy, /<h2>2\. 我们收集的信息<\/h2>/);
+    assert.match(privacy, /游客现金购买信息/);
+    assert.match(privacy, /HMAC/);
+    assert.match(privacy, /HttpOnly/);
+    assert.match(privacy, /争议处理期|争议期内/);
+    assert.match(privacy, /AI 工作台内容/);
+    assert.match(privacy, /公开来源与作者署名信息/);
+});
+
 test('refund policy distinguishes platform points from third-party API charges', () => {
     const source = pages['refund-policy.html'];
     assert.match(source, /明确拒绝或未执行/);

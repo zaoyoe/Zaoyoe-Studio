@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const defaultSecurity = require('../../../api/_lib/guest-shop/security');
+const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
 
 const GUEST_WEBHOOK_PROVIDERS = new Set(['zpay', 'nowpayments']);
@@ -37,6 +38,19 @@ const MAX_GUEST_WEBHOOK_GLOBAL_LIMIT = 100_000;
 const MAX_GUEST_WEBHOOK_IP_LIMIT = 10_000;
 // NUMERIC(14,2) in the migration has a maximum of 999999999999.99.
 const MAX_GUEST_CASH_PRICE_MINOR = 99_999_999_999_999;
+
+// Active status-query self-healing (webhook + throttled provider poll). The
+// throttle values mirror the logged-in wallet recharge flow so a lost callback
+// cannot leave a paid guest order stuck on `pending` indefinitely.
+const GUEST_STATUS_QUERY_EVENT_TYPE = 'status_query';
+const GUEST_STATUS_QUERY_THROTTLE_MS = 8 * 1000;
+const GUEST_STATUS_QUERY_FORCE_THROTTLE_MS = 1200;
+// Payment-row statuses that already represent a resolved provider outcome.
+// They never need a live provider query from the buyer status endpoint.
+const GUEST_STATUS_QUERY_RESOLVED_PAYMENT_STATUSES = new Set([
+    'confirmed', 'refunded', 'chargeback', 'paid_unfulfillable',
+    'failed', 'expired', 'amount_mismatch', 'overpaid', 'partial'
+]);
 
 function guestRuntimeConfigError(name, range = '') {
     const suffix = range ? ` (${range})` : '';
@@ -134,6 +148,44 @@ function storedPlainObject(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null ? value : {};
+}
+
+function storedGuestPaymentPricing(order, payment, computed = null) {
+    const metadata = storedPlainObject(order?.metadata);
+    const stored = storedPlainObject(metadata.payment_pricing);
+    const total = order?.total_amount;
+    if (stored.payable_amount != null
+        && defaultGuestPricing.moneyAmountsEqual(stored.payable_amount, total)
+        && (!payment || defaultGuestPricing.moneyAmountsEqual(payment.expected_amount, stored.payable_amount))) {
+        return stored;
+    }
+    if (computed
+        && defaultGuestPricing.moneyAmountsEqual(computed.payableAmount, total)
+        && (!payment || defaultGuestPricing.moneyAmountsEqual(payment.expected_amount, computed.payableAmount))) {
+        return computed.payload || defaultGuestPricing.buildGuestPaymentPricingPayload(computed);
+    }
+    return null;
+}
+
+function applyPayableSnapshot(order, payment, computed, metadata = null) {
+    const payable = computed.payableAmount;
+    const surcharge = computed.surchargeAmount || 0;
+    const nextMetadata = {
+        ...storedPlainObject(metadata || order?.metadata),
+        credit_unit_amount: computed.baseAmount,
+        payment_pricing: computed.payload || defaultGuestPricing.buildGuestPaymentPricingPayload(computed)
+    };
+    if (order && typeof order === 'object') {
+        order.unit_amount = payable;
+        order.total_amount = payable;
+        order.expected_amount = payable;
+        order.metadata = nextMetadata;
+    }
+    if (payment && typeof payment === 'object') {
+        payment.expected_amount = payable;
+        payment.payment_fee = surcharge;
+    }
+    return nextMetadata;
 }
 
 function storedText(value, maxLength = 1000) {
@@ -329,6 +381,18 @@ function invalidWebhookAuditBucketKey(provider, clientIp, nowMs = Date.now(), en
         .slice(0, 32);
     const bucket = Math.floor(Number(nowMs) / INVALID_WEBHOOK_AUDIT_BUCKET_MS);
     return `${normalizedProvider}:invalid-bucket:${bucket}:${principalHash}`.slice(0, 300);
+}
+
+/**
+ * Deterministic, provider-scoped event key for an active status query. The
+ * payment id is already globally unique, so one payment can only ever own one
+ * query event and retries collapse onto the same row instead of accumulating
+ * duplicates.
+ */
+function statusQueryEventKey(provider, { paymentId } = {}) {
+    const normalizedProvider = normalizeWebhookReference(provider, 80).toLowerCase() || 'unknown';
+    const normalizedPaymentId = normalizeWebhookReference(paymentId, 80) || 'unknown';
+    return `${normalizedProvider}:status-query:${normalizedPaymentId}`.slice(0, 300);
 }
 
 function toRawBuffer(value) {
@@ -764,23 +828,34 @@ function createGuestShopHandlers({
     async function loadGuestSkuPricing({ supabase, productId, skuId, siteName }) {
         if (!supabase?.from) throw Object.assign(new Error('数据库服务不可用'), { statusCode: 503, expose: false });
         const productQuery = await supabase.from('shop_products')
-            .select('id,name,is_active,allow_guest_purchase,guest_cash_price_cny,guest_cash_price_intl,delivery_type,manual_delivery,guest_payment_channels')
+            .select('id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl')
             .eq('id', productId).maybeSingle();
         if (productQuery.error) throw productQuery.error;
         const product = productQuery.data;
         const skuQuery = await supabase.from('shop_product_skus')
-            .select('id,product_id,sku_name,is_active,allow_guest_purchase,guest_cash_price_cny,guest_cash_price_intl,manual_delivery,guest_payment_channels')
+            .select('id,product_id,sku_name,is_active,allow_guest_purchase,manual_delivery,guest_payment_channels,price_points,price_points_intl,quantity_rules,quantity_rules_intl,is_default')
             .eq('id', skuId).eq('product_id', productId).maybeSingle();
         if (skuQuery.error) throw skuQuery.error;
         const sku = skuQuery.data;
-        const priceField = siteName === 'cn' ? 'guest_cash_price_cny' : 'guest_cash_price_intl';
         const enabled = Boolean(sku?.allow_guest_purchase ?? product?.allow_guest_purchase);
         const currency = security.currencyForSite(siteName);
-        const price = normalizeGuestCashPrice(
-            sku?.[priceField] ?? product?.[priceField],
-            security,
-            currency
-        );
+        const creditAmount = defaultGuestPricing.resolveGuestCreditUnitAmount({
+            site: siteName,
+            skuPricePoints: sku?.price_points,
+            skuPricePointsIntl: sku?.price_points_intl,
+            skuQuantityRules: sku?.quantity_rules,
+            skuQuantityRulesIntl: sku?.quantity_rules_intl,
+            skuIsDefault: sku?.is_default === true,
+            productQuantityRules: product?.quantity_rules,
+            productQuantityRulesIntl: product?.quantity_rules_intl,
+            productFlashSalePrice: product?.flash_sale_price,
+            productFlashSalePriceIntl: product?.flash_sale_price_intl,
+            productFlashSaleEnd: product?.flash_sale_end,
+            productFlashSaleEndIntl: product?.flash_sale_end_intl
+        });
+        const price = creditAmount == null
+            ? null
+            : normalizeGuestCashPrice(creditAmount, security, currency);
         const deliveryType = String(product?.delivery_type || 'KEY').trim().toUpperCase();
         if (!product?.is_active || !sku?.is_active || !enabled || deliveryType !== 'KEY' || product?.manual_delivery || sku?.manual_delivery || !price) {
             const error = new security.GuestShopSecurityError('商品暂不支持游客购买', { statusCode: 409, code: 'guest_product_unavailable' });
@@ -895,7 +970,7 @@ function createGuestShopHandlers({
         }
         const currency = String(order?.currency || payment?.currency || '').trim().toUpperCase();
         const amountSnapshot = normalizeGuestCashPrice(order?.total_amount, security, currency);
-        if (!amountSnapshot || !['CNY', 'USD'].includes(currency)) return null;
+        if (!amountSnapshot || currency !== 'CNY') return null;
         const amount = amountSnapshot.amount;
 
         if (provider === 'zpay') {
@@ -994,14 +1069,17 @@ function createGuestShopHandlers({
         return null;
     }
 
-function responseOrder(order, claimSecret) {
+function responseOrder(order, claimSecret, extras = {}) {
         const result = {
             order_no: order.order_no,
             payment_order_id: order.payment_order_id,
-            amount: order.total_amount,
+            amount: extras.amount ?? order.total_amount,
             currency: order.currency,
             expires_at: order.expires_at
         };
+        const paymentPricing = extras.payment_pricing
+            || storedGuestPaymentPricing(order, extras.payment, extras.computed);
+        if (paymentPricing) result.payment_pricing = paymentPricing;
         // The recovery code is a high-entropy bearer credential.  It is
         // returned only in the order-creation response (never in status,
         // webhook, logs or provider metadata) so a buyer may move to another
@@ -1010,6 +1088,21 @@ function responseOrder(order, claimSecret) {
             result.recovery_code = claimSecret.trim();
         }
         return result;
+    }
+
+    function publicOrderSnapshot(order, extras = {}) {
+        const snapshot = {
+            order_no: order.order_no,
+            payment_status: order.payment_status,
+            fulfillment_status: order.fulfillment_status,
+            refund_status: order.refund_status,
+            amount: order.total_amount,
+            currency: order.currency,
+            expires_at: order.expires_at
+        };
+        const paymentPricing = storedGuestPaymentPricing(order, extras.payment, extras.computed);
+        if (paymentPricing) snapshot.payment_pricing = paymentPricing;
+        return snapshot;
     }
 
     async function acquirePaymentCreationLease(order, payment) {
@@ -1081,16 +1174,116 @@ function responseOrder(order, claimSecret) {
         return result?.data || null;
     }
 
+    async function clearPaymentCreationLease(order, lease) {
+        if (!lease) return null;
+        try {
+            return await updatePaymentForLease(order, lease, {
+                last_error_code: null,
+                last_error_message: null
+            });
+        } catch (_) {
+            return null;
+        }
+    }
+
+    async function loadGuestOrderAmountRow(order) {
+        const db = getSupabase();
+        const orderId = String(order?.order_id || order?.id || '').trim();
+        if (!db?.from || !orderId) return null;
+        let query = db.from('guest_shop_orders')
+            .select('id,unit_amount,total_amount,metadata,payment_status')
+            .eq('id', orderId);
+        if (typeof query.maybeSingle === 'function') query = query.maybeSingle();
+        const result = await query;
+        if (result?.error) throw result.error;
+        return result?.data || null;
+    }
+
+    async function persistGuestPayableAmounts({
+        order,
+        payment,
+        creditAmount,
+        provider,
+        lease,
+        summaries = {}
+    }) {
+        const computed = defaultGuestPricing.resolveGuestPayablePricing(
+            creditAmount,
+            provider,
+            summaries
+        );
+        const payableSnapshot = normalizeGuestCashPrice(
+            computed.payableAmount,
+            security,
+            String(order?.currency || 'CNY')
+        );
+        if (!payableSnapshot || !(payableSnapshot.amount > 0)) {
+            throw Object.assign(new Error('应付金额无效'), {
+                statusCode: 503,
+                code: 'guest_payable_amount_invalid',
+                expose: false
+            });
+        }
+        computed.payableAmount = payableSnapshot.amount;
+        computed.payload = defaultGuestPricing.buildGuestPaymentPricingPayload(computed);
+
+        const current = await loadGuestOrderAmountRow(order);
+        const currentUnit = current?.unit_amount ?? order?.unit_amount ?? order?.total_amount;
+        const currentTotal = current?.total_amount ?? order?.total_amount;
+        const alreadyOrder = defaultGuestPricing.moneyAmountsEqual(currentUnit, payableSnapshot.amount)
+            && defaultGuestPricing.moneyAmountsEqual(currentTotal, payableSnapshot.amount);
+        const alreadyPayment = defaultGuestPricing.moneyAmountsEqual(
+            payment?.expected_amount,
+            payableSnapshot.amount
+        );
+        const orderId = String(order?.order_id || order?.id || '').trim();
+        const db = getSupabase();
+        const metadata = applyPayableSnapshot(order, alreadyPayment ? payment : null, computed, current?.metadata);
+
+        if (!alreadyOrder) {
+            if (!db?.from || !orderId) return { ok: false, computed };
+            let query = db.from('guest_shop_orders').update({
+                unit_amount: payableSnapshot.amount,
+                total_amount: payableSnapshot.amount,
+                metadata,
+                updated_at: new Date().toISOString()
+            }).eq('id', orderId).eq('payment_status', 'pending');
+            if (typeof query.select === 'function') {
+                query = query.select('id,unit_amount,total_amount,metadata').maybeSingle();
+            }
+            const result = await query;
+            if (result?.error) throw result.error;
+            if (!result?.data) return { ok: false, computed };
+        }
+
+        if (!alreadyPayment) {
+            const patched = await updatePaymentForLease(order, lease, {
+                expected_amount: payableSnapshot.amount,
+                payment_fee: computed.surchargeAmount || 0
+            });
+            if (!patched) return { ok: false, computed };
+            payment.expected_amount = payableSnapshot.amount;
+            payment.payment_fee = computed.surchargeAmount || 0;
+        }
+
+        applyPayableSnapshot(order, payment, computed, metadata);
+        return { ok: true, computed };
+    }
+
     async function markPaymentCreationReview(order, code, message, lease = null) {
         const db = getSupabase();
         if (!db?.from) return null;
+        const errorCode = String(code || '').trim() || 'payment_creation_unknown';
+        const errorMessage = String(message || '支付创建结果未知，请对账确认').slice(0, 500);
+        const nowIso = new Date().toISOString();
+        const orderId = String(order?.order_id || order?.id || '').trim();
         let query = db.from('guest_shop_payment_orders').update({
             status: 'review',
-            last_error_code: code,
-            last_error_message: String(message || '支付创建结果未知，请对账确认').slice(0, 500),
-            updated_at: new Date().toISOString()
+            last_error_code: errorCode,
+            last_error_message: errorMessage,
+            updated_at: nowIso
         }).eq('id', String(order.payment_order_id))
-            .eq('guest_order_id', String(order.order_id))
+            .eq('guest_order_id', orderId)
             .eq('merchant_order_no', String(order.merchant_order_no || order.order_no))
             .eq('purpose', 'shop_direct');
         if (lease) {
@@ -1103,12 +1296,31 @@ function responseOrder(order, claimSecret) {
         if (typeof query.select === 'function') query = query.select('id,status').maybeSingle();
         const result = await query;
         if (result?.error) return null;
-        await db.from('guest_shop_orders').update({
-            payment_status: 'review',
-            last_error_code: code,
-            last_error_message: String(message || '支付创建结果未知，请对账确认').slice(0, 500),
-            updated_at: new Date().toISOString()
-        }).eq('id', String(order.order_id)).in('payment_status', ['pending', 'review']).catch(() => {});
+        // PostgREST builders are thenable but do not implement Promise.catch().
+        // Calling `.catch()` on the builder threw before the PATCH left the
+        // process, so payment rows could enter review while the order row
+        // stayed pending. Await the request; never mask the provider error.
+        if (orderId) {
+            try {
+                let orderQuery = db.from('guest_shop_orders').update({
+                    payment_status: 'review',
+                    last_error_code: errorCode,
+                    last_error_message: errorMessage,
+                    updated_at: nowIso
+                }).eq('id', orderId);
+                if (typeof orderQuery.in === 'function') {
+                    orderQuery = orderQuery.in('payment_status', ['pending', 'review']);
+                } else {
+                    orderQuery = orderQuery.eq('payment_status', 'pending');
+                }
+                if (typeof orderQuery.select === 'function') {
+                    orderQuery = orderQuery.select('id,payment_status,last_error_code').maybeSingle();
+                }
+                await orderQuery;
+            } catch (_) {
+                // Payment is already review, so retries stay 503.
+            }
+        }
         return result?.data || null;
     }
 
@@ -1142,11 +1354,18 @@ function responseOrder(order, claimSecret) {
             const productId = security.normalizeUuid(queryValue(req, 'productId') || queryValue(req, 'product_id'), 'productId');
             const skuId = security.normalizeUuid(queryValue(req, 'skuId') || queryValue(req, 'sku_id'), 'skuId');
             const pricing = await loadGuestSkuPricing({ supabase: getSupabase(), productId, skuId, siteName });
+            const paymentProviders = defaultGuestPricing.publicGuestPaymentProviderSummaries(
+                await defaultGuestPricing.loadGuestPaymentProviderSummaries({
+                    supabase: getSupabase(),
+                    siteName
+                })
+            );
             return sendJson(res, 200, {
                 success: true,
                 product: { id: pricing.product.id, name: pricing.product.name || '', sku_id: pricing.sku.id, sku_name: pricing.sku.sku_name || '' },
                 price: { amount: pricing.unitAmount, currency: pricing.currency, quantity: 1 },
-                payment_channels: Array.isArray(pricing.channels) ? pricing.channels : []
+                payment_channels: Array.isArray(pricing.channels) ? pricing.channels : [],
+                payment_providers: paymentProviders
             });
         } catch (error) { return failResponse(res, error); }
     }
@@ -1176,7 +1395,7 @@ function responseOrder(order, claimSecret) {
             const fingerprint = security.buildGuestRequestFingerprint({
                 ...normalized,
                 unitAmount: pricing.unitAmount,
-                pricingVersion: 'guest-v1',
+                pricingVersion: defaultGuestPricing.GUEST_CREDIT_PRICING_VERSION,
                 provider,
                 channel
             });
@@ -1234,12 +1453,21 @@ function responseOrder(order, claimSecret) {
                 return !released?.error;
             }
 
+            const paymentProviderSummaries = await defaultGuestPricing.loadGuestPaymentProviderSummaries({
+                supabase: getSupabase(),
+                siteName
+            });
+            const computedPayable = defaultGuestPricing.resolveGuestPayablePricing(
+                pricing.unitAmount,
+                provider,
+                paymentProviderSummaries
+            );
             const replayResponse = (checkout, statusCode = 200, extra = {}) => {
                 setClaimProofCookie(req, res, order, claimSecret, security, env);
                 return sendJson(res, statusCode, {
                     success: true,
                     replayed: true,
-                    order: responseOrder(order, claimSecret),
+                    order: responseOrder(order, claimSecret, { payment, computed: computedPayable }),
                     checkout,
                     ...extra
                 });
@@ -1311,6 +1539,22 @@ function responseOrder(order, claimSecret) {
                 });
             }
             const creationLease = leaseResult.lease;
+            const persistResult = await persistGuestPayableAmounts({
+                order,
+                payment,
+                creditAmount: pricing.unitAmount,
+                provider,
+                lease: creationLease,
+                summaries: paymentProviderSummaries
+            });
+            if (!persistResult.ok) {
+                await clearPaymentCreationLease(order, creationLease);
+                throw Object.assign(new Error('应付金额写入失败，请稍后重试'), {
+                    statusCode: 503,
+                    code: 'guest_payable_amount_persist_failed',
+                    expose: true
+                });
+            }
 
             let checkout = null;
             if (typeof paymentAdapter?.createGuestPayment === 'function') {
@@ -1377,7 +1621,11 @@ function responseOrder(order, claimSecret) {
                 throw Object.assign(new Error('支付订单暂需人工对账'), { statusCode: 503, code: 'guest_payment_reconciliation_required', expose: true });
             }
             setClaimProofCookie(req, res, order, claimSecret, security, env);
-            return sendJson(res, 201, { success: true, order: responseOrder(order, claimSecret), checkout });
+            return sendJson(res, 201, {
+                success: true,
+                order: responseOrder(order, claimSecret, { payment, computed: persistResult.computed }),
+                checkout
+            });
         } catch (error) { return failResponse(res, error); }
     }
 
@@ -1495,23 +1743,255 @@ function responseOrder(order, claimSecret) {
         }
     }
 
+    function forceProviderRefreshRequested(req) {
+        const raw = queryValue(req, 'force_provider_refresh')
+            ?? queryValue(req, 'forceProviderRefresh')
+            ?? queryValue(req, 'force')
+            ?? '';
+        const value = String(Array.isArray(raw) ? raw[0] : raw).trim().toLowerCase();
+        return value === '1' || value === 'true' || value === 'yes';
+    }
+
+    async function persistStatusQueryMetadata(payment, patch) {
+        const db = getSupabase();
+        if (!db?.from || !payment?.id) return;
+        const next = { ...storedPlainObject(payment.provider_metadata) };
+        for (const [key, value] of Object.entries(patch || {})) {
+            if (value === undefined) continue;
+            next[key] = value;
+        }
+        try {
+            await db.from('guest_shop_payment_orders').update({
+                provider_metadata: next,
+                updated_at: new Date().toISOString()
+            }).eq('id', payment.id);
+        } catch (_) {
+            // Throttle bookkeeping is best effort; a failed metadata write must
+            // never break the buyer-facing status response.
+        }
+    }
+
+    /**
+     * Actively query the payment provider from the buyer status endpoint. This
+     * mirrors the logged-in wallet recharge flow, which keeps a webhook plus a
+     * throttled status-poll closed loop so a dropped callback cannot leave a
+     * genuinely paid guest order stuck on `pending` forever.
+     *
+     * The function is deliberately conservative: it never throws, never flips
+     * order state directly, and only confirms through the same
+     * fn_guest_shop_confirm_payment RPC used by verified webhooks.
+     */
+    async function attemptGuestPaymentStatusQuery({ order, payment, forceProviderRefresh = false } = {}) {
+        const db = getSupabase();
+        if (!db?.from || !payment?.id) return { refreshed: false, reason: 'missing_payment_order' };
+        const provider = String(payment.provider || '').trim().toLowerCase();
+        if (!GUEST_WEBHOOK_PROVIDERS.has(provider)) return { refreshed: false, reason: 'unsupported_provider' };
+        if (typeof paymentAdapter?.queryGuestPayment !== 'function') return { refreshed: false, reason: 'adapter_unavailable' };
+        if (GUEST_STATUS_QUERY_RESOLVED_PAYMENT_STATUSES.has(String(payment.status || '').trim().toLowerCase())) {
+            return { refreshed: false, reason: 'already_resolved' };
+        }
+
+        const metadata = storedPlainObject(payment.provider_metadata);
+        const lastQueryMs = Date.parse(String(metadata.query_verified_at || metadata.status_poll_query_at || ''));
+        const throttleMs = forceProviderRefresh === true
+            ? GUEST_STATUS_QUERY_FORCE_THROTTLE_MS
+            : GUEST_STATUS_QUERY_THROTTLE_MS;
+        if (Number.isFinite(lastQueryMs) && (Date.now() - lastQueryMs) < throttleMs) {
+            return { refreshed: false, reason: 'query_throttled' };
+        }
+
+        const merchantOrderNo = normalizeWebhookReference(payment.merchant_order_no || order?.order_no, 200);
+        const providerOrderNo = normalizeWebhookReference(payment.provider_order_no || merchantOrderNo, 300);
+        const tradeNo = normalizeWebhookReference(metadata.trade_no || metadata.query_trade_no, 120);
+        const providerPaymentId = normalizeWebhookReference(metadata.payment_id || metadata.provider_payment_id, 120);
+        const observedSite = normalizeWebhookReference(payment.site, 16).toLowerCase();
+        const observedCurrency = normalizeWebhookReference(payment.currency, 8).toUpperCase();
+        const expectedAmount = normalizeGuestCashPrice(payment.expected_amount, security, observedCurrency);
+        if (!merchantOrderNo || !providerOrderNo || !expectedAmount
+            || !['cn', 'intl'].includes(observedSite)
+            || !['CNY', 'USD'].includes(observedCurrency)) {
+            return { refreshed: false, reason: 'invalid_payment_binding' };
+        }
+
+        let live = null;
+        try {
+            live = await paymentAdapter.queryGuestPayment({
+                provider,
+                channel: normalizeWebhookReference(payment.channel, 80).toLowerCase() || provider,
+                site: observedSite,
+                providerOrderNo,
+                merchantOrderNo,
+                tradeNo,
+                paymentId: providerPaymentId,
+                providerPaymentId,
+                metadata
+            });
+        } catch (error) {
+            const nowIso = new Date().toISOString();
+            await persistStatusQueryMetadata(payment, {
+                query_status: null,
+                query_error_code: normalizeWebhookReference(error?.code, 120) || 'guest_status_query_failed',
+                query_verified_at: nowIso,
+                status_poll_query_at: nowIso
+            });
+            return { refreshed: false, reason: 'query_error' };
+        }
+        if (!live || live.supported === false) {
+            const nowIso = new Date().toISOString();
+            await persistStatusQueryMetadata(payment, {
+                query_status: null,
+                query_error_code: 'guest_status_query_unsupported',
+                query_verified_at: nowIso,
+                status_poll_query_at: nowIso
+            });
+            return { refreshed: false, reason: 'query_unavailable' };
+        }
+
+        const observedStatus = String(live.final_status || live.status || '').trim().toLowerCase();
+        const observedAmount = normalizeObservedAmount(live.paid_amount ?? live.amount);
+        const liveProviderOrderNo = normalizeWebhookReference(live.provider_order_no || providerOrderNo, 300);
+        const liveTradeNo = normalizeWebhookReference(live.trade_no || live.transaction_id || tradeNo, 120);
+        const quote = providerQuoteChecks(provider, live, payment, security);
+        const binding = security.verifyPaymentBinding({
+            expectedMerchantOrderNo: merchantOrderNo,
+            expectedProvider: provider,
+            expectedPurpose: 'shop_direct',
+            expectedSite: observedSite,
+            expectedCurrency: observedCurrency,
+            expectedAmountMinor: expectedAmount.minor,
+            received: {
+                merchantOrderNo: normalizeWebhookReference(live.merchant_order_no, 200) || merchantOrderNo,
+                provider,
+                purpose: String(live.purpose || 'shop_direct').trim().toLowerCase(),
+                site: observedSite,
+                currency: observedCurrency,
+                // NOWPayments settles in crypto and is validated by the quote
+                // checks above; ZPay reports the fiat amount it actually took.
+                paidAmount: provider === 'nowpayments' ? expectedAmount.amount : observedAmount,
+                finalStatus: observedStatus
+            }
+        });
+        const verified = binding.valid === true && quote.valid === true && isFinalPaymentStatus(observedStatus);
+        const nowIso = new Date().toISOString();
+        await persistStatusQueryMetadata(payment, {
+            query_status: observedStatus || null,
+            query_status_raw: normalizeWebhookReference(live.status_raw, 80) || null,
+            query_trade_no: liveTradeNo || null,
+            query_error_code: verified ? null : 'guest_status_query_not_confirmed',
+            query_verified_at: nowIso,
+            status_poll_query_at: nowIso
+        });
+        if (!verified || !liveProviderOrderNo) return { refreshed: false, reason: 'not_verified' };
+
+        const eventKey = statusQueryEventKey(provider, { paymentId: payment.id });
+        const bodyHash = crypto.createHash('sha256').update(JSON.stringify({
+            event_key: eventKey,
+            provider,
+            payment_order_id: payment.id,
+            provider_order_no: liveProviderOrderNo,
+            merchant_order_no: merchantOrderNo,
+            status: observedStatus,
+            amount: expectedAmount.amount
+        })).digest('hex');
+        const redactedPayload = typeof security.redactGuestPaymentPayload === 'function'
+            ? security.redactGuestPaymentPayload(live.response_payload || {})
+            : {};
+        const eventRow = {
+            payment_order_id: payment.id,
+            merchant_order_no: merchantOrderNo,
+            provider,
+            event_key: eventKey,
+            provider_event_id: eventKey,
+            provider_order_no: liveProviderOrderNo,
+            event_type: GUEST_STATUS_QUERY_EVENT_TYPE,
+            observed_status: observedStatus,
+            observed_site: observedSite,
+            observed_currency: observedCurrency,
+            observed_amount: expectedAmount.amount,
+            observed_purpose: 'shop_direct',
+            payload_redacted: { provider, status: observedStatus, query: storedPlainObject(redactedPayload) },
+            body_sha256: bodyHash,
+            signature_version: 'query_api',
+            signature_verified: true,
+            amount_verified: true,
+            currency_verified: true,
+            final_status_verified: true,
+            processing_status: 'verified',
+            error_code: null
+        };
+
+        let eventId = null;
+        let alreadyProcessed = false;
+        try {
+            const existing = await db.from('guest_shop_payment_events')
+                .select('*').eq('provider', provider).eq('event_key', eventKey).maybeSingle();
+            if (existing?.error) return { refreshed: false, reason: 'event_lookup_failed' };
+            if (existing?.data) {
+                eventId = existing.data.id || null;
+                alreadyProcessed = ['processed', 'duplicate']
+                    .includes(String(existing.data.processing_status || '').trim().toLowerCase());
+            } else {
+                const inserted = await db.from('guest_shop_payment_events').insert(eventRow).select('*').single();
+                if (inserted?.error) {
+                    if (!isUniqueViolation(inserted.error)) return { refreshed: false, reason: 'event_insert_failed' };
+                    const raced = await db.from('guest_shop_payment_events')
+                        .select('*').eq('provider', provider).eq('event_key', eventKey).maybeSingle();
+                    eventId = raced?.data?.id || null;
+                    alreadyProcessed = ['processed', 'duplicate']
+                        .includes(String(raced?.data?.processing_status || '').trim().toLowerCase());
+                } else {
+                    eventId = inserted.data?.id || null;
+                }
+            }
+        } catch (_) {
+            return { refreshed: false, reason: 'event_write_failed' };
+        }
+        if (!eventId) return { refreshed: false, reason: 'event_reference_missing' };
+
+        if (!alreadyProcessed) {
+            try {
+                const confirmed = await db.rpc('fn_guest_shop_confirm_payment', {
+                    p_payment_order_id: payment.id,
+                    p_event_id: eventId,
+                    p_provider: provider,
+                    p_provider_order_no: liveProviderOrderNo,
+                    p_observed_site: observedSite,
+                    p_observed_currency: observedCurrency,
+                    p_observed_amount: expectedAmount.amount,
+                    p_observed_purpose: 'shop_direct',
+                    p_observed_status: observedStatus,
+                    p_signature_verified: true,
+                    p_amount_verified: true,
+                    p_currency_verified: true,
+                    p_final_status_verified: true
+                });
+                if (confirmed?.error) return { refreshed: false, reason: 'confirm_failed' };
+            } catch (_) {
+                return { refreshed: false, reason: 'confirm_failed' };
+            }
+        }
+
+        const refreshedOrder = await loadOrderByNo(order?.order_no || merchantOrderNo).catch(() => null);
+        return { refreshed: true, order: refreshedOrder || order };
+    }
+
     async function status(req, res) {
         setGuestSensitiveHeaders(res);
         if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
         if (!(await limit(req, res, 'status', { limit: 60 }))) return;
         try {
-            const order = await loadOrderByNo(queryValue(req, 'orderNo') || queryValue(req, 'order_no'));
+            let order = await loadOrderByNo(queryValue(req, 'orderNo') || queryValue(req, 'order_no'));
             await authorizeClaim(req, order);
-            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
             let checkout = null;
             // A refreshed tab may have only the non-sensitive order handle in
             // sessionStorage. Reconstruct the checkout from server-owned,
             // allowlisted provider metadata after the claim cookie has been
             // verified. This never returns the claim secret, raw webhook
             // payload, or arbitrary provider metadata.
-            if (!paymentStatusIsTerminal(paymentStatus)) {
+            if (!paymentStatusIsTerminal(String(order.payment_status || '').trim().toLowerCase())) {
+                let payment = null;
                 try {
-                    const payment = await loadPaymentIntent({
+                    payment = await loadPaymentIntent({
                         payment_order_id: order.payment_order_id,
                         order_id: order.id,
                         merchant_order_no: order.order_no
@@ -1522,20 +2002,30 @@ function responseOrder(order, claimSecret) {
                     // still pending; provider reconstruction is best effort
                     // and must not turn a valid status response into an
                     // information oracle.
+                    payment = null;
                     checkout = null;
+                }
+                // A provider callback can be lost, delayed, or dropped. Mirror
+                // the logged-in wallet recharge flow and actively query the
+                // provider from this endpoint so a genuinely paid order can
+                // self-heal without an operator touching the row.
+                if (payment) {
+                    const refresh = await attemptGuestPaymentStatusQuery({
+                        order,
+                        payment,
+                        forceProviderRefresh: forceProviderRefreshRequested(req)
+                    });
+                    if (refresh?.refreshed && refresh.order) {
+                        order = refresh.order;
+                        if (paymentStatusIsTerminal(String(order.payment_status || '').trim().toLowerCase())) {
+                            checkout = null;
+                        }
+                    }
                 }
             }
             return sendJson(res, 200, {
                 success: true,
-                order: {
-                    order_no: order.order_no,
-                    payment_status: order.payment_status,
-                    fulfillment_status: order.fulfillment_status,
-                    refund_status: order.refund_status,
-                    amount: order.total_amount,
-                    currency: order.currency,
-                    expires_at: order.expires_at
-                },
+                order: publicOrderSnapshot(order),
                 ...(checkout ? { checkout } : {})
             });
         } catch (error) { return failResponse(res, error); }
@@ -1579,15 +2069,7 @@ function responseOrder(order, claimSecret) {
             return sendJson(res, 200, {
                 success: true,
                 recovered: true,
-                order: {
-                    order_no: order.order_no,
-                    payment_status: order.payment_status,
-                    fulfillment_status: order.fulfillment_status,
-                    refund_status: order.refund_status,
-                    amount: order.total_amount,
-                    currency: order.currency,
-                    expires_at: order.expires_at
-                },
+                order: publicOrderSnapshot(order),
                 ...(checkout ? { checkout } : {})
             });
         } catch (error) { return failResponse(res, error); }
@@ -1663,7 +2145,17 @@ function responseOrder(order, claimSecret) {
                     .select('*').eq('provider', provider).eq('checkout_reference', providerCallbackReference).maybeSingle();
                 if (payment.error) throw payment.error;
             }
-            const expected = payment?.data || null;
+            // Merchant-order lookup is not provider-scoped, so a NOWPayments
+            // IPN can hit a ZPay row (and vice versa). Binding that row to a
+            // cross-provider event trips guest_shop_validate_payment_event
+            // (P0001) because NEW.provider <> payment.provider. Treat the
+            // mismatch as an unknown order: audit with payment_order_id=null
+            // and never confirm.
+            const matchedPayment = payment?.data || null;
+            const expected = matchedPayment
+                && String(matchedPayment.provider || '').trim().toLowerCase() === provider
+                ? matchedPayment
+                : null;
             const verifier = paymentAdapter?.verifyGuestWebhook || paymentAdapter?.verifyWebhook;
             if (typeof verifier !== 'function') throw webhookError('支付通道未配置', 'guest_payment_provider_unavailable', 503, false);
             const verification = await verifier({ provider, payload, rawBody, headers: req.headers || {}, signature: provider === 'zpay' ? payload.sign : webhookHeader(req, 'x-nowpayments-sig'), site: expected?.site || 'cn', expectedPayment: expected, requestOrigin: '', requestHost: webhookHeader(req, 'host'), env });
@@ -1676,7 +2168,7 @@ function responseOrder(order, claimSecret) {
             const observedAmount = normalizeObservedAmount(normalized?.amount ?? normalized?.paid_amount);
             const businessEventKey = normalizeWebhookEventKey(normalized?.event_key || normalized?.event_id, providerOrderNo || merchantOrderNo, provider, bodySha256);
             const quote = providerQuoteChecks(provider, normalized, expected, security);
-            const binding = expected && normalized ? security.verifyPaymentBinding({ expectedMerchantOrderNo: expected.merchant_order_no, expectedProvider: expected.provider, expectedPurpose: 'shop_direct', expectedSite: expected.site, expectedCurrency: expected.currency, expectedAmountMinor: Math.round(Number(expected.expected_amount) * 100), received: { merchantOrderNo, provider, purpose: normalized.purpose, site: expected.site, currency: normalized.currency || expected.currency, paidAmount: provider === 'nowpayments' ? expected.expected_amount : observedAmount, finalStatus: observedStatus } }) : { valid: false, checks: {} };
+            const binding = expected && normalized ? security.verifyPaymentBinding({ expectedMerchantOrderNo: expected.merchant_order_no, expectedProvider: expected.provider, expectedPurpose: 'shop_direct', expectedSite: expected.site, expectedCurrency: expected.currency, expectedAmountMinor: Math.round(Number(expected.expected_amount) * 100), received: { merchantOrderNo, provider, purpose: normalized.purpose, site: expected.site, currency: expected.currency, paidAmount: provider === 'nowpayments' ? expected.expected_amount : observedAmount, finalStatus: observedStatus } }) : { valid: false, checks: {} };
             const valid = verification?.valid === true && binding.valid && quote.valid && isFinalPaymentStatus(observedStatus);
             // Invalid signatures, mismatched orders, amounts or final status
             // are audit events only.  They use a body-hash namespace so an

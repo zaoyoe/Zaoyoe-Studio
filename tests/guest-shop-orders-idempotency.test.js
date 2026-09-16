@@ -31,6 +31,7 @@ function createResponse() {
 
 function makeOrder(overrides = {}) {
     return {
+        id: ORDER_ID,
         order_id: ORDER_ID,
         order_no: ORDER_NO,
         merchant_order_no: ORDER_NO,
@@ -138,7 +139,6 @@ function createHandlers(stateOverrides = {}, adapterOverrides = {}) {
             name: 'Test product',
             is_active: true,
             allow_guest_purchase: true,
-            guest_cash_price_cny: 12.34,
             delivery_type: 'KEY',
             manual_delivery: false,
             guest_payment_channels: ['zpay']
@@ -149,7 +149,9 @@ function createHandlers(stateOverrides = {}, adapterOverrides = {}) {
             sku_name: 'Default',
             is_active: true,
             allow_guest_purchase: null,
-            guest_cash_price_cny: null,
+            price_points: 12.34,
+            price_points_intl: 12.34,
+            is_default: true,
             manual_delivery: false,
             guest_payment_channels: null
         },
@@ -160,12 +162,16 @@ function createHandlers(stateOverrides = {}, adapterOverrides = {}) {
         ...stateOverrides
     };
     const supabase = createSupabaseStub(state);
-    const calls = { create: 0 };
+    const calls = { create: 0, lastCreateArgs: null };
     const paymentAdapter = {
-        async createGuestPayment() {
+        async createGuestPayment(args) {
             calls.create += 1;
+            calls.lastCreateArgs = args;
             if (adapterOverrides.createDelayMs) {
                 await new Promise((resolve) => setTimeout(resolve, adapterOverrides.createDelayMs));
+            }
+            if (adapterOverrides.createError) {
+                throw adapterOverrides.createError;
             }
             const checkoutUrl = 'https://pay.example.test/checkout?id=1';
             const metadata = {
@@ -174,10 +180,13 @@ function createHandlers(stateOverrides = {}, adapterOverrides = {}) {
                 provider_order_no: ORDER_NO,
                 checkout_url: checkoutUrl
             };
+            const checkoutAmount = Number(args?.amount ?? 12.34);
             return {
+                amount: checkoutAmount,
+                currency: 'CNY',
                 checkout: {
                     provider: 'zpay', channel: 'alipay', checkout_url: checkoutUrl,
-                    qrcode_url: null, qrcode_image_url: null, amount: 12.34, currency: 'CNY'
+                    qrcode_url: null, qrcode_image_url: null, amount: checkoutAmount, currency: 'CNY'
                 },
                 payment_order_patch: {
                     provider_order_no: ORDER_NO,
@@ -260,6 +269,54 @@ test('two concurrent pending retries acquire one creation lease and call provide
     assert.equal(state.payment.provider_order_no, ORDER_NO);
 });
 
+test('unknown provider create error marks payment and order review and blocks a second charge', async () => {
+    const { state, calls, handlers } = createHandlers({}, {
+        createError: Object.assign(new Error('connect timeout'), { name: 'FetchError' })
+    });
+    const first = createResponse();
+    await handlers.orders(request('idem-key-unknown-0000001'), first);
+    assert.equal(first.statusCode, 500);
+    assert.equal(first.payload.code, 'guest_shop_request_failed');
+    assert.equal(calls.create, 1);
+    assert.equal(state.payment.status, 'review');
+    assert.equal(state.payment.last_error_code, 'payment_creation_unknown');
+    assert.equal(state.order.payment_status, 'review');
+    assert.equal(state.order.last_error_code, 'payment_creation_unknown');
+    assert.equal(state.order.id, ORDER_ID);
+
+    const second = createResponse();
+    await handlers.orders(request('idem-key-unknown-0000001'), second);
+    assert.equal(second.statusCode, 503);
+    assert.equal(second.payload.code, 'guest_payment_reconciliation_required');
+    assert.equal(calls.create, 1);
+    assert.equal(state.payment.status, 'review');
+    assert.equal(state.order.payment_status, 'review');
+});
+
+test('definitive provider create rejection marks payment failed and releases the reservation', async () => {
+    const { state, calls, handlers } = createHandlers({
+        reservations: [{
+            id: '55555555-5555-4555-8555-555555555555',
+            order_id: ORDER_ID,
+            status: 'held'
+        }]
+    }, {
+        createError: Object.assign(new Error('金额低于 NOWPayments 最低限额，无法创建支付'), {
+            code: 'guest_provider_create_failed',
+            statusCode: 400,
+            expose: true
+        })
+    });
+    const res = createResponse();
+    await handlers.orders(request('idem-key-rejected-0000001'), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.payload.code, 'guest_provider_create_failed');
+    assert.equal(calls.create, 1);
+    assert.equal(state.payment.status, 'failed');
+    assert.equal(state.payment.last_error_code, 'guest_provider_create_failed');
+    assert.ok(state.rpcCalls.includes('fn_guest_shop_release_reservation'));
+});
+
 test('a stale creation lease is fail-closed and never issues a second provider order', async () => {
     const staleMessage = `v1:${Date.now() - 10 * 60 * 1000}:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`;
     const { calls, handlers } = createHandlers({
@@ -306,4 +363,22 @@ test('idempotent create retry re-emits the same recovery code and never leaks th
     assert.match(expected, /^[A-Za-z0-9_-]{40,200}$/u);
     assert.doesNotMatch(JSON.stringify(first.payload), /claim_secret_hash|hmac-sha256|stored-claim-hash/);
     assert.doesNotMatch(JSON.stringify(second.payload), /claim_secret_hash|hmac-sha256|stored-claim-hash/);
+});
+
+test('guest order create persists and sends the credit price plus 1% channel fee', async () => {
+    const { state, calls, handlers } = createHandlers();
+    const res = createResponse();
+    await handlers.orders(request('idem-key-payable-0000001'), res);
+    assert.equal(res.statusCode, 201);
+    assert.equal(calls.create, 1);
+    assert.equal(Number(calls.lastCreateArgs.amount), 12.47);
+    assert.equal(Number(state.order.unit_amount), 12.47);
+    assert.equal(Number(state.order.total_amount), 12.47);
+    assert.equal(Number(state.payment.expected_amount), 12.47);
+    assert.equal(Number(state.payment.payment_fee), 0.13);
+    assert.equal(Number(res.payload.order.amount), 12.47);
+    assert.equal(Number(res.payload.order.payment_pricing.base_amount), 12.34);
+    assert.equal(Number(res.payload.order.payment_pricing.payment_fee_amount), 0.13);
+    assert.equal(Number(res.payload.order.payment_pricing.payable_amount), 12.47);
+    assert.equal(Number(res.payload.checkout.amount), 12.47);
 });

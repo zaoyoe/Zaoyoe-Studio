@@ -337,7 +337,7 @@ test('loadEnvFile is side-effect free and does not mutate the base environment',
 test('repository and runbook contracts are present', () => {
     const repoChecks = inspectRepo(REPO_ROOT);
     const runbookChecks = inspectRunbook(REPO_ROOT);
-    assert.equal(repoChecks.length, REQUIRED_REPO_FILES.length + REQUIRED_TEST_FILES.length + 5);
+    assert.equal(repoChecks.length, REQUIRED_REPO_FILES.length + REQUIRED_TEST_FILES.length + 7);
     assert.equal(repoChecks.some((check) => check.ok === false), false);
     assert.equal(runbookChecks.some((check) => check.ok === false), false);
 });

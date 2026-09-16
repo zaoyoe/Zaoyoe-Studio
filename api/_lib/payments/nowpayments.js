@@ -340,6 +340,21 @@ async function requestNowpaymentsJson(url, payload, {
     };
 }
 
+
+function throwNowpaymentsResponseError(response, actionLabel) {
+    const status = Number(response?.status || 0);
+    const data = response?.data && typeof response.data === 'object' ? response.data : null;
+    const message = data
+        ? (sanitizeText(data.message || data.error, '', 240) || `NOWPayments ${actionLabel}失败：HTTP ${status || 'unknown'}`)
+        : `NOWPayments ${actionLabel}返回非 JSON：HTTP ${status || 'unknown'}`;
+    const error = new Error(message);
+    if (Number.isFinite(status) && status > 0) {
+        error.statusCode = status;
+        error.code = status >= 400 && status < 500 ? 'nowpayments_rejected' : 'nowpayments_http_error';
+    }
+    throw error;
+}
+
 async function createNowpaymentsInvoice(options = {}, dependencies = {}) {
     const config = normalizeNowpaymentsConfig(options);
     if (!config.createReady) {
@@ -363,14 +378,8 @@ async function createNowpaymentsInvoice(options = {}, dependencies = {}) {
         apiKey: config.apiKey
     });
 
-    if (!response.data || typeof response.data !== 'object') {
-        throw new Error(`NOWPayments 下单返回非 JSON：HTTP ${response.status}`);
-    }
-    if (!response.ok) {
-        throw new Error(
-            sanitizeText(response.data.message || response.data.error, '', 240)
-            || `NOWPayments 下单失败：HTTP ${response.status}`
-        );
+    if (!response.data || typeof response.data !== 'object' || !response.ok) {
+        throwNowpaymentsResponseError(response, '下单');
     }
 
     return {
@@ -401,14 +410,8 @@ async function createNowpaymentsPayment(options = {}, dependencies = {}) {
         apiKey: config.apiKey
     });
 
-    if (!response.data || typeof response.data !== 'object') {
-        throw new Error(`NOWPayments 下单返回非 JSON：HTTP ${response.status}`);
-    }
-    if (!response.ok) {
-        throw new Error(
-            sanitizeText(response.data.message || response.data.error, '', 240)
-            || `NOWPayments 下单失败：HTTP ${response.status}`
-        );
+    if (!response.data || typeof response.data !== 'object' || !response.ok) {
+        throwNowpaymentsResponseError(response, '下单');
     }
 
     return {
@@ -435,14 +438,8 @@ async function updateNowpaymentsPaymentEstimate(options = {}, dependencies = {})
         apiKey: config.apiKey
     });
 
-    if (!response.data || typeof response.data !== 'object') {
-        throw new Error(`NOWPayments 更新报价返回非 JSON：HTTP ${response.status}`);
-    }
-    if (!response.ok) {
-        throw new Error(
-            sanitizeText(response.data.message || response.data.error, '', 240)
-            || `NOWPayments 更新报价失败：HTTP ${response.status}`
-        );
+    if (!response.data || typeof response.data !== 'object' || !response.ok) {
+        throwNowpaymentsResponseError(response, '更新报价');
     }
 
     return {
@@ -475,16 +472,16 @@ async function queryNowpaymentsPayment(options = {}, dependencies = {}) {
     });
 
     if (!response.data || typeof response.data !== 'object') {
-        throw new Error(`NOWPayments 查单返回非 JSON：HTTP ${response.status}`);
+        throwNowpaymentsResponseError(response, '查单');
     }
     if (!response.ok) {
         if (response.status === 404 || /payment\s+not\s+found/i.test(String(response.data.message || response.data.error || ''))) {
-            throw new Error(`NOWPayments 未找到 payment_id ${paymentId}；请确认订单里保存的是官方 payment_id，且当前 API Key 属于创建该支付单的商户。`);
+            const notFoundError = new Error(`NOWPayments 未找到 payment_id ${paymentId}；请确认订单里保存的是官方 payment_id，且当前 API Key 属于创建该支付单的商户。`);
+            notFoundError.statusCode = 404;
+            notFoundError.code = 'nowpayments_rejected';
+            throw notFoundError;
         }
-        throw new Error(
-            sanitizeText(response.data.message || response.data.error, '', 240)
-            || `NOWPayments 查单失败：HTTP ${response.status}`
-        );
+        throwNowpaymentsResponseError(response, '查单');
     }
 
     return {

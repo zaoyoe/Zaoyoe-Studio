@@ -14,6 +14,7 @@ const {
 const {
     channelMatchesAllowlist,
     createGuestShopPaymentAdapter,
+    getTrustedOrderAmount,
     normalizeAllowedChannels,
     normalizeDecimalAmount
 } = require('../api/_lib/payments/guest-shop-adapter');
@@ -211,6 +212,28 @@ test('ZPay checkout uses immutable server amount and excludes claim/user metadat
     assert.equal(form.get('param').includes('points'), false);
 });
 
+test('trusted guest amount prefers expected_amount over catalog total_amount', () => {
+    const payable = getTrustedOrderAmount({
+        expected_amount: '12.47',
+        total_amount: '12.34'
+    }, '12.47');
+    assert.equal(payable.text, '12.47');
+    assert.equal(payable.amount, 12.47);
+
+    const fallback = getTrustedOrderAmount({
+        total_amount: '144.00'
+    });
+    assert.equal(fallback.text, '144.00');
+
+    assert.throws(
+        () => getTrustedOrderAmount({
+            expected_amount: '12.47',
+            total_amount: '12.34'
+        }, '12.34'),
+        (error) => error.code === 'guest_payment_amount_snapshot_mismatch'
+    );
+});
+
 test('adapter rejects a client amount that differs from the server snapshot', async () => {
     const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({ code: 1, payurl: 'https://zpayz.cn/pay' }));
     await assert.rejects(
@@ -269,6 +292,11 @@ test('NOWPayments checkout requires USDT-BEP20 and returns payment details witho
     assert.equal(body.order_id, 'GS20260913-000002');
     assert.equal(body.pay_currency, 'usdtbsc');
     assert.equal(body.price_amount, '1.73');
+    assert.equal(result.currency, 'CNY');
+    assert.equal(result.checkout.currency, 'CNY');
+    assert.equal(result.provider_metadata.local_currency, 'cny');
+    assert.equal(result.provider_metadata.local_amount, 12.34);
+    assert.equal(result.provider_metadata.cny_to_usd_rate, 0.14);
 
     const wrongNetworkAdapter = makeAdapter(nowpaymentsConfig({ pay_currency: 'usdttrc20' }), {
         nowpayments_api_key: NOWPAYMENTS_API_KEY,
@@ -284,6 +312,103 @@ test('NOWPayments checkout requires USDT-BEP20 and returns payment details witho
             allowedChannels: ['nowpayments']
         }),
         (error) => error.code === 'guest_payment_network_unsupported'
+    );
+});
+
+test('NOWPayments intl checkout still settles CNY and converts the credit price to a USD quote', async () => {
+    let request;
+    const adapter = makeAdapter(nowpaymentsConfig(), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async (url, options) => {
+        request = { url, options };
+        return responseJson({
+            payment_id: 'NP-PAYMENT-INTL-1',
+            order_id: 'GS20260913-000006',
+            pay_address: '0x1234567890abcdef1234567890abcdef12345678',
+            pay_amount: 1.73,
+            pay_currency: 'usdtbsc',
+            price_amount: 1.73,
+            price_currency: 'usd',
+            expiration_estimate_date: '2026-09-13T12:00:00Z'
+        });
+    });
+    const result = await adapter.createGuestPayment({
+        order: makeOrder({
+            order_no: 'GS20260913-000006',
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            currency: 'CNY'
+        }),
+        provider: 'nowpayments',
+        channel: 'nowpayments',
+        site: 'intl',
+        amount: '12.34',
+        allowedChannels: ['nowpayments']
+    });
+
+    assert.equal(result.currency, 'CNY');
+    assert.equal(result.checkout.currency, 'CNY');
+    assert.equal(result.pay_currency, 'usdtbsc');
+    assert.equal(result.provider_metadata.local_currency, 'cny');
+    assert.equal(result.provider_metadata.local_amount, 12.34);
+    assert.equal(result.provider_metadata.cny_to_usd_rate, 0.14);
+    const body = JSON.parse(request.options.body);
+    assert.equal(body.price_amount, '1.73');
+    assert.equal(body.pay_currency, 'usdtbsc');
+});
+
+test('NOWPayments 4xx amount too small is a definitive create rejection', async () => {
+    const adapter = makeAdapter(nowpaymentsConfig(), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async () => responseJson({ message: 'amountTo is too small' }, 400));
+    await assert.rejects(
+        () => adapter.createGuestPayment({
+            order: makeOrder({
+                provider: 'nowpayments',
+                channel: 'nowpayments',
+                site: 'intl',
+                currency: 'CNY'
+            }),
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            amount: '12.34',
+            allowedChannels: ['nowpayments']
+        }),
+        (error) => error.code === 'guest_provider_create_failed'
+            && error.statusCode === 400
+            && /最低限额/.test(error.message)
+    );
+});
+
+test('NOWPayments gateway network failure stays non-definitive', async () => {
+    const adapter = makeAdapter(nowpaymentsConfig(), {
+        nowpayments_api_key: NOWPAYMENTS_API_KEY,
+        nowpayments_ipn_secret: NOWPAYMENTS_IPN_SECRET
+    }, async () => {
+        throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    });
+    await assert.rejects(
+        () => adapter.createGuestPayment({
+            order: makeOrder({
+                provider: 'nowpayments',
+                channel: 'nowpayments',
+                site: 'intl',
+                currency: 'CNY'
+            }),
+            provider: 'nowpayments',
+            channel: 'nowpayments',
+            site: 'intl',
+            amount: '12.34',
+            allowedChannels: ['nowpayments']
+        }),
+        (error) => error.code !== 'guest_provider_create_failed'
+            && error.code !== 'guest_payment_channel_unavailable'
+            && error.code !== 'guest_payment_provider_disabled'
+            && error.code !== 'guest_payment_provider_not_ready'
     );
 });
 

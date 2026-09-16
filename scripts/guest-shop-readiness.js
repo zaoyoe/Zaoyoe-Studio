@@ -52,6 +52,7 @@ const REQUIRED_REPO_FILES = Object.freeze([
     'api/_lib/guest-shop/security.js',
     'api/_lib/guest-shop/runtime-config.js',
     'api/_lib/payments/guest-shop-adapter.js',
+    'api/_lib/guest-shop-alerts.js',
     'api/shop/guest/preview.js',
     'api/shop/guest/orders.js',
     'api/shop/guest/status.js',
@@ -66,6 +67,7 @@ const REQUIRED_REPO_FILES = Object.freeze([
     'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker.service',
     'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker.timer',
     'scripts/install-kvm4-guest-shop-worker.sh',
+    'scripts/guest-shop-reconcile.js',
     'supabase/migrations/20260913_add_guest_shop_cash_purchase.sql',
     'supabase/migrations/20260913_guest_shop_atomic_rpcs.sql',
     'docs/guest-shop-payment-fulfillment-runbook.md'
@@ -79,6 +81,8 @@ const REQUIRED_TEST_FILES = Object.freeze([
     'tests/guest-shop-worker-scheduler-contract.test.js',
     'tests/guest-shop-runtime-config.test.js',
     'tests/guest-shop-readiness.test.js',
+    'tests/guest-shop-alerts.test.js',
+    'tests/guest-shop-reconcile.test.js',
     'tests/guest-shop-status-recovery.test.js',
     'tests/guest-shop-frontend-contract.test.js',
     'tests/guest-shop-public-route-contract.test.js'
@@ -919,15 +923,27 @@ function inspectRepo(repoRoot = REPO_ROOT) {
         ? buildCheck('repo', 'guest-payment-adapter-contract', true, 'present', '游客支付 adapter 与 shop_direct/USDT-BEP20 验证逻辑存在。', { blocking: false, severity: 'info' })
         : invalidCheck('repo', 'guest-payment-adapter-contract', '游客支付 adapter 契约不完整。'));
 
-    let readinessScript = '';
+    let packageScripts = {};
     try {
-        readinessScript = String(JSON.parse(read('package.json')).scripts['readiness:guest-shop'] || '').trim();
+        packageScripts = JSON.parse(read('package.json')).scripts || {};
     } catch (_) {
-        readinessScript = '';
+        packageScripts = {};
     }
+    const readinessScript = String(packageScripts['readiness:guest-shop'] || '').trim();
     checks.push(readinessScript === 'node -- scripts/guest-shop-readiness.js'
         ? buildCheck('repo', 'guest-readiness-npm-script', true, 'present', 'readiness:guest-shop 使用 node -- 转发参数，避免 Node 25 把闸门参数当成运行时选项。', { blocking: false, severity: 'info' })
         : invalidCheck('repo', 'guest-readiness-npm-script', 'package.json 的 readiness:guest-shop 必须是 node -- scripts/guest-shop-readiness.js。'));
+
+    const reconcileScript = String(packageScripts['reconcile:guest-shop'] || '').trim();
+    checks.push(reconcileScript === 'node -- scripts/guest-shop-reconcile.js'
+        ? buildCheck('repo', 'guest-reconcile-npm-script', true, 'present', 'reconcile:guest-shop 使用 node -- 转发参数。', { blocking: false, severity: 'info' })
+        : invalidCheck('repo', 'guest-reconcile-npm-script', 'package.json 的 reconcile:guest-shop 必须是 node -- scripts/guest-shop-reconcile.js。'));
+
+    const serverIndex = read('server/index.js');
+    checks.push(serverIndex.includes('startGuestShopAlertSweep()')
+        && serverIndex.includes("require('../api/_lib/guest-shop-alerts')")
+        ? buildCheck('repo', 'guest-shop-alert-sweep-wired', true, 'present', 'verify server 已接线独立游客告警 sweep。', { blocking: false, severity: 'info' })
+        : invalidCheck('repo', 'guest-shop-alert-sweep-wired', 'server/index.js 必须 import guest-shop-alerts 并调用 startGuestShopAlertSweep()。'));
 
     return checks;
 }
@@ -945,7 +961,17 @@ function inspectRunbook(repoRoot = REPO_ROOT) {
         ['dead-letter-alert', /dead[_ -]?letter|死信/i, 'dead-letter alert'],
         ['readiness-command', /readiness:guest-shop|guest-shop-readiness/i, 'readiness command'],
         ['readiness-strict-gate', /--fail-on-not-ready/i, 'strict readiness gate'],
-        ['deploy-enable-separation', /发布不等于启用|不得打开游客商品|关闭游客/i, 'deploy does not enable guest products']
+        ['deploy-enable-separation', /发布不等于启用|不得打开游客商品|关闭游客/i, 'deploy does not enable guest products'],
+        ['env-file-recreate', /docker compose up -d --no-deps --force-recreate --no-build verify-server/i, 'verify-server env_file recreate after secret changes'],
+        ['no-docker-restart-reload', /docker restart[\s\S]{0,80}(不会重读|不会重新读取|does not reread|will not reread)/i, 'docker restart does not reload env_file'],
+        ['stored-secret-preferred', /resolvePaymentProviderSecrets/i, 'payment stored secret preferred over env'],
+        ['paid-unfulfilled-10m', /paid_unfulfilled_count[\s\S]{0,80}10\s*分钟/i, 'paid-unfulfilled 10 minute alert'],
+        ['fulfillment-p95-p99', /P95\s*>\s*120[\s\S]{0,80}P99\s*>\s*300/i, 'fulfillment P95/P99 thresholds'],
+        ['refund-hanging', /refund_pending_age_seconds[\s\S]{0,80}30\s*分钟[\s\S]{0,80}2\s*小时/i, 'refund hanging alert'],
+        ['digital-goods-refund-policy', /数字商品退款与争议/i, 'digital goods refund policy'],
+        ['privacy-retention-deletion', /HMAC[\s\S]{0,200}财务[\s\S]{0,200}(不删|保留)/i, 'privacy retention and deletion'],
+        ['reconcile-command', /npm run reconcile:guest-shop/i, 'reconcile command'],
+        ['independent-guest-alerts', /api\/_lib\/guest-shop-alerts\.js[\s\S]{0,240}guest_shop_monitor[\s\S]{0,240}shop_order_delivery/i, 'independent guest-shop-alerts not merged into shop_order_delivery']
     ];
     return requirements.map(([key, pattern, label]) => pattern.test(source)
         ? buildCheck('docs', `runbook:${key}`, true, 'documented', `运行手册已说明 ${label}。`, { relative_path: relativePath, blocking: false, severity: 'info' })

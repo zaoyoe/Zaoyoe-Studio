@@ -24,6 +24,11 @@
 
 执行合同见 `docs/guest-purchase-task-2.0.md`。
 
+## 游客应付金额
+
+游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
+
+
 ## 上线前配置与 readiness
 
 生产环境必须配置独立的 `GUEST_SHOP_CLAIM_PEPPER`、
@@ -35,8 +40,9 @@
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-如需隔离数据用途，再配置独立的 `GUEST_SHOP_CONTACT_HASH_PEPPER` 和
-`GUEST_SHOP_REQUEST_HASH_PEPPER`。生产禁止内存限流，必须启用持久化限流并在目标
+生产还要配置独立的 `GUEST_SHOP_CONTACT_HASH_PEPPER` 和
+`GUEST_SHOP_REQUEST_HASH_PEPPER`，用于隔离联系方式哈希和请求指纹；同样不得复用
+claim pepper、`CRON_SECRET` 或 `SUPABASE_SERVICE_ROLE_KEY`。生产禁止内存限流，必须启用持久化限流并在目标
 Supabase 中确认 `take_rate_limit_tokens` RPC、权限和存储表可用。
 
 worker 只能使用专用 `GUEST_SHOP_WORKER_SECRET` 调用：
@@ -47,6 +53,27 @@ POST /api/shop/guest/worker
 
 建议由 cron/systemd 每分钟调用一次；禁止仅依赖通用 `CRON_SECRET`。调用 503、无运行记录、
 履约积压或 `dead_letter` 增长时立即告警并暂停扩大游客商品范围。
+
+游客支付 adapter 走 `resolvePaymentProviderSecrets`：优先读后台 stored secret，
+`.env` 里的 `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` 只是回退。KVM4 `.env` 没有这两项
+不等于支付密钥缺失；登录支付能跑是预期现象。不要为了“看起来齐套”把登录支付密钥
+复制进游客专用环境变量。
+
+### 改 `.env` 后必须重建 verify-server
+
+compose `env_file` 只在创建容器时加载。写入或轮换 `GUEST_SHOP_*` 后，先停
+watchdog，再执行：
+
+```bash
+cd /opt/zaoyoe-verify-server
+docker compose up -d --no-deps --force-recreate --no-build verify-server
+curl -fsS http://127.0.0.1:3001/healthz
+```
+
+`docker restart` 不会重读 `env_file`，容器会继续用旧密钥，worker 会 401/503。
+重建时不要 `--build`，也不要顺手 recreate 其他 worker。命令、journal 和聊天里
+都不要打印 secret。compact verify 镜像可能不含 `deploy/kvm4/guest-shop-worker/*`；
+那不是启动失败，host 安装器落地的 systemd unit 才是调度来源。
 
 ### KVM4 调度器安装（仅部署准备，不替代应用发布）
 
@@ -109,8 +136,40 @@ https://<受管域名>/api/shop/guest/webhooks/zpay
 https://<受管域名>/api/shop/guest/webhooks/nowpayments
 ```
 
-NOWPayments 游客网络固定为 `usdtbsc`。NOWPayments 退款暂按人工队列处理，核对收款地址、
+NOWPayments 游客网络固定为 `usdtbsc`。游客商品标价始终是人民币（复用积分价，1 积分 = 1 元），
+国内站和国际站结算币种都是 CNY。ZPay/易支付始终收人民币；NOWPayments 始终收 USDT-BEP20，
+下单时按登录用户充值同一套逻辑把人民币折成实时等额 USD quote 再转 USDT，不得把 USD quote
+当成订单结算币种。NOWPayments 退款暂按人工队列处理，核对收款地址、
 金额、交易哈希和出款凭证后再完成退款；不把自动退款视为已就绪。
+
+20260915 积分价 SQL 已在目标库执行；verify 1-7 PASS。第 8 项 `REVIEW` 只表示当前有 1 个商品
+开了 `allow_guest_purchase`，不是约束失败。内部测试最多保留这一个低价值、非共享、自动发货 SKU；
+不得据此公开上架，也不得再跑 20260913 / 20260914 / 20260915 迁移。
+
+20260916 / 20260917 / 20260918 / 20260919 已在目标库执行（verify 分别 3/3、4/4、6/6、6/6 PASS）。
+D3-01 已用官方 unlock + 本地 worker 履约到 delivered，不要重跑 20260913 / 20260914 /
+20260915 / 20260916 / 20260917 / 20260918 / 20260919。INTL create-order 闸门已解除，但不要
+据此立刻新开 NOWPayments 扣款；网络仍固定 `usdtbsc`，标价始终 CNY。已 delivered 订单禁止再
+手工改库存或批量重放死信。
+D3-04 已验证：同一已付款 ZPay 回调重放到 `/api/shop/guest/webhooks/zpay` 必须 200
+`duplicate: true`，不得新插事件、不得二次发货、不得改 `fulfilled_at`。伪造签名属于 D3-03，
+必须进 invalid-bucket 并拒绝，不得占用业务 event_key。
+D3-05 已验证：对已 delivered 订单补发签名正确但非终态（`WAIT_BUYER_PAY`）的乱序回调，必须 202
+`accepted: false`，写入 invalid-bucket rejected 事件，`final_status_verified=false`，不得
+`confirm_payment`，不得把 `delivered` / `consumed` / `sold` 划回。
+D3-06 已验证：对已 delivered 订单补发签名正确但少付（`money=0.00` vs expected `0.01`）的终态回调，必须 202
+`accepted: false`，`amount_verified=false`，不得改 `paid_amount`，不得回退 delivered。
+D3-07 已验证：对已 delivered 订单补发签名正确但多付（`money=1.00` vs expected `0.01`）的终态回调，必须 202
+`accepted: false`，`observed_amount=1`，`amount_verified=false`，不得改 `paid_amount`，不得回退 delivered。
+D3-20 已验证：游客已付回调打到充值入口 `/api/payments/zpay/webhook` 必须 503 `payment order not ready`，不得写
+`points_ledger`，不得改游客单；充值单回调打到 `/api/shop/guest/webhooks/zpay` 必须 202 `accepted: false`，
+invalid-bucket rejected，`payment_order_id=null`，不得 `confirm_payment`。本地 preview 需要独立文件
+`api/payments/zpay/webhook.js`，与 NOWPayments 入口同构。
+同一来源 IP 的 invalid-bucket 窗口为 5 分钟；窗口内不同异常 body 会 `event_key_body_conflict`，这仍是拒绝。金额或币种异常回调同样不得回退终态。
+D3-08 已收口：CN ZPay 结算币种由站点推导为 CNY，`parseGuestWebhook` 会覆盖 payload `currency`，binding 用 `expected.currency` 对比自身，`providerQuoteChecks` 对非 NOWPayments 恒为 valid。因此 CN 错币种记 `BLOCKED+ZPay currency is site-derived`，真实错币种放到 INTL NOWPayments 的 quote / `actually_paid_currency`。
+不要用「金额正确 + 只改 currency」重放已 delivered 订单。
+D3-02 已验证：未付款单到期后只能由官方 worker 调 `fn_guest_shop_release_expired_reservations` 释放
+`held` 预占；已 `consumed` / delivered 的 D3-01 不得被划回 available。worker 入口不接受 body。
 
 ## 日常指标与告警
 
@@ -120,6 +179,27 @@ NOWPayments 游客网络固定为 `usdtbsc`。NOWPayments 退款暂按人工队�
 - `reservation_expired_count`：15 分钟内超过 5 笔，检查释放 worker 和库存锁。
 - `refund_pending_age_seconds`：超过 30 分钟告警，超过 2 小时升级财务。
 - `dead_letter_count`：任意新增即告警，不得直接批量重放。
+
+游客现金订单告警由独立模块 `api/_lib/guest-shop-alerts.js` 产生，`source` 固定为 `guest_shop_monitor`。不得并入 `shop_order_delivery` 告警，也不要给 ops-alerts 增加新的 routing key 或 mute UI。阈值只使用环境变量和模块默认值，不写入 ops-alerts runtime config。即使 ops alerts 关闭，verify server 仍会计算指标并打日志。值班入口保持本手册，后台入口是 Admin Studio → 商城 → 游客异常订单。
+
+对账默认只核对本站记录：
+
+```bash
+npm run reconcile:guest-shop
+```
+
+该命令默认 `--local-only`。只有值班明确需要核对支付渠道时才加 `--query-provider`；provider 查询失败保持 review，不得自动确认发货。对账输出禁止包含卡密、`claim_secret_hash`、`recovery_code` 或回调原文。
+
+## 数字商品退款与争议
+
+- 游客现金购买的数字商品，若卡密、账号或兑换码尚未领取/展示，可申请原路退款。
+- 卡密一旦向用户展示，不自动退款；拒付或 chargeback 期间冻结订单，不得补发。
+- NOWPayments 退款暂按人工队列核对收款地址、金额、交易哈希和出款凭证。
+- 死信只允许单笔解锁，禁止批量重放。
+
+## 隐私、保留与删除
+
+游客现金购买只保存取货口令与联系方式的 HMAC 或哈希。财务、支付、退款与争议记录在争议处理期内不删除，并依法保留至义务届满。当前设备取货凭证使用 HttpOnly Cookie。告警、对账和后台列表都不得回显明文口令或卡密。
 
 ## 回调丢失或 provider 已付款、本地未确认
 

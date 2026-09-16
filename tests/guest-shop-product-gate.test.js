@@ -30,8 +30,12 @@ function makeProduct(overrides = {}) {
         name: 'Guest card',
         is_active: true,
         allow_guest_purchase: false,
-        guest_cash_price_cny: '12.34',
-        guest_cash_price_intl: '2.00',
+        quantity_rules: null,
+        quantity_rules_intl: null,
+        flash_sale_price: null,
+        flash_sale_price_intl: null,
+        flash_sale_end: null,
+        flash_sale_end_intl: null,
         delivery_type: 'KEY',
         manual_delivery: false,
         guest_payment_channels: ['zpay'],
@@ -46,8 +50,11 @@ function makeSku(overrides = {}) {
         sku_name: 'default',
         is_active: true,
         allow_guest_purchase: null,
-        guest_cash_price_cny: null,
-        guest_cash_price_intl: null,
+        price_points: 12.34,
+        price_points_intl: 20,
+        quantity_rules: null,
+        quantity_rules_intl: null,
+        is_default: true,
         manual_delivery: false,
         guest_payment_channels: null,
         ...overrides
@@ -169,7 +176,7 @@ test('inactive, missing, or manual-delivery catalog rows cannot be previewed or 
         { product: makeProduct({ allow_guest_purchase: true, delivery_type: 'MANUAL' }), sku: makeSku({ allow_guest_purchase: true }) },
         { product: makeProduct({ allow_guest_purchase: true, manual_delivery: true }), sku: makeSku({ allow_guest_purchase: true }) },
         { product: makeProduct({ allow_guest_purchase: true }), sku: makeSku({ allow_guest_purchase: true, manual_delivery: true }) },
-        { product: makeProduct({ allow_guest_purchase: true, guest_cash_price_cny: null }), sku: makeSku({ allow_guest_purchase: true, guest_cash_price_cny: null }) }
+        { product: makeProduct({ allow_guest_purchase: true }), sku: makeSku({ allow_guest_purchase: true, price_points: null }) }
     ];
     for (const catalog of blocked) {
         const { state, handlers } = createHandlers(catalog);
@@ -183,7 +190,6 @@ test('only an explicitly enabled sku can pass the guest product gate', async () 
         product: makeProduct({ allow_guest_purchase: false }),
         sku: makeSku({
             allow_guest_purchase: true,
-            guest_cash_price_cny: '12.34',
             guest_payment_channels: ['zpay']
         })
     });
@@ -193,5 +199,55 @@ test('only an explicitly enabled sku can pass the guest product gate', async () 
     assert.equal(res.payload.success, true);
     assert.equal(res.payload.price.amount, 12.34);
     assert.equal(res.payload.price.currency, 'CNY');
+    assert.equal(res.payload.payment_providers.zpay.surcharge_rate, 0.01);
+    assert.equal(res.payload.payment_providers.nowpayments.surcharge_rate, 0.01);
+    assert.equal(state.rpcCalls.length, 0);
+});
+
+test('intl guest preview settles the credit price in CNY', async () => {
+    const { state, handlers } = createHandlers({
+        product: makeProduct({ allow_guest_purchase: true }),
+        sku: makeSku({
+            allow_guest_purchase: true,
+            guest_payment_channels: ['nowpayments']
+        })
+    });
+    const res = createResponse();
+    await handlers.preview({
+        method: 'GET',
+        headers: { 'user-agent': 'guest-test' },
+        query: { site: 'intl', productId: PRODUCT_ID, skuId: SKU_ID }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    assert.equal(res.payload.price.amount, 20);
+    assert.equal(res.payload.price.currency, 'CNY');
+    assert.equal(res.payload.payment_providers.zpay.surcharge_rate, 0.01);
+    assert.equal(res.payload.payment_providers.nowpayments.surcharge_rate, 0.01);
+    assert.equal(state.rpcCalls.length, 0);
+});
+
+test('intl guest preview reuses CN credit price when intl points are null', async () => {
+    const { state, handlers } = createHandlers({
+        product: makeProduct({ allow_guest_purchase: true }),
+        sku: makeSku({
+            allow_guest_purchase: true,
+            price_points: 0.01,
+            price_points_intl: null,
+            guest_payment_channels: ['nowpayments']
+        })
+    });
+    const res = createResponse();
+    await handlers.preview({
+        method: 'GET',
+        headers: { 'user-agent': 'guest-test' },
+        query: { site: 'intl', productId: PRODUCT_ID, skuId: SKU_ID }
+    }, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    assert.equal(res.payload.price.amount, 0.01);
+    assert.equal(res.payload.price.currency, 'CNY');
+    assert.equal(res.payload.payment_providers.zpay.surcharge_rate, 0.01);
+    assert.equal(res.payload.payment_providers.nowpayments.surcharge_rate, 0.01);
     assert.equal(state.rpcCalls.length, 0);
 });

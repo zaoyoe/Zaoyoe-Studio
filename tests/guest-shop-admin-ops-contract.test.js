@@ -127,6 +127,11 @@ test('queue_refund is eligible for confirmed or paid_unfulfillable orders and fi
     assert.match(queue, /refund_status\s*=\s*'pending'/i);
     assert.match(queue, /previous_refund_status/i);
     assert.doesNotMatch(queue, /RETURNS TABLE[\s\S]*(content|claim_secret|recovery_code)/i);
+    assert.match(
+        queue,
+        /WHEN\s+v_order\.refund_status\s+IN\s*\(\s*'pending'\s*,\s*'failed'\s*\)/i
+    );
+    assert.doesNotMatch(queue, /WHEN\s+refund_status\s+IN\s*\(\s*'pending'\s*,\s*'failed'\s*\)/i);
 });
 
 test('unlock_dead_letter is single-order, requires no active lease, and clears worker dead-letter metadata', () => {
@@ -146,6 +151,12 @@ test('unlock_dead_letter is single-order, requires no active lease, and clears w
     assert.match(unlock, /THEN\s+'failed'/i);
     assert.doesNotMatch(unlock, /THEN\s+'dead_letter'/i);
     assert.doesNotMatch(unlock, /RETURNS TABLE[\s\S]*(content|claim_secret|recovery_code)/i);
+    assert.match(
+        unlock,
+        /WHEN\s+v_order\.fulfillment_status\s*=\s*'dead_letter'\s+THEN\s+'failed'/i
+    );
+    assert.match(unlock, /ELSE\s+v_order\.fulfillment_status/i);
+    assert.doesNotMatch(unlock, /WHEN\s+fulfillment_status\s*=\s*'dead_letter'/i);
 });
 
 test('manual_fulfill rebinds the unique reservation with SKIP LOCKED and never returns secrets', () => {
@@ -159,7 +170,7 @@ test('manual_fulfill rebinds the unique reservation with SKIP LOCKED and never r
     assert.match(manual, /snapshot_sku_manual_delivery|snapshot_manual_delivery/i);
     assert.match(manual, /COALESCE\s*\(\s*i\.is_shared\s*,\s*false\s*\)\s*=\s*false/i);
     assert.match(manual, /status\s*=\s*'sold'/i);
-    assert.match(manual, /UPDATE\s+public\.guest_shop_inventory_reservations\s+SET\s+inventory_id/i);
+    assert.match(manual, /UPDATE\s+public\.guest_shop_inventory_reservations(?:\s+(?:AS\s+)?r)?\s+SET\s+inventory_id/i);
     assert.match(manual, /previous_inventory_id/i);
     assert.doesNotMatch(manual, /INSERT\s+INTO\s+public\.guest_shop_inventory_reservations/i);
     assert.doesNotMatch(manual, /RETURNS TABLE[\s\S]*(content|claim_secret|recovery_code)/i);
