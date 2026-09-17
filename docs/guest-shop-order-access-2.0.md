@@ -433,9 +433,17 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
 入口：
 
 - `shop.html` 游客弹窗里现有的「找回订单」按钮 → 改为跳转 `/guest-orders.html`；
-  **删除**弹窗内 `guestCashRecoveryPanel`（订单号 + 取货口令）与
-  `guestCashRecoveryCodePanel`（口令一次性展示）两个 section，
-  同步修改契约测试第 21 行附近对这两个 id 的断言。
+  **删除**弹窗内 `guestCashRecoveryPanel`（`shop.html:767`，订单号 + 取货口令）与
+  `guestCashRecoveryCodePanel`（`shop.html:758`，口令一次性展示）两个 section，
+  并清理 `js/guest-shop-client.js` 的 `showRecoveryCode` / `resetOrderUi({preserveRecovery})` /
+  `guestCashRecoveryOrderNo` / `guestCashRecoveryCodeInput` 相关分支（`:979-1008`、`:1118-1139`）。
+- **必须同步修改契约测试**：`tests/guest-shop-frontend-contract.test.js:59-60` 现在
+  **断言这两个 panel id 必须存在**，删除 UI 会让这两条断言失败。改为断言新入口
+  （`guest-orders.html` 链接存在、两个 panel id 不再出现）。
+- 命名注意：现有前端用的是 `recovery_code`（不是 `claim_secret`）；契约测试第 58 行禁止
+  guest 脚本出现 `X-Guest-Claim-Secret|claimSecret|claim_secret`，第 57 行禁止
+  `Authorization\s*:`（大小写不敏感）。新文件 `js/guest-orders-client.js` 必须同样满足这两条，
+  这是 §7.1 选用 `X-Guest-Order-Credential` 而非 `Authorization: Guest` 的直接原因。
 - 页脚/帮助区加「游客订单查询」链接。
 
 ### 11.3 下单表单新增字段（文案定稿）
