@@ -441,6 +441,61 @@ test('buyer credential switches default off so A0 is behaviour neutral', () => {
     assert.equal(enabled.length, 0);
 });
 
+test('A1b upsert migration static assertions pass on the real file and fail closed on a tampered one', () => {
+    // Positive: the committed A1b RPC satisfies every requirement and trips no
+    // prohibition, so the gate stays green while the feature is off (the
+    // migration is behaviour-neutral until GUEST_SHOP_BUYER_CREDENTIAL_ENABLED).
+    const real = inspectBuyerCredentials({}, false, REPO_ROOT);
+    const a1b = real.filter((check) => check.key.startsWith('upsert-migration:') || check.key.startsWith('upsert-verify:'));
+    assert.ok(a1b.length >= 28, `expected the full A1b assertion set, got ${a1b.length}`);
+    assert.equal(a1b.some((check) => check.ok === false), false, JSON.stringify(a1b.filter((check) => !check.ok)));
+    assert.equal(real.find((check) => check.key === 'upsert-migration-file').ok, true);
+
+    // Negative: a rewrite that drops the contact advisory lock and overwrites an
+    // existing group's password (ON CONFLICT ... DO UPDATE) is the N2
+    // card-secret-cross-leak primitive. The static gate must catch it on disk,
+    // before it can ever be applied to a database.
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-a1b-'));
+    try {
+        const migDir = path.join(tempRoot, 'supabase', 'migrations');
+        fs.mkdirSync(migDir, { recursive: true });
+        // Keep A0 green so every failure below is isolated to A1b.
+        for (const file of ['20260920_guest_shop_buyer_credentials.sql', '20260920_verify_guest_shop_buyer_credentials.sql']) {
+            fs.copyFileSync(path.join(REPO_ROOT, 'supabase', 'migrations', file), path.join(migDir, file));
+        }
+        fs.copyFileSync(
+            path.join(REPO_ROOT, 'supabase', 'migrations', '20260921_verify_guest_shop_buyer_group_upsert.sql'),
+            path.join(migDir, '20260921_verify_guest_shop_buyer_group_upsert.sql')
+        );
+        const tampered = [
+            'CREATE OR REPLACE FUNCTION public.fn_guest_shop_upsert_buyer_group(',
+            '    p_site TEXT, p_contact_hash TEXT)',
+            'RETURNS TABLE (buyer_id UUID, credential_group_no SMALLINT, allocation TEXT)',
+            'LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$',
+            'BEGIN',
+            '    INSERT INTO public.guest_shop_buyers (site, contact_hash) VALUES (p_site, p_contact_hash)',
+            '    ON CONFLICT ON CONSTRAINT guest_shop_buyers_site_contact_group_uniq DO UPDATE SET password_hash = EXCLUDED.password_hash;',
+            '    RETURN;',
+            'END; $$;',
+            'REVOKE ALL ON FUNCTION public.fn_guest_shop_upsert_buyer_group(TEXT, TEXT, SMALLINT, TEXT, INTEGER, INTEGER, BOOLEAN) FROM PUBLIC, anon, authenticated;',
+            'GRANT EXECUTE ON FUNCTION public.fn_guest_shop_upsert_buyer_group(TEXT, TEXT, SMALLINT, TEXT, INTEGER, INTEGER, BOOLEAN) TO service_role;'
+        ].join('\n');
+        fs.writeFileSync(path.join(migDir, '20260921_guest_shop_buyer_group_upsert.sql'), tampered, 'utf8');
+
+        const out = inspectBuyerCredentials({}, false, tempRoot);
+        const byKey = new Map(out.map((check) => [check.key, check]));
+        assert.equal(byKey.get('upsert-migration:upsert-advisory-lock').ok, false, 'a missing advisory lock must fail');
+        assert.equal(byKey.get('upsert-migration:upsert-no-do-update').ok, false, 'an ON CONFLICT DO UPDATE must fail (N2)');
+        assert.equal(byKey.get('upsert-migration:upsert-conflict-token').ok, false, 'a missing named 409 token must fail');
+        assert.equal(byKey.get('upsert-migration:upsert-registered-match-record-only').ok, false, 'a missing record-only guard must fail');
+        // A0 stayed green: the gate pinpoints A1b rather than failing wholesale.
+        assert.equal(byKey.get('migration-file').ok, true);
+        assert.equal(out.some((check) => check.key.startsWith('migration:') && check.ok === false), false);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
 test('enabling buyer credentials fails closed without a dedicated contact pepper', () => {
     const missing = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true' }, true, REPO_ROOT);
     assert.equal(hasFinding({ checks: missing, findings: missing.filter((c) => !c.ok) }, 'contact-pepper-required'), true);

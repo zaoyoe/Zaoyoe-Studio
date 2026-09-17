@@ -142,6 +142,59 @@ const BUYER_CREDENTIAL_VERIFY_PROHIBITIONS = Object.freeze([
     ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'verify 脚本必须是只读的（不得出现写操作语句）']
 ]);
 
+// ---------------------------------------------------------------------------
+// Order Access 2.0 (A1b): the atomic credential-group allocation RPC. Like A0,
+// the readiness gate never connects to a database, so the migration file on
+// disk is the only thing it can prove statically; the paired verify script
+// stays a manual operator step against the target Supabase. A1b is additive:
+// it creates one SECURITY DEFINER function and writes nothing else, so the
+// prohibitions below are the "a function migration must not reshape schema or
+// flip a switch" guards from AGENTS.md.
+// ---------------------------------------------------------------------------
+const BUYER_GROUP_UPSERT_MIGRATION = 'supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql';
+const BUYER_GROUP_UPSERT_VERIFY_MIGRATION = 'supabase/migrations/20260921_verify_guest_shop_buyer_group_upsert.sql';
+
+const BUYER_GROUP_UPSERT_MIGRATION_REQUIREMENTS = Object.freeze([
+    ['upsert-fn-created', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_upsert_buyer_group\(/u, 'fn_guest_shop_upsert_buyer_group 建函数'],
+    ['upsert-security-definer', /SECURITY DEFINER/u, '函数声明为 SECURITY DEFINER'],
+    ['upsert-search-path-pinned', /SET search_path = public, pg_temp/u, '固定 search_path 防止对象劫持'],
+    ['upsert-advisory-lock', /pg_advisory_xact_lock\(hashtextextended\(/u, '按 (site, contact_hash) 取事务级 advisory lock 串行化分配'],
+    ['upsert-site-invalid-token', /guest_buyer_site_invalid/u, 'site 非法的命名错误令牌'],
+    ['upsert-contact-required-token', /guest_buyer_contact_required/u, 'contact_hash 缺失/非法的命名错误令牌'],
+    ['upsert-password-malformed-token', /guest_buyer_password_malformed/u, 'password_hash 格式非法的命名错误令牌'],
+    ['upsert-password-required-token', /guest_buyer_password_required/u, '新建/回收分组缺少 password_hash 的命名错误令牌'],
+    ['upsert-conflict-token', /guest_buyer_credential_conflict/u, '分组达上限的命名 409 令牌'],
+    ['upsert-on-conflict-constraint', /ON CONFLICT ON CONSTRAINT guest_shop_buyers_site_contact_group_uniq DO NOTHING/u, '按约束名 ON CONFLICT DO NOTHING（避免列表达式歧义）'],
+    ['upsert-registered-match-record-only', /registered_user_match = COALESCE\(p_registered_user_match, false\)/u, 'registered_user_match 仅记录、默认 false（§10.1 反价格歧视）'],
+    ['upsert-revoke-public', /REVOKE ALL ON FUNCTION public\.fn_guest_shop_upsert_buyer_group\(TEXT, TEXT, SMALLINT, TEXT, INTEGER, INTEGER, BOOLEAN\) FROM PUBLIC, anon, authenticated/u, 'upsert 函数对 anon/authenticated 撤权'],
+    ['upsert-grant-service-role', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_upsert_buyer_group\(TEXT, TEXT, SMALLINT, TEXT, INTEGER, INTEGER, BOOLEAN\) TO service_role/u, 'upsert 函数仅授予 service_role EXECUTE']
+]);
+
+const BUYER_GROUP_UPSERT_MIGRATION_PROHIBITIONS = Object.freeze([
+    ['upsert-no-do-update', /ON CONFLICT[^;]*DO UPDATE/iu, 'upsert 不得用 DO UPDATE 覆写既有分组密码（N2 防卡密串读）'],
+    ['upsert-no-create-table', /CREATE TABLE/iu, 'A1b 为纯函数迁移，不得建表'],
+    ['upsert-no-alter-table', /ALTER TABLE/iu, 'A1b 不得改表（A0 已建好结构）'],
+    ['upsert-no-drop-table', /DROP TABLE/iu, 'A1b 不得删表'],
+    ['upsert-no-guest-product-enablement', /allow_guest_purchase\s*=\s*true/iu, '迁移不得打开游客商品开关'],
+    ['upsert-no-product-update', /UPDATE\s+public\.shop_products/iu, '迁移不得 UPDATE shop_products'],
+    ['upsert-no-sku-update', /UPDATE\s+public\.shop_product_skus/iu, '迁移不得 UPDATE shop_product_skus'],
+    ['upsert-no-order-backfill', /UPDATE\s+public\.guest_shop_orders/iu, '迁移不得回填历史订单 buyer_id'],
+    ['upsert-no-scheduled-job', /pg_cron|cron\.schedule/iu, '迁移不得创建清理定时任务']
+]);
+
+const BUYER_GROUP_UPSERT_VERIFY_REQUIREMENTS = Object.freeze([
+    ['verify-upsert-fn-present', /upsert_fn_present_and_unique/u, 'verify 检查 upsert 函数存在且唯一重载'],
+    ['verify-upsert-signature', /upsert_fn_signature/u, 'verify 检查 upsert 函数签名/参数名/返回列'],
+    ['verify-upsert-security-posture', /upsert_fn_security_posture/u, 'verify 检查 SECURITY DEFINER / search_path / 非 IMMUTABLE'],
+    ['verify-upsert-grants', /upsert_fn_grants/u, 'verify 检查仅 service_role 可 EXECUTE'],
+    ['verify-upsert-body-guarantees', /upsert_fn_body_guarantees/u, 'verify 检查 advisory lock / 命名错误 / DO NOTHING / record-only 不变量'],
+    ['verify-a1b-additive', /a1b_is_additive/u, 'verify 检查 A1b 未改动 A0 结构（纯增量）']
+]);
+
+const BUYER_GROUP_UPSERT_VERIFY_PROHIBITIONS = Object.freeze([
+    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'A1b verify 脚本必须是只读的（不得出现写操作语句）']
+]);
+
 const BUYER_CREDENTIAL_FRONTEND_FILES = Object.freeze([
     'guest-orders.html',
     'js/guest-orders-client.js'
@@ -786,6 +839,78 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
                 }));
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Order Access 2.0 (A1b): atomic credential-group allocation RPC. Same
+    // contract as A0 — prove statically what the file on disk can prove, and
+    // turn the rest into an explicit operator step against the paired verify
+    // script. These run regardless of the enable switch: a malformed migration
+    // on disk is a release blocker even while the feature stays off.
+    // -----------------------------------------------------------------------
+    const rawUpsert = read(BUYER_GROUP_UPSERT_MIGRATION);
+    const rawUpsertVerify = read(BUYER_GROUP_UPSERT_VERIFY_MIGRATION);
+    const upsert = stripSqlComments(rawUpsert);
+    const upsertVerify = stripSqlComments(rawUpsertVerify);
+
+    if (!rawUpsert) {
+        checks.push(invalidCheck('buyer_credentials', 'upsert-migration-file', `${BUYER_GROUP_UPSERT_MIGRATION} 缺失；凭证分组无法原子分配，启用凭证链路后会退化为有竞态的多次往返。`, {
+            relative_path: BUYER_GROUP_UPSERT_MIGRATION
+        }));
+    } else {
+        checks.push(buildCheck('buyer_credentials', 'upsert-migration-file', true, 'present', `${BUYER_GROUP_UPSERT_MIGRATION} 已存在。`, {
+            relative_path: BUYER_GROUP_UPSERT_MIGRATION,
+            blocking: false,
+            severity: 'info'
+        }));
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_MIGRATION_REQUIREMENTS) {
+            checks.push(pattern.test(upsert)
+                ? buildCheck('buyer_credentials', `upsert-migration:${key}`, true, 'present', `A1b 迁移已包含${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `upsert-migration:${key}`, `A1b 迁移缺少${label}。`, { relative_path: BUYER_GROUP_UPSERT_MIGRATION }));
+        }
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_MIGRATION_PROHIBITIONS) {
+            checks.push(pattern.test(upsert)
+                ? invalidCheck('buyer_credentials', `upsert-migration:${key}`, `A1b 迁移违反约束：${label}。`, { relative_path: BUYER_GROUP_UPSERT_MIGRATION })
+                : buildCheck('buyer_credentials', `upsert-migration:${key}`, true, 'absent', `A1b 迁移未违反约束：${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    if (!rawUpsertVerify) {
+        checks.push(invalidCheck('buyer_credentials', 'upsert-verify-migration-file', `${BUYER_GROUP_UPSERT_VERIFY_MIGRATION} 缺失；无法在目标库验证 A1b upsert 函数。`, {
+            relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_VERIFY_REQUIREMENTS) {
+            checks.push(pattern.test(upsertVerify)
+                ? buildCheck('buyer_credentials', `upsert-verify:${key}`, true, 'present', `A1b verify 脚本已包含${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `upsert-verify:${key}`, `A1b verify 脚本缺少${label}。`, { relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION }));
+        }
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_VERIFY_PROHIBITIONS) {
+            checks.push(pattern.test(upsertVerify)
+                ? invalidCheck('buyer_credentials', `upsert-verify:${key}`, `A1b verify 脚本违反约束：${label}。`, { relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION })
+                : buildCheck('buyer_credentials', `upsert-verify:${key}`, true, 'absent', `A1b verify 脚本未违反约束：${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    checks.push(manualCheck('buyer_credentials', 'upsert-schema-applied', `必须在目标 Supabase 中、于 ${BUYER_CREDENTIAL_MIGRATION} 之后执行 ${BUYER_GROUP_UPSERT_MIGRATION}，并运行 ${BUYER_GROUP_UPSERT_VERIFY_MIGRATION} 确认 6 项检查全部 PASS（函数唯一重载、签名、SECURITY DEFINER/search_path、仅 service_role 可执行、body 不变量、A1b 纯增量）。本脚本不连接数据库。`, {
+        relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION,
+        severity: credential.value ? 'critical' : 'high'
+    }));
 
     checks.push(manualCheck('buyer_credentials', 'database-schema-applied', `必须在目标 Supabase 中执行 ${BUYER_CREDENTIAL_MIGRATION}，并运行 ${BUYER_CREDENTIAL_VERIFY_MIGRATION} 确认 11 项检查全部 PASS（含 RLS 收口、13 参数 RPC 签名、旧 12 参数签名已消失）。本脚本不连接数据库。`, {
         relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION,
