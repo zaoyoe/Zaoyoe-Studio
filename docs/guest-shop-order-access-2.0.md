@@ -163,10 +163,19 @@ CREATE TABLE IF NOT EXISTS public.guest_shop_buyers (
     CONSTRAINT guest_shop_buyers_attempts     CHECK (failed_login_count >= 0 AND failed_login_count <= 1000),
     CONSTRAINT guest_shop_buyers_stage        CHECK (login_lock_stage BETWEEN 0 AND 3),
     CONSTRAINT guest_shop_buyers_orders_count CHECK (order_count >= 0),
-    CONSTRAINT guest_shop_buyers_site_contact_uniq UNIQUE (site, contact_hash)
+    credential_group_no   SMALLINT     NOT NULL DEFAULT 1,   -- 同邮箱的第几套查询密码（§6.4）
+    CONSTRAINT guest_shop_buyers_group_range  CHECK (credential_group_no BETWEEN 1 AND 3),
+    -- 注意：不是 UNIQUE(site, contact_hash)。同一邮箱允许存在多套互不可见的凭证分组，
+    -- 见 §6.4「凭证分组模型」。UNIQUE 落在 (site, contact_hash, credential_group_no)。
+    CONSTRAINT guest_shop_buyers_site_contact_group_uniq
+        UNIQUE (site, contact_hash, credential_group_no)
 );
 CREATE INDEX IF NOT EXISTS guest_shop_buyers_locked_idx ON public.guest_shop_buyers (locked_until)
     WHERE locked_until IS NOT NULL;
+-- 登录查找：按邮箱哈希取出该邮箱下的全部分组（≤3 行），逐行 scrypt 校验，命中即停
+CREATE INDEX IF NOT EXISTS guest_shop_buyers_contact_idx
+    ON public.guest_shop_buyers (site, contact_hash);
+-- 配额计数走 guest_shop_orders.buyer_contact_hash（已存在的列），不需要 join 本表
 ```
 
 ### 5.2 `guest_shop_orders` 增列
@@ -192,10 +201,11 @@ CREATE TABLE IF NOT EXISTS public.guest_shop_access_attempts (
     buyer_id     UUID,
     request_ip_hash   TEXT NOT NULL,
     request_device_hash TEXT,
-    outcome      VARCHAR(24) NOT NULL, -- success / bad_password / unknown_email / locked / captcha_required / rate_limited
+    outcome      VARCHAR(24) NOT NULL, -- success / bad_password / unknown_email / locked / captcha_required / rate_limited / credential_conflict
     created_at   TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT guest_shop_access_attempts_outcome_check CHECK (outcome IN
-        ('success','bad_password','unknown_email','locked','captcha_required','rate_limited'))
+        ('success','bad_password','unknown_email','locked','captcha_required','rate_limited',
+         'credential_conflict'))
 );
 CREATE INDEX IF NOT EXISTS guest_shop_access_attempts_ip_idx
     ON public.guest_shop_access_attempts (request_ip_hash, created_at DESC);
@@ -241,6 +251,86 @@ CREATE INDEX IF NOT EXISTS guest_shop_access_attempts_contact_idx
 - `GUEST_SHOP_CONTACT_HASH_PEPPER` 缺失 → **fail-closed**：拒绝创建游客订单、拒绝查询，
   返回 503 `guest_shop_misconfigured`，**绝不降级为明文或无哈希**（对齐独角的 panic 语义）。
 - readiness 脚本新增检查项（§15）。
+
+---
+
+### 6.4 同邮箱重复下单：凭证分组模型（**防抢占 / 防卡密串号，2.0 的第二个承重墙**）
+
+这是 2.0 最容易写错、且错了会**直接丢卡密**的一处。必须显式定义语义。
+
+#### 6.4.1 两个必须同时成立的诉求
+
+| # | 诉求 | 天真实现的后果 |
+|---|---|---|
+| N1 | 用户忘了查询密码，**仍然必须能下新单**（不能因为记不住密码就买不了东西） | 「密码不匹配就拒单」会在 OTP（A4）上线前形成**硬性购买墙**，直接损失成交 |
+| N2 | 后下单的人**绝不能读到先下单的人的订单和卡密** | 「同邮箱就 upsert 覆盖 `password_hash`」会让攻击者用受害者邮箱下一次单，**接管受害者全部历史订单与卡密** |
+
+> **N2 是真实的资损路径**，不是理论风险：卡密 = 货。覆盖密码 = 把货交给别人。
+> 独角因为把密码存在**每张订单**上（`orders.guest_password`），天然不存在跨订单串号，
+> 但代价是改密要全表更新、同邮箱不同订单可以有不同密码。我们在 D1 选择了归一化，
+> 就必须自己把 N2 补回来。
+
+#### 6.4.2 解法：一个邮箱可以有 ≤3 套互不可见的「凭证分组」
+
+```
+guest_shop_buyers
+  ├─ (site, contact_hash=H(alice@x), group=1)  password_hash=scrypt(P_a)   ← Alice 第一次设的密码
+  └─ (site, contact_hash=H(alice@x), group=2)  password_hash=scrypt(P_b)   ← Alice 忘了 P_a，新设的
+
+guest_shop_orders
+  ├─ 订单 #1001  buyer_id → group=1   （只能用 P_a 查）
+  ├─ 订单 #1002  buyer_id → group=1   （只能用 P_a 查）
+  └─ 订单 #1003  buyer_id → group=2   （只能用 P_b 查）
+```
+
+**下单时的 upsert 语义（A1 必须严格照此实现）：**
+
+1. 按 `(site, contact_hash)` 取出该邮箱的全部分组（≤3 行）。
+2. **无分组** → 建 `group=1`，写入 scrypt 哈希，订单挂到它。
+3. **有分组，且提交的密码能验证通过其中某一行** → 视为**同一人复购**，订单挂到该 `buyer_id`。
+   （这是常态路径：同设备下单时前端会从 sessionStorage 预填密码，用户无感。）
+4. **有分组，但没有任何一行验证通过** → **绝不覆盖任何现有行**；新建 `group = max+1`，
+   订单挂到新分组。旧订单仍然只有旧密码能查。
+5. **分组数已达 3** → 拒绝下单，文案见 §6.4.4，引导走「忘记查询密码」/ 客服。
+   这一步同时是**抢占攻击的成本上限**：攻击者最多给一个邮箱制造 3 个无用分组。
+
+**登录（查询）时的语义：**
+
+1. 按 `(site, contact_hash)` 取全部分组；若该邮箱处于锁定期（§8.1）→ 直接拒，**不跑 scrypt**。
+2. 逐行 `crypto.timingSafeEqual` 校验，**命中即停**；全部不中 → 记一次失败。
+3. 命中后，返回的订单集合**只包含 `buyer_id = 命中分组` 的订单**。跨分组不可见，
+   即使它们来自同一个邮箱。这条要有专门的越权测试（§16.1）。
+
+#### 6.4.3 为什么这样同时满足 N1 和 N2
+
+| | 结果 |
+|---|---|
+| N1 忘密码仍能买 | 满足：走第 4 步新建分组，**不需要 OTP、不需要客服、不阻断成交** |
+| N2 不串号 | 满足：永不覆盖，攻击者用受害者邮箱下单只会得到**一个只含他自己订单的新分组** |
+| 抢占攻击 | 失效：攻击者既读不到受害者订单，也无法让受害者读不到自己的订单 |
+| 卡密资损 | 无新增路径 |
+| 代价 | 登录最坏情况跑 ≤3 次 scrypt（≈150~300ms）；`order_count` 等统计需按 `contact_hash` 聚合而非按行 |
+
+#### 6.4.4 文案定稿
+
+- 分组已满（第 5 步）：
+  `该邮箱已设置过 3 套查询密码，为保护订单安全无法再新增。请用原查询密码登录，或点击「忘记查询密码」。`
+- 下单页密码框下方常驻提示（与 §11.3 合并展示，不额外占行）：
+  `再次购买时请填写上次设置的查询密码；如果忘记了，直接设置一个新密码即可，原订单仍用原密码查询。`
+
+> 第二条提示很重要：它把「分组」这个内部概念翻译成了用户能理解的因果，
+> 否则用户第二次下单换了密码、回头查不到第一单，会当成 bug 报客服。
+
+#### 6.4.5 与配额的关系（**关键，修订 §14**）
+
+分组模型让「换密码重置配额」成为可能——攻击者可以不停新建分组来刷新身份。
+因此**促销配额的计数口径必须是 `contact_hash`（跨该邮箱全部分组求并集），而不是 `buyer_id`**：
+
+- **访问控制**用 `buyer_id`（单分组，严格隔离，防串号）。
+- **配额计数**用 `guest_shop_orders.buyer_contact_hash`（跨分组并集，防轮换刷额度）。
+
+两者职责分离，缺一不可。`guest_shop_orders.buyer_contact_hash` 是已存在的列
+（`supabase/migrations/20260913_add_guest_shop_cash_purchase.sql:130`），计数**不需要 join** `guest_shop_buyers`。
 
 ---
 
@@ -338,10 +428,18 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
 | 限流 | 429 | `guest_rate_limited` | 操作过于频繁，请稍后再试 |
 | 订单不属于该凭证 | 404 | `guest_order_not_found` | 未找到该订单 |
 | 配置缺失 | 503 | `guest_shop_misconfigured` | 服务暂不可用，请联系客服 |
+| 下单时该邮箱凭证分组已满（§6.4.2 第 5 步） | 409 | `guest_buyer_credential_conflict` | 该邮箱已设置过 3 套查询密码，为保护订单安全无法再新增 |
 
 **关键**：`guest_order_credentials_invalid` 覆盖三种不同内部原因，
 内部原因只写审计表（`outcome` 字段区分），**绝不出现在响应体、响应头、日志里**。
 这一点现有 `loadOrderByNo` 已经做对了（`guest-shop.js:1653` 注释），2.0 沿用。
+
+> **唯一一处刻意的信息泄露**：`guest_buyer_credential_conflict` 会让攻击者得知
+> 「该邮箱在本站下过单且已用满 3 套密码」。这是 §6.4 在「防卡密串号」与「防枚举」之间
+> 的显式取舍——前者是资损，后者只是情报，**资损优先**。
+> 缓解：该错误只在**下单**路径出现（已要求填完整订单表单 + 通过商品级风控），
+> 且计入 §8.1 的 IP 限流；查询路径**永不**返回它。
+> `guest_shop_access_attempts.outcome` 需相应增加 `credential_conflict` 取值（§5.3 CHECK 同步）。
 
 ### 9.2 订单详情/卡密的越权
 
@@ -489,6 +587,9 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
   （无法自定义 header）时可用会话 cookie；③ **与促销方案的服务端会话合流成同一套设施**，
   不重复造轮子。
 - 会话丢失只是回到「重新输入邮箱密码」，**不会放松任何配额**（促销方案 §7.1 已确立的原则）。
+- **cookie 载荷里的 `buyer_id` 就是命中的那个凭证分组**，因此会话通道天然继承 §6.4.2 的分组隔离：
+  持有 group=2 会话的客户端**无法**读取 group=1 的订单或卡密。
+  实现时严禁把 cookie 载荷退化成 `contact_hash`（那会跨分组放行，等于把 §6.4 的防串号打穿）。
 
 ---
 
@@ -535,29 +636,45 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
 
 | 因子 | 促销方案 §7.2 原评级 | 2.0 之后的评级 | 原因 |
 |---|---|---|---|
-| `guest_session_hash` | 中（清 cookie 即失效） | 中 | 不变 |
-| `buyer_contact_hash` | ~~高（真实身份）~~ → 可伪造 | **中-高（凭证保护）** | 攻击者要复用同一邮箱，必须知道该邮箱的查询密码；批量薅羊毛需要**逐个记住/管理**邮箱+密码对，成本从 0 变成真实的簿记负担 |
-| `request_device_hash` | 低（仅 UA） | 低 | 不变 |
-| `request_ip_hash` | 低（NAT） | 低 | 不变 |
+| `buyer_contact_hash` | ~~高（真实身份）~~ → 可伪造 | **高（主判据）** | 2.0 之后邮箱是**下单必填**且有密码保护；配额按 `contact_hash` **跨该邮箱全部凭证分组求并集**（§6.4.5），所以「换密码 / 新建分组」**无法重置配额** |
+| `guest_session_hash` | 中（清 cookie 即失效） | 中（兜底） | 不变；覆盖未走凭证链路的降级下单 |
+| `request_ip_hash` | 低（NAT） | 低（粗防洪兜底） | 不变 |
+| `request_device_hash` | 低（仅 UA） | **移除** | 仅由 UA 派生，误伤 NAT / 同型号用户的代价高于防薅收益；独角的游客风控键同样只有 IP（促销方案 §21.2） |
+
+> **注意 `buyer_id` 不是配额因子。** 它只用于**访问控制**（§6.4.2：命中哪个分组就只能看哪个分组的订单）。
+> 若误用 `buyer_id` 计数，攻击者新建一个凭证分组即可刷新额度——这是 §6.4.5 专门防的坑。
 
 **更重要的结构性变化**：`guest_shop_buyers.id` 是一个**跨会话、跨设备、用户主动维护**的稳定主键。
 促销配额可以直接按 `buyer_id` 计数，不再依赖四因子并集的模糊匹配：
 
 ```sql
--- 促销配额计数谓词（2.0 修订版，取代 §7.2 的四因子 OR）
+-- 促销配额计数谓词（2.0 修订版，取代促销方案 §7.2 的四因子 OR）
+-- 三个因子各自独立设阈值，不做单一全局阈值，避免 NAT 误伤（详见促销方案 §7.2 阈值表）
 SELECT COUNT(*) FROM guest_shop_orders o
 WHERE o.discount_code IS NOT NULL
   AND o.payment_status NOT IN ('expired','failed','amount_mismatch','chargeback','refunded')
   AND COALESCE(o.refund_status,'none') <> 'succeeded'
   AND (
-        o.buyer_id = p_buyer_id                                  -- 主判据（强）
-     OR (p_session_hash IS NOT NULL AND o.guest_session_hash = p_session_hash)  -- 兜底（未登录态下单）
-     OR (p_ip_hash IS NOT NULL AND o.request_ip_hash = p_ip_hash)               -- 粗防洪
+        -- 主判据：跨该邮箱全部凭证分组，已有列，无需 join guest_shop_buyers
+        (p_contact_hash IS NOT NULL AND o.buyer_contact_hash = p_contact_hash)
+        -- 兜底：未走凭证链路的降级下单
+     OR (p_session_hash IS NOT NULL AND o.guest_session_hash = p_session_hash)
+        -- 粗防洪：阈值最宽
+     OR (p_ip_hash IS NOT NULL AND o.request_ip_hash = p_ip_hash)
   );
 ```
 
-`device_hash`（UA-only）从判据中**移除**——它误伤 NAT/同型号用户的代价高于收益，
-独角也完全没有用它（独角的游客风控键只有 IP，见 §21.2）。
+建议阈值（比促销方案 §7.2 更严，因为 `contact_hash` 现在是凭证保护的可信因子）：
+
+| 因子 | 每码上限 | 每日上限 |
+|---|---|---|
+| `buyer_contact_hash`（主判据） | **1** | **3** |
+| `guest_session_hash`（兜底） | 1 | 3 |
+| `request_ip_hash`（粗防洪） | 3 | 20 |
+
+**降级语义**：`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED=false`（即 `p_contact_hash` 为 NULL）时，
+谓词自动退化为 session + ip 两因子，**不得 fail-open 成「没有主判据就不限额」**。
+这条必须进 readiness 与 §16.1 测试。
 
 **结论：2.0 让促销方案的身份层从「四个都不可信的因子做 OR」收敛为
 「一个凭证保护的主键 + 两个兜底」，配额体系第一次有了真实地基。**
@@ -620,6 +737,13 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 - 时间侧信道：`unknown_email` 与 `bad_password` 都执行了一次 scrypt（用 spy 断言调用次数）。
 - 错误码统一：三种内部原因返回同一 code，且响应体不含内部原因字符串。
 - 越权：A 的凭证查 B 的订单 → 404；已并入账号的订单 → 卡密接口拒绝。
+- **凭证分组隔离（§6.4，必须有专测）**：同邮箱 group=1/2 各挂一单，用 P_a 登录只见 group=1 的订单，
+  用 P_b 登录只见 group=2 的订单；卡密接口同样隔离。
+- **防抢占（§6.4.2 第 4 步）**：受害者先用 V/P_v 下单；攻击者用 V/P_a 下单**不得覆盖** P_v，
+  且攻击者用 V/P_a 登录**看不到**受害者订单；受害者用 V/P_v 仍能查到自己的订单。
+- **分组上限**：第 4 个分组被拒（K38=3），且拒绝时不跑 scrypt、不泄露已有分组数以外的信息。
+- **配额不因换密码重置（§6.4.5）**：同邮箱新建分组后，促销配额计数**不变**（按 contact_hash 并集）。
+- **降级**：`BUYER_CREDENTIAL_ENABLED=false` 时配额走 session+ip，且不是「不限额」。
 - CAS 计数在并发下不丢增量（复用现有 claim 失败计数的测试范式）。
 
 ### 16.2 契约测试（扩展 `tests/guest-shop-frontend-contract.test.js`）
@@ -662,6 +786,8 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 | K35 | 历史订单自助升级为密码访问 | **开** | 开/关 | 开 |
 | K36 | 审计表保留期 | 30 天 | 7~180 | **30** |
 | K37 | 游客订单是否发通知邮件 | **关** | 关/开 | **先关**；开启前必须先做「每邮箱每日发信上限」，否则会变成邮件轰炸工具 |
+| K38 | 单邮箱凭证分组上限（§6.4） | **3** | 1~5 | **3**。设 1 等于「忘密码就买不了」，会在 OTP 上线前形成购买墙；设过大则放任抢占 |
+| K39 | 重复下单是否要求密码匹配才复用旧分组 | **是** | 是/否 | **是**（§6.4.2 第 3 步）。选「否」则每次都新建分组，很快撞到 K38 上限 |
 
 > K37 是唯一可能把「邮箱不验证」变成实际危害的旋钮。建议 OTP（§10.3）上线前保持关闭。
 
@@ -712,7 +838,9 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 ## 20. 一句话总结
 
 **把「不可猜测但不可记忆」的取货口令，换成「可记忆但可猜测」的邮箱+查询密码，
-代价是凭证熵从 240 bit 掉到 45 bit；2.0 用 scrypt 加盐慢哈希、双维度指数锁定、
-失败后场景化验证码、常数时间与等价开销的防枚举、专用 header 传输、sessionStorage-only
-这六件事把代价补回来，并且顺手让促销配额第一次拥有了一个跨会话稳定、
-用户主动维护的主键 `buyer_id`——这是本次升级比体验改善更值钱的部分。**
+代价是凭证熵从 240 bit 掉到 45 bit。2.0 用八件事把代价补回来：scrypt 加盐慢哈希、
+双维度指数锁定、失败后场景化验证码、常数时间比较与等价开销的防枚举、专用 header 传输、
+sessionStorage-only、凭证分组模型（§6.4，既让用户忘密码仍能下单、又让后下单者读不到先下单者的卡密）、
+以及访问控制与配额计数职责分离。最大的意外收益是：促销配额第一次拥有了一个
+用户主动维护、跨会话跨设备稳定的可信主判据 `buyer_contact_hash`（§14），
+而 `buyer_id` 只负责访问隔离、**绝不参与配额**——这一条写错就会被「换密码刷额度」打穿。**

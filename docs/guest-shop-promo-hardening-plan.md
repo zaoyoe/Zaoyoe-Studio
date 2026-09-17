@@ -1032,17 +1032,17 @@ if coupon.PerUserLimit > 0 && userID != 0 {   // ← 游客 userID == 0，整段
 > 并新建归一化买家表 `guest_shop_buyers`。它对本方案的身份层有**实质性反哺**，
 > 本节记录需要随之修订的条款；**冲突时以本节为准**。
 
-### 22.1 §7.2 计数谓词修订：`buyer_id` 成为主判据
+### 22.1 §7.2 计数谓词修订：主判据换成凭证保护的 `buyer_contact_hash`
 
-2.0 之后 `guest_shop_orders` 增列 `buyer_id`（FK → `guest_shop_buyers.id`）。该主键具备
-此前任何因子都没有的三个性质：**跨会话稳定、跨设备稳定、由用户主动维护、且受查询密码保护**。
+2.0 之后邮箱从「选填」变「**下单必填**」，且受查询密码保护。这使 `buyer_contact_hash`
+从 §7.2 原来评的「未验证前＝可伪造」升级为**可信主判据**：攻击者要复用同一邮箱刷额度，
+必须知道该邮箱的查询密码，批量薅羊毛从「改一个字符串」变成「逐个管理邮箱+密码对」的簿记负担。
 
 | 因子 | 本方案原评级 | 2.0 之后 | 处置 |
 |---|---|---|---|
-| `buyer_id`（新） | — | **高（凭证保护）** | **主判据**，每码/每日上限从严 |
-| `buyer_contact_hash` | 可伪造（仅 HMAC，无 OTP） | 中-高 | 由 `buyer_id` 覆盖，不再单独作判据；保留作隐私安全的归并/展示键 |
-| `guest_session_hash` | 中 | 中 | **兜底**：覆盖未走凭证链路的历史/降级下单 |
-| `request_ip_hash` | 低 | 低 | **粗防洪**兜底，阈值最宽 |
+| `buyer_contact_hash` | 可伪造（仅 HMAC，无 OTP） | **高** | **主判据**，阈值最严（每码 1 / 每日 3） |
+| `guest_session_hash` | 中 | 中 | **兜底**：覆盖未走凭证链路的降级下单（每码 1 / 每日 3） |
+| `request_ip_hash` | 低 | 低 | **粗防洪**兜底，阈值最宽（每码 3 / 每日 20） |
 | `request_device_hash` | 低（仅 UA） | 低 | **从判据中移除** |
 
 移除 `request_device_hash` 的理由：它只由 UA 派生，误伤 NAT / 同型号用户的代价高于防薅收益；
@@ -1052,14 +1052,29 @@ if coupon.PerUserLimit > 0 && userID != 0 {   // ← 游客 userID == 0，整段
 
 ```sql
 AND (
-      o.buyer_id = p_buyer_id                                                  -- 主判据（强）
+      (p_contact_hash IS NOT NULL AND o.buyer_contact_hash = p_contact_hash)   -- 主判据
    OR (p_session_hash IS NOT NULL AND o.guest_session_hash = p_session_hash)   -- 兜底
    OR (p_ip_hash      IS NOT NULL AND o.request_ip_hash    = p_ip_hash)        -- 粗防洪
 )
 ```
 
-> 实现注意：**按因子分别设阈值**的机制必须保留（`buyer_id` 最严、`ip_hash` 最宽），
+> 实现注意：**按因子分别设阈值**的机制必须保留（`contact_hash` 最严、`ip_hash` 最宽），
 > 不得因为换了主判据就退化成单一全局阈值，否则又会把 NAT 后的无辜买家一起封掉。
+
+#### 22.1.1 ⚠️ `buyer_id` **不是**配额因子（最容易写错的一条）
+
+2.0 的 §6.4 引入了「凭证分组」：同一个邮箱允许存在 ≤3 套互不可见的查询密码
+（用于「用户忘了密码仍能下新单」且「后下单者读不到先下单者的卡密」）。
+因此 `guest_shop_buyers.id` / `guest_shop_orders.buyer_id` **只用于访问控制**，
+**绝不能用作配额计数键**——否则攻击者只要不停新建凭证分组，就能无限刷新促销额度。
+
+| 用途 | 键 | 理由 |
+|---|---|---|
+| 访问控制（能看哪些订单/卡密） | `buyer_id`（单分组，严格隔离） | 防卡密串号，2.0 §6.4.2 |
+| **配额计数**（促销次数/金额） | **`buyer_contact_hash`（跨该邮箱全部分组并集）** | 防「换密码刷额度」，2.0 §6.4.5 |
+
+好消息：`guest_shop_orders.buyer_contact_hash` 是**已存在的列**
+（`supabase/migrations/20260913_add_guest_shop_cash_purchase.sql:130`），计数无需 join 新表。
 
 ### 22.2 §7.5 诚实声明可以下调一档，但结论不变
 
@@ -1086,5 +1101,9 @@ A4（邮箱 OTP + 游客订单并入账号）**必须排在 L2 之后**，因为
 | `GUEST_SHOP_PROMO_ENABLED` | `false` | 本方案 K1，不变 |
 
 **降级语义（必须实现并测试）**：`BUYER_CREDENTIAL_ENABLED=false` 而促销已开启时，
-配额必须在缺少 `buyer_id` 的情况下继续按兜底因子工作，
+邮箱为选填、`p_contact_hash` 可能为 NULL，配额必须自动退化为 `session + ip` 两因子继续工作，
 **绝不能 fail-open 成「没有主判据就不限额」**。这条要进 readiness 检查项与 §15 的测试用例。
+
+> 反过来说：一旦 2.0 上线，邮箱成为下单必填，`p_contact_hash` 恒有值，
+> 配额体系第一次拥有了一个**用户主动维护、跨会话跨设备稳定**的主判据。
+> 这正是 §7.5 承认的「身份层只能提高成本」被实质性改善的地方——但 §7.5 的结论仍然成立（§22.2）。
