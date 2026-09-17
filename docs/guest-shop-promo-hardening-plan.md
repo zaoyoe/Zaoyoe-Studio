@@ -139,7 +139,7 @@
 | C-A2 | 配额按 **四因子并集** 计数：`guest_session_hash` ∪ `request_ip_hash` ∪ `request_device_hash` ∪ `buyer_contact_hash`，任一命中即计入 | SQL 计数子查询（带索引） | T4 |
 | C-A3 | 每因子独立阈值，IP 因子最宽松（避免 NAT / 校园网误伤真实买家），contact 与 session 最严格 | env 旋钮 §16 | T4 + 可用性 |
 | C-A4 | 游客用券时 contact 由「可选」变「**必填**」，格式校验 + 独立限流 | `normalizeGuestOrderInput` 新增 `requireContactWhenDiscount` | T4 T5 T6 |
-| C-A5 | contact 命中已注册账号 → 拒绝游客促销（可原价购买），统一错误码 | handler 用 service_role 查 `auth.users`，**不把 pepper 写进 SQL** | T5 |
+| C-A5 | contact 命中已注册账号 → **仅记录 `registered_user_match`，绝不影响价格、折扣与券可用性**（§7.3，原「拒绝促销」设计已废弃，见 §22.5 反杀熟） | handler 用 service_role 查 `auth.users`，**不把 pepper 写进 SQL**；`registered_user_match` 不得进入定价 resolver 入参（H2） | T5 |
 | C-A6 | 无效码尝试计数 + 指数退避锁定，会话表与限流桶双写 | `guest_shop_sessions.invalid_code_attempts` / `locked_until` | T6 |
 
 ### B. 金额与零元购
@@ -338,7 +338,7 @@ DB CHECK 约束与硬预算负责，与身份强度无关。
 | 折后单价被前端篡改 | 单一 SQL resolver `fn_guest_shop_resolve_payable` + quote/commit 双跑 + 黄金向量 parity | **是** | JS 侧无金额决定权 |
 | 掏鸟蛋（锁库存） | 游客占比 ≤ `max_stock_hold_percent`(20%) + 每身份 ≤2 张未付单 + TTL 600s | **是，占比有顶** | 最多占住 20%，且到期自动释放 |
 | 同一身份反复用券 | 四因子并集配额 | **否，只是抬价** | 清 cookie + 换 IP + 换 UA + 换邮箱 = 重置；靠预算兜底 |
-| 批量注册「游客」 | 会话签发 + 注册账号碰撞（C-A5） | **否，只是抬价** | 邮箱无需验证即可换新；C-A5 只挡「登出已注册账号来薅」这一条特定路径 |
+| 批量注册「游客」 | 会话签发 + `contact_hash` 配额主判据（§22.1） | **否，只是抬价** | 邮箱无需验证即可换新，但每换一个邮箱都要新设一个四类齐全的查询密码（订单访问 2.0 §6.1），批量薅羊毛从「改一个字符串」变成「逐个管理邮箱+密码对」的簿记负担；C-A5 已不再承担任何拦截职责 |
 | 优惠码枚举 | 锁定退避 + 限流 + 熔断 | **否，只是抬价** | 撞库速度被压到分钟级，但不为零 |
 
 **`contact_hash` 的真实价值，以及我在早期草稿里说错的地方：**
@@ -346,7 +346,8 @@ DB CHECK 约束与硬预算负责，与身份强度无关。
 邮箱**不验证、不发 OTP**，且今天联系方式是选填（`security.js` `allowOptionalContact: true`）。
 因此 `contact_hash` 的可伪造性与其他三个因子同级，**不是「最可信因子」**。它仍然有用，
 但用途是：(a) 售后与订单通知的真实通道；(b) 跨会话归并同一买家（用户换设备时配额仍连续）；
-(c) C-A5 注册账号碰撞的查表键。它**不提供防伪造能力**，除非叠加 §20-B 的邮箱 OTP。
+(c) C-A5 注册账号碰撞的查表键（**仅记录用途**，不参与定价，§7.3）。它**不提供防伪造能力**，
+除非叠加订单访问 2.0 的查询密码（同邮箱复用需知道密码）或 §20-B 的邮箱 OTP。
 
 **因此，威胁模型必须重新表述：** 攻击者要拿到货，必须真的付钱（DB CHECK 保证）。
 所以真实风险不是「资不抵债」，而是「营销预算被薅羊毛者吃掉、没花在目标客户身上」——
@@ -804,7 +805,13 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 2. 换 ¥10 SKU + percent 10% 券：应付 = 9.00 + 1% 通道费（ceil）= 9.09，实际支付 9.09 → 正常发货。
 3. 故意支付 9.00（少付手续费）→ webhook `amount_mismatch`，**不发货**，熔断计数 +1。
 4. `guest_max_uses=2` 的券，第 3 次使用 → `guest_discount_unavailable`，且 `guest_used_count` 停在 2（验证 §9.3 原子性）。
-5. 同一邮箱注册账号登录后登出，再用游客通道用同一张券 → 拒绝（验证 C-A5）。
+5. **反杀熟（H1，断言方向与旧版相反）**：同一张券、同一个 SKU，
+   「已注册邮箱的游客会话」与「全新邮箱的游客会话」的折后金额必须**逐分相等**；
+   两边都必须能用券，都不得返回 `guest_discount_unavailable`。
+   同时断言 `registered_user_match` 在两边取值不同（证明判定确实跑了），
+   但**金额相同**（证明判定没有进入定价）。这条测试是 §22.5 的守门员，**不可删除**。
+6. **H2 入参白名单**：断言定价 resolver 的入参对象不含 `registered_user_match`、
+   `merged_into_user_id`、`order_count`、`last_login_at`、`email_verified_at` 任一字段。
 6. 批量创建不付款单 → 触达 C-D3 / C-D4 后拒绝；TTL 到期后库存与预算同时归还（验证 C-D6 / C-C5）。
 7. 手动把 `guest_shop_promo_breaker` 置 open → 促销全停、原价可买；后台恢复 → 促销恢复。
 8. 日预算打满 → 促销停止、原价可买、告警发出。

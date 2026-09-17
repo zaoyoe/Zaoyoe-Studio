@@ -539,6 +539,12 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
    在 OTP 上线前，忘记密码**只能走客服**（§10.5）。
 2. **游客订单并入账号**（§10.4）。
 3. `contact_hash` 升级为**已验证身份因子**，促销配额阈值可放宽（促销方案 §7.2、§20-B）。
+   ⚠️ **这条必须与反杀熟约束一起理解**（促销方案 §22.5）：
+   ① 放宽只能发生在 **`email_verified_at`（是否 OTP 验证过）** 这一条轴上，
+   **绝不能**发生在 `registered_user_match`（是否注册账号）这一条轴上；
+   ② OTP 对**所有游客平等开放**，任何人自愿走一遍就能达到同一状态，因此不构成身份差别待遇；
+   ③ **价格永不因验证状态而不同**，可放宽的只是配额/次数上限；
+   ④ 本轮**不实施**放宽，保持所有邮箱同一阈值，留待促销侧正式开闸后单独评审。
 
 ### 10.4 并入注册账号（一次性、需验证邮箱）
 
@@ -832,6 +838,13 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 - **分组上限**：第 4 个分组被拒（K38=3），且拒绝时不跑 scrypt、不泄露已有分组数以外的信息。
 - **配额不因换密码重置（§6.4.5）**：同邮箱新建分组后，促销配额计数**不变**（按 contact_hash 并集）。
 - **降级**：`BUYER_CREDENTIAL_ENABLED=false` 时配额走 session+ip，且不是「不限额」。
+- **反杀熟 H1（守门员测试，不可删除）**：同一张券、同一个 SKU，
+  「`registered_user_match=true` 的游客」与「全新邮箱游客」的折后金额**逐分相等**，
+  两边都能用券；并断言 `registered_user_match` 取值确实不同（证明判定跑了但没进定价）。
+- **反杀熟 H2**：定价 resolver 入参白名单，断言不含 `registered_user_match` /
+  `merged_into_user_id` / `order_count` / `last_login_at` / `email_verified_at`。
+- **反杀熟 H4**：契约测试断言前端与错误文案中不出现「老用户」「已注册所以」「登录后更优惠」等
+  暗示身份差别定价的字符串。
 - CAS 计数在并发下不丢增量（复用现有 claim 失败计数的测试范式）。
 
 ### 16.2 契约测试（扩展 `tests/guest-shop-frontend-contract.test.js`）
