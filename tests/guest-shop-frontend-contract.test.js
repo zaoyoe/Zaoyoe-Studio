@@ -11,6 +11,26 @@ const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath)
 const markup = read('shop.html');
 const client = read('js/guest-shop-client.js');
 const styles = read('css/shop-page.css');
+const guestShopHandler = read('server/api-handlers/public/guest-shop.js');
+
+// The polling client and the server-side per-IP status budget must stay in sync,
+// so read both instead of pinning magic interval numbers.
+function parseSmartPollIntervals(source) {
+    const block = /const SMART_POLL_INTERVALS = Object\.freeze\(\{([\s\S]*?)\}\);/.exec(source);
+    assert.ok(block, 'SMART_POLL_INTERVALS must stay a frozen literal');
+    const intervals = {};
+    for (const line of block[1].split('\n')) {
+        const entry = /^\s*([A-Z][A-Z_]*):\s*(\d+)/.exec(line);
+        if (entry) intervals[entry[1]] = Number(entry[2]);
+    }
+    return intervals;
+}
+
+function parseStatusRateLimitPerMinute(source) {
+    const match = /limit\(req, res, 'status', \{ limit: (\d+) \}\)/.exec(source);
+    assert.ok(match, 'the guest status endpoint must keep an explicit rate limit');
+    return Number(match[1]);
+}
 
 test('shop page mounts the isolated guest cash checkout after the authenticated shop client', () => {
     const shopClientIndex = markup.indexOf('js/shop-client.js');
@@ -108,10 +128,6 @@ test('polling remains recoverable after transient fulfilment lag and manual retr
 test('confirmed payments poll fulfilment faster while unpaid orders keep the normal interval', () => {
     assert.match(client, /const POLL_INTERVAL_MS = 3500/);
     assert.match(client, /const CONFIRMED_FULFILLMENT_POLL_INTERVAL_MS = 1000/);
-    // Smart polling provides adaptive intervals based on order state
-    assert.match(client, /const SMART_POLL_INTERVALS/);
-    assert.match(client, /PAYMENT_JUST_CONFIRMED.*800/);
-    assert.match(client, /FULFILLING.*600/);
     assert.match(client, /calculateSmartPollInterval/);
     assert.match(
         client,
@@ -121,6 +137,36 @@ test('confirmed payments poll fulfilment faster while unpaid orders keep the nor
     // A failed/transient status request falls back to the ordinary interval;
     // it must not create a tight retry loop or a second modal flow.
     assert.match(client, /let nextPollIntervalMs = POLL_INTERVAL_MS/);
+
+    const intervals = parseSmartPollIntervals(client);
+    const statusLimitPerMinute = parseStatusRateLimitPerMinute(guestShopHandler);
+    const confirmedStates = [
+        'FULFILLING',
+        'PAYMENT_JUST_CONFIRMED',
+        'PAYMENT_CONFIRMED_EARLY',
+        'PAYMENT_CONFIRMED_LATE'
+    ];
+    for (const key of confirmedStates) {
+        assert.ok(Number.isFinite(intervals[key]), `${key} interval must exist`);
+        // One buyer must fit inside the shared per-IP status budget while polling
+        // the confirmed window.  Exceeding it turns delivery into 429s plus the
+        // 3.5s error retry, which is slower than polling calmly.
+        assert.ok(
+            Math.ceil(60000 / intervals[key]) <= statusLimitPerMinute,
+            `${key}=${intervals[key]}ms needs ${Math.ceil(60000 / intervals[key])}/min `
+            + `but the status endpoint allows ${statusLimitPerMinute}/min per IP`
+        );
+        assert.ok(
+            intervals[key] < intervals.AWAITING_PAYMENT,
+            `${key} must poll faster than an unpaid order`
+        );
+    }
+    assert.equal(intervals.AWAITING_PAYMENT, 3500);
+    assert.ok(intervals.THROTTLED_HINT >= 5000, 'a backend throttle hint must back off to at least 5s');
+    assert.ok(
+        intervals.FULFILLING <= intervals.PAYMENT_CONFIRMED_LATE,
+        'active fulfilment must not poll slower than the late confirmed window'
+    );
 });
 
 test('terminal fulfilment failures stop tight polling and show an actionable state', () => {
@@ -208,7 +254,7 @@ test('guest ZPay checkout hosts an in-page Alipay QR and countdown instead of op
     assert.match(markup, /请使用支付宝扫码支付/);
     assert.match(markup, /打开支付宝支付/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
-    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_2/);
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
 
     assert.match(styles, /\.guest-shop-modal__qr-card/);
     assert.match(styles, /\.guest-shop-modal__qr-countdown/);
@@ -242,7 +288,7 @@ test('unpaid guest orders can be abandoned locally without a cancel RPC', () => 
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*hidden/);
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*>关闭当前订单</);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
-    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_2/);
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
 
     assert.match(client, /function clearStoredCheckout\(\)/);
     assert.match(client, /function isAbandonableOrder\(\)/);
@@ -271,7 +317,7 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(markup, /id="guestCashFeeAmount"/);
     assert.match(markup, /应付金额/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
-    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_2/);
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
 
     assert.match(client, /function paymentProviderSummary\(provider\)/);
     assert.match(client, /const fallbackRate = \(key === ['"]zpay['"] \|\| key === ['"]nowpayments['"]\) \? 0\.01 : 0;/);

@@ -515,6 +515,56 @@ test('immediate fulfillment kicker contains worker failures for the durable time
     assert.equal(JSON.stringify(logs).includes('provider payload'), false);
 });
 
+test('immediate fulfillment kick tracing is opt-in and never writes files', async () => {
+    // A confirmed order is re-kicked by every buyer status poll, so the kick path
+    // must stay off the request hot path: no synchronous file writes, and no logs
+    // unless an operator explicitly turns tracing on.
+    const source = fs.readFileSync(path.join(root, 'server', 'guest-shop-worker.js'), 'utf8');
+    assert.equal(source.includes('worker-kick.log'), false);
+    assert.equal(/appendFileSync|writeFileSync/.test(source), false);
+
+    const enabledEnv = {
+        GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED: 'true',
+        VERIFY_SERVER_WORKERS_ENABLED: 'true'
+    };
+    const makeKicker = (env, logs) => worker.createGuestShopFulfillmentKicker({
+        supabase: {},
+        env,
+        logger: {
+            info: (...args) => logs.push(['info', ...args]),
+            error: (...args) => logs.push(['error', ...args])
+        },
+        workerFactory() {
+            return { async processOrderById() { return { status: 'delivered' }; } };
+        }
+    });
+
+    const quiet = [];
+    assert.deepEqual(await makeKicker(enabledEnv, quiet).kick('order-trace-1'), { status: 'delivered' });
+    assert.deepEqual(quiet, []);
+
+    const disabledLogs = [];
+    const skipped = await makeKicker({ VERIFY_SERVER_WORKERS_ENABLED: 'true' }, disabledLogs).kick('order-trace-2');
+    assert.equal(skipped.status, 'skipped');
+    assert.equal(skipped.reason, 'immediate_fulfillment_disabled');
+    assert.deepEqual(disabledLogs, []);
+
+    const traced = [];
+    const tracedKicker = makeKicker({ ...enabledEnv, GUEST_SHOP_IMMEDIATE_FULFILLMENT_DEBUG: 'true' }, traced);
+    assert.deepEqual(await tracedKicker.kick('order-trace-3'), { status: 'delivered' });
+    assert.deepEqual(
+        traced.filter((entry) => entry[0] === 'info').map((entry) => entry[1]),
+        [
+            '[GuestShopWorker] immediate fulfillment kick started',
+            '[GuestShopWorker] immediate fulfillment kick finished'
+        ]
+    );
+    const finished = traced.find((entry) => entry[1] === '[GuestShopWorker] immediate fulfillment kick finished');
+    assert.equal(finished[2].order_id, 'order-trace-3');
+    assert.equal(finished[2].status, 'delivered');
+    assert.equal(typeof finished[2].duration_ms, 'number');
+});
+
 test('guest worker processes a dead-lettered order that an admin queued for refund', async () => {
     const order = createCandidateOrder({
         id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',

@@ -82,3 +82,6 @@ supabase/.temp/
 .dataconnect
 .vercel
 .vercel-static/
+
+# Local tool scratch directories (never commit tool-generated ids)
+.freebuff/

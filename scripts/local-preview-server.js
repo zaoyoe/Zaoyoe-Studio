@@ -686,7 +686,6 @@ function createLocalPreviewApp(options = {}) {
     });
 
     app.all('/api/shop/*', async (req, res) => {
-        console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
         await dispatchLocalPreviewApiRequest(req, res, {
             kind: 'shop api',
             loadHandler: loadFreshShopApiHandler,

@@ -15,18 +15,24 @@
     // short transition more closely so the buyer sees delivery promptly while
     // keeping the normal unpaid-order polling interval unchanged.
     const CONFIRMED_FULFILLMENT_POLL_INTERVAL_MS = 1000;
-    // Smart polling intervals optimize for different order states: aggressive
-    // polling right after payment confirmation (when fulfillment is imminent),
-    // backing off when backend throttling is detected, and providing rapid
-    // feedback during active fulfillment. This reduces perceived wait time
-    // without hammering the backend unnecessarily.
+    // Smart polling intervals per order state: tighter right after payment
+    // confirmation (when fulfilment is imminent), backing off when backend
+    // throttling is detected.
+    //
+    // Hard floor of 1000ms: the status endpoint allows 60 requests/min per
+    // client IP, and that bucket is shared by every buyer behind the same
+    // NAT/mobile-carrier IP. Sub-second polling would spend the whole budget on
+    // one buyer and turn the delivery window into 429s plus a 3.5s retry, which
+    // is slower than polling calmly. Delivery itself is server-side (payment
+    // webhook / status kick), so polling faster does not deliver faster; it only
+    // shortens the moment the buyer sees an already-delivered order.
     const SMART_POLL_INTERVALS = Object.freeze({
-        AWAITING_PAYMENT: 3500,           // Waiting for payment
-        PAYMENT_JUST_CONFIRMED: 800,      // 0-3s after confirmation (aggressive)
-        PAYMENT_CONFIRMED_EARLY: 1200,    // 3-10s after confirmation
-        PAYMENT_CONFIRMED_LATE: 2000,     // 10s+ after confirmation
-        FULFILLING: 600,                  // Active fulfillment (most aggressive)
-        THROTTLED_HINT: 5000              // Backend throttle detected
+        AWAITING_PAYMENT: 3500,           // waiting for payment
+        PAYMENT_JUST_CONFIRMED: 1000,     // 0-3s after confirmation
+        PAYMENT_CONFIRMED_EARLY: 1500,    // 3-10s after confirmation
+        PAYMENT_CONFIRMED_LATE: 2500,     // 10s+ after confirmation
+        FULFILLING: 1000,                 // active fulfilment
+        THROTTLED_HINT: 5000              // backend throttle detected
     });
     const POLL_MAX_MS = 15 * 60 * 1000;
     const PREVIEW_ENDPOINT = '/api/shop/guest/preview';
