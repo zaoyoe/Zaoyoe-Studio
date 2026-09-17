@@ -207,6 +207,39 @@ npm run install:kvm4:guest-shop-worker -- --start --host 76.13.188.218 --port 22
 期望：`enabled` + `active (waiting)`，下次触发 ≤ 10 秒后，journal 无 503/超时。
 出现 503 或超时：先 `systemctl stop zaoyoe-guest-shop-worker.timer`，再按 §6 排查。
 
+### 步骤 8/9 的 CI 替代路径（本机 SSH 不可用时）
+
+沙箱/代理环境常常只放行 HTTP(S)：TCP 能连上 `76.13.188.218:2222`，却收不到 SSH banner
+（表现为 `Connection timed out during banner exchange`），本机 `ssh`/`scp` 全部不可用，
+步骤 8、9 无法在工作站上执行。GitHub Actions runner 可以正常 SSH（部署工作流一直在用
+`secrets.KVM4_SSH_PRIVATE_KEY`），因此改走 dispatch 工作流：
+
+```bash
+gh workflow run install-kvm4-guest-shop-worker.yml --field start_timer=true
+gh run list --workflow install-kvm4-guest-shop-worker.yml --limit 1
+gh run watch <run-id> --exit-status
+```
+
+`.github/workflows/install-kvm4-guest-shop-worker.yml` 做的事：
+
+1. 把 checkout 钉到最新 `main`（并要求 `github.ref == refs/heads/main`）
+2. **预检 fail-closed**：`.current-release` == main HEAD、`.env` 权限 0600、host `.env` 里
+   `GUEST_SHOP_WORKER_SECRET` 长度 ≥32（只打印长度）、`zaoyoe-verify-server` healthy、
+   无 `sub2api-legacy` 桥接容器、loopback `127.0.0.1:3001/healthz` 通、
+   未授权探测 `/api/shop/guest/worker` 返回 **401**
+   （503 = 容器内 worker 密钥不可用；404 = 该 release 没有这条路由）
+3. 调用 canonical 安装器 `npm run install:kvm4:guest-shop-worker [--start]`，不传自定义 root
+4. 证据：`is-enabled` / `is-active` / `list-timers`，再等 25 秒覆盖至少两次 tick，
+   校验 `Result=success`、`ExecMainStatus=0`、`ExecMainStartTimestamp` 非空；
+   任一不满足就 `systemctl stop` timer 并让工作流失败（fail-closed，不留半启动状态）
+
+预检同时以 INFO 形式报告 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` /
+`VERIFY_SERVER_WORKERS_ENABLED` / `VERCEL_ENV` 的真假（不打印值）。
+**timer 是 10 秒兜底路径，不依赖即时发货开关**；只有 1–3 秒 kick 路径要求
+`GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED=true` 且 `VERIFY_SERVER_WORKERS_ENABLED=true`
+且 `VERCEL_ENV` 为空，判据见 `server/guest-shop-worker.js` 的
+`isGuestShopImmediateFulfillmentEnabled()`。
+
 ---
 
 ## 4. 只读审计脚本（不打印任何密钥值）
@@ -381,6 +414,9 @@ npm run reconcile:guest-shop
    （`kex_exchange_identification: Connection closed` / banner 超时），疑似 fail2ban 或连接限速，
    因此 §0 表中「KVM4 `.current-release`」「容器内开关」「worker timer」三行仍未验证。
    处理方式见 §6 最后一条；这是当前唯一未闭环的核对项。
+   **补充结论**：复测确认 TCP 可连通但永远收不到 banner（`github.com:22` 同样挂起），
+   即本机所在沙箱只放行 HTTP(S)，与 KVM4 侧 fail2ban 无关。此环境下不要再重试 SSH，
+   改用 §3「步骤 8/9 的 CI 替代路径」由 Actions runner 执行安装与审计。
 
 ---
 
@@ -391,6 +427,7 @@ npm run reconcile:guest-shop
 - `docs/guest-shop-payment-fulfillment-runbook.md` → 发布≠启用、stored secrets、退款/补发/解锁死信
 - `docs/guest-purchase-task-2.0.md` → 启用条件（Task 2.0 完成标准）
 - `deploy/kvm4/docker-compose.verify-server.yml`、`deploy/kvm4/guest-shop-worker/*`、`deploy/kvm4/watchdog/*`
+- `.github/workflows/install-kvm4-guest-shop-worker.yml` → 本机 SSH 不可用时的 CI 安装路径（仅 workflow_dispatch）
 - `scripts/install-kvm4-guest-shop-worker.sh`、`scripts/guest-shop-readiness.js`、`scripts/guest-shop-reconcile.js`
 - `server/guest-shop-worker.js`、`server/api-handlers/public/guest-shop.js`、`api/public.js`
 
