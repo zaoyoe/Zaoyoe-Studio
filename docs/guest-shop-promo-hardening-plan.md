@@ -664,7 +664,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 灰度顺序（每步都要有观察期与指标达标）：
 
-1. **G0**：代码合并 + 迁移执行 + 全部开关关闭。线上行为零变化。验收：全量测试基线不回退（当前 3157 pass / 0 fail），readiness 退出码符合预期。
+1. **G0**：代码合并 + 迁移执行 + 全部开关关闭。线上行为零变化。验收：全量测试基线不回退（main 实测 3156 pass / 0 fail），readiness 退出码符合预期。
 2. **G1**：只开 `TIERED_PRICING_ENABLED`，`guest_max_quantity=1`（即阶梯实际不生效），验证数量闸与库存占比闸工作正常。
 3. **G2**：单个低价值 SKU（¥0.01 沙箱 SKU 或最低价真实 SKU）+ 单张 percent 10% 券，`guest_max_uses=5`、`guest_max_total_discount=¥50`、`daily_budget=¥50`。内部白名单 IP 实测。
 4. **G3**：放开该券到 `guest_max_uses=50`，观察 48 小时：无效码率、身份上限拒绝率、`amount_mismatch`=0、库存占比未触顶、预算未异常消耗。
@@ -726,7 +726,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 ### 15.3 回归
 
-- 全量：`node --test --test-force-exit tests/*.test.js`，基线 **3157 pass / 0 fail**，不得低于基线。
+- 全量：`node --test --test-force-exit tests/*.test.js`。**main（`2424dcc14`）实测基线：3156 tests / 3156 pass / 0 fail / 58.6s**（已在本工作树复核）。`codex/guest-shop-entry-merge` 因新增 1 个契约测试为 3157。合并本任务后 pass 数只允许增加，fail 必须为 0。
 - 登录用户积分购买、折扣码、购物车、后台订单 / 库存流程零回归（这是 `docs/guest-purchase-task-2.0.md` §0.2 第 2 条的既有要求）。
 
 ### 15.4 沙箱实机验证（**由用户执行，Codex 不执行 SQL、不启用商品**）
