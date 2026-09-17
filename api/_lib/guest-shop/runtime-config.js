@@ -100,6 +100,91 @@ const GUEST_SHOP_RUNTIME_SETTINGS = Object.freeze({
         min: 0,
         max: 0.5,
         label: '游客履约重试抖动比例'
+    }),
+    // ---------------------------------------------------------------------
+    // Order Access 2.0 (docs/guest-shop-order-access-2.0.md §17 K26-K38).
+    //
+    // scrypt cost parameters are deliberately NOT in this table. An operator
+    // typo that lowers N from 32768 to 1024 would silently turn the query
+    // password into an offline-crackable hash, and nothing at runtime would
+    // notice. Cost parameters therefore live as frozen constants in
+    // api/_lib/guest-shop/security.js together with a policy floor, and the
+    // readiness gate asserts both. Only the knobs that legitimately need
+    // operational tuning are exposed here.
+    // ---------------------------------------------------------------------
+    GUEST_SHOP_BUYER_PASSWORD_MIN_LENGTH: Object.freeze({
+        key: 'buyerPasswordMinLength',
+        type: 'integer',
+        defaultValue: 8,
+        min: 6,
+        max: 20,
+        label: '游客查询密码最小长度'
+    }),
+    GUEST_SHOP_BUYER_CREDENTIAL_GROUP_CAP: Object.freeze({
+        key: 'buyerCredentialGroupCap',
+        type: 'integer',
+        defaultValue: 3,
+        min: 1,
+        // Must stay <= the guest_shop_buyers_group_range CHECK upper bound in
+        // supabase/migrations/20260920_guest_shop_buyer_credentials.sql.
+        max: 5,
+        label: '单邮箱凭证分组上限'
+    }),
+    GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES: Object.freeze({
+        key: 'buyerLoginMaxFailures',
+        type: 'integer',
+        defaultValue: 5,
+        min: 3,
+        max: 20,
+        label: '游客查询密码失败上限（单买家）'
+    }),
+    GUEST_SHOP_BUYER_LOGIN_WINDOW_SECONDS: Object.freeze({
+        key: 'buyerLoginWindowSeconds',
+        type: 'integer',
+        defaultValue: 600,
+        min: 60,
+        max: 3600,
+        label: '游客登录失败统计窗口'
+    }),
+    GUEST_SHOP_BUYER_IP_MAX_FAILURES: Object.freeze({
+        key: 'buyerIpMaxFailures',
+        type: 'integer',
+        defaultValue: 20,
+        min: 5,
+        max: 100,
+        label: '游客登录失败上限（单 IP）'
+    }),
+    GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD: Object.freeze({
+        key: 'buyerCaptchaBuyerThreshold',
+        type: 'integer',
+        defaultValue: 3,
+        min: 1,
+        max: 20,
+        label: '游客登录验证码触发阈值（单买家）'
+    }),
+    GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD: Object.freeze({
+        key: 'buyerCaptchaIpThreshold',
+        type: 'integer',
+        defaultValue: 8,
+        min: 1,
+        max: 100,
+        label: '游客登录验证码触发阈值（单 IP）'
+    }),
+    GUEST_SHOP_BUYER_ACCESS_SESSION_TTL_SECONDS: Object.freeze({
+        key: 'buyerAccessSessionTtlSeconds',
+        type: 'integer',
+        defaultValue: 1800,
+        min: 300,
+        max: 86400,
+        label: '游客订单访问会话有效期'
+    }),
+    GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS: Object.freeze({
+        key: 'buyerAccessAuditRetentionDays',
+        type: 'integer',
+        defaultValue: 30,
+        min: 7,
+        max: 180,
+        label: '游客登录审计保留天数'
     })
 });
 
@@ -118,6 +203,18 @@ const WORKER_RUNTIME_SETTING_NAMES = Object.freeze([
     'GUEST_SHOP_WORKER_MAX_BACKOFF_MS',
     'GUEST_SHOP_WORKER_LEASE_MS',
     'GUEST_SHOP_WORKER_RETRY_JITTER_RATIO'
+]);
+
+const BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES = Object.freeze([
+    'GUEST_SHOP_BUYER_PASSWORD_MIN_LENGTH',
+    'GUEST_SHOP_BUYER_CREDENTIAL_GROUP_CAP',
+    'GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES',
+    'GUEST_SHOP_BUYER_LOGIN_WINDOW_SECONDS',
+    'GUEST_SHOP_BUYER_IP_MAX_FAILURES',
+    'GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD',
+    'GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD',
+    'GUEST_SHOP_BUYER_ACCESS_SESSION_TTL_SECONDS',
+    'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS'
 ]);
 
 const ALL_RUNTIME_SETTING_NAMES = Object.freeze(Object.keys(GUEST_SHOP_RUNTIME_SETTINGS));
@@ -284,6 +381,31 @@ function resolveGuestShopRuntimeConfig(env = {}, { strict = false, names = ALL_R
         });
     }
 
+    // Order Access 2.0 invariants. A captcha threshold at or above the lockout
+    // threshold is dead configuration: the account locks before the challenge
+    // is ever shown, so the operator believes they have step-up protection and
+    // do not. Treat it as an inconsistency rather than a silent no-op.
+    if (byName.GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD?.valid
+        && byName.GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES?.valid
+        && byName.GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD.value >= byName.GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES.value) {
+        errors.push({
+            name: 'GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD,GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES',
+            key: 'buyer-captcha-before-lockout',
+            code: 'inconsistent_numeric_config',
+            reason: '买家验证码阈值必须小于锁定失败次数，否则验证码永远不会触发'
+        });
+    }
+    if (byName.GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD?.valid
+        && byName.GUEST_SHOP_BUYER_IP_MAX_FAILURES?.valid
+        && byName.GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD.value >= byName.GUEST_SHOP_BUYER_IP_MAX_FAILURES.value) {
+        errors.push({
+            name: 'GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD,GUEST_SHOP_BUYER_IP_MAX_FAILURES',
+            key: 'buyer-captcha-ip-before-lockout',
+            code: 'inconsistent_numeric_config',
+            reason: 'IP 验证码阈值必须小于 IP 锁定失败次数，否则验证码永远不会触发'
+        });
+    }
+
     const result = {
         ...values,
         entries: Object.freeze(entries),
@@ -303,6 +425,7 @@ function assertGuestShopRuntimeConfig(env = {}, options = {}) {
 
 module.exports = {
     ALL_RUNTIME_SETTING_NAMES,
+    BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES,
     GUEST_SHOP_RUNTIME_SETTINGS,
     PUBLIC_RUNTIME_SETTING_NAMES,
     WORKER_RUNTIME_SETTING_NAMES,

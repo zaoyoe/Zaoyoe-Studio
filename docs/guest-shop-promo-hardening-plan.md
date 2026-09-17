@@ -811,10 +811,13 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
    同时断言 `registered_user_match` 在两边取值不同（证明判定确实跑了），
    但**金额相同**（证明判定没有进入定价）。这条测试是 §22.5 的守门员，**不可删除**。
 6. **H2 入参白名单**：断言定价 resolver 的入参对象不含 `registered_user_match`、
-   `merged_into_user_id`、`order_count`、`last_login_at`、`email_verified_at` 任一字段。
-6. 批量创建不付款单 → 触达 C-D3 / C-D4 后拒绝；TTL 到期后库存与预算同时归还（验证 C-D6 / C-C5）。
-7. 手动把 `guest_shop_promo_breaker` 置 open → 促销全停、原价可买；后台恢复 → 促销恢复。
-8. 日预算打满 → 促销停止、原价可买、告警发出。
+   `merged_into_user_id`、`buyer_id`、`credential_group_no`、`failed_login_count`、
+   `last_login_at`、`email_verified_at` 任一字段（字段清单与
+   `docs/guest-shop-order-access-2.0.md` §16.1 保持一致；`guest_shop_buyers` 已无
+   `order_count` 列，见该文档 §5.1）。
+7. 批量创建不付款单 → 触达 C-D3 / C-D4 后拒绝；TTL 到期后库存与预算同时归还（验证 C-D6 / C-C5）。
+8. 手动把 `guest_shop_promo_breaker` 置 open → 促销全停、原价可买；后台恢复 → 促销恢复。
+9. 日预算打满 → 促销停止、原价可买、告警发出。
 
 ### 15.5 演练与归档
 
@@ -1159,7 +1162,7 @@ A4（邮箱 OTP + 游客订单并入账号）**必须排在 L2 之后**，因为
 | # | 约束 | 验证方式 |
 |---|---|---|
 | H1 | **同一张券 + 同一个 SKU + 同一个邮箱，折后价格必须逐分一致**，与「该邮箱是否注册」「是否登录过」「历史消费多少」全部无关 | 集成测试：注册邮箱与全新邮箱对同一券同一 SKU 报价，断言金额完全相等 |
-| H2 | `registered_user_match`、`merged_into_user_id`、`order_count`、`last_login_at` 等**任何身份/历史字段，都不得出现在定价 resolver 的输入里** | 代码审查 + resolver 入参白名单测试（断言入参结构体不含这些字段） |
+| H2 | `registered_user_match`、`merged_into_user_id`、`buyer_id`、`credential_group_no`、`failed_login_count`、`last_login_at` 等**任何身份/历史字段，都不得出现在定价 resolver 的输入里**（`guest_shop_buyers` 已无 `order_count` 列，见 2.0 文档 §5.1） | 代码审查 + resolver 入参白名单测试（断言入参结构体不含这些字段） |
 | H3 | 券的受众定向只能是**券级、商家主动勾选、对所有符合条件者一致**的配置，不能是平台按用户身份自动加价 | C-B7 已限制游客券 `audience_segment ∈ (NULL,'all_users')`；如需「仅限新客」活动，须走独立功能评审，**本轮不做** |
 | H4 | 错误文案不得泄露「因为你是老用户所以更贵」这类语义 | 文案审查 + 契约测试断言不出现相关字符串 |
 

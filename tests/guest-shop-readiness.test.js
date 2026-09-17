@@ -12,13 +12,15 @@ const {
     REQUIRED_TEST_FILES,
     formatHumanReport,
     getReadinessExitCode,
+    inspectBuyerCredentials,
     inspectCallbackUrl,
     inspectRepo,
     inspectRunbook,
     loadEnvFile,
     parseArgs,
     parseProviderList,
-    runReadiness
+    runReadiness,
+    stripSqlComments
 } = require('../scripts/guest-shop-readiness');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -399,3 +401,260 @@ test('guest-shop readiness npm script uses node -- so Node 25 forwards gate flag
     );
 });
 
+
+// ---------------------------------------------------------------------------
+// Order Access 2.0 readiness gate (docs/guest-shop-order-access-2.0.md §15.2)
+// ---------------------------------------------------------------------------
+
+const BUYER_MIGRATION = path.join(
+    REPO_ROOT,
+    'supabase',
+    'migrations',
+    '20260920_guest_shop_buyer_credentials.sql'
+);
+const BUYER_VERIFY_MIGRATION = path.join(
+    REPO_ROOT,
+    'supabase',
+    'migrations',
+    '20260920_verify_guest_shop_buyer_credentials.sql'
+);
+
+function buyerCheckKeys(checks) {
+    return new Set((checks || []).map((check) => check.key));
+}
+
+test('buyer credential switches default off so A0 is behaviour neutral', () => {
+    const checks = inspectBuyerCredentials({}, false, REPO_ROOT);
+    assert.equal(checks.some((check) => check.ok === false), false, JSON.stringify(checks.filter((c) => !c.ok)));
+
+    const switches = checks.filter((check) => ['credential-switch-boolean', 'orders-page-requires-credentials'].includes(check.key));
+    assert.equal(switches.length, 2);
+    for (const item of switches) {
+        assert.equal(item.blocking, false);
+        assert.notEqual(item.status, 'enabled');
+    }
+
+    // Both switches absent must never look like an enablement.
+    const summary = runReadiness({ env: completeProductionEnv(), repoRoot: REPO_ROOT, envFile: '' });
+    assert.equal(summary.ok, true);
+    const enabled = (summary.checks || []).filter((check) => check.status === 'enabled' && check.area === 'buyer_credentials');
+    assert.equal(enabled.length, 0);
+});
+
+test('enabling buyer credentials fails closed without a dedicated contact pepper', () => {
+    const missing = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true' }, true, REPO_ROOT);
+    assert.equal(hasFinding({ checks: missing, findings: missing.filter((c) => !c.ok) }, 'contact-pepper-required'), true);
+
+    // Falling back to the claim pepper is not acceptable once the email hash
+    // becomes the credential-group key: a later pepper rotation would re-key
+    // every stored contact_hash and orphan all guest orders.
+    const reused = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_CLAIM_PEPPER: SECRET_VALUES.claim,
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.claim
+    }, true, REPO_ROOT);
+    assert.equal(reused.some((check) => check.key === 'contact-pepper-required' && check.ok === false), true);
+
+    // AGENTS.md forbids reusing SUPABASE_SERVICE_ROLE_KEY as a guest-shop
+    // pepper. The cross-check compares two environment values, so the test must
+    // present both: a pepper that merely looks like a service role key is not
+    // detectable, and must not be pretended to be.
+    const serviceRole = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        SUPABASE_SERVICE_ROLE_KEY: SECRET_VALUES.serviceRole,
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.serviceRole
+    }, true, REPO_ROOT);
+    assert.equal(serviceRole.some((check) => check.key === 'contact-pepper-required' && check.ok === false), true);
+    assert.equal(JSON.stringify(serviceRole).includes(SECRET_VALUES.serviceRole), false);
+
+    const good = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+    }, true, REPO_ROOT);
+    const pepperCheck = good.find((check) => check.key === 'contact-pepper-required');
+    assert.equal(pepperCheck.ok, true);
+    assert.equal(pepperCheck.message.includes(SECRET_VALUES.contact), false);
+});
+
+test('enabling buyer credentials before the A2 frontend exists is a hard failure', () => {
+    const checks = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+    }, true, REPO_ROOT);
+    const keys = buyerCheckKeys(checks);
+    assert.equal(keys.has('frontend:guest-orders.html'), true);
+    assert.equal(keys.has('frontend:js/guest-orders-client.js'), true);
+    // A0 ships the schema only; the switch must not be turnable on yet.
+    assert.equal(checks.some((check) => check.key.startsWith('frontend:') && check.ok === false), true);
+});
+
+test('guest orders page cannot be enabled ahead of the credential chain', () => {
+    const checks = inspectBuyerCredentials({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true' }, true, REPO_ROOT);
+    const failure = checks.find((check) => check.key === 'orders-page-requires-credentials');
+    assert.equal(failure.ok, false);
+    assert.equal(failure.blocking, true);
+});
+
+test('malformed buyer credential switch values are hard failures, not silent off', () => {
+    for (const value of ['maybe', '2', 'yess']) {
+        const checks = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: value }, true, REPO_ROOT);
+        const failure = checks.find((check) => check.key === 'credential-switch-boolean');
+        assert.equal(failure.ok, false, `value ${value} must fail closed`);
+    }
+    const off = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'false' }, true, REPO_ROOT);
+    assert.equal(off.some((check) => check.ok === false), false);
+});
+
+test('captcha thresholds must fire before the lockout thresholds', () => {
+    const buyer = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD: '5' }, true, REPO_ROOT);
+    assert.equal(buyer.some((check) => check.key === 'buyer-captcha-before-lockout' && check.ok === false), true);
+
+    const ip = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD: '20' }, true, REPO_ROOT);
+    assert.equal(ip.some((check) => check.key === 'buyer-captcha-ip-before-lockout' && check.ok === false), true);
+
+    const consistent = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD: '3',
+        GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD: '8'
+    }, true, REPO_ROOT);
+    assert.equal(consistent.some((check) => check.key.startsWith('buyer-captcha-') && check.ok === false), false);
+});
+
+test('buyer credential numeric settings reject malformed and out-of-range values', () => {
+    const outOfRange = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CREDENTIAL_GROUP_CAP: '99' }, true, REPO_ROOT);
+    assert.equal(outOfRange.some((check) => check.key === 'buyerCredentialGroupCap' && check.ok === false), true);
+
+    const malformed = inspectBuyerCredentials({ GUEST_SHOP_BUYER_PASSWORD_MIN_LENGTH: '8.5' }, true, REPO_ROOT);
+    assert.equal(malformed.some((check) => check.key === 'buyerPasswordMinLength' && check.ok === false), true);
+
+    const defaults = inspectBuyerCredentials({}, true, REPO_ROOT);
+    const expectedDefaults = {
+        buyerPasswordMinLength: 8,
+        buyerCredentialGroupCap: 3,
+        buyerLoginMaxFailures: 5,
+        buyerLoginWindowSeconds: 600,
+        buyerIpMaxFailures: 20,
+        buyerCaptchaBuyerThreshold: 3,
+        buyerCaptchaIpThreshold: 8,
+        buyerAccessSessionTtlSeconds: 1800,
+        buyerAccessAuditRetentionDays: 30
+    };
+    for (const [key, value] of Object.entries(expectedDefaults)) {
+        const check = defaults.find((item) => item.key === key);
+        assert.ok(check, `missing readiness check for ${key}`);
+        assert.equal(check.effective_value, value);
+    }
+});
+
+test('stripSqlComments keeps string literals and dollar-quoted bodies but drops prose', () => {
+    const source = [
+        '-- DROP FUNCTION ... CASCADE is mentioned in prose only',
+        "CREATE TABLE t (a TEXT CHECK (a ~ '^scrypt$'));",
+        '/* block DROP TABLE t */',
+        "COMMENT ON COLUMN t.a IS 'literal -- not a comment';",
+        'CREATE FUNCTION f() RETURNS void AS $$',
+        'BEGIN',
+        '    -- body prose survives: a dollar-quoted body is opaque',
+        "    RAISE EXCEPTION 'guest_buyer_mismatch';",
+        'END;',
+        '$$;',
+        'SELECT 1; -- trailing prose'
+    ].join('\n');
+    const stripped = stripSqlComments(source);
+    assert.equal(/CASCADE/.test(stripped), false);
+    assert.equal(/block DROP TABLE/.test(stripped), false);
+    assert.equal(/trailing prose/.test(stripped), false);
+    assert.ok(stripped.includes("'^scrypt$'"));
+    // A comment marker inside a string literal is literal text, not a comment.
+    assert.ok(stripped.includes("'literal -- not a comment'"));
+    assert.ok(stripped.includes("'guest_buyer_mismatch'"));
+    assert.ok(stripped.includes('$$'));
+    // Opacity is the conservative direction for a gate: keeping body prose can
+    // only make a prohibition check stricter, never let real SQL be stripped.
+    assert.ok(stripped.includes('-- body prose survives'));
+    assert.ok(stripped.includes('RAISE EXCEPTION'));
+});
+
+test('A0 migration statically satisfies the credential, RLS and no-enablement contract', () => {
+    // Every structural assertion runs against the comment-stripped source, the
+    // same way scripts/guest-shop-readiness.js does: prose must never satisfy a
+    // gate (a "-- no CASCADE" note is not a DROP statement) and must never fail
+    // one either (the header explains the drop is without CASCADE).
+    const migration = stripSqlComments(fs.readFileSync(BUYER_MIGRATION, 'utf8'));
+    const verify = stripSqlComments(fs.readFileSync(BUYER_VERIFY_MIGRATION, 'utf8'));
+
+    // Credential storage must be scrypt with a pinned normalisation version and
+    // a per-row salt; a deterministic HMAC (the Dujiao design) is not allowed.
+    // The CHECK expression is asserted as a literal string because the SQL
+    // regex escapes `$`, and a JS regex for it is an escaping trap.
+    const hashFormatCheck = "password_hash ~ '^scrypt\\$[0-9]+\\$[0-9]+\\$[0-9]+\\$norm=v[0-9]+\\$[A-Za-z0-9+/=]+\\$[A-Za-z0-9+/=]+$'";
+    assert.ok(
+        migration.includes(hashFormatCheck),
+        'guest_shop_buyers.password_hash must pin the scrypt$N$r$p$norm=vX$salt$hash format'
+    );
+    assert.match(migration, /norm=v1/u);
+    assert.match(migration, /CONSTRAINT guest_shop_buyers_site_contact_group_uniq\s+UNIQUE \(site, contact_hash, credential_group_no\)/u);
+    // Group capacity is bounded in the database as the outer bound of the
+    // application-level K38 cap.
+    assert.match(migration, /credential_group_no BETWEEN 1 AND 5/u);
+
+    // The password-hash table must never be reachable from a browser role.
+    assert.match(migration, /ALTER TABLE public\.guest_shop_buyers ENABLE ROW LEVEL SECURITY/u);
+    assert.match(migration, /REVOKE ALL ON TABLE public\.guest_shop_buyers FROM PUBLIC, anon, authenticated/u);
+    assert.match(migration, /GRANT ALL ON TABLE public\.guest_shop_buyers TO service_role/u);
+    assert.doesNotMatch(migration, /GRANT SELECT ON TABLE public\.guest_shop_buyers TO authenticated/u);
+    assert.doesNotMatch(migration, /CREATE POLICY[^;]*guest_shop_buyers/iu);
+
+    // buyer_id is access control only and must not become a quota key.
+    assert.match(migration, /ADD COLUMN IF NOT EXISTS buyer_id UUID\s+REFERENCES public\.guest_shop_buyers\(id\) ON DELETE SET NULL/u);
+    assert.match(migration, /Promotion quota must count by buyer_contact_hash/u);
+
+    // The RPC replacement must be an exact-signature drop, never a cascade, and
+    // must re-grant EXECUTE on the NEW 13-parameter identity.
+    assert.match(migration, /DROP FUNCTION IF EXISTS public\.fn_guest_shop_create_order\(\s*TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER\s*\)/u);
+    assert.doesNotMatch(migration, /DROP FUNCTION[^;]*CASCADE/iu);
+    assert.match(migration, /p_buyer_id UUID DEFAULT NULL/u);
+    assert.match(migration, /RAISE EXCEPTION 'guest_buyer_contact_required'/u);
+    assert.match(migration, /RAISE EXCEPTION 'guest_buyer_mismatch'/u);
+    assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_create_order\(TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, INTEGER\) TO service_role/u);
+    assert.match(migration, /REVOKE ALL ON FUNCTION public\.fn_guest_shop_create_order\(TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, INTEGER\) FROM PUBLIC, anon, authenticated/u);
+
+    // AGENTS.md: a deploy must never enable guest products or schedule jobs.
+    assert.doesNotMatch(migration, /allow_guest_purchase\s*=\s*true/iu);
+    assert.doesNotMatch(migration, /UPDATE\s+public\.(shop_products|shop_product_skus|guest_shop_orders)/iu);
+    assert.doesNotMatch(migration, /pg_cron|cron\.schedule/iu);
+
+    // The paired verify script is read-only and covers the signature change.
+    assert.doesNotMatch(verify, /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE)\b/imu);
+    assert.match(verify, /legacy_12_param_signature_absent/u);
+    assert.match(verify, /rls_and_privileges_closed/u);
+    assert.match(verify, /realtime_published/u);
+    assert.match(verify, /browser_policies/u);
+});
+
+test('buyer credential readiness checks stay inside the strict gate and never print secrets', () => {
+    const summary = runReadiness({
+        env: completeProductionEnv({
+            GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+            GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true'
+        }),
+        repoRoot: REPO_ROOT,
+        envFile: ''
+    });
+
+    // The page/credential switches are on but the A2 files do not exist yet, so
+    // the gate must be hard-invalid rather than quietly ready.
+    assert.equal(summary.ok, false);
+    assert.equal(summary.ready, false);
+    assert.equal(getReadinessExitCode({ failOnInvalid: true }, summary), READINESS_EXIT_CODES.INVALID);
+    assert.equal(getReadinessExitCode({ failOnNotReady: true }, summary), READINESS_EXIT_CODES.NOT_READY);
+
+    const areas = new Set((summary.checks || []).map((check) => check.area));
+    assert.equal(areas.has('buyer_credentials'), true);
+
+    const report = formatHumanReport(summary);
+    const serialized = JSON.stringify(summary);
+    for (const secret of Object.values(SECRET_VALUES)) {
+        assert.equal(report.includes(secret), false);
+        assert.equal(serialized.includes(secret), false);
+    }
+});

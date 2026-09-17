@@ -133,7 +133,12 @@
 
 ---
 
-## 5. 数据模型（DDL 草案；最终写入迁移文件，**不执行**）
+## 5. 数据模型（DDL；权威版本在迁移文件，**不执行**）
+
+> **A0 已落盘**：权威 DDL 见
+> `supabase/migrations/20260920_guest_shop_buyer_credentials.sql`，
+> 只读验收脚本见 `supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql`。
+> 本节与迁移文件不一致时**以迁移文件为准**，并回改本节。Codex 不执行 SQL。
 
 ### 5.1 新表 `guest_shop_buyers`
 
@@ -141,18 +146,18 @@
 CREATE TABLE IF NOT EXISTS public.guest_shop_buyers (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     site                  VARCHAR(10)  NOT NULL,
-    contact_hash          TEXT         NOT NULL,   -- HMAC(GUEST_SHOP_CONTACT_HASH_PEPPER, lower(trim(email)))
-    password_hash         TEXT         NOT NULL,   -- scrypt$N$r$p$salt$hash
+    contact_hash          TEXT         NOT NULL,   -- HMAC-SHA256(GUEST_SHOP_CONTACT_HASH_PEPPER, lower(btrim(email)))，永不存明文邮箱
+    credential_group_no   SMALLINT     NOT NULL DEFAULT 1,   -- 同邮箱的第几套查询密码（§6.4）
+    password_hash         TEXT         NOT NULL,   -- scrypt$N$r$p$norm=v1$salt_b64$hash_b64
     password_version      SMALLINT     NOT NULL DEFAULT 1,
     password_updated_at   TIMESTAMPTZ,
     email_verified_at     TIMESTAMPTZ,             -- 仅 OTP 通过后回填（§10.3 / 促销方案 §20-B）
-    registered_user_match BOOLEAN      NOT NULL DEFAULT false,
+    registered_user_match BOOLEAN      NOT NULL DEFAULT false,   -- 只用于并号与统计，禁止进定价（H2）
     failed_login_count    INTEGER      NOT NULL DEFAULT 0,
     login_lock_stage      SMALLINT     NOT NULL DEFAULT 0,   -- 0/1/2/3 → 15min/30min/24h/永久待人工
     locked_until          TIMESTAMPTZ,
     last_login_at         TIMESTAMPTZ,
     last_login_ip_hash    TEXT,
-    order_count           INTEGER      NOT NULL DEFAULT 0,
     merged_into_user_id   UUID,                    -- 并入注册账号后回填（§10.4）
     merged_at             TIMESTAMPTZ,
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT clock_timestamp(),
@@ -160,49 +165,78 @@ CREATE TABLE IF NOT EXISTS public.guest_shop_buyers (
     CONSTRAINT guest_shop_buyers_site_check   CHECK (site IN ('cn','intl')),
     CONSTRAINT guest_shop_buyers_hash_check   CHECK (contact_hash ~ '^[0-9a-f]{64}$'),
     CONSTRAINT guest_shop_buyers_pwd_format   CHECK (password_hash ~ '^scrypt\$[0-9]+\$[0-9]+\$[0-9]+\$norm=v[0-9]+\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$'),
+    CONSTRAINT guest_shop_buyers_pwd_version  CHECK (password_version >= 1),
     CONSTRAINT guest_shop_buyers_attempts     CHECK (failed_login_count >= 0 AND failed_login_count <= 1000),
     CONSTRAINT guest_shop_buyers_stage        CHECK (login_lock_stage BETWEEN 0 AND 3),
-    CONSTRAINT guest_shop_buyers_orders_count CHECK (order_count >= 0),
-    credential_group_no   SMALLINT     NOT NULL DEFAULT 1,   -- 同邮箱的第几套查询密码（§6.4）
-    CONSTRAINT guest_shop_buyers_group_range  CHECK (credential_group_no BETWEEN 1 AND 3),
+    -- 数据库外边界 5，应用层 K38 有效上限 3（默认）。应用只统计「确实拥有订单」的
+    -- 分组，孤儿分组会被回收，所以一次失败的下单不能永久占死一个邮箱的名额。
+    CONSTRAINT guest_shop_buyers_group_range  CHECK (credential_group_no BETWEEN 1 AND 5),
     -- 注意：不是 UNIQUE(site, contact_hash)。同一邮箱允许存在多套互不可见的凭证分组，
     -- 见 §6.4「凭证分组模型」。UNIQUE 落在 (site, contact_hash, credential_group_no)。
     CONSTRAINT guest_shop_buyers_site_contact_group_uniq
         UNIQUE (site, contact_hash, credential_group_no)
 );
-CREATE INDEX IF NOT EXISTS guest_shop_buyers_locked_idx ON public.guest_shop_buyers (locked_until)
-    WHERE locked_until IS NOT NULL;
--- 登录查找：按邮箱哈希取出该邮箱下的全部分组（≤3 行），逐行 scrypt 校验，命中即停
+-- 登录查找：按邮箱哈希取出该邮箱下的全部分组（受 K38 限制，正常 ≤3 行），
+-- 逐行 scrypt 校验，命中即停。
 CREATE INDEX IF NOT EXISTS guest_shop_buyers_contact_idx
     ON public.guest_shop_buyers (site, contact_hash);
--- 配额计数走 guest_shop_orders.buyer_contact_hash（已存在的列），不需要 join 本表
+CREATE INDEX IF NOT EXISTS guest_shop_buyers_locked_idx ON public.guest_shop_buyers (locked_until)
+    WHERE locked_until IS NOT NULL;
+-- 配额计数走 guest_shop_orders.buyer_contact_hash（已存在的列），不需要 join 本表。
 ```
+
+**A0 与草案的两处差异（以迁移文件为准）**：
+
+1. **删除 `order_count` 列**（连带 `guest_shop_buyers_orders_count` 约束）。
+   它是可由 `guest_shop_orders` 推出的冗余计数，留着就必须在下单/退款/改价的每条
+   路径上维护，且天然按「分组行」计——这与 §6.4.5「配额按 contact_hash 并集」直接
+   冲突，等于在表结构里埋一个「换个密码就重置额度」的诱导。需要订单一律
+   `EXISTS` / `COUNT(*)` 聚合，不落列。
+2. **`group_range` 从 `1..3` 放宽为 `1..5`**。数据库这里是**外边界**，应用层 K38
+   （默认 3）才是有效上限；留出余量是为了让运营调 K38 时不必再改表结构，同时保证
+   「应用上限 ≤ 数据库上限」永远成立。放宽不会扩大攻击面：配额与定价都按
+   `contact_hash` 计，多一个分组不多一份额度（§6.4.5，守门员测试见 §16.1）。
+
+**RLS 与权限（§15.2 硬约束）**：`guest_shop_buyers` 与 `guest_shop_access_attempts`
+两张新表都 `ENABLE ROW LEVEL SECURITY`，并
+`REVOKE ALL ... FROM PUBLIC, anon, authenticated` + `GRANT ALL ... TO service_role`。
+**不建任何浏览器可见的 policy，也不给 `authenticated` 开 SELECT**：密码哈希表只能由
+verify-server 用 service role 访问，任何前端可达路径都视为漏洞。
 
 ### 5.2 `guest_shop_orders` 增列
 
 ```sql
 ALTER TABLE public.guest_shop_orders
-    ADD COLUMN IF NOT EXISTS buyer_id UUID REFERENCES public.guest_shop_buyers(id) ON DELETE SET NULL;
+    ADD COLUMN IF NOT EXISTS buyer_id UUID
+        REFERENCES public.guest_shop_buyers(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS guest_shop_orders_buyer_idx
     ON public.guest_shop_orders (buyer_id, created_at DESC);
--- 邮箱从「选填」变「必填」：新订单必须能定位到买家
--- 注意：不能对历史行加 NOT NULL，用部分索引 + 应用层校验
-CREATE UNIQUE INDEX IF NOT EXISTS guest_shop_orders_buyer_order_uniq
-    ON public.guest_shop_orders (buyer_id, order_no);
+-- 邮箱从「选填」变「必填」：新订单必须能定位到买家凭证分组。
+-- 不能对历史行加 NOT NULL：历史订单 buyer_id 保持 NULL，继续走既有
+-- claim-secret 通道（/api/shop/guest/recover），升级路径见 §13.2。
 ```
+
+> **A0 实现差异（以迁移文件为准）**：草案曾写
+> `CREATE UNIQUE INDEX guest_shop_orders_buyer_order_uniq (buyer_id, order_no)`，
+> 迁移里**故意不建**。`order_no` 在 `20260913` 迁移中已是全表 UNIQUE，
+> `(buyer_id, order_no)` 的唯一性是它的严格推论，再叠一份索引只是白付写入放大与
+> 存储成本，不提供任何新保护，还会让「同一订单被改挂到别的分组」这类越权改动
+> 看起来像是被数据库允许的。
 
 ### 5.3 登录尝试审计（防爆破取证，复用促销方案 §8.5 审计表）
 
 ```sql
 CREATE TABLE IF NOT EXISTS public.guest_shop_access_attempts (
-    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    site         VARCHAR(10) NOT NULL,
-    contact_hash TEXT,                 -- 命中或尝试的邮箱哈希
-    buyer_id     UUID,
-    request_ip_hash   TEXT NOT NULL,
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    site                VARCHAR(10) NOT NULL,
+    contact_hash        TEXT,                 -- 命中或尝试的邮箱哈希
+    buyer_id            UUID,
+    request_ip_hash     TEXT NOT NULL,
     request_device_hash TEXT,
-    outcome      VARCHAR(24) NOT NULL, -- success / bad_password / unknown_email / locked / captcha_required / rate_limited / credential_conflict
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    outcome             VARCHAR(24) NOT NULL, -- success / bad_password / unknown_email / locked / captcha_required / rate_limited / credential_conflict
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT guest_shop_access_attempts_site_check CHECK (site IN ('cn','intl')),
+    CONSTRAINT guest_shop_access_attempts_ip_check   CHECK (char_length(request_ip_hash) <= 128),
     CONSTRAINT guest_shop_access_attempts_outcome_check CHECK (outcome IN
         ('success','bad_password','unknown_email','locked','captcha_required','rate_limited',
          'credential_conflict'))
@@ -211,7 +245,8 @@ CREATE INDEX IF NOT EXISTS guest_shop_access_attempts_ip_idx
     ON public.guest_shop_access_attempts (request_ip_hash, created_at DESC);
 CREATE INDEX IF NOT EXISTS guest_shop_access_attempts_contact_idx
     ON public.guest_shop_access_attempts (contact_hash, created_at DESC);
--- 只留 30 天，避免变成无限增长表
+-- 只留 30 天（GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS，7~180 可调）。
+-- 清理任务**不在迁移里创建**：AGENTS.md 禁止迁移调度作业，由运维单独排期。
 ```
 
 > 审计表**不存密码、不存密码哈希、不存明文邮箱、不存明文 IP**，只存已有的 HMAC 派生值。
@@ -357,7 +392,7 @@ guest_shop_orders
 | N2 不串号 | 满足：永不覆盖，攻击者用受害者邮箱下单只会得到**一个只含他自己订单的新分组** |
 | 抢占攻击 | 失效：攻击者既读不到受害者订单，也无法让受害者读不到自己的订单 |
 | 卡密资损 | 无新增路径 |
-| 代价 | 登录最坏情况跑 ≤3 次 scrypt（≈150~300ms）；`order_count` 等统计需按 `contact_hash` 聚合而非按行 |
+| 代价 | 登录最坏情况跑 ≤K38 次 scrypt（默认 3 次，≈150~300ms）；订单数等统计一律按 `contact_hash` 聚合，不按分组行计（A0 已删除草案里的 `order_count` 冗余列） |
 
 #### 6.4.4 文案定稿
 
@@ -842,7 +877,10 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
   「`registered_user_match=true` 的游客」与「全新邮箱游客」的折后金额**逐分相等**，
   两边都能用券；并断言 `registered_user_match` 取值确实不同（证明判定跑了但没进定价）。
 - **反杀熟 H2**：定价 resolver 入参白名单，断言不含 `registered_user_match` /
-  `merged_into_user_id` / `order_count` / `last_login_at` / `email_verified_at`。
+  `merged_into_user_id` / `buyer_id` / `credential_group_no` / `failed_login_count` /
+  `last_login_at` / `email_verified_at`。（草案里的 `order_count` 列已在 A0 删除；
+  黑名单改为覆盖 `buyer_id` / `credential_group_no`——这两个正是「换一套分组刷新配额」
+  的攻击面，见 §6.4.5。）
 - **反杀熟 H4**：契约测试断言前端与错误文案中不出现「老用户」「已注册所以」「登录后更优惠」等
   暗示身份差别定价的字符串。
 - CAS 计数在并发下不丢增量（复用现有 claim 失败计数的测试范式）。
