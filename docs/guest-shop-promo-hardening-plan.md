@@ -800,6 +800,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 | K17 | 熔断：无效码率 | 30%（样本 ≥ 50） | 10%~50% | 停机灵敏度 | **30%** |
 | K18 | 熔断：`amount_mismatch` | ≥ 3 | 1~10 | 价格分裂停机 | **1**（最保守，一次就停） |
 | K19 | IP 因子每日上限 | 20 | 5~200 | NAT 误伤风险 vs 防洪强度 | **20** |
+| K24 | `max_pending_quantity_per_ip_product` | `2` | 1~50 | 单 IP 对**单个商品**最多能占住多少件未付款库存（吸收自 Dujiao-Next） | **2** |
 | K20 | 游客用券是否必填联系方式 | **必填** | 必填 / 选填 | 身份可信度 vs 转化率 | **必填**（这是整个配额体系的地基；选填会让 C-A2 退化） |
 | K21 | 带折扣的 quote 是否前置人机校验（§20-A） | **开** | 开 / 关 | 脚本化薅羊毛的入门成本 | **开**；国际站 Cloudflare Turnstile，国内站需评估腾讯防水墙/极验的可用性与合规 |
 | K22 | 触发邮箱 OTP 的折扣阈值（§20-B） | 折扣 ≥ ¥20 或折扣率 ≥ 20% | — | 大额优惠的身份可信度 | **开**：小额免验证保转化，大额必须 OTP；OTP 通过后 `contact_hash` 才升级为「已验证因子」并放宽阈值 |
@@ -905,3 +906,115 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 **我的建议：A + B 同做，C 排到 L4，D 放弃。** 这样 §7.2 的四因子里有两个（session、verified contact）
 具备真实抗伪造性，配额体系才不是纸面上的。
+
+---
+
+## 21. 先例对照：Dujiao-Next（独角发卡 Go 版）如何处理游客身份
+
+> 来源：`https://github.com/dujiao-next/dujiao-next`（`main`，浅克隆核对，2026-09-17）。
+> 下列行号/文件名为核对时的实际路径，便于复查。
+
+### 21.1 核心结论：它没有「解决」游客身份，而是**绕开**了这个问题
+
+独角把促销分成两类，只有一类需要身份：
+
+| 促销类型 | 独角实现 | 是否有状态 | 是否做游客身份限制 |
+|---|---|---|---|
+| 闪购 / 活动价 | `internal/modules/promotion/domain/promotion.go` — 只有 `ScopeRefID / Type / Value / MinAmount / StartsAt / EndsAt / IsActive`，**没有任何 usage / quota / user 字段** | 无状态价格规则 | **不做**。游客与会员同价，天然共享 |
+| 阶梯价（批发价） | `internal/modules/catalog/product/domain/pricing.go:151 ResolveWholesaleUnitPriceForSKU` — 纯按 `MinQuantity` 档位算 | 无状态价格规则 | **不做** |
+| 会员折扣 | 依赖 `memberLevelID` | 有状态（绑定账号） | 游客 `memberLevelID=0` → 自动排除 |
+| 优惠码 | `internal/modules/coupon/*` | **有状态、可兑换资源** | **放弃 per-user，改用全局总量 + 角色白名单 + IP 风控 + 验证码** |
+
+**关键代码事实**（`internal/modules/coupon/application/service.go:69`）：
+
+```go
+if coupon.PerUserLimit > 0 && userID != 0 {   // ← 游客 userID == 0，整段跳过
+    count, err := s.usageRepo.CountByUser(coupon.ID, userID)
+    ...
+}
+```
+
+即：**独角的「每人限用 N 次」对游客完全不生效。** 它承认游客身份不可计数，转而只依赖
+「这张券总共能被用 N 次」。
+
+### 21.2 它靠什么兜底（与身份无关的四层）
+
+1. **券的全局总量 + 事务内行锁重查**（`internal/modules/order/application/order_service.go:645-678`）：
+   下单事务里先取 `lockedCoupon`（行锁），**再查一次** `UsageLimit/UsedCount` 与
+   `PerUserLimit`，然后 `Create(CouponUsage)` + `IncrementUsedCount(+1)`。
+   `DecrementUsedCount` 带 `WHERE used_count >= delta` 防止减成负数。
+2. **券的角色/等级白名单**：`Coupon.PaymentRoles`（`guest` / `member`，留空不限）与
+   `Coupon.MemberLevels`。`resolveCouponPaymentRoleError` 还会区分
+   `ErrPaymentRoleGuestOnly` / `ErrPaymentRoleMemberOnly` 给出精确文案。
+   → 定向券天然不发到游客手里。
+3. **零元购**：`order_service_validate.go:339` `if totalAmount.LessThanOrEqual(decimal.Zero) { return nil, ErrInvalidOrderAmount }`。
+   券折扣先被 clamp 到 `MaxDiscount`，再 clamp 到 `eligibility.subtotal`，最后由这一行兜底。
+   **注意：这是应用层拦截，不是 DB CHECK。**
+4. **IP 风控 + 验证码**（`internal/modules/orderrisk/`、`internal/modules/captcha/`）：
+   - `NormalizeRiskIP`：IPv4 用完整地址，**IPv6 按 /64 前缀聚合**（`contract/types.go`）。
+   - 游客默认值（`settings/schema/security/order_risk_control.go:60-72`）：
+     `MaxPendingOrdersPerIP=2`、`MaxQuantityPerProductPerOrder=1`、
+     `MaxPendingQuantityPerIPProduct=2`、`PaymentExpireMinutes=10`、
+     限流 `60s / 3 次 / 封 120s`。会员侧默认 `MaxPendingOrdersPerUser=5`、`60s/10次`。
+   - **总开关 `Enabled: false` 默认关闭**，注释明写「避免静默改变订单行为」。
+   - **fail-closed**：策略需要 IP 而 `RiskIP == ""` → `ErrClientIPUnavailable` 直接拒单。
+   - **事务内加锁再计数**：`gate.LockRiskKeys([]string{"guest:ip:" + RiskIP})` 后才
+     `CountPendingGuestByRiskIP` / `SumPendingGuestQuantityByRiskIP`，注释要求
+     「必须在订单事务内、创建父订单和锁库存之前调用」，且「事务内禁止再次读取独立设置仓储」
+     （配置快照 `ConfigSnapshot` 从事务外带入）。
+   - 限流用 Redis Lua 固定窗口（`infrastructure/redislimiter/limiter.go`），
+     键为 `dj:risk:order_rate:guest_ip:<riskIP>`；**Redis 不可用或脚本报错时 `return nil`（放行）**。
+   - 验证码：`CaptchaSceneGuestCreateOrder = "guest_create_order"`
+     （`internal/constants/constants.go:352`），provider 支持 `image` / `turnstile` / `none`，
+     在 `order/transport/http/create_handler.go:139,213` 的下单入口调
+     `VerifyGuestCreateOrder(payload, c.ClientIP())`，**服务端校验**，错误分
+     `ErrRequired / ErrInvalid / ErrConfigInvalid` 三档。场景化开关（login / register_send_code /
+     reset_send_code / guest_create_order / gift_card_redeem）可单独启停。
+
+### 21.3 独角的「游客身份」到底是什么
+
+**邮箱 + 自设查询密码**，且**只用于取货，不用于配额**：
+
+- 下单必填 `GuestEmail`（`ErrGuestEmailRequired`）与 `GuestPassword`
+  （`order_service.go:799 validateGuestPassword`，只校验非空 + 最小长度）。
+- 查订单 / 下载卡密都要 `email + password`（`order/transport/http/guest_handler.go`，
+  `ginutil.GetGuestCredentials`）。
+- **邮箱不验证、不发 OTP**。所以它是一个「取货凭证」，不是「身份」。
+
+### 21.4 与本方案的逐条对照
+
+| 维度 | Dujiao-Next | 本方案 | 判断 |
+|---|---|---|---|
+| 游客配额锚点 | 无（`userID==0` 跳过 per-user） | 服务端会话 + 四因子并集 | 本方案更强，但成本更高；独角证明了「不做也能活」 |
+| 券总量 | 全局 `UsageLimit`（**只有次数，没有金额**） | `guest_max_uses` + `guest_max_total_discount` + 站点 `daily_budget_cny` | **本方案更强**：独角的损失上限＝`UsageLimit × MaxDiscount`，运营易算错 |
+| 扣减原子性 | 事务内行锁 + 重查 + `used_count+1` | 条件 UPDATE 看受影响行数，同事务 | 两者都正确；条件 UPDATE 对锁顺序更不敏感 |
+| 零元购 | 应用层 `total<=0` 拒绝 | **DB CHECK**，数学上不可表达 | **本方案更强**：后台补单 / 数据修复脚本绕不过 CHECK |
+| 定向券外泄 | `PaymentRoles` + `MemberLevels` | `audience_segment` / `distribution_mode` / `pricing_apply_stage` 的 DB CHECK 组合禁止 | 思路一致；本方案落在约束层 |
+| 掏鸟蛋 | per-IP 未付单 ≤2 + **per-IP-per-商品 pending 数量 ≤2** + 单品单笔 ≤1 + TTL 10min + 事务内锁 | 游客占库存 ≤20% + 每身份 ≤2 单 + TTL 600s | **独角的 per-IP-per-商品维度更细，应吸收**（§21.5-2） |
+| 人机校验 | **已落地**（Turnstile / 图片，场景化） | 列为待选项 A（§20-A） | 独角验证了 A 的工程可行性与落点 |
+| fail-closed | 拿不到 IP 直接拒；总开关默认关 | P2/P3 默认全关 + fail-closed | 一致 |
+| 熔断 | **无** | §12 自动跳闸 + 人工恢复 | **本方案更强** |
+| 限流降级 | Redis 故障 → 放行（fail-open） | 促销异常 → 拒绝促销但允许原价（P10） | 语义不同但都经过思考；本方案的限流应显式声明 fail-open/fail-closed |
+
+### 21.5 吸收进本方案的四条改动
+
+1. **L1 可以脱离身份层提前上线。** 阶梯价与闪购是**无状态价格规则**，独角对游客完全开放且
+   没有出过配额问题。本方案原先把 L1 排在 L2（会话身份）之后属于过度保守。
+   → 修订 §14：L1 只依赖「DB CHECK 零元购 + 单品单笔件数上限 + per-IP pending 上限 + 熔断」，
+   **不依赖 `guest_shop_sessions`**。L2/L3（优惠码 + 金额权威）仍必须捆绑。
+2. **新增 per-IP-per-商品 的 pending 数量上限**（对应独角 `MaxPendingQuantityPerIPProduct`），
+   与「游客占比 ≤20%」并存：占比闸防全局掏空，单品闸防某个热门 SKU 被单点掏空。
+   → 新增旋钮 K24（默认 2）。
+3. **验证码做成场景化开关**，而不是一个全局布尔：`guest_quote_with_code` /
+   `guest_create_order_with_discount` 两个场景独立启停，**原价链路永不加码**。
+   → 修订 §20-A 的落点描述。
+4. **限流的降级语义必须显式写明**：独角在 Redis 故障时 fail-open。本方案选择
+   **促销链路 fail-closed（拒绝促销）、原价链路 fail-open（允许下单）**，
+   并要求限流器故障写审计事件 + 计入熔断指标。
+
+### 21.6 不照抄的四条
+
+1. 不照抄「游客跳过 per-user 限制」——我们要的是「游客也能享福利」，不是「游客无限享福利」。
+2. 不照抄「零元购只在应用层拦」——必须落 DB CHECK。
+3. 不照抄「只有次数预算、没有金额预算」——必须有 `guest_max_total_discount` 与站点日预算。
+4. 不照抄「IP 是唯一游客风控键」——保留服务端会话锚点，否则移动网络换 IP 即重置配额。
