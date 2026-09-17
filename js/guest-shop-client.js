@@ -484,13 +484,26 @@
         return true;
     }
 
-    async function loadPreview(context, { revealButton = true } = {}) {
-        if (!context || context.manualDelivery || context.soldOut) return false;
+    // Preview requests are serialized so a caller that lands while an earlier
+    // probe is still in flight waits for that result instead of getting a
+    // "not available yet" answer. The merged logged-out entry point treats an
+    // unavailable preview as "fall back to login", so a duplicate probe must
+    // never look like a negative result.
+    let previewQueue = Promise.resolve();
+
+    function loadPreview(context) {
+        if (!context) return Promise.resolve({ available: false, reason: 'missing_context' });
+        if (context.manualDelivery) return Promise.resolve({ available: false, reason: 'manual_delivery' });
+        if (context.soldOut) return Promise.resolve({ available: false, reason: 'sold_out' });
+        const task = previewQueue.then(() => runPreviewRequest(context));
+        previewQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    async function runPreviewRequest(context) {
         if (state.previewKey === context.contextKey && state.preview) {
-            if (revealButton && !state.previewError) setHidden('guestCashPurchaseBtn', false);
-            return !state.previewError;
+            return { available: !state.previewError, reason: state.previewError ? 'unavailable' : 'available' };
         }
-        if (state.previewPending) return false;
         state.previewPending = true;
         state.previewError = false;
         const query = new URLSearchParams({
@@ -501,15 +514,16 @@
         try {
             const payload = await requestJson(`${PREVIEW_ENDPOINT}?${query.toString()}`, { method: 'GET' });
             const available = renderPreview(context, payload);
-            if (revealButton) setHidden('guestCashPurchaseBtn', !available);
-            return available;
+            return { available, reason: available ? 'available' : 'unavailable' };
         } catch (error) {
             state.previewKey = context.contextKey;
             state.preview = null;
             state.previewError = true;
-            if (revealButton) setHidden('guestCashPurchaseBtn', true);
             if (!getModal()?.hidden) setStateMessage(error.message || '游客支付暂不可用', 'error');
-            return false;
+            const reason = error.status === 429
+                ? 'rate_limited'
+                : (error.code === 'guest_product_unavailable' ? 'unavailable' : 'preview_error');
+            return { available: false, reason };
         } finally {
             state.previewPending = false;
         }
@@ -936,7 +950,7 @@
             setHidden('guestCashCreateOrderBtn', false);
             setHidden('guestCashCheckStatusBtn', true);
             setStateMessage('正在确认商品信息...', 'configure');
-            void loadPreview(context || getPurchaseContext(), { revealButton: false });
+            void loadPreview(context || getPurchaseContext());
         }
         if (state.orderNo) {
             void pollStatus({ immediate: true });
@@ -1042,7 +1056,7 @@
             state.skuId = context.skuId;
             setText('guestCashProductName', context.productName || '-');
             setText('guestCashSkuName', context.skuName || '-');
-            void loadPreview(context, { revealButton: false });
+            void loadPreview(context);
         }
     }
 
@@ -1064,7 +1078,8 @@
             setStateMessage('当前商品不支持游客购买', 'error');
             return;
         }
-        if (!(await loadPreview(context, { revealButton: false }))) return;
+        const previewResult = await loadPreview(context);
+        if (!previewResult.available) return;
         const payment = selectedPayment();
         if (!payment.provider || !payment.channel) {
             setStateMessage('请选择有效的支付方式', 'error');
@@ -1424,30 +1439,76 @@
         }
     }
 
-    function syncPurchaseButton() {
-        const button = element('guestCashPurchaseBtn');
-        const modal = element('shopPurchaseModal');
-        const context = getPurchaseContext();
-        const active = Boolean(modal && !modal.hidden && modal.classList.contains('active'));
-        if (!button || !active || !context || context.manualDelivery || context.soldOut) {
-            if (button) setHidden('guestCashPurchaseBtn', true);
-            return;
-        }
-        if (state.previewKey !== context.contextKey && !state.previewPending) {
-            void loadPreview(context, { revealButton: true });
-        }
-        if (state.previewKey === context.contextKey && state.preview && !state.previewError) {
-            setHidden('guestCashPurchaseBtn', false);
-        }
+    // The standalone "游客购买" button was removed. shop-client.js now merges the
+    // guest cash entry into the primary "兑换 / 立即购买" action for logged-out
+    // visitors. This bridge exposes just enough of the isolated guest flow for
+    // that routing, without leaking auth/token concerns into this file.
+    const availabilityCache = new Map();
+    const availabilityInFlight = new Map();
+    // Transient probe failures stay retryable: caching them would permanently
+    // route a logged-out visitor to the login prompt for the rest of the page
+    // session even though guest cash payment may well be available.
+    const TRANSIENT_AVAILABILITY_REASONS = new Set(['pending', 'rate_limited', 'preview_error']);
+
+    function guestContextBlockReason(context) {
+        if (!context || !context.contextKey) return 'missing_context';
+        if (context.manualDelivery) return 'manual_delivery';
+        if (context.soldOut) return 'sold_out';
+        return '';
     }
 
-    function handlePurchaseButtonClick(event) {
-        const target = event.target instanceof Element ? event.target.closest('#guestCashPurchaseBtn') : null;
-        if (!target) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openGuestModal(getPurchaseContext());
+    // Synchronous, cache-only read used for render decisions. Returns null when
+    // availability has not been probed yet for this selection.
+    function peekAvailability(context = getPurchaseContext()) {
+        const blocked = guestContextBlockReason(context);
+        if (blocked) return { available: false, reason: blocked };
+        return availabilityCache.get(context.contextKey) || null;
     }
+
+    // Resolves guest cash availability for a selection, deduplicating in-flight
+    // probes and caching negative results so a non-guest product is not re-probed
+    // on every render (matching the old button-poll behaviour).
+    async function probeAvailability(context = getPurchaseContext()) {
+        const blocked = guestContextBlockReason(context);
+        if (blocked) return { available: false, reason: blocked };
+        const cached = availabilityCache.get(context.contextKey);
+        if (cached) return cached;
+        const inFlight = availabilityInFlight.get(context.contextKey);
+        if (inFlight) return inFlight;
+        const promise = (async () => {
+            try {
+                const result = await loadPreview(context);
+                const normalized = {
+                    available: Boolean(result && result.available),
+                    reason: (result && result.reason) || ((result && result.available) ? 'available' : 'unavailable')
+                };
+                if (!TRANSIENT_AVAILABILITY_REASONS.has(normalized.reason)) {
+                    availabilityCache.set(context.contextKey, normalized);
+                }
+                return normalized;
+            } finally {
+                availabilityInFlight.delete(context.contextKey);
+            }
+        })();
+        availabilityInFlight.set(context.contextKey, promise);
+        return promise;
+    }
+
+    // Opens the isolated guest cash modal when this selection supports it.
+    async function startGuestCheckout(context = getPurchaseContext()) {
+        const availability = await probeAvailability(context);
+        if (!availability || !availability.available) {
+            return { started: false, reason: (availability && availability.reason) || 'unavailable' };
+        }
+        openGuestModal(context);
+        return { started: true, reason: 'available' };
+    }
+
+    window.GuestShopCheckout = {
+        peekAvailability,
+        probeAvailability,
+        startGuestCheckout
+    };
 
     function handleGuestModalClick(event) {
         const target = event.target instanceof Element ? event.target : null;
@@ -1579,12 +1640,10 @@
     }
 
     function init() {
-        document.addEventListener('click', handlePurchaseButtonClick, true);
         getModal()?.addEventListener('click', handleGuestModalClick);
         element('guestCashPaymentChannel')?.addEventListener('change', handlePaymentChannelChange);
         const stored = storedCheckout();
         if (stored) hydrateCheckout(stored);
-        window.setInterval(syncPurchaseButton, 350);
         maybeRestoreReturn();
     }
 

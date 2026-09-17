@@ -10,8 +10,11 @@ const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath)
 
 const markup = read('shop.html');
 const client = read('js/guest-shop-client.js');
+const shopClient = read('js/shop-client.js');
 const styles = read('css/shop-page.css');
 const guestShopHandler = read('server/api-handlers/public/guest-shop.js');
+const zhLang = JSON.parse(read('lang/zh.json'));
+const enLang = JSON.parse(read('lang/en.json'));
 
 // The polling client and the server-side per-IP status budget must stay in sync,
 // so read both instead of pinning magic interval numbers.
@@ -38,11 +41,78 @@ test('shop page mounts the isolated guest cash checkout after the authenticated 
 
     assert.ok(shopClientIndex >= 0, 'the existing shop client must remain mounted');
     assert.ok(guestClientIndex > shopClientIndex, 'guest checkout must initialize after the shop client');
-    assert.match(markup, /id="guestCashPurchaseBtn"[^>]*hidden/);
+    assert.doesNotMatch(
+        markup,
+        /guestCashPurchaseBtn/,
+        'the standalone 游客购买 button must stay removed from the product detail modal'
+    );
+    assert.match(markup, /id="nextPurchaseStepBtn"[^>]*class="shop-btn shop-btn-primary"/);
     assert.match(markup, /id="guestCashPurchaseModal"[^>]*hidden/);
     assert.match(markup, /id="guestCashDeliveredContent"[^>]*class="guest-shop-modal__delivery-content"/);
     assert.match(styles, /\.guest-shop-modal__content/);
     assert.match(styles, /@media \(max-width: 600px\)[\s\S]*\.guest-shop-modal__actions/);
+});
+
+test('the logged-out guest cash entry is merged into the primary purchase action', () => {
+    // The guest script no longer watches the shop purchase modal or owns a button.
+    assert.doesNotMatch(client, /guestCashPurchaseBtn/);
+    assert.doesNotMatch(client, /shopPurchaseModal/);
+    assert.doesNotMatch(client, /syncPurchaseButton|handlePurchaseButtonClick/);
+    assert.doesNotMatch(client, /window\.setInterval\(syncPurchaseButton/);
+    assert.match(client, /function loadPreview\(context\) \{/);
+    assert.match(client, /async function runPreviewRequest\(context\) \{/);
+    assert.doesNotMatch(client, /reason: 'pending' \};/);
+
+    // It exposes only a routing bridge, and that bridge stays free of auth material.
+    assert.match(
+        client,
+        /window\.GuestShopCheckout = \{\s*peekAvailability,\s*probeAvailability,\s*startGuestCheckout\s*\};/
+    );
+    assert.match(client, /function peekAvailability\(context = getPurchaseContext\(\)\) \{/);
+    assert.match(client, /async function probeAvailability\(context = getPurchaseContext\(\)\) \{/);
+    assert.match(client, /async function startGuestCheckout\(context = getPurchaseContext\(\)\) \{/);
+    assert.match(client, /const TRANSIENT_AVAILABILITY_REASONS = new Set\(\['pending', 'rate_limited', 'preview_error'\]\);/);
+    assert.match(client, /if \(!TRANSIENT_AVAILABILITY_REASONS\.has\(normalized\.reason\)\) \{/);
+
+    // shop-client.js owns the auth decision and only routes logged-out visitors.
+    assert.match(shopClient, /shopAuthStateKnown: null,/);
+    assert.match(
+        shopClient,
+        /isGuestCashEntryActive: function \(\) \{\s*if \(this\.shopAuthStateKnown !== false\) return false;/
+    );
+    assert.match(shopClient, /startGuestCashCheckout: async function \(\) \{/);
+    assert.match(shopClient, /window\.GuestShopCheckout/);
+    assert.match(
+        shopClient,
+        /const token = await this\.getAccessToken\(\);[\s\S]*?if \(!token\) \{[\s\S]*?const guestEntry = await this\.startGuestCashCheckout\(\);[\s\S]*?if \(!guestEntry\.started\) \{[\s\S]*?this\.promptLoginForPurchase\(/
+    );
+    // Guest cash orders are one unit without coupons, so both stages collapse.
+    assert.match(
+        shopClient,
+        /if \(guestCashActive\) \{\s*document\.querySelectorAll\(\s*'#shopPurchaseModal \.shop-purchase-stage-quantity, #shopPurchaseModal \.shop-purchase-stage-discount'\s*\)/
+    );
+    // The bridge cache is read synchronously before the stage copy is computed so
+    // the merged label does not flash "兑换" on a reopened, already-probed product.
+    assert.match(shopClient, /hydrateGuestCashEntryFromBridge: function \(\) \{/);
+    assert.match(
+        shopClient,
+        /this\.hydrateGuestCashEntryFromBridge\(\);\s*\n\s*const copy = this\.getPurchaseStageCopy\(nextStage\);/
+    );
+    assert.match(shopClient, /nextLabel: guestCashActive/);
+    assert.equal(zhLang.shop.guestCashBuyNow, '立即购买');
+    assert.equal(enLang.shop.guestCashBuyNow, 'Buy now');
+
+    // Guest orders are one unit, so the quantity is collapsed through the canonical
+    // repricing path without paying for a coupon asset refresh.
+    assert.match(
+        shopClient,
+        /applyGuestCashEntryQuantity: function \(\) \{[\s\S]*?this\.updatePriceForQuantity\(1, \{ refreshDiscountAssets: false \}\);/
+    );
+    assert.match(shopClient, /quantityInput\.disabled = isPurchaseProcessing \|\| isManualDelivery \|\| isSoldOut \|\| guestCashActive;/);
+
+    // The user explicitly rejected an explanatory hint line for logged-out visitors.
+    assert.doesNotMatch(shopClient, /未登录可直接现金购买/);
+    assert.doesNotMatch(markup, /未登录可直接现金购买/);
 });
 
 test('guest checkout uses only the public cash endpoints and same-origin cookie credentials', () => {
@@ -255,6 +325,10 @@ test('guest ZPay checkout hosts an in-page Alipay QR and countdown instead of op
     assert.match(markup, /打开支付宝支付/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
+    assert.match(
+        markup,
+        /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1/
+    );
 
     assert.match(styles, /\.guest-shop-modal__qr-card/);
     assert.match(styles, /\.guest-shop-modal__qr-countdown/);
@@ -289,6 +363,10 @@ test('unpaid guest orders can be abandoned locally without a cancel RPC', () => 
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*>关闭当前订单</);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
+    assert.match(
+        markup,
+        /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1/
+    );
 
     assert.match(client, /function clearStoredCheckout\(\)/);
     assert.match(client, /function isAbandonableOrder\(\)/);
@@ -318,6 +396,10 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(markup, /应付金额/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
+    assert.match(
+        markup,
+        /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1/
+    );
 
     assert.match(client, /function paymentProviderSummary\(provider\)/);
     assert.match(client, /const fallbackRate = \(key === ['"]zpay['"] \|\| key === ['"]nowpayments['"]\) \? 0\.01 : 0;/);
