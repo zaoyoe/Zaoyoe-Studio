@@ -64,7 +64,18 @@ test('guest delivery is claim-gated by confirmed payment and delivered fulfillme
     assert.match(client, /CLAIM_ENDPOINT[\s\S]*method:\s*['"]POST['"][\s\S]*credentials:\s*['"]same-origin['"]/);
     assert.match(client, /setText\(['"]guestCashDeliveredContent['"], payload\.content \|\| ['"]['"]\)/);
     assert.doesNotMatch(client, /innerHTML\s*=\s*[^;]*payload\.content/);
+    assert.match(client, /claimDelivery\(expectedGeneration[\s\S]*clearStoredCheckout\(\)/);
+    assert.doesNotMatch(client, /claimDelivery\(expectedGeneration[\s\S]*persistCheckout\(\)/);
     assert.match(markup, /<pre id="guestCashDeliveredContent"/);
+});
+
+test('delivered guest orders are cleared when the modal closes and cannot be restored after refresh', () => {
+    assert.match(client, /function clearCompletedCheckout\(\)/);
+    assert.match(client, /function clearCompletedCheckout\(\)[\s\S]*state\.orderNo = ['"]['"][\s\S]*state\.status = ['"]configure['"][\s\S]*resetOrderUi\(\)/);
+    assert.match(client, /function closeGuestModal\(\)[\s\S]*if \(state\.status === ['"]delivered['"]\) clearCompletedCheckout\(\)/);
+    assert.match(client, /function clearCompletedCheckout\(\)[\s\S]*clearStoredCheckout\(\)/);
+    assert.match(client, /async function maybeRestoreReturn\(\)[\s\S]*const restoredOrderNo = state\.orderNo[\s\S]*state\.orderNo !== restoredOrderNo/);
+    assert.match(client, /restoredOrder\.payment_status[\s\S]*restoredOrder\.fulfillment_status[\s\S]*clearCompletedCheckout\(\)/);
 });
 
 test('payment return markers only restore an order handle and do not unlock delivery', () => {
@@ -94,11 +105,44 @@ test('polling remains recoverable after transient fulfilment lag and manual retr
     assert.match(client, /当前设备的取货凭证不可用，请勿重复付款/);
 });
 
+test('confirmed payments poll fulfilment faster while unpaid orders keep the normal interval', () => {
+    assert.match(client, /const POLL_INTERVAL_MS = 3500/);
+    assert.match(client, /const CONFIRMED_FULFILLMENT_POLL_INTERVAL_MS = 1000/);
+    // Smart polling provides adaptive intervals based on order state
+    assert.match(client, /const SMART_POLL_INTERVALS/);
+    assert.match(client, /PAYMENT_JUST_CONFIRMED.*800/);
+    assert.match(client, /FULFILLING.*600/);
+    assert.match(client, /calculateSmartPollInterval/);
+    assert.match(
+        client,
+        /if \(state\.smartPollingEnabled\)[\s\S]*calculateSmartPollInterval/
+    );
+    assert.match(client, /window\.setTimeout\(run, nextPollIntervalMs\)/);
+    // A failed/transient status request falls back to the ordinary interval;
+    // it must not create a tight retry loop or a second modal flow.
+    assert.match(client, /let nextPollIntervalMs = POLL_INTERVAL_MS/);
+});
+
+test('terminal fulfilment failures stop tight polling and show an actionable state', () => {
+    assert.match(
+        client,
+        /paymentStatus === ['"]confirmed['"] && fulfillmentStatus === ['"]paid_unfulfillable['"][\s\S]*正在处理退款或人工补发[\s\S]*shouldContinue = false/
+    );
+    assert.match(
+        client,
+        /paymentStatus === ['"]confirmed['"] && fulfillmentStatus === ['"]dead_letter['"][\s\S]*已转人工处理[\s\S]*shouldContinue = false/
+    );
+    assert.match(client, /fulfillmentStatus === ['"]failed['"][\s\S]*发货正在重试/);
+    assert.match(client, /\['pending', 'fulfilling'\]\.includes\(fulfillmentStatus\)/);
+});
+
 test('manual status check forces a live provider query while background polling does not', () => {
     assert.match(client, /async function fetchStatus\(\{ forceRefresh = false \} = \{\}\)/);
     assert.match(client, /if \(forceRefresh\) query\.set\('force_provider_refresh', '1'\)/);
     assert.match(client, /async function pollStatus\(\{ immediate = false, resetWindow = false, forceProviderRefresh = false \} = \{\}\)/);
-    assert.match(client, /await fetchStatus\(\{ forceRefresh: forceProviderRefresh \}\)/);
+    assert.match(client, /let forceProviderRefreshNext = forceProviderRefresh === true/);
+    assert.match(client, /fetchStatus\(\{ forceRefresh: forceProviderRefreshNext \}\)/);
+    assert.match(client, /forceProviderRefreshNext = false/);
     // The automatic poll path stays non-forced so it cannot bypass the server throttle.
     assert.match(client, /void pollStatus\(\{ immediate: true \}\)/);
 });
@@ -164,7 +208,7 @@ test('guest ZPay checkout hosts an in-page Alipay QR and countdown instead of op
     assert.match(markup, /请使用支付宝扫码支付/);
     assert.match(markup, /打开支付宝支付/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
-    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_1/);
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_2/);
 
     assert.match(styles, /\.guest-shop-modal__qr-card/);
     assert.match(styles, /\.guest-shop-modal__qr-countdown/);
@@ -198,7 +242,7 @@ test('unpaid guest orders can be abandoned locally without a cancel RPC', () => 
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*hidden/);
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*>关闭当前订单</);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
-    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_1/);
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_2/);
 
     assert.match(client, /function clearStoredCheckout\(\)/);
     assert.match(client, /function isAbandonableOrder\(\)/);
@@ -227,7 +271,7 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(markup, /id="guestCashFeeAmount"/);
     assert.match(markup, /应付金额/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
-    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_1/);
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260916_GUEST_STATUS_ACTIVE_REFRESH_2/);
 
     assert.match(client, /function paymentProviderSummary\(provider\)/);
     assert.match(client, /const fallbackRate = \(key === ['"]zpay['"] \|\| key === ['"]nowpayments['"]\) \? 0\.01 : 0;/);

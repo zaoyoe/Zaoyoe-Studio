@@ -90,11 +90,13 @@ test('installer accepts the canonical --root only as an explicit no-op', () => {
     assert.match(result.stdout, /remote app root is fixed/u);
 });
 
-test('systemd timer is minute-based, persistent, and targets the worker unit', () => {
-    assert.match(timer, /OnCalendar=\*-\*-\* \*:\*:00/u);
+test('systemd timer runs every 10 seconds, is persistent, and targets the worker unit', () => {
+    assert.match(timer, /Description=.*every 10 seconds/u);
+    assert.match(timer, /OnCalendar=\*-\*-\* \*:\*:00\/10/u);
+    assert.match(timer, /AccuracySec=1s/u);
+    assert.match(timer, /RandomizedDelaySec=2s/u);
     assert.match(timer, /Persistent=true/u);
     assert.match(timer, /Unit=zaoyoe-guest-shop-worker\.service/u);
-    assert.match(timer, /RandomizedDelaySec=/u);
 });
 
 test('installer only installs scheduler artifacts and defaults to stopped timer', () => {

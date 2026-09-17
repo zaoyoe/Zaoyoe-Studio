@@ -422,17 +422,6 @@ function createGuestShopWorker({
             .slice(0, limit);
     }
 
-    async function loadReservation(orderId) {
-        const db = requireDb();
-        let query = db.from('guest_shop_inventory_reservations')
-            .select('id,status,inventory_id,reserved_until,order_id')
-            .eq('order_id', orderId);
-        if (typeof query.maybeSingle === 'function') query = query.maybeSingle();
-        const result = await query;
-        if (result?.error) throw result.error;
-        return result?.data || null;
-    }
-
     async function loadPayment(orderId) {
         const db = requireDb();
         let query = db.from('guest_shop_payment_orders')
@@ -763,20 +752,55 @@ function createGuestShopWorker({
             return { status: 'skipped', reason: 'payment_not_confirmed' };
         }
         const { state } = getWorkerMetadata(order);
-        if (state.fulfillment_terminal || (state.fulfillment_next_attempt_at && !isRetryDue({ next_attempt_at: state.fulfillment_next_attempt_at }, currentDate().getTime()))) {
-            return { status: 'skipped', reason: 'fulfillment_backoff' };
-        }
+
+        // Fast-path optimization: skip backoff check for recently confirmed orders
+        // on their first attempt. This accelerates delivery from ~15s to <1s for
+        // immediate webhook confirmations, while preserving exponential backoff
+        // for genuine retry scenarios (network errors, transient failures).
+        const fulfillmentStartMs = currentDate().getTime();
         const attempt = normalizeNonNegativeInteger(state.fulfillment_attempt_count, 0) + 1;
+        const isFirstAttempt = attempt === 1;
+        const paidAtMs = Date.parse(String(order.paid_at || '').trim());
+        const isRecentlyConfirmed = Number.isFinite(paidAtMs) && (currentDate().getTime() - paidAtMs) < 10000;
+        const shouldSkipBackoff = isFirstAttempt && isRecentlyConfirmed;
+
+        // 🔍 诊断日志：Worker 处理时序
+        const logMsg = `[Worker Fulfillment] Order ${order.id}:
+  - 支付时间: ${order.paid_at || 'N/A'}
+  - 当前时间: ${new Date(fulfillmentStartMs).toISOString()}
+  - 支付延迟: ${paidAtMs ? `${fulfillmentStartMs - paidAtMs}ms` : 'N/A'}
+  - 尝试次数: ${attempt} (首次: ${isFirstAttempt})
+  - 最近确认: ${isRecentlyConfirmed}
+  - 跳过回退: ${shouldSkipBackoff ? '✅ YES' : '❌ NO'}`;
+        console.log(logMsg);
+        logger?.info?.(logMsg);
+
+        if (!shouldSkipBackoff) {
+            if (state.fulfillment_terminal || (state.fulfillment_next_attempt_at && !isRetryDue({ next_attempt_at: state.fulfillment_next_attempt_at }, currentDate().getTime()))) {
+                return { status: 'skipped', reason: 'fulfillment_backoff' };
+            }
+        }
+
         const lease = await acquireLease(order, 'fulfillment', state, currentDate());
         if (!lease) return { status: 'skipped', reason: 'lease_lost' };
         const workingOrder = lease.order;
 
+        const leaseAcquiredMs = currentDate().getTime();
+        console.log(`[Worker Fulfillment] Lease acquired in ${leaseAcquiredMs - fulfillmentStartMs}ms`);
+
         try {
-            const reservation = await loadReservation(order.id);
+            const claimStartMs = currentDate().getTime();
             const claimed = await callRpc('fn_guest_shop_claim_fulfillment', {
                 p_order_id: order.id,
-                p_reservation_id: reservation?.id || null
+                // The claim RPC already locks and resolves the one
+                // reservation belonging to this order.  Supplying a
+                // reservation id fetched in a separate HTTP round-trip adds
+                // latency and creates a needless stale-read window.
+                p_reservation_id: null
             });
+            const claimEndMs = currentDate().getTime();
+            console.log(`[Worker Fulfillment] Claim RPC completed in ${claimEndMs - claimStartMs}ms`);
+
             const claim = claimed || {};
             // The RPC persists paid_unfulfillable before returning this row.
             // Never retry with a replacement inventory row: that would break
@@ -822,10 +846,20 @@ function createGuestShopWorker({
                 throw error;
             }
 
+            const reservationId = normalizeText(claim.reservation_id, 160);
+            if (!reservationId) {
+                const error = new Error('履约 RPC 未返回库存预留引用');
+                error.code = 'guest_fulfillment_reservation_missing';
+                error.retryable = true;
+                throw error;
+            }
             const marked = await callRpc('fn_guest_shop_mark_fulfilled', {
                 p_order_id: order.id,
-                p_reservation_id: claim.reservation_id || reservation?.id || null
+                p_reservation_id: reservationId
             });
+            const markEndMs = currentDate().getTime();
+            console.log(`[Worker Fulfillment] Mark fulfilled RPC completed in ${markEndMs - claimEndMs}ms`);
+
             if (!marked || (marked.fulfilled !== true && marked.fulfillment_status !== 'delivered')) {
                 const error = new Error('履约标记未确认');
                 error.code = 'guest_fulfillment_mark_unconfirmed';
@@ -846,6 +880,13 @@ function createGuestShopWorker({
                     last_error_message: null
                 }
             });
+            const fulfillmentEndMs = currentDate().getTime();
+            const totalMs = fulfillmentEndMs - fulfillmentStartMs;
+            console.log(`[Worker Fulfillment] ✅ 发货成功！总耗时: ${totalMs}ms
+  - Lease获取: ${leaseAcquiredMs - fulfillmentStartMs}ms
+  - Claim RPC: ${claimEndMs - claimStartMs}ms
+  - Mark RPC: ${markEndMs - claimEndMs}ms
+  - Release: ${fulfillmentEndMs - markEndMs}ms`);
             return { status: 'delivered', attempt };
         } catch (error) {
             const result = await markRetry(workingOrder, 'fulfillment', attempt, error);
@@ -860,6 +901,45 @@ function createGuestShopWorker({
             logger?.error?.('[GuestShopWorker] expired reservation sweep failed', safeErrorMessage(error));
             return { processed_count: 0, released_count: 0, unfulfillable_count: 0, error: safeErrorCode(error) };
         }
+    }
+
+    async function loadOrderById(orderId) {
+        const id = normalizeText(orderId, 160);
+        if (!id) return null;
+        const db = requireDb();
+        let query = db.from('guest_shop_orders').select(CANDIDATE_SELECT).eq('id', id);
+        if (typeof query.maybeSingle === 'function') query = query.maybeSingle();
+        const result = await query;
+        if (result?.error) throw result.error;
+        return result?.data || null;
+    }
+
+    async function processOrder(order) {
+        if (!order || !normalizeText(order.id, 160)) {
+            return { status: 'skipped', reason: 'order_missing' };
+        }
+        const workerInfo = getWorkerMetadata(order).state;
+        const needsRefund = REFUND_CANDIDATE_STATUSES.includes(String(order.refund_status || '').toLowerCase());
+        if (workerInfo.refund_status === 'manual_review') {
+            return { status: 'skipped', reason: 'refund_manual_review' };
+        }
+        // A dead-lettered fulfillment must not hide an admin-queued refund.
+        // Only skip when there is no pending/failed refund.
+        if (workerInfo.fulfillment_status === 'dead_letter' && !needsRefund) {
+            return { status: 'skipped', reason: 'fulfillment_dead_letter' };
+        }
+        if (order.fulfillment_status === 'paid_unfulfillable' || needsRefund) {
+            const result = await processRefund(order);
+            return { ...result, processed_kind: 'refund' };
+        }
+        const result = await processFulfillment(order);
+        return { ...result, processed_kind: 'fulfillment' };
+    }
+
+    async function processOrderById(orderId) {
+        const order = await loadOrderById(orderId);
+        if (!order) return { status: 'skipped', reason: 'order_not_found' };
+        return processOrder(order);
     }
 
     async function runOnce(options = {}) {
@@ -889,32 +969,26 @@ function createGuestShopWorker({
         // reservation -> inventory, and serial execution keeps provider
         // refund calls within a predictable rate envelope.
         for (const order of orders) {
+            const orderStartMs = currentDate().getTime();
+            console.log(`[Worker Loop] 🔄 开始处理订单 ${order.id}, 支付=${order.payment_status}, 发货=${order.fulfillment_status}`);
+
             try {
-                const workerInfo = getWorkerMetadata(order).state;
-                const needsRefund = REFUND_CANDIDATE_STATUSES.includes(String(order.refund_status || '').toLowerCase());
-                if (workerInfo.refund_status === 'manual_review') {
+                const result = await processOrder(order);
+                const orderEndMs = currentDate().getTime();
+                console.log(`[Worker Loop] ✅ 订单 ${order.id} 处理完成: ${result.status}, 耗时 ${orderEndMs - orderStartMs}ms`);
+
+                if (result.status === 'skipped'
+                    && ['refund_manual_review', 'fulfillment_dead_letter'].includes(result.reason)) {
                     summary.skipped += 1;
                     continue;
                 }
-                // A dead-lettered fulfillment must not hide an admin-queued
-                // refund.  Only skip when there is no pending/failed refund.
-                if (workerInfo.fulfillment_status === 'dead_letter' && !needsRefund) {
-                    summary.skipped += 1;
-                    continue;
-                }
-                let result;
-                if (order.fulfillment_status === 'paid_unfulfillable' || needsRefund) {
-                    result = await processRefund(order);
-                    if (result.status === 'refunded') summary.refunded += 1;
-                    if (result.status === 'manual_review') summary.manual_review += 1;
-                } else {
-                    result = await processFulfillment(order);
-                    if (result.status === 'delivered') summary.delivered += 1;
-                    if (result.status === 'paid_unfulfillable') {
-                        summary.paid_unfulfillable += 1;
-                        if (result.refund?.status === 'refunded') summary.refunded += 1;
-                        if (result.refund?.status === 'manual_review') summary.manual_review += 1;
-                    }
+                if (result.status === 'refunded') summary.refunded += 1;
+                if (result.status === 'manual_review') summary.manual_review += 1;
+                if (result.status === 'delivered') summary.delivered += 1;
+                if (result.status === 'paid_unfulfillable') {
+                    summary.paid_unfulfillable += 1;
+                    if (result.refund?.status === 'refunded') summary.refunded += 1;
+                    if (result.refund?.status === 'manual_review') summary.manual_review += 1;
                 }
                 summary.processed += 1;
                 if (result.status === 'retry_waiting') summary.retry_waiting += 1;
@@ -935,12 +1009,111 @@ function createGuestShopWorker({
 
     return Object.freeze({
         runOnce,
+        loadOrderById,
+        processOrder,
+        processOrderById,
         processFulfillment,
         processRefund,
         releaseExpiredReservations,
         loadCandidates,
         config,
         workerName: name
+    });
+}
+
+function isGuestShopImmediateFulfillmentEnabled(env = process.env) {
+    const enabled = ['1', 'true', 'yes', 'on'].includes(
+        String(env?.GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED || '').trim().toLowerCase()
+    );
+    const vercelRuntime = String(env?.VERCEL_ENV || '').trim().length > 0
+        || String(env?.VERCEL || '').trim().toLowerCase() === '1';
+    const sharedWorkerRuntime = ['1', 'true', 'yes', 'on'].includes(
+        String(env?.VERIFY_SERVER_WORKERS_ENABLED || '').trim().toLowerCase()
+    );
+    // The kicker is deliberately restricted to the long-running verify-server
+    // process. Vercel/serverless handlers and standalone API modules keep the
+    // durable timer as their only fulfillment fallback.
+    return enabled && !vercelRuntime && sharedWorkerRuntime;
+}
+
+function createGuestShopFulfillmentKicker({
+    supabase,
+    paymentAdapter = null,
+    env = process.env,
+    workerFactory = createGuestShopWorker,
+    logger = console
+} = {}) {
+    const enabled = isGuestShopImmediateFulfillmentEnabled(env);
+    const inFlight = new Map();
+    let worker = null;
+
+    function getWorker() {
+        if (worker) return worker;
+        worker = workerFactory({
+            supabase,
+            paymentAdapter,
+            env,
+            logger
+        });
+        return worker;
+    }
+
+    function kick(orderId) {
+        const id = normalizeText(orderId, 160);
+        const kickStartMs = Date.now();
+        const logMsg = `[${new Date(kickStartMs).toISOString()}] [Immediate Kicker] ⚡ 即时发货被触发! Order ID: ${id}\n`;
+
+        // 同时输出到控制台和文件
+        console.log(logMsg);
+        try {
+            require('fs').appendFileSync('/tmp/worker-kick.log', logMsg);
+        } catch (e) {}
+
+        if (!enabled) {
+            const disabledMsg = `[${new Date().toISOString()}] [Immediate Kicker] ❌ 即时发货未启用\n`;
+            console.log(disabledMsg);
+            try {
+                require('fs').appendFileSync('/tmp/worker-kick.log', disabledMsg);
+            } catch (e) {}
+            return Promise.resolve({ status: 'skipped', reason: 'immediate_fulfillment_disabled' });
+        }
+        if (!id) return Promise.resolve({ status: 'skipped', reason: 'order_id_missing' });
+        if (inFlight.has(id)) {
+            console.log(`[Immediate Kicker] ⏳ 订单 ${id} 已在处理中`);
+            return inFlight.get(id);
+        }
+
+        const task = Promise.resolve()
+            .then(() => {
+                console.log(`[Immediate Kicker] 🚀 开始立即处理订单 ${id}`);
+                return getWorker().processOrderById(id);
+            })
+            .then((result) => {
+                const kickEndMs = Date.now();
+                console.log(`[Immediate Kicker] ✅ 订单 ${id} 即时发货完成: ${result?.status}, 总耗时 ${kickEndMs - kickStartMs}ms`);
+                return result;
+            })
+            .catch((error) => {
+                // A kick is an optimization over the durable timer. Never
+                // reject into the payment callback/status request, and never
+                // log order contents, claim secrets, or card material.
+                logger?.error?.('[GuestShopWorker] immediate fulfillment failed', {
+                    order_id: id,
+                    code: safeErrorCode(error, 'guest_immediate_fulfillment_failed')
+                });
+                return { status: 'error', error_code: safeErrorCode(error, 'guest_immediate_fulfillment_failed') };
+            })
+            .finally(() => {
+                inFlight.delete(id);
+            });
+        inFlight.set(id, task);
+        return task;
+    }
+
+    return Object.freeze({
+        enabled,
+        kick,
+        pendingCount: () => inFlight.size
     });
 }
 
@@ -1015,6 +1188,9 @@ function createGuestShopWorkerHandler({
         if (!Number.isFinite(limit)) limit = DEFAULT_BATCH_SIZE;
         limit = normalizePositiveInteger(limit, DEFAULT_BATCH_SIZE, { min: 1, max: MAX_BATCH_SIZE });
         try {
+            const workerStartMs = Date.now();
+            console.log(`[Worker Handler] 🚀 Worker 被触发 at ${new Date(workerStartMs).toISOString()}, batch_size=${limit}`);
+
             const worker = workerFactory({
                 supabase,
                 paymentAdapter,
@@ -1022,6 +1198,13 @@ function createGuestShopWorkerHandler({
                 logger
             });
             const result = await worker.runOnce({ limit });
+
+            const workerEndMs = Date.now();
+            console.log(`[Worker Handler] ✅ Worker 完成，耗时 ${workerEndMs - workerStartMs}ms, 结果:`, {
+                fulfillment: result.fulfillment?.summary,
+                refund: result.refund?.summary
+            });
+
             return sendWorkerJson(res, 200, result);
         } catch (error) {
             logger?.error?.('[GuestShopWorker] endpoint failed', safeErrorMessage(error));
@@ -1057,5 +1240,7 @@ module.exports = {
     safeErrorCode,
     safeErrorMessage,
     createGuestShopWorker,
+    isGuestShopImmediateFulfillmentEnabled,
+    createGuestShopFulfillmentKicker,
     createGuestShopWorkerHandler
 };

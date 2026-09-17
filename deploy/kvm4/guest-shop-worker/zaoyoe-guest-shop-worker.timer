@@ -1,10 +1,10 @@
 [Unit]
-Description=Run Zaoyoe guest-shop fulfillment worker every minute
+Description=Run Zaoyoe guest-shop fulfillment worker every 10 seconds
 
 [Timer]
-OnCalendar=*-*-* *:*:00
-AccuracySec=15s
-RandomizedDelaySec=5s
+OnCalendar=*-*-* *:*:00/10
+AccuracySec=1s
+RandomizedDelaySec=2s
 Persistent=true
 Unit=zaoyoe-guest-shop-worker.service
 

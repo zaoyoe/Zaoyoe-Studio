@@ -167,7 +167,11 @@ function createRouteHandlersForScope(scope) {
         const discountPricing = require('./_lib/discount-pricing');
         const { createGuestShopPaymentAdapter } = require('./_lib/payments/guest-shop-adapter');
         const { createGuestShopHandlers } = require('../server/api-handlers/public/guest-shop');
-        const { createGuestShopWorkerHandler } = require('../server/guest-shop-worker');
+        const {
+            createGuestShopWorkerHandler,
+            createGuestShopFulfillmentKicker,
+            isGuestShopImmediateFulfillmentEnabled
+        } = require('../server/guest-shop-worker');
         const {
             createShopHandlers
         } = require('../server/api-handlers/public/shop');
@@ -179,11 +183,24 @@ function createRouteHandlersForScope(scope) {
             supabase: admin.getOptionalSupabaseAdmin?.() || null,
             env: process.env
         });
+        // Only the long-running KVM4 verify-server process receives the
+        // in-process fulfillment kick. Vercel and the standalone serverless
+        // route modules keep the durable worker timer as their fallback.
+        const immediateFulfillment = typeof isGuestShopImmediateFulfillmentEnabled === 'function'
+            && typeof createGuestShopFulfillmentKicker === 'function'
+            && isGuestShopImmediateFulfillmentEnabled(process.env)
+            ? createGuestShopFulfillmentKicker({
+                supabase: admin.getOptionalSupabaseAdmin?.() || null,
+                paymentAdapter: guestPaymentAdapter,
+                env: process.env
+            })
+            : null;
         const guestHandlers = createGuestShopHandlers({
             admin,
             requestSecurity,
             site,
             paymentAdapter: guestPaymentAdapter,
+            kickFulfillment: immediateFulfillment?.kick,
             env: process.env
         });
         const guestWorker = createGuestShopWorkerHandler({

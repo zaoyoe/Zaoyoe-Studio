@@ -42,8 +42,11 @@ const MAX_GUEST_CASH_PRICE_MINOR = 99_999_999_999_999;
 // Active status-query self-healing (webhook + throttled provider poll). The
 // throttle values mirror the logged-in wallet recharge flow so a lost callback
 // cannot leave a paid guest order stuck on `pending` indefinitely.
+// Confirmed orders use a shorter throttle (3s) to accelerate fulfillment,
+// while unpaid orders remain conservative (8s) to protect provider APIs.
 const GUEST_STATUS_QUERY_EVENT_TYPE = 'status_query';
 const GUEST_STATUS_QUERY_THROTTLE_MS = 8 * 1000;
+const GUEST_STATUS_QUERY_CONFIRMED_THROTTLE_MS = 3 * 1000;
 const GUEST_STATUS_QUERY_FORCE_THROTTLE_MS = 1200;
 // Payment-row statuses that already represent a resolved provider outcome.
 // They never need a live provider query from the buyer status endpoint.
@@ -616,6 +619,7 @@ function createGuestShopHandlers({
     security = defaultSecurity,
     site = {},
     paymentAdapter = null,
+    kickFulfillment = null,
     env = process.env
 } = {}) {
     const sendJson = admin.sendJson || ((res, status, payload) => {
@@ -643,6 +647,19 @@ function createGuestShopHandlers({
     const resolveClientIp = typeof requestSecurity.resolveClientIp === 'function'
         ? requestSecurity.resolveClientIp
         : defaultRequestSecurity.resolveClientIp;
+
+    function kickConfirmedOrder(orderId) {
+        const id = String(orderId || '').trim();
+        if (!id || typeof kickFulfillment !== 'function') return;
+        try {
+            // Fulfillment is an optimization over the durable worker timer.
+            // Do not hold a webhook/status response open on inventory work.
+            Promise.resolve(kickFulfillment(id)).catch(() => {});
+        } catch (_) {
+            // A malformed/inactive kicker must never turn a confirmed payment
+            // into a failed buyer-facing response.
+        }
+    }
 
     function failResponse(res, error, fallback = '游客购买请求失败') {
         const status = Number(error?.statusCode) || 500;
@@ -1743,6 +1760,60 @@ function responseOrder(order, claimSecret, extras = {}) {
         }
     }
 
+    function guestInventoryConsistencyError() {
+        return Object.assign(new Error('库存状态异常'), {
+            statusCode: 409,
+            code: 'guest_inventory_inconsistent'
+        });
+    }
+
+    async function loadClaimedContent(order) {
+        const db = getSupabase();
+        if (!db) throw Object.assign(new Error('游客履约数据库不可用'), {
+            statusCode: 503,
+            code: 'guest_database_unavailable',
+            expose: false
+        });
+
+        // The worker already uses this service-role RPC to atomically verify
+        // the consumed reservation and sold, non-shared inventory. Reusing it
+        // here collapses the old reservation-read + inventory-read sequence
+        // into one database round-trip and keeps the delivery read under the
+        // same row locks/state contract as fulfillment.
+        if (typeof db.rpc === 'function') {
+            const result = await db.rpc('fn_guest_shop_claim_fulfillment', {
+                p_order_id: order.id,
+                p_reservation_id: null
+            });
+            if (result?.error) throw result.error;
+            const row = Array.isArray(result?.data) ? result.data[0] : result?.data;
+            const orderId = String(row?.order_id || '').trim();
+            const reservationStatus = String(row?.reservation_status || '').trim().toLowerCase();
+            const fulfillmentStatus = String(row?.fulfillment_status || '').trim().toLowerCase();
+            if (!row
+                || orderId !== String(order.id || '').trim()
+                || reservationStatus !== 'consumed'
+                || fulfillmentStatus !== 'delivered'
+                || typeof row.content !== 'string') {
+                throw guestInventoryConsistencyError();
+            }
+            return row.content;
+        }
+
+        // Keep a compatibility path for thin local/test adapters that do not
+        // expose RPCs. Production service-role clients have `.rpc` because
+        // the worker and payment confirmation already depend on it.
+        const reservation = await db.from('guest_shop_inventory_reservations')
+            .select('inventory_id,status').eq('order_id', order.id).maybeSingle();
+        if (reservation.error) throw reservation.error;
+        if (!reservation.data || reservation.data.status !== 'consumed') throw guestInventoryConsistencyError();
+        const inventory = await db.from('shop_inventory')
+            .select('content,is_shared,status').eq('id', reservation.data.inventory_id).maybeSingle();
+        if (inventory.error) throw inventory.error;
+        if (!inventory.data || inventory.data.status !== 'sold' || inventory.data.is_shared) throw guestInventoryConsistencyError();
+        return inventory.data.content;
+    }
+
     function forceProviderRefreshRequested(req) {
         const raw = queryValue(req, 'force_provider_refresh')
             ?? queryValue(req, 'forceProviderRefresh')
@@ -1760,6 +1831,10 @@ function responseOrder(order, claimSecret, extras = {}) {
             if (value === undefined) continue;
             next[key] = value;
         }
+        // Keep the object loaded by the status request in sync with the
+        // best-effort persistence below so later response shaping can reuse
+        // it without issuing a second payment-row query.
+        payment.provider_metadata = next;
         try {
             await db.from('guest_shop_payment_orders').update({
                 provider_metadata: next,
@@ -1793,11 +1868,21 @@ function responseOrder(order, claimSecret, extras = {}) {
 
         const metadata = storedPlainObject(payment.provider_metadata);
         const lastQueryMs = Date.parse(String(metadata.query_verified_at || metadata.status_poll_query_at || ''));
-        const throttleMs = forceProviderRefresh === true
-            ? GUEST_STATUS_QUERY_FORCE_THROTTLE_MS
-            : GUEST_STATUS_QUERY_THROTTLE_MS;
+
+        // Use adaptive throttle: aggressive after payment confirmation, conservative before
+        const isPaymentConfirmed = String(order?.payment_status || '').trim().toLowerCase() === 'confirmed';
+        let throttleMs;
+
+        if (forceProviderRefresh === true) {
+            throttleMs = GUEST_STATUS_QUERY_FORCE_THROTTLE_MS;  // 1.2s - user-initiated
+        } else if (isPaymentConfirmed) {
+            throttleMs = GUEST_STATUS_QUERY_CONFIRMED_THROTTLE_MS;  // 3s - aggressive post-payment
+        } else {
+            throttleMs = GUEST_STATUS_QUERY_THROTTLE_MS;  // 8s - conservative pre-payment
+        }
+
         if (Number.isFinite(lastQueryMs) && (Date.now() - lastQueryMs) < throttleMs) {
-            return { refreshed: false, reason: 'query_throttled' };
+            return { refreshed: false, reason: 'query_throttled', nextAllowedMs: lastQueryMs + throttleMs };
         }
 
         const merchantOrderNo = normalizeWebhookReference(payment.merchant_order_no || order?.order_no, 200);
@@ -1948,6 +2033,7 @@ function responseOrder(order, claimSecret, extras = {}) {
         }
         if (!eventId) return { refreshed: false, reason: 'event_reference_missing' };
 
+        let kickRequested = false;
         if (!alreadyProcessed) {
             try {
                 const confirmed = await db.rpc('fn_guest_shop_confirm_payment', {
@@ -1966,13 +2052,42 @@ function responseOrder(order, claimSecret, extras = {}) {
                     p_final_status_verified: true
                 });
                 if (confirmed?.error) return { refreshed: false, reason: 'confirm_failed' };
+                kickConfirmedOrder(
+                    order?.id
+                    || payment.guest_order_id
+                    || confirmed?.data?.guest_order_id
+                    || confirmed?.data?.order_id
+                );
+                kickRequested = true;
             } catch (_) {
                 return { refreshed: false, reason: 'confirm_failed' };
             }
         }
 
         const refreshedOrder = await loadOrderByNo(order?.order_no || merchantOrderNo).catch(() => null);
-        return { refreshed: true, order: refreshedOrder || order };
+        return { refreshed: true, order: refreshedOrder || order, kickRequested };
+    }
+
+    async function buildThrottleHint(order, payment) {
+        // Provide frontend with throttle state to optimize polling intervals
+        // Delivered orders are fully terminal. Avoid reading the payment row
+        // again after the status path has established that no stale checkout
+        // or provider refresh can be relevant.
+        if (!order?.payment_order_id
+            || String(order.fulfillment_status || '').trim().toLowerCase() === 'delivered'
+            || !payment) return null;
+        try {
+            const metadata = storedPlainObject(payment?.provider_metadata);
+            const queryVerifiedAt = metadata?.query_verified_at;
+            if (!queryVerifiedAt) return null;
+            return {
+                query_verified_at: queryVerifiedAt,
+                // Frontend can calculate next_allowed_ms from query_verified_at + throttle window
+            };
+        } catch (_) {
+            // Throttle hint is best-effort; never break the status response
+            return null;
+        }
     }
 
     async function status(req, res) {
@@ -1982,21 +2097,40 @@ function responseOrder(order, claimSecret, extras = {}) {
         try {
             let order = await loadOrderByNo(queryValue(req, 'orderNo') || queryValue(req, 'order_no'));
             await authorizeClaim(req, order);
+            // A prior webhook/status request may have confirmed payment while
+            // its in-process kick was unavailable or failed. Re-kick any
+            // confirmed order that is still not delivered; the worker's
+            // persisted lease/CAS keeps this safe across concurrent callers.
+            let kickedConfirmedOrder = false;
+            if (String(order.payment_status || '').trim().toLowerCase() === 'confirmed'
+                && String(order.fulfillment_status || '').trim().toLowerCase() !== 'delivered') {
+                kickConfirmedOrder(order.id);
+                kickedConfirmedOrder = true;
+            }
             let checkout = null;
+            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+            const fulfillmentStatus = String(order.fulfillment_status || '').trim().toLowerCase();
             // A refreshed tab may have only the non-sensitive order handle in
             // sessionStorage. Reconstruct the checkout from server-owned,
             // allowlisted provider metadata after the claim cookie has been
             // verified. This never returns the claim secret, raw webhook
             // payload, or arbitrary provider metadata.
-            if (!paymentStatusIsTerminal(String(order.payment_status || '').trim().toLowerCase())) {
-                let payment = null;
+            // A confirmed payment still needs active reconciliation until the
+            // fulfillment worker marks the order delivered. Other payment
+            // terminal states remain read-free, as before.
+            const shouldReadPayment = fulfillmentStatus !== 'delivered'
+                && (!paymentStatusIsTerminal(paymentStatus) || paymentStatus === 'confirmed');
+            let payment = null;
+            if (shouldReadPayment) {
                 try {
                     payment = await loadPaymentIntent({
                         payment_order_id: order.payment_order_id,
                         order_id: order.id,
                         merchant_order_no: order.order_no
                     });
-                    checkout = buildStoredCheckout(order, payment);
+                    if (!paymentStatusIsTerminal(paymentStatus)) {
+                        checkout = buildStoredCheckout(order, payment);
+                    }
                 } catch (_) {
                     // Status polling remains useful when payment creation is
                     // still pending; provider reconstruction is best effort
@@ -2017,16 +2151,25 @@ function responseOrder(order, claimSecret, extras = {}) {
                     });
                     if (refresh?.refreshed && refresh.order) {
                         order = refresh.order;
+                        if (refresh.kickRequested === true) kickedConfirmedOrder = true;
                         if (paymentStatusIsTerminal(String(order.payment_status || '').trim().toLowerCase())) {
                             checkout = null;
                         }
                     }
                 }
             }
+            if (!kickedConfirmedOrder
+                && String(order.payment_status || '').trim().toLowerCase() === 'confirmed'
+                && String(order.fulfillment_status || '').trim().toLowerCase() !== 'delivered') {
+                kickConfirmedOrder(order.id);
+            }
+            // Include throttle hint for frontend smart polling optimization
+            const throttleHint = await buildThrottleHint(order, payment);
             return sendJson(res, 200, {
                 success: true,
                 order: publicOrderSnapshot(order),
-                ...(checkout ? { checkout } : {})
+                ...(checkout ? { checkout } : {}),
+                ...(throttleHint ? { throttle_hint: throttleHint } : {})
             });
         } catch (error) { return failResponse(res, error); }
     }
@@ -2094,13 +2237,8 @@ function responseOrder(order, claimSecret, extras = {}) {
             if (order.fulfillment_status !== 'delivered' || order.payment_status !== 'confirmed') {
                 return sendJson(res, 409, { success: false, code: 'guest_order_not_delivered', message: '订单尚未完成发货' });
             }
-            const reservation = await getSupabase().from('guest_shop_inventory_reservations').select('inventory_id,status').eq('order_id', order.id).maybeSingle();
-            if (reservation.error) throw reservation.error;
-            if (!reservation.data || reservation.data.status !== 'consumed') throw Object.assign(new Error('库存状态异常'), { statusCode: 409, code: 'guest_inventory_inconsistent' });
-            const inventory = await getSupabase().from('shop_inventory').select('content,is_shared,status').eq('id', reservation.data.inventory_id).maybeSingle();
-            if (inventory.error) throw inventory.error;
-            if (!inventory.data || inventory.data.status !== 'sold' || inventory.data.is_shared) throw Object.assign(new Error('库存状态异常'), { statusCode: 409, code: 'guest_inventory_inconsistent' });
-            return sendJson(res, 200, { success: true, order_no: order.order_no, content: inventory.data.content });
+            const content = await loadClaimedContent(order);
+            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
         } catch (error) { return failResponse(res, error); }
     }
 
@@ -2181,7 +2319,13 @@ function responseOrder(order, claimSecret, extras = {}) {
             if (existing.error) throw existing.error;
             if (existing.data) {
                 if (existing.data.body_sha256 !== bodySha256) return sendJson(res, 202, { success: true, accepted: false, code: 'event_key_body_conflict' });
-                if (['processed', 'duplicate'].includes(existing.data.processing_status)) return sendJson(res, 200, { success: true, accepted: true, duplicate: true });
+                if (['processed', 'duplicate'].includes(existing.data.processing_status)) {
+                    // A duplicate callback can be the first request after a
+                    // transient kick failure. Reusing the verified event is
+                    // safe; the worker remains idempotent and lease-guarded.
+                    kickConfirmedOrder(expected?.guest_order_id);
+                    return sendJson(res, 200, { success: true, accepted: true, duplicate: true });
+                }
                 if (['rejected', 'dead_letter'].includes(existing.data.processing_status)) return sendJson(res, 202, { success: true, accepted: false });
             }
             const redacted = typeof security.redactGuestPaymentPayload === 'function' ? security.redactGuestPaymentPayload(payload) : {};
@@ -2191,6 +2335,11 @@ function responseOrder(order, claimSecret, extras = {}) {
             if (!valid || !expected) return sendJson(res, 202, { success: true, accepted: false });
             const confirmed = await db.rpc('fn_guest_shop_confirm_payment', { p_payment_order_id: expected.id, p_event_id: inserted.data.id, p_provider: provider, p_provider_order_no: providerOrderNo, p_observed_site: expected.site, p_observed_currency: expected.currency, p_observed_amount: expected.expected_amount, p_observed_purpose: 'shop_direct', p_observed_status: observedStatus, p_signature_verified: true, p_amount_verified: true, p_currency_verified: true, p_final_status_verified: true });
             if (confirmed.error) throw confirmed.error;
+            kickConfirmedOrder(
+                expected.guest_order_id
+                || confirmed?.data?.guest_order_id
+                || confirmed?.data?.order_id
+            );
             return sendJson(res, 200, { success: true, accepted: true, result: Array.isArray(confirmed.data) ? confirmed.data[0] : confirmed.data });
         } catch (error) { return failResponse(res, error, '回调处理失败'); }
     }
