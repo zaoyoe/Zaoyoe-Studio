@@ -60,6 +60,12 @@ Verify Server 的 `.env` 显式设置 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED=
 `VERIFY_SERVER_WORKERS_ENABLED` 为真时生效；Vercel/serverless 永远不启用。即时 kick
 不是可靠性边界：systemd timer 仍必须保留并运行，负责进程重启、网络错误和 kick 失败后的兜底。
 
+kick 路径的跟踪日志由 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_DEBUG` 控制，**默认关闭**，只在核对
+发货延迟时临时打开。它只经仓库结构化 logger 输出订单 ID 与耗时，不写任何文件，也不输出
+claim token、卡片或 provider payload。不要重新引入 `/tmp/worker-kick.log` 之类的同步文件写：
+阻塞式 I/O 落在买家轮询的请求路径上，与降延迟目标相反；已确认订单会被每次 status 轮询重复
+kick，日志量会随买家流量放大。
+
 游客支付 adapter 走 `resolvePaymentProviderSecrets`：优先读后台 stored secret，
 `.env` 里的 `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` 只是回退。KVM4 `.env` 没有这两项
 不等于支付密钥缺失；登录支付能跑是预期现象。不要为了“看起来齐套”把登录支付密钥

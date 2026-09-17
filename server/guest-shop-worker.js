@@ -348,6 +348,7 @@ function createGuestShopWorker({
     randomBytes = crypto.randomBytes
 } = {}) {
     const config = resolveWorkerConfig(env);
+    const trace = isGuestShopFulfillmentTraceEnabled(env);
     const name = normalizeText(
         workerName || env?.GUEST_SHOP_WORKER_NAME || `guest-shop-worker:${process.pid}`,
         160
@@ -764,16 +765,16 @@ function createGuestShopWorker({
         const isRecentlyConfirmed = Number.isFinite(paidAtMs) && (currentDate().getTime() - paidAtMs) < 10000;
         const shouldSkipBackoff = isFirstAttempt && isRecentlyConfirmed;
 
-        // 🔍 诊断日志：Worker 处理时序
-        const logMsg = `[Worker Fulfillment] Order ${order.id}:
-  - 支付时间: ${order.paid_at || 'N/A'}
-  - 当前时间: ${new Date(fulfillmentStartMs).toISOString()}
-  - 支付延迟: ${paidAtMs ? `${fulfillmentStartMs - paidAtMs}ms` : 'N/A'}
-  - 尝试次数: ${attempt} (首次: ${isFirstAttempt})
-  - 最近确认: ${isRecentlyConfirmed}
-  - 跳过回退: ${shouldSkipBackoff ? '✅ YES' : '❌ NO'}`;
-        console.log(logMsg);
-        logger?.info?.(logMsg);
+        if (trace) {
+            logger?.info?.('[GuestShopWorker] fulfillment attempt planned', {
+                order_id: normalizeText(order.id, 80),
+                attempt,
+                first_attempt: isFirstAttempt,
+                recently_confirmed: isRecentlyConfirmed,
+                skip_backoff: shouldSkipBackoff,
+                payment_age_ms: Number.isFinite(paidAtMs) ? Math.max(0, fulfillmentStartMs - paidAtMs) : null
+            });
+        }
 
         if (!shouldSkipBackoff) {
             if (state.fulfillment_terminal || (state.fulfillment_next_attempt_at && !isRetryDue({ next_attempt_at: state.fulfillment_next_attempt_at }, currentDate().getTime()))) {
@@ -786,7 +787,6 @@ function createGuestShopWorker({
         const workingOrder = lease.order;
 
         const leaseAcquiredMs = currentDate().getTime();
-        console.log(`[Worker Fulfillment] Lease acquired in ${leaseAcquiredMs - fulfillmentStartMs}ms`);
 
         try {
             const claimStartMs = currentDate().getTime();
@@ -799,7 +799,6 @@ function createGuestShopWorker({
                 p_reservation_id: null
             });
             const claimEndMs = currentDate().getTime();
-            console.log(`[Worker Fulfillment] Claim RPC completed in ${claimEndMs - claimStartMs}ms`);
 
             const claim = claimed || {};
             // The RPC persists paid_unfulfillable before returning this row.
@@ -858,7 +857,6 @@ function createGuestShopWorker({
                 p_reservation_id: reservationId
             });
             const markEndMs = currentDate().getTime();
-            console.log(`[Worker Fulfillment] Mark fulfilled RPC completed in ${markEndMs - claimEndMs}ms`);
 
             if (!marked || (marked.fulfilled !== true && marked.fulfillment_status !== 'delivered')) {
                 const error = new Error('履约标记未确认');
@@ -881,12 +879,28 @@ function createGuestShopWorker({
                 }
             });
             const fulfillmentEndMs = currentDate().getTime();
-            const totalMs = fulfillmentEndMs - fulfillmentStartMs;
-            console.log(`[Worker Fulfillment] ✅ 发货成功！总耗时: ${totalMs}ms
-  - Lease获取: ${leaseAcquiredMs - fulfillmentStartMs}ms
-  - Claim RPC: ${claimEndMs - claimStartMs}ms
-  - Mark RPC: ${markEndMs - claimEndMs}ms
-  - Release: ${fulfillmentEndMs - markEndMs}ms`);
+            // One durable line per delivered guest order.  This is the evidence
+            // used to prove payment-to-delivery latency, so it stays on by
+            // default; the per-stage breakdown is trace-only.  No inventory
+            // content, claim secret, or provider payload is logged.
+            logger?.info?.('[GuestShopWorker] order fulfilled', {
+                order_id: normalizeText(order.id, 80),
+                attempt,
+                duration_ms: fulfillmentEndMs - fulfillmentStartMs,
+                paid_to_delivered_ms: Number.isFinite(paidAtMs)
+                    ? Math.max(0, fulfillmentEndMs - paidAtMs)
+                    : null
+            });
+            if (trace) {
+                logger?.info?.('[GuestShopWorker] fulfillment timing breakdown', {
+                    order_id: normalizeText(order.id, 80),
+                    total_ms: fulfillmentEndMs - fulfillmentStartMs,
+                    lease_ms: leaseAcquiredMs - fulfillmentStartMs,
+                    claim_ms: claimEndMs - claimStartMs,
+                    mark_ms: markEndMs - claimEndMs,
+                    release_ms: fulfillmentEndMs - markEndMs
+                });
+            }
             return { status: 'delivered', attempt };
         } catch (error) {
             const result = await markRetry(workingOrder, 'fulfillment', attempt, error);
@@ -970,12 +984,23 @@ function createGuestShopWorker({
         // refund calls within a predictable rate envelope.
         for (const order of orders) {
             const orderStartMs = currentDate().getTime();
-            console.log(`[Worker Loop] 🔄 开始处理订单 ${order.id}, 支付=${order.payment_status}, 发货=${order.fulfillment_status}`);
+            if (trace) {
+                logger?.info?.('[GuestShopWorker] order processing started', {
+                    order_id: normalizeText(order.id, 80),
+                    payment_status: normalizeText(order.payment_status, 40),
+                    fulfillment_status: normalizeText(order.fulfillment_status, 40)
+                });
+            }
 
             try {
                 const result = await processOrder(order);
-                const orderEndMs = currentDate().getTime();
-                console.log(`[Worker Loop] ✅ 订单 ${order.id} 处理完成: ${result.status}, 耗时 ${orderEndMs - orderStartMs}ms`);
+                if (trace) {
+                    logger?.info?.('[GuestShopWorker] order processing finished', {
+                        order_id: normalizeText(order.id, 80),
+                        status: normalizeText(result?.status, 40),
+                        duration_ms: Math.max(0, currentDate().getTime() - orderStartMs)
+                    });
+                }
 
                 if (result.status === 'skipped'
                     && ['refund_manual_review', 'fulfillment_dead_letter'].includes(result.reason)) {
@@ -1022,18 +1047,26 @@ function createGuestShopWorker({
 }
 
 function isGuestShopImmediateFulfillmentEnabled(env = process.env) {
-    const enabled = ['1', 'true', 'yes', 'on'].includes(
-        String(env?.GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED || '').trim().toLowerCase()
-    );
+    const enabled = isTruthyEnvFlag(env?.GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED);
     const vercelRuntime = String(env?.VERCEL_ENV || '').trim().length > 0
         || String(env?.VERCEL || '').trim().toLowerCase() === '1';
-    const sharedWorkerRuntime = ['1', 'true', 'yes', 'on'].includes(
-        String(env?.VERIFY_SERVER_WORKERS_ENABLED || '').trim().toLowerCase()
-    );
+    const sharedWorkerRuntime = isTruthyEnvFlag(env?.VERIFY_SERVER_WORKERS_ENABLED);
     // The kicker is deliberately restricted to the long-running verify-server
     // process. Vercel/serverless handlers and standalone API modules keep the
     // durable timer as their only fulfillment fallback.
     return enabled && !vercelRuntime && sharedWorkerRuntime;
+}
+
+function isTruthyEnvFlag(value) {
+    return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+// Fine-grained fulfillment tracing is opt-in and never writes files.  The tick
+// runs every 10 seconds and its run summary is already returned to the systemd
+// helper (so it lands in the journal), so per-tick container logs stay quiet by
+// default.  Turn this on only while measuring payment-to-delivery latency.
+function isGuestShopFulfillmentTraceEnabled(env = process.env) {
+    return isTruthyEnvFlag(env?.GUEST_SHOP_IMMEDIATE_FULFILLMENT_DEBUG);
 }
 
 function createGuestShopFulfillmentKicker({
@@ -1044,6 +1077,9 @@ function createGuestShopFulfillmentKicker({
     logger = console
 } = {}) {
     const enabled = isGuestShopImmediateFulfillmentEnabled(env);
+    // Tracing is opt-in. It never writes files, and it never logs order
+    // contents, claim secrets, or provider payloads.
+    const debug = isGuestShopFulfillmentTraceEnabled(env);
     const inFlight = new Map();
     let worker = null;
 
@@ -1060,37 +1096,36 @@ function createGuestShopFulfillmentKicker({
 
     function kick(orderId) {
         const id = normalizeText(orderId, 160);
-        const kickStartMs = Date.now();
-        const logMsg = `[${new Date(kickStartMs).toISOString()}] [Immediate Kicker] ⚡ 即时发货被触发! Order ID: ${id}\n`;
-
-        // 同时输出到控制台和文件
-        console.log(logMsg);
-        try {
-            require('fs').appendFileSync('/tmp/worker-kick.log', logMsg);
-        } catch (e) {}
-
         if (!enabled) {
-            const disabledMsg = `[${new Date().toISOString()}] [Immediate Kicker] ❌ 即时发货未启用\n`;
-            console.log(disabledMsg);
-            try {
-                require('fs').appendFileSync('/tmp/worker-kick.log', disabledMsg);
-            } catch (e) {}
+            if (debug) {
+                logger?.info?.('[GuestShopWorker] immediate fulfillment kick skipped', {
+                    order_id: id,
+                    reason: 'immediate_fulfillment_disabled'
+                });
+            }
             return Promise.resolve({ status: 'skipped', reason: 'immediate_fulfillment_disabled' });
         }
         if (!id) return Promise.resolve({ status: 'skipped', reason: 'order_id_missing' });
-        if (inFlight.has(id)) {
-            console.log(`[Immediate Kicker] ⏳ 订单 ${id} 已在处理中`);
-            return inFlight.get(id);
+        // Dedupe before any logging: a confirmed order is re-kicked by every
+        // status poll until it reaches `delivered`, so log volume must not
+        // scale with buyer polling traffic.
+        if (inFlight.has(id)) return inFlight.get(id);
+
+        const kickStartMs = Date.now();
+        if (debug) {
+            logger?.info?.('[GuestShopWorker] immediate fulfillment kick started', { order_id: id });
         }
 
         const task = Promise.resolve()
-            .then(() => {
-                console.log(`[Immediate Kicker] 🚀 开始立即处理订单 ${id}`);
-                return getWorker().processOrderById(id);
-            })
+            .then(() => getWorker().processOrderById(id))
             .then((result) => {
-                const kickEndMs = Date.now();
-                console.log(`[Immediate Kicker] ✅ 订单 ${id} 即时发货完成: ${result?.status}, 总耗时 ${kickEndMs - kickStartMs}ms`);
+                if (debug) {
+                    logger?.info?.('[GuestShopWorker] immediate fulfillment kick finished', {
+                        order_id: id,
+                        status: normalizeText(result?.status, 40) || 'unknown',
+                        duration_ms: Date.now() - kickStartMs
+                    });
+                }
                 return result;
             })
             .catch((error) => {
@@ -1189,7 +1224,10 @@ function createGuestShopWorkerHandler({
         limit = normalizePositiveInteger(limit, DEFAULT_BATCH_SIZE, { min: 1, max: MAX_BATCH_SIZE });
         try {
             const workerStartMs = Date.now();
-            console.log(`[Worker Handler] 🚀 Worker 被触发 at ${new Date(workerStartMs).toISOString()}, batch_size=${limit}`);
+            const trace = isGuestShopFulfillmentTraceEnabled(env);
+            if (trace) {
+                logger?.info?.('[GuestShopWorker] run started', { batch_size: limit });
+            }
 
             const worker = workerFactory({
                 supabase,
@@ -1199,11 +1237,16 @@ function createGuestShopWorkerHandler({
             });
             const result = await worker.runOnce({ limit });
 
-            const workerEndMs = Date.now();
-            console.log(`[Worker Handler] ✅ Worker 完成，耗时 ${workerEndMs - workerStartMs}ms, 结果:`, {
-                fulfillment: result.fulfillment?.summary,
-                refund: result.refund?.summary
-            });
+            if (trace) {
+                // The same summary is returned to the systemd helper, which
+                // prints it to the journal; the container does not need a
+                // second copy on every 10-second tick.
+                logger?.info?.('[GuestShopWorker] run finished', {
+                    duration_ms: Date.now() - workerStartMs,
+                    fulfillment: result?.fulfillment?.summary,
+                    refund: result?.refund?.summary
+                });
+            }
 
             return sendWorkerJson(res, 200, result);
         } catch (error) {
@@ -1241,6 +1284,7 @@ module.exports = {
     safeErrorMessage,
     createGuestShopWorker,
     isGuestShopImmediateFulfillmentEnabled,
+    isGuestShopFulfillmentTraceEnabled,
     createGuestShopFulfillmentKicker,
     createGuestShopWorkerHandler
 };
