@@ -239,6 +239,10 @@ Cookie 规范：
 
 ### 7.2 四因子并集配额（C-A2 / C-A3）
 
+> **修订（2026-09-18）**：`docs/guest-shop-order-access-2.0.md` 落地后，本节的四因子并集
+> 收敛为「`buyer_id` 主判据 + `guest_session_hash` / `request_ip_hash` 两个兜底」，
+> `request_device_hash` 从判据中移除。详见 §22.1，冲突时以 §22 为准。
+
 计数谓词（示意，实际写在 resolver 内）：
 
 ```sql
@@ -1018,3 +1022,69 @@ if coupon.PerUserLimit > 0 && userID != 0 {   // ← 游客 userID == 0，整段
 2. 不照抄「零元购只在应用层拦」——必须落 DB CHECK。
 3. 不照抄「只有次数预算、没有金额预算」——必须有 `guest_max_total_discount` 与站点日预算。
 4. 不照抄「IP 是唯一游客风控键」——保留服务端会话锚点，否则移动网络换 IP 即重置配额。
+
+---
+
+## 22. 与「游客订单访问 2.0」的联动（后续修订，2026-09-18）
+
+> 来源：`docs/guest-shop-order-access-2.0.md`。该文档把游客订单的找回凭证从
+> 「订单号 + 取货口令」改为「邮箱 + 自设查询密码」（对齐 Dujiao-Next 的用户体验），
+> 并新建归一化买家表 `guest_shop_buyers`。它对本方案的身份层有**实质性反哺**，
+> 本节记录需要随之修订的条款；**冲突时以本节为准**。
+
+### 22.1 §7.2 计数谓词修订：`buyer_id` 成为主判据
+
+2.0 之后 `guest_shop_orders` 增列 `buyer_id`（FK → `guest_shop_buyers.id`）。该主键具备
+此前任何因子都没有的三个性质：**跨会话稳定、跨设备稳定、由用户主动维护、且受查询密码保护**。
+
+| 因子 | 本方案原评级 | 2.0 之后 | 处置 |
+|---|---|---|---|
+| `buyer_id`（新） | — | **高（凭证保护）** | **主判据**，每码/每日上限从严 |
+| `buyer_contact_hash` | 可伪造（仅 HMAC，无 OTP） | 中-高 | 由 `buyer_id` 覆盖，不再单独作判据；保留作隐私安全的归并/展示键 |
+| `guest_session_hash` | 中 | 中 | **兜底**：覆盖未走凭证链路的历史/降级下单 |
+| `request_ip_hash` | 低 | 低 | **粗防洪**兜底，阈值最宽 |
+| `request_device_hash` | 低（仅 UA） | 低 | **从判据中移除** |
+
+移除 `request_device_hash` 的理由：它只由 UA 派生，误伤 NAT / 同型号用户的代价高于防薅收益；
+独角的游客风控键同样只有 IP（§21.2）。移除后 §7.2 的分因子阈值表少一行，其余阈值不变。
+
+修订后的谓词（取代 §7.2 的四因子 OR）：
+
+```sql
+AND (
+      o.buyer_id = p_buyer_id                                                  -- 主判据（强）
+   OR (p_session_hash IS NOT NULL AND o.guest_session_hash = p_session_hash)   -- 兜底
+   OR (p_ip_hash      IS NOT NULL AND o.request_ip_hash    = p_ip_hash)        -- 粗防洪
+)
+```
+
+> 实现注意：**按因子分别设阈值**的机制必须保留（`buyer_id` 最严、`ip_hash` 最宽），
+> 不得因为换了主判据就退化成单一全局阈值，否则又会把 NAT 后的无辜买家一起封掉。
+
+### 22.2 §7.5 诚实声明可以下调一档，但结论不变
+
+§7.5 原文承认「`contact_hash` 不验证、不抗伪造，身份层只能提高成本、不能杜绝」。
+2.0 引入查询密码后，攻击者要复用同一邮箱必须**先知道该邮箱的查询密码**，批量薅羊毛从
+「零成本改一个字符串」变成「逐个管理邮箱+密码对」的真实簿记负担。
+
+**但 §7.5 的核心结论不变**：结构性上限（DB CHECK 零元购、单品单笔件数上限、per-IP pending
+上限、券级 / 站点级金额预算、熔断）仍然是承重墙，身份层仍然只是成本项。
+**不得因为 2.0 而放松任何一条硬上限。**
+
+### 22.3 §14 分期修订
+
+2.0 的 A0–A3（订单访问）与本方案的 L0–L1（促销 DDL + 无状态定价）**写集合不相交，可并行**。
+A4（邮箱 OTP + 游客订单并入账号）**必须排在 L2 之后**，因为它依赖本方案的 OTP 设施与
+§7.2 的因子升级。完整顺序见 2.0 文档 §19。
+
+### 22.4 开关与降级语义
+
+| 开关 | 默认 | 关系 |
+|---|---|---|
+| `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` | `false` | 2.0 主闸；关闭时 `buyer_id` 为 NULL，配额自动退回 session + ip 兜底 |
+| `GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED` | `false` | 新查询页 `/guest-orders.html` 是否可访问 |
+| `GUEST_SHOP_PROMO_ENABLED` | `false` | 本方案 K1，不变 |
+
+**降级语义（必须实现并测试）**：`BUYER_CREDENTIAL_ENABLED=false` 而促销已开启时，
+配额必须在缺少 `buyer_id` 的情况下继续按兜底因子工作，
+**绝不能 fail-open 成「没有主判据就不限额」**。这条要进 readiness 检查项与 §15 的测试用例。
