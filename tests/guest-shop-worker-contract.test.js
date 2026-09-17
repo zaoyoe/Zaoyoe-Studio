@@ -395,6 +395,126 @@ test('guest worker loadCandidates includes delivered orders with a pending refun
     assert.equal(ids.includes(deadLetterNoRefund.id), false);
 });
 
+test('guest worker processOrderById reloads a single durable order and reuses fulfillment leases', async () => {
+    const order = createCandidateOrder({
+        id: '12121212-1212-4212-8212-121212121212',
+        order_no: 'GS-IMMEDIATE-1',
+        reservation_status: 'reserved'
+    });
+    const reservation = {
+        id: '34343434-3434-4434-8434-343434343434',
+        order_id: order.id,
+        inventory_id: '56565656-5656-4565-8565-565656565656',
+        status: 'reserved'
+    };
+    const rowsByTable = {
+        guest_shop_orders: [order],
+        guest_shop_inventory_reservations: [reservation],
+        guest_shop_payment_orders: []
+    };
+    const calls = [];
+    const instance = worker.createGuestShopWorker({
+        supabase: {
+            from(table) { return makeWorkerQuery(table, rowsByTable); },
+            async rpc(name, params) {
+                calls.push({ name, params });
+                if (name === 'fn_guest_shop_claim_fulfillment') {
+                    return { data: [{
+                        order_id: order.id,
+                        reservation_id: reservation.id,
+                        content: 'SECRET-CARD-CONTENT',
+                        fulfillment_status: 'fulfilling',
+                        reservation_status: 'consumed'
+                    }], error: null };
+                }
+                if (name === 'fn_guest_shop_mark_fulfilled') {
+                    return { data: [{ fulfilled: true, fulfillment_status: 'delivered' }], error: null };
+                }
+                throw new Error(`unexpected rpc ${name}`);
+            }
+        },
+        now: () => new Date('2026-09-17T00:00:00.000Z'),
+        logger: { error() {}, warn() {} }
+    });
+
+    const result = await instance.processOrderById(order.id);
+    assert.equal(result.status, 'delivered');
+    assert.equal(result.processed_kind, 'fulfillment');
+    assert.deepEqual(calls.map((call) => call.name), [
+        'fn_guest_shop_claim_fulfillment',
+        'fn_guest_shop_mark_fulfilled'
+    ]);
+    assert.equal(JSON.stringify(result).includes('SECRET-CARD-CONTENT'), false);
+});
+
+test('immediate fulfillment kicker is opt-in, server-only, and coalesces an in-flight order', async () => {
+    const enabledEnv = {
+        GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED: 'true',
+        VERIFY_SERVER_WORKERS_ENABLED: 'true'
+    };
+    assert.equal(worker.isGuestShopImmediateFulfillmentEnabled(enabledEnv), true);
+    assert.equal(worker.isGuestShopImmediateFulfillmentEnabled({
+        ...enabledEnv,
+        VERCEL_ENV: 'production'
+    }), false);
+    assert.equal(worker.isGuestShopImmediateFulfillmentEnabled({
+        VERIFY_SERVER_WORKERS_ENABLED: 'true'
+    }), false);
+
+    let release;
+    let calls = 0;
+    const blocker = new Promise((resolve) => { release = resolve; });
+    const kicker = worker.createGuestShopFulfillmentKicker({
+        supabase: {},
+        env: enabledEnv,
+        logger: { error() {} },
+        workerFactory() {
+            return {
+                async processOrderById(orderId) {
+                    calls += 1;
+                    assert.equal(orderId, 'order-immediate-1');
+                    await blocker;
+                    return { status: 'delivered' };
+                }
+            };
+        }
+    });
+
+    const first = kicker.kick('order-immediate-1');
+    const second = kicker.kick('order-immediate-1');
+    assert.equal(first, second);
+    assert.equal(kicker.pendingCount(), 1);
+    await Promise.resolve();
+    assert.equal(calls, 1);
+    release();
+    assert.deepEqual(await first, { status: 'delivered' });
+    assert.equal(kicker.pendingCount(), 0);
+});
+
+test('immediate fulfillment kicker contains worker failures for the durable timer fallback', async () => {
+    const logs = [];
+    const kicker = worker.createGuestShopFulfillmentKicker({
+        supabase: {},
+        env: {
+            GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED: 'true',
+            VERIFY_SERVER_WORKERS_ENABLED: 'true'
+        },
+        logger: { error: (...args) => logs.push(args) },
+        workerFactory() {
+            return {
+                async processOrderById() {
+                    const error = new Error('provider payload must not be logged');
+                    error.code = 'temporary_database_error';
+                    throw error;
+                }
+            };
+        }
+    });
+    const result = await kicker.kick('order-immediate-2');
+    assert.deepEqual(result, { status: 'error', error_code: 'temporary_database_error' });
+    assert.equal(JSON.stringify(logs).includes('provider payload'), false);
+});
+
 test('guest worker processes a dead-lettered order that an admin queued for refund', async () => {
     const order = createCandidateOrder({
         id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',

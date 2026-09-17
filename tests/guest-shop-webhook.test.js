@@ -200,6 +200,7 @@ function createHandlers(options = {}) {
             resolveClientIp() { return '198.51.100.10'; }
         },
         paymentAdapter,
+        kickFulfillment: options.kickFulfillment,
         env: options.env || { APP_ENV: 'test' }
     });
     return { handlers, state: supabase.state };
@@ -226,6 +227,22 @@ test('a forged webhook cannot reserve the business event key before the valid ca
     assert.equal(state.events[1].processing_status, 'processed');
     assert.equal(state.rpcCalls.length, 1);
     assert.equal(state.rpcCalls[0].name, 'fn_guest_shop_confirm_payment');
+});
+
+test('a confirmed webhook kicks fulfillment without making the payment response depend on it', async () => {
+    const kicked = [];
+    const { handlers, state } = createHandlers({
+        kickFulfillment(orderId) {
+            kicked.push(orderId);
+            throw new Error('worker temporarily unavailable');
+        }
+    });
+    const response = createResponse();
+    await handlers.webhook(makeRequest('valid-signature'), response, 'zpay');
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.accepted, true);
+    assert.deepEqual(kicked, [ORDER_ID]);
+    assert.equal(state.rpcCalls.length, 1);
 });
 
 test('repeated forged webhook bodies are deduplicated in the invalid namespace', async () => {

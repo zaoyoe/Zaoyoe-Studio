@@ -194,7 +194,7 @@ function createSupabaseStub({ order = makeOrder(), payment = makePayment() } = {
     };
 }
 
-function createHandlers({ supabase, adapter } = {}) {
+function createHandlers({ supabase, adapter, kickFulfillment } = {}) {
     const security = Object.assign({}, realSecurity, {
         // Authorization is covered by the status-recovery suite; here we only
         // need a deterministic success/failure boundary.
@@ -216,6 +216,7 @@ function createHandlers({ supabase, adapter } = {}) {
         },
         security,
         paymentAdapter: adapter,
+        kickFulfillment,
         env: { APP_ENV: 'test' }
     });
     return handlers;
@@ -288,6 +289,24 @@ test('lost webhook self-heals through the active provider query and confirm RPC'
     assert.equal(supabase.state.confirmParams.p_observed_status, 'paid');
     assert.equal(supabase.state.confirmParams.p_signature_verified, true);
     assert.equal(supabase.state.confirmParams.p_final_status_verified, true);
+});
+
+test('status query confirmation kicks fulfillment once for the request', async () => {
+    const supabase = createSupabaseStub();
+    const adapter = makeAdapter({ result: makeZpayQueryResult() });
+    const kicked = [];
+    const handlers = createHandlers({
+        supabase,
+        adapter,
+        kickFulfillment(orderId) { kicked.push(orderId); }
+    });
+    const response = createResponse();
+
+    await handlers.status(statusRequest(), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.order.payment_status, 'confirmed');
+    assert.deepEqual(kicked, [ORDER_ID]);
 });
 
 test('a non-final provider status never inserts an event or confirms the order', async () => {
@@ -369,6 +388,21 @@ test('a non-forced poll waits for the background throttle window before querying
     await handlers.status(statusRequest(), refreshed);
     assert.equal(adapter.state.queries.length, 1);
     assert.equal(refreshed.payload.order.payment_status, 'confirmed');
+});
+
+test('confirmed orders use shorter throttle window for faster fulfillment', async () => {
+    const supabase = createSupabaseStub({
+        order: makeOrder({ payment_status: 'confirmed', fulfillment_status: 'pending' }),
+        payment: makePayment({ provider_metadata: { provider: 'zpay', purpose: 'shop_direct', provider_order_no: ORDER_NO, query_verified_at: new Date(Date.now() - 4000).toISOString() } })
+    });
+    const adapter = makeAdapter({ result: makeZpayQueryResult() });
+    const handlers = createHandlers({ supabase, adapter });
+
+    // 4s ago: would be throttled by 8s window, but passes 3s confirmed window
+    const response = createResponse();
+    await handlers.status(statusRequest(), response);
+    assert.equal(adapter.state.queries.length, 1);
+    assert.equal(response.payload.order.payment_status, 'confirmed');
 });
 
 test('a terminal order never reads the payment row or queries the provider', async () => {

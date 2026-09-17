@@ -51,8 +51,14 @@ worker 只能使用专用 `GUEST_SHOP_WORKER_SECRET` 调用：
 POST /api/shop/guest/worker
 ```
 
-建议由 cron/systemd 每分钟调用一次；禁止仅依赖通用 `CRON_SECRET`。调用 503、无运行记录、
+由 systemd timer 每 10 秒调用一次（单次 oneshot 仍串行执行）；禁止仅依赖通用 `CRON_SECRET`。调用 503、无运行记录、
 履约积压或 `dead_letter` 增长时立即告警并暂停扩大游客商品范围。
+
+要把支付确认后的正常履约延迟从定时器等待降到通常约 1～3 秒，可在 KVM4
+Verify Server 的 `.env` 显式设置 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED=true`，并按下方
+流程重建 `verify-server` 使 `env_file` 生效。该开关只在长驻 KVM4 进程且
+`VERIFY_SERVER_WORKERS_ENABLED` 为真时生效；Vercel/serverless 永远不启用。即时 kick
+不是可靠性边界：systemd timer 仍必须保留并运行，负责进程重启、网络错误和 kick 失败后的兜底。
 
 游客支付 adapter 走 `resolvePaymentProviderSecrets`：优先读后台 stored secret，
 `.env` 里的 `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` 只是回退。KVM4 `.env` 没有这两项

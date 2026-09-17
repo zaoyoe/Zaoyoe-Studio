@@ -10,6 +10,24 @@
     const STORAGE_KEY = 'guest_shop_checkout_v1';
     const STORAGE_VERSION = 3;
     const POLL_INTERVAL_MS = 3500;
+    // Once payment is confirmed, provider polling is no longer the bottleneck:
+    // the worker only needs to finish the reserved inventory claim. Poll that
+    // short transition more closely so the buyer sees delivery promptly while
+    // keeping the normal unpaid-order polling interval unchanged.
+    const CONFIRMED_FULFILLMENT_POLL_INTERVAL_MS = 1000;
+    // Smart polling intervals optimize for different order states: aggressive
+    // polling right after payment confirmation (when fulfillment is imminent),
+    // backing off when backend throttling is detected, and providing rapid
+    // feedback during active fulfillment. This reduces perceived wait time
+    // without hammering the backend unnecessarily.
+    const SMART_POLL_INTERVALS = Object.freeze({
+        AWAITING_PAYMENT: 3500,           // Waiting for payment
+        PAYMENT_JUST_CONFIRMED: 800,      // 0-3s after confirmation (aggressive)
+        PAYMENT_CONFIRMED_EARLY: 1200,    // 3-10s after confirmation
+        PAYMENT_CONFIRMED_LATE: 2000,     // 10s+ after confirmation
+        FULFILLING: 600,                  // Active fulfillment (most aggressive)
+        THROTTLED_HINT: 5000              // Backend throttle detected
+    });
     const POLL_MAX_MS = 15 * 60 * 1000;
     const PREVIEW_ENDPOINT = '/api/shop/guest/preview';
     const ORDER_ENDPOINT = '/api/shop/guest/orders';
@@ -42,7 +60,10 @@
         claimInFlight: false,
         contextKey: '',
         zpayCountdownTimer: null,
-        confirmedPricing: null
+        confirmedPricing: null,
+        paymentConfirmedAt: null,         // Timestamp when payment was confirmed
+        lastStatusQueryTime: null,        // Last backend provider query time
+        smartPollingEnabled: true         // Smart polling feature flag
     };
 
     function element(id) {
@@ -918,6 +939,7 @@
     }
 
     function closeGuestModal() {
+        if (state.status === 'delivered') clearCompletedCheckout();
         stopPolling();
         stopZpayCountdown();
         const modal = getModal();
@@ -925,6 +947,27 @@
         modal.hidden = true;
         modal.classList.remove('active');
         document.body?.classList.remove('guest-shop-modal-open');
+    }
+
+    function clearCompletedCheckout() {
+        if (state.status !== 'delivered') return false;
+        stopPolling();
+        stopZpayCountdown();
+        clearStoredCheckout();
+        state.orderNo = '';
+        state.idempotencyKey = '';
+        state.expiresAt = '';
+        state.provider = '';
+        state.channel = '';
+        state.recoveryCode = '';
+        state.paymentConfirmed = false;
+        state.status = 'configure';
+        state.confirmedPricing = null;
+        state.paymentConfirmedAt = null;
+        state.lastStatusQueryTime = null;
+        resetOrderUi();
+        setStateMessage('发货内容已关闭，可以重新购买。', 'configure');
+        return true;
     }
 
     function resetOrderUi({ preserveRecovery = false } = {}) {
@@ -940,6 +983,8 @@
             state.recoveryCode = '';
             setHidden('guestCashRecoveryCodePanel', true);
             setText('guestCashRecoveryCode', '');
+            state.paymentConfirmedAt = null;
+            state.lastStatusQueryTime = null;
         }
         setHidden('guestCashRecoveryPanel', true);
         if (!state.orderNo) showOrderNo('');
@@ -978,6 +1023,8 @@
         state.paymentConfirmed = false;
         state.status = 'configure';
         state.confirmedPricing = null;
+        state.paymentConfirmedAt = null;
+        state.lastStatusQueryTime = null;
         resetOrderUi();
         showOrderNo('');
         setStateMessage('当前未付款订单已关闭。请不要再支付旧付款码。可以重新创建订单。旧库存预占会在过期后自动释放。', 'configure');
@@ -1154,7 +1201,10 @@
             setStateMessage('支付已确认，订单已发货。', 'delivered');
             syncAbandonOrderButton();
             stopPolling();
-            persistCheckout();
+            // A delivered order is intentionally not auto-restored after a
+            // refresh. Keep the content in memory until the user closes this
+            // modal, while removing the resumable checkout handle now.
+            clearStoredCheckout();
         } catch (error) {
             if (expectedGeneration !== state.pollGeneration) return;
             if (error?.code === 'guest_order_not_delivered') {
@@ -1168,6 +1218,62 @@
         }
     }
 
+    function calculateSmartPollInterval(paymentStatus, fulfillmentStatus, statusPayload) {
+        const now = Date.now();
+
+        // Track when payment was confirmed
+        if (paymentStatus === 'confirmed' && !state.paymentConfirmedAt) {
+            state.paymentConfirmedAt = now;
+        }
+
+        // Payment confirmed: use aggressive intervals based on time elapsed
+        if (paymentStatus === 'confirmed') {
+            const timeSinceConfirmed = state.paymentConfirmedAt
+                ? (now - state.paymentConfirmedAt)
+                : 0;
+
+            // Active fulfillment: most aggressive (0.6s)
+            if (fulfillmentStatus === 'fulfilling') {
+                return SMART_POLL_INTERVALS.FULFILLING;
+            }
+
+            // Just confirmed (0-3s): very aggressive (0.8s)
+            if (timeSinceConfirmed < 3000) {
+                return SMART_POLL_INTERVALS.PAYMENT_JUST_CONFIRMED;
+            }
+
+            // Early confirmation (3-10s): aggressive (1.2s)
+            if (timeSinceConfirmed < 10000) {
+                return SMART_POLL_INTERVALS.PAYMENT_CONFIRMED_EARLY;
+            }
+
+            // Late confirmation (10s+): moderate (2s)
+            return SMART_POLL_INTERVALS.PAYMENT_CONFIRMED_LATE;
+        }
+
+        // Check for backend throttle hints
+        try {
+            const queryTime = statusPayload?.throttle_hint?.query_verified_at;
+            if (queryTime) {
+                const lastQueryMs = Date.parse(queryTime);
+                if (Number.isFinite(lastQueryMs)) {
+                    state.lastStatusQueryTime = lastQueryMs;
+                    const timeSinceQuery = now - lastQueryMs;
+
+                    // Backend queried provider within 8s: back off to 5s
+                    if (timeSinceQuery < 8000) {
+                        return SMART_POLL_INTERVALS.THROTTLED_HINT;
+                    }
+                }
+            }
+        } catch (_) {
+            // Ignore parsing errors, fall through to default
+        }
+
+        // Default: awaiting payment (3.5s)
+        return SMART_POLL_INTERVALS.AWAITING_PAYMENT;
+    }
+
     async function pollStatus({ immediate = false, resetWindow = false, forceProviderRefresh = false } = {}) {
         if (!state.orderNo) return;
         if (resetWindow) stopPolling();
@@ -1175,11 +1281,16 @@
         const generation = state.pollGeneration;
         if (state.pollActiveGeneration === generation) return;
         state.pollStartedAt = state.pollStartedAt || Date.now();
+        // A manual status check should force only its first request. Once the
+        // server has performed that live provider query, ordinary polling is
+        // enough and avoids repeatedly bypassing the background throttle.
+        let forceProviderRefreshNext = forceProviderRefresh === true;
         const run = async () => {
             if (generation !== state.pollGeneration || !state.orderNo) return;
             state.pollTimer = null;
             state.pollActiveGeneration = generation;
             let shouldContinue = true;
+            let nextPollIntervalMs = POLL_INTERVAL_MS;
             if (Date.now() - state.pollStartedAt > POLL_MAX_MS) {
                 setStateMessage('自动核验已暂停，请点击“查询支付状态”继续。', 'manual_review');
                 state.pollStartedAt = 0;
@@ -1187,13 +1298,27 @@
                 return;
             }
             try {
-                const payload = await fetchStatus({ forceRefresh: forceProviderRefresh });
+                const payload = await fetchStatus({ forceRefresh: forceProviderRefreshNext });
+                forceProviderRefreshNext = false;
                 if (generation !== state.pollGeneration || !state.orderNo) return;
                 if (payload?.checkout && !state.checkout) renderCheckout(payload.checkout);
                 const order = payload?.order || {};
                 applyServerPricing(order);
                 const paymentStatus = normalizeText(order.payment_status, 80).toLowerCase();
                 const fulfillmentStatus = normalizeText(order.fulfillment_status, 80).toLowerCase();
+                // Smart polling: calculate interval based on order state
+                if (state.smartPollingEnabled) {
+                    nextPollIntervalMs = calculateSmartPollInterval(
+                        paymentStatus,
+                        fulfillmentStatus,
+                        payload
+                    );
+                } else {
+                    // Fallback to original logic if smart polling is disabled
+                    if (paymentStatus === 'confirmed' && ['pending', 'fulfilling'].includes(fulfillmentStatus)) {
+                        nextPollIntervalMs = CONFIRMED_FULFILLMENT_POLL_INTERVAL_MS;
+                    }
+                }
                 if (paymentStatus === 'confirmed') {
                     state.paymentConfirmed = true;
                     syncAbandonOrderButton();
@@ -1215,12 +1340,25 @@
                     if (state.checkout?.provider === 'zpay') presentZpayTimeout();
                     setStateMessage('订单支付未完成或已关闭，请勿重复付款。', 'error');
                     shouldContinue = false;
+                } else if (paymentStatus === 'confirmed' && fulfillmentStatus === 'paid_unfulfillable') {
+                    setStateMessage('支付已确认，但当前库存不足，正在处理退款或人工补发。请保留订单号。', 'manual_review');
+                    // This is a durable stock decision recorded by the claim
+                    // RPC. Do not keep hammering status while the refund or
+                    // manual fulfilment queue is handled by operations.
+                    shouldContinue = false;
+                } else if (paymentStatus === 'confirmed' && fulfillmentStatus === 'dead_letter') {
+                    setStateMessage('支付已确认，但自动发货失败，订单已转人工处理。请保留订单号。', 'manual_review');
+                    shouldContinue = false;
                 } else {
                     if (paymentStatus === 'confirmed' && state.checkout?.provider === 'zpay') {
                         presentZpaySuccess();
                     }
                     setStateMessage(
-                        paymentStatus === 'confirmed' ? '支付已确认，正在等待发货...' : '等待支付确认，请完成付款后保持页面打开。',
+                        paymentStatus === 'confirmed'
+                            ? (fulfillmentStatus === 'failed'
+                                ? '支付已确认，发货正在重试，请保持页面打开。'
+                                : '支付已确认，正在等待发货...')
+                            : '等待支付确认，请完成付款后保持页面打开。',
                         'checking'
                     );
                 }
@@ -1236,7 +1374,7 @@
                 if (state.pollActiveGeneration === generation) state.pollActiveGeneration = null;
             }
             if (shouldContinue && generation === state.pollGeneration && state.orderNo) {
-                state.pollTimer = window.setTimeout(run, POLL_INTERVAL_MS);
+                state.pollTimer = window.setTimeout(run, nextPollIntervalMs);
             }
         };
         if (immediate) await run();
@@ -1377,7 +1515,7 @@
         }
     }
 
-    function maybeRestoreReturn() {
+    async function maybeRestoreReturn() {
         const saved = storedCheckout();
         const returnOrderNo = readReturnOrderNo();
         if (returnOrderNo) {
@@ -1403,6 +1541,28 @@
         }
         hydrateCheckout(saved);
         clearQueryReturnMarker();
+        const restoredOrderNo = state.orderNo;
+        // Older clients persisted the order even after delivery. Check the
+        // server-owned status before opening the modal so those stale records
+        // cannot resurrect a completed delivery after a page refresh.
+        try {
+            const snapshot = await fetchStatus();
+            if (state.orderNo !== restoredOrderNo) return;
+            const restoredOrder = snapshot?.order || {};
+            const paymentStatus = normalizeText(restoredOrder.payment_status, 80).toLowerCase();
+            const fulfillmentStatus = normalizeText(restoredOrder.fulfillment_status, 80).toLowerCase();
+            if (paymentStatus === 'confirmed' && fulfillmentStatus === 'delivered') {
+                state.status = 'delivered';
+                state.paymentConfirmed = true;
+                clearCompletedCheckout();
+                return;
+            }
+        } catch (error) {
+            // A transient status failure should not discard an unpaid order;
+            // retain the existing modal-and-poll recovery path below. This
+            // also preserves the manual recovery UI when the claim cookie has
+            // expired or was lost on another device.
+        }
         const context = getPurchaseContext();
         // A persisted order can outlive the currently selected product/SKU.
         // Restore it without passing a mismatched context through
