@@ -16,26 +16,38 @@
 
 ---
 
-## 0. 生产状态快照（2026-09-17 复核）
+## 0. 生产状态快照（2026-09-17 二次复核，PR #649/#650 合并后）
 
 | 链路 | 状态 | 证据 |
 |---|---|---|
-| `main` | `aef4c0cc101cf30f412bb45dd67ce99d5b8bc7b4` | PR #648 已合并（2026-09-17 07:14 UTC） |
-| Vercel production | ● Ready | `dpl_3RqUQVKiAXqm6AMmmLR8G972Z4Gu`，别名含 `www.fatherkey.com`，构建于 15:36 CST（合并之后） |
-| Deploy KVM4 Verify Server | success | run `35193525564` @ `aef4c0cc1` |
-| Deploy KVM4 Sub2API | success | run `35193525577` @ `aef4c0cc1` |
-| Security Tests | success | run `35193525527` @ `aef4c0cc1` |
-| verify 健康 | 200 | `https://verify-api.fatherkey.com/healthz`，`uptime_seconds` 与 07:15 UTC 部署时间吻合 |
+| `main` | `2424dcc14ba9af7d69f1aee8b950d832e548e4d3` | PR #649、#650 已合并 |
+| Vercel production | ● Ready | `dpl_8ViQAytA4pA5UXpvsutfL55FbEtm`，target production，别名含 `www.fatherkey.com`，13:46 UTC 构建 |
+| Deploy KVM4 Verify Server | success | run `35226534149` @ `2424dcc14`（13:21 UTC） |
+| Deploy KVM4 Sub2API | success | run `35226534130` @ `2424dcc14`（13:21 UTC） |
+| KVM4 `.current-release` | == main | run `35231858943` 预检输出（本机 SSH 被封，改由 CI 复核） |
+| verify 健康 | 200 | `https://verify-api.fatherkey.com/healthz`，`uptime_seconds` 与 13:21 UTC 部署吻合 |
 | NewAPI 健康 | 200 | `https://new.fatherkey.com/health` |
-| KVM4 `.current-release` | 待 SSH 复核 | 本机 SSH 在握手阶段被远端关闭（见 §6 最后一条） |
-| 容器内 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` | 待确认 | 只能在容器内确认，见 §4 审计脚本 |
-| `zaoyoe-guest-shop-worker.timer` | 待确认 | 见 §4 审计脚本 |
+| `zaoyoe-guest-shop-worker.timer` | enabled + active | run `35231858943`：`Result=success`、`ExecMainStatus=0` |
+| host `.env` | 0600，worker secret 长度校验通过 | run `35231858943`（只打印长度，不打印值） |
+| `sub2api-legacy` 桥接容器 | 未运行 | run `35231858943` |
+| 容器内 `VERIFY_SERVER_WORKERS_ENABLED` | true | `deploy/kvm4/docker-compose.verify-server.yml:16` 固定注入 |
+| 容器内 `VERCEL_ENV` | 空 | kick 判据之一，满足 |
+| 容器内 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` | **不为 true（唯一缺口）** | run `35231858943` 输出 `INFO immediate_fulfillment not true` |
 
 **结论**：即时 kick 的代码（`api/public.js`、`api/shop/guest/status.js`、两个 webhook 路由、
-前端智能轮询）已经随 `aef4c0cc1` 上线。真正决定「能不能 1-3 秒发货」的只剩两件运维事项：
+前端智能轮询）已随 `main@2424dcc14` 上线，host 上每 10 秒的兜底 timer 也已安装并在跑。
+「能不能 1-3 秒发货」只剩最后一件事：把 host `/opt/zaoyoe-verify-server/.env` 里的
+`GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` 设为 `true`，并按步骤 6 force-recreate 重载
+`env_file`（另两个判据已由 compose 固定满足）。
 
-1. verify 容器内 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED=true`（另两个条件由 compose 固定）；
-2. host 上每 10 秒的兜底 timer 已安装并启动。
+> **在 Vercel 环境变量里设这个开关是无效的，且永久无效。** 判据函数
+> `isGuestShopImmediateFulfillmentEnabled()`（`server/guest-shop-worker.js:1049`）在
+> `VERCEL_ENV` 非空或 `VERCEL=1` 时直接返回 false，而这两个变量在 Vercel 运行时恒存在；
+> 它还要求 `VERIFY_SERVER_WORKERS_ENABLED=true`，该变量只在 KVM4 compose 里注入。
+> 加上 `.vercelignore:125-132` 排除了全部 `api/shop/guest/*`，线上 Vercel 部署里根本没有
+> 这些函数，`/api/shop/:path*` 由 `vercel.json` 反代到 `verify-api.fatherkey.com`。
+> 因此 Vercel 面板上新加的 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` 建议删除，
+> 以免后续误判「开关已经打开」。开关只能落在 KVM4 的 `.env` 上。
 
 ---
 
@@ -176,6 +188,44 @@ serverless 环境而关闭。
 ```
 
 `/healthz` 不通就不要继续，也不要启动 watchdog 之外的任何东西。
+
+### 步骤 5/6 的 CI 替代路径（本机 SSH 被封时）
+
+本机公网 IP 一旦被 fail2ban 封掉，步骤 5、6 就无法在工作站执行：TCP 能连上
+`76.13.188.218:2222`，但立刻 `Connection closed by 76.13.188.218 port 2222`，收不到 banner。
+**此时不要继续重试**，重试会刷新封禁计时。改走 dispatch 工作流：
+
+```bash
+gh workflow run enable-kvm4-guest-shop-immediate-fulfillment.yml \
+  --field enabled=true \
+  --field unban_ip=<你的公网 IP>
+gh run list --workflow enable-kvm4-guest-shop-immediate-fulfillment.yml --limit 1
+gh run watch <run-id> --exit-status
+```
+
+`.github/workflows/enable-kvm4-guest-shop-immediate-fulfillment.yml` 做的事：
+
+1. 只接受 `workflow_dispatch`，且要求 `github.ref == refs/heads/main`，checkout 钉到最新
+   `main`；与两个部署工作流共用 `deploy-kvm4-main` 并发组，不会和部署同时改容器
+2. **预检 fail-closed**：`.current-release` == main HEAD、`.env` 权限 0600、
+   `GUEST_SHOP_WORKER_SECRET` 长度 ≥32（只打印长度）、`zaoyoe-verify-server` healthy、
+   无 `sub2api-legacy` 桥接容器、loopback `127.0.0.1:3001/healthz` 通、
+   未授权探测 `/api/shop/guest/worker` 返回 **401**；同时只读报告 fail2ban 封禁列表、
+   提到该 IP 的 iptables/nft 规则数和 `sshd MaxStartups`
+3. **幂等判定**：host `.env` 和容器内开关都已是目标值时输出 `DECISION need_recreate=false`，
+   跳过全部写操作与 force-recreate，不做无谓重启
+4. `unban_ip` 非空时在所有 jail 执行 `fail2ban-client set <jail> unbanip <IP>`，并回显封禁列表
+5. 写开关：备份 `.env` 到 `backups/env.<UTC 时间戳>.bak`（0600）→ 补齐缺失的结尾换行 →
+   `sed` 改已有行或追加新行 → 断言「恰好一行且等于目标值」，否则失败退出。
+   目标值只接受 `true`/`false`，其它输入直接拒绝且不碰文件
+6. 重载：暂停健康看门狗 → `docker compose up -d --no-deps --force-recreate --no-build verify-server`
+   → 最多 150 秒轮询 healthy + loopback `/healthz` → 校验容器内开关已生效
+7. 看门狗恢复步骤用 `if: always()`，前面任何一步失败也会把 watchdog 拉回来
+8. 收尾断言三条件（`immediate_fulfillment` / `workers_enabled` / `vercel_env_empty`）全真，
+   才打印 `PASS 1-3s kick path armed`；随后附 timer 状态、journal、kicker 日志与公网 `/healthz`
+
+`enabled=false` 就是回滚档位：只写 `false` 并 force-recreate，解除 kick 路径，退回
+10 秒兜底 timer（见 §7）。全程只打印计数与真假，不打印任何 `GUEST_SHOP_*` 值。
 
 ### 步骤 7 — readiness 闸门（本地）
 
@@ -345,7 +395,8 @@ npm run reconcile:guest-shop
 | worker 返回 503 / 超时 | `journalctl -u zaoyoe-guest-shop-worker.service -n 50`；`curl -fsS http://127.0.0.1:3001/healthz` | 先 `systemctl stop zaoyoe-guest-shop-worker.timer`，修好 verify 再启动；不要放宽 SKU |
 | 容器不健康 | `docker compose -f /opt/zaoyoe-verify-server/docker-compose.yml ps`；`docker logs --tail 200 zaoyoe-verify-server`；`docker inspect --format '{{json .State.Health}}' zaoyoe-verify-server` | 按日志定位；不要在宿主机 `node server/index.js` 手工起服务 |
 | 端口 3001 | `ss -ltnp \| grep 3001` | 预期只有 `127.0.0.1:3001`（compose 绑定），公网入口是 Caddy → `verify-api.fatherkey.com`。禁止 `kill -9 $(lsof -ti:3001)` |
-| SSH 握手即断：`kex_exchange_identification: Connection closed by remote host` | 远端限速 / fail2ban | 按 15-25 秒间隔重试最多 4-8 次（`scripts/deploy-kvm4-verify-server.sh` 内置同样重试）。连续爆破式重试会延长封禁；必要时走 Hostinger 面板控制台 |
+| SSH 连上即断：`Connection closed by 76.13.188.218 port 2222`，收不到 banner | 大概率 fail2ban 已封本机公网 IP，不是网络抖动。判据：同一时间窗 CI 用 `secrets.KVM4_SSH_PRIVATE_KEY` 能 SSH 成功 | **立刻停止重试**（每次重试都会刷新封禁计时）。改走 §3「步骤 5/6 的 CI 替代路径」，dispatch 时带 `unban_ip=<公网 IP>`；或用 Hostinger 面板 VNC 执行 `fail2ban-client set sshd unbanip <IP>` |
+| SSH 偶发 `kex_exchange_identification: Connection closed by remote host` | 远端并发限速 / `MaxStartups` | 按 15-25 秒间隔重试最多 4-8 次（`scripts/deploy-kvm4-verify-server.sh` 内置同样重试） |
 
 ---
 
@@ -355,6 +406,9 @@ npm run reconcile:guest-shop
    回滚 verify release 本身不会退款或撤销已发货订单。
 2. 只回滚履约链路：`systemctl stop zaoyoe-guest-shop-worker.timer`（保留 unit 与 helper），
    或把 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED` 置 `false` 后按步骤 6 force-recreate。
+   本机 SSH 不可用时用 CI 档位：
+   `gh workflow run enable-kvm4-guest-shop-immediate-fulfillment.yml --field enabled=false`
+   （同一条工作流、同一套预检与看门狗保护，只是目标值写成 `false`）。
 3. verify release 回滚：只在本地干净 `main` 上用 `npm run rollback:kvm4:verify`。
 4. Vercel 紧急回滚：`npx vercel rollback <deployment-url-or-id> --yes`。
 5. 常规回滚不要 `rm /etc/systemd/system/zaoyoe-guest-shop-worker.*`；先 stop + disable，
@@ -410,13 +464,28 @@ npm run reconcile:guest-shop
 4. **`.freebuff/project-id`**：**已移出版本库**并加入 `.gitignore`（本地文件保留给工具使用）。
 5. **本机未跟踪草稿**：`kvm4-deployment-guide.md`、`DEPLOYMENT_STEPS.md`、`kvm4-env-template.txt`、
    `deploy-guest-shop-worker.sh` 已按本规范修正或降级为指针，不要再按旧版本执行。
-6. **KVM4 SSH 未通过**：本次复核期间 `ssh -p 2222 root@76.13.188.218` 在密钥交换阶段被远端关闭
-   （`kex_exchange_identification: Connection closed` / banner 超时），疑似 fail2ban 或连接限速，
-   因此 §0 表中「KVM4 `.current-release`」「容器内开关」「worker timer」三行仍未验证。
-   处理方式见 §6 最后一条；这是当前唯一未闭环的核对项。
-   **补充结论**：复测确认 TCP 可连通但永远收不到 banner（`github.com:22` 同样挂起），
-   即本机所在沙箱只放行 HTTP(S)，与 KVM4 侧 fail2ban 无关。此环境下不要再重试 SSH，
-   改用 §3「步骤 8/9 的 CI 替代路径」由 Actions runner 执行安装与审计。
+6. **沙箱侧 SSH 不可用（已定性）**：Codex 沙箱只放行 HTTP(S)——TCP 能连上
+   `76.13.188.218:2222` 但永远收不到 banner，且 `github.com:22` 同样挂起，与 KVM4 侧
+   fail2ban 无关。此环境下不要重试 SSH，一律改用 §3「步骤 8/9 的 CI 替代路径」和
+   「步骤 5/6 的 CI 替代路径」，由 Actions runner 用 `secrets.KVM4_SSH_PRIVATE_KEY` 执行。
+   原先「`.current-release`／容器内开关／worker timer 三行未验证」已由 CI run
+   `35231858943`（14:10 UTC，success）闭环，结论见 §0 表。
+7. **操作员 IP 被 SSH 拒绝（2026-09-17 晚）**：用户在自己的 Mac 终端连续两次粘贴执行
+   §3 步骤 5/6 的六条命令，每次都立刻 `Connection closed by 76.13.188.218 port 2222`；
+   同一时间窗 CI run `35231858943` 用同一份密钥 SSH 成功，服务器侧未被改动
+   （verify 容器 uptime 未重置）。判定为**按 IP 的 SSH 拒绝（fail2ban 一类）**，
+   命中 `103.142.140.60`，而不是命令写错。
+   两点教训：① 出现该症状时立刻停手，重试只会刷新封禁计时；② 那六条命令是给
+   **可 SSH 的终端**用的，粘到 Codex 沙箱终端里不会生效。
+   顺带说明：粘贴块里的 `zsh: command not found: #` 只是交互式 zsh 未开启
+   `interactive_comments`，注释行被当命令执行，无副作用。
+   处理方式：走 CI 替代路径，dispatch 时带 `unban_ip=103.142.140.60`，
+   预检会只读打印 fail2ban 封禁列表与相关 iptables/nft 规则数以确认根因。
+8. **Vercel 环境变量误配（2026-09-17 晚）**：用户在 Vercel 面板新增
+   `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED=true`（Production 作用域，Sensitive）。
+   该变量对履约链路**永久无效**，理由见 §0 引用块。建议删除；开关的唯一正确位置是
+   KVM4 `/opt/zaoyoe-verify-server/.env`。这次误配触发的 13:46 UTC 生产重建
+   （`dpl_8ViQAytA4pA5UXpvsutfL55FbEtm`）源自 `main@2424dcc14`，本身合规，只是不解决问题。
 
 ---
 
@@ -428,6 +497,7 @@ npm run reconcile:guest-shop
 - `docs/guest-purchase-task-2.0.md` → 启用条件（Task 2.0 完成标准）
 - `deploy/kvm4/docker-compose.verify-server.yml`、`deploy/kvm4/guest-shop-worker/*`、`deploy/kvm4/watchdog/*`
 - `.github/workflows/install-kvm4-guest-shop-worker.yml` → 本机 SSH 不可用时的 CI 安装路径（仅 workflow_dispatch）
+- `.github/workflows/enable-kvm4-guest-shop-immediate-fulfillment.yml` → 本机 SSH 被封时改/回滚即时发货开关的 CI 路径（仅 workflow_dispatch，`enabled=false` 即回滚档位）
 - `scripts/install-kvm4-guest-shop-worker.sh`、`scripts/guest-shop-readiness.js`、`scripts/guest-shop-reconcile.js`
 - `server/guest-shop-worker.js`、`server/api-handlers/public/guest-shop.js`、`api/public.js`
 
