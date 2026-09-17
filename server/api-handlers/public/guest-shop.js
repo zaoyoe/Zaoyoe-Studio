@@ -1831,6 +1831,10 @@ function responseOrder(order, claimSecret, extras = {}) {
             if (value === undefined) continue;
             next[key] = value;
         }
+        // Keep the object loaded by the status request in sync with the
+        // best-effort persistence below so later response shaping can reuse
+        // it without issuing a second payment-row query.
+        payment.provider_metadata = next;
         try {
             await db.from('guest_shop_payment_orders').update({
                 provider_metadata: next,
@@ -2064,15 +2068,15 @@ function responseOrder(order, claimSecret, extras = {}) {
         return { refreshed: true, order: refreshedOrder || order, kickRequested };
     }
 
-    async function buildThrottleHint(order) {
+    async function buildThrottleHint(order, payment) {
         // Provide frontend with throttle state to optimize polling intervals
-        if (!order?.payment_order_id) return null;
+        // Delivered orders are fully terminal. Avoid reading the payment row
+        // again after the status path has established that no stale checkout
+        // or provider refresh can be relevant.
+        if (!order?.payment_order_id
+            || String(order.fulfillment_status || '').trim().toLowerCase() === 'delivered'
+            || !payment) return null;
         try {
-            const payment = await loadPaymentIntent({
-                payment_order_id: order.payment_order_id,
-                order_id: order.id,
-                merchant_order_no: order.order_no
-            });
             const metadata = storedPlainObject(payment?.provider_metadata);
             const queryVerifiedAt = metadata?.query_verified_at;
             if (!queryVerifiedAt) return null;
@@ -2104,20 +2108,29 @@ function responseOrder(order, claimSecret, extras = {}) {
                 kickedConfirmedOrder = true;
             }
             let checkout = null;
+            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+            const fulfillmentStatus = String(order.fulfillment_status || '').trim().toLowerCase();
             // A refreshed tab may have only the non-sensitive order handle in
             // sessionStorage. Reconstruct the checkout from server-owned,
             // allowlisted provider metadata after the claim cookie has been
             // verified. This never returns the claim secret, raw webhook
             // payload, or arbitrary provider metadata.
-            if (!paymentStatusIsTerminal(String(order.payment_status || '').trim().toLowerCase())) {
-                let payment = null;
+            // A confirmed payment still needs active reconciliation until the
+            // fulfillment worker marks the order delivered. Other payment
+            // terminal states remain read-free, as before.
+            const shouldReadPayment = fulfillmentStatus !== 'delivered'
+                && (!paymentStatusIsTerminal(paymentStatus) || paymentStatus === 'confirmed');
+            let payment = null;
+            if (shouldReadPayment) {
                 try {
                     payment = await loadPaymentIntent({
                         payment_order_id: order.payment_order_id,
                         order_id: order.id,
                         merchant_order_no: order.order_no
                     });
-                    checkout = buildStoredCheckout(order, payment);
+                    if (!paymentStatusIsTerminal(paymentStatus)) {
+                        checkout = buildStoredCheckout(order, payment);
+                    }
                 } catch (_) {
                     // Status polling remains useful when payment creation is
                     // still pending; provider reconstruction is best effort
@@ -2151,7 +2164,7 @@ function responseOrder(order, claimSecret, extras = {}) {
                 kickConfirmedOrder(order.id);
             }
             // Include throttle hint for frontend smart polling optimization
-            const throttleHint = await buildThrottleHint(order);
+            const throttleHint = await buildThrottleHint(order, payment);
             return sendJson(res, 200, {
                 success: true,
                 order: publicOrderSnapshot(order),
