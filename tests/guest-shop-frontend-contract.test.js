@@ -574,7 +574,7 @@ test('the query password travels once in the order body and is never persisted, 
 test('the guest order lookup page is a lean standalone page with no account runtime', () => {
     assert.match(ordersPage, /<meta name="robots" content="noindex, nofollow">/);
     assert.match(ordersPage, /<body class="guest-orders-page">/);
-    assert.match(ordersPage, /css\/guest-orders\.css\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
+    assert.match(ordersPage, /css\/guest-orders\.css\?v=20260922_GUEST_ORDER_ACCESS_A3_1/);
     for (const id of [
         'guestOrdersSavedHint', 'guestOrdersSavedEmail', 'guestOrdersClearSavedBtn',
         'guestOrdersQueryForm', 'guestOrdersEmail', 'guestOrdersPassword',
@@ -584,7 +584,17 @@ test('the guest order lookup page is a lean standalone page with no account runt
         'guestOrdersPageInfo', 'guestOrdersPrevBtn', 'guestOrdersNextBtn',
         'guestOrdersDetail', 'guestOrdersDetailRows', 'guestOrdersDeliveryContent',
         'guestOrdersCopyDeliveryBtn', 'guestOrdersLoadDeliveryBtn',
-        'guestOrdersLegacyOrderNo', 'guestOrdersLegacyCode', 'guestOrdersLegacyBtn'
+        'guestOrdersLegacyOrderNo', 'guestOrdersLegacyCode', 'guestOrdersLegacyBtn',
+        // A3 §10.5 one-time reset-link card
+        'guestOrdersResetCard', 'guestOrdersResetForm', 'guestOrdersResetEmail',
+        'guestOrdersResetPassword', 'guestOrdersResetPasswordConfirm',
+        'guestOrdersResetToggleBtn', 'guestOrdersResetGenerateBtn',
+        'guestOrdersResetPolicy', 'guestOrdersResetSubmitBtn',
+        // A3 §13.2 historical-order self-upgrade
+        'guestOrdersUpgradeEmail', 'guestOrdersUpgradePassword',
+        'guestOrdersUpgradePasswordConfirm', 'guestOrdersUpgradeToggleBtn',
+        'guestOrdersUpgradeGenerateBtn', 'guestOrdersUpgradePolicy',
+        'guestOrdersUpgradeBtn', 'guestOrdersUpgradeResult'
     ]) {
         assert.match(ordersPage, new RegExp(`id="${id}"`), `guest-orders.html is missing #${id}`);
     }
@@ -593,6 +603,19 @@ test('the guest order lookup page is a lean standalone page with no account runt
     assert.match(ordersPage, /id="guestOrdersPassword"[\s\S]{0,120}autocomplete="current-password"[^>]*maxlength="64"/);
     assert.match(ordersPage, /id="guestOrdersEmail"[^>]*type="email"/);
     assert.match(ordersPage, /id="guestOrdersQueryForm"[^>]*novalidate/);
+
+    // A3: the two credential-MINTING forms must ask a password manager for a NEW
+    // password (the opposite of the lookup field), and the reset card must start
+    // hidden — it is revealed only after the client has read a real ?reset= token,
+    // so a hand-typed /guest-orders.html?reset=xxx cannot pre-open a form.
+    assert.match(ordersPage, /id="guestOrdersResetCard"[^>]*hidden/);
+    assert.match(ordersPage, /id="guestOrdersResetPassword"[\s\S]{0,200}autocomplete="new-password"/);
+    assert.match(ordersPage, /id="guestOrdersUpgradePassword"[\s\S]{0,200}autocomplete="new-password"/);
+    assert.doesNotMatch(ordersPage, /id="guestOrdersReset[^>]*autocomplete="current-password"/);
+    assert.doesNotMatch(ordersPage, /id="guestOrdersUpgrade[^>]*autocomplete="current-password"/);
+    // The page must not advertise the reset link as a self-service entry point:
+    // it exists only in a support message from an admin (§10.5).
+    assert.doesNotMatch(ordersPage, /href="[^"]*\?reset=/);
 
     // No account runtime at all: mounting shop-client would drag in supabase,
     // the wallet and the auth modal, which is exactly what the guest channel
@@ -610,7 +633,7 @@ test('the guest order lookup page is a lean standalone page with no account runt
     assert.ok(siteConfig >= 0, 'site-config must be mounted');
     assert.ok(generator > siteConfig, 'the generator must load after site-config');
     assert.ok(pageClient > generator, 'the lookup client must load after the generator');
-    assert.match(ordersPage, /js\/guest-orders-client\.js\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
+    assert.match(ordersPage, /js\/guest-orders-client\.js\?v=20260922_GUEST_ORDER_ACCESS_A3_1/);
     assert.doesNotMatch(ordersPage, /<script(?![^>]*\bdefer\b)[^>]*js\/guest-orders-client\.js/);
     assert.match(ordersStyles, /body\.guest-orders-page/);
     assert.match(ordersStyles, /\.guest-orders-item-discounts:empty/);
@@ -650,7 +673,11 @@ test('the lookup client stays isolated from the account auth system and never wr
         "'/api/shop/guest/order'",
         "'/api/shop/guest/delivery'",
         "'/api/shop/guest/access/login'",
-        "'/api/shop/guest/access/logout'"
+        "'/api/shop/guest/access/logout'",
+        // A3: the one-time reset link (§10.5) and the §13.2 historical-order
+        // self-upgrade ride the same public flat-key dispatcher.
+        "'/api/shop/guest/access/reset'",
+        "'/api/shop/guest/access/upgrade'"
     ]) {
         assert.ok(code.includes(endpoint), `the lookup client must call ${endpoint}`);
     }
@@ -658,4 +685,24 @@ test('the lookup client stays isolated from the account auth system and never wr
     assert.doesNotMatch(code, /searchParams\.set\(\s*['"](?:password|orderPassword|credential|secret|token|email)/i);
     assert.doesNotMatch(code, /history\.(?:push|replace)State\([^)]*(?:password|credential|secret)/i);
     assert.doesNotMatch(code, /location\.(?:href|assign|replace)\s*=?\s*[^;]*(?:password|credential|secret)/i);
+
+    // A3 §10.5: the one-time link token is a BEARER credential. It must be read
+    // out of the address bar and deleted before any request, must never be put
+    // back into a URL, and must never reach a storage tier.
+    assert.match(code, /searchParams\.delete\('reset'\)/);
+    assert.match(code, /history\.replaceState\(/);
+    assert.doesNotMatch(code, /searchParams\.set\(\s*['"]reset['"]/);
+    assert.doesNotMatch(code, /\?reset=/);
+    assert.doesNotMatch(code, /resetToken\s*[:=][^;]*(sessionStorage|localStorage)/);
+    // Both new surfaces send their secrets in the JSON body, under exactly one
+    // canonical field spelling each, so the server cannot be probed with an
+    // alternative normalization (§16.1).
+    assert.match(code, /body: JSON\.stringify\(\{ token, email, password, site:/);
+    assert.match(code, /body: JSON\.stringify\(\{ orderNo, recoveryCode, email, password, site:/);
+    assert.doesNotMatch(code, /reset_token\s*:/);
+    // K26 is mirrored locally through the shared module, never re-implemented
+    // here, and never weakened by a Math.random generator.
+    assert.match(code, /globalThis\.GuestQueryPassword/);
+    assert.match(code, /policyFailure\(/);
+    assert.match(code, /foldFullwidth\(/);
 });

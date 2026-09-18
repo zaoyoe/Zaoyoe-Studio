@@ -22,6 +22,12 @@
     const DELIVERY_ENDPOINT = '/api/shop/guest/delivery';
     const LOGIN_ENDPOINT = '/api/shop/guest/access/login';
     const LOGOUT_ENDPOINT = '/api/shop/guest/access/logout';
+    // Order Access 2.0 (A3). `reset` spends the admin-issued one-time link
+    // (§10.5); `upgrade` is the §13.2 historical-order self-service that turns
+    // orderNo + pickup code into email + query-password access. Flat keys like
+    // every other guest route: the shared dispatcher has no path parameters.
+    const RESET_ENDPOINT = '/api/shop/guest/access/reset';
+    const UPGRADE_ENDPOINT = '/api/shop/guest/access/upgrade';
     // Legacy (§13.4) historical-order path: order number + one-time pickup code.
     const RECOVER_ENDPOINT = '/api/shop/guest/recover';
     const CLAIM_ENDPOINT = '/api/shop/guest/claim';
@@ -61,7 +67,13 @@
         page: 1,
         orderNoFilter: '',
         detail: null,
-        busy: false
+        busy: false,
+        // A3 §10.5: the one-time link token lives in MEMORY ONLY. It is read out
+        // of the URL once during init(), the URL parameter is deleted before any
+        // request, and it is never written to storage or sent as a query string.
+        resetToken: '',
+        resetSite: '',
+        generatedPassword: ''
     };
 
     function element(id) {
@@ -613,16 +625,350 @@
         showError('');
     }
 
-    function togglePasswordVisibility(button) {
-        const input = element('guestOrdersPassword');
+    /**
+     * Shared by the lookup field and the two A3 credential forms. `inputId` and
+     * `label` default to the lookup field so the original call site is unchanged.
+     */
+    function togglePasswordVisibility(button, inputId = 'guestOrdersPassword', label = '查询密码') {
+        const input = element(inputId);
         if (!input || !button) return;
         const wasRevealed = input.type === 'text';
         input.type = wasRevealed ? 'password' : 'text';
         button.setAttribute('aria-pressed', wasRevealed ? 'false' : 'true');
         button.title = wasRevealed ? '显示密码' : '隐藏密码';
-        button.setAttribute('aria-label', wasRevealed ? '显示查询密码' : '隐藏查询密码');
+        button.setAttribute('aria-label', wasRevealed ? `显示${label}` : `隐藏${label}`);
         const icon = button.querySelector('i');
         if (icon) icon.className = wasRevealed ? 'fas fa-eye' : 'fas fa-eye-slash';
+    }
+
+    // ------------------------------------------------------------------
+    // Order Access 2.0 (A3) — §10.5 one-time reset link
+    // ------------------------------------------------------------------
+
+    /**
+     * Read the one-time token out of the address bar and DELETE the parameter
+     * before anything else happens.
+     *
+     * The token is a BEARER credential: anyone holding it plus the buyer's email
+     * can set a new query password. Left in the URL it would survive in browser
+     * history, in the Referer header of every later navigation, in any support
+     * screenshot the buyer takes, and in the server access log. Deleting it on
+     * arrival shrinks that window to one page load, and keeping it in `state`
+     * (memory only) is what §7.2's storage ladder already requires for the
+     * password itself.
+     */
+    function consumeUrlResetToken() {
+        try {
+            const url = new URL(window.location.href);
+            const token = normalizeText(url.searchParams.get('reset'), 200);
+            const site = normalizeSite(url.searchParams.get('site'));
+            if (!token) return { token: '', site: '' };
+            url.searchParams.delete('reset');
+            url.searchParams.delete('site');
+            window.history.replaceState({}, '', url.toString());
+            return { token, site };
+        } catch (_) {
+            return { token: '', site: '' };
+        }
+    }
+
+    const POLICY_MESSAGES = Object.freeze({
+        P1: '请填写查询密码（至少 8 位）',
+        P2: '查询密码必须同时包含大写字母、小写字母、数字和标点',
+        P7: '查询密码过于简单，请点击「帮我生成一个强密码」重新设置',
+        P9: '查询密码不能有太长的重复字符，请点击「帮我生成一个强密码」',
+        P10: '查询密码用到的字符种类太少，请点击「帮我生成一个强密码」'
+    });
+
+    function policyMessage(failure) {
+        if (!failure) return '';
+        const rule = String(failure.rule || '');
+        if (POLICY_MESSAGES[rule]) return POLICY_MESSAGES[rule];
+        if (rule.startsWith('P2')) return POLICY_MESSAGES.P2;
+        if (rule.startsWith('P7')) return POLICY_MESSAGES.P7;
+        return '查询密码强度不足，请点击「帮我生成一个强密码」重新设置';
+    }
+
+    /**
+     * §6.1.2: fold fullwidth characters before comparing or sending, so a Chinese
+     * IME cannot turn a working credential into a 403. The folded value is echoed
+     * back into the field so what the buyer sees is what was sent.
+     */
+    function foldPassword(input) {
+        if (!input) return '';
+        const module = globalThis.GuestQueryPassword || null;
+        const raw = String(input.value ?? '');
+        const folded = module ? module.foldFullwidth(raw).slice(0, 64) : raw.slice(0, 64);
+        if (folded !== raw) input.value = folded;
+        return folded;
+    }
+
+    /**
+     * Advisory mirror of the server's K26 rules. The server re-checks everything;
+     * without the shared module loaded we send the password anyway rather than
+     * blocking the buyer on a missing script.
+     */
+    function localPolicyFailure(rawPassword) {
+        const value = String(rawPassword ?? '');
+        if (!value) return { rule: 'P1', reason: 'missing' };
+        const module = globalThis.GuestQueryPassword || null;
+        return module ? module.policyFailure(value) : null;
+    }
+
+    /**
+     * Render the inline policy line and report whether the form may submit.
+     * `confirmValue === undefined` means the form has no confirm field.
+     */
+    function syncPolicyLine(nodeId, password, confirmValue) {
+        const node = element(nodeId);
+        const failure = localPolicyFailure(password);
+        const mismatch = confirmValue !== undefined && confirmValue !== password;
+        if (!password && !mismatch) {
+            if (node) { node.hidden = true; node.textContent = ''; node.removeAttribute('data-tone'); }
+            return false;
+        }
+        const ok = !failure && !mismatch;
+        if (node) {
+            node.hidden = false;
+            if (ok) {
+                node.dataset.tone = 'ok';
+                node.textContent = '密码强度符合要求';
+            } else {
+                node.dataset.tone = 'danger';
+                node.textContent = failure ? policyMessage(failure) : '两次输入的查询密码不一致';
+            }
+        }
+        return ok;
+    }
+
+    function showFormMessage(nodeId, message, tone) {
+        const node = element(nodeId);
+        if (!node) return;
+        if (!message) {
+            node.hidden = true;
+            node.textContent = '';
+            node.removeAttribute('data-tone');
+            return;
+        }
+        node.hidden = false;
+        if (tone) node.dataset.tone = tone;
+        else node.removeAttribute('data-tone');
+        node.textContent = normalizeText(message, 400);
+    }
+
+    /**
+     * Mint a K26-compliant password and copy it to the clipboard. Both new
+     * credential forms get one because K26 (upper + lower + digit + punctuation,
+     * no weak pattern) is genuinely hard to satisfy by hand, and a buyer who
+     * cannot get past the local check never reaches their order.
+     */
+    async function generateIntoFields(button, passwordId, confirmId, noteId) {
+        const module = globalThis.GuestQueryPassword || null;
+        const input = element(passwordId);
+        if (!module || !input) return;
+        try {
+            const generated = module.generate();
+            input.value = generated;
+            const confirm = element(confirmId);
+            if (confirm) confirm.value = generated;
+            state.generatedPassword = generated;
+            syncPolicyLine(noteId, generated, generated);
+            await copyGeneratedPassword(button, generated);
+        } catch (error) {
+            showFormMessage(noteId, normalizeText(error?.message, 200) || '无法生成查询密码，请手动设置一个', 'danger');
+        }
+    }
+
+    async function copyGeneratedPassword(button, generated) {
+        try {
+            await navigator.clipboard.writeText(generated);
+            const original = button ? button.textContent : '';
+            if (button) button.textContent = '已生成并复制到剪贴板';
+            window.setTimeout(() => { if (button) button.textContent = original; }, 2200);
+        } catch (_) {
+            showFormMessage('guestOrdersResetPolicy',
+                '已生成查询密码，但当前浏览器不允许自动复制，请手动选择并妥善保存。', 'danger');
+        }
+    }
+
+    function activateResetCard(token, site) {
+        state.resetToken = token;
+        state.resetSite = site || currentSite();
+        const card = element('guestOrdersResetCard');
+        if (!card) return;
+        card.hidden = false;
+        card.removeAttribute('aria-hidden');
+        // The link IS the buyer's intent, so it takes the page: leaving the
+        // lookup form on top would invite them to type the password the link is
+        // about to replace, and every such attempt is a wasted login-budget hit.
+        setHidden('guestOrdersQueryCard', true);
+        setHidden('guestOrdersResultCard', true);
+        const emailInput = element('guestOrdersResetEmail');
+        if (emailInput) emailInput.focus();
+        try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* older browsers */ }
+    }
+
+    /**
+     * After a successful reset/upgrade the buyer is already signed in (the
+     * endpoint set the session cookie), so hand the page back to the normal
+     * lookup flow with the new credential pre-filled and the list loaded.
+     */
+    async function finishCredentialSetup(email, password, site) {
+        persistAuth({ email, password, site });
+        syncSavedHint();
+        setHidden('guestOrdersResetCard', true);
+        setHidden('guestOrdersQueryCard', false);
+        const emailInput = element('guestOrdersEmail');
+        const passwordInput = element('guestOrdersPassword');
+        if (emailInput) emailInput.value = email;
+        if (passwordInput) passwordInput.value = password;
+        state.orderNoFilter = '';
+        syncDetailUrl('');
+        await loadOrders(1);
+    }
+
+    function describeCredentialError(error) {
+        const base = describeError(error);
+        if (error?.code === 'guest_reset_invalid') {
+            return '找回链接无效或已过期。链接有效期 15 分钟且只能使用一次，请联系客服重新签发。';
+        }
+        if (error?.code === 'guest_claim_invalid') {
+            return '订单号或取货口令不正确，请核对后重试。连续输错会临时锁定该订单。';
+        }
+        if (error?.code === 'guest_buyer_credential_conflict') {
+            return '该邮箱的查询凭证已达上限（同一邮箱最多 3 套）。请换一个邮箱，或联系客服处理。';
+        }
+        if (error?.code === 'guest_order_already_bound') {
+            return '该订单已经绑定过另一个查询凭证，无法在这里合并。请联系客服处理。';
+        }
+        if (error?.code === 'guest_password_weak' || error?.status === 400) {
+            return base;
+        }
+        return base;
+    }
+
+    async function handleResetSubmit(event) {
+        if (event) event.preventDefault();
+        if (state.busy) return;
+        const token = state.resetToken;
+        const policyId = 'guestOrdersResetPolicy';
+        if (!token) {
+            showFormMessage(policyId, '找回链接已失效，请联系客服重新签发。', 'danger');
+            return;
+        }
+        const email = normalizeText(element('guestOrdersResetEmail')?.value, 320).toLowerCase();
+        const password = foldPassword(element('guestOrdersResetPassword'));
+        const confirm = foldPassword(element('guestOrdersResetPasswordConfirm'));
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+            showFormMessage(policyId, '请输入正确的邮箱地址', 'danger');
+            return;
+        }
+        if (!syncPolicyLine(policyId, password, confirm)) return;
+
+        const button = element('guestOrdersResetSubmitBtn');
+        state.busy = true;
+        if (button) { button.disabled = true; button.dataset.label = button.textContent; button.textContent = '正在设置...'; }
+        try {
+            const payload = await requestJson(RESET_ENDPOINT, {
+                method: 'POST',
+                body: JSON.stringify({ token, email, password, site: state.resetSite || currentSite() })
+            });
+            // Spent either way from here on: the server consumed it atomically.
+            state.resetToken = '';
+            if (payload?.authenticated === false || payload?.session_required === true) {
+                // The password changed but the convenience session could not be
+                // minted. Say exactly that instead of pretending it failed.
+                showFormMessage(policyId, '查询密码已设置成功，请用下方表单登录查看订单。', 'ok');
+                setHidden('guestOrdersResetCard', true);
+                setHidden('guestOrdersQueryCard', false);
+                const emailInput = element('guestOrdersEmail');
+                const passwordInput = element('guestOrdersPassword');
+                if (emailInput) emailInput.value = email;
+                if (passwordInput) passwordInput.value = password;
+                showError('');
+                return;
+            }
+            showError('');
+            await finishCredentialSetup(email, password, state.resetSite || currentSite());
+        } catch (error) {
+            // A spent/invalid link must not stay retryable — every retry is
+            // another row in the access-attempt log and another confused buyer.
+            // Anything else (network, 429, 503) keeps the token so a retry works.
+            if (error?.code === 'guest_reset_invalid') state.resetToken = '';
+            showFormMessage(policyId, describeCredentialError(error), 'danger');
+        } finally {
+            state.busy = false;
+            if (button) {
+                button.disabled = !state.resetToken;
+                if (button.dataset.label) button.textContent = button.dataset.label;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Order Access 2.0 (A3) — §13.2 historical-order self-upgrade
+    // ------------------------------------------------------------------
+
+    /**
+     * Same two legacy factors as the recover button above, spent once to attach a
+     * query password to the order. The server takes the site from the ORDER, so
+     * the site sent here is only a hint and cannot move the credential group.
+     */
+    async function handleUpgradeSubmit() {
+        if (state.busy) return;
+        const policyId = 'guestOrdersUpgradePolicy';
+        const resultId = 'guestOrdersUpgradeResult';
+        const orderNo = normalizeText(element('guestOrdersLegacyOrderNo')?.value, 200);
+        const recoveryCode = normalizeText(element('guestOrdersLegacyCode')?.value, 200);
+        const email = normalizeText(element('guestOrdersUpgradeEmail')?.value, 320).toLowerCase();
+        const password = foldPassword(element('guestOrdersUpgradePassword'));
+        const confirm = foldPassword(element('guestOrdersUpgradePasswordConfirm'));
+
+        if (!orderNo || !recoveryCode) {
+            showFormMessage(resultId, '请先在上方填写订单号和取货口令', 'danger');
+            return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+            showFormMessage(resultId, '', '');
+            showFormMessage(policyId, '请输入正确的邮箱地址', 'danger');
+            return;
+        }
+        if (!syncPolicyLine(policyId, password, confirm)) return;
+        showFormMessage(resultId, '', '');
+
+        const button = element('guestOrdersUpgradeBtn');
+        state.busy = true;
+        if (button) { button.disabled = true; button.dataset.label = button.textContent; button.textContent = '正在设置...'; }
+        try {
+            const payload = await requestJson(UPGRADE_ENDPOINT, {
+                method: 'POST',
+                body: JSON.stringify({ orderNo, recoveryCode, email, password, site: currentSite() })
+            });
+            const alreadyBound = payload?.already_bound === true;
+            showError('');
+            await finishCredentialSetup(email, password, normalizeSite(payload?.site) || currentSite());
+            showFormMessage(resultId, alreadyBound
+                ? `订单 ${normalizeText(payload?.order_no || orderNo, 200)} 之前已设置过查询密码，已为你直接登录。`
+                : `已为订单 ${normalizeText(payload?.order_no || orderNo, 200)} 设置查询密码，以后用邮箱 + 查询密码即可查询。`,
+            'ok');
+            // The pickup code has done its job; clearing it removes the only
+            // copy of a one-time secret from a page the buyer may leave open.
+            const codeInput = element('guestOrdersLegacyCode');
+            if (codeInput) codeInput.value = '';
+            const passwordInput = element('guestOrdersUpgradePassword');
+            const confirmInput = element('guestOrdersUpgradePasswordConfirm');
+            if (passwordInput) passwordInput.value = '';
+            if (confirmInput) confirmInput.value = '';
+            syncPolicyLine(policyId, '', undefined);
+        } catch (error) {
+            showFormMessage(resultId, describeCredentialError(error), 'danger');
+        } finally {
+            state.busy = false;
+            if (button) {
+                button.disabled = false;
+                if (button.dataset.label) button.textContent = button.dataset.label;
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -706,6 +1052,9 @@
 
     // ------------------------------------------------------------------
     function init() {
+        // FIRST, before any rendering: pull the one-time reset token out of the
+        // address bar so it cannot leak through history, Referer or a screenshot.
+        const resetLink = consumeUrlResetToken();
         syncSavedHint();
         const saved = loadSavedAuth();
         if (saved) {
@@ -714,7 +1063,12 @@
             if (emailInput && !emailInput.value) emailInput.value = saved.email;
             if (passwordInput && !passwordInput.value) passwordInput.value = saved.password;
         }
-        const deepLinkOrderNo = readUrlOrderNo();
+        // An arriving support link outranks a saved credential and a ?order_no=
+        // deep link: the buyer came to SET a password, not to reuse one.
+        if (resetLink.token) {
+            activateResetCard(resetLink.token, resetLink.site);
+        }
+        const deepLinkOrderNo = resetLink.token ? '' : readUrlOrderNo();
         if (deepLinkOrderNo) {
             const orderNoInput = element('guestOrdersOrderNo');
             if (orderNoInput) orderNoInput.value = deepLinkOrderNo;
@@ -756,6 +1110,40 @@
         });
         element('guestOrdersLegacyToggleBtn')?.addEventListener('click', toggleLegacyPanel);
         element('guestOrdersLegacyBtn')?.addEventListener('click', () => { void handleLegacyRecover(); });
+
+        // --- A3 §10.5 one-time reset link ---------------------------------
+        element('guestOrdersResetForm')?.addEventListener('submit', handleResetSubmit);
+        element('guestOrdersResetToggleBtn')?.addEventListener('click', (event) => {
+            togglePasswordVisibility(event.currentTarget, 'guestOrdersResetPassword', '新查询密码');
+        });
+        element('guestOrdersResetGenerateBtn')?.addEventListener('click', (event) => {
+            void generateIntoFields(event.currentTarget, 'guestOrdersResetPassword',
+                'guestOrdersResetPasswordConfirm', 'guestOrdersResetPolicy');
+        });
+        for (const id of ['guestOrdersResetPassword', 'guestOrdersResetPasswordConfirm']) {
+            element(id)?.addEventListener('input', () => {
+                syncPolicyLine('guestOrdersResetPolicy',
+                    foldPassword(element('guestOrdersResetPassword')),
+                    foldPassword(element('guestOrdersResetPasswordConfirm')));
+            });
+        }
+
+        // --- A3 §13.2 historical-order self-upgrade ------------------------
+        element('guestOrdersUpgradeBtn')?.addEventListener('click', () => { void handleUpgradeSubmit(); });
+        element('guestOrdersUpgradeToggleBtn')?.addEventListener('click', (event) => {
+            togglePasswordVisibility(event.currentTarget, 'guestOrdersUpgradePassword', '查询密码');
+        });
+        element('guestOrdersUpgradeGenerateBtn')?.addEventListener('click', (event) => {
+            void generateIntoFields(event.currentTarget, 'guestOrdersUpgradePassword',
+                'guestOrdersUpgradePasswordConfirm', 'guestOrdersUpgradePolicy');
+        });
+        for (const id of ['guestOrdersUpgradePassword', 'guestOrdersUpgradePasswordConfirm']) {
+            element(id)?.addEventListener('input', () => {
+                syncPolicyLine('guestOrdersUpgradePolicy',
+                    foldPassword(element('guestOrdersUpgradePassword')),
+                    foldPassword(element('guestOrdersUpgradePasswordConfirm')));
+            });
+        }
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

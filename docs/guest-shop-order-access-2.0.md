@@ -599,14 +599,29 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
   但 `/guest-orders.html` 对已并入的买家显示「这些订单已并入你的账号，请登录查看」并停止返回卡密。
 - 全过程写审计。**并入是不可逆的**，管理台可解并（需二次确认 + 审计）。
 
-### 10.5 OTP 上线前的忘记密码路径
+### 10.5 OTP 上线前的忘记密码路径（A3 已落地）
 
 - 页面文案：「忘记查询密码？请联系客服，提供订单号与下单支付方式以便核实。」
-- 管理台新增操作（`server/api-handlers/admin/shop/guest-orders.js` 扩展）：
-  - `解锁登录锁定`（清 `failed_login_count` / `locked_until` / `login_lock_stage`）
-  - `重置查询密码`（管理员设置临时密码，**一次性**，首次登录强制改密）
-  - `生成一次性找回链接`（**复用现有 `claim_secret_hash` 通道**，15 分钟有效，用后即焚）
-  - 全部操作写审计，且**不得在日志/聊天中打印**临时密码或链接（对齐 `AGENTS.md` 禁令）。
+- 管理台操作**独立成新处理器** `server/api-handlers/admin/shop/guest-buyer-access.js`
+  （route `shop/guest-buyer-access`），不挂在 `shop/guest-orders.js` 上：
+  后者的选择器是 `orderId`（UUID），而买家访问的主体是**凭证分组**，
+  用订单号解析出 `buyer_id` 再操作，语义与鉴权都不同。
+  - `unlock_buyer_login`：清该买家 `contact_hash` 下**全部**凭证分组的
+    `failed_login_count` / `locked_until` / `login_lock_stage`（stage 归 0 而非仅解锁，见 D-8）
+  - `issue_password_reset_link`：15 分钟有效、用后即焚的一次性链接。**不复用
+    `claim_secret_hash` 通道**，改为独立的 `guest_shop_access_resets` 表（见 D-7）
+  - `revoke_password_reset_link`：只撤销、不补发（「发错人 / 买家已自行找回」场景）
+  - **选择器永远是 `orderNo`，绝不接受邮箱**（§6.4：`contact_hash` 不是可信身份因子）
+  - 三个动作都写审计（`shop.guest_buyer_access.{unlock,issue_reset_link,revoke_reset_link}`），
+    审计只记 `reset_id` / `expires_at` / `password_version`，**绝不记 token 或链接**
+    （对齐 `AGENTS.md` 禁令）。审计写失败**不回滚**已生效的操作，但会在响应里
+    回 `audit_recorded:false`，管理台据此提示运营人工补记。
+  - 原文的「`重置查询密码`（管理员设置临时密码）」**刻意不实现**，见 §12.1 D-7。
+- 买家侧完成端点 `POST /api/shop/guest/access/reset`：`token` + `email` + 新 `password`。
+  失败一律 `403 guest_reset_invalid`（不区分「token 无效 / 邮箱不符 / 已被用掉」）。
+- 管理台 UI：`js/admin-shop.js` 游客异常队列行内「买家访问」按钮 → 弹窗。
+  一次性链接只渲染进 readonly input + 内存变量，**不落 localStorage、不进 console、
+  不生成 `<a href>`、不写地址栏**；关窗即清空。
 
 ---
 
@@ -723,6 +738,9 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 | GET | `/api/shop/guest/delivery?order_no=` | `X-Guest-Order-Credential` 或会话 cookie | **新增（A2 已落地）**：卡密（仅 `confirmed` + `delivered`，否则 `409 guest_order_not_ready`）。同为扁平键 |
 | POST | `/api/shop/guest/access/logout` | 无 | **新增（A2 已落地）**：注销会话 cookie。**不受功能开关门禁**，否则关开关会把持有效 cookie 的用户卡死 |
 | POST | `/api/shop/guest/access/login` | 无 | **新增**：显式校验凭证，成功返回一个**短时会话 cookie**（见下），失败走 §8 锁定 |
+| POST | `/api/shop/guest/access/reset` | 无（body: token + email + password） | **新增（A3 已落地）**：消费管理台签发的一次性链接并设置新查询密码。扁平键 `guest/access/reset`。失败统一 `403 guest_reset_invalid` |
+| POST | `/api/shop/guest/access/upgrade` | 无（body: orderNo + recoveryCode + email + password） | **新增（A3 已落地）**：§13.2 历史订单自助升级为密码访问。扁平键 `guest/access/upgrade`。**复用 `recover` 的配额键**，因为它花的是同一个取货口令 |
+| GET/POST | `/api/admin?route=shop/guest-buyer-access` | 管理员（`shop.manage`） | **新增（A3 已落地）**：GET `?orderNo=` 读买家访问状态；POST `{action, orderNo, confirm:true, reason}` 执行三个动作之一 |
 | POST | `/api/shop/guest/recover` | 无（body: orderNo + recoveryCode） | **保留**，仅服务历史订单 |
 | GET | `/api/shop/guest/claim` | 现有 claim 通道 | **保留** |
 
@@ -742,7 +760,7 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
   持有 group=2 会话的客户端**无法**读取 group=1 的订单或卡密。
   实现时严禁把 cookie 载荷退化成 `contact_hash`（那会跨分组放行，等于把 §6.4 的防串号打穿）。
 
-### 12.1 A2 落地偏差（实现已定稿，本节为权威）
+### 12.1 A2 / A3 落地偏差（实现已定稿，本节为权威）
 
 | # | 原文设计 | 实际落地 | 原因 |
 |---|---|---|---|
@@ -752,10 +770,24 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 | D-4 | query 中出现凭证 → `400` 并写审计 `outcome=rate_limited` | `400 guest_credential_malformed` + 审计，但审计 outcome 复用既有枚举，**不新造 `rate_limited` 语义**（该 outcome 仍专属于配额命中） | 避免把「URL 传凭证探测」与「配额打满」在取证上混为一谈 |
 | D-5 | 列表/详情/卡密各自独立配额 | 列表 `guest-orders-read`、卡密 `guest-orders-delivery` 两个粗配额键 + §8.1 的登录写配额；**卡密严于列表** | 与既有 `guest-shop` 配额键命名保持一致 |
 | D-6 | 列表返回优惠明细 | 容器**已就位但恒为 `null`**：`coupon_discount` / `promo_discount` | L1/L2 未上线。先把字段做出来，促销落地时前端零改动即可填充（§11.2 订单卡） |
+| D-7 | §10.5 的「重置查询密码（管理员设置临时密码）」+「一次性找回链接**复用 `claim_secret_hash` 通道**」 | **只做链接，不做临时密码**；链接**不复用** `claim_secret_hash`，改为新表 `guest_shop_access_resets`（迁移 `20260922_guest_shop_access_resets.sql`） | ①管理员设的临时密码要走客服明文通道、由人选所以弱且常被复用，还需要额外一个「首登强制改密」状态位挂在凭证路径最热的行上；链接方案下新密码**只有买家本人见过**。②`claim_secret_hash` 是订单维度的取货口令哈希，而找回链接需要「15 分钟 TTL / 用后即焚 / 谁签发 / 为什么签发 / 可撤销」五个字段，塞进订单表等于把 bearer secret 的生命周期挂在业务行上，既没有取证链，也无法区分「撤销」与「从未签发」 |
+| D-8 | `解锁登录锁定` 只清 `locked_until` | 同时把 `login_lock_stage` **归 0**（并清 `failed_login_count`） | stage 是 §8.1 阶梯锁的档位记忆（1→15 分钟、2→30 分钟、3→24 小时）。只清 `locked_until` 会让运营解锁后，买家下一次输错密码**直接跳回 24 小时档**，表现为「客服说解了，我一分钟又被锁一天」。归 0 才是运营语义上的「解锁」 |
+| D-9 | — | 签发链接时 `password_version` +1，**该分组下所有已登录会话立即失效**；同时撤销该买家所有旧的未使用链接 | 改密码却不吊销旧会话，等于「找回」对已经拿到会话的攻击者毫无作用。`__Host-gs-acc` 载荷里带 `pv`，校验时与 DB 的 `password_version` 比对，不匹配即拒——不需要维护会话黑名单。DB 侧另有部分唯一索引 `guest_shop_access_resets_one_pending_per_buyer`，让两个管理员并发签发**失败关闭**而不是留下两条活链接 |
 
 > D-1/D-2 是**契约级**偏差，已写进 `tests/guest-shop-order-access-endpoints.test.js`
 > 与 `tests/guest-shop-public-route-contract.test.js`；后续如需改回 REST 路径参数，
 > 必须同时改路由表、这两个测试与本节。
+>
+> D-7/D-8/D-9 是**安全级**偏差，写进 `tests/guest-shop-admin-buyer-access.test.js`
+> （23 条）与 `tests/guest-shop-access-resets-migration.test.js`（8 条）。
+> 尤其：`token_hash` 的 `CHECK (token_hash ~ '^[0-9a-f]{64}$')` 由测试用
+> **真实 `issueResetToken()` 产物**双向验证——sha256 hex 必须通过，
+> 43 字符 base64url 明文 token 必须被拒。这道约束就是「不小心把明文 token 存进库」的最后一道闸。
+>
+> **Fix B（A3 期间的健壮性修复，非偏差）**：`accessUpgrade` 与
+> `buyer-access-admin.normalizeBuyerRow` 都改为**幂等归一化**——同一订单重复提交
+> 解析到同一分组并返回成功，而不是第二次因为「已有 `buyer_id`」报 409。
+> §13.2 的幂等承诺靠这个成立；409 只保留给「解析出**不同**分组」这一种真冲突。
 
 ---
 
@@ -767,11 +799,22 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 - 新页面底部折叠区：`使用订单号 + 取货口令找回（适用于 2026-09 之前的订单）`，
   提交到现有 `/api/shop/guest/recover`，**零改动**。
 
-### 13.2 历史订单升级为密码访问（可选，用户自助）
+### 13.2 历史订单升级为密码访问（可选，用户自助）— A3 已落地
 
 - 折叠区内加「为这笔订单设置查询密码」：验证订单号 + 取货口令成功后，
   要求输入邮箱 + 新查询密码 → 创建/关联 `guest_shop_buyers` → 回填 `buyer_id`。
-- 幂等：同一订单重复设置返回同一结果；`buyer_id` 已存在且不同 → `409`，需客服处理。
+  端点 `POST /api/shop/guest/access/upgrade`，前端 `guestOrdersUpgrade*` 子表单。
+- 幂等：同一订单重复设置返回同一结果；解析出**不同**分组 → `409 guest_order_already_bound`，
+  需客服处理（见 §12.1 Fix B：「已有 `buyer_id`」本身不再报 409，否则幂等承诺不成立）。
+- **两因子顺序与配额**：取货口令走**与 `/guest/recover` 完全相同**的
+  `verifyClaimSecret` + `recordClaimFailure` 预算（同一个 `recover` 配额键），
+  所以升级端点不会变成取货口令的第二个不计次猜测面；邮箱+密码走
+  `resolveBuyerGroupForOrder`（下单路径的解析器），因此**白拿** §8.1 锁定、
+  per-IP 预算、§8.4 等开销校验与 §6.4 分组上限，不重新实现任何一条。
+- **站点取自订单，绝不取自 body**：凭证分组键是 `(site, contact_hash)`，
+  让客户端选站点等于允许一个取货口令在订单从未下过的站点里铸分组。
+- 管理台**不代做**升级：GET `shop/guest-buyer-access` 对未绑定订单返回
+  `bound:false` + 可直接照读的话术（引导买家自助升级），三个写动作一律 `409`。
 
 ### 13.3 新订单是否还生成取货口令
 
@@ -1024,7 +1067,8 @@ A0  迁移文件写盘（guest_shop_buyers / buyer_id / access_attempts）+ read
 A1  下单表单收集查询密码 + scrypt 存储 + buyer upsert + 订单关联
 A2  /guest-orders.html + js/guest-orders-client.js + 列表/详情/卡密接口
       └─ 含 §8 全部防爆破 + §9 错误语义 + §16.2 契约测试
-A3  管理台：解锁 / 重置密码 / 一次性找回链接；历史订单自助升级（§13.2）
+A3  管理台：解锁 / 一次性找回链接（✅ 已落地，不做临时密码，见 D-7）；
+      历史订单自助升级（§13.2）
 ─────────────── 以上为 2.0 订单访问，可独立上线 ───────────────
 L0  促销 DDL + 策略表 + readiness（促销方案）
 L1  游客阶梯价 + 闪购（**无状态价格规则，不依赖身份层**，§21.5-1）
@@ -1039,18 +1083,53 @@ A4  邮箱 OTP → 自助改密 + 游客订单并入账号（§10.3/§10.4）
 L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 之后**，
 因为它依赖促销方案的 OTP 设施与 `contact_hash` 因子升级。
 
-### 19.1 落地状态（截至 A2）
+### 19.1 落地状态（截至 A3）
 
 | 阶段 | 状态 | 提交 | 内容 |
 |---|---|---|---|
 | A0 | ✅ 已完成 | `0eaf2cfd1` | `guest_shop_buyers` / `guest_shop_orders.buyer_id` / `guest_shop_access_attempts` 迁移文件写盘（**未执行**）+ readiness 门禁扩展 |
 | A1a | ✅ 已完成 | `65fac4107` | 查询密码策略 P1–P10、scrypt 哈希（`norm=v1`）、`X-Guest-Order-Credential` 解析原语 |
 | A1b | ✅ 已完成 | `24759bf13` | 凭证分组原子分配 RPC（K38=3 上限、防抢占）、等开销防预言机、登录失败/锁定阶段机 |
-| A1c | ✅ 已完成 | 本次提交 | 下单链路接通：`preview` 回 `buyer_credential_required`、订单表单收集查询密码、服务端权威强度校验、`buyer_id` 绑定到订单（RPC 复核 `(buyer_id, site, contact_hash)` 三元组，不匹配即 fail-closed） |
-| **A2** | ✅ **已完成** | 本次提交 | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
+| A1c | ✅ 已完成 | `1b8cfd372` | 下单链路接通：`preview` 回 `buyer_credential_required`、订单表单收集查询密码、服务端权威强度校验、`buyer_id` 绑定到订单（RPC 复核 `(buyer_id, site, contact_hash)` 三元组，不匹配即 fail-closed） |
+| **A2** | ✅ **已完成** | `1b8cfd372` | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
 | G3 | ⏸ 未开始 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` + 改契约断言 + 页脚入口（**必须等开关打开且实机证据归档后**，见 §11.2.1） |
-| A3 | ⏸ 未开始 | — | 管理台：解锁 / 重置查询密码 / 一次性找回链接；§13.2 历史订单自助升级 |
+| **A3** | ✅ **已完成** | `19d41eefe` | 管理台 `shop/guest-buyer-access`（GET 状态 + 三个写动作）+ 游客异常队列行内「买家访问」弹窗；`guest_shop_access_resets` 迁移文件写盘（**未执行**）；公开端点 `guest/access/reset`（一次性链接消费）与 `guest/access/upgrade`（§13.2 自助升级）；`guest-orders.html` 找回卡片 + 历史订单升级子表单。**不做**管理员临时密码（D-7） |
 | L0–L4 / A4 | ⏸ 未开始 | — | 促销侧与 OTP，见 §19 |
+
+**A3 测试覆盖（见本节末尾的全量数字）**
+
+- `tests/guest-shop-admin-buyer-access.test.js`（新增，23 条）：方法白名单 + `Allow`；
+  开关关闭 → `409 guest_feature_disabled`，且 **`requireAdmin` 先于开关**（未鉴权者
+  探测不到功能是否已灰度）；无 admin Supabase → `503`；actor 非 UUID → `400`；
+  **GET 投影禁泄露**（`RESET_VIEW_FIELDS` 白名单里没有 `token_hash` / `contact_hash`）；
+  `sanitizeResetRow` 的四态判定（pending/used/revoked/expired）；
+  POST 的 `confirm:true` 与 `reason ≥ 8` 双门禁；`unlock` 清**整个** `contact_hash`
+  分组而非单笔；`issue` 产出 43 字符 token、匹配 `RESET_TOKEN_PATTERN`、
+  **审计 JSON 里不含 token**、`password_version` 2→3、旧链接被撤销；
+  `revoke` 只撤不补；已并入账号 → `409`；订单无 `contact_hash` → `409`；
+  悬空分组 → `409`；**审计写失败不回滚已生效操作**但回 `audit_recorded:false`；
+  `ACTIONS` 映射与 dispatcher 注册。
+- `tests/guest-shop-access-resets-migration.test.js`（新增，8 条）：迁移**严格增量**
+  （唯一的 `DROP CONSTRAINT` 就是被放宽的 outcome 约束，无 `TRUNCATE/DELETE/UPDATE/INSERT`、
+  无 trigger、无 cron）；`token_hash` 的 CHECK 用**真实 `issueResetToken()` 产物**双向验证
+  （sha256 hex 通过、43 字符明文 token 被拒、大写被拒、超长被拒）；
+  TTL / reason 长度 / purpose 白名单与**应用层常量逐一相等**；
+  「每分组至多一条待用链接」是**部分唯一索引**这一硬闸；
+  RLS + `REVOKE ALL FROM PUBLIC, anon, authenticated` 双保险且**无任何 `CREATE POLICY`**；
+  outcome 新枚举是旧枚举的**严格超集**；verify 脚本只读；
+  两个 SQL 文件**不被任何 npm script 或 GitHub workflow 引用**（Codex 不执行 SQL）。
+- `tests/admin-shop-guest-orders-ui.test.js`（+5 条）：行内入口与五个分发 case；
+  动作白名单**冻结成三条**且与后端一致（静默加动作会让测试失败）；
+  写请求体被钉死成 `{action, orderNo, confirm, reason}`——**邮箱没有位置可塞**；
+  一次性链接**不落 localStorage / sessionStorage / cookie / console / `<a href>` / 地址栏**，
+  关窗即清 token 与 DOM；写按钮初始 `disabled`，需原因 ≥8 字 **且** 勾选身份核实，
+  提交前**再校验一次**（不信任 UI 状态），一次操作后复选框自动取消防连点。
+- `tests/guest-shop-public-route-contract.test.js`（+1 条）：`guest/access/reset` 与
+  `guest/access/upgrade` 两个扁平键在共享 dispatcher 上绑定，且两个 Vercel 入口
+  都在 `.vercelignore` 内。
+- `tests/guest-shop-frontend-contract.test.js`（+若干条）：找回卡片 / 升级子表单的新 id 清单、
+  `autocomplete="new-password"`、两个新端点、**token 剥离**断言
+  （`searchParams.delete('reset')` + `history.replaceState`，禁止把 `?reset=` 回写地址栏）。
 
 **A2 测试覆盖（全量 `npm run test:security`：3261 通过 / 0 失败）**
 
@@ -1077,10 +1156,18 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
   `summary.ok=true` 但 `summary.ready=false`、`--fail-on-invalid → 0`、
   `--fail-on-not-ready → 3 (NOT_READY)`。
 
-> **A2 完成 ≠ 可启用。** 开关仍默认关闭，迁移 SQL 仍**未执行**（文件在
-> `supabase/migrations/20260920_guest_shop_buyer_credentials.sql`、
-> `supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql`，由你执行，Codex 不执行 SQL）。
-> 启用前置条件见 §15.3 与 §16.4。
+> **A3 完成 ≠ 可启用。** 开关 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 仍默认关闭，
+> 迁移 SQL 仍**未执行**，按顺序由你执行（Codex 不执行 SQL，`AGENTS.md` 硬禁令）：
+>
+> 1. `supabase/migrations/20260920_guest_shop_buyer_credentials.sql`
+> 2. `supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql`
+> 3. `supabase/migrations/20260922_guest_shop_access_resets.sql`
+>
+> 每步之后跑对应的 verify 脚本（`20260920_verify_*` / `20260922_verify_guest_shop_access_resets.sql`），
+> **全部 PASS** 才允许打开开关。启用前置条件见 §15.3 与 §16.4。
+>
+> 三个迁移都是**行为中立**的：开关关闭时应用层永不读写这些新表，
+> 执行完 SQL 后线上行为与执行前完全一致。
 
 ---
 

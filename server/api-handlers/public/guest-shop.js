@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const defaultSecurity = require('../../../api/_lib/guest-shop/security');
 const defaultBuyerCredentials = require('../../../api/_lib/guest-shop/buyer-credentials');
+const defaultBuyerAccessAdmin = require('../../../api/_lib/guest-shop/buyer-access-admin');
 const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
 
@@ -33,7 +34,14 @@ const GUEST_CLAIM_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
 // groups (§6.4). Keyed off the claim pepper with a distinct domain-separation
 // label so it can never be confused with the claim-proof cookie key.
 const GUEST_ACCESS_COOKIE_NAME = '__Host-gs-acc';
-const GUEST_ACCESS_COOKIE_VERSION = 'v1';
+// v2 (A3): the payload carries `pv` (password_version) in addition to
+// buyer_id/contact_hash/exp. v1 is NOT accepted, because a v1 cookie cannot be
+// revoked: nothing in it changes when an admin issues a reset link or a buyer
+// resets their own password, so a stolen cookie would stay valid for its full
+// 30 minutes regardless. Dropping v1 outright is free — the credential switch
+// has never been on in production, so no v1 cookie has ever been minted outside
+// a test harness (§13.4 / §15.1).
+const GUEST_ACCESS_COOKIE_VERSION = 'v2';
 const GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS = 30 * 60;
 const MAX_CLAIM_FAILURE_ATTEMPTS = 20;
 const CLAIM_FAILURE_UPDATE_RETRIES = 4;
@@ -413,10 +421,19 @@ function decryptAccessCookie(value, security, env) {
         const buyerId = String(parsed.buyer_id || '').trim();
         const contactHash = String(parsed.contact_hash || '').trim();
         const exp = Number(parsed.exp);
-        // A session is only usable while it carries the group id and has not
-        // expired. Never fall back to contact_hash for authorization (§6.4).
+        const pv = Number(parsed.pv);
+        // A session is only usable while it carries the group id AND the
+        // password_version it was minted with, and has not expired. Never fall
+        // back to contact_hash for authorization (§6.4).
+        //
+        // A missing/invalid `pv` makes the whole cookie invalid rather than
+        // "pv unchecked": fail-closed. This is what turns password_version into
+        // a real revocation handle — an admin reset link or a buyer password
+        // reset moves the row's version and every outstanding cookie for that
+        // group stops resolving (§10.5, deviation D-8).
         if (!buyerId || !Number.isFinite(exp) || exp <= Date.now()) return null;
-        return { buyerId, contactHash, exp };
+        if (!Number.isSafeInteger(pv) || pv < 1) return null;
+        return { buyerId, contactHash, pv, exp };
     } catch (_) {
         return null;
     }
@@ -2515,16 +2532,31 @@ function responseOrder(order, claimSecret, extras = {}) {
             await defaultBuyerCredentials.resetBuyerLoginFailures({
                 supabase: db, site: siteName, contactHash, rows
             });
+            let rehashed = false;
             if (needsRehash) {
-                await defaultBuyerCredentials.rehashBuyerPasswordIfNeeded({
+                rehashed = await defaultBuyerCredentials.rehashBuyerPasswordIfNeeded({
                     supabase: db, row: matched, password: rawPassword, security
-                });
+                }) === true;
             }
             await audit('success', matched.id);
             // buyer_id (never contact_hash) is the authorization subject, so a
             // group=2 session cannot read group=1 orders or card content
             // (§6.4.2). The cookie payload below carries this same id.
-            return { buyerId: matched.id, contactHash };
+            //
+            // passwordVersion must reflect the value the row holds AFTER the
+            // §6.2 transparent rehash, not the one we read: the rehash bumps it,
+            // and a cookie minted with the stale number would be rejected by the
+            // very next authenticated read. `rehashBuyerPasswordIfNeeded` is a
+            // best-effort CAS (it returns false when the hash was already
+            // current or when the write lost a race), so the version is derived
+            // from its actual outcome through the SAME formula the writer used.
+            return {
+                buyerId: matched.id,
+                contactHash,
+                passwordVersion: rehashed
+                    ? defaultBuyerCredentials.nextBuyerPasswordVersion(matched.passwordVersion)
+                    : matched.passwordVersion
+            };
         }
 
         const failure = await defaultBuyerCredentials.registerBuyerLoginFailure({
@@ -2552,6 +2584,59 @@ function responseOrder(order, claimSecret, extras = {}) {
         if (result?.error) throw result.error;
         if (!result?.data) throw guestOrderNotFoundError();
         return result.data;
+    }
+
+    /**
+     * §10.5 / deviation D-8: the session cookie is a CACHED authorization, not
+     * a standing one. Its AES-GCM tag proves we minted it; it cannot prove the
+     * credential group is still in the state it was in when we minted it. So
+     * every cookie-authenticated read re-validates four things against
+     * `guest_shop_buyers`:
+     *
+     *   row exists            -> the group was not deleted
+     *   merged_into_user_id   -> §10.4 retired guest access; fail closed
+     *   locked_until          -> a lock raised on ANOTHER device after this
+     *                            cookie was issued must still cut this one off,
+     *                            otherwise §8.1's lock would only protect the
+     *                            login endpoint and not the data it guards
+     *   password_version == pv-> THE revocation handle. An admin issuing a reset
+     *                            link, a buyer completing a reset, or a §6.2
+     *                            transparent rehash all move it, and every
+     *                            outstanding cookie for that group dies with it
+     *
+     * Cost: one indexed primary-key read per authenticated request, only while
+     * the credential switch is on (with it off, order/delivery answer 404 before
+     * authentication and the GET list branch is unreachable). That is the price
+     * of making "revoke a guest session" mean something, and it is strictly
+     * cheaper than the scrypt the header channel pays on every request.
+     *
+     * All four failures collapse to the SAME unified 403 as a wrong password
+     * (§9.1), except the lock (423, matching login) and a database error (503,
+     * retryable — an outage must not read as "your credentials are wrong").
+     */
+    async function validateSessionBuyer(session) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const buyerId = String(session?.buyerId || '').trim();
+        // A malformed id can only come from our own minting, so treat it as an
+        // invalid session rather than letting a 404 escape the unified 403.
+        if (!defaultBuyerAccessAdmin.isUuid(buyerId)) throw guestCredentialsInvalidError();
+        let row = null;
+        try {
+            row = await defaultBuyerAccessAdmin.loadBuyerRowById({ supabase: db, buyerId });
+        } catch (_) {
+            // Past the UUID check the only throw is a database error.
+            throw guestDatabaseUnavailableError();
+        }
+        if (!row) throw guestCredentialsInvalidError();
+        if (row.mergedIntoUserId) throw guestCredentialsInvalidError();
+        if (defaultBuyerAccessAdmin.isBuyerLocked(row)) throw guestOrderLockedError();
+        if (Number(row.passwordVersion) !== Number(session.pv)) throw guestCredentialsInvalidError();
+        return {
+            buyerId: row.id,
+            contactHash: row.contactHash,
+            passwordVersion: row.passwordVersion
+        };
     }
 
     /**
@@ -2597,7 +2682,10 @@ function responseOrder(order, claimSecret, extras = {}) {
         const session = decryptAccessCookie(
             cookieHeaderValue(req, GUEST_ACCESS_COOKIE_NAME), security, env
         );
-        if (session) return { buyerId: session.buyerId, contactHash: session.contactHash };
+        // Cookie wins over the header (§7.1) but is NOT trusted on its own: see
+        // validateSessionBuyer for the four re-validations and why a cookie
+        // without them would make §8.1's lock and §10.5's reset unenforceable.
+        if (session) return validateSessionBuyer(session);
 
         const header = req?.headers?.[security.GUEST_ORDER_CREDENTIAL_HEADER];
         if (header) {
@@ -2762,6 +2850,10 @@ function responseOrder(order, claimSecret, extras = {}) {
                 v: 1,
                 buyer_id: session.buyerId,
                 contact_hash: session.contactHash,
+                // `pv` is the revocation handle (§10.5 / D-8). decryptAccessCookie
+                // rejects a cookie without it, so this can never be omitted by a
+                // future edit without breaking login loudly in tests.
+                pv: session.passwordVersion,
                 exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
             }, security, env);
             if (!token) {
@@ -2794,6 +2886,356 @@ function responseOrder(order, claimSecret, extras = {}) {
         // clear it. Logout exposes no data and grants nothing.
         clearAccessCookie(res);
         return sendJson(res, 200, { success: true, logged_out: true });
+    }
+
+
+    /**
+     * §9.1 / §10.5: ONE code and ONE message for every failed reset — no such
+     * link, expired, already used, revoked, wrong email, deleted group, merged
+     * group. The real reason only ever reaches
+     * `guest_shop_access_attempts.outcome = reset_invalid`.
+     */
+    function guestResetInvalidError() {
+        return new security.GuestShopSecurityError('找回链接无效或已过期', {
+            statusCode: 403, code: 'guest_reset_invalid'
+        });
+    }
+
+    /**
+     * §10.5 (A3): consume an admin-issued one-time link and set a new query
+     * password. This is the "forgot my query password" path until OTP (§10.3)
+     * ships; the admin verifies the buyer through a support channel and issues
+     * the link, and the buyer completes it here without any support interaction.
+     *
+     * WHY THERE IS NO scrypt ON THE FAILURE PATHS (and why that is correct here
+     * but would be a bug on the login path): the login path defends a 45-bit
+     * guessable password, so §8.4 makes every answer cost the same. This path
+     * defends a 256-bit CSPRNG token that cannot be guessed at all — there is no
+     * brute force to slow down. Running a dummy derivation on every invalid
+     * token would convert a free indexed lookup into ~100 ms of attacker-chosen
+     * CPU work, i.e. it would CREATE the amplification it was meant to hide.
+     * The single scrypt here happens only after token+email are both proven.
+     *
+     * WHY THE EMAIL IS CHECKED BEFORE THE CONSUME: an attacker who steals the
+     * link but not the mailbox cannot burn it, and a buyer who typos their email
+     * does not lose their own link. This costs nothing in oracle terms, because
+     * reaching the comparison already requires the 256-bit token.
+     *
+     * Ordering summary: local shape/strength checks -> read pending row ->
+     * constant-time email match -> CAS consume -> load group -> rehash under a
+     * password_version CAS -> audit -> mint a session cookie with the NEW pv.
+     */
+    async function accessReset(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Same write budget as login (§8.1): the reset endpoint is a
+            // credential-setting surface and must not be cheaper to spray.
+            if (!(await limit(req, res, 'guest-orders-write', { limit: 10 }))) return;
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['token', 'resetToken', 'reset_token', 'email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
+                    throw new security.GuestShopSecurityError('重置请求字段不允许', {
+                        field: key, code: 'unknown_field'
+                    });
+                }
+            }
+            const siteName = normalizeSiteValue(body.site);
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+            const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+            const audit = async (outcome, contactHash = null, buyerId = null) => {
+                // Best effort by contract: a failed audit insert must never flip
+                // the decision that has already been made.
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                    });
+                } catch (_) { /* evidence only */ }
+            };
+
+            const rawToken = defaultBuyerAccessAdmin.normalizeResetToken(
+                body.token || body.resetToken || body.reset_token
+            );
+            const rawEmail = String(body.email || '').trim().toLowerCase();
+            const newPassword = typeof body.password === 'string' && body.password
+                ? body.password
+                : (typeof body.orderPassword === 'string' && body.orderPassword
+                    ? body.orderPassword
+                    : String(body.order_password || ''));
+
+            // Cheap local rejects FIRST: no database read is owed to a request
+            // that cannot possibly succeed.
+            if (!rawToken || !rawEmail) {
+                await audit('reset_invalid');
+                throw guestResetInvalidError();
+            }
+            try {
+                // §6.1.4: echoing the failing rule is safe — the buyer is present
+                // and the answer is identical whether or not the token is valid,
+                // so this leaks nothing about the link.
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(newPassword, {
+                    security, env, email: rawEmail, field: 'password'
+                });
+            } catch (error) {
+                await audit('reset_invalid');
+                throw error;
+            }
+
+            const tokenHash = defaultBuyerAccessAdmin.hashResetToken(rawToken);
+            const pending = await defaultBuyerAccessAdmin.loadPendingResetByTokenHash({
+                supabase: db, tokenHash
+            });
+            if (!pending || pending.purpose !== defaultBuyerAccessAdmin.RESET_PURPOSE
+                || pending.site !== siteName) {
+                await audit('reset_invalid');
+                throw guestResetInvalidError();
+            }
+            // The audit row names the group the link was minted for, not the
+            // attacker-supplied email: "someone probed group X" is the useful
+            // forensic fact, and contact_hash is an HMAC anyway.
+            if (!defaultBuyerAccessAdmin.matchesResetContact({ reset: pending, email: rawEmail, security, env })) {
+                await audit('reset_invalid', pending.contactHash || null, pending.buyerId || null);
+                throw guestResetInvalidError();
+            }
+            const consumed = await defaultBuyerAccessAdmin.consumeResetToken({
+                supabase: db, tokenHash, ipHash
+            });
+            if (!consumed || consumed.buyerId !== pending.buyerId) {
+                // Lost the race against a second browser, or revoked in between.
+                // Same answer as an invalid link: the token is spent either way.
+                await audit('reset_invalid', pending.contactHash || null, pending.buyerId || null);
+                throw guestResetInvalidError();
+            }
+
+            const buyer = await defaultBuyerAccessAdmin.loadBuyerRowById({
+                supabase: db, buyerId: consumed.buyerId, site: consumed.site || siteName
+            });
+            if (!buyer || buyer.mergedIntoUserId) {
+                await audit('reset_invalid', pending.contactHash || null, pending.buyerId || null);
+                throw guestResetInvalidError();
+            }
+            const applied = await defaultBuyerAccessAdmin.applyPasswordReset({
+                supabase: db, buyer, password: newPassword, security
+            });
+            await audit('reset_success', buyer.contactHash || null, applied.buyerId);
+
+            // Sign the buyer straight in: they have just proven link + email +
+            // set a password, and making them retype it would only teach them
+            // that the reset page and the login page disagree. The cookie carries
+            // the NEW password_version, so every other outstanding cookie for
+            // this group is dead (D-8).
+            const token = encryptAccessCookie({
+                v: 1,
+                buyer_id: applied.buyerId,
+                contact_hash: buyer.contactHash,
+                pv: applied.passwordVersion,
+                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
+            }, security, env);
+            if (!token) {
+                // The password is already changed; only the convenience session
+                // failed. Say so instead of pretending the reset failed.
+                return sendJson(res, 200, {
+                    success: true,
+                    reset: true,
+                    authenticated: false,
+                    session_required: true,
+                    email: rawEmail
+                });
+            }
+            setAccessCookie(res, token);
+            return sendJson(res, 200, {
+                success: true,
+                reset: true,
+                authenticated: true,
+                email: rawEmail,
+                session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    /**
+     * §13.2 (A3): self-service upgrade of a HISTORICAL order
+     * (`buyer_id IS NULL`, placed before the credential switch existed) to
+     * email + query-password access.
+     *
+     * Two factors, in this order:
+     *   1. orderNo + recoveryCode — the legacy claim secret, verified through
+     *      the SAME `verifyClaimSecret` + `recordClaimFailure` budget as
+     *      `/guest/recover`, so this endpoint does not become a second,
+     *      uncounted guessing surface for it;
+     *   2. email + new/existing query password — resolved through
+     *      `resolveBuyerGroupForOrder`, which is the order-path resolver, so
+     *      the upgrade inherits §8.1 locking, the per-IP budget, §8.4
+     *      equal-cost verification and the §6.4 group cap for free instead of
+     *      re-implementing any of them.
+     *
+     * The site is taken from the ORDER, never from the body: the credential
+     * group key is (site, contact_hash), and letting the client pick the site
+     * would let one recovery code mint groups in a site the order was never
+     * placed in.
+     *
+     * Idempotent: re-submitting resolves to the same group and returns success.
+     * A different group is a hard 409 and needs support (§13.2).
+     */
+    async function accessUpgrade(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Shares the `recover` budget because it spends the same secret.
+            if (!(await limit(req, res, 'recover', { limit: 8 }))) return;
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['orderNo', 'order_no', 'recoveryCode', 'recovery_code', 'email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
+                    throw new security.GuestShopSecurityError('升级请求字段不允许', {
+                        field: key, code: 'unknown_field'
+                    });
+                }
+            }
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const orderNo = String(body.orderNo || body.order_no || '').trim();
+            const recoveryCode = String(body.recoveryCode || body.recovery_code || '').trim();
+            const email = String(body.email || '').trim().toLowerCase();
+            const password = typeof body.password === 'string' && body.password
+                ? body.password
+                : (typeof body.orderPassword === 'string' && body.orderPassword
+                    ? body.orderPassword
+                    : String(body.order_password || ''));
+            // Identical shapes to /guest/recover: one canonical spelling per
+            // field, so the two endpoints cannot be used to probe each other's
+            // normalization (§16.1).
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)
+                || !/^[A-Za-z0-9_-]{40,200}$/u.test(recoveryCode)) {
+                throw new security.GuestShopSecurityError('订单号或取货口令无效', {
+                    code: 'guest_claim_invalid', statusCode: 403
+                });
+            }
+            if (!email || !password) {
+                throw new security.GuestShopSecurityError('请填写邮箱和查询密码', {
+                    statusCode: 400, code: 'guest_credential_malformed', field: 'email'
+                });
+            }
+
+            const order = await loadOrderByNo(orderNo);
+            const siteName = normalizeSiteValue(order.site);
+            const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+            const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+            const audit = async (outcome, contactHash = null, buyerId = null) => {
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                    });
+                } catch (_) { /* evidence only */ }
+            };
+
+            // The claim-failure budget is spent BEFORE anything else is looked
+            // at, exactly as in /guest/recover.
+            if (!security.verifyClaimSecret(recoveryCode, order.claim_secret_hash, { env })) {
+                await recordClaimFailure(order);
+                await audit('upgrade_invalid');
+                throw Object.assign(new Error('取货凭证无效'), {
+                    statusCode: 403, code: 'guest_claim_invalid'
+                });
+            }
+            // There is deliberately NO early return for an already-bound order.
+            //
+            // §13.2 hardening: an order bound before A3 carries only `buyer_id`.
+            // Minting a session cookie from that alone would let anyone holding
+            // the LEGACY orderNo + claim code escalate from single-order legacy
+            // access to GROUP-WIDE access — every order and every card in that
+            // credential group — which is precisely the 掏鸟蛋 failure mode. So a
+            // bound order goes through the SAME email + password verification as
+            // an unbound one (`resolveBuyerGroupForOrder` runs §8.4 equal-cost
+            // scrypt verification regardless of binding state), and only the
+            // binding step differs: same group -> idempotent success, different
+            // group -> hard 409 for support, exactly as §13.2 specifies.
+            //
+            // K26 (§6.1) applies to EVERY surface that can create a credential:
+            // the resolve below may allocate a brand-new group, and a weak
+            // password guarding card content is exactly what the policy exists
+            // to prevent. A reused (matched) password was minted under the same
+            // policy at order time, so this check can never lock a legitimate
+            // buyer out of the reuse path.
+            try {
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(password, {
+                    security, env, email, field: 'password'
+                });
+            } catch (error) {
+                await audit('upgrade_invalid');
+                throw error;
+            }
+            let resolved = null;
+            try {
+                resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
+                    supabase: db,
+                    security,
+                    env,
+                    site: siteName,
+                    email,
+                    password,
+                    ipHash,
+                    deviceHash
+                });
+            } catch (error) {
+                // resolveBuyerGroupForOrder already recorded the specific reason
+                // (locked / rate_limited / credential_conflict). One extra
+                // `upgrade_invalid` row marks this as the upgrade surface; it is
+                // deliberately NOT a failure outcome, so it cannot double count
+                // into the per-IP login budget.
+                await audit('upgrade_invalid');
+                throw error;
+            }
+            const contactHash = security.hashGuestContact(email, { env, strict: true });
+            let binding = null;
+            try {
+                binding = await defaultBuyerAccessAdmin.bindOrderToBuyer({
+                    supabase: db, order, buyerId: resolved.buyerId
+                });
+            } catch (error) {
+                // The credential itself verified; this failure is about the order
+                // row (409: already bound to a DIFFERENT group). No cookie is set
+                // on this path, so the verified credential gains nothing it did
+                // not already have through /guest/access/login. Audited as
+                // `upgrade_invalid` for evidence.
+                await audit('upgrade_invalid', contactHash, resolved.buyerId);
+                throw error;
+            }
+            // Read back for the CURRENT password_version: on the reuse path the
+            // §6.2 transparent rehash happens inside the allocation RPC, so the
+            // number we would otherwise guess may already be stale and the
+            // cookie would be rejected by its own first authenticated read.
+            const buyer = await defaultBuyerAccessAdmin.loadBuyerRowById({
+                supabase: db, buyerId: resolved.buyerId, site: siteName
+            });
+            await audit('upgrade_success', contactHash, resolved.buyerId);
+            const token = buyer ? encryptAccessCookie({
+                v: 1,
+                buyer_id: buyer.id,
+                contact_hash: buyer.contactHash,
+                pv: buyer.passwordVersion,
+                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
+            }, security, env) : '';
+            if (token) setAccessCookie(res, token);
+            return sendJson(res, 200, {
+                success: true,
+                upgraded: true,
+                already_bound: binding.alreadyBound === true,
+                order_no: order.order_no,
+                credential_group_no: resolved.groupNo || null,
+                authenticated: Boolean(token),
+                ...(token ? { session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS } : {})
+            });
+        } catch (error) { return failResponse(res, error); }
     }
 
     async function webhook(req, res, providerOverride = '') {
@@ -2912,6 +3354,12 @@ function responseOrder(order, claimSecret, extras = {}) {
         delivery,
         accessLogin,
         accessLogout,
+        // Order Access 2.0 (A3). Both answer 404 guest_feature_disabled while
+        // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off, so the deployed surface is
+        // unchanged (§13.4). accessReset spends an admin-issued one-time link
+        // (§10.5); accessUpgrade is the §13.2 historical-order self-service.
+        accessReset,
+        accessUpgrade,
         // Kept out of the public route modules (which select one handler),
         // but useful for contract tests to exercise server-owned checkout
         // normalization without making a provider call.

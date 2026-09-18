@@ -22,7 +22,7 @@
     <link rel="canonical" href="https://www.fatherkey.com/guest-orders.html">
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="vendor/fontawesome/6.4.0/css/all.min.css?v=20260519_VENDOR_PUBLIC_1">
-    <link rel="stylesheet" href="css/guest-orders.css?v=20260921_GUEST_ORDER_ACCESS_A2_1">
+    <link rel="stylesheet" href="css/guest-orders.css?v=20260922_GUEST_ORDER_ACCESS_A3_1">
 </head>
 
 <body class="guest-orders-page">
@@ -43,7 +43,7 @@
             <button id="guestOrdersClearSavedBtn" type="button" class="guest-orders-link-btn">清除本机凭证</button>
         </div>
 
-        <section class="guest-orders-card" aria-labelledby="guestOrdersQueryTitle">
+        <section id="guestOrdersQueryCard" class="guest-orders-card" aria-labelledby="guestOrdersQueryTitle">
             <h2 id="guestOrdersQueryTitle" class="guest-orders-card-title">查询订单</h2>
             <form id="guestOrdersQueryForm" class="guest-orders-form" novalidate>
                 <label class="guest-orders-field" for="guestOrdersEmail">
@@ -83,6 +83,62 @@
             <div id="guestOrdersLoading" class="guest-orders-loading" hidden>
                 <i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i> 正在查询...
             </div>
+        </section>
+
+        <!--
+          §10.5 (A3): the admin-issued one-time reset link lands here as
+          /guest-orders.html?reset=<token>&site=<site>. The card stays hidden
+          until the client reads the token, and the client strips the token from
+          the address bar with history.replaceState BEFORE any request, so it
+          never survives in browser history, a referer header, or a screenshot.
+          There is deliberately no way to reach this card by hand: without a
+          valid token the form cannot do anything but fail.
+        -->
+        <section id="guestOrdersResetCard" class="guest-orders-card guest-orders-reset" aria-labelledby="guestOrdersResetTitle" hidden>
+            <h2 id="guestOrdersResetTitle" class="guest-orders-card-title">
+                <i class="fas fa-envelope-circle-check" aria-hidden="true"></i> 设置新的查询密码
+            </h2>
+            <p class="guest-orders-tip guest-orders-reset-intro">
+                客服为你签发了一次性找回链接，有效期 15 分钟且只能使用一次。请填写下单时的邮箱，并设置一个新的查询密码。
+            </p>
+            <form id="guestOrdersResetForm" class="guest-orders-form" novalidate>
+                <label class="guest-orders-field" for="guestOrdersResetEmail">
+                    <span>邮箱</span>
+                    <input id="guestOrdersResetEmail" name="guest-reset-email" type="email" inputmode="email"
+                        autocomplete="username" maxlength="320" placeholder="下单时填写的邮箱" required>
+                </label>
+                <label class="guest-orders-field" for="guestOrdersResetPassword">
+                    <span>新查询密码</span>
+                    <span class="guest-orders-password-row">
+                        <!-- new-password: this form MINTS a secret, so it must
+                             not invite a reused site password (§6.1.2). -->
+                        <input id="guestOrdersResetPassword" name="guest-reset-password" type="password"
+                            autocomplete="new-password" maxlength="64" spellcheck="false"
+                            placeholder="至少 8 位，含大小写字母、数字和符号" required>
+                        <button id="guestOrdersResetToggleBtn" type="button" class="guest-orders-icon-btn"
+                            title="显示密码" aria-label="显示新查询密码" aria-pressed="false">
+                            <i class="fas fa-eye" aria-hidden="true"></i>
+                        </button>
+                    </span>
+                </label>
+                <label class="guest-orders-field" for="guestOrdersResetPasswordConfirm">
+                    <span>确认新查询密码</span>
+                    <input id="guestOrdersResetPasswordConfirm" name="guest-reset-password-confirm" type="password"
+                        autocomplete="new-password" maxlength="64" spellcheck="false" required>
+                </label>
+                <div class="guest-orders-field-action-row">
+                    <button id="guestOrdersResetGenerateBtn" type="button" class="guest-orders-link-btn">
+                        <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> 帮我生成一个强密码
+                    </button>
+                </div>
+                <p id="guestOrdersResetPolicy" class="guest-orders-policy" aria-live="polite" hidden></p>
+                <div class="guest-orders-field guest-orders-field-action">
+                    <button id="guestOrdersResetSubmitBtn" type="submit" class="guest-orders-primary-btn">
+                        <i class="fas fa-key" aria-hidden="true"></i> 设置密码并查询订单
+                    </button>
+                </div>
+            </form>
+            <p class="guest-orders-tip">链接使用后立即失效。设置成功的同时，该邮箱在其他设备上已登录的查询会话会被一并退出。</p>
         </section>
 
         <section id="guestOrdersResultCard" class="guest-orders-card" aria-labelledby="guestOrdersResultTitle" hidden>
@@ -146,6 +202,52 @@
                 </label>
                 <button id="guestOrdersLegacyBtn" type="button" class="guest-orders-secondary-btn">找回订单</button>
                 <div id="guestOrdersLegacyResult" class="guest-orders-legacy-result" hidden></div>
+
+                <!--
+                  §13.2 (A3): the same two legacy factors, spent once to attach a
+                  query password to the order. It reuses the order-number and
+                  pickup-code inputs above so there is exactly one place to type
+                  them. The admin console deliberately cannot do this for the
+                  buyer (§10.5): an admin-set password would transit a support
+                  channel in plaintext.
+                -->
+                <div class="guest-orders-upgrade">
+                    <div class="guest-orders-upgrade-title">
+                        <i class="fas fa-arrow-up-right-dots" aria-hidden="true"></i>
+                        为这个历史订单设置查询密码
+                    </div>
+                    <p class="guest-orders-tip">设置后不必再记取货口令：用页面顶部的「邮箱 + 查询密码」表单就能查到这个订单。请填写下单时的邮箱。</p>
+                    <label class="guest-orders-field" for="guestOrdersUpgradeEmail">
+                        <span>邮箱</span>
+                        <input id="guestOrdersUpgradeEmail" name="guest-upgrade-email" type="email" inputmode="email"
+                            autocomplete="username" maxlength="320" placeholder="下单时填写的邮箱">
+                    </label>
+                    <label class="guest-orders-field" for="guestOrdersUpgradePassword">
+                        <span>查询密码</span>
+                        <span class="guest-orders-password-row">
+                            <input id="guestOrdersUpgradePassword" name="guest-upgrade-password" type="password"
+                                autocomplete="new-password" maxlength="64" spellcheck="false"
+                                placeholder="至少 8 位，含大小写字母、数字和符号">
+                            <button id="guestOrdersUpgradeToggleBtn" type="button" class="guest-orders-icon-btn"
+                                title="显示密码" aria-label="显示查询密码" aria-pressed="false">
+                                <i class="fas fa-eye" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                    </label>
+                    <label class="guest-orders-field" for="guestOrdersUpgradePasswordConfirm">
+                        <span>确认查询密码</span>
+                        <input id="guestOrdersUpgradePasswordConfirm" name="guest-upgrade-password-confirm" type="password"
+                            autocomplete="new-password" maxlength="64" spellcheck="false">
+                    </label>
+                    <div class="guest-orders-field-action-row">
+                        <button id="guestOrdersUpgradeGenerateBtn" type="button" class="guest-orders-link-btn">
+                            <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> 帮我生成一个强密码
+                        </button>
+                    </div>
+                    <p id="guestOrdersUpgradePolicy" class="guest-orders-policy" aria-live="polite" hidden></p>
+                    <button id="guestOrdersUpgradeBtn" type="button" class="guest-orders-secondary-btn">设置查询密码</button>
+                    <div id="guestOrdersUpgradeResult" class="guest-orders-legacy-result" hidden></div>
+                </div>
             </div>
         </section>
 
@@ -157,7 +259,7 @@
 
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
     <script src="./js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
-    <script src="./js/guest-orders-client.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
+    <script src="./js/guest-orders-client.js?v=20260922_GUEST_ORDER_ACCESS_A3_1" defer></script>
 </body>
 
 </html>

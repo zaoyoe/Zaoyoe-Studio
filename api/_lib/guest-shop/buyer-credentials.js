@@ -79,6 +79,18 @@ const BUYER_FAILURE_CAS_RETRIES = 4;
 const TERMINAL_UNPAID_PAYMENT_STATUSES = Object.freeze(['expired', 'failed']);
 
 // guest_shop_access_attempts.outcome CHECK values written by this module.
+// The list must stay a subset of the DB CHECK in
+// supabase/migrations/20260922_guest_shop_access_resets.sql section 3.
+//
+// The four A3 outcomes (reset_* / upgrade_*) live in ONE audit stream with the
+// login outcomes on purpose: one table, one retention rule, one place to look
+// during an incident. They are deliberately ABSENT from
+// BUYER_ACCESS_FAILURE_OUTCOMES below. Neither A3 second factor is guessable
+// (a 256-bit reset token, a 240-bit claim secret), so counting them into the
+// per-IP LOGIN budget would hand an attacker a way to lock a whole shared NAT
+// out of the login page by spamming invalid reset links — and would double
+// count the upgrade path, whose credential failures are already recorded as
+// `locked` / `credential_conflict` by resolveBuyerGroupForOrder.
 const BUYER_ACCESS_OUTCOMES = Object.freeze([
     'success',
     'bad_password',
@@ -86,7 +98,11 @@ const BUYER_ACCESS_OUTCOMES = Object.freeze([
     'locked',
     'captcha_required',
     'rate_limited',
-    'credential_conflict'
+    'credential_conflict',
+    'reset_invalid',
+    'reset_success',
+    'upgrade_invalid',
+    'upgrade_success'
 ]);
 const BUYER_ACCESS_FAILURE_OUTCOMES = Object.freeze([
     'bad_password',
@@ -243,6 +259,28 @@ function assertBuyerQueryPasswordStrength(password, options = {}) {
         field: options.field || 'orderPassword',
         forbiddenTokens: forbiddenPasswordTokens(env)
     });
+}
+
+/**
+ * The ONE definition of "what is the next password_version".
+ *
+ * `password_version` is the session-revocation counter: the `__Host-gs-acc`
+ * cookie carries the value it was minted with, and
+ * `authenticateGuestOrderAccess` re-reads the row, so moving this number kills
+ * every live session of that credential group. Three writers move it — the
+ * §6.2 transparent rehash below, the A3 admin reset-link issue
+ * (`bumpBuyerPasswordVersion`) and the A3 password reset
+ * (`applyPasswordReset`). If any of them computed the next value differently
+ * two writers could land on the SAME version and one of them would silently
+ * stop revoking sessions, which is why this is exported rather than inlined.
+ *
+ * `password_version` is SMALLINT: saturate at 32767 instead of wrapping to a
+ * negative, which would re-validate every old cookie.
+ */
+function nextBuyerPasswordVersion(current) {
+    const parsed = Number(current);
+    const base = Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : 1;
+    return Math.min(32767, base + 1);
 }
 
 /**
@@ -502,7 +540,7 @@ async function rehashBuyerPasswordIfNeeded({ supabase, row, password, security, 
     try {
         const result = await supabase.from('guest_shop_buyers').update({
             password_hash: nextHash,
-            password_version: Math.min(32767, (Number(row.passwordVersion) || 1) + 1),
+            password_version: nextBuyerPasswordVersion(row.passwordVersion),
             password_updated_at: now.toISOString(),
             updated_at: now.toISOString()
         }).eq('id', row.id).eq('password_hash', row.passwordHash);
@@ -719,6 +757,7 @@ module.exports = {
     forbiddenPasswordTokens,
     isBuyerCredentialEnabled,
     loadBuyerGroups,
+    nextBuyerPasswordVersion,
     parseBuyerCredentialSwitch,
     recordBuyerAccessAttempt,
     registerBuyerLoginFailure,

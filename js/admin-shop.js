@@ -3459,6 +3459,429 @@ Example output format:
         }
     },
 
+    /**
+     * Guest Shop Order Access 2.0 (A3) — 管理台「买家访问」入口。
+     * 契约：docs/guest-shop-order-access-2.0.md §10.5 / §13.2 / §18
+     * 后端：server/api-handlers/admin/shop/guest-buyer-access.js（route `shop/guest-buyer-access`）
+     *
+     * 安全边界（与后端逐条对齐，改动前请先读后端注释）：
+     *  - 选择器永远是 order_no，绝不接受 email。§6.4：contact_hash 不是可信身份因子，
+     *    让运营手打邮箱等于把「解错分组」变成常态事故。
+     *  - 一次性找回链接的 token 只存在于本次 HTTP 响应、DOM input 与剪贴板：
+     *    不写 localStorage / sessionStorage，不打 console，不进审计
+     *    （审计只记 reset_id / expires_at / password_version）。
+     *  - 关闭弹窗即抹掉内存中的 token（closeGuestBuyerAccessModal）。
+     *  - §10.5 列出的「管理员设置临时密码」刻意不实现（偏差 D-7）：临时密码要走客服
+     *    明文通道、由人选所以弱、还需要额外的「首登强制改密」状态位。链接方案下
+     *    新密码只有买家本人见过。
+     */
+    GUEST_BUYER_ACCESS_ACTIONS: Object.freeze(['unlock_buyer_login', 'issue_password_reset_link', 'revoke_password_reset_link']),
+
+    getGuestBuyerAccessActionMeta: function (action) {
+        const catalog = {
+            unlock_buyer_login: {
+                title: '解锁买家登录',
+                confirmLabel: '确认解锁',
+                modifier: 'unlock',
+                icon: 'fa-unlock',
+                hint: '清除该买家凭证分组的登录锁定（失败次数 / 锁定阶段 / 锁定截止时间）。用于买家自述「密码输错被锁」。不会改动查询密码本身，也不会让已登录会话失效。'
+            },
+            issue_password_reset_link: {
+                title: '生成一次性找回链接',
+                confirmLabel: '确认生成',
+                modifier: 'issue',
+                icon: 'fa-link',
+                hint: '生成 15 分钟有效、用后即焚的一次性链接，买家打开后自行设置新查询密码。注意：生成会使 password_version +1，该分组下所有已登录会话立即失效，旧的未使用链接同时作废。链接只显示一次。'
+            },
+            revoke_password_reset_link: {
+                title: '撤销找回链接',
+                confirmLabel: '确认撤销',
+                modifier: 'revoke',
+                icon: 'fa-ban',
+                hint: '作废当前所有未使用的找回链接，且不生成新链接。用于「链接发错人」「买家已自行找回」或「怀疑链接外泄」。'
+            }
+        };
+        return catalog[String(action || '').trim()] || null;
+    },
+
+    renderGuestBuyerAccessButton: function (row = {}) {
+        const orderNo = String(row?.order_no || '').trim();
+        if (!orderNo) return '';
+        const label = '买家访问';
+        const title = `${label}（解锁登录 / 一次性找回链接）`;
+        return `<button type="button" class="shop-guest-exception-action shop-guest-exception-action--access"
+            data-shop-action="guest-buyer-access-open" data-order-no="${this.escapeForAttr(orderNo)}"
+            title="${this.escapeForAttr(title)}" aria-label="${this.escapeForAttr(title)}">
+            <i class="fas fa-user-shield" aria-hidden="true"></i>
+        </button>`;
+    },
+
+    openGuestBuyerAccessModal: function ({ orderNo } = {}) {
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!normalizedOrderNo) return;
+        this.closeDynamicModal('guestBuyerAccessModal');
+        // 打开新弹窗前先抹掉上一次的 token，避免残留。
+        this.guestBuyerAccessResetToken = '';
+        this.guestBuyerAccessState = null;
+        const modalHtml = `
+            <div id="guestBuyerAccessModal" data-shop-overlay-close="dynamic-modal" data-modal-id="guestBuyerAccessModal"
+                class="shop-refund-modal-overlay">
+                <div class="shop-refund-modal shop-guest-buyer-access-modal">
+                    <h3 class="shop-refund-modal-title">
+                        <span class="shop-refund-modal-title-icon">
+                            <i class="fas fa-user-shield"></i>
+                        </span>
+                        买家访问
+                    </h3>
+                    <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(normalizedOrderNo)}。处理游客买家的查询密码访问问题：解锁登录锁定、生成一次性找回链接、撤销链接。后台不显示邮箱、查询密码、卡密或取货口令。</p>
+                    <div id="guestBuyerAccessState" class="shop-guest-buyer-access-state">
+                        <p class="shop-guest-buyer-access-note">正在读取买家访问状态…</p>
+                    </div>
+                    <div id="guestBuyerAccessActions" class="shop-guest-buyer-access-actions" hidden>
+                        <div class="shop-refund-modal-section shop-refund-modal-section--remark">
+                            <label class="shop-refund-modal-label" for="guestBuyerAccessReason">处理原因</label>
+                            <textarea id="guestBuyerAccessReason" class="shop-refund-modal-textarea" placeholder="请填写至少 8 个字的处理原因（会写入审计）"></textarea>
+                            <p id="guestBuyerAccessReasonError" class="shop-guest-exception-ops-error" hidden>请填写至少 8 个字的处理原因</p>
+                        </div>
+                        <label class="shop-guest-buyer-access-confirm" for="guestBuyerAccessConfirm">
+                            <input type="checkbox" id="guestBuyerAccessConfirm">
+                            <span>我已核实买家身份，并确认此操作会影响该凭证分组下的<b>全部</b>游客订单</span>
+                        </label>
+                        <div id="guestBuyerAccessButtons" class="shop-guest-buyer-access-buttons"></div>
+                    </div>
+                    <div id="guestBuyerAccessResult" class="shop-guest-buyer-access-result" hidden></div>
+                    <div class="shop-refund-modal-actions">
+                        <button type="button" data-shop-action="guest-buyer-access-close" data-modal-id="guestBuyerAccessModal" class="refund-btn-cancel">关闭</button>
+                        <button type="button" class="refund-btn-confirm" data-shop-action="guest-buyer-access-refresh"
+                            data-order-no="${this.escapeForAttr(normalizedOrderNo)}">刷新状态</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.bindOverlayDismiss('guestBuyerAccessModal', () => {
+            this.closeGuestBuyerAccessModal();
+        });
+        const reasonInput = document.getElementById('guestBuyerAccessReason');
+        reasonInput?.addEventListener('input', () => this.syncGuestBuyerAccessGuards());
+        document.getElementById('guestBuyerAccessConfirm')
+            ?.addEventListener('change', () => this.syncGuestBuyerAccessGuards());
+        requestAnimationFrame(() => {
+            document.getElementById('guestBuyerAccessModal')?.classList.add('is-visible');
+            void this.loadGuestBuyerAccessState(normalizedOrderNo);
+        });
+    },
+
+    closeGuestBuyerAccessModal: function () {
+        // §18 / AGENTS.md：一次性链接不得留存。关窗即清内存与 DOM 里的 token。
+        this.guestBuyerAccessResetToken = '';
+        this.guestBuyerAccessState = null;
+        const linkInput = document.getElementById('guestBuyerAccessResetLink');
+        if (linkInput) linkInput.value = '';
+        const result = document.getElementById('guestBuyerAccessResult');
+        if (result) {
+            result.hidden = true;
+            result.innerHTML = '';
+        }
+        this.closeDynamicModal('guestBuyerAccessModal');
+    },
+
+    loadGuestBuyerAccessState: async function (orderNo) {
+        const stateBox = document.getElementById('guestBuyerAccessState');
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!stateBox || !normalizedOrderNo) return;
+        stateBox.innerHTML = '<p class="shop-guest-buyer-access-note">正在读取买家访问状态…</p>';
+        this.hideGuestBuyerAccessActions();
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/guest-buyer-access', { orderNo: normalizedOrderNo }),
+                { method: 'GET', credentials: 'include', headers }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '读取买家访问状态失败');
+            }
+            this.guestBuyerAccessState = payload;
+            this.renderGuestBuyerAccessState(payload);
+        } catch (error) {
+            this.guestBuyerAccessState = null;
+            stateBox.innerHTML = `<p class="shop-guest-buyer-access-error">${this.escapeHtml(error.message || '读取买家访问状态失败')}</p>`;
+            this.hideGuestBuyerAccessActions();
+        }
+    },
+
+    formatGuestBuyerAccessLockStage: function (stage, locked) {
+        const parsed = Number(stage);
+        const minutes = [0, 15, 30, 24 * 60];
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) return '未锁定';
+        const span = minutes[Math.min(parsed, 3)] || 0;
+        const spanLabel = span >= 60 ? `${span / 60} 小时` : `${span} 分钟`;
+        return locked ? `已锁定（第 ${parsed} 级，${spanLabel}）` : `历史第 ${parsed} 级（已到期）`;
+    },
+
+    formatGuestBuyerAccessResetState: function (state) {
+        const labels = {
+            pending: '待使用',
+            used: '已使用',
+            revoked: '已撤销',
+            expired: '已过期'
+        };
+        return labels[String(state || '').trim().toLowerCase()] || '未知';
+    },
+
+    formatGuestBuyerAccessTime: function (value) {
+        if (!value) return '—';
+        const parsed = Date.parse(String(value));
+        if (!Number.isFinite(parsed)) return '—';
+        return new Date(parsed).toLocaleString('zh-CN');
+    },
+
+    renderGuestBuyerAccessState: function (payload = {}) {
+        const stateBox = document.getElementById('guestBuyerAccessState');
+        if (!stateBox) return;
+        const orderNo = String(payload.order_no || '').trim() || '—';
+        const site = String(payload.site || '').trim().toUpperCase() || '—';
+
+        if (!payload.bound) {
+            // §13.2：历史订单由买家自助升级，管理台不代设密码。给出可直接照读的话术。
+            stateBox.innerHTML = `
+                <div class="shop-guest-buyer-access-flag shop-guest-buyer-access-flag--warn">
+                    <i class="fas fa-circle-info" aria-hidden="true"></i>
+                    <div>
+                        <strong>该订单尚未绑定查询密码</strong>
+                        <p>${this.escapeHtml(payload.hint || '请引导买家在游客订单页自助升级（订单号 + 取货口令）。')}</p>
+                    </div>
+                </div>
+                <dl class="shop-guest-buyer-access-facts">
+                    <div><dt>订单号</dt><dd>${this.escapeHtml(orderNo)}</dd></div>
+                    <div><dt>站点</dt><dd>${this.escapeHtml(site)}</dd></div>
+                </dl>`;
+            this.hideGuestBuyerAccessActions();
+            return;
+        }
+
+        const buyer = payload.buyer || {};
+        const merged = String(buyer.merged_into_user_id || '').trim();
+        const lockLabel = this.formatGuestBuyerAccessLockStage(buyer.login_lock_stage, buyer.locked);
+        const facts = [
+            ['订单号', orderNo],
+            ['站点', site],
+            ['凭证分组号', String(buyer.credential_group_no ?? '—')],
+            ['密码版本', String(buyer.password_version ?? '—')],
+            ['登录失败次数', String(buyer.failed_login_count ?? 0)],
+            ['登录锁定', lockLabel],
+            ['锁定截止', this.formatGuestBuyerAccessTime(buyer.locked_until)],
+            ['已并入注册账号', merged ? `是（${merged}）` : '否']
+        ];
+        const resets = Array.isArray(payload.resets) ? payload.resets : [];
+        const resetRows = resets.length
+            ? resets.map((item) => `<tr>
+                    <td data-label="状态"><span class="shop-guest-buyer-access-badge shop-guest-buyer-access-badge--${this.escapeForAttr(String(item.state || 'pending'))}">${this.escapeHtml(this.formatGuestBuyerAccessResetState(item.state))}</span></td>
+                    <td data-label="生成时间">${this.escapeHtml(this.formatGuestBuyerAccessTime(item.created_at))}</td>
+                    <td data-label="过期时间">${this.escapeHtml(this.formatGuestBuyerAccessTime(item.expires_at))}</td>
+                    <td data-label="原因">${this.escapeHtml(String(item.reason || '—'))}</td>
+                </tr>`).join('')
+            : '<tr><td colspan="4" class="text-center">暂无找回链接记录</td></tr>';
+
+        stateBox.innerHTML = `
+            ${merged ? `<div class="shop-guest-buyer-access-flag shop-guest-buyer-access-flag--warn">
+                <i class="fas fa-user-check" aria-hidden="true"></i>
+                <div><strong>该凭证分组已并入注册账号</strong><p>买家应改用账号登录查询订单；游客通道对其不再适用。</p></div>
+            </div>` : ''}
+            ${buyer.locked ? `<div class="shop-guest-buyer-access-flag shop-guest-buyer-access-flag--danger">
+                <i class="fas fa-lock" aria-hidden="true"></i>
+                <div><strong>当前处于登录锁定中</strong><p>${this.escapeHtml(lockLabel)}，截止 ${this.escapeHtml(this.formatGuestBuyerAccessTime(buyer.locked_until))}。可用「解锁买家登录」立即恢复。</p></div>
+            </div>` : ''}
+            <dl class="shop-guest-buyer-access-facts">
+                ${facts.map(([label, value]) => `<div><dt>${this.escapeHtml(label)}</dt><dd>${this.escapeHtml(String(value ?? '—'))}</dd></div>`).join('')}
+            </dl>
+            <div class="shop-guest-buyer-access-resets">
+                <h4 class="shop-guest-buyer-access-subtitle">找回链接记录</h4>
+                <table class="shop-table shop-guest-buyer-access-table">
+                    <thead><tr><th>状态</th><th>生成时间</th><th>过期时间</th><th>原因</th></tr></thead>
+                    <tbody>${resetRows}</tbody>
+                </table>
+            </div>`;
+        this.renderGuestBuyerAccessButtons(String(payload.order_no || '').trim());
+    },
+
+    renderGuestBuyerAccessButtons: function (orderNo) {
+        const container = document.getElementById('guestBuyerAccessButtons');
+        const actionsBox = document.getElementById('guestBuyerAccessActions');
+        if (!container || !actionsBox) return;
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!normalizedOrderNo) {
+            this.hideGuestBuyerAccessActions();
+            return;
+        }
+        container.innerHTML = this.GUEST_BUYER_ACCESS_ACTIONS.map((action) => {
+            const meta = this.getGuestBuyerAccessActionMeta(action);
+            if (!meta) return '';
+            return `<button type="button" class="shop-guest-buyer-access-action shop-guest-buyer-access-action--${meta.modifier}"
+                data-shop-action="guest-buyer-access-action" data-guest-access-action="${this.escapeForAttr(action)}"
+                data-order-no="${this.escapeForAttr(normalizedOrderNo)}" title="${this.escapeForAttr(meta.hint)}" disabled>
+                <i class="fas ${meta.icon}" aria-hidden="true"></i>
+                <span>${this.escapeHtml(meta.title)}</span>
+            </button>`;
+        }).join('');
+        actionsBox.hidden = false;
+        this.syncGuestBuyerAccessGuards();
+    },
+
+    hideGuestBuyerAccessActions: function () {
+        const actionsBox = document.getElementById('guestBuyerAccessActions');
+        if (actionsBox) actionsBox.hidden = true;
+    },
+
+    /**
+     * 双重门禁：处理原因 ≥ 8 字 **且** 勾选身份核实复选框，三个写按钮才可点。
+     * 这三个动作都会影响整个凭证分组（不是单笔订单），所以比游客异常处理的
+     * 单按钮确认多一道显式勾选。
+     */
+    syncGuestBuyerAccessGuards: function () {
+        const reason = String(document.getElementById('guestBuyerAccessReason')?.value || '').trim();
+        const confirmed = Boolean(document.getElementById('guestBuyerAccessConfirm')?.checked);
+        const ready = reason.length >= 8 && confirmed;
+        document.querySelectorAll('#guestBuyerAccessButtons [data-shop-action="guest-buyer-access-action"]')
+            .forEach((button) => {
+                button.disabled = !ready;
+            });
+        const reasonError = document.getElementById('guestBuyerAccessReasonError');
+        if (reasonError && reason.length > 0 && reason.length < 8) {
+            reasonError.hidden = false;
+        } else if (reasonError) {
+            reasonError.hidden = true;
+        }
+        return ready;
+    },
+
+    submitGuestBuyerAccessAction: async function (button) {
+        const action = String(button?.dataset?.guestAccessAction || '').trim();
+        const orderNo = String(button?.dataset?.orderNo || '').trim();
+        const meta = this.getGuestBuyerAccessActionMeta(action);
+        if (!meta || !orderNo) return;
+        const reasonInput = document.getElementById('guestBuyerAccessReason');
+        const reasonError = document.getElementById('guestBuyerAccessReasonError');
+        const reason = String(reasonInput?.value || '').trim();
+        if (reason.length < 8 || !document.getElementById('guestBuyerAccessConfirm')?.checked) {
+            if (reasonError) {
+                reasonError.hidden = false;
+                reasonError.textContent = reason.length < 8
+                    ? '请填写至少 8 个字的处理原因'
+                    : '请先勾选身份核实确认';
+            }
+            this.showActionToast(reason.length < 8 ? '请填写至少 8 个字的处理原因' : '请先勾选身份核实确认', 'warning');
+            return;
+        }
+        if (reasonError) reasonError.hidden = true;
+        this.setActionButtonLoading(button, '处理中...');
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/guest-buyer-access'),
+                {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers,
+                    body: JSON.stringify({ action, orderNo, confirm: true, reason })
+                }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '买家访问操作失败');
+            }
+            this.finishActionButton(button, '已处理');
+            this.showActionToast(`${meta.title}已完成`, 'success');
+            if (action === 'issue_password_reset_link') {
+                this.renderGuestBuyerAccessResetLink(payload);
+            } else {
+                this.hideGuestBuyerAccessResult();
+            }
+            if (payload.audit_recorded === false) {
+                this.showActionToast('操作已生效，但审计写入失败，请人工补记', 'warning', { durationMs: 8000 });
+            }
+            // 重置门禁：一次操作后必须重新勾选确认，避免连点。
+            const confirmBox = document.getElementById('guestBuyerAccessConfirm');
+            if (confirmBox) confirmBox.checked = false;
+            await this.loadGuestBuyerAccessState(orderNo);
+        } catch (error) {
+            this.failActionButton(button, '处理失败');
+            this.showActionToast(error.message || '买家访问操作失败', 'error', { durationMs: 5000 });
+        }
+    },
+
+    hideGuestBuyerAccessResult: function () {
+        this.guestBuyerAccessResetToken = '';
+        const result = document.getElementById('guestBuyerAccessResult');
+        if (!result) return;
+        result.hidden = true;
+        result.innerHTML = '';
+    },
+
+    /**
+     * 一次性找回链接：只渲染进 DOM 的 readonly input + 内存变量，
+     * 绝不写 localStorage / sessionStorage，绝不 console.log，绝不进 URL。
+     * 关闭弹窗或再次操作即清空。
+     */
+    renderGuestBuyerAccessResetLink: function (payload = {}) {
+        const result = document.getElementById('guestBuyerAccessResult');
+        const resetPath = String(payload.reset_path || '').trim();
+        if (!result || !resetPath) {
+            this.hideGuestBuyerAccessResult();
+            return;
+        }
+        const token = String(payload.reset_token || '').trim();
+        this.guestBuyerAccessResetToken = token;
+        let absoluteUrl = resetPath;
+        try {
+            absoluteUrl = new URL(resetPath, window.location.origin).toString();
+        } catch (_) {
+            absoluteUrl = resetPath;
+        }
+        const ttlMinutes = Math.round(Number(payload.ttl_seconds || 0) / 60) || 15;
+        const revokedCount = Array.isArray(payload.revoked_reset_ids) ? payload.revoked_reset_ids.length : 0;
+        result.hidden = false;
+        result.innerHTML = `
+            <div class="shop-guest-buyer-access-flag shop-guest-buyer-access-flag--danger">
+                <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+                <div>
+                    <strong>本次仅显示一次</strong>
+                    <p>链接 ${ttlMinutes} 分钟内有效、用后即焚；关闭本窗口后无法再次查看，只能重新生成。请立即通过客服渠道发给买家本人，不要截图存档、不要写入工单正文。</p>
+                </div>
+            </div>
+            <div class="shop-guest-buyer-access-link-row">
+                <input id="guestBuyerAccessResetLink" class="shop-guest-buyer-access-link-input" type="text" readonly
+                    value="${this.escapeHtml(absoluteUrl)}" aria-label="一次性找回链接" autocomplete="off" spellcheck="false">
+                <button type="button" class="shop-guest-buyer-access-action shop-guest-buyer-access-action--issue"
+                    data-shop-action="guest-buyer-access-copy-link">
+                    <i class="fas fa-copy" aria-hidden="true"></i>
+                    <span>复制链接</span>
+                </button>
+            </div>
+            <p class="shop-guest-buyer-access-note">买家打开后需用下单邮箱 + 自设新查询密码完成重置${revokedCount ? `；本次已同时作废 ${revokedCount} 条旧链接` : ''}。该分组下所有已登录会话已失效。</p>`;
+    },
+
+    copyGuestBuyerAccessResetLink: async function (button) {
+        const linkInput = document.getElementById('guestBuyerAccessResetLink');
+        const link = String(linkInput?.value || '').trim();
+        if (!link) {
+            this.showActionToast('链接已失效，请重新生成', 'warning');
+            return;
+        }
+        try {
+            await this.copyTextToClipboard(link);
+            this.showActionToast('已复制一次性找回链接，请立即发给买家本人', 'success');
+            if (button) {
+                const label = button.querySelector('span');
+                if (label) label.textContent = '已复制';
+            }
+        } catch (error) {
+            // 剪贴板失败时不打印链接本身，只提示手动复制。
+            this.showActionToast('剪贴板写入失败，请手动选中输入框内容复制', 'error', { durationMs: 5000 });
+        }
+    },
+
     getGuestExceptionMeta: function (key) {
         return GUEST_ORDER_EXCEPTION_META[String(key || '').trim().toLowerCase()]
             || GUEST_ORDER_EXCEPTION_META.any;
@@ -3539,6 +3962,7 @@ Example output format:
                         <i class="fas fa-copy" aria-hidden="true"></i>
                     </button>
                     ${this.renderGuestExceptionWriteButtons(row)}
+                    ${this.renderGuestBuyerAccessButton(row)}
                     </div>
                 </td>
             </tr>`;
@@ -4937,6 +5361,21 @@ Example output format:
                     break;
                 case 'guest-exception-ops-confirm':
                     void this.submitGuestExceptionWrite(actionEl);
+                    break;
+                case 'guest-buyer-access-open':
+                    this.openGuestBuyerAccessModal({ orderNo: actionEl.dataset.orderNo });
+                    break;
+                case 'guest-buyer-access-close':
+                    this.closeGuestBuyerAccessModal();
+                    break;
+                case 'guest-buyer-access-refresh':
+                    void this.loadGuestBuyerAccessState(actionEl.dataset.orderNo);
+                    break;
+                case 'guest-buyer-access-action':
+                    void this.submitGuestBuyerAccessAction(actionEl);
+                    break;
+                case 'guest-buyer-access-copy-link':
+                    void this.copyGuestBuyerAccessResetLink(actionEl);
                     break;
                 case 'product-open-create-modal':
                     this.openProductModal();

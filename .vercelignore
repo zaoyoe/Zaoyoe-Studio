@@ -131,6 +131,8 @@ api/shop/guest/order.js
 api/shop/guest/delivery.js
 api/shop/guest/access/login.js
 api/shop/guest/access/logout.js
+api/shop/guest/access/reset.js
+api/shop/guest/access/upgrade.js
 api/shop/guest/webhooks/nowpayments.js
 api/shop/guest/webhooks/zpay.js
 api/shop/guest/worker.js

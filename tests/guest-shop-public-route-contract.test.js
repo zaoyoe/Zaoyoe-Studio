@@ -58,6 +58,8 @@ async function withPublicHandler(callback) {
                         delivery: async (_req, res) => res.end('delivery'),
                         accessLogin: async (_req, res) => res.end('access-login'),
                         accessLogout: async (_req, res) => res.end('access-logout'),
+                        accessReset: async (_req, res) => res.end('access-reset'),
+                        accessUpgrade: async (_req, res) => res.end('access-upgrade'),
                         webhook: async (_req, res, provider) => {
                             res.status(200);
                             res.end(`webhook:${provider}`);
@@ -135,7 +137,12 @@ test('shared public dispatcher exposes the flat-key guest order access routes', 
             ['guest/order', 'order'],
             ['guest/delivery', 'delivery'],
             ['guest/access/login', 'access-login'],
-            ['guest/access/logout', 'access-logout']
+            ['guest/access/logout', 'access-logout'],
+            // Order Access 2.0 (A3): the one-time reset link (§10.5) and the
+            // §13.2 historical-order self-upgrade share the same flat-key
+            // constraint as A2 (deviation D-1).
+            ['guest/access/reset', 'access-reset'],
+            ['guest/access/upgrade', 'access-upgrade']
         ]) {
             const res = createMockResponse();
             await handler({ method: 'GET', url: `/api/public?scope=shop&route=${route}&order_no=GS20260921-000001` }, res);
@@ -162,7 +169,9 @@ test('guest order access Vercel entrypoints bind the shared handlers and stay ou
         ['api/shop/guest/order.js', 'order'],
         ['api/shop/guest/delivery.js', 'delivery'],
         ['api/shop/guest/access/login.js', 'accessLogin'],
-        ['api/shop/guest/access/logout.js', 'accessLogout']
+        ['api/shop/guest/access/logout.js', 'accessLogout'],
+        ['api/shop/guest/access/reset.js', 'accessReset'],
+        ['api/shop/guest/access/upgrade.js', 'accessUpgrade']
     ]) {
         const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
         assert.match(
