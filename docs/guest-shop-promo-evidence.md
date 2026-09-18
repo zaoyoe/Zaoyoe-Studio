@@ -23,12 +23,16 @@
 
 | # | 迁移 | 对应 verify | verify 行数 | 结果 |
 |---|---|---|---|---|
-| 1 | `supabase/migrations/20260920_guest_shop_buyer_credentials.sql` | `20260920_verify_guest_shop_buyer_credentials.sql` | 11 | ⚠️ 首轮 **1 行 FAIL** → 诊断为 verify 探针缺陷（D-10），已修复；**迁移无需重跑**，待重跑修复后的 verify |
+| 1 | `supabase/migrations/20260920_guest_shop_buyer_credentials.sql` | `20260920_verify_guest_shop_buyer_credentials.sql` | 11 | ⚠️→✅ 首轮 **1 行 FAIL**（诊断为 verify 探针缺陷 D-10，非迁移缺陷）；探针修复后**同日复跑 11/11 全 PASS**，逐行见 §1.5。**迁移未重跑，也不需要重跑** |
 | 2 | `supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql` | `20260921_verify_guest_shop_buyer_group_upsert.sql` | 5 | ✅ **全行 PASS** |
 | 3 | `supabase/migrations/20260922_guest_shop_access_resets.sql` | `20260922_verify_guest_shop_access_resets.sql` | 7 | ✅ **全行 PASS（7/7）**，逐行见 §1.2 |
 
 三个迁移都是**行为中立**的：`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 仍为关闭状态，
 应用层不读写这些新表，落库前后线上行为完全一致。**本次未打开任何开关、未启用游客商品。**
+
+**三步校验现已全部通过（23 行 PASS / 0 FAIL）**：步骤 1 见 §1.5（11 行）、步骤 2 见 §1.1（5 行）、
+步骤 3 见 §1.2（7 行）；首轮那行假 FAIL 的诊断与处置见 §1.3。**数据库侧 A0–A3 已落地并校验完毕，
+剩余启用前置见 §1.4。**
 
 ### 1.2 步骤 3（`20260922_verify_guest_shop_access_resets.sql`）逐行结果
 
@@ -83,7 +87,7 @@ verify 行清单冻结（20260920 共 11 行、20260922 共 7 行）。
 
 ### 1.4 启用前仍待补齐的实机项
 
-- [ ] 重跑 `supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql`，**11 行全 PASS**，把输出粘回本节
+- [x] ~~重跑 `supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql`~~ → **11 行全 PASS**（2026-09-18 复跑，输出已归档在 §1.5）
 - [ ] `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid`
       （预期 `--fail-on-not-ready` 仍返回 `3`，**禁止 `|| true` 绕过**）
 - [ ] §15.3 G1：内部开启 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 后，自测下单 / 查询 / 详情 / 卡密全链路截图
@@ -93,3 +97,84 @@ verify 行清单冻结（20260920 共 11 行、20260922 共 7 行）。
 
 > 以上全部归档前，**不得宣称订单访问 2.0 可启用**；发布仍须走 `AGENTS.md` 的游客专用分支 + 四链路流程，
 > 且必须等用户明确下达部署指令。
+
+### 1.5 步骤 1 复跑逐行结果（探针修复后，**11/11 全 PASS**）
+
+复跑日：**2026-09-18**（同日，探针修复后）　脚本：`supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql`
+执行人：**用户**　Codex：**未执行任何 SQL**
+
+| sort_order | check_name | status | observed 要点（与 expected 逐字一致） |
+|---|---|---|---|
+| 1 | `buyer_tables_present` | PASS | `guest_shop_buyers: true`、`guest_shop_access_attempts: true` |
+| 2 | `buyers_columns` | PASS | `missing_columns: []`、`unexpected_denormalised_columns: []`（库里**没有**明文邮箱/密码列） |
+| 3 | `buyers_constraints` | PASS | `password_format_pins_scrypt_and_norm_version: true`（**首轮唯一 FAIL 行，现 PASS**）、`contact_hash_format_is_64_hex: true`、`group_range_upper_bound_at_least_app_cap: true`、`group_unique_covers_site_contact_group: true`、`missing_constraints: []` |
+| 4 | `buyers_indexes` | PASS | `guest_shop_buyers_pkey` / `_site_contact_group_uniq` / `_contact_idx` / `_locked_idx` 四个齐备 |
+| 5 | `access_attempts_shape` | PASS | `_pkey` / `_contact_idx` / `_ip_idx` 齐备、`missing_constraints: []`、`outcome_allows_credential_conflict: true` |
+| 6 | `rls_and_privileges_closed` | PASS | `browser_policies: []`、`anon_select_buyers: false`、`anon_select_attempts: false`、`authenticated_select_buyers: false`、`authenticated_select_attempts: false`、两张表 `rls_enabled: true`、`realtime_published: false`、仅 `service_role` 有 select/insert |
+| 7 | `orders_buyer_id_link` | PASS | `column_present` / `index_present` / `foreign_key_to_buyers` 全 true、`column_nullable_for_history: true`、`foreign_key_on_delete_set_null: true` |
+| 8 | `create_order_signature_migrated` | PASS | `arity: 13`、`single_overload: true`、`has_p_buyer_id_param: true`、`new_13_param_signature_present: true`、`legacy_12_param_signature_absent: true`、`security_definer: true`、`search_path_pinned: true` |
+| 9 | `create_order_buyer_binding_guards` | PASS | 9 项全 true：`rejects_buyer_contact_mismatch`、`binding_checks_same_contact_hash`、`binding_checks_same_site`、`requires_contact_hash_with_buyer_id`、`insert_persists_buyer_id`、`keeps_credit_price_resolver`、`keeps_service_role_gate`、`quantity_still_hardcoded_to_one`、`keeps_existing_guards` |
+| 10 | `create_order_grants` | PASS | `anon_execute: false`、`public_execute: false`、`authenticated_execute: false`、`service_role_execute: true` |
+| 11 | `a0_is_behaviour_neutral` | PASS | `buyer_id_has_no_not_null` / `orders_rls_still_enabled` / `no_backfill_trigger_on_orders` / `no_purge_job_created_by_migration` 全 true |
+
+安全含义（这 11 行分别堵住了什么）：
+
+- **浏览器不可达**（第 6、10 行）：`guest_shop_buyers`（存 scrypt 哈希与锁定状态）与下单 RPC 对
+  `anon` / `authenticated` **零权限、零 policy、未进 realtime publication**，只能由服务端 service_role 访问。
+  即使前端被 XSS 打穿，也捞不到任何哈希、无法直接调 RPC 造单。
+- **串号/错绑防线在 DB 层**（第 9 行）：「订单绑定的 `buyer_id` 必须与 `(site, contact_hash)` 三元组一致」
+  是**数据库级**校验（`rejects_buyer_contact_mismatch` + `binding_checks_same_contact_hash` + `binding_checks_same_site`），
+  应用层被绕过也会 fail-closed；`requires_contact_hash_with_buyer_id` 堵掉「只给 buyer_id 不给邮箱哈希」的半绑定。
+- **金额与数量权威仍在服务端**（第 9 行）：`keeps_credit_price_resolver`（价格由 resolver 决定，不信客户端报价）
+  与 `quantity_still_hardcoded_to_one`（游客单固定 1 件）在迁移后**没有被削弱** —— 这是「零元购/刷库存」的两道主闸。
+- **无重载歧义**（第 8 行）：`single_overload: true` + `legacy_12_param_signature_absent: true` 证明旧的 12 参签名
+  已彻底移除；否则攻击者可以直接调旧签名绕过 `p_buyer_id` 绑定校验。`security_definer` + `search_path_pinned`
+  防止靠搜索路径劫持函数。
+- **历史订单不被误伤**（第 7、11 行）：`column_nullable_for_history` + `foreign_key_on_delete_set_null` +
+  `buyer_id_has_no_not_null` + `no_backfill_trigger_on_orders` —— 老订单 `buyer_id IS NULL`，仍走
+  「订单号 + 取货口令」（§13.1 不可回归项），迁移**没有回填、没有加 NOT NULL、没有建触发器、没有建清理任务**。
+- **防爆破取证就位**（第 4、5 行）：`locked_idx` 支撑 §8.1 阶梯锁扫描；`guest_shop_access_attempts` 的
+  contact / ip 双索引支撑双维度锁定；`outcome_allows_credential_conflict` 让「凭证分组冲突」可取证。
+- **行为中立已实证**（第 2、11 行）：`unexpected_denormalised_columns: []` 说明没有偷偷存明文邮箱/密码，
+  配合开关关闭，落库前后线上行为一致。
+
+> 复跑用的是**修复后的探针**（D-10）。同一份迁移、同一座库，只换探针就从 FAIL 变 PASS ——
+> 这本身就是「坏的是校验器」的最直接实证。`tests/guest-shop-verify-probe-contract.test.js`
+> 已把三条探针的字面量写法冻结，同类错误再犯会先在 CI 里红。
+
+### 1.6 「迁移已落库、代码尚未发布」的线上兼容性核对
+
+时间差是客观存在的：SQL 在 2026-09-18 落库时，线上跑的仍是 **main 分支**的代码
+（本次改动**未推送、未部署**）。核对结论：**这个顺序是安全的，线上游客下单链路行为不变。**
+
+| 核对项 | 证据 |
+|---|---|
+| 唯一的运行时调用方用具名参数 | `origin/main:server/api-handlers/public/guest-shop.js:1431` → `.rpc('fn_guest_shop_create_order', { ... })`，传 12 个具名参数，**不含 `p_buyer_id`** |
+| 少传 `p_buyer_id` 仍能解析到 13 参函数 | 迁移里 `p_buyer_id UUID DEFAULT NULL`，且**带默认值的参数连续排到末尾**（PG 规则）；`p_ttl_seconds INTEGER DEFAULT 1800` 同理 |
+| 少传 = 老行为，而不是报错 | 函数体 `IF p_buyer_id IS NOT NULL THEN ... ELSE v_buyer_id := NULL; END IF;`（`20260920` 迁移第 272–286 行） |
+| 旧签名不会残留成第二个重载 | verify 第 8 行：`single_overload: true`、`legacy_12_param_signature_absent: true`、`arity: 13` |
+| 权限没有因为换签名而丢失或放宽 | verify 第 10 行：`service_role_execute: true`，`anon/public/authenticated_execute: false` |
+| 原有守卫一条没少 | verify 第 9 行 9 项全 true：`keeps_credit_price_resolver`（价格由 resolver 决定，不信客户端）、`keeps_service_role_gate`、`quantity_still_hardcoded_to_one`、`keeps_existing_guards` |
+| `20260922` 放宽 outcome 不会让现有写入失效 | 步骤 3 verify 第 5 行：`keeps_every_legacy_outcome: true`（新枚举是旧枚举的**严格超集**） |
+| 订单表没有被顺带改动 | verify 第 7、11 行：`column_nullable_for_history` / `foreign_key_on_delete_set_null` / `buyer_id_has_no_not_null` / `no_backfill_trigger_on_orders` / `orders_rls_still_enabled` |
+
+⚠️ 反过来说，**如果调用方用的是位置参数，这次换签名就会直接把线上下单打断**：
+第 10 位会把 `p_request_ip_hash` 的 TEXT 塞进 `p_buyer_id UUID`，报
+`function ... does not exist`，或者在类型恰好兼容时**静默错位**。仓库里已确认没有位置参数调用，
+并新增 `tests/guest-shop-create-order-signature-compat.test.js`（5 条）把这件事钉死：
+
+1. `api/` 与 `server/` 下**所有** `.rpc('fn_guest_shop_*', ...)` 调用点的第二参数必须是对象字面量；
+2. 调用方键集合与迁移声明的 13 个参数**逐字相同**（防拼写错误、防漏传、防重复传）；
+3. 模拟「线上 main 的 12 参调用」：省略的参数必须带 `DEFAULT`、默认值必须是 `NULL`，
+   且**带默认值的参数必须连续到末尾**；
+4. 函数体必须保留 `ELSE v_buyer_id := NULL`（少传 = 不绑定，不是报错），
+   同时保留 `guest_buyer_contact_required` / `guest_buyer_mismatch` 两道 fail-closed；
+5. 旧 12 参签名必须按**精确参数表** DROP、**禁止 CASCADE**、迁移里只允许一个 create 定义，
+   且新签名必须重新 `GRANT ... TO service_role` + `REVOKE ... FROM PUBLIC, anon, authenticated`。
+
+变异验证（证明这些断言真的会咬人，不是空转）：把 `p_buyer_id UUID DEFAULT NULL` 的 `DEFAULT NULL` 去掉 →
+第 3 条红；把调用方的 `{` 改成 `[` → 第 1、2 条红。两次变异后文件均已还原，`git diff` 为空。
+
+> `DROP FUNCTION` 与 `CREATE OR REPLACE FUNCTION` 之间存在一个极短的解析窗口（已执行完毕）。
+> 期间若有游客下单请求，最坏表现是该请求失败并由前端重试；RPC 是原子的、订单创建幂等
+> （`idempotency_key` + advisory lock），不会产生半写状态或重复订单。

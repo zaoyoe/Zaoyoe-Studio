@@ -933,7 +933,7 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| G0 | 迁移文件写盘 + readiness 扩展，开关全关 | 全量测试基线不退化；线上行为**零变化** |
+| G0 | ✅ **已完成（2026-09-18）**：迁移文件写盘**并已由用户落库** + readiness 扩展，开关全关 | ✅ 全量测试基线不退化（3328 通过 / 0 失败）；三步 verify **23 行全 PASS**（`docs/guest-shop-promo-evidence.md` §1）；线上行为**零变化** |
 | G1 | 内部开启 `BUYER_CREDENTIAL_ENABLED`，仅自己下单验证 | 下单/查询/详情/卡密全链路截图归档 |
 | G2 | 开启新页面，旧弹窗入口并存 | 历史订单仍可用口令找回 |
 | G3 | 删除弹窗内口令面板，新页面成为唯一入口 | 客服工单量对比 |
@@ -1014,13 +1014,16 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 ### 16.3 回归
 
 - 基线：main = **3156 pass / 0 fail**（促销方案已实测）。2.0 完成后必须 **≥3156 pass / 0 fail**。
+- **当前实测基线（2026-09-18，A0–A3 + verify 探针修复）**：`npm run test:security` = **3333 pass / 0 fail**。
 - 游客原价下单、支付、webhook、claim、worker、管理台游客订单页全链路不退化。
+
+> ⚠️ **判定回归必须「数量 + 0 fail」一起看**：`npm run test:security` = `node --test --test-force-exit tests/*.test.js`，在满并行度下**偶发静默丢测试**。2026-09-18 的三次全量里有一次报 `tests 3326 / pass 3326 / fail 0`，少的 7 条全部来自 `tests/admin-workbench-builders.test.js`（该文件单独跑恒为 83 条，与 4 个文件同批连跑 4 次恒为 186 条，只在满并行度下丢；同一次里新增的 5 条兼容性测试全部在跑）。因此规则是：**`ℹ tests` 必须等于预期总数（当前 3333）且 `ℹ fail` 为 0**；**数量偏低但 0 fail 不算通过**，必须重跑确认，否则会拿一次「少跑了 7 条」的结果当绿灯。
 
 ### 16.4 实机（由你执行，Codex 不执行 SQL、不启用商品）
 
 归档到 `docs/guest-shop-promo-evidence.md`：下单截图、查询页截图、详情+卡密截图、
 锁定触发截图、历史订单口令找回截图、readiness 退出码 3 的输出。
-该文件已建立：**§1 已归档 2026-09-18 三个迁移落库 + 三个 verify 的实机结果**（含 D-10 假 FAIL 的诊断与处置），**§1.4 是启用前仍待补齐的清单**。
+该文件已建立：**§1 已归档 2026-09-18 三个迁移落库 + 三个 verify 的实机结果**（§1.2 步骤 3 逐行、§1.3 D-10 假 FAIL 诊断与处置、§1.5 步骤 1 修复后 11/11 复跑逐行、§1.6 「迁移已落库但代码未发布」的线上兼容性核对），**§1.4 是启用前仍待补齐的清单**（readiness + G1 灰度截图 + 三项不可回归截图）。
 
 ---
 
@@ -1102,7 +1105,7 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 | **A2** | ✅ **已完成** | `1b8cfd372` | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
 | G3 | ⏸ 未开始 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` + 改契约断言 + 页脚入口（**必须等开关打开且实机证据归档后**，见 §11.2.1） |
 | **A3** | ✅ **已完成** | `5496a47c9` | 管理台 `shop/guest-buyer-access`（GET 状态 + 三个写动作）+ 游客异常队列行内「买家访问」弹窗；`guest_shop_access_resets` 迁移文件写盘（**未执行**）；公开端点 `guest/access/reset`（一次性链接消费）与 `guest/access/upgrade`（§13.2 自助升级）；`guest-orders.html` 找回卡片 + 历史订单升级子表单。**不做**管理员临时密码（D-7） |
-| **A0-verify-FIX** | ✅ 已完成 | `bbf5705a6` | `20260920_verify_guest_shop_buyer_credentials.sql` 假 FAIL 修复（D-10）：三个约束探针改为字面量 / 数值化 + 文件头新增「RULE FOR PROBE AUTHORS」；新增 `tests/guest-shop-verify-probe-contract.test.js`（11 条静态重放，全量 `npm run test:security`：**3328 通过 / 0 失败** = 基线 3317 + 新增 11）；实机三步校验记录归档到 `docs/guest-shop-promo-evidence.md` §1。**迁移文件未改、无需重跑**，只需重跑该 verify 脚本 |
+| **A0-verify-FIX** | ✅ 已完成 | `bbf5705a6` | `20260920_verify_guest_shop_buyer_credentials.sql` 假 FAIL 修复（D-10）：三个约束探针改为字面量 / 数值化 + 文件头新增「RULE FOR PROBE AUTHORS」；新增 `tests/guest-shop-verify-probe-contract.test.js`（11 条静态重放）与 `tests/guest-shop-create-order-signature-compat.test.js`（5 条，钉住「迁移先落库、代码后发布」的兼容性）；实机三步校验记录归档到 `docs/guest-shop-promo-evidence.md` §1，**三步 23 行全 PASS**（步骤 1 见 §1.5）。全量 `npm run test:security`：**3333 通过 / 0 失败**（基线 3317 + 11 + 5）。**迁移文件未改、无需重跑**；探针修复后同日复跑该 verify，**11/11 全 PASS**（evidence §1.5），三步校验 23 行全绿 |
 | L0–L4 / A4 | ⏸ 未开始 | — | 促销侧与 OTP，见 §19 |
 
 **A3 测试覆盖（见本节末尾的全量数字）**
@@ -1175,7 +1178,9 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 > 每步之后跑对应的 verify 脚本（`20260920_verify_*` / `20260922_verify_guest_shop_access_resets.sql`），
 > **全部 PASS** 才允许打开开关。启用前置条件见 §15.3 与 §16.4。
 >
-> **实机执行记录（2026-09-18，由你在目标 Supabase 执行，Codex 未执行任何 SQL）**：三个迁移均已落库；`20260921_verify` 与 `20260922_verify`（7 行）**全 PASS**；`20260920_verify` 首轮出现 **1 行 FAIL**（`password_format_pins_scrypt_and_norm_version`），诊断为**探针自身缺陷**而非迁移缺陷（D-10），已修复，**待你重跑该 verify 脚本确认 11 行全 PASS**。逐行结果与诊断归档在 `docs/guest-shop-promo-evidence.md` §1。开关仍未打开。
+> **实机执行记录（2026-09-18，由你在目标 Supabase 执行，Codex 未执行任何 SQL）**：三个迁移均已落库，**三步校验现已全部通过（23 行 PASS / 0 FAIL）**——`20260920_verify` 11/11、`20260921_verify` 5/5、`20260922_verify` 7/7。`20260920_verify` 首轮曾出现 1 行 FAIL（`password_format_pins_scrypt_and_norm_version`），诊断为**探针自身缺陷**而非迁移缺陷（D-10）；探针修复后**同日复跑即 11/11 全 PASS**，迁移一行未改、未重跑。逐行结果与诊断归档在 `docs/guest-shop-promo-evidence.md` §1（步骤 1 见 §1.5、步骤 3 见 §1.2、假 FAIL 诊断见 §1.3）。开关仍未打开。
+>
+> **下一步（G0 已完成）**：① 跑 readiness（§15.2，`--fail-on-not-ready` 返回 `3` 是预期 fail-closed，禁止 `|| true`）；② 按 §15.3 G1 内部灰度并归档全链路截图。启用前仍待补齐的清单见 evidence §1.4；部署仍须等用户明确指令并按 `AGENTS.md` 游客四链路流程走。
 >
 > 三个迁移都是**行为中立**的：开关关闭时应用层永不读写这些新表，
 > 执行完 SQL 后线上行为与执行前完全一致。
