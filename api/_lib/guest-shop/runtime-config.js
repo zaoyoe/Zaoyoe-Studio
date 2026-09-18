@@ -185,6 +185,30 @@ const GUEST_SHOP_RUNTIME_SETTINGS = Object.freeze({
         min: 7,
         max: 180,
         label: '游客登录审计保留天数'
+    }),
+    // ---------------------------------------------------------------------
+    // Promo L1 (docs/guest-shop-promo-hardening-plan.md §8.3 / §13 层 3.1).
+    //
+    // This is the ENV ceiling only. The effective per-order quantity is
+    // min(this value, shop_product_skus.guest_max_quantity,
+    // shop_products.guest_max_quantity, shop_products.max_purchase_quantity, 5)
+    // and the smallest of them wins, so an operator raising this number can
+    // never widen a per-SKU ceiling. max is pinned to 5 because that is the
+    // guest_shop_orders_quantity_check hard bound in
+    // supabase/migrations/20260923_guest_shop_promo_l1l2.sql §1; a value above
+    // it would be a write error, not a larger order.
+    //
+    // defaultValue is 1 = the P0 behaviour (one card per guest order). Until an
+    // operator raises it, every guest order still reserves exactly one row and
+    // the tiered-price loop can only ever match a qty=1 rule.
+    // ---------------------------------------------------------------------
+    GUEST_SHOP_MAX_QUANTITY: Object.freeze({
+        key: 'guestMaxQuantity',
+        type: 'integer',
+        defaultValue: 1,
+        min: 1,
+        max: 5,
+        label: '游客单笔购买数量上限'
     })
 });
 
@@ -203,6 +227,12 @@ const WORKER_RUNTIME_SETTING_NAMES = Object.freeze([
     'GUEST_SHOP_WORKER_MAX_BACKOFF_MS',
     'GUEST_SHOP_WORKER_LEASE_MS',
     'GUEST_SHOP_WORKER_RETRY_JITTER_RATIO'
+]);
+
+// Promo L1/L2 numeric knobs. Kept as its own list so readiness can check the
+// promo group independently of the Order Access 2.0 group.
+const PROMO_RUNTIME_SETTING_NAMES = Object.freeze([
+    'GUEST_SHOP_MAX_QUANTITY'
 ]);
 
 const BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES = Object.freeze([
@@ -427,6 +457,7 @@ module.exports = {
     ALL_RUNTIME_SETTING_NAMES,
     BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES,
     GUEST_SHOP_RUNTIME_SETTINGS,
+    PROMO_RUNTIME_SETTING_NAMES,
     PUBLIC_RUNTIME_SETTING_NAMES,
     WORKER_RUNTIME_SETTING_NAMES,
     assertGuestShopRuntimeConfig,

@@ -7,6 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+    PROMO_MIGRATION,
+    PROMO_VERIFY_MIGRATION,
     READINESS_EXIT_CODES,
     REQUIRED_REPO_FILES,
     REQUIRED_TEST_FILES,
@@ -14,6 +16,7 @@ const {
     getReadinessExitCode,
     inspectBuyerCredentials,
     inspectCallbackUrl,
+    inspectPromo,
     inspectRepo,
     inspectRunbook,
     loadEnvFile,
@@ -743,5 +746,113 @@ test('buyer credential readiness checks stay inside the strict gate and never pr
     for (const secret of Object.values(SECRET_VALUES)) {
         assert.equal(report.includes(secret), false);
         assert.equal(serialized.includes(secret), false);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 促销 verify 的静态闸门：真文件全绿，被篡改后必须逐项变红
+// ---------------------------------------------------------------------------
+//
+// 2026-09-23 用户第一次在 Supabase 执行促销 verify，22 行里报了 2 个 FAIL，
+// 而迁移本身是正确的：
+//   第 12 行 evaluate_is_read_only=false —— pg_proc.prosrc 保留函数自己的注释，
+//     fn_guest_shop_evaluate_discount 的原子性说明里有一句 "the atomic UPDATE
+//     pair"，拿关键字正则扫原始 prosrc 就把注释当成了写操作；
+//   第 16 行 guest_products_enabled observed=2 / expected=0 —— 把「运维开了几个
+//     游客商品」钉成迁移必须满足的常量，等于宣告正确的迁移在有人开过游客商品时
+//     必然 FAIL。FAIL 一旦成为常态，运维就会开始忽略所有 FAIL。
+// 修法写进了 verify（fn_code 剥注释 + 第 23 行 operator_state_review），
+// 这里保证 readiness 的闸门不是空转：每条新断言都要能被一个单点篡改打红。
+
+test('promo verify static assertions pass on the real file and fail closed on tampered ones', () => {
+    const realVerify = fs.readFileSync(path.join(REPO_ROOT, PROMO_VERIFY_MIGRATION), 'utf8');
+    const real = inspectPromo({}, false, REPO_ROOT);
+    const verifyChecks = real.filter((check) => check.key.startsWith('verify:'));
+    assert.ok(verifyChecks.length >= 30, `expected the full promo verify assertion set, got ${verifyChecks.length}`);
+    assert.deepEqual(
+        verifyChecks.filter((check) => !check.ok).map((check) => check.key),
+        [],
+        'the committed promo verify must satisfy every readiness assertion'
+    );
+    for (const key of [
+        'verify:verify-body-scans-strip-comments',
+        'verify:verify-body-scans-strip-block-comments',
+        'verify:verify-fn-code-superset',
+        'verify:verify-evaluate-no-dynamic-sql',
+        'verify:verify-evaluate-strip-keeps-guards',
+        'verify:verify-promo-functions-never-write-products',
+        'verify:verify-operator-state-review-row',
+        'verify:verify-operator-state-review-branch',
+        'verify:verify-operator-state-names-products',
+        'verify:verify-no-pinned-operator-count',
+        'verify:verify-no-raw-prosrc-regex',
+        'verify:verify-no-raw-prosrc-position'
+    ]) {
+        assert.equal(real.find((check) => check.key === key)?.ok, true, `${key} must exist and pass on the real file`);
+    }
+
+    const variants = [
+        {
+            name: 'pinned-operator-count',
+            key: 'verify:verify-no-pinned-operator-count',
+            mutate: (source) => source.replace(
+                "'guest_products_enabled', (",
+                "'guest_products_enabled', 0,\n            'guest_products_enabled_live', ("
+            )
+        },
+        {
+            name: 'raw-prosrc-regex',
+            key: 'verify:verify-no-raw-prosrc-regex',
+            mutate: (source) => source.replace("WHERE code ~* '", "WHERE prosrc ~* '")
+        },
+        {
+            name: 'raw-prosrc-position',
+            key: 'verify:verify-no-raw-prosrc-position',
+            mutate: (source) => source.replace("in f.code) > 0", "in f.prosrc) > 0")
+        },
+        {
+            name: 'no-comment-strip',
+            key: 'verify:verify-body-scans-strip-comments',
+            mutate: (source) => source.replace("regexp_replace(f.prosrc, '--.*', ' ', 'gn')", 'f.prosrc')
+        },
+        {
+            name: 'no-review-branch',
+            key: 'verify:verify-operator-state-review-branch',
+            mutate: (source) => source.replace("THEN 'PASS' ELSE 'REVIEW'", "THEN 'PASS' ELSE 'FAIL'")
+        },
+        {
+            name: 'no-review-row',
+            key: 'verify:verify-operator-state-review-row',
+            // 必须全局替换：行名在 checks CTE 和最后的判分 CASE 里各出现一次，
+            // 只换第一处的话闸门仍然命中，测试就会假绿。
+            mutate: (source) => source.replace(/'operator_state_review'/gu, "'operator_state_summary'")
+        },
+        {
+            name: 'no-mechanism-assertion',
+            key: 'verify:verify-promo-functions-never-write-products',
+            mutate: (source) => source.replace(/'promo_functions_never_write_products'/gu, "'catalogue_write_audit'")
+        }
+    ];
+
+    for (const variant of variants) {
+        const tampered = variant.mutate(realVerify);
+        // 防止 needle 过期导致「篡改没生效、测试却绿着」这种最危险的空转。
+        assert.notEqual(tampered, realVerify, `${variant.name}: the tamper must actually change the verify script`);
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-promo-verify-'));
+        try {
+            const migDir = path.join(tempRoot, 'supabase', 'migrations');
+            fs.mkdirSync(migDir, { recursive: true });
+            fs.copyFileSync(path.join(REPO_ROOT, PROMO_MIGRATION), path.join(migDir, path.basename(PROMO_MIGRATION)));
+            fs.writeFileSync(path.join(migDir, path.basename(PROMO_VERIFY_MIGRATION)), tampered, 'utf8');
+            const out = inspectPromo({}, false, tempRoot);
+            const byKey = new Map(out.map((check) => [check.key, check]));
+            assert.equal(
+                byKey.get(variant.key)?.ok,
+                false,
+                `${variant.name}: ${variant.key} must fail closed on the tampered verify script`
+            );
+        } finally {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
     }
 });

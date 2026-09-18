@@ -31,6 +31,18 @@ const NONCE_PATTERN = /^[A-Za-z0-9._:-]{16,200}$/;
 const MONEY_PATTERN = /^(?:0|[1-9][0-9]*)(?:\.([0-9]{1,2}))?$/;
 const HEX_64_PATTERN = /^[0-9a-f]{64}$/i;
 
+// Promo L2. The alphabet is byte-identical to the guest_shop_orders
+// discount_code CHECK and to the guard inside fn_guest_shop_evaluate_discount
+// (supabase/migrations/20260923_guest_shop_promo_l1l2.sql §1/§5), so a value
+// accepted here can never be rejected later by the database for its shape.
+const GUEST_DISCOUNT_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{0,49}$/u;
+const GUEST_DISCOUNT_CODE_MAX_LENGTH = 50;
+// Promo L1. guest_shop_orders_quantity_check pins quantity BETWEEN 1 AND 5.
+// The per-order ceiling an operator actually gets is far lower (usually 1); see
+// promo.resolveGuestQuantityCap. This constant is only the outer bound that
+// stops a mis-set GUEST_SHOP_MAX_QUANTITY from ever reaching the RPC.
+const GUEST_QUANTITY_HARD_CEILING = 5;
+
 const SENSITIVE_KEY_PATTERN = /(?:authorization|cookie|set-cookie|password|passwd|secret|token|recovery[_-]?code|api[_-]?key|service[_-]?role|refresh[_-]?token|access[_-]?token|claim|credential|query[_-]?password|signature|(?:^|[_-])sign(?:ature)?$|raw[_-]?body|card|inventory|delivery|content|private[_-]?key|merchant[_-]?secret|webhook[_-]?secret)/i;
 const SENSITIVE_VALUE_PATTERN = /(?:bearer\s+[a-z0-9._~+\/-]+=*|eyj[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+|sk-[a-z0-9_-]{12,}|sb_(?:secret|publishable)_[a-z0-9_-]+|gAAAA[a-z0-9_=-]{20,})/i;
 
@@ -163,6 +175,30 @@ function readAliasedValue(body, primary, aliases, field) {
     return first;
 }
 
+/**
+ * Normalize a guest discount code to the canonical stored form.
+ *
+ * Returns '' when the caller supplied nothing usable, the canonical upper-cased
+ * code when the value is well formed, and null when a value WAS supplied but is
+ * malformed. The three-way result matters: silently dropping a malformed code
+ * would charge the buyer the undiscounted price after they typed a coupon, and
+ * silently accepting one would put an unvalidated string into the request
+ * fingerprint. Callers must turn null into an explicit 400.
+ */
+function normalizeGuestDiscountCode(value) {
+    if (value === undefined || value === null) return '';
+    if (typeof value !== 'string' && typeof value !== 'number') return null;
+    const text = String(value).trim().toUpperCase();
+    if (!text) return '';
+    if (text.length > GUEST_DISCOUNT_CODE_MAX_LENGTH) return null;
+    if (/[\u0000-\u0020\u007f]/u.test(text)) return null;
+    return GUEST_DISCOUNT_CODE_PATTERN.test(text) ? text : null;
+}
+
+function isGuestDiscountCodeFormat(value) {
+    return GUEST_DISCOUNT_CODE_PATTERN.test(String(value ?? ''));
+}
+
 function normalizeGuestOrderInput(body, options = {}) {
     const {
         site,
@@ -170,7 +206,12 @@ function normalizeGuestOrderInput(body, options = {}) {
         allowClientSite = true,
         quantityMax = 1,
         requireIdempotencyKey = true,
-        allowOptionalContact = false
+        allowOptionalContact = false,
+        // Promo L2. Only the create-order handler may set this, and only while
+        // GUEST_SHOP_DISCOUNT_ENABLED is on AND the buyer-credential switch is
+        // on (the database refuses an unattributable discount: §5 of the
+        // migration raises guest_discount_identity_required).
+        allowDiscountCode = false
     } = options || {};
 
     if (!isPlainObject(body)) {
@@ -204,12 +245,39 @@ function normalizeGuestOrderInput(body, options = {}) {
         'skuId'
     );
 
-    const rawQuantity = readAliasedValue(body, 'quantity', [], 'quantity');
+    const rawQuantity = readAliasedValue(body, 'quantity', ['quantity_requested'], 'quantity');
     const quantity = rawQuantity === undefined ? 1 : rawQuantity;
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > Math.max(1, Number(quantityMax) || 1)) {
+    // L1: the caller's cap is clamped by the database ceiling first, so a
+    // mis-set GUEST_SHOP_MAX_QUANTITY (or a handler bug) can never ask the RPC
+    // for a quantity that guest_shop_orders_quantity_check would reject.
+    const quantityCeiling = Math.min(
+        GUEST_QUANTITY_HARD_CEILING,
+        Math.max(1, Number(quantityMax) || 1)
+    );
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > quantityCeiling) {
         fail('quantity 必须是允许范围内的整数', {
             field: 'quantity',
             code: 'invalid_quantity'
+        });
+    }
+
+    // L2: the discount code is normalized here (not in the handler) so the value
+    // that enters the request fingerprint is always the canonical upper-cased
+    // form, and so a code submitted while the switch is OFF is rejected instead
+    // of being dropped.
+    const rawDiscountCode = readAliasedValue(body, 'discountCode', ['discount_code'], 'discountCode');
+    const normalizedDiscountCode = normalizeGuestDiscountCode(rawDiscountCode);
+    if (normalizedDiscountCode === null) {
+        fail('优惠码格式无效', {
+            field: 'discountCode',
+            code: 'guest_invalid_discount_code'
+        });
+    }
+    if (normalizedDiscountCode && !allowDiscountCode) {
+        fail('游客优惠码通道未开启', {
+            statusCode: 403,
+            field: 'discountCode',
+            code: 'guest_discount_disabled'
         });
     }
 
@@ -248,7 +316,10 @@ function normalizeGuestOrderInput(body, options = {}) {
         quantity,
         site: normalizedSite,
         currency: normalizedSite ? currencyForSite(normalizedSite) : '',
-        idempotencyKey
+        idempotencyKey,
+        // '' means "no code". The create handler passes this straight through as
+        // p_discount_code, where NULLIF(...,'') turns it back into NULL.
+        discountCode: normalizedDiscountCode
     };
 
     if (allowOptionalContact && body.email !== undefined) {
@@ -569,6 +640,20 @@ function buildGuestRequestFingerprint(input = {}) {
             pattern: /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
         });
     };
+    // L2: a discount code changes what the buyer pays, so it is part of the
+    // idempotency contract exactly like provider/channel. Replaying one
+    // idempotency key with a different code must be a 409, never a silent
+    // re-price of an existing order.
+    //
+    // The key is added ONLY when a code is present. An order without a code
+    // therefore hashes to the same fingerprint as before L1/L2 shipped, which
+    // keeps in-flight pending orders replayable across the deploy. (The
+    // database compares fingerprints byte-for-byte and raises
+    // guest_idempotency_conflict on any difference.)
+    const discountCode = normalizeGuestDiscountCode(input.discountCode ?? input.discount_code);
+    if (discountCode === null) {
+        fail('优惠码格式无效', { field: 'discountCode', code: 'guest_invalid_discount_code' });
+    }
     const canonical = {
         site,
         productId,
@@ -583,6 +668,7 @@ function buildGuestRequestFingerprint(input = {}) {
         provider: normalizeBindingToken(input.provider, 'provider'),
         channel: normalizeBindingToken(input.channel, 'channel')
     };
+    if (discountCode) canonical.discountCode = discountCode;
     return crypto.createHash('sha256')
         .update(JSON.stringify(canonical), 'utf8')
         .digest('hex');
@@ -1726,6 +1812,9 @@ module.exports = {
     GUEST_QUERY_PASSWORD_MAX_LENGTH,
     GUEST_QUERY_PASSWORD_MIN_LENGTH,
     GUEST_QUERY_PASSWORD_NORM_VERSION,
+    GUEST_DISCOUNT_CODE_MAX_LENGTH,
+    GUEST_DISCOUNT_CODE_PATTERN,
+    GUEST_QUANTITY_HARD_CEILING,
     GuestShopSecurityError,
     SUPPORTED_SITES,
     SITE_CURRENCIES,
@@ -1754,11 +1843,13 @@ module.exports = {
     hashClaimSecret,
     hashIdempotencyKey,
     hashRawBody,
+    isGuestDiscountCodeFormat,
     isIdempotencyConflict,
     isPlainObject,
     moneyMinorEqual,
     multiplyMoneyMinor,
     normalizeBoundedString,
+    normalizeGuestDiscountCode,
     normalizeGuestIdempotencyKey,
     normalizeGuestOrderInput,
     normalizeGuestSite,

@@ -764,7 +764,14 @@ test('A1b verify script is read-only and asserts the six structural guarantees',
     assert.match(verify, /insert_never_upserts/u);
     assert.match(verify, /registered_match_never_a_predicate/u);
     assert.match(verify, /advisory_lock_serialises_contact/u);
-    assert.match(verify, /create_order_rpc_still_13_params/u);
+    // 2026-09-23 era-aware probe: the key used to pin the A0 13-parameter
+    // create_order signature exactly. 20260923_guest_shop_promo_l1l2.sql
+    // legitimately replaces it with 15 parameters, so the pinned probe would
+    // report a FALSE FAIL against a correct database. The row now asserts
+    // "a KNOWN create_order signature is installed"; the retired key must not
+    // come back.
+    assert.match(verify, /create_order_rpc_known_signature/u);
+    assert.doesNotMatch(verify, /create_order_rpc_still_13_params/u);
     // Read-only: no leading write/DDL statement (string literals inside the body
     // checks are fine; this mirrors the readiness gate's prohibition regex).
     assert.doesNotMatch(verify, /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu);

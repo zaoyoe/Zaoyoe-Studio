@@ -161,8 +161,13 @@ test('guest checkout uses only the public cash endpoints and same-origin cookie 
     assert.match(markup, /id="guestCashRecoveryPanel"/);
 });
 
-test('guest order creation fixes quantity to one and keeps secret material out of browser persistence and URLs', () => {
-    assert.match(client, /const body = \{[\s\S]*quantity:\s*1,[\s\S]*idempotencyKey:/);
+test('guest order creation clamps quantity to the server cap and keeps secret material out of browser persistence and URLs', () => {
+    // L1: quantity is no longer a hardcoded 1 — it is the buyer's selection run
+    // through normalizeQuantity(), which clamps to the preview-reported cap (1
+    // while the switch is off, so the pre-L1 body is byte-identical). The raw
+    // state.quantity is never sent, so a forged stepper value cannot widen an
+    // order; fn_guest_shop_create_order re-applies the same cap server-side.
+    assert.match(client, /const body = \{[\s\S]*quantity:\s*normalizeQuantity\(state\.quantity\),[\s\S]*idempotencyKey:/);
     const persistStart = client.indexOf('function persistCheckout()');
     const persistEnd = client.indexOf('\n    function hydrateCheckout', persistStart);
     const persistedCheckout = client.slice(persistStart, persistEnd);
@@ -175,6 +180,58 @@ test('guest order creation fixes quantity to one and keeps secret material out o
     assert.match(client, /clearQueryReturnMarker\(\)/);
     assert.match(client, /回跳页面不会直接视为支付成功/);
     assert.match(client, /body:\s*JSON\.stringify\(\{\s*orderNo:\s*state\.orderNo\s*\}\)/);
+});
+
+test('the guest promo UI ships hidden, the preview stays code-free and every discount gate is server-driven', () => {
+    // The version pin for this batch rides the same script tag as the earlier pins.
+    assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
+    assert.match(markup, /guestPromo=20260923_GUEST_PROMO_L1L2_1/);
+
+    // Every promo surface is `hidden` in the markup itself, not merely hidden by
+    // JS on load: with the switches off - or if the script dies before
+    // syncPromoUi runs - the modal must render exactly the pre-L1 layout.
+    assert.match(markup, /id="guestCashQuantityField" class="guest-shop-modal__field" hidden/);
+    assert.match(markup, /id="guestCashDiscountField" class="guest-shop-modal__field" hidden/);
+    assert.match(markup, /id="guestCashQuantityRow" class="guest-shop-modal__summary-row" hidden/);
+    assert.match(markup, /id="guestCashCouponRow"[^>]*hidden/);
+    assert.match(markup, /id="guestCashPromoRow"[^>]*hidden/);
+    // `hidden` must win over the flex display the modal CSS gives these fields.
+    assert.match(styles, /\.guest-shop-modal__field\[hidden\] \{ display: none !important; \}/);
+
+    // The preview GET is unauthenticated, so a discount code must never ride
+    // along in its URL: the whitelist is exactly the four quote inputs. Asserted
+    // on comment-stripped source because the function's explanatory comments
+    // legitimately discuss the code they forbid.
+    const previewStart = client.indexOf('async function runPreviewRequest(context) {');
+    const previewEnd = client.indexOf('function safeHttpsUrl(value) {', previewStart);
+    assert.ok(previewStart >= 0 && previewEnd > previewStart, 'runPreviewRequest must stay a standalone function');
+    const previewSource = stripComments(client.slice(previewStart, previewEnd));
+    assert.match(
+        previewSource,
+        /const query = new URLSearchParams\(\{\s*site: context\.site,\s*productId: context\.productId,\s*skuId: context\.skuId,\s*quantity: String\(normalizeQuantity\(state\.quantity\)\)\s*\}\);/
+    );
+    assert.doesNotMatch(previewSource, /discount|coupon|promo|searchParams\.set|\.append\(/iu);
+
+    // The only signal that unlocks the code field is the server's own preview
+    // flag, and the state literal defaults it closed.
+    assert.match(client, /discountEnabled: false,/);
+    assert.match(client, /state\.discountEnabled = preview\?\.discount_enabled === true;/);
+    assert.match(
+        client,
+        /const enabled = state\.discountEnabled === true;\s*\n\s*setHidden\('guestCashDiscountField', !enabled\);/
+    );
+    // A disabled gate wipes whatever was typed, so a code can never survive from
+    // an enabled SKU into a later createOrder body.
+    assert.match(client, /if \(!enabled\) \{[\s\S]{0,400}?input\.value = '';/);
+    // createOrder consults the same gate right before building the body - the
+    // code is sent only when the server enabled the discount channel.
+    assert.match(client, /const discountCode = state\.discountEnabled \? discountCodeValue\(\) : '';/);
+    // Switching product/SKU resets the gate and drops the typed code, because
+    // eligibility, caps and tiers are all per-SKU.
+    assert.match(
+        client,
+        /function resetPromoSelection\(\) \{[\s\S]*?state\.discountEnabled = false;[\s\S]*?clearDiscountCode\(\);/
+    );
 });
 
 test('guest delivery is claim-gated by confirmed payment and delivered fulfillment', () => {
@@ -741,9 +798,14 @@ test('the query password travels once in the order body and is never persisted, 
     assert.match(client, /if \(state\.buyerCredentialRequired\) \{[\s\S]*?if \(!email\) \{[\s\S]*?请填写邮箱，用于查询订单与获取发货通知/);
     assert.match(client, /const passwordFailure = orderPasswordPolicyFailure\(\);[\s\S]*?setStateMessage\(orderPasswordPolicyMessage\(passwordFailure\), 'error'\);\s*return;/);
     assert.match(client, /if \(orderPassword\) body\.orderPassword = orderPassword;/);
-    // Fixed quantity 1 is unchanged by A2 — the credential must not become a
-    // back door into multi-quantity guest orders.
-    assert.match(client, /const body = \{[\s\S]*quantity:\s*1,[\s\S]*idempotencyKey:/);
+    // The A2 credential rides in the same body as the (L1-clamped) quantity;
+    // it must not become a back door that bypasses normalizeQuantity's cap.
+    // L1: quantity is no longer a hardcoded 1 — it is the buyer's selection run
+    // through normalizeQuantity(), which clamps to the preview-reported cap (1
+    // while the switch is off, so the pre-L1 body is byte-identical). The raw
+    // state.quantity is never sent, so a forged stepper value cannot widen an
+    // order; fn_guest_shop_create_order re-applies the same cap server-side.
+    assert.match(client, /const body = \{[\s\S]*quantity:\s*normalizeQuantity\(state\.quantity\),[\s\S]*idempotencyKey:/);
 
     // Never persisted: the checkout snapshot keeps order_no + expiry only.
     const persistStart = client.indexOf('function persistCheckout()');
