@@ -8517,20 +8517,81 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__header,
 .guest-shop-modal__summary-row,
 .guest-shop-modal__actions,
-.guest-shop-modal__payment-meta,
 .guest-shop-modal__address-row {
     display: flex;
     align-items: center;
 }
 
 .guest-shop-modal__header,
-.guest-shop-modal__summary-row,
-.guest-shop-modal__payment-meta {
+.guest-shop-modal__summary-row {
     justify-content: space-between;
     gap: 16px;
 }
 
 .guest-shop-modal__header { margin-bottom: 18px; }
+
+/* Dujiao alignment (Payment.vue header): one muted subtitle line under the
+   title, swapped per phase by js/guest-shop-client.js. Deliberately not
+   uppercase - this modal's __eyebrow is contractually not uppercase, and the
+   subtitle is a full Chinese sentence rather than a label. */
+.guest-shop-modal__subtitle { margin: 6px 0 0; color: rgba(226,232,240,.62); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+
+/* Dujiao alignment (CheckoutSteps.vue): numbered pills, a connector bar before
+   every step except the first, and a check mark replacing the number once a
+   step is done. Dujiao drives status from a Vue computed; here js sets
+   is-done / is-current / is-upcoming plus aria-current="step" on the live step.
+   Dujiao's keys are cart/checkout/payment; a guest single-product flow has no
+   cart, so the rail is 确认订单 -> 支付 -> 发货. */
+.guest-shop-modal__steps {
+    display: flex;
+    align-items: center;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 12px;
+    background: rgba(255,255,255,.045);
+    list-style: none;
+}
+.guest-shop-modal__step { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-width: 0; }
+.guest-shop-modal__step + .guest-shop-modal__step { flex: 1 1 0; }
+.guest-shop-modal__step + .guest-shop-modal__step::before {
+    content: "";
+    flex: 1 1 auto;
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.14);
+    transition: background-color .2s ease;
+}
+.guest-shop-modal__step.is-done::before,
+.guest-shop-modal__step.is-current::before { background: #3b82f6; }
+.guest-shop-modal__step-index {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 2px solid rgba(255,255,255,.18);
+    border-radius: 50%;
+    color: rgba(226,232,240,.58);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+.guest-shop-modal__step.is-done .guest-shop-modal__step-index,
+.guest-shop-modal__step.is-current .guest-shop-modal__step-index {
+    border-color: transparent;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: #fff;
+}
+/* The number stays in the DOM (so a step can walk back on a reset) and is only
+   visually replaced by the tick, exactly like Dujiao's <Check v-if="done">. */
+.guest-shop-modal__step.is-done .guest-shop-modal__step-index { font-size: 0; }
+.guest-shop-modal__step.is-done .guest-shop-modal__step-index::after { content: "\2713"; font-size: 13px; font-weight: 700; }
+.guest-shop-modal__step-label { color: rgba(226,232,240,.58); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.guest-shop-modal__step.is-done .guest-shop-modal__step-label,
+.guest-shop-modal__step.is-current .guest-shop-modal__step-label { color: rgba(248,250,252,.94); font-weight: 600; }
 .guest-shop-modal__eyebrow { margin: 0 0 4px; color: #93c5fd; font-size: 12px; letter-spacing: .02em; }
 .guest-shop-modal__close { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
 .guest-shop-modal__state { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(147,197,253,.16); border-radius: 10px; color: rgba(226,232,240,.78); font-size: 13px; }
@@ -8538,8 +8599,41 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__summary, .guest-shop-modal__panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; background: rgba(255,255,255,.045); }
 .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 9px; }
 .guest-shop-modal__summary-row[hidden] { display: none !important; }
-.guest-shop-modal__summary-row span, .guest-shop-modal__payment-meta span { color: rgba(226,232,240,.58); font-size: 13px; }
+.guest-shop-modal__summary-row span { color: rgba(226,232,240,.58); font-size: 13px; }
 .guest-shop-modal__summary-row strong { max-width: 72%; overflow-wrap: anywhere; text-align: right; }
+
+/* Dujiao alignment (PaymentAmountBreakdown.vue): the payable figure is promoted
+   to a hero number under an uppercase muted label, the line items sit below it
+   as a compact 12px list, discounts read destructive, and the polling hint
+   moves into the same card under a divider. The countdown deliberately stays on
+   the QR card so one deadline never has two live timers. */
+.guest-shop-modal__amount {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 12px;
+    background: rgba(255,255,255,.045);
+}
+.guest-shop-modal__amount-label { color: rgba(226,232,240,.58); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.guest-shop-modal__amount-value {
+    margin-top: 4px;
+    color: #f8fafc;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+    overflow-wrap: anywhere;
+}
+.guest-shop-modal__amount-rows { display: grid; gap: 8px; margin-top: 14px; }
+/* Rows keep the modal's shared __summary-row idiom, but inside the breakdown
+   card the stack is driven by grid gap, not by the sibling margin. */
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 0; }
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row span { font-size: 12px; }
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong { font-size: 12px; font-weight: 600; }
+.guest-shop-modal__row--discount strong { color: #f87171; }
+.guest-shop-modal__amount-footer { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.09); }
+.guest-shop-modal__amount-footer .guest-shop-modal__hint { margin-top: 0; }
+.guest-shop-modal__amount-footer[hidden] { display: none !important; }
 .guest-shop-modal__field { display: grid; gap: 7px; margin-bottom: 13px; color: rgba(226,232,240,.82); font-size: 13px; }
 .guest-shop-modal__field input, .guest-shop-modal__field select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(15,23,42,.55); color: inherit; }
 .guest-shop-modal__hint { margin: 10px 0 0; color: rgba(226,232,240,.58); font-size: 12px; line-height: 1.6; }
@@ -8547,6 +8641,61 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__address-row { gap: 8px; margin-top: 10px; }
 .guest-shop-modal__address-row code { min-width: 0; flex: 1; padding: 9px; border-radius: 8px; background: rgba(0,0,0,.22); overflow-wrap: anywhere; font-size: 12px; }
 .guest-shop-modal__copy-btn { flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
+
+/* Dujiao alignment (Payment.vue cryptoPaymentDetails): the crypto facts become
+   one bordered list of label/value rows separated by hairlines (none after the
+   last row), stacked on narrow screens and split label-left / value-right from
+   the 600px house breakpoint up. The copy affordance is its own right-aligned
+   row with a separate success text, so the confirmation can never be written
+   into the address node itself. */
+.guest-shop-modal__crypto-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    background: rgba(255,255,255,.05);
+}
+.guest-shop-modal__crypto-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.guest-shop-modal__crypto-row:last-child { padding-bottom: 0; border-bottom: 0; }
+.guest-shop-modal__crypto-label { flex: 0 0 auto; color: rgba(226,232,240,.58); font-size: 12px; }
+.guest-shop-modal__crypto-value {
+    min-width: 0;
+    color: rgba(248,250,252,.94);
+    font-size: 13px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.guest-shop-modal__crypto-address {
+    padding: 9px;
+    border-radius: 8px;
+    background: rgba(0,0,0,.22);
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 500;
+}
+.guest-shop-modal__crypto-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+.guest-shop-modal__crypto-copy { min-height: 38px; }
+.guest-shop-modal__copy-feedback { color: #86efac; font-size: 12px; }
+.guest-shop-modal__copy-feedback[hidden] { display: none !important; }
+@media (min-width: 600px) {
+    .guest-shop-modal__crypto-row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .guest-shop-modal__crypto-value { text-align: right; }
+    .guest-shop-modal__crypto-address { text-align: left; }
+}
 /* Order Access 2.0 (A2): reveal / generate buttons beside the query-password
    input, and the additive entry link into /guest-orders.html. Both live in
    markup that stays hidden while the buyer-credential switch is off. */
@@ -8560,9 +8709,34 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__pw-checks li.is-pass::before { content: "\2713"; }
 .guest-shop-modal__pw-note { margin-top: 8px; color: #fcd34d; overflow-wrap: anywhere; }
 .guest-shop-modal__orders-link { display: inline-flex; margin-top: 10px; color: #93c5fd; text-decoration: underline; overflow-wrap: anywhere; }
+/* Dujiao alignment (GuestOrderDetail.vue fulfillment card): title left and
+   action right on one head row instead of a full-width button under the
+   payload; 发货类型 / 发货状态 become muted fact lines above the payload box;
+   and the copy button flips to an emerald treatment plus a tick and label
+   while copied. Dujiao's 使用说明 block is deliberately not ported - guest
+   preview never returns product guidance, and exposing it to an
+   unauthenticated buyer is a backend disclosure decision, not a styling one. */
+.guest-shop-modal__delivery-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.guest-shop-modal__delivery-actions { display: flex; align-items: center; gap: 8px; }
+.guest-shop-modal__delivery-copy { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
+.guest-shop-modal__delivery-copy.is-copied {
+    border-color: rgba(16,185,129,.5);
+    background: rgba(16,185,129,.22);
+    color: #bbf7d0;
+}
+.guest-shop-modal__delivery-fact { display: flex; align-items: baseline; gap: 2px; color: rgba(226,232,240,.58); font-size: 13px; }
+.guest-shop-modal__delivery-fact + .guest-shop-modal__delivery-fact { margin-top: 4px; }
+.guest-shop-modal__delivery-fact span::after { content: "\FF1A"; }
+.guest-shop-modal__delivery-fact strong { color: rgba(226,232,240,.82); font-weight: 600; }
 .guest-shop-modal__delivery-title { display: flex; gap: 8px; align-items: center; color: #86efac; font-weight: 600; }
 .guest-shop-modal__delivery-content { max-height: 260px; margin: 12px 0; padding: 12px; border-radius: 8px; background: rgba(0,0,0,.22); color: rgba(248,250,252,.92); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.guest-shop-modal__copy-all { width: 100%; min-height: 40px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.07); color: inherit; cursor: pointer; }
 .guest-shop-modal__actions { justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .guest-shop-modal__actions .shop-btn { min-height: 42px; }
 
@@ -8738,8 +8912,39 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-checks { colo
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-checks li.is-pass { color: #15803d; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-note { color: #b45309; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__orders-link { color: #2563eb; }
+
+/* Dujiao alignment, light theme: the new rail / breakdown / crypto / fulfillment
+   nodes need the same paper treatment the existing guest modal cards already get,
+   otherwise they stay dark-on-white. */
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__subtitle,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-label,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-label,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-fact { color: rgba(51,65,85,.72); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__steps,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount { border-color: rgba(148,163,184,.2); background: rgba(248,250,252,.82); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-value { color: #0f172a; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong { color: #334155; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__row--discount strong { color: #dc2626; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-footer { border-top-color: rgba(148,163,184,.24); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step-index { border-color: rgba(148,163,184,.45); color: #64748b; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step-label { color: #64748b; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-done .guest-shop-modal__step-label,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-current .guest-shop-modal__step-label { color: #0f172a; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step + .guest-shop-modal__step::before { background: rgba(148,163,184,.4); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-done::before,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-current::before { background: #2563eb; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-list { border-color: rgba(148,163,184,.24); background: rgba(255,255,255,.9); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-row { border-bottom-color: rgba(148,163,184,.22); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-value { color: #0f172a; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-address { background: rgba(241,245,249,.9); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__copy-feedback { color: #047857; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-fact strong { color: #334155; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-copy.is-copied {
+    border-color: rgba(16,185,129,.4);
+    background: rgba(209,250,229,.7);
+    color: #047857;
+}
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__summary-row span,
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-meta span,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__hint { color: rgba(51,65,85,.72); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-status {
     background: rgba(248, 250, 252, 0.94);
@@ -8810,6 +9015,18 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-success-mark 
     .guest-shop-modal__qr-image { width: min(100%, 220px); }
     .guest-shop-modal__qr-countdown strong { font-size: 18px; }
     .guest-shop-modal__qr-success-title { font-size: 22px; }
+    /* Dujiao hides the step labels below its sm breakpoint (hidden sm:inline) and
+       keeps only the numbered pills plus connectors. Same here. */
+    .guest-shop-modal__steps { padding: 10px 12px; }
+    .guest-shop-modal__step { gap: 0; }
+    .guest-shop-modal__step-label { display: none; }
+    .guest-shop-modal__step-index { width: 24px; height: 24px; }
+    .guest-shop-modal__step.is-done .guest-shop-modal__step-index::after { font-size: 12px; }
+    .guest-shop-modal__amount-value { font-size: 24px; }
+    /* Dujiao's fulfillment head is a single row; below 600px it stacks so the
+       copy button stays a full-width thumb target. */
+    .guest-shop-modal__delivery-head { flex-direction: column; align-items: stretch; }
+    .guest-shop-modal__delivery-actions .shop-btn { width: 100%; justify-content: center; }
 }
 
 #shopPurchaseModal .shop-purchase-stage-header {

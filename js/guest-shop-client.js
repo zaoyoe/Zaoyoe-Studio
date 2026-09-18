@@ -132,12 +132,105 @@
         else node.removeAttribute('aria-hidden');
     }
 
+    // ---------------------------------------------------------------------
+    // Dujiao alignment. Payment.vue keeps a subtitle under the title,
+    // CheckoutSteps.vue keeps a progress rail, and its order card keeps
+    // 订单号 / 订单状态 / 支付方式 fact rows. All of them are pure functions of
+    // the guest order status, so they are derived from this one table and
+    // driven from setStateMessage() instead of being poked at ~30 call sites.
+    //
+    // Dujiao's step keys are cart / checkout / payment. A guest single-product
+    // flow has no cart and its third phase is key delivery, so the rail is
+    // 确认订单 -> 支付 -> 发货.
+    // ---------------------------------------------------------------------
+    const STEP_PHASES = ['configure', 'payment', 'delivery'];
+    const STEP_SUBTITLES = {
+        configure: '选择支付方式后创建订单，支付完成会自动核验并展示发货内容。',
+        payment: '请完成支付。支付成功后系统会自动核验并展示发货内容，请勿重复付款。',
+        delivery: '支付已确认，发货内容如下，请及时复制并妥善保存。'
+    };
+    // Only statuses that positively advance the flow move the rail. creating /
+    // error / manual_review deliberately map to nothing, so a transient poll
+    // failure never walks an already-paid buyer back to 确认订单.
+    const STEP_PHASE_BY_STATUS = {
+        configure: 'configure',
+        awaiting_payment: 'payment',
+        checking: 'payment',
+        confirmed: 'payment',
+        delivered: 'delivery'
+    };
+    const ORDER_STATUS_LABELS = {
+        configure: '待创建',
+        creating: '创建中',
+        awaiting_payment: '待支付',
+        checking: '核验中',
+        confirmed: '已支付，待发货',
+        delivered: '已发货',
+        error: '需要处理',
+        manual_review: '人工处理中'
+    };
+
+    function setSubtitle(text) {
+        setText('guestCashSubtitle', text);
+    }
+
+    function syncStepState(phase) {
+        const rail = element('guestCashSteps');
+        if (!rail || !STEP_PHASES.includes(phase)) return;
+        rail.dataset.step = phase;
+        const activeIndex = STEP_PHASES.indexOf(phase);
+        Array.from(rail.querySelectorAll('.guest-shop-modal__step')).forEach((step, index) => {
+            step.classList.toggle('is-done', index < activeIndex);
+            step.classList.toggle('is-current', index === activeIndex);
+            step.classList.toggle('is-upcoming', index > activeIndex);
+            if (index === activeIndex) step.setAttribute('aria-current', 'step');
+            else step.removeAttribute('aria-current');
+        });
+        setSubtitle(STEP_SUBTITLES[phase]);
+    }
+
+    function paymentMethodLabel(provider, channel) {
+        if (!provider) return '';
+        return paymentLabel({ provider, channel });
+    }
+
+    // The 订单状态 / 支付方式 rows only carry meaning once an order exists, so
+    // they stay hidden during 确认订单 instead of showing "待创建" noise.
+    function syncOrderMeta(status = state.status) {
+        const hasOrder = Boolean(state.orderNo);
+        setHidden('guestCashStatusRow', !hasOrder);
+        if (hasOrder) setText('guestCashStatusValue', ORDER_STATUS_LABELS[status] || status);
+        const provider = normalizeText(state.provider || state.checkout?.provider, 80).toLowerCase();
+        const channel = normalizeText(state.channel || state.checkout?.channel, 80).toLowerCase();
+        setHidden('guestCashMethodRow', !provider);
+        if (provider) setText('guestCashMethodValue', paymentMethodLabel(provider, channel));
+    }
+
+    // Dujiao renders the polling hint inside the amount card, under a divider.
+    // It belongs to the awaiting-payment window only: once the payload is on
+    // screen the delivery card is the live region, and a second "please keep
+    // this page open" line would contradict it.
+    function syncPollingHint(status = state.status) {
+        const active = Boolean(state.orderNo)
+            && (status === 'awaiting_payment' || status === 'checking' || status === 'confirmed');
+        setHidden('guestCashAmountFooter', !active);
+        if (!active) return;
+        setText('guestCashPollingHint', status === 'confirmed'
+            ? '支付已确认，正在等待系统发货，请保持此页面打开。'
+            : '正在自动核验支付结果，请保持此页面打开。');
+    }
+
     function setStateMessage(message, status = state.status) {
         state.status = status;
         if (status === 'delivered' || status === 'confirmed') {
             state.paymentConfirmed = true;
         }
         syncAbandonOrderButton();
+        // Derived before the guestCashState guard so the rail still tracks the
+        // status even if the message node is missing from the markup.
+        syncStepState(STEP_PHASE_BY_STATUS[status] || '');
+        syncOrderMeta(status);
+        syncPollingHint(status);
         const node = element('guestCashState');
         if (!node) return;
         node.textContent = normalizeText(message, 500);
@@ -1097,6 +1190,13 @@
         modal.hidden = false;
         modal.classList.add('active');
         document.body?.classList.add('guest-shop-modal-open');
+        // Re-derive the rail from whatever order state survived, so resuming a
+        // paid-but-undelivered order never flashes 确认订单 on the way in.
+        syncStepState(state.status === 'delivered'
+            ? 'delivery'
+            : (state.orderNo || state.checkout ? 'payment' : 'configure'));
+        syncOrderMeta(state.status);
+        syncPollingHint(state.status);
         setHidden('guestCashDeliveryPanel', state.status !== 'delivered');
         setHidden('guestCashCheckoutPanel', !state.checkout || state.status === 'delivered');
         setHidden('guestCashConfigurePanel', Boolean(state.checkout) && state.status !== 'delivered');
@@ -1165,6 +1265,12 @@
         setHidden('guestCashCreateOrderBtn', false);
         resetZpayHostedQr();
         setText('guestCashDeliveredContent', '');
+        // Dujiao fulfillment facts and the amount-card footer are order-scoped,
+        // so they reset with the rest of the order UI instead of leaking the
+        // previous order's 已发货 into a fresh 确认订单 screen.
+        setText('guestCashDeliveryType', '-');
+        setText('guestCashDeliveryStatus', '-');
+        setHidden('guestCashAmountFooter', true);
         state.checkout = null;
         if (!preserveRecovery) {
             state.recoveryCode = '';
@@ -1176,6 +1282,8 @@
         setHidden('guestCashRecoveryPanel', true);
         if (!state.orderNo) showOrderNo('');
         syncAbandonOrderButton();
+        syncStepState('configure');
+        syncOrderMeta('configure');
     }
 
     function showRecoveryCode(code) {
@@ -1405,6 +1513,13 @@
             state.status = 'delivered';
             if (state.checkout?.provider === 'zpay') presentZpaySuccess();
             setText('guestCashDeliveredContent', payload.content || '');
+            // Guest checkout can only ever serve auto-delivery key products -
+            // manual delivery is blocked before the modal is allowed to open -
+            // and POST /guest/claim returns { order_no, content } only. So these
+            // two Dujiao fact lines are constant rather than read off a field
+            // the endpoint does not expose.
+            setText('guestCashDeliveryType', '卡密（自动发货）');
+            setText('guestCashDeliveryStatus', '已发货');
             setHidden('guestCashDeliveryPanel', false);
             setHidden('guestCashCheckoutPanel', true);
             setHidden('guestCashCheckStatusBtn', true);
@@ -1605,7 +1720,19 @@
         state.pollActiveGeneration = null;
     }
 
-    async function copyText(value, button) {
+    /**
+     * Dujiao never confirms a copy by overwriting the thing that was copied, and
+     * never wipes an icon button. So the confirmation is expressed three ways,
+     * picked per call site:
+     *   - doneEl: reveal a separate success node (Payment.vue walletAddressCopied)
+     *   - copiedClass: flip the button to its emerald "copied" treatment and swap
+     *     its inner <span> label plus <i> icon (GuestOrderDetail.vue
+     *     fulfillmentCopied), leaving the icon node itself intact
+     *   - neither: legacy text swap, but only when the button actually has text;
+     *     an icon-only button gets its glyph swapped instead, because writing
+     *     textContent there used to destroy the <i> permanently.
+     */
+    async function copyText(value, button, { doneEl = '', copiedClass = '' } = {}) {
         const text = String(value || '');
         if (!text) return;
         try {
@@ -1621,11 +1748,43 @@
             document.execCommand('copy');
             input.remove();
         }
-        if (button) {
-            const original = button.textContent;
-            button.textContent = '已复制';
-            window.setTimeout(() => { button.textContent = original; }, 1600);
+        const restore = [];
+        if (doneEl) {
+            const feedback = element(doneEl);
+            if (feedback) {
+                feedback.hidden = false;
+                restore.push(() => { feedback.hidden = true; });
+            }
         }
+        if (button) {
+            const icon = button.querySelector('i');
+            const label = button.querySelector('span');
+            if (copiedClass) {
+                const originalIconClass = icon ? icon.className : '';
+                const originalLabel = label ? label.textContent : '';
+                button.classList.add(copiedClass);
+                if (icon) icon.className = 'fas fa-check';
+                if (label) label.textContent = '已复制';
+                restore.push(() => {
+                    button.classList.remove(copiedClass);
+                    if (icon && originalIconClass) icon.className = originalIconClass;
+                    if (label) label.textContent = originalLabel;
+                });
+            } else if (label && !button.textContent.trim().startsWith('已复制')) {
+                const originalLabel = label.textContent;
+                label.textContent = '已复制';
+                restore.push(() => { label.textContent = originalLabel; });
+            } else if (icon) {
+                const originalIconClass = icon.className;
+                icon.className = 'fas fa-check';
+                restore.push(() => { icon.className = originalIconClass; });
+            } else if (button.textContent.trim()) {
+                const original = button.textContent;
+                button.textContent = '已复制';
+                restore.push(() => { button.textContent = original; });
+            }
+        }
+        if (restore.length) window.setTimeout(() => { restore.forEach((undo) => undo()); }, 1600);
     }
 
     // The standalone "游客购买" button was removed. shop-client.js now merges the
@@ -1768,13 +1927,18 @@
         const addressButton = target.closest('#guestCashNowCopyAddressBtn');
         if (addressButton) {
             event.preventDefault();
-            void copyText(element('guestCashNowAddress')?.textContent || '', addressButton);
+            // Dujiao keeps the wallet-address button label fixed and confirms in
+            // a separate success node, so the address itself is never at risk of
+            // being overwritten by a "已复制" swap.
+            void copyText(element('guestCashNowAddress')?.textContent || '', addressButton, { doneEl: 'guestCashNowCopyFeedback' });
             return;
         }
         const deliveryButton = target.closest('#guestCashCopyDeliveryBtn');
         if (deliveryButton) {
             event.preventDefault();
-            void copyText(element('guestCashDeliveredContent')?.textContent || '', deliveryButton);
+            // GuestOrderDetail.vue flips the fulfillment copy button to emerald
+            // with a tick and a swapped label; is-copied carries that treatment.
+            void copyText(element('guestCashDeliveredContent')?.textContent || '', deliveryButton, { copiedClass: 'is-copied' });
         }
         const recoveryCopyButton = target.closest('#guestCashCopyRecoveryCodeBtn');
         if (recoveryCopyButton) {

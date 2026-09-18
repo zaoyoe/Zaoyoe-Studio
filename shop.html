@@ -665,14 +665,52 @@
                     <div>
                         <p class="guest-shop-modal__eyebrow">无需登录</p>
                         <h3 id="guestCashPurchaseTitle" class="card-title">游客购买</h3>
+                        <!--
+                          Dujiao alignment (Payment.vue header): the title is followed
+                          by a muted one-line subtitle that always states what the
+                          buyer is looking at right now. The text is swapped by the
+                          guest checkout client per phase instead of adding a second
+                          heading, so the modal keeps a single title node.
+                        -->
+                        <p id="guestCashSubtitle" class="guest-shop-modal__subtitle">选择支付方式后创建订单，支付完成会自动核验并展示发货内容。</p>
                     </div>
                     <button id="guestCashPurchaseCloseBtn" type="button" class="guest-shop-modal__close" aria-label="关闭游客购买">
                         <i class="fas fa-xmark" aria-hidden="true"></i>
                     </button>
                 </header>
 
+                <!--
+                  Dujiao alignment (CheckoutSteps.vue): a 3-step progress rail with
+                  numbered pills, a check mark once a step is done, and connector
+                  bars that colour in as the flow advances. Dujiao's keys are
+                  cart / checkout / payment; a guest single-product flow has no
+                  cart, so the同构 mapping is 确认订单 -> 支付 -> 发货. aria-current
+                  marks the live step exactly like the Vue original.
+                -->
+                <ol id="guestCashSteps" class="guest-shop-modal__steps" data-step="configure" aria-label="购买流程">
+                    <li class="guest-shop-modal__step" data-step-key="configure">
+                        <span class="guest-shop-modal__step-index" aria-hidden="true">1</span>
+                        <span class="guest-shop-modal__step-label">确认订单</span>
+                    </li>
+                    <li class="guest-shop-modal__step" data-step-key="payment">
+                        <span class="guest-shop-modal__step-index" aria-hidden="true">2</span>
+                        <span class="guest-shop-modal__step-label">支付</span>
+                    </li>
+                    <li class="guest-shop-modal__step" data-step-key="delivery">
+                        <span class="guest-shop-modal__step-index" aria-hidden="true">3</span>
+                        <span class="guest-shop-modal__step-label">发货</span>
+                    </li>
+                </ol>
+
                 <div id="guestCashState" class="guest-shop-modal__state" role="status" aria-live="polite">正在确认商品信息...</div>
 
+                <!--
+                  Dujiao alignment (Payment.vue 订单信息 card): product identity plus
+                  the 订单号 / 订单状态 / 支付方式 meta rows Dujiao renders in its side
+                  card. A single-column modal has no side column, so the meta rows
+                  share this card - which is exactly how Dujiao's own mobile
+                  breakpoint stacks them.
+                -->
                 <section class="guest-shop-modal__summary" aria-label="商品信息">
                     <div class="guest-shop-modal__summary-row">
                         <span>商品</span>
@@ -682,21 +720,56 @@
                         <span>规格</span>
                         <strong id="guestCashSkuName">-</strong>
                     </div>
-                    <div class="guest-shop-modal__summary-row">
-                        <span>商品金额</span>
-                        <strong id="guestCashProductAmount">-</strong>
-                    </div>
-                    <div id="guestCashFeeRow" class="guest-shop-modal__summary-row" hidden>
-                        <span id="guestCashFeeLabel">通道手续费</span>
-                        <strong id="guestCashFeeAmount">-</strong>
-                    </div>
-                    <div class="guest-shop-modal__summary-row">
-                        <span>应付金额</span>
-                        <strong id="guestCashPrice">-</strong>
-                    </div>
                     <div id="guestCashOrderNoRow" class="guest-shop-modal__summary-row" hidden>
                         <span>订单号</span>
                         <strong id="guestCashOrderNo">-</strong>
+                    </div>
+                    <div id="guestCashStatusRow" class="guest-shop-modal__summary-row" hidden>
+                        <span>订单状态</span>
+                        <strong id="guestCashStatusValue">-</strong>
+                    </div>
+                    <div id="guestCashMethodRow" class="guest-shop-modal__summary-row" hidden>
+                        <span>支付方式</span>
+                        <strong id="guestCashMethodValue">-</strong>
+                    </div>
+                </section>
+
+                <!--
+                  Dujiao alignment (PaymentAmountBreakdown.vue): the payable amount is
+                  promoted to a hero figure with an uppercase muted label, the line
+                  items sit under it as a compact list, and the polling hint moves
+                  inside the same card below a divider. The countdown deliberately
+                  stays on the QR card (Dujiao also keeps expires_at next to the code)
+                  so there is never a second live timer for the same deadline.
+
+                  guestCashCouponRow / guestCashPromoRow are the L1/L2 container, the
+                  same pattern the lookup page already ships for coupon_discount /
+                  promo_discount: rendered hidden, filled with no markup change once
+                  tiered pricing and coupons land.
+                -->
+                <section class="guest-shop-modal__amount" aria-label="金额明细">
+                    <div class="guest-shop-modal__amount-label">应付金额</div>
+                    <div id="guestCashPrice" class="guest-shop-modal__amount-value">-</div>
+                    <div class="guest-shop-modal__amount-rows">
+                        <div class="guest-shop-modal__summary-row">
+                            <span>商品金额</span>
+                            <strong id="guestCashProductAmount">-</strong>
+                        </div>
+                        <div id="guestCashFeeRow" class="guest-shop-modal__summary-row" hidden>
+                            <span id="guestCashFeeLabel">通道手续费</span>
+                            <strong id="guestCashFeeAmount">-</strong>
+                        </div>
+                        <div id="guestCashCouponRow" class="guest-shop-modal__summary-row guest-shop-modal__row--discount" hidden>
+                            <span>优惠码</span>
+                            <strong id="guestCashCouponAmount">-</strong>
+                        </div>
+                        <div id="guestCashPromoRow" class="guest-shop-modal__summary-row guest-shop-modal__row--discount" hidden>
+                            <span>活动优惠</span>
+                            <strong id="guestCashPromoAmount">-</strong>
+                        </div>
+                    </div>
+                    <div id="guestCashAmountFooter" class="guest-shop-modal__amount-footer" hidden>
+                        <p id="guestCashPollingHint" class="guest-shop-modal__hint">正在自动核验支付结果，请保持此页面打开。</p>
                     </div>
                 </section>
 
@@ -767,13 +840,34 @@
                             <button id="guestCashZpayOpenBtn" type="button" class="shop-btn shop-btn-primary guest-shop-modal__qr-open" hidden>打开支付宝支付</button>
                         </div>
                     </div>
-                    <div id="guestCashNowpaymentsPanel" hidden>
+                    <!--
+                      Dujiao alignment (Payment.vue cryptoPaymentDetails): the crypto
+                      facts become one bordered list of label/value rows separated by
+                      hairlines (none after the last row), stacked on narrow screens and
+                      split label-left / value-right from 600px up. The copy affordance
+                      is its own right-aligned row with a separate success text, rather
+                      than an icon button glued to the address, so the confirmation can
+                      never be written into the address node itself.
+                    -->
+                    <div id="guestCashNowpaymentsPanel" class="guest-shop-modal__crypto" hidden>
                         <p class="guest-shop-modal__hint">请使用钱包向以下地址支付指定金额，仅支持 USDT-BEP20。</p>
-                        <div class="guest-shop-modal__payment-meta"><span>网络</span><strong id="guestCashNowNetwork">BNB Smart Chain</strong></div>
-                        <div class="guest-shop-modal__payment-meta"><span>支付金额</span><strong id="guestCashNowAmount">-</strong></div>
-                        <div class="guest-shop-modal__address-row">
-                            <code id="guestCashNowAddress"></code>
-                            <button id="guestCashNowCopyAddressBtn" type="button" class="guest-shop-modal__copy-btn" title="复制付款地址" aria-label="复制付款地址"><i class="fas fa-copy" aria-hidden="true"></i></button>
+                        <div class="guest-shop-modal__crypto-list">
+                            <div class="guest-shop-modal__crypto-row">
+                                <span class="guest-shop-modal__crypto-label">网络</span>
+                                <strong id="guestCashNowNetwork" class="guest-shop-modal__crypto-value">BNB Smart Chain</strong>
+                            </div>
+                            <div class="guest-shop-modal__crypto-row">
+                                <span class="guest-shop-modal__crypto-label">支付金额</span>
+                                <strong id="guestCashNowAmount" class="guest-shop-modal__crypto-value">-</strong>
+                            </div>
+                            <div class="guest-shop-modal__crypto-row">
+                                <span class="guest-shop-modal__crypto-label">付款地址</span>
+                                <code id="guestCashNowAddress" class="guest-shop-modal__crypto-value guest-shop-modal__crypto-address"></code>
+                            </div>
+                        </div>
+                        <div class="guest-shop-modal__crypto-actions">
+                            <button id="guestCashNowCopyAddressBtn" type="button" class="shop-btn shop-btn-secondary guest-shop-modal__crypto-copy">复制钱包地址</button>
+                            <span id="guestCashNowCopyFeedback" class="guest-shop-modal__copy-feedback" role="status" hidden>已复制</span>
                         </div>
                     </div>
                 </section>
@@ -795,10 +889,29 @@
                     <button id="guestCashRecoverBtn" type="button" class="shop-btn shop-btn-secondary">找回订单</button>
                 </section>
 
+                <!--
+                  Dujiao alignment (GuestOrderDetail.vue fulfillment card): the header
+                  row now carries the title on the left and the action buttons on the
+                  right, instead of a full-width button below the payload; 发货类型 and
+                  发货状态 become muted fact lines above the payload box; and the copy
+                  button flips to a success colour plus label while copied.
+
+                  Dujiao's 使用说明 block is deliberately NOT ported here. It renders
+                  product guidance HTML, and GET /api/shop/guest/preview returns only
+                  product name and sku_name - exposing guidance to an unauthenticated
+                  buyer is a backend information-disclosure decision, not a styling one,
+                  so it stays out of a UI-alignment change.
+                -->
                 <section id="guestCashDeliveryPanel" class="guest-shop-modal__panel guest-shop-modal__delivery" hidden aria-live="polite">
-                    <div class="guest-shop-modal__delivery-title"><i class="fas fa-circle-check" aria-hidden="true"></i><span>支付已确认，发货内容如下</span></div>
+                    <div class="guest-shop-modal__delivery-head">
+                        <div class="guest-shop-modal__delivery-title"><i class="fas fa-circle-check" aria-hidden="true"></i><span>发货内容</span></div>
+                        <div class="guest-shop-modal__delivery-actions">
+                            <button id="guestCashCopyDeliveryBtn" type="button" class="shop-btn shop-btn-secondary guest-shop-modal__delivery-copy"><i class="fas fa-copy" aria-hidden="true"></i><span>复制发货内容</span></button>
+                        </div>
+                    </div>
+                    <div class="guest-shop-modal__delivery-fact"><span>发货类型</span><strong id="guestCashDeliveryType">-</strong></div>
+                    <div class="guest-shop-modal__delivery-fact"><span>发货状态</span><strong id="guestCashDeliveryStatus">-</strong></div>
                     <pre id="guestCashDeliveredContent" class="guest-shop-modal__delivery-content"></pre>
-                    <button id="guestCashCopyDeliveryBtn" type="button" class="guest-shop-modal__copy-all"><i class="fas fa-copy" aria-hidden="true"></i><span>复制发货内容</span></button>
                 </section>
 
                 <footer class="guest-shop-modal__actions">
@@ -931,7 +1044,7 @@
     <script src="js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&cartCalm=20260912_SHOP_CART_CALM_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1&siteMarketingPricing=20260513_SHOP_SITE_MARKETING_PRICING_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&shopModalBackdropTap=20260514_SHOP_MODAL_CHROME_BACKDROP_TAP_1&purchaseModalCenter=20260514_SHOP_PURCHASE_CENTER_CHROME_1&purchaseLightLock=20260514_SHOP_PURCHASE_CHROME_LIGHT_LOCK_1&purchaseSkuCombo=20260524_SHOP_PURCHASE_SKU_COMBO_1&purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2&purchaseDiscountDrawer=20260524_SHOP_PURCHASE_DISCOUNT_DRAWER_3&purchaseGuidancePreview=20260524_SHOP_PURCHASE_GUIDANCE_PREVIEW_1&purchaseWideDefaults=20260524_SHOP_PURCHASE_WIDE_DEFAULTS_1&purchaseStockTone=20260524_SHOP_PURCHASE_STOCK_TONE_1&successDisclosureScroll=20260524_SHOP_SUCCESS_DISCLOSURE_SCROLL_5&purchaseGuidanceScrollState=20260524_SHOP_PURCHASE_GUIDANCE_SCROLL_STATE_2&purchaseOpeningStable=20260525_SHOP_PURCHASE_OPENING_STABLE_6&purchaseSkuTouchHitfix=20260525_SHOP_PURCHASE_SKU_TOUCH_HITFIX_1&discountSkuScope=20260525_SHOP_DISCOUNT_SKU_SCOPE_1&discountCouponPolish=20260525_SHOP_DISCOUNT_COUPON_POLISH_2&imageDragLock=20260530_IMAGE_DRAG_LOCK_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&cartDrawerSelectGuard=20260530_SHOP_CART_DRAWER_SELECT_GUARD_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&manualDeliveryContact=20260530_SHOP_MANUAL_DELIVERY_CONTACT_1&shopImageCache=20260531_SHOP_PRODUCT_IMAGE_CACHE_1&siteScopedSkuPrice=20260604_SHOP_SITE_SCOPED_SKU_PRICE_1&siteScopedCategoryFilter=20260608_SHOP_SITE_SCOPED_CATEGORY_FILTER_1&richTextGuidanceColor=20260604_SHOP_RICH_TEXT_GUIDANCE_COLOR_1&purchaseGuidanceMutexAlign=20260605_SHOP_PURCHASE_GUIDANCE_MUTEX_ALIGN_7&skuManualDelivery=20260605_SHOP_SKU_MANUAL_DELIVERY_1&manualDeliveryZeroStockDetail=20260607_SHOP_MANUAL_DELIVERY_ZERO_STOCK_DETAIL_1&soldOutDiscountStable=20260607_SHOP_SOLD_OUT_DISCOUNT_STABLE_2&restockChatDirectOpen=20260607_SHOP_RESTOCK_CHAT_DIRECT_OPEN_1&guidanceThemeText=20260607_SHOP_GUIDANCE_THEME_TEXT_1&richTextGuidanceStyle=20260619_SHOP_RICH_TEXT_GUIDANCE_STYLE_1&guidanceCopy=20260608_SHOP_GUIDANCE_COPY_4&purchaseMobileOpenViewportStable=20260608_SHOP_PURCHASE_MOBILE_OPEN_VIEWPORT_STABLE_1&shopFloatingMobileDock=20260608_SHOP_FLOATING_MOBILE_DOCK_1&inputPaste=20260609_INPUT_PASTE_1&cardSkuStockTotal=20260613_SHOP_CARD_SKU_STOCK_TOTAL_1&soldOutSkuSelectable=20260613_SHOP_SOLD_OUT_SKU_SELECTABLE_1&categoryDefaultFirst=20260614_SHOP_CATEGORY_DEFAULT_FIRST_1&emptyCatalogGuard=20260615_SHOP_EMPTY_CATALOG_GUARD_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1&maxDiscountQuantity=20260617_MAX_DISCOUNT_QUANTITY_1&discountMessageOrder=20260617_DISCOUNT_MESSAGE_ORDER_1&shopListChips=20260913_SHOP_LIST_ENTER_4&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1" defer></script>
 
     <script src="js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
-    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_A2_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1" defer></script>
+    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_A2_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1&guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1" defer></script>
     <script src="js/shop-list-layout.js?v=20260913_SHOP_LIST_ENTER_4" defer></script>
 
     <!-- Chat Widget -->

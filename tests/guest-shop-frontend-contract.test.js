@@ -64,8 +64,11 @@ function parseStatusRateLimitPerMinute(source) {
 }
 
 test('shop page mounts the isolated guest cash checkout after the authenticated shop client', () => {
-    const shopClientIndex = markup.indexOf('js/shop-client.js');
-    const guestClientIndex = markup.indexOf('js/guest-shop-client.js');
+    // Anchored on the <script src= prefix, not the bare path: an explanatory
+    // HTML comment that mentions the client would otherwise win the indexOf race
+    // and make load order look inverted.
+    const shopClientIndex = markup.indexOf('<script src="js/shop-client.js');
+    const guestClientIndex = markup.indexOf('<script src="js/guest-shop-client.js');
 
     assert.ok(shopClientIndex >= 0, 'the existing shop client must remain mounted');
     assert.ok(guestClientIndex > shopClientIndex, 'guest checkout must initialize after the shop client');
@@ -440,6 +443,120 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.doesNotMatch(client, /surcharge_rate:\s*normalizeSurchargeRate\(summary\?\.surcharge_rate, fallbackRate\)/);
 });
 
+test('the guest checkout modal mirrors the Dujiao payment and delivery layout', () => {
+    const guestModalStart = markup.indexOf('id="guestCashPurchaseModal"');
+    const guestModalEnd = markup.indexOf('id="guestCashPurchaseDismissBtn"');
+    assert.ok(guestModalStart >= 0 && guestModalEnd > guestModalStart, 'guest cash modal markup must exist');
+    const modal = markup.slice(guestModalStart, guestModalEnd);
+
+    // Release pin for this UI-alignment batch (independent marker convention, so
+    // reordering cache-buster params never silently invalidates it).
+    assert.match(markup, /guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1/);
+
+    // Payment.vue header: one title node + a muted subtitle the client swaps per phase.
+    assert.match(modal, /id="guestCashSubtitle"[^>]*class="guest-shop-modal__subtitle"/);
+
+    // CheckoutSteps.vue -> a 3-step rail (确认订单 -> 支付 -> 发货). A guest single-product
+    // flow has no cart, so the同构 mapping drops Dujiao's cart step.
+    assert.match(modal, /id="guestCashSteps"[^>]*class="guest-shop-modal__steps"[^>]*data-step="configure"/);
+    for (const key of ['configure', 'payment', 'delivery']) {
+        assert.match(modal, new RegExp('data-step-key="' + key + '"'));
+    }
+    assert.equal((modal.match(/class="guest-shop-modal__step"/g) || []).length, 3, 'the rail keeps exactly three steps');
+    assert.equal((modal.match(/guest-shop-modal__step-index/g) || []).length, 3);
+    assert.equal((modal.match(/guest-shop-modal__step-label/g) || []).length, 3);
+
+    // PaymentAmountBreakdown.vue -> payable hero + line items + in-card polling hint.
+    assert.match(modal, /class="guest-shop-modal__amount"/);
+    assert.match(modal, /class="guest-shop-modal__amount-label">应付金额</);
+    assert.match(modal, /id="guestCashPrice"[^>]*class="guest-shop-modal__amount-value"/);
+    assert.match(modal, /class="guest-shop-modal__amount-rows"/);
+    assert.match(modal, /id="guestCashAmountFooter"[^>]*class="guest-shop-modal__amount-footer"[^>]*hidden/);
+    assert.match(modal, /id="guestCashPollingHint"[^>]*class="guest-shop-modal__hint"/);
+    // Order meta rows Dujiao renders in its side card; hidden until an order exists.
+    assert.match(modal, /id="guestCashStatusRow"[^>]*hidden/);
+    assert.match(modal, /id="guestCashStatusValue"/);
+    assert.match(modal, /id="guestCashMethodRow"[^>]*hidden/);
+    assert.match(modal, /id="guestCashMethodValue"/);
+    // L1/L2 containers ship hidden, filled with no markup change once promos land.
+    assert.match(modal, /id="guestCashCouponRow"[^>]*guest-shop-modal__row--discount[^>]*hidden/);
+    assert.match(modal, /id="guestCashCouponAmount"/);
+    assert.match(modal, /id="guestCashPromoRow"[^>]*guest-shop-modal__row--discount[^>]*hidden/);
+    assert.match(modal, /id="guestCashPromoAmount"/);
+
+    // Payment.vue cryptoPaymentDetails -> bordered label/value list + its own copy row.
+    assert.match(modal, /id="guestCashNowpaymentsPanel"[^>]*class="guest-shop-modal__crypto"[^>]*hidden/);
+    assert.match(modal, /class="guest-shop-modal__crypto-list"/);
+    assert.equal((modal.match(/class="guest-shop-modal__crypto-row"/g) || []).length, 3, '网络 / 支付金额 / 付款地址');
+    assert.match(modal, /id="guestCashNowAddress"[^>]*class="guest-shop-modal__crypto-value guest-shop-modal__crypto-address"/);
+    assert.match(modal, /id="guestCashNowCopyAddressBtn"[^>]*class="shop-btn shop-btn-secondary guest-shop-modal__crypto-copy"/);
+    // The copy confirmation lives in its own node, never inside the address.
+    assert.match(modal, /id="guestCashNowCopyFeedback"[^>]*class="guest-shop-modal__copy-feedback"[^>]*hidden/);
+
+    // GuestOrderDetail.vue fulfillment card -> head row (title + actions) then fact lines.
+    assert.match(modal, /id="guestCashDeliveryPanel"[^>]*class="guest-shop-modal__panel guest-shop-modal__delivery"[^>]*hidden/);
+    assert.match(modal, /class="guest-shop-modal__delivery-head"/);
+    assert.match(modal, /class="guest-shop-modal__delivery-actions"/);
+    assert.match(modal, /id="guestCashCopyDeliveryBtn"[^>]*class="shop-btn shop-btn-secondary guest-shop-modal__delivery-copy"/);
+    assert.match(modal, /class="guest-shop-modal__delivery-fact"><span>发货类型<\/span><strong id="guestCashDeliveryType"/);
+    assert.match(modal, /class="guest-shop-modal__delivery-fact"><span>发货状态<\/span><strong id="guestCashDeliveryStatus"/);
+
+    // The pre-Dujiao wrappers are gone from both markup and styles.
+    assert.doesNotMatch(modal, /guest-shop-modal__payment-meta/);
+    assert.doesNotMatch(modal, /guest-shop-modal__copy-all/);
+    assert.doesNotMatch(styles, /\.guest-shop-modal__payment-meta/);
+    assert.doesNotMatch(styles, /\.guest-shop-modal__copy-all/);
+
+    // Styles cover the new cards in dark AND light theme, plus the done/copied states.
+    for (const sel of [
+        '.guest-shop-modal__subtitle',
+        '.guest-shop-modal__steps',
+        '.guest-shop-modal__step-index',
+        '.guest-shop-modal__step.is-current',
+        '.guest-shop-modal__step.is-done',
+        '.guest-shop-modal__amount {',
+        '.guest-shop-modal__amount-value',
+        '.guest-shop-modal__row--discount',
+        '.guest-shop-modal__crypto-list',
+        '.guest-shop-modal__crypto-row:last-child',
+        '.guest-shop-modal__copy-feedback',
+        '.guest-shop-modal__delivery-head',
+        '.guest-shop-modal__delivery-copy.is-copied',
+        '.guest-shop-modal__delivery-fact'
+    ]) {
+        assert.ok(styles.includes(sel), 'missing style rule: ' + sel);
+    }
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__amount/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__crypto-list/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__step-index/);
+
+    // The client derives rail/meta/hint from one status table inside setStateMessage,
+    // so a transient poll error can never walk a paid buyer back to 确认订单.
+    assert.match(client, /const STEP_PHASES = \['configure', 'payment', 'delivery'\];/);
+    assert.match(client, /const STEP_PHASE_BY_STATUS = \{/);
+    assert.match(client, /const ORDER_STATUS_LABELS = \{/);
+    assert.match(client, /function syncStepState\(phase\) \{/);
+    assert.match(client, /function syncOrderMeta\(status = state\.status\) \{/);
+    assert.match(client, /function syncPollingHint\(status = state\.status\) \{/);
+    assert.match(client, /syncStepState\(STEP_PHASE_BY_STATUS\[status\] \|\| ''\);\s*\n\s*syncOrderMeta\(status\);\s*\n\s*syncPollingHint\(status\);/);
+    // Only正向 statuses advance the rail; creating/error/manual_review map to nothing.
+    assert.doesNotMatch(client, /creating: 'configure'|error: 'configure'|manual_review: 'configure'/);
+
+    // claimDelivery fills the two Dujiao fact lines with the only values guest checkout
+    // can ever serve (auto-delivery key product; POST /guest/claim returns content only).
+    assert.match(client, /setText\('guestCashDeliveryType', '卡密（自动发货）'\)/);
+    assert.match(client, /setText\('guestCashDeliveryStatus', '已发货'\)/);
+    // resetOrderUi clears them so a fresh 确认订单 never shows the last order's 已发货.
+    assert.match(client, /setText\('guestCashDeliveryType', '-'\)/);
+    assert.match(client, /setText\('guestCashDeliveryStatus', '-'\)/);
+
+    // copyText never overwrites the copied node and never wipes an icon button: the
+    // wallet address confirms via a separate node, the delivery button via is-copied.
+    assert.match(client, /async function copyText\(value, button, \{ doneEl = '', copiedClass = '' \} = \{\}\) \{/);
+    assert.match(client, /copyText\(element\('guestCashNowAddress'\)\?\.textContent \|\| '', addressButton, \{ doneEl: 'guestCashNowCopyFeedback' \}\)/);
+    assert.match(client, /copyText\(element\('guestCashDeliveredContent'\)\?\.textContent \|\| '', deliveryButton, \{ copiedClass: 'is-copied' \}\)/);
+});
+
 // ---------------------------------------------------------------------------
 // Order Access 2.0 (A2) — query password collection, generator and lookup page
 // ---------------------------------------------------------------------------
@@ -590,8 +707,10 @@ test('the shop modal collects the query password only when the server says it is
 
     // The generator module must be mounted BEFORE the client that calls into it,
     // and both carry the A2 cachebuster.
-    const generatorIndex = markup.indexOf('js/guest-query-password.js');
-    const guestClientIndex = markup.indexOf('js/guest-shop-client.js');
+    // Anchored on the <script src= prefix for the same reason as the mount-order
+    // test above: prose in the markup must never decide load order.
+    const generatorIndex = markup.indexOf('<script src="js/guest-query-password.js');
+    const guestClientIndex = markup.indexOf('<script src="js/guest-shop-client.js');
     assert.ok(generatorIndex >= 0, 'js/guest-query-password.js must be mounted');
     assert.ok(guestClientIndex > generatorIndex, 'the generator must load before the guest client');
     assert.match(markup, /js\/guest-query-password\.js\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
