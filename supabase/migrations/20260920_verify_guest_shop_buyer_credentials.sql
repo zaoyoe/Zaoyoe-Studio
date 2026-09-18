@@ -10,6 +10,19 @@
 -- bodies (for example `BETWEEN 1 AND 5` is dumped as `>= 1 AND <= 5`) and an
 -- exact-match verify script would report a false FAIL.
 --
+-- RULE FOR PROBE AUTHORS (learned from a real false FAIL on 2026-09-18):
+-- when the definition being probed itself STORES REGEX SOURCE -- here
+-- `guest_shop_buyers_pwd_format` and `guest_shop_buyers_hash_check`, and in
+-- 20260922 `guest_shop_access_resets_token_check` -- match it with a LITERAL
+-- probe (strpos() / LIKE), never with `~`.  `def ~ 'norm=v[0-9]+'` reads
+-- `[0-9]` as a character class and therefore demands a digit right after
+-- `norm=v`, while the stored text is the twelve characters `norm=v[0-9]+`; the
+-- probe can never match and the row reports FAIL even though the migration is
+-- correct.  Literal needles also avoid backslashes entirely, so they are immune
+-- to standard_conforming_strings differences.
+-- `tests/guest-shop-verify-probe-contract.test.js` replays every probe in this
+-- file against the real migration text and fails if the rule is broken again.
+--
 -- Every row must be PASS. Any FAIL means the migration was applied partially or
 -- an older migration was re-run on top of it; do NOT enable
 -- GUEST_SHOP_BUYER_CREDENTIAL_ENABLED until all rows pass.
@@ -138,17 +151,44 @@ WITH buyers_columns AS (
                 WHERE conname = 'guest_shop_buyers_site_contact_group_uniq'
             ),
             'group_range_upper_bound_at_least_app_cap', (
-                SELECT COALESCE(bool_and(def ~ 'credential_group_no >= 1' AND def ~ '<= [3-9]'), false)
+                -- Numeric extraction, not a character-class probe.  The rule is
+                -- "DB cap >= application cap (K38, default 3)", so a two-digit
+                -- cap such as 10 must also pass; `<= [3-9]` would have failed
+                -- it.  A missing match yields NULL -> COALESCE 0 -> false, i.e.
+                -- fail-closed.
+                SELECT COALESCE(bool_and(
+                    def ~ 'credential_group_no >= 1'
+                    AND COALESCE((substring(def from '<= *([0-9]+)'))::int, 0) >= 3
+                ), false)
                 FROM buyers_constraints
                 WHERE conname = 'guest_shop_buyers_group_range'
             ),
             'password_format_pins_scrypt_and_norm_version', (
-                SELECT COALESCE(bool_and(def ~ 'scrypt' AND def ~ 'norm=v[0-9]+'), false)
+                -- LITERAL probes on purpose: this CHECK stores regex source, so
+                -- a `~` probe would misread `[0-9]+` as a character class and
+                -- report a false FAIL.  See the RULE in the file header.
+                SELECT COALESCE(bool_and(
+                    strpos(def, 'scrypt') > 0
+                    AND strpos(def, 'password_hash') > 0
+                    AND strpos(def, 'norm=v[0-9]+') > 0
+                    AND strpos(def, '[A-Za-z0-9+/=]+') > 0
+                ), false)
                 FROM buyers_constraints
                 WHERE conname = 'guest_shop_buyers_pwd_format'
             ),
             'contact_hash_format_is_64_hex', (
-                SELECT COALESCE(bool_and(def ~ 'contact_hash' AND def ~ '0-9a-f'), false)
+                -- LITERAL probe: this CHECK also stores regex source, so a `~`
+                -- probe is a trap for the next editor (see the header RULE).
+                -- Pinning the whole class additionally proves the 64-hex length
+                -- bound, which the retired `~ '0-9a-f'` probe did not.  The
+                -- spelling is proven against a real pg_get_constraintdef by the
+                -- already-passing sibling check
+                -- `resets_constraints.token_hash_is_sha256_hex_shape` in
+                -- 20260922_verify_guest_shop_access_resets.sql.
+                SELECT COALESCE(bool_and(
+                    strpos(def, 'contact_hash') > 0
+                    AND strpos(def, '[0-9a-f]{64}') > 0
+                ), false)
                 FROM buyers_constraints
                 WHERE conname = 'guest_shop_buyers_hash_check'
             )

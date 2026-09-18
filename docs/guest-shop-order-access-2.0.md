@@ -773,6 +773,7 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 | D-7 | §10.5 的「重置查询密码（管理员设置临时密码）」+「一次性找回链接**复用 `claim_secret_hash` 通道**」 | **只做链接，不做临时密码**；链接**不复用** `claim_secret_hash`，改为新表 `guest_shop_access_resets`（迁移 `20260922_guest_shop_access_resets.sql`） | ①管理员设的临时密码要走客服明文通道、由人选所以弱且常被复用，还需要额外一个「首登强制改密」状态位挂在凭证路径最热的行上；链接方案下新密码**只有买家本人见过**。②`claim_secret_hash` 是订单维度的取货口令哈希，而找回链接需要「15 分钟 TTL / 用后即焚 / 谁签发 / 为什么签发 / 可撤销」五个字段，塞进订单表等于把 bearer secret 的生命周期挂在业务行上，既没有取证链，也无法区分「撤销」与「从未签发」 |
 | D-8 | `解锁登录锁定` 只清 `locked_until` | 同时把 `login_lock_stage` **归 0**（并清 `failed_login_count`） | stage 是 §8.1 阶梯锁的档位记忆（1→15 分钟、2→30 分钟、3→24 小时）。只清 `locked_until` 会让运营解锁后，买家下一次输错密码**直接跳回 24 小时档**，表现为「客服说解了，我一分钟又被锁一天」。归 0 才是运营语义上的「解锁」 |
 | D-9 | — | 签发链接时 `password_version` +1，**该分组下所有已登录会话立即失效**；同时撤销该买家所有旧的未使用链接 | 改密码却不吊销旧会话，等于「找回」对已经拿到会话的攻击者毫无作用。`__Host-gs-acc` 载荷里带 `pv`，校验时与 DB 的 `password_version` 比对，不匹配即拒——不需要维护会话黑名单。DB 侧另有部分唯一索引 `guest_shop_access_resets_one_pending_per_buyer`，让两个管理员并发签发**失败关闭**而不是留下两条活链接 |
+| D-10 | §15.2 的 verify 脚本用正则探针 `def ~ 'norm=v[0-9]+'` 校验 `guest_shop_buyers_pwd_format` | **verify 脚本自身缺陷，不是设计偏差，也不是迁移缺陷**：三个探针重写为字面量/数值化 —— `password_format_pins_scrypt_and_norm_version` 改成四连 `strpos`（`scrypt` / `password_hash` / `norm=v[0-9]+` / `[A-Za-z0-9+/=]+`）；`contact_hash_format_is_64_hex` 由 `~ 'contact_hash' AND ~ '0-9a-f'` 改成 `strpos(def, 'contact_hash') > 0 AND strpos(def, '[0-9a-f]{64}') > 0`；`group_range_upper_bound_at_least_app_cap` 由 `~ '<= [3-9]'` 改成 `COALESCE((substring(def from '<= *([0-9]+)'))::int, 0) >= 3` | 迁移 `20260920` 的 `guest_shop_buyers_pwd_format` / `guest_shop_buyers_hash_check` 两条 CHECK **本身存的就是正则源码**。用 `~` 去匹配这段文本时，`[0-9]` 会被当成字符类，要求 `norm=v` 后紧跟一个数字，而反解析出来的文本里 `norm=v` 后是字面字符 `[` —— 探针**永不命中**，于是 2026-09-18 实机校验里出现了唯一一行假 FAIL（observed `false` vs expected `true`）。假 FAIL 的代价是让运维以为迁移坏了、不敢开开关，甚至去「修」一个正确的迁移。`[3-9]` 是同一陷阱的另一种形态：它把「DB 上限 ≥ 应用上限 K38=3」写成了个位数字形状，两位数上限（如 10）会被误杀，数值化后 NULL→0→false 仍然 fail-closed。`contact_hash` 顺带从「只查字母表」升级为「钉住 64 位长度」。字面量探针不含反斜杠，因此对 `standard_conforming_strings` 差异免疫。**实证锚点**：同一轮校验里 `20260922_verify` 的 `token_hash_is_sha256_hex_shape` 用 `LIKE '%[0-9a-f]{64}%'` 在真实库上 PASS，证明 `pg_get_constraintdef` 会原样保留 `[...]` / `{64}` 字面量 |
 
 > D-1/D-2 是**契约级**偏差，已写进 `tests/guest-shop-order-access-endpoints.test.js`
 > 与 `tests/guest-shop-public-route-contract.test.js`；后续如需改回 REST 路径参数，
@@ -788,6 +789,10 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 > `buyer-access-admin.normalizeBuyerRow` 都改为**幂等归一化**——同一订单重复提交
 > 解析到同一分组并返回成功，而不是第二次因为「已有 `buyer_id`」报 409。
 > §13.2 的幂等承诺靠这个成立；409 只保留给「解析出**不同**分组」这一种真冲突。
+>
+> **D-10 是「校验器坏了」，不是「被校验物坏了」**：迁移 `20260920` 一行未改、**无需重跑**，只需重跑修复后的 `20260920_verify_guest_shop_buyer_credentials.sql`（只读、可重复执行）。
+> 规则已写进该文件头部的「RULE FOR PROBE AUTHORS」段：**被探测文本自身存正则源码的约束（`guest_shop_buyers_pwd_format` / `guest_shop_buyers_hash_check` / `guest_shop_access_resets_token_check`），只能用 `strpos()` / `LIKE` 字面量探针，禁止 `~`**。
+> 由 `tests/guest-shop-verify-probe-contract.test.js`（11 条，**纯静态重放，Codex 不执行 SQL**）钉住：三个 verify 里作用于约束定义的每一条探针都被抽出来、按 PG 语义对着真实迁移文本求值，全量必须为真；含正则源码的三条约束一旦出现 `~` 立即失败；分组上限对 3/5/9/10/12/100 通过、对 2 或「缺上限」失败；并**逐字重放已退役的错误探针**复现那次假 FAIL（harness 自检，防止前面全是空转）。遇到无法识别的谓词形状一律**抛错**而不是静默跳过；verify 行清单被冻结（20260920 共 11 行、20260922 共 7 行），少一行就红。
 
 ---
 
@@ -922,6 +927,8 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 7. 若 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED=true`，则 `/guest-orders.html` 必须可访问，
    且 `/api/shop/guest/orders` 必须**拒绝** query 形式凭证。
 
+> **verify 脚本探针书写规则（D-10，2026-09-18 假 FAIL 后定稿）**：`20260920/21/22_verify_*.sql` 中，凡被探测的约束定义**自身存正则源码**，只能用 `strpos()` / `LIKE` 字面量探针，**禁止 `~`**（`~ 'norm=v[0-9]+'` 会把 `[0-9]` 读成字符类而永不命中）；上限/长度类比较一律数值化（`substring(...)::int`），NULL 走 `COALESCE(..., 0)` 保持 fail-closed。20260921 的探针作用于**函数体**而非约束定义，`~` 在那里是正确的，不受本规则约束。三个 verify 脚本全部只读、可重复执行，由 `tests/guest-shop-verify-probe-contract.test.js` 静态重放把守。
+
 ### 15.3 灰度
 
 | 阶段 | 内容 | 验收 |
@@ -1013,6 +1020,7 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 
 归档到 `docs/guest-shop-promo-evidence.md`：下单截图、查询页截图、详情+卡密截图、
 锁定触发截图、历史订单口令找回截图、readiness 退出码 3 的输出。
+该文件已建立：**§1 已归档 2026-09-18 三个迁移落库 + 三个 verify 的实机结果**（含 D-10 假 FAIL 的诊断与处置），**§1.4 是启用前仍待补齐的清单**。
 
 ---
 
@@ -1094,6 +1102,7 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 | **A2** | ✅ **已完成** | `1b8cfd372` | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
 | G3 | ⏸ 未开始 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` + 改契约断言 + 页脚入口（**必须等开关打开且实机证据归档后**，见 §11.2.1） |
 | **A3** | ✅ **已完成** | `5496a47c9` | 管理台 `shop/guest-buyer-access`（GET 状态 + 三个写动作）+ 游客异常队列行内「买家访问」弹窗；`guest_shop_access_resets` 迁移文件写盘（**未执行**）；公开端点 `guest/access/reset`（一次性链接消费）与 `guest/access/upgrade`（§13.2 自助升级）；`guest-orders.html` 找回卡片 + 历史订单升级子表单。**不做**管理员临时密码（D-7） |
+| **A0-verify-FIX** | ✅ 已完成 | `见下一提交回填` | `20260920_verify_guest_shop_buyer_credentials.sql` 假 FAIL 修复（D-10）：三个约束探针改为字面量 / 数值化 + 文件头新增「RULE FOR PROBE AUTHORS」；新增 `tests/guest-shop-verify-probe-contract.test.js`（11 条静态重放，全量 `npm run test:security`：**3328 通过 / 0 失败** = 基线 3317 + 新增 11）；实机三步校验记录归档到 `docs/guest-shop-promo-evidence.md` §1。**迁移文件未改、无需重跑**，只需重跑该 verify 脚本 |
 | L0–L4 / A4 | ⏸ 未开始 | — | 促销侧与 OTP，见 §19 |
 
 **A3 测试覆盖（见本节末尾的全量数字）**
@@ -1165,6 +1174,8 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 >
 > 每步之后跑对应的 verify 脚本（`20260920_verify_*` / `20260922_verify_guest_shop_access_resets.sql`），
 > **全部 PASS** 才允许打开开关。启用前置条件见 §15.3 与 §16.4。
+>
+> **实机执行记录（2026-09-18，由你在目标 Supabase 执行，Codex 未执行任何 SQL）**：三个迁移均已落库；`20260921_verify` 与 `20260922_verify`（7 行）**全 PASS**；`20260920_verify` 首轮出现 **1 行 FAIL**（`password_format_pins_scrypt_and_norm_version`），诊断为**探针自身缺陷**而非迁移缺陷（D-10），已修复，**待你重跑该 verify 脚本确认 11 行全 PASS**。逐行结果与诊断归档在 `docs/guest-shop-promo-evidence.md` §1。开关仍未打开。
 >
 > 三个迁移都是**行为中立**的：开关关闭时应用层永不读写这些新表，
 > 执行完 SQL 后线上行为与执行前完全一致。
