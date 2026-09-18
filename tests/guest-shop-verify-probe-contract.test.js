@@ -554,6 +554,17 @@ test('the verify row inventory is frozen so a row cannot be silently dropped', (
         'create_order_grants',
         'a0_is_behaviour_neutral'
     ]);
+    // 2026-09-18 补：A1b 的 verify 此前不在冻结清单里，结果文档把它的行数写成 5
+    // （真实为 6，见 docs/guest-shop-promo-evidence.md §1.7）。三个 verify 现在全部在册，
+    // 少一行或多一行都会红，「静默丢一行校验」不再可能。
+    assert.deepEqual(checkNames(SOURCES.a1bVerify), [
+        'upsert_fn_present_and_unique',
+        'upsert_fn_signature',
+        'upsert_fn_security_posture',
+        'upsert_fn_grants',
+        'upsert_fn_body_guarantees',
+        'a1b_is_additive'
+    ]);
     assert.deepEqual(checkNames(SOURCES.a3Verify), [
         'resets_table_present',
         'resets_columns',

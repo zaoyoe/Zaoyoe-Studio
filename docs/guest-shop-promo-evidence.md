@@ -24,13 +24,13 @@
 | # | 迁移 | 对应 verify | verify 行数 | 结果 |
 |---|---|---|---|---|
 | 1 | `supabase/migrations/20260920_guest_shop_buyer_credentials.sql` | `20260920_verify_guest_shop_buyer_credentials.sql` | 11 | ⚠️→✅ 首轮 **1 行 FAIL**（诊断为 verify 探针缺陷 D-10，非迁移缺陷）；探针修复后**同日复跑 11/11 全 PASS**，逐行见 §1.5。**迁移未重跑，也不需要重跑** |
-| 2 | `supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql` | `20260921_verify_guest_shop_buyer_group_upsert.sql` | 5 | ✅ **全行 PASS** |
+| 2 | `supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql` | `20260921_verify_guest_shop_buyer_group_upsert.sql` | 6 | ✅ **全行 PASS（6/6）**，逐行见 §1.7 |
 | 3 | `supabase/migrations/20260922_guest_shop_access_resets.sql` | `20260922_verify_guest_shop_access_resets.sql` | 7 | ✅ **全行 PASS（7/7）**，逐行见 §1.2 |
 
 三个迁移都是**行为中立**的：`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 仍为关闭状态，
 应用层不读写这些新表，落库前后线上行为完全一致。**本次未打开任何开关、未启用游客商品。**
 
-**三步校验现已全部通过（23 行 PASS / 0 FAIL）**：步骤 1 见 §1.5（11 行）、步骤 2 见 §1.1（5 行）、
+**三步校验现已全部通过（24 行 PASS / 0 FAIL）**：步骤 1 见 §1.5（11 行）、步骤 2 见 §1.7（6 行）、
 步骤 3 见 §1.2（7 行）；首轮那行假 FAIL 的诊断与处置见 §1.3。**数据库侧 A0–A3 已落地并校验完毕，
 剩余启用前置见 §1.4。**
 
@@ -178,3 +178,50 @@ verify 行清单冻结（20260920 共 11 行、20260922 共 7 行）。
 > `DROP FUNCTION` 与 `CREATE OR REPLACE FUNCTION` 之间存在一个极短的解析窗口（已执行完毕）。
 > 期间若有游客下单请求，最坏表现是该请求失败并由前端重试；RPC 是原子的、订单创建幂等
 > （`idempotency_key` + advisory lock），不会产生半写状态或重复订单。
+
+### 1.7 步骤 2（`20260921_verify_guest_shop_buyer_group_upsert.sql`）逐行结果
+
+执行日：**2026-09-18**　执行人：**用户**　Codex：**未执行任何 SQL**
+
+| sort_order | check_name | status | observed 要点（与 expected 逐字一致） |
+|---|---|---|---|
+| 1 | `upsert_fn_present_and_unique` | PASS | `present: true`、`overload_count: 1`（**只有一个重载**） |
+| 2 | `upsert_fn_signature` | PASS | `arity: 7`、`in_params_match: true`（7 个入参名**逐位**一致）、`returns_buyer_id / returns_group_no / returns_allocation: true`、`is_set_returning: true` |
+| 3 | `upsert_fn_security_posture` | PASS | `security_definer: true`、`search_path_pinned: true`、`not_immutable: true` |
+| 4 | `upsert_fn_grants` | PASS | `service_role_execute: true`；`anon_execute / authenticated_execute / public_execute` 全 `false` |
+| 5 | `upsert_fn_body_guarantees` | PASS | 9 项全 `true`：`advisory_lock_serialises_contact`、`insert_never_upserts`、`effective_group_uses_exists_not_counter`、`recycle_cooldown_applied`、`cap_conflict_token_present`、`contact_hash_validated`、`password_format_validated`、`registered_match_written_as_record`、`registered_match_never_a_predicate` |
+| 6 | `a1b_is_additive` | PASS | `buyers_table_present / group_unique_still_present / buyers_rls_still_enabled / create_order_rpc_still_13_params: true`；`no_new_buyers_columns / no_trigger_added_to_buyers / no_purge_job_created: true` |
+
+安全含义（这 6 行分别堵住了什么）：
+
+- **分组分配 RPC 浏览器不可达**（第 4 行）：`fn_guest_shop_upsert_buyer_group` 只对 `service_role` 开放，
+  `anon` / `authenticated` / `PUBLIC` 零 EXECUTE。分组号、容量上限、回收冷却全部由服务端裁决，
+  前端无法自选或反复申请「新分组」来蹭更宽松的配额。
+- **`insert_never_upserts` 是 N2（卡密串号/接管）的根**（第 5 行）：函数体只允许
+  `ON CONFLICT ON CONSTRAINT guest_shop_buyers_site_contact_group_uniq DO NOTHING`，并显式**禁止任何 `DO UPDATE`**。
+  否则后来者可以用同一 `(site, contact_hash, group_no)` 覆盖已存在分组的 `password_hash`，
+  直接接管别人的凭证分组，进而读到别人的卡密。
+- **并发不会双开分组**（第 5 行）：`advisory_lock_serialises_contact`
+  （`pg_advisory_xact_lock(hashtextextended(...))`）把同一联系方式的并发注册串行化；
+  `effective_group_uses_exists_not_counter` 用 `EXISTS` 实数分组而**不是自增计数器**，
+  计数器漂移不会突破 cap；撞 cap 时抛 `guest_buyer_credential_conflict`，**fail-closed** 而不是放行。
+- **不能靠换邮箱无限刷配额**（第 5 行）：`recycle_cooldown_applied` 把分组回收夹在冷却期之后。
+- **DB 层再校验一次数据形状**（第 5 行）：`contact_hash_validated`（64-hex）与
+  `password_format_validated`（scrypt 前缀 + `norm=v`）在写入前由函数体把关，
+  应用层被绕过也写不进脏凭证 —— 脏 `password_hash` 会让后续登录校验退化成不可比对的字符串。
+- **反杀熟硬约束落到 DB**（第 5 行）：`registered_match_written_as_record: true` 且
+  `registered_match_never_a_predicate: true` —— 「是否命中已注册邮箱」**只能作为取证记录写入**，
+  永不作为过滤条件、比较或分支判据（H2 / 促销方案 §22.5）。注册邮箱用户与游客拿到的
+  价格与资格**完全一致**，不存在「老用户被区别对待」的实现路径。
+- **A1b 是纯加法，没有踩 A0**（第 6 行）：没有新增列、没有给 `guest_shop_buyers` 挂触发器、
+  没有创建清理任务，RLS 仍启用，分组唯一约束仍在，`fn_guest_shop_create_order` 仍是 **13 参**
+  （即 A0 换签名后没有被 A1b 改回去或改出第二个重载）。
+- **具名参数契约不会被重载打断**（第 1、2 行）：`overload_count: 1` + 7 个入参名逐位一致，
+  保证 PostgREST 的具名调用唯一可解析。这与 A0 精确 DROP 旧 12 参签名是同一个坑：
+  多出一个重载，所有具名调用立刻变歧义。
+
+> **计数勘误（2026-09-18）**：本节归档前，§1.1 与设计合同把步骤 2 记为「5 行」（总数 23），
+> 实际 verify 输出 **6 行**（总数 **24**）。原因是 `tests/guest-shop-verify-probe-contract.test.js`
+> 的「行清单冻结」断言当时只覆盖 `20260920` 与 `20260922` 两个脚本，A1b 不在册，
+> 因此没有任何自动化守门员发现文档少算一行。已补上 `checkNames(SOURCES.a1bVerify)` 的 6 项断言，
+> 三个 verify 现在全部在册；行数口径已同步改为 11 + 6 + 7 = **24**。**迁移与 verify 脚本本身一行未改。**
