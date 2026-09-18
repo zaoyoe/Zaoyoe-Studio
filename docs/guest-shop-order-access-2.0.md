@@ -1102,7 +1102,7 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 | **A2** | ✅ **已完成** | `1b8cfd372` | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
 | G3 | ⏸ 未开始 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` + 改契约断言 + 页脚入口（**必须等开关打开且实机证据归档后**，见 §11.2.1） |
 | **A3** | ✅ **已完成** | `5496a47c9` | 管理台 `shop/guest-buyer-access`（GET 状态 + 三个写动作）+ 游客异常队列行内「买家访问」弹窗；`guest_shop_access_resets` 迁移文件写盘（**未执行**）；公开端点 `guest/access/reset`（一次性链接消费）与 `guest/access/upgrade`（§13.2 自助升级）；`guest-orders.html` 找回卡片 + 历史订单升级子表单。**不做**管理员临时密码（D-7） |
-| **A0-verify-FIX** | ✅ 已完成 | `见下一提交回填` | `20260920_verify_guest_shop_buyer_credentials.sql` 假 FAIL 修复（D-10）：三个约束探针改为字面量 / 数值化 + 文件头新增「RULE FOR PROBE AUTHORS」；新增 `tests/guest-shop-verify-probe-contract.test.js`（11 条静态重放，全量 `npm run test:security`：**3328 通过 / 0 失败** = 基线 3317 + 新增 11）；实机三步校验记录归档到 `docs/guest-shop-promo-evidence.md` §1。**迁移文件未改、无需重跑**，只需重跑该 verify 脚本 |
+| **A0-verify-FIX** | ✅ 已完成 | `bbf5705a6` | `20260920_verify_guest_shop_buyer_credentials.sql` 假 FAIL 修复（D-10）：三个约束探针改为字面量 / 数值化 + 文件头新增「RULE FOR PROBE AUTHORS」；新增 `tests/guest-shop-verify-probe-contract.test.js`（11 条静态重放，全量 `npm run test:security`：**3328 通过 / 0 失败** = 基线 3317 + 新增 11）；实机三步校验记录归档到 `docs/guest-shop-promo-evidence.md` §1。**迁移文件未改、无需重跑**，只需重跑该 verify 脚本 |
 | L0–L4 / A4 | ⏸ 未开始 | — | 促销侧与 OTP，见 §19 |
 
 **A3 测试覆盖（见本节末尾的全量数字）**
