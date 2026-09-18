@@ -1,0 +1,369 @@
+/*
+ * Guest Order Access 2.0 (§11.2) — standalone stylesheet for /guest-orders.html.
+ *
+ * Kept out of css/shop-page.css on purpose: the shop page is the highest-traffic
+ * surface in the repo and every rule there is a regression risk for the
+ * authenticated storefront. This file only ever matches body.guest-orders-page.
+ *
+ * Layout follows 独角发卡 frontend/user/src/views/GuestOrders.vue block for
+ * block (header / saved-auth hint / 4-column query form / tip / alert / empty
+ * state / order cards / pagination), re-implemented in plain HTML+JS because
+ * this site is server-rendered markup, not Vue.
+ */
+
+:root {
+    --go-bg: #f5f7fb;
+    --go-card: #ffffff;
+    --go-card-alt: #f8fafc;
+    --go-text: #0f172a;
+    --go-muted: rgba(51, 65, 85, .72);
+    --go-border: rgba(148, 163, 184, .35);
+    --go-input-bg: #ffffff;
+    --go-accent: #2563eb;
+    --go-accent-text: #ffffff;
+    --go-danger: #b91c1c;
+    --go-danger-bg: rgba(254, 226, 226, .7);
+    --go-danger-border: rgba(248, 113, 113, .5);
+    --go-ok: #15803d;
+    --go-warn: #b45309;
+    --go-code-bg: #f1f5f9;
+    --go-shadow: 0 18px 44px rgba(15, 23, 42, .08);
+}
+
+html[data-theme="dark"] {
+    --go-bg: #070b16;
+    --go-card: rgba(15, 23, 42, .82);
+    --go-card-alt: rgba(2, 6, 23, .5);
+    --go-text: #e2e8f0;
+    --go-muted: rgba(226, 232, 240, .62);
+    --go-border: rgba(148, 163, 184, .18);
+    --go-input-bg: rgba(2, 6, 23, .55);
+    --go-accent: #3b82f6;
+    --go-accent-text: #04101f;
+    --go-danger: #fca5a5;
+    --go-danger-bg: rgba(127, 29, 29, .28);
+    --go-danger-border: rgba(248, 113, 113, .35);
+    --go-ok: #86efac;
+    --go-warn: #fcd34d;
+    --go-code-bg: rgba(0, 0, 0, .32);
+    --go-shadow: 0 22px 60px rgba(0, 0, 0, .5);
+}
+
+* { box-sizing: border-box; }
+
+body.guest-orders-page {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--go-bg);
+    color: var(--go-text);
+    font-family: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    -webkit-text-size-adjust: 100%;
+}
+
+.guest-orders-shell {
+    width: min(920px, 100% - 32px);
+    margin: 0 auto;
+    padding: 28px 0 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* --- header ------------------------------------------------------------- */
+.guest-orders-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.guest-orders-heading { display: flex; align-items: center; gap: 14px; }
+
+.guest-orders-heading-icon {
+    width: 44px; height: 44px; flex: 0 0 44px;
+    display: grid; place-items: center;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--go-accent) 16%, transparent);
+    color: var(--go-accent);
+    font-size: 19px;
+}
+
+.guest-orders-heading h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: .2px; }
+.guest-orders-heading p { margin: 4px 0 0; font-size: 13px; color: var(--go-muted); }
+
+.guest-orders-back {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--go-border);
+    background: var(--go-card);
+    color: var(--go-text);
+    font-size: 13px; text-decoration: none;
+}
+.guest-orders-back:hover { border-color: var(--go-accent); color: var(--go-accent); }
+
+/* --- cards -------------------------------------------------------------- */
+.guest-orders-card {
+    border: 1px solid var(--go-border);
+    border-radius: 18px;
+    background: var(--go-card);
+    box-shadow: var(--go-shadow);
+    padding: 20px;
+}
+
+.guest-orders-card-title { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
+.guest-orders-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guest-orders-result-head .guest-orders-card-title { margin-bottom: 0; }
+.guest-orders-result-head { margin-bottom: 14px; }
+
+/* --- saved credential hint ---------------------------------------------- */
+.guest-orders-saved {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap;
+    padding: 11px 16px;
+    border: 1px solid var(--go-border);
+    border-radius: 14px;
+    background: var(--go-card-alt);
+    font-size: 13px; color: var(--go-muted);
+}
+.guest-orders-saved i { color: var(--go-accent); margin-right: 4px; }
+
+/* --- query form: 4 columns, single column on mobile ---------------------- */
+.guest-orders-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.guest-orders-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.guest-orders-field > span { font-size: 12px; color: var(--go-muted); }
+.guest-orders-field > span small { opacity: .8; }
+
+.guest-orders-field input {
+    width: 100%;
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--go-border);
+    border-radius: 12px;
+    background: var(--go-input-bg);
+    color: var(--go-text);
+    font: inherit;
+    font-size: 14px;
+}
+.guest-orders-field input:focus {
+    outline: none;
+    border-color: var(--go-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--go-accent) 22%, transparent);
+}
+
+.guest-orders-password-row { display: flex; gap: 8px; align-items: stretch; }
+.guest-orders-password-row input { flex: 1; min-width: 0; }
+
+.guest-orders-icon-btn {
+    flex: 0 0 44px; width: 44px; height: 44px;
+    border: 1px solid var(--go-border);
+    border-radius: 12px;
+    background: var(--go-card-alt);
+    color: var(--go-muted);
+    cursor: pointer;
+}
+.guest-orders-icon-btn:hover { color: var(--go-accent); border-color: var(--go-accent); }
+
+.guest-orders-primary-btn {
+    height: 44px;
+    padding: 0 22px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: var(--go-accent);
+    color: var(--go-accent-text);
+    font: inherit; font-size: 14px; font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.guest-orders-primary-btn:hover { filter: brightness(1.06); }
+.guest-orders-primary-btn:disabled { opacity: .6; cursor: progress; }
+
+.guest-orders-secondary-btn {
+    padding: 9px 16px;
+    border: 1px solid var(--go-border);
+    border-radius: 11px;
+    background: var(--go-card-alt);
+    color: var(--go-text);
+    font: inherit; font-size: 13px;
+    cursor: pointer;
+}
+.guest-orders-secondary-btn:hover { border-color: var(--go-accent); color: var(--go-accent); }
+.guest-orders-secondary-btn:disabled { opacity: .6; cursor: progress; }
+
+.guest-orders-link-btn {
+    border: 0; background: none; padding: 0;
+    color: var(--go-accent);
+    font: inherit; font-size: 12.5px;
+    text-decoration: underline; cursor: pointer;
+}
+
+.guest-orders-tip { margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--go-muted); }
+
+/* --- alert / loading ---------------------------------------------------- */
+.shop-alert { margin-top: 14px; padding: 11px 14px; border-radius: 12px; font-size: 13px; line-height: 1.6; }
+.shop-alert--error {
+    background: var(--go-danger-bg);
+    border: 1px solid var(--go-danger-border);
+    color: var(--go-danger);
+}
+.guest-orders-loading { margin-top: 14px; font-size: 13px; color: var(--go-muted); }
+.guest-orders-loading i { margin-right: 6px; color: var(--go-accent); }
+
+/* --- empty state -------------------------------------------------------- */
+.guest-orders-empty {
+    display: grid; place-items: center; gap: 6px;
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--go-muted);
+}
+.guest-orders-empty i { font-size: 30px; opacity: .45; }
+.guest-orders-empty p { margin: 6px 0 0; font-size: 14px; color: var(--go-text); }
+.guest-orders-empty small { font-size: 12px; line-height: 1.7; max-width: 460px; }
+
+/* --- order cards -------------------------------------------------------- */
+.guest-orders-list { display: flex; flex-direction: column; gap: 12px; }
+
+.guest-orders-item {
+    border: 1px solid var(--go-border);
+    border-radius: 14px;
+    background: var(--go-card-alt);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.guest-orders-item-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.guest-orders-item-no {
+    font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--go-muted); overflow-wrap: anywhere;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.guest-orders-item-amount { font-size: 18px; font-weight: 700; }
+.guest-orders-item-amount small { font-size: 12px; font-weight: 500; color: var(--go-muted); margin-left: 3px; }
+
+/* Discount lines: A2 ships the container, L1/L2 fill it. Both stay empty until
+   the server returns a non-null coupon_discount / promo_discount, so nothing
+   misleading such as "已优惠 0.00" can appear. */
+.guest-orders-item-discounts { display: flex; flex-direction: column; gap: 3px; }
+.guest-orders-item-discounts:empty { display: none; }
+.guest-orders-discount-line { font-size: 12px; color: #e11d48; }
+html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
+
+.guest-orders-item-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 12px; color: var(--go-muted); }
+.guest-orders-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--go-border);
+    background: var(--go-card);
+    font-size: 11.5px; font-weight: 600;
+    color: var(--go-muted);
+}
+.guest-orders-badge[data-tone="ok"] { color: var(--go-ok); border-color: color-mix(in srgb, var(--go-ok) 40%, transparent); }
+.guest-orders-badge[data-tone="warn"] { color: var(--go-warn); border-color: color-mix(in srgb, var(--go-warn) 40%, transparent); }
+.guest-orders-badge[data-tone="danger"] { color: var(--go-danger); border-color: var(--go-danger-border); }
+
+.guest-orders-item-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* --- pagination --------------------------------------------------------- */
+.guest-orders-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; }
+.guest-orders-page-btn {
+    padding: 8px 14px; border: 1px solid var(--go-border); border-radius: 10px;
+    background: var(--go-card-alt); color: var(--go-text); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.guest-orders-page-btn:disabled { opacity: .45; cursor: not-allowed; }
+.guest-orders-page-info { font-size: 12.5px; color: var(--go-muted); }
+
+/* --- detail ------------------------------------------------------------- */
+.guest-orders-detail-rows { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 18px; }
+.guest-orders-detail-rows > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.guest-orders-detail-rows dt { font-size: 11.5px; color: var(--go-muted); }
+.guest-orders-detail-rows dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.guest-orders-detail-rows dd.is-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+
+.guest-orders-delivery { margin-top: 16px; }
+.guest-orders-delivery-title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; color: var(--go-ok); }
+.guest-orders-delivery-content {
+    max-height: 280px; margin: 10px 0;
+    padding: 12px; border-radius: 12px;
+    background: var(--go-code-bg);
+    color: var(--go-text);
+    white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere;
+    font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* --- legacy recovery (§13.4) -------------------------------------------- */
+.guest-orders-legacy { padding: 0; overflow: hidden; }
+.guest-orders-legacy-toggle {
+    width: 100%; display: flex; align-items: center; gap: 9px;
+    padding: 16px 20px; border: 0; background: none;
+    color: var(--go-muted); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+}
+.guest-orders-legacy-toggle:hover { color: var(--go-accent); }
+.guest-orders-legacy-caret { margin-left: auto; transition: transform .18s ease; }
+.guest-orders-legacy-toggle[aria-expanded="true"] .guest-orders-legacy-caret { transform: rotate(180deg); }
+.guest-orders-legacy-panel {
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 0 20px 20px;
+    border-top: 1px solid var(--go-border);
+    padding-top: 16px;
+}
+.guest-orders-legacy-panel .guest-orders-secondary-btn { align-self: flex-start; }
+.guest-orders-legacy-result { font-size: 12.5px; line-height: 1.7; color: var(--go-muted); overflow-wrap: anywhere; }
+.guest-orders-legacy-result[data-tone="ok"] { color: var(--go-ok); }
+.guest-orders-legacy-result[data-tone="danger"] { color: var(--go-danger); }
+
+/* --- §10.5 one-time reset link (A3) ------------------------------------- */
+/* The card is only ever shown by the client after it has read ?reset=, so the
+   accent border doubles as "you arrived from a support link" affordance. */
+.guest-orders-reset { border-color: color-mix(in srgb, var(--go-accent) 45%, var(--go-border)); }
+.guest-orders-reset .guest-orders-card-title { display: flex; align-items: center; gap: 9px; }
+.guest-orders-reset .guest-orders-card-title i { color: var(--go-accent); }
+.guest-orders-reset-intro { margin: 0 0 14px; }
+
+.guest-orders-field-action-row { display: flex; justify-content: flex-end; }
+.guest-orders-field-action-row .guest-orders-link-btn { font-size: 12px; }
+.guest-orders-field-action-row .guest-orders-link-btn i { margin-right: 4px; }
+
+/* --- shared password-policy line (reset + §13.2 upgrade) ------------------ */
+.guest-orders-policy {
+    grid-column: 1 / -1;
+    margin: 0; font-size: 12px; line-height: 1.7; color: var(--go-muted);
+}
+.guest-orders-policy[data-tone="danger"] { color: var(--go-danger); }
+.guest-orders-policy[data-tone="ok"] { color: var(--go-ok); }
+
+/* --- §13.2 historical-order self-upgrade (A3) ----------------------------- */
+.guest-orders-upgrade {
+    display: flex; flex-direction: column; gap: 12px;
+    margin-top: 16px; padding-top: 16px;
+    border-top: 1px dashed var(--go-border);
+}
+.guest-orders-upgrade-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 650; color: var(--go-text);
+}
+.guest-orders-upgrade-title i { color: var(--go-accent); }
+.guest-orders-upgrade .guest-orders-tip { margin: 0; }
+.guest-orders-upgrade .guest-orders-secondary-btn { align-self: flex-start; }
+
+/* --- footer ------------------------------------------------------------- */
+.guest-orders-footer { font-size: 12px; line-height: 1.8; color: var(--go-muted); text-align: center; }
+.guest-orders-footer a { color: var(--go-accent); text-decoration: none; }
+.guest-orders-footer a:hover { text-decoration: underline; }
+
+/* --- mobile: the 4-column grid collapses to one column ------------------- */
+@media (max-width: 600px) {
+    .guest-orders-shell { width: min(100% - 24px, 920px); padding-top: 20px; }
+    .guest-orders-card { padding: 16px; border-radius: 16px; }
+    .guest-orders-form { grid-template-columns: minmax(0, 1fr); }
+    .guest-orders-field-action .guest-orders-primary-btn { width: 100%; }
+    .guest-orders-heading h1 { font-size: 19px; }
+    .guest-orders-back { padding: 7px 12px; }
+}

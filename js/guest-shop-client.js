@@ -55,6 +55,14 @@
         provider: '',
         channel: '',
         recoveryCode: '',
+        // Order Access 2.0 (§6.4/§11.3). The credential requirement is read from
+        // GET /guest/preview, never guessed, so the form is unchanged while
+        // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off.
+        buyerCredentialRequired: false,
+        // Only ever holds a password THIS client generated, and only so a
+        // server-side P7a rejection can be re-minted instead of silently
+        // discarding what the buyer typed. Never persisted (§7.2).
+        generatedOrderPassword: '',
         checkout: null,
         paymentConfirmed: false,
         status: 'configure',
@@ -464,9 +472,166 @@
         renderPayableSummary();
     }
 
+    // ---------------------------------------------------------------------
+    // Order Access 2.0 (§11.3): the buyer query credential on the order form.
+    // js/guest-query-password.js owns the alphabet and the generator so the
+    // shop modal and /guest-orders.html cannot drift apart. Everything here is
+    // a courtesy check: api/_lib/guest-shop/security.js stays authoritative.
+    // ---------------------------------------------------------------------
+    function queryPasswordModule() {
+        return globalThis.GuestQueryPassword || null;
+    }
+
+    function orderPasswordInput() {
+        return element('guestCashOrderPassword');
+    }
+
+    /**
+     * §6.1.2 step 2, mirrored in the browser: fold fullwidth ASCII to halfwidth
+     * and cap at the server's P3 length. Deliberately does NOT trim — the
+     * frozen normalization contract never trims a query password, and trimming
+     * here but not on the lookup page would strand an order behind a space.
+     */
+    function foldQueryPassword(value) {
+        const module = queryPasswordModule();
+        const folded = module ? module.foldFullwidth(value) : String(value ?? '');
+        return folded.slice(0, 64);
+    }
+
+    function setOrderPasswordNote(message) {
+        const note = element('guestCashOrderPasswordNote');
+        if (!note) return;
+        note.textContent = normalizeText(message, 300);
+        note.hidden = !message;
+    }
+
+    function syncOrderPasswordChecks() {
+        const list = element('guestCashOrderPasswordChecks');
+        if (!list) return;
+        const module = queryPasswordModule();
+        const result = module ? module.inspect(orderPasswordInput()?.value || '') : null;
+        for (const item of list.querySelectorAll('[data-pw-check]')) {
+            item.classList.toggle('is-pass', Boolean(result && result[item.dataset.pwCheck]));
+        }
+    }
+
+    function clearOrderPassword() {
+        const input = orderPasswordInput();
+        if (input) input.value = '';
+        state.generatedOrderPassword = '';
+        setOrderPasswordNote('');
+        syncOrderPasswordChecks();
+    }
+
+    function syncBuyerCredentialUi() {
+        const required = state.buyerCredentialRequired;
+        setHidden('guestCashOrderPasswordField', !required);
+        // §11.3 frozen copy. The email is the lookup key for the order and its
+        // card secret, so it becomes mandatory the moment a password is asked
+        // for, and stays "可选" on the legacy path.
+        setText('guestCashContactHint', required ? '必填，用于查询订单与获取发货通知' : '可选');
+        setHidden('guestCashOrdersPageLink', !required);
+        if (!required) clearOrderPassword();
+        else syncOrderPasswordChecks();
+    }
+
+    function orderPasswordPolicyFailure() {
+        const value = foldQueryPassword(orderPasswordInput()?.value || '');
+        if (!value) return { rule: 'P1', reason: 'missing' };
+        const module = queryPasswordModule();
+        // Without the shared module the client cannot judge strength; sending it
+        // anyway is correct because the server rejects with the exact rule.
+        return module ? module.policyFailure(value) : null;
+    }
+
+    function orderPasswordPolicyMessage(failure) {
+        if (!failure) return '';
+        if (failure.rule === 'P1') return '请填写查询密码（至少 8 位）';
+        if (failure.rule.startsWith('P2')) return '查询密码必须同时包含大写字母、小写字母、数字和标点';
+        return '查询密码过于简单，请点击「帮我生成」重新设置';
+    }
+
+    async function generateOrderPassword(button) {
+        const module = queryPasswordModule();
+        const input = orderPasswordInput();
+        if (!module || !input) return;
+        try {
+            const generated = module.generate();
+            input.value = generated;
+            state.generatedOrderPassword = generated;
+            syncOrderPasswordChecks();
+            // Copied to the clipboard because §6.1.3 decouples "strong" from
+            // "must be memorised"; the plaintext is never persisted anywhere.
+            await copyText(generated, button);
+            setOrderPasswordNote('已生成并复制到剪贴板，请妥善保存。本站不保存明文，关闭页面后无法找回。');
+        } catch (error) {
+            state.generatedOrderPassword = '';
+            setOrderPasswordNote(normalizeText(error?.message, 200) || '无法生成查询密码，请手动设置一个');
+        }
+    }
+
+    /**
+     * The server can still refuse a password we minted (P7a denylist, which the
+     * browser deliberately does not carry, ~1 in 200k). Re-mint and re-copy
+     * instead of resubmitting: a silent second submit would store a different
+     * secret than the one already in the buyer's clipboard.
+     */
+    async function refreshRejectedOrderPassword() {
+        const input = orderPasswordInput();
+        const current = foldQueryPassword(input?.value || '');
+        if (!current || current !== state.generatedOrderPassword) {
+            setOrderPasswordNote('该查询密码强度不足，请点击「帮我生成」换一个。');
+            syncOrderPasswordChecks();
+            return;
+        }
+        const module = queryPasswordModule();
+        if (!module) return;
+        try {
+            const next = module.generate();
+            input.value = next;
+            state.generatedOrderPassword = next;
+            syncOrderPasswordChecks();
+            await copyText(next);
+            setOrderPasswordNote('已重新生成并复制查询密码，请妥善保存后再次点击「创建订单」。');
+        } catch (_) {
+            setOrderPasswordNote('无法重新生成查询密码，请手动设置一个。');
+        }
+    }
+
+    function toggleOrderPasswordVisibility(button) {
+        const input = orderPasswordInput();
+        if (!input || !button) return;
+        const wasRevealed = input.type === 'text';
+        input.type = wasRevealed ? 'password' : 'text';
+        button.setAttribute('aria-pressed', wasRevealed ? 'false' : 'true');
+        button.title = wasRevealed ? '显示密码' : '隐藏密码';
+        button.setAttribute('aria-label', wasRevealed ? '显示查询密码' : '隐藏查询密码');
+        const icon = button.querySelector('i');
+        if (icon) icon.className = wasRevealed ? 'fas fa-eye' : 'fas fa-eye-slash';
+    }
+
+    function handleOrderPasswordInput() {
+        const input = orderPasswordInput();
+        if (!input) return;
+        const folded = foldQueryPassword(input.value);
+        if (folded !== input.value) input.value = folded;
+        // Any manual edit invalidates the "we minted this" marker, so a later
+        // server rejection never overwrites what the buyer typed.
+        if (state.generatedOrderPassword && folded !== state.generatedOrderPassword) {
+            state.generatedOrderPassword = '';
+        }
+        setOrderPasswordNote('');
+        syncOrderPasswordChecks();
+    }
+
     function renderPreview(context, preview) {
         state.preview = preview;
         state.previewKey = context.contextKey;
+        // §12/§13.4: preview is the only unauthenticated signal that the buyer
+        // credential switch is on. Reading it here (and nowhere else) keeps the
+        // switch-off checkout byte-identical to today.
+        state.buyerCredentialRequired = preview?.buyer_credential_required === true;
+        syncBuyerCredentialUi();
         const product = preview?.product || {};
         const options = normalizePaymentOptions(preview?.payment_channels);
         setText('guestCashProductName', product.name || context.productName || '-');
@@ -945,6 +1110,8 @@
     }
 
     function closeGuestModal() {
+        // A query password must not outlive the modal it was typed in.
+        clearOrderPassword();
         if (state.status === 'delivered') clearCompletedCheckout();
         stopPolling();
         stopZpayCountdown();
@@ -1075,6 +1242,23 @@
             setStateMessage('邮箱格式不正确', 'error');
             return;
         }
+        // §6.1.4. The password travels once, in the request body, and is never
+        // written to sessionStorage or a URL (§7.1/§7.2). The server re-checks
+        // strength and resolves the credential group (§6.4).
+        let orderPassword = '';
+        if (state.buyerCredentialRequired) {
+            if (!email) {
+                setStateMessage('请填写邮箱，用于查询订单与获取发货通知', 'error');
+                return;
+            }
+            const passwordFailure = orderPasswordPolicyFailure();
+            if (passwordFailure) {
+                syncOrderPasswordChecks();
+                setStateMessage(orderPasswordPolicyMessage(passwordFailure), 'error');
+                return;
+            }
+            orderPassword = foldQueryPassword(orderPasswordInput()?.value || '');
+        }
         if (!state.idempotencyKey) {
             try {
                 state.idempotencyKey = newIdempotencyKey();
@@ -1097,6 +1281,7 @@
             channel: payment.channel
         };
         if (email) body.email = email;
+        if (orderPassword) body.orderPassword = orderPassword;
         try {
             const payload = await requestJson(ORDER_ENDPOINT, {
                 method: 'POST',
@@ -1114,6 +1299,9 @@
             state.channel = payment.channel;
             state.paymentConfirmed = false;
             state.status = 'awaiting_payment';
+            // The order is bound to the buyer group server-side from here on, so
+            // the plaintext has no further use in this page and is dropped.
+            clearOrderPassword();
             persistCheckout();
             resetOrderUi({ preserveRecovery: Boolean(state.recoveryCode) });
             showOrderNo(orderNo);
@@ -1127,6 +1315,7 @@
             if (!getModal()?.hidden) startPolling();
         } catch (error) {
             state.status = error?.code === 'guest_payment_reconciliation_required' ? 'manual_review' : 'error';
+            if (error?.code === 'guest_password_weak') void refreshRejectedOrderPassword();
             setStateMessage(error?.message || '支付订单创建失败，请稍后重试', state.status);
         } finally {
             state.requestInFlight = false;
@@ -1469,6 +1658,18 @@
             void createOrder();
             return;
         }
+        const togglePasswordButton = target.closest('#guestCashToggleOrderPasswordBtn');
+        if (togglePasswordButton) {
+            event.preventDefault();
+            toggleOrderPasswordVisibility(togglePasswordButton);
+            return;
+        }
+        const generatePasswordButton = target.closest('#guestCashGenerateOrderPasswordBtn');
+        if (generatePasswordButton) {
+            event.preventDefault();
+            void generateOrderPassword(generatePasswordButton);
+            return;
+        }
         const recoverButton = target.closest('#guestCashRecoverBtn');
         if (recoverButton) {
             event.preventDefault();
@@ -1582,6 +1783,7 @@
         document.addEventListener('click', handlePurchaseButtonClick, true);
         getModal()?.addEventListener('click', handleGuestModalClick);
         element('guestCashPaymentChannel')?.addEventListener('change', handlePaymentChannelChange);
+        element('guestCashOrderPassword')?.addEventListener('input', handleOrderPasswordInput);
         const stored = storedCheckout();
         if (stored) hydrateCheckout(stored);
         window.setInterval(syncPurchaseButton, 350);

@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const dotenv = require('dotenv');
 const {
+    BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES,
     GUEST_SHOP_RUNTIME_SETTINGS,
     parseRuntimeNumericSetting
 } = require('../api/_lib/guest-shop/runtime-config');
@@ -86,6 +87,117 @@ const REQUIRED_TEST_FILES = Object.freeze([
     'tests/guest-shop-status-recovery.test.js',
     'tests/guest-shop-frontend-contract.test.js',
     'tests/guest-shop-public-route-contract.test.js'
+]);
+
+const BUYER_CREDENTIAL_MIGRATION = 'supabase/migrations/20260920_guest_shop_buyer_credentials.sql';
+const BUYER_CREDENTIAL_VERIFY_MIGRATION = 'supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql';
+
+// Static assertions about the Order Access 2.0 migration. The readiness gate
+// never connects to a database (that stays a manual check on the paired
+// verify script), so the migration file on disk is the only thing it can
+// prove. Each entry is [key, pattern, human label]; `mustNotMatch` entries are
+// [key, pattern, label] asserted to be ABSENT.
+const BUYER_CREDENTIAL_MIGRATION_REQUIREMENTS = Object.freeze([
+    ['buyers-table', /CREATE TABLE IF NOT EXISTS public\.guest_shop_buyers/u, 'guest_shop_buyers 建表'],
+    ['access-attempts-table', /CREATE TABLE IF NOT EXISTS public\.guest_shop_access_attempts/u, 'guest_shop_access_attempts 建表'],
+    ['credential-group-unique', /UNIQUE \(site, contact_hash, credential_group_no\)/u, '凭证分组 UNIQUE(site, contact_hash, credential_group_no)'],
+    ['password-format-norm-version', /norm=v[0-9]+/u, 'password_hash 格式含 norm=v1 归一化版本号'],
+    ['contact-hash-format', /guest_shop_buyers_hash_check/u, 'contact_hash 64 位十六进制 CHECK'],
+    ['buyers-rls', /ALTER TABLE public\.guest_shop_buyers ENABLE ROW LEVEL SECURITY/u, 'guest_shop_buyers 启用 RLS'],
+    ['attempts-rls', /ALTER TABLE public\.guest_shop_access_attempts ENABLE ROW LEVEL SECURITY/u, 'guest_shop_access_attempts 启用 RLS'],
+    ['buyers-revoke-public', /REVOKE ALL ON TABLE public\.guest_shop_buyers FROM PUBLIC, anon, authenticated/u, 'guest_shop_buyers 对 anon/authenticated 撤权'],
+    ['attempts-revoke-public', /REVOKE ALL ON TABLE public\.guest_shop_access_attempts FROM PUBLIC, anon, authenticated/u, 'guest_shop_access_attempts 对 anon/authenticated 撤权'],
+    ['buyers-grant-service-role', /GRANT ALL ON TABLE public\.guest_shop_buyers TO service_role/u, 'guest_shop_buyers 仅授予 service_role'],
+    ['outcome-credential-conflict', /'credential_conflict'/u, '审计 outcome 允许 credential_conflict'],
+    ['orders-buyer-id-fk', /ADD COLUMN IF NOT EXISTS buyer_id UUID\s+REFERENCES public\.guest_shop_buyers\(id\) ON DELETE SET NULL/u, 'guest_shop_orders.buyer_id 外键（ON DELETE SET NULL）'],
+    ['orders-buyer-index', /CREATE INDEX IF NOT EXISTS guest_shop_orders_buyer_idx/u, 'guest_shop_orders_buyer_idx 索引'],
+    ['rpc-drop-legacy-signature', /DROP FUNCTION IF EXISTS public\.fn_guest_shop_create_order\(\s*TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER\s*\)/u, '按精确签名 DROP 旧 12 参数 RPC'],
+    ['rpc-buyer-id-param', /p_buyer_id UUID DEFAULT NULL/u, 'RPC 新增 p_buyer_id 参数'],
+    ['rpc-contact-required-guard', /guest_buyer_contact_required/u, 'RPC buyer_id 必须携带 contact_hash 的守卫'],
+    ['rpc-mismatch-guard', /guest_buyer_mismatch/u, 'RPC buyer_id 与 contact_hash 不匹配即拒绝的守卫'],
+    ['rpc-grant-reapplied', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_create_order\(TEXT, UUID, UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, UUID, TEXT, TEXT, INTEGER\) TO service_role/u, '新 13 参数签名重新授予 service_role EXECUTE']
+]);
+
+// Absence assertions. These are the "deploy must not change behaviour" guards
+// from AGENTS.md: the A0 migration may only add schema, it may never enable a
+// guest product, flip a switch, backfill a row, or schedule a job.
+const BUYER_CREDENTIAL_MIGRATION_PROHIBITIONS = Object.freeze([
+    ['no-guest-product-enablement', /allow_guest_purchase\s*=\s*true/iu, '迁移不得打开游客商品开关'],
+    ['no-product-update', /UPDATE\s+public\.shop_products/iu, '迁移不得 UPDATE shop_products'],
+    ['no-sku-update', /UPDATE\s+public\.shop_product_skus/iu, '迁移不得 UPDATE shop_product_skus'],
+    ['no-order-backfill', /UPDATE\s+public\.guest_shop_orders/iu, '迁移不得回填历史订单 buyer_id'],
+    ['no-scheduled-job', /pg_cron|cron\.schedule/iu, '迁移不得创建清理定时任务'],
+    ['no-cascade', /DROP\s+FUNCTION[\s\S]{0,200}CASCADE/iu, '迁移不得使用 DROP ... CASCADE'],
+    ['no-denormalised-order-count', /order_count\s+INTEGER/iu, 'guest_shop_buyers 不得再引入会漂移的 order_count 计数列']
+]);
+
+const BUYER_CREDENTIAL_VERIFY_REQUIREMENTS = Object.freeze([
+    ['verify-checks-function', /fn_guest_shop_create_order/u, 'verify 脚本检查下单 RPC 签名'],
+    ['verify-checks-rls', /rls_and_privileges_closed/u, 'verify 脚本检查 RLS 与权限收口'],
+    ['verify-checks-realtime', /realtime_published/u, 'verify 脚本检查新表未进入 realtime 发布'],
+    ['verify-checks-legacy-absent', /legacy_12_param_signature_absent/u, 'verify 脚本检查旧 12 参数签名已消失']
+]);
+
+const BUYER_CREDENTIAL_VERIFY_PROHIBITIONS = Object.freeze([
+    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'verify 脚本必须是只读的（不得出现写操作语句）']
+]);
+
+// ---------------------------------------------------------------------------
+// Order Access 2.0 (A1b): the atomic credential-group allocation RPC. Like A0,
+// the readiness gate never connects to a database, so the migration file on
+// disk is the only thing it can prove statically; the paired verify script
+// stays a manual operator step against the target Supabase. A1b is additive:
+// it creates one SECURITY DEFINER function and writes nothing else, so the
+// prohibitions below are the "a function migration must not reshape schema or
+// flip a switch" guards from AGENTS.md.
+// ---------------------------------------------------------------------------
+const BUYER_GROUP_UPSERT_MIGRATION = 'supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql';
+const BUYER_GROUP_UPSERT_VERIFY_MIGRATION = 'supabase/migrations/20260921_verify_guest_shop_buyer_group_upsert.sql';
+
+const BUYER_GROUP_UPSERT_MIGRATION_REQUIREMENTS = Object.freeze([
+    ['upsert-fn-created', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_upsert_buyer_group\(/u, 'fn_guest_shop_upsert_buyer_group 建函数'],
+    ['upsert-security-definer', /SECURITY DEFINER/u, '函数声明为 SECURITY DEFINER'],
+    ['upsert-search-path-pinned', /SET search_path = public, pg_temp/u, '固定 search_path 防止对象劫持'],
+    ['upsert-advisory-lock', /pg_advisory_xact_lock\(hashtextextended\(/u, '按 (site, contact_hash) 取事务级 advisory lock 串行化分配'],
+    ['upsert-site-invalid-token', /guest_buyer_site_invalid/u, 'site 非法的命名错误令牌'],
+    ['upsert-contact-required-token', /guest_buyer_contact_required/u, 'contact_hash 缺失/非法的命名错误令牌'],
+    ['upsert-password-malformed-token', /guest_buyer_password_malformed/u, 'password_hash 格式非法的命名错误令牌'],
+    ['upsert-password-required-token', /guest_buyer_password_required/u, '新建/回收分组缺少 password_hash 的命名错误令牌'],
+    ['upsert-conflict-token', /guest_buyer_credential_conflict/u, '分组达上限的命名 409 令牌'],
+    ['upsert-on-conflict-constraint', /ON CONFLICT ON CONSTRAINT guest_shop_buyers_site_contact_group_uniq DO NOTHING/u, '按约束名 ON CONFLICT DO NOTHING（避免列表达式歧义）'],
+    ['upsert-registered-match-record-only', /registered_user_match = COALESCE\(p_registered_user_match, false\)/u, 'registered_user_match 仅记录、默认 false（§10.1 反价格歧视）'],
+    ['upsert-revoke-public', /REVOKE ALL ON FUNCTION public\.fn_guest_shop_upsert_buyer_group\(TEXT, TEXT, SMALLINT, TEXT, INTEGER, INTEGER, BOOLEAN\) FROM PUBLIC, anon, authenticated/u, 'upsert 函数对 anon/authenticated 撤权'],
+    ['upsert-grant-service-role', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_upsert_buyer_group\(TEXT, TEXT, SMALLINT, TEXT, INTEGER, INTEGER, BOOLEAN\) TO service_role/u, 'upsert 函数仅授予 service_role EXECUTE']
+]);
+
+const BUYER_GROUP_UPSERT_MIGRATION_PROHIBITIONS = Object.freeze([
+    ['upsert-no-do-update', /ON CONFLICT[^;]*DO UPDATE/iu, 'upsert 不得用 DO UPDATE 覆写既有分组密码（N2 防卡密串读）'],
+    ['upsert-no-create-table', /CREATE TABLE/iu, 'A1b 为纯函数迁移，不得建表'],
+    ['upsert-no-alter-table', /ALTER TABLE/iu, 'A1b 不得改表（A0 已建好结构）'],
+    ['upsert-no-drop-table', /DROP TABLE/iu, 'A1b 不得删表'],
+    ['upsert-no-guest-product-enablement', /allow_guest_purchase\s*=\s*true/iu, '迁移不得打开游客商品开关'],
+    ['upsert-no-product-update', /UPDATE\s+public\.shop_products/iu, '迁移不得 UPDATE shop_products'],
+    ['upsert-no-sku-update', /UPDATE\s+public\.shop_product_skus/iu, '迁移不得 UPDATE shop_product_skus'],
+    ['upsert-no-order-backfill', /UPDATE\s+public\.guest_shop_orders/iu, '迁移不得回填历史订单 buyer_id'],
+    ['upsert-no-scheduled-job', /pg_cron|cron\.schedule/iu, '迁移不得创建清理定时任务']
+]);
+
+const BUYER_GROUP_UPSERT_VERIFY_REQUIREMENTS = Object.freeze([
+    ['verify-upsert-fn-present', /upsert_fn_present_and_unique/u, 'verify 检查 upsert 函数存在且唯一重载'],
+    ['verify-upsert-signature', /upsert_fn_signature/u, 'verify 检查 upsert 函数签名/参数名/返回列'],
+    ['verify-upsert-security-posture', /upsert_fn_security_posture/u, 'verify 检查 SECURITY DEFINER / search_path / 非 IMMUTABLE'],
+    ['verify-upsert-grants', /upsert_fn_grants/u, 'verify 检查仅 service_role 可 EXECUTE'],
+    ['verify-upsert-body-guarantees', /upsert_fn_body_guarantees/u, 'verify 检查 advisory lock / 命名错误 / DO NOTHING / record-only 不变量'],
+    ['verify-a1b-additive', /a1b_is_additive/u, 'verify 检查 A1b 未改动 A0 结构（纯增量）']
+]);
+
+const BUYER_GROUP_UPSERT_VERIFY_PROHIBITIONS = Object.freeze([
+    ['verify-read-only', /^\s*(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu, 'A1b verify 脚本必须是只读的（不得出现写操作语句）']
+]);
+
+const BUYER_CREDENTIAL_FRONTEND_FILES = Object.freeze([
+    'guest-orders.html',
+    'js/guest-orders-client.js'
 ]);
 
 function parseArgs(argv = []) {
@@ -455,6 +567,358 @@ function inspectGuestSecrets(env, production) {
             }));
         }
     }
+
+    return checks;
+}
+
+/**
+ * Remove SQL comments while preserving string literals and dollar-quoted
+ * function bodies.
+ *
+ * The prohibition checks below look for statements such as `DROP ... CASCADE`.
+ * The migration header explains in prose that it drops WITHOUT cascade, so a
+ * naive regex over the raw file reports a false violation. Prose must never be
+ * able to fail a gate, and neither must a comment be able to satisfy one, so
+ * every structural pattern runs against the comment-stripped source.
+ */
+function stripSqlComments(source = '') {
+    const text = String(source || '');
+    let out = '';
+    let index = 0;
+    let inSingleQuote = false;
+    let dollarTag = '';
+    while (index < text.length) {
+        const ch = text[index];
+        if (dollarTag) {
+            if (text.startsWith(dollarTag, index)) {
+                out += dollarTag;
+                index += dollarTag.length;
+                dollarTag = '';
+                continue;
+            }
+            out += ch;
+            index += 1;
+            continue;
+        }
+        if (inSingleQuote) {
+            if (ch === "'") {
+                if (text[index + 1] === "'") { out += "''"; index += 2; continue; }
+                inSingleQuote = false;
+            }
+            out += ch;
+            index += 1;
+            continue;
+        }
+        if (ch === '-' && text.startsWith('--', index)) {
+            const newline = text.indexOf('\n', index);
+            index = newline < 0 ? text.length : newline;
+            continue;
+        }
+        if (ch === '/' && text.startsWith('/*', index)) {
+            const end = text.indexOf('*/', index + 2);
+            index = end < 0 ? text.length : end + 2;
+            out += ' ';
+            continue;
+        }
+        if (ch === "'") { inSingleQuote = true; out += ch; index += 1; continue; }
+        if (ch === '$') {
+            const matched = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(text.slice(index, index + 80));
+            if (matched) {
+                dollarTag = matched[0];
+                out += dollarTag;
+                index += dollarTag.length;
+                continue;
+            }
+        }
+        out += ch;
+        index += 1;
+    }
+    return out;
+}
+
+/**
+ * Order Access 2.0 gate (docs/guest-shop-order-access-2.0.md §15.2).
+ *
+ * Two independent switches control this feature and BOTH default to off, so
+ * the whole block is behaviour-neutral until an operator opts in:
+ *
+ *   GUEST_SHOP_BUYER_CREDENTIAL_ENABLED  collect + verify the query password
+ *   GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED serve /guest-orders.html
+ *
+ * The page switch without the credential switch is invalid: it would publish
+ * an order-lookup endpoint with no credential to check. The credential switch
+ * without a dedicated GUEST_SHOP_CONTACT_HASH_PEPPER is also invalid, because
+ * the runtime falls back to the claim pepper and a fallback that changes later
+ * silently re-keys every stored contact_hash, making existing guest orders
+ * permanently unreachable. That is a fail-closed rule, not a warning.
+ */
+function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
+    const checks = [];
+
+    const parseSwitch = (name) => {
+        const raw = envValue(env, name, 40);
+        if (!raw) return { present: false, value: false };
+        const parsed = parseBoolean(raw);
+        return { present: true, value: parsed === true, parsed };
+    };
+
+    const credential = parseSwitch('GUEST_SHOP_BUYER_CREDENTIAL_ENABLED');
+    const page = parseSwitch('GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED');
+
+    if (credential.present && credential.parsed === null) {
+        checks.push(invalidCheck('buyer_credentials', 'credential-switch-boolean', 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED 必须是布尔值；无法解析时按关闭处理会掩盖配置错误。', {
+            env_name: 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED'
+        }));
+    } else if (credential.value) {
+        checks.push(buildCheck('buyer_credentials', 'credential-switch-boolean', true, 'enabled', '游客邮箱 + 查询密码链路已显式启用；下方全部前置条件必须为真。', {
+            env_name: 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED',
+            blocking: false,
+            severity: 'info',
+            requires_manual_review: true
+        }));
+    } else {
+        checks.push(optionalCheck('buyer_credentials', 'credential-switch-boolean', credential.present
+            ? 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED 已显式关闭（等于现状）。'
+            : '未设置 GUEST_SHOP_BUYER_CREDENTIAL_ENABLED；默认关闭，线上行为与现状一致。', {
+            env_name: 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED'
+        }));
+    }
+
+    if (page.present && page.parsed === null) {
+        checks.push(invalidCheck('buyer_credentials', 'orders-page-switch-boolean', 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED 必须是布尔值。', {
+            env_name: 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED'
+        }));
+    } else if (page.value && !credential.value) {
+        checks.push(invalidCheck('buyer_credentials', 'orders-page-requires-credentials', '开启 /guest-orders.html 前必须先开启 GUEST_SHOP_BUYER_CREDENTIAL_ENABLED，否则查询页没有任何可校验的凭证。', {
+            env_name: 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED,GUEST_SHOP_BUYER_CREDENTIAL_ENABLED'
+        }));
+    } else if (page.value) {
+        checks.push(buildCheck('buyer_credentials', 'orders-page-requires-credentials', true, 'enabled', '游客订单查询页与凭证链路同时启用。', {
+            env_name: 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED',
+            blocking: false,
+            severity: 'info',
+            requires_manual_review: true
+        }));
+    } else {
+        checks.push(optionalCheck('buyer_credentials', 'orders-page-requires-credentials', '未开启游客订单查询页（默认关闭）。', {
+            env_name: 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED'
+        }));
+    }
+
+    // §15.2-1: the contact pepper becomes mandatory (not advisory) the moment
+    // credentials are collected, because contact_hash is the group key.
+    if (credential.value) {
+        const contact = envValue(env, 'GUEST_SHOP_CONTACT_HASH_PEPPER', 4096);
+        const claim = envValue(env, 'GUEST_SHOP_CLAIM_PEPPER', 4096);
+        const serviceRole = envValue(env, 'SUPABASE_SERVICE_ROLE_KEY', 4096);
+        if (!contact) {
+            checks.push(invalidCheck('buyer_credentials', 'contact-pepper-required', '启用游客查询密码后必须显式配置 GUEST_SHOP_CONTACT_HASH_PEPPER；回退到 claim pepper 会在 pepper 变更时让全部历史 contact_hash 失效、游客订单永久查不到。', {
+                env_name: 'GUEST_SHOP_CONTACT_HASH_PEPPER'
+            }));
+        } else if (!secretIsStrong(contact, 32) || contact === claim || contact === serviceRole) {
+            checks.push(invalidCheck('buyer_credentials', 'contact-pepper-required', 'GUEST_SHOP_CONTACT_HASH_PEPPER 必须是独立且至少 32 字节的非占位密钥。', {
+                env_name: 'GUEST_SHOP_CONTACT_HASH_PEPPER'
+            }));
+        } else {
+            checks.push(buildCheck('buyer_credentials', 'contact-pepper-required', true, 'configured', 'GUEST_SHOP_CONTACT_HASH_PEPPER 已配置为独立强密钥（值已隐藏）。', {
+                env_name: 'GUEST_SHOP_CONTACT_HASH_PEPPER',
+                blocking: false,
+                severity: 'info'
+            }));
+        }
+
+        for (const relativePath of BUYER_CREDENTIAL_FRONTEND_FILES) {
+            checks.push(fs.existsSync(path.join(repoRoot, relativePath))
+                ? buildCheck('buyer_credentials', `frontend:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
+                    relative_path: relativePath,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `frontend:${relativePath}`, `启用凭证链路后 ${relativePath} 必须存在（A2 交付物）。`, { relative_path: relativePath }));
+        }
+    }
+
+    for (const name of BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES) {
+        checks.push(inspectRuntimeNumericSetting(env, name, { production }));
+    }
+
+    // Step-up challenge must fire BEFORE the lockout, otherwise the captcha
+    // threshold is dead configuration and the operator believes they have
+    // protection they do not. Mirrors the webhook-limit-order invariant above.
+    const numeric = (name) => parseRuntimeNumericSetting(env, name);
+    const captchaPairs = [
+        ['buyer-captcha-before-lockout', 'GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD', 'GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES', '买家'],
+        ['buyer-captcha-ip-before-lockout', 'GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD', 'GUEST_SHOP_BUYER_IP_MAX_FAILURES', 'IP']
+    ];
+    for (const [key, captchaName, lockName, scope] of captchaPairs) {
+        const captcha = numeric(captchaName);
+        const lock = numeric(lockName);
+        if (!captcha.valid || !lock.valid) {
+            checks.push(invalidCheck('buyer_credentials', key, `${scope}验证码阈值与锁定阈值无法比较，请先修正数值配置。`, {
+                env_name: `${captchaName},${lockName}`
+            }));
+            continue;
+        }
+        if (captcha.value >= lock.value) {
+            checks.push(invalidCheck('buyer_credentials', key, `${scope}验证码阈值（${captchaName}=${captcha.value}）必须小于锁定阈值（${lockName}=${lock.value}），否则账号会先被锁定、验证码永远不触发。`, {
+                env_name: `${captchaName},${lockName}`,
+                captcha_threshold: captcha.value,
+                lock_threshold: lock.value
+            }));
+        } else {
+            checks.push(buildCheck('buyer_credentials', key, true, 'consistent', `${scope}验证码阈值 ${captcha.value} 早于锁定阈值 ${lock.value} 触发。`, {
+                env_name: `${captchaName},${lockName}`,
+                blocking: false,
+                severity: 'info'
+            }));
+        }
+    }
+
+    // §15.2-2..6 are database facts. This script never connects to a database,
+    // so it proves what it can from the migration file on disk and turns the
+    // rest into an explicit operator check against the paired verify script.
+    const read = (relativePath) => {
+        try { return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8'); } catch (_) { return ''; }
+    };
+    const rawMigration = read(BUYER_CREDENTIAL_MIGRATION);
+    const rawVerify = read(BUYER_CREDENTIAL_VERIFY_MIGRATION);
+    const migration = stripSqlComments(rawMigration);
+    const verify = stripSqlComments(rawVerify);
+
+    if (!rawMigration) {
+        checks.push(invalidCheck('buyer_credentials', 'migration-file', `${BUYER_CREDENTIAL_MIGRATION} 缺失；guest_shop_buyers / buyer_id 无法在目标库建立。`, {
+            relative_path: BUYER_CREDENTIAL_MIGRATION
+        }));
+    } else {
+        checks.push(buildCheck('buyer_credentials', 'migration-file', true, 'present', `${BUYER_CREDENTIAL_MIGRATION} 已存在。`, {
+            relative_path: BUYER_CREDENTIAL_MIGRATION,
+            blocking: false,
+            severity: 'info'
+        }));
+        for (const [key, pattern, label] of BUYER_CREDENTIAL_MIGRATION_REQUIREMENTS) {
+            checks.push(pattern.test(migration)
+                ? buildCheck('buyer_credentials', `migration:${key}`, true, 'present', `迁移已包含${label}。`, {
+                    relative_path: BUYER_CREDENTIAL_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `migration:${key}`, `迁移缺少${label}。`, { relative_path: BUYER_CREDENTIAL_MIGRATION }));
+        }
+        for (const [key, pattern, label] of BUYER_CREDENTIAL_MIGRATION_PROHIBITIONS) {
+            checks.push(pattern.test(migration)
+                ? invalidCheck('buyer_credentials', `migration:${key}`, `迁移违反约束：${label}。`, { relative_path: BUYER_CREDENTIAL_MIGRATION })
+                : buildCheck('buyer_credentials', `migration:${key}`, true, 'absent', `迁移未违反约束：${label}。`, {
+                    relative_path: BUYER_CREDENTIAL_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    if (!rawVerify) {
+        checks.push(invalidCheck('buyer_credentials', 'verify-migration-file', `${BUYER_CREDENTIAL_VERIFY_MIGRATION} 缺失；无法在目标库验证 A0 迁移结果。`, {
+            relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_CREDENTIAL_VERIFY_REQUIREMENTS) {
+            checks.push(pattern.test(verify)
+                ? buildCheck('buyer_credentials', `verify:${key}`, true, 'present', `verify 脚本已包含${label}。`, {
+                    relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `verify:${key}`, `verify 脚本缺少${label}。`, { relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION }));
+        }
+        for (const [key, pattern, label] of BUYER_CREDENTIAL_VERIFY_PROHIBITIONS) {
+            checks.push(pattern.test(verify)
+                ? invalidCheck('buyer_credentials', `verify:${key}`, `verify 脚本违反约束：${label}。`, { relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION })
+                : buildCheck('buyer_credentials', `verify:${key}`, true, 'absent', `verify 脚本未违反约束：${label}。`, {
+                    relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Order Access 2.0 (A1b): atomic credential-group allocation RPC. Same
+    // contract as A0 — prove statically what the file on disk can prove, and
+    // turn the rest into an explicit operator step against the paired verify
+    // script. These run regardless of the enable switch: a malformed migration
+    // on disk is a release blocker even while the feature stays off.
+    // -----------------------------------------------------------------------
+    const rawUpsert = read(BUYER_GROUP_UPSERT_MIGRATION);
+    const rawUpsertVerify = read(BUYER_GROUP_UPSERT_VERIFY_MIGRATION);
+    const upsert = stripSqlComments(rawUpsert);
+    const upsertVerify = stripSqlComments(rawUpsertVerify);
+
+    if (!rawUpsert) {
+        checks.push(invalidCheck('buyer_credentials', 'upsert-migration-file', `${BUYER_GROUP_UPSERT_MIGRATION} 缺失；凭证分组无法原子分配，启用凭证链路后会退化为有竞态的多次往返。`, {
+            relative_path: BUYER_GROUP_UPSERT_MIGRATION
+        }));
+    } else {
+        checks.push(buildCheck('buyer_credentials', 'upsert-migration-file', true, 'present', `${BUYER_GROUP_UPSERT_MIGRATION} 已存在。`, {
+            relative_path: BUYER_GROUP_UPSERT_MIGRATION,
+            blocking: false,
+            severity: 'info'
+        }));
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_MIGRATION_REQUIREMENTS) {
+            checks.push(pattern.test(upsert)
+                ? buildCheck('buyer_credentials', `upsert-migration:${key}`, true, 'present', `A1b 迁移已包含${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `upsert-migration:${key}`, `A1b 迁移缺少${label}。`, { relative_path: BUYER_GROUP_UPSERT_MIGRATION }));
+        }
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_MIGRATION_PROHIBITIONS) {
+            checks.push(pattern.test(upsert)
+                ? invalidCheck('buyer_credentials', `upsert-migration:${key}`, `A1b 迁移违反约束：${label}。`, { relative_path: BUYER_GROUP_UPSERT_MIGRATION })
+                : buildCheck('buyer_credentials', `upsert-migration:${key}`, true, 'absent', `A1b 迁移未违反约束：${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    if (!rawUpsertVerify) {
+        checks.push(invalidCheck('buyer_credentials', 'upsert-verify-migration-file', `${BUYER_GROUP_UPSERT_VERIFY_MIGRATION} 缺失；无法在目标库验证 A1b upsert 函数。`, {
+            relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_VERIFY_REQUIREMENTS) {
+            checks.push(pattern.test(upsertVerify)
+                ? buildCheck('buyer_credentials', `upsert-verify:${key}`, true, 'present', `A1b verify 脚本已包含${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `upsert-verify:${key}`, `A1b verify 脚本缺少${label}。`, { relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION }));
+        }
+        for (const [key, pattern, label] of BUYER_GROUP_UPSERT_VERIFY_PROHIBITIONS) {
+            checks.push(pattern.test(upsertVerify)
+                ? invalidCheck('buyer_credentials', `upsert-verify:${key}`, `A1b verify 脚本违反约束：${label}。`, { relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION })
+                : buildCheck('buyer_credentials', `upsert-verify:${key}`, true, 'absent', `A1b verify 脚本未违反约束：${label}。`, {
+                    relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                }));
+        }
+    }
+
+    checks.push(manualCheck('buyer_credentials', 'upsert-schema-applied', `必须在目标 Supabase 中、于 ${BUYER_CREDENTIAL_MIGRATION} 之后执行 ${BUYER_GROUP_UPSERT_MIGRATION}，并运行 ${BUYER_GROUP_UPSERT_VERIFY_MIGRATION} 确认 6 项检查全部 PASS（函数唯一重载、签名、SECURITY DEFINER/search_path、仅 service_role 可执行、body 不变量、A1b 纯增量）。本脚本不连接数据库。`, {
+        relative_path: BUYER_GROUP_UPSERT_VERIFY_MIGRATION,
+        severity: credential.value ? 'critical' : 'high'
+    }));
+
+    checks.push(manualCheck('buyer_credentials', 'database-schema-applied', `必须在目标 Supabase 中执行 ${BUYER_CREDENTIAL_MIGRATION}，并运行 ${BUYER_CREDENTIAL_VERIFY_MIGRATION} 确认 11 项检查全部 PASS（含 RLS 收口、13 参数 RPC 签名、旧 12 参数签名已消失）。本脚本不连接数据库。`, {
+        relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION,
+        severity: credential.value ? 'critical' : 'high'
+    }));
+    checks.push(manualCheck('buyer_credentials', 'access-attempt-purge', `guest_shop_access_attempts 的 ${parseRuntimeNumericSetting(env, 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS').value} 天清理由运维调度，迁移不会创建定时任务；启用凭证链路前必须确认清理方式已落地。`, {
+        severity: 'medium'
+    }));
 
     return checks;
 }
@@ -1001,6 +1465,7 @@ function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', n
         ...inspectSupabase(env, production),
         ...inspectGuestSecrets(env, production),
         inspectWorkerSecret(env, production),
+        ...inspectBuyerCredentials(env, production, repoRoot),
         ...inspectPersistentRateLimit(env, production),
         ...inspectLimits(env, production),
         ...inspectProductionCallbacks(env, production),
@@ -1111,6 +1576,7 @@ module.exports = {
     SUPPORTED_PROVIDERS,
     formatHumanReport,
     getReadinessExitCode,
+    inspectBuyerCredentials,
     inspectCallbackUrl,
     inspectGuestSecrets,
     inspectLimits,
@@ -1125,5 +1591,6 @@ module.exports = {
     loadEnvFile,
     parseArgs,
     parseProviderList,
-    runReadiness
+    runReadiness,
+    stripSqlComments
 };

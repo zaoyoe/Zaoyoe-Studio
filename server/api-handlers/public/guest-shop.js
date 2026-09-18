@@ -2,6 +2,8 @@
 
 const crypto = require('node:crypto');
 const defaultSecurity = require('../../../api/_lib/guest-shop/security');
+const defaultBuyerCredentials = require('../../../api/_lib/guest-shop/buyer-credentials');
+const defaultBuyerAccessAdmin = require('../../../api/_lib/guest-shop/buyer-access-admin');
 const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
 
@@ -21,6 +23,26 @@ const GUEST_CLAIM_COOKIE_NAME = 'guest_claim_proof';
 const GUEST_CLAIM_COOKIE_VERSION = 'v1';
 const GUEST_CLAIM_COOKIE_MAX_ITEMS = 4;
 const GUEST_CLAIM_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
+// Order Access 2.0 (§7.1 / §12): a short-lived session cookie issued by
+// POST /guest/access/login so the list/detail/delivery endpoints do not have to
+// re-send the query password on every request. The `__Host-` prefix is a browser
+// contract: it forces Secure, forbids a Domain attribute, and REQUIRES Path=/.
+// The spec's illustrative Path=/api/shop/guest is therefore invalid for a
+// `__Host-` cookie; we use Path=/ and scope authorization server-side to the
+// guest routes instead. The payload always carries buyer_id (the matched
+// credential group) and NEVER degrades to contact_hash, which would leak across
+// groups (§6.4). Keyed off the claim pepper with a distinct domain-separation
+// label so it can never be confused with the claim-proof cookie key.
+const GUEST_ACCESS_COOKIE_NAME = '__Host-gs-acc';
+// v2 (A3): the payload carries `pv` (password_version) in addition to
+// buyer_id/contact_hash/exp. v1 is NOT accepted, because a v1 cookie cannot be
+// revoked: nothing in it changes when an admin issues a reset link or a buyer
+// resets their own password, so a stolen cookie would stay valid for its full
+// 30 minutes regardless. Dropping v1 outright is free — the credential switch
+// has never been on in production, so no v1 cookie has ever been minted outside
+// a test harness (§13.4 / §15.1).
+const GUEST_ACCESS_COOKIE_VERSION = 'v2';
+const GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS = 30 * 60;
 const MAX_CLAIM_FAILURE_ATTEMPTS = 20;
 const CLAIM_FAILURE_UPDATE_RETRIES = 4;
 const INVALID_WEBHOOK_AUDIT_BUCKET_MS = 5 * 60 * 1000;
@@ -349,6 +371,90 @@ function claimSecretFromCookie(req, order, security, env) {
     return String(proof?.secret || '').trim();
 }
 
+function accessCookieKey(security, env) {
+    try {
+        const pepper = security.getGuestClaimPepper(env, { required: true });
+        return crypto.createHash('sha256')
+            .update(`guest-shop-access-cookie\0${pepper}`, 'utf8')
+            .digest();
+    } catch (_) {
+        return null;
+    }
+}
+
+function encryptAccessCookie(payload, security, env) {
+    const key = accessCookieKey(security, env);
+    if (!key) return '';
+    try {
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+        const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        return [
+            GUEST_ACCESS_COOKIE_VERSION,
+            iv.toString('base64url'),
+            tag.toString('base64url'),
+            ciphertext.toString('base64url')
+        ].join('.');
+    } catch (_) {
+        return '';
+    }
+}
+
+function decryptAccessCookie(value, security, env) {
+    const source = String(value || '').trim();
+    const parts = source.split('.');
+    if (parts.length !== 4 || parts[0] !== GUEST_ACCESS_COOKIE_VERSION) return null;
+    const key = accessCookieKey(security, env);
+    if (!key) return null;
+    try {
+        const iv = Buffer.from(parts[1], 'base64url');
+        const tag = Buffer.from(parts[2], 'base64url');
+        const ciphertext = Buffer.from(parts[3], 'base64url');
+        if (iv.length !== 12 || tag.length !== 16 || !ciphertext.length || ciphertext.length > 1024) return null;
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+        const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+        const parsed = JSON.parse(plaintext);
+        if (!parsed || parsed.v !== 1) return null;
+        const buyerId = String(parsed.buyer_id || '').trim();
+        const contactHash = String(parsed.contact_hash || '').trim();
+        const exp = Number(parsed.exp);
+        const pv = Number(parsed.pv);
+        // A session is only usable while it carries the group id AND the
+        // password_version it was minted with, and has not expired. Never fall
+        // back to contact_hash for authorization (§6.4).
+        //
+        // A missing/invalid `pv` makes the whole cookie invalid rather than
+        // "pv unchecked": fail-closed. This is what turns password_version into
+        // a real revocation handle — an admin reset link or a buyer password
+        // reset moves the row's version and every outstanding cookie for that
+        // group stops resolving (§10.5, deviation D-8).
+        if (!buyerId || !Number.isFinite(exp) || exp <= Date.now()) return null;
+        if (!Number.isSafeInteger(pv) || pv < 1) return null;
+        return { buyerId, contactHash, pv, exp };
+    } catch (_) {
+        return null;
+    }
+}
+
+function setAccessCookie(res, token) {
+    if (!res?.setHeader || !token) return;
+    const cookie = `${GUEST_ACCESS_COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+    let current = res.getHeader?.('Set-Cookie');
+    if (!Array.isArray(current)) current = current ? [String(current)] : [];
+    res.setHeader('Set-Cookie', [...current, cookie]);
+}
+
+function clearAccessCookie(res) {
+    if (!res?.setHeader) return;
+    const cookie = `${GUEST_ACCESS_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict`;
+    let current = res.getHeader?.('Set-Cookie');
+    if (!Array.isArray(current)) current = current ? [String(current)] : [];
+    res.setHeader('Set-Cookie', [...current, cookie]);
+}
+
 function webhookError(message, code, statusCode = 400, expose = true) {
     const error = new Error(String(message || '回调请求无效'));
     error.code = String(code || 'guest_webhook_invalid');
@@ -609,8 +715,8 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
 
 const ALLOWED_ORDER_FIELDS = new Set([
     'site', 'productId', 'product_id', 'skuId', 'sku_id', 'quantity',
-    'idempotencyKey', 'idempotency_key', 'email', 'provider', 'providerKey',
-    'provider_key', 'channel', 'paymentChannel', 'payment_channel'
+    'idempotencyKey', 'idempotency_key', 'email', 'orderPassword', 'provider',
+    'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel'
 ]);
 
 function createGuestShopHandlers({
@@ -1382,13 +1488,27 @@ function responseOrder(order, claimSecret, extras = {}) {
                 product: { id: pricing.product.id, name: pricing.product.name || '', sku_id: pricing.sku.id, sku_name: pricing.sku.sku_name || '' },
                 price: { amount: pricing.unitAmount, currency: pricing.currency, quantity: 1 },
                 payment_channels: Array.isArray(pricing.channels) ? pricing.channels : [],
-                payment_providers: paymentProviders
+                payment_providers: paymentProviders,
+                // Order Access 2.0 (§13.4): the order form only collects a query
+                // password when the credential switch is on. The client toggles
+                // the field from this flag, so no separate config channel is
+                // needed and the switch-off path stays byte-identical to today.
+                buyer_credential_required: defaultBuyerCredentials.isBuyerCredentialEnabled(env)
             });
         } catch (error) { return failResponse(res, error); }
     }
 
     async function orders(req, res) {
         setGuestSensitiveHeaders(res);
+        // Order Access 2.0 (§12): GET on this same flat route lists the orders of
+        // the authenticated buyer. The dispatcher has no path parameters
+        // (resolveRoute lowercases and joins segments), so detail and delivery
+        // live on their own flat keys with order_no in the query string. While
+        // the credential switch is off the GET branch is unreachable and the
+        // 405 below is exactly today's response.
+        if (req.method === 'GET' && defaultBuyerCredentials.isBuyerCredentialEnabled(env)) {
+            return listOrders(req, res);
+        }
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
         if (!(await limit(req, res, 'orders', { limit: 12 }))) return;
         try {
@@ -1407,6 +1527,13 @@ function responseOrder(order, claimSecret, extras = {}) {
             }
             const orderBody = { ...body };
             for (const field of ['provider', 'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel']) delete orderBody[field];
+            // Order Access 2.0 (§6.1.4 / §12): the query password is collected on
+            // the order form ONLY while the credential switch is on. It is never
+            // an order input field, so lift it out before normalization and drop
+            // it from the body that reaches normalizeGuestOrderInput.
+            const credentialEnabled = defaultBuyerCredentials.isBuyerCredentialEnabled(env);
+            const rawOrderPassword = orderBody.orderPassword;
+            delete orderBody.orderPassword;
             const normalized = security.normalizeGuestOrderInput(orderBody, { site: siteName, quantityMax: 1, allowOptionalContact: true });
             const pricing = await loadGuestSkuPricing({ supabase: getSupabase(), productId: normalized.productId, skuId: normalized.skuId, siteName });
             const fingerprint = security.buildGuestRequestFingerprint({
@@ -1428,11 +1555,50 @@ function responseOrder(order, claimSecret, extras = {}) {
             const claimHash = security.hashClaimSecret(claimSecret, { env });
             const ipHash = hashRequestAttribute(resolveClientIp(req, { env }));
             const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+
+            // Order Access 2.0 (§6.4): resolve the credential group that will own
+            // this order. While the switch is OFF this is a no-op and the order
+            // keeps the legacy non-strict contact hash (or null), so the path is
+            // byte-identical to today. While ON, email + query password are
+            // mandatory, the password is strength-checked server-side, and the
+            // resolved buyer_id is bound to the order under the SAME strict
+            // contact hash that keys the group (the create RPC re-verifies the
+            // (buyer_id, site, contact_hash) triple and fails closed on mismatch).
+            let buyerContactHash = hashContact(normalized.email);
+            let buyerId = null;
+            if (credentialEnabled) {
+                const email = String(normalized.email || '').trim().toLowerCase();
+                if (!email) {
+                    throw new security.GuestShopSecurityError('请填写邮箱', {
+                        statusCode: 400, code: 'guest_email_required', field: 'email'
+                    });
+                }
+                const orderPassword = typeof rawOrderPassword === 'string' ? rawOrderPassword : '';
+                // Server-authoritative strength check (§6.1.4). Safe to echo the
+                // failing rule here: the buyer is present and no secret exists yet.
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(orderPassword, {
+                    security, env, email, field: 'orderPassword'
+                });
+                buyerContactHash = security.hashGuestContact(email, { env, strict: true });
+                const resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
+                    supabase: getSupabase(),
+                    security,
+                    env,
+                    site: siteName,
+                    email,
+                    password: orderPassword,
+                    contactHash: buyerContactHash,
+                    ipHash,
+                    deviceHash
+                });
+                buyerId = resolved.buyerId;
+            }
+
             const { data, error } = await getSupabase().rpc('fn_guest_shop_create_order', {
                 p_site: siteName, p_product_id: normalized.productId, p_sku_id: normalized.skuId,
                 p_idempotency_key: normalized.idempotencyKey, p_request_fingerprint: fingerprint,
                 p_claim_secret_hash: claimHash, p_provider: provider, p_channel: channel,
-                p_buyer_contact_hash: hashContact(normalized.email), p_request_ip_hash: ipHash,
+                p_buyer_contact_hash: buyerContactHash, p_buyer_id: buyerId, p_request_ip_hash: ipHash,
                 p_request_device_hash: deviceHash, p_ttl_seconds: orderTtlSeconds
             });
             if (error) throw error;
@@ -2242,6 +2408,836 @@ function responseOrder(order, claimSecret, extras = {}) {
         } catch (error) { return failResponse(res, error); }
     }
 
+    // ------------------------------------------------------------------
+    // Order Access 2.0 (A2): buyer-credential session + list/detail/delivery.
+    //
+    // Everything in this block is gated behind
+    // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED. With the switch off each new route
+    // answers 404 and the GET branch on /guest/orders is not even reachable, so
+    // the deployed behaviour stays byte-identical to today (§13.4 / §15.1).
+    // ------------------------------------------------------------------
+
+    function buyerFeatureDisabledError() {
+        // 404, not 403: an unreleased endpoint must not be distinguishable from
+        // a route that never existed, otherwise the route map itself advertises
+        // the rollout state of the credential feature.
+        return Object.assign(new Error('接口不存在'), {
+            statusCode: 404, code: 'guest_feature_disabled', expose: true
+        });
+    }
+
+    function ensureBuyerCredentialsEnabled() {
+        if (!defaultBuyerCredentials.isBuyerCredentialEnabled(env)) throw buyerFeatureDisabledError();
+    }
+
+    function guestCredentialsInvalidError() {
+        // §9.1: ONE code and ONE message cover "unknown email", "wrong password"
+        // and "this email has no guest order". The real reason only ever reaches
+        // guest_shop_access_attempts.outcome, never the body, header or log.
+        return new security.GuestShopSecurityError('邮箱或查询密码不正确', {
+            statusCode: 403, code: 'guest_order_credentials_invalid'
+        });
+    }
+
+    function guestOrderLockedError() {
+        return new security.GuestShopSecurityError('尝试次数过多，请稍后再试', {
+            statusCode: 423, code: 'guest_order_locked'
+        });
+    }
+
+    function guestOrderRateLimitedError() {
+        return new security.GuestShopSecurityError('操作过于频繁，请稍后再试', {
+            statusCode: 429, code: 'guest_rate_limited'
+        });
+    }
+
+    function guestOrderNotFoundError() {
+        return new security.GuestShopSecurityError('未找到该订单', {
+            statusCode: 404, code: 'guest_order_not_found'
+        });
+    }
+
+    function guestDatabaseUnavailableError() {
+        return Object.assign(new Error('游客订单数据库不可用'), {
+            statusCode: 503, code: 'guest_database_unavailable', expose: false
+        });
+    }
+
+    /**
+     * §8.1 shared login path. POST /guest/access/login and the per-request
+     * X-Guest-Order-Credential header both funnel through here, which is the
+     * only reason the two channels share one lock budget, one audit stream and
+     * one equal-cost scrypt. Bypassing it would hand an attacker a second,
+     * uncounted guessing surface.
+     */
+    async function resolveBuyerSessionFromPassword({ req, email, password, siteName }) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const rawPassword = typeof password === 'string' ? password : '';
+        // Throws a 503 expose:false misconfiguration error on a malformed knob,
+        // so a typo can never silently widen the budget to "unlimited".
+        const settings = defaultBuyerCredentials.resolveBuyerCredentialSettings(env);
+        const contactHash = security.hashGuestContact(normalizedEmail, { env, strict: true });
+        const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+        const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+        const audit = async (outcome, buyerId = null) => {
+            // Evidence only. A failed insert must never flip an auth decision in
+            // either direction, so this is isolated from the caller's outcome.
+            try {
+                await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                    supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                });
+            } catch (_) { /* best effort by contract */ }
+        };
+
+        // The IP budget is evaluated BEFORE any group read or scrypt: a spraying
+        // attacker is cut off cheaply and cannot use latency as an email oracle.
+        const ipFailures = await defaultBuyerCredentials.countRecentIpFailures({
+            supabase: db,
+            ipHash,
+            windowSeconds: settings.loginWindowSeconds,
+            budget: settings.ipMaxFailures
+        });
+        if (ipFailures >= settings.ipMaxFailures) {
+            await audit('rate_limited');
+            throw guestOrderRateLimitedError();
+        }
+
+        const rows = await defaultBuyerCredentials.loadBuyerGroups({
+            supabase: db, site: siteName, contactHash
+        });
+
+        // A lock on ANY group of the contact locks the whole contact, and is
+        // checked before scrypt so a locked contact is both cheap and free of a
+        // timing side channel (§8.1).
+        const lockedRow = defaultBuyerCredentials.findActiveBuyerLock(rows);
+        if (lockedRow) {
+            await audit('locked', lockedRow.id || null);
+            throw guestOrderLockedError();
+        }
+
+        const { matched, needsRehash } = defaultBuyerCredentials
+            .verifyBuyerPasswordAcrossGroups(rawPassword, rows, security);
+        if (matched) {
+            // §10.4 (A4) will retire guest access for a merged group. Nothing
+            // writes merged_into_user_id yet, so this is the fail-closed guard:
+            // a merged group answers exactly like a wrong password, reusing the
+            // unified 403 and the existing outcome enum rather than inventing a
+            // distinguishable signal.
+            if (matched.mergedIntoUserId) {
+                await audit('bad_password', matched.id);
+                throw guestCredentialsInvalidError();
+            }
+            await defaultBuyerCredentials.resetBuyerLoginFailures({
+                supabase: db, site: siteName, contactHash, rows
+            });
+            let rehashed = false;
+            if (needsRehash) {
+                rehashed = await defaultBuyerCredentials.rehashBuyerPasswordIfNeeded({
+                    supabase: db, row: matched, password: rawPassword, security
+                }) === true;
+            }
+            await audit('success', matched.id);
+            // buyer_id (never contact_hash) is the authorization subject, so a
+            // group=2 session cannot read group=1 orders or card content
+            // (§6.4.2). The cookie payload below carries this same id.
+            //
+            // passwordVersion must reflect the value the row holds AFTER the
+            // §6.2 transparent rehash, not the one we read: the rehash bumps it,
+            // and a cookie minted with the stale number would be rejected by the
+            // very next authenticated read. `rehashBuyerPasswordIfNeeded` is a
+            // best-effort CAS (it returns false when the hash was already
+            // current or when the write lost a race), so the version is derived
+            // from its actual outcome through the SAME formula the writer used.
+            return {
+                buyerId: matched.id,
+                contactHash,
+                passwordVersion: rehashed
+                    ? defaultBuyerCredentials.nextBuyerPasswordVersion(matched.passwordVersion)
+                    : matched.passwordVersion
+            };
+        }
+
+        const failure = await defaultBuyerCredentials.registerBuyerLoginFailure({
+            supabase: db, site: siteName, contactHash, rows, settings
+        });
+        await audit(rows.length === 0 ? 'unknown_email' : 'bad_password');
+        if (failure?.locked) throw guestOrderLockedError();
+        throw guestCredentialsInvalidError();
+    }
+
+    /**
+     * §9.2: ownership is proven by buyer_id and every non-match collapses to
+     * 404 — never 403 — so detail/delivery cannot be used as an order-number
+     * existence oracle.
+     */
+    async function loadOwnedGuestOrder(buyerId, orderNo) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const normalized = String(orderNo || '').trim();
+        if (!normalized) throw guestOrderNotFoundError();
+        const result = await db.from('guest_shop_orders').select('*')
+            .eq('order_no', normalized)
+            .eq('buyer_id', String(buyerId))
+            .maybeSingle();
+        if (result?.error) throw result.error;
+        if (!result?.data) throw guestOrderNotFoundError();
+        return result.data;
+    }
+
+    /**
+     * §10.5 / deviation D-8: the session cookie is a CACHED authorization, not
+     * a standing one. Its AES-GCM tag proves we minted it; it cannot prove the
+     * credential group is still in the state it was in when we minted it. So
+     * every cookie-authenticated read re-validates four things against
+     * `guest_shop_buyers`:
+     *
+     *   row exists            -> the group was not deleted
+     *   merged_into_user_id   -> §10.4 retired guest access; fail closed
+     *   locked_until          -> a lock raised on ANOTHER device after this
+     *                            cookie was issued must still cut this one off,
+     *                            otherwise §8.1's lock would only protect the
+     *                            login endpoint and not the data it guards
+     *   password_version == pv-> THE revocation handle. An admin issuing a reset
+     *                            link, a buyer completing a reset, or a §6.2
+     *                            transparent rehash all move it, and every
+     *                            outstanding cookie for that group dies with it
+     *
+     * Cost: one indexed primary-key read per authenticated request, only while
+     * the credential switch is on (with it off, order/delivery answer 404 before
+     * authentication and the GET list branch is unreachable). That is the price
+     * of making "revoke a guest session" mean something, and it is strictly
+     * cheaper than the scrypt the header channel pays on every request.
+     *
+     * All four failures collapse to the SAME unified 403 as a wrong password
+     * (§9.1), except the lock (423, matching login) and a database error (503,
+     * retryable — an outage must not read as "your credentials are wrong").
+     */
+    async function validateSessionBuyer(session) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const buyerId = String(session?.buyerId || '').trim();
+        // A malformed id can only come from our own minting, so treat it as an
+        // invalid session rather than letting a 404 escape the unified 403.
+        if (!defaultBuyerAccessAdmin.isUuid(buyerId)) throw guestCredentialsInvalidError();
+        let row = null;
+        try {
+            row = await defaultBuyerAccessAdmin.loadBuyerRowById({ supabase: db, buyerId });
+        } catch (_) {
+            // Past the UUID check the only throw is a database error.
+            throw guestDatabaseUnavailableError();
+        }
+        if (!row) throw guestCredentialsInvalidError();
+        if (row.mergedIntoUserId) throw guestCredentialsInvalidError();
+        if (defaultBuyerAccessAdmin.isBuyerLocked(row)) throw guestOrderLockedError();
+        if (Number(row.passwordVersion) !== Number(session.pv)) throw guestCredentialsInvalidError();
+        return {
+            buyerId: row.id,
+            contactHash: row.contactHash,
+            passwordVersion: row.passwordVersion
+        };
+    }
+
+    /**
+     * §7.1 transport rules for the credential endpoints:
+     *   - query-string credentials are rejected outright, so they can never end
+     *     up in an access log, a proxy log or a Referer header;
+     *   - the session cookie wins when present, which is what lets a
+     *     browser-native navigation (card download) work without a custom
+     *     header;
+     *   - otherwise the X-Guest-Order-Credential header is verified through the
+     *     shared login path, keeping one lock budget.
+     */
+    async function authenticateGuestOrderAccess(req) {
+        for (const name of ['email', 'order_password', 'orderPassword', 'password']) {
+            const value = queryValue(req, name);
+            if (value === undefined || value === null || String(value) === '') continue;
+            // Audit the attempt with the real site when it parses; an unparseable
+            // site is skipped rather than written as a row that the NOT NULL /
+            // CHECK constraint would reject anyway. The 400 is returned either
+            // way, so audit failure cannot weaken the rejection.
+            let auditSite = '';
+            try {
+                auditSite = security.normalizeGuestSite(queryValue(req, 'site'));
+            } catch (_) { auditSite = ''; }
+            if (auditSite) {
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: getSupabase(),
+                        site: auditSite,
+                        contactHash: null,
+                        buyerId: null,
+                        ipHash: hashRequestAttribute(clientIpForRateLimit(req)),
+                        deviceHash: hashRequestAttribute(req?.headers?.['user-agent'] || ''),
+                        outcome: 'rate_limited'
+                    });
+                } catch (_) { /* best effort */ }
+            }
+            throw new security.GuestShopSecurityError('不支持通过 URL 传递查询凭证', {
+                statusCode: 400, code: 'guest_credential_malformed', field: name
+            });
+        }
+
+        const session = decryptAccessCookie(
+            cookieHeaderValue(req, GUEST_ACCESS_COOKIE_NAME), security, env
+        );
+        // Cookie wins over the header (§7.1) but is NOT trusted on its own: see
+        // validateSessionBuyer for the four re-validations and why a cookie
+        // without them would make §8.1's lock and §10.5's reset unenforceable.
+        if (session) return validateSessionBuyer(session);
+
+        const header = req?.headers?.[security.GUEST_ORDER_CREDENTIAL_HEADER];
+        if (header) {
+            // parseGuestOrderCredentialHeader throws 400 guest_credential_malformed
+            // for anything non-canonical, including the non-canonical base64url
+            // re-encodings (§16.1).
+            const parsed = security.parseGuestOrderCredentialHeader(header);
+            return resolveBuyerSessionFromPassword({
+                req,
+                email: parsed.email,
+                password: parsed.password,
+                siteName: normalizeSiteValue(queryValue(req, 'site'))
+            });
+        }
+        throw guestCredentialsInvalidError();
+    }
+
+    function guestOrderListSnapshot(order) {
+        return {
+            ...publicOrderSnapshot(order),
+            site: order.site || '',
+            quantity: Number(order.quantity) || 1,
+            unit_amount: order.unit_amount === undefined || order.unit_amount === null
+                ? null : order.unit_amount,
+            created_at: order.created_at || null,
+            // §11.2: the guest orders page renders two discount lines (coupon /
+            // campaign). A2 ships the container only; L1/L2 fill it. Both stay
+            // null so the client renders nothing instead of a misleading
+            // "已优惠 0.00".
+            coupon_discount: null,
+            promo_discount: null
+        };
+    }
+
+    function parsePositiveQueryInt(value, { defaultValue, min, max }) {
+        const raw = String(value ?? '').trim();
+        if (!raw) return defaultValue;
+        if (!/^\d+$/u.test(raw)) return defaultValue;
+        const parsed = Number(raw);
+        if (!Number.isSafeInteger(parsed)) return defaultValue;
+        return Math.min(max, Math.max(min, parsed));
+    }
+
+    async function listOrders(req, res) {
+        // Read budget 30/min (§8.1). Taken before authentication so an
+        // unauthenticated spray still consumes the coarse limiter.
+        if (!(await limit(req, res, 'guest-orders-read', { limit: 30 }))) return;
+        try {
+            const auth = await authenticateGuestOrderAccess(req);
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const page = parsePositiveQueryInt(queryValue(req, 'page'), { defaultValue: 1, min: 1, max: 10_000 });
+            const pageSize = parsePositiveQueryInt(queryValue(req, 'pageSize') ?? queryValue(req, 'page_size'), {
+                defaultValue: 20, min: 1, max: 50
+            });
+            const fields = 'order_no,site,total_amount,currency,quantity,unit_amount,'
+                + 'payment_status,fulfillment_status,refund_status,expires_at,created_at';
+            let query = db.from('guest_shop_orders').select(fields, { count: 'exact' });
+            // buyer_id is unique per (site, contact_hash), so it already implies
+            // the site; no extra site filter is needed or wanted.
+            query = query.eq('buyer_id', String(auth.buyerId));
+            const orderNo = String(queryValue(req, 'order_no') || queryValue(req, 'orderNo') || '').trim();
+            if (orderNo) query = query.eq('order_no', orderNo);
+            if (typeof query.order === 'function') query = query.order('created_at', { ascending: false });
+            if (typeof query.range === 'function') {
+                query = query.range((page - 1) * pageSize, page * pageSize - 1);
+            } else if (typeof query.limit === 'function') {
+                query = query.limit(pageSize);
+            }
+            const result = await query;
+            if (result?.error) throw result.error;
+            const rows = Array.isArray(result?.data) ? result.data : [];
+            const total = Number.isFinite(Number(result?.count)) && result?.count !== null
+                ? Number(result.count) : rows.length;
+            return sendJson(res, 200, {
+                success: true,
+                orders: rows.map(guestOrderListSnapshot),
+                pagination: { page, page_size: pageSize, total }
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function orderDetail(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            if (!(await limit(req, res, 'guest-orders-read', { limit: 30 }))) return;
+            const auth = await authenticateGuestOrderAccess(req);
+            const order = await loadOwnedGuestOrder(
+                auth.buyerId,
+                queryValue(req, 'order_no') || queryValue(req, 'orderNo')
+            );
+            return sendJson(res, 200, { success: true, order: guestOrderListSnapshot(order) });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function delivery(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Card content is the highest-value payload on the guest surface, so
+            // it gets a tighter budget than the list endpoint.
+            if (!(await limit(req, res, 'guest-orders-delivery', { limit: 20 }))) return;
+            const auth = await authenticateGuestOrderAccess(req);
+            const order = await loadOwnedGuestOrder(
+                auth.buyerId,
+                queryValue(req, 'order_no') || queryValue(req, 'orderNo')
+            );
+            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+            const fulfillmentStatus = String(order.fulfillment_status || '').trim().toLowerCase();
+            if (paymentStatus !== 'confirmed' || fulfillmentStatus !== 'delivered') {
+                return sendJson(res, 409, {
+                    success: false, code: 'guest_order_not_ready', message: '订单尚未完成发货'
+                });
+            }
+            const content = await loadClaimedContent(order);
+            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function accessLogin(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Write budget 10/min (§8.1), taken before the body is parsed so a
+            // credential spray cannot amplify JSON work.
+            if (!(await limit(req, res, 'guest-orders-write', { limit: 10 }))) return;
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
+                    throw new security.GuestShopSecurityError('登录请求字段不允许', {
+                        field: key, code: 'unknown_field'
+                    });
+                }
+            }
+            const email = String(body.email || '').trim().toLowerCase();
+            const password = typeof body.password === 'string' && body.password
+                ? body.password
+                : (typeof body.orderPassword === 'string' && body.orderPassword
+                    ? body.orderPassword
+                    : String(body.order_password || ''));
+            if (!email || !password) {
+                throw new security.GuestShopSecurityError('请输入邮箱和查询密码', {
+                    statusCode: 400, code: 'guest_credential_malformed', field: 'email'
+                });
+            }
+            const siteName = normalizeSiteValue(body.site);
+            const session = await resolveBuyerSessionFromPassword({ req, email, password, siteName });
+            const token = encryptAccessCookie({
+                v: 1,
+                buyer_id: session.buyerId,
+                contact_hash: session.contactHash,
+                // `pv` is the revocation handle (§10.5 / D-8). decryptAccessCookie
+                // rejects a cookie without it, so this can never be omitted by a
+                // future edit without breaking login loudly in tests.
+                pv: session.passwordVersion,
+                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
+            }, security, env);
+            if (!token) {
+                // A missing claim pepper must not silently degrade the buyer to
+                // the header-only channel; fail closed with a retryable 503.
+                throw Object.assign(new Error('会话签发失败'), {
+                    statusCode: 503, code: 'guest_shop_misconfigured', expose: false
+                });
+            }
+            setAccessCookie(res, token);
+            return sendJson(res, 200, {
+                success: true,
+                authenticated: true,
+                // Only the buyer's own email is echoed, for the "已保存 xxx 的查询
+                // 凭证" hint. buyer_id stays server-side inside the cookie.
+                email,
+                session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function accessLogout(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        // Deliberately NOT gated on the credential switch: if the feature is
+        // rolled back while a cookie is live, the buyer must still be able to
+        // clear it. Logout exposes no data and grants nothing.
+        clearAccessCookie(res);
+        return sendJson(res, 200, { success: true, logged_out: true });
+    }
+
+
+    /**
+     * §9.1 / §10.5: ONE code and ONE message for every failed reset — no such
+     * link, expired, already used, revoked, wrong email, deleted group, merged
+     * group. The real reason only ever reaches
+     * `guest_shop_access_attempts.outcome = reset_invalid`.
+     */
+    function guestResetInvalidError() {
+        return new security.GuestShopSecurityError('找回链接无效或已过期', {
+            statusCode: 403, code: 'guest_reset_invalid'
+        });
+    }
+
+    /**
+     * §10.5 (A3): consume an admin-issued one-time link and set a new query
+     * password. This is the "forgot my query password" path until OTP (§10.3)
+     * ships; the admin verifies the buyer through a support channel and issues
+     * the link, and the buyer completes it here without any support interaction.
+     *
+     * WHY THERE IS NO scrypt ON THE FAILURE PATHS (and why that is correct here
+     * but would be a bug on the login path): the login path defends a 45-bit
+     * guessable password, so §8.4 makes every answer cost the same. This path
+     * defends a 256-bit CSPRNG token that cannot be guessed at all — there is no
+     * brute force to slow down. Running a dummy derivation on every invalid
+     * token would convert a free indexed lookup into ~100 ms of attacker-chosen
+     * CPU work, i.e. it would CREATE the amplification it was meant to hide.
+     * The single scrypt here happens only after token+email are both proven.
+     *
+     * WHY THE EMAIL IS CHECKED BEFORE THE CONSUME: an attacker who steals the
+     * link but not the mailbox cannot burn it, and a buyer who typos their email
+     * does not lose their own link. This costs nothing in oracle terms, because
+     * reaching the comparison already requires the 256-bit token.
+     *
+     * Ordering summary: local shape/strength checks -> read pending row ->
+     * constant-time email match -> CAS consume -> load group -> rehash under a
+     * password_version CAS -> audit -> mint a session cookie with the NEW pv.
+     */
+    async function accessReset(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Same write budget as login (§8.1): the reset endpoint is a
+            // credential-setting surface and must not be cheaper to spray.
+            if (!(await limit(req, res, 'guest-orders-write', { limit: 10 }))) return;
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['token', 'resetToken', 'reset_token', 'email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
+                    throw new security.GuestShopSecurityError('重置请求字段不允许', {
+                        field: key, code: 'unknown_field'
+                    });
+                }
+            }
+            const siteName = normalizeSiteValue(body.site);
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+            const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+            const audit = async (outcome, contactHash = null, buyerId = null) => {
+                // Best effort by contract: a failed audit insert must never flip
+                // the decision that has already been made.
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                    });
+                } catch (_) { /* evidence only */ }
+            };
+
+            const rawToken = defaultBuyerAccessAdmin.normalizeResetToken(
+                body.token || body.resetToken || body.reset_token
+            );
+            const rawEmail = String(body.email || '').trim().toLowerCase();
+            const newPassword = typeof body.password === 'string' && body.password
+                ? body.password
+                : (typeof body.orderPassword === 'string' && body.orderPassword
+                    ? body.orderPassword
+                    : String(body.order_password || ''));
+
+            // Cheap local rejects FIRST: no database read is owed to a request
+            // that cannot possibly succeed.
+            if (!rawToken || !rawEmail) {
+                await audit('reset_invalid');
+                throw guestResetInvalidError();
+            }
+            try {
+                // §6.1.4: echoing the failing rule is safe — the buyer is present
+                // and the answer is identical whether or not the token is valid,
+                // so this leaks nothing about the link.
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(newPassword, {
+                    security, env, email: rawEmail, field: 'password'
+                });
+            } catch (error) {
+                await audit('reset_invalid');
+                throw error;
+            }
+
+            const tokenHash = defaultBuyerAccessAdmin.hashResetToken(rawToken);
+            const pending = await defaultBuyerAccessAdmin.loadPendingResetByTokenHash({
+                supabase: db, tokenHash
+            });
+            if (!pending || pending.purpose !== defaultBuyerAccessAdmin.RESET_PURPOSE
+                || pending.site !== siteName) {
+                await audit('reset_invalid');
+                throw guestResetInvalidError();
+            }
+            // The audit row names the group the link was minted for, not the
+            // attacker-supplied email: "someone probed group X" is the useful
+            // forensic fact, and contact_hash is an HMAC anyway.
+            if (!defaultBuyerAccessAdmin.matchesResetContact({ reset: pending, email: rawEmail, security, env })) {
+                await audit('reset_invalid', pending.contactHash || null, pending.buyerId || null);
+                throw guestResetInvalidError();
+            }
+            const consumed = await defaultBuyerAccessAdmin.consumeResetToken({
+                supabase: db, tokenHash, ipHash
+            });
+            if (!consumed || consumed.buyerId !== pending.buyerId) {
+                // Lost the race against a second browser, or revoked in between.
+                // Same answer as an invalid link: the token is spent either way.
+                await audit('reset_invalid', pending.contactHash || null, pending.buyerId || null);
+                throw guestResetInvalidError();
+            }
+
+            const buyer = await defaultBuyerAccessAdmin.loadBuyerRowById({
+                supabase: db, buyerId: consumed.buyerId, site: consumed.site || siteName
+            });
+            if (!buyer || buyer.mergedIntoUserId) {
+                await audit('reset_invalid', pending.contactHash || null, pending.buyerId || null);
+                throw guestResetInvalidError();
+            }
+            const applied = await defaultBuyerAccessAdmin.applyPasswordReset({
+                supabase: db, buyer, password: newPassword, security
+            });
+            await audit('reset_success', buyer.contactHash || null, applied.buyerId);
+
+            // Sign the buyer straight in: they have just proven link + email +
+            // set a password, and making them retype it would only teach them
+            // that the reset page and the login page disagree. The cookie carries
+            // the NEW password_version, so every other outstanding cookie for
+            // this group is dead (D-8).
+            const token = encryptAccessCookie({
+                v: 1,
+                buyer_id: applied.buyerId,
+                contact_hash: buyer.contactHash,
+                pv: applied.passwordVersion,
+                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
+            }, security, env);
+            if (!token) {
+                // The password is already changed; only the convenience session
+                // failed. Say so instead of pretending the reset failed.
+                return sendJson(res, 200, {
+                    success: true,
+                    reset: true,
+                    authenticated: false,
+                    session_required: true,
+                    email: rawEmail
+                });
+            }
+            setAccessCookie(res, token);
+            return sendJson(res, 200, {
+                success: true,
+                reset: true,
+                authenticated: true,
+                email: rawEmail,
+                session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    /**
+     * §13.2 (A3): self-service upgrade of a HISTORICAL order
+     * (`buyer_id IS NULL`, placed before the credential switch existed) to
+     * email + query-password access.
+     *
+     * Two factors, in this order:
+     *   1. orderNo + recoveryCode — the legacy claim secret, verified through
+     *      the SAME `verifyClaimSecret` + `recordClaimFailure` budget as
+     *      `/guest/recover`, so this endpoint does not become a second,
+     *      uncounted guessing surface for it;
+     *   2. email + new/existing query password — resolved through
+     *      `resolveBuyerGroupForOrder`, which is the order-path resolver, so
+     *      the upgrade inherits §8.1 locking, the per-IP budget, §8.4
+     *      equal-cost verification and the §6.4 group cap for free instead of
+     *      re-implementing any of them.
+     *
+     * The site is taken from the ORDER, never from the body: the credential
+     * group key is (site, contact_hash), and letting the client pick the site
+     * would let one recovery code mint groups in a site the order was never
+     * placed in.
+     *
+     * Idempotent: re-submitting resolves to the same group and returns success.
+     * A different group is a hard 409 and needs support (§13.2).
+     */
+    async function accessUpgrade(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Shares the `recover` budget because it spends the same secret.
+            if (!(await limit(req, res, 'recover', { limit: 8 }))) return;
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['orderNo', 'order_no', 'recoveryCode', 'recovery_code', 'email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
+                    throw new security.GuestShopSecurityError('升级请求字段不允许', {
+                        field: key, code: 'unknown_field'
+                    });
+                }
+            }
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const orderNo = String(body.orderNo || body.order_no || '').trim();
+            const recoveryCode = String(body.recoveryCode || body.recovery_code || '').trim();
+            const email = String(body.email || '').trim().toLowerCase();
+            const password = typeof body.password === 'string' && body.password
+                ? body.password
+                : (typeof body.orderPassword === 'string' && body.orderPassword
+                    ? body.orderPassword
+                    : String(body.order_password || ''));
+            // Identical shapes to /guest/recover: one canonical spelling per
+            // field, so the two endpoints cannot be used to probe each other's
+            // normalization (§16.1).
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)
+                || !/^[A-Za-z0-9_-]{40,200}$/u.test(recoveryCode)) {
+                throw new security.GuestShopSecurityError('订单号或取货口令无效', {
+                    code: 'guest_claim_invalid', statusCode: 403
+                });
+            }
+            if (!email || !password) {
+                throw new security.GuestShopSecurityError('请填写邮箱和查询密码', {
+                    statusCode: 400, code: 'guest_credential_malformed', field: 'email'
+                });
+            }
+
+            const order = await loadOrderByNo(orderNo);
+            const siteName = normalizeSiteValue(order.site);
+            const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+            const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+            const audit = async (outcome, contactHash = null, buyerId = null) => {
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                    });
+                } catch (_) { /* evidence only */ }
+            };
+
+            // The claim-failure budget is spent BEFORE anything else is looked
+            // at, exactly as in /guest/recover.
+            if (!security.verifyClaimSecret(recoveryCode, order.claim_secret_hash, { env })) {
+                await recordClaimFailure(order);
+                await audit('upgrade_invalid');
+                throw Object.assign(new Error('取货凭证无效'), {
+                    statusCode: 403, code: 'guest_claim_invalid'
+                });
+            }
+            // There is deliberately NO early return for an already-bound order.
+            //
+            // §13.2 hardening: an order bound before A3 carries only `buyer_id`.
+            // Minting a session cookie from that alone would let anyone holding
+            // the LEGACY orderNo + claim code escalate from single-order legacy
+            // access to GROUP-WIDE access — every order and every card in that
+            // credential group — which is precisely the 掏鸟蛋 failure mode. So a
+            // bound order goes through the SAME email + password verification as
+            // an unbound one (`resolveBuyerGroupForOrder` runs §8.4 equal-cost
+            // scrypt verification regardless of binding state), and only the
+            // binding step differs: same group -> idempotent success, different
+            // group -> hard 409 for support, exactly as §13.2 specifies.
+            //
+            // K26 (§6.1) applies to EVERY surface that can create a credential:
+            // the resolve below may allocate a brand-new group, and a weak
+            // password guarding card content is exactly what the policy exists
+            // to prevent. A reused (matched) password was minted under the same
+            // policy at order time, so this check can never lock a legitimate
+            // buyer out of the reuse path.
+            try {
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(password, {
+                    security, env, email, field: 'password'
+                });
+            } catch (error) {
+                await audit('upgrade_invalid');
+                throw error;
+            }
+            let resolved = null;
+            try {
+                resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
+                    supabase: db,
+                    security,
+                    env,
+                    site: siteName,
+                    email,
+                    password,
+                    ipHash,
+                    deviceHash
+                });
+            } catch (error) {
+                // resolveBuyerGroupForOrder already recorded the specific reason
+                // (locked / rate_limited / credential_conflict). One extra
+                // `upgrade_invalid` row marks this as the upgrade surface; it is
+                // deliberately NOT a failure outcome, so it cannot double count
+                // into the per-IP login budget.
+                await audit('upgrade_invalid');
+                throw error;
+            }
+            const contactHash = security.hashGuestContact(email, { env, strict: true });
+            let binding = null;
+            try {
+                binding = await defaultBuyerAccessAdmin.bindOrderToBuyer({
+                    supabase: db, order, buyerId: resolved.buyerId
+                });
+            } catch (error) {
+                // The credential itself verified; this failure is about the order
+                // row (409: already bound to a DIFFERENT group). No cookie is set
+                // on this path, so the verified credential gains nothing it did
+                // not already have through /guest/access/login. Audited as
+                // `upgrade_invalid` for evidence.
+                await audit('upgrade_invalid', contactHash, resolved.buyerId);
+                throw error;
+            }
+            // Read back for the CURRENT password_version: on the reuse path the
+            // §6.2 transparent rehash happens inside the allocation RPC, so the
+            // number we would otherwise guess may already be stale and the
+            // cookie would be rejected by its own first authenticated read.
+            const buyer = await defaultBuyerAccessAdmin.loadBuyerRowById({
+                supabase: db, buyerId: resolved.buyerId, site: siteName
+            });
+            await audit('upgrade_success', contactHash, resolved.buyerId);
+            const token = buyer ? encryptAccessCookie({
+                v: 1,
+                buyer_id: buyer.id,
+                contact_hash: buyer.contactHash,
+                pv: buyer.passwordVersion,
+                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
+            }, security, env) : '';
+            if (token) setAccessCookie(res, token);
+            return sendJson(res, 200, {
+                success: true,
+                upgraded: true,
+                already_bound: binding.alreadyBound === true,
+                order_no: order.order_no,
+                credential_group_no: resolved.groupNo || null,
+                authenticated: Boolean(token),
+                ...(token ? { session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS } : {})
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
     async function webhook(req, res, providerOverride = '') {
         setWebhookSecurityHeaders(res);
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
@@ -2351,6 +3347,19 @@ function responseOrder(order, claimSecret, extras = {}) {
         recover,
         claim,
         webhook,
+        // Order Access 2.0 (A2). All four answer 404 guest_feature_disabled
+        // while GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off (logout excepted: it
+        // only clears a cookie, so it must keep working after a rollback).
+        order: orderDetail,
+        delivery,
+        accessLogin,
+        accessLogout,
+        // Order Access 2.0 (A3). Both answer 404 guest_feature_disabled while
+        // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off, so the deployed surface is
+        // unchanged (§13.4). accessReset spends an admin-issued one-time link
+        // (§10.5); accessUpgrade is the §13.2 historical-order self-service.
+        accessReset,
+        accessUpgrade,
         // Kept out of the public route modules (which select one handler),
         // but useful for contract tests to exercise server-owned checkout
         // normalization without making a provider call.

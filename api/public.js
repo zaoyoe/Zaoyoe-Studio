@@ -223,6 +223,22 @@ function createRouteHandlersForScope(scope) {
             'guest/status': guestHandlers.status,
             'guest/recover': guestHandlers.recover,
             'guest/claim': guestHandlers.claim,
+            // Order Access 2.0 (A2). resolveRoute() lowercases the path and joins
+            // segments with '/', so it cannot express ':orderNo' path params; the
+            // detail/delivery routes are flat keys that read order_no from the
+            // query string. All of them answer 404 while the buyer-credential
+            // switch is off, so registering the keys is behaviour-neutral.
+            'guest/order': guestHandlers.order,
+            'guest/delivery': guestHandlers.delivery,
+            'guest/access/login': guestHandlers.accessLogin,
+            'guest/access/logout': guestHandlers.accessLogout,
+            // Order Access 2.0 (A3). `reset` spends the admin-issued one-time
+            // link (§10.5); `upgrade` is the §13.2 historical-order self-service
+            // that turns orderNo + recoveryCode into email + query-password
+            // access. Same flat-key constraint as A2 (deviation D-1), and both
+            // answer 404 guest_feature_disabled while the switch is off.
+            'guest/access/reset': guestHandlers.accessReset,
+            'guest/access/upgrade': guestHandlers.accessUpgrade,
             // KVM4 routes /api/shop/* through this shared dispatcher.  Keep
             // the worker behind its dedicated secret gate in both Vercel and
             // the shared Express path; never expose it through the regular
