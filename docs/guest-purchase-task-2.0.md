@@ -17,7 +17,7 @@
 - 当前总进度：**48%**（A 8% + B 12% + C 10% + F 10% + H 8%）
 - 当前阶段：`D 真实支付矩阵执行中`（D3-01/D3-13/D3-17/D3-04/D3-03/D3-02/D3-05/D3-06/D3-07/D3-20/D3-11/D3-12/D3-10/D3-19/D3-18/D3-14/D3-15/D3-09 PASS；D3-08 BLOCKED+ZPay currency is site-derived；D3-16 未开始）。**INTL USDT 成功路径暂停。** 当前插队修游客应付金额：第 54 节站内二维码+倒计时、第 55 节「关闭当前订单」已落地；第 56 节让支付宝/USDT 自动加 1% 通道手续费，禁止用户手改应付金额。总进度仍 48%，禁止写成 99%
 - 阻断原因：D 仍未完成。**不是代码卡死。** 用户要求先暂停 INTL USDT，修游客支付宝 UX。第 54 节已禁止打开支付宝官方下载页。第 55 节根因是未付款单写在 `sessionStorage` `guest_shop_checkout_v1`。第 56 节根因是应付金额只展示商品价，未自动加易支付/NOWPayments 1% 手续费，用户少付则 webhook 金额校验失败、不会发货。已让前端/服务端在 stored `0%` 时回退到 1%，创建支付时把应付金额写入 `unit_amount` / `expected_amount` / `payment_pricing`。INTL 成功支付等该 UX 验收后再恢复。不得用 mock 顶 D，不得再打开第二个游客商品，不要退 D3-01，不要付款旧超时单/已过期发票。
-- 当前执行者动作：第 56 节已让支付宝/USDT 自动加 1% 通道手续费（CSS cache bust 仍是 `20260916_GUEST_PAYABLE_FEE_2`）；第 57 节补齐游客「主动查单」自愈闭环，`js/guest-shop-client.js` cache bust 升到 `20260916_GUEST_STATUS_ACTIVE_REFRESH_1`，修复未发布（仍在 `codex/guest-shop-cash-purchase` 工作区）。INTL USDT 暂停。下一步：硬刷新 http://localhost:8000/shop.html（CN，不要 `?site=intl`）。若自动弹出未付款单，点「关闭当前订单」后重新创建；应付金额应是商品价 + 1%（测试 SKU `¥0.01` 向上取整为 `¥0.02`），不要在支付宝里手改金额。不要付款旧 GS 单。该 UX 验收通过后再恢复 INTL USDT。
+- 当前执行者动作：第 56 节已让支付宝/USDT 自动加 1% 通道手续费（CSS cache bust 仍是 `20260916_GUEST_PAYABLE_FEE_2`）；第 57 节补齐游客「主动查单」自愈闭环，`js/guest-shop-client.js` cache bust 升到 `20260916_GUEST_STATUS_ACTIVE_REFRESH_1`，修复未发布（仍在 `codex/guest-shop-cash-purchase` 工作区）。INTL USDT 暂停。下一步：硬刷新 http://localhost:8000/shop.html（CN，不要 `?site=intl`）。若自动弹出未付款单，点「关闭当前订单」后重新创建；应付金额应是商品价 + 1%（测试 SKU `¥0.01` 向上取整为 `¥0.02`），不要在支付宝里手改金额。不要付款旧 GS 单。该 UX 验收通过后再恢复 INTL USDT。第 58 节移除商品详情弹窗的「游客购买」按钮，未登录时把游客现金直付并入主按钮（`js/guest-shop-client.js` 的 cache bust 形态是 `?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`，保留第 57/#649 的 token 以免破坏其契约断言；登录用户积分路径不变），已按用户要求**暂不部署**。第 58 节已 rebase 到 `main`（含 #649 轮询限流修复与 #650 worker 安装工作流）。**本地验收入口：`http://localhost:8010/shop.html`**，它由 `codex/guest-shop-entry-merge` 工作树`/Volumes/chao/AI/xianyu_profit_calculator-guest-entry-merge` 的 `scripts/local-preview-server.js` 提供；`http://localhost:8000` 服务的是主仓库工作树（另一个 agent 的分支），**看不到本轮改动**。
 - 进度按下方阶段权重计算，不按文件数量，不用“基本完成”。
 - 被用户、SQL、沙箱账号、真实设备或 KVM4 权限阻断时，状态记为 `blocked`，并写明责任人和证据缺口。禁止把 blocked 写成 99%。
 - 只有第 0.2 节全部满足，才能从任何 90%+ 数字改成 **100%**。
@@ -3028,6 +3028,66 @@ Codex 不代执行。
 1. 新订单验证需要先让修复进入运行环境：本分支 → PR → `main` → Vercel + KVM4 Verify Server（按 AGENTS.md 四条链路），否则 KVM4 上的 `/api/shop/guest/status` 仍是旧逻辑。
 2. 发布成功后再用新订单验证：`http://localhost:8000/shop.html`（本地）只适合做 UI/契约验证，本地 preview 连的是同一套 Supabase，且没有公网 webhook，真实验证应在 verify 环境走「下单 → 付款 → 回调或主动查单 → confirmed → worker 发货」。
 3. 新订单必须由用户新开，不接受对 `GS202609160455236231CF70169C6AB` 补测。
+
+### SQL 状态
+
+本轮**不需要用户执行 SQL**。不要重跑 20260913 / 20260914 / 20260915 / 20260916 / 20260917 / 20260918 / 20260919。
+
+Codex 不代执行。
+
+## 58. 2026-09-17 商品详情弹窗移除「游客购买」按钮，未登录时并入主按钮
+
+### 本轮做了什么
+
+- 用户要求：商城 → 单个商品详情弹窗里**移除「游客购买」按钮**；未登录时把游客购买能力**并入「兑换」主按钮**。用户明确不要「未登录可直接现金购买」提示行，并要求在下达部署指令前**不发布**。
+- 旧行为（两个问题）：
+  1. `js/guest-shop-client.js` 用 `window.setInterval(syncPurchaseButton, 350)` 轮询商城购买弹窗来决定 `#guestCashPurchaseBtn` 显隐，**完全不看登录状态**，所以已登录用户也会看到「游客购买」。
+  2. 「兑换」在未登录时只会 `promptLoginForPurchase()` 弹登录框，游客链路必须靠第二个按钮才能进入。
+- 新行为：
+  - `/Volumes/chao/AI/xianyu_profit_calculator/shop.html`：删除 `#guestCashPurchaseBtn`（连带 `shop-guest-cash-purchase-btn` 类名，仓库里已无任何残留引用）；`js/guest-shop-client.js` 的 cache bust 采用叠加形态 `?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`（保留 #649 的 token，其三条契约断言按子串仍能匹配）；`js/shop-client.js` 追加 `&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`（保留原 `?v=20260520_SHOP_CARD_PROMPT_BREATHE_3` 前缀，多个测试按子串断言它）。CSS 的 `guestPayableFee` 参数本轮未改。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/js/guest-shop-client.js`：删掉 `syncPurchaseButton` / `handlePurchaseButtonClick` / 350ms 轮询 / capture 点击监听；`loadPreview()` 不再操作按钮，改为返回 `{ available, reason }`；新增只读桥接
+    `window.GuestShopCheckout = { peekAvailability, probeAvailability, startGuestCheckout }`，按 `contextKey` 缓存可用性并去重 in-flight 探测。`loadPreview` 改为**串行队列**（`previewQueue` + `runPreviewRequest`），所以「加载中」不会再被当成「不可用」；瞬时失败（`pending` / `rate_limited` / `preview_error`）**不写缓存**，后续点击可重试。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/js/shop-client.js`：由它独家判断登录态（`shopAuthStateKnown`，`onAuthStateChange` + `getSession()` 维护）。仅当 **已确认未登录** + 探测到游客可购 + 选择项一致时 `isGuestCashEntryActive()` 才为真，此时主按钮文案切「立即购买 / Buy now」，并隐藏数量与优惠码两个 stage、锁定数量输入为 1（游客单固定 `quantity: 1` 且不支持积分券）。`confirmPurchase` 保持原有顺序「优惠码同步 → 取 token」，只在 `!token` 分支改为先 `startGuestCashCheckout()`，未启动才回落 `promptLoginForPurchase()`。**没有**新增埋点：`window.UserEventTracker.track()` 在没有登录用户时直接 `return null`，而这条路径只在未登录时执行，加了也永远打不上；游客漏斗指标需要一条匿名的服务端事件通道，本轮不做。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/lang/zh.json` / `lang/en.json`：新增 `shop.guestCashBuyNow`（立即购买 / Buy now）。
+- 隔离不变量保持：`js/guest-shop-client.js` 仍不含 `supabase` / `access_token` / `Authorization` / `localStorage` / `Math.random()`，`STORAGE_VERSION` 仍是 3，也不再引用 `shopPurchaseModal`。登录态判断全部留在 `shop-client.js`。
+- **已登录用户路径逐字未变**：所有游客分支都以 `shopAuthStateKnown !== false` 或 `guestCashActive` 为前置条件，积分兑换、优惠码同步、购物车结算的既有契约测试全部保持原样通过。
+
+### 证据
+
+- `tests/guest-shop-frontend-contract.test.js`：**18/18 PASS**（基线 17/17，新增「merged logged-out entry」契约）。原第 21 行的 `#guestCashPurchaseBtn` 断言改为「必须不存在」；三处版本号断言改为同时匹配 `20260917_GUEST_POLL_RATE_LIMIT_SAFE_1` 与追加的 `guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`。
+- 全仓回归 `node --test --test-force-exit tests/*.test.js`：**3156 pass / 0 fail**。
+- 过程中发现并修回两处真实回归（都来自最初把 token 检查提到优惠码同步之前）：
+  - `tests/shop-discount-preview-selection-regression.test.js`「coupon-list sync a short chance before buying without a coupon」
+  - `tests/shop-purchase-guidance-regression.test.js`「refreshes latest notes and versions prefetched product snapshots」
+  两者都按既有契约的字面顺序断言 `waitForPurchaseDiscountAssetsBeforeSubmit()` → `getAccessToken()` → `if (!token)`，以及 `setPurchaseStage` 里的 `shouldShow` 谓词。已恢复原顺序（未登录时优惠码请求本就直接返回空 payload，不发网络请求，因此没有额外延迟），并把游客专属的 stage 隐藏挪到通用遍历之后。
+
+### 本轮没做什么
+
+- 已 rebase 到最新 `main`（`2424dcc14`，含 #649 轮询限流修复、#650 worker 安装工作流）。冲突只有两处：`shop.html` 的 guest 脚本 cache bust（改为叠加两个 token）与契约测试的同名断言（改为同时断言两个 token）；`js/guest-shop-client.js` 自动合并，#649 的 `SMART_POLL_INTERVALS` 硬下限与本轮的 `loadPreview` 串行队列/桥接互不重叠。
+- 没有部署：没有推分支、没有开/合 PR、没有 `vercel deploy`、没有触发 KVM4 任何链路、没有安装或启动 guest-shop worker。用户明确要求等指令。
+- 没有执行任何 SQL，没有新增迁移。
+- 没有打开游客商品/SKU 开关，没有改 `allow_guest_purchase`。
+- 没有按用户要求添加「未登录可直接现金购买」提示行（契约测试里反向断言它不存在）。
+- 没有给**已登录**用户新增现金购买入口。这是一个产品决策缺口：积分不足的登录用户现在只剩积分兑换一条路。本轮按用户原始诉求只处理未登录场景，未擅自扩权。
+
+### 风险和修正
+
+- **登录用户失去现金出路。** 现状：改完后已登录用户看不到任何现金购买入口（旧版反而能看到「游客购买」）。修正建议：在积分不足报错处补一个「改用现金购买」入口，或让登录用户走已有的钱包充值。等产品确认后再做。
+- **游客模式下金额摘要仍显示积分。** 数量锁定为 1，摘要按单价积分展示，但点下去是人民币/USDT 现金支付，存在语义落差。本轮按用户要求不加提示行；如需彻底消除，建议游客模式下把摘要区切成现金口径，这是后续可选项。
+- **可用性探测失败会回落登录框。** 预览接口 5xx / 限速时，未登录用户点主按钮会看到登录提示而不是游客收银台。已做到瞬时失败不缓存、下次点击重试；仍属 fail-closed，符合「发布不等于启用」的保守口径。
+- **购物车结算未动。** `shopCartCheckout` 仍要求登录，本轮没有把游客能力接进购物车。
+
+### 进度
+
+- 总进度仍记 **48%**（A+B+C+F+H）。本轮是 P0-5 前端 UI 的入口收敛，不是 D 阶段推进。100% 只在第 J 节用户签署之后。
+
+### 下一步
+
+1. 用户在本地硬刷新 `http://localhost:8010/shop.html`（CN，不要 `?site=intl`；`:8010` 是 `codex/guest-shop-entry-merge` 工作树的 `scripts/local-preview-server.js`，`:8000` 服务的是主仓库另一个分支，看不到本轮改动），**退出登录**后打开一个已开启游客支付的商品：主按钮应为「立即购买」，且看不到数量/优惠码两块；点击直接进入游客收银台。
+2. 同一商品**登录后**再看：主按钮应为「兑换」，数量与优惠码恢复，走积分流程，且**不再出现**任何现金购买入口。
+3. 未开启游客支付 / 人工发货 / 售罄 / 预览失败四种商品，未登录点击应回落登录弹窗。
+4. 上述 UI 验收通过后，再由用户下达部署指令；届时按 `AGENTS.md` 走 `codex/guest-shop-entry-merge` → PR → `main` → 四条链路，不得从功能分支 `vercel deploy --prod`。
+5. 产品决策待确认：是否给已登录用户保留现金购买入口。
 
 ### SQL 状态
 
