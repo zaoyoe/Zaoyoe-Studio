@@ -258,7 +258,10 @@ async function loadBuyerGroups({ supabase, site, contactHash }) {
         // password_version is selected because §6.2's transparent upgrade must
         // bump it monotonically; reading it back as undefined silently pinned
         // every upgraded row to version 2.
-        .select('id,credential_group_no,password_hash,password_version,failed_login_count,login_lock_stage,locked_until')
+        // merged_into_user_id is read so §10.4 account merges can retire guest
+        // access fail-closed; nothing writes it until A4, and a NULL keeps the
+        // group guest-accessible exactly as today.
+        .select('id,credential_group_no,password_hash,password_version,failed_login_count,login_lock_stage,locked_until,merged_into_user_id')
         .eq('site', site)
         .eq('contact_hash', contactHash);
     if (result?.error) throw result.error;
@@ -271,7 +274,8 @@ async function loadBuyerGroups({ supabase, site, contactHash }) {
             passwordVersion: normalizeVersion(row?.password_version),
             failedLoginCount: normalizeCount(row?.failed_login_count),
             loginLockStage: normalizeStage(row?.login_lock_stage),
-            lockedUntil: parseTimestamp(row?.locked_until)
+            lockedUntil: parseTimestamp(row?.locked_until),
+            mergedIntoUserId: row?.merged_into_user_id ? String(row.merged_into_user_id) : ''
         }))
         .filter((row) => row.id && Number.isSafeInteger(row.groupNo) && row.groupNo >= 1)
         .sort((a, b) => a.groupNo - b.groupNo);
@@ -435,6 +439,44 @@ async function registerBuyerLoginFailure({ supabase, site, contactHash, rows, se
         }
     }
     return Object.freeze({ locked: false, stage: current.loginLockStage });
+}
+
+/**
+ * §8.1: a SUCCESSFUL verification clears the shared failure counter, so an
+ * honest buyer who mistyped twice is not carried one step closer to a lockout
+ * forever. Two deliberate details:
+ *
+ *   - `login_lock_stage` is NOT reset. The stage is the escalation memory
+ *     (15min -> 30min -> 24h -> manual), and clearing it on every success would
+ *     let an attacker who knows one password of the contact keep re-arming the
+ *     cheapest stage while spraying the others.
+ *   - The write is guarded by `.eq('failed_login_count', <read value>)`, the
+ *     same optimistic CAS as registerBuyerLoginFailure. A blind `SET 0` racing a
+ *     concurrent failure would silently swallow that failure's increment.
+ *
+ * Best-effort by contract: this runs AFTER the password already verified, so a
+ * failed write must never turn a valid credential into an error. It returns
+ * false and the login proceeds.
+ */
+async function resetBuyerLoginFailures({ supabase, site, contactHash, rows, now = new Date() }) {
+    const target = (rows || [])[0];
+    if (!supabase?.from || !target?.id) return false;
+    if (normalizeCount(target.failedLoginCount) === 0) return false;
+    const expected = normalizeCount(target.failedLoginCount);
+    try {
+        let query = supabase.from('guest_shop_buyers').update({
+            failed_login_count: 0,
+            updated_at: now.toISOString()
+        }).eq('id', target.id).eq('failed_login_count', expected);
+        if (typeof query.select === 'function' && typeof query.maybeSingle === 'function') {
+            query = query.select('id,failed_login_count').maybeSingle();
+        }
+        const result = await query;
+        if (result?.error) return false;
+        return result?.data !== null && result?.data !== undefined;
+    } catch (_) {
+        return false;
+    }
 }
 
 /**
@@ -680,6 +722,7 @@ module.exports = {
     parseBuyerCredentialSwitch,
     recordBuyerAccessAttempt,
     registerBuyerLoginFailure,
+    resetBuyerLoginFailures,
     rehashBuyerPasswordIfNeeded,
     resolveBuyerCredentialSettings,
     resolveBuyerGroupForOrder,

@@ -531,7 +531,7 @@ test('enabling buyer credentials fails closed without a dedicated contact pepper
     assert.equal(pepperCheck.message.includes(SECRET_VALUES.contact), false);
 });
 
-test('enabling buyer credentials before the A2 frontend exists is a hard failure', () => {
+test('the A2 frontend deliverables satisfy the buyer credential frontend gate', () => {
     const checks = inspectBuyerCredentials({
         GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
         GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
@@ -539,8 +539,35 @@ test('enabling buyer credentials before the A2 frontend exists is a hard failure
     const keys = buyerCheckKeys(checks);
     assert.equal(keys.has('frontend:guest-orders.html'), true);
     assert.equal(keys.has('frontend:js/guest-orders-client.js'), true);
-    // A0 ships the schema only; the switch must not be turnable on yet.
-    assert.equal(checks.some((check) => check.key.startsWith('frontend:') && check.ok === false), true);
+    // A2 landed guest-orders.html + js/guest-orders-client.js, so the static
+    // deliverable gate is now green. It stays a code-presence gate only: the
+    // runtime gate (database, sandbox, worker, manual evidence) still decides
+    // readiness, asserted by the strict-gate test below.
+    const frontend = checks.filter((check) => check.key.startsWith('frontend:'));
+    assert.equal(frontend.length, 2);
+    for (const check of frontend) {
+        assert.equal(check.ok, true, `${check.key} must pass now that A2 is committed`);
+        assert.equal(check.status, 'present');
+    }
+});
+
+test('a missing A2 frontend file still fails the buyer credential gate closed', () => {
+    // Regression guard for the positive case above: the gate must keep failing
+    // closed if either deliverable disappears (revert, bad merge, partial
+    // deploy), otherwise a half-removed lookup page could be enabled.
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-a2-frontend-'));
+    try {
+        const checks = inspectBuyerCredentials({
+            GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+            GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+        }, true, tempRoot);
+        const missing = checks.filter((check) => check.key.startsWith('frontend:'));
+        assert.equal(missing.length, 2);
+        assert.equal(missing.every((check) => check.ok === false), true);
+        assert.equal(missing.every((check) => check.blocking === true), true);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
 });
 
 test('guest orders page cannot be enabled ahead of the credential chain', () => {
@@ -696,12 +723,17 @@ test('buyer credential readiness checks stay inside the strict gate and never pr
         envFile: ''
     });
 
-    // The page/credential switches are on but the A2 files do not exist yet, so
-    // the gate must be hard-invalid rather than quietly ready.
-    assert.equal(summary.ok, false);
+    // A2 shipped the frontend files, so the static configuration gate is now
+    // valid. That must NOT be readable as "ready": the runtime evidence chain
+    // (database migrations applied, provider sandbox, worker, manual archive)
+    // is still absent, so readiness stays fail-closed with exit code 3 exactly
+    // as AGENTS.md requires. A green `--fail-on-invalid` run is never permission
+    // to open guest checkout.
+    assert.equal(summary.ok, true, JSON.stringify((summary.checks || []).filter((check) => !check.ok).map((check) => check.key)));
     assert.equal(summary.ready, false);
-    assert.equal(getReadinessExitCode({ failOnInvalid: true }, summary), READINESS_EXIT_CODES.INVALID);
+    assert.equal(getReadinessExitCode({ failOnInvalid: true }, summary), 0);
     assert.equal(getReadinessExitCode({ failOnNotReady: true }, summary), READINESS_EXIT_CODES.NOT_READY);
+    assert.equal(getReadinessExitCode({ failOnInvalid: true, failOnNotReady: true }, summary), READINESS_EXIT_CODES.NOT_READY);
 
     const areas = new Set((summary.checks || []).map((check) => check.area));
     assert.equal(areas.has('buyer_credentials'), true);

@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const defaultSecurity = require('../../../api/_lib/guest-shop/security');
+const defaultBuyerCredentials = require('../../../api/_lib/guest-shop/buyer-credentials');
 const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
 
@@ -21,6 +22,19 @@ const GUEST_CLAIM_COOKIE_NAME = 'guest_claim_proof';
 const GUEST_CLAIM_COOKIE_VERSION = 'v1';
 const GUEST_CLAIM_COOKIE_MAX_ITEMS = 4;
 const GUEST_CLAIM_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
+// Order Access 2.0 (§7.1 / §12): a short-lived session cookie issued by
+// POST /guest/access/login so the list/detail/delivery endpoints do not have to
+// re-send the query password on every request. The `__Host-` prefix is a browser
+// contract: it forces Secure, forbids a Domain attribute, and REQUIRES Path=/.
+// The spec's illustrative Path=/api/shop/guest is therefore invalid for a
+// `__Host-` cookie; we use Path=/ and scope authorization server-side to the
+// guest routes instead. The payload always carries buyer_id (the matched
+// credential group) and NEVER degrades to contact_hash, which would leak across
+// groups (§6.4). Keyed off the claim pepper with a distinct domain-separation
+// label so it can never be confused with the claim-proof cookie key.
+const GUEST_ACCESS_COOKIE_NAME = '__Host-gs-acc';
+const GUEST_ACCESS_COOKIE_VERSION = 'v1';
+const GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS = 30 * 60;
 const MAX_CLAIM_FAILURE_ATTEMPTS = 20;
 const CLAIM_FAILURE_UPDATE_RETRIES = 4;
 const INVALID_WEBHOOK_AUDIT_BUCKET_MS = 5 * 60 * 1000;
@@ -349,6 +363,81 @@ function claimSecretFromCookie(req, order, security, env) {
     return String(proof?.secret || '').trim();
 }
 
+function accessCookieKey(security, env) {
+    try {
+        const pepper = security.getGuestClaimPepper(env, { required: true });
+        return crypto.createHash('sha256')
+            .update(`guest-shop-access-cookie\0${pepper}`, 'utf8')
+            .digest();
+    } catch (_) {
+        return null;
+    }
+}
+
+function encryptAccessCookie(payload, security, env) {
+    const key = accessCookieKey(security, env);
+    if (!key) return '';
+    try {
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+        const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        return [
+            GUEST_ACCESS_COOKIE_VERSION,
+            iv.toString('base64url'),
+            tag.toString('base64url'),
+            ciphertext.toString('base64url')
+        ].join('.');
+    } catch (_) {
+        return '';
+    }
+}
+
+function decryptAccessCookie(value, security, env) {
+    const source = String(value || '').trim();
+    const parts = source.split('.');
+    if (parts.length !== 4 || parts[0] !== GUEST_ACCESS_COOKIE_VERSION) return null;
+    const key = accessCookieKey(security, env);
+    if (!key) return null;
+    try {
+        const iv = Buffer.from(parts[1], 'base64url');
+        const tag = Buffer.from(parts[2], 'base64url');
+        const ciphertext = Buffer.from(parts[3], 'base64url');
+        if (iv.length !== 12 || tag.length !== 16 || !ciphertext.length || ciphertext.length > 1024) return null;
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+        const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+        const parsed = JSON.parse(plaintext);
+        if (!parsed || parsed.v !== 1) return null;
+        const buyerId = String(parsed.buyer_id || '').trim();
+        const contactHash = String(parsed.contact_hash || '').trim();
+        const exp = Number(parsed.exp);
+        // A session is only usable while it carries the group id and has not
+        // expired. Never fall back to contact_hash for authorization (§6.4).
+        if (!buyerId || !Number.isFinite(exp) || exp <= Date.now()) return null;
+        return { buyerId, contactHash, exp };
+    } catch (_) {
+        return null;
+    }
+}
+
+function setAccessCookie(res, token) {
+    if (!res?.setHeader || !token) return;
+    const cookie = `${GUEST_ACCESS_COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+    let current = res.getHeader?.('Set-Cookie');
+    if (!Array.isArray(current)) current = current ? [String(current)] : [];
+    res.setHeader('Set-Cookie', [...current, cookie]);
+}
+
+function clearAccessCookie(res) {
+    if (!res?.setHeader) return;
+    const cookie = `${GUEST_ACCESS_COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict`;
+    let current = res.getHeader?.('Set-Cookie');
+    if (!Array.isArray(current)) current = current ? [String(current)] : [];
+    res.setHeader('Set-Cookie', [...current, cookie]);
+}
+
 function webhookError(message, code, statusCode = 400, expose = true) {
     const error = new Error(String(message || '回调请求无效'));
     error.code = String(code || 'guest_webhook_invalid');
@@ -609,8 +698,8 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
 
 const ALLOWED_ORDER_FIELDS = new Set([
     'site', 'productId', 'product_id', 'skuId', 'sku_id', 'quantity',
-    'idempotencyKey', 'idempotency_key', 'email', 'provider', 'providerKey',
-    'provider_key', 'channel', 'paymentChannel', 'payment_channel'
+    'idempotencyKey', 'idempotency_key', 'email', 'orderPassword', 'provider',
+    'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel'
 ]);
 
 function createGuestShopHandlers({
@@ -1382,13 +1471,27 @@ function responseOrder(order, claimSecret, extras = {}) {
                 product: { id: pricing.product.id, name: pricing.product.name || '', sku_id: pricing.sku.id, sku_name: pricing.sku.sku_name || '' },
                 price: { amount: pricing.unitAmount, currency: pricing.currency, quantity: 1 },
                 payment_channels: Array.isArray(pricing.channels) ? pricing.channels : [],
-                payment_providers: paymentProviders
+                payment_providers: paymentProviders,
+                // Order Access 2.0 (§13.4): the order form only collects a query
+                // password when the credential switch is on. The client toggles
+                // the field from this flag, so no separate config channel is
+                // needed and the switch-off path stays byte-identical to today.
+                buyer_credential_required: defaultBuyerCredentials.isBuyerCredentialEnabled(env)
             });
         } catch (error) { return failResponse(res, error); }
     }
 
     async function orders(req, res) {
         setGuestSensitiveHeaders(res);
+        // Order Access 2.0 (§12): GET on this same flat route lists the orders of
+        // the authenticated buyer. The dispatcher has no path parameters
+        // (resolveRoute lowercases and joins segments), so detail and delivery
+        // live on their own flat keys with order_no in the query string. While
+        // the credential switch is off the GET branch is unreachable and the
+        // 405 below is exactly today's response.
+        if (req.method === 'GET' && defaultBuyerCredentials.isBuyerCredentialEnabled(env)) {
+            return listOrders(req, res);
+        }
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
         if (!(await limit(req, res, 'orders', { limit: 12 }))) return;
         try {
@@ -1407,6 +1510,13 @@ function responseOrder(order, claimSecret, extras = {}) {
             }
             const orderBody = { ...body };
             for (const field of ['provider', 'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel']) delete orderBody[field];
+            // Order Access 2.0 (§6.1.4 / §12): the query password is collected on
+            // the order form ONLY while the credential switch is on. It is never
+            // an order input field, so lift it out before normalization and drop
+            // it from the body that reaches normalizeGuestOrderInput.
+            const credentialEnabled = defaultBuyerCredentials.isBuyerCredentialEnabled(env);
+            const rawOrderPassword = orderBody.orderPassword;
+            delete orderBody.orderPassword;
             const normalized = security.normalizeGuestOrderInput(orderBody, { site: siteName, quantityMax: 1, allowOptionalContact: true });
             const pricing = await loadGuestSkuPricing({ supabase: getSupabase(), productId: normalized.productId, skuId: normalized.skuId, siteName });
             const fingerprint = security.buildGuestRequestFingerprint({
@@ -1428,11 +1538,50 @@ function responseOrder(order, claimSecret, extras = {}) {
             const claimHash = security.hashClaimSecret(claimSecret, { env });
             const ipHash = hashRequestAttribute(resolveClientIp(req, { env }));
             const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+
+            // Order Access 2.0 (§6.4): resolve the credential group that will own
+            // this order. While the switch is OFF this is a no-op and the order
+            // keeps the legacy non-strict contact hash (or null), so the path is
+            // byte-identical to today. While ON, email + query password are
+            // mandatory, the password is strength-checked server-side, and the
+            // resolved buyer_id is bound to the order under the SAME strict
+            // contact hash that keys the group (the create RPC re-verifies the
+            // (buyer_id, site, contact_hash) triple and fails closed on mismatch).
+            let buyerContactHash = hashContact(normalized.email);
+            let buyerId = null;
+            if (credentialEnabled) {
+                const email = String(normalized.email || '').trim().toLowerCase();
+                if (!email) {
+                    throw new security.GuestShopSecurityError('请填写邮箱', {
+                        statusCode: 400, code: 'guest_email_required', field: 'email'
+                    });
+                }
+                const orderPassword = typeof rawOrderPassword === 'string' ? rawOrderPassword : '';
+                // Server-authoritative strength check (§6.1.4). Safe to echo the
+                // failing rule here: the buyer is present and no secret exists yet.
+                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(orderPassword, {
+                    security, env, email, field: 'orderPassword'
+                });
+                buyerContactHash = security.hashGuestContact(email, { env, strict: true });
+                const resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
+                    supabase: getSupabase(),
+                    security,
+                    env,
+                    site: siteName,
+                    email,
+                    password: orderPassword,
+                    contactHash: buyerContactHash,
+                    ipHash,
+                    deviceHash
+                });
+                buyerId = resolved.buyerId;
+            }
+
             const { data, error } = await getSupabase().rpc('fn_guest_shop_create_order', {
                 p_site: siteName, p_product_id: normalized.productId, p_sku_id: normalized.skuId,
                 p_idempotency_key: normalized.idempotencyKey, p_request_fingerprint: fingerprint,
                 p_claim_secret_hash: claimHash, p_provider: provider, p_channel: channel,
-                p_buyer_contact_hash: hashContact(normalized.email), p_request_ip_hash: ipHash,
+                p_buyer_contact_hash: buyerContactHash, p_buyer_id: buyerId, p_request_ip_hash: ipHash,
                 p_request_device_hash: deviceHash, p_ttl_seconds: orderTtlSeconds
             });
             if (error) throw error;
@@ -2242,6 +2391,411 @@ function responseOrder(order, claimSecret, extras = {}) {
         } catch (error) { return failResponse(res, error); }
     }
 
+    // ------------------------------------------------------------------
+    // Order Access 2.0 (A2): buyer-credential session + list/detail/delivery.
+    //
+    // Everything in this block is gated behind
+    // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED. With the switch off each new route
+    // answers 404 and the GET branch on /guest/orders is not even reachable, so
+    // the deployed behaviour stays byte-identical to today (§13.4 / §15.1).
+    // ------------------------------------------------------------------
+
+    function buyerFeatureDisabledError() {
+        // 404, not 403: an unreleased endpoint must not be distinguishable from
+        // a route that never existed, otherwise the route map itself advertises
+        // the rollout state of the credential feature.
+        return Object.assign(new Error('接口不存在'), {
+            statusCode: 404, code: 'guest_feature_disabled', expose: true
+        });
+    }
+
+    function ensureBuyerCredentialsEnabled() {
+        if (!defaultBuyerCredentials.isBuyerCredentialEnabled(env)) throw buyerFeatureDisabledError();
+    }
+
+    function guestCredentialsInvalidError() {
+        // §9.1: ONE code and ONE message cover "unknown email", "wrong password"
+        // and "this email has no guest order". The real reason only ever reaches
+        // guest_shop_access_attempts.outcome, never the body, header or log.
+        return new security.GuestShopSecurityError('邮箱或查询密码不正确', {
+            statusCode: 403, code: 'guest_order_credentials_invalid'
+        });
+    }
+
+    function guestOrderLockedError() {
+        return new security.GuestShopSecurityError('尝试次数过多，请稍后再试', {
+            statusCode: 423, code: 'guest_order_locked'
+        });
+    }
+
+    function guestOrderRateLimitedError() {
+        return new security.GuestShopSecurityError('操作过于频繁，请稍后再试', {
+            statusCode: 429, code: 'guest_rate_limited'
+        });
+    }
+
+    function guestOrderNotFoundError() {
+        return new security.GuestShopSecurityError('未找到该订单', {
+            statusCode: 404, code: 'guest_order_not_found'
+        });
+    }
+
+    function guestDatabaseUnavailableError() {
+        return Object.assign(new Error('游客订单数据库不可用'), {
+            statusCode: 503, code: 'guest_database_unavailable', expose: false
+        });
+    }
+
+    /**
+     * §8.1 shared login path. POST /guest/access/login and the per-request
+     * X-Guest-Order-Credential header both funnel through here, which is the
+     * only reason the two channels share one lock budget, one audit stream and
+     * one equal-cost scrypt. Bypassing it would hand an attacker a second,
+     * uncounted guessing surface.
+     */
+    async function resolveBuyerSessionFromPassword({ req, email, password, siteName }) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const rawPassword = typeof password === 'string' ? password : '';
+        // Throws a 503 expose:false misconfiguration error on a malformed knob,
+        // so a typo can never silently widen the budget to "unlimited".
+        const settings = defaultBuyerCredentials.resolveBuyerCredentialSettings(env);
+        const contactHash = security.hashGuestContact(normalizedEmail, { env, strict: true });
+        const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+        const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+        const audit = async (outcome, buyerId = null) => {
+            // Evidence only. A failed insert must never flip an auth decision in
+            // either direction, so this is isolated from the caller's outcome.
+            try {
+                await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                    supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                });
+            } catch (_) { /* best effort by contract */ }
+        };
+
+        // The IP budget is evaluated BEFORE any group read or scrypt: a spraying
+        // attacker is cut off cheaply and cannot use latency as an email oracle.
+        const ipFailures = await defaultBuyerCredentials.countRecentIpFailures({
+            supabase: db,
+            ipHash,
+            windowSeconds: settings.loginWindowSeconds,
+            budget: settings.ipMaxFailures
+        });
+        if (ipFailures >= settings.ipMaxFailures) {
+            await audit('rate_limited');
+            throw guestOrderRateLimitedError();
+        }
+
+        const rows = await defaultBuyerCredentials.loadBuyerGroups({
+            supabase: db, site: siteName, contactHash
+        });
+
+        // A lock on ANY group of the contact locks the whole contact, and is
+        // checked before scrypt so a locked contact is both cheap and free of a
+        // timing side channel (§8.1).
+        const lockedRow = defaultBuyerCredentials.findActiveBuyerLock(rows);
+        if (lockedRow) {
+            await audit('locked', lockedRow.id || null);
+            throw guestOrderLockedError();
+        }
+
+        const { matched, needsRehash } = defaultBuyerCredentials
+            .verifyBuyerPasswordAcrossGroups(rawPassword, rows, security);
+        if (matched) {
+            // §10.4 (A4) will retire guest access for a merged group. Nothing
+            // writes merged_into_user_id yet, so this is the fail-closed guard:
+            // a merged group answers exactly like a wrong password, reusing the
+            // unified 403 and the existing outcome enum rather than inventing a
+            // distinguishable signal.
+            if (matched.mergedIntoUserId) {
+                await audit('bad_password', matched.id);
+                throw guestCredentialsInvalidError();
+            }
+            await defaultBuyerCredentials.resetBuyerLoginFailures({
+                supabase: db, site: siteName, contactHash, rows
+            });
+            if (needsRehash) {
+                await defaultBuyerCredentials.rehashBuyerPasswordIfNeeded({
+                    supabase: db, row: matched, password: rawPassword, security
+                });
+            }
+            await audit('success', matched.id);
+            // buyer_id (never contact_hash) is the authorization subject, so a
+            // group=2 session cannot read group=1 orders or card content
+            // (§6.4.2). The cookie payload below carries this same id.
+            return { buyerId: matched.id, contactHash };
+        }
+
+        const failure = await defaultBuyerCredentials.registerBuyerLoginFailure({
+            supabase: db, site: siteName, contactHash, rows, settings
+        });
+        await audit(rows.length === 0 ? 'unknown_email' : 'bad_password');
+        if (failure?.locked) throw guestOrderLockedError();
+        throw guestCredentialsInvalidError();
+    }
+
+    /**
+     * §9.2: ownership is proven by buyer_id and every non-match collapses to
+     * 404 — never 403 — so detail/delivery cannot be used as an order-number
+     * existence oracle.
+     */
+    async function loadOwnedGuestOrder(buyerId, orderNo) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const normalized = String(orderNo || '').trim();
+        if (!normalized) throw guestOrderNotFoundError();
+        const result = await db.from('guest_shop_orders').select('*')
+            .eq('order_no', normalized)
+            .eq('buyer_id', String(buyerId))
+            .maybeSingle();
+        if (result?.error) throw result.error;
+        if (!result?.data) throw guestOrderNotFoundError();
+        return result.data;
+    }
+
+    /**
+     * §7.1 transport rules for the credential endpoints:
+     *   - query-string credentials are rejected outright, so they can never end
+     *     up in an access log, a proxy log or a Referer header;
+     *   - the session cookie wins when present, which is what lets a
+     *     browser-native navigation (card download) work without a custom
+     *     header;
+     *   - otherwise the X-Guest-Order-Credential header is verified through the
+     *     shared login path, keeping one lock budget.
+     */
+    async function authenticateGuestOrderAccess(req) {
+        for (const name of ['email', 'order_password', 'orderPassword', 'password']) {
+            const value = queryValue(req, name);
+            if (value === undefined || value === null || String(value) === '') continue;
+            // Audit the attempt with the real site when it parses; an unparseable
+            // site is skipped rather than written as a row that the NOT NULL /
+            // CHECK constraint would reject anyway. The 400 is returned either
+            // way, so audit failure cannot weaken the rejection.
+            let auditSite = '';
+            try {
+                auditSite = security.normalizeGuestSite(queryValue(req, 'site'));
+            } catch (_) { auditSite = ''; }
+            if (auditSite) {
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: getSupabase(),
+                        site: auditSite,
+                        contactHash: null,
+                        buyerId: null,
+                        ipHash: hashRequestAttribute(clientIpForRateLimit(req)),
+                        deviceHash: hashRequestAttribute(req?.headers?.['user-agent'] || ''),
+                        outcome: 'rate_limited'
+                    });
+                } catch (_) { /* best effort */ }
+            }
+            throw new security.GuestShopSecurityError('不支持通过 URL 传递查询凭证', {
+                statusCode: 400, code: 'guest_credential_malformed', field: name
+            });
+        }
+
+        const session = decryptAccessCookie(
+            cookieHeaderValue(req, GUEST_ACCESS_COOKIE_NAME), security, env
+        );
+        if (session) return { buyerId: session.buyerId, contactHash: session.contactHash };
+
+        const header = req?.headers?.[security.GUEST_ORDER_CREDENTIAL_HEADER];
+        if (header) {
+            // parseGuestOrderCredentialHeader throws 400 guest_credential_malformed
+            // for anything non-canonical, including the non-canonical base64url
+            // re-encodings (§16.1).
+            const parsed = security.parseGuestOrderCredentialHeader(header);
+            return resolveBuyerSessionFromPassword({
+                req,
+                email: parsed.email,
+                password: parsed.password,
+                siteName: normalizeSiteValue(queryValue(req, 'site'))
+            });
+        }
+        throw guestCredentialsInvalidError();
+    }
+
+    function guestOrderListSnapshot(order) {
+        return {
+            ...publicOrderSnapshot(order),
+            site: order.site || '',
+            quantity: Number(order.quantity) || 1,
+            unit_amount: order.unit_amount === undefined || order.unit_amount === null
+                ? null : order.unit_amount,
+            created_at: order.created_at || null,
+            // §11.2: the guest orders page renders two discount lines (coupon /
+            // campaign). A2 ships the container only; L1/L2 fill it. Both stay
+            // null so the client renders nothing instead of a misleading
+            // "已优惠 0.00".
+            coupon_discount: null,
+            promo_discount: null
+        };
+    }
+
+    function parsePositiveQueryInt(value, { defaultValue, min, max }) {
+        const raw = String(value ?? '').trim();
+        if (!raw) return defaultValue;
+        if (!/^\d+$/u.test(raw)) return defaultValue;
+        const parsed = Number(raw);
+        if (!Number.isSafeInteger(parsed)) return defaultValue;
+        return Math.min(max, Math.max(min, parsed));
+    }
+
+    async function listOrders(req, res) {
+        // Read budget 30/min (§8.1). Taken before authentication so an
+        // unauthenticated spray still consumes the coarse limiter.
+        if (!(await limit(req, res, 'guest-orders-read', { limit: 30 }))) return;
+        try {
+            const auth = await authenticateGuestOrderAccess(req);
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const page = parsePositiveQueryInt(queryValue(req, 'page'), { defaultValue: 1, min: 1, max: 10_000 });
+            const pageSize = parsePositiveQueryInt(queryValue(req, 'pageSize') ?? queryValue(req, 'page_size'), {
+                defaultValue: 20, min: 1, max: 50
+            });
+            const fields = 'order_no,site,total_amount,currency,quantity,unit_amount,'
+                + 'payment_status,fulfillment_status,refund_status,expires_at,created_at';
+            let query = db.from('guest_shop_orders').select(fields, { count: 'exact' });
+            // buyer_id is unique per (site, contact_hash), so it already implies
+            // the site; no extra site filter is needed or wanted.
+            query = query.eq('buyer_id', String(auth.buyerId));
+            const orderNo = String(queryValue(req, 'order_no') || queryValue(req, 'orderNo') || '').trim();
+            if (orderNo) query = query.eq('order_no', orderNo);
+            if (typeof query.order === 'function') query = query.order('created_at', { ascending: false });
+            if (typeof query.range === 'function') {
+                query = query.range((page - 1) * pageSize, page * pageSize - 1);
+            } else if (typeof query.limit === 'function') {
+                query = query.limit(pageSize);
+            }
+            const result = await query;
+            if (result?.error) throw result.error;
+            const rows = Array.isArray(result?.data) ? result.data : [];
+            const total = Number.isFinite(Number(result?.count)) && result?.count !== null
+                ? Number(result.count) : rows.length;
+            return sendJson(res, 200, {
+                success: true,
+                orders: rows.map(guestOrderListSnapshot),
+                pagination: { page, page_size: pageSize, total }
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function orderDetail(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            if (!(await limit(req, res, 'guest-orders-read', { limit: 30 }))) return;
+            const auth = await authenticateGuestOrderAccess(req);
+            const order = await loadOwnedGuestOrder(
+                auth.buyerId,
+                queryValue(req, 'order_no') || queryValue(req, 'orderNo')
+            );
+            return sendJson(res, 200, { success: true, order: guestOrderListSnapshot(order) });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function delivery(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Card content is the highest-value payload on the guest surface, so
+            // it gets a tighter budget than the list endpoint.
+            if (!(await limit(req, res, 'guest-orders-delivery', { limit: 20 }))) return;
+            const auth = await authenticateGuestOrderAccess(req);
+            const order = await loadOwnedGuestOrder(
+                auth.buyerId,
+                queryValue(req, 'order_no') || queryValue(req, 'orderNo')
+            );
+            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+            const fulfillmentStatus = String(order.fulfillment_status || '').trim().toLowerCase();
+            if (paymentStatus !== 'confirmed' || fulfillmentStatus !== 'delivered') {
+                return sendJson(res, 409, {
+                    success: false, code: 'guest_order_not_ready', message: '订单尚未完成发货'
+                });
+            }
+            const content = await loadClaimedContent(order);
+            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function accessLogin(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureBuyerCredentialsEnabled();
+            // Write budget 10/min (§8.1), taken before the body is parsed so a
+            // credential spray cannot amplify JSON work.
+            if (!(await limit(req, res, 'guest-orders-write', { limit: 10 }))) return;
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
+                    throw new security.GuestShopSecurityError('登录请求字段不允许', {
+                        field: key, code: 'unknown_field'
+                    });
+                }
+            }
+            const email = String(body.email || '').trim().toLowerCase();
+            const password = typeof body.password === 'string' && body.password
+                ? body.password
+                : (typeof body.orderPassword === 'string' && body.orderPassword
+                    ? body.orderPassword
+                    : String(body.order_password || ''));
+            if (!email || !password) {
+                throw new security.GuestShopSecurityError('请输入邮箱和查询密码', {
+                    statusCode: 400, code: 'guest_credential_malformed', field: 'email'
+                });
+            }
+            const siteName = normalizeSiteValue(body.site);
+            const session = await resolveBuyerSessionFromPassword({ req, email, password, siteName });
+            const token = encryptAccessCookie({
+                v: 1,
+                buyer_id: session.buyerId,
+                contact_hash: session.contactHash,
+                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
+            }, security, env);
+            if (!token) {
+                // A missing claim pepper must not silently degrade the buyer to
+                // the header-only channel; fail closed with a retryable 503.
+                throw Object.assign(new Error('会话签发失败'), {
+                    statusCode: 503, code: 'guest_shop_misconfigured', expose: false
+                });
+            }
+            setAccessCookie(res, token);
+            return sendJson(res, 200, {
+                success: true,
+                authenticated: true,
+                // Only the buyer's own email is echoed, for the "已保存 xxx 的查询
+                // 凭证" hint. buyer_id stays server-side inside the cookie.
+                email,
+                session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function accessLogout(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        // Deliberately NOT gated on the credential switch: if the feature is
+        // rolled back while a cookie is live, the buyer must still be able to
+        // clear it. Logout exposes no data and grants nothing.
+        clearAccessCookie(res);
+        return sendJson(res, 200, { success: true, logged_out: true });
+    }
+
     async function webhook(req, res, providerOverride = '') {
         setWebhookSecurityHeaders(res);
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
@@ -2351,6 +2905,13 @@ function responseOrder(order, claimSecret, extras = {}) {
         recover,
         claim,
         webhook,
+        // Order Access 2.0 (A2). All four answer 404 guest_feature_disabled
+        // while GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off (logout excepted: it
+        // only clears a cookie, so it must keep working after a rollback).
+        order: orderDetail,
+        delivery,
+        accessLogin,
+        accessLogout,
         // Kept out of the public route modules (which select one handler),
         // but useful for contract tests to exercise server-owned checkout
         // normalization without making a provider call.

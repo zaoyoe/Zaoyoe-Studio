@@ -656,6 +656,22 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
   这是 §7.1 选用 `X-Guest-Order-Credential` 而非 `Authorization: Guest` 的直接原因。
 - 页脚/帮助区加「游客订单查询」链接。
 
+#### 11.2.1 A2 实际落地范围（**面板删除推迟到 G3**，本节为权威）
+
+A2 采**纯增量**落地：新链路上线，旧链路一行不删。
+
+| 项 | A2 状态 | 说明 |
+|---|---|---|
+| `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css` | ✅ 已落地 | 独立精简页，不引 supabase、不引商城页运行时；脚本带 `?v=20260921_GUEST_ORDER_ACCESS_A2_1` |
+| `shop.html` 弹窗内「使用邮箱 + 查询密码查询订单与卡密」入口（`guestCashOrdersPageLink`） | ✅ 已落地 | 默认 `hidden`，仅在 `buyer_credential_required` 时显示 |
+| `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` 及其 JS 分支 | ⛔ **保留**（G3 再删） | 开关关闭时用户仍需靠「订单号 + 取货口令」找回历史订单（§13.1）。现在就删 = 在灰度期自断唯一可用的找回路径。契约测试对这两个 id 的 `match` 断言**原样保留** |
+| 订单卡上的「立即支付」（待支付单跳支付） | ⏸ **推迟** | 需要先确定「游客二次支付」是否复用现有 `guest/preview` 下单幂等键；A2 只展示状态，不提供再次支付入口，避免出现两条可下单路径 |
+| 页脚/帮助区「游客订单查询」链接 | ⏸ 推迟到 G3 | 与面板删除同批处理，避免开关关闭时暴露一个 404 页面入口 |
+
+> **G3 的验收条件**：`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED=true` 且 §16.4 实机证据归档后，
+> 才允许删面板 + 改契约测试断言 + 上页脚链接。删除时同一 PR 内必须把
+> `tests/guest-shop-frontend-contract.test.js` 的 panel `match` 断言改为 `doesNotMatch`。
+
 ### 11.3 下单表单新增字段（文案定稿）
 
 ```
@@ -681,6 +697,17 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
   而不是只在提交时报错——中文用户对「标点」的理解差异很大，实时反馈能显著降低放弃率。
 - 二次确认框：**不做**（增加摩擦；「帮我生成」+ 实时清单已足够）。
 - 全角标点在前端就归一到半角并回显（§6.1.2 第 2 步），避免用户提交后才发现被拒。
+- **输入框 `maxlength="64"`**，与服务端 P3 上限严格相等（`shop.html` 的
+  `guestCashOrderPassword`）。前端截断到 64 而服务端也拒 >64，两侧不会出现
+  「前端放行、服务端拒绝」的裂缝。
+- **「帮我生成」的 P7a 残余（诚实记录）**：浏览器端**刻意不镜像** P7a 黑名单
+  （下发 11052 条策略资产到前端，换来的收益接近零）。因此生成器可能极小概率产出
+  一个命中服务端 P7a 的口令，实测量级约 **1/200k**
+  （`tests/guest-shop-frontend-contract.test.js` 用 20000 次采样对**真实**
+  `security.validateGuestQueryPasswordPolicy` 做上界断言）。
+  缓解：服务端返回 `guest_password_weak` 时，前端**自动重新生成并重新复制**，
+  提示用户「已重新生成」，**绝不自动用弱口令重试提交**，也不把失败口令留在输入框里。
+  这条路径已写成测试，属于「不可能变成死胡同」的保证。
 
 ---
 
@@ -692,8 +719,9 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
 | POST | `/api/shop/guest/orders` | 无（body 内带 email + password） | **变更**：`email` 由选填改必填，新增 `orderPassword`；沿用 `normalizeGuestOrderInput` 的 `forbiddenFields` 机制拦截客户端传金额 |
 | GET | `/api/shop/guest/status` | 无（现有机制不变） | **不变**，支付轮询仍用现有 status 通道，避免把凭证塞进高频轮询 |
 | GET | `/api/shop/guest/orders` | `X-Guest-Order-Credential` | **新增**：列表 + 分页，可选 `order_no` 精确过滤 |
-| GET | `/api/shop/guest/orders/:orderNo` | `X-Guest-Order-Credential` | **新增**：详情 |
-| GET | `/api/shop/guest/orders/:orderNo/delivery` | `X-Guest-Order-Credential` | **新增**：卡密（仅 `confirmed` + 已发货） |
+| GET | `/api/shop/guest/order?order_no=` | `X-Guest-Order-Credential` 或会话 cookie | **新增（A2 已落地）**：详情。**路径为扁平键**，见下方「A2 落地偏差 D-1」 |
+| GET | `/api/shop/guest/delivery?order_no=` | `X-Guest-Order-Credential` 或会话 cookie | **新增（A2 已落地）**：卡密（仅 `confirmed` + `delivered`，否则 `409 guest_order_not_ready`）。同为扁平键 |
+| POST | `/api/shop/guest/access/logout` | 无 | **新增（A2 已落地）**：注销会话 cookie。**不受功能开关门禁**，否则关开关会把持有效 cookie 的用户卡死 |
 | POST | `/api/shop/guest/access/login` | 无 | **新增**：显式校验凭证，成功返回一个**短时会话 cookie**（见下），失败走 §8 锁定 |
 | POST | `/api/shop/guest/recover` | 无（body: orderNo + recoveryCode） | **保留**，仅服务历史订单 |
 | GET | `/api/shop/guest/claim` | 现有 claim 通道 | **保留** |
@@ -702,7 +730,7 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
 独角是前者（每个请求都重发 email+password）。2.0 采用**混合**：
 
 - `POST /access/login` 校验通过后签发 `__Host-gs-acc`（httpOnly、Secure、SameSite=Strict、
-  Path=/api/shop/guest、Max-Age 30 分钟滑动），值为 AES-256-GCM 加密的
+  **Path=/**、Max-Age 30 分钟滑动），值为 AES-256-GCM 加密的
   `{buyer_id, contact_hash, exp}`，复用现有 `encryptClaimCookie` 范式
   （`guest-shop.js:267-315`）与**促销方案 §7.1 的同一套会话基础设施**。
 - 列表/详情/卡密接口**同时接受**会话 cookie 或 `X-Guest-Order-Credential`（cookie 优先）。
@@ -713,6 +741,21 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
 - **cookie 载荷里的 `buyer_id` 就是命中的那个凭证分组**，因此会话通道天然继承 §6.4.2 的分组隔离：
   持有 group=2 会话的客户端**无法**读取 group=1 的订单或卡密。
   实现时严禁把 cookie 载荷退化成 `contact_hash`（那会跨分组放行，等于把 §6.4 的防串号打穿）。
+
+### 12.1 A2 落地偏差（实现已定稿，本节为权威）
+
+| # | 原文设计 | 实际落地 | 原因 |
+|---|---|---|---|
+| D-1 | `GET /guest/orders/:orderNo`、`GET /guest/orders/:orderNo/delivery` REST 路径参数 | **扁平键** `guest/order`、`guest/delivery`，订单号走 **query string** `order_no` | `api/public.js` 的 `resolveRoute()` 会把路径小写并按 `/` 拼接，**没有参数槽**；KVM4 与 Vercel 共用这张扁平路由表。为两个接口引入路径参数解析会牵动全部既有路由的匹配语义，风险远大于收益 |
+| D-2 | cookie `Path=/api/shop/guest` | **`Path=/`** | `__Host-` 前缀是浏览器强制约束：必须 `Secure`、必须 `Path=/`、**禁止** `Domain`。原文的 `Path=/api/shop/guest` 会让浏览器**直接丢弃**整个 cookie。授权范围改由服务端按 `buyer_id` 收口（§6.4.2），不依赖 cookie path |
+| D-3 | 详情/卡密「仅接受 header」 | **cookie 优先，header 兜底**，二者都缺 → 统一 `403 guest_order_credentials_invalid` | 与 §12 混合模型一致；卡密下载走浏览器原生导航时无法自定义 header |
+| D-4 | query 中出现凭证 → `400` 并写审计 `outcome=rate_limited` | `400 guest_credential_malformed` + 审计，但审计 outcome 复用既有枚举，**不新造 `rate_limited` 语义**（该 outcome 仍专属于配额命中） | 避免把「URL 传凭证探测」与「配额打满」在取证上混为一谈 |
+| D-5 | 列表/详情/卡密各自独立配额 | 列表 `guest-orders-read`、卡密 `guest-orders-delivery` 两个粗配额键 + §8.1 的登录写配额；**卡密严于列表** | 与既有 `guest-shop` 配额键命名保持一致 |
+| D-6 | 列表返回优惠明细 | 容器**已就位但恒为 `null`**：`coupon_discount` / `promo_discount` | L1/L2 未上线。先把字段做出来，促销落地时前端零改动即可填充（§11.2 订单卡） |
+
+> D-1/D-2 是**契约级**偏差，已写进 `tests/guest-shop-order-access-endpoints.test.js`
+> 与 `tests/guest-shop-public-route-contract.test.js`；后续如需改回 REST 路径参数，
+> 必须同时改路由表、这两个测试与本节。
 
 ---
 
@@ -995,6 +1038,49 @@ A4  邮箱 OTP → 自助改密 + 游客订单并入账号（§10.3/§10.4）
 **A0–A3 与 L0–L1 可并行**，因为写集合不相交（A 系列动 `guest_shop_buyers`/凭证/新页面，
 L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 之后**，
 因为它依赖促销方案的 OTP 设施与 `contact_hash` 因子升级。
+
+### 19.1 落地状态（截至 A2）
+
+| 阶段 | 状态 | 提交 | 内容 |
+|---|---|---|---|
+| A0 | ✅ 已完成 | `0eaf2cfd1` | `guest_shop_buyers` / `guest_shop_orders.buyer_id` / `guest_shop_access_attempts` 迁移文件写盘（**未执行**）+ readiness 门禁扩展 |
+| A1a | ✅ 已完成 | `65fac4107` | 查询密码策略 P1–P10、scrypt 哈希（`norm=v1`）、`X-Guest-Order-Credential` 解析原语 |
+| A1b | ✅ 已完成 | `24759bf13` | 凭证分组原子分配 RPC（K38=3 上限、防抢占）、等开销防预言机、登录失败/锁定阶段机 |
+| A1c | ✅ 已完成 | 本次提交 | 下单链路接通：`preview` 回 `buyer_credential_required`、订单表单收集查询密码、服务端权威强度校验、`buyer_id` 绑定到订单（RPC 复核 `(buyer_id, site, contact_hash)` 三元组，不匹配即 fail-closed） |
+| **A2** | ✅ **已完成** | 本次提交 | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
+| G3 | ⏸ 未开始 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` + 改契约断言 + 页脚入口（**必须等开关打开且实机证据归档后**，见 §11.2.1） |
+| A3 | ⏸ 未开始 | — | 管理台：解锁 / 重置查询密码 / 一次性找回链接；§13.2 历史订单自助升级 |
+| L0–L4 / A4 | ⏸ 未开始 | — | 促销侧与 OTP，见 §19 |
+
+**A2 测试覆盖（全量 `npm run test:security`：3261 通过 / 0 失败）**
+
+- `tests/guest-shop-order-access-endpoints.test.js`（新增，19 条）：开关关闭时四个新路由
+  全部 `404 guest_feature_disabled` 且 `guest/orders` 保持今天的 `405 + Allow: POST`；
+  logout 不受开关门禁；query 传凭证 → `400` 且审计不落明文；cookie 优先于 header；
+  伪造 cookie → 统一 `403`；未知邮箱与错密码**响应体逐键相同**；锁定 → `423` 且不跑 scrypt；
+  已并入账号 → `403` 且审计写 `bad_password`（不新造 `merged` 信号）；per-IP 预算先于分组读；
+  越权一律 `404`（含 group1 会话读 group2 订单）；列表快照形状与 `null` 优惠容器；
+  分页/过滤被夹取；卡密门控矩阵（未支付/未发货 → `409` 且**不触碰** fulfillment RPC）；
+  方法白名单 + `Allow`；登录 body 字段白名单（`unknown_field`）；cookie 属性全套。
+  **scrypt 用真实现**，否则等开销与锁定断言毫无意义。
+- `tests/guest-shop-frontend-contract.test.js`（+6 条）：生成器只用 CSPRNG、无存储、无网络；
+  **20000 次采样喂给真实 `security.validateGuestQueryPasswordPolicy`**，并断言客户端字母表
+  与服务端 `_private.GENERATED_QUERY_PASSWORD_CLASSES` 逐字符冻结一致（把 `O` 加回客户端
+  字母表会让这条测试失败，已做过变异验证）；密码只传一次、永不落盘、弱口令只重新生成
+  不自动重提；查询页脚本的隔离断言（无 supabase / 无 `Authorization:` / 无 claim secret /
+  无 `localStorage.setItem`）。
+- `tests/guest-shop-public-route-contract.test.js`（+3 条）：四个扁平键在共享 dispatcher 上
+  正确绑定；`guest/orders` 既有绑定不变；四个 Vercel 入口文件导出对应 handler 且都在
+  `.vercelignore` 内（不占 Hobby 的函数槽位）。
+- `tests/guest-shop-readiness.test.js`：A2 前端文件从「缺失即 fail」翻为 `present`，
+  并新增 tempRoot 用例证明文件缺失仍然 **blocking=true fail-closed**；严格门禁下
+  `summary.ok=true` 但 `summary.ready=false`、`--fail-on-invalid → 0`、
+  `--fail-on-not-ready → 3 (NOT_READY)`。
+
+> **A2 完成 ≠ 可启用。** 开关仍默认关闭，迁移 SQL 仍**未执行**（文件在
+> `supabase/migrations/20260920_guest_shop_buyer_credentials.sql`、
+> `supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql`，由你执行，Codex 不执行 SQL）。
+> 启用前置条件见 §15.3 与 §16.4。
 
 ---
 

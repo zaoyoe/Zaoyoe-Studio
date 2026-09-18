@@ -4,6 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
+
+// Order Access 2.0 (A2): the browser generator is judged against the REAL
+// server policy, not against a copy of it, so a drift in either side fails here.
+const security = require('../api/_lib/guest-shop/security');
 
 const repoRoot = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -12,6 +17,26 @@ const markup = read('shop.html');
 const client = read('js/guest-shop-client.js');
 const styles = read('css/shop-page.css');
 const guestShopHandler = read('server/api-handlers/public/guest-shop.js');
+// A2 deliverables: the standalone lookup page and the shared password module.
+const ordersPage = read('guest-orders.html');
+const ordersClient = read('js/guest-orders-client.js');
+const ordersStyles = read('css/guest-orders.css');
+const passwordModuleSource = read('js/guest-query-password.js');
+
+/**
+ * Comments are prose; code is the contract. The guest scripts legitimately
+ * document WHY supabase / Authorization / localStorage.setItem are forbidden,
+ * so the isolation assertions below run against comment-stripped source and
+ * fail on a real reference only. Same helper convention as
+ * tests/guest-shop-buyer-credentials.test.js: block comments and whole-line
+ * comments go, trailing `// ...` on a code line stays so a URL inside a string
+ * literal is never mangled.
+ */
+function stripComments(source) {
+    return source
+        .replace(/\/\*[\s\S]*?\*\//gu, ' ')
+        .replace(/^[ \t]*\/\/.*$/gmu, '');
+}
 
 // The polling client and the server-side per-IP status budget must stay in sync,
 // so read both instead of pinning magic interval numbers.
@@ -328,4 +353,309 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(client, /setText\(['"]guestCashPrice['"], formatAmount\(pricing\?\.payableAmount\)\)/);
     assert.match(client, /setHidden\(['"]guestCashFeeRow['"], !\(surchargeAmount > 0\)\)/);
     assert.doesNotMatch(client, /surcharge_rate:\s*normalizeSurchargeRate\(summary\?\.surcharge_rate, fallbackRate\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Order Access 2.0 (A2) — query password collection, generator and lookup page
+// ---------------------------------------------------------------------------
+
+test('the shared query-password module is CSPRNG-only, storage-free and network-free', () => {
+    const code = stripComments(passwordModuleSource);
+    assert.match(code, /getRandomValues/);
+    assert.doesNotMatch(code, /Math\.random/);
+    assert.doesNotMatch(code, /localStorage|sessionStorage|document\.cookie/);
+    assert.doesNotMatch(code, /fetch\s*\(|XMLHttpRequest|sendBeacon/);
+    assert.doesNotMatch(code, /supabase|access_token|Authorization\s*:|Bearer/i);
+    assert.doesNotMatch(code, /innerHTML/);
+    assert.doesNotMatch(code, /X-Guest-Claim-Secret|claimSecret|claim_secret/);
+    // Unbiased rejection sampling. A plain `buffer[0] % max` would over-represent
+    // the first alphabet characters and quietly narrow the effective keyspace of
+    // every generated query password.
+    assert.match(code, /Math\.floor\(0x100000000 \/ max\) \* max/);
+    assert.match(code, /globalThis\.GuestQueryPassword = Object\.freeze\(\{/);
+    // The module must stay a pure companion to the generator button: it never
+    // sees an order, a credential or a recovery code.
+    assert.doesNotMatch(code, /order_no|orderNo|recovery/i);
+});
+
+test('the browser query-password generator only mints passwords the real server policy accepts', () => {
+    // Deterministic xorshift32 so a policy regression reproduces exactly instead
+    // of flaking. In the browser the module uses crypto.getRandomValues; here we
+    // only need a stable, unbiased enough byte source to exercise the alphabet.
+    let seed = 0x2545f491;
+    const nextUint32 = () => {
+        seed ^= seed << 13; seed >>>= 0;
+        seed ^= seed >>> 17;
+        seed ^= seed << 5; seed >>>= 0;
+        return seed;
+    };
+    const context = vm.createContext({
+        crypto: {
+            getRandomValues(buffer) {
+                for (let index = 0; index < buffer.length; index += 1) buffer[index] = nextUint32();
+                return buffer;
+            }
+        }
+    });
+    vm.runInContext(passwordModuleSource, context, { filename: 'js/guest-query-password.js' });
+    const api = context.GuestQueryPassword;
+    assert.ok(api, 'the module must expose globalThis.GuestQueryPassword');
+
+    // Frozen parity with the server. These three values are the whole reason the
+    // button exists: if the alphabet, the length or the minimum drift, every
+    // "帮我生成" password becomes a guaranteed 400 guest_password_weak and the
+    // buyer is told the password WE minted is too weak.
+    assert.deepEqual(
+        { ...api.CLASSES },
+        { ...security._private.GENERATED_QUERY_PASSWORD_CLASSES },
+        'the browser alphabet must mirror GENERATED_QUERY_PASSWORD_CLASSES character-for-character'
+    );
+    assert.equal(api.GENERATED_LENGTH, security.GENERATED_QUERY_PASSWORD_LENGTH);
+    assert.equal(api.MIN_LENGTH, security.GUEST_QUERY_PASSWORD_MIN_LENGTH);
+
+    const alphabet = new Set(Object.values(security._private.GENERATED_QUERY_PASSWORD_CLASSES).join(''));
+    const SAMPLES = 20000;
+    const seen = new Set();
+    let denylistHits = 0;
+    for (let index = 0; index < SAMPLES; index += 1) {
+        const candidate = api.generate();
+        assert.equal([...candidate].length, api.GENERATED_LENGTH);
+        for (const ch of candidate) {
+            assert.equal(alphabet.has(ch), true, `${candidate} contains an out-of-alphabet character`);
+        }
+        assert.equal(seen.has(candidate), false, 'generated passwords must not repeat');
+        seen.add(candidate);
+
+        const result = security.validateGuestQueryPasswordPolicy(candidate);
+        if (result.ok) continue;
+        // P7a is the ONE rule the browser deliberately does not mirror: shipping
+        // the ~120-entry server denylist to the client would leak a policy asset
+        // to save a round trip, and a random 12-character string collides with
+        // it at roughly 1/200k. The client turns that residual into a re-mint +
+        // re-copy (asserted below), never a dead end, so it is tolerated here but
+        // bounded. Any other rule means the local structural mirror drifted.
+        assert.equal(
+            result.rule,
+            'P7a',
+            `${candidate} was rejected by ${result.rule}, which js/guest-query-password.js must mirror`
+        );
+        denylistHits += 1;
+    }
+    assert.ok(
+        denylistHits / SAMPLES < 0.001,
+        `P7a residual rate ${denylistHits}/${SAMPLES} is far above the ~1/200k expectation`
+    );
+
+    // The live checklist (§11.3) and the submit gate must agree with the server's
+    // P1/P2a-P2d on the same input, otherwise the modal shows five green ticks
+    // for a password the server is about to refuse.
+    for (const probe of [api.generate(), 'Ab3!xY9#', 'short1!', 'alllowercase1!', 'NOUPPERCASE!']) {
+        const inspected = api.inspect(probe);
+        const server = security.validateGuestQueryPasswordPolicy(probe);
+        const clientOk = api.policyFailure(probe) === null;
+        // P6-P8/P10 inputs the client cannot judge are allowed to differ, but the
+        // four-class + length verdict surfaced in the UI must match exactly.
+        assert.equal(
+            inspected.length,
+            [...probe].length >= security.GUEST_QUERY_PASSWORD_MIN_LENGTH,
+            `length tick disagrees for ${probe}`
+        );
+        assert.equal(inspected.upper, /[A-Z]/.test(probe));
+        assert.equal(inspected.lower, /[a-z]/.test(probe));
+        assert.equal(inspected.digit, /[0-9]/.test(probe));
+        assert.equal(inspected.punct, /[^A-Za-z0-9]/.test(probe));
+        assert.equal(inspected.ok, inspected.length && inspected.upper && inspected.lower && inspected.digit && inspected.punct);
+        if (server.ok) assert.equal(clientOk, true, `client rejected a password the server accepts: ${probe}`);
+        if (!server.ok && ['P1', 'P2a', 'P2b', 'P2c', 'P2d'].includes(server.rule)) {
+            assert.equal(clientOk, false, `client accepted a password the server rejects with ${server.rule}: ${probe}`);
+        }
+    }
+
+    // §6.1.2 step 2: fullwidth folding must be identical on both sides, or a
+    // Chinese IME turns a working credential into a permanent 403.
+    assert.equal(
+        api.foldFullwidth('Ａｂ３！'),
+        security._private.foldFullwidthAscii('Ａｂ３！')
+    );
+    assert.equal(api.foldFullwidth('Ab3!xY9#'), 'Ab3!xY9#');
+});
+
+test('the shop modal collects the query password only when the server says it is required', () => {
+    // Markup: the whole block ships hidden, so with GUEST_SHOP_BUYER_CREDENTIAL_ENABLED
+    // off the checkout a buyer sees is byte-identical to today (D1).
+    assert.match(markup, /id="guestCashOrderPasswordField"[^>]*hidden/);
+    assert.match(
+        markup,
+        /id="guestCashOrderPassword"[^>]*type="password"[^>]*autocomplete="new-password"[^>]*maxlength="64"[^>]*spellcheck="false"/
+    );
+    // new-password, never current-password: this field MINTS a secret, and
+    // current-password makes browsers offer a reused site password (§8.3).
+    assert.doesNotMatch(markup, /id="guestCashOrderPassword"[^>]*autocomplete="current-password"/);
+    assert.match(markup, /id="guestCashOrderPasswordChecks"[^>]*class="guest-shop-modal__pw-checks"/);
+    for (const key of ['length', 'upper', 'lower', 'digit', 'punct']) {
+        assert.match(markup, new RegExp(`<li data-pw-check="${key}">`), `missing checklist item ${key}`);
+    }
+    assert.match(markup, /id="guestCashOrderPasswordNote"[^>]*role="status"[^>]*hidden/);
+    assert.match(markup, /id="guestCashToggleOrderPasswordBtn"[^>]*aria-pressed="false"/);
+    assert.match(markup, /id="guestCashGenerateOrderPasswordBtn"[^>]*>帮我生成</);
+    assert.match(markup, /id="guestCashOrdersPageLink"[^>]*href="\/guest-orders\.html"[^>]*hidden/);
+    assert.match(styles, /\.guest-shop-modal__pw-checks/);
+    assert.match(styles, /\.guest-shop-modal__pw-btn/);
+    assert.match(styles, /\.guest-shop-modal__pw-note/);
+
+    // The generator module must be mounted BEFORE the client that calls into it,
+    // and both carry the A2 cachebuster.
+    const generatorIndex = markup.indexOf('js/guest-query-password.js');
+    const guestClientIndex = markup.indexOf('js/guest-shop-client.js');
+    assert.ok(generatorIndex >= 0, 'js/guest-query-password.js must be mounted');
+    assert.ok(guestClientIndex > generatorIndex, 'the generator must load before the guest client');
+    assert.match(markup, /js\/guest-query-password\.js\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
+    assert.match(markup, /guestOrderAccess=20260921_GUEST_ORDER_ACCESS_A2_1/);
+
+    // Client: the switch is driven ONLY by the server's preview flag, never by a
+    // client-side guess, so the server stays authoritative (§6.1.4).
+    assert.match(client, /buyerCredentialRequired:\s*false,/);
+    assert.match(client, /state\.buyerCredentialRequired = preview\?\.buyer_credential_required === true;/);
+    assert.match(client, /setHidden\('guestCashOrderPasswordField', !required\);/);
+    assert.match(client, /setHidden\('guestCashOrdersPageLink', !required\);/);
+    assert.match(client, /setText\('guestCashContactHint', required \? '必填，用于查询订单与获取发货通知' : '可选'\);/);
+    // Off path must actively wipe any plaintext left in the field.
+    assert.match(client, /if \(!required\) clearOrderPassword\(\);/);
+
+    // maxlength=64 is the server's P3 cap; folding slices to the same bound.
+    assert.match(client, /return folded\.slice\(0, 64\);/);
+    // The frozen normalization contract NEVER trims a query password. A trim
+    // here but not on the lookup page would strand an order behind one space.
+    const foldStart = client.indexOf('function foldQueryPassword(value)');
+    const foldEnd = client.indexOf('\n    function setOrderPasswordNote', foldStart);
+    assert.ok(foldStart > 0 && foldEnd > foldStart, 'foldQueryPassword must stay a standalone function');
+    assert.doesNotMatch(client.slice(foldStart, foldEnd), /\.trim\(/);
+});
+
+test('the query password travels once in the order body and is never persisted, URL-encoded or silently retried', () => {
+    // Mandatory email + client-side strength gate before the request is built.
+    assert.match(client, /if \(state\.buyerCredentialRequired\) \{[\s\S]*?if \(!email\) \{[\s\S]*?请填写邮箱，用于查询订单与获取发货通知/);
+    assert.match(client, /const passwordFailure = orderPasswordPolicyFailure\(\);[\s\S]*?setStateMessage\(orderPasswordPolicyMessage\(passwordFailure\), 'error'\);\s*return;/);
+    assert.match(client, /if \(orderPassword\) body\.orderPassword = orderPassword;/);
+    // Fixed quantity 1 is unchanged by A2 — the credential must not become a
+    // back door into multi-quantity guest orders.
+    assert.match(client, /const body = \{[\s\S]*quantity:\s*1,[\s\S]*idempotencyKey:/);
+
+    // Never persisted: the checkout snapshot keeps order_no + expiry only.
+    const persistStart = client.indexOf('function persistCheckout()');
+    const persistEnd = client.indexOf('\n    function hydrateCheckout', persistStart);
+    assert.ok(persistStart > 0 && persistEnd > persistStart, 'persistCheckout must stay a standalone function');
+    const persisted = client.slice(persistStart, persistEnd);
+    assert.doesNotMatch(persisted, /orderPassword|queryPassword|generatedOrderPassword/i);
+    assert.doesNotMatch(persisted, /password/i);
+
+    // Plaintext is dropped on success BEFORE the snapshot is written, and on
+    // modal close, so it never outlives the request that needed it.
+    assert.match(client, /clearOrderPassword\(\);\s*\n\s*persistCheckout\(\);/);
+    const closeStart = client.indexOf('function closeGuestModal(');
+    assert.ok(closeStart > 0, 'closeGuestModal must exist');
+    assert.match(client.slice(closeStart, closeStart + 2000), /clearOrderPassword\(\);/);
+
+    // A server-side rejection must re-mint and ask the buyer to click again.
+    // Auto-resubmitting would loop against the order-creation rate limit and
+    // could mint a second credential group behind the buyer's back.
+    assert.match(client, /if \(error\?\.code === 'guest_password_weak'\) void refreshRejectedOrderPassword\(\);/);
+    const refreshStart = client.indexOf('async function refreshRejectedOrderPassword()');
+    const refreshEnd = client.indexOf('\n    function toggleOrderPasswordVisibility', refreshStart);
+    assert.ok(refreshStart > 0 && refreshEnd > refreshStart, 'refreshRejectedOrderPassword must stay a standalone function');
+    const refreshBody = client.slice(refreshStart, refreshEnd);
+    assert.doesNotMatch(refreshBody, /createOrder|ORDER_ENDPOINT|requestJson|fetch\s*\(/);
+    assert.match(refreshBody, /请点击「帮我生成」换一个/);
+    assert.match(refreshBody, /请妥善保存后再次点击「创建订单」/);
+    // A password the buyer typed by hand is NEVER replaced without asking.
+    assert.match(refreshBody, /if \(!current \|\| current !== state\.generatedOrderPassword\) \{/);
+});
+
+test('the guest order lookup page is a lean standalone page with no account runtime', () => {
+    assert.match(ordersPage, /<meta name="robots" content="noindex, nofollow">/);
+    assert.match(ordersPage, /<body class="guest-orders-page">/);
+    assert.match(ordersPage, /css\/guest-orders\.css\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
+    for (const id of [
+        'guestOrdersSavedHint', 'guestOrdersSavedEmail', 'guestOrdersClearSavedBtn',
+        'guestOrdersQueryForm', 'guestOrdersEmail', 'guestOrdersPassword',
+        'guestOrdersTogglePasswordBtn', 'guestOrdersOrderNo', 'guestOrdersSubmitBtn',
+        'guestOrdersError', 'guestOrdersLoading', 'guestOrdersResultCard',
+        'guestOrdersEmpty', 'guestOrdersList', 'guestOrdersPagination',
+        'guestOrdersPageInfo', 'guestOrdersPrevBtn', 'guestOrdersNextBtn',
+        'guestOrdersDetail', 'guestOrdersDetailRows', 'guestOrdersDeliveryContent',
+        'guestOrdersCopyDeliveryBtn', 'guestOrdersLoadDeliveryBtn',
+        'guestOrdersLegacyOrderNo', 'guestOrdersLegacyCode', 'guestOrdersLegacyBtn'
+    ]) {
+        assert.match(ordersPage, new RegExp(`id="${id}"`), `guest-orders.html is missing #${id}`);
+    }
+    // The lookup field LOOKS UP an existing secret, so current-password is the
+    // correct (and opposite) choice to the order form's new-password.
+    assert.match(ordersPage, /id="guestOrdersPassword"[\s\S]{0,120}autocomplete="current-password"[^>]*maxlength="64"/);
+    assert.match(ordersPage, /id="guestOrdersEmail"[^>]*type="email"/);
+    assert.match(ordersPage, /id="guestOrdersQueryForm"[^>]*novalidate/);
+
+    // No account runtime at all: mounting shop-client would drag in supabase,
+    // the wallet and the auth modal, which is exactly what the guest channel
+    // must never touch.
+    assert.doesNotMatch(ordersPage, /supabase/i);
+    assert.doesNotMatch(ordersPage, /js\/shop-client\.js/);
+    assert.doesNotMatch(ordersPage, /js\/guest-shop-client\.js/);
+    assert.doesNotMatch(ordersPage, /chat-widget/);
+    assert.doesNotMatch(ordersPage, /wallet-modal/);
+
+    // Script order: site config, then the shared generator, then the page client.
+    const siteConfig = ordersPage.indexOf('js/site-config.js');
+    const generator = ordersPage.indexOf('js/guest-query-password.js');
+    const pageClient = ordersPage.indexOf('js/guest-orders-client.js');
+    assert.ok(siteConfig >= 0, 'site-config must be mounted');
+    assert.ok(generator > siteConfig, 'the generator must load after site-config');
+    assert.ok(pageClient > generator, 'the lookup client must load after the generator');
+    assert.match(ordersPage, /js\/guest-orders-client\.js\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
+    assert.doesNotMatch(ordersPage, /<script(?![^>]*\bdefer\b)[^>]*js\/guest-orders-client\.js/);
+    assert.match(ordersStyles, /body\.guest-orders-page/);
+    assert.match(ordersStyles, /\.guest-orders-item-discounts:empty/);
+});
+
+test('the lookup client stays isolated from the account auth system and never writes the query password to storage or a URL', () => {
+    const code = stripComments(ordersClient);
+    // Transport: the dedicated guest credential header, same-origin cookies only.
+    assert.match(code, /const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';/);
+    assert.match(code, /credentials:\s*'same-origin'/);
+    assert.match(code, /cache:\s*'no-store'/);
+    assert.match(code, /sessionStorage/);
+    assert.doesNotMatch(code, /supabase|access_token|Authorization\s*:|Bearer/i);
+    // The lookup page must never see a one-time claim secret: delivery access is
+    // credential-gated, and re-exposing claimSecret here would rebuild the exact
+    // URL-leak surface the checkout client already removed.
+    assert.doesNotMatch(code, /X-Guest-Claim-Secret|claimSecret|claim_secret/);
+    assert.doesNotMatch(code, /Math\.random/);
+    // Every order field is built with createElement/textContent: a product name
+    // or delivery body is attacker-influenceable and must not become markup.
+    assert.doesNotMatch(code, /innerHTML|insertAdjacentHTML|outerHTML|document\.write/);
+
+    // §7.2 storage ladder: memory -> sessionStorage -> a ONE-TIME localStorage
+    // read + removeItem migration for credentials an older build left behind.
+    // Writing to localStorage is forbidden because it survives across sessions
+    // and browser profiles on a shared machine.
+    assert.match(code, /window\.localStorage/);
+    assert.match(code, /\.removeItem\(/);
+    assert.doesNotMatch(code, /localStorage\s*\.\s*setItem/);
+    assert.doesNotMatch(code, /localStorage\s*\[[^\]]*\]\s*=/);
+    assert.doesNotMatch(code, /document\.cookie\s*=/);
+
+    // Flat-key endpoints per the dispatcher contract (no path params), and the
+    // credential never rides along in a query string.
+    for (const endpoint of [
+        "'/api/shop/guest/orders'",
+        "'/api/shop/guest/order'",
+        "'/api/shop/guest/delivery'",
+        "'/api/shop/guest/access/login'",
+        "'/api/shop/guest/access/logout'"
+    ]) {
+        assert.ok(code.includes(endpoint), `the lookup client must call ${endpoint}`);
+    }
+    assert.match(code, /searchParams\.set\('order_no', orderNo\)/);
+    assert.doesNotMatch(code, /searchParams\.set\(\s*['"](?:password|orderPassword|credential|secret|token|email)/i);
+    assert.doesNotMatch(code, /history\.(?:push|replace)State\([^)]*(?:password|credential|secret)/i);
+    assert.doesNotMatch(code, /location\.(?:href|assign|replace)\s*=?\s*[^;]*(?:password|credential|secret)/i);
 });

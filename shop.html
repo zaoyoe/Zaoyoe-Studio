@@ -710,9 +710,36 @@
                         <select id="guestCashPaymentChannel" autocomplete="off"></select>
                     </label>
                     <label class="guest-shop-modal__field" for="guestCashContact">
-                        <span>接收通知邮箱 <small>可选</small></span>
+                        <span>接收通知邮箱 <small id="guestCashContactHint">可选</small></span>
                         <input id="guestCashContact" type="email" inputmode="email" autocomplete="email" maxlength="160" placeholder="用于接收订单提醒">
                     </label>
+                    <!--
+                      Order Access 2.0 (A2, §11.3). Rendered hidden and only revealed
+                      when GET /guest/preview answers buyer_credential_required=true, so
+                      with GUEST_SHOP_BUYER_CREDENTIAL_ENABLED off the checkout markup a
+                      buyer sees is unchanged. autocomplete is new-password on purpose:
+                      current-password makes browsers offer a reused site password, which
+                      is exactly the credential-stuffing surface §8.3 wants to avoid.
+                    -->
+                    <div id="guestCashOrderPasswordField" class="guest-shop-modal__field" hidden>
+                        <label class="guest-shop-modal__field" for="guestCashOrderPassword">
+                            <span>查询密码 <small>必填</small></span>
+                            <input id="guestCashOrderPassword" type="password" autocomplete="new-password" maxlength="64" spellcheck="false" placeholder="8 位以上，含大小写字母、数字和标点">
+                        </label>
+                        <div class="guest-shop-modal__password-actions">
+                            <button id="guestCashToggleOrderPasswordBtn" type="button" class="guest-shop-modal__copy-btn guest-shop-modal__pw-btn" title="显示密码" aria-label="显示查询密码" aria-pressed="false"><i class="fas fa-eye" aria-hidden="true"></i></button>
+                            <button id="guestCashGenerateOrderPasswordBtn" type="button" class="guest-shop-modal__copy-btn guest-shop-modal__pw-btn" title="生成 12 位随机查询密码并复制">帮我生成</button>
+                        </div>
+                        <ul id="guestCashOrderPasswordChecks" class="guest-shop-modal__pw-checks" aria-label="查询密码要求">
+                            <li data-pw-check="length">至少 8 位</li>
+                            <li data-pw-check="upper">大写字母</li>
+                            <li data-pw-check="lower">小写字母</li>
+                            <li data-pw-check="digit">数字</li>
+                            <li data-pw-check="punct">标点</li>
+                        </ul>
+                        <p id="guestCashOrderPasswordNote" class="guest-shop-modal__hint guest-shop-modal__pw-note" role="status" hidden></p>
+                        <p class="guest-shop-modal__hint">请设置一个只用于查询本站订单的密码，不要使用你在其他网站常用的密码。再次购买时请填写上次设置的查询密码；如果忘记了，直接设置一个新密码即可，原订单仍用原密码查询。</p>
+                    </div>
                     <p class="guest-shop-modal__hint">支付完成后，页面会自动核验支付回调并展示发货内容。回跳页面本身不会被视为支付成功。</p>
                 </div>
 
@@ -766,6 +793,7 @@
 
                 <section id="guestCashRecoveryPanel" class="guest-shop-modal__panel" hidden aria-live="polite">
                     <strong>找回游客订单</strong>
+                    <a id="guestCashOrdersPageLink" class="guest-shop-modal__hint guest-shop-modal__orders-link" href="/guest-orders.html" hidden>使用邮箱 + 查询密码查询订单与卡密</a>
                     <label class="guest-shop-modal__field" for="guestCashRecoveryOrderNo"><span>订单号</span><input id="guestCashRecoveryOrderNo" autocomplete="off" maxlength="200"></label>
                     <label class="guest-shop-modal__field" for="guestCashRecoveryCodeInput"><span>取货口令</span><input id="guestCashRecoveryCodeInput" autocomplete="off" maxlength="200"></label>
                     <button id="guestCashRecoverBtn" type="button" class="shop-btn shop-btn-secondary">找回订单</button>
@@ -906,7 +934,8 @@
     <script src="js/shop-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1" defer></script>
     <script src="js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&cartCalm=20260912_SHOP_CART_CALM_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1&siteMarketingPricing=20260513_SHOP_SITE_MARKETING_PRICING_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&shopModalBackdropTap=20260514_SHOP_MODAL_CHROME_BACKDROP_TAP_1&purchaseModalCenter=20260514_SHOP_PURCHASE_CENTER_CHROME_1&purchaseLightLock=20260514_SHOP_PURCHASE_CHROME_LIGHT_LOCK_1&purchaseSkuCombo=20260524_SHOP_PURCHASE_SKU_COMBO_1&purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2&purchaseDiscountDrawer=20260524_SHOP_PURCHASE_DISCOUNT_DRAWER_3&purchaseGuidancePreview=20260524_SHOP_PURCHASE_GUIDANCE_PREVIEW_1&purchaseWideDefaults=20260524_SHOP_PURCHASE_WIDE_DEFAULTS_1&purchaseStockTone=20260524_SHOP_PURCHASE_STOCK_TONE_1&successDisclosureScroll=20260524_SHOP_SUCCESS_DISCLOSURE_SCROLL_5&purchaseGuidanceScrollState=20260524_SHOP_PURCHASE_GUIDANCE_SCROLL_STATE_2&purchaseOpeningStable=20260525_SHOP_PURCHASE_OPENING_STABLE_6&purchaseSkuTouchHitfix=20260525_SHOP_PURCHASE_SKU_TOUCH_HITFIX_1&discountSkuScope=20260525_SHOP_DISCOUNT_SKU_SCOPE_1&discountCouponPolish=20260525_SHOP_DISCOUNT_COUPON_POLISH_2&imageDragLock=20260530_IMAGE_DRAG_LOCK_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&cartDrawerSelectGuard=20260530_SHOP_CART_DRAWER_SELECT_GUARD_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&manualDeliveryContact=20260530_SHOP_MANUAL_DELIVERY_CONTACT_1&shopImageCache=20260531_SHOP_PRODUCT_IMAGE_CACHE_1&siteScopedSkuPrice=20260604_SHOP_SITE_SCOPED_SKU_PRICE_1&siteScopedCategoryFilter=20260608_SHOP_SITE_SCOPED_CATEGORY_FILTER_1&richTextGuidanceColor=20260604_SHOP_RICH_TEXT_GUIDANCE_COLOR_1&purchaseGuidanceMutexAlign=20260605_SHOP_PURCHASE_GUIDANCE_MUTEX_ALIGN_7&skuManualDelivery=20260605_SHOP_SKU_MANUAL_DELIVERY_1&manualDeliveryZeroStockDetail=20260607_SHOP_MANUAL_DELIVERY_ZERO_STOCK_DETAIL_1&soldOutDiscountStable=20260607_SHOP_SOLD_OUT_DISCOUNT_STABLE_2&restockChatDirectOpen=20260607_SHOP_RESTOCK_CHAT_DIRECT_OPEN_1&guidanceThemeText=20260607_SHOP_GUIDANCE_THEME_TEXT_1&richTextGuidanceStyle=20260619_SHOP_RICH_TEXT_GUIDANCE_STYLE_1&guidanceCopy=20260608_SHOP_GUIDANCE_COPY_4&purchaseMobileOpenViewportStable=20260608_SHOP_PURCHASE_MOBILE_OPEN_VIEWPORT_STABLE_1&shopFloatingMobileDock=20260608_SHOP_FLOATING_MOBILE_DOCK_1&inputPaste=20260609_INPUT_PASTE_1&cardSkuStockTotal=20260613_SHOP_CARD_SKU_STOCK_TOTAL_1&soldOutSkuSelectable=20260613_SHOP_SOLD_OUT_SKU_SELECTABLE_1&categoryDefaultFirst=20260614_SHOP_CATEGORY_DEFAULT_FIRST_1&emptyCatalogGuard=20260615_SHOP_EMPTY_CATALOG_GUARD_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1&maxDiscountQuantity=20260617_MAX_DISCOUNT_QUANTITY_1&discountMessageOrder=20260617_DISCOUNT_MESSAGE_ORDER_1&shopListChips=20260913_SHOP_LIST_ENTER_4" defer></script>
 
-    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1" defer></script>
+    <script src="js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
+    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
     <script src="js/shop-list-layout.js?v=20260913_SHOP_LIST_ENTER_4" defer></script>
 
     <!-- Chat Widget -->
