@@ -41,6 +41,23 @@
     const CLAIM_ENDPOINT = '/api/shop/guest/claim';
     const RECOVERY_ENDPOINT = '/api/shop/guest/recover';
 
+    // ---------------------------------------------------------------------
+    // Promo L1/L2 client-side mirrors of api/_lib/guest-shop/{security,promo}.js.
+    // Every one of these is a COURTESY check: the server re-validates the code
+    // format, the quantity cap and the discount itself, and only the database
+    // ever decides an amount. Nothing here multiplies, discounts or rounds a
+    // price (plan §11.1) - the browser formats numbers the server sent.
+    // ---------------------------------------------------------------------
+    const DISCOUNT_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{0,49}$/u;
+    const DISCOUNT_CODE_MAX_LENGTH = 50;
+    // preview is limited to 60 requests/min per IP and that bucket is shared by
+    // every buyer behind the same NAT, so a quantity stepper must not fire one
+    // request per keystroke. Debounced re-quote instead.
+    const QUANTITY_PREVIEW_DEBOUNCE_MS = 400;
+    // Outer bound only (promo.GUEST_MAX_QUANTITY_CEILING). The cap that actually
+    // applies arrives as preview.quantity_cap and is 1 while the switches are off.
+    const QUANTITY_HARD_CEILING = 5;
+
     const state = {
         preview: null,
         previewKey: '',
@@ -77,7 +94,20 @@
         confirmedPricing: null,
         paymentConfirmedAt: null,         // Timestamp when payment was confirmed
         lastStatusQueryTime: null,        // Last backend provider query time
-        smartPollingEnabled: true         // Smart polling feature flag
+        smartPollingEnabled: true,        // Smart polling feature flag
+        // Promo L1/L2. quantity is the buyer's selection for the CURRENT product;
+        // quantityCap/discountEnabled are read from GET /guest/preview and never
+        // guessed, so with the switches off the cap stays 1, the stepper stays
+        // hidden and the checkout is unchanged. listSubtotal and amountBreakdown
+        // are server-authored amounts only: the first is the preview list total
+        // (unit*tier quantity, rounded server-side), the second is the committed
+        // order breakdown echoed by the create/status/recover responses.
+        quantity: 1,
+        quantityCap: 1,
+        discountEnabled: false,
+        listSubtotal: null,
+        amountBreakdown: null,
+        quantityPreviewTimer: null
     };
 
     function element(id) {
@@ -511,7 +541,17 @@
     }
 
     function computePreviewPricing() {
-        const baseAmount = roundMoneyAmount(state.preview?.price?.amount);
+        // Server-authored list subtotal only. The browser never multiplies a unit
+        // price by a quantity (§11.1): GET /guest/preview ships `price.subtotal`
+        // for exactly this. The `price.amount` fallback covers a payload from a
+        // server that predates the field, and is honoured ONLY for a single unit -
+        // for any other quantity the hero renders '-' until the re-quote lands,
+        // which is strictly better than showing a total nobody committed to.
+        const quantity = normalizeQuantity(state.quantity);
+        const serverSubtotal = roundMoneyAmount(state.listSubtotal);
+        const baseAmount = serverSubtotal !== null
+            ? serverSubtotal
+            : (quantity === 1 ? roundMoneyAmount(state.preview?.price?.amount) : null);
         const payment = selectedPayment();
         const summary = paymentProviderSummary(payment.provider);
         const surchargeAmount = baseAmount > 0 && summary.surcharge_rate > 0
@@ -547,17 +587,52 @@
                 : '通道手续费',
             payableAmount: payable
         };
+        // L1/L2: the committed breakdown is what the 小计 / 优惠 / 手续费 rows are
+        // allowed to render. Only overwrite when the response actually carries the
+        // key. status/recover snapshots omit it for a pre-L1 row (list_unit_amount
+        // NULL) and for a row buildGuestAmountBreakdown judged inconsistent, and in
+        // both cases there is nothing better to show than what create committed;
+        // blanking it on every poll would wipe the discount line of a live order
+        // while the buyer is watching it.
+        if (Object.prototype.hasOwnProperty.call(order, 'amount_breakdown')) {
+            const breakdown = order.amount_breakdown;
+            state.amountBreakdown = breakdown && typeof breakdown === 'object' ? breakdown : null;
+        }
         renderPayableSummary();
     }
 
     function renderPayableSummary() {
         const pricing = state.confirmedPricing || computePreviewPricing();
+        const breakdown = state.amountBreakdown && typeof state.amountBreakdown === 'object'
+            ? state.amountBreakdown
+            : null;
         const surchargeAmount = Number(pricing?.surchargeAmount) || 0;
-        setText('guestCashProductAmount', formatAmount(pricing?.baseAmount));
+        // 商品金额 prefers the LIST total so the 优惠码 row below subtracts from a
+        // base the buyer can actually read (list - discount = net). A pre-L1 row
+        // has no list_unit_amount, so it falls back to net_amount and then to the
+        // preview base - i.e. legacy orders render exactly as they do today.
+        const listAmount = roundMoneyAmount(breakdown?.list_amount);
+        const netAmount = roundMoneyAmount(breakdown?.net_amount);
+        const productAmount = listAmount !== null && listAmount > 0
+            ? listAmount
+            : (netAmount !== null && netAmount > 0 ? netAmount : pricing?.baseAmount);
+        // Both rows are committed-amount-only. A negative or missing value hides
+        // the row, so the client can never invent a saving the database did not
+        // record. `promo_amount` is not emitted by the server yet (tiered/flash
+        // savings are already folded into the list unit price); the row is wired
+        // anyway so a future server field lights it up with no markup change.
+        const discountAmount = roundMoneyAmount(breakdown?.discount_amount);
+        const promoAmount = roundMoneyAmount(breakdown?.promo_amount);
+        setText('guestCashProductAmount', formatAmount(productAmount));
         setText('guestCashPrice', formatAmount(pricing?.payableAmount));
         setText('guestCashFeeLabel', pricing?.surchargeLabel || '通道手续费');
         setText('guestCashFeeAmount', formatAmount(surchargeAmount));
         setHidden('guestCashFeeRow', !(surchargeAmount > 0));
+        setText('guestCashCouponAmount', discountAmount > 0 ? `-${formatAmount(discountAmount)}` : '-');
+        setHidden('guestCashCouponRow', !(discountAmount > 0));
+        setText('guestCashPromoAmount', promoAmount > 0 ? `-${formatAmount(promoAmount)}` : '-');
+        setHidden('guestCashPromoRow', !(promoAmount > 0));
+        renderQuantityFact();
     }
 
     function handlePaymentChannelChange() {
@@ -717,14 +792,331 @@
         syncOrderPasswordChecks();
     }
 
+    // ---------------------------------------------------------------------
+    // Promo L1/L2 UI. Two hard rules shape every function below:
+    //
+    //  1. The browser NEVER derives an amount (plan §11.1). The list subtotal
+    //     comes from GET /guest/preview `price.subtotal`; the discount, fee and
+    //     payable come from the created order's `amount_breakdown` /
+    //     `payment_pricing`. A discount is therefore never displayed before the
+    //     database has committed it, which is what makes "前端能报价、后端不认账"
+    //     structurally impossible instead of merely unlikely.
+    //  2. Nothing promo-related is persisted. The code lives in the input only,
+    //     travels once in the POST body, and is never written to storage, a URL
+    //     or a GET query (§7.2, and the contract test that asserts it).
+    // ---------------------------------------------------------------------
+
+    /**
+     * The preview cache is keyed by product/SKU AND quantity, because L1 made
+     * the unit price quantity-dependent (tiered rules pick the cheapest rule
+     * whose qty <= quantity). Keying on the context alone would serve a 1-unit
+     * price for a 3-unit selection.
+     */
+    function previewCacheKey(context) {
+        const key = normalizeText(context?.contextKey, 200);
+        return `${key}#${normalizeQuantity(state.quantity)}`;
+    }
+
+    function quantityCapValue() {
+        const cap = Number.parseInt(String(state.quantityCap ?? ''), 10);
+        if (!Number.isInteger(cap) || cap < 1) return 1;
+        return Math.min(cap, QUANTITY_HARD_CEILING);
+    }
+
+    function normalizeQuantity(value) {
+        const parsed = Number.parseInt(String(value ?? ''), 10);
+        if (!Number.isInteger(parsed) || parsed < 1) return 1;
+        return Math.min(parsed, quantityCapValue());
+    }
+
+    function quantityInput() {
+        return element('guestCashQuantity');
+    }
+
+    function discountCodeInput() {
+        return element('guestCashDiscountCode');
+    }
+
+    function discountCodeValue() {
+        return normalizeText(discountCodeInput()?.value, DISCOUNT_CODE_MAX_LENGTH).toUpperCase();
+    }
+
+    // Mirrors security.isGuestDiscountCodeFormat. Courtesy only: the server
+    // re-validates and returns guest_invalid_discount_code, and an order is
+    // never created with a malformed code.
+    function isDiscountCodeFormat(value) {
+        return DISCOUNT_CODE_PATTERN.test(normalizeText(value, DISCOUNT_CODE_MAX_LENGTH));
+    }
+
+    function cancelScheduledPreview() {
+        if (state.quantityPreviewTimer) window.clearTimeout(state.quantityPreviewTimer);
+        state.quantityPreviewTimer = null;
+    }
+
+    function invalidatePreviewQuote() {
+        // Drop the cached quote so the next loadPreview() re-quotes at the new
+        // quantity, and drop the derived totals so the modal can never keep
+        // showing an amount that belongs to another selection. state.preview is
+        // kept: it still owns the payment-channel list and the surcharge labels,
+        // which are quantity-independent.
+        cancelScheduledPreview();
+        state.previewKey = '';
+        state.listSubtotal = null;
+        state.amountBreakdown = null;
+    }
+
+    function schedulePreviewRefresh() {
+        cancelScheduledPreview();
+        state.quantityPreviewTimer = window.setTimeout(() => {
+            state.quantityPreviewTimer = null;
+            const context = getPurchaseContext();
+            if (context && !state.orderNo) void loadPreview(context);
+        }, QUANTITY_PREVIEW_DEBOUNCE_MS);
+    }
+
+    function syncQuantityUi() {
+        const cap = quantityCapValue();
+        // With the L1 switch off the cap is 1, the stepper stays hidden and the
+        // configure panel is byte-identical to the pre-promo checkout.
+        const multiUnit = cap >= 2;
+        const locked = Boolean(state.orderNo);
+        const quantity = normalizeQuantity(state.quantity);
+        setHidden('guestCashQuantityField', !multiUnit);
+        const input = quantityInput();
+        if (input) {
+            input.value = String(quantity);
+            input.disabled = locked || !multiUnit;
+            input.maxLength = 1;
+        }
+        const minus = element('guestCashQuantityMinus');
+        const plus = element('guestCashQuantityPlus');
+        if (minus) minus.disabled = locked || !multiUnit || quantity <= 1;
+        if (plus) plus.disabled = locked || !multiUnit || quantity >= cap;
+        setText('guestCashQuantityHint', multiUnit ? `单笔最多 ${cap} 件，价格按数量阶梯计算` : '');
+    }
+
+    function renderQuantityFact() {
+        // After the order exists the committed count wins: the buyer must not see
+        // a 数量 row that disagrees with the amount they are being asked to pay.
+        const committed = Number.parseInt(String(state.amountBreakdown?.quantity ?? ''), 10);
+        const quantity = Number.isInteger(committed) && committed >= 1
+            ? Math.min(committed, QUANTITY_HARD_CEILING)
+            : normalizeQuantity(state.quantity);
+        setText('guestCashQuantityValue', String(quantity));
+        setHidden('guestCashQuantityRow', !(quantity > 1 || quantityCapValue() >= 2));
+    }
+
+    function setQuantity(next) {
+        if (state.orderNo) return;
+        const quantity = normalizeQuantity(next);
+        if (quantity === normalizeQuantity(state.quantity)) {
+            syncQuantityUi();
+            return;
+        }
+        state.quantity = quantity;
+        invalidatePreviewQuote();
+        syncQuantityUi();
+        renderQuantityFact();
+        renderPayableSummary();
+        setStateMessage('正在按新的数量重新报价...', 'configure');
+        schedulePreviewRefresh();
+    }
+
+    function handleQuantityInput() {
+        if (state.orderNo) return;
+        // maxlength=1 plus this clamp keeps the field a stepper, not a free-text
+        // quantity: anything unparsable falls back to the current selection.
+        const digits = String(quantityInput()?.value ?? '').replace(/[^0-9]/gu, '');
+        const parsed = Number.parseInt(digits, 10);
+        if (!Number.isInteger(parsed) || parsed < 1) {
+            syncQuantityUi();
+            return;
+        }
+        setQuantity(parsed);
+    }
+
+    function syncDiscountHint() {
+        const hint = element('guestCashDiscountHint');
+        if (!hint) return;
+        const value = discountCodeValue();
+        hint.hidden = false;
+        hint.classList.remove('is-error');
+        if (!value) {
+            hint.textContent = '选填。优惠码按等额现金抵扣，实际优惠以下单结果为准。';
+            return;
+        }
+        if (isDiscountCodeFormat(value)) {
+            hint.textContent = '优惠码在创建订单时由服务端核验，核验通过后直接抵扣现金金额。';
+            return;
+        }
+        hint.textContent = '优惠码格式不正确：仅限大写字母、数字、下划线和短横线，最长 50 位。';
+        hint.classList.add('is-error');
+    }
+
+    function setDiscountInvalid(invalid) {
+        const field = element('guestCashDiscountField');
+        if (!field) return;
+        if (invalid) field.classList.add('is-invalid');
+        else field.classList.remove('is-invalid');
+    }
+
+    function handleDiscountCodeInput() {
+        const input = discountCodeInput();
+        if (!input) return;
+        // Uppercase as typed so what the buyer sees is what gets sent; the server
+        // normalizes the same way, so this is presentation, not validation.
+        const upper = String(input.value ?? '').toUpperCase().slice(0, DISCOUNT_CODE_MAX_LENGTH);
+        if (upper !== input.value) input.value = upper;
+        setDiscountInvalid(false);
+        syncDiscountHint();
+    }
+
+    function clearDiscountCode() {
+        const input = discountCodeInput();
+        if (input) input.value = '';
+        setDiscountInvalid(false);
+        syncDiscountHint();
+    }
+
+    function syncDiscountUi() {
+        // discount_enabled is read from the preview only. It already requires the
+        // buyer-credential switch server-side, because the database refuses a
+        // redemption it cannot attribute to a buyer group.
+        const enabled = state.discountEnabled === true;
+        setHidden('guestCashDiscountField', !enabled);
+        if (!enabled) {
+            // Wipe instead of hide-and-keep: a code that cannot be submitted must
+            // not survive into a later createOrder body.
+            const input = discountCodeInput();
+            if (input) input.value = '';
+            setDiscountInvalid(false);
+            const hint = element('guestCashDiscountHint');
+            if (hint) hint.hidden = true;
+            return;
+        }
+        const input = discountCodeInput();
+        if (input) input.disabled = Boolean(state.orderNo);
+        syncDiscountHint();
+    }
+
+    function syncPromoUi(preview) {
+        const rawCap = Number.parseInt(String(preview?.quantity_cap ?? ''), 10);
+        state.quantityCap = Number.isInteger(rawCap) && rawCap >= 1
+            ? Math.min(rawCap, QUANTITY_HARD_CEILING)
+            : 1;
+        state.discountEnabled = preview?.discount_enabled === true;
+        // A cap can shrink between two previews (operator lowered the switch, or
+        // this SKU has its own guest_max_quantity). Clamp rather than reject so
+        // the modal stays usable; the server re-applies the same cap on create.
+        // price.quantity is the server's own normalized count for this quote, so
+        // adopting it keeps the stepper and the quoted subtotal in agreement
+        // instead of letting the two drift by one request.
+        const echoedQuantity = Number.parseInt(String(preview?.price?.quantity ?? ''), 10);
+        state.quantity = normalizeQuantity(
+            Number.isInteger(echoedQuantity) && echoedQuantity >= 1
+                ? echoedQuantity
+                : state.quantity
+        );
+        syncQuantityUi();
+        syncDiscountUi();
+        renderQuantityFact();
+    }
+
+    /**
+     * A different product/SKU has its own cap, tiers, flash window and code
+     * eligibility, so nothing from the previous selection may carry over -
+     * least of all a typed discount code, which is scoped per SKU.
+     */
+    function resetPromoSelection() {
+        invalidatePreviewQuote();
+        state.preview = null;
+        state.quantity = 1;
+        state.quantityCap = 1;
+        state.discountEnabled = false;
+        clearDiscountCode();
+        syncQuantityUi();
+        renderQuantityFact();
+    }
+
+    // A create-order rejection that says "this discount will not be applied"
+    // must visibly retract the discount UI. Keeping a discount line on screen for
+    // an order that was never created is the exact failure mode §9.6 wanted a
+    // quote endpoint to prevent; retracting on the authoritative error is the
+    // stronger guarantee, because it cannot disagree with a committed row.
+    // Only the codes POST /guest/orders can actually emit. Plan §11.2 (C-E6)
+    // collapses every coupon-lifecycle rejection - unknown, not guest, expired,
+    // wrong site or scope, uses exhausted, daily budget exhausted, per-identity
+    // limit, breaker open, below the discount floor, reservation race - onto the
+    // single `guest_discount_unavailable` / 400 / 「优惠码不可用」, so the granular
+    // SQL codes deliberately never appear here: listing them would mean waiting
+    // for a signal the server is forbidden to send (and the pre-L1
+    // guest_idempotency_conflict branch is a reminder of what a dead code costs).
+    // The other two are raised by the Node layer before the RPC: a format failure
+    // on the submitted string, and a code submitted while the switch is off.
+    const PROMO_DISCOUNT_CODES = new Set([
+        'guest_discount_unavailable',
+        'guest_invalid_discount_code',
+        'guest_discount_disabled'
+    ]);
+    // Rejections that mean the quote this modal holds no longer describes the
+    // product. Drop it and re-quote instead of letting the buyer retry into the
+    // same wall.
+    const PROMO_REQUOTE_CODES = new Set([
+        'guest_quantity_not_allowed',
+        'guest_credit_price_unavailable',
+        'guest_pricing_parity_mismatch'
+    ]);
+
+    function handleCreateOrderError(error) {
+        const code = normalizeText(error?.code, 80);
+        if (!code) return;
+        if (PROMO_DISCOUNT_CODES.has(code)) {
+            state.amountBreakdown = null;
+            setDiscountInvalid(true);
+            const input = discountCodeInput();
+            if (input && !input.disabled) {
+                try { input.focus(); } catch (_) { /* focus is best effort */ }
+            }
+            renderPayableSummary();
+            return;
+        }
+        if (PROMO_REQUOTE_CODES.has(code)) {
+            invalidatePreviewQuote();
+            renderPayableSummary();
+            const context = getPurchaseContext();
+            if (context) void loadPreview(context);
+            return;
+        }
+        // The database raises this only when an existing row carries a DIFFERENT
+        // fingerprint. L1 put quantity and the discount code into that
+        // fingerprint, so "changed the quantity, clicked again" now lands here.
+        // Retrying the same key would conflict forever, and with no order number
+        // in hand there is nothing to resume - so mint a fresh key on the next
+        // click. The abandoned unpaid order expires and its reservations are
+        // released by the TTL sweep. This is exactly what a page reload already
+        // did; it is a strict improvement, never a new charge path.
+        if (code === 'guest_idempotency_conflict' && !state.orderNo) {
+            state.idempotencyKey = '';
+        }
+    }
+
     function renderPreview(context, preview) {
         state.preview = preview;
-        state.previewKey = context.contextKey;
         // §12/§13.4: preview is the only unauthenticated signal that the buyer
         // credential switch is on. Reading it here (and nowhere else) keeps the
         // switch-off checkout byte-identical to today.
         state.buyerCredentialRequired = preview?.buyer_credential_required === true;
         syncBuyerCredentialUi();
+        // L1/L2 runs BEFORE the cache key is written: syncPromoUi may clamp (or
+        // adopt) state.quantity, the key includes the quantity, and a key written
+        // from a stale quantity would make the very next loadPreview() re-quote in
+        // a loop.
+        syncPromoUi(preview);
+        state.previewKey = previewCacheKey(context);
+        // The list subtotal for THIS quantity, rounded server-side. null (an older
+        // payload, or an out-of-bounds amount) makes the hero render '-' rather
+        // than a client-side multiplication.
+        state.listSubtotal = roundMoneyAmount(preview?.price?.subtotal);
         const product = preview?.product || {};
         const options = normalizePaymentOptions(preview?.payment_channels);
         setText('guestCashProductName', product.name || context.productName || '-');
@@ -759,24 +1151,39 @@
     }
 
     async function runPreviewRequest(context) {
-        if (state.previewKey === context.contextKey && state.preview) {
+        const cacheKey = previewCacheKey(context);
+        if (state.previewKey === cacheKey && state.preview) {
             return { available: !state.previewError, reason: state.previewError ? 'unavailable' : 'available' };
         }
         state.previewPending = true;
         state.previewError = false;
+        // L1: quantity rides along so the modal quotes the tier the buyer will
+        // actually be charged. It is the only promo input on this request - a
+        // discount code is NEVER sent to preview, never appears in a URL and is
+        // never cached, because preview is an unauthenticated GET (§11.1). The
+        // code is validated for real once, in the create-order body.
         const query = new URLSearchParams({
             site: context.site,
             productId: context.productId,
-            skuId: context.skuId
+            skuId: context.skuId,
+            quantity: String(normalizeQuantity(state.quantity))
         });
         try {
             const payload = await requestJson(`${PREVIEW_ENDPOINT}?${query.toString()}`, { method: 'GET' });
             const available = renderPreview(context, payload);
             return { available, reason: available ? 'available' : 'unavailable' };
         } catch (error) {
-            state.previewKey = context.contextKey;
+            state.previewKey = cacheKey;
             state.preview = null;
             state.previewError = true;
+            // A failed quote leaves no list subtotal behind, so the amount card
+            // renders '-' instead of the previous selection's total. The promo
+            // switches and the buyer's quantity/code are deliberately untouched:
+            // preview failures are retryable (429 shares one per-IP bucket), and
+            // resetting a typed discount code on a transient error would be a
+            // worse outcome than showing '-' for a moment.
+            state.listSubtotal = null;
+            renderPayableSummary();
             if (!getModal()?.hidden) setStateMessage(error.message || '游客支付暂不可用', 'error');
             const reason = error.status === 429
                 ? 'rate_limited'
@@ -1172,6 +1579,7 @@
         state.paymentConfirmed = false;
         state.status = 'configure';
         state.confirmedPricing = null;
+        state.amountBreakdown = null;
         resetOrderUi();
     }
 
@@ -1180,6 +1588,14 @@
         if (!modal) return;
         if (context) {
             resetActiveOrderForContext(context);
+            if (context.contextKey !== state.contextKey) {
+                // A different product/SKU has its own quantity cap, tier rules,
+                // flash window and code eligibility. Dropping the previous
+                // selection here is what stops a code typed for SKU A from being
+                // submitted against SKU B (the server would reject it, but the
+                // buyer should never get that far).
+                resetPromoSelection();
+            }
             state.contextKey = context.contextKey;
             state.site = context.site;
             state.productId = context.productId;
@@ -1200,6 +1616,11 @@
         setHidden('guestCashDeliveryPanel', state.status !== 'delivered');
         setHidden('guestCashCheckoutPanel', !state.checkout || state.status === 'delivered');
         setHidden('guestCashConfigurePanel', Boolean(state.checkout) && state.status !== 'delivered');
+        // A resumed order arrives without a fresh preview, so re-derive the promo
+        // controls from state instead of leaving whatever the last render did.
+        syncQuantityUi();
+        syncDiscountUi();
+        renderQuantityFact();
         if (state.checkout?.provider === 'zpay' && state.status !== 'delivered') {
             presentZpayHostedQr(state.checkout);
         }
@@ -1250,6 +1671,7 @@
         state.paymentConfirmed = false;
         state.status = 'configure';
         state.confirmedPricing = null;
+        state.amountBreakdown = null;
         state.paymentConfirmedAt = null;
         state.lastStatusQueryTime = null;
         resetOrderUi();
@@ -1263,6 +1685,13 @@
         setHidden('guestCashDeliveryPanel', true);
         setHidden('guestCashCheckStatusBtn', true);
         setHidden('guestCashCreateOrderBtn', false);
+        // L1/L2: the stepper and the code field are order-scoped inputs, so they
+        // lock while an order exists and unlock again on 关闭当前订单. Both stay
+        // hidden unless the preview turned them on, which keeps the switch-off
+        // checkout markup identical to before this batch.
+        syncQuantityUi();
+        syncDiscountUi();
+        renderQuantityFact();
         resetZpayHostedQr();
         setText('guestCashDeliveredContent', '');
         // Dujiao fulfillment facts and the amount-card footer are order-scoped,
@@ -1318,6 +1747,11 @@
         state.paymentConfirmed = false;
         state.status = 'configure';
         state.confirmedPricing = null;
+        // The abandoned order's committed breakdown must not survive into the
+        // next 确认订单 screen: it would show a discount for an order that no
+        // longer exists. The typed code itself is kept (it is a public coupon,
+        // not a secret) so the buyer can retry without retyping it.
+        state.amountBreakdown = null;
         state.paymentConfirmedAt = null;
         state.lastStatusQueryTime = null;
         resetOrderUi();
@@ -1353,6 +1787,11 @@
             setStateMessage('当前商品不支持游客购买', 'error');
             return;
         }
+        // A quantity change schedules a debounced re-quote. Drop the timer here:
+        // loadPreview() below fetches the same key synchronously in this flow, so
+        // leaving the timer armed would only spend a second preview request from
+        // the shared per-IP budget.
+        cancelScheduledPreview();
         const previewResult = await loadPreview(context);
         if (!previewResult.available) return;
         const payment = selectedPayment();
@@ -1382,6 +1821,20 @@
             }
             orderPassword = foldQueryPassword(orderPasswordInput()?.value || '');
         }
+        // L2: the code is read here and validated BEFORE an idempotency key is
+        // minted, so a typo cannot burn a key or spend a create-order rate-limit
+        // slot on a guaranteed 400. This mirrors security.normalizeGuestDiscountCode
+        // as a courtesy; the server re-validates and fn_guest_shop_reserve_discount
+        // decides whether it applies. Nothing is displayed as a result of this
+        // check - the discount line only appears once the committed order echoes it.
+        const discountCode = state.discountEnabled ? discountCodeValue() : '';
+        if (discountCode && !isDiscountCodeFormat(discountCode)) {
+            setDiscountInvalid(true);
+            syncDiscountHint();
+            setStateMessage('优惠码格式不正确，请修改后再创建订单', 'error');
+            discountCodeInput()?.focus();
+            return;
+        }
         if (!state.idempotencyKey) {
             try {
                 state.idempotencyKey = newIdempotencyKey();
@@ -1398,13 +1851,21 @@
             site: context.site,
             productId: context.productId,
             skuId: context.skuId,
-            quantity: 1,
+            // L1: the buyer's selection, clamped to the cap the preview reported.
+            // It stays 1 while the switch is off (cap 1), so the pre-L1 request
+            // body is unchanged. quantity is part of the request fingerprint, so
+            // changing it between two clicks is a conflict, not a silent reprice.
+            quantity: normalizeQuantity(state.quantity),
             idempotencyKey: state.idempotencyKey,
             provider: payment.provider,
             channel: payment.channel
         };
         if (email) body.email = email;
         if (orderPassword) body.orderPassword = orderPassword;
+        // L2: the code travels once, in this POST body, and only while the preview
+        // said discounts are on. It is never appended to a URL, never written to
+        // sessionStorage and never sent to preview.
+        if (discountCode) body.discountCode = discountCode;
         try {
             const payload = await requestJson(ORDER_ENDPOINT, {
                 method: 'POST',
@@ -1439,6 +1900,10 @@
         } catch (error) {
             state.status = error?.code === 'guest_payment_reconciliation_required' ? 'manual_review' : 'error';
             if (error?.code === 'guest_password_weak') void refreshRejectedOrderPassword();
+            // Runs before the message so a rejected discount retracts its UI in the
+            // same frame the buyer reads the error, and a stale quote is dropped
+            // instead of being retried into the same wall.
+            handleCreateOrderError(error);
             setStateMessage(error?.message || '支付订单创建失败，请稍后重试', state.status);
         } finally {
             state.requestInFlight = false;
@@ -1872,6 +2337,18 @@
             abandonCurrentOrder();
             return;
         }
+        // L1 stepper. Handled before the create branch and always
+        // preventDefault-ed: these are <button type="button">, but a form-less
+        // modal still must not let a stepper click fall through to anything else.
+        const quantityStepButton = target.closest('#guestCashQuantityMinus, #guestCashQuantityPlus');
+        if (quantityStepButton) {
+            event.preventDefault();
+            if (!quantityStepButton.disabled) {
+                const delta = quantityStepButton.id === 'guestCashQuantityPlus' ? 1 : -1;
+                setQuantity(normalizeQuantity(state.quantity) + delta);
+            }
+            return;
+        }
         const createButton = target.closest('#guestCashCreateOrderBtn');
         if (createButton) {
             event.preventDefault();
@@ -2008,6 +2485,16 @@
         getModal()?.addEventListener('click', handleGuestModalClick);
         element('guestCashPaymentChannel')?.addEventListener('change', handlePaymentChannelChange);
         element('guestCashOrderPassword')?.addEventListener('input', handleOrderPasswordInput);
+        // L1/L2. `input` drives the live format hint and the uppercase fold;
+        // `change` is bound too so a stepper value committed by autofill or a
+        // browser "undo" still re-quotes. The discount code is never wired to a
+        // GET request, a URL or storage - it only ever reaches the create body.
+        const quantityField = element('guestCashQuantity');
+        quantityField?.addEventListener('input', handleQuantityInput);
+        quantityField?.addEventListener('change', handleQuantityInput);
+        element('guestCashDiscountCode')?.addEventListener('input', handleDiscountCodeInput);
+        syncQuantityUi();
+        syncDiscountUi();
         const stored = storedCheckout();
         if (stored) hydrateCheckout(stored);
         maybeRestoreReturn();

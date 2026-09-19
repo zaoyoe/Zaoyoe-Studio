@@ -248,6 +248,32 @@ function createSupabaseStub(state) {
                     error: null
                 };
             }
+            if (name === 'fn_guest_shop_list_delivered_content') {
+                // Mirrors supabase/migrations/20260923_guest_shop_promo_l1l2.sql:
+                // the helper re-validates the WHOLE order under the service-role
+                // contract and raises a named token for every undeliverable state;
+                // a healthy order returns one (reservation_id, item_index,
+                // content) row per item, ordered by reservation creation.
+                const order = state.orders.find((row) => row.id === args?.p_order_id);
+                const raise = (message) => ({ data: null, error: { message, code: 'P0002' } });
+                if (!order) return raise('guest_order_not_found');
+                if (String(order.payment_status) !== 'confirmed') return raise('guest_payment_not_confirmed');
+                if (String(order.fulfillment_status) !== 'delivered') return raise('guest_order_not_delivered');
+                if (String(state.reservationStatus) !== 'consumed') return raise('guest_reservation_not_consumed');
+                const requested = Number.isInteger(order.quantity) && order.quantity > 0 ? order.quantity : 1;
+                const contents = Array.isArray(state.deliveryContents)
+                    ? state.deliveryContents
+                    : Array.from({ length: requested }, () => state.deliveryContent);
+                if (contents.some((text) => typeof text !== 'string')) return raise('guest_consumed_inventory_inconsistent');
+                return {
+                    data: contents.map((content, index) => ({
+                        reservation_id: crypto.randomUUID(),
+                        item_index: index,
+                        content
+                    })),
+                    error: null
+                };
+            }
             if (name === 'fn_guest_shop_upsert_buyer_group') {
                 // Mirrors supabase/migrations/20260921_guest_shop_buyer_group_upsert.sql:
                 // a verified match REUSES its group (and only overwrites the
@@ -312,6 +338,9 @@ function createHarness({ env = BASE_ENV, state: stateOverrides = {}, rateLimited
         rpcCalls: [],
         reservationStatus: 'consumed',
         deliveryContent: 'CARD-KEY-0001',
+        // L1: an order can hold several consumed reservations; deliveryContents
+        // overrides the per-item content when a test needs a multi-card order.
+        deliveryContents: null,
         ...stateOverrides
     };
     const supabase = createSupabaseStub(state);
@@ -747,6 +776,122 @@ test('delivery is gated on confirmed payment AND delivered fulfillment', async (
             assert.equal(res.payload.content, 'CARD-KEY-0001');
         }
     }
+});
+
+// ---------------------------------------------------------------------------
+// §11.2 + Promo L1/L2 — a multi-unit order and the committed amount breakdown
+// ---------------------------------------------------------------------------
+
+test('L1: a multi-unit order delivers every card in one payload', async () => {
+    const header = { 'x-guest-order-credential': credentialHeader() };
+    const { handlers, state } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                payment_status: 'confirmed',
+                fulfillment_status: 'delivered',
+                quantity: 3,
+                list_unit_amount: '12.34',
+                unit_amount: '12.34',
+                discount_amount: '0.00',
+                payment_fee_amount: '0.38',
+                total_amount: '37.40'
+            })],
+            deliveryContents: ['CARD-KEY-0001', 'CARD-KEY-0002', 'CARD-KEY-0003']
+        }
+    });
+    const res = createResponse();
+    await handlers.delivery(getReq('/api/shop/guest/delivery', { order_no: ORDER_NO }, header), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.success, true);
+    // One card keeps the pre-L1 single-string shape; several are joined so the
+    // buyer receives every item without a client change.
+    assert.equal(res.payload.content, 'CARD-KEY-0001\n\nCARD-KEY-0002\n\nCARD-KEY-0003');
+    // One round-trip for the whole order, never one call per item.
+    const deliveryCalls = state.rpcCalls.filter((call) => call.name === 'fn_guest_shop_list_delivered_content');
+    assert.equal(deliveryCalls.length, 1);
+    assert.deepEqual(deliveryCalls[0].args, { p_order_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
+});
+
+test('L1: a partially delivered order is a 409, never a truncated payload', async () => {
+    const header = { 'x-guest-order-credential': credentialHeader() };
+    // fn_guest_shop_list_delivered_content raises guest_reservation_not_consumed
+    // unless EVERY reservation of the order is consumed; the endpoint must map
+    // that onto its existing 409 contract instead of rendering what it has.
+    const { handlers } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                payment_status: 'confirmed',
+                fulfillment_status: 'delivered',
+                quantity: 2,
+                unit_amount: '12.34',
+                total_amount: '24.68'
+            })],
+            reservationStatus: 'held'
+        }
+    });
+    const res = createResponse();
+    await handlers.delivery(getReq('/api/shop/guest/delivery', { order_no: ORDER_NO }, header), res);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.payload.code, 'guest_inventory_inconsistent');
+    assert.equal('content' in res.payload, false);
+});
+
+test('L2: the list snapshot fills coupon_discount and amount_breakdown from committed columns', async () => {
+    const { handlers } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                quantity: 2,
+                list_unit_amount: '12.34',
+                unit_amount: '11.11',
+                discount_amount: '2.46',
+                discount_code: 'WELCOME10',
+                payment_fee_amount: '0.23',
+                total_amount: '22.45'
+            })]
+        }
+    });
+    const res = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', {}, { 'x-guest-order-credential': credentialHeader() }), res);
+    assert.equal(res.statusCode, 200);
+    const [order] = res.payload.orders;
+    assert.equal(order.quantity, 2);
+    assert.equal(order.coupon_discount, 2.46);
+    assert.equal(order.promo_discount, null);
+    assert.deepEqual(order.amount_breakdown, {
+        quantity: 2,
+        unit_amount: 11.11,
+        net_amount: 22.22,
+        discount_amount: 2.46,
+        payment_fee_amount: 0.23,
+        total_amount: 22.45,
+        currency: 'CNY',
+        list_unit_amount: 12.34,
+        list_amount: 24.68,
+        discount_code: 'WELCOME10'
+    });
+});
+
+test('L2: an inconsistent committed row drops the breakdown instead of lying about it', async () => {
+    // total != unit*qty + fee. buildGuestAmountBreakdown must return null so the
+    // client never renders a breakdown that does not add up to the amount owed.
+    const { handlers } = createHarness({
+        state: {
+            orders: [makeOrderRow({
+                quantity: 2,
+                list_unit_amount: '12.34',
+                unit_amount: '11.11',
+                discount_amount: '2.46',
+                payment_fee_amount: '0.23',
+                total_amount: '99.99'
+            })]
+        }
+    });
+    const res = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', {}, { 'x-guest-order-credential': credentialHeader() }), res);
+    assert.equal(res.statusCode, 200);
+    const [order] = res.payload.orders;
+    assert.equal('amount_breakdown' in order, false);
+    assert.equal(order.quantity, 2);
 });
 
 test('detail and delivery reject non-GET methods with an Allow header', async () => {

@@ -122,11 +122,17 @@ function createSupabaseStub(state) {
                 update(patch) { return builder(table, 'update', patch); }
             };
         },
-        async rpc(name) {
+        async rpc(name, args) {
             state.rpcCalls.push(name);
+            state.rpcArgs.push({ name, args: clone(args) });
             await new Promise((resolve) => setImmediate(resolve));
             if (name === 'fn_guest_shop_create_order') return { data: [clone(state.order)], error: null };
-            if (name === 'fn_guest_shop_release_reservation') return { data: [{ released: true }], error: null };
+            // L1: an order can hold up to 5 reservation rows, so a failed payment
+            // creation releases ALL held rows through the service-role helper
+            // (RETURNS INTEGER = released count). The pre-L1 single-row
+            // fn_guest_shop_release_reservation + maybeSingle() read would now
+            // error on a multi-row order and leave stock locked until the TTL sweep.
+            if (name === 'guest_shop_release_held_reservations') return { data: 1, error: null };
             throw new Error(`unexpected rpc ${name}`);
         }
     };
@@ -159,6 +165,7 @@ function createHandlers(stateOverrides = {}, adapterOverrides = {}) {
         payment: makePayment(),
         reservations: [],
         rpcCalls: [],
+        rpcArgs: [],
         ...stateOverrides
     };
     const supabase = createSupabaseStub(state);
@@ -314,7 +321,15 @@ test('definitive provider create rejection marks payment failed and releases the
     assert.equal(calls.create, 1);
     assert.equal(state.payment.status, 'failed');
     assert.equal(state.payment.last_error_code, 'guest_provider_create_failed');
-    assert.ok(state.rpcCalls.includes('fn_guest_shop_release_reservation'));
+    // L1: every held row of the order is released, and the reason records why.
+    assert.ok(state.rpcCalls.includes('guest_shop_release_held_reservations'));
+    assert.equal(state.rpcCalls.includes('fn_guest_shop_release_reservation'), false,
+        'the single-row release must not be used: it cannot release a multi-unit order');
+    const release = state.rpcArgs.find((call) => call.name === 'guest_shop_release_held_reservations');
+    assert.deepEqual(release.args, {
+        p_order_id: ORDER_ID,
+        p_reason: 'payment_create_failed:guest_provider_create_failed'
+    });
 });
 
 test('a stale creation lease is fail-closed and never issues a second provider order', async () => {

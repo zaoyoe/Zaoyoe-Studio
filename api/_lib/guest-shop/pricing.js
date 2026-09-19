@@ -3,12 +3,28 @@
 /**
  * Guest checkout reuses the logged-in shop credit/tier price.
  * 1 credit = 1 CNY. Both CN and INTL settle in CNY.
- * Agent markup and discount codes are intentionally excluded.
+ * Agent markup stays excluded: it is an account-level benefit and the guest
+ * channel has no account.
+ *
+ * L1/L2 SCOPE OF THIS FILE (docs/guest-shop-promo-hardening-plan.md §9.4)
+ *   resolveGuestCreditUnitAmount below is a DISPLAY/PARITY mirror of the SQL
+ *   function public.guest_shop_resolve_credit_unit_amount. It exists so the
+ *   preview endpoint and the request fingerprint can be built before an order
+ *   row exists, and so a parity test can prove the two agree. It is never the
+ *   authority for what a buyer pays: fn_guest_shop_create_order recomputes the
+ *   list price in SQL, applies any discount through
+ *   fn_guest_shop_reserve_discount, and the HTTP layer persists whatever the
+ *   database returned. Discount amounts are therefore NOT computed here at all.
  */
 
 const GUEST_CREDIT_PRICING_VERSION = 'guest-credit-v1';
 const GUEST_SETTLEMENT_CURRENCY = 'CNY';
 const GUEST_QUANTITY = 1;
+// Mirrors the SQL resolver's own bound (p_quantity BETWEEN 1 AND 99). The
+// per-order guest ceiling (<= 5, and usually 1) is applied by
+// promo.resolveGuestQuantityCap before this function is ever reached; keeping
+// the two bounds identical is what makes the JS/SQL parity test meaningful.
+const GUEST_QUANTITY_CEILING = 99;
 
 function toFiniteNumber(value) {
     if (value === null || value === undefined || value === '') return null;
@@ -86,12 +102,28 @@ function firstDefined(...values) {
     return null;
 }
 
+function parseQuantityInteger(value) {
+    if (typeof value === 'number') return Number.isInteger(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text || !/^\d+$/u.test(text)) return null;
+    const parsed = Number(text);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 function resolveGuestCreditUnitAmount(input = {}) {
     const site = String(input.site || '').trim().toLowerCase();
     if (site !== 'cn' && site !== 'intl') return null;
 
-    const quantity = Number.isInteger(input.quantity) ? input.quantity : GUEST_QUANTITY;
-    if (quantity !== GUEST_QUANTITY) return null;
+    // L1: quantity is no longer hard-locked to 1. The tier loop further down
+    // already picks the cheapest rule whose qty is <= quantity, and the
+    // flash-sale branch ignores quantity, so relaxing this guard is exactly what
+    // turns tiered pricing and flash sales on for the guest channel - the same
+    // edit the SQL resolver received in §4 of the L1/L2 migration.
+    const quantity = input.quantity === undefined || input.quantity === null || input.quantity === ''
+        ? GUEST_QUANTITY
+        : (Number.isInteger(input.quantity) ? input.quantity : parseQuantityInteger(input.quantity));
+    if (quantity === null || quantity < 1 || quantity > GUEST_QUANTITY_CEILING) return null;
 
     // INTL may leave site-specific credit fields empty. Reuse the CN SKU
     // credit/tier/flash price in that case. Never fall back to product
@@ -275,6 +307,74 @@ function resolveGuestPayablePricing(unitAmount, providerKey, summaries = {}) {
     };
 }
 
+/**
+ * L1: the LIST (pre-discount) subtotal of a multi-unit guest order, i.e. the
+ * tiered/flash unit price this process resolved times the requested count.
+ *
+ * Why this exists as a server helper instead of a client multiplication: the
+ * guest checkout modal must show 商品金额 for N units BEFORE an order row
+ * exists, and §11.1 forbids the browser from deriving an amount by itself. So
+ * the preview endpoint ships the subtotal and the client only formats it. The
+ * value is still display-only - fn_guest_shop_create_order recomputes the list
+ * price in SQL and the parity gate in the orders handler rejects any row that
+ * disagrees with what was quoted here.
+ *
+ * Bounds mirror resolveGuestOrderPayablePricing exactly so a quantity that one
+ * helper accepts can never be rejected by the other.
+ */
+function resolveGuestListSubtotal({
+    unitAmount,
+    quantity = GUEST_QUANTITY
+} = {}) {
+    const unit = roundMoneyAmount(unitAmount, null);
+    const count = parseQuantityInteger(quantity);
+    if (unit === null || !(unit > 0) || count === null || count < 1 || count > GUEST_QUANTITY_CEILING) {
+        return null;
+    }
+    const subtotal = roundMoneyAmount(unit * count, null);
+    return subtotal !== null && subtotal > 0 ? subtotal : null;
+}
+
+/**
+ * L1: the surcharge base for a multi-unit order is the NET ORDER TOTAL, not the
+ * unit price. `baseAmount` must be the amount the database already committed as
+ * the pre-fee total (fn_guest_shop_create_order returns it as total_amount, and
+ * §1's CHECK pins total_amount = unit_amount*quantity + payment_fee_amount), so
+ * this helper only re-derives base = unit*quantity to double-check the caller
+ * passed a consistent pair and then adds the channel fee.
+ *
+ * The result satisfies the fee CHECK by construction: normalizeSurchargeRate
+ * caps the rate at 0.1 and roundUpMoneyAmount adds at most one cent, which is
+ * exactly the +0.01 slack in payment_fee_amount <= ROUND(unit*qty*0.1, 2) + 0.01.
+ */
+function resolveGuestOrderPayablePricing({
+    unitAmount,
+    quantity = GUEST_QUANTITY,
+    providerKey,
+    summaries = {},
+    expectedBaseAmount = null
+} = {}) {
+    const unit = roundMoneyAmount(unitAmount, null);
+    const count = parseQuantityInteger(quantity);
+    if (unit === null || !(unit > 0) || count === null || count < 1 || count > GUEST_QUANTITY_CEILING) {
+        return null;
+    }
+    const baseAmount = roundMoneyAmount(unit * count, null);
+    if (baseAmount === null || !(baseAmount > 0)) return null;
+    const expected = roundMoneyAmount(expectedBaseAmount, null);
+    // A caller that already knows the committed pre-fee total (the create-order
+    // row) must agree with unit*quantity. Refusing to price a mismatch is what
+    // keeps the fee from being computed on a base the database will reject.
+    if (expected !== null && expected !== baseAmount) return null;
+    const pricing = resolveGuestPayablePricing(baseAmount, providerKey, summaries);
+    return {
+        ...pricing,
+        quantity: count,
+        unitAmount: unit,
+        baseAmount
+    };
+}
+
 async function loadGuestPaymentProviderSummaries({ supabase = null, siteName = '' } = {}) {
     const summaries = {};
     for (const key of GUEST_PAYMENT_PROVIDER_KEYS) {
@@ -298,6 +398,7 @@ module.exports = {
     GUEST_CREDIT_PRICING_VERSION,
     GUEST_PAYMENT_PROVIDER_KEYS,
     GUEST_QUANTITY,
+    GUEST_QUANTITY_CEILING,
     GUEST_SETTLEMENT_CURRENCY,
     buildGuestPaymentPricing,
     buildGuestPaymentPricingPayload,
@@ -308,6 +409,8 @@ module.exports = {
     publicGuestPaymentProviderSummaries,
     resolveGuestSurchargeRate,
     resolveGuestCreditUnitAmount,
+    resolveGuestListSubtotal,
+    resolveGuestOrderPayablePricing,
     resolveGuestPayablePricing,
     roundMoneyAmount,
     roundUpMoneyAmount

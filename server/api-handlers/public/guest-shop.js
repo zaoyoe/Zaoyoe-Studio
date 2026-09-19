@@ -5,6 +5,10 @@ const defaultSecurity = require('../../../api/_lib/guest-shop/security');
 const defaultBuyerCredentials = require('../../../api/_lib/guest-shop/buyer-credentials');
 const defaultBuyerAccessAdmin = require('../../../api/_lib/guest-shop/buyer-access-admin');
 const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
+// Promo L1/L2: switches, quantity normalization and the display breakdown.
+// This module NEVER computes an amount - every price, discount and fee comes
+// from the SQL functions (see its header comment).
+const defaultGuestPromo = require('../../../api/_lib/guest-shop/promo');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
 
 const GUEST_WEBHOOK_PROVIDERS = new Set(['zpay', 'nowpayments']);
@@ -120,6 +124,12 @@ function guestOrderTtlSeconds(env = process.env) {
     });
 }
 
+// Operator ceiling for one guest order (promo L1). Unparsable or out-of-range
+// values degrade to 1, i.e. the pre-L1 behaviour, never to the maximum.
+function guestMaxQuantity(env = process.env) {
+    return defaultGuestPromo.resolveGuestMaxQuantity(env);
+}
+
 function guestWebhookLimits(env = process.env) {
     const globalLimit = parseGuestRuntimeInteger(env, 'GUEST_SHOP_WEBHOOK_GLOBAL_LIMIT', {
         defaultValue: DEFAULT_GUEST_WEBHOOK_GLOBAL_LIMIT,
@@ -195,15 +205,23 @@ function storedGuestPaymentPricing(order, payment, computed = null) {
 function applyPayableSnapshot(order, payment, computed, metadata = null) {
     const payable = computed.payableAmount;
     const surcharge = computed.surchargeAmount || 0;
+    // Promo L1: resolveGuestOrderPayablePricing carries the per-unit NET amount
+    // in `unitAmount` and keeps the channel fee separate, so a multi-unit order
+    // persists unit_amount = net unit, payment_fee_amount = surcharge and
+    // total_amount = net + fee (the shape guest_shop_orders_amount_check now
+    // requires). The legacy single-unit helper has no `unitAmount`, and for it
+    // unit == total == payable with fee 0, which is exactly the pre-L1 shape.
+    const unit = computed.unitAmount != null ? computed.unitAmount : payable;
     const nextMetadata = {
         ...storedPlainObject(metadata || order?.metadata),
-        credit_unit_amount: computed.baseAmount,
+        credit_unit_amount: computed.creditUnitAmount != null ? computed.creditUnitAmount : unit,
         payment_pricing: computed.payload || defaultGuestPricing.buildGuestPaymentPricingPayload(computed)
     };
     if (order && typeof order === 'object') {
-        order.unit_amount = payable;
+        order.unit_amount = unit;
         order.total_amount = payable;
         order.expected_amount = payable;
+        order.payment_fee_amount = surcharge;
         order.metadata = nextMetadata;
     }
     if (payment && typeof payment === 'object') {
@@ -211,6 +229,48 @@ function applyPayableSnapshot(order, payment, computed, metadata = null) {
         payment.payment_fee = surcharge;
     }
     return nextMetadata;
+}
+
+// Promo L1: a quantity is echoed only when the row actually carries a valid
+// one. Rows loaded through a trimmed select (or written before the migration)
+// have no quantity, and reporting 1 for an unknown count would mis-render a
+// multi-unit order in the buyer's order list.
+function guestSnapshotQuantity(order) {
+    const raw = order?.quantity;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const value = defaultGuestPromo.normalizeGuestQuantity(raw, {
+        cap: defaultGuestPromo.GUEST_MAX_QUANTITY_CEILING
+    });
+    return value === null ? null : value;
+}
+
+// Promo L2: the coupon line of the order list. Only a row written by the promo
+// create RPC (list_unit_amount NOT NULL) can carry a discount; a legacy row has
+// no discount columns and must render nothing rather than "已优惠 ¥0.00".
+function guestSnapshotDiscount(order) {
+    const listUnit = order?.list_unit_amount;
+    if (listUnit === null || listUnit === undefined) return null;
+    const amount = defaultGuestPricing.roundMoneyAmount(order?.discount_amount, 0) || 0;
+    return amount > 0 ? amount : null;
+}
+
+// Promo L1/L2: the amount breakdown is echoed ONLY for a row written by the
+// promo create RPC (list_unit_amount NOT NULL). A legacy row baked the channel
+// fee into unit_amount, so echoing payment_fee_amount: 0 for it would render a
+// false "手续费 ¥0.00" line against a unit price that already contains the fee.
+// Returning null makes the key disappear and the client falls back to the
+// single stored amount, exactly as it did before L1/L2.
+function guestSnapshotBreakdown(order) {
+    const listUnit = order?.list_unit_amount;
+    if (listUnit === null || listUnit === undefined || listUnit === '') return null;
+    return defaultGuestPromo.buildGuestAmountBreakdown(order);
+}
+
+// A money-shape or money-state problem is always an internal 503: the buyer is
+// told to retry, the operator gets a distinct code, and no amount is ever
+// derived from the request to "fix" the row.
+function guestPayableAmountError(message, code) {
+    return Object.assign(new Error(message), { statusCode: 503, code, expose: false });
 }
 
 function storedText(value, maxLength = 1000) {
@@ -716,7 +776,10 @@ function providerQuoteChecks(provider, normalized, expected, security = defaultS
 const ALLOWED_ORDER_FIELDS = new Set([
     'site', 'productId', 'product_id', 'skuId', 'sku_id', 'quantity',
     'idempotencyKey', 'idempotency_key', 'email', 'orderPassword', 'provider',
-    'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel'
+    'providerKey', 'provider_key', 'channel', 'paymentChannel', 'payment_channel',
+    // Promo L2. The value is re-normalized (and rejected while the switch is
+    // off) by security.normalizeGuestOrderInput, never trusted as an amount.
+    'discountCode', 'discount_code'
 ]);
 
 function createGuestShopHandlers({
@@ -775,6 +838,48 @@ function createGuestShopHandlers({
             code: String(error?.code || (status === 429 ? 'rate_limited' : 'guest_shop_request_failed')),
             message: expose ? String(error?.message || fallback) : fallback
         });
+    }
+
+    // Promo L1/L2 (plan §11.2 / C-E6). fn_guest_shop_create_order signals every
+    // rejection as a bare `RAISE EXCEPTION 'guest_*'`, which arrives here as a
+    // PostgREST error whose `code` is the SQLSTATE and whose `message` is the
+    // machine code. Left alone that is a 500 `P0001` for a plain coupon typo, and
+    // the checkout modal has no way to retract a discount line. The table lives in
+    // api/_lib/guest-shop/promo.js so the frontend contract test can assert the
+    // codes the client reacts to are codes this layer really emits.
+    //
+    // Two guarantees, both inherited from that table: every coupon-lifecycle
+    // rejection collapses onto ONE public code/message (the granular SQL code and
+    // the SQL DETAIL are never echoed, because either one is a coupon-existence
+    // oracle), and an unmapped code returns null so the caller keeps the pre-L1
+    // 500 instead of inventing a friendlier answer.
+    function mapGuestCreateOrderError(error) {
+        const mapped = defaultGuestPromo.resolveGuestCreateOrderError(error);
+        if (mapped) {
+            const mappedError = new security.GuestShopSecurityError(mapped.message, {
+                statusCode: mapped.statusCode,
+                code: mapped.code,
+                expose: mapped.expose
+            });
+            // Internal only: failResponse serializes success/code/message and
+            // nothing else, so this never reaches a response body.
+            mappedError.internalCode = mapped.internalCode;
+            return mappedError;
+        }
+        // Fail closed, but not leaky. A database rejection this batch does not
+        // know about stays a 500 exactly as before L1/L2 - the generic message is
+        // all a buyer gets. What it must NOT keep is the raw PostgREST shape:
+        // `code: 'P0001'` and the SQL exception text are schema fingerprints, and
+        // an unmapped `RAISE EXCEPTION 'guest_new_thing'` would otherwise be echoed
+        // straight back as the response code.
+        if (defaultGuestPromo.isOpaqueGuestDatabaseError(error)) {
+            return new security.GuestShopSecurityError('游客购买请求失败', {
+                statusCode: 500,
+                code: 'guest_shop_request_failed',
+                expose: false
+            });
+        }
+        return error;
     }
 
     function rateLimitUnavailable(res) {
@@ -948,22 +1053,50 @@ function createGuestShopHandlers({
         return crypto.createHmac('sha256', pepper).update(String(value)).digest('hex');
     }
 
-    async function loadGuestSkuPricing({ supabase, productId, skuId, siteName }) {
+    // `quantity` is the caller-requested unit count (promo L1). It is only ever
+    // used to (a) reject early against the effective per-order cap and (b) pick
+    // the tier in the SAME resolver the database uses. It never scales an
+    // amount here: resolveGuestCreditUnitAmount returns a per-unit price.
+    async function loadGuestSkuPricing({ supabase, productId, skuId, siteName, quantity = null }) {
         if (!supabase?.from) throw Object.assign(new Error('数据库服务不可用'), { statusCode: 503, expose: false });
         const productQuery = await supabase.from('shop_products')
-            .select('id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl')
+            .select('id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity')
             .eq('id', productId).maybeSingle();
         if (productQuery.error) throw productQuery.error;
         const product = productQuery.data;
         const skuQuery = await supabase.from('shop_product_skus')
-            .select('id,product_id,sku_name,is_active,allow_guest_purchase,manual_delivery,guest_payment_channels,price_points,price_points_intl,quantity_rules,quantity_rules_intl,is_default')
+            .select('id,product_id,sku_name,is_active,allow_guest_purchase,manual_delivery,guest_payment_channels,price_points,price_points_intl,quantity_rules,quantity_rules_intl,is_default,guest_max_quantity')
             .eq('id', skuId).eq('product_id', productId).maybeSingle();
         if (skuQuery.error) throw skuQuery.error;
         const sku = skuQuery.data;
         const enabled = Boolean(sku?.allow_guest_purchase ?? product?.allow_guest_purchase);
         const currency = security.currencyForSite(siteName);
+        // Effective cap = min(operator env, sku.guest_max_quantity ??
+        // product.guest_max_quantity ?? 1, product.max_purchase_quantity, 5),
+        // mirroring the SQL expression in §6 of the L1/L2 migration. Missing
+        // columns (a stub adapter, or a database that has not been migrated)
+        // collapse the cap to 1, i.e. the pre-L1 behaviour.
+        const quantityCap = defaultGuestPromo.resolveGuestQuantityCap({
+            env,
+            skuGuestMaxQuantity: sku?.guest_max_quantity ?? null,
+            productGuestMaxQuantity: product?.guest_max_quantity ?? null,
+            productMaxPurchaseQuantity: product?.max_purchase_quantity ?? null
+        });
+        const normalizedQuantity = defaultGuestPromo.normalizeGuestQuantity(quantity, { cap: quantityCap });
+        if (normalizedQuantity === null) {
+            // Fail closed with 400 rather than clamping: silently selling a
+            // different quantity than the buyer asked for would mis-price the
+            // tier and break the idempotency fingerprint contract.
+            throw new security.GuestShopSecurityError('购买数量超出允许范围', {
+                statusCode: 400, code: 'guest_quantity_not_allowed', field: 'quantity'
+            });
+        }
         const creditAmount = defaultGuestPricing.resolveGuestCreditUnitAmount({
             site: siteName,
+            // L1: the tier loop picks the cheapest rule whose qty <= quantity and
+            // the flash-sale branch ignores quantity, so this is exactly what
+            // enables tiered/flash pricing on the guest channel.
+            quantity: normalizedQuantity,
             skuPricePoints: sku?.price_points,
             skuPricePointsIntl: sku?.price_points_intl,
             skuQuantityRules: sku?.quantity_rules,
@@ -984,13 +1117,30 @@ function createGuestShopHandlers({
             const error = new security.GuestShopSecurityError('商品暂不支持游客购买', { statusCode: 409, code: 'guest_product_unavailable' });
             throw error;
         }
+        // L1 display subtotal: the tiered/flash unit price above times the
+        // validated quantity, rounded once. The browser never multiplies (§11.1),
+        // so the preview response carries the number it should format. It stays
+        // display-only - fn_guest_shop_create_order recomputes the list price in
+        // SQL and the parity gate below rejects a row that disagrees.
+        const listSubtotal = defaultGuestPricing.resolveGuestListSubtotal({
+            unitAmount: price.amount,
+            quantity: normalizedQuantity
+        });
         return {
             product,
             sku,
             unitAmount: price.amount,
             unitAmountMinor: price.minor,
             currency,
-            channels: sku?.guest_payment_channels ?? product?.guest_payment_channels ?? []
+            channels: sku?.guest_payment_channels ?? product?.guest_payment_channels ?? [],
+            // Both are echo/UX values. fn_guest_shop_create_order re-applies the
+            // same cap and raises guest_quantity_not_allowed itself, so a forged
+            // or stale cap from the client can never enlarge an order.
+            quantity: normalizedQuantity,
+            quantityCap,
+            // null only if the resolved unit amount fell outside the money
+            // bounds; the client then renders '-' instead of guessing a total.
+            subtotal: listSubtotal
         };
     }
 
@@ -1203,6 +1353,16 @@ function responseOrder(order, claimSecret, extras = {}) {
         const paymentPricing = extras.payment_pricing
             || storedGuestPaymentPricing(order, extras.payment, extras.computed);
         if (paymentPricing) result.payment_pricing = paymentPricing;
+        // Promo L1/L2: a guest order may now carry several units and a discount,
+        // so the checkout modal renders 小计 / 优惠 / 手续费 / 应付 from the
+        // DATABASE-committed amounts only. buildGuestAmountBreakdown returns null
+        // (and the key is then omitted) whenever the row is not internally
+        // consistent, so the client can never be handed a breakdown that does not
+        // add up to the amount it is being asked to pay.
+        const quantity = guestSnapshotQuantity(order);
+        if (quantity !== null) result.quantity = quantity;
+        const breakdown = guestSnapshotBreakdown(order);
+        if (breakdown) result.amount_breakdown = breakdown;
         // The recovery code is a high-entropy bearer credential.  It is
         // returned only in the order-creation response (never in status,
         // webhook, logs or provider metadata) so a buyer may move to another
@@ -1225,6 +1385,12 @@ function responseOrder(order, claimSecret, extras = {}) {
         };
         const paymentPricing = storedGuestPaymentPricing(order, extras.payment, extras.computed);
         if (paymentPricing) snapshot.payment_pricing = paymentPricing;
+        // Promo L1/L2, same rule as responseOrder: echoed only when the committed
+        // row carries a valid quantity and an internally consistent breakdown.
+        const quantity = guestSnapshotQuantity(order);
+        if (quantity !== null) snapshot.quantity = quantity;
+        const breakdown = guestSnapshotBreakdown(order);
+        if (breakdown) snapshot.amount_breakdown = breakdown;
         return snapshot;
     }
 
@@ -1314,7 +1480,12 @@ function responseOrder(order, claimSecret, extras = {}) {
         const orderId = String(order?.order_id || order?.id || '').trim();
         if (!db?.from || !orderId) return null;
         let query = db.from('guest_shop_orders')
-            .select('id,unit_amount,total_amount,metadata,payment_status')
+            // Promo L1/L2 columns are read (never written) here: list_unit_amount
+            // identifies the amount regime of the row, quantity/discount_amount
+            // let the fee base be re-checked against the committed discount math,
+            // and payment_fee_amount tells a fee-pending row from a fee-written one.
+            .select('id,unit_amount,total_amount,payment_fee_amount,quantity,'
+                + 'list_unit_amount,discount_amount,metadata,payment_status')
             .eq('id', orderId);
         if (typeof query.maybeSingle === 'function') query = query.maybeSingle();
         const result = await query;
@@ -1322,39 +1493,130 @@ function responseOrder(order, claimSecret, extras = {}) {
         return result?.data || null;
     }
 
+    /**
+     * Write the channel surcharge onto a freshly created guest order.
+     *
+     * Promo L1/L2 introduced a second amount regime (migration §1) and this
+     * function is the only place that decides which one applies:
+     *
+     *   list_unit_amount IS NOT NULL  ->  new regime. unit_amount is the NET
+     *       (already discounted) unit price, payment_fee_amount carries the
+     *       surcharge and total_amount = unit_amount*quantity + fee.
+     *   list_unit_amount IS NULL      ->  legacy regime, unchanged: the fee is
+     *       folded into unit_amount == total_amount and payment_fee_amount
+     *       stays 0.
+     *
+     * Both shapes satisfy guest_shop_orders_amount_check, but only their own.
+     * Writing the new shape onto a legacy row would charge the surcharge twice;
+     * writing the legacy shape onto a new row would erase the discount and then
+     * violate the CHECK. The regime is therefore read from the COMMITTED row,
+     * never inferred from the request, and every amount written here is
+     * re-derived from database-owned values and cross-checked against the
+     * committed discount math before it is persisted. Nothing in this function
+     * can lower an amount: it only adds the channel fee.
+     */
     async function persistGuestPayableAmounts({
         order,
         payment,
         creditAmount,
+        netUnitAmount = null,
         provider,
         lease,
         summaries = {}
     }) {
-        const computed = defaultGuestPricing.resolveGuestPayablePricing(
-            creditAmount,
-            provider,
-            summaries
+        const current = await loadGuestOrderAmountRow(order);
+        const listUnitAmount = current?.list_unit_amount ?? order?.list_unit_amount ?? null;
+        const quantity = defaultGuestPromo.normalizeGuestQuantity(
+            current?.quantity ?? order?.quantity,
+            { cap: defaultGuestPromo.GUEST_MAX_QUANTITY_CEILING }
         );
+        const isNewRegime = listUnitAmount !== null && listUnitAmount !== undefined && quantity !== null;
+        // Without the committed row the new regime cannot be verified at all, so
+        // refuse to write anything and let the caller clear the creation lease
+        // and return 503. The legacy regime keeps its pre-L1 fallbacks.
+        if (isNewRegime && !current) return { ok: false, computed: null };
+
+        // New regime: the database-committed NET unit price is authoritative (it
+        // already carries the discount) and is stable across replays because the
+        // fee lives in its own column. Legacy regime: the freshly resolved
+        // catalogue unit price, exactly as before - a replayed legacy row stores
+        // the fee-baked amount in unit_amount, so re-deriving from it would add
+        // the surcharge a second time.
+        const baseUnitAmount = isNewRegime
+            ? (netUnitAmount ?? current?.unit_amount)
+            : creditAmount;
+        const computed = isNewRegime
+            ? defaultGuestPricing.resolveGuestOrderPayablePricing({
+                unitAmount: baseUnitAmount,
+                quantity,
+                providerKey: provider,
+                summaries
+            })
+            : defaultGuestPricing.resolveGuestPayablePricing(baseUnitAmount, provider, summaries);
+        if (!computed) {
+            throw guestPayableAmountError('应付金额无效', 'guest_payable_amount_invalid');
+        }
         const payableSnapshot = normalizeGuestCashPrice(
             computed.payableAmount,
             security,
             String(order?.currency || 'CNY')
         );
         if (!payableSnapshot || !(payableSnapshot.amount > 0)) {
-            throw Object.assign(new Error('应付金额无效'), {
-                statusCode: 503,
-                code: 'guest_payable_amount_invalid',
-                expose: false
-            });
+            throw guestPayableAmountError('应付金额无效', 'guest_payable_amount_invalid');
         }
         computed.payableAmount = payableSnapshot.amount;
         computed.payload = defaultGuestPricing.buildGuestPaymentPricingPayload(computed);
 
-        const current = await loadGuestOrderAmountRow(order);
+        const targetUnit = isNewRegime ? computed.unitAmount : payableSnapshot.amount;
+        const targetFee = isNewRegime ? (computed.surchargeAmount || 0) : 0;
+        const targetTotal = payableSnapshot.amount;
+
+        if (isNewRegime) {
+            // Re-check the committed arithmetic before any money moves:
+            //   list_unit * quantity - discount == net_unit * quantity == base
+            //   base + fee == total
+            // A row that does not agree with the amount we are about to charge is
+            // a 503 for reconciliation, never a silent re-price.
+            const listUnit = defaultGuestPricing.roundMoneyAmount(listUnitAmount, null);
+            const discount = defaultGuestPricing.roundMoneyAmount(
+                current.discount_amount ?? order?.discount_amount ?? 0, 0
+            ) || 0;
+            const netAmount = defaultGuestPricing.roundMoneyAmount(computed.baseAmount, null);
+            const listAmount = listUnit === null
+                ? null
+                : defaultGuestPricing.roundMoneyAmount(listUnit * quantity, null);
+            const unitTimesQuantity = defaultGuestPricing.roundMoneyAmount(targetUnit * quantity, null);
+            const arithmeticTotal = netAmount === null
+                ? null
+                : defaultGuestPricing.roundMoneyAmount(netAmount + targetFee, null);
+            const consistent = listUnit !== null && listAmount !== null && netAmount !== null
+                && unitTimesQuantity !== null && arithmeticTotal !== null
+                && discount >= 0 && discount < listAmount
+                && defaultGuestPricing.moneyAmountsEqual(unitTimesQuantity, netAmount)
+                && defaultGuestPricing.moneyAmountsEqual(listAmount - discount, netAmount)
+                && defaultGuestPricing.moneyAmountsEqual(arithmeticTotal, targetTotal)
+                && defaultGuestPricing.moneyAmountsEqual(current.unit_amount, targetUnit);
+            if (!consistent) {
+                throw guestPayableAmountError('订单金额与折扣不一致', 'guest_payable_amount_state_invalid');
+            }
+            // The row must be fee-pending (as the create RPC left it: fee 0 and
+            // total == net) or already fee-written with exactly our target. Any
+            // other combination means another writer moved the money.
+            const feePending = defaultGuestPricing.moneyAmountsEqual(current.payment_fee_amount ?? 0, 0)
+                && defaultGuestPricing.moneyAmountsEqual(current.total_amount, netAmount);
+            const feeWritten = defaultGuestPricing.moneyAmountsEqual(current.payment_fee_amount, targetFee)
+                && defaultGuestPricing.moneyAmountsEqual(current.total_amount, targetTotal);
+            if (!feePending && !feeWritten) {
+                throw guestPayableAmountError('订单金额状态异常', 'guest_payable_amount_state_invalid');
+            }
+        }
+
         const currentUnit = current?.unit_amount ?? order?.unit_amount ?? order?.total_amount;
         const currentTotal = current?.total_amount ?? order?.total_amount;
-        const alreadyOrder = defaultGuestPricing.moneyAmountsEqual(currentUnit, payableSnapshot.amount)
-            && defaultGuestPricing.moneyAmountsEqual(currentTotal, payableSnapshot.amount);
+        const currentFee = current?.payment_fee_amount ?? order?.payment_fee_amount ?? 0;
+        const alreadyOrder = defaultGuestPricing.moneyAmountsEqual(currentUnit, targetUnit)
+            && defaultGuestPricing.moneyAmountsEqual(currentFee, targetFee)
+            && defaultGuestPricing.moneyAmountsEqual(currentTotal, targetTotal);
         const alreadyPayment = defaultGuestPricing.moneyAmountsEqual(
             payment?.expected_amount,
             payableSnapshot.amount
@@ -1365,14 +1627,19 @@ function responseOrder(order, claimSecret, extras = {}) {
 
         if (!alreadyOrder) {
             if (!db?.from || !orderId) return { ok: false, computed };
-            let query = db.from('guest_shop_orders').update({
-                unit_amount: payableSnapshot.amount,
-                total_amount: payableSnapshot.amount,
+            const patch = {
+                unit_amount: targetUnit,
+                total_amount: targetTotal,
                 metadata,
                 updated_at: new Date().toISOString()
-            }).eq('id', orderId).eq('payment_status', 'pending');
+            };
+            // Only the new regime writes the fee column; a legacy row must keep
+            // payment_fee_amount = 0 with the surcharge folded into unit_amount.
+            if (isNewRegime) patch.payment_fee_amount = targetFee;
+            let query = db.from('guest_shop_orders').update(patch)
+                .eq('id', orderId).eq('payment_status', 'pending');
             if (typeof query.select === 'function') {
-                query = query.select('id,unit_amount,total_amount,metadata').maybeSingle();
+                query = query.select('id,unit_amount,total_amount,payment_fee_amount,metadata').maybeSingle();
             }
             const result = await query;
             if (result?.error) throw result.error;
@@ -1476,7 +1743,18 @@ function responseOrder(order, claimSecret, extras = {}) {
             const siteName = normalizeSiteValue(queryValue(req, 'site'));
             const productId = security.normalizeUuid(queryValue(req, 'productId') || queryValue(req, 'product_id'), 'productId');
             const skuId = security.normalizeUuid(queryValue(req, 'skuId') || queryValue(req, 'sku_id'), 'skuId');
-            const pricing = await loadGuestSkuPricing({ supabase: getSupabase(), productId, skuId, siteName });
+            // Promo L1: preview accepts a quantity so the modal can show the
+            // tiered/flash unit price the buyer will actually be charged. It is
+            // validated against the same per-SKU cap as the order itself (400
+            // guest_quantity_not_allowed), and it only selects a tier - the
+            // returned amount is still a per-unit price.
+            const pricing = await loadGuestSkuPricing({
+                supabase: getSupabase(),
+                productId,
+                skuId,
+                siteName,
+                quantity: queryValue(req, 'quantity')
+            });
             const paymentProviders = defaultGuestPricing.publicGuestPaymentProviderSummaries(
                 await defaultGuestPricing.loadGuestPaymentProviderSummaries({
                     supabase: getSupabase(),
@@ -1486,7 +1764,25 @@ function responseOrder(order, claimSecret, extras = {}) {
             return sendJson(res, 200, {
                 success: true,
                 product: { id: pricing.product.id, name: pricing.product.name || '', sku_id: pricing.sku.id, sku_name: pricing.sku.sku_name || '' },
-                price: { amount: pricing.unitAmount, currency: pricing.currency, quantity: 1 },
+                // `amount` stays the PER-UNIT price (unchanged contract for
+                // every existing consumer); `subtotal` is the L1 list total the
+                // modal formats. Both come from the server resolver.
+                price: {
+                    amount: pricing.unitAmount,
+                    currency: pricing.currency,
+                    quantity: pricing.quantity,
+                    subtotal: pricing.subtotal
+                },
+                // Promo L1/L2 UI switches. quantity_cap is the effective per-order
+                // ceiling (1 while the switches are off, so the client keeps
+                // hiding the stepper and the surface is unchanged); the database
+                // re-applies the same cap on create. discount_enabled also
+                // requires the buyer-credential switch because the database
+                // refuses an unattributable discount (migration §5,
+                // guest_discount_identity_required).
+                quantity_cap: pricing.quantityCap,
+                discount_enabled: defaultGuestPromo.isGuestDiscountEnabled(env)
+                    && defaultBuyerCredentials.isBuyerCredentialEnabled(env),
                 payment_channels: Array.isArray(pricing.channels) ? pricing.channels : [],
                 payment_providers: paymentProviders,
                 // Order Access 2.0 (§13.4): the order form only collects a query
@@ -1534,8 +1830,30 @@ function responseOrder(order, claimSecret, extras = {}) {
             const credentialEnabled = defaultBuyerCredentials.isBuyerCredentialEnabled(env);
             const rawOrderPassword = orderBody.orderPassword;
             delete orderBody.orderPassword;
-            const normalized = security.normalizeGuestOrderInput(orderBody, { site: siteName, quantityMax: 1, allowOptionalContact: true });
-            const pricing = await loadGuestSkuPricing({ supabase: getSupabase(), productId: normalized.productId, skuId: normalized.skuId, siteName });
+            // Promo L2: a discount code is only accepted while BOTH the discount
+            // switch and the buyer-credential switch are on. The database will not
+            // reserve a redemption it cannot attribute to a buyer group, and
+            // silently dropping a submitted code would let a buyer believe they
+            // got a discount the order does not carry - so normalizeGuestOrderInput
+            // rejects it with 403 guest_discount_disabled instead.
+            const discountEnabled = defaultGuestPromo.isGuestDiscountEnabled(env) && credentialEnabled;
+            // Promo L1: quantityMax is the OPERATOR ceiling; the per-SKU cap from
+            // loadGuestSkuPricing and the database cap are applied on top of it.
+            // With GUEST_SHOP_MAX_QUANTITY unset this is 1, i.e. any quantity
+            // other than 1 is rejected exactly as before L1.
+            const normalized = security.normalizeGuestOrderInput(orderBody, {
+                site: siteName,
+                quantityMax: guestMaxQuantity(env),
+                allowOptionalContact: true,
+                allowDiscountCode: discountEnabled
+            });
+            const pricing = await loadGuestSkuPricing({
+                supabase: getSupabase(),
+                productId: normalized.productId,
+                skuId: normalized.skuId,
+                siteName,
+                quantity: normalized.quantity
+            });
             const fingerprint = security.buildGuestRequestFingerprint({
                 ...normalized,
                 unitAmount: pricing.unitAmount,
@@ -1599,11 +1917,37 @@ function responseOrder(order, claimSecret, extras = {}) {
                 p_idempotency_key: normalized.idempotencyKey, p_request_fingerprint: fingerprint,
                 p_claim_secret_hash: claimHash, p_provider: provider, p_channel: channel,
                 p_buyer_contact_hash: buyerContactHash, p_buyer_id: buyerId, p_request_ip_hash: ipHash,
-                p_request_device_hash: deviceHash, p_ttl_seconds: orderTtlSeconds
+                p_request_device_hash: deviceHash, p_ttl_seconds: orderTtlSeconds,
+                // Promo L1/L2. Both are re-validated inside the RPC (quantity cap,
+                // code status/window/per-buyer limit, identity requirement), so a
+                // value that slipped past this process still cannot widen an order.
+                p_quantity: normalized.quantity,
+                p_discount_code: normalized.discountCode || null
             });
             if (error) throw error;
             const order = Array.isArray(data) ? data[0] : data;
             if (!order?.order_id) throw new Error('订单创建失败');
+
+            // Promo L1/L2 amount-regime detection and parity gate.
+            //
+            // list_unit_amount IS NOT NULL identifies a row written by the promo
+            // create RPC; NULL identifies a pre-L1 row (or a replay of one), which
+            // keeps the legacy fee-folded shape and is deliberately skipped here.
+            //
+            // For a new row the database must agree with the price this process
+            // quoted and with the quantity the buyer asked for. A replay can only
+            // reach this point with an identical request fingerprint, and that
+            // fingerprint already pins quantity + unitAmountMinor, so the gate can
+            // never trip on a legitimate retry: it only fires when the SQL and Node
+            // resolvers disagree, in which case creating a payment would charge an
+            // amount nobody quoted. Fail closed for reconciliation instead.
+            const orderListUnitAmount = order?.list_unit_amount;
+            const isNewRegimeOrder = orderListUnitAmount !== null && orderListUnitAmount !== undefined;
+            if (isNewRegimeOrder
+                && (Number(order.quantity) !== normalized.quantity
+                    || !defaultGuestPricing.moneyAmountsEqual(orderListUnitAmount, pricing.unitAmount))) {
+                throw guestPayableAmountError('订单定价与报价不一致', 'guest_pricing_parity_mismatch');
+            }
 
             // The create RPC is idempotent, but it intentionally does not
             // perform an external provider call.  Always reload and bind the
@@ -1622,14 +1966,15 @@ function responseOrder(order, claimSecret, extras = {}) {
             async function releaseCreatedReservation(reason) {
                 const db = getSupabase();
                 if (!db?.from || !db?.rpc) return false;
-                const reservationResult = await db.from('guest_shop_inventory_reservations')
-                    .select('id')
-                    .eq('order_id', order.order_id)
-                    .eq('status', 'held')
-                    .maybeSingle();
-                if (reservationResult.error || !reservationResult.data?.id) return false;
-                const released = await db.rpc('fn_guest_shop_release_reservation', {
-                    p_reservation_id: reservationResult.data.id,
+                // Promo L1 holds up to 5 reservation rows per order, so a failed
+                // payment creation must release ALL of them: a single leftover
+                // held row would keep real stock locked until the TTL sweep and
+                // would leave reservation_status inconsistent. The service-role
+                // helper is idempotent, releases held rows only, recomputes the
+                // order rollup and returns the released count. (The pre-L1 code
+                // read one row with maybeSingle(), which now errors on a
+                // multi-row order - the RPC removes that failure mode.)
+                const released = await db.rpc('guest_shop_release_held_reservations', {
                     p_order_id: order.order_id,
                     p_reason: String(reason || 'payment_create_failed').slice(0, 120)
                 });
@@ -1640,11 +1985,24 @@ function responseOrder(order, claimSecret, extras = {}) {
                 supabase: getSupabase(),
                 siteName
             });
-            const computedPayable = defaultGuestPricing.resolveGuestPayablePricing(
-                pricing.unitAmount,
-                provider,
-                paymentProviderSummaries
-            );
+            // New-regime rows price the surcharge on the NET ORDER TOTAL
+            // (unit*quantity, discount already applied by the database) and keep
+            // unit_amount un-folded, so the replay/response payload must be built
+            // from the committed row. Legacy rows keep the pre-L1 expression
+            // byte-for-byte: their unit_amount already contains the fee once it
+            // has been written, and re-deriving from it would double-charge.
+            const computedPayable = (isNewRegimeOrder
+                && defaultGuestPricing.resolveGuestOrderPayablePricing({
+                    unitAmount: order.unit_amount,
+                    quantity: order.quantity,
+                    providerKey: provider,
+                    summaries: paymentProviderSummaries
+                }))
+                || defaultGuestPricing.resolveGuestPayablePricing(
+                    pricing.unitAmount,
+                    provider,
+                    paymentProviderSummaries
+                );
             const replayResponse = (checkout, statusCode = 200, extra = {}) => {
                 setClaimProofCookie(req, res, order, claimSecret, security, env);
                 return sendJson(res, statusCode, {
@@ -1726,6 +2084,11 @@ function responseOrder(order, claimSecret, extras = {}) {
                 order,
                 payment,
                 creditAmount: pricing.unitAmount,
+                // New-regime base: the database-committed NET unit price, which
+                // already carries the L2 discount. persistGuestPayableAmounts
+                // ignores it for legacy rows and re-checks it against the
+                // committed discount math before writing anything.
+                netUnitAmount: order.unit_amount,
                 provider,
                 lease: creationLease,
                 summaries: paymentProviderSummaries
@@ -1809,7 +2172,7 @@ function responseOrder(order, claimSecret, extras = {}) {
                 order: responseOrder(order, claimSecret, { payment, computed: persistResult.computed }),
                 checkout
             });
-        } catch (error) { return failResponse(res, error); }
+        } catch (error) { return failResponse(res, mapGuestCreateOrderError(error)); }
     }
 
     async function loadOrderByNo(orderNo) {
@@ -1947,37 +2310,83 @@ function responseOrder(order, claimSecret, extras = {}) {
         // into one database round-trip and keeps the delivery read under the
         // same row locks/state contract as fulfillment.
         if (typeof db.rpc === 'function') {
-            const result = await db.rpc('fn_guest_shop_claim_fulfillment', {
-                p_order_id: order.id,
-                p_reservation_id: null
+            // Promo L1: an order can now hold up to 5 consumed reservations and
+            // fn_guest_shop_claim_fulfillment returns exactly ONE row per call, so
+            // the delivery read moved to the dedicated list helper. It re-validates
+            // the WHOLE order under the same service-role contract (payment
+            // confirmed, order delivered, every reservation consumed, every
+            // inventory row sold and non-shared) and returns one
+            // (reservation_id, item_index, content) row per item, ordered by
+            // reservation creation. A partially delivered order therefore raises
+            // instead of rendering as complete, and the buyer always receives all
+            // of the cards they paid for.
+            const result = await db.rpc('fn_guest_shop_list_delivered_content', {
+                p_order_id: order.id
             });
-            if (result?.error) throw result.error;
-            const row = Array.isArray(result?.data) ? result.data[0] : result?.data;
-            const orderId = String(row?.order_id || '').trim();
-            const reservationStatus = String(row?.reservation_status || '').trim().toLowerCase();
-            const fulfillmentStatus = String(row?.fulfillment_status || '').trim().toLowerCase();
-            if (!row
-                || orderId !== String(order.id || '').trim()
-                || reservationStatus !== 'consumed'
-                || fulfillmentStatus !== 'delivered'
-                || typeof row.content !== 'string') {
+            if (result?.error) throw mapDeliveredContentError(result.error);
+            const rawRows = result?.data;
+            const rows = Array.isArray(rawRows) ? rawRows : (rawRows ? [rawRows] : []);
+            const contents = rows.map((row) => row?.content);
+            // The pre-L1 contract is a single string; keep it for one card and
+            // join multi-card orders so no client change is required to receive
+            // every item. An empty list or a non-string content means the order is
+            // not in a deliverable state.
+            if (!rows.length || contents.some((text) => typeof text !== 'string')) {
                 throw guestInventoryConsistencyError();
             }
-            return row.content;
+            return contents.length === 1 ? contents[0] : contents.join('\n\n');
         }
 
         // Keep a compatibility path for thin local/test adapters that do not
         // expose RPCs. Production service-role clients have `.rpc` because
-        // the worker and payment confirmation already depend on it.
-        const reservation = await db.from('guest_shop_inventory_reservations')
-            .select('inventory_id,status').eq('order_id', order.id).maybeSingle();
-        if (reservation.error) throw reservation.error;
-        if (!reservation.data || reservation.data.status !== 'consumed') throw guestInventoryConsistencyError();
-        const inventory = await db.from('shop_inventory')
-            .select('content,is_shared,status').eq('id', reservation.data.inventory_id).maybeSingle();
-        if (inventory.error) throw inventory.error;
-        if (!inventory.data || inventory.data.status !== 'sold' || inventory.data.is_shared) throw guestInventoryConsistencyError();
-        return inventory.data.content;
+        // the worker and payment confirmation already depend on it. L1: read ALL
+        // reservations of the order and apply the same all-consumed /
+        // all-sold-non-shared rule the RPC enforces, so a partial delivery can
+        // never be returned as complete.
+        const reservations = await db.from('guest_shop_inventory_reservations')
+            .select('inventory_id,status').eq('order_id', order.id);
+        if (reservations.error) throw reservations.error;
+        const rawReservations = reservations.data;
+        const reservationRows = Array.isArray(rawReservations)
+            ? rawReservations
+            : (rawReservations ? [rawReservations] : []);
+        if (!reservationRows.length
+            || reservationRows.some((row) => String(row?.status || '') !== 'consumed')) {
+            throw guestInventoryConsistencyError();
+        }
+        const contents = [];
+        for (const row of reservationRows) {
+            const inventory = await db.from('shop_inventory')
+                .select('content,is_shared,status').eq('id', row.inventory_id).maybeSingle();
+            if (inventory.error) throw inventory.error;
+            if (!inventory.data || inventory.data.status !== 'sold' || inventory.data.is_shared) {
+                throw guestInventoryConsistencyError();
+            }
+            contents.push(inventory.data.content);
+        }
+        return contents.length === 1 ? contents[0] : contents.join('\n\n');
+    }
+
+    // fn_guest_shop_list_delivered_content reports an undeliverable order as a
+    // SQL exception. Map that family onto the pre-L1 409 so the delivery
+    // endpoint keeps its existing response contract; anything unexpected
+    // propagates unchanged instead of being disguised as an inventory problem.
+    function mapDeliveredContentError(error) {
+        const message = String(error?.message || '').trim();
+        const code = String(error?.code || '').trim();
+        const details = String(error?.details || '').trim();
+        const known = new Set([
+            'guest_order_required',
+            'guest_order_not_found',
+            'guest_payment_not_confirmed',
+            'guest_order_not_delivered',
+            'guest_reservation_not_consumed',
+            'guest_consumed_inventory_inconsistent'
+        ]);
+        if (known.has(message) || known.has(code) || known.has(details)) {
+            return guestInventoryConsistencyError();
+        }
+        return error;
     }
 
     function forceProviderRefreshRequested(req) {
@@ -2712,10 +3121,14 @@ function responseOrder(order, claimSecret, extras = {}) {
                 ? null : order.unit_amount,
             created_at: order.created_at || null,
             // §11.2: the guest orders page renders two discount lines (coupon /
-            // campaign). A2 ships the container only; L1/L2 fill it. Both stay
+            // campaign). A2 shipped the container; L2 now fills the coupon line
+            // from the database-committed discount_amount, and a legacy row stays
             // null so the client renders nothing instead of a misleading
             // "已优惠 0.00".
-            coupon_discount: null,
+            coupon_discount: guestSnapshotDiscount(order),
+            // L1 tier/flash pricing is committed AS the list unit price, not as a
+            // separable amount, so there is nothing honest to render here. It
+            // stays null until a campaign-discount column exists.
             promo_discount: null
         };
     }
@@ -2741,7 +3154,11 @@ function responseOrder(order, claimSecret, extras = {}) {
             const pageSize = parsePositiveQueryInt(queryValue(req, 'pageSize') ?? queryValue(req, 'page_size'), {
                 defaultValue: 20, min: 1, max: 50
             });
+            // Promo L1/L2 columns feed the §11.2 discount line and the amount
+            // breakdown. They are database-owned values; the client only renders
+            // them and never recomputes an amount from them.
             const fields = 'order_no,site,total_amount,currency,quantity,unit_amount,'
+                + 'list_unit_amount,discount_amount,discount_code,payment_fee_amount,'
                 + 'payment_status,fulfillment_status,refund_status,expires_at,created_at';
             let query = db.from('guest_shop_orders').select(fields, { count: 'exact' });
             // buyer_id is unique per (site, contact_hash), so it already implies
@@ -3373,7 +3790,11 @@ module.exports = {
         MAX_GUEST_CASH_PRICE_MINOR,
         MAX_GUEST_ORDER_TTL_SECONDS,
         MAX_PAYMENT_CREATION_LEASE_MS,
+        guestMaxQuantity,
         guestOrderTtlSeconds,
+        guestSnapshotBreakdown,
+        guestSnapshotDiscount,
+        guestSnapshotQuantity,
         guestRuntimeConfigError,
         guestWebhookLimits,
         normalizeGuestCashPrice,

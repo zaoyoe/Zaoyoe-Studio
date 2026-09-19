@@ -199,7 +199,7 @@
 - [x] 游客购买代码已按 AGENTS.md 从专用分支 PR 合入最新 `main`，Vercel + KVM4 Verify 已发布该 commit。发布不等于启用游客商品，也不得在发布过程执行 SQL
 - [x] KVM4 游客专用密钥已写入 `/opt/zaoyoe-verify-server/.env`（mode `0600`，不回显、不复用 `CRON_SECRET`）；verify-server 已重建加载 `env_file`；guest-shop worker timer 已启动且空 tick 成功
 - [x] 可见浏览器已接上：Codex in-app browser 打开 `http://localhost:8000/shop.html`，游客购买弹窗可操作
-- [x] 内部测试 SKU 已确认：Gemini「测试 2」/ 规格「测试」；`product_id=c16212d8-6ad8-4b3c-831c-3cc68b2d7a52`；`sku_id=db8cc9bd-898a-49ff-adb4-cc07f94d7d8f`；`price_points=0.01`；`delivery_type=KEY`；自动发货；非共享；库存 42。不得再开第二个
+- [x] 内部测试 SKU 已确认：Gemini「测试 2」/ 规格「测试」；`product_id=c16212d8-6ad8-4b3c-831c-3cc68b2d7a52`；`sku_id=db8cc9bd-898a-49ff-adb4-cc07f94d7d8f`；`price_points=0.01`；`delivery_type=KEY`；自动发货；非共享；库存 42。~~不得再开第二个~~【2026-09-19 更新：计数上限作废——游客商品数由 Admin Studio 游客开关动态决定，无固定上限；每个被打开的商品仍须低价值/非共享/自动发货且不得公开上架。见 §60.8.2 / 证据 §2.10.2】
 - [x] CN ZPay：现有配置没有独立沙箱，实际走现网 `zpayz.cn` + 支付宝。D3-01 按现网 ¥0.01 执行，不把沙箱缺失写成 PASS
 - [x] INTL NOWPayments：现有配置也是现网 `api.nowpayments.io` / `usdtbsc`，没有沙箱密钥。20260916 已执行 3/3 PASS，INTL create-order 闸门已解除。测试 SKU 已涨到 `price_points=144`（现网 min ≈ `$19.05` USD），已能建成 `usdtbsc` 发票。网络仍固定 `usdtbsc`，商品标价 CNY，USDT 按充值同一套汇率折算，不得把 USD quote 当结算币种。当前成功支付发票已过期且 `actually_paid=0`，不得再付旧地址
 - [x] 游客公开商品保持关闭。当前库里已有 **1** 个 `allow_guest_purchase=true`（用户确认主动打开为测试准备，非代码故障）。D 结束后若未进入 I，必须先关掉该 SKU
@@ -656,7 +656,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 
 1. ~~用户在目标 Supabase 执行 20260915 SQL~~ 已执行
 2. ~~用户只重跑修正后的 verify~~ 已重跑：1-7 PASS，第 8 项 REVIEW（`enabled_count=1`）
-3. ~~verify 前不要打开内部测试 SKU~~ 用户已主动打开 1 个商品做测试准备，非代码故障；不得再开第二个，也不得公开上架
+3. ~~verify 前不要打开内部测试 SKU~~ 用户已主动打开 1 个商品做测试准备，非代码故障；~~不得再开第二个~~，也不得公开上架【2026-09-19 更新：计数上限作废——数量由 Admin Studio 游客开关动态决定；资质三条与「不得公开上架」保留。见 §60.8.2 / 证据 §2.10.2】
 4. 仍保持 D `blocked`，直到确认该 SKU 低价值/非共享/自动发货，并且 CN ZPay 沙箱、INTL NOWPayments 沙箱（`usdtbsc`）、可见浏览器/真机齐套
 
 ### 风险和修正
@@ -675,7 +675,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 - [ ] 确认该 SKU 低价值、非共享、自动发货，不是公开主推
 - [ ] 未齐套沙箱/真机前禁止真实付款；本地弹层不等于 D 开始
 - [ ] 不从功能分支 vercel prod deploy；发布仍须走 AGENTS.md
-- [ ] 不得再打开第二个游客商品，不得公开上架
+- [ ] ~~不得再打开第二个游客商品~~（2026-09-19 更新：计数上限作废，数量由 Admin Studio 游客开关动态决定，见 §60.8.2），不得公开上架
 - [ ] D 仍缺：CN ZPay 沙箱、INTL NOWPayments 沙箱、可见浏览器/真机
 - [ ] G 视觉验收、E 真实并发、I 灰度、J 回滚签署均未开始
 
@@ -730,7 +730,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 - [x] 用户重跑修正后的 verify 并回传
 - [x] 不重跑 20260915 迁移
 - [ ] 不从功能分支部署
-- [ ] 不得再打开第二个游客商品，不得公开上架
+- [ ] ~~不得再打开第二个游客商品~~（2026-09-19 更新：计数上限作废，数量由 Admin Studio 游客开关动态决定，见 §60.8.2），不得公开上架
 
 ## 25. 2026-09-15 verify 闸门关闭 + 用户确认 1 个测试商品（不开始 D）
 
@@ -779,7 +779,7 @@ WHERE allow_guest_purchase IS TRUE;
 
 2. 若该商品是公开/高价值/共享库存/人工发货，先在 Admin Studio 关掉，另选一个内部测试 SKU
 3. 补齐 D0 剩余项：CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、主线程可见浏览器或真机
-4. 齐套前不得真实付款，不得发布功能分支，不得再开第二个游客商品
+4. 齐套前不得真实付款，不得发布功能分支，~~不得再开第二个游客商品~~（2026-09-19 更新：计数上限作废，数量由 Admin Studio 游客开关动态决定，见 §60.8.2）
 
 ### 风险和修正
 
@@ -3094,3 +3094,353 @@ Codex 不代执行。
 本轮**不需要用户执行 SQL**。不要重跑 20260913 / 20260914 / 20260915 / 20260916 / 20260917 / 20260918 / 20260919。
 
 Codex 不代执行。
+
+## 59. 2026-09-19 游客促销 L1+L2 合并批：阶梯价/闪购/优惠码全部服务端定价，附带时代感知探针修复
+
+### 本轮做了什么
+
+- 用户指令是「按『L1+L2 合并一批』开工」，并沿用既有红线：**安全第一、绝不零元购、防掏鸟蛋、防刷**；
+  所有折扣**只走服务端定价**，客户端不参与金额计算；阶梯价与闪购的库存/限购/幂等校验全部保留。
+- 按 `docs/guest-shop-promo-hardening-plan.md` §14 的分期表，「L1+L2 合并一批」等价于
+  **L1 + L2 + L3 的「定价权威」部分同批交付**。§14 明确禁止 L2/L3 拆开发布：拆开就会出现
+  「前端能报价、后端不认账」→ `amount_mismatch` → **已付款不发货**。**L4（后台运营界面）不在本批。**
+- 库侧（新增 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`，3531 行）：
+  - **L1**：`guest_shop_resolve_credit_unit_amount` 放开 `p_quantity`，阶梯价/闪购与登录用户走**同一个 resolver**
+    （积分与现金等值，游客因此能享受登录用户的阶梯价与闪购）；`fn_guest_shop_create_order` 一条语句预占 N 行卡密。
+  - **L1 件数四处取小**：`min(env GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity,
+    product.max_purchase_quantity, 5)` —— 运维调高 env **永远不可能**放宽某个 SKU 的上限。
+  - **L2**：`fn_guest_shop_evaluate_discount`（只读试算）+ `fn_guest_shop_reserve_discount`（原子扣减）；
+    `discount_codes` 加 `guest_*` 五列做券级硬预算；新增 `guest_shop_promo_budget`（站点级日预算）、
+    `guest_shop_discount_redemptions`（身份配额台账，按 `buyer_contact_hash` 计数）、
+    `guest_shop_promo_breaker` + `_events`（熔断，**只有 closed/open 两值，无半开**，人工恢复）。
+  - **L3 定价权威**：create-order 内**重算**金额，并用 `guest_shop_orders_amount_check` 一次性钉住五条红线 ——
+    ① `unit_amount > 0 AND total_amount > 0`（**任何情况下都不存在 0 元单**）；
+    ② `discount_amount < ROUND(list_unit_amount * quantity, 2)`（**零元购地板**，折扣必须**严格小于**折前总额）；
+    ③ `discount_amount <= 折前总额 * 0.5`（**单笔最多折 50%**）；
+    ④ `payment_fee_amount <= unit_amount*quantity*0.1 + 0.01`（通道费硬顶 10%）；
+    ⑤ `total_amount = unit_amount*quantity + payment_fee_amount`（金额三者必须自洽）。
+    另有 `guest_shop_orders_quantity_check`（1..5）、`discount_codes_guest_caps_check`
+    （让「超发的游客额度」在数据库层**不可表示**）。四张新表全部 `ENABLE ROW LEVEL SECURITY` +
+    `REVOKE FROM PUBLIC, anon, authenticated`，七个促销函数全部 `SECURITY DEFINER` + `SET search_path` + 非 `IMMUTABLE` + **各自唯一重载**。
+  - **签名变更**：`fn_guest_shop_create_order` 13 → **15** 参（新增 `p_quantity INTEGER DEFAULT 1`、
+    `p_discount_code TEXT DEFAULT NULL`）。旧 13 参签名被**精确 DROP**，DEFAULT 参数**连续排在末尾**
+    （否则 PostgREST 具名调用无法解析）。
+- 应用侧：
+  - `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop/promo.js`（新，510 行）：开关解析 + 券码/数量归一化 + 展示整形。
+    **红线写在文件头注释里：本模块永远不计算金额**，每个价格/折扣/手续费都由 SQL 函数产出；
+    本文件的取值只能让游客通道**更严**，不可能更松（所有 cap 取 env 与数据库上限的 `min()`，
+    env 解析失败一律**降级到 P0 行为**：数量 1、不带券码）。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop/runtime-config.js`：新增 `GUEST_SHOP_MAX_QUANTITY`
+    （integer，default **1**，min 1，max **5** = 数据库 CHECK 硬顶）；`GUEST_SHOP_DISCOUNT_ENABLED`（boolean，default **OFF**，
+    解析不出真假值即视为 OFF）。生效折扣开关 = `GUEST_SHOP_DISCOUNT_ENABLED` **AND** `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop/security.js`：fingerprint 扩展为含
+    `quantity` + 归一化券码 + 折扣额，换券或换数量重放 → `guest_idempotency_conflict`（不是覆盖旧单）。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/server/api-handlers/public/guest-shop.js`（+491/−70）：
+    preview 只回 `quantity_cap` / `discount_enabled` 等**能力标志**，绝不回可被信任的金额；
+    create 路径服务端重算并落库。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/shop.html` + `/Volumes/chao/AI/xianyu_profit_calculator/js/guest-shop-client.js`（+495/−8）：
+    数量步进器与优惠码区块**默认 `hidden`**，只有 `GET /guest/preview` 报 `quantity_cap >= 2` / `discount_enabled` 才显示；
+    preview 的 `URLSearchParams` 白名单**只有** `site/productId/skuId/quantity`（券码**不进 URL**，§17 第 8 条）；
+    切换商品/SKU 时 `resetPromoSelection` 清空数量与券码；cache bust 叠加 `guestPromo=20260923_GUEST_PROMO_L1L2_1`。
+    隔离不变量保持：`js/guest-shop-client.js` 仍不含 `supabase` / `access_token` / `Authorization` / `Math.random()`。
+- **错误码对外归一（C-E6）**：券生命周期的一切细码（含 `guest_discount_code_rejected`）对外**只**呈现
+  `guest_discount_unavailable` 一个中性 400，不泄漏 `SQLSTATE` 与内部细码，防止券码枚举探测。
+- **附带修复：时代感知探针（D-10 同类事故第二次）。** 15 参签名让两个**已归档**的 verify 探针假 FAIL ——
+  它们把「13 参」「固定 1 件」写死在字面量里。修法是**改成时代感知，而不是再钉一个新常量**：
+  `20260920_verify` 的 `fn`/`fn_grants` 改按 `pronamespace+proname` 解析、新增 `fn_era` CTE
+  （`a0_signature` 13 参 / `l1l2_signature` 15 参），键名 `new_13_param_signature_present` → `known_signature_present`、
+  `quantity_still_hardcoded_to_one` → `quantity_policy_matches_era`，`arity` 期望值由 `fn_era` 推导（`min(arity)`）；
+  `20260921_verify` 的 `create_order_rpc_still_13_params` → `create_order_rpc_known_signature`（两个时代命中其一）。
+  **`20260920` / `20260921` / `20260922` 三个迁移一行未改，不需要重跑**；改的始终是校验器。
+
+### 证据
+
+- 全量回归 `npm run test:security`：**3361 tests / 3361 pass / 0 fail**，`EXIT=0`（`main` 基线 3156，**+205**）。
+  开发中出现过一次 **3314** 读数，诊断为 `--test-force-exit` 在高负载下的**瞬时少计**，随后三次连续运行稳定 3361；
+  已登记而不追猎（证据文档 §2.7）。
+- 聚焦测试全部本机复跑核实：promo-error-contract **9/9**（新）、frontend-contract **26/26**（基线 25）、
+  create-order-signature-compat **15/15**（原 8 + 新 §5 的 7）、buyer-order-credentials **31/31**、
+  verify-probe-contract **11/11**、readiness **28/28**、credit-pricing **13/13**、security **10/10**、
+  orders-idempotency **7/7**、order-access-endpoints **43/43**。聚焦小计 **120/120**。
+- 就绪度 `node scripts/guest-shop-readiness.js --json`：**296 项检查全部 `ok:true`**，`invalid_count` **0**，
+  `warning_count` 5（全是「本地无 `.env.production` / 无 production 标识 / 两个 pepper 未配置 / NOWPayments 退款需人工」，
+  属本地环境的预期告警），`manual_review_count` **14 → 20**（新增 6 项全在 `promo` 组），`ok: true`、**`ready: false`**。
+  `--fail-on-invalid` 退出 **0**；`--fail-on-not-ready` 退出 **3** —— **这是本批的正确终态，不是待修故障**
+  （没有实机证据就不该 ready；§17 第 9 条禁止用 `|| true` 绕过）。
+- 新增 `promo` 就绪度组共 **108** 项：迁移 81 present / 17 absent（禁令）+ env 旋钮 + 客户端券码泄漏静态扫描 +
+  6 项 `manual_review`。其中 `no-phantom-percent-knob` 禁令专门防止运维去配一个**不存在**的
+  `GUEST_SHOP_DISCOUNT_MAX_PERCENT`（早期草稿提过，**未实现**；要收紧单券用 `guest_max_uses` /
+  `guest_max_total_discount`，要收紧整站用 `guest_shop_promo_budget.daily_budget_cny`，
+  要提高 50% 本身只能改迁移并重跑 verify）。
+- 时代感知探针的守门员（两道，均已跑绿）：compat 测试 **§5 的 7 例**自动从迁移推导出**每一个历史签名**，
+  断言归档 verify 认识当前签名、**绝不发明任何迁移没装过的签名**、按函数名而非精确签名解析、已退役键名保持退役、
+  arity 的 CASE 覆盖当前时代；readiness 新增要求项 `verify-era-aware-signature` / `verify-known-signature-key` /
+  `verify-era-aware-quantity`，禁止项 `verify-no-signature-pinned-cte` / `verify-no-era-pinned-arity` /
+  `verify-retired-13-param-key` / `verify-retired-quantity-key`（A0）与 `verify-a1b-era-aware-rpc` /
+  `verify-a1b-retired-rpc-key`（A1b）。
+- 文档：`docs/guest-shop-promo-hardening-plan.md` 新增 **§23**（实现记录与 6 项偏差，**冲突时以 §23 为准**）；
+  `docs/guest-shop-promo-evidence.md` 新增 **§2**（本批证据，含 22 行 verify 待跑清单【**2026-09-19 勘误：首次执行后已升级为 23 行，见 §60**】、§15.4 九项 0/9 登记表、
+  4 个待排除文件的说明）与 §1.5 / §1.7 的两段探针勘误；`docs/guest-shop-payment-fulfillment-runbook.md` +159 行。
+
+### 本轮没做什么
+
+- **没有部署**：没有推分支、没有开/合 PR、没有 `vercel deploy`、没有触发 KVM4 任何链路、没有安装或启动 guest-shop worker。
+  用户明确要求等指令。改动**至今未提交**。
+- **没有执行任何 SQL**。`20260923` 迁移与 22 行 verify 只写成文件，绝对路径已交付（§2.4），由用户执行。
+  【**2026-09-19 后续**：用户已执行，22 行报 20 PASS / 2 FAIL，两处均为探针缺陷，已修为 23 行 —— 见 **§60**。】
+- **没有打开任何开关、没有启用游客商品/SKU**：`GUEST_SHOP_DISCOUNT_ENABLED` 默认 OFF，`GUEST_SHOP_MAX_QUANTITY` 默认 **1**。
+  即使代码发布，游客单仍固定 1 件、仍不带券码，行为与 P0 一致。
+- **本批没有 quote 端点**（偏差 1，§23.2）：`POST /api/shop/guest/quote`、`p_mode='quote'`、quote 令牌绑定与
+  `guest_quote_stale` 全部延后。折扣改为在 **create 时**服务端应用并校验，券不可用即统一 400
+  `guest_discount_unavailable`，**不产生订单行**。代价是用户「下单后才知道券不能用」，属可接受的体验折衷。
+- **C-D3（库存占比闸）/ C-D4（并发未付款单闸）/ C-D5（促销单 TTL）未实现**（偏差 4，§23.5）。
+  这三项是放开 `GUEST_SHOP_MAX_QUANTITY >= 2` 的**前置条件**，因此该值**本批禁止调高**。
+- **L4 后台运营界面未开工**：券的 `allow_guest`、游客预算、熔断状态与人工恢复目前没有 UI，
+  熔断恢复只能由运维手工执行 `SELECT public.fn_guest_shop_promo_set_breaker('closed', '<actor>', '<reason>')`。
+- **§7.4 阶梯锁定退避未实现**（偏差 6，§23.7）：由 24h 台账配额 + 熔断替代。
+- **A4（邮箱 OTP + 游客订单并入账号）未做**：按 §22.3 必须排在本批之后。
+- **提交时必须排除 4 个无关未跟踪文件**：`DEPLOYMENT_STEPS.md`、`deploy-guest-shop-worker.sh`、
+  `kvm4-deployment-guide.md`、`kvm4-env-template.txt`。它们是 2026-09-17 的部署草稿/包装脚本，非本批产物；
+  `kvm4-deployment-guide.md` 自身首行即标注「本文件已作废（v1 草稿）」，`deploy-guest-shop-worker.sh`
+  绕过 `AGENTS.md` 规定的 `npm run deploy:kvm4:*` 与 host installer 路径。**不得随本批进入 `main`。**
+
+### 风险和修正
+
+- **最大风险：多件（quantity ≥ 2）在 C-D3/C-D4 缺席下会被刷库存。** 现状：件数上限虽由四处取小钳制，
+  但「批量创建不付款单占住卡密」这条攻击路径**没有闸**。修正：`GUEST_SHOP_MAX_QUANTITY` 保持 **1** 直到
+  C-D3/C-D4/C-D5 落地；§15.4 第 7 项在此之前**必然不通过**，不要把它当作偶发失败去绕过。
+- **零元购已被数据库层堵死，但依赖迁移真的落库。** `guest_shop_orders_amount_check` 的五条红线在**数据库**里，
+  迁移未执行时它们并不存在。修正：启用前必须看到 §2.5 第 2、9、12、22 行 PASS，不接受「代码里已经写了」作为证据。
+- **假 FAIL 会再次发生，只要有人再往探针里钉常量。** 本轮已是 D-10 同类事故**第二次**。修正：compat §5
+  从迁移**自动推导**每一个历史签名（不再手抄），readiness 用禁止项挡住「按精确签名解析 CTE」「arity 写死 13」
+  「已退役键名复活」三种写法。下次再犯会先在 CI 里红，而不是在用户的 SQL editor 里红。
+- **没有 quote 端点意味着券失败发生在下单时。** 用户填了券、点了购买，才知道券不可用。修正：对外只回一个中性
+  `guest_discount_unavailable`（不泄漏是「券不存在」「已用尽」还是「不允许游客」，防枚举）；若运营反馈失败率过高，
+  再按 §23.10 第 3 项补 quote 端点。
+- **熔断无半开、且没有 UI。** 促销被打停后不会自动恢复，运维必须手工执行 SQL 函数。这是**刻意的**保守选择
+  （自动半开会让攻击者用定时探测把熔断变成周期性放闸）。修正：L4 落地前，把恢复 SQL 写进 runbook（已 +159 行）。
+- **客户端只信服务端标志，但 preview 仍可能被限速/5xx。** 此时数量与券码区块保持 `hidden`，游客退回单件无券下单 ——
+  fail-closed，符合「发布不等于启用」的口径。
+
+### 进度
+
+- 总进度仍记 **48%**（A+B+C+F+H）。**本批属于促销加固批次（L1+L2），不在 A–J 阶段记账内，不计入总进度**；
+  D 仍 `in_progress`（INTL 成功支付仍未入账）。100% 只在第 J 节用户签署之后。
+- 促销加固自身的口径按 §17 第 12 条：**没有 §15.4 实机证据，不得宣称游客促销「完成」或「可启用」**。
+  当前状态是「代码 + 迁移文件 + 22 行 verify【**勘误：现为 23 行，见 §60**】 + 自动化守门员 + 就绪度扫描全部就位并跑绿，
+  实机证据 **0/9**、迁移**未落库**」，`ready:false` / 退出码 3 就是这个状态的机器可读表达。
+
+### 下一步
+
+1. **用户执行迁移**（写操作，落库后行为仍中立，因为开关默认关闭）：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`
+2. **用户执行 verify**（只读、可重复，**22 行**【**已被 §60 取代：现为 23 行，第 1–22 行须 PASS，第 23 行 PASS/REVIEW**】），把输出贴回来由我归档进证据文档 §2.5：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`
+   必须看到 PASS 的四行：`orders_amount_check`(2)、`function_arity_single_overload`(9)、
+   `zero_purchase_guards`(12)、`promo_function_guards`(22)。
+   【**2026-09-19 已执行**：这四行里 (2)(9)(22) PASS，(12) 因探针缺陷假 FAIL，已修，待复跑 —— 见 **§60**。】
+3. 如需在同一座库上重跑**已归档**的两个旧 verify，用修复后的版本，并预期看到新键名与 `arity: 15`：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql`（11 行）、
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260921_verify_guest_shop_buyer_group_upsert.sql`（6 行）。
+   **A0 的三个迁移不需要重跑。**
+4. **用户执行 §15.4 九项沙箱实机验证**（第 7 项需先补 C-D3/C-D4；第 5、6 项是 §22.5 反杀熟守门员，**不可删除**）。
+5. 上述完成后，由用户下达**明确部署指令**，我才按 `AGENTS.md` 的游客购买流程发布：专用分支 → PR → `main` →
+   **四条链路**（Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker），
+   不得从功能分支 `vercel deploy --prod`。
+6. **发布 ≠ 启用**。启用另需 §14 的灰度许可签署 + §15.4 实机证据归档；回滚用**开关**，不用 DB 回滚（§17 第 10 条）。
+7. 后续批次（§23.10）：L4 后台运营界面 → C-D3/C-D4/C-D5（多件前置）→ 可选 quote 端点 → 可选 §7.4 阶梯退避 → A4。
+
+### SQL 状态
+
+本轮**新增 2 个 SQL 文件待用户执行**（§59「下一步」第 1、2 条），Codex **不代执行**。
+
+不要重跑 20260913 / 20260914 / 20260915 / 20260916 / 20260917 / 20260918 / 20260919 /
+20260920 / 20260921 / 20260922 这十个迁移 —— 其中 `20260920` / `20260921` / `20260922` 三个**迁移**本批一行未改
+（只改了同名的 **verify 探针**，探针只读、可重复执行，重跑不是重跑迁移）。
+
+
+---
+
+## 60. 2026-09-19 促销 verify 首次实机执行：22 行报 2 FAIL，两处均为**探针缺陷**（D-10 第 3、4 类），已升级为 23 行
+
+> 日期口径：真实执行日 **2026-09-19**（与 §59 同日、晚于其归档）。代码注释里出现的
+> 「2026-09-23」沿用迁移文件名 `20260923_*` 的序号日期，指的是**同一个事件**，不是另一天。
+
+### 60.1 用户实机输出（原样登记）
+
+- 迁移 `20260923_guest_shop_promo_l1l2.sql`：**已在目标 Supabase 落库**。
+- verify `20260923_verify_guest_shop_promo_l1l2.sql`：首次执行，**22 行 → 20 PASS / 2 FAIL**。
+- FAIL 行 1：第 **12** 行 `zero_purchase_guards`，15 个键里唯一为 `false` 的是 `evaluate_is_read_only`
+  （observed `false` / expected `true`），其余 14 键全 `true`。
+- FAIL 行 2：第 **16** 行 `no_side_effects`，唯一不符的是 `guest_products_enabled`
+  （observed **2** / expected **0**），其余 6 键全 `true`、`writable_browser_policies` 为 `[]`。
+
+### 60.2 结论：**迁移一行未改**，两处都是 verify 探针自身的缺陷
+
+| # | FAIL 位置 | 根因 | D-10 类别 | 修法 |
+|---|---|---|---|---|
+| 1 | 第 12 行 `zero_purchase_guards.evaluate_is_read_only` | `pg_proc.prosrc` **原样保留函数自己的 SQL 注释**。`fn_guest_shop_evaluate_discount` 在说明原子性时写了 “deduction is the atomic UPDATE pair in `fn_guest_shop_reserve_discount`”，退役探针 `prosrc ~* UPDATE` 把这句**注释**当成了 DML，于是判定一个真正只读的函数「会写库」 | **第 3 类**：注释文本被当作可执行代码 | 新增 CTE `fn_code`，先剥 `--` 行注释与 `/* */` 块注释再扫描；本文件**所有**函数体探针（正向与负向）统一改跑 `fn_code`，避免「只被注释满足的正向探针」这一更危险的同源假 PASS |
+| 2 | 第 16 行 `no_side_effects.guest_products_enabled` | 把**运维状态**（已开放游客结账的商品数）钉成常量 `0`。用户为测试开了 2 个商品，这是人的决定，任何迁移都无权、也无法把它变回 0 | **第 4 类**：把运维状态钉死成常量 | 第 16 行只保留**机制**断言 `promo_functions_never_write_products`（任何 `guest_shop*` 函数都不得写 `shop_products`）；实时状态挪到**新增的第 23 行** `operator_state_review`，输出 `PASS` 或 `REVIEW` |
+
+两处都符合 D-10 的既有结论：**报 FAIL 的是校验器，不是被校验的对象**（同类事故第 1、2 次见 §1.3 / §1.5 / §1.7）。
+处置方式也一致：**不重跑迁移**，只重跑修复后的 verify（只读、可重复执行）。
+
+### 60.3 「剥注释」为什么不会把真缺陷放过去（安全性证明）
+
+这是本轮唯一需要论证的改动方向 —— 剥注释天然是**放松**扫描，必须证明它只影响注释、不影响正文：
+
+1. **字面量扫描**：用引号感知扫描器取出仓库里全部 **53** 个 `guest_shop*` 函数体中的字符串/美元引用字面量，
+   其中包含 `--` 或 `/*` 的字面量数 = **0** → 剥注释不可能吃掉任何被断言的正文文本。
+2. **探针静态重放**：把全部函数体探针分别在 raw `prosrc` 与 `fn_code` 上重放，**正向探针结果逐一相同**；
+   唯一发生变化的是那条负向只读 DML 探针（`FAIL → PASS`），正是本次要修的目标。
+   **不存在任何 `PASS → FAIL` 方向的漂移。**
+3. **反向保险**：`fn_code` 定义为 `SELECT f.*, regexp_replace(...) AS code FROM guest_fns f`，是 `guest_fns` 的**严格超集**，
+   `prosrc` 仍在；将来若某条探针确实需要原文（例如断言注释本身存在），可继续用 `prosrc`。
+4. **fail-closed 键**：verify 内保留证明「剥注释没有把函数体剥空」的键；
+   守门员测试 `tests/guest-shop-verify-probe-contract.test.js` **§7** 逐字验证剥注释逻辑保住字符串字面量与美元引用体、只丢散文，
+   并断言四个 verify 脚本**全部只读**。
+5. **规则入档**：文件头 `RULE FOR PROBE AUTHORS` 从 3 类扩到 **4 类**，并写明
+   「正向体探针在 raw 与 fn_code 上结果相同；唯一刻意的例外是负向只读 DML 探针（FAIL→PASS）；
+   任何体探针都不得因剥注释而向 PASS→FAIL 方向漂移」。
+
+**明确禁止的两种「修法」**（都会把安全断言换掉而不是修探针，已在 readiness 里设为禁止项）：
+删掉 `fn_guest_shop_evaluate_discount` 里那句原子性说明注释；或直接删掉 `evaluate_is_read_only` 断言。
+
+### 60.4 本轮变更清单（全部 amend 进 `codex/guest-shop-promo-l1l2` 顶端那**一个**提交）
+
+| 文件 | 变更 |
+|---|---|
+| `supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql` | **22 行 → 23 行**，1279 → **1433** 行；新增 `fn_code` CTE 并把全部体探针切过去；第 16 行改为机制断言；新增第 23 行 `operator_state_review`；文件头规则 3 扩写 + 新增规则 4。**仍是单条只读语句**（libpg-query 解析：1 statement） |
+| `supabase/migrations/20260923_guest_shop_promo_l1l2.sql` | **只改 §9 运维注释**（说明 23 行、第 1–22 行须 PASS、第 23 行 REVIEW 语义）。**DDL / 函数体 / CHECK / 索引 / 权限一行未动** |
+| `tests/guest-shop-verify-probe-contract.test.js` | 11 → **19** 例（+8）。新增 §7「体探针必须剥注释」与 §8「运维状态不得钉死」；「四个 verify 全部只读」；冻结行清单补到 **23** 个促销行名；顺带修掉 `password_hash` 用例约 12% 的偶发变红（注入确定性 `+` / `/`）。连跑 ×5 稳定、flake 测试 ×40 稳定 |
+| `scripts/guest-shop-readiness.js` | 新增 **9** 条 `PROMO_VERIFY_REQUIREMENTS` + **3** 条 `PROMO_VERIFY_PROHIBITIONS`；修正 `promo-schema-applied` 文案（23 行 + REVIEW 语义）。checks **296 → 308**（`promo` 组 108 → **120**），`invalid 0`、`manual_review 20`（不变）、`ready:false`（不变） |
+| `tests/guest-shop-readiness.test.js` | 28 → **29** 例。促销 verify 篡改测试新增 **7** 个 fail-closed 变体（含「行名必须全局替换，只换第一处会假绿」的守卫） |
+| `docs/*` | 本节（§60）+ `docs/guest-shop-promo-evidence.md` §2.1/§2.2/§2.3/§2.4/§2.5/§2.7/§2.8 计数与状态更新、新增 **§2.9** 归档首次 20 PASS / 2 FAIL + 新增 **§2.10** 待复跑清单 + `docs/guest-shop-payment-fulfillment-runbook.md` 启用前置清单第 2 条 |
+
+**顺带修掉一个提交完整性缺陷**：§59 那个提交实际只含 **26** 个文件，
+`tests/guest-shop-readiness.test.js` 与 `tests/guest-shop-verify-probe-contract.test.js` 的改动**只留在工作区、没进提交**
+（源码进了、对应守门员测试没进 —— 正是「守门员没随规则一起上线」这类最危险的漏项）。
+本轮 amend 已把两者补进**同一个**提交，完整口径为 **4 个新文件 + 24 个已跟踪文件改动 = 28 个文件**。
+证据文档 §2.1 的文件表已按 `git show --numstat` 重新生成，并写明「+/− 是快照、会随 amend 漂移，
+权威口径是 numstat；稳定的只有文件清单与 4/24/28 这三个计数」—— 与本批「不写死 commit hash」是同一条纪律。
+
+全量回归：`npm run test:security` **3361 → 3370 pass / 0 fail**（+9 = 探针合同 +8、readiness +1），满足「pass 只增不减、fail 恒为 0」；
+**连续两次独立运行均为 3370 / 3370 / 0 fail、`EXIT=0`**（第二次在全部文档改完之后跑，确认文档改动没有踩到任何 `docs` 区就绪度断言）。
+就绪度退出码：`--fail-on-invalid` = **0**，`--fail-on-not-ready` = **3**（仍是**预期的 fail-closed**，不得 `|| true` 绕过）。
+
+### 60.5 ⚠️ 必须请用户当面确认的运维状态（第 23 行点名的内容）
+
+verify 第 23 行报出 **`guest_products_enabled = 2`**，而 §59 之前的既有口径是 **1** 个
+（§45 附近的常设规则原文：「用户已主动打开 1 个商品做测试准备，非代码故障；**不得再开第二个**，也不得公开上架」）。
+
+第 23 行会把这两个商品**逐一点名**（光有计数无法据此行动 —— 1 → 2 的增量正是这样发现的），请核对后二选一：
+
+- **若是有意开启**（例如新加的沙箱测试 SKU）：把该 SKU 写进白名单说明并更新上面那条常设规则；
+  同时确认它满足「低价值 / 非共享 / 自动发货」三条，且**未公开上架**。
+- **若是误开**：立刻关掉（`allow_guest_purchase = false`）。
+  按 §17 第 10 条，**回滚游客结账的正确方式是关开关，不是 DB 回滚，也不是 Vercel 回滚。**
+
+**在用户确认之前**：`GUEST_SHOP_MAX_QUANTITY` 保持 **1**、`GUEST_SHOP_DISCOUNT_ENABLED` 保持 **OFF**、
+`guest_shop_promo_budget` 保持 `enabled=false / daily_budget_cny=0`、熔断保持 `closed`。
+Codex **不代为打开任何开关、不执行任何 SQL**。
+
+### 60.6 下一步（替换 §59「下一步」第 2 条）
+
+1. **用户复跑修复后的 verify**（只读、可重复执行，**23 行**）：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`
+   预期：**第 1–22 行全 PASS，第 23 行 `operator_state_review` 为 PASS 或 REVIEW**。
+   仍必须逐行看到 PASS 的四行：`orders_amount_check`(2)、`function_arity_single_overload`(9)、
+   `zero_purchase_guards`(12)、`promo_function_guards`(22)。
+2. 把 23 行输出贴回来，由我归档进 `docs/guest-shop-promo-evidence.md` **§2.10**
+   （首次的 20 PASS / 2 FAIL 已作为 D-10 第 3、4 类事故归档在 **§2.9**，**保留不删**，作为探针纪律的实证锚点）。
+3. 按 §60.5 确认第 23 行的运维状态。
+4. 其余顺序**不变**：§15.4 九项沙箱实机验证（第 7 项需先补 C-D3/C-D4；第 5、6 项是反杀熟守门员，不可删除）
+   → 用户下达**明确部署指令** → 按 `AGENTS.md` 走专用分支 + **四条链路** → **发布 ≠ 启用**（启用另需 §14 灰度许可签署）。
+
+### 60.7 风险和修正
+
+- **风险：探针「变绿」比「变红」更危险。** 剥注释是放松扫描，若有人顺手把正向探针也切到 `fn_code`
+  却不做重放证明，就可能造出「只被注释满足」的假 PASS。修正：§60.3 的 5 条证明 + 守门员测试 §7 把
+  「字面量不含注释标记」「正向探针两种口径结果相同」「不得 PASS→FAIL 漂移」全部固化成断言。
+- **风险：第 23 行 REVIEW 被误读成「迁移失败」或被误读成「可以忽略」。** 修正：verify 文件头、迁移 §9、
+  runbook 启用前置清单第 2 条、readiness 的 `promo-schema-applied` 文案**四处**同时写明 REVIEW 语义
+  （= 必须有人逐条核对列出的运维状态，≠ 迁移失败），并由 readiness 禁止项挡住「删掉 REVIEW 分支」的写法。
+- **风险：篡改测试的 needle 过期导致空转假绿。** 本轮真的踩到一次：行名替换只换了第一处
+  （`checks` CTE 里换了、最后的判分 `CASE` 里没换），闸门仍然命中，测试却绿着。修正：改为**全局替换**，
+  并在每个变体后加 `assert.notEqual(tampered, realVerify)`，篡改没生效就直接红。
+- **不变的红线**：安全第一、绝不零元购、防掏鸟蛋、防刷。本轮**没有**为了让输出变绿而弱化任何一条安全断言：
+  零元购地板、50% 折扣硬顶、通道费 10% 硬顶、15 参唯一重载、`evaluate` 只读、白名单 + 配额闸、
+  原子扣预算与计数 —— 全部**原样保留**，只修了它们的**观测方式**。
+
+### 60.8 2026-09-19 后续：23 行 verify **复跑闭合** + 第 23 行用户裁决 + §9.5 parity 交付
+
+> 本节晚于 §60.1–§60.7 归档，记录三件事：①修复后的 23 行 verify 已由用户**复跑**并闭合；
+> ②第 23 行 `operator_state_review` 的 REVIEW 已由用户**当面裁决**；③补上 §9.5 要求的
+> **≥40 条黄金向量 parity 测试 + 配套只读 SQL**。详细逐行读数与权威边界见
+> `docs/guest-shop-promo-evidence.md` **§2.10 / §2.11**（本节只做索引与决策登记，不重复证据）。
+
+#### 60.8.1 复跑结果（替换 §60.6 第 1、2 条的「待复跑」状态）
+
+- 用户已用 §2.9.6 升级后的 **23 行**版 `20260923_verify_guest_shop_promo_l1l2.sql` 复跑（**未重跑迁移**，
+  落库版本与当前文件在 DDL / 函数体 / CHECK / 索引 / 权限上逐字等价）。
+- 结果：**第 1–22 行全 PASS（22/0），第 23 行 `operator_state_review` = REVIEW**。用户回执「验证结果符合预期」。
+- 与「绝不零元购」直接相关的四行 `orders_amount_check`(2)、`function_arity_single_overload`(9)、
+  `zero_purchase_guards`(12)、`promo_function_guards`(22) **复跑全部 PASS**；首跑假 FAIL 的 (12) 修复后兑现
+  （§2.9.2 / §60.2），第 16 行改机制断言后亦 PASS（§2.9.3）。**首跑 20 PASS / 2 FAIL 归档（§2.9）保留不删。**
+- 归档位：`docs/guest-shop-promo-evidence.md` **§2.10.1**（原样登记复跑输出）。
+
+#### 60.8.2 第 23 行 REVIEW 的用户裁决（运维状态，**推翻旧常设规则的「固定 1 个」前提**）
+
+第 23 行点名 `guest_products_enabled = 2`：`52246f1d-…-581296f43de9`「测试」、`c16212d8-…-3cc68b2d7a52`「测试 2」，
+均 `is_active=true`、`guest_skus=0`、未公开上架；`guest_skus_enabled=0`、`guest_discount_codes_open=0`。用户裁决：
+
+- **保留这 2 个游客商品**（本人手动开启的沙箱测试商品）。
+- **关键澄清**：某商品是否属于游客商品，**取决于管理员在 Admin Studio 里打开了哪个商品的游客开关**，
+  是**动态、管理员可控**的，**既不是固定 1 个、也不是固定 2 个**。
+- 据此**作废旧常设规则中的「计数上限」一句**（§45 附近原文「用户已主动打开 1 个商品做测试准备……
+  **不得再开第二个**，也不得公开上架」里的「不得再开第二个」），改为：「**游客商品数量由管理员开关决定，
+  无固定上限；但每一个被打开的商品都必须满足低价值 / 非共享 / 自动发货，且未公开上架**」。
+  **「不得公开上架」与三条资质要求原样保留。**
+- **REVIEW 机制保留不删**：第 23 行继续逐次点名当前所有游客商品（而非只给计数），供每次复跑人工对账 ——
+  这正是 1 → 2 增量当初被发现的机制（§2.9.5 / §60.5），不因计数上限作废而削弱。
+- **技术护栏一条未弱化**：`GUEST_SHOP_MAX_QUANTITY=1`、`GUEST_SHOP_DISCOUNT_ENABLED=OFF`、
+  `guest_shop_promo_budget` `enabled=false / daily_budget_cny=0`、熔断 `closed`。Codex **不代为打开任何开关、
+  不执行任何 SQL、不部署**。
+- 常设规则同步更新处（注解 / 取代而非删除，保留审计轨迹）：本文档第 **202 / 659 / 678 / 733 / 782** 行、
+  `docs/guest-shop-promo-evidence.md` **§2.9.5**。归档位：**§2.10.2**。
+
+#### 60.8.3 §9.5 黄金向量 parity 交付（readiness `promo-parity-evidence` 硬证据之一）
+
+| 交付物 | 绝对路径 | 规模 | 实测状态 |
+|---|---|---|---|
+| parity 测试 | `/Volumes/chao/AI/xianyu_profit_calculator/tests/guest-shop-pricing-parity.test.js` | 380 行 / 9 例 / **74 条黄金向量**（A32·B10·C20·D12） | `node --test` **9 pass / 0 fail** |
+| 配套只读 SQL | `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_parity.sql` | 120 行 / **单条** `WITH...SELECT` / 32 条 group-A fixture | libpg-query `statements: 1`；注释外无任何写关键字 |
+
+- 权威边界：`resolveGuestCreditUnitAmount` 是 SQL resolver 的**只读镜像**，只算单价 / 列表价（基础 / 闪购 / 阶梯），
+  **从不算折扣**；`buildGuestAmountBreakdown` 只整形 **DB 已返回**的金额，零值 / 负值 / 不自洽（`net+fee≠total`）
+  一律 **fail-closed 返回 null**；件数天花板 resolver `99`、breakdown/order `5`，越界 env **降级到 1 绝不放大**。
+- 防漂移：配套 SQL 由测试源码生成，group-A VALUES 与 JS fixture 逐字一致（32/32），`p_now` 两侧统一
+  `'2026-09-14T12:00:00.000Z'`；测试断言 SQL 文件存在、含每个 group-A id、剥注释后无写关键字。
+- resolver 仅 `GRANT service_role`，配套 SQL 由用户在 SQL Editor 执行，**Codex 不执行**。
+- 归档位：`docs/guest-shop-promo-evidence.md` **§2.11**（含权威边界、防漂移、回归读数）。
+
+#### 60.8.4 回归读数（本机实测，2026-09-19）
+
+```text
+node --test --test-force-exit tests/guest-shop-pricing-parity.test.js  →  tests 9  pass 9  fail 0
+npm run test:security                                                  →  tests 3379 pass 3379 fail 0  EXIT=0
+node scripts/guest-shop-readiness.js --json     →  checks 308  ok 308/308  invalid 0  warning 5  manual_review 20  ready false
+node scripts/guest-shop-readiness.js --fail-on-invalid    →  EXIT 0
+node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预期的 fail-closed，禁止 || true 绕过）
+```
+
+全量 **3370 → 3379**（+9 = parity 9 例），满足「pass 只增不减、fail 恒为 0」。本轮首跑曾报 `tests 3340`，
+第二次独立运行即恢复 `3379`，属 §2.7 / 证据文档 §2.11.3 登记的**瞬时少计**，以复跑后的 3379 为权威，不追猎、不改测试。
+
+#### 60.8.5 状态与下一步（替换 §60.6）
+
+- **§2.10 复跑已闭合、§2.11 parity 已交付**；但 `ready` 仍为 **false**：`promo-parity-evidence` 只满足
+  「≥40 条黄金向量」一半，**§15.4 九项沙箱实机验证仍 0/9**（§2.6），故**不得宣称完成或可启用**。
+- 接下来严格按序：① **用户执行 §15.4 九项沙箱实机验证**（第 7 项需先补 C-D3/C-D4；第 5、6 项是反杀熟守门员，
+  不可删除）→ ② 用户下达**明确部署指令** → ③ 按 `AGENTS.md` 走专用分支 + **四条链路** →
+  ④ **发布 ≠ 启用**（启用另需 §14 灰度许可签署）。Codex **不执行 SQL、不打开开关、不部署**，直至用户明确下令。

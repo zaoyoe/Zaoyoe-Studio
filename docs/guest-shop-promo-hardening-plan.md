@@ -633,6 +633,8 @@ ON CONFLICT (bucket_day, site) DO UPDATE
 - 每例断言：JS 展示结果 == 期望值；并输出一份 `supabase/migrations/2026MMDD_verify_guest_shop_promo_parity.sql`（用户执行），用同一组 fixture 在 DB 侧 `SELECT` 出结果做人工/脚本比对。
 - CI 里 JS 侧必须全绿；SQL 侧作为交付物，**不由 Codex 执行**。
 
+> **已交付（2026-09-19，C-E3 完成）**：`tests/guest-shop-pricing-parity.test.js`（9 例 / **74 条黄金向量** A32·B10·C20·D12，`node --test` 9 pass / 0 fail）+ 配套只读 SQL `supabase/migrations/20260923_verify_guest_shop_promo_parity.sql`（单条 `WITH…SELECT`、32 条 group-A fixture、由测试源码生成与 JS fixture 逐字一致；**Codex 不执行**，留用户在 SQL Editor 以 service_role 跑）。权威边界、防漂移与回归读数见 `docs/guest-shop-promo-evidence.md` **§2.11** 与 `docs/guest-purchase-task-2.0.md` **§60.8.3**。readiness `promo-parity-evidence` 的「≥40 条黄金向量」一半已满足；另一半「§15.4 沙箱实机证据」仍 **0/9**，故 `ready` 仍为 **false**，不得据此宣称完成或可启用。
+
 ### 9.6 报价令牌（quote token，C-B10 / T9）
 
 - 结构：`base64url(payload) + '.' + HMAC-SHA256(pepper, payload)`，pepper 复用 `GUEST_SHOP_SESSION_PEPPER`。
@@ -1208,3 +1210,187 @@ A4（邮箱 OTP + 游客订单并入账号）**必须排在 L2 之后**，因为
 4. **异常领用速度（窜货 / 脚本套利的信号）** → §19 单码增速熔断 + 站点级熔断，自动跳闸、只能人工恢复
 
 **所以正确的问题不是「会不会亏钱」，而是「最坏情况我会少赚多少，这个数我接受吗」。** 反杀熟（H1：绝不按身份差别定价）与促销硬预算（总让利封顶）并不矛盾，而是正交的两件事：前者管「不能歧视谁」，后者管「总共能让多少利」。**把风控做在结构上限上，而不是做在用户身份上——这是本节的全部要点。**
+
+---
+
+## 23. L1+L2 合并批次的实现记录与偏差（2026-09-19）
+
+> 本节记录 `codex/guest-shop-promo-l1l2` 分支**实际落地**的内容，以及与前文
+> （§8 数据模型 / §9 定价权威链路 / §11 防券码枚举 / §14 分期计划）不一致之处。
+> **冲突时以本节为准**（效力约定同 §22）。
+>
+> 本节**不是启用授权**：所有开关默认关闭，`readiness --fail-on-not-ready` 仍返回 `3`，
+> 发布仍按 `AGENTS.md`，启用仍需 §14 的灰度许可签署 + §15.4 的实机证据归档。
+
+### 23.1 本批次实际范围
+
+用户指令是「L1+L2 合并一批」。按 §14 的分期表，这等价于 **L1 + L2 + L3 中的「定价权威」部分**同批交付
+（§14 明确禁止 L2/L3 拆开发布，因为拆开就会出现「前端能报价、后端不认账」→ `amount_mismatch` → 已付款不发货）。
+**L4（后台运营界面）不在本批。**
+
+| 能力 | 状态 | 落点 |
+|---|---|---|
+| L1 游客多件 + 阶梯价 + 闪购 | ✅ | `guest_shop_resolve_credit_unit_amount` 放开 `p_quantity`；`fn_guest_shop_create_order` 一条语句预占 N 行 |
+| L1 件数四处取小 | ✅ | `min(env GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 5)` |
+| L2 游客优惠码（percent / fixed） | ✅ | `fn_guest_shop_evaluate_discount`（只读）+ `fn_guest_shop_reserve_discount`（原子扣减） |
+| L2 券级/站点级硬预算 | ✅ | `discount_codes.guest_*` 五列 + `guest_shop_promo_budget` |
+| L2 身份配额（跨凭证分组并集） | ✅ | `guest_shop_discount_redemptions` 台账，按 `buyer_contact_hash` 计数 |
+| L2 熔断（人工恢复，无半开） | ✅ | `guest_shop_promo_breaker` + `guest_shop_promo_breaker_events` + `fn_guest_shop_promo_set_breaker` |
+| L3 create-order 内重算 + 金额 CHECK | ✅ | `guest_shop_orders_amount_check`（含零元购地板 + 50% 硬顶 + 通道费 10% 硬顶） |
+| L3 fingerprint 扩展（quantity + code + discount） | ✅ | `api/_lib/guest-shop/security.js` |
+| L3 退款/过期归还券预算（幂等） | ✅ | `fn_guest_shop_return_discount_reservation` + 台账 `returned_at` |
+| **L2 `POST /api/shop/guest/quote`** | ❌ **延后** | 见 §23.2 |
+| **L3 quote 令牌绑定 / `guest_quote_stale`** | ❌ **延后** | 见 §23.2 |
+| **C-D3 库存占比闸 / C-D4 并发未付款单闸 / C-D5 促销单 TTL** | ❌ **未实现** | 见 §23.5（**多件启用前必须补**） |
+| **L4 后台运营界面** | ❌ 未开工 | 熔断恢复目前只能由运维手工执行 SQL 函数 |
+| §7.4 锁定退避（5 次/10 分钟 → 15 分钟 → 30 分钟 → 24 小时） | ❌ 未实现 | 见 §23.7，由 24h 台账配额 + 熔断替代 |
+
+### 23.2 偏差 1：本批**没有** quote 端点（§9.1 `p_mode='quote'`、§9.2 第 9 步、§9.6 quote 令牌全部延后）
+
+**做了什么替代**：折扣在 **create-order 事务内**被权威计算与校验；任何不可用都收敛成
+**统一 400 `guest_discount_unavailable`**（C-E6），**且不写任何订单行**（整个事务回滚，预占的券预算与库存一并归还）。
+客户端拿到这个错误后**主动撤回折扣 UI**（`js/guest-shop-client.js` 的 `handleCreateOrderError` →
+`state.amountBreakdown = null` + `setDiscountInvalid(true)`），因此屏幕上不可能停留一条
+「已优惠 ¥X」而实际订单不存在的假折扣行。
+
+**为什么这个替代比 quote 令牌更强**（这是本批最重要的设计判断）：
+
+- quote 令牌解决的是「报价与成交不一致」。但它引入一个**新的信任边界**：令牌本身要签名、要绑定会话、
+  要处理过期与重放，`guest_quote_stale` 只是一个**事后**发现不一致的错误。
+- 本批的做法是**根本不存在第二份报价**：买家看到的金额只来自 ①preview 的**单价/小计**（服务端算）
+  和 ②**已创建订单**的 `amount_breakdown`（数据库算）。折扣金额在订单存在之前**从不下发**，
+  所以「前端持有的折扣报价」这个可被篡改/过期的对象**不存在**。
+- 撤回发生在**权威错误**上，而不是发生在「与另一份报价比对」上，因此它**不可能与已提交的行不一致**。
+
+**代价（必须写进运营口径）**：买家填了券码点「立即购买」，若券不可用，得到的是
+**一次失败的下单**（400 + 「优惠码不可用」），而不是「下单前先告诉你券不能用」。
+券码校验的**限流与配额仍然生效**（见 §23.7），所以这不会被变成枚举 oracle，
+但**体验上确实比 quote 差一档**。若后续要做「输入券码即时校验」，
+再按 §9.6 补 quote 端点 + 令牌绑定；本批的撤回逻辑与之兼容，不需要回退。
+
+**preview 的参数白名单**：`site` / `productId` / `skuId` / `quantity` 四个，**没有** `code`。
+券码只出现在 `POST /api/shop/guest/orders` 的 JSON body，
+不进 URL、不进 query、不进 `localStorage` / `sessionStorage`、不进缓存键（C-E8 保持）。
+
+### 23.3 偏差 2：开关命名与「策略表」形态
+
+| 前文条目 | 本批实际 | 说明 |
+|---|---|---|
+| K1 `GUEST_SHOP_PROMO_ENABLED` | **`GUEST_SHOP_DISCOUNT_ENABLED`**（L2 主闸，默认关） | 命名更窄更准确：它只管**优惠码**。L1（多件/阶梯）由 `GUEST_SHOP_MAX_QUANTITY` 单独管，两个闸互不隐含 |
+| — | **`GUEST_SHOP_MAX_QUANTITY`**（L1 运营上限，默认 `1`，`min=1`，`max=5`） | `max=5` 与 `guest_shop_orders_quantity_check` 的数据库硬顶**逐字一致**；readiness 有 `quantity-ceiling-consistent` 守门，改宽 env 只会在写入时 CHECK 失败，**必须改迁移** |
+| §8.3 `guest_shop_promo_policy` 单行策略表 | **未建**。改为三处分散落点 | ①站点级：`guest_shop_promo_budget`（每站一行，`enabled` + `daily_budget_cny`）②全局：`guest_shop_promo_breaker`（单行，阈值就地可调）③券级：`discount_codes.guest_max_uses` / `guest_max_total_discount` / `allow_guest`。**没有 `max_quantity` / `min_payable_cny` / `promo_order_ttl_seconds` / `max_stock_hold_percent` 这些策略列**，对应旋钮见 §23.5 |
+
+**降级语义（已实现并测试）**：`discount_enabled` 在 preview 里是
+`GUEST_SHOP_DISCOUNT_ENABLED && GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 的**与**。
+理由：折扣必须可归属身份，否则数据库直接抛 `guest_discount_identity_required`
+（见 §23.4）。所以**订单访问 2.0 的凭证开关是 L2 的硬前置**，
+只开 `GUEST_SHOP_DISCOUNT_ENABLED` 不会打开游客优惠码通道，这是有意的 fail-closed。
+
+**关闭时的行为**：`GUEST_SHOP_DISCOUNT_ENABLED` 未开而买家仍提交券码 → **403 `guest_discount_disabled`**，
+**不是静默丢弃**。静默丢弃会让买家以为自己拿到了折扣却按原价被扣款。
+
+### 23.4 偏差 3：身份层复用「订单访问 2.0」凭证，不建游客会话表
+
+- **没有** `guest_shop_sessions` 表，**没有** `guest_session_hash` 列，**没有** `__Host-` 会话 cookie
+  （§7.1/§7.3 与 §15.2 里那条 cookie 契约断言因此**不适用**，本批未新增该断言）。
+- 配额主判据按 §22.1 落地为 **`buyer_contact_hash`**：
+  `fn_guest_shop_evaluate_discount` / `fn_guest_shop_reserve_discount` 都要求它是 64-hex，
+  否则抛 `guest_discount_identity_required`；台账按它跨**该邮箱的全部凭证分组**并集计数
+  （**不用 `buyer_id`**，理由见 §22.1.1：换分组刷额度）。
+- 兜底判据 **`request_ip_hash`**。`request_device_hash` 按 §22.1 **不入配额**（只写台账取证）。
+- 24h 阈值：`per_contact` 默认 **3**（函数内 `LEAST(10, ...)` 硬夹）、`per_ip` 默认 **10**（`LEAST(50, ...)` 硬夹）。
+  两个阈值目前**只由 SQL 默认值提供**，HTTP 层不传参，所以运营改不了 —— 要调必须改迁移，
+  这与「env 只能收紧不能放宽」是同一个口径。
+- 并发安全：扣减前对 `contact_hash` 与 `ip_hash` 各取一次 `pg_advisory_xact_lock`，
+  同一身份/同一网络的并发下单被串行化，配额不可能被竞态突破。
+
+### 23.5 偏差 4：C-D3 / C-D4 / C-D5 未实现（**多件启用前必须补**）
+
+§14 把这三道闸写在 L1 行里，本批**没有**实现它们：
+
+| 控制 | 状态 | 现状与补偿 |
+|---|---|---|
+| C-D3 库存占比闸（游客最多占住 X%） | ❌ 未实现 | 目前只靠 `GUEST_SHOP_MAX_QUANTITY=1` + 单 SKU `guest_max_quantity` + 下单限流 12/min/IP 约束。**多件（≥2）一旦放开，攻击者可以用大量未付款单把某 SKU 的可用库存全部锁死** |
+| C-D4 并发未付款单闸 | ❌ 未实现 | 同上，无 per-identity/per-IP 的 pending 单数上限 |
+| C-D5 促销单独立短 TTL | ❌ 未实现 | 促销单与原价单共用 `GUEST_SHOP_ORDER_TTL_SECONDS`（迁移把 `p_ttl_seconds` 夹在 300–7200）。券预算会随 TTL 释放归还，但**占着不买的时间窗没有被压缩** |
+
+**为什么本批仍可安全合并**：三道闸都是「多件 + 大量未付款单」才成立的攻击面。
+`GUEST_SHOP_MAX_QUANTITY` 默认 `1`，此时每单只预占一行库存，与 L1 之前的行为**完全一致**；
+且 readiness 的 `promo/quantity-inventory-gate` 检查在该值 `>1` 时会**升级为 high 并显式点名这两道闸**，
+构成一道人工闸门。
+
+**硬性要求**：把 `GUEST_SHOP_MAX_QUANTITY` 调到 `≥2` **之前**，必须先补 C-D3 + C-D4（并建议一并补 C-D5），
+并重新归档 readiness 与实机证据。**只改 env 就放多件是被禁止的。**
+
+### 23.6 偏差 5：券码字符集
+
+§11.5 写的是 `^[A-Z0-9]{4,32}$`；本批实现为 **`^[A-Z0-9][A-Z0-9_-]{0,49}$`（最长 50）**，
+与 `discount_codes` 既有券码字符集、`guest_shop_orders_discount_code_check`、
+以及进入幂等 fingerprint 的归一化值**三处逐字一致**。
+
+理由：若收窄成 `{4,32}` 且不含 `_-`，运营**已经创建**的合法券会在游客侧被格式闸拒掉，
+买家看到的是「优惠码不可用」而运营查不出原因。三处一致意味着
+**在 Node 层通过格式闸的值，绝不可能在数据库层因形状被拒**。
+枚举防护不依赖长度下限：真正的防线是 C-E6 统一错误 + 限流 + 24h 配额 + 熔断（§23.7）。
+
+### 23.7 偏差 6：限流与锁定退避
+
+- **没有**新增 §11.3 的三级 quote 桶（`quote:ip` / `quote:session` / `quote:global`），因为没有 quote 端点。
+- 沿用既有持久化 fail-closed 限流：**preview 60/min/IP**、**orders 12/min/IP**。
+  券码校验发生在 orders 路径内，所以「撞券码」的成本被 12/min/IP + 24h 台账配额（3/身份、10/IP）双重压住。
+- **没有**实现 §7.4 的阶梯锁定退避。替代：24h 配额命中即 `guest_discount_rate_limited`，
+  异常速度由 §12 熔断（`mismatch_trip_threshold=3`、`identity_trip_threshold=20`、`trip_window_seconds=900`）
+  在**滚动 15 分钟窗口**内自动跳闸，恢复只能人工。
+- 限流不可用仍然 **503 拒绝**，不放行（F11 不变）。
+
+### 23.8 本批已落地的数据库红线（不可协商，改动必须重跑 verify）
+
+`supabase/migrations/20260923_guest_shop_promo_l1l2.sql` 的 `guest_shop_orders_amount_check` 一次性钉住了：
+
+1. `unit_amount > 0 AND total_amount > 0` —— **任何情况下都不存在 0 元单**；
+2. `discount_amount < ROUND(list_unit_amount * quantity, 2)` —— **零元购地板**：折扣必须**严格小于**折前总额；
+3. `discount_amount <= ROUND(list_unit_amount * quantity * 0.5, 2)` —— **单笔最多折 50%**，这是本批**唯一**的折扣率边界；
+4. `payment_fee_amount <= ROUND(unit_amount * quantity * 0.1, 2) + 0.01` —— 通道费硬顶 10%（`+0.01` 是进位余量）；
+5. `total_amount = unit_amount * quantity + payment_fee_amount` —— **金额三者必须自洽**，
+   其中 `unit_amount` 是**折后**净单价、`payment_fee_amount` 是**按折后净额**计算的通道费。
+
+> ⚠️ 关于第 3 条：**本批不存在折扣率 env 旋钮，`discount_codes` 也没有折扣率列。**
+> 早期草稿的注释里提到过 `GUEST_SHOP_DISCOUNT_MAX_PERCENT` 与 `guest_max_discount_percent`，
+> 两者**都未实现**，相关注释已修正，readiness 也新增了 `no-phantom-percent-knob` 禁令，
+> 防止运维去配一个不存在的开关。**要收紧单券**用 `guest_max_uses` / `guest_max_total_discount`；
+> **要收紧整站**用 `guest_shop_promo_budget.daily_budget_cny`；
+> **要提高 50% 本身**只能改迁移并重跑 verify。
+
+其余结构性红线：`guest_shop_orders_quantity_check`（1..5）、`guest_shop_orders_discount_code_check`（字符集）、
+`discount_codes_guest_caps_check`（`guest_used_count <= guest_max_uses`、`guest_discount_total <= guest_max_total_discount`，
+让「超发的游客额度」在数据库层**不可表示**）、熔断状态只有 `closed` / `open` 两值（**无半开**）、
+四张新表全部 `ENABLE ROW LEVEL SECURITY` + `REVOKE FROM PUBLIC, anon, authenticated` + 仅 `service_role`、
+七个促销函数全部 `SECURITY DEFINER` + `SET search_path` + 非 `IMMUTABLE` + 各自**唯一重载**。
+
+### 23.9 自动化守门员清单（本批新增/扩展）
+
+| 文件 | 断言要点 | 结果 |
+|---|---|---|
+| `tests/guest-shop-promo-error-contract.test.js`（**新**，9 例） | 迁移里 `RAISE` 的每一个 `guest_*` 码都在 `GUEST_CREATE_ORDER_ERROR_CONTRACT` 有映射（**UNMAPPED 必须为空**）；表里的公开码集合与实际一致；C-E6 归一（`guest_discount_code_rejected` 等细码对外**只**呈现 `guest_discount_unavailable`）；`mapGuestCreateOrderError` 与 `failResponse` 之间**不得泄漏** `SQLSTATE` / 内部细码；跨路径码（`guest_provider_order_conflict`）仍被真实抛出 | 9/9 |
+| `tests/guest-shop-frontend-contract.test.js`（扩展，26 例，基线 25） | `guestPromo=20260923_GUEST_PROMO_L1L2_1` cache-bust 标记；数量/优惠码两个区块**默认 hidden**；preview 的 `URLSearchParams` 白名单**只有** `site/productId/skuId/quantity`；`discount_enabled` 单点驱动显隐；切换商品/SKU 时 `resetPromoSelection` 必须清空数量与券码；沿用隔离断言（无 `supabase`/`access_token`/`Authorization`/`Math.random()`） | 26/26 |
+| `tests/guest-shop-create-order-signature-compat.test.js`（扩展，**15 例** = 原 8 + 新 §5 的 7） | `fn_guest_shop_create_order` 从 13 参换到 **15 参**：旧 13 参签名被**精确 DROP**、只剩唯一重载、`p_quantity INTEGER DEFAULT 1` 与 `p_discount_code TEXT DEFAULT NULL` 逐位正确、所有 DEFAULT 参数**连续排在末尾**（否则具名调用无法解析）、未升级的调用方仍解析到 15 参函数。**§5（2026-09-23 新增，7 例）**：自动从迁移推导出**每一个历史 create_order 签名**，断言归档 verify 认识当前签名、绝不发明任何迁移没装过的签名、按 `pronamespace+proname` 而非精确签名解析、已退役键名保持退役、arity 的 CASE 覆盖当前时代 | **15/15** |
+| `tests/guest-shop-credit-pricing.test.js`（扩展，13 例） | JS 展示镜像与 SQL resolver 在阶梯/闪购上的 parity；多件小计只由服务端算 | 13/13 |
+| `tests/guest-shop-security.test.js`（扩展，10 例） | fingerprint 含 quantity + 归一化券码 + 折扣额；换券/换数量重放 → `guest_idempotency_conflict` | 10/10 |
+| `tests/guest-shop-orders-idempotency.test.js`（扩展，7 例） / `tests/guest-shop-order-access-endpoints.test.js`（扩展，43 例） | 幂等重放返回**新制度**金额形状；订单列表/详情的 `quantity` 与 `amount_breakdown` 只在行确实由促销 RPC 写入时回显（legacy 行**不得**渲染「已优惠 ¥0.00」） | 7/7、43/43 |
+| `scripts/guest-shop-readiness.js` 新增 `promo` 组 | 108 项：迁移 81 present / 17 absent（禁令）+ env 旋钮 + 客户端券码泄漏静态扫描 + 6 项 `manual_review`（schema 已应用、预算已开、熔断 closed、脏券扫描、SKU 件数扫描、parity 证据）。`--fail-on-invalid` 退出 **0**、`findings: none`；`--fail-on-not-ready` 退出 **3**（预期 fail-closed）；`manual_review_count` 14 → **20**。**时代感知探针守门（2026-09-23 新增）**：要求项 `verify-era-aware-signature` / `verify-known-signature-key` / `verify-era-aware-quantity`；禁止项 `verify-no-signature-pinned-cte` / `verify-no-era-pinned-arity` / `verify-retired-13-param-key` / `verify-retired-quantity-key`（A0 探针）与 `verify-a1b-era-aware-rpc` / `verify-a1b-retired-rpc-key`（A1b 探针） | 0 INVALID |
+| 全量回归 `node --test --test-force-exit tests/*.test.js` | **3361 tests / 3361 pass / 0 fail**，`EXIT=0`（`main` 基线 3156，**+205**，fail 仍为 0，满足 §15.3「pass 只增不减」）。开发中曾出现一次 **3314** 读数，诊断为 `--test-force-exit` 在高负载下的瞬时少计，随后三次连续运行均稳定 3361，详见证据文档 §2.7 | ✅ |
+
+> **计数勘误（2026-09-23）**：上表初稿记 compat 为 8 例、全量为 3354，那是**探针修复前**的快照。
+> 15 参签名让两个归档 verify 探针假 FAIL（D-10 同类事故第二次），修法是把它改成时代感知而非再钉一个新常量，
+> 并为此新增 compat §5 的 7 例与 readiness 的 9 条时代感知断言 —— 于是 compat 8→**15**、全量 3354→**3361**。
+> **迁移与业务代码未因这次勘误改动一行**；`20260920` / `20260921` 两个 verify 脚本改的是校验器自身。
+> 完整事故记录、修法与新键名见 `docs/guest-shop-promo-evidence.md` §1.5 / §1.7 的「探针勘误（2026-09-23）」两段。
+
+### 23.10 后续批次（不在本批）
+
+1. **L4 后台运营界面**：券的 `allow_guest` / 游客预算 / 熔断状态与人工恢复（RBAC + 二次确认 + 原因 + 审计）/ 台账查询。
+   在此之前，熔断恢复只能由运维执行 `SELECT public.fn_guest_shop_promo_set_breaker('closed', '<actor>', '<reason>')`。
+2. **C-D3 + C-D4（+ C-D5）**：放开 `GUEST_SHOP_MAX_QUANTITY ≥ 2` 的**前置条件**，见 §23.5。
+3. **§9.6 quote 端点 + quote 令牌**（可选，体验优化）：仅当运营确认「下单后才知道券不能用」的失败率过高时再做。
+4. **§7.4 阶梯锁定退避**（可选）：若 24h 配额 + 熔断仍不足以压住撞库，再补。
+5. **A4（邮箱 OTP + 游客订单并入账号）**：按 §22.3 必须排在本批之后。

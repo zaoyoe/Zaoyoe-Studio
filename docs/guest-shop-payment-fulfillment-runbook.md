@@ -29,6 +29,169 @@
 游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
 
 
+## 游客促销：阶梯价 / 闪购（L1）与优惠码（L2）
+
+> 设计合同见 `docs/guest-shop-promo-hardening-plan.md`；**本批次的实现记录与偏差见该文档 §23，冲突以 §23 为准**。
+> 迁移与 verify 脚本（**Codex 不执行 SQL，由运维/用户在目标库手工执行**）：
+>
+> - `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`
+> - `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`（**只读**，**23 行**检查，可重复执行；第 1–22 行必须 PASS，第 23 行 `operator_state_review` 为 PASS 或 REVIEW）
+>
+> **发布不等于启用**：本批所有开关默认关闭，代码上线后游客结账的线上行为与之前**逐字一致**。
+
+### 应付金额口径（本批之后）
+
+新制度订单（`guest_shop_orders.list_unit_amount IS NOT NULL`）：
+
+```text
+list_unit_amount              折前单价（阶梯价/闪购已由 SQL resolver 命中）
+list_amount  = list_unit_amount * quantity
+discount_amount               券折扣（>= 0，且严格小于 list_amount）
+unit_amount  = 折后净单价
+payment_fee_amount = 按「折后净额」计算的通道费（支付宝/USDT，1%，向上取整到分）
+total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
+```
+
+旧制度订单（`list_unit_amount IS NULL`，本批之前创建的行）**保持原样**：通道费折进 `unit_amount`、
+`payment_fee_amount = 0`、`quantity = 1`。**不要**给旧行回显「已优惠 ¥0.00」或「手续费 ¥0.00」，
+前端与订单接口都按 `list_unit_amount` 是否为 NULL 区分两种制度。
+
+数据库层 `guest_shop_orders_amount_check` 钉死了：`total_amount > 0`（**永不产生 0 元单**）、
+折扣**严格小于**折前总额（零元购地板）、折扣**不超过折前总额的 50%**、通道费**不超过 10% + 0.01**、
+且三者必须自洽。**任何一条被违反都会写入失败**，这是最后一道闸，不依赖应用层正确。
+
+> ⚠️ 本批**没有**折扣率 env 旋钮，`discount_codes` **也没有**折扣率列。50% 硬顶是唯一的折扣率边界。
+> 收紧单券用 `guest_max_uses` / `guest_max_total_discount`；收紧整站用
+> `guest_shop_promo_budget.daily_budget_cny`；提高 50% 本身只能改迁移并重跑 verify。
+
+### 开关矩阵（默认全关，任何一项关闭都退回原价购买）
+
+| 开关 | 位置 | 默认 | 生效方式 | 关闭时的行为 |
+|---|---|---|---|---|
+| `GUEST_SHOP_DISCOUNT_ENABLED` | KVM4 `.env` | 未设置 = 关 | **需重建容器**（`env_file` 只被 `--force-recreate` 重读） | 提交券码 → **403 `guest_discount_disabled`**（不是静默丢弃）；无券下单不受影响 |
+| `GUEST_SHOP_MAX_QUANTITY` | KVM4 `.env` | `1`（`min=1`, `max=5`） | 需重建容器 | `1` = 每单只预占一行库存，阶梯价最多命中 qty=1 规则，与 L1 之前一致 |
+| `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` | KVM4 `.env` | `false` | 需重建容器 | **L2 的硬前置**：关着的时候 `discount_enabled` 恒为 false（折扣无法归属身份，数据库会抛 `guest_discount_identity_required`） |
+| `guest_shop_promo_budget.enabled` + `daily_budget_cny` | DB（每站一行） | `false` / `0` | **即时** | gate 返回 `guest_promo_budget_closed`，游客只能原价购买（**这是有意的 fail-closed，不是故障**） |
+| `guest_shop_promo_breaker.state` | DB（单行） | `closed` | **即时** | `open` = 所有游客折扣被拒（原价购买不受影响），readiness 判为 NOT_READY（退出码 3） |
+| `discount_codes.allow_guest` | DB（每券） | `false` | **即时** | 该券对游客不可用；`guest_max_uses = 0` 同样表示**关闭**而不是无限 |
+
+`discount_enabled` 由 preview 接口下发，取值是
+`GUEST_SHOP_DISCOUNT_ENABLED && GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`；
+`quantity_cap` 是
+`min(GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 5)` 的**生效值**。
+前端只按这两个值显隐控件，**不做任何金额计算**。
+
+### 启用前置清单（按顺序，缺一不可）
+
+1. 在目标 Supabase 执行 `20260923_guest_shop_promo_l1l2.sql`（必须在 `20260922_guest_shop_access_resets.sql` **之后**）。
+2. 执行 `20260923_verify_guest_shop_promo_l1l2.sql`（**23 行**），确认 **第 1–22 行全 PASS**，把输出归档到
+   `docs/guest-shop-promo-evidence.md`（归档前抹掉密钥、claim token、卡密正文、查询密码明文）。
+   第 23 行 `operator_state_review` **不是** PASS/FAIL 判定，它把实时运维状态（已开放游客结账的商品/SKU 数、
+   `GUEST_SHOP_MAX_QUANTITY`、`GUEST_SHOP_DISCOUNT_ENABLED` 等）打印出来交人工确认：
+   看到 `REVIEW` 表示「必须有人逐条核对列出的状态是有意为之」，**不代表迁移失败**；
+   看到 `FAIL` 才是迁移问题。运维状态由人决定，迁移无权钉死，所以它单列一行。
+3. `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid` 必须退出 **0** 且 `findings: none`。
+4. 逐项完成 readiness 输出的 **6 项 `promo` manual_review**：schema 已应用、预算已开、熔断 closed、
+   **脏券扫描**（不得存在 `allow_guest=true` 且 `guest_max_uses=0` 或 `guest_max_total_discount<=0` 的券）、
+   **SKU 件数扫描**、parity 证据已归档。
+5. 改 `.env` 后必须
+   `cd /opt/zaoyoe-verify-server && docker compose up -d --no-deps --force-recreate --no-build verify-server`，
+   然后确认 `/healthz`。**`docker restart` 不会重读 `env_file`。**
+6. 只有以上全部完成，才可以按 §14 的灰度许可签署开放**指定 SKU + 指定券码**。`--fail-on-not-ready` 返回 `3`
+   是启用前的**预期**结果，不得用 `|| true` 绕过。
+
+> **禁止只改 env 就把 `GUEST_SHOP_MAX_QUANTITY` 调到 ≥2**：库存占比闸（C-D3）与并发未付款单闸（C-D4）
+> 本批**未实现**（见 `docs/guest-shop-promo-hardening-plan.md` §23.5）。放开多件之前必须先补这两道闸并重新归档证据。
+
+### 运营错误码速查
+
+买家侧**只会**看到「对外码」，细码只写审计与内部错误对象（`failResponse` 只序列化
+`success/code/message`，细码不可能出现在响应里）。
+
+| 对外码 | HTTP | 买家看到 | 运营含义 / 处置 |
+|---|---|---|---|
+| `guest_discount_unavailable` | 400 | 优惠码不可用 | **C-E6 统一码**：券不存在 / 未开游客 / 过期 / 未生效 / 站点或范围不符 / 次数或金额预算耗尽 / 身份超限 / 熔断中 / 折后低于地板 / 预占竞态，**全部收敛到这一个码**（防枚举）。查具体原因看 `guest_shop_promo_breaker_events` 与订单审计，**不要**给买家更细的文案 |
+| `guest_invalid_discount_code` | 400 | 优惠码格式无效 | Node 层格式闸（`^[A-Z0-9][A-Z0-9_-]{0,49}# 游客现金订单支付与履约运行手册
+
+本手册用于值班、对账和故障处理。游客订单与登录用户积分订单完全分离；任何人工操作都必须保留订单号、原因、操作者和审计记录。
+
+## 发布不等于启用
+
+游客购买代码发布必须按 `AGENTS.md`：从专用分支 PR 合入最新 `main`，禁止从 `codex/*` 功能分支执行 `npx vercel deploy --prod`。
+
+生产拓扑固定为：
+
+- Vercel 生产托管 `shop.html` / `js/guest-shop-client.js` / `css/shop-page.css` 等前端；
+- `/api/shop/:path*` 由 Vercel 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`；
+- 游客 API、webhook、worker 实际运行在 KVM4 Verify Server；
+- KVM4 Sub2API / NewAPI 仍是完整部署的第三条链路，但不承载游客下单。
+
+因此游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker。其中 worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动。
+
+硬禁止：
+
+- 部署过程不得打开游客商品或游客 SKU；
+- 部署过程不得执行 SQL，也不得回滚已有游客购买迁移；
+- 不得把自动化全绿、readiness 默认退出码 0、或三条链路 Ready 当成可以启用游客购买；
+- 关闭游客开关是业务回滚；数据库回滚和 Vercel-only rollback 都不是游客购买的标准回滚。
+
+执行合同见 `docs/guest-purchase-task-2.0.md`。
+
+## 游客应付金额
+
+游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
+
+）。频繁出现说明有人在撞库或前端有输入污染 |
+| `guest_discount_disabled` | 403 | 游客优惠码通道未开启 | 开关关着却收到了券码。**不是故障**，但若量大说明前端显隐与开关不同步 |
+| `guest_quantity_not_allowed` | 400 | 购买数量不可用 | 超出四处取小的生效上限。检查 `GUEST_SHOP_MAX_QUANTITY` 与该 SKU 的 `guest_max_quantity` |
+| `guest_pricing_parity_mismatch` | 400 | 价格已更新，请重试 | **最高优先级告警**：JS 展示镜像与 SQL 权威价不一致。出现即说明定价链路分叉，**立即关闭全部促销开关并跳闸**，再排查 |
+| `guest_promo_budget_closed` / `guest_promo_halted` | — | （内部细码，对外呈现为 `guest_discount_unavailable`） | 分别是「站点日预算未开/已打满」与「熔断跳闸」。前者是配置状态，后者需要人工恢复 |
+| `guest_discount_identity_required` | — | （内部细码） | 折扣无法归属身份：`buyer_contact_hash` 缺失或不是 64-hex。通常是凭证开关关着却开了折扣开关 |
+| `guest_discount_rate_limited` | — | （内部细码，对外呈现为 `guest_discount_unavailable`） | 24h 配额命中：每身份默认 **3 次**、每 IP 默认 **10 次**（函数内硬夹 10 / 50） |
+
+**本批没有 quote 端点**：券码只在 `POST /api/shop/guest/orders` 的 body 里校验一次，
+校验失败 = 一次失败的下单（**不写订单行**，预占的券预算与库存在同一事务内回滚），
+前端收到上述折扣类错误后会**主动撤回**折扣显示。因此不存在「前端持有一份可篡改/过期的报价」，
+但也意味着买家是**点了购买才知道券不能用**。preview 的参数白名单只有
+`site` / `productId` / `skuId` / `quantity`，**不含券码**；券码永不进 URL、query、`localStorage`、`sessionStorage` 或缓存键。
+
+### 熔断（`guest_shop_promo_breaker`）
+
+- 状态只有 `closed` / `open`，**没有半开、没有自动恢复**（能跳闸的攻击者也能等冷却）。
+- 阈值就在行上，可不改迁移调整：`mismatch_trip_threshold=3`（金额不一致，**最高优先级**）、
+  `identity_trip_threshold=20`、`trip_window_seconds=900`（滚动 15 分钟）。
+  CHECK 夹住范围（1–100 / 1–1000 / 60–86400），写不出「第一个事件就永久跳闸」。
+- 人工恢复（**只能由运维执行，需记录 actor 与 reason**）：
+
+  ```sql
+  SELECT public.fn_guest_shop_promo_set_breaker('closed', '<操作者标识>', '<恢复原因>');
+  ```
+
+- 只读状态快照（无 PII、无密钥、不写库）：`SELECT public.fn_guest_shop_promo_status();`
+- 跳闸期间**原价购买不受影响**，只有折扣被拒。
+
+### 预算与配额归还
+
+- 扣减是原子的：`fn_guest_shop_reserve_discount` 在同一事务里更新
+  `discount_codes.guest_used_count` / `guest_discount_total`、站点日预算已用额，并写
+  `guest_shop_discount_redemptions` 台账一行；余量不足则一行都不更新。
+- 归还是幂等的：`fn_guest_shop_return_discount_reservation` 靠台账行的 `returned_at` 判重，
+  **反复退款不会把券预算刷回无限**。订单过期释放、后台退款、履约失败都走同一条归还路径。
+- 台账只存哈希（`buyer_contact_hash` 64-hex、`request_ip_hash`），**不存明文邮箱、密码、claim secret 或卡密**；
+  RLS 开启、浏览器侧零权限、仅 `service_role`。
+- 配额按 `buyer_contact_hash` **跨该邮箱的全部凭证分组并集**计数，**不按 `buyer_id`**
+  （否则不停新建凭证分组就能无限刷新额度）。
+
+### 紧急停机（三条互相独立的路径，任一即可）
+
+1. `GUEST_SHOP_DISCOUNT_ENABLED=false` + 重建容器（需重启，最彻底）；
+2. `UPDATE public.guest_shop_promo_budget SET enabled=false WHERE site='<site>'`（**即时**，只停该站）；
+3. `UPDATE public.discount_codes SET allow_guest=false WHERE code='<CODE>'`（**即时**，只停单券）。
+
+停机后**已创建**的促销单继续按原金额履约或退款，不要改价、不要手工改 `total_amount`
+（会撞上金额 CHECK，并让对账与 webhook 校验失败）。
+
+
 ## 上线前配置与 readiness
 
 生产环境必须配置独立的 `GUEST_SHOP_CLAIM_PEPPER`、

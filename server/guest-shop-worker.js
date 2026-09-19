@@ -47,7 +47,13 @@ const REFUND_CANDIDATE_STATUSES = Object.freeze([
     'pending',
     'failed'
 ]);
-const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
+// Promo L1 reads `quantity` so the fulfillment loop knows how many cards the
+// order paid for. It is a bound on the loop, never on an amount: the money was
+// committed by fn_guest_shop_create_order and is not recomputed here.
+const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,quantity,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
+// Mirror of guest_shop_orders_quantity_check. Raising it is a migration, not an
+// env change, so the loop bound can never be widened at runtime.
+const GUEST_ORDER_QUANTITY_CEILING = 5;
 
 const PRODUCTION_MARKER_NAMES = Object.freeze([
     'VERCEL_ENV',
@@ -790,17 +796,73 @@ function createGuestShopWorker({
 
         try {
             const claimStartMs = currentDate().getTime();
-            const claimed = await callRpc('fn_guest_shop_claim_fulfillment', {
-                p_order_id: order.id,
-                // The claim RPC already locks and resolves the one
-                // reservation belonging to this order.  Supplying a
-                // reservation id fetched in a separate HTTP round-trip adds
-                // latency and creates a needless stale-read window.
-                p_reservation_id: null
+            // Promo L1: an order can hold up to 5 reservations and
+            // fn_guest_shop_claim_fulfillment hands over exactly ONE row per call
+            // (held rows first, then a stable created_at/id order, so a retry can
+            // never be given the same live card twice while another stays held).
+            // The worker therefore loops until every card of THIS order is
+            // consumed. Supplying a reservation id fetched in a separate HTTP
+            // round-trip would add latency and create a stale-read window, so the
+            // RPC keeps resolving the row itself.
+            //
+            // Termination is bounded twice. (1) The committed order quantity, so
+            // the loop can never claim more cards than were paid for. (2) A
+            // repeated reservation id: re-reading an already-consumed row returns
+            // that same row again (with its content) rather than signalling "no
+            // held row left", so without this the loop would spin whenever the
+            // reservation set and quantity disagree. fn_guest_shop_mark_fulfilled
+            // stays the authority - it refuses to write 'delivered' unless EVERY
+            // reservation is consumed - so a bounded early exit can never mark a
+            // partially delivered order as finished.
+            const expectedItems = normalizePositiveInteger(order.quantity, 1, {
+                min: 1,
+                max: GUEST_ORDER_QUANTITY_CEILING
             });
+            const seenReservationIds = new Set();
+            let claim = null;
+            let claimedItems = 0;
+            for (let item = 0; item <= expectedItems; item += 1) {
+                const row = await callRpc('fn_guest_shop_claim_fulfillment', {
+                    p_order_id: order.id,
+                    p_reservation_id: null
+                }) || {};
+                claim = row;
+                // The RPC persists paid_unfulfillable before returning this row,
+                // and for a multi-card order it has already released the remaining
+                // held cards, because one lost card makes the whole order
+                // undeliverable. Never retry with a replacement inventory row:
+                // that would break the payment-to-reservation audit boundary.
+                if (row.fulfillment_status === 'paid_unfulfillable'
+                    || row.reservation_status === 'released'
+                    || row.content == null) {
+                    break;
+                }
+                if (typeof row.content !== 'string' || !row.content.length) {
+                    const error = new Error('履约 RPC 未返回可交付库存');
+                    error.code = 'guest_fulfillment_content_missing';
+                    error.retryable = false;
+                    throw error;
+                }
+                const rowReservationId = normalizeText(row.reservation_id, 160);
+                if (!rowReservationId) {
+                    const error = new Error('履约 RPC 未返回库存预留引用');
+                    error.code = 'guest_fulfillment_reservation_missing';
+                    error.retryable = true;
+                    throw error;
+                }
+                if (seenReservationIds.has(rowReservationId)) break;
+                seenReservationIds.add(rowReservationId);
+                claimedItems += 1;
+                if (claimedItems >= expectedItems) break;
+            }
             const claimEndMs = currentDate().getTime();
 
-            const claim = claimed || {};
+            if (!claim) {
+                const error = new Error('履约 RPC 未返回结果');
+                error.code = 'guest_fulfillment_claim_missing';
+                error.retryable = true;
+                throw error;
+            }
             // The RPC persists paid_unfulfillable before returning this row.
             // Never retry with a replacement inventory row: that would break
             // the payment-to-reservation audit boundary.
@@ -852,6 +914,11 @@ function createGuestShopWorker({
                 error.retryable = true;
                 throw error;
             }
+            // mark_fulfilled is an ORDER-level transition: the reservation id only
+            // proves the caller is talking about this order, it does not narrow the
+            // decision. It writes 'delivered' solely when every reservation of the
+            // order is consumed and every card is sold and non-shared, so a 1-of-3
+            // delivery raises guest_reservation_not_consumed instead of finishing.
             const marked = await callRpc('fn_guest_shop_mark_fulfilled', {
                 p_order_id: order.id,
                 p_reservation_id: reservationId
@@ -898,7 +965,11 @@ function createGuestShopWorker({
                     lease_ms: leaseAcquiredMs - fulfillmentStartMs,
                     claim_ms: claimEndMs - claimStartMs,
                     mark_ms: markEndMs - claimEndMs,
-                    release_ms: fulfillmentEndMs - markEndMs
+                    release_ms: fulfillmentEndMs - markEndMs,
+                    // Cards actually handed over in this pass. Never a card
+                    // content, a claim secret or a provider payload.
+                    items: claimedItems,
+                    items_expected: expectedItems
                 });
             }
             return { status: 'delivered', attempt };
