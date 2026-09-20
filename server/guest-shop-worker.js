@@ -14,6 +14,12 @@ const crypto = require('node:crypto');
 const {
     guestWorkerRequestDeclaresBody
 } = require('../api/_lib/guest-shop/raw-body');
+const {
+    parseRuntimeNumericSetting
+} = require('../api/_lib/guest-shop/runtime-config');
+const {
+    parseBuyerCredentialSwitch
+} = require('../api/_lib/guest-shop/buyer-credentials');
 
 const FULFILLMENT_STATE_KEY = '__guest_shop_worker';
 // A guest worker is a financial side-effect endpoint.  It must not inherit a
@@ -36,6 +42,14 @@ const DEFAULT_MAX_BACKOFF_MS = 30 * 60 * 1000;
 const DEFAULT_LEASE_MS = 2 * 60 * 1000;
 const DEFAULT_RETRY_JITTER_RATIO = 0.2;
 const MAX_ERROR_MESSAGE_LENGTH = 500;
+const ACCESS_AUDIT_RETENTION_SWITCH_ENV = 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED';
+const ACCESS_AUDIT_RETENTION_ENV = 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS';
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const ACCESS_AUDIT_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const ACCESS_AUDIT_PURGE_BATCH_SIZE = 1000;
+const ACCESS_AUDIT_PURGE_MAX_BATCHES = 10;
+const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'y', 'on', 'enabled']);
+const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'n', 'off', 'disabled']);
 
 const FULFILLMENT_CANDIDATE_STATUSES = Object.freeze([
     'pending',
@@ -164,6 +178,54 @@ function resolveWorkerConfig(env = process.env) {
         );
     }
     return Object.freeze(config);
+}
+
+function parseAccessAuditRetentionSwitch(env = process.env) {
+    const raw = String(env?.[ACCESS_AUDIT_RETENTION_SWITCH_ENV] ?? '').trim().toLowerCase();
+    if (!raw) return Object.freeze({ present: false, valid: true, enabled: false });
+    if (TRUE_ENV_VALUES.has(raw)) return Object.freeze({ present: true, valid: true, enabled: true });
+    if (FALSE_ENV_VALUES.has(raw)) return Object.freeze({ present: true, valid: true, enabled: false });
+    return Object.freeze({ present: true, valid: false, enabled: false });
+}
+
+function resolveAccessAuditRetention(env = process.env) {
+    const retentionSwitch = parseAccessAuditRetentionSwitch(env);
+    if (!retentionSwitch.valid) {
+        return Object.freeze({
+            enabled: false,
+            valid: false,
+            retentionDays: null,
+            reason: 'access_audit_retention_switch_invalid'
+        });
+    }
+    if (!retentionSwitch.enabled) {
+        const credentialsEnabled = parseBuyerCredentialSwitch(env).enabled;
+        return Object.freeze({
+            enabled: false,
+            valid: !credentialsEnabled,
+            retentionDays: null,
+            reason: credentialsEnabled
+                ? 'access_audit_retention_required'
+                : 'access_audit_retention_disabled'
+        });
+    }
+
+    const retention = parseRuntimeNumericSetting(env, ACCESS_AUDIT_RETENTION_ENV);
+    if (!retention.valid) {
+        return Object.freeze({
+            enabled: true,
+            valid: false,
+            retentionDays: null,
+            reason: 'access_audit_retention_invalid'
+        });
+    }
+
+    return Object.freeze({
+        enabled: true,
+        valid: true,
+        retentionDays: retention.value,
+        reason: 'enabled'
+    });
 }
 
 function getGuestShopWorkerSecret(env = process.env) {
@@ -354,6 +416,7 @@ function createGuestShopWorker({
     randomBytes = crypto.randomBytes
 } = {}) {
     const config = resolveWorkerConfig(env);
+    const accessAuditRetention = resolveAccessAuditRetention(env);
     const trace = isGuestShopFulfillmentTraceEnabled(env);
     const name = normalizeText(
         workerName || env?.GUEST_SHOP_WORKER_NAME || `guest-shop-worker:${process.pid}`,
@@ -988,6 +1051,85 @@ function createGuestShopWorker({
         }
     }
 
+    async function purgeExpiredAccessAttempts() {
+        const base = {
+            enabled: accessAuditRetention.enabled,
+            retention_days: accessAuditRetention.retentionDays,
+            cutoff_at: null,
+            batch_size: ACCESS_AUDIT_PURGE_BATCH_SIZE,
+            max_batches: ACCESS_AUDIT_PURGE_MAX_BATCHES,
+            batches: 0,
+            deleted_count: 0,
+            has_more: false,
+            backlog_degraded: false,
+            error: null
+        };
+        if (!accessAuditRetention.enabled) {
+            return {
+                ...base,
+                error: accessAuditRetention.valid ? null : accessAuditRetention.reason,
+                backlog_degraded: !accessAuditRetention.valid
+            };
+        }
+        if (!accessAuditRetention.valid) {
+            return { ...base, error: accessAuditRetention.reason, backlog_degraded: true };
+        }
+
+        const cutoffAt = new Date(
+            currentDate().getTime() - (accessAuditRetention.retentionDays * MILLISECONDS_PER_DAY)
+        ).toISOString();
+
+        let batches = 0;
+        let deletedCount = 0;
+        let hasMore = false;
+        try {
+            for (let batch = 0; batch < ACCESS_AUDIT_PURGE_MAX_BATCHES; batch += 1) {
+                const result = await callRpc('fn_guest_shop_purge_access_attempts', {
+                    p_cutoff: cutoffAt,
+                    p_limit: ACCESS_AUDIT_PURGE_BATCH_SIZE
+                });
+                const batchDeletedCount = Number(result?.deleted_count);
+                const batchHasMore = result?.has_more;
+                if (!Number.isSafeInteger(batchDeletedCount)
+                    || batchDeletedCount < 0
+                    || batchDeletedCount > ACCESS_AUDIT_PURGE_BATCH_SIZE
+                    || typeof batchHasMore !== 'boolean'
+                    || (batchHasMore && batchDeletedCount !== ACCESS_AUDIT_PURGE_BATCH_SIZE)) {
+                    throw Object.assign(new Error('游客访问审计清理结果无效'), { code: 'access_audit_purge_result_invalid' });
+                }
+                batches += 1;
+                deletedCount += batchDeletedCount;
+                hasMore = batchHasMore;
+                if (!hasMore) break;
+            }
+
+            return {
+                ...base,
+                cutoff_at: cutoffAt,
+                batches,
+                deleted_count: deletedCount,
+                has_more: hasMore,
+                backlog_degraded: hasMore
+            };
+        } catch (error) {
+            logger?.error?.('[GuestShopWorker] access audit retention sweep failed', {
+                code: safeErrorCode(error),
+                message: safeErrorMessage(error),
+                batches,
+                deleted_count: deletedCount
+            });
+            return {
+                ...base,
+                cutoff_at: cutoffAt,
+                batches,
+                deleted_count: deletedCount,
+                has_more: true,
+                backlog_degraded: true,
+                error: safeErrorCode(error, 'access_audit_retention_failed')
+            };
+        }
+    }
+
     async function loadOrderById(orderId) {
         const id = normalizeText(orderId, 160);
         if (!id) return null;
@@ -1031,6 +1173,21 @@ function createGuestShopWorker({
         const started = currentDate();
         const limit = normalizePositiveInteger(options.limit, config.batchSize, { min: 1, max: MAX_BATCH_SIZE });
         const expiry = await releaseExpiredReservations(limit);
+        const accessAuditCleanup = options.runAccessAuditCleanup === true
+            ? await purgeExpiredAccessAttempts()
+            : {
+                enabled: accessAuditRetention.enabled,
+                retention_days: accessAuditRetention.retentionDays,
+                cutoff_at: null,
+                batch_size: ACCESS_AUDIT_PURGE_BATCH_SIZE,
+                max_batches: ACCESS_AUDIT_PURGE_MAX_BATCHES,
+                batches: 0,
+                deleted_count: 0,
+                has_more: false,
+                backlog_degraded: !accessAuditRetention.valid,
+                error: accessAuditRetention.valid ? null : accessAuditRetention.reason,
+                skipped: 'not_scheduled'
+            };
         const orders = await loadCandidates(limit);
         const summary = {
             success: true,
@@ -1047,6 +1204,7 @@ function createGuestShopWorker({
             errors: 0,
             expired_reservations: Number(expiry?.released_count || 0),
             expiry_unfulfillable: Number(expiry?.unfulfillable_count || 0),
+            access_audit_cleanup: accessAuditCleanup,
             duration_ms: 0
         };
 
@@ -1111,6 +1269,7 @@ function createGuestShopWorker({
         processFulfillment,
         processRefund,
         releaseExpiredReservations,
+        purgeExpiredAccessAttempts,
         loadCandidates,
         config,
         workerName: name
@@ -1254,8 +1413,11 @@ function createGuestShopWorkerHandler({
     env = process.env,
     workerFactory = createGuestShopWorker,
     paymentAdapter = null,
-    logger = console
+    logger = console,
+    now = () => new Date()
 } = {}) {
+    let nextAccessAuditSweepAtMs = 0;
+
     return async function guestShopWorkerHandler(req, res) {
         const method = String(req?.method || '').toUpperCase();
         if (method === 'OPTIONS') {
@@ -1306,7 +1468,21 @@ function createGuestShopWorkerHandler({
                 env,
                 logger
             });
-            const result = await worker.runOnce({ limit });
+            const clockValue = typeof now === 'function' ? now() : now;
+            const clockDate = clockValue instanceof Date ? clockValue : new Date(clockValue);
+            const clockMs = Number.isFinite(clockDate.getTime()) ? clockDate.getTime() : Date.now();
+            const runAccessAuditCleanup = clockMs >= nextAccessAuditSweepAtMs;
+            if (runAccessAuditCleanup) {
+                // Advance before the RPC. A database outage should retry after
+                // ten minutes, not turn the 10-second fulfillment timer into a
+                // tight retention-query loop.
+                nextAccessAuditSweepAtMs = clockMs + ACCESS_AUDIT_SWEEP_INTERVAL_MS;
+            }
+            const result = await worker.runOnce({ limit, runAccessAuditCleanup });
+            const accessAuditCleanup = result?.access_audit_cleanup;
+            const maintenanceDegraded = Boolean(
+                accessAuditCleanup?.error || accessAuditCleanup?.backlog_degraded
+            );
 
             if (trace) {
                 // The same summary is returned to the systemd helper, which
@@ -1315,7 +1491,28 @@ function createGuestShopWorkerHandler({
                 logger?.info?.('[GuestShopWorker] run finished', {
                     duration_ms: Date.now() - workerStartMs,
                     fulfillment: result?.fulfillment?.summary,
-                    refund: result?.refund?.summary
+                    refund: result?.refund?.summary,
+                    access_audit_cleanup: accessAuditCleanup
+                });
+            }
+
+            if (maintenanceDegraded) {
+                const code = accessAuditCleanup?.error
+                    ? 'guest_access_audit_cleanup_failed'
+                    : 'guest_access_audit_backlog_degraded';
+                logger?.error?.('[GuestShopWorker] maintenance degraded', {
+                    code,
+                    batches: Number(accessAuditCleanup?.batches || 0),
+                    deleted_count: Number(accessAuditCleanup?.deleted_count || 0),
+                    has_more: accessAuditCleanup?.has_more === true
+                });
+                return sendWorkerJson(res, 503, {
+                    ...result,
+                    success: false,
+                    worker_run_success: result?.success === true,
+                    degraded: true,
+                    code,
+                    message: '履约已按幂等规则处理，但访问审计清理需要运维关注'
                 });
             }
 
@@ -1339,11 +1536,17 @@ module.exports = {
     WORKER_SECRET_HEADER_NAMES,
     DEFAULT_BATCH_SIZE,
     MAX_BATCH_SIZE,
+    ACCESS_AUDIT_RETENTION_SWITCH_ENV,
+    ACCESS_AUDIT_PURGE_BATCH_SIZE,
+    ACCESS_AUDIT_PURGE_MAX_BATCHES,
+    ACCESS_AUDIT_SWEEP_INTERVAL_MS,
     isProductionLikeRuntime,
     isStrongWorkerSecret,
     parseWorkerInteger,
     parseWorkerRatio,
+    parseAccessAuditRetentionSwitch,
     resolveWorkerConfig,
+    resolveAccessAuditRetention,
     workerRuntimeConfigError,
     getGuestShopWorkerSecret,
     getProvidedWorkerSecret,

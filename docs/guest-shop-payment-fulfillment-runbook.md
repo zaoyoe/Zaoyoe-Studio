@@ -96,9 +96,9 @@ total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
 4. 逐项完成 readiness 输出的 **6 项 `promo` manual_review**：schema 已应用、预算已开、熔断 closed、
    **脏券扫描**（不得存在 `allow_guest=true` 且 `guest_max_uses=0` 或 `guest_max_total_discount<=0` 的券）、
    **SKU 件数扫描**、parity 证据已归档。
-5. 改 `.env` 后必须
-   `cd /opt/zaoyoe-verify-server && docker compose up -d --no-deps --force-recreate --no-build verify-server`，
-   然后确认 `/healthz`。**`docker restart` 不会重读 `env_file`。**
+5. 改 `.env` 后必须先暂停 KVM4 health watchdog，再执行
+   `cd /opt/zaoyoe-verify-server && docker compose up -d --no-deps --force-recreate --no-build verify-server`；
+   确认 `/healthz` 后恢复 watchdog。**禁止用 `docker restart` 或 `docker compose restart`，两者都不会重读 `env_file`。**
 6. 只有以上全部完成，才可以按 §14 的灰度许可为已通过基础门的**指定 SKU + 指定券码**开启促销或多件。`--fail-on-not-ready` 返回 `3` 是该扩展启用前的**预期**结果，不得用 `|| true` 绕过。
 
 > **禁止只改 env 就把 `GUEST_SHOP_MAX_QUANTITY` 调到 ≥2**：库存占比闸（C-D3）与并发未付款单闸（C-D4）
@@ -179,6 +179,28 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 claim pepper、`CRON_SECRET` 或 `SUPABASE_SERVICE_ROLE_KEY`。生产禁止内存限流，必须启用持久化限流并在目标
 Supabase 中确认 `take_rate_limit_tokens` RPC、权限和存储表可用。
 
+### 凭证与访问审计保留矩阵
+
+`GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED` 是独立的数据生命周期开关，默认
+`false`。它不能跟随 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 自动关闭，否则凭证回滚后已存在的
+`guest_shop_access_attempts` 会永久停止清理。
+
+| 凭证开关 | retention 开关 | 允许状态 | 运维含义 |
+|---|---|---|---|
+| OFF | OFF / 未设置 | 允许（默认） | 不产生新的凭证访问审计，也不运行 retention RPC |
+| ON | OFF / 未设置 | **禁止** | readiness 硬失败；不得开启凭证能力 |
+| ON | ON | 条件允许 | 必须先应用 `20260924_guest_shop_access_attempt_retention.sql`，并用只读 `20260924_verify_guest_shop_access_attempt_retention.sql` 取得 **7/7 PASS** |
+| OFF | ON | 允许且是凭证回滚后的必需状态 | 停止凭证入口，但继续按保留期清理历史访问审计 |
+
+启用顺序固定为：由用户/数据库运维应用 retention migration；运行只读 verify 并归档
+**7/7 PASS**；先设置 `GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED=true`；按下节流程重建
+`verify-server` 并观察 worker；最后才可在独立批准后开启凭证和查询页开关。Codex 发布过程不执行
+这些 SQL，也不把 migration 文件存在误报成目标库已应用。
+
+凭证回滚时关闭 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 和查询页开关，但 retention 必须保持 ON，
+worker/timer 也必须继续运行。只有从凭证关闭时刻起已经跨过配置的保留期、历史行已按该保留期清理，
+且没有 retention 错误或积压证据后，才可另行关闭 retention 开关。
+
 worker 只能使用专用 `GUEST_SHOP_WORKER_SECRET` 调用：
 
 ```text
@@ -211,12 +233,15 @@ compose `env_file` 只在创建容器时加载。写入或轮换 `GUEST_SHOP_*` 
 watchdog，再执行：
 
 ```bash
+systemctl stop zaoyoe-kvm4-health-watchdog.timer zaoyoe-kvm4-health-watchdog.service
 cd /opt/zaoyoe-verify-server
 docker compose up -d --no-deps --force-recreate --no-build verify-server
 curl -fsS http://127.0.0.1:3001/healthz
+systemctl start zaoyoe-kvm4-health-watchdog.timer
 ```
 
-`docker restart` 不会重读 `env_file`，容器会继续用旧密钥，worker 会 401/503。
+`docker restart` 和 `docker compose restart` 都不会重读 `env_file`，容器会继续用旧开关或密钥，
+worker 会 401/503。
 重建时不要 `--build`，也不要顺手 recreate 其他 worker。命令、journal 和聊天里
 都不要打印 secret。compact verify 镜像可能不含 `deploy/kvm4/guest-shop-worker/*`；
 那不是启动失败，host 安装器落地的 systemd unit 才是调度来源。
@@ -249,6 +274,14 @@ journalctl -u zaoyoe-guest-shop-worker.service -n 50 --no-pager
 不要把 `GUEST_SHOP_WORKER_SECRET` 写进 unit 文件、命令历史或监控标签；只放在
 `/opt/zaoyoe-verify-server/.env`（权限 `0600`）。若 timer 连续返回 503/超时，先停止 timer，
 保留订单和支付证据，再按下方死信/退款流程处理。该安装脚本不执行 SQL，也不负责开启游客商品。
+
+retention 每十分钟最多连续清理 10 批、每批最多 1000 行。清理配置/RPC/结果异常时，worker 返回
+HTTP 503 和稳定码 `guest_access_audit_cleanup_failed`；10 批后仍有 `has_more=true` 时返回 HTTP 503
+和 `guest_access_audit_backlog_degraded`。该次履约扫描仍按幂等规则完成，响应中的
+`worker_run_success=true` 不得被误读为 retention 健康，也不得因此批量重放订单。systemd oneshot
+会记录 failed/HTTP 503；用 `journalctl -u zaoyoe-guest-shop-worker.service` 确认失败时间，再从
+`zaoyoe-verify-server` 容器日志的 `maintenance degraded` 记录核对稳定码、批次数、删除数与
+`has_more`。在错误或积压消失前不得扩大游客商品或关闭 retention。
 
 上线前执行只读检查：
 
@@ -347,6 +380,9 @@ npm run reconcile:guest-shop
 
 游客现金购买只保存取货口令与联系方式的 HMAC 或哈希。财务、支付、退款与争议记录在争议处理期内不删除，并依法保留至义务届满。当前设备取货凭证使用 HttpOnly Cookie。告警、对账和后台列表都不得回显明文口令或卡密。
 
+凭证访问审计默认保留 30 天（允许配置范围 7–180 天），由独立 retention 开关控制。关闭凭证功能
+不等于删除或停止清理：按上面的回滚矩阵继续运行 worker，直到历史访问审计跨过保留窗口并完成清理。
+
 ## 回调丢失或 provider 已付款、本地未确认
 
 1. 用 provider 订单号和本站 `order_no` 查询 provider 状态。
@@ -410,6 +446,10 @@ npm run reconcile:guest-shop
 ## 关闭游客开关与回滚
 
 关闭商品游客开关后，API 应拒绝新游客订单；已付款订单继续由 worker 履约或退款。数据库迁移不回滚、不删除业务记录。恢复开关前先确认死信、退款和库存异常队列已有人负责。
+
+若同时回滚邮箱 + 查询密码能力，只关闭凭证与查询页开关；
+`GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED` 保持 `true`，并继续运行 guest-shop worker。
+完成保留期清理后再单独评审是否关闭 retention，禁止在同一次紧急回滚中一起关闭三个开关。
 
 ## 证据留存
 

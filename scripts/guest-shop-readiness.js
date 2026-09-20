@@ -4,16 +4,21 @@
  * Read-only production readiness gate for the guest-shop cash channel.
  *
  * This checker intentionally does not create a Supabase client and does not
- * call a provider.  A production deploy can run it before exposing a guest
- * product; the output only contains configuration names/statuses and never a
- * secret value.  Provider enablement and rate-limit RPC existence still live
- * in the database, so those items are reported as explicit operator checks
- * rather than being guessed from environment variables.
+ * call a payment provider. A production deploy can run it before exposing a
+ * guest product; the output only contains configuration names/statuses and
+ * never a secret value. When both buyer-access switches are enabled, the CLI
+ * performs read-only GETs against the Vercel-owned query page and client so it
+ * can align their static-asset commit with the KVM4 release marker. Database
+ * facts remain explicit operator checks rather than being guessed from env.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const dotenv = require('dotenv');
+const {
+    collectStaticAssetVersionsFromHtml,
+    extractAssetReference
+} = require('./check-prod-env');
 const {
     BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES,
     GUEST_SHOP_RUNTIME_SETTINGS,
@@ -89,6 +94,16 @@ const REQUIRED_REPO_FILES = Object.freeze([
     'docs/guest-shop-promo-hardening-plan.md'
 ]);
 
+// These artifacts are installed from the source checkout onto the KVM4 host;
+// they are intentionally outside deploy-kvm4-verify-server.sh PACKAGE_PATHS
+// and therefore cannot be inspected from inside the compact Verify image.
+// A normal source checkout must still contain them.
+const KVM4_HOST_ONLY_GUEST_WORKER_FILES = new Set([
+    'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker',
+    'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker.service',
+    'deploy/kvm4/guest-shop-worker/zaoyoe-guest-shop-worker.timer'
+]);
+
 const REQUIRED_TEST_FILES = Object.freeze([
     'tests/guest-shop-security.test.js',
     'tests/guest-shop-payment-adapter.test.js',
@@ -97,6 +112,7 @@ const REQUIRED_TEST_FILES = Object.freeze([
     'tests/guest-shop-worker-scheduler-contract.test.js',
     'tests/guest-shop-runtime-config.test.js',
     'tests/guest-shop-readiness.test.js',
+    'tests/guest-shop-access-attempt-retention.test.js',
     'tests/guest-shop-alerts.test.js',
     'tests/guest-shop-reconcile.test.js',
     'tests/guest-shop-status-recovery.test.js',
@@ -106,6 +122,52 @@ const REQUIRED_TEST_FILES = Object.freeze([
 
 const BUYER_CREDENTIAL_MIGRATION = 'supabase/migrations/20260920_guest_shop_buyer_credentials.sql';
 const BUYER_CREDENTIAL_VERIFY_MIGRATION = 'supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql';
+const BUYER_ACCESS_RETENTION_MIGRATION = 'supabase/migrations/20260924_guest_shop_access_attempt_retention.sql';
+const BUYER_ACCESS_RETENTION_VERIFY_MIGRATION = 'supabase/migrations/20260924_verify_guest_shop_access_attempt_retention.sql';
+const BUYER_ACCESS_RETENTION_WORKER = 'server/guest-shop-worker.js';
+const BUYER_ACCESS_RETENTION_SWITCH = 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED';
+
+const BUYER_ACCESS_RETENTION_MIGRATION_REQUIREMENTS = Object.freeze([
+    ['retention-index', /CREATE INDEX IF NOT EXISTS guest_shop_access_attempts_retention_idx\s+ON public\.guest_shop_access_attempts \(created_at ASC, id ASC\);/u, 'created_at/id 清理索引'],
+    ['purge-function', /CREATE OR REPLACE FUNCTION public\.fn_guest_shop_purge_access_attempts\(\s*p_cutoff TIMESTAMPTZ,\s*p_limit INTEGER DEFAULT 1000\s*\)/u, '受限清理函数'],
+    ['bounded-delete', /LEAST\(GREATEST\(COALESCE\(p_limit, 1000\), 1\), 1000\)/u, '单批最多 1000 行硬上限'],
+    ['victim-limit', /victims AS \([\s\S]*?LIMIT v_limit\s*\)/u, 'victims CTE 单批删除行数上限'],
+    ['skip-locked', /FOR UPDATE SKIP LOCKED/u, '并发清理 SKIP LOCKED'],
+    ['secure-definer', /SECURITY DEFINER\s+SET search_path = pg_catalog, pg_temp\s+AS \$\$/u, 'SECURITY DEFINER 固定完整 search_path（不含 public）'],
+    ['service-role-guard', /PERFORM public\.guest_shop_require_service_role\(\);/u, '函数体 service-role 守卫'],
+    ['advisory-lock', /PERFORM pg_catalog\.pg_advisory_xact_lock\(\s*pg_catalog\.hashtextextended\('guest_shop_access_attempt_retention', 0\)\s*\);/u, '事务级 advisory lock 串行化'],
+    ['revoke-public', /REVOKE ALL ON FUNCTION public\.fn_guest_shop_purge_access_attempts\(TIMESTAMPTZ, INTEGER\)\s+FROM PUBLIC, anon, authenticated, service_role;/u, 'PUBLIC/anon/authenticated/service_role 先撤权'],
+    ['grant-service-role', /GRANT EXECUTE ON FUNCTION public\.fn_guest_shop_purge_access_attempts\(TIMESTAMPTZ, INTEGER\)\s+TO service_role;/u, '仅 service_role 可执行']
+]);
+const BUYER_ACCESS_RETENTION_VERIFY_REQUIREMENTS = Object.freeze([
+    ['verify-index', /'retention_index'/u, '索引检查'],
+    ['verify-index-valid-ready', /bool_and\(indisvalid\)[\s\S]*?bool_and\(indisready\)/u, '索引 valid/ready 检查'],
+    ['verify-index-plain', /bool_and\(is_not_partial\)[\s\S]*?bool_and\(is_not_expression\)/u, '索引非 partial/表达式检查'],
+    ['verify-index-shape', /bool_and\(indnatts = 2\)[\s\S]*?bool_and\(indnkeyatts = 2\)[\s\S]*?bool_and\(access_method = 'btree'\)[\s\S]*?bool_and\(is_ascending_nulls_last\)[\s\S]*?bool_and\(key_columns = ARRAY\['created_at', 'id'\]::NAME\[\]\)/u, '索引精确 btree(created_at ASC,id ASC) 形态检查'],
+    ['verify-function', /'purge_function_present'/u, '函数存在检查'],
+    ['verify-single-overload', /\(SELECT COUNT\(\*\) = 1 FROM fn\)\s+AND \(SELECT COUNT\(\*\) = 1 FROM fn_family\)/u, '精确签名及同名函数族唯一重载检查'],
+    ['verify-owner', /'purge_function_owner'/u, '函数 owner 检查'],
+    ['verify-security', /'purge_function_security'/u, '函数安全属性检查'],
+    ['verify-search-path', /proconfig @> ARRAY\['search_path=pg_catalog, pg_temp'\]::TEXT\[\]/u, '完整 search_path（不含 public）检查'],
+    ['verify-result-contract', /'purge_function_result_contract'/u, '返回结果合同检查'],
+    ['verify-body', /'purge_function_body'/u, '有界删除函数体检查'],
+    ['verify-body-victim-limit', /def LIKE '%LIMIT v_limit%'/u, '函数体 victims LIMIT v_limit 检查'],
+    ['verify-body-service-role-guard', /def LIKE '%PERFORM public\.guest_shop_require_service_role\(\)%'/u, '函数体 service-role 守卫检查'],
+    ['verify-body-advisory-lock', /def LIKE '%pg_catalog\.pg_advisory_xact_lock%'/u, '函数体 advisory lock 检查'],
+    ['verify-grants', /'purge_function_grants'/u, '授权收口检查'],
+    ['verify-family-grant-source', /fn_grants AS \([\s\S]*?FROM fn_family\s+CROSS JOIN LATERAL aclexplode/u, '授权检查覆盖所有同名重载'],
+    ['verify-family-grants', /WHERE privilege_type = 'EXECUTE'\s+AND grantee NOT IN \(owner_name, 'service_role'\)/u, '非 owner/service_role 重载授权拒绝检查'],
+    ['verify-effective-grant-source', /fn_effective_privileges AS \([\s\S]*?has_function_privilege\('anon'[\s\S]*?has_function_privilege\('authenticated'[\s\S]*?has_function_privilege\('service_role'/u, '角色继承后的有效 EXECUTE 权限来源'],
+    ['verify-effective-grants', /NOT anon_can_execute\s+AND NOT authenticated_can_execute\s+AND service_role_can_execute/u, 'anon/authenticated 有效 EXECUTE 拒绝及 service_role 允许检查']
+]);
+const BUYER_ACCESS_RETENTION_WORKER_REQUIREMENTS = Object.freeze([
+    ['worker-rpc', /fn_guest_shop_purge_access_attempts/u, 'worker 调用清理 RPC'],
+    ['worker-config', /GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS/u, 'worker 使用统一保留天数配置'],
+    ['worker-batch', /ACCESS_AUDIT_PURGE_BATCH_SIZE\s*=\s*1000/u, 'worker 单批 1000 行'],
+    ['worker-schedule', /ACCESS_AUDIT_SWEEP_INTERVAL_MS\s*=\s*10\s*\*\s*60\s*\*\s*1000/u, 'worker 十分钟调度间隔'],
+    ['worker-switch', /GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED/u, '独立清理开关'],
+    ['worker-credential-interlock', /parseBuyerCredentialSwitch\(env\)\.enabled[\s\S]*?access_audit_retention_required/u, '凭证 ON + retention OFF 运行时互锁']
+]);
 
 // Static assertions about the Order Access 2.0 migration. The readiness gate
 // never connects to a database (that stays a manual check on the paired
@@ -415,6 +477,221 @@ const BUYER_CREDENTIAL_FRONTEND_FILES = Object.freeze([
     'guest-orders.html',
     'js/guest-orders-client.js'
 ]);
+const KVM4_RELEASE_COMMIT_FILE = 'server/.release-commit';
+const GUEST_ORDERS_PAGE_CONTRACT_MARKERS = Object.freeze([
+    '<body class="guest-orders-page">',
+    'id="guestOrdersFeatureGate"',
+    'id="guestOrdersProtectedContent"',
+    'id="guestOrdersQueryForm"',
+    'id="guestOrdersLegacyPanel"'
+]);
+const GUEST_ORDERS_CLIENT_CONTRACT_MARKERS = Object.freeze([
+    "const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';",
+    "const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';",
+    "credentials: 'same-origin'"
+]);
+
+function managedFrontendUrl(env, relativePath) {
+    const baseUrl = envValue(env, 'APP_BASE_URL', 2000);
+    if (!isHttpsUrl(baseUrl)) return '';
+    try {
+        const parsed = new URL(baseUrl);
+        const hostname = parsed.hostname.toLowerCase();
+        if (!['fatherkey.com', 'www.fatherkey.com', 'zaoyoe.xyz', 'www.zaoyoe.xyz'].includes(hostname)) return '';
+        return new URL(`/${String(relativePath || '').replace(/^\/+/, '')}`, parsed.origin).toString();
+    } catch (_) {
+        return '';
+    }
+}
+
+/**
+ * The source checkout and Vercel build contain both browser artifacts. The
+ * KVM4 Verify image deliberately contains only the API/runtime subset: Vercel
+ * owns the HTML entry point, while the client module remains in the image as a
+ * code-contract witness. A missing externally hosted HTML file is therefore a
+ * manual deployment-chain check, not an invalid API image. It still keeps
+ * strict readiness closed until the live page and CI contract evidence have
+ * been reviewed. Every other missing frontend artifact remains a hard failure.
+ */
+function inspectBuyerCredentialFrontend(env, production, repoRoot = REPO_ROOT) {
+    return BUYER_CREDENTIAL_FRONTEND_FILES.map((relativePath) => {
+        if (fs.existsSync(path.join(repoRoot, relativePath))) {
+            return buildCheck('buyer_credentials', `frontend:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
+                relative_path: relativePath,
+                blocking: false,
+                severity: 'info'
+            });
+        }
+
+        const hostedUrl = relativePath === 'guest-orders.html' && production
+            ? managedFrontendUrl(env, relativePath)
+            : '';
+        if (hostedUrl) {
+            return manualCheck(
+                'buyer_credentials',
+                `frontend:${relativePath}`,
+                `${relativePath} 由 Vercel 托管，不属于 KVM4 Verify 精简镜像；启用前必须核验线上页面可达、来源为同一 main 提交，且 tests/guest-shop-frontend-contract.test.js 已通过。`,
+                {
+                    relative_path: relativePath,
+                    hosted_url: hostedUrl,
+                    deployment_surface: 'vercel'
+                }
+            );
+        }
+
+        return invalidCheck(
+            'buyer_credentials',
+            `frontend:${relativePath}`,
+            `启用凭证链路后 ${relativePath} 必须存在（A2 交付物）；仅在 production 且 APP_BASE_URL 指向受管 HTTPS 站点时，Vercel 托管的 guest-orders.html 可改由线上证据核验。`,
+            { relative_path: relativePath }
+        );
+    });
+}
+
+function readKvm4ReleaseCommit(repoRoot = REPO_ROOT) {
+    try {
+        const commit = fs.readFileSync(path.join(repoRoot, KVM4_RELEASE_COMMIT_FILE), 'utf8').trim().toLowerCase();
+        return /^[0-9a-f]{40}$/u.test(commit) ? commit : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+async function fetchHostedFrontendText(url, { fetchImpl = globalThis.fetch, timeoutMs = 10000 } = {}) {
+    if (typeof fetchImpl !== 'function') throw new Error('fetch unavailable');
+    const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { Accept: 'text/html, application/javascript, text/plain' },
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs)
+    });
+    return {
+        ok: response.ok === true,
+        status: Number(response.status) || 0,
+        url: String(response.url || url),
+        text: await response.text()
+    };
+}
+
+/**
+ * Verify the Vercel-owned query page from the KVM4 runtime without requiring
+ * the HTML file in the API image. Vercel's build rewrites every same-site
+ * CSS/JS `v=` value to VERCEL_GIT_COMMIT_SHA[0..12], so matching those values
+ * to KVM4's generated release marker proves both deployment chains are on the
+ * same commit. Contract markers keep a generic/stale HTML response from being
+ * accepted as the guest-order page.
+ */
+async function inspectHostedBuyerCredentialFrontend({
+    env = process.env,
+    repoRoot = REPO_ROOT,
+    fetchImpl = globalThis.fetch,
+    timeoutMs = 10000
+} = {}) {
+    const pageUrl = managedFrontendUrl(env, 'guest-orders.html');
+    if (!pageUrl) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', '无法从 APP_BASE_URL 解析受管的 Vercel 游客订单查询页。', {
+            env_name: 'APP_BASE_URL'
+        })];
+    }
+
+    const releaseCommit = readKvm4ReleaseCommit(repoRoot);
+    if (!releaseCommit) {
+        return [invalidCheck('buyer_credentials', 'frontend:release-commit', `KVM4 精简镜像缺少有效的 ${KVM4_RELEASE_COMMIT_FILE}，无法证明 Vercel 静态页与 Verify API 来自同一 main 提交。`, {
+            relative_path: KVM4_RELEASE_COMMIT_FILE
+        })];
+    }
+    const expectedVersion = releaseCommit.slice(0, 12);
+
+    let pageResponse;
+    try {
+        pageResponse = await fetchHostedFrontendText(pageUrl, { fetchImpl, timeoutMs });
+    } catch (_) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', 'Vercel 游客订单查询页请求失败；启用前必须取得可验证的线上页面。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+    if (!pageResponse.ok || new URL(pageResponse.url).origin !== new URL(pageUrl).origin) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', `Vercel 游客订单查询页不可用或跳转离开 canonical origin（HTTP ${pageResponse.status || 0}）。`, {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    const missingPageMarker = GUEST_ORDERS_PAGE_CONTRACT_MARKERS.find((marker) => !pageResponse.text.includes(marker));
+    if (missingPageMarker) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders.html', '线上 guest-orders.html 缺少必要的凭证查询合同标记；可能是旧版、错误页或不完整构建。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    const versions = collectStaticAssetVersionsFromHtml(pageResponse.text);
+    const uniqueVersions = [...new Set(versions)];
+    const versionAligned = uniqueVersions.length === 1 && uniqueVersions[0] === expectedVersion;
+    if (!versionAligned) {
+        return [invalidCheck('buyer_credentials', 'frontend:guest-orders-commit', 'Vercel guest-orders.html 的静态资产版本与 KVM4 Verify release commit 不一致。', {
+            expected_commit: expectedVersion,
+            observed_versions: uniqueVersions.slice(0, 6),
+            deployment_surface: 'vercel+kvm4'
+        })];
+    }
+
+    const clientReference = extractAssetReference(pageResponse.text, 'js/guest-orders-client.js');
+    let clientUrl = '';
+    try {
+        clientUrl = new URL(clientReference, pageUrl).toString();
+    } catch (_) {
+        clientUrl = '';
+    }
+    if (!clientReference || !clientUrl || new URL(clientUrl).origin !== new URL(pageUrl).origin) {
+        return [invalidCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', '线上查询页未引用同源 guest-orders-client.js。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    let clientResponse;
+    try {
+        clientResponse = await fetchHostedFrontendText(clientUrl, { fetchImpl, timeoutMs });
+    } catch (_) {
+        return [invalidCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', '线上 guest-orders-client.js 请求失败。', {
+            hosted_url: clientUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+    const missingClientMarker = GUEST_ORDERS_CLIENT_CONTRACT_MARKERS.find((marker) => !clientResponse.text.includes(marker));
+    if (!clientResponse.ok
+        || new URL(clientResponse.url).origin !== new URL(pageUrl).origin
+        || missingClientMarker) {
+        return [invalidCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', '线上 guest-orders-client.js 不可用或缺少必要安全合同标记。', {
+            hosted_url: clientUrl,
+            deployment_surface: 'vercel'
+        })];
+    }
+
+    return [
+        buildCheck('buyer_credentials', 'frontend:guest-orders.html', true, 'hosted_verified', 'Vercel 游客订单查询页可达且关键凭证/旧订单恢复结构完整。', {
+            hosted_url: pageUrl,
+            deployment_surface: 'vercel',
+            blocking: false,
+            severity: 'info'
+        }),
+        buildCheck('buyer_credentials', 'frontend:guest-orders-commit', true, 'aligned', 'Vercel 查询页静态资产版本与 KVM4 Verify release commit 一致。', {
+            expected_commit: expectedVersion,
+            deployment_surface: 'vercel+kvm4',
+            blocking: false,
+            severity: 'info'
+        }),
+        buildCheck('buyer_credentials', 'frontend:js/guest-orders-client.js:hosted', true, 'hosted_verified', 'Vercel 查询页加载的同源客户端具备可用性探针、专用凭证头与 same-origin cookie 合同。', {
+            hosted_url: clientUrl,
+            deployment_surface: 'vercel',
+            blocking: false,
+            severity: 'info'
+        })
+    ];
+}
 
 function parseArgs(argv = []) {
     const options = {
@@ -889,6 +1166,7 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
 
     const credential = parseSwitch('GUEST_SHOP_BUYER_CREDENTIAL_ENABLED');
     const page = parseSwitch('GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED');
+    const retentionSwitch = parseSwitch(BUYER_ACCESS_RETENTION_SWITCH);
 
     if (credential.present && credential.parsed === null) {
         checks.push(invalidCheck('buyer_credentials', 'credential-switch-boolean', 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED 必须是布尔值；无法解析时按关闭处理会掩盖配置错误。', {
@@ -906,6 +1184,30 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
             ? 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED 已显式关闭（等于现状）。'
             : '未设置 GUEST_SHOP_BUYER_CREDENTIAL_ENABLED；默认关闭，线上行为与现状一致。', {
             env_name: 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED'
+        }));
+    }
+
+    if (retentionSwitch.present && retentionSwitch.parsed === null) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-switch-boolean', `${BUYER_ACCESS_RETENTION_SWITCH} 必须是布尔值；无法解析时不得猜测数据清理状态。`, {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH
+        }));
+    } else if (credential.value && !retentionSwitch.value) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-switch-required', `启用游客邮箱 + 查询密码链路时必须显式开启 ${BUYER_ACCESS_RETENTION_SWITCH}，避免访问审计数据无限保留。`, {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH
+        }));
+    } else if (retentionSwitch.value) {
+        checks.push(buildCheck('buyer_credentials', 'access-retention-switch-boolean', true, 'enabled', credential.value
+            ? '游客访问审计保留清理已显式启用。'
+            : '游客凭证链路已关闭，但访问审计保留清理继续运行，以完成回滚后的历史数据生命周期。', {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH,
+            blocking: false,
+            severity: 'info'
+        }));
+    } else {
+        checks.push(optionalCheck('buyer_credentials', 'access-retention-switch-boolean', retentionSwitch.present
+            ? `${BUYER_ACCESS_RETENTION_SWITCH} 已显式关闭。`
+            : `未设置 ${BUYER_ACCESS_RETENTION_SWITCH}；默认关闭。`, {
+            env_name: BUYER_ACCESS_RETENTION_SWITCH
         }));
     }
 
@@ -952,24 +1254,18 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
             }));
         }
 
-        for (const relativePath of BUYER_CREDENTIAL_FRONTEND_FILES) {
-            checks.push(fs.existsSync(path.join(repoRoot, relativePath))
-                ? buildCheck('buyer_credentials', `frontend:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
-                    relative_path: relativePath,
-                    blocking: false,
-                    severity: 'info'
-                })
-                : invalidCheck('buyer_credentials', `frontend:${relativePath}`, `启用凭证链路后 ${relativePath} 必须存在（A2 交付物）。`, { relative_path: relativePath }));
-        }
+        checks.push(...inspectBuyerCredentialFrontend(env, production, repoRoot));
     }
 
     for (const name of BUYER_CREDENTIAL_RUNTIME_SETTING_NAMES) {
         checks.push(inspectRuntimeNumericSetting(env, name, { production }));
     }
 
-    // Step-up challenge must fire BEFORE the lockout, otherwise the captcha
-    // threshold is dead configuration and the operator believes they have
-    // protection they do not. Mirrors the webhook-limit-order invariant above.
+    // Keep the reserved CAPTCHA thresholds internally consistent even though
+    // the current request path does not yet consume or verify a CAPTCHA token.
+    // Readiness must never describe this relationship as active protection:
+    // the initial five-order rollout relies on the implemented per-IP budget
+    // and per-contact staged lock instead.
     const numeric = (name) => parseRuntimeNumericSetting(env, name);
     const captchaPairs = [
         ['buyer-captcha-before-lockout', 'GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD', 'GUEST_SHOP_BUYER_LOGIN_MAX_FAILURES', '买家'],
@@ -991,12 +1287,31 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
                 lock_threshold: lock.value
             }));
         } else {
-            checks.push(buildCheck('buyer_credentials', key, true, 'consistent', `${scope}验证码阈值 ${captcha.value} 早于锁定阈值 ${lock.value} 触发。`, {
+            checks.push(buildCheck('buyer_credentials', key, true, 'configured_deferred', `${scope}验证码预留阈值 ${captcha.value} 小于锁定阈值 ${lock.value}；当前运行链路尚未读取或校验 CAPTCHA token，不可视为有效保护。`, {
                 env_name: `${captchaName},${lockName}`,
                 blocking: false,
                 severity: 'info'
             }));
         }
+    }
+
+    if (credential.value) {
+        checks.push(manualCheck(
+            'buyer_credentials',
+            'captcha-runtime-deferred',
+            'CAPTCHA provider/token 服务端校验尚未实现；首批最多 5 单灰度仅依赖已实现的 IP 限流、买家失败计数与阶梯锁定，CAPTCHA 不得作为放行证据。',
+            {
+                deferred: true,
+                rollout_limit_orders: 5
+            }
+        ));
+    } else {
+        checks.push(optionalCheck(
+            'buyer_credentials',
+            'captcha-runtime-deferred',
+            '游客凭证链路未启用；CAPTCHA provider/token 服务端校验仍为 deferred。',
+            { deferred: true }
+        ));
     }
 
     // §15.2-2..6 are database facts. This script never connects to a database,
@@ -1141,8 +1456,92 @@ function inspectBuyerCredentials(env, production, repoRoot = REPO_ROOT) {
         relative_path: BUYER_CREDENTIAL_VERIFY_MIGRATION,
         severity: credential.value ? 'critical' : 'high'
     }));
-    checks.push(manualCheck('buyer_credentials', 'access-attempt-purge', `guest_shop_access_attempts 的 ${parseRuntimeNumericSetting(env, 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS').value} 天清理由运维调度，迁移不会创建定时任务；启用凭证链路前必须确认清理方式已落地。`, {
-        severity: 'medium'
+
+    // Access-attempt retention is now an application worker contract, not an
+    // unspecified operator cron. Prove the migration, read-only verify and
+    // worker wiring on disk; applying and running the verify SQL remains a
+    // separate database evidence step that this checker cannot manufacture.
+    const rawRetention = read(BUYER_ACCESS_RETENTION_MIGRATION);
+    const rawRetentionVerify = read(BUYER_ACCESS_RETENTION_VERIFY_MIGRATION);
+    const retentionWorker = read(BUYER_ACCESS_RETENTION_WORKER);
+    const retention = stripSqlComments(rawRetention);
+    const retentionVerify = stripSqlComments(rawRetentionVerify);
+
+    if (!rawRetention) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-migration-file', `${BUYER_ACCESS_RETENTION_MIGRATION} 缺失；访问审计无法按保留期有界清理。`, {
+            relative_path: BUYER_ACCESS_RETENTION_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_ACCESS_RETENTION_MIGRATION_REQUIREMENTS) {
+            checks.push(pattern.test(retention)
+                ? buildCheck('buyer_credentials', `access-retention:${key}`, true, 'present', `访问审计清理迁移已包含${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `access-retention:${key}`, `访问审计清理迁移缺少${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_MIGRATION
+                }));
+        }
+        checks.push(/pg_cron|cron\.schedule|CREATE\s+TRIGGER/iu.test(retention)
+            ? invalidCheck('buyer_credentials', 'access-retention:no-sql-scheduler', '访问审计清理迁移不得创建数据库定时任务或触发器；调度归 KVM4 worker。', {
+                relative_path: BUYER_ACCESS_RETENTION_MIGRATION
+            })
+            : buildCheck('buyer_credentials', 'access-retention:no-sql-scheduler', true, 'absent', '访问审计清理迁移未创建数据库定时任务或触发器。', {
+                relative_path: BUYER_ACCESS_RETENTION_MIGRATION,
+                blocking: false,
+                severity: 'info'
+            }));
+    }
+
+    if (!rawRetentionVerify) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-verify-file', `${BUYER_ACCESS_RETENTION_VERIFY_MIGRATION} 缺失；无法核验目标库清理函数。`, {
+            relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_ACCESS_RETENTION_VERIFY_REQUIREMENTS) {
+            checks.push(pattern.test(retentionVerify)
+                ? buildCheck('buyer_credentials', `access-retention:${key}`, true, 'present', `访问审计 verify 已包含${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `access-retention:${key}`, `访问审计 verify 缺少${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION
+                }));
+        }
+        checks.push(/^[ \t]*(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT|REVOKE|TRUNCATE|CALL)\b/imu.test(retentionVerify)
+            ? invalidCheck('buyer_credentials', 'access-retention:verify-read-only', '访问审计 verify 必须只读。', {
+                relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION
+            })
+            : buildCheck('buyer_credentials', 'access-retention:verify-read-only', true, 'read_only', '访问审计 verify 未包含顶层写操作。', {
+                relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION,
+                blocking: false,
+                severity: 'info'
+            }));
+    }
+
+    if (!retentionWorker) {
+        checks.push(invalidCheck('buyer_credentials', 'access-retention-worker-file', `${BUYER_ACCESS_RETENTION_WORKER} 缺失；访问审计清理没有运行入口。`, {
+            relative_path: BUYER_ACCESS_RETENTION_WORKER
+        }));
+    } else {
+        for (const [key, pattern, label] of BUYER_ACCESS_RETENTION_WORKER_REQUIREMENTS) {
+            checks.push(pattern.test(retentionWorker)
+                ? buildCheck('buyer_credentials', `access-retention:${key}`, true, 'present', `guest-shop worker 已包含${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_WORKER,
+                    blocking: false,
+                    severity: 'info'
+                })
+                : invalidCheck('buyer_credentials', `access-retention:${key}`, `guest-shop worker 缺少${label}。`, {
+                    relative_path: BUYER_ACCESS_RETENTION_WORKER
+                }));
+        }
+    }
+
+    checks.push(manualCheck('buyer_credentials', 'access-retention-schema-applied', `必须在目标 Supabase 中执行 ${BUYER_ACCESS_RETENTION_MIGRATION}，并运行 ${BUYER_ACCESS_RETENTION_VERIFY_MIGRATION} 确认 7 项检查全部 PASS。${BUYER_ACCESS_RETENTION_SWITCH} 开启后，worker 将按 ${parseRuntimeNumericSetting(env, 'GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_DAYS').value} 天保留期每十分钟尝试一次、每批最多 1000 行；该独立开关可在凭证回滚关闭后继续清理，本脚本不执行 SQL。`, {
+        relative_path: BUYER_ACCESS_RETENTION_VERIFY_MIGRATION,
+        severity: credential.value ? 'critical' : 'high'
     }));
 
     return checks;
@@ -1773,11 +2172,30 @@ function inspectProvider(env, provider, production) {
 
 function inspectRepo(repoRoot = REPO_ROOT) {
     const checks = [];
+    const compactImage = Boolean(readKvm4ReleaseCommit(repoRoot));
     for (const relativePath of REQUIRED_REPO_FILES) {
         const exists = fs.existsSync(path.join(repoRoot, relativePath));
-        checks.push(exists
-            ? buildCheck('repo', `file:${relativePath}`, true, 'present', `${relativePath} 已存在。`, { relative_path: relativePath, blocking: false, severity: 'info' })
-            : invalidCheck('repo', `file:${relativePath}`, `${relativePath} 缺失。`, { relative_path: relativePath }));
+        if (exists) {
+            checks.push(buildCheck('repo', `file:${relativePath}`, true, 'present', `${relativePath} 已存在。`, {
+                relative_path: relativePath,
+                blocking: false,
+                severity: 'info'
+            }));
+        } else if (compactImage && KVM4_HOST_ONLY_GUEST_WORKER_FILES.has(relativePath)) {
+            checks.push(manualCheck(
+                'repo',
+                `file:${relativePath}`,
+                `${relativePath} 是 KVM4 宿主机安装资产，不在 Verify 精简镜像的 PACKAGE_PATHS 中；请在宿主机核验 canonical installer 已落地对应 helper/systemd unit。`,
+                {
+                    relative_path: relativePath,
+                    deployment_surface: 'kvm4-host',
+                    compact_image: true,
+                    marker_path: KVM4_RELEASE_COMMIT_FILE
+                }
+            ));
+        } else {
+            checks.push(invalidCheck('repo', `file:${relativePath}`, `${relativePath} 缺失。`, { relative_path: relativePath }));
+        }
     }
     for (const relativePath of REQUIRED_TEST_FILES) {
         const exists = fs.existsSync(path.join(repoRoot, relativePath));
@@ -1892,6 +2310,41 @@ function inspectProductionCallbacks(env, production) {
     return checks;
 }
 
+function buildReadinessSummary(checks, production, checkedAt = new Date()) {
+    const normalizedChecks = Array.isArray(checks) ? checks : [];
+    const blockingChecks = normalizedChecks.filter((check) => check.blocking === true && check.ok !== true);
+    const warnings = normalizedChecks.filter((check) => check.status === 'warning');
+    const manualReview = normalizedChecks.filter((check) => check.requires_manual_review === true);
+    const findings = blockingChecks.map((check) => ({
+        severity: check.severity || 'high',
+        key: check.key,
+        message: check.message,
+        area: check.area,
+        env_name: check.env_name || ''
+    }));
+
+    const timestamp = checkedAt instanceof Date && Number.isFinite(checkedAt.getTime())
+        ? checkedAt.toISOString()
+        : (typeof checkedAt === 'string' && checkedAt ? checkedAt : new Date().toISOString());
+    return {
+        checked_at: timestamp,
+        production_like: production,
+        providers: SUPPORTED_PROVIDERS,
+        checks: normalizedChecks,
+        findings,
+        warnings: warnings.map((check) => ({ key: check.key, message: check.message, severity: check.severity, area: check.area })),
+        manual_review: manualReview.map((check) => ({ key: check.key, message: check.message, area: check.area })),
+        invalid_count: blockingChecks.length,
+        warning_count: warnings.length,
+        manual_review_count: manualReview.length,
+        // `ok` means automated checks found no hard-invalid values. `ready`
+        // additionally requires a production marker and completion of all
+        // operator/database checks, which cannot be proven offline.
+        ok: blockingChecks.length === 0,
+        ready: production && blockingChecks.length === 0 && manualReview.length === 0
+    };
+}
+
 function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', now = new Date() } = {}) {
     const production = isProductionLikeRuntime(env);
     const checks = [
@@ -1910,35 +2363,37 @@ function runReadiness({ env = process.env, repoRoot = REPO_ROOT, envFile = '', n
         ...inspectRunbook(repoRoot)
     ];
 
-    const blockingChecks = checks.filter((check) => check.blocking === true && check.ok !== true);
-    const warnings = checks.filter((check) => check.status === 'warning');
-    const manualReview = checks.filter((check) => check.requires_manual_review === true);
-    const findings = blockingChecks.map((check) => ({
-        severity: check.severity || 'high',
-        key: check.key,
-        message: check.message,
-        area: check.area,
-        env_name: check.env_name || ''
-    }));
+    return buildReadinessSummary(checks, production, now);
+}
 
-    const checkedAt = now instanceof Date && Number.isFinite(now.getTime()) ? now.toISOString() : new Date().toISOString();
-    return {
-        checked_at: checkedAt,
-        production_like: production,
-        providers: SUPPORTED_PROVIDERS,
-        checks,
-        findings,
-        warnings: warnings.map((check) => ({ key: check.key, message: check.message, severity: check.severity, area: check.area })),
-        manual_review: manualReview.map((check) => ({ key: check.key, message: check.message, area: check.area })),
-        invalid_count: blockingChecks.length,
-        warning_count: warnings.length,
-        manual_review_count: manualReview.length,
-        // `ok` means automated checks found no hard-invalid values. `ready`
-        // additionally requires a production marker and completion of all
-        // operator/database checks, which cannot be proven offline.
-        ok: blockingChecks.length === 0,
-        ready: production && blockingChecks.length === 0 && manualReview.length === 0
-    };
+async function runReadinessWithHostedFrontend(options = {}) {
+    const summary = runReadiness(options);
+    const env = options.env || process.env;
+    const pageCheckIndex = summary.checks.findIndex((check) => check.key === 'frontend:guest-orders.html');
+    if (pageCheckIndex < 0) return summary;
+
+    const pageCheck = summary.checks[pageCheckIndex];
+    // A complete source checkout already proves both frontend artifacts from
+    // the candidate tree and has no generated KVM4 release marker. Hosted
+    // commit alignment is required only for the compact Verify image, where
+    // guest-orders.html is intentionally absent and delegated to Vercel.
+    const compactImageRequiresHostedEvidence = pageCheck.status === 'manual_review'
+        && pageCheck.deployment_surface === 'vercel';
+    const hostedVerificationRequired = summary.production_like === true
+        && parseBoolean(envValue(env, 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED', 40)) === true
+        && parseBoolean(envValue(env, 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED', 40)) === true
+        && compactImageRequiresHostedEvidence;
+    if (!hostedVerificationRequired) return summary;
+
+    const hostedChecks = await inspectHostedBuyerCredentialFrontend({
+        env,
+        repoRoot: options.repoRoot || REPO_ROOT,
+        fetchImpl: options.fetchImpl || globalThis.fetch,
+        timeoutMs: options.timeoutMs || 10000
+    });
+    const checks = [...summary.checks];
+    checks.splice(pageCheckIndex, 1, ...hostedChecks);
+    return buildReadinessSummary(checks, summary.production_like, summary.checked_at);
 }
 
 function formatHumanReport(summary = {}) {
@@ -1984,24 +2439,22 @@ function getReadinessExitCode(options = {}, summary = {}) {
     return 0;
 }
 
-function main() {
+async function main() {
     const options = parseArgs(process.argv.slice(2));
     const env = loadEnvFile(options.envFile, process.env);
-    const summary = runReadiness({ env, repoRoot: REPO_ROOT, envFile: options.envFile });
+    const summary = await runReadinessWithHostedFrontend({ env, repoRoot: REPO_ROOT, envFile: options.envFile });
     process.stdout.write(`${options.json ? JSON.stringify(summary, null, 2) : formatHumanReport(summary)}\n`);
     const exitCode = getReadinessExitCode(options, summary);
     if (exitCode > 0) process.exitCode = exitCode;
 }
 
 if (require.main === module) {
-    try {
-        main();
-    } catch (error) {
+    main().catch((error) => {
         // Do not echo arbitrary parser/env contents; only expose a generic
         // failure line suitable for CI logs.
         console.error(`guest-shop-readiness failed: ${error?.message || 'unknown error'}`);
         process.exitCode = 1;
-    }
+    });
 }
 
 module.exports = {
@@ -2016,9 +2469,12 @@ module.exports = {
     REQUIRED_REPO_FILES,
     REQUIRED_TEST_FILES,
     SUPPORTED_PROVIDERS,
+    buildReadinessSummary,
     formatHumanReport,
     getReadinessExitCode,
     inspectBuyerCredentials,
+    inspectBuyerCredentialFrontend,
+    inspectHostedBuyerCredentialFrontend,
     inspectCallbackUrl,
     inspectGuestSecrets,
     inspectLimits,
@@ -2035,5 +2491,6 @@ module.exports = {
     parseArgs,
     parseProviderList,
     runReadiness,
+    runReadinessWithHostedFrontend,
     stripSqlComments
 };
