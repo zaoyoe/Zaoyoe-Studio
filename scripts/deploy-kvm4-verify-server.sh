@@ -205,6 +205,11 @@ release_app="$release_root/app"
 mkdir -p "$release_app"
 
 tar -xzf "$REMOTE_TMP/app.tar.gz" -C "$release_app"
+# Runtime readiness uses this non-secret marker to prove the Vercel-hosted
+# guest-orders.html asset version and the KVM4 Verify API came from the same
+# main commit. It lives under server/ so the existing Docker COPY includes it
+# without adding the Vercel-owned HTML page to the compact API image.
+printf '%s\n' "$RELEASE_COMMIT" > "$release_app/server/.release-commit"
 install -o root -g root -m 0644 "$REMOTE_TMP/Dockerfile" "$release_root/Dockerfile"
 install -o root -g root -m 0644 "$REMOTE_TMP/docker-compose.yml" "$release_root/docker-compose.yml"
 printf '%s\n' "$RELEASE_COMMIT" > "$release_root/.commit"

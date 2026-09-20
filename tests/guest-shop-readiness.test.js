@@ -15,6 +15,8 @@ const {
     formatHumanReport,
     getReadinessExitCode,
     inspectBuyerCredentials,
+    inspectBuyerCredentialFrontend,
+    inspectHostedBuyerCredentialFrontend,
     inspectCallbackUrl,
     inspectPromo,
     inspectRepo,
@@ -23,6 +25,7 @@ const {
     parseArgs,
     parseProviderList,
     runReadiness,
+    runReadinessWithHostedFrontend,
     stripSqlComments
 } = require('../scripts/guest-shop-readiness');
 
@@ -77,6 +80,55 @@ function checksByKey(summary, key) {
 
 function hasFinding(summary, key) {
     return (summary.findings || []).some((finding) => finding.key === key);
+}
+
+function createFetchResponse(url, { status = 200, text = '' } = {}) {
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: status === 200 ? 'OK' : 'Error',
+        url,
+        async text() { return text; }
+    };
+}
+
+function readKvm4PackagePaths() {
+    const deploySource = fs.readFileSync(
+        path.join(REPO_ROOT, 'scripts', 'deploy-kvm4-verify-server.sh'),
+        'utf8'
+    );
+    const block = /^PACKAGE_PATHS=\(\r?\n([\s\S]*?)^\)$/mu.exec(deploySource);
+    assert.ok(block, 'deploy-kvm4-verify-server.sh must declare PACKAGE_PATHS');
+    return block[1]
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((entry) => {
+            assert.match(entry, /^[A-Za-z0-9._/-]+$/u, `unsupported PACKAGE_PATHS entry: ${entry}`);
+            return entry;
+        });
+}
+
+function linkKvm4PackageFixture(tempRoot) {
+    const packagePaths = readKvm4PackagePaths();
+    for (const relativePath of packagePaths) {
+        const sourcePath = path.join(REPO_ROOT, relativePath);
+        const targetPath = path.join(tempRoot, relativePath);
+        if (relativePath === 'server') {
+            fs.mkdirSync(targetPath, { recursive: true });
+            for (const entry of fs.readdirSync(sourcePath, { withFileTypes: true })) {
+                if (entry.name === '.release-commit') continue;
+                fs.symlinkSync(
+                    path.join(sourcePath, entry.name),
+                    path.join(targetPath, entry.name),
+                    entry.isDirectory() ? 'dir' : 'file'
+                );
+            }
+            continue;
+        }
+        fs.symlinkSync(sourcePath, targetPath, fs.statSync(sourcePath).isDirectory() ? 'dir' : 'file');
+    }
+    return packagePaths;
 }
 
 test('parseArgs supports env file, JSON and strict readiness flags', () => {
@@ -499,6 +551,236 @@ test('A1b upsert migration static assertions pass on the real file and fail clos
     }
 });
 
+test('access-attempt retention readiness proves the migration, verify and worker contracts but keeps DB evidence manual', () => {
+    const checks = inspectBuyerCredentials({}, false, REPO_ROOT);
+    const retention = checks.filter((check) => check.key.startsWith('access-retention:'));
+    assert.ok(retention.length >= 20, `expected retention static checks, got ${retention.length}`);
+    assert.equal(retention.some((check) => check.ok === false), false, JSON.stringify(retention.filter((check) => !check.ok)));
+    assert.equal(retention.some((check) => check.key === 'access-retention:verify-owner'), true);
+    assert.equal(retention.some((check) => check.key === 'access-retention:verify-result-contract'), true);
+    assert.equal(retention.some((check) => check.key === 'access-retention:service-role-guard'), true);
+    assert.equal(retention.some((check) => check.key === 'access-retention:advisory-lock'), true);
+    assert.equal(retention.some((check) => check.key === 'access-retention:verify-single-overload'), true);
+    assert.equal(retention.some((check) => check.key === 'access-retention:verify-index-valid-ready'), true);
+    assert.equal(retention.some((check) => check.key === 'access-retention:verify-index-shape'), true);
+
+    const applied = checks.find((check) => check.key === 'access-retention-schema-applied');
+    assert.equal(applied.status, 'manual_review');
+    assert.equal(applied.requires_manual_review, true);
+    assert.match(applied.message, /7 项检查全部 PASS/u);
+    assert.match(applied.message, /每批最多 1000 行/u);
+    assert.match(applied.message, /不执行 SQL/u);
+});
+
+test('access-attempt retention readiness rejects removal of each hardened SQL invariant', () => {
+    const migrationPath = 'supabase/migrations/20260924_guest_shop_access_attempt_retention.sql';
+    const verifyPath = 'supabase/migrations/20260924_verify_guest_shop_access_attempt_retention.sql';
+    const workerPath = 'server/guest-shop-worker.js';
+    const cases = [
+        {
+            name: 'migration service-role guard',
+            file: migrationPath,
+            key: 'access-retention:service-role-guard',
+            mutate: (source) => source.replace(
+                'PERFORM public.guest_shop_require_service_role();',
+                'PERFORM public.guest_shop_require_service_role_removed();'
+            )
+        },
+        {
+            name: 'migration advisory lock',
+            file: migrationPath,
+            key: 'access-retention:advisory-lock',
+            mutate: (source) => source.replace(
+                'PERFORM pg_catalog.pg_advisory_xact_lock(',
+                'PERFORM pg_catalog.pg_advisory_lock('
+            )
+        },
+        {
+            name: 'migration bounded victims',
+            file: migrationPath,
+            key: 'access-retention:victim-limit',
+            mutate: (source) => source.replace('        LIMIT v_limit\n', '')
+        },
+        {
+            name: 'migration complete search path',
+            file: migrationPath,
+            key: 'access-retention:secure-definer',
+            mutate: (source) => source.replace(
+                'SET search_path = pg_catalog, pg_temp',
+                'SET search_path = pg_catalog, public, pg_temp'
+            )
+        },
+        {
+            name: 'verify unique overload family',
+            file: verifyPath,
+            key: 'access-retention:verify-single-overload',
+            mutate: (source) => source.replace(
+                'AND (SELECT COUNT(*) = 1 FROM fn_family)',
+                'AND true'
+            )
+        },
+        {
+            name: 'verify index ready state',
+            file: verifyPath,
+            key: 'access-retention:verify-index-valid-ready',
+            mutate: (source) => source.replace('AND bool_and(indisready)', 'AND true')
+        },
+        {
+            name: 'verify exact index columns',
+            file: verifyPath,
+            key: 'access-retention:verify-index-shape',
+            mutate: (source) => source.replace(
+                "AND bool_and(key_columns = ARRAY['created_at', 'id']::NAME[])",
+                'AND true'
+            )
+        },
+        {
+            name: 'verify exact index direction',
+            file: verifyPath,
+            key: 'access-retention:verify-index-shape',
+            mutate: (source) => source.replace(
+                'AND bool_and(is_ascending_nulls_last)',
+                'AND true'
+            )
+        },
+        {
+            name: 'verify complete search path',
+            file: verifyPath,
+            key: 'access-retention:verify-search-path',
+            mutate: (source) => source.replace(
+                "proconfig @> ARRAY['search_path=pg_catalog, pg_temp']::TEXT[]",
+                "proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']::TEXT[]"
+            )
+        },
+        {
+            name: 'verify body service-role guard',
+            file: verifyPath,
+            key: 'access-retention:verify-body-service-role-guard',
+            mutate: (source) => source.replace(
+                "AND def LIKE '%PERFORM public.guest_shop_require_service_role()%'",
+                'AND true'
+            )
+        },
+        {
+            name: 'verify body advisory lock',
+            file: verifyPath,
+            key: 'access-retention:verify-body-advisory-lock',
+            mutate: (source) => source.replace(
+                "AND def LIKE '%pg_catalog.pg_advisory_xact_lock%'",
+                'AND true'
+            )
+        },
+        {
+            name: 'verify body bounded victims',
+            file: verifyPath,
+            key: 'access-retention:verify-body-victim-limit',
+            mutate: (source) => source.replace(
+                "AND def LIKE '%LIMIT v_limit%'",
+                'AND true'
+            )
+        },
+        {
+            name: 'verify grants cover the overload family',
+            file: verifyPath,
+            key: 'access-retention:verify-family-grant-source',
+            mutate: (source) => source.replace(
+                'FROM fn_family\n    CROSS JOIN LATERAL aclexplode(',
+                'FROM fn\n    CROSS JOIN LATERAL aclexplode('
+            )
+        },
+        {
+            name: 'verify effective inherited grants',
+            file: verifyPath,
+            key: 'access-retention:verify-effective-grants',
+            mutate: (source) => source.replace(
+                'NOT anon_can_execute\n                AND NOT authenticated_can_execute\n                AND service_role_can_execute',
+                'service_role_can_execute'
+            )
+        },
+        {
+            name: 'worker credential-retention runtime interlock',
+            file: workerPath,
+            key: 'access-retention:worker-credential-interlock',
+            mutate: (source) => source.replace(
+                "? 'access_audit_retention_required'",
+                "? 'access_audit_retention_disabled'"
+            )
+        }
+    ];
+
+    for (const scenario of cases) {
+        const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-retention-readiness-'));
+        try {
+            for (const relativePath of [migrationPath, verifyPath, workerPath]) {
+                const targetPath = path.join(tempRoot, relativePath);
+                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+                fs.copyFileSync(path.join(REPO_ROOT, relativePath), targetPath);
+            }
+            const targetPath = path.join(tempRoot, scenario.file);
+            const source = fs.readFileSync(targetPath, 'utf8');
+            const mutated = scenario.mutate(source);
+            assert.notEqual(mutated, source, `${scenario.name} fixture mutation must apply`);
+            fs.writeFileSync(targetPath, mutated, 'utf8');
+
+            const failed = inspectBuyerCredentials({}, false, tempRoot)
+                .find((check) => check.key === scenario.key);
+            assert.ok(failed, `${scenario.name} readiness check must exist`);
+            assert.equal(failed.ok, false, `${scenario.name} must fail closed`);
+            assert.equal(failed.blocking, true, `${scenario.name} must be blocking`);
+        } finally {
+            fs.rmSync(tempRoot, { recursive: true, force: true });
+        }
+    }
+});
+
+test('access-attempt retention uses an independent fail-closed switch that can outlive credential rollback', () => {
+    const defaults = inspectBuyerCredentials({}, true, REPO_ROOT);
+    const defaultSwitch = defaults.find((check) => check.key === 'access-retention-switch-boolean');
+    assert.equal(defaultSwitch.status, 'optional_not_configured');
+    assert.match(defaultSwitch.message, /默认关闭/u);
+
+    const missingForCredentials = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+    }, true, REPO_ROOT);
+    const required = missingForCredentials.find((check) => check.key === 'access-retention-switch-required');
+    assert.equal(required.ok, false);
+    assert.equal(required.blocking, true);
+    assert.match(required.message, /必须显式开启/u);
+
+    const explicitlyDisabled = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'false',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+    }, true, REPO_ROOT).find((check) => check.key === 'access-retention-switch-required');
+    assert.equal(explicitlyDisabled.ok, false);
+    assert.equal(explicitlyDisabled.blocking, true);
+
+    const rollbackCleanup = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'false',
+        GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'true'
+    }, true, REPO_ROOT);
+    const rollbackSwitch = rollbackCleanup.find((check) => check.key === 'access-retention-switch-boolean');
+    assert.equal(rollbackSwitch.ok, true);
+    assert.equal(rollbackSwitch.status, 'enabled');
+    assert.match(rollbackSwitch.message, /回滚后的历史数据/u);
+    assert.equal(rollbackCleanup.some((check) => check.key === 'access-retention-switch-required'), false);
+
+    const enabledWithCredentials = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'true',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+    }, true, REPO_ROOT);
+    assert.equal(enabledWithCredentials.some((check) => check.key === 'access-retention-switch-required'), false);
+    assert.equal(enabledWithCredentials.find((check) => check.key === 'access-retention-switch-boolean').status, 'enabled');
+
+    const malformed = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'sometimes'
+    }, true, REPO_ROOT).find((check) => check.key === 'access-retention-switch-boolean');
+    assert.equal(malformed.ok, false);
+    assert.equal(malformed.blocking, true);
+});
+
 test('enabling buyer credentials fails closed without a dedicated contact pepper', () => {
     const missing = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true' }, true, REPO_ROOT);
     assert.equal(hasFinding({ checks: missing, findings: missing.filter((c) => !c.ok) }, 'contact-pepper-required'), true);
@@ -573,6 +855,271 @@ test('a missing A2 frontend file still fails the buyer credential gate closed', 
     }
 });
 
+test('a complete local checkout validates its present frontend without a generated KVM4 release marker', async () => {
+    assert.equal(fs.existsSync(path.join(REPO_ROOT, 'guest-orders.html')), true);
+    assert.equal(fs.existsSync(path.join(REPO_ROOT, 'js', 'guest-orders-client.js')), true);
+    assert.equal(fs.existsSync(path.join(REPO_ROOT, 'server', '.release-commit')), false,
+        'the KVM4 marker is generated during deploy and must not be required in a source checkout');
+
+    let fetchCalls = 0;
+    const summary = await runReadinessWithHostedFrontend({
+        env: completeProductionEnv({
+            GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+            GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true',
+            GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'true'
+        }),
+        repoRoot: REPO_ROOT,
+        envFile: '',
+        fetchImpl: async () => {
+            fetchCalls += 1;
+            throw new Error('complete source checkout must not require hosted frontend evidence');
+        }
+    });
+
+    assert.equal(fetchCalls, 0);
+    assert.equal(summary.ok, true, JSON.stringify(summary.findings));
+    assert.equal(summary.checks.find((check) => check.key === 'frontend:guest-orders.html').status, 'present');
+    assert.equal(summary.checks.some((check) => check.key === 'frontend:release-commit'), false);
+    assert.equal(summary.checks.some((check) => check.key === 'frontend:guest-orders-commit'), false);
+});
+
+test('the KVM4 compact image delegates only the Vercel HTML entry point to manual evidence', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-kvm4-frontend-'));
+    try {
+        const clientPath = path.join(tempRoot, 'js', 'guest-orders-client.js');
+        fs.mkdirSync(path.dirname(clientPath), { recursive: true });
+        fs.copyFileSync(path.join(REPO_ROOT, 'js', 'guest-orders-client.js'), clientPath);
+
+        const checks = inspectBuyerCredentialFrontend({
+            APP_BASE_URL: 'https://www.fatherkey.com'
+        }, true, tempRoot);
+        const byKey = new Map(checks.map((check) => [check.key, check]));
+        const page = byKey.get('frontend:guest-orders.html');
+        const client = byKey.get('frontend:js/guest-orders-client.js');
+
+        assert.equal(page.ok, true);
+        assert.equal(page.status, 'manual_review');
+        assert.equal(page.blocking, false);
+        assert.equal(page.requires_manual_review, true);
+        assert.equal(page.deployment_surface, 'vercel');
+        assert.equal(page.hosted_url, 'https://www.fatherkey.com/guest-orders.html');
+        assert.match(page.message, /同一 main 提交/u);
+        assert.match(page.message, /guest-shop-frontend-contract\.test\.js/u);
+        assert.equal(client.ok, true);
+        assert.equal(client.status, 'present');
+
+        // The topology is not invalid, but it is intentionally not launch-ready
+        // until the Vercel page and CI contract evidence are reviewed.
+        const frontendSummary = {
+            ok: checks.every((check) => check.blocking !== true),
+            ready: checks.every((check) => check.requires_manual_review !== true)
+        };
+        assert.equal(getReadinessExitCode({ failOnInvalid: true }, frontendSummary), 0);
+        assert.equal(
+            getReadinessExitCode({ failOnNotReady: true }, frontendSummary),
+            READINESS_EXIT_CODES.NOT_READY
+        );
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('missing frontend artifacts cannot claim Vercel hosting without a managed production origin', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-untrusted-frontend-'));
+    try {
+        for (const [env, production] of [
+            [{ APP_BASE_URL: 'https://evil.example' }, true],
+            [{ APP_BASE_URL: 'https://verify-api.fatherkey.com' }, true],
+            [{ APP_BASE_URL: 'http://www.fatherkey.com' }, true],
+            [{ APP_BASE_URL: 'https://www.fatherkey.com' }, false]
+        ]) {
+            const checks = inspectBuyerCredentialFrontend(env, production, tempRoot);
+            assert.equal(checks.every((check) => check.ok === false), true);
+            assert.equal(checks.every((check) => check.blocking === true), true);
+        }
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('hosted frontend verification aligns Vercel asset versions with the KVM4 release commit', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-hosted-frontend-'));
+    const releaseCommit = 'a'.repeat(40);
+    const expectedVersion = releaseCommit.slice(0, 12);
+    try {
+        fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
+        fs.writeFileSync(path.join(tempRoot, 'server', '.release-commit'), `${releaseCommit}\n`, 'utf8');
+        const pageUrl = 'https://www.fatherkey.com/guest-orders.html';
+        const clientUrl = `https://www.fatherkey.com/js/guest-orders-client.js?v=${expectedVersion}`;
+        const page = [
+            '<body class="guest-orders-page">',
+            '<section id="guestOrdersFeatureGate"></section>',
+            '<div id="guestOrdersProtectedContent"></div>',
+            '<form id="guestOrdersQueryForm"></form>',
+            '<div id="guestOrdersLegacyPanel"></div>',
+            `<link rel="stylesheet" href="css/guest-orders.css?v=${expectedVersion}">`,
+            `<script src="./js/guest-orders-client.js?v=${expectedVersion}"></script>`
+        ].join('\n');
+        const client = [
+            "const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';",
+            "const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';",
+            "fetch('/api', { credentials: 'same-origin' });"
+        ].join('\n');
+        const calls = [];
+        const checks = await inspectHostedBuyerCredentialFrontend({
+            env: { APP_BASE_URL: 'https://www.fatherkey.com' },
+            repoRoot: tempRoot,
+            fetchImpl: async (url) => {
+                calls.push(String(url));
+                if (String(url) === pageUrl) return createFetchResponse(pageUrl, { text: page });
+                if (String(url) === clientUrl) return createFetchResponse(clientUrl, { text: client });
+                return createFetchResponse(String(url), { status: 404 });
+            }
+        });
+
+        assert.deepEqual(calls, [pageUrl, clientUrl]);
+        assert.equal(checks.length, 3);
+        assert.equal(checks.every((check) => check.ok === true), true);
+        assert.equal(checks.find((check) => check.key === 'frontend:guest-orders-commit').expected_commit, expectedVersion);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('the async production gate replaces local page presence with hosted commit-aligned evidence', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-readiness-overlay-'));
+    const releaseCommit = 'c'.repeat(40);
+    const expectedVersion = releaseCommit.slice(0, 12);
+    try {
+        const packagePaths = linkKvm4PackageFixture(tempRoot);
+        assert.deepEqual(packagePaths, [
+            'package.json',
+            'package-lock.json',
+            'adapters',
+            'api',
+            'server',
+            'js',
+            'scripts',
+            'docs',
+            'supabase'
+        ]);
+        assert.equal(fs.existsSync(path.join(tempRoot, 'deploy')), false);
+        assert.equal(fs.existsSync(path.join(tempRoot, 'tests')), false);
+        const serverRoot = path.join(tempRoot, 'server');
+        fs.writeFileSync(path.join(serverRoot, '.release-commit'), `${releaseCommit}\n`, 'utf8');
+
+        const pageUrl = 'https://www.fatherkey.com/guest-orders.html';
+        const clientUrl = `https://www.fatherkey.com/js/guest-orders-client.js?v=${expectedVersion}`;
+        const page = [
+            '<body class="guest-orders-page">',
+            '<div id="guestOrdersFeatureGate"></div>',
+            '<div id="guestOrdersProtectedContent"></div>',
+            '<form id="guestOrdersQueryForm"></form>',
+            '<div id="guestOrdersLegacyPanel"></div>',
+            `<link rel="stylesheet" href="css/guest-orders.css?v=${expectedVersion}">`,
+            `<script src="./js/guest-orders-client.js?v=${expectedVersion}"></script>`
+        ].join('\n');
+        const client = [
+            "const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';",
+            "const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';",
+            "fetch('/api', { credentials: 'same-origin' });"
+        ].join('\n');
+
+        const summary = await runReadinessWithHostedFrontend({
+            env: completeProductionEnv({
+                GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+                GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true',
+                GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'true'
+            }),
+            repoRoot: tempRoot,
+            envFile: '',
+            fetchImpl: async (url) => {
+                if (String(url) === pageUrl) return createFetchResponse(pageUrl, { text: page });
+                if (String(url) === clientUrl) return createFetchResponse(clientUrl, { text: client });
+                return createFetchResponse(String(url), { status: 404 });
+            }
+        });
+
+        assert.equal(summary.ok, true, JSON.stringify(summary.findings));
+        assert.equal(summary.ready, false, 'database/operator evidence must still keep strict readiness closed');
+        assert.equal(summary.checks.find((check) => check.key === 'frontend:guest-orders.html').status, 'hosted_verified');
+        assert.equal(summary.checks.find((check) => check.key === 'frontend:guest-orders-commit').status, 'aligned');
+        assert.equal(summary.manual_review.some((check) => check.key === 'frontend:guest-orders.html'), false);
+        const hostOnlyWorkerChecks = summary.checks.filter((check) =>
+            check.key.startsWith('file:deploy/kvm4/guest-shop-worker/')
+        );
+        assert.equal(hostOnlyWorkerChecks.length, 3);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.ok === true), true);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.status === 'manual_review'), true);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.requires_manual_review === true), true);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.deployment_surface === 'kvm4-host'), true);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.compact_image === true), true);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('missing host worker assets remain invalid without a valid compact-image marker', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-source-assets-'));
+    try {
+        fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
+        fs.writeFileSync(path.join(tempRoot, 'server', '.release-commit'), 'not-a-commit\n', 'utf8');
+        const hostOnlyWorkerChecks = inspectRepo(tempRoot).filter((check) =>
+            check.key.startsWith('file:deploy/kvm4/guest-shop-worker/')
+        );
+        assert.equal(hostOnlyWorkerChecks.length, 3);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.ok === false), true);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.status === 'invalid'), true);
+        assert.equal(hostOnlyWorkerChecks.every((check) => check.blocking === true), true);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('hosted frontend verification fails closed on commit drift or missing release evidence', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guest-shop-hosted-drift-'));
+    try {
+        const missing = await inspectHostedBuyerCredentialFrontend({
+            env: { APP_BASE_URL: 'https://www.fatherkey.com' },
+            repoRoot: tempRoot,
+            fetchImpl: async () => { throw new Error('must not fetch without release evidence'); }
+        });
+        assert.equal(missing[0].key, 'frontend:release-commit');
+        assert.equal(missing[0].ok, false);
+
+        fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
+        fs.writeFileSync(path.join(tempRoot, 'server', '.release-commit'), `${'a'.repeat(40)}\n`, 'utf8');
+        const stalePage = [
+            '<body class="guest-orders-page">',
+            '<div id="guestOrdersFeatureGate"></div>',
+            '<div id="guestOrdersProtectedContent"></div>',
+            '<form id="guestOrdersQueryForm"></form>',
+            '<div id="guestOrdersLegacyPanel"></div>',
+            '<script src="./js/guest-orders-client.js?v=bbbbbbbbbbbb"></script>'
+        ].join('\n');
+        const drift = await inspectHostedBuyerCredentialFrontend({
+            env: { APP_BASE_URL: 'https://www.fatherkey.com' },
+            repoRoot: tempRoot,
+            fetchImpl: async (url) => createFetchResponse(String(url), { text: stalePage })
+        });
+        assert.equal(drift[0].key, 'frontend:guest-orders-commit');
+        assert.equal(drift[0].ok, false);
+        assert.equal(drift[0].blocking, true);
+        assert.deepEqual(drift[0].observed_versions, ['bbbbbbbbbbbb']);
+    } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('the KVM4 deploy embeds its exact release commit for hosted frontend alignment', () => {
+    const deploy = fs.readFileSync(path.join(REPO_ROOT, 'scripts', 'deploy-kvm4-verify-server.sh'), 'utf8');
+    assert.match(
+        deploy,
+        /printf '%s\\n' "\$RELEASE_COMMIT" > "\$release_app\/server\/\.release-commit"/u
+    );
+    assert.match(deploy, /tar -xzf "\$REMOTE_TMP\/app\.tar\.gz" -C "\$release_app"[\s\S]{0,600}server\/\.release-commit/u);
+});
+
 test('guest orders page cannot be enabled ahead of the credential chain', () => {
     const checks = inspectBuyerCredentials({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true' }, true, REPO_ROOT);
     const failure = checks.find((check) => check.key === 'orders-page-requires-credentials');
@@ -590,7 +1137,7 @@ test('malformed buyer credential switch values are hard failures, not silent off
     assert.equal(off.some((check) => check.ok === false), false);
 });
 
-test('captcha thresholds must fire before the lockout thresholds', () => {
+test('reserved captcha thresholds must remain below the lockout thresholds without claiming runtime protection', () => {
     const buyer = inspectBuyerCredentials({ GUEST_SHOP_BUYER_CAPTCHA_BUYER_THRESHOLD: '5' }, true, REPO_ROOT);
     assert.equal(buyer.some((check) => check.key === 'buyer-captcha-before-lockout' && check.ok === false), true);
 
@@ -602,6 +1149,32 @@ test('captcha thresholds must fire before the lockout thresholds', () => {
         GUEST_SHOP_BUYER_CAPTCHA_IP_THRESHOLD: '8'
     }, true, REPO_ROOT);
     assert.equal(consistent.some((check) => check.key.startsWith('buyer-captcha-') && check.ok === false), false);
+    for (const check of consistent.filter((item) => item.key.startsWith('buyer-captcha-'))) {
+        assert.equal(check.status, 'configured_deferred');
+        assert.match(check.message, /尚未读取或校验 CAPTCHA token/u);
+        assert.doesNotMatch(check.message, /早于.*触发/u);
+    }
+});
+
+test('buyer credential readiness reports CAPTCHA as deferred instead of active protection', () => {
+    const disabled = inspectBuyerCredentials({}, true, REPO_ROOT)
+        .find((check) => check.key === 'captcha-runtime-deferred');
+    assert.equal(disabled.status, 'optional_not_configured');
+    assert.equal(disabled.requires_manual_review, undefined);
+
+    const enabled = inspectBuyerCredentials({
+        GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+        GUEST_SHOP_CONTACT_HASH_PEPPER: SECRET_VALUES.contact
+    }, true, REPO_ROOT).find((check) => check.key === 'captcha-runtime-deferred');
+    assert.equal(enabled.ok, true);
+    assert.equal(enabled.status, 'manual_review');
+    assert.equal(enabled.blocking, false);
+    assert.equal(enabled.requires_manual_review, true);
+    assert.equal(enabled.deferred, true);
+    assert.equal(enabled.rollout_limit_orders, 5);
+    assert.match(enabled.message, /IP 限流/u);
+    assert.match(enabled.message, /阶梯锁定/u);
+    assert.match(enabled.message, /不得作为放行证据/u);
 });
 
 test('buyer credential numeric settings reject malformed and out-of-range values', () => {
@@ -720,7 +1293,8 @@ test('buyer credential readiness checks stay inside the strict gate and never pr
     const summary = runReadiness({
         env: completeProductionEnv({
             GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
-            GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true'
+            GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true',
+            GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED: 'true'
         }),
         repoRoot: REPO_ROOT,
         envFile: ''

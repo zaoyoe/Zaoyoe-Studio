@@ -181,11 +181,17 @@ an instruction to execute SQL.
    readiness, secrets, port `127.0.0.1:3001`, and health checks.
 9. Rollback of guest checkout is closing the product/SKU switch. Rolling back a
    verify release does not by itself refund or un-fulfill guest orders.
+10. `GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED` is independent from the
+    buyer-credential switch. Buyer credentials require retention explicitly ON
+    after its migration and read-only verify report **7/7 PASS**. During a
+    credential rollback, leave retention ON until historical access-attempt rows
+    have aged through the configured retention window and cleanup has caught up.
 
-### Reload guest-shop secrets
+### Reload guest-shop secrets or switches
 
 `verify-server` reads `/opt/zaoyoe-verify-server/.env` through compose
-`env_file`. Writing a new key into `.env` is not enough.
+`env_file`. Writing a new key or changing a feature/retention switch in `.env`
+is not enough.
 
 ```bash
 # 1. backup .env (mode 0600). Append or rotate keys without printing values.
@@ -211,6 +217,86 @@ printing their values. Guest payment adapters call
 variables are only a fallback. Missing `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` in
 `.env` is expected when those live in stored secrets. Do not copy login-payment
 keys into guest-shop env "just in case".
+
+### Buyer credential retention lifecycle
+
+The retention switch defaults OFF. Apply
+`supabase/migrations/20260924_guest_shop_access_attempt_retention.sql` and run
+the read-only `supabase/migrations/20260924_verify_guest_shop_access_attempt_retention.sql`
+first; all **7** rows must be `PASS` before setting
+`GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED=true`. Codex deployment does
+not execute either SQL file.
+
+The supported matrix is:
+
+| Buyer credentials | Retention | Result |
+|---|---|---|
+| OFF | OFF | Default; no retention RPC |
+| ON | OFF | Invalid; readiness fails closed |
+| ON | ON | Allowed only after migration + 7/7 verify |
+| OFF | ON | Required rollback-drain mode; historical rows continue to expire |
+
+Every `.env` transition in this matrix uses the watchdog pause and
+`docker compose up -d --no-deps --force-recreate --no-build verify-server`
+sequence above. Never use `docker restart` or `docker compose restart` as an
+environment reload. On rollback, turn buyer credentials and the orders page
+OFF but keep retention and the guest-shop timer ON. Review retention OFF only
+after the configured retention period has elapsed and there is no cleanup
+error or backlog evidence.
+
+Retention runs every ten minutes and may drain at most 10 batches of 1000 rows
+per sweep. A cleanup/config/RPC error returns HTTP 503 with stable code
+`guest_access_audit_cleanup_failed`; a remaining backlog after 10 batches
+returns HTTP 503 with `guest_access_audit_backlog_degraded`. The systemd
+oneshot is failed for that tick even if fulfillment work completed safely.
+Inspect both records without replaying orders:
+
+```bash
+systemctl status zaoyoe-guest-shop-worker.service --no-pager
+journalctl -u zaoyoe-guest-shop-worker.service -n 80 --no-pager
+docker logs --since 30m zaoyoe-verify-server 2>&1 \
+  | grep -E 'guest_access_audit_(cleanup_failed|backlog_degraded)'
+```
+
+The systemd journal establishes the failed/HTTP 503 tick; the verify container
+`maintenance degraded` record carries the stable code, completed batch/delete
+counts, and `has_more`. Do not widen guest SKUs or disable retention while
+either condition persists.
+
+### KVM4 runtime readiness
+
+The local checkout command below is a source-tree gate. Because a complete
+checkout contains `guest-orders.html` and `js/guest-orders-client.js`, it checks
+those local files and deliberately does not require the generated
+`server/.release-commit` or fetch the live Vercel page.
+
+When buyer credentials and the guest-orders page are both enabled, run the
+production gate inside the actual KVM4 `verify-server` container. The compact
+image intentionally omits `guest-orders.html`, while deployment writes the
+exact release commit to `/app/server/.release-commit`; this makes readiness
+fetch the Vercel page and its same-origin client and compare their 12-character
+asset version with the KVM4 release commit.
+
+```bash
+cd /opt/zaoyoe-verify-server
+
+host_release="$(tr -d '\r\n' < .current-release)"
+container_release="$(docker compose exec -T verify-server \
+  sh -c 'tr -d "\r\n" < /app/server/.release-commit')"
+test -n "$host_release" && test "$host_release" = "$container_release"
+
+docker compose exec -T verify-server \
+  npm run readiness:guest-shop -- --fail-on-invalid
+```
+
+Before accepting the result, confirm the container uses a canonical HTTPS
+`APP_BASE_URL`. The report must show the Vercel `guest-orders.html` as
+`hosted_verified`, its same-origin `js/guest-orders-client.js` as
+`hosted_verified`, and `frontend:guest-orders-commit` as `aligned`. A request
+failure, cross-origin result, missing contract marker, missing release marker,
+or asset-version drift is a hard failure. This container check supplements the
+local source-tree gate; neither one applies SQL or grants permission to enable
+a product/SKU.
 
 ### Install
 
