@@ -8512,6 +8512,7 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     padding: 24px !important;
     text-align: left;
     overflow-y: auto;
+    scroll-padding-bottom: 88px;
 }
 
 .guest-shop-modal__header,
@@ -8778,8 +8779,21 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__delivery-fact strong { color: rgba(226,232,240,.82); font-weight: 600; }
 .guest-shop-modal__delivery-title { display: flex; gap: 8px; align-items: center; color: #86efac; font-weight: 600; }
 .guest-shop-modal__delivery-content { max-height: 260px; margin: 12px 0; padding: 12px; border-radius: 8px; background: rgba(0,0,0,.22); color: rgba(248,250,252,.92); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.guest-shop-modal__actions { justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.guest-shop-modal__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(148,163,184,.2);
+    background: inherit;
+    box-shadow: 0 -10px 18px rgba(15,23,42,.12);
+}
 .guest-shop-modal__actions .shop-btn { min-height: 42px; }
+.guest-shop-modal__actions > .shop-btn[hidden] { display: none !important; }
 
 
 .guest-shop-modal__qr {
@@ -8991,6 +9005,10 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-copy.is
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__summary-row span,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__hint { color: rgba(51,65,85,.72); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__actions {
+    border-top-color: rgba(148,163,184,.24);
+    box-shadow: 0 -10px 18px rgba(148,163,184,.12);
+}
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-status {
     background: rgba(248, 250, 252, 0.94);
     border-color: rgba(148, 163, 184, 0.2);
@@ -9053,7 +9071,7 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-success-mark 
 
 @media (max-width: 600px) {
     .guest-shop-modal { align-items: flex-end; padding: 12px; }
-    .guest-shop-modal__content { width: 100% !important; max-height: calc(100dvh - 24px) !important; padding: 20px !important; border-radius: 20px !important; }
+    .guest-shop-modal__content { width: 100% !important; max-height: calc(100dvh - 24px) !important; padding: 20px !important; border-radius: 20px !important; scroll-padding-bottom: 220px; }
     .guest-shop-modal__actions { display: grid; grid-template-columns: 1fr; }
     .guest-shop-modal__actions .shop-btn { width: 100%; }
     .guest-shop-modal__qr-card { min-height: 240px; }

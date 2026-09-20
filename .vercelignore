@@ -129,6 +129,7 @@ api/shop/guest/status.js
 api/shop/guest/recover.js
 api/shop/guest/order.js
 api/shop/guest/delivery.js
+api/shop/guest/access/availability.js
 api/shop/guest/access/login.js
 api/shop/guest/access/logout.js
 api/shop/guest/access/reset.js

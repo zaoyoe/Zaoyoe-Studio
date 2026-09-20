@@ -269,6 +269,14 @@ test('parseBuyerCredentialSwitch fails closed on garbage and treats absent as di
     assert.equal(buyer.isBuyerCredentialEnabled({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true' }), true);
     assert.equal(buyer.isBuyerCredentialEnabled({ GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'maybe' }), false);
     assert.equal(buyer.isBuyerCredentialEnabled({}), false);
+
+    assert.deepEqual(buyer.parseGuestOrdersPageSwitch({}), { present: false, valid: true, enabled: false });
+    assert.equal(buyer.isGuestOrdersPageEnabled({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true' }), true);
+    assert.equal(buyer.isGuestOrdersPageEnabled({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'no' }), false);
+    assert.deepEqual(
+        buyer.parseGuestOrdersPageSwitch({ GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'maybe' }),
+        { present: true, valid: false, enabled: false }
+    );
 });
 
 test('resolveBuyerCredentialSettings applies defaults, clamps the cap and rejects invalid numbers', () => {

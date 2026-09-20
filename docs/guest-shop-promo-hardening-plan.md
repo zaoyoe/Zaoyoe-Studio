@@ -2,7 +2,7 @@
 
 > 工作目录：`/Volumes/chao/AI/xianyu_profit_calculator-guest-promo`
 > 分支：`codex/guest-shop-promo-hardening`（基线 `2424dcc14` = 最新 `main`）
-> 关联：`docs/guest-purchase-task-2.0.md`、`docs/guest-shop-payment-fulfillment-runbook.md`、`AGENTS.md`
+> 关联：`docs/guest-purchase-task-2.0.md`（当前任务 2.1 内容版本）、`docs/guest-shop-payment-fulfillment-runbook.md`、`AGENTS.md`
 > 前置已完成任务：`codex/guest-shop-entry-merge`（`7cf0cb405`，未部署）
 
 ## 0. 文档定位
@@ -759,7 +759,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 > **L2 与 L3 拆开发布是禁止的**：只发 L2 会出现「前端能报价、后端不认账」，直接产生 `amount_mismatch`（已付款不发货）。只发 L3 会出现「后端能算、前端拿不到报价」。
 
-每期交付物固定四件套：迁移文件（写盘不执行）+ verify SQL + 自动化测试 + 文档更新（本文 + `docs/guest-shop-payment-fulfillment-runbook.md` + `docs/guest-purchase-task-2.0.md`）。
+每期交付物固定四件套：迁移文件（写盘不执行）+ verify SQL + 自动化测试 + 文档更新（本文 + `docs/guest-shop-payment-fulfillment-runbook.md` + `docs/guest-purchase-task-2.0.md` 的任务 2.1 §61）。
 
 ### 灰度许可签署（用户填写）
 
@@ -905,7 +905,7 @@ pricingVersion: 'guest-promo-v1'   // 版本升级，旧 fingerprint 天然不�
 
 - 本文（设计合同）
 - `docs/guest-shop-payment-fulfillment-runbook.md` — 增补促销章节：开关层级、紧急停机三路径、熔断恢复、预算归还核对
-- `docs/guest-purchase-task-2.0.md` — 增补促销任务条目与完成标准
+- `docs/guest-purchase-task-2.0.md` — 任务 2.1 §61 的促销任务条目与完成标准
 - `docs/guest-shop-promo-evidence.md`（新）— 实机证据归档
 
 ---

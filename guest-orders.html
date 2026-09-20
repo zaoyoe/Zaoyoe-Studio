@@ -22,7 +22,7 @@
     <link rel="canonical" href="https://www.fatherkey.com/guest-orders.html">
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="vendor/fontawesome/6.4.0/css/all.min.css?v=20260519_VENDOR_PUBLIC_1">
-    <link rel="stylesheet" href="css/guest-orders.css?v=20260922_GUEST_ORDER_ACCESS_A3_1">
+    <link rel="stylesheet" href="css/guest-orders.css?v=20260924_GUEST_ORDERS_RETRY_1">
 </head>
 
 <body class="guest-orders-page">
@@ -38,6 +38,18 @@
             <a class="guest-orders-back" href="/shop.html"><i class="fas fa-arrow-left" aria-hidden="true"></i> 返回商城</a>
         </header>
 
+        <section id="guestOrdersFeatureGate" class="guest-orders-gate" aria-labelledby="guestOrdersFeatureGateTitle">
+            <i class="fas fa-shield-halved guest-orders-gate-icon" aria-hidden="true"></i>
+            <div>
+                <h2 id="guestOrdersFeatureGateTitle">正在确认查询服务状态</h2>
+                <p id="guestOrdersFeatureGateMessage" role="status" aria-live="polite">请稍候，正在验证游客订单查询是否可用。</p>
+                <button id="guestOrdersFeatureRetryBtn" type="button" class="guest-orders-secondary-btn" hidden>
+                    <i class="fas fa-rotate-right" aria-hidden="true"></i> 重新确认
+                </button>
+            </div>
+        </section>
+
+        <div id="guestOrdersProtectedContent" hidden aria-hidden="true">
         <div id="guestOrdersSavedHint" class="guest-orders-saved" hidden>
             <span><i class="fas fa-key" aria-hidden="true"></i> <span id="guestOrdersSavedEmail"></span> 的查询凭证已保存在本机</span>
             <button id="guestOrdersClearSavedBtn" type="button" class="guest-orders-link-btn">清除本机凭证</button>
@@ -177,6 +189,7 @@
                 <p id="guestOrdersDeliveryHint" class="guest-orders-tip" hidden></p>
             </div>
         </section>
+        </div>
 
         <!--
           §13.4: historical orders placed before Order Access 2.0 have no query
@@ -211,7 +224,7 @@
                   buyer (§10.5): an admin-set password would transit a support
                   channel in plaintext.
                 -->
-                <div class="guest-orders-upgrade">
+                <div id="guestOrdersUpgradeContent" class="guest-orders-upgrade" hidden aria-hidden="true">
                     <div class="guest-orders-upgrade-title">
                         <i class="fas fa-arrow-up-right-dots" aria-hidden="true"></i>
                         为这个历史订单设置查询密码
@@ -259,7 +272,7 @@
 
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
     <script src="./js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
-    <script src="./js/guest-orders-client.js?v=20260922_GUEST_ORDER_ACCESS_A3_1" defer></script>
+    <script src="./js/guest-orders-client.js?v=20260924_GUEST_ORDERS_RETRY_1&legacyRecovery=20260920_GUEST_LEGACY_RECOVERY_1" defer></script>
 </body>
 
 </html>

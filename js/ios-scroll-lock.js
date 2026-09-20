@@ -190,12 +190,16 @@
         return shouldAnchorLightLock(modalElement);
     }
 
+    function isRestorableModal(modalElement) {
+        return !!(
+            modalElement?.isConnected
+            && modalElement.classList?.contains('active')
+        );
+    }
+
     function getRestorableSuspendedLightLock() {
         const lockState = suspendedLightLock;
-        const modalElement = lockState?.modalElement || null;
-        if (!modalElement?.isConnected) return null;
-        if (modalElement.classList && !modalElement.classList.contains('active')) return null;
-        return lockState;
+        return isRestorableModal(lockState?.modalElement) ? lockState : null;
     }
 
     function restoreSuspendedLightLock(lockState, fallbackScrollY) {
@@ -386,7 +390,7 @@
             const previousModal = currentModal;
 
             if (isLightLock) {
-                if (!suspendedLightLock && previousModal) {
+                if (!suspendedLightLock && isRestorableModal(previousModal)) {
                     suspendedLightLock = {
                         modalElement: previousModal,
                         savedScrollY,
@@ -446,7 +450,7 @@
     function lockLight(modalElement, options = {}) {
         if (isLocked) {
             const previousModal = currentModal;
-            if (isLightLock && modalElement && modalElement !== previousModal && !suspendedLightLock && previousModal) {
+            if (isLightLock && modalElement && modalElement !== previousModal && !suspendedLightLock && isRestorableModal(previousModal)) {
                 suspendedLightLock = {
                     modalElement: previousModal,
                     savedScrollY,
@@ -507,8 +511,18 @@
     /**
      * 解锁背景滚动，恢复到原始位置
      */
-    function unlock() {
+    function unlock(ownerModal = null) {
         if (!isLocked) return;
+        // A modal may close after another overlay has taken ownership of the
+        // shared lock. Releasing by owner prevents that stale close from
+        // unlocking the newer surface. If the stale owner was suspended below
+        // the current full lock, drop only that restoration candidate.
+        if (ownerModal && currentModal !== ownerModal) {
+            if (suspendedLightLock?.modalElement === ownerModal) {
+                suspendedLightLock = null;
+            }
+            return;
+        }
 
         // 1. 清理 viewport 监听器
         detachViewportListener();
@@ -625,6 +639,9 @@
         lock: lock,
         lockLight: lockLight,
         unlock: unlock,
+        isOwnedBy(modalElement) {
+            return isLocked && currentModal === modalElement;
+        },
         /** 检查当前是否处于锁定状态 */
         get isLocked() { return isLocked; }
     };

@@ -594,6 +594,7 @@ const ShopClient = {
     purchaseModalPageFrozen: false,
     purchaseModalBaseScrollY: 0,
     purchaseModalOwnsFullScrollLock: false,
+    guestCashHandoffGeneration: 0,
     categoryProductsCache: {},
     categoryProductsPromises: {},
     allProductsCache: null,
@@ -6087,15 +6088,63 @@ const ShopClient = {
         if (!bridge || typeof bridge.startGuestCheckout !== 'function') {
             return { started: false, reason: 'bridge_unavailable' };
         }
+        // The availability probe is asynchronous and the points modal cleanup may
+        // discard currentPurchase before it resolves. Capture a visible external
+        // return target now so closing the guest dialog never leaves focus on body.
+        const returnFocusTarget = this.findGuestCashReturnFocusTarget();
+        const sourceModal = document.getElementById('shopPurchaseModal');
+        const sourcePurchase = this.currentPurchase;
+        const sourceProductId = String(sourcePurchase?.productId || '').trim();
+        const sourceSkuId = String(sourcePurchase?.productSkuId || '').trim();
+        const handoffGeneration = Number(this.guestCashHandoffGeneration || 0) + 1;
+        this.guestCashHandoffGeneration = handoffGeneration;
+        const shouldOpenGuestModal = () => this.guestCashHandoffGeneration === handoffGeneration
+            && this.currentPurchase === sourcePurchase
+            && String(this.currentPurchase?.productId || '').trim() === sourceProductId
+            && String(this.currentPurchase?.productSkuId || '').trim() === sourceSkuId
+            && sourceModal?.hidden !== true
+            && sourceModal?.classList?.contains('active') === true;
         try {
-            const result = await bridge.startGuestCheckout();
+            const canHandoffScrollLock = Boolean(window.iOSScrollLock);
+            const result = await bridge.startGuestCheckout(undefined, {
+                deferScrollLock: canHandoffScrollLock,
+                shouldOpen: shouldOpenGuestModal
+            });
             if (result && result.started) {
+                // The guest checkout owns the next interaction surface. Close
+                // the points-purchase modal that launched it so two overlays
+                // cannot compete for focus, scroll locking, or backdrop clicks.
+                // Keep one continuous lock across the handoff; releasing the
+                // purchase lock first makes iOS restore the page underneath the
+                // newly opened guest dialog.
+                this.closePurchaseModal({
+                    scrollLockHandoffTarget: canHandoffScrollLock
+                        ? document.getElementById('guestCashPurchaseModal')
+                        : null
+                });
+                bridge.setModalReturnFocusTarget?.(returnFocusTarget);
+                window.requestAnimationFrame(() => bridge.focusGuestModal?.());
                 return { started: true, reason: result.reason || 'available' };
             }
             return { started: false, reason: (result && result.reason) || 'unavailable' };
         } catch (error) {
             return { started: false, reason: 'bridge_error' };
         }
+    },
+
+    findGuestCashReturnFocusTarget: function () {
+        const productId = String(this.currentPurchase?.productId || '').trim();
+        if (!productId) return null;
+        const candidates = Array.from(document.querySelectorAll('[data-shop-action="buy-product"][data-product-id]'));
+        const isVisibleCandidate = (candidate) => String(candidate.dataset?.productId || '').trim() === productId
+            && candidate.hidden !== true
+            && candidate.getAttribute?.('aria-hidden') !== 'true'
+            && (typeof candidate.getClientRects !== 'function' || candidate.getClientRects().length > 0);
+        // A product tile can be a nested pseudo-button plus a real purchase button.
+        // Prefer the real control the keyboard user can operate directly.
+        return candidates.find((candidate) => candidate.matches?.('button') && isVisibleCandidate(candidate))
+            || candidates.find(isVisibleCandidate)
+            || null;
     },
 
     getCurrentPurchaseFlashSalePricingContext: function () {
@@ -12874,7 +12923,7 @@ const ShopClient = {
         document.body.scrollTop = 0;
     },
 
-    unfreezePurchaseModalPage: function () {
+    unfreezePurchaseModalPage: function ({ restoreScroll = true } = {}) {
         if (!this.purchaseModalPageFrozen) return;
 
         const restoreScrollY = Math.max(0, Math.round(this.purchaseModalBaseScrollY || 0));
@@ -12914,9 +12963,30 @@ const ShopClient = {
         this.purchaseModalPageFrozen = false;
         this.purchaseModalBaseScrollY = 0;
 
-        requestAnimationFrame(() => {
+        if (restoreScroll) {
+            requestAnimationFrame(() => {
+                window.scrollTo(0, restoreScrollY);
+            });
+        }
+    },
+
+    handoffPurchaseModalScrollLock: function (target) {
+        if (!target?.classList?.contains('active') || !window.iOSScrollLock) return false;
+
+        if (this.purchaseModalPageFrozen) {
+            const restoreScrollY = Math.max(0, Math.round(this.purchaseModalBaseScrollY || 0));
+            this.unfreezePurchaseModalPage({ restoreScroll: false });
             window.scrollTo(0, restoreScrollY);
+            document.documentElement.scrollTop = restoreScrollY;
+            document.body.scrollTop = restoreScrollY;
+        }
+        // lockLight updates the current modal without dropping the existing
+        // background lock or its saved page position. Keeping guest checkout a
+        // light owner also lets a temporary full-lock auth overlay restore it.
+        window.iOSScrollLock.lockLight(target, {
+            restoreScrollDuringViewport: true
         });
+        return true;
     },
 
     lockPurchaseModalKeyboardPage: function () {
@@ -13649,9 +13719,11 @@ const ShopClient = {
         });
     },
 
-    closePurchaseModal: function () {
+    closePurchaseModal: function (options = {}) {
         const modal = document.getElementById('shopPurchaseModal');
         if (!modal) return;
+        this.guestCashHandoffGeneration = Number(this.guestCashHandoffGeneration || 0) + 1;
+        const scrollLockHandoffTarget = options?.scrollLockHandoffTarget || null;
         const activeInput = this.getActivePurchaseModalInput();
         activeInput?.blur();
         this.runShopModalCloseChromeCleanup({
@@ -13677,11 +13749,14 @@ const ShopClient = {
         modal.classList.remove('has-purchase-notes-expanded');
         modal.classList.remove('has-purchase-usage');
         modal.classList.remove('has-purchase-usage-expanded');
-        // Unlock background scroll on mobile Safari
-        if (this.purchaseModalPageFrozen) {
-            this.unfreezePurchaseModalPage();
-        } else if (window.iOSScrollLock) {
-            window.iOSScrollLock.unlock();
+        // Unlock background scroll, unless another already-open modal adopts it.
+        const scrollLockHandedOff = this.handoffPurchaseModalScrollLock(scrollLockHandoffTarget);
+        if (!scrollLockHandedOff) {
+            if (this.purchaseModalPageFrozen) {
+                this.unfreezePurchaseModalPage();
+            } else if (window.iOSScrollLock) {
+                window.iOSScrollLock.unlock();
+            }
         }
         this.purchaseModalOwnsFullScrollLock = false;
         this.purchaseModalBaseScrollY = 0;
@@ -14161,7 +14236,7 @@ const ShopClient = {
                 // this adds no latency for guests and keeps the logged-in path intact.
                 const guestEntry = await this.startGuestCashCheckout();
                 restoreIdleButtonState();
-                if (!guestEntry.started) {
+                if (!guestEntry.started && guestEntry.reason !== 'source_stale') {
                     this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
                 }
                 return;

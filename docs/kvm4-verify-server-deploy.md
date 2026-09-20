@@ -243,4 +243,4 @@ See also:
 
 - `AGENTS.md` Guest Shop Deployment Rules
 - `docs/guest-shop-payment-fulfillment-runbook.md`
-- `docs/guest-purchase-task-2.0.md`
+- `docs/guest-purchase-task-2.0.md`（任务 2.1 内容版本；路径兼容旧引用）

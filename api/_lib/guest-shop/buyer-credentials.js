@@ -50,6 +50,7 @@ const defaultSecurity = require('./security');
 const { parseRuntimeNumericSetting } = require('./runtime-config');
 
 const BUYER_CREDENTIAL_SWITCH = 'GUEST_SHOP_BUYER_CREDENTIAL_ENABLED';
+const GUEST_ORDERS_PAGE_SWITCH = 'GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED';
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'y', 'on', 'enabled']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'n', 'off', 'disabled']);
 
@@ -207,6 +208,23 @@ function parseBuyerCredentialSwitch(env = {}) {
 
 function isBuyerCredentialEnabled(env = {}) {
     return parseBuyerCredentialSwitch(env).enabled;
+}
+
+/**
+ * The standalone order-query page is independently switchable.  Keep the
+ * parser identical to the credential switch so a typo fails closed rather
+ * than exposing a half-configured credential surface.
+ */
+function parseGuestOrdersPageSwitch(env = {}) {
+    const raw = String(env?.[GUEST_ORDERS_PAGE_SWITCH] ?? '').trim().toLowerCase();
+    if (!raw) return Object.freeze({ present: false, valid: true, enabled: false });
+    if (TRUE_VALUES.has(raw)) return Object.freeze({ present: true, valid: true, enabled: true });
+    if (FALSE_VALUES.has(raw)) return Object.freeze({ present: true, valid: true, enabled: false });
+    return Object.freeze({ present: true, valid: false, enabled: false });
+}
+
+function isGuestOrdersPageEnabled(env = {}) {
+    return parseGuestOrdersPageSwitch(env).enabled;
 }
 
 function resolveBuyerCredentialSettings(env = {}) {
@@ -748,6 +766,7 @@ module.exports = {
     BUYER_LOCK_MAX_STAGE,
     BUYER_LOCK_STAGE_MINUTES,
     GUEST_BUYER_GROUP_RECYCLE_COOLDOWN_SECONDS,
+    GUEST_ORDERS_PAGE_SWITCH,
     SITE_FORBIDDEN_PASSWORD_TOKENS,
     TERMINAL_UNPAID_PAYMENT_STATUSES,
     allocateBuyerGroup,
@@ -756,9 +775,11 @@ module.exports = {
     findActiveBuyerLock,
     forbiddenPasswordTokens,
     isBuyerCredentialEnabled,
+    isGuestOrdersPageEnabled,
     loadBuyerGroups,
     nextBuyerPasswordVersion,
     parseBuyerCredentialSwitch,
+    parseGuestOrdersPageSwitch,
     recordBuyerAccessAttempt,
     registerBuyerLoginFailure,
     resetBuyerLoginFailures,

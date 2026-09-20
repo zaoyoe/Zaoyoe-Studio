@@ -64,7 +64,6 @@
         previewPending: false,
         previewError: false,
         orderNo: '',
-        idempotencyKey: '',
         site: '',
         productId: '',
         skuId: '',
@@ -88,7 +87,48 @@
         pollGeneration: 0,
         pollActiveGeneration: null,
         requestInFlight: false,
+        recoverInFlight: false,
+        statusRequestInFlight: false,
+        statusRequestContext: null,
+        queuedStatusRequest: null,
         claimInFlight: false,
+        // Every async UI operation captures both values. Closing the modal,
+        // switching product context, or starting recovery advances the view;
+        // changing a quote input advances the quote. Late responses may still
+        // finish server-side, but they can no longer overwrite a newer view.
+        viewGeneration: 0,
+        actionGeneration: 0,
+        quoteGeneration: 0,
+        paymentCreationUnknown: false,
+        // Opaque public selector used only to retry an acknowledgement after a
+        // successful order snapshot was restored. It is never the server's
+        // idempotency key and cannot authorize an order by itself.
+        checkoutIntentId: '',
+        // The server owns the actual idempotency key inside its encrypted,
+        // HttpOnly checkout-intent cookie. This client keeps only the public
+        // intent selector and never writes a replay key to JS storage, URLs or
+        // telemetry. An order password is deliberately omitted and must be
+        // re-entered after the modal is closed.
+        pendingCreateAttempt: null,
+        // The initial acknowledgement is best-effort. A gateway/network hiccup
+        // must be retryable once a terminal snapshot proves the order is safely
+        // persisted, without issuing an ack on every status poll.
+        checkoutIntentAckedId: '',
+        checkoutIntentAckInFlightId: '',
+        checkoutIntentAckRetryId: '',
+        checkoutIntentClearAfterAckId: '',
+        checkoutIntentInspectInFlight: false,
+        // A successful response may arrive after its view was closed. Keep the
+        // safe handle separate until the next explicit open/click so the stale
+        // response cannot repaint a different product already on screen.
+        detachedCheckout: null,
+        fulfillmentStatus: '',
+        refundStatus: '',
+        recoveryCodeCopied: false,
+        deliveryCopied: false,
+        lastTriggerElement: null,
+        fallbackModalScrollLock: false,
+        sessionStorageUnavailable: false,
         contextKey: '',
         zpayCountdownTimer: null,
         confirmedPricing: null,
@@ -149,6 +189,97 @@
         return element('guestCashPurchaseModal');
     }
 
+    function getModalDialog() {
+        return element('guestCashPurchaseDialog') || getModal();
+    }
+
+    function modalFocusableElements() {
+        const dialog = getModalDialog();
+        if (!dialog || typeof dialog.querySelectorAll !== 'function') return [];
+        // A single selector preserves DOM order. Grouping by tag would move
+        // footer buttons ahead of fields and makes the Tab trap skip visible
+        // controls in a way real keyboard users cannot predict.
+        const nodes = [...dialog.querySelectorAll('button, input, select, textarea, a')];
+        return nodes.filter((node) => {
+            if (!node || node.disabled === true || node.getAttribute?.('tabindex') === '-1') return false;
+            let current = node;
+            while (current) {
+                if (current.hidden === true || current.getAttribute?.('aria-hidden') === 'true') return false;
+                current = current.parentElement;
+            }
+            return true;
+        });
+    }
+
+    function focusGuestModal() {
+        const [first] = modalFocusableElements();
+        if (first && typeof first.focus === 'function') {
+            try { first.focus(); } catch (_) { /* focus is best effort */ }
+        }
+    }
+
+    function setModalReturnFocusTarget(target) {
+        if (!target || typeof target.focus !== 'function') return;
+        state.lastTriggerElement = target;
+    }
+
+    function isUsableReturnFocusTarget(target) {
+        if (!target || target.isConnected === false || target.disabled === true
+            || target.hidden === true || typeof target.focus !== 'function') return false;
+        let current = target;
+        while (current) {
+            if (current.hidden === true || current.getAttribute?.('aria-hidden') === 'true') return false;
+            current = current.parentElement;
+        }
+        if (typeof target.getClientRects === 'function' && target.getClientRects().length === 0) return false;
+        return true;
+    }
+
+    function fallbackReturnFocusTarget() {
+        const productId = normalizeText(state.productId, 100);
+        if (!productId || typeof document.querySelectorAll !== 'function') return null;
+        const candidates = Array.from(document.querySelectorAll('[data-shop-action="buy-product"][data-product-id]'));
+        const isMatchingVisibleCandidate = (candidate) => String(candidate?.dataset?.productId || '').trim() === productId
+            && candidate.hidden !== true
+            && candidate.getAttribute?.('aria-hidden') !== 'true'
+            && (typeof candidate.getClientRects !== 'function' || candidate.getClientRects().length > 0)
+            && isUsableReturnFocusTarget(candidate);
+        // A list/card tile can expose both a pseudo-button container and a real
+        // purchase button. Give keyboard focus to the directly operable control.
+        return candidates.find((candidate) => candidate.matches?.('button') && isMatchingVisibleCandidate(candidate))
+            || candidates.find(isMatchingVisibleCandidate)
+            || null;
+    }
+
+    function handleGuestModalKeydown(event) {
+        const modal = getModal();
+        if (!modal || modal.hidden) return;
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeGuestModal();
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        const focusable = modalFocusableElements();
+        if (!focusable.length) return;
+        const active = document.activeElement;
+        const currentIndex = focusable.indexOf(active);
+        if (currentIndex < 0) {
+            event.preventDefault();
+            focusable[0].focus();
+            return;
+        }
+        const nextIndex = event.shiftKey
+            ? (currentIndex - 1 + focusable.length) % focusable.length
+            : (currentIndex + 1) % focusable.length;
+        if (nextIndex !== currentIndex + (event.shiftKey ? -1 : 1)) event.preventDefault();
+        if (nextIndex === 0 || nextIndex === focusable.length - 1
+            || currentIndex === 0 || currentIndex === focusable.length - 1) {
+            event.preventDefault();
+            focusable[nextIndex].focus();
+        }
+    }
+
     function setText(id, value) {
         const node = element(id);
         if (node) node.textContent = normalizeText(value, 10000);
@@ -160,6 +291,30 @@
         node.hidden = Boolean(hidden);
         if (hidden) node.setAttribute('aria-hidden', 'true');
         else node.removeAttribute('aria-hidden');
+    }
+
+    function invalidateView() {
+        state.viewGeneration += 1;
+        state.actionGeneration += 1;
+        return state.viewGeneration;
+    }
+
+    function beginAction() {
+        state.actionGeneration += 1;
+        return {
+            actionGeneration: state.actionGeneration,
+            viewGeneration: state.viewGeneration
+        };
+    }
+
+    function isCurrentAction(operation) {
+        return Boolean(operation)
+            && operation.actionGeneration === state.actionGeneration
+            && operation.viewGeneration === state.viewGeneration;
+    }
+
+    function isModalVisible() {
+        return !getModal()?.hidden;
     }
 
     // ---------------------------------------------------------------------
@@ -184,9 +339,24 @@
     // failure never walks an already-paid buyer back to 确认订单.
     const STEP_PHASE_BY_STATUS = {
         configure: 'configure',
+        creating: 'configure',
+        recovering: 'payment',
         awaiting_payment: 'payment',
         checking: 'payment',
+        review: 'payment',
+        payment_creation_unknown: 'payment',
+        failed: 'payment',
+        expired: 'payment',
+        refunded: 'payment',
+        chargeback: 'payment',
+        cancelled: 'payment',
+        canceled: 'payment',
+        amount_mismatch: 'payment',
+        overpaid: 'payment',
+        partial: 'payment',
         confirmed: 'payment',
+        paid_unfulfillable: 'payment',
+        dead_letter: 'payment',
         delivered: 'delivery'
     };
     const ORDER_STATUS_LABELS = {
@@ -194,11 +364,236 @@
         creating: '创建中',
         awaiting_payment: '待支付',
         checking: '核验中',
+        recovering: '找回中',
+        review: '待人工对账',
+        payment_creation_unknown: '支付结果待确认',
         confirmed: '已支付，待发货',
+        paid_unfulfillable: '已支付，人工处理中',
+        dead_letter: '已支付，自动发货失败',
+        failed: '支付失败',
+        expired: '已过期',
+        refunded: '已退款',
+        chargeback: '已撤单',
+        cancelled: '已取消',
+        canceled: '已取消',
+        amount_mismatch: '金额异常',
+        overpaid: '多付待处理',
+        partial: '少付待处理',
         delivered: '已发货',
         error: '需要处理',
         manual_review: '人工处理中'
     };
+
+    const TERMINAL_PAYMENT_STATUSES = new Set([
+        'failed', 'expired', 'refunded', 'chargeback', 'cancelled', 'canceled',
+        'amount_mismatch', 'overpaid', 'partial'
+    ]);
+
+    function orderStatusMessage(status) {
+        const messages = {
+            failed: '支付未成功，请勿继续支付旧付款码。',
+            expired: '订单已过期，请勿继续支付旧付款码。',
+            refunded: '订单已退款。如资金尚未到账，请保留订单号联系客服。',
+            chargeback: '订单支付已撤销或发生争议，请保留订单号联系客服。',
+            cancelled: '订单已取消，请勿继续支付旧付款码。',
+            canceled: '订单已取消，请勿继续支付旧付款码。',
+            amount_mismatch: '收到的付款金额与订单不一致，已停止自动发货并转人工核对。',
+            overpaid: '检测到多付金额，已停止自动发货并转人工处理。',
+            partial: '检测到付款不足，请勿再向旧付款码补款，并保留订单号联系客服。'
+        };
+        return messages[status] || '订单状态需要人工处理，请保留订单号。';
+    }
+
+    function deriveOrderDisplayStatus(paymentStatus, fulfillmentStatus, refundStatus) {
+        const payment = normalizeText(paymentStatus, 80).toLowerCase();
+        const fulfillment = normalizeText(fulfillmentStatus, 80).toLowerCase();
+        const refund = normalizeText(refundStatus, 80).toLowerCase();
+        if (TERMINAL_PAYMENT_STATUSES.has(payment)) return payment;
+        if (payment === 'refunded' || refund === 'succeeded' || fulfillment === 'refunded') return 'refunded';
+        if (payment === 'chargeback') return 'chargeback';
+        if (['review', 'payment_creation_unknown'].includes(payment)) return 'payment_creation_unknown';
+        if (payment === 'confirmed') {
+            if (['paid_unfulfillable', 'dead_letter'].includes(fulfillment)) return fulfillment;
+            return 'confirmed';
+        }
+        return 'checking';
+    }
+
+    function isRestartableTerminalOrder(snapshot = state) {
+        const status = normalizeText(snapshot.status, 80).toLowerCase();
+        const fulfillmentStatus = normalizeText(snapshot.fulfillmentStatus, 80).toLowerCase();
+        return Boolean(normalizeText(snapshot.orderNo, 200))
+            && TERMINAL_PAYMENT_STATUSES.has(status)
+            // An inconsistent snapshot must never let a terminal-payment label
+            // discard already-delivered content from this browsing context.
+            && fulfillmentStatus !== 'delivered'
+            && snapshot.requestInFlight !== true
+            && snapshot.recoverInFlight !== true
+            && snapshot.statusRequestInFlight !== true
+            && snapshot.claimInFlight !== true
+            && snapshot.paymentCreationUnknown !== true;
+    }
+
+    function deriveGuestActionPolicy(snapshot = state) {
+        const status = normalizeText(snapshot.status, 80).toLowerCase() || 'configure';
+        const hasOrder = Boolean(normalizeText(snapshot.orderNo, 200));
+        const creating = snapshot.requestInFlight === true || status === 'creating';
+        const recovering = snapshot.recoverInFlight === true || status === 'recovering';
+        const checking = snapshot.statusRequestInFlight === true;
+        const inspectingIntent = snapshot.checkoutIntentInspectInFlight === true;
+        const delivered = status === 'delivered';
+        const canAdoptDetachedCheckout = !hasOrder
+            && Boolean(snapshot.detachedCheckout)
+            && !creating
+            && !recovering;
+        const canResumeUnknownCreate = !hasOrder
+            && Boolean(snapshot.pendingCreateAttempt)
+            && (snapshot.paymentCreationUnknown === true || snapshot.pendingCreateAttempt?.unresolved === true)
+            && !creating
+            && !recovering
+            && !inspectingIntent;
+        const unresolvedLocalCreate = Boolean(snapshot.detachedCheckout)
+            || Boolean(snapshot.pendingCreateAttempt
+                && (snapshot.paymentCreationUnknown === true
+                    || snapshot.pendingCreateAttempt?.unresolved === true));
+        const canCreate = !hasOrder
+            && !snapshot.paymentCreationUnknown
+            && !creating
+            && !recovering
+            && !inspectingIntent
+            && !snapshot.previewPending
+            && ['configure', 'error'].includes(status);
+        const canQuery = hasOrder
+            && !creating
+            && !recovering
+            && !delivered
+            && status !== 'configure';
+        const canLeaveOrder = hasOrder
+            && status === 'awaiting_payment'
+            && !snapshot.paymentConfirmed
+            && !snapshot.paymentCreationUnknown
+            && snapshot.statusRequestInFlight !== true
+            && !snapshot.claimInFlight;
+        const canRestartTerminalOrder = isRestartableTerminalOrder(snapshot);
+        return {
+            dismiss: {
+                visible: true,
+                // Closing is supported while a request is in flight: the action
+                // generation prevents its late result from repainting this view.
+                // Keep this aligned with Escape and backdrop behavior so a buyer
+                // is never trapped behind a slow network request.
+                disabled: false,
+                busy: false,
+                label: delivered ? '关闭已发货内容' : '稍后处理'
+            },
+            create: {
+                visible: canCreate || canResumeUnknownCreate || canAdoptDetachedCheckout
+                    || canRestartTerminalOrder || creating || inspectingIntent || (!hasOrder && snapshot.previewPending),
+                disabled: !(canCreate || canResumeUnknownCreate || canAdoptDetachedCheckout || canRestartTerminalOrder),
+                busy: creating || inspectingIntent,
+                restartTerminal: canRestartTerminalOrder,
+                label: canRestartTerminalOrder
+                    ? '回到配置后创建新订单'
+                    : (canAdoptDetachedCheckout
+                    ? '查看已创建订单'
+                    : (canResumeUnknownCreate ? '确认原订单结果'
+                    : (inspectingIntent ? '正在检查未完成订单...' : '创建支付订单')))
+            },
+            query: {
+                visible: canQuery,
+                disabled: checking || snapshot.claimInFlight === true,
+                busy: checking,
+                label: TERMINAL_PAYMENT_STATUSES.has(status) || ['paid_unfulfillable', 'dead_letter'].includes(status)
+                    ? '刷新处理状态'
+                    : '查询支付状态'
+            },
+            abandon: {
+                visible: canLeaveOrder,
+                disabled: false,
+                busy: false,
+                label: '离开当前订单'
+            },
+            recover: {
+                visible: true,
+                disabled: creating || recovering || inspectingIntent || unresolvedLocalCreate,
+                busy: recovering,
+                label: '找回订单'
+            }
+        };
+    }
+
+    function applyActionPolicy(buttonId, policy, busyText = '处理中...') {
+        const button = element(buttonId);
+        if (!button) return;
+        setHidden(buttonId, !policy.visible);
+        if (!button.dataset.defaultLabel) button.dataset.defaultLabel = policy.label;
+        if (!policy.busy) {
+            button.textContent = policy.label;
+            delete button.dataset.originalText;
+        }
+        button.disabled = Boolean(policy.disabled);
+        button.setAttribute('aria-disabled', policy.disabled ? 'true' : 'false');
+        button.setAttribute('aria-busy', policy.busy ? 'true' : 'false');
+        if (policy.busy) {
+            if (!button.dataset.originalText) button.dataset.originalText = policy.label;
+            button.textContent = busyText;
+        }
+    }
+
+    function syncConfigureControls() {
+        const locked = state.requestInFlight
+            || state.recoverInFlight
+            || state.checkoutIntentInspectInFlight
+            || Boolean(state.orderNo)
+            || Boolean(state.pendingCreateAttempt
+                && (state.paymentCreationUnknown || state.pendingCreateAttempt.unresolved));
+        const resumeNeedsCredentials = Boolean(
+            (state.paymentCreationUnknown || state.pendingCreateAttempt?.unresolved)
+            && (state.pendingCreateAttempt?.requiresOrderPassword || state.pendingCreateAttempt?.requiresEmail)
+            && !state.requestInFlight
+            && !state.recoverInFlight
+        );
+        ['guestCashPaymentChannel', 'guestCashDiscountCode']
+            .forEach((id) => {
+                const node = element(id);
+                if (node) node.disabled = Boolean(locked);
+            });
+        const contact = element('guestCashContact');
+        if (contact) contact.disabled = Boolean(locked && !resumeNeedsCredentials);
+        const password = element('guestCashOrderPassword');
+        if (password) password.disabled = Boolean(locked && !resumeNeedsCredentials);
+        ['guestCashToggleOrderPasswordBtn', 'guestCashGenerateOrderPasswordBtn']
+            .forEach((id) => {
+                const node = element(id);
+                if (node) node.disabled = Boolean(locked && !resumeNeedsCredentials);
+            });
+        syncQuantityUi();
+    }
+
+    function renderGuestActions() {
+        const policy = deriveGuestActionPolicy();
+        applyActionPolicy('guestCashPurchaseDismissBtn', policy.dismiss);
+        applyActionPolicy(
+            'guestCashCreateOrderBtn',
+            policy.create,
+            state.checkoutIntentInspectInFlight ? '正在检查...' : (state.pendingCreateAttempt ? '正在确认...' : '创建中...')
+        );
+        applyActionPolicy('guestCashCheckStatusBtn', policy.query, '查询中...');
+        applyActionPolicy('guestCashAbandonOrderBtn', policy.abandon);
+        applyActionPolicy('guestCashShowRecoveryBtn', policy.recover, '找回中...');
+        applyActionPolicy('guestCashRecoverBtn', {
+            ...policy.recover,
+            visible: true
+        }, '正在找回...');
+        setHidden('guestCashAbandonOrderHint', !policy.abandon.visible);
+        setHidden('guestCashTerminalRestartHint', !policy.create.restartTerminal);
+        setHidden(
+            'guestCashDismissHint',
+            !(state.orderNo || state.requestInFlight || state.checkoutIntentInspectInFlight || state.paymentCreationUnknown
+                || state.pendingCreateAttempt?.unresolved || state.detachedCheckout)
+        );
+        syncConfigureControls();
+    }
 
     function setSubtitle(text) {
         setText('guestCashSubtitle', text);
@@ -255,7 +650,7 @@
         if (status === 'delivered' || status === 'confirmed') {
             state.paymentConfirmed = true;
         }
-        syncAbandonOrderButton();
+        renderGuestActions();
         // Derived before the guestCashState guard so the rail still tracks the
         // status even if the message node is missing from the markup.
         syncStepState(STEP_PHASE_BY_STATUS[status] || '');
@@ -282,10 +677,22 @@
 
     function getSessionStorage() {
         try {
-            return window.sessionStorage;
+            const storage = window.sessionStorage;
+            if (!storage) noteSessionStorageUnavailable();
+            return storage || null;
         } catch (_) {
+            noteSessionStorageUnavailable();
             return null;
         }
+    }
+
+    function syncSessionStorageWarning() {
+        setHidden('guestCashStorageWarning', !state.sessionStorageUnavailable);
+    }
+
+    function noteSessionStorageUnavailable() {
+        state.sessionStorageUnavailable = true;
+        syncSessionStorageWarning();
     }
 
     function storedCheckout() {
@@ -311,31 +718,40 @@
         }
     }
 
-    function persistCheckout() {
-        if (!state.orderNo) return;
+    function persistCheckoutRecord(record) {
+        const orderNo = normalizeText(record?.orderNo, 200);
+        if (!orderNo) return false;
         const storage = getSessionStorage();
-        if (!storage) return;
+        if (!storage) return false;
         try {
             storage.setItem(STORAGE_KEY, JSON.stringify({
                 version: STORAGE_VERSION,
-                orderNo: state.orderNo,
-                site: state.site,
-                productId: state.productId,
-                skuId: state.skuId,
-                expiresAt: state.expiresAt,
-                provider: state.provider,
-                channel: state.channel,
+                orderNo,
+                site: normalizeSite(record?.site),
+                productId: normalizeText(record?.productId, 100),
+                skuId: normalizeText(record?.skuId, 100),
+                expiresAt: normalizeText(record?.expiresAt, 80),
+                provider: normalizeText(record?.provider, 80).toLowerCase(),
+                channel: normalizeText(record?.channel, 80).toLowerCase(),
+                intentId: checkoutIntentId(record?.intentId),
                 savedAt: new Date().toISOString()
             }));
+            return true;
         } catch (_) {
             // A storage failure does not invalidate the in-memory checkout.
+            noteSessionStorageUnavailable();
+            return false;
         }
+    }
+
+    function persistCheckout() {
+        return persistCheckoutRecord(state);
     }
 
     function hydrateCheckout(parsed) {
         if (!parsed) return false;
         state.orderNo = normalizeText(parsed.orderNo, 200);
-        state.idempotencyKey = '';
+        state.checkoutIntentId = checkoutIntentId(parsed.intentId);
         state.site = normalizeSite(parsed.site);
         state.productId = normalizeText(parsed.productId, 100);
         state.skuId = normalizeText(parsed.skuId, 100);
@@ -346,6 +762,14 @@
         state.provider = normalizeText(parsed.provider, 80).toLowerCase();
         state.channel = normalizeText(parsed.channel, 80).toLowerCase();
         state.paymentConfirmed = false;
+        state.paymentCreationUnknown = false;
+        state.pendingCreateAttempt = null;
+        state.detachedCheckout = null;
+        state.status = 'checking';
+        state.fulfillmentStatus = '';
+        state.refundStatus = '';
+        state.recoveryCodeCopied = false;
+        state.deliveryCopied = false;
         return Boolean(state.orderNo);
     }
 
@@ -356,19 +780,50 @@
             storage.removeItem(STORAGE_KEY);
         } catch (_) {
             // Storage may be unavailable in locked-down browsers.
+            noteSessionStorageUnavailable();
+        }
+    }
+
+    function clearStoredCheckoutAfterAcknowledgement() {
+        const selector = checkoutIntentId(state.checkoutIntentId);
+        if (selector && state.checkoutIntentAckInFlightId === selector) {
+            // Keep the safe handle until the in-flight ack settles. If that
+            // request fails, the queued terminal retry can still use it.
+            state.checkoutIntentClearAfterAckId = selector;
+            return;
+        }
+        clearStoredCheckout();
+    }
+
+    function hasPersistedCheckoutHandle(orderNo = state.orderNo) {
+        const expected = normalizeText(orderNo, 200);
+        if (!expected) return false;
+        const storage = getSessionStorage();
+        if (!storage) return false;
+        try {
+            const parsed = JSON.parse(storage.getItem(STORAGE_KEY) || 'null');
+            // Do not call storedCheckout() here: an expired terminal order may
+            // still have a valid local handle that is sufficient to retry ack.
+            return Boolean(parsed
+                && parsed.version === STORAGE_VERSION
+                && normalizeText(parsed.orderNo, 200) === expected);
+        } catch (_) {
+            return false;
         }
     }
 
     function isAbandonableOrder() {
         if (!normalizeText(state.orderNo, 200)) return false;
         if (state.paymentConfirmed) return false;
-        if (state.status === 'delivered' || state.status === 'confirmed') return false;
+        if (state.status !== 'awaiting_payment') return false;
+        if (state.paymentCreationUnknown) return false;
+        if (state.statusRequestInFlight) return false;
         if (state.claimInFlight) return false;
         return true;
     }
 
     function syncAbandonOrderButton() {
-        setHidden('guestCashAbandonOrderBtn', !isAbandonableOrder());
+        renderGuestActions();
     }
 
     function hydrateReturnOrderNo(orderNo) {
@@ -378,7 +833,6 @@
         // sessionStorage is empty. Keep only the non-sensitive order handle;
         // status/claim endpoints still require the HttpOnly proof cookie.
         state.orderNo = normalized;
-        state.idempotencyKey = '';
         state.site = normalizeSite(window.SiteConfig?.site);
         state.productId = '';
         state.skuId = '';
@@ -388,7 +842,15 @@
         state.checkout = null;
         state.contextKey = '';
         state.paymentConfirmed = false;
+        state.paymentCreationUnknown = false;
+        state.pendingCreateAttempt = null;
+        state.detachedCheckout = null;
+        state.fulfillmentStatus = '';
+        state.refundStatus = '';
+        state.recoveryCodeCopied = false;
+        state.deliveryCopied = false;
         state.status = 'checking';
+        if (state.checkoutIntentId) acknowledgeCheckoutIntent(state.checkoutIntentId);
         return true;
     }
 
@@ -433,6 +895,10 @@
             const error = new Error(normalizeText(payload?.message, 300) || '游客购买请求失败');
             error.code = normalizeText(payload?.code, 100);
             error.status = response.status;
+            // A fail-closed checkout-intent response can safely carry a public
+            // selector. Keep it only on this transient error object; it is never
+            // persisted and contains no idempotency key or buyer credential.
+            error.payload = payload;
             throw error;
         }
         return payload;
@@ -637,7 +1103,12 @@
 
     function handlePaymentChannelChange() {
         if (state.orderNo) return;
+        state.quoteGeneration += 1;
         renderPayableSummary();
+        if (state.previewPending) {
+            const context = getPurchaseContext();
+            if (context) void loadPreview(context);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -693,12 +1164,22 @@
 
     function syncBuyerCredentialUi() {
         const required = state.buyerCredentialRequired;
+        const pendingIntentRequiresEmail = Boolean(
+            state.pendingCreateAttempt
+            && (state.paymentCreationUnknown || state.pendingCreateAttempt.unresolved)
+            && state.pendingCreateAttempt.requiresEmail
+        );
+        const contactRequired = required || pendingIntentRequiresEmail;
         setHidden('guestCashOrderPasswordField', !required);
         // §11.3 frozen copy. The email is the lookup key for the order and its
         // card secret, so it becomes mandatory the moment a password is asked
         // for, and stays "可选" on the legacy path.
-        setText('guestCashContactHint', required ? '必填，用于查询订单与获取发货通知' : '可选');
+        setText('guestCashContactHint', required
+            ? '必填，用于查询订单'
+            : (pendingIntentRequiresEmail ? '必填，需与原订单一致' : '可选'));
         setHidden('guestCashOrdersPageLink', !required);
+        const contact = element('guestCashContact');
+        if (contact) contact.required = contactRequired;
         if (!required) clearOrderPassword();
         else syncOrderPasswordChecks();
     }
@@ -853,6 +1334,11 @@
         state.quantityPreviewTimer = null;
     }
 
+    function hasFrozenCreateAttempt() {
+        return Boolean(state.pendingCreateAttempt
+            && (state.paymentCreationUnknown || state.pendingCreateAttempt.unresolved));
+    }
+
     function invalidatePreviewQuote() {
         // Drop the cached quote so the next loadPreview() re-quotes at the new
         // quantity, and drop the derived totals so the modal can never keep
@@ -860,6 +1346,7 @@
         // kept: it still owns the payment-channel list and the surcharge labels,
         // which are quantity-independent.
         cancelScheduledPreview();
+        state.quoteGeneration += 1;
         state.previewKey = '';
         state.listSubtotal = null;
         state.amountBreakdown = null;
@@ -870,7 +1357,7 @@
         state.quantityPreviewTimer = window.setTimeout(() => {
             state.quantityPreviewTimer = null;
             const context = getPurchaseContext();
-            if (context && !state.orderNo) void loadPreview(context);
+            if (context && !state.orderNo && !hasFrozenCreateAttempt()) void loadPreview(context);
         }, QUANTITY_PREVIEW_DEBOUNCE_MS);
     }
 
@@ -879,7 +1366,10 @@
         // With the L1 switch off the cap is 1, the stepper stays hidden and the
         // configure panel is byte-identical to the pre-promo checkout.
         const multiUnit = cap >= 2;
-        const locked = Boolean(state.orderNo);
+        const locked = Boolean(state.orderNo)
+            || state.requestInFlight
+            || state.recoverInFlight
+            || hasFrozenCreateAttempt();
         const quantity = normalizeQuantity(state.quantity);
         setHidden('guestCashQuantityField', !multiUnit);
         const input = quantityInput();
@@ -907,7 +1397,7 @@
     }
 
     function setQuantity(next) {
-        if (state.orderNo) return;
+        if (state.orderNo || hasFrozenCreateAttempt()) return;
         const quantity = normalizeQuantity(next);
         if (quantity === normalizeQuantity(state.quantity)) {
             syncQuantityUi();
@@ -923,7 +1413,7 @@
     }
 
     function handleQuantityInput() {
-        if (state.orderNo) return;
+        if (state.orderNo || hasFrozenCreateAttempt()) return;
         // maxlength=1 plus this clamp keeps the field a stepper, not a free-text
         // quantity: anything unparsable falls back to the current selection.
         const digits = String(quantityInput()?.value ?? '').replace(/[^0-9]/gu, '');
@@ -995,7 +1485,7 @@
             return;
         }
         const input = discountCodeInput();
-        if (input) input.disabled = Boolean(state.orderNo);
+        if (input) input.disabled = Boolean(state.orderNo) || state.requestInFlight || state.recoverInFlight;
         syncDiscountHint();
     }
 
@@ -1049,8 +1539,7 @@
     // limit, breaker open, below the discount floor, reservation race - onto the
     // single `guest_discount_unavailable` / 400 / 「优惠码不可用」, so the granular
     // SQL codes deliberately never appear here: listing them would mean waiting
-    // for a signal the server is forbidden to send (and the pre-L1
-    // guest_idempotency_conflict branch is a reminder of what a dead code costs).
+    // for a signal the server is forbidden to send.
     // The other two are raised by the Node layer before the RPC: a format failure
     // on the submitted string, and a code submitted while the switch is off.
     const PROMO_DISCOUNT_CODES = new Set([
@@ -1087,17 +1576,6 @@
             if (context) void loadPreview(context);
             return;
         }
-        // The database raises this only when an existing row carries a DIFFERENT
-        // fingerprint. L1 put quantity and the discount code into that
-        // fingerprint, so "changed the quantity, clicked again" now lands here.
-        // Retrying the same key would conflict forever, and with no order number
-        // in hand there is nothing to resume - so mint a fresh key on the next
-        // click. The abandoned unpaid order expires and its reservations are
-        // released by the TTL sweep. This is exactly what a page reload already
-        // did; it is a strict improvement, never a new charge path.
-        if (code === 'guest_idempotency_conflict' && !state.orderNo) {
-            state.idempotencyKey = '';
-        }
     }
 
     function renderPreview(context, preview) {
@@ -1125,12 +1603,11 @@
         if (!state.orderNo) state.confirmedPricing = null;
         renderPayableSummary();
         state.previewError = options.length === 0;
-        setHidden('guestCashCreateOrderBtn', options.length === 0);
         if (options.length === 0) {
-            setStateMessage('当前商品暂未开放游客支付', 'error');
+            if (!state.requestInFlight) setStateMessage('当前商品暂未开放游客支付', 'error');
             return false;
         }
-        setStateMessage('请选择支付方式并创建订单', 'configure');
+        if (!state.requestInFlight) setStateMessage('请选择支付方式并创建订单', 'configure');
         return true;
     }
 
@@ -1141,22 +1618,45 @@
     // never look like a negative result.
     let previewQueue = Promise.resolve();
 
+    function capturePreviewRequest(context) {
+        const quantity = normalizeQuantity(state.quantity);
+        return {
+            contextKey: normalizeText(context?.contextKey, 200),
+            cacheKey: `${normalizeText(context?.contextKey, 200)}#${quantity}`,
+            quantity,
+            quoteGeneration: state.quoteGeneration,
+            viewGeneration: state.viewGeneration
+        };
+    }
+
+    function isCurrentPreviewRequest(request) {
+        const current = getPurchaseContext();
+        return Boolean(request)
+            && request.viewGeneration === state.viewGeneration
+            && request.quoteGeneration === state.quoteGeneration
+            && request.cacheKey === previewCacheKey({ contextKey: request.contextKey })
+            && (!current || current.contextKey === request.contextKey);
+    }
+
     function loadPreview(context) {
         if (!context) return Promise.resolve({ available: false, reason: 'missing_context' });
         if (context.manualDelivery) return Promise.resolve({ available: false, reason: 'manual_delivery' });
         if (context.soldOut) return Promise.resolve({ available: false, reason: 'sold_out' });
-        const task = previewQueue.then(() => runPreviewRequest(context));
+        const request = capturePreviewRequest(context);
+        const task = previewQueue.then(() => runPreviewRequest(context, request));
         previewQueue = task.then(() => undefined, () => undefined);
         return task;
     }
 
-    async function runPreviewRequest(context) {
-        const cacheKey = previewCacheKey(context);
+    async function runPreviewRequest(context, request = capturePreviewRequest(context)) {
+        if (!isCurrentPreviewRequest(request)) return { available: false, reason: 'stale' };
+        const cacheKey = request.cacheKey;
         if (state.previewKey === cacheKey && state.preview) {
             return { available: !state.previewError, reason: state.previewError ? 'unavailable' : 'available' };
         }
         state.previewPending = true;
         state.previewError = false;
+        renderGuestActions();
         // L1: quantity rides along so the modal quotes the tier the buyer will
         // actually be charged. It is the only promo input on this request - a
         // discount code is NEVER sent to preview, never appears in a URL and is
@@ -1166,13 +1666,15 @@
             site: context.site,
             productId: context.productId,
             skuId: context.skuId,
-            quantity: String(normalizeQuantity(state.quantity))
+            quantity: String(request.quantity)
         });
         try {
             const payload = await requestJson(`${PREVIEW_ENDPOINT}?${query.toString()}`, { method: 'GET' });
+            if (!isCurrentPreviewRequest(request)) return { available: false, reason: 'stale' };
             const available = renderPreview(context, payload);
             return { available, reason: available ? 'available' : 'unavailable' };
         } catch (error) {
+            if (!isCurrentPreviewRequest(request)) return { available: false, reason: 'stale' };
             state.previewKey = cacheKey;
             state.preview = null;
             state.previewError = true;
@@ -1191,6 +1693,7 @@
             return { available: false, reason };
         } finally {
             state.previewPending = false;
+            renderGuestActions();
         }
     }
 
@@ -1521,7 +2024,27 @@
 
     function renderCheckout(checkout) {
         const details = checkoutDetails(checkout);
+        const valid = (details.provider === 'zpay'
+            && Boolean(details.qrcodeImageUrl || details.qrcodeUrl || details.checkoutUrl))
+            || (details.provider === 'nowpayments'
+                && Boolean(details.address)
+                && details.payCurrency === 'USDTBSC');
+        if (!valid) {
+            state.checkout = null;
+            state.paymentCreationUnknown = true;
+            setHidden('guestCashCheckoutPanel', true);
+            setHidden('guestCashConfigurePanel', true);
+            resetZpayHostedQr();
+            setStateMessage(
+                details.provider === 'nowpayments'
+                    ? '加密货币支付信息无效，请保留订单号并联系客服'
+                    : '支付凭证暂时无法安全展示，请保留订单号并先查询状态',
+                'payment_creation_unknown'
+            );
+            return false;
+        }
         state.checkout = details;
+        state.paymentCreationUnknown = false;
         setHidden('guestCashCheckoutPanel', false);
         setHidden('guestCashConfigurePanel', true);
         setHidden('guestCashZpayPanel', details.provider !== 'zpay');
@@ -1536,12 +2059,17 @@
             ? `${details.payAmount} ${details.payCurrency}`
             : '-');
         setText('guestCashNowAddress', details.address || '-');
-        if (details.provider === 'zpay' && !details.qrcodeImageUrl && !details.qrcodeUrl && !details.checkoutUrl) {
-            setStateMessage('支付页面链接无效，请稍后重试或联系客服', 'manual_review');
-        }
-        if (details.provider === 'nowpayments' && (!details.address || details.payCurrency !== 'USDTBSC')) {
-            setStateMessage('加密货币支付信息无效，请联系客服', 'manual_review');
-        }
+        return true;
+    }
+
+    function suppressUnsafeCheckout() {
+        state.checkout = null;
+        setHidden('guestCashCheckoutPanel', true);
+        setHidden('guestCashZpayPanel', true);
+        setHidden('guestCashNowpaymentsPanel', true);
+        resetZpayHostedQr();
+        setText('guestCashNowAmount', '-');
+        setText('guestCashNowAddress', '');
     }
 
     function selectedPayment() {
@@ -1553,14 +2081,249 @@
         };
     }
 
-    function newIdempotencyKey() {
-        if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
-        if (typeof globalThis.crypto?.getRandomValues === 'function') {
-            const bytes = new Uint8Array(16);
-            globalThis.crypto.getRandomValues(bytes);
-            return `guest_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+    const DEFINITIVE_CREATE_FAILURE_CODES = new Set([
+        'guest_provider_create_failed',
+        'guest_payment_channel_unavailable',
+        'guest_payment_provider_disabled',
+        'guest_payment_provider_not_ready',
+        'guest_payment_provider_unavailable',
+        'guest_checkout_intent_missing',
+        'guest_checkout_intent_invalid',
+        'guest_checkout_intent_expired',
+        'guest_checkout_intent_contact_mismatch'
+    ]);
+
+    function createResultIsUnknown(error, { requestStarted = false, retryingUnknown = false } = {}) {
+        if (!requestStarted) return false;
+        const code = normalizeText(error?.code, 100).toLowerCase();
+        if (DEFINITIVE_CREATE_FAILURE_CODES.has(code)) return false;
+        if (retryingUnknown) return true;
+        // A checkout commit may have reached the server after its response was
+        // lost. The server-held intent key makes the retry a lookup-first replay,
+        // so retain only the public intent selector until it resolves.
+        return code === 'guest_payment_reconciliation_required'
+            || code === 'guest_payment_creation_in_progress'
+            || !Number.isFinite(Number(error?.status))
+            || Number(error?.status) >= 500;
+    }
+
+    function checkoutIntentId(value) {
+        const normalized = normalizeText(value, 120);
+        return /^ci\.[A-Za-z0-9_-]{24,96}$/u.test(normalized) ? normalized : '';
+    }
+
+    function checkoutIntentPaymentPart(value) {
+        const normalized = normalizeText(value, 80).toLowerCase();
+        return /^[a-z0-9][a-z0-9._:-]{0,79}$/u.test(normalized) ? normalized : '';
+    }
+
+    function checkoutIntentContext(intent, fallbackContext = null) {
+        const site = normalizeText(intent?.site, 10).toLowerCase();
+        const productId = normalizeText(intent?.product_id, 100);
+        const skuId = normalizeText(intent?.sku_id, 100);
+        if (!['cn', 'intl'].includes(site) || !productId || !skuId) return null;
+        const fallback = fallbackContext || getPurchaseContext();
+        const sameSelection = fallback
+            && fallback.site === site
+            && fallback.productId === productId
+            && fallback.skuId === skuId;
+        return {
+            context: {
+                site,
+                productId,
+                skuId,
+                productName: sameSelection ? normalizeText(fallback.productName, 240) : '原订单商品',
+                skuName: sameSelection ? normalizeText(fallback.skuName, 240) : '原订单规格',
+                contextKey: [site, productId, skuId].join(':')
+            }
+        };
+    }
+
+    function checkoutIntentAttempt(intent, fallbackContext = null) {
+        const intentId = checkoutIntentId(intent?.intent_id);
+        const provider = checkoutIntentPaymentPart(intent?.provider);
+        const channel = checkoutIntentPaymentPart(intent?.channel);
+        const contextResult = checkoutIntentContext(intent, fallbackContext);
+        if (!intentId || !provider || !channel || !contextResult) return null;
+        return {
+            intentId,
+            context: contextResult.context,
+            payment: { provider, channel },
+            requiresOrderPassword: intent?.buyer_credential_required === true,
+            requiresEmail: intent?.contact_required === true || intent?.buyer_credential_required === true,
+            createDeadlineAt: normalizeText(intent?.create_deadline_at, 80),
+            expiresAt: normalizeText(intent?.expires_at, 80),
+            unresolved: false
+        };
+    }
+
+    function rememberCheckoutIntent(intent, fallbackContext = null) {
+        const attempt = checkoutIntentAttempt(intent, fallbackContext);
+        if (!attempt) return null;
+        state.pendingCreateAttempt = attempt;
+        return attempt;
+    }
+
+    function rememberUnresolvedCheckoutIntent(context, payment, { requiresOrderPassword = false, requiresEmail = false } = {}) {
+        const safeContext = context || getPurchaseContext();
+        const provider = checkoutIntentPaymentPart(payment?.provider);
+        const channel = checkoutIntentPaymentPart(payment?.channel);
+        if (!safeContext || !provider || !channel) return null;
+        const attempt = {
+            intentId: '',
+            context: {
+                site: normalizeSite(safeContext.site),
+                productId: normalizeText(safeContext.productId, 100),
+                skuId: normalizeText(safeContext.skuId, 100),
+                productName: normalizeText(safeContext.productName, 240),
+                skuName: normalizeText(safeContext.skuName, 240),
+                contextKey: normalizeText(safeContext.contextKey, 300)
+            },
+            payment: { provider, channel },
+            requiresOrderPassword: Boolean(requiresOrderPassword),
+            requiresEmail: Boolean(requiresEmail),
+            createDeadlineAt: '',
+            expiresAt: '',
+            unresolved: true
+        };
+        state.pendingCreateAttempt = attempt;
+        return attempt;
+    }
+
+    function applyPendingCheckoutIntent(attempt, { message = '', refreshed = false } = {}) {
+        if (!attempt) return false;
+        state.pendingCreateAttempt = attempt;
+        state.paymentCreationUnknown = true;
+        state.status = 'payment_creation_unknown';
+        state.site = attempt.context.site;
+        state.productId = attempt.context.productId;
+        state.skuId = attempt.context.skuId;
+        state.contextKey = attempt.context.contextKey;
+        state.provider = attempt.payment.provider;
+        state.channel = attempt.payment.channel;
+        state.buyerCredentialRequired = attempt.requiresOrderPassword;
+        state.checkout = null;
+        state.expiresAt = '';
+        suppressUnsafeCheckout();
+        setText('guestCashProductName', attempt.context.productName || '原订单商品');
+        setText('guestCashSkuName', attempt.context.skuName || '原订单规格');
+        showOrderNo('');
+        syncBuyerCredentialUi();
+        setHidden('guestCashConfigurePanel', !(attempt.requiresEmail || attempt.requiresOrderPassword));
+        setStateMessage(
+            message || (refreshed
+                ? '检测到上次未确认的订单。请填写原邮箱和查询密码后确认原订单结果；系统不会创建新订单。'
+                : '上一笔订单创建结果待确认。请确认原订单结果；系统不会创建新订单。'),
+            'payment_creation_unknown'
+        );
+        renderGuestActions();
+        return true;
+    }
+
+    async function inspectCheckoutIntent(context = null, { operation = null, announce = true } = {}) {
+        if (state.checkoutIntentInspectInFlight || state.orderNo) return null;
+        state.checkoutIntentInspectInFlight = true;
+        renderGuestActions();
+        try {
+            const payload = await requestJson(ORDER_ENDPOINT, {
+                method: 'POST',
+                body: JSON.stringify({ checkoutAction: 'inspect' })
+            });
+            if (operation && !isCurrentAction(operation)) return null;
+            const intent = payload?.intent;
+            if (intent?.pending === true) {
+                const attempt = rememberCheckoutIntent(intent, context);
+                if (!attempt) throw new Error('未完成订单的安全凭证无效，请重新确认商品后再试');
+                applyPendingCheckoutIntent(attempt, { refreshed: announce });
+                return attempt;
+            }
+            const hadUnresolvedIntent = Boolean(state.pendingCreateAttempt?.unresolved || state.paymentCreationUnknown);
+            clearPendingCreateAttempt();
+            state.paymentCreationUnknown = false;
+            if (hadUnresolvedIntent && isModalVisible()) {
+                state.status = 'configure';
+                setHidden('guestCashConfigurePanel', false);
+                setStateMessage('未找到可恢复的原订单，请重新确认报价后再创建订单。', 'configure');
+            }
+            return null;
+        } catch (error) {
+            if (operation && !isCurrentAction(operation)) return null;
+            const fallback = state.pendingCreateAttempt
+                || rememberUnresolvedCheckoutIntent(context, selectedPayment(), {
+                    requiresOrderPassword: state.buyerCredentialRequired,
+                    requiresEmail: state.buyerCredentialRequired || Boolean(normalizeText(element('guestCashContact')?.value, 160))
+                });
+            if (fallback) {
+                fallback.unresolved = true;
+                applyPendingCheckoutIntent(fallback, {
+                    message: '暂时无法确认未完成订单。请稍后点击“确认原订单结果”重试；不要重新付款。'
+                });
+            } else if (isModalVisible()) {
+                state.status = 'error';
+                setStateMessage(normalizeText(error?.message, 300) || '暂时无法确认未完成订单，请稍后重试', 'error');
+            }
+            return null;
+        } finally {
+            state.checkoutIntentInspectInFlight = false;
+            renderGuestActions();
         }
-        throw new Error('当前浏览器不支持安全下单，请升级浏览器后重试');
+    }
+
+    function acknowledgeCheckoutIntent(intentId) {
+        const selector = checkoutIntentId(intentId);
+        if (!selector) return;
+        if (state.checkoutIntentAckedId === selector) {
+            if (state.checkoutIntentAckRetryId === selector) state.checkoutIntentAckRetryId = '';
+            return;
+        }
+        if (state.checkoutIntentAckInFlightId === selector) return;
+        // Ack is intentionally best-effort. Failure leaves an encrypted cookie
+        // that can only replay the same order; it must not discard the safe
+        // order handle the buyer already received.
+        state.checkoutIntentAckInFlightId = selector;
+        void requestJson(ORDER_ENDPOINT, {
+            method: 'POST',
+            body: JSON.stringify({ checkoutAction: 'ack', intentId: selector })
+        }).then(() => {
+            state.checkoutIntentAckedId = selector;
+            if (state.checkoutIntentAckRetryId === selector) state.checkoutIntentAckRetryId = '';
+        }).catch(() => undefined).finally(() => {
+            if (state.checkoutIntentAckInFlightId === selector) {
+                state.checkoutIntentAckInFlightId = '';
+            }
+            // A terminal snapshot can arrive before the first best-effort ack
+            // settles. Queue exactly one same-selector retry in that case; a
+            // successful first request clears the queue above, and a failed
+            // retry is left for a later explicit terminal action.
+            if (state.checkoutIntentAckRetryId === selector
+                && state.checkoutIntentAckedId !== selector) {
+                state.checkoutIntentAckRetryId = '';
+                if (hasPersistedCheckoutHandle()) acknowledgeCheckoutIntent(selector);
+            }
+            if (state.checkoutIntentClearAfterAckId === selector
+                && state.checkoutIntentAckedId === selector
+                && state.checkoutIntentAckInFlightId !== selector) {
+                state.checkoutIntentClearAfterAckId = '';
+                clearStoredCheckout();
+            }
+        });
+    }
+
+    function retryCheckoutIntentAcknowledgement() {
+        const selector = checkoutIntentId(state.checkoutIntentId);
+        if (!selector || !hasPersistedCheckoutHandle()) return;
+        if (state.checkoutIntentAckedId === selector) return;
+        if (state.checkoutIntentAckInFlightId === selector) {
+            state.checkoutIntentAckRetryId = selector;
+            return;
+        }
+        state.checkoutIntentAckRetryId = '';
+        acknowledgeCheckoutIntent(selector);
+    }
+
+    function clearPendingCreateAttempt(attempt = null) {
+        if (attempt && state.pendingCreateAttempt !== attempt) return;
+        state.pendingCreateAttempt = null;
     }
 
     function resetActiveOrderForContext(context) {
@@ -1569,23 +2332,91 @@
         // authenticated purchase modal switches selection, never show or poll
         // that order in the new guest checkout dialog. Keep sessionStorage
         // untouched so a refresh can still recover the original order.
+        invalidateView();
         stopPolling();
         state.orderNo = '';
-        state.idempotencyKey = '';
+        state.checkoutIntentId = '';
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
         state.checkout = null;
         state.paymentConfirmed = false;
+        state.paymentCreationUnknown = false;
+        state.pendingCreateAttempt = null;
+        state.detachedCheckout = null;
+        state.fulfillmentStatus = '';
+        state.refundStatus = '';
+        state.recoveryCodeCopied = false;
+        state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
         state.amountBreakdown = null;
         resetOrderUi();
     }
 
-    function openGuestModal(context) {
+    function lockGuestModalScroll(modal) {
+        if (!modal) return;
+        if (window.iOSScrollLock) {
+            // A light lock participates in the shared suspended-owner protocol,
+            // so a temporary auth/notice overlay can restore this modal's lock.
+            window.iOSScrollLock.lockLight(modal, { restoreScrollDuringViewport: true });
+            return;
+        }
+        document.documentElement?.classList.add('no-scroll');
+        document.body?.classList.add('no-scroll');
+        state.fallbackModalScrollLock = true;
+    }
+
+    function unlockGuestModalScroll(modal = getModal()) {
+        if (window.iOSScrollLock?.isLocked) window.iOSScrollLock.unlock(modal);
+        if (!state.fallbackModalScrollLock) return;
+        document.documentElement?.classList.remove('no-scroll');
+        document.body?.classList.remove('no-scroll');
+        state.fallbackModalScrollLock = false;
+    }
+
+    function openGuestModal(context, { deferScrollLock = false } = {}) {
         const modal = getModal();
         if (!modal) return;
+        if (modal.hidden) {
+            const active = document.activeElement;
+            if (active && active !== modal && typeof active.focus === 'function') {
+                state.lastTriggerElement = active;
+            }
+            invalidateView();
+        }
+        const inspectOperation = {
+            actionGeneration: state.actionGeneration,
+            viewGeneration: state.viewGeneration
+        };
+        if (!state.orderNo && state.detachedCheckout) {
+            const detached = state.detachedCheckout;
+            hydrateCheckout(detached);
+            setText('guestCashProductName', detached.productName || '-');
+            setText('guestCashSkuName', detached.skuName || '-');
+            // The explicit late-success handle wins over the product tile that
+            // happened to reopen the modal. Passing that tile through the context
+            // reset below would immediately discard the order we just adopted.
+            context = null;
+        }
+        if (!state.orderNo) {
+            const saved = storedCheckout();
+            const savedContextKey = saved?.productId && saved?.skuId
+                ? [normalizeSite(saved.site), normalizeText(saved.productId, 100), normalizeText(saved.skuId, 100)].join(':')
+                : '';
+            if (saved && (!context || !savedContextKey || savedContextKey === context.contextKey)) {
+                hydrateCheckout(saved);
+                clearPendingCreateAttempt();
+            }
+        }
+        if (!state.orderNo
+            && (state.paymentCreationUnknown || state.pendingCreateAttempt?.unresolved)
+            && state.pendingCreateAttempt?.context) {
+            // A new product click cannot silently replace an unresolved create.
+            // Keep presenting the original immutable attempt until it yields an
+            // order handle or a definitive failure.
+            context = state.pendingCreateAttempt.context;
+        }
         if (context) {
             resetActiveOrderForContext(context);
             if (context.contextKey !== state.contextKey) {
@@ -1604,8 +2435,11 @@
             setText('guestCashSkuName', context.skuName || '-');
         }
         modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
         modal.classList.add('active');
         document.body?.classList.add('guest-shop-modal-open');
+        if (!deferScrollLock) lockGuestModalScroll(modal);
+        syncSessionStorageWarning();
         // Re-derive the rail from whatever order state survived, so resuming a
         // paid-but-undelivered order never flashes 确认订单 on the way in.
         syncStepState(state.status === 'delivered'
@@ -1631,30 +2465,79 @@
             showOrderNo(state.orderNo);
             setHidden('guestCashCreateOrderBtn', true);
             setHidden('guestCashCheckStatusBtn', state.status === 'delivered');
+        } else if ((state.paymentCreationUnknown || state.pendingCreateAttempt?.unresolved)
+            && state.pendingCreateAttempt) {
+            showOrderNo('');
+            setHidden('guestCashCheckoutPanel', true);
+            setHidden(
+                'guestCashConfigurePanel',
+                !(state.pendingCreateAttempt.requiresOrderPassword || state.pendingCreateAttempt.requiresEmail)
+            );
+            syncBuyerCredentialUi();
+            setStateMessage(
+                state.pendingCreateAttempt.requiresOrderPassword
+                    ? '上一笔订单创建结果待确认。请重新输入原邮箱和查询密码，再确认原订单；不要重新付款。'
+                    : (state.pendingCreateAttempt.requiresEmail
+                        ? '上一笔订单创建结果待确认。请重新输入原邮箱，再确认原订单；不要重新付款。'
+                        : '上一笔订单创建结果待确认。请确认原订单结果；系统不会创建新订单。'),
+                'payment_creation_unknown'
+            );
         } else {
             showOrderNo('');
             setHidden('guestCashCreateOrderBtn', false);
             setHidden('guestCashCheckStatusBtn', true);
-            setStateMessage('正在确认商品信息...', 'configure');
-            void loadPreview(context || getPurchaseContext());
+            setStateMessage('正在检查未完成订单...', 'configure');
+            void inspectCheckoutIntent(context || getPurchaseContext(), { operation: inspectOperation })
+                .then((attempt) => {
+                    if (attempt || !isCurrentAction(inspectOperation) || state.orderNo
+                        || state.paymentCreationUnknown || !isModalVisible()) return;
+                    setStateMessage('正在确认商品信息...', 'configure');
+                    void loadPreview(context || getPurchaseContext());
+                });
         }
         if (state.orderNo) {
             void pollStatus({ immediate: true });
         }
-        syncAbandonOrderButton();
+        renderGuestActions();
+        focusGuestModal();
     }
 
     function closeGuestModal() {
+        const deliveryNotCopied = state.status === 'delivered'
+            && normalizeText(element('guestCashDeliveredContent')?.textContent, 10000)
+            && !state.deliveryCopied;
+        const recoveryCodeNotCopied = state.status === 'delivered'
+            && Boolean(state.recoveryCode && !state.recoveryCodeCopied);
+        if (deliveryNotCopied || recoveryCodeNotCopied) {
+            const warnings = [];
+            if (deliveryNotCopied) warnings.push('发货内容尚未复制。');
+            if (recoveryCodeNotCopied) warnings.push('取货口令尚未复制或保存。');
+            const confirmed = typeof window.confirm !== 'function' || window.confirm(
+                `${warnings.join('')}关闭后刷新页面可能无法再次显示，确定仍要关闭吗？`
+            );
+            if (!confirmed) return;
+        }
         // A query password must not outlive the modal it was typed in.
         clearOrderPassword();
-        if (state.status === 'delivered') clearCompletedCheckout();
+        clearRecoveryForm();
+        invalidateView();
+        cancelScheduledPreview();
         stopPolling();
         stopZpayCountdown();
         const modal = getModal();
         if (!modal) return;
         modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
         modal.classList.remove('active');
         document.body?.classList.remove('guest-shop-modal-open');
+        unlockGuestModalScroll();
+        const trigger = isUsableReturnFocusTarget(state.lastTriggerElement)
+            ? state.lastTriggerElement
+            : fallbackReturnFocusTarget();
+        if (isUsableReturnFocusTarget(trigger)) {
+            try { trigger.focus(); } catch (_) { /* focus restoration is best effort */ }
+        }
+        renderGuestActions();
     }
 
     function clearCompletedCheckout() {
@@ -1662,13 +2545,21 @@
         stopPolling();
         stopZpayCountdown();
         clearStoredCheckout();
+        acknowledgeCheckoutIntent(state.checkoutIntentId);
         state.orderNo = '';
-        state.idempotencyKey = '';
+        state.checkoutIntentId = '';
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
         state.recoveryCode = '';
         state.paymentConfirmed = false;
+        state.paymentCreationUnknown = false;
+        state.pendingCreateAttempt = null;
+        state.detachedCheckout = null;
+        state.fulfillmentStatus = '';
+        state.refundStatus = '';
+        state.recoveryCodeCopied = false;
+        state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
         state.amountBreakdown = null;
@@ -1686,7 +2577,7 @@
         setHidden('guestCashCheckStatusBtn', true);
         setHidden('guestCashCreateOrderBtn', false);
         // L1/L2: the stepper and the code field are order-scoped inputs, so they
-        // lock while an order exists and unlock again on 关闭当前订单. Both stay
+        // lock while an order exists and unlock again on 离开当前订单. Both stay
         // hidden unless the preview turned them on, which keeps the switch-off
         // checkout markup identical to before this batch.
         syncQuantityUi();
@@ -1703,12 +2594,13 @@
         state.checkout = null;
         if (!preserveRecovery) {
             state.recoveryCode = '';
+            state.recoveryCodeCopied = false;
             setHidden('guestCashRecoveryCodePanel', true);
             setText('guestCashRecoveryCode', '');
             state.paymentConfirmedAt = null;
             state.lastStatusQueryTime = null;
         }
-        setHidden('guestCashRecoveryPanel', true);
+        setRecoveryPanelVisible(false);
         if (!state.orderNo) showOrderNo('');
         syncAbandonOrderButton();
         syncStepState('configure');
@@ -1722,29 +2614,70 @@
         // in this browsing context and never persist it to storage or URLs.
         if (state.recoveryCode) return;
         state.recoveryCode = normalized;
+        state.recoveryCodeCopied = false;
         setText('guestCashRecoveryCode', normalized);
         setHidden('guestCashRecoveryCodePanel', false);
+    }
+
+    function setRecoveryPanelVisible(visible, { focusOrderNo = false } = {}) {
+        const expanded = Boolean(visible);
+        setHidden('guestCashRecoveryPanel', !expanded);
+        const toggle = element('guestCashShowRecoveryBtn');
+        if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (!expanded || !focusOrderNo) return;
+        const orderNoInput = element('guestCashRecoveryOrderNo');
+        if (orderNoInput && !orderNoInput.disabled) {
+            try { orderNoInput.focus(); } catch (_) { /* focus is best effort */ }
+        }
+    }
+
+    function clearRecoveryForm() {
+        const orderNoInput = element('guestCashRecoveryOrderNo');
+        const recoveryCodeInput = element('guestCashRecoveryCodeInput');
+        if (orderNoInput) orderNoInput.value = '';
+        if (recoveryCodeInput) recoveryCodeInput.value = '';
+        setRecoveryPanelVisible(false);
     }
 
     function abandonCurrentOrder() {
         if (!isAbandonableOrder()) {
             syncAbandonOrderButton();
             if (state.orderNo && (state.paymentConfirmed || state.status === 'delivered' || state.status === 'confirmed')) {
-                setStateMessage('当前订单已确认付款或已发货，不能关闭。请保留订单号。', state.status);
+                setStateMessage('当前订单已确认付款或已发货，不能离开并清除本地句柄。请保留订单号。', state.status);
             }
             return;
         }
+        const unsavedRecoveryWarning = state.recoveryCode && !state.recoveryCodeCopied
+            ? '取货口令尚未复制或保存；离开后本站不会再次展示。'
+            : '';
+        const confirmed = typeof window.confirm !== 'function' || window.confirm(
+            `${unsavedRecoveryWarning}这只会从当前页面移除订单，不会取消服务端订单或立即释放库存。请勿再支付旧付款码，确定离开吗？`
+        );
+        if (!confirmed) return;
+        invalidateView();
         stopPolling();
         stopZpayCountdown();
         clearStoredCheckout();
+        acknowledgeCheckoutIntent(state.checkoutIntentId);
+        clearOrderPassword();
+        clearRecoveryForm();
+        const contact = element('guestCashContact');
+        if (contact) contact.value = '';
         state.orderNo = '';
-        state.idempotencyKey = '';
+        state.checkoutIntentId = '';
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
         state.recoveryCode = '';
         state.checkout = null;
         state.paymentConfirmed = false;
+        state.paymentCreationUnknown = false;
+        state.pendingCreateAttempt = null;
+        state.detachedCheckout = null;
+        state.fulfillmentStatus = '';
+        state.refundStatus = '';
+        state.recoveryCodeCopied = false;
+        state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
         // The abandoned order's committed breakdown must not survive into the
@@ -1756,7 +2689,7 @@
         state.lastStatusQueryTime = null;
         resetOrderUi();
         showOrderNo('');
-        setStateMessage('当前未付款订单已关闭。请不要再支付旧付款码。可以重新创建订单。旧库存预占会在过期后自动释放。', 'configure');
+        setStateMessage('已从当前页面离开旧订单。这不代表服务端订单已取消：请勿再支付旧付款码，库存预占将按过期时间释放。', 'configure');
         const context = getPurchaseContext();
         if (context) {
             state.contextKey = context.contextKey;
@@ -1767,6 +2700,74 @@
             setText('guestCashSkuName', context.skuName || '-');
             void loadPreview(context);
         }
+    }
+
+    function returnTerminalOrderToConfiguration() {
+        if (!isRestartableTerminalOrder()) {
+            renderGuestActions();
+            return false;
+        }
+        const context = getPurchaseContext();
+        const terminalStatus = state.status;
+        if (!context || context.manualDelivery || context.soldOut) {
+            setStateMessage('当前商品暂时无法创建新订单；已保留终态订单与订单号。', terminalStatus);
+            return false;
+        }
+        const unsavedRecoveryWarning = state.recoveryCode && !state.recoveryCodeCopied
+            ? '取货口令尚未复制或保存；回到配置后本站不会再次展示。'
+            : '';
+        const confirmed = typeof window.confirm !== 'function' || window.confirm(
+            `${unsavedRecoveryWarning}此操作只会清除本地订单句柄，不会取消服务端订单或立即释放库存。旧付款码不可再付；回到配置后需再次确认报价并创建新订单，确定继续吗？`
+        );
+        if (!confirmed) return false;
+
+        const previousContextKey = state.contextKey;
+        invalidateView();
+        stopPolling();
+        stopZpayCountdown();
+        clearStoredCheckout();
+        acknowledgeCheckoutIntent(state.checkoutIntentId);
+        clearOrderPassword();
+        clearRecoveryForm();
+        const contact = element('guestCashContact');
+        if (contact) contact.value = '';
+        state.orderNo = '';
+        state.checkoutIntentId = '';
+        state.expiresAt = '';
+        state.provider = '';
+        state.channel = '';
+        state.recoveryCode = '';
+        state.checkout = null;
+        state.paymentConfirmed = false;
+        state.paymentCreationUnknown = false;
+        state.pendingCreateAttempt = null;
+        state.detachedCheckout = null;
+        state.fulfillmentStatus = '';
+        state.refundStatus = '';
+        state.recoveryCodeCopied = false;
+        state.deliveryCopied = false;
+        state.status = 'configure';
+        state.confirmedPricing = null;
+        state.amountBreakdown = null;
+        state.paymentConfirmedAt = null;
+        state.lastStatusQueryTime = null;
+        state.preview = null;
+        state.previewError = false;
+        state.buyerCredentialRequired = false;
+        if (previousContextKey !== context.contextKey) resetPromoSelection();
+        else invalidatePreviewQuote();
+        state.site = context.site;
+        state.productId = context.productId;
+        state.skuId = context.skuId;
+        state.contextKey = context.contextKey;
+        setText('guestCashProductName', context.productName || '-');
+        setText('guestCashSkuName', context.skuName || '-');
+        syncBuyerCredentialUi();
+        resetOrderUi();
+        showOrderNo('');
+        setStateMessage('已回到配置。旧订单仍保留在服务端，旧付款码不可再付；请确认报价后再创建新订单。', 'configure');
+        void loadPreview(context);
+        return true;
     }
 
     function showOrderNo(orderNo) {
@@ -1781,92 +2782,157 @@
     }
 
     async function createOrder() {
-        if (state.requestInFlight) return;
-        const context = getPurchaseContext();
-        if (!context || context.manualDelivery || context.soldOut) {
+        if (state.requestInFlight
+            || state.recoverInFlight
+            || state.statusRequestInFlight
+            || state.checkoutIntentInspectInFlight
+            || state.claimInFlight) return;
+        if (isRestartableTerminalOrder()) {
+            returnTerminalOrderToConfiguration();
+            return;
+        }
+        if (state.orderNo && !state.detachedCheckout) return;
+        if (state.detachedCheckout) {
+            const detached = state.detachedCheckout;
+            hydrateCheckout(detached);
+            setText('guestCashProductName', detached.productName || '-');
+            setText('guestCashSkuName', detached.skuName || '-');
+            openGuestModal(null);
+            setStateMessage('已接管刚才创建的订单，正在核验支付状态。', 'checking');
+            return;
+        }
+        const retryAttempt = (state.paymentCreationUnknown || state.pendingCreateAttempt?.unresolved)
+            ? state.pendingCreateAttempt
+            : null;
+        const retryingUnknown = Boolean(retryAttempt);
+        const context = retryAttempt?.context || getPurchaseContext();
+        if (!context || (!retryingUnknown && (context.manualDelivery || context.soldOut))) {
             setStateMessage('当前商品不支持游客购买', 'error');
             return;
         }
+        // The lock and operation token are acquired before the first await.
+        // A double click therefore joins the same attempt instead of issuing a
+        // second preview/create sequence after both previews resolve.
+        state.requestInFlight = true;
+        if (!retryingUnknown) state.paymentCreationUnknown = false;
+        const operation = beginAction();
+        const quoteGeneration = state.quoteGeneration;
+        const contextKey = context.contextKey;
+        let commitRequestStarted = false;
+        let attempt = retryAttempt;
+        setStateMessage(
+            retryingUnknown ? '正在使用原请求确认订单结果...' : '正在确认报价并准备支付订单...',
+            'creating'
+        );
         // A quantity change schedules a debounced re-quote. Drop the timer here:
         // loadPreview() below fetches the same key synchronously in this flow, so
         // leaving the timer armed would only spend a second preview request from
         // the shared per-IP budget.
         cancelScheduledPreview();
-        const previewResult = await loadPreview(context);
-        if (!previewResult.available) return;
-        const payment = selectedPayment();
-        if (!payment.provider || !payment.channel) {
-            setStateMessage('请选择有效的支付方式', 'error');
-            return;
-        }
-        const email = normalizeText(element('guestCashContact')?.value, 160);
-        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
-            setStateMessage('邮箱格式不正确', 'error');
-            return;
-        }
-        // §6.1.4. The password travels once, in the request body, and is never
-        // written to sessionStorage or a URL (§7.1/§7.2). The server re-checks
-        // strength and resolves the credential group (§6.4).
-        let orderPassword = '';
-        if (state.buyerCredentialRequired) {
-            if (!email) {
-                setStateMessage('请填写邮箱，用于查询订单与获取发货通知', 'error');
-                return;
-            }
-            const passwordFailure = orderPasswordPolicyFailure();
-            if (passwordFailure) {
-                syncOrderPasswordChecks();
-                setStateMessage(orderPasswordPolicyMessage(passwordFailure), 'error');
-                return;
-            }
-            orderPassword = foldQueryPassword(orderPasswordInput()?.value || '');
-        }
-        // L2: the code is read here and validated BEFORE an idempotency key is
-        // minted, so a typo cannot burn a key or spend a create-order rate-limit
-        // slot on a guaranteed 400. This mirrors security.normalizeGuestDiscountCode
-        // as a courtesy; the server re-validates and fn_guest_shop_reserve_discount
-        // decides whether it applies. Nothing is displayed as a result of this
-        // check - the discount line only appears once the committed order echoes it.
-        const discountCode = state.discountEnabled ? discountCodeValue() : '';
-        if (discountCode && !isDiscountCodeFormat(discountCode)) {
-            setDiscountInvalid(true);
-            syncDiscountHint();
-            setStateMessage('优惠码格式不正确，请修改后再创建订单', 'error');
-            discountCodeInput()?.focus();
-            return;
-        }
-        if (!state.idempotencyKey) {
-            try {
-                state.idempotencyKey = newIdempotencyKey();
-            } catch (error) {
-                setStateMessage(error?.message || '当前浏览器不支持安全下单，请升级浏览器后重试', 'error');
-                return;
-            }
-        }
-        state.requestInFlight = true;
-        const button = element('guestCashCreateOrderBtn');
-        setActionBusy(button, true);
-        setStateMessage('正在创建支付订单...', 'creating');
-        const body = {
-            site: context.site,
-            productId: context.productId,
-            skuId: context.skuId,
-            // L1: the buyer's selection, clamped to the cap the preview reported.
-            // It stays 1 while the switch is off (cap 1), so the pre-L1 request
-            // body is unchanged. quantity is part of the request fingerprint, so
-            // changing it between two clicks is a conflict, not a silent reprice.
-            quantity: normalizeQuantity(state.quantity),
-            idempotencyKey: state.idempotencyKey,
-            provider: payment.provider,
-            channel: payment.channel
-        };
-        if (email) body.email = email;
-        if (orderPassword) body.orderPassword = orderPassword;
-        // L2: the code travels once, in this POST body, and only while the preview
-        // said discounts are on. It is never appended to a URL, never written to
-        // sessionStorage and never sent to preview.
-        if (discountCode) body.discountCode = discountCode;
         try {
+            let payment;
+            let body;
+            if (retryingUnknown) {
+                if (!attempt.intentId) {
+                    await inspectCheckoutIntent(attempt.context, { operation, announce: false });
+                    attempt = state.pendingCreateAttempt;
+                }
+                if (!attempt?.intentId) {
+                    clearPendingCreateAttempt();
+                    state.paymentCreationUnknown = false;
+                    setStateMessage('未找到可安全恢复的原订单，请重新确认商品后再试。', 'error');
+                    return;
+                }
+                payment = { ...attempt.payment };
+                body = { checkoutAction: 'commit', intentId: attempt.intentId };
+                const email = normalizeText(element('guestCashContact')?.value, 160);
+                if (attempt.requiresEmail && (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email))) {
+                    setHidden('guestCashConfigurePanel', false);
+                    setStateMessage('请填写创建原订单时使用的邮箱，再确认原订单结果。', 'payment_creation_unknown');
+                    return;
+                }
+                if (email) body.email = email;
+                if (attempt.requiresOrderPassword) {
+                    const passwordFailure = orderPasswordPolicyFailure();
+                    if (passwordFailure) {
+                        setHidden('guestCashConfigurePanel', false);
+                        syncOrderPasswordChecks();
+                        setStateMessage(
+                            `请重新输入原查询密码后确认订单结果。${orderPasswordPolicyMessage(passwordFailure)}`,
+                            'payment_creation_unknown'
+                        );
+                        return;
+                    }
+                    body.orderPassword = foldQueryPassword(orderPasswordInput()?.value || '');
+                }
+            } else {
+                const previewResult = await loadPreview(context);
+                if (!isCurrentAction(operation)
+                    || quoteGeneration !== state.quoteGeneration
+                    || getPurchaseContext()?.contextKey !== contextKey) return;
+                if (!previewResult.available) {
+                    setStateMessage('当前商品暂时无法创建游客订单', 'error');
+                    return;
+                }
+                payment = selectedPayment();
+                if (!payment.provider || !payment.channel) {
+                    setStateMessage('请选择有效的支付方式', 'error');
+                    return;
+                }
+                const email = normalizeText(element('guestCashContact')?.value, 160);
+                if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+                    setStateMessage('邮箱格式不正确', 'error');
+                    return;
+                }
+                let orderPassword = '';
+                if (state.buyerCredentialRequired) {
+                    if (!email) {
+                        setStateMessage('请填写邮箱，用于查询订单', 'error');
+                        return;
+                    }
+                    const passwordFailure = orderPasswordPolicyFailure();
+                    if (passwordFailure) {
+                        syncOrderPasswordChecks();
+                        setStateMessage(orderPasswordPolicyMessage(passwordFailure), 'error');
+                        return;
+                    }
+                    orderPassword = foldQueryPassword(orderPasswordInput()?.value || '');
+                }
+                const discountCode = state.discountEnabled ? discountCodeValue() : '';
+                if (discountCode && !isDiscountCodeFormat(discountCode)) {
+                    setDiscountInvalid(true);
+                    syncDiscountHint();
+                    setStateMessage('优惠码格式不正确，请修改后再创建订单', 'error');
+                    discountCodeInput()?.focus();
+                    return;
+                }
+                const prepareBody = {
+                    checkoutAction: 'prepare',
+                    site: context.site,
+                    productId: context.productId,
+                    skuId: context.skuId,
+                    quantity: normalizeQuantity(state.quantity),
+                    provider: payment.provider,
+                    channel: payment.channel
+                };
+                if (email) prepareBody.email = email;
+                if (discountCode) prepareBody.discountCode = discountCode;
+                const prepared = await requestJson(ORDER_ENDPOINT, {
+                    method: 'POST',
+                    body: JSON.stringify(prepareBody)
+                });
+                if (!isCurrentAction(operation)) return;
+                attempt = rememberCheckoutIntent(prepared?.intent, context);
+                if (!attempt) throw new Error('支付订单准备失败，请稍后重试');
+                body = { checkoutAction: 'commit', intentId: attempt.intentId };
+                if (email) body.email = email;
+                if (orderPassword) body.orderPassword = orderPassword;
+            }
+            setStateMessage(
+                retryingUnknown ? '正在确认原支付订单...' : '正在创建支付订单...',
+                'creating'
+            );
+            commitRequestStarted = true;
             const payload = await requestJson(ORDER_ENDPOINT, {
                 method: 'POST',
                 body: JSON.stringify(body)
@@ -1874,44 +2940,158 @@
             const order = payload?.order || {};
             const orderNo = normalizeText(order.order_no, 200);
             if (!orderNo) throw new Error('订单凭证缺失，请联系客服');
+            const safeCheckoutRecord = {
+                orderNo,
+                site: context.site,
+                productId: context.productId,
+                skuId: context.skuId,
+                productName: normalizeText(order.product_name || context.productName, 240),
+                skuName: normalizeText(order.sku_name || context.skuName, 240),
+                expiresAt: order.expires_at,
+                provider: payment.provider,
+                channel: payment.channel,
+                intentId: attempt?.intentId
+            };
+            if (!isCurrentAction(operation)) {
+                // The buyer left after the POST was sent. Preserve only the safe
+                // resumable handle; never let the late response repaint another
+                // product view or start polling behind a hidden modal.
+                persistCheckoutRecord(safeCheckoutRecord);
+                state.detachedCheckout = safeCheckoutRecord;
+                clearPendingCreateAttempt(attempt);
+                return;
+            }
+            const checkoutPersisted = persistCheckoutRecord({
+                orderNo,
+                site: context.site,
+                productId: context.productId,
+                skuId: context.skuId,
+                expiresAt: order.expires_at,
+                provider: payment.provider,
+                channel: payment.channel,
+                intentId: attempt?.intentId
+            });
+            clearPendingCreateAttempt(attempt);
+            if (checkoutPersisted) acknowledgeCheckoutIntent(attempt?.intentId);
             state.orderNo = orderNo;
+            state.checkoutIntentId = checkoutIntentId(attempt?.intentId);
             state.site = context.site;
             state.productId = context.productId;
             state.skuId = context.skuId;
             state.expiresAt = normalizeText(order.expires_at, 80);
             state.provider = payment.provider;
             state.channel = payment.channel;
-            state.paymentConfirmed = false;
-            state.status = 'awaiting_payment';
+            const replayStatus = normalizeText(payload?.payment_status || order.payment_status, 80).toLowerCase();
+            state.paymentConfirmed = replayStatus === 'confirmed';
+            const replayNeedsReview = ['review', 'payment_creation_unknown'].includes(replayStatus);
+            const replayTerminal = TERMINAL_PAYMENT_STATUSES.has(replayStatus);
+            state.paymentCreationUnknown = replayNeedsReview;
+            state.status = replayNeedsReview
+                ? 'payment_creation_unknown'
+                : (replayTerminal
+                    ? replayStatus
+                    : (state.paymentConfirmed ? 'confirmed' : 'awaiting_payment'));
             // The order is bound to the buyer group server-side from here on, so
             // the plaintext has no further use in this page and is dropped.
             clearOrderPassword();
-            persistCheckout();
             resetOrderUi({ preserveRecovery: Boolean(state.recoveryCode) });
             showOrderNo(orderNo);
             showRecoveryCode(order.recovery_code);
             applyServerPricing(order);
-            if (payload.checkout) renderCheckout(payload.checkout);
-            setHidden('guestCashCreateOrderBtn', true);
-            setHidden('guestCashCheckStatusBtn', false);
-            syncAbandonOrderButton();
-            setStateMessage('订单已创建，请完成支付；回跳页面不会直接视为支付成功。', 'awaiting_payment');
-            if (!getModal()?.hidden) startPolling();
+            const checkoutReady = !replayNeedsReview && payload.checkout
+                ? renderCheckout(payload.checkout)
+                : false;
+            if (replayNeedsReview) {
+                suppressUnsafeCheckout();
+                setHidden('guestCashConfigurePanel', true);
+                setStateMessage('原订单已定位，但支付创建结果仍待对账。请勿重复付款，可稍后查询状态。', 'payment_creation_unknown');
+                stopPolling();
+                return;
+            }
+            if (replayTerminal) {
+                suppressUnsafeCheckout();
+                setHidden('guestCashConfigurePanel', true);
+                setStateMessage(orderStatusMessage(replayStatus), replayStatus);
+                // A create response can arrive while the first best-effort ack
+                // is still in flight (or after it failed). The terminal
+                // snapshot is sufficient proof that the order exists, so retry
+                // the same intent selector without preparing or committing a
+                // second order.
+                retryCheckoutIntentAcknowledgement();
+                stopPolling();
+                return;
+            }
+            if (!checkoutReady && !state.paymentConfirmed) {
+                state.paymentCreationUnknown = true;
+                setHidden('guestCashConfigurePanel', true);
+                setStateMessage('订单已建立，但支付凭证结果未知。请先查询状态或找回订单，不要重复付款。', 'payment_creation_unknown');
+                stopPolling();
+                return;
+            }
+            setStateMessage(
+                state.paymentConfirmed
+                    ? '支付已确认，正在等待发货。'
+                    : '订单已创建，请完成支付；回跳页面不会直接视为支付成功。',
+                state.paymentConfirmed ? 'confirmed' : 'awaiting_payment'
+            );
+            if (isModalVisible()) startPolling();
         } catch (error) {
-            state.status = error?.code === 'guest_payment_reconciliation_required' ? 'manual_review' : 'error';
+            const unknownResult = createResultIsUnknown(error, {
+                requestStarted: commitRequestStarted,
+                retryingUnknown
+            });
+            if (unknownResult && attempt) {
+                attempt.unresolved = true;
+                state.pendingCreateAttempt = attempt;
+            }
+            if (!isCurrentAction(operation)) {
+                if (unknownResult) {
+                    // Closing the modal invalidates the view, but it does not make
+                    // an indeterminate POST safe to forget. Advance only the
+                    // in-memory state so the next explicit open exposes the
+                    // same-key confirmation action instead of a stuck busy label.
+                    state.paymentCreationUnknown = true;
+                    state.status = 'payment_creation_unknown';
+                } else {
+                    clearPendingCreateAttempt(attempt);
+                }
+                return;
+            }
+            state.paymentCreationUnknown = unknownResult;
+            state.status = unknownResult ? 'payment_creation_unknown' : 'error';
+            if (!unknownResult) {
+                clearPendingCreateAttempt(attempt);
+            }
             if (error?.code === 'guest_password_weak') void refreshRejectedOrderPassword();
             // Runs before the message so a rejected discount retracts its UI in the
             // same frame the buyer reads the error, and a stale quote is dropped
             // instead of being retried into the same wall.
-            handleCreateOrderError(error);
-            setStateMessage(error?.message || '支付订单创建失败，请稍后重试', state.status);
+            if (!(retryingUnknown && error?.code === 'guest_idempotency_conflict')) {
+                handleCreateOrderError(error);
+            }
+            setStateMessage(
+                unknownResult
+                    ? (state.orderNo
+                        ? '支付创建结果暂时无法确认。请先查询或找回订单，不要重复付款。'
+                        : '支付创建结果暂时无法确认。请点击“确认原订单结果”，系统只会重放同一笔请求；不要重新付款。')
+                    : (error?.message || '支付订单创建失败，请检查输入后重试'),
+                state.status
+            );
         } finally {
             state.requestInFlight = false;
-            setActionBusy(button, false);
+            renderGuestActions();
         }
     }
 
     async function recoverOrder() {
+        if (state.recoverInFlight || state.requestInFlight) return;
+        if (state.detachedCheckout
+            || (state.pendingCreateAttempt
+                && (state.paymentCreationUnknown || state.pendingCreateAttempt.unresolved))) {
+            setStateMessage('请先确认上一笔订单结果，再找回其他订单。', 'payment_creation_unknown');
+            renderGuestActions();
+            return;
+        }
         const orderNo = normalizeText(element('guestCashRecoveryOrderNo')?.value, 200);
         const recoveryCode = normalizeText(element('guestCashRecoveryCodeInput')?.value, 200);
         if (!orderNo || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)
@@ -1919,41 +3099,119 @@
             setStateMessage('请输入订单号和取货口令', 'error');
             return;
         }
-        const button = element('guestCashRecoverBtn');
-        setActionBusy(button, true, '正在找回...');
+        stopPolling();
+        invalidateView();
+        const operation = beginAction();
+        const previousOrderNo = state.orderNo;
+        const previousStatus = state.status;
+        state.recoverInFlight = true;
+        setHidden('guestCashConfigurePanel', true);
+        setHidden('guestCashCheckoutPanel', true);
+        setHidden('guestCashDeliveryPanel', true);
+        setStateMessage('正在找回订单并核对服务端状态...', 'recovering');
         try {
             const payload = await requestJson(RECOVERY_ENDPOINT, {
                 method: 'POST',
                 body: JSON.stringify({ orderNo, recoveryCode })
             });
+            if (!isCurrentAction(operation) || !isModalVisible()) return;
+            clearRecoveryForm();
             const order = payload?.order || {};
-            state.orderNo = normalizeText(order.order_no || orderNo, 200);
-            state.site = normalizeSite(window.SiteConfig?.site);
-            state.expiresAt = normalizeText(order.expires_at, 80);
-            const paymentStatus = normalizeText(order.payment_status, 80).toLowerCase();
-            state.status = paymentStatus || 'checking';
-            state.paymentConfirmed = paymentStatus === 'confirmed';
+            state.orderNo = '';
+            state.checkoutIntentId = '';
+            state.checkout = null;
+            state.provider = '';
+            state.channel = '';
+            state.productId = '';
+            state.skuId = '';
+            state.contextKey = '';
+            state.paymentConfirmed = false;
+            state.paymentCreationUnknown = false;
+            state.pendingCreateAttempt = null;
+            state.detachedCheckout = null;
+            state.confirmedPricing = null;
+            state.amountBreakdown = null;
             state.recoveryCode = '';
+            state.recoveryCodeCopied = false;
+            state.deliveryCopied = false;
+            resetOrderUi({ preserveRecovery: false });
+            state.orderNo = normalizeText(order.order_no || orderNo, 200);
+            state.site = normalizeSite(order.site || window.SiteConfig?.site);
+            state.productId = normalizeText(order.product_id, 100);
+            state.skuId = normalizeText(order.sku_id, 100);
+            state.contextKey = state.productId && state.skuId
+                ? [state.site, state.productId, state.skuId].join(':')
+                : '';
+            state.expiresAt = normalizeText(order.expires_at, 80);
+            state.provider = normalizeText(order.provider || payload?.checkout?.provider, 80).toLowerCase();
+            state.channel = normalizeText(order.channel || payload?.checkout?.channel, 80).toLowerCase();
+            const paymentStatus = normalizeText(order.payment_status, 80).toLowerCase();
+            const fulfillmentStatus = normalizeText(order.fulfillment_status, 80).toLowerCase();
+            state.fulfillmentStatus = fulfillmentStatus;
+            state.refundStatus = normalizeText(order.refund_status, 80).toLowerCase();
+            state.status = deriveOrderDisplayStatus(
+                paymentStatus,
+                fulfillmentStatus,
+                state.refundStatus
+            );
+            state.paymentConfirmed = paymentStatus === 'confirmed';
             persistCheckout();
             showOrderNo(state.orderNo);
+            setText('guestCashProductName', order.product_name || '-');
+            setText('guestCashSkuName', order.sku_name || '-');
             applyServerPricing(order);
-            if (payload.checkout) renderCheckout(payload.checkout);
-            setHidden('guestCashRecoveryPanel', true);
-            setHidden('guestCashCreateOrderBtn', true);
-            setHidden('guestCashCheckStatusBtn', false);
-            syncAbandonOrderButton();
-            setStateMessage('订单已找回，正在核验支付状态。', 'checking');
-            startPolling();
+            const checkoutReady = state.status !== 'payment_creation_unknown' && payload.checkout
+                ? renderCheckout(payload.checkout)
+                : false;
+            if (state.status === 'confirmed') {
+                setStateMessage('订单已找回，支付已确认，正在等待发货。', 'confirmed');
+                startPolling();
+            } else if (['paid_unfulfillable', 'dead_letter'].includes(state.status)) {
+                setStateMessage(
+                    state.status === 'paid_unfulfillable'
+                        ? '支付已确认，订单正在退款或人工补发。请保留订单号。'
+                        : '支付已确认，自动发货失败，已转人工处理。',
+                    state.status
+                );
+            } else if (TERMINAL_PAYMENT_STATUSES.has(state.status)) {
+                setStateMessage(orderStatusMessage(state.status), state.status);
+            } else if (state.status === 'payment_creation_unknown') {
+                state.paymentCreationUnknown = true;
+                suppressUnsafeCheckout();
+                setStateMessage('订单已找回，但支付创建结果仍待对账。请勿重复付款，可稍后手动查询状态。', 'payment_creation_unknown');
+            } else if (!checkoutReady) {
+                state.paymentCreationUnknown = true;
+                setStateMessage('订单已找回，但支付凭证不可用。请先查询状态，不要重复付款。', 'payment_creation_unknown');
+            } else {
+                setStateMessage('订单已找回，正在核验支付状态。', 'checking');
+                startPolling();
+            }
         } catch (error) {
-            setStateMessage(error?.message || '订单找回失败，请检查订单号和取货口令', error?.status === 403 ? 'error' : 'manual_review');
+            if (!isCurrentAction(operation)) return;
+            setHidden('guestCashDeliveryPanel', previousStatus !== 'delivered');
+            setHidden('guestCashCheckoutPanel', !state.checkout || previousStatus === 'delivered');
+            setHidden('guestCashConfigurePanel', Boolean(state.checkout) && previousStatus !== 'delivered');
+            if (state.checkout?.provider === 'zpay' && previousStatus !== 'delivered') {
+                presentZpayHostedQr(state.checkout);
+            }
+            setStateMessage(
+                `${error?.message || '订单找回失败，请检查订单号和取货口令'}。当前订单未改变。`,
+                previousStatus
+            );
+            if (previousOrderNo && ['awaiting_payment', 'checking', 'confirmed'].includes(previousStatus)) {
+                startPolling();
+            }
         } finally {
-            setActionBusy(button, false);
+            state.recoverInFlight = false;
+            if (state.status === 'recovering') state.status = previousStatus || 'configure';
+            renderGuestActions();
         }
     }
 
-    async function fetchStatus({ forceRefresh = false } = {}) {
-        if (!state.orderNo) return null;
-        const query = new URLSearchParams({ orderNo: state.orderNo });
+    async function fetchStatus({ forceRefresh = false, orderNo = state.orderNo } = {}) {
+        const expectedOrderNo = normalizeText(orderNo, 200);
+        if (!expectedOrderNo) return null;
+        const query = new URLSearchParams({ orderNo: expectedOrderNo });
         // The status endpoint also runs a throttled active provider query so a
         // dropped webhook can still settle the order. An explicit user action
         // forces that provider refresh instead of waiting for the poll window.
@@ -1964,18 +3222,59 @@
         });
     }
 
-    async function claimDelivery(expectedGeneration = state.pollGeneration) {
-        if (state.claimInFlight || !state.orderNo) return;
+    async function fetchStatusForRestore(orderNo = state.orderNo) {
+        const expectedOrderNo = normalizeText(orderNo, 200);
+        if (!expectedOrderNo || state.statusRequestInFlight) return null;
+        const requestContext = {
+            orderNo: expectedOrderNo,
+            generation: state.pollGeneration
+        };
+        state.statusRequestInFlight = true;
+        state.statusRequestContext = requestContext;
+        renderGuestActions();
+        let handoff = null;
+        try {
+            return await fetchStatus({ orderNo: expectedOrderNo });
+        } finally {
+            if (state.statusRequestContext === requestContext) {
+                state.statusRequestInFlight = false;
+                state.statusRequestContext = null;
+                const queued = state.queuedStatusRequest;
+                state.queuedStatusRequest = null;
+                if (queued
+                    && queued.orderNo === state.orderNo
+                    && queued.generation === state.pollGeneration) {
+                    handoff = queued;
+                }
+            }
+            renderGuestActions();
+            if (handoff) {
+                void pollStatus({
+                    immediate: true,
+                    forceProviderRefresh: handoff.forceProviderRefresh
+                });
+            }
+        }
+    }
+
+    async function claimDelivery(
+        expectedGeneration = state.pollGeneration,
+        expectedOrderNo = state.orderNo
+    ) {
+        const orderNo = normalizeText(expectedOrderNo, 200);
+        if (state.claimInFlight || !orderNo) return;
         state.claimInFlight = true;
+        renderGuestActions();
         try {
             const payload = await requestJson(CLAIM_ENDPOINT, {
                 method: 'POST',
                 credentials: 'same-origin',
-                body: JSON.stringify({ orderNo: state.orderNo })
+                body: JSON.stringify({ orderNo })
             });
-            if (expectedGeneration !== state.pollGeneration) return;
+            if (expectedGeneration !== state.pollGeneration || state.orderNo !== orderNo) return;
             state.paymentConfirmed = true;
             state.status = 'delivered';
+            state.deliveryCopied = false;
             if (state.checkout?.provider === 'zpay') presentZpaySuccess();
             setText('guestCashDeliveredContent', payload.content || '');
             // Guest checkout can only ever serve auto-delivery key products -
@@ -1994,9 +3293,9 @@
             // A delivered order is intentionally not auto-restored after a
             // refresh. Keep the content in memory until the user closes this
             // modal, while removing the resumable checkout handle now.
-            clearStoredCheckout();
+            clearStoredCheckoutAfterAcknowledgement();
         } catch (error) {
-            if (expectedGeneration !== state.pollGeneration) return;
+            if (expectedGeneration !== state.pollGeneration || state.orderNo !== orderNo) return;
             if (error?.code === 'guest_order_not_delivered') {
                 setStateMessage('支付已确认，正在等待发货...', 'checking');
             } else {
@@ -2005,6 +3304,7 @@
             }
         } finally {
             state.claimInFlight = false;
+            renderGuestActions();
         }
     }
 
@@ -2066,9 +3366,27 @@
 
     async function pollStatus({ immediate = false, resetWindow = false, forceProviderRefresh = false } = {}) {
         if (!state.orderNo) return;
+        // GET /status is not a passive read: it may query the provider, record an
+        // event, confirm payment and kick fulfilment. Never let rapid clicks or
+        // an automatic tick issue a second request while one is in flight.
+        if (state.statusRequestInFlight) {
+            const active = state.statusRequestContext;
+            if (!active
+                || active.orderNo !== state.orderNo
+                || active.generation !== state.pollGeneration) {
+                state.queuedStatusRequest = {
+                    orderNo: state.orderNo,
+                    generation: state.pollGeneration,
+                    forceProviderRefresh: forceProviderRefresh === true
+                };
+            }
+            renderGuestActions();
+            return;
+        }
         if (resetWindow) stopPolling();
         if (state.pollTimer) return;
         const generation = state.pollGeneration;
+        const expectedOrderNo = state.orderNo;
         if (state.pollActiveGeneration === generation) return;
         state.pollStartedAt = state.pollStartedAt || Date.now();
         // A manual status check should force only its first request. Once the
@@ -2076,26 +3394,74 @@
         // enough and avoids repeatedly bypassing the background throttle.
         let forceProviderRefreshNext = forceProviderRefresh === true;
         const run = async () => {
-            if (generation !== state.pollGeneration || !state.orderNo) return;
+            if (generation !== state.pollGeneration || state.orderNo !== expectedOrderNo) return;
             state.pollTimer = null;
-            state.pollActiveGeneration = generation;
-            let shouldContinue = true;
-            let nextPollIntervalMs = POLL_INTERVAL_MS;
+            if (state.statusRequestInFlight) {
+                const active = state.statusRequestContext;
+                if (!active
+                    || active.orderNo !== expectedOrderNo
+                    || active.generation !== generation) {
+                    state.queuedStatusRequest = {
+                        orderNo: expectedOrderNo,
+                        generation,
+                        forceProviderRefresh: forceProviderRefreshNext
+                    };
+                }
+                return;
+            }
             if (Date.now() - state.pollStartedAt > POLL_MAX_MS) {
                 setStateMessage('自动核验已暂停，请点击“查询支付状态”继续。', 'manual_review');
                 state.pollStartedAt = 0;
                 state.pollActiveGeneration = null;
+                renderGuestActions();
                 return;
             }
+            const requestContext = { orderNo: expectedOrderNo, generation };
+            state.pollActiveGeneration = generation;
+            state.statusRequestInFlight = true;
+            state.statusRequestContext = requestContext;
+            renderGuestActions();
+            let shouldContinue = true;
+            let nextPollIntervalMs = POLL_INTERVAL_MS;
+            let handoff = null;
             try {
-                const payload = await fetchStatus({ forceRefresh: forceProviderRefreshNext });
+                const payload = await fetchStatus({
+                    forceRefresh: forceProviderRefreshNext,
+                    orderNo: expectedOrderNo
+                });
                 forceProviderRefreshNext = false;
-                if (generation !== state.pollGeneration || !state.orderNo) return;
-                if (payload?.checkout && !state.checkout) renderCheckout(payload.checkout);
+                if (generation !== state.pollGeneration || state.orderNo !== expectedOrderNo) return;
                 const order = payload?.order || {};
+                const responseOrderNo = normalizeText(order.order_no, 200);
+                if (responseOrderNo && responseOrderNo !== expectedOrderNo) return;
+                state.site = normalizeSite(order.site || state.site);
+                state.productId = normalizeText(order.product_id || state.productId, 100);
+                state.skuId = normalizeText(order.sku_id || state.skuId, 100);
+                state.contextKey = state.productId && state.skuId
+                    ? [state.site, state.productId, state.skuId].join(':')
+                    : state.contextKey;
+                state.expiresAt = normalizeText(order.expires_at || state.expiresAt, 80);
+                state.provider = normalizeText(order.provider || state.provider, 80).toLowerCase();
+                state.channel = normalizeText(order.channel || state.channel, 80).toLowerCase();
+                if (order.product_name) setText('guestCashProductName', order.product_name);
+                if (order.sku_name) setText('guestCashSkuName', order.sku_name);
                 applyServerPricing(order);
                 const paymentStatus = normalizeText(order.payment_status, 80).toLowerCase();
                 const fulfillmentStatus = normalizeText(order.fulfillment_status, 80).toLowerCase();
+                state.fulfillmentStatus = fulfillmentStatus;
+                state.refundStatus = normalizeText(order.refund_status, 80).toLowerCase();
+                const displayStatus = deriveOrderDisplayStatus(
+                    paymentStatus,
+                    fulfillmentStatus,
+                    state.refundStatus
+                );
+                if (payload?.checkout
+                    && !state.checkout
+                    && displayStatus !== 'payment_creation_unknown'
+                    && !TERMINAL_PAYMENT_STATUSES.has(displayStatus)) {
+                    renderCheckout(payload.checkout);
+                }
+                persistCheckout();
                 // Smart polling: calculate interval based on order state
                 if (state.smartPollingEnabled) {
                     nextPollIntervalMs = calculateSmartPollInterval(
@@ -2111,14 +3477,19 @@
                 }
                 if (paymentStatus === 'confirmed') {
                     state.paymentConfirmed = true;
+                    state.paymentCreationUnknown = false;
                     syncAbandonOrderButton();
                 }
                 if (paymentStatus === 'confirmed' && fulfillmentStatus === 'delivered') {
                     if (state.checkout?.provider === 'zpay') presentZpaySuccess();
+                    // Keep this before claimDelivery() clears the resumable
+                    // browser handle. A failed initial ack must get one more
+                    // chance while the matching safe handle is still present.
+                    retryCheckoutIntentAcknowledgement();
                     // Do not let a stale poll generation claim after the user
                     // switched products or reset the active order.
                     if (generation === state.pollGeneration) {
-                        await claimDelivery(generation);
+                        await claimDelivery(generation, expectedOrderNo);
                         // A just-confirmed order may race the fulfilment worker.
                         // claimDelivery() leaves the state as `checking` for that
                         // transient case, so keep polling until delivery succeeds.
@@ -2126,18 +3497,43 @@
                     } else {
                         shouldContinue = false;
                     }
-                } else if (['failed', 'expired', 'refunded', 'chargeback', 'amount_mismatch', 'overpaid', 'partial'].includes(paymentStatus)) {
-                    if (state.checkout?.provider === 'zpay') presentZpayTimeout();
-                    setStateMessage('订单支付未完成或已关闭，请勿重复付款。', 'error');
+                } else if (TERMINAL_PAYMENT_STATUSES.has(displayStatus)) {
+                    if (state.checkout?.provider === 'zpay' && ['failed', 'expired'].includes(displayStatus)) {
+                        presentZpayTimeout();
+                    } else {
+                        stopZpayCountdown();
+                        setHidden('guestCashCheckoutPanel', true);
+                    }
+                    state.paymentCreationUnknown = false;
+                    setStateMessage(orderStatusMessage(displayStatus), displayStatus);
+                    retryCheckoutIntentAcknowledgement();
                     shouldContinue = false;
                 } else if (paymentStatus === 'confirmed' && fulfillmentStatus === 'paid_unfulfillable') {
-                    setStateMessage('支付已确认，但当前库存不足，正在处理退款或人工补发。请保留订单号。', 'manual_review');
+                    // A confirmed payment must never leave an old QR or checkout
+                    // handle available once fulfillment has moved to human follow-up.
+                    suppressUnsafeCheckout();
+                    retryCheckoutIntentAcknowledgement();
+                    clearStoredCheckoutAfterAcknowledgement();
+                    setStateMessage('支付已确认，但当前库存不足，正在处理退款或人工补发。请保留订单号。', 'paid_unfulfillable');
                     // This is a durable stock decision recorded by the claim
                     // RPC. Do not keep hammering status while the refund or
                     // manual fulfilment queue is handled by operations.
                     shouldContinue = false;
                 } else if (paymentStatus === 'confirmed' && fulfillmentStatus === 'dead_letter') {
-                    setStateMessage('支付已确认，但自动发货失败，订单已转人工处理。请保留订单号。', 'manual_review');
+                    // The payment is final but automatic fulfillment failed, so
+                    // stale payment credentials must not survive this transition.
+                    suppressUnsafeCheckout();
+                    retryCheckoutIntentAcknowledgement();
+                    clearStoredCheckoutAfterAcknowledgement();
+                    setStateMessage('支付已确认，但自动发货失败，订单已转人工处理。请保留订单号。', 'dead_letter');
+                    shouldContinue = false;
+                } else if (['review', 'payment_creation_unknown'].includes(paymentStatus)) {
+                    state.paymentCreationUnknown = true;
+                    suppressUnsafeCheckout();
+                    setStateMessage('支付创建或回调结果待对账。请勿重复付款，可稍后手动刷新状态。', 'payment_creation_unknown');
+                    shouldContinue = false;
+                } else if (state.paymentCreationUnknown) {
+                    setStateMessage('订单支付凭证仍不可用。请勿重复付款，可稍后手动刷新状态。', 'payment_creation_unknown');
                     shouldContinue = false;
                 } else {
                     if (paymentStatus === 'confirmed' && state.checkout?.provider === 'zpay') {
@@ -2149,11 +3545,11 @@
                                 ? '支付已确认，发货正在重试，请保持页面打开。'
                                 : '支付已确认，正在等待发货...')
                             : '等待支付确认，请完成付款后保持页面打开。',
-                        'checking'
+                        paymentStatus === 'confirmed' ? 'confirmed' : 'awaiting_payment'
                     );
                 }
             } catch (error) {
-                if (generation !== state.pollGeneration || !state.orderNo) return;
+                if (generation !== state.pollGeneration || state.orderNo !== expectedOrderNo) return;
                 if (error?.status === 403 || error?.code === 'guest_claim_invalid') {
                     setStateMessage('当前设备的取货凭证不可用，请勿重复付款，请联系客服恢复订单。', 'manual_review');
                     shouldContinue = false;
@@ -2161,9 +3557,28 @@
                     setStateMessage('暂时无法查询支付状态，将自动重试。', 'checking');
                 }
             } finally {
+                if (state.statusRequestContext === requestContext) {
+                    state.statusRequestInFlight = false;
+                    state.statusRequestContext = null;
+                    const queued = state.queuedStatusRequest;
+                    state.queuedStatusRequest = null;
+                    if (queued
+                        && queued.orderNo === state.orderNo
+                        && queued.generation === state.pollGeneration) {
+                        handoff = queued;
+                    }
+                }
                 if (state.pollActiveGeneration === generation) state.pollActiveGeneration = null;
+                renderGuestActions();
+                if (handoff) {
+                    shouldContinue = false;
+                    void pollStatus({
+                        immediate: true,
+                        forceProviderRefresh: handoff.forceProviderRefresh
+                    });
+                }
             }
-            if (shouldContinue && generation === state.pollGeneration && state.orderNo) {
+            if (shouldContinue && generation === state.pollGeneration && state.orderNo === expectedOrderNo) {
                 state.pollTimer = window.setTimeout(run, nextPollIntervalMs);
             }
         };
@@ -2183,6 +3598,7 @@
         state.pollTimer = null;
         state.pollStartedAt = 0;
         state.pollActiveGeneration = null;
+        state.queuedStatusRequest = null;
     }
 
     /**
@@ -2261,7 +3677,7 @@
     // Transient probe failures stay retryable: caching them would permanently
     // route a logged-out visitor to the login prompt for the rest of the page
     // session even though guest cash payment may well be available.
-    const TRANSIENT_AVAILABILITY_REASONS = new Set(['pending', 'rate_limited', 'preview_error']);
+    const TRANSIENT_AVAILABILITY_REASONS = new Set(['pending', 'rate_limited', 'preview_error', 'stale']);
 
     function guestContextBlockReason(context) {
         if (!context || !context.contextKey) return 'missing_context';
@@ -2308,19 +3724,29 @@
     }
 
     // Opens the isolated guest cash modal when this selection supports it.
-    async function startGuestCheckout(context = getPurchaseContext()) {
+    async function startGuestCheckout(
+        context = getPurchaseContext(),
+        { deferScrollLock = false, shouldOpen = null } = {}
+    ) {
         const availability = await probeAvailability(context);
         if (!availability || !availability.available) {
             return { started: false, reason: (availability && availability.reason) || 'unavailable' };
         }
-        openGuestModal(context);
+        if (typeof shouldOpen === 'function') {
+            let sourceStillValid = false;
+            try { sourceStillValid = shouldOpen() === true; } catch (_) { sourceStillValid = false; }
+            if (!sourceStillValid) return { started: false, reason: 'source_stale' };
+        }
+        openGuestModal(context, { deferScrollLock });
         return { started: true, reason: 'available' };
     }
 
     window.GuestShopCheckout = {
         peekAvailability,
         probeAvailability,
-        startGuestCheckout
+        startGuestCheckout,
+        setModalReturnFocusTarget,
+        focusGuestModal
     };
 
     function handleGuestModalClick(event) {
@@ -2377,10 +3803,7 @@
         if (showRecoveryButton) {
             event.preventDefault();
             const panel = element('guestCashRecoveryPanel');
-            if (panel) {
-                panel.hidden = !panel.hidden;
-                panel.setAttribute('aria-hidden', panel.hidden ? 'true' : 'false');
-            }
+            if (panel) setRecoveryPanelVisible(panel.hidden, { focusOrderNo: panel.hidden });
             return;
         }
         const zpayOpenButton = target.closest('#guestCashZpayOpenBtn');
@@ -2415,12 +3838,17 @@
             event.preventDefault();
             // GuestOrderDetail.vue flips the fulfillment copy button to emerald
             // with a tick and a swapped label; is-copied carries that treatment.
-            void copyText(element('guestCashDeliveredContent')?.textContent || '', deliveryButton, { copiedClass: 'is-copied' });
+            void copyText(
+                element('guestCashDeliveredContent')?.textContent || '',
+                deliveryButton,
+                { copiedClass: 'is-copied' }
+            ).then(() => { state.deliveryCopied = true; });
         }
         const recoveryCopyButton = target.closest('#guestCashCopyRecoveryCodeBtn');
         if (recoveryCopyButton) {
             event.preventDefault();
-            void copyText(element('guestCashRecoveryCode')?.textContent || '', recoveryCopyButton);
+            void copyText(element('guestCashRecoveryCode')?.textContent || '', recoveryCopyButton)
+                .then(() => { state.recoveryCodeCopied = true; });
         }
     }
 
@@ -2455,7 +3883,7 @@
         // server-owned status before opening the modal so those stale records
         // cannot resurrect a completed delivery after a page refresh.
         try {
-            const snapshot = await fetchStatus();
+            const snapshot = await fetchStatusForRestore(restoredOrderNo);
             if (state.orderNo !== restoredOrderNo) return;
             const restoredOrder = snapshot?.order || {};
             const paymentStatus = normalizeText(restoredOrder.payment_status, 80).toLowerCase();
@@ -2483,6 +3911,7 @@
 
     function init() {
         getModal()?.addEventListener('click', handleGuestModalClick);
+        document.addEventListener('keydown', handleGuestModalKeydown);
         element('guestCashPaymentChannel')?.addEventListener('change', handlePaymentChannelChange);
         element('guestCashOrderPassword')?.addEventListener('input', handleOrderPasswordInput);
         // L1/L2. `input` drives the live format hint and the uppercase fold;

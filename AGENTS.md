@@ -187,8 +187,11 @@ Hard prohibitions:
 - Do not treat automated tests, default readiness exit `0`, or a successful
   three-chain deploy as permission to open guest checkout.
 - `--fail-on-not-ready` returning `3` is the expected fail-closed result until
-  sandbox, database, worker and manual evidence are archived. Do not bypass it
-  with `|| true`.
+  its applicable sandbox, database, worker and manual evidence is archived. Do
+  not bypass it with `|| true`. This aggregate result does not block a
+  default-off production deploy, and a disabled optional feature does not block
+  a CN, original-price, quantity-one SKU; it blocks enabling the capability to
+  which the missing evidence belongs.
 - Rollback of guest checkout is closing the guest product/SKU switch, not a
   database rollback and not a Vercel-only rollback.
 
@@ -197,8 +200,14 @@ Canonical guest-shop deploy prompt:
 > 推送并完整部署游客购买相关改动。请严格按 AGENTS.md：从专用游客购买分支创建/更新 PR 到 main，检查通过后合并；不要从功能分支手动 vercel prod deploy。合并后必须验证 Vercel production Ready、Deploy KVM4 Verify Server、Deploy KVM4 Sub2API，并 SSH 确认 verify/sub2api 的 .current-release 等于 main 最新 commit。verify 发布成功后才能安装或启动 KVM4 guest-shop worker。部署过程不得执行 SQL，也不得打开游客商品。最后用中文汇报四条链路结果。
 
 Canonical guest-shop enablement is a separate later step in
-`docs/guest-purchase-task-2.0.md`. Enablement requires Task 2.0 completion
-criteria, not merely a successful deploy.
+`docs/guest-purchase-task-2.0.md` (the file currently carries the Task 2.1
+content version for compatibility). The old Task 2.0 percentage and A-J matrix
+are frozen historical evidence: they do not block a default-off Task 2.1
+deploy. Enabling a selected SKU requires the direct, feature-scoped safety gate
+in Task 2.1 §61.9, an operator review of that exact product/SKU, a successful
+production deploy, and the user's explicit approval. Unrelated historical
+payment cases and disabled future features are not implicit prerequisites.
+Deployment success alone still never enables a guest product.
 
 See also:
 

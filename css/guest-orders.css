@@ -111,6 +111,25 @@ body.guest-orders-page {
     padding: 20px;
 }
 
+.guest-orders-gate {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    border: 1px solid var(--go-border);
+    border-radius: 14px;
+    background: var(--go-card-alt);
+    padding: 17px 18px;
+    color: var(--go-text);
+}
+.guest-orders-gate-icon {
+    color: var(--go-accent);
+    font-size: 18px;
+    line-height: 1.4;
+}
+.guest-orders-gate h2 { margin: 0; font-size: 15px; }
+.guest-orders-gate p { margin: 5px 0 0; font-size: 13px; line-height: 1.6; color: var(--go-muted); }
+.guest-orders-gate .guest-orders-secondary-btn { margin-top: 11px; }
+
 .guest-orders-card-title { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
 .guest-orders-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .guest-orders-result-head .guest-orders-card-title { margin-bottom: 0; }

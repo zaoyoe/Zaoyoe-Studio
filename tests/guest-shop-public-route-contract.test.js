@@ -56,6 +56,7 @@ async function withPublicHandler(callback) {
                         claim: async (_req, res) => res.end('claim'),
                         order: async (_req, res) => res.end('order'),
                         delivery: async (_req, res) => res.end('delivery'),
+                        accessAvailability: async (_req, res) => res.end('access-availability'),
                         accessLogin: async (_req, res) => res.end('access-login'),
                         accessLogout: async (_req, res) => res.end('access-logout'),
                         accessReset: async (_req, res) => res.end('access-reset'),
@@ -136,6 +137,7 @@ test('shared public dispatcher exposes the flat-key guest order access routes', 
         for (const [route, body] of [
             ['guest/order', 'order'],
             ['guest/delivery', 'delivery'],
+            ['guest/access/availability', 'access-availability'],
             ['guest/access/login', 'access-login'],
             ['guest/access/logout', 'access-logout'],
             // Order Access 2.0 (A3): the one-time reset link (§10.5) and the
@@ -168,6 +170,7 @@ test('guest order access Vercel entrypoints bind the shared handlers and stay ou
     for (const [relativePath, handlerName] of [
         ['api/shop/guest/order.js', 'order'],
         ['api/shop/guest/delivery.js', 'delivery'],
+        ['api/shop/guest/access/availability.js', 'accessAvailability'],
         ['api/shop/guest/access/login.js', 'accessLogin'],
         ['api/shop/guest/access/logout.js', 'accessLogout'],
         ['api/shop/guest/access/reset.js', 'accessReset'],
@@ -210,4 +213,3 @@ test('recover.js Vercel entrypoint binds the shared recover handler', () => {
     assert.match(recover, /createGuestShopHandlers\([\s\S]*\)\.recover/);
     assert.match(ignored, /api\/shop\/guest\/recover\.js/);
 });
-

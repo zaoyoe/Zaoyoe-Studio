@@ -1,6 +1,6 @@
 # 任务 2.0 阶段 D：真实支付沙箱验收表
 
-> 执行合同：[`docs/guest-purchase-task-2.0.md`](./guest-purchase-task-2.0.md)  
+> 执行合同：[`docs/guest-purchase-task-2.0.md`](./guest-purchase-task-2.0.md)（当前内容版本为任务 2.1；本文件保留 D 阶段 2.0 历史证据）
 > 当前状态：`in_progress`（D3-01/D3-13/D3-17/D3-04/D3-03/D3-02/D3-05/D3-06/D3-07/D3-20/D3-11/D3-12/D3-10/D3-19/D3-18/D3-14/D3-15/D3-09 PASS；D3-08 BLOCKED+ZPay currency is site-derived；INTL 成功支付改由用户在 ?site=intl 自建 USDT-BEP20 并真付；07:12 CST 只读复核 available=41/sold=1/held=0，无新单；D3-16 未开始；总进度仍 48%）  
 > 禁止：mock 支付、把空白行当成 PASS、写入卡密 / claim token / `recovery_code` / 支付密钥
 
