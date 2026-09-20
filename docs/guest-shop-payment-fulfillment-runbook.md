@@ -22,11 +22,11 @@
 - 不得把自动化全绿、readiness 默认退出码 0、或三条链路 Ready 当成可以启用游客购买；
 - 关闭游客开关是业务回滚；数据库回滚和 Vercel-only rollback 都不是游客购买的标准回滚。
 
-执行合同见 `docs/guest-purchase-task-2.0.md`。
+执行合同见 `docs/guest-purchase-task-2.0.md`（当前内容版本为任务 2.1；文件名为兼容既有引用而保留）。
 
 ## 游客应付金额
 
-游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
+游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额；可用「离开当前订单」清除本地界面后重新创建，但该动作不会取消服务端旧单，也不要再支付旧付款码。少付不会 confirm，也不会发货。
 
 
 ## 游客促销：阶梯价 / 闪购（L1）与优惠码（L2）
@@ -81,7 +81,9 @@ total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
 `min(GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 5)` 的**生效值**。
 前端只按这两个值显隐控件，**不做任何金额计算**。
 
-### 启用前置清单（按顺序，缺一不可）
+### 促销 / 多件扩展启用前置清单（按顺序，缺一不可）
+
+本清单只约束优惠码、阶梯价/闪购和 `quantity > 1`。它不阻塞已按任务 2.1 §61.9 通过直接安全门的 CN、原价、单件基础 SKU，也不阻塞所有扩展开关保持关闭的生产发布。
 
 1. 在目标 Supabase 执行 `20260923_guest_shop_promo_l1l2.sql`（必须在 `20260922_guest_shop_access_resets.sql` **之后**）。
 2. 执行 `20260923_verify_guest_shop_promo_l1l2.sql`（**23 行**），确认 **第 1–22 行全 PASS**，把输出归档到
@@ -97,8 +99,7 @@ total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
 5. 改 `.env` 后必须
    `cd /opt/zaoyoe-verify-server && docker compose up -d --no-deps --force-recreate --no-build verify-server`，
    然后确认 `/healthz`。**`docker restart` 不会重读 `env_file`。**
-6. 只有以上全部完成，才可以按 §14 的灰度许可签署开放**指定 SKU + 指定券码**。`--fail-on-not-ready` 返回 `3`
-   是启用前的**预期**结果，不得用 `|| true` 绕过。
+6. 只有以上全部完成，才可以按 §14 的灰度许可为已通过基础门的**指定 SKU + 指定券码**开启促销或多件。`--fail-on-not-ready` 返回 `3` 是该扩展启用前的**预期**结果，不得用 `|| true` 绕过。
 
 > **禁止只改 env 就把 `GUEST_SHOP_MAX_QUANTITY` 调到 ≥2**：库存占比闸（C-D3）与并发未付款单闸（C-D4）
 > 本批**未实现**（见 `docs/guest-shop-promo-hardening-plan.md` §23.5）。放开多件之前必须先补这两道闸并重新归档证据。
@@ -111,37 +112,7 @@ total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
 | 对外码 | HTTP | 买家看到 | 运营含义 / 处置 |
 |---|---|---|---|
 | `guest_discount_unavailable` | 400 | 优惠码不可用 | **C-E6 统一码**：券不存在 / 未开游客 / 过期 / 未生效 / 站点或范围不符 / 次数或金额预算耗尽 / 身份超限 / 熔断中 / 折后低于地板 / 预占竞态，**全部收敛到这一个码**（防枚举）。查具体原因看 `guest_shop_promo_breaker_events` 与订单审计，**不要**给买家更细的文案 |
-| `guest_invalid_discount_code` | 400 | 优惠码格式无效 | Node 层格式闸（`^[A-Z0-9][A-Z0-9_-]{0,49}# 游客现金订单支付与履约运行手册
-
-本手册用于值班、对账和故障处理。游客订单与登录用户积分订单完全分离；任何人工操作都必须保留订单号、原因、操作者和审计记录。
-
-## 发布不等于启用
-
-游客购买代码发布必须按 `AGENTS.md`：从专用分支 PR 合入最新 `main`，禁止从 `codex/*` 功能分支执行 `npx vercel deploy --prod`。
-
-生产拓扑固定为：
-
-- Vercel 生产托管 `shop.html` / `js/guest-shop-client.js` / `css/shop-page.css` 等前端；
-- `/api/shop/:path*` 由 Vercel 反代到 `https://verify-api.fatherkey.com/api/shop/:path*`；
-- 游客 API、webhook、worker 实际运行在 KVM4 Verify Server；
-- KVM4 Sub2API / NewAPI 仍是完整部署的第三条链路，但不承载游客下单。
-
-因此游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker。其中 worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动。
-
-硬禁止：
-
-- 部署过程不得打开游客商品或游客 SKU；
-- 部署过程不得执行 SQL，也不得回滚已有游客购买迁移；
-- 不得把自动化全绿、readiness 默认退出码 0、或三条链路 Ready 当成可以启用游客购买；
-- 关闭游客开关是业务回滚；数据库回滚和 Vercel-only rollback 都不是游客购买的标准回滚。
-
-执行合同见 `docs/guest-purchase-task-2.0.md`。
-
-## 游客应付金额
-
-游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
-
-）。频繁出现说明有人在撞库或前端有输入污染 |
+| `guest_invalid_discount_code` | 400 | 优惠码格式无效 | Node 层格式闸（`^[A-Z0-9][A-Z0-9_-]{0,49}$`）。频繁出现说明有人在撞库或前端有输入污染 |
 | `guest_discount_disabled` | 403 | 游客优惠码通道未开启 | 开关关着却收到了券码。**不是故障**，但若量大说明前端显隐与开关不同步 |
 | `guest_quantity_not_allowed` | 400 | 购买数量不可用 | 超出四处取小的生效上限。检查 `GUEST_SHOP_MAX_QUANTITY` 与该 SKU 的 `guest_max_quantity` |
 | `guest_pricing_parity_mismatch` | 400 | 价格已更新，请重试 | **最高优先级告警**：JS 展示镜像与 SQL 权威价不一致。出现即说明定价链路分叉，**立即关闭全部促销开关并跳闸**，再排查 |
@@ -289,7 +260,7 @@ npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-inva
 自动化硬错误；即使进程返回 0，也不代表可以打开游客商品。provider 启用状态、商品 allowlist、
 限流 RPC 和支付平台后台配置仍必须由值班人员人工核对。
 
-需要把 readiness 当作“启用前”硬闸门时，再显式开启严格模式：
+需要把 readiness 当作“当前功能启用前”的聚合检查时，再显式开启严格模式：
 
 ```bash
 npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid --fail-on-not-ready
@@ -299,10 +270,9 @@ npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-inva
 表示 `--fail-on-not-ready` 发现 `operational_ready=false`（未识别 production、仍有人工/数据库
 复核项或存在其他未闭环证据）。当前脚本是刻意不连接数据库/provider 的离线检查器，因此在
 人工证据尚未接线时，严格模式返回 `3` 是预期的 fail-closed 结果；不得用 `|| true` 忽略，也不得
-据此打开游客商品。只有在目标 Supabase、支付平台、KVM4 worker 和沙箱证据均归档后，才可将严格
-模式作为发布/启用检查的一部分。
-
-readiness 未完成人工复核不得打开游客商品。
+把缺失证据对应的功能打开。聚合 `operational_ready=false` 不阻塞扩展开关保持关闭的发布，也不自动
+阻塞 CN、原价、单件基础 SKU；基础 SKU 仍必须通过任务 2.1 §61.9.2 的直接安全门。只有要开启的
+provider、站点、凭证、促销或多件功能，其对应人工项才是该功能的硬门。
 
 ZPay 与 NOWPayments 控制台的 callback 必须分别指向：
 
@@ -317,8 +287,9 @@ NOWPayments 游客网络固定为 `usdtbsc`。游客商品标价始终是人民�
 当成订单结算币种。NOWPayments 退款暂按人工队列处理，核对收款地址、
 金额、交易哈希和出款凭证后再完成退款；不把自动退款视为已就绪。
 
-20260915 积分价 SQL 已在目标库执行；verify 1-7 PASS。第 8 项 `REVIEW` 只表示当前有 1 个商品
-开了 `allow_guest_purchase`，不是约束失败。内部测试最多保留这一个低价值、非共享、自动发货 SKU；
+20260915 积分价 SQL 已在目标库执行；verify 1-7 PASS。第 8 项 `REVIEW` 当时只表示有 1 个商品
+开了 `allow_guest_purchase`，不是约束失败，也不是当前商品数量的权威快照。现行状态必须通过
+Admin Studio/operator review 按精确 product/SKU 复核；每个开放 SKU 都应是低价值、非共享、自动发货且可单独关闭。
 不得据此公开上架，也不得再跑 20260913 / 20260914 / 20260915 迁移。
 
 20260916 / 20260917 / 20260918 / 20260919 已在目标库执行（verify 分别 3/3、4/4、6/6、6/6 PASS）。

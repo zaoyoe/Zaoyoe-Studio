@@ -28,6 +28,7 @@
     // every other guest route: the shared dispatcher has no path parameters.
     const RESET_ENDPOINT = '/api/shop/guest/access/reset';
     const UPGRADE_ENDPOINT = '/api/shop/guest/access/upgrade';
+    const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';
     // Legacy (§13.4) historical-order path: order number + one-time pickup code.
     const RECOVER_ENDPOINT = '/api/shop/guest/recover';
     const CLAIM_ENDPOINT = '/api/shop/guest/claim';
@@ -73,7 +74,11 @@
         // request, and it is never written to storage or sent as a query string.
         resetToken: '',
         resetSite: '',
-        generatedPassword: ''
+        generatedPassword: '',
+        pageAvailable: false,
+        availabilityLoading: false,
+        baseListenersBound: false,
+        orderAccessInitialized: false
     };
 
     function element(id) {
@@ -111,6 +116,21 @@
         if (!node) return;
         node.textContent = normalizeText(message, 400);
         node.hidden = !message;
+    }
+
+    function setOrderAccessPageAvailable(available, message = '') {
+        state.pageAvailable = available === true;
+        setHidden('guestOrdersFeatureGate', state.pageAvailable);
+        setHidden('guestOrdersProtectedContent', !state.pageAvailable);
+        setHidden('guestOrdersUpgradeContent', !state.pageAvailable);
+        setHidden('guestOrdersFeatureRetryBtn', state.pageAvailable);
+        if (!state.pageAvailable) {
+            setText('guestOrdersFeatureGateTitle', '邮箱密码查询暂未开放');
+            setText(
+                'guestOrdersFeatureGateMessage',
+                message || '你仍可使用下方的「订单号 + 取货口令」找回历史订单。'
+            );
+        }
     }
 
     function setBusy(busy) {
@@ -268,6 +288,21 @@
             throw error;
         }
         return payload;
+    }
+
+    async function loadOrderAccessAvailability() {
+        try {
+            const payload = await requestJson(ACCESS_AVAILABILITY_ENDPOINT, { method: 'GET' });
+            if (payload?.enabled !== true) throw new Error('guest_order_access_not_enabled');
+            setOrderAccessPageAvailable(true);
+            return true;
+        } catch (_) {
+            // A static page can be cached or linked before the matching Verify
+            // Server release exists. Keep it visibly unavailable instead of
+            // rendering a credential form that only fails after submission.
+            setOrderAccessPageAvailable(false);
+            return false;
+        }
     }
 
     function describeError(error) {
@@ -666,6 +701,8 @@
             url.searchParams.delete('reset');
             url.searchParams.delete('site');
             window.history.replaceState({}, '', url.toString());
+            state.resetToken = token;
+            state.resetSite = site;
             return { token, site };
         } catch (_) {
             return { token: '', site: '' };
@@ -1051,10 +1088,22 @@
     }
 
     // ------------------------------------------------------------------
-    function init() {
-        // FIRST, before any rendering: pull the one-time reset token out of the
-        // address bar so it cannot leak through history, Referer or a screenshot.
-        const resetLink = consumeUrlResetToken();
+    function bindBaseListeners() {
+        if (state.baseListenersBound) return;
+        state.baseListenersBound = true;
+        // Legacy recovery predates the email/password feature switch. Bind it
+        // before probing that switch so an unavailable or older Verify release
+        // cannot strand buyers who still hold an order number + pickup code.
+        element('guestOrdersLegacyToggleBtn')?.addEventListener('click', toggleLegacyPanel);
+        element('guestOrdersLegacyBtn')?.addEventListener('click', () => { void handleLegacyRecover(); });
+        element('guestOrdersFeatureRetryBtn')?.addEventListener('click', () => {
+            void initializeOrderAccessPage();
+        });
+    }
+
+    function initializeOrderAccessFeatures() {
+        if (state.orderAccessInitialized) return;
+        state.orderAccessInitialized = true;
         syncSavedHint();
         const saved = loadSavedAuth();
         if (saved) {
@@ -1062,19 +1111,6 @@
             const passwordInput = element('guestOrdersPassword');
             if (emailInput && !emailInput.value) emailInput.value = saved.email;
             if (passwordInput && !passwordInput.value) passwordInput.value = saved.password;
-        }
-        // An arriving support link outranks a saved credential and a ?order_no=
-        // deep link: the buyer came to SET a password, not to reuse one.
-        if (resetLink.token) {
-            activateResetCard(resetLink.token, resetLink.site);
-        }
-        const deepLinkOrderNo = resetLink.token ? '' : readUrlOrderNo();
-        if (deepLinkOrderNo) {
-            const orderNoInput = element('guestOrdersOrderNo');
-            if (orderNoInput) orderNoInput.value = deepLinkOrderNo;
-            // A deep link is explicit intent, so run the query immediately when
-            // a credential is already saved; otherwise wait for the buyer.
-            if (saved) void handleSubmit(null);
         }
         element('guestOrdersQueryForm')?.addEventListener('submit', handleSubmit);
         element('guestOrdersClearSavedBtn')?.addEventListener('click', () => { void handleClearSaved(); });
@@ -1108,9 +1144,6 @@
                 showError('当前浏览器不允许自动复制，请手动选择内容复制');
             }
         });
-        element('guestOrdersLegacyToggleBtn')?.addEventListener('click', toggleLegacyPanel);
-        element('guestOrdersLegacyBtn')?.addEventListener('click', () => { void handleLegacyRecover(); });
-
         // --- A3 §10.5 one-time reset link ---------------------------------
         element('guestOrdersResetForm')?.addEventListener('submit', handleResetSubmit);
         element('guestOrdersResetToggleBtn')?.addEventListener('click', (event) => {
@@ -1144,8 +1177,48 @@
                     foldPassword(element('guestOrdersUpgradePasswordConfirm')));
             });
         }
+
+        // An arriving support link outranks a saved credential and a ?order_no=
+        // deep link: the buyer came to SET a password, not to reuse one. The
+        // token was moved into memory immediately after its URL was scrubbed, so
+        // this still works after one or more failed availability probes.
+        if (state.resetToken) activateResetCard(state.resetToken, state.resetSite);
+        const deepLinkOrderNo = state.resetToken ? '' : readUrlOrderNo();
+        if (deepLinkOrderNo) {
+            const orderNoInput = element('guestOrdersOrderNo');
+            if (orderNoInput) orderNoInput.value = deepLinkOrderNo;
+            // A deep link is explicit intent, so run the query immediately when
+            // a credential is already saved; otherwise wait for the buyer.
+            if (saved) void handleSubmit(null);
+        }
     }
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
-    else init();
+    async function initializeOrderAccessPage() {
+        if (state.orderAccessInitialized || state.availabilityLoading) return;
+        state.availabilityLoading = true;
+        const retryButton = element('guestOrdersFeatureRetryBtn');
+        if (retryButton) retryButton.disabled = true;
+        try {
+            // The static document is deliberately shipped with its credential
+            // forms hidden. Only the matching runtime switch may reveal them; an
+            // old static asset paired with a rolled-back API therefore stays
+            // controlled instead of accepting a password and failing on submit.
+            if (!(await loadOrderAccessAvailability())) return;
+            initializeOrderAccessFeatures();
+        } finally {
+            state.availabilityLoading = false;
+            if (retryButton) retryButton.disabled = false;
+        }
+    }
+
+    async function init() {
+        // FIRST, before any request or rendering: scrub the one-time bearer from
+        // the address bar and retain it only in memory for a possible retry.
+        consumeUrlResetToken();
+        bindBaseListeners();
+        await initializeOrderAccessPage();
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });
+    else void init();
 })();

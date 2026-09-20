@@ -43,10 +43,12 @@ const BASE_ENV = Object.freeze({
     GUEST_SHOP_CLAIM_DERIVATION_PEPPER: 'guest-derivation-pepper-0123456789-abcdefghijklmnopqrstuv',
     GUEST_SHOP_CONTACT_HASH_PEPPER: CONTACT_PEPPER,
     GUEST_SHOP_REQUEST_HASH_PEPPER: REQUEST_PEPPER,
-    GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true'
+    GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'true',
+    GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'true'
 });
 
 const OFF_ENV = Object.freeze({ ...BASE_ENV, GUEST_SHOP_BUYER_CREDENTIAL_ENABLED: 'false' });
+const PAGE_OFF_ENV = Object.freeze({ ...BASE_ENV, GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED: 'false' });
 
 const COOKIE_NAME = '__Host-gs-acc';
 
@@ -469,6 +471,37 @@ test('with the switch off GET /guest/orders keeps today\'s 405 and never reaches
     // No credential verification, no audit row, no read budget consumed: the
     // request must be indistinguishable from today's method-not-allowed path.
     assert.equal(limitCalls.length, 0);
+});
+
+test('the standalone page switch gates its capability endpoint and credential routes', async () => {
+    const { handlers, limitCalls } = createHarness({ env: PAGE_OFF_ENV });
+
+    const availability = createResponse();
+    await handlers.accessAvailability(getReq('/api/shop/guest/access/availability'), availability);
+    assert.equal(availability.statusCode, 404);
+    assert.equal(availability.payload.code, 'guest_feature_disabled');
+
+    const login = createResponse();
+    await handlers.accessLogin(postReq('/api/shop/guest/access/login', loginBody()), login);
+    assert.equal(login.statusCode, 404);
+    assert.equal(login.payload.code, 'guest_feature_disabled');
+    assert.equal(login.cookies.length, 0);
+
+    const list = createResponse();
+    await handlers.orders(getReq('/api/shop/guest/orders', {}, {
+        'x-guest-order-credential': credentialHeader()
+    }), list);
+    assert.equal(list.statusCode, 405);
+    assert.equal(list.headers.allow, 'POST');
+    assert.equal(limitCalls.length, 0, 'disabled page access must not consume a query budget');
+});
+
+test('the capability endpoint acknowledges only the enabled standalone page', async () => {
+    const { handlers } = createHarness();
+    const res = createResponse();
+    await handlers.accessAvailability(getReq('/api/shop/guest/access/availability'), res);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.payload, { success: true, enabled: true });
 });
 
 test('logout is never switch-gated so a rollback cannot strand a live cookie', async () => {

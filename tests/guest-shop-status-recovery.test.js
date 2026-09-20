@@ -7,6 +7,8 @@ const { createGuestShopHandlers } = require('../server/api-handlers/public/guest
 
 const ORDER_ID = '33333333-3333-4333-8333-333333333333';
 const PAYMENT_ID = '44444444-4444-4444-8444-444444444444';
+const PRODUCT_ID = '55555555-5555-4555-8555-555555555555';
+const SKU_ID = '66666666-6666-4666-8666-666666666666';
 const ORDER_NO = 'GS20260913-000001';
 const VALID_RECOVERY_CODE = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abc';
 
@@ -39,9 +41,26 @@ function makeOrder(overrides = {}) {
     return {
         id: ORDER_ID,
         order_no: ORDER_NO,
-        payment_order_id: PAYMENT_ID,
+        site: 'cn',
+        product_id: PRODUCT_ID,
+        sku_id: SKU_ID,
+        snapshot_product_name: 'Cross-device product',
+        snapshot_sku_name: 'Annual plan',
+        quantity: 1,
+        idempotency_key: 'must-not-leak-idempotency-key',
+        request_fingerprint: 'must-not-leak-request-fingerprint',
+        buyer_id: '88888888-8888-4888-8888-888888888888',
+        buyer_contact_hash: 'must-not-leak-contact-hash',
+        request_ip_hash: 'must-not-leak-ip-hash',
+        request_device_hash: 'must-not-leak-device-hash',
         claim_secret_hash: 'stored-claim-hash',
+        claim_secret_version: 1,
         claim_attempt_count: 0,
+        recovery_code: 'must-not-leak-recovery-code',
+        query_password_hash: 'must-not-leak-password-hash',
+        delivery_content: 'must-not-leak-card-secret',
+        metadata: { card_secret: 'must-not-leak-card-secret' },
+        discount_snapshot: { internal_rule: 'must-not-leak-discount-rule' },
         last_error_code: null,
         last_error_message: null,
         payment_status: 'pending',
@@ -211,8 +230,23 @@ test('authorized pending status reconstructs an allowlisted checkout', async () 
 
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload.success, true);
-    assert.equal(response.payload.order.order_no, ORDER_NO);
-    assert.equal(response.payload.order.payment_status, 'pending');
+    assert.deepEqual(response.payload.order, {
+        order_no: ORDER_NO,
+        site: 'cn',
+        product_id: PRODUCT_ID,
+        sku_id: SKU_ID,
+        product_name: 'Cross-device product',
+        sku_name: 'Annual plan',
+        payment_status: 'pending',
+        fulfillment_status: 'pending',
+        refund_status: 'none',
+        amount: '12.34',
+        currency: 'CNY',
+        expires_at: '2099-01-01T00:00:00.000Z',
+        quantity: 1,
+        provider: 'zpay',
+        channel: 'alipay'
+    });
     assert.equal(response.payload.checkout.provider, 'zpay');
     assert.equal(response.payload.checkout.checkout_url, 'https://pay.example.test/checkout?id=1');
     assert.equal(response.payload.checkout.amount, 12.34);
@@ -222,6 +256,7 @@ test('authorized pending status reconstructs an allowlisted checkout', async () 
 
     const serialized = JSON.stringify(response.payload);
     assert.doesNotMatch(serialized, /claim_secret|provider_token|arbitrary_sensitive_value|stored-claim-hash/);
+    assert.doesNotMatch(serialized, /recovery_code|query_password_hash|delivery_content|card_secret|must-not-leak/);
     assert.doesNotMatch(serialized, /provider_metadata/);
 });
 
@@ -233,10 +268,60 @@ test('cross-device recovery requires order number plus high-entropy code and set
     assert.equal(response.payload.success, true);
     assert.equal(response.payload.recovered, true);
     assert.equal(response.payload.order.order_no, ORDER_NO);
+    assert.equal(response.payload.order.site, 'cn');
+    assert.equal(response.payload.order.product_id, PRODUCT_ID);
+    assert.equal(response.payload.order.sku_id, SKU_ID);
+    assert.equal(response.payload.order.product_name, 'Cross-device product');
+    assert.equal(response.payload.order.sku_name, 'Annual plan');
+    assert.equal(response.payload.order.provider, 'zpay');
+    assert.equal(response.payload.order.channel, 'alipay');
     assert.equal(response.payload.checkout.provider, 'zpay');
     assert.match(String(response.headers['set-cookie'] || ''), /guest_claim_proof=/);
     assert.equal(state.paymentReads, 1);
-    assert.doesNotMatch(JSON.stringify(response.payload), /claim_secret|recovery_code|stored-claim-hash/);
+    assert.doesNotMatch(JSON.stringify(response.payload), /claim_secret|recovery_code|query_password_hash|delivery_content|card_secret|stored-claim-hash|must-not-leak/);
+});
+
+test('status omits provider context when the payment intent is not bound to the order', async () => {
+    const { handlers, state } = createHandlers({
+        payment: makePayment({ guest_order_id: '77777777-7777-4777-8777-777777777777' })
+    });
+    const response = createResponse();
+
+    await handlers.status(statusRequest('valid-secret'), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.order.product_id, PRODUCT_ID);
+    assert.equal(response.payload.order.product_name, 'Cross-device product');
+    assert.equal(Object.hasOwn(response.payload.order, 'provider'), false);
+    assert.equal(Object.hasOwn(response.payload.order, 'channel'), false);
+    assert.equal(Object.hasOwn(response.payload, 'checkout'), false);
+    assert.equal(state.paymentReads, 1);
+    assert.doesNotMatch(JSON.stringify(response.payload), /provider_metadata|must-not-leak/);
+});
+
+test('status never falls back to provider metadata for an invalid payment key', async () => {
+    const { handlers } = createHandlers({
+        payment: makePayment({
+            provider: `z${'p'.repeat(80)}`,
+            channel: 'alipay',
+            provider_metadata: {
+                provider: 'zpay',
+                purpose: 'shop_direct',
+                provider_order_no: 'ZPAY-PROVIDER-001',
+                checkout_url: 'https://pay.example.test/checkout?id=1',
+                provider_token: 'must-not-leak-provider-token'
+            }
+        })
+    });
+    const response = createResponse();
+
+    await handlers.status(statusRequest('valid-secret'), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(Object.hasOwn(response.payload.order, 'provider'), false);
+    assert.equal(Object.hasOwn(response.payload.order, 'channel'), false);
+    assert.equal(Object.hasOwn(response.payload, 'checkout'), false);
+    assert.doesNotMatch(JSON.stringify(response.payload), /provider_metadata|must-not-leak-provider-token/);
 });
 
 test('cross-device recovery rejects malformed or invalid code before payment lookup', async () => {
@@ -263,7 +348,7 @@ test('invalid status proof is rejected before payment lookup or checkout reconst
     assert.equal(state.paymentReads, 0);
 });
 
-test('authorized terminal status never reconstructs a stale checkout', async () => {
+test('authorized terminal status returns its bound channel without reconstructing a stale checkout', async () => {
     const { handlers, state } = createHandlers({
         order: makeOrder({ payment_status: 'confirmed', fulfillment_status: 'delivered' })
     });
@@ -274,8 +359,29 @@ test('authorized terminal status never reconstructs a stale checkout', async () 
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload.success, true);
     assert.equal(response.payload.order.payment_status, 'confirmed');
+    assert.equal(response.payload.order.product_id, PRODUCT_ID);
+    assert.equal(response.payload.order.sku_id, SKU_ID);
+    assert.equal(response.payload.order.provider, 'zpay');
+    assert.equal(response.payload.order.channel, 'alipay');
     assert.equal(Object.prototype.hasOwnProperty.call(response.payload, 'checkout'), false);
-    assert.equal(state.paymentReads, 0);
+    assert.equal(state.paymentReads, 1);
+});
+
+test('terminal recovery returns its bound channel without a checkout', async () => {
+    const { handlers, state } = createHandlers({
+        order: makeOrder({ payment_status: 'expired', fulfillment_status: 'pending' })
+    });
+    const response = createResponse();
+
+    await handlers.recover(recoverRequest(), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.order.payment_status, 'expired');
+    assert.equal(response.payload.order.provider, 'zpay');
+    assert.equal(response.payload.order.channel, 'alipay');
+    assert.equal(Object.hasOwn(response.payload, 'checkout'), false);
+    assert.equal(state.paymentReads, 1);
+    assert.doesNotMatch(JSON.stringify(response.payload), /provider_metadata|must-not-leak/);
 });
 
 test('authorized status fails closed when the stored checkout URL is not HTTPS', async () => {
@@ -329,4 +435,3 @@ test('status after recovery still withholds the recovery code', async () => {
     assert.equal(status.payload.order.order_no, ORDER_NO);
     assert.doesNotMatch(JSON.stringify(status.payload), /recovery_code|claim_secret|stored-claim-hash/);
 });
-

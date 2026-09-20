@@ -230,6 +230,7 @@ function createRouteHandlersForScope(scope) {
             // switch is off, so registering the keys is behaviour-neutral.
             'guest/order': guestHandlers.order,
             'guest/delivery': guestHandlers.delivery,
+            'guest/access/availability': guestHandlers.accessAvailability,
             'guest/access/login': guestHandlers.accessLogin,
             'guest/access/logout': guestHandlers.accessLogout,
             // Order Access 2.0 (A3). `reset` spends the admin-issued one-time

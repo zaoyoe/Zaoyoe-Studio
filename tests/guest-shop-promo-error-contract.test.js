@@ -451,11 +451,20 @@ test('an idempotency conflict reaches the buyer as a 409 the client can act on',
     assert.equal(res.statusCode, 409);
     assert.equal(res.payload.code, 'guest_idempotency_conflict');
     assert.equal(res.payload.message, '下单信息已变化，请重新提交');
-    // The client's live branch: no order number in hand, so the next click mints a
-    // fresh key instead of replaying into the same conflict forever.
+    // An unknown-result retry never responds to this conflict by minting a new
+    // key. It marks the replay explicitly so the server can bind the persisted
+    // row before mutable repricing, while the original immutable key stays put.
     assert.match(
         clientSource,
-        /if \(code === 'guest_idempotency_conflict' && !state\.orderNo\) \{\s*\n\s*state\.idempotencyKey = '';/
+        /if \(retryingUnknown\) \{[\s\S]*body = \{ checkoutAction: 'commit', intentId: attempt\.intentId \};/
+    );
+    assert.doesNotMatch(clientSource, /body\.resumeUnknown\s*=\s*true/);
+    const createErrorStart = clientSource.indexOf('function handleCreateOrderError(error) {');
+    const createErrorEnd = clientSource.indexOf('\n    function renderPreview', createErrorStart);
+    assert.ok(createErrorStart >= 0 && createErrorEnd > createErrorStart);
+    assert.doesNotMatch(
+        clientSource.slice(createErrorStart, createErrorEnd),
+        /guest_idempotency_conflict[\s\S]*state\.idempotencyKey\s*=\s*''/
     );
 });
 
