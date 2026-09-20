@@ -18,12 +18,12 @@
 
 ### 0.1 进度口径
 
-- **任务 2.1 是当前唯一执行版本，当前总进度为 20%（1/5 阶段完成）。** 阶段 1「代码与合同」已完成；当前进入阶段 2「默认关闭生产发布」。
+- **任务 2.1 是当前唯一执行版本，当前总进度为 40%（2/5 阶段完成）。** 阶段 1「代码与合同」和阶段 2「默认关闭生产发布」已完成；当前进入阶段 3「指定 SKU 游客启用」。
 - **任务 2.0 的 48% 已冻结为历史快照。** 它只说明当时 A–J 合同执行到哪里，不再参与 2.1 计分，也不阻塞默认关闭发布或指定 SKU 的独立启用评审。§12–§60 内重复出现的 48% 均按历史运行日志解释，不再动态更新。
 - 2.1 五阶段各占 20%，状态只使用 `not_started / in_progress / blocked / complete / deferred`。`blocked` 和 `NOT RUN` 都不等于通过，但未启用功能的证据缺口也不会阻塞不包含该功能的阶段。
 - 每阶段都有独立退出条件；通过的证据绑定一个固定候选或生产 commit。只有代码、配置、环境、选定 SKU 或事故事实发生变化时才重开对应阶段，不因 `main` 后续自然前进而循环重验。
 - 默认关闭生产发布和游客商品启用分开计分。阶段 2 完成只证明代码已安全发布且所有游客开关保持原状态；阶段 3 才审查并启用一个明确的 product/SKU。
-- 当前事实：自动化基线为 `512/512 PASS`；尚未发布本工作区改动，尚未启用新的游客商品，本轮未执行 SQL、未创建新订单、未支付既有订单。
+- 当前事实：发布候选自动化为游客商城 `516/516 PASS`、全量安全 `3450/3450 PASS`；代码已由 PR #656 发布到 production commit `40da7b557659b0f097a478437cb9034138f2ea2e`。指定「测试」SKU 在发布前后都已能返回游客 preview，本次发布没有新增或扩大商品/功能开关；邮箱密码凭证与查询页开关仍关闭。本轮未执行 SQL、未创建新订单、未支付既有订单。
 
 ### 0.2 任务 2.0 历史完成标准（仅供追溯）
 
@@ -40,7 +40,7 @@
 9. 最终验收记录、风险清单、运行手册和上线/回滚步骤已归档。
 10. 用户在本文件第 J 节签署“可以启用该白名单灰度 SKU 集合”。在此之前公开/灰度游客商品必须保持关闭；§60.8.2 已确认的内部沙箱商品只能按白名单和本合同资质要求保留，不得误当成公开启用。
 
-旧合同曾规定不满足任何一条时 2.0 不能记 100%；该规则随 2.0 一并冻结。它不改变当前 2.1 的 20% 进度，也不覆盖 §61.9 针对发布、基础 SKU 和扩展功能分别定义的退出条件。
+旧合同曾规定不满足任何一条时 2.0 不能记 100%；该规则随 2.0 一并冻结。它不改变当前 2.1 的 40% 进度，也不覆盖 §61.9 针对发布、基础 SKU 和扩展功能分别定义的退出条件。
 
 ### 0.3 硬性规则
 
@@ -68,14 +68,14 @@
 
 | 阶段 | 内容 | 权重 | 状态 | 退出条件 |
 | --- | --- | ---: | --- | --- |
-| 1 | 代码与合同 | 20% | **complete** | P0 安全切片、按钮语义、自动化 `512/512` 和 2.1 分层合同完成；扩展项明确关闭或延期 |
-| 2 | 默认关闭生产发布 | 20% | **in_progress** | 专用分支经 PR 合入当时最新 `main`；Vercel、Verify、Sub2API、guest-shop worker 四链绑定同一 commit 且健康；不执行 SQL、不改变游客商品/功能开关 |
-| 3 | 指定 SKU 游客启用 | 20% | **not_started** | 精确 product/SKU 通过 operator review 和 §61.9 基础安全门；用户确认后只打开该 SKU，扩展开关保持关闭 |
+| 1 | 代码与合同 | 20% | **complete** | P0 安全切片、按钮语义、自动化 `516/516` 和 2.1 分层合同完成；扩展项明确关闭或延期 |
+| 2 | 默认关闭生产发布 | 20% | **complete** | PR #656 合入当时最新 `main`；Vercel、Verify、Sub2API、guest-shop worker 四链绑定 production commit `40da7b557659b0f097a478437cb9034138f2ea2e` 且健康；未执行 SQL、未改变游客商品/功能开关 |
+| 3 | 指定 SKU 游客启用 | 20% | **in_progress** | 精确 product/SKU 通过 operator review 和 §61.9 基础安全门；用户确认后只打开该 SKU，扩展开关保持关闭 |
 | 4 | 观察与回滚 | 20% | **not_started** | 按预先写定的窗口、样本和阈值完成对账与履约观察；关闭该 SKU 后新单被拒、在途已付款单继续履约或退款 |
 | 5 | 后续扩展与收口 | 20% | **not_started** | INTL、促销、多件、凭证增强、完整可访问性等逐项实施或明确 `deferred`；归档最终状态与后续责任人 |
 | **合计** |  | **100%** |  |  |
 
-阶段 1 已在 2026-09-20 以当前工作区代码和 `512/512` 自动化基线完成，当前进度 **20%**。阶段 2 的真实发布 commit 尚未产生，因此仍为 `in_progress`；剩余 **4/5 阶段，80%**。
+阶段 1 已在 2026-09-20 以发布候选代码和 `516/516` 游客商城自动化基线完成；阶段 2 已由 §61.14 的同 commit 四链证据完成。当前进度 **40%**，剩余 **3/5 阶段，60%**；阶段 3 先核清指定 SKU 已存在的 allowlist 状态和邮箱密码链路前置，不能重复建单或盲目重开开关。
 
 下方 A–J、§12–§60 和早期 K 表述均是 2.0/实施历史，保留用于审计，不再构成当前计分表或一揽子阻断门。若历史段落与本节或 §61.9 冲突，以本节和 §61.9 为准。
 
@@ -3457,7 +3457,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 
 ## 61. 2026-09-19 任务 2.1：游客收银台五按钮、身份恢复与运行护栏升级计划
 
-> **状态：阶段 1 已完成，2.1 总进度 20%。** 本轮已落地一组自动化可验证的安全切片，但不修改 §12–§60 的历史事实，也不把自动化全绿误报为实机或生产闭环。P0-C 的短期「离开」语义和 P0-D 的终态展示已有前置切片；剩余证据按 §61.9 分层使用，不再作为默认关闭发布的一揽子阻断门。
+> **状态：阶段 1、2 已完成，2.1 总进度 40%。** 安全切片已经由 PR #656 发布并完成四链同 commit 验证；这仍不把自动化或默认关闭发布误报为指定 SKU 启用完成。P0-C 的短期「离开」语义和 P0-D 的终态展示已有前置切片；剩余证据按 §61.9 分层使用，当前进入阶段 3 的精确 SKU 与凭证能力评审。
 
 ### 61.1 审查结论：按钮存在，不等于动作闭环完整
 
@@ -3615,7 +3615,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - **短期离开语义：** 前端已把「关闭当前订单」改为「离开当前订单」，确认文案明确这不会取消服务端订单、不会立即释放库存，并警告旧付款码不要再付；本轮没有新增 cancel API，因此 P0-C 整批仍未完成。
 - **恢复终态展示：** create 恢复路径可直接渲染 `expired`、`failed`、`refunded` 等终态并抑制 checkout，不再把旧二维码/地址重新展示为可付款；完整的 §61.3 支付、履约、退款和人工处理矩阵仍需继续逐项验收，因此 P0-D 仍未完成。
 - **orderless intent 的 fail-closed 边界：** `prepare` 产生的无订单 intent 在约 5 分钟 commit 窗口内不会被客户端静默清除；关闭弹窗后若响应可能仍在途，服务端继续保留该 intent，暂时阻止换 SKU/重新 prepare，以避免重复预占或重复支付。当前没有新增宽松的 `abort` 动作，也不把“离开当前订单”解释为取消。后续若要缩短阻塞，必须设计仅限“确认无订单且无 provider 请求在途”的服务端原子 abort，并补跨标签、迟到响应和 provider 竞态证据；在此之前保持 fail-closed。
-- **自动化结果（各套件单独运行，子集数字不累加）：** 早期切片的 `482/482`、`13/13`、`43/43`、`25/25`、`30/30`、`22/22` 及 `509/509` 仅作为历史记录保留，不再作为当前门禁。当前权威全量基线见下方 `512/512`；这些结果仍只证明代码/合同层行为，不证明真实渠道、真实浏览器或生产开关已闭合。
+- **自动化结果（各套件单独运行，子集数字不累加）：** 早期切片的 `482/482`、`13/13`、`43/43`、`25/25`、`30/30`、`22/22`、`509/509` 及 `512/512` 仅作为历史记录保留，不再作为当前门禁。当前发布候选权威基线为 `516/516`；这些结果仍只证明代码/合同层行为，不证明指定 SKU、真实渠道或邮箱密码开关已完成启用。
 
 **2026-09-20 续做记录：** 在 §61.7.1 的切片上补入查单在途离开保护、找回在途合成创建保护和弹窗键盘/ARIA 前置；正式站只做只读商城列表与「测试」商品详情核对，未触发游客建单、支付或开关变更。P0-A/P0-B、实机状态矩阵和运行开关门禁仍未闭合。
 
@@ -3631,7 +3631,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - OFF 门禁：本地默认凭证开关关闭时，`POST /api/shop/guest/access/login` 返回 `404 guest_feature_disabled`；`/guest-orders.html` 静态页面返回 `200`，页面/API 仍需由前端开关和服务端门禁共同决定可操作性。
 - readiness：`npm run readiness:guest-shop -- --fail-on-invalid` 返回 `PASS (automated)`、`findings: none`、`operational_ready=false`、`manual_review_count=20`；本地没有 production env/database，因此不能据此放行游客商品。
 - ON 代码级矩阵：使用非生产的合成环境值运行 `runReadiness`，`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED=true` 与 `GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED=true` 均被识别为 `enabled`，没有硬失败；仍有 22 项 manual review，未触碰真实环境变量、数据库或开关。
-- 定向门禁测试 `tests/guest-shop-order-access-endpoints.test.js`、`tests/guest-shop-public-route-contract.test.js`、`tests/guest-shop-readiness.test.js` 共 `83/83` 通过；这组结果与当前 `512/512` 游客商城套件一样，只证明代码/合同，不替代真实浏览器、数据库和 provider 证据。
+- 定向门禁测试 `tests/guest-shop-order-access-endpoints.test.js`、`tests/guest-shop-public-route-contract.test.js`、`tests/guest-shop-readiness.test.js` 共 `83/83` 通过；这组结果与当前 `516/516` 游客商城套件一样，只证明代码/合同，不替代真实浏览器、数据库和 provider 证据。
 
 ### 61.7.3 本地预览与低价测试商品复核（2026-09-19）
 
@@ -3658,11 +3658,11 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 
 **本轮后仍缺的证据：**
 
-- §61.3 每个状态的完整自动化映射和桌面/移动真实浏览器证据尚未逐项签署；当前 `512/512` 只能证明代码回归，不能替代矩阵验收。
+- §61.3 每个状态的完整自动化映射和桌面/移动真实浏览器证据尚未逐项签署；当前 `516/516` 只能证明代码回归，不能替代矩阵验收。
 - 人为断网后的真实 provider 同单恢复、真实库存/预占数量、迟到付款/退款与人工履约结果尚未留证；不得用 mock provider 的“不重复调用”断言顶替。
 - 双标签/新标签回跳、`sessionStorage` 禁用、隐私模式、跨标签句柄竞争、键盘/读屏、focus 和亮暗主题证据尚未归档。
 - `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 与 `GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED` 的 OFF/ON 组合，及 preview、静态查询页、API、readiness、Admin Studio 的一致性尚未做 production-like 证据。
-- 本轮未部署、未启用游客商品、未运行新真实支付；Vercel/Verify/Sub2API/worker 四链和最新 `main` 的发布后证据仍为空。
+- 默认关闭发布已完成并归档于 §61.14；本轮仍未新增/扩大游客商品、未运行新真实支付。阶段 3 尚缺精确 SKU operator review、邮箱密码链路生产前置和启用后的聚焦证据。
 
 **实机/沙箱分层集合：**
 
@@ -3708,13 +3708,13 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 
 2.1 以第 1 节五阶段为唯一完成定义。每阶段满足自身退出条件后计 20%；后续阶段出现的新证据缺口不会倒扣已经绑定固定 commit 的阶段，除非代码、配置、环境、选定 SKU 或事故变化使原证据失效。
 
-- [x] **阶段 1：代码与合同。** 五按钮/竞态/恢复安全切片、`512/512` 自动化基线和分层门禁已归档。
-- [ ] **阶段 2：默认关闭生产发布。** 下一步按 `AGENTS.md` 完成 PR、合并和四链验证；不执行 SQL、不打开或扩大游客商品。
-- [ ] **阶段 3：指定 SKU 游客启用。** 只对精确 product/SKU 执行 §61.9.2，用户确认后单独切换。
+- [x] **阶段 1：代码与合同。** 五按钮/竞态/恢复安全切片、`516/516` 游客商城自动化基线和分层门禁已归档。
+- [x] **阶段 2：默认关闭生产发布。** PR #656 已合并，production commit `40da7b557659b0f097a478437cb9034138f2ea2e` 的四链验证见 §61.14；未执行 SQL、未打开或扩大游客商品。
+- [ ] **阶段 3：指定 SKU 游客启用（进行中）。** 只对 `52246f1d-b98d-4920-9129-581296f43de9` / `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d` 执行 §61.9.2；先核清其已存在的 preview allowlist 和邮箱密码生产前置，再由用户确认精确切换动作。
 - [ ] **阶段 4：观察与回滚。** 按启用前写定的窗口、样本和阈值形成继续/关闭/修复结论，并验证关闭 SKU 后新单拒绝、在途单继续处理。
 - [ ] **阶段 5：后续扩展与收口。** 每项扩展要么完成专属门禁，要么明确记为 `deferred` 并给出重启条件；延期本身可以完成本阶段，不要求无限实现所有未来设想。
 
-当前唯一下一步是阶段 2。完整浏览器矩阵继续作为质量 backlog 保存，但不再排在默认关闭生产发布之前；不得重复创建或支付 §61.7.3 的既有未付款订单。
+当前唯一下一步是阶段 3 的 operator review 和邮箱密码链路前置核验。指定 SKU 已能在生产返回游客 preview，不能把“再次打开商品开关”当作下一步；应先证明其低价值、非共享、自动发货、可单独关闭，并确认凭证迁移/配置后再决定单独切换。完整浏览器矩阵继续作为质量 backlog 保存；不得重复创建或支付 §61.7.3 的既有未付款订单。
 
 ### 61.11 2026-09-20 阶段性交付边界
 
@@ -3723,7 +3723,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - [x] 五按钮统一策略、`hidden`/`disabled`/`aria-busy`、焦点恢复和 Escape/Tab 前置实现。
 - [x] create/status/recover 单飞、代数隔离、unknown-create 同键恢复、终态旧支付凭证抑制实现。
 - [x] `sessionStorage` 降级提示、找回凭证清理、短期「离开当前订单」语义实现。
-- [x] 本地 `8017` 夹具、去敏 audit、延迟 smoke 和全量 `512/512` 自动化回归基线（2026-09-20 下一阶段启动复测；`511/511` 保留为上一轮历史基线）。
+- [x] 本地 `8017` 夹具、去敏 audit、延迟 smoke 和历史 `512/512` 自动化基线；发布候选补强后的当前基线为 `516/516`（`511/511`、`512/512` 保留为历史读数）。
 - [ ] 真实 IAB 的在途瞬时断言、完整终态矩阵、横屏/主题/读屏、多标签和回跳证据。
 - [ ] production-like 开关/readiness/Admin Studio 一致性、真实 provider/库存/worker 与发布链路证据。
 
@@ -3755,4 +3755,16 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - [x] 行为回归覆盖 availability `404`/网络失败下的旧恢复、reset token `503 -> retry -> submit`、慢探测来源失效、滚动锁 owner 恢复；本轮风险聚焦回归 `72/72 PASS`。
 - [x] 发布候选复测为游客商城套件 `516/516 PASS`、全量安全套件 `3450/3450 PASS`；readiness `findings: none` 且保持 `operational_ready=false`。从 Git 暂存区导出的隔离快照构建生成 812 个静态文件，5 个未跟踪草稿/诱饵均未进入候选。
 
-本节只表示发布候选的已知前端阻断已收口。阶段 2 仍为 `in_progress`，Task 2.1 总进度仍为 **20%**；只有候选提交经 PR 合入最新 `main`，并完成 Vercel、Verify、Sub2API、guest-shop worker 四链同 commit 验证和开关状态归档后，才可把阶段 2 标记 `complete`、总进度更新为 **40%**。
+本节的候选已通过 PR #656 合入并完成 §61.14 的四链验证，因此阶段 2 已由 `in_progress` 更新为 `complete`，Task 2.1 总进度为 **40%**。该结论只覆盖默认关闭发布，不代表指定 SKU 或邮箱密码链路已完成启用。
+
+### 61.14 2026-09-20 阶段 2 生产发布归档
+
+- **候选与合并：** 专用分支候选 `3204aea885d0aba3422b89d86be7a98c86cccea4` 经 PR #656 的 11 项检查全部通过后正常合并；未使用 `--admin`。固定 production commit 为 `40da7b557659b0f097a478437cb9034138f2ea2e`。
+- **Vercel production：** deployment `dpl_6Br5GJ8fBpJpurmMobntfqfbKUrf` 为 `READY`，target 为 `production`，Git source 为 `main` / `40da7b557659b0f097a478437cb9034138f2ea2e`。线上 `shop.html` 和 `guest-orders.html` 静态资源版本均已改写为 `v=40da7b557659`，重试按钮与本批 modal cache marker 可见。
+- **KVM4 Verify Server：** GitHub Actions run `35507620953` 成功；`/opt/zaoyoe-verify-server/.current-release` 等于 production commit，容器 `zaoyoe-verify-server` healthy，内外 `/healthz` 均正常，`.env` 权限为 `0600`。
+- **KVM4 Sub2API / NewAPI：** run `35507620930` 首次因 GitHub runner 到 SSH 端口连续超时而失败，未上传/切换 release；同一 run 的 failed-job rerun（attempt 2）成功。`/opt/sub2api/.current-release` 等于 production commit，`sub2api`、PostgreSQL、Redis 均 healthy，`https://new.fatherkey.com/health` 正常，`sub2api-legacy` 不存在。
+- **KVM4 guest-shop worker：** host installer 已落地的 timer 为 enabled + active，最近 service 结果 `success`、退出码 0；发布后 30 分钟窗口内检出 360 条 systemd 成功标记（同一次 tick 可产生多条标记，不把它误报为订单数）。KVM4 health watchdog active。本批未重跑 installer，也未修改 worker secret。
+- **生产 readiness 口径：** 完整仓库本地 `--fail-on-invalid` 为 `findings: none`。生产容器内检查确认 claim/contact/request peppers 均已配置且未复用 service-role secret；唯一 3 个 `invalid` 是 compact verify image 按设计不携带的 host-only worker 脚本/service/timer，`AGENTS.md` 明确该情况不算启动失败，且对应 host units 已由上一条实况验证。凭证开关和查询页开关都未设置，保持默认关闭。
+- **开关前后状态：** 指定「测试」商品在发布前后都返回 `success=true` 的生产 preview，数量上限 1、优惠关闭、邮箱密码要求关闭、渠道仍为 ZPay/NOWPayments；本部署没有执行 SQL、没有调用商品/功能开关写接口、没有创建或支付订单。`/api/shop/guest/access/availability` 返回预期的 `404 guest_feature_disabled`，证明邮箱密码查询尚未启用而非前端回退。
+
+阶段 2 退出条件已经全部满足。阶段 3 只评审「测试」商品 `52246f1d-b98d-4920-9129-581296f43de9`、SKU `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`（不是「测试 2」）；下一步先完成 operator review、数据库迁移存在性证明、凭证开关配置方案和阶段 4 观察/停止阈值，未经再次精确确认不改生产开关。
