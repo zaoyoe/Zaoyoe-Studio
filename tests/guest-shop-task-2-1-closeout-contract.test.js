@@ -8,6 +8,9 @@ const test = require('node:test');
 const repoRoot = path.resolve(__dirname, '..');
 const planPath = path.join(repoRoot, 'docs', 'guest-purchase-task-2.0.md');
 const taskboardPath = path.join(repoRoot, 'docs', 'guest-purchase-execution-taskboard.md');
+const archivePath = path.join(repoRoot, 'docs', 'guest-shop-stage5-rollback-archive.md');
+const archiveScriptPath = path.join(repoRoot, 'scripts', 'guest-shop-stage5-archive.js');
+const archiveTestPath = path.join(repoRoot, 'tests', 'guest-shop-stage5-archive.test.js');
 
 function read(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -52,15 +55,29 @@ test('Task 2.1 Stage 5 closeout stays bounded and auditable', () => {
         const cells = row.slice(1, -1).split('|').map((cell) => cell.trim());
         assert.equal(cells.length, 5, `Stage 5 row must keep five contract columns: ${row}`);
         assert.ok(cells.every(Boolean), `Stage 5 row must not contain an empty contract cell: ${row}`);
-        assert.match(cells[1], /^(?:`deferred`|`deferred \/ manual_review`|`pending_operator_window`)$/u);
+        const isRollbackRow = row.includes('指定 SKU 回滚演练');
+        if (isRollbackRow) {
+            assert.equal(cells[1], '`complete`', 'the operator-confirmed rollback exercise must be closed out');
+        } else {
+            assert.match(cells[1], /^(?:`deferred`|`deferred \/ manual_review`|`pending_operator_window`)$/u);
+        }
         assert.doesNotMatch(cells[2], /待定|未分配|TBD/iu);
         assert.doesNotMatch(cells[3], /待定|未定义|TBD/iu);
         assert.doesNotMatch(cells[4], /待定|未定义|TBD/iu);
     }
 
-    assert.match(section, /用户明确给出停用窗口/u);
-    assert.match(section, /关闭开关后新单 409/u);
+    assert.match(section, /明确停用窗口/u);
+    assert.match(section, /关闭后 preview 返回 `guest_product_unavailable`/u);
     assert.match(section, /本阶段不执行：不新增 SQL/u);
     assert.match(section, /不重复创建或支付历史订单/u);
     assert.match(section, /阶段 5 才可从 `in_progress` 更新为 `complete`/u);
+
+    const archive = fs.readFileSync(archivePath, 'utf8');
+    assert.match(archive, /guest-shop-stage5-rollback-2026-09-21-test-sku/u);
+    assert.match(archive, /guest_product_unavailable/u);
+    assert.match(archive, /本归档不自动取消、不代用户支付/u);
+    assert.doesNotMatch(archive, /GS\d{10,}/u);
+    assert.ok(fs.existsSync(archiveScriptPath), 'Stage 5 archive contract implementation must exist');
+    assert.ok(fs.existsSync(archiveTestPath), 'Stage 5 archive regression test must exist');
+    assert.match(plan, /阶段 5 指定 SKU 运营归档完成/u);
 });
