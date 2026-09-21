@@ -191,79 +191,6 @@
         </section>
         </div>
 
-        <!--
-          §13.4: historical orders placed before Order Access 2.0 have no query
-          password, only an order number plus a one-time pickup code. That path
-          stays reachable until those orders expire, collapsed by default so the
-          password flow is the obvious one.
-        -->
-        <section class="guest-orders-card guest-orders-legacy">
-            <button id="guestOrdersLegacyToggleBtn" type="button" class="guest-orders-legacy-toggle" aria-expanded="false"
-                aria-controls="guestOrdersLegacyPanel">
-                <i class="fas fa-clock-rotate-left" aria-hidden="true"></i>
-                使用订单号 + 取货口令找回历史订单
-                <i class="fas fa-chevron-down guest-orders-legacy-caret" aria-hidden="true"></i>
-            </button>
-            <div id="guestOrdersLegacyPanel" class="guest-orders-legacy-panel" hidden>
-                <label class="guest-orders-field" for="guestOrdersLegacyOrderNo">
-                    <span>订单号</span>
-                    <input id="guestOrdersLegacyOrderNo" type="text" autocomplete="off" maxlength="200">
-                </label>
-                <label class="guest-orders-field" for="guestOrdersLegacyCode">
-                    <span>取货口令</span>
-                    <input id="guestOrdersLegacyCode" type="text" autocomplete="off" maxlength="200">
-                </label>
-                <button id="guestOrdersLegacyBtn" type="button" class="guest-orders-secondary-btn">找回订单</button>
-                <div id="guestOrdersLegacyResult" class="guest-orders-legacy-result" hidden></div>
-
-                <!--
-                  §13.2 (A3): the same two legacy factors, spent once to attach a
-                  query password to the order. It reuses the order-number and
-                  pickup-code inputs above so there is exactly one place to type
-                  them. The admin console deliberately cannot do this for the
-                  buyer (§10.5): an admin-set password would transit a support
-                  channel in plaintext.
-                -->
-                <div id="guestOrdersUpgradeContent" class="guest-orders-upgrade" hidden aria-hidden="true">
-                    <div class="guest-orders-upgrade-title">
-                        <i class="fas fa-arrow-up-right-dots" aria-hidden="true"></i>
-                        为这个历史订单设置查询密码
-                    </div>
-                    <p class="guest-orders-tip">设置后不必再记取货口令：用页面顶部的「邮箱 + 查询密码」表单就能查到这个订单。请填写下单时的邮箱。</p>
-                    <label class="guest-orders-field" for="guestOrdersUpgradeEmail">
-                        <span>邮箱</span>
-                        <input id="guestOrdersUpgradeEmail" name="guest-upgrade-email" type="email" inputmode="email"
-                            autocomplete="username" maxlength="320" placeholder="下单时填写的邮箱">
-                    </label>
-                    <label class="guest-orders-field" for="guestOrdersUpgradePassword">
-                        <span>查询密码</span>
-                        <span class="guest-orders-password-row">
-                            <input id="guestOrdersUpgradePassword" name="guest-upgrade-password" type="password"
-                                autocomplete="new-password" maxlength="64" spellcheck="false"
-                                placeholder="至少 8 位，含大小写字母、数字和符号">
-                            <button id="guestOrdersUpgradeToggleBtn" type="button" class="guest-orders-icon-btn"
-                                title="显示密码" aria-label="显示查询密码" aria-pressed="false">
-                                <i class="fas fa-eye" aria-hidden="true"></i>
-                            </button>
-                        </span>
-                    </label>
-                    <label class="guest-orders-field" for="guestOrdersUpgradePasswordConfirm">
-                        <span>确认查询密码</span>
-                        <input id="guestOrdersUpgradePasswordConfirm" name="guest-upgrade-password-confirm" type="password"
-                            autocomplete="new-password" maxlength="64" spellcheck="false">
-                    </label>
-                    <div class="guest-orders-field-action-row">
-                        <button id="guestOrdersUpgradeGenerateBtn" type="button" class="guest-orders-link-btn">
-                            <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> 帮我生成一个强密码
-                        </button>
-                    </div>
-                    <p id="guestOrdersUpgradePolicy" class="guest-orders-policy" aria-live="polite" hidden></p>
-                    <button id="guestOrdersUpgradeBtn" type="button" class="guest-orders-secondary-btn">设置查询密码</button>
-                    <div id="guestOrdersUpgradeResult" class="guest-orders-legacy-result" hidden></div>
-                </div>
-            </div>
-        </section>
-
         <footer class="guest-orders-footer">
             <p>查询凭证只保存在本机浏览器，本站不保存明文查询密码。清除浏览器数据或点击「清除本机凭证」后需要重新输入。</p>
             <p><a href="/shop.html">返回商城</a> · <a href="/refund-policy.html">退款政策</a> · <a href="/terms.html">用户协议</a> · <a href="/privacy.html">隐私政策</a></p>
@@ -272,7 +199,7 @@
 
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
     <script src="./js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
-    <script src="./js/guest-orders-client.js?v=20260924_GUEST_ORDERS_RETRY_1&legacyRecovery=20260920_GUEST_LEGACY_RECOVERY_1" defer></script>
+    <script src="./js/guest-orders-client.js?v=20260924_GUEST_ORDERS_CREDENTIAL_ONLY_1" defer></script>
 </body>
 
 </html>

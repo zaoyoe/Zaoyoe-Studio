@@ -71,11 +71,11 @@
 | 1 | 代码与合同 | 20% | **complete** | P0 安全切片、按钮语义、自动化 `516/516` 和 2.1 分层合同完成；扩展项明确关闭或延期 |
 | 2 | 默认关闭生产发布 | 20% | **complete** | PR #656 合入当时最新 `main`；Vercel、Verify、Sub2API、guest-shop worker 四链绑定 production commit `40da7b557659b0f097a478437cb9034138f2ea2e` 且健康；未执行 SQL、未改变游客商品/功能开关 |
 | 3 | 指定 SKU 游客启用 | 20% | **in_progress** | 精确 product/SKU 通过 operator review 和 §61.9 基础安全门；用户确认后只打开该 SKU，扩展开关保持关闭 |
-| 4 | 观察与回滚 | 20% | **not_started** | 按预先写定的窗口、样本和阈值完成对账与履约观察；关闭该 SKU 后新单被拒、在途已付款单继续履约或退款 |
+| 4 | 观察与回滚 | 20% | **deferred** | 用户自行完成聚焦下单测试并回传结果后归档；不执行固定 24 小时/最多 5 单窗口，关闭该 SKU 后新单被拒、在途已付款单继续履约或退款 |
 | 5 | 后续扩展与收口 | 20% | **not_started** | INTL、促销、多件、凭证增强、完整可访问性等逐项实施或明确 `deferred`；归档最终状态与后续责任人 |
 | **合计** |  | **100%** |  |  |
 
-阶段 1 已在 2026-09-20 以发布候选代码和 `516/516` 游客商城自动化基线完成；阶段 2 已由 §61.14 的同 commit 四链证据完成。当前进度 **40%**，剩余 **3/5 阶段，60%**；阶段 3 先核清指定 SKU 已存在的 allowlist 状态和邮箱密码链路前置，不能重复建单或盲目重开开关。
+阶段 1 已在 2026-09-20 以发布候选代码和 `516/516` 游客商城自动化基线完成；阶段 2 已由 §61.14 的同 commit 四链证据完成。当前进度 **40%**，剩余 **3/5 阶段，60%**；阶段 3 先核清指定 SKU 已存在的 allowlist 状态和邮箱密码链路前置，不能重复建单或盲目重开开关。阶段 4 的固定观察窗口已按 §61.18 改为用户自测，不再作为下一步的等待门。
 
 下方 A–J、§12–§60 和早期 K 表述均是 2.0/实施历史，保留用于审计，不再构成当前计分表或一揽子阻断门。若历史段落与本节或 §61.9 冲突，以本节和 §61.9 为准。
 
@@ -105,9 +105,17 @@
 
 ---
 
-## B. 代码/自动化/恢复语义/UI 契约收口
+## B. 代码/自动化/恢复语义/UI 契约收口（2.0 历史记录）
 
-### B1. 恢复语义冻结（本轮已定稿）
+> 本节的恢复、recover 路由和口令展示条目是旧 2.0 候选的审计记录；它们不再描述
+> 当前 2.1 入口。当前用户查询统一使用邮箱 + 查询密码，旧公开查询/升级路由已移除；
+> 服务端 claim proof 的履约用途不受影响。
+
+### B1. 恢复语义冻结（2.0 历史记录，2.1 已移除公开旧入口）
+
+> 本节记录早期 2.0 的订单号 + 取货口令恢复合同，仅用于审计当时的实现与证据。
+> 它不是当前用户能力；2.1 当前合同以 §61.4.5 和 §61.16 为准，邮箱 + 查询密码
+> 是唯一用户查询入口，公开 `recover` / `access/upgrade` 已移除。
 
 `recovery_code` **不是**一次性消耗令牌。
 
@@ -299,7 +307,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 - [ ] 桌面：刷新恢复（无口令回吐）
 - [ ] 移动端同样 7 项，底部 sheet、按钮全宽
 - [ ] 支付 App 切回
-- [ ] 关闭浏览器后用订单号+口令找回
+- [ ] 关闭浏览器后用邮箱 + 查询密码找回（不保存凭证、不把凭证写入 URL）
 - [ ] 亮色/暗色主题都不刺眼，不出现英文 `Guest checkout`
 - [ ] 按 §61.3 逐状态截图五个动作：稍后处理、创建支付订单、查询支付状态、离开/取消、找回订单；同时记录 computed `display`、disabled、focus 和 `aria-busy`
 - [ ] `configure/creating/awaiting_payment/checking/review/confirmed/paid_unfulfillable/dead_letter/delivered` 与全部支付/退款终态均有真实文案，不把 review/金额异常/退款误标成“支付超时”
@@ -3469,7 +3477,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 | 「创建支付订单」 | 有服务端重算、幂等键、原子预占和 provider lease；但锁在首个 `await loadPreview()` 之后才建立，且无效支付 QR/地址的错误状态可能被后续“订单已创建”文案覆盖 | P1 | 双击/快速点击可并发预览或创建；服务端已建单但客户端超时/丢响应时，界面没有订单号和恢复入口；没有可支付凭证时却继续引导付款 | 先锁请求，再预览；未知结果和无效 checkout 必须进入 `review` 并提供找回路径，禁止重复付款 |
 | 「查询支付状态」 | 后端有 claim 校验、主动查单、节流和 worker kick；按钮每次点击都 `resetWindow + force_provider_refresh`，无前端互斥 | P1 | 快速连点并发查渠道、触发限流；`review`/终态仍可能显示普通查询；状态文案可能把金额异常/退款显示成超时 | 统一状态机、busy/debounce、终态映射和手动重试上限 |
 | 「关闭当前订单」 | `abandonCurrentOrder()` 只清本地句柄；没有 `/guest/cancel` 路由或取消 RPC，服务端预占等 TTL 释放；该分支还需显式清除查询密码 | **P0** | 按钮名暗示订单已关闭；旧付款码在 TTL 内仍可能付款，造成 `paid_unfulfillable`/退款；`review`、未知金额等状态可能被清掉本地证据，旧密码可能污染下一次下单 | 在真正取消能力上线前不得使用“关闭订单”语义；短期改成“离开当前订单”，长期再做有条件幂等取消 |
-| 「找回订单」 | 旧链路为订单号+取货口令；邮箱+查询密码入口按开关显示；recover 返回的快照缺商品/站点/渠道上下文 | P1 | 找回期间旧轮询未停；跨商品/跨站可能沿用当前页面商品、旧二维码或旧金额；终态先闪现“核验中” | 双链路按开关分流，先隔离旧状态，再用服务端快照重建界面；不泄露凭证 |
+| 「找回订单」（历史基线） | 旧链路曾为订单号+取货口令；邮箱+查询密码入口曾按开关显示 | P1 | 旧链路与新链路并存会造成入口歧义、跨商品上下文污染和凭证泄露 | **2.1 已收口为邮箱 + 查询密码唯一入口**；旧 panel、公开 recover/upgrade 和双链路分流均已删除；服务端只返回 allowlist 快照，不泄露凭证 |
 
 另有一个纯 UI 闸门：`.shop-btn` 在作者样式中强制 `display:flex`，而五个按钮主要依赖 HTML `hidden`。如果没有显式的 `.guest-shop-modal__actions .shop-btn[hidden] { display:none !important; }`，计算样式可能覆盖隐藏意图，导致“不该出现的按钮”仍占位或可聚焦。契约测试必须检查计算样式，不只检查 DOM 属性。
 
@@ -3481,7 +3489,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 2. **服务端状态优先。** 商品、SKU、站点、数量、阶梯价、优惠、手续费、应付金额、支付终态、库存和退款状态均由服务端/数据库裁决，客户端只渲染经过 allowlist 的快照。
 3. **未知不等于未支付。** provider 超时、响应丢失、回写失败、金额/币种无法核对统一进入 `review/payment_creation_unknown`，不得显示“请继续付款”、不得释放可能已付款的预占，也不得允许盲目重新创建。
 4. **无破坏性假动作。** 没有服务端取消和渠道状态确认时，客户端只能“离开当前页面”；不能声称订单已关闭、不能声称库存已释放、不能抹掉用户唯一恢复线索。
-5. **凭证分层。** 凭证开关开启时，新订单以邮箱+查询密码为主；旧订单号+`recovery_code` 仅兼容迁移。任何 status/recover/claim 响应都不得回吐 `recovery_code`、密码、claim token、卡密或原始 provider payload。
+5. **凭证分层。** 凭证开关开启时，邮箱 + 查询密码是唯一用户查询入口；`claim_secret_hash` 与 HttpOnly claim proof 仅服务履约和内部 break-glass。任何 status/claim/access 响应都不得回吐 `recovery_code`、密码、claim token、卡密或原始 provider payload。
 6. **发布、配置、启用三者分离。** 代码部署成功不代表邮箱凭证、查询页、优惠码或多件购买已开启；readiness、页面门禁和 Admin Studio 开关必须能准确反映实际运行状态。
 
 ### 61.3 目标状态机与五按钮矩阵
@@ -3553,15 +3561,15 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - provider 已创建但不能撤销时，不做本地假取消，转 `review` 并等待渠道查单；迟到付款必须进入退款/人工队列，不能发货。
 - 增加跨标签、迟到 webhook、取消与 worker 竞态测试后，才可恢复“关闭当前订单”名称。
 
-#### 61.4.5 「找回订单」：按开关分流，先隔离上下文
+#### 61.4.5 「找回订单」：邮箱 + 查询密码唯一入口
 
-- 凭证开关 **ON**：主入口引导 `/guest-orders.html` 的邮箱+查询密码；旧订单号+取货口令只作为迁移兼容，并记录弃用日期，不同时让用户面对两个等价入口。
-- 凭证开关 **OFF**：保留订单号+取货口令找回；不得暗中要求邮箱密码或泄露“该订单是否存在”。
-- recover 开始前停止旧轮询、清空旧 checkout/provider/product/context，保存一个新的 request generation；响应回来后只允许匹配当前 generation 的结果更新 UI。
-- 从 `sessionStorage` 或回跳恢复时先进入 `recovering/checking`，不能因 `hydrateCheckout()` 的默认状态短暂显示“确认商品信息”并同时展示查询/关闭按钮；首个服务端 snapshot 决定最终面板。
+- 当前 2.1 主入口（无论商城弹窗当前订单是否待支付）统一导航到 `/guest-orders.html`；该页只展示并提交邮箱 + 查询密码。
+- 订单号 + 取货口令的公开查询、旧兼容面板、`guest/recover` 和 `guest/access/upgrade` 均已移除；不得因凭证开关关闭、availability 不可达或接口异常而回退到旧查询模式。
+- `/guest-orders.html` 的登录、列表、详情和发货查询必须先隔离旧页面上下文；响应回来后只允许匹配当前请求代数和当前买家会话的结果更新 UI。
+- 从 `sessionStorage` 或回跳恢复时先进入 `checking`，不能因默认状态短暂显示“确认商品信息”并同时展示旧查询按钮；首个服务端 snapshot 决定最终面板。
 - `publicOrderSnapshot` 至少返回经 allowlist 的 `site/product_id/sku_id/product_name/sku_name/provider/channel/amount/currency/payment_status/fulfillment_status/refund_status/expires_at`；不返回 recovery code、密码、原始 payload 或卡密。
-- 找回已过期、已退款、已发货、金额异常等终态时直接渲染真实终态，不先闪现“正在核验”；不得沿用当前页面商品或旧二维码。
-- G3 删除旧入口的条件：邮箱密码链路已在生产完成 G1 全链路实机证据（下单→支付→查询→发货→锁定→重置），客服/运营有迁移路径，且旧订单兼容窗口与数据保留期限已公告并归档。
+- 找回已过期、已退款、已发货、金额异常等终态时直接渲染真实终态，不先闪现“正在核验”；不得沿用商城页当前商品或旧二维码。
+- 服务端 `claim_secret_hash` 与 HttpOnly claim proof 仅服务履约和内部 break-glass，不是买家查询入口；不得在公开页面、建单响应或客服以外的用户流程中展示。
 
 ### 61.5 身份、开关与促销的 2.1 补强项
 
@@ -3573,7 +3581,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 | P0 | 邮箱+查询密码目标链路仍允许回退到可选邮箱的旧行为；密码策略虽有 P1–P10 代码，但尚未完成生产 G1 证据 | 凭证开关 ON 时邮箱和查询密码均必填，服务端强制 8 位及四类字符/弱密码拒绝；同一邮箱同价同券，身份字段不得进入定价；下单、支付、查询、发货、锁定、重置全链路实测通过 |
 | P1 | CAPTCHA 只有阈值/错误码，公开处理器和前端未真正接线 | 先做威胁模型和成本评估，再决定接入或明确限流替代；不能把“有配置项”当成已防刷 |
 | P1 | 邮箱未做 OTP 所有权验证；`registered_user_match` 目前公开下单传 `null` | 在不改变同价/同券原则的前提下补记录链路；OTP/并入账号单独做 A4，不把未验证邮箱描述成已验证身份 |
-| P1 | 旧 recovery code 与邮箱密码双入口并存 | 设定迁移、客服、弃用和 G3 删除条件；任何升级/重置不得回吐旧口令 |
+| P1（已收口） | 旧 recovery code 与邮箱密码双入口并存（历史缺口） | 删除旧查询/升级入口；邮箱 + 查询密码成为唯一用户查询链路；claim proof 仅服务履约，不回吐旧口令 |
 | P0/P1 | `GUEST_SHOP_MAX_QUANTITY` 仍为 1；C-D3 库存占比、C-D4 并发未付款单、C-D5 促销 TTL 尚未完成 | 在三项通过前不得调高数量，不得开启多件阶梯价；每项有最后一张库存、批量占用、释放和优惠额度证据 |
 | P1 | 阶梯价、闪购、优惠码需要与登录用户价格 resolver 保持一致，但 parity 实机与 quote 语义仍未完全闭合 | 以服务端/数据库 resolver 为唯一价格源，覆盖基础价、阶梯、闪购、同价同券、手续费和限购向量；前端只展示结果，不能让游客因身份而加价 |
 | P1 | 少付/金额异常尚未统一写入促销熔断事件；日预算耗尽无通知 | 将金额异常、重复拒绝、预算耗尽接入 breaker/audit/告警；告警必须含匿名订单维度，不含凭证/卡密 |
@@ -3584,7 +3592,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 ### 61.6 竞态、隐私与可访问性验收
 
 - **上下文代数：** 延迟 preview 时切换 SKU、站点、数量、优惠码或关闭弹窗；旧响应必须被丢弃，不能覆盖新商品价格、渠道、身份开关或 quote。
-- **请求互斥：** create/status/recover 各自单飞；跨动作（找回进行中点创建、创建进行中点关闭、关闭后旧响应回来）必须按 generation 拒绝过期结果。
+- **请求互斥：** create/status/access 各自单飞；跨动作（查询进行中点创建、创建进行中点关闭、关闭后旧响应回来）必须按 generation 拒绝过期结果。
 - **多页面：** 同一订单在两个标签页操作时，不得双发、双 claim 或互相清除新句柄；`storage` 不可用、隐私模式、回跳新标签均有降级提示。
 - **回跳安全：** return URL 只携带非敏感订单句柄；回跳不等于支付成功；站点、商品和 claim 仍由服务器校验。
 - **焦点与读屏：** modal 关闭后焦点回到触发按钮；busy/错误/状态使用 `aria-live`，隐藏按钮不可聚焦；移动端按钮顺序与点击热区可用。
@@ -3595,11 +3603,11 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 | 批次 | 工作包 | 依赖 | 退出条件 |
 | --- | --- | --- | --- |
 | 2.1-P0-A | 状态机/按钮策略与 CSS hidden 修复 | 无 | 目标矩阵逐状态可计算；hidden、disabled、focus、aria 契约测试通过 |
-| 2.1-P0-B | create/status/recover 单飞、代数隔离、未知结果恢复 | P0-A | 双击、丢响应、延迟 preview、跨 SKU、隐藏弹窗响应测试通过；无重复支付/预占 |
+| 2.1-P0-B | create/status/access 单飞、代数隔离、未知结果恢复 | P0-A | 双击、丢响应、延迟 preview、跨 SKU、隐藏弹窗响应测试通过；无重复支付/预占 |
 | 2.1-P0-C | “离开”短期语义或真正 cancel API 设计落地 | P0-B、产品决策 | 没有服务端取消时不再出现误导性“关闭”；若做 cancel，RPC/审计/迟到支付竞态全绿 |
 | 2.1-P0-D | 终态/退款/人工处理映射和恢复快照 | P0-B | §61.3 列出的全部支付/履约/退款终态都有正确文案、按钮和轮询行为；跨商品找回不串单 |
 | 2.1-P0-E | 运行开关与静态查询页门禁 | P0-D | OFF/ON 两套生产-like 实测；readiness 与页面/API 一致；默认仍 fail-closed |
-| 2.1-P1-A | 邮箱密码 G1、CAPTCHA 决策、旧入口迁移 | P0-E | 邮箱密码全链路实机证据；未验证邮箱不冒充已验证身份；G3 删除条件可执行 |
+| 2.1-P1-A | 邮箱密码 G1、CAPTCHA 决策、旧入口收口 | P0-E | 邮箱密码全链路实机证据；未验证邮箱不冒充已验证身份；旧入口删除已完成，剩余仅为实机证据与风险决策 |
 | 2.1-P1-B | C-D3/C-D4/C-D5、金额异常熔断、预算告警 | P0-D | 多件/并发/TTL/少付/预算的真实证据齐全；数量和优惠开关仍按门禁开启 |
 | 2.1-P1-C | L4 Admin Studio 运营与审计 | P1-B | RBAC、二次确认、原因、审计、恢复和只读监控可用 |
 | 2.1-P2 | quote、登录现金购买、购物车、体验优化 | P1 完成后 | 单独产品评审和灰度，不阻塞 P0 安全闭环，也不能绕过其门禁 |
@@ -3609,7 +3617,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 以下均为代码和自动化证据，不能替代 §61.8 的实机/沙箱证据，也不表示对应工作包已满足全部退出条件：
 
 - **unknown-create 同键恢复：** 浏览器现在只提交 `prepare → commit` 和不带敏感字段的 `inspect/ack` 动作；服务端在内部把同一 intent 映射为显式 `resumeUnknown:true` 恢复分支，并在实时价格、库存 RPC 和支付渠道调用前按 `site + idempotency_key` 查旧单。商品、SKU、数量、优惠码、claim 派生值、渠道以及已绑定的买家/联系方式不一致时 fail-closed，凭证订单仍执行共享密码认证和锁定预算且不新分配买家组。命中旧单只返回数据库持久化的安全 checkout；`review` 且无 provider reference 时返回订单句柄、该 create 响应允许的恢复口令和 `checkout:null`；过期、失败、退款等终态优先，不能重新暴露旧付款码。未命中旧单时才按当前数量/优惠开关走正常创建，自动化断言不会重复调用 provider 或新增预占。
-- **客户端竞态隔离：** unknown 重试复用原幂等键和不可变请求字段；create/status/recover 使用单飞与 generation/context 校验隔离迟到响应。关闭弹窗后的迟到 unknown 不再把界面卡在“正在确认”；recover 与旧 poll 交叉、延迟 preview、双击 create 和切换商品上下文已有定向覆盖。处于 unknown/detached 状态时禁止“找回订单”切单，恢复成功、离开、终态或上下文重置会清理 detached 状态。
+- **客户端竞态隔离：** unknown 重试复用原幂等键和不可变请求字段；create/status/access 使用单飞与 generation/context 校验隔离迟到响应。关闭弹窗后的迟到 unknown 不再把界面卡在“正在确认”；查询与旧 poll 交叉、延迟 preview、双击 create 和切换商品上下文已有定向覆盖。处于 unknown/detached 状态时禁止“找回订单”切单，恢复成功、离开、终态或上下文重置会清理 detached 状态。
 - **查单期间离开保护：** 手动或自动 `/status` 请求在途时，策略层隐藏“离开当前订单”，执行层的 `isAbandonableOrder()` 也拒绝清理本地订单句柄；迟到的 `confirmed`/`review` 响应因此仍可落到原订单。动态回归覆盖了查询按钮 busy、订单号与 `sessionStorage` 保留，以及迟到确认不被旧离开动作污染。
 - **弹窗可访问性前置：** 游客弹窗补齐 `aria-hidden` 开关、`aria-describedby` 状态关联、打开后的首个可用控件焦点、Escape 关闭和 Tab 循环；关闭仍恢复触发器焦点。该切片已纳入前端合同测试，但真实读屏、移动键盘和视觉焦点截图仍属于 §61.8 未闭合证据。
 - **短期离开语义：** 前端已把「关闭当前订单」改为「离开当前订单」，确认文案明确这不会取消服务端订单、不会立即释放库存，并警告旧付款码不要再付；本轮没有新增 cancel API，因此 P0-C 整批仍未完成。
@@ -3672,7 +3680,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 4. 点击「离开当前订单」：旧付款码被警告；迟到付款进入人工/退款，不发货。
 5. 快速连点「查询支付状态」：只有一个 provider 查询，按钮显示 busy，终态停止轮询。
 6. review、金额不足/多付、expired、refunded、paid_unfulfillable、dead_letter：逐一核对文案、按钮、退款/客服入口。
-7. **凭证功能开启时：** 清 cookie/换设备后按邮箱+查询密码或旧口令兼容链路找回；跨商品找回不显示当前商品的二维码和金额。凭证关闭时本项不阻塞不含凭证的发布，但本任务阶段 3 若按目标开启强制邮箱密码，则必须完成对应聚焦证据。
+7. **凭证功能开启时：** 清 cookie/换设备后只按邮箱+查询密码找回；跨商品找回不显示当前商品的二维码和金额。凭证关闭时本项不阻塞不含凭证的发布，但本任务阶段 3 若按目标开启强制邮箱密码，则必须完成对应聚焦证据。
 8. **浏览器扩展：** sessionStorage 禁用、移动端回跳、新标签、双标签并发、键盘/读屏和亮暗主题截图；未涉及的设备/辅助技术缺口保留在扩展 backlog，不阻塞默认关闭发布。
 9. **所启用功能的运行开关：** OFF/ON、静态 `/guest-orders.html`、API 404/200、preview 字段和 Admin Studio 开关保持一致。关闭中的促销、多件或 INTL 不要求伪造 ON 证据。
 
@@ -3721,7 +3729,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 本轮阶段性实现可交付范围已经收口为“代码安全切片 + 本地受控夹具基线”，不等同于 2.1 完成或游客商品启用：
 
 - [x] 五按钮统一策略、`hidden`/`disabled`/`aria-busy`、焦点恢复和 Escape/Tab 前置实现。
-- [x] create/status/recover 单飞、代数隔离、unknown-create 同键恢复、终态旧支付凭证抑制实现。
+- [x] create/status/access 单飞、代数隔离、unknown-create 同键恢复、终态旧支付凭证抑制实现。
 - [x] `sessionStorage` 降级提示、找回凭证清理、短期「离开当前订单」语义实现。
 - [x] 本地 `8017` 夹具、去敏 audit、延迟 smoke 和历史 `512/512` 自动化基线；发布候选补强后的当前基线为 `516/516`（`511/511`、`512/512` 保留为历史读数）。
 - [ ] 真实 IAB 的在途瞬时断言、完整终态矩阵、横屏/主题/读屏、多标签和回跳证据。
@@ -3748,7 +3756,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 在冻结阶段 2 候选前，独立审查发现并闭合三项不能带入发布的回归；这些修复不改变任何生产商品或功能开关：
 
 - [x] `shop-client.js`、`guest-shop-client.js`、`ios-scroll-lock.js` 和 `guest-orders-client.js` 都有本批独立 cache-buster，避免一年 `immutable` 缓存继续运行旧弹窗交接或旧查询页逻辑。
-- [x] “订单号 + 取货口令”历史恢复区移出邮箱密码能力门禁；availability 为 `404`、网络失败或开关 OFF 时仍显示、可展开并可调用 `/guest/recover`。历史订单升级为邮箱密码的表单继续单独默认隐藏，只在新能力明确 ON 时显示。
+- [x] （历史记录）旧“订单号 + 取货口令”恢复区曾移出邮箱密码能力门禁；该候选策略已被 2.1 收口 supersede。当前旧恢复区、升级表单和公开 `/guest/recover` 均已删除，任何 availability/开关异常都不得回退到旧入口。
 - [x] 积分购买弹窗到游客弹窗采用连续滚动锁交接；共享锁按 modal owner 释放，游客弹窗关闭不得误释放后来打开的认证/公告弹窗。慢 availability 响应在打开游客弹窗前复核来源 modal、同一 purchase 对象、product/SKU 和 handoff generation，来源已关闭或切换时返回 `source_stale`，不再幽灵打开或错误弹登录。
 - [x] 连续 `purchase -> guest -> auth` 弹窗交接只把仍连接 DOM 且保持 `active` 的 modal 记为可恢复 owner；已失活 purchase 不再挤占唯一恢复槽，关闭 auth 后 guest 仍持有背景滚动锁。
 - [x] 一次性 reset token 在从 URL 清除后立即只存入内存；availability 瞬时失败会提供原地重试，成功后继续展开 reset card，不刷新、不把 token 放回 URL，legacy/retry/受保护监听均只绑定一次。
@@ -3833,7 +3841,7 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - 任意新 `paid_unfulfillable`、`dead_letter`、退款失败、异常 `amount_mismatch/partial/overpaid`，或已确认付款连续两个 worker 调度周期仍未进入预期履约/人工处理状态；
 - 任意缺失或弱查询密码被服务端接受、锁定预算失效、查询页/API/preview 开关状态不一致；
 - 库存、预占、支付、订单或 provider 对账出现 1 条无法解释的差异，过期预占超过既定 TTL 加一个 worker 调度周期仍未释放；
-- Vercel/Verify/Sub2API/worker 任一必要链路不健康、release commit 漂移，或 create/status/recover 连续两次出现服务端失败。
+- Vercel/Verify/Sub2API/worker 任一必要链路不健康、release commit 漂移，或 create/status/access 连续两次出现服务端失败。
 
 停止动作固定为：立即关闭受影响商品/SKU 的游客购买入口，停止新单；保留并对账在途单，已付款单继续履约或退款，不做数据库回滚，不清客户端状态冒充回滚。达到 5 单但没有异常属于计划内停表复核，不记为事故。
 
@@ -3845,3 +3853,39 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - 阶段 3 当前本地候选为游客商城 `545/545 PASS`、全量安全 `3479/3479 PASS`；隔离 worktree 的 Vercel 构建成功生成 812 个静态文件。这是包含本阶段补强的候选读数，不与 `516` 相加，也不代表这些未发布改动已在生产生效。
 - 本候选已补齐访问审计 retention 的独立开关、每十分钟最多 `10 × 1000` 行的有界 worker 清理、错误/积压 HTTP 503、凭证 ON + retention OFF 的持续运行时 503 互锁，以及 read-only verify 对 service-role 内部守卫、事务 advisory lock、唯一函数重载、有效角色权限和精确有效 `(created_at ASC, id ASC)` 索引的检查。KVM4 compact image 仅将 3 个 host-only systemd 资产降为人工核验，源码检出缺失仍硬失败；hosted 页面还必须与 `server/.release-commit` 对齐。
 - 当前 Task 2.1 进度仍为 **40%**。阶段 3 已完成目标 SKU、库存和数据库的只读事实核验，但仍缺候选发布、待执行迁移的用户侧验证、第二商品范围选择、CAPTCHA 剩余风险接受、三类责任人和精确启用确认。上述项目闭合并完成聚焦启用证据后，阶段 3 才能从 `in_progress` 更新为 `complete`；随后才进入阶段 4 的 24 小时/最多 5 单观察。
+
+### 61.16 2026-09-21 待支付弹窗找回入口收口（2.1 增量）
+
+本次变更响应真实生产验收中发现的交互歧义：在待支付订单弹窗点击「找回订单」时，旧版会展开“订单号 + 取货口令”表单，使新订单看起来仍在走旧流程。当前合同更新为：
+
+- [x] 商城待支付弹窗的「找回订单」改为直接跳转 `/guest-orders.html`，该页以**邮箱 + 查询密码**作为新订单的默认查询入口；不再由商城弹窗内的脚本调用 `/api/shop/guest/recover`。
+- [x] 从商城弹窗移除旧订单号/取货口令输入区、旧取货口令展示与复制控件，以及相关未保存口令提示；当前订单履约所需的服务端 claim proof 与用户查询凭证分离，公开建单/查询响应不展示 `recovery_code`。
+- [x] `guest-orders.html` 底部折叠的历史订单兼容区、公开 `/api/shop/guest/recover` 和历史订单升级接口一并移除；商城弹窗和独立查询页均不再提供订单号 + 取货口令查询。
+- [x] 为商城脚本增加独立 cache-buster `guestOrderAccess=20260921_GUEST_ORDER_ACCESS_DIRECT_1`，避免 immutable CDN 继续执行旧弹窗脚本。
+- [x] 前端合同/竞态测试改为验证 direct link、无旧弹窗 DOM/endpoint/凭证泄露；服务端合同同步验证旧公开端点与 Vercel 入口不存在。
+- [x] 当前订单号作为不含凭证的非敏感定位参数随链接传递（若格式有效），并保留当前 `site` 覆盖参数；邮箱、查询密码、claim/recovery code 均不得进入 URL。
+
+因此，旧的 §61.13 “A2 期间商城弹窗保留历史恢复区”只作为历史发布记录，不再描述当前 2.1 目标行为；与本节冲突时以本节为准。此变更不改商品、SKU、支付、数据库或生产开关，也不改变当前 **40%** 进度；它是阶段 3 的体验与证据补强，仍需按 §61.9 完成发布、真实订单和观察门禁。
+
+> **待支付订单边界：** 当前 `/guest-orders.html` 的邮箱+密码查询用于查看订单状态与已发货内容；它不会在本次变更中重建待支付订单的 checkout，也不会自动创建新订单。查询到待支付订单时不得提示用户重复付款或无提示地重复下单；待支付 checkout resume 作为后续 P1 设计项单独评审。
+
+### 61.17 2026-09-21 旧用户查询入口移除收口
+
+- [x] 删除公开 `guest/recover`、`guest/access/upgrade` Vercel 入口、共享 dispatcher 注册和对应 handler；`.vercelignore`、readiness、浏览器夹具同步移除旧依赖。
+- [x] 删除商城弹窗和独立查询页的订单号/历史凭证表单、旧 claim 展示/复制逻辑与升级脚本；「找回订单」只导航 `/guest-orders.html`，邮箱 + 查询密码是唯一用户查询入口。
+- [x] 删除无调用方的历史订单绑定 helper；管理台未绑定订单只提示人工核验和管理员一次性找回链接，不再引导公开迁移入口。
+- [x] 建单/幂等响应不再返回 `recovery_code`；服务端 `claim_secret_hash`、HttpOnly claim proof 和履约 `claim` 通道保留，职责不变。
+- [x] 定向访问/前端/管理台/readiness 回归 `212/212 PASS`；完整游客商城套件 `522/522 PASS`；`node --check`、`git diff --check` 通过；readiness `findings: none`，但 `operational_ready=false` 仍保持默认关闭。
+
+本次收口子任务完成，Task 2.1 总进度仍为 **40%**：未执行 SQL、未提交/部署、未启用商品、未启动新的 worker，也没有把阶段 3 或阶段 4 误记为完成。下一阶段是按 §61.9.2 对指定「测试」SKU完成 operator review、用户侧迁移/开关前置和聚焦生产发布证据；旧入口移除本身不替代邮箱密码启用、真实支付或 24 小时/最多 5 单观察。
+
+### 61.18 2026-09-21 用户确认：观察改为用户自测
+
+用户明确确认：不需要本合同原拟的连续 24 小时、最多 5 笔新游客订单观察窗口，后续由用户自行下单测试。自本节起，§61.15.5 的固定窗口只作为被覆盖的历史草案，不再作为阶段 3 启用或阶段 4 推进前的等待条件。
+
+- 阶段 4 当前状态记为 `deferred` / `operator-led`，不是失败，也不要求 Codex 自动创建订单、支付或持续监控。
+- 用户自测至少应记录：精确 product/SKU、CN/单件/原价、实际应付金额、订单号、支付结果、发货结果，以及邮箱 + 查询密码查询结果；不得在聊天、日志或证据中提交邮箱、密码、claim token、卡密、二维码或支付密钥。
+- 阶段 4 仍保留即时停止原则：若用户测试发现错误商品/金额、重复支付、未付款发货、库存双发、凭证泄露、`amount_mismatch`、`paid_unfulfillable`、`dead_letter` 或退款异常，应立即关闭受影响 SKU 并进入人工对账。
+- 用户自测结果回传并归档后，阶段 4 可直接按结果记为 `complete` 或 `blocked`；不以“等待 24 小时”替代证据，也不把没有测试结果写成 PASS。
+
+因此当前唯一下一步是：先把本批旧入口移除改动按专用分支发布到最新 `main` 并验证四条生产链路；随后确认全局邮箱密码/查询页开关、关闭「测试 2」的实际状态，并只启用本阶段「测试」product/SKU。启用动作完成后由用户自行下单测试，Codex负责根据回传结果更新阶段 3/4 和最终收口记录。

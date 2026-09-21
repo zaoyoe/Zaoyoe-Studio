@@ -39,7 +39,6 @@
     const ORDER_ENDPOINT = '/api/shop/guest/orders';
     const STATUS_ENDPOINT = '/api/shop/guest/status';
     const CLAIM_ENDPOINT = '/api/shop/guest/claim';
-    const RECOVERY_ENDPOINT = '/api/shop/guest/recover';
 
     // ---------------------------------------------------------------------
     // Promo L1/L2 client-side mirrors of api/_lib/guest-shop/{security,promo}.js.
@@ -70,7 +69,6 @@
         expiresAt: '',
         provider: '',
         channel: '',
-        recoveryCode: '',
         // Order Access 2.0 (§6.4/§11.3). The credential requirement is read from
         // GET /guest/preview, never guessed, so the form is unchanged while
         // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off.
@@ -87,13 +85,12 @@
         pollGeneration: 0,
         pollActiveGeneration: null,
         requestInFlight: false,
-        recoverInFlight: false,
         statusRequestInFlight: false,
         statusRequestContext: null,
         queuedStatusRequest: null,
         claimInFlight: false,
-        // Every async UI operation captures both values. Closing the modal,
-        // switching product context, or starting recovery advances the view;
+        // Every async UI operation captures both values. Closing the modal or
+        // switching product context advances the view;
         // changing a quote input advances the quote. Late responses may still
         // finish server-side, but they can no longer overwrite a newer view.
         viewGeneration: 0,
@@ -124,7 +121,6 @@
         detachedCheckout: null,
         fulfillmentStatus: '',
         refundStatus: '',
-        recoveryCodeCopied: false,
         deliveryCopied: false,
         lastTriggerElement: null,
         fallbackModalScrollLock: false,
@@ -141,7 +137,7 @@
         // hidden and the checkout is unchanged. listSubtotal and amountBreakdown
         // are server-authored amounts only: the first is the preview list total
         // (unit*tier quantity, rounded server-side), the second is the committed
-        // order breakdown echoed by the create/status/recover responses.
+        // order breakdown echoed by the create/status responses.
         quantity: 1,
         quantityCap: 1,
         discountEnabled: false,
@@ -340,7 +336,6 @@
     const STEP_PHASE_BY_STATUS = {
         configure: 'configure',
         creating: 'configure',
-        recovering: 'payment',
         awaiting_payment: 'payment',
         checking: 'payment',
         review: 'payment',
@@ -364,7 +359,6 @@
         creating: '创建中',
         awaiting_payment: '待支付',
         checking: '核验中',
-        recovering: '找回中',
         review: '待人工对账',
         payment_creation_unknown: '支付结果待确认',
         confirmed: '已支付，待发货',
@@ -428,7 +422,6 @@
             // discard already-delivered content from this browsing context.
             && fulfillmentStatus !== 'delivered'
             && snapshot.requestInFlight !== true
-            && snapshot.recoverInFlight !== true
             && snapshot.statusRequestInFlight !== true
             && snapshot.claimInFlight !== true
             && snapshot.paymentCreationUnknown !== true;
@@ -438,19 +431,16 @@
         const status = normalizeText(snapshot.status, 80).toLowerCase() || 'configure';
         const hasOrder = Boolean(normalizeText(snapshot.orderNo, 200));
         const creating = snapshot.requestInFlight === true || status === 'creating';
-        const recovering = snapshot.recoverInFlight === true || status === 'recovering';
         const checking = snapshot.statusRequestInFlight === true;
         const inspectingIntent = snapshot.checkoutIntentInspectInFlight === true;
         const delivered = status === 'delivered';
         const canAdoptDetachedCheckout = !hasOrder
             && Boolean(snapshot.detachedCheckout)
-            && !creating
-            && !recovering;
+            && !creating;
         const canResumeUnknownCreate = !hasOrder
             && Boolean(snapshot.pendingCreateAttempt)
             && (snapshot.paymentCreationUnknown === true || snapshot.pendingCreateAttempt?.unresolved === true)
             && !creating
-            && !recovering
             && !inspectingIntent;
         const unresolvedLocalCreate = Boolean(snapshot.detachedCheckout)
             || Boolean(snapshot.pendingCreateAttempt
@@ -459,13 +449,11 @@
         const canCreate = !hasOrder
             && !snapshot.paymentCreationUnknown
             && !creating
-            && !recovering
             && !inspectingIntent
             && !snapshot.previewPending
             && ['configure', 'error'].includes(status);
         const canQuery = hasOrder
             && !creating
-            && !recovering
             && !delivered
             && status !== 'configure';
         const canLeaveOrder = hasOrder
@@ -512,12 +500,6 @@
                 disabled: false,
                 busy: false,
                 label: '离开当前订单'
-            },
-            recover: {
-                visible: true,
-                disabled: creating || recovering || inspectingIntent || unresolvedLocalCreate,
-                busy: recovering,
-                label: '找回订单'
             }
         };
     }
@@ -542,7 +524,6 @@
 
     function syncConfigureControls() {
         const locked = state.requestInFlight
-            || state.recoverInFlight
             || state.checkoutIntentInspectInFlight
             || Boolean(state.orderNo)
             || Boolean(state.pendingCreateAttempt
@@ -551,7 +532,6 @@
             (state.paymentCreationUnknown || state.pendingCreateAttempt?.unresolved)
             && (state.pendingCreateAttempt?.requiresOrderPassword || state.pendingCreateAttempt?.requiresEmail)
             && !state.requestInFlight
-            && !state.recoverInFlight
         );
         ['guestCashPaymentChannel', 'guestCashDiscountCode']
             .forEach((id) => {
@@ -572,6 +552,7 @@
 
     function renderGuestActions() {
         const policy = deriveGuestActionPolicy();
+        syncGuestOrdersLink();
         applyActionPolicy('guestCashPurchaseDismissBtn', policy.dismiss);
         applyActionPolicy(
             'guestCashCreateOrderBtn',
@@ -580,11 +561,6 @@
         );
         applyActionPolicy('guestCashCheckStatusBtn', policy.query, '查询中...');
         applyActionPolicy('guestCashAbandonOrderBtn', policy.abandon);
-        applyActionPolicy('guestCashShowRecoveryBtn', policy.recover, '找回中...');
-        applyActionPolicy('guestCashRecoverBtn', {
-            ...policy.recover,
-            visible: true
-        }, '正在找回...');
         setHidden('guestCashAbandonOrderHint', !policy.abandon.visible);
         setHidden('guestCashTerminalRestartHint', !policy.create.restartTerminal);
         setHidden(
@@ -687,7 +663,35 @@
     }
 
     function syncSessionStorageWarning() {
+        setText(
+            'guestCashStorageWarning',
+            state.buyerCredentialRequired
+                ? '此浏览器无法暂存订单。请保存下单邮箱和查询密码；刷新或换页后可用“找回订单”继续。'
+                : '此浏览器无法暂存订单。请保持当前页面；查询能力开启后可用邮箱 + 查询密码继续。'
+        );
         setHidden('guestCashStorageWarning', !state.sessionStorageUnavailable);
+    }
+
+    function syncGuestOrdersLink() {
+        const link = element('guestCashShowRecoveryBtn');
+        if (!link) return;
+        try {
+            const current = new URL(window.location.href);
+            const target = new URL('/guest-orders.html', current.origin);
+            const site = String(current.searchParams.get('site') || '').trim().toLowerCase();
+            if (site === 'cn' || site === 'intl') target.searchParams.set('site', site);
+            const orderNo = normalizeText(state.orderNo, 200);
+            if (/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)) {
+                // The order number is a non-secret locator. Carrying it lets
+                // the credential page open the exact pending order when the
+                // buyer has several orders; credentials never enter this URL.
+                target.searchParams.set('order_no', orderNo);
+            }
+            link.setAttribute('href', `${target.pathname}${target.search}`);
+        } catch (_) {
+            // Keep the static same-origin fallback when the location object is
+            // unavailable in a constrained browser/test harness.
+        }
     }
 
     function noteSessionStorageUnavailable() {
@@ -768,7 +772,6 @@
         state.status = 'checking';
         state.fulfillmentStatus = '';
         state.refundStatus = '';
-        state.recoveryCodeCopied = false;
         state.deliveryCopied = false;
         return Boolean(state.orderNo);
     }
@@ -847,7 +850,6 @@
         state.detachedCheckout = null;
         state.fulfillmentStatus = '';
         state.refundStatus = '';
-        state.recoveryCodeCopied = false;
         state.deliveryCopied = false;
         state.status = 'checking';
         if (state.checkoutIntentId) acknowledgeCheckoutIntent(state.checkoutIntentId);
@@ -1055,7 +1057,7 @@
         };
         // L1/L2: the committed breakdown is what the 小计 / 优惠 / 手续费 rows are
         // allowed to render. Only overwrite when the response actually carries the
-        // key. status/recover snapshots omit it for a pre-L1 row (list_unit_amount
+        // key. status snapshots omit it for a pre-L1 row (list_unit_amount
         // NULL) and for a row buildGuestAmountBreakdown judged inconsistent, and in
         // both cases there is nothing better to show than what create committed;
         // blanking it on every poll would wipe the discount line of a live order
@@ -1173,11 +1175,10 @@
         setHidden('guestCashOrderPasswordField', !required);
         // §11.3 frozen copy. The email is the lookup key for the order and its
         // card secret, so it becomes mandatory the moment a password is asked
-        // for, and stays "可选" on the legacy path.
+        // for, and remains optional while the credential capability is OFF.
         setText('guestCashContactHint', required
             ? '必填，用于查询订单'
             : (pendingIntentRequiresEmail ? '必填，需与原订单一致' : '可选'));
-        setHidden('guestCashOrdersPageLink', !required);
         const contact = element('guestCashContact');
         if (contact) contact.required = contactRequired;
         if (!required) clearOrderPassword();
@@ -1368,7 +1369,6 @@
         const multiUnit = cap >= 2;
         const locked = Boolean(state.orderNo)
             || state.requestInFlight
-            || state.recoverInFlight
             || hasFrozenCreateAttempt();
         const quantity = normalizeQuantity(state.quantity);
         setHidden('guestCashQuantityField', !multiUnit);
@@ -1485,7 +1485,7 @@
             return;
         }
         const input = discountCodeInput();
-        if (input) input.disabled = Boolean(state.orderNo) || state.requestInFlight || state.recoverInFlight;
+        if (input) input.disabled = Boolean(state.orderNo) || state.requestInFlight;
         syncDiscountHint();
     }
 
@@ -2346,7 +2346,6 @@
         state.detachedCheckout = null;
         state.fulfillmentStatus = '';
         state.refundStatus = '';
-        state.recoveryCodeCopied = false;
         state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
@@ -2506,12 +2505,9 @@
         const deliveryNotCopied = state.status === 'delivered'
             && normalizeText(element('guestCashDeliveredContent')?.textContent, 10000)
             && !state.deliveryCopied;
-        const recoveryCodeNotCopied = state.status === 'delivered'
-            && Boolean(state.recoveryCode && !state.recoveryCodeCopied);
-        if (deliveryNotCopied || recoveryCodeNotCopied) {
+        if (deliveryNotCopied) {
             const warnings = [];
             if (deliveryNotCopied) warnings.push('发货内容尚未复制。');
-            if (recoveryCodeNotCopied) warnings.push('取货口令尚未复制或保存。');
             const confirmed = typeof window.confirm !== 'function' || window.confirm(
                 `${warnings.join('')}关闭后刷新页面可能无法再次显示，确定仍要关闭吗？`
             );
@@ -2519,7 +2515,6 @@
         }
         // A query password must not outlive the modal it was typed in.
         clearOrderPassword();
-        clearRecoveryForm();
         invalidateView();
         cancelScheduledPreview();
         stopPolling();
@@ -2551,14 +2546,12 @@
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
-        state.recoveryCode = '';
         state.paymentConfirmed = false;
         state.paymentCreationUnknown = false;
         state.pendingCreateAttempt = null;
         state.detachedCheckout = null;
         state.fulfillmentStatus = '';
         state.refundStatus = '';
-        state.recoveryCodeCopied = false;
         state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
@@ -2570,7 +2563,7 @@
         return true;
     }
 
-    function resetOrderUi({ preserveRecovery = false } = {}) {
+    function resetOrderUi() {
         setHidden('guestCashCheckoutPanel', true);
         setHidden('guestCashConfigurePanel', false);
         setHidden('guestCashDeliveryPanel', true);
@@ -2592,51 +2585,12 @@
         setText('guestCashDeliveryStatus', '-');
         setHidden('guestCashAmountFooter', true);
         state.checkout = null;
-        if (!preserveRecovery) {
-            state.recoveryCode = '';
-            state.recoveryCodeCopied = false;
-            setHidden('guestCashRecoveryCodePanel', true);
-            setText('guestCashRecoveryCode', '');
-            state.paymentConfirmedAt = null;
-            state.lastStatusQueryTime = null;
-        }
-        setRecoveryPanelVisible(false);
+        state.paymentConfirmedAt = null;
+        state.lastStatusQueryTime = null;
         if (!state.orderNo) showOrderNo('');
         syncAbandonOrderButton();
         syncStepState('configure');
         syncOrderMeta('configure');
-    }
-
-    function showRecoveryCode(code) {
-        const normalized = normalizeText(code, 200);
-        if (!/^[A-Za-z0-9_-]{40,200}$/u.test(normalized)) return;
-        // Create retries may re-emit the same derived code. Show it only once
-        // in this browsing context and never persist it to storage or URLs.
-        if (state.recoveryCode) return;
-        state.recoveryCode = normalized;
-        state.recoveryCodeCopied = false;
-        setText('guestCashRecoveryCode', normalized);
-        setHidden('guestCashRecoveryCodePanel', false);
-    }
-
-    function setRecoveryPanelVisible(visible, { focusOrderNo = false } = {}) {
-        const expanded = Boolean(visible);
-        setHidden('guestCashRecoveryPanel', !expanded);
-        const toggle = element('guestCashShowRecoveryBtn');
-        if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-        if (!expanded || !focusOrderNo) return;
-        const orderNoInput = element('guestCashRecoveryOrderNo');
-        if (orderNoInput && !orderNoInput.disabled) {
-            try { orderNoInput.focus(); } catch (_) { /* focus is best effort */ }
-        }
-    }
-
-    function clearRecoveryForm() {
-        const orderNoInput = element('guestCashRecoveryOrderNo');
-        const recoveryCodeInput = element('guestCashRecoveryCodeInput');
-        if (orderNoInput) orderNoInput.value = '';
-        if (recoveryCodeInput) recoveryCodeInput.value = '';
-        setRecoveryPanelVisible(false);
     }
 
     function abandonCurrentOrder() {
@@ -2647,11 +2601,8 @@
             }
             return;
         }
-        const unsavedRecoveryWarning = state.recoveryCode && !state.recoveryCodeCopied
-            ? '取货口令尚未复制或保存；离开后本站不会再次展示。'
-            : '';
         const confirmed = typeof window.confirm !== 'function' || window.confirm(
-            `${unsavedRecoveryWarning}这只会从当前页面移除订单，不会取消服务端订单或立即释放库存。请勿再支付旧付款码，确定离开吗？`
+            '这只会从当前页面移除订单，不会取消服务端订单或立即释放库存。请勿再支付旧付款码，确定离开吗？'
         );
         if (!confirmed) return;
         invalidateView();
@@ -2660,7 +2611,6 @@
         clearStoredCheckout();
         acknowledgeCheckoutIntent(state.checkoutIntentId);
         clearOrderPassword();
-        clearRecoveryForm();
         const contact = element('guestCashContact');
         if (contact) contact.value = '';
         state.orderNo = '';
@@ -2668,7 +2618,6 @@
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
-        state.recoveryCode = '';
         state.checkout = null;
         state.paymentConfirmed = false;
         state.paymentCreationUnknown = false;
@@ -2676,7 +2625,6 @@
         state.detachedCheckout = null;
         state.fulfillmentStatus = '';
         state.refundStatus = '';
-        state.recoveryCodeCopied = false;
         state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
@@ -2713,11 +2661,8 @@
             setStateMessage('当前商品暂时无法创建新订单；已保留终态订单与订单号。', terminalStatus);
             return false;
         }
-        const unsavedRecoveryWarning = state.recoveryCode && !state.recoveryCodeCopied
-            ? '取货口令尚未复制或保存；回到配置后本站不会再次展示。'
-            : '';
         const confirmed = typeof window.confirm !== 'function' || window.confirm(
-            `${unsavedRecoveryWarning}此操作只会清除本地订单句柄，不会取消服务端订单或立即释放库存。旧付款码不可再付；回到配置后需再次确认报价并创建新订单，确定继续吗？`
+            '此操作只会清除本地订单句柄，不会取消服务端订单或立即释放库存。旧付款码不可再付；回到配置后需再次确认报价并创建新订单，确定继续吗？'
         );
         if (!confirmed) return false;
 
@@ -2728,7 +2673,6 @@
         clearStoredCheckout();
         acknowledgeCheckoutIntent(state.checkoutIntentId);
         clearOrderPassword();
-        clearRecoveryForm();
         const contact = element('guestCashContact');
         if (contact) contact.value = '';
         state.orderNo = '';
@@ -2736,7 +2680,6 @@
         state.expiresAt = '';
         state.provider = '';
         state.channel = '';
-        state.recoveryCode = '';
         state.checkout = null;
         state.paymentConfirmed = false;
         state.paymentCreationUnknown = false;
@@ -2744,7 +2687,6 @@
         state.detachedCheckout = null;
         state.fulfillmentStatus = '';
         state.refundStatus = '';
-        state.recoveryCodeCopied = false;
         state.deliveryCopied = false;
         state.status = 'configure';
         state.confirmedPricing = null;
@@ -2783,7 +2725,6 @@
 
     async function createOrder() {
         if (state.requestInFlight
-            || state.recoverInFlight
             || state.statusRequestInFlight
             || state.checkoutIntentInspectInFlight
             || state.claimInFlight) return;
@@ -2994,9 +2935,8 @@
             // The order is bound to the buyer group server-side from here on, so
             // the plaintext has no further use in this page and is dropped.
             clearOrderPassword();
-            resetOrderUi({ preserveRecovery: Boolean(state.recoveryCode) });
+            resetOrderUi();
             showOrderNo(orderNo);
-            showRecoveryCode(order.recovery_code);
             applyServerPricing(order);
             const checkoutReady = !replayNeedsReview && payload.checkout
                 ? renderCheckout(payload.checkout)
@@ -3079,131 +3019,6 @@
             );
         } finally {
             state.requestInFlight = false;
-            renderGuestActions();
-        }
-    }
-
-    async function recoverOrder() {
-        if (state.recoverInFlight || state.requestInFlight) return;
-        if (state.detachedCheckout
-            || (state.pendingCreateAttempt
-                && (state.paymentCreationUnknown || state.pendingCreateAttempt.unresolved))) {
-            setStateMessage('请先确认上一笔订单结果，再找回其他订单。', 'payment_creation_unknown');
-            renderGuestActions();
-            return;
-        }
-        const orderNo = normalizeText(element('guestCashRecoveryOrderNo')?.value, 200);
-        const recoveryCode = normalizeText(element('guestCashRecoveryCodeInput')?.value, 200);
-        if (!orderNo || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)
-            || !/^[A-Za-z0-9_-]{40,200}$/u.test(recoveryCode)) {
-            setStateMessage('请输入订单号和取货口令', 'error');
-            return;
-        }
-        stopPolling();
-        invalidateView();
-        const operation = beginAction();
-        const previousOrderNo = state.orderNo;
-        const previousStatus = state.status;
-        state.recoverInFlight = true;
-        setHidden('guestCashConfigurePanel', true);
-        setHidden('guestCashCheckoutPanel', true);
-        setHidden('guestCashDeliveryPanel', true);
-        setStateMessage('正在找回订单并核对服务端状态...', 'recovering');
-        try {
-            const payload = await requestJson(RECOVERY_ENDPOINT, {
-                method: 'POST',
-                body: JSON.stringify({ orderNo, recoveryCode })
-            });
-            if (!isCurrentAction(operation) || !isModalVisible()) return;
-            clearRecoveryForm();
-            const order = payload?.order || {};
-            state.orderNo = '';
-            state.checkoutIntentId = '';
-            state.checkout = null;
-            state.provider = '';
-            state.channel = '';
-            state.productId = '';
-            state.skuId = '';
-            state.contextKey = '';
-            state.paymentConfirmed = false;
-            state.paymentCreationUnknown = false;
-            state.pendingCreateAttempt = null;
-            state.detachedCheckout = null;
-            state.confirmedPricing = null;
-            state.amountBreakdown = null;
-            state.recoveryCode = '';
-            state.recoveryCodeCopied = false;
-            state.deliveryCopied = false;
-            resetOrderUi({ preserveRecovery: false });
-            state.orderNo = normalizeText(order.order_no || orderNo, 200);
-            state.site = normalizeSite(order.site || window.SiteConfig?.site);
-            state.productId = normalizeText(order.product_id, 100);
-            state.skuId = normalizeText(order.sku_id, 100);
-            state.contextKey = state.productId && state.skuId
-                ? [state.site, state.productId, state.skuId].join(':')
-                : '';
-            state.expiresAt = normalizeText(order.expires_at, 80);
-            state.provider = normalizeText(order.provider || payload?.checkout?.provider, 80).toLowerCase();
-            state.channel = normalizeText(order.channel || payload?.checkout?.channel, 80).toLowerCase();
-            const paymentStatus = normalizeText(order.payment_status, 80).toLowerCase();
-            const fulfillmentStatus = normalizeText(order.fulfillment_status, 80).toLowerCase();
-            state.fulfillmentStatus = fulfillmentStatus;
-            state.refundStatus = normalizeText(order.refund_status, 80).toLowerCase();
-            state.status = deriveOrderDisplayStatus(
-                paymentStatus,
-                fulfillmentStatus,
-                state.refundStatus
-            );
-            state.paymentConfirmed = paymentStatus === 'confirmed';
-            persistCheckout();
-            showOrderNo(state.orderNo);
-            setText('guestCashProductName', order.product_name || '-');
-            setText('guestCashSkuName', order.sku_name || '-');
-            applyServerPricing(order);
-            const checkoutReady = state.status !== 'payment_creation_unknown' && payload.checkout
-                ? renderCheckout(payload.checkout)
-                : false;
-            if (state.status === 'confirmed') {
-                setStateMessage('订单已找回，支付已确认，正在等待发货。', 'confirmed');
-                startPolling();
-            } else if (['paid_unfulfillable', 'dead_letter'].includes(state.status)) {
-                setStateMessage(
-                    state.status === 'paid_unfulfillable'
-                        ? '支付已确认，订单正在退款或人工补发。请保留订单号。'
-                        : '支付已确认，自动发货失败，已转人工处理。',
-                    state.status
-                );
-            } else if (TERMINAL_PAYMENT_STATUSES.has(state.status)) {
-                setStateMessage(orderStatusMessage(state.status), state.status);
-            } else if (state.status === 'payment_creation_unknown') {
-                state.paymentCreationUnknown = true;
-                suppressUnsafeCheckout();
-                setStateMessage('订单已找回，但支付创建结果仍待对账。请勿重复付款，可稍后手动查询状态。', 'payment_creation_unknown');
-            } else if (!checkoutReady) {
-                state.paymentCreationUnknown = true;
-                setStateMessage('订单已找回，但支付凭证不可用。请先查询状态，不要重复付款。', 'payment_creation_unknown');
-            } else {
-                setStateMessage('订单已找回，正在核验支付状态。', 'checking');
-                startPolling();
-            }
-        } catch (error) {
-            if (!isCurrentAction(operation)) return;
-            setHidden('guestCashDeliveryPanel', previousStatus !== 'delivered');
-            setHidden('guestCashCheckoutPanel', !state.checkout || previousStatus === 'delivered');
-            setHidden('guestCashConfigurePanel', Boolean(state.checkout) && previousStatus !== 'delivered');
-            if (state.checkout?.provider === 'zpay' && previousStatus !== 'delivered') {
-                presentZpayHostedQr(state.checkout);
-            }
-            setStateMessage(
-                `${error?.message || '订单找回失败，请检查订单号和取货口令'}。当前订单未改变。`,
-                previousStatus
-            );
-            if (previousOrderNo && ['awaiting_payment', 'checking', 'confirmed'].includes(previousStatus)) {
-                startPolling();
-            }
-        } finally {
-            state.recoverInFlight = false;
-            if (state.status === 'recovering') state.status = previousStatus || 'configure';
             renderGuestActions();
         }
     }
@@ -3793,19 +3608,6 @@
             void generateOrderPassword(generatePasswordButton);
             return;
         }
-        const recoverButton = target.closest('#guestCashRecoverBtn');
-        if (recoverButton) {
-            event.preventDefault();
-            void recoverOrder();
-            return;
-        }
-        const showRecoveryButton = target.closest('#guestCashShowRecoveryBtn');
-        if (showRecoveryButton) {
-            event.preventDefault();
-            const panel = element('guestCashRecoveryPanel');
-            if (panel) setRecoveryPanelVisible(panel.hidden, { focusOrderNo: panel.hidden });
-            return;
-        }
         const zpayOpenButton = target.closest('#guestCashZpayOpenBtn');
         if (zpayOpenButton) {
             event.preventDefault();
@@ -3843,12 +3645,6 @@
                 deliveryButton,
                 { copiedClass: 'is-copied' }
             ).then(() => { state.deliveryCopied = true; });
-        }
-        const recoveryCopyButton = target.closest('#guestCashCopyRecoveryCodeBtn');
-        if (recoveryCopyButton) {
-            event.preventDefault();
-            void copyText(element('guestCashRecoveryCode')?.textContent || '', recoveryCopyButton)
-                .then(() => { state.recoveryCodeCopied = true; });
         }
     }
 
@@ -3896,9 +3692,9 @@
             }
         } catch (error) {
             // A transient status failure should not discard an unpaid order;
-            // retain the existing modal-and-poll recovery path below. This
-            // also preserves the manual recovery UI when the claim cookie has
-            // expired or was lost on another device.
+            // retain the existing modal-and-poll status path below. A buyer
+            // who needs cross-device access uses the standalone credential
+            // lookup page, not a second recovery form inside this modal.
         }
         const context = getPurchaseContext();
         // A persisted order can outlive the currently selected product/SKU.

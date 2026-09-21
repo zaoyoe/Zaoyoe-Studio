@@ -1970,7 +1970,7 @@ function createGuestShopHandlers({
         return null;
     }
 
-function responseOrder(order, claimSecret, extras = {}) {
+function responseOrder(order, extras = {}) {
         const result = {
             order_no: order.order_no,
             payment_order_id: order.payment_order_id,
@@ -1991,13 +1991,6 @@ function responseOrder(order, claimSecret, extras = {}) {
         if (quantity !== null) result.quantity = quantity;
         const breakdown = guestSnapshotBreakdown(order);
         if (breakdown) result.amount_breakdown = breakdown;
-        // The recovery code is a high-entropy bearer credential.  It is
-        // returned only in the order-creation response (never in status,
-        // webhook, logs or provider metadata) so a buyer may move to another
-        // device.  The client must display it once and never persist it.
-        if (typeof claimSecret === 'string' && /^[A-Za-z0-9_-]{40,200}$/u.test(claimSecret.trim())) {
-            result.recovery_code = claimSecret.trim();
-        }
         return result;
     }
 
@@ -2116,7 +2109,7 @@ function responseOrder(order, claimSecret, extras = {}) {
             success: true,
             replayed: true,
             resumed_unknown: true,
-            order: responseOrder(order, claimSecret, { payment }),
+            order: responseOrder(order, { payment }),
             checkout,
             payment_status: publicPaymentStatus
         });
@@ -2874,7 +2867,7 @@ function responseOrder(order, claimSecret, extras = {}) {
                 return sendJson(res, statusCode, {
                     success: true,
                     replayed: true,
-                    order: responseOrder(order, claimSecret, { payment, computed: computedPayable }),
+                    order: responseOrder(order, { payment, computed: computedPayable }),
                     checkout,
                     ...extra
                 });
@@ -3035,7 +3028,7 @@ function responseOrder(order, claimSecret, extras = {}) {
             setClaimProofCookie(req, res, order, claimSecret, security, env);
             return sendJson(res, 201, {
                 success: true,
-                order: responseOrder(order, claimSecret, { payment, computed: persistResult.computed }),
+                order: responseOrder(order, { payment, computed: persistResult.computed }),
                 checkout
             });
         } catch (error) { return failResponse(res, mapGuestCreateOrderError(error)); }
@@ -3615,55 +3608,6 @@ function responseOrder(order, claimSecret, extras = {}) {
                 order: publicOrderSnapshot(order, { payment }),
                 ...(checkout ? { checkout } : {}),
                 ...(throttleHint ? { throttle_hint: throttleHint } : {})
-            });
-        } catch (error) { return failResponse(res, error); }
-    }
-
-    async function recover(req, res) {
-        setGuestSensitiveHeaders(res);
-        if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
-        if (!(await limit(req, res, 'recover', { limit: 8 }))) return;
-        try {
-            const body = await parseJson(req);
-            for (const key of Object.keys(body || {})) {
-                if (!['orderNo', 'order_no', 'recoveryCode', 'recovery_code'].includes(key)) {
-                    throw new security.GuestShopSecurityError('找回请求字段不允许', { field: key, code: 'unknown_field' });
-                }
-            }
-            const orderNo = String(body.orderNo || body.order_no || '').trim();
-            const recoveryCode = String(body.recoveryCode || body.recovery_code || '').trim();
-            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)
-                || !/^[A-Za-z0-9_-]{40,200}$/u.test(recoveryCode)) {
-                throw new security.GuestShopSecurityError('订单号或取货口令无效', { code: 'guest_claim_invalid', statusCode: 403 });
-            }
-            const order = await loadOrderByNo(orderNo);
-            if (!security.verifyClaimSecret(recoveryCode, order.claim_secret_hash, { env })) {
-                await recordClaimFailure(order);
-                throw Object.assign(new Error('取货凭证无效'), { statusCode: 403, code: 'guest_claim_invalid' });
-            }
-            setClaimProofCookie(req, res, order, recoveryCode, security, env);
-            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
-            let checkout = null;
-            let payment = null;
-            try {
-                // A recovered terminal order still needs its bound payment
-                // context in the allowlisted snapshot.  Reading the row is not
-                // a provider operation, and checkout reconstruction remains
-                // restricted to non-terminal orders below.
-                payment = await loadPaymentIntent({
-                    payment_order_id: order.payment_order_id,
-                    order_id: order.id,
-                    merchant_order_no: order.order_no
-                });
-                if (!paymentStatusIsTerminal(paymentStatus)) {
-                    checkout = buildStoredCheckout(order, payment);
-                }
-            } catch (_) { checkout = null; }
-            return sendJson(res, 200, {
-                success: true,
-                recovered: true,
-                order: publicOrderSnapshot(order, { payment }),
-                ...(checkout ? { checkout } : {})
             });
         } catch (error) { return failResponse(res, error); }
     }
@@ -4370,185 +4314,6 @@ function responseOrder(order, claimSecret, extras = {}) {
         } catch (error) { return failResponse(res, error); }
     }
 
-    /**
-     * §13.2 (A3): self-service upgrade of a HISTORICAL order
-     * (`buyer_id IS NULL`, placed before the credential switch existed) to
-     * email + query-password access.
-     *
-     * Two factors, in this order:
-     *   1. orderNo + recoveryCode — the legacy claim secret, verified through
-     *      the SAME `verifyClaimSecret` + `recordClaimFailure` budget as
-     *      `/guest/recover`, so this endpoint does not become a second,
-     *      uncounted guessing surface for it;
-     *   2. email + new/existing query password — resolved through
-     *      `resolveBuyerGroupForOrder`, which is the order-path resolver, so
-     *      the upgrade inherits §8.1 locking, the per-IP budget, §8.4
-     *      equal-cost verification and the §6.4 group cap for free instead of
-     *      re-implementing any of them.
-     *
-     * The site is taken from the ORDER, never from the body: the credential
-     * group key is (site, contact_hash), and letting the client pick the site
-     * would let one recovery code mint groups in a site the order was never
-     * placed in.
-     *
-     * Idempotent: re-submitting resolves to the same group and returns success.
-     * A different group is a hard 409 and needs support (§13.2).
-     */
-    async function accessUpgrade(req, res) {
-        setGuestSensitiveHeaders(res);
-        if (req.method !== 'POST') {
-            res.setHeader('Allow', 'POST');
-            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
-        }
-        try {
-            ensureGuestOrderAccessEnabled();
-            // Shares the `recover` budget because it spends the same secret.
-            if (!(await limit(req, res, 'recover', { limit: 8 }))) return;
-            const body = await parseJson(req);
-            for (const key of Object.keys(body || {})) {
-                if (!['orderNo', 'order_no', 'recoveryCode', 'recovery_code', 'email', 'password', 'orderPassword', 'order_password', 'site'].includes(key)) {
-                    throw new security.GuestShopSecurityError('升级请求字段不允许', {
-                        field: key, code: 'unknown_field'
-                    });
-                }
-            }
-            const db = getSupabase();
-            if (!db?.from) throw guestDatabaseUnavailableError();
-            const orderNo = String(body.orderNo || body.order_no || '').trim();
-            const recoveryCode = String(body.recoveryCode || body.recovery_code || '').trim();
-            const email = String(body.email || '').trim().toLowerCase();
-            const password = typeof body.password === 'string' && body.password
-                ? body.password
-                : (typeof body.orderPassword === 'string' && body.orderPassword
-                    ? body.orderPassword
-                    : String(body.order_password || ''));
-            // Identical shapes to /guest/recover: one canonical spelling per
-            // field, so the two endpoints cannot be used to probe each other's
-            // normalization (§16.1).
-            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,199}$/u.test(orderNo)
-                || !/^[A-Za-z0-9_-]{40,200}$/u.test(recoveryCode)) {
-                throw new security.GuestShopSecurityError('订单号或取货口令无效', {
-                    code: 'guest_claim_invalid', statusCode: 403
-                });
-            }
-            if (!email || !password) {
-                throw new security.GuestShopSecurityError('请填写邮箱和查询密码', {
-                    statusCode: 400, code: 'guest_credential_malformed', field: 'email'
-                });
-            }
-
-            const order = await loadOrderByNo(orderNo);
-            const siteName = normalizeSiteValue(order.site);
-            const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
-            const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
-            const audit = async (outcome, contactHash = null, buyerId = null) => {
-                try {
-                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
-                        supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
-                    });
-                } catch (_) { /* evidence only */ }
-            };
-
-            // The claim-failure budget is spent BEFORE anything else is looked
-            // at, exactly as in /guest/recover.
-            if (!security.verifyClaimSecret(recoveryCode, order.claim_secret_hash, { env })) {
-                await recordClaimFailure(order);
-                await audit('upgrade_invalid');
-                throw Object.assign(new Error('取货凭证无效'), {
-                    statusCode: 403, code: 'guest_claim_invalid'
-                });
-            }
-            // There is deliberately NO early return for an already-bound order.
-            //
-            // §13.2 hardening: an order bound before A3 carries only `buyer_id`.
-            // Minting a session cookie from that alone would let anyone holding
-            // the LEGACY orderNo + claim code escalate from single-order legacy
-            // access to GROUP-WIDE access — every order and every card in that
-            // credential group — which is precisely the 掏鸟蛋 failure mode. So a
-            // bound order goes through the SAME email + password verification as
-            // an unbound one (`resolveBuyerGroupForOrder` runs §8.4 equal-cost
-            // scrypt verification regardless of binding state), and only the
-            // binding step differs: same group -> idempotent success, different
-            // group -> hard 409 for support, exactly as §13.2 specifies.
-            //
-            // K26 (§6.1) applies to EVERY surface that can create a credential:
-            // the resolve below may allocate a brand-new group, and a weak
-            // password guarding card content is exactly what the policy exists
-            // to prevent. A reused (matched) password was minted under the same
-            // policy at order time, so this check can never lock a legitimate
-            // buyer out of the reuse path.
-            try {
-                defaultBuyerCredentials.assertBuyerQueryPasswordStrength(password, {
-                    security, env, email, field: 'password'
-                });
-            } catch (error) {
-                await audit('upgrade_invalid');
-                throw error;
-            }
-            let resolved = null;
-            try {
-                resolved = await defaultBuyerCredentials.resolveBuyerGroupForOrder({
-                    supabase: db,
-                    security,
-                    env,
-                    site: siteName,
-                    email,
-                    password,
-                    ipHash,
-                    deviceHash
-                });
-            } catch (error) {
-                // resolveBuyerGroupForOrder already recorded the specific reason
-                // (locked / rate_limited / credential_conflict). One extra
-                // `upgrade_invalid` row marks this as the upgrade surface; it is
-                // deliberately NOT a failure outcome, so it cannot double count
-                // into the per-IP login budget.
-                await audit('upgrade_invalid');
-                throw error;
-            }
-            const contactHash = security.hashGuestContact(email, { env, strict: true });
-            let binding = null;
-            try {
-                binding = await defaultBuyerAccessAdmin.bindOrderToBuyer({
-                    supabase: db, order, buyerId: resolved.buyerId
-                });
-            } catch (error) {
-                // The credential itself verified; this failure is about the order
-                // row (409: already bound to a DIFFERENT group). No cookie is set
-                // on this path, so the verified credential gains nothing it did
-                // not already have through /guest/access/login. Audited as
-                // `upgrade_invalid` for evidence.
-                await audit('upgrade_invalid', contactHash, resolved.buyerId);
-                throw error;
-            }
-            // Read back for the CURRENT password_version: on the reuse path the
-            // §6.2 transparent rehash happens inside the allocation RPC, so the
-            // number we would otherwise guess may already be stale and the
-            // cookie would be rejected by its own first authenticated read.
-            const buyer = await defaultBuyerAccessAdmin.loadBuyerRowById({
-                supabase: db, buyerId: resolved.buyerId, site: siteName
-            });
-            await audit('upgrade_success', contactHash, resolved.buyerId);
-            const token = buyer ? encryptAccessCookie({
-                v: 1,
-                buyer_id: buyer.id,
-                contact_hash: buyer.contactHash,
-                pv: buyer.passwordVersion,
-                exp: Date.now() + GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS * 1000
-            }, security, env) : '';
-            if (token) setAccessCookie(res, token);
-            return sendJson(res, 200, {
-                success: true,
-                upgraded: true,
-                already_bound: binding.alreadyBound === true,
-                order_no: order.order_no,
-                credential_group_no: resolved.groupNo || null,
-                authenticated: Boolean(token),
-                ...(token ? { session_expires_in_seconds: GUEST_ACCESS_COOKIE_MAX_AGE_SECONDS } : {})
-            });
-        } catch (error) { return failResponse(res, error); }
-    }
-
     async function webhook(req, res, providerOverride = '') {
         setWebhookSecurityHeaders(res);
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
@@ -4655,7 +4420,6 @@ function responseOrder(order, claimSecret, extras = {}) {
         preview,
         orders,
         status,
-        recover,
         claim,
         webhook,
         // Order Access 2.0 (A2). All of these answer 404
@@ -4667,12 +4431,10 @@ function responseOrder(order, claimSecret, extras = {}) {
         delivery,
         accessLogin,
         accessLogout,
-        // Order Access 2.0 (A3). Both answer 404 guest_feature_disabled while
-        // GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off, so the deployed surface is
-        // unchanged (§13.4). accessReset spends an admin-issued one-time link
-        // (§10.5); accessUpgrade is the §13.2 historical-order self-service.
+        // Order Access 2.0 (A3). accessReset spends an admin-issued one-time
+        // link (§10.5). Historical order self-upgrade is intentionally removed:
+        // email + query password is the only buyer-facing lookup path.
         accessReset,
-        accessUpgrade,
         // Kept out of the public route modules (which select one handler),
         // but useful for contract tests to exercise server-owned checkout
         // normalization without making a provider call.

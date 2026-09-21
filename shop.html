@@ -703,7 +703,7 @@
                 </ol>
 
                 <div id="guestCashState" class="guest-shop-modal__state" role="status" aria-live="polite">正在确认商品信息...</div>
-                <p id="guestCashStorageWarning" class="guest-shop-modal__hint" role="status" hidden>此浏览器无法暂存订单。请保存订单号和取货口令；刷新或换页后可用“找回订单”继续。</p>
+                <p id="guestCashStorageWarning" class="guest-shop-modal__hint" role="status" hidden>此浏览器无法暂存订单。请保持当前页面；查询能力开启后可用邮箱 + 查询密码继续。</p>
 
                 <!--
                   Dujiao alignment (Payment.vue 订单信息 card): product identity plus
@@ -921,22 +921,12 @@
                     </div>
                 </section>
 
-                <section id="guestCashRecoveryCodePanel" class="guest-shop-modal__panel" hidden aria-live="polite">
-                    <strong>请保存取货口令</strong>
-                    <p class="guest-shop-modal__hint">换设备或清除浏览器数据后，需要订单号和此口令找回订单。口令只显示一次，本站不会再次展示。</p>
-                    <div class="guest-shop-modal__address-row">
-                        <code id="guestCashRecoveryCode"></code>
-                        <button id="guestCashCopyRecoveryCodeBtn" type="button" class="guest-shop-modal__copy-btn" title="复制取货口令" aria-label="复制取货口令"><i class="fas fa-copy" aria-hidden="true"></i></button>
-                    </div>
-                </section>
-
-                <section id="guestCashRecoveryPanel" class="guest-shop-modal__panel" hidden aria-live="polite">
-                    <strong>找回游客订单</strong>
-                    <a id="guestCashOrdersPageLink" class="guest-shop-modal__hint guest-shop-modal__orders-link" href="/guest-orders.html" hidden>使用邮箱 + 查询密码查询订单与卡密</a>
-                    <label class="guest-shop-modal__field" for="guestCashRecoveryOrderNo"><span>订单号</span><input id="guestCashRecoveryOrderNo" autocomplete="off" maxlength="200"></label>
-                    <label class="guest-shop-modal__field" for="guestCashRecoveryCodeInput"><span>取货口令</span><input id="guestCashRecoveryCodeInput" autocomplete="off" maxlength="200"></label>
-                    <button id="guestCashRecoverBtn" type="button" class="shop-btn shop-btn-secondary">找回订单</button>
-                </section>
+                <!--
+                  Order Access 2.1: the checkout modal has one lookup destination.
+                  New orders are queried with email + password on the standalone
+                  page. The former compatibility form and public recovery route
+                  are retired, so this modal contains no second credential form.
+                -->
 
                 <!--
                   Dujiao alignment (GuestOrderDetail.vue fulfillment card): the header
@@ -971,7 +961,7 @@
                     <button id="guestCashCreateOrderBtn" type="button" class="shop-btn shop-btn-primary" aria-describedby="guestCashTerminalRestartHint">创建支付订单</button>
                     <button id="guestCashCheckStatusBtn" type="button" class="shop-btn shop-btn-secondary" hidden>查询支付状态</button>
                     <button id="guestCashAbandonOrderBtn" type="button" class="shop-btn shop-btn-secondary" aria-describedby="guestCashAbandonOrderHint" hidden>离开当前订单</button>
-                    <button id="guestCashShowRecoveryBtn" type="button" class="shop-btn shop-btn-secondary" aria-controls="guestCashRecoveryPanel" aria-expanded="false">找回订单</button>
+                    <a id="guestCashShowRecoveryBtn" class="shop-btn shop-btn-secondary" href="/guest-orders.html" data-guest-order-access="primary" aria-label="使用邮箱和查询密码找回订单">找回订单</a>
                 </footer>
             </div>
         </div>
@@ -1096,7 +1086,7 @@
     <script src="js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&cartCalm=20260912_SHOP_CART_CALM_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1&siteMarketingPricing=20260513_SHOP_SITE_MARKETING_PRICING_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&shopModalBackdropTap=20260514_SHOP_MODAL_CHROME_BACKDROP_TAP_1&purchaseModalCenter=20260514_SHOP_PURCHASE_CENTER_CHROME_1&purchaseLightLock=20260514_SHOP_PURCHASE_CHROME_LIGHT_LOCK_1&purchaseSkuCombo=20260524_SHOP_PURCHASE_SKU_COMBO_1&purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2&purchaseDiscountDrawer=20260524_SHOP_PURCHASE_DISCOUNT_DRAWER_3&purchaseGuidancePreview=20260524_SHOP_PURCHASE_GUIDANCE_PREVIEW_1&purchaseWideDefaults=20260524_SHOP_PURCHASE_WIDE_DEFAULTS_1&purchaseStockTone=20260524_SHOP_PURCHASE_STOCK_TONE_1&successDisclosureScroll=20260524_SHOP_SUCCESS_DISCLOSURE_SCROLL_5&purchaseGuidanceScrollState=20260524_SHOP_PURCHASE_GUIDANCE_SCROLL_STATE_2&purchaseOpeningStable=20260525_SHOP_PURCHASE_OPENING_STABLE_6&purchaseSkuTouchHitfix=20260525_SHOP_PURCHASE_SKU_TOUCH_HITFIX_1&discountSkuScope=20260525_SHOP_DISCOUNT_SKU_SCOPE_1&discountCouponPolish=20260525_SHOP_DISCOUNT_COUPON_POLISH_2&imageDragLock=20260530_IMAGE_DRAG_LOCK_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1&cartDrawerSelectGuard=20260530_SHOP_CART_DRAWER_SELECT_GUARD_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&manualDeliveryContact=20260530_SHOP_MANUAL_DELIVERY_CONTACT_1&shopImageCache=20260531_SHOP_PRODUCT_IMAGE_CACHE_1&siteScopedSkuPrice=20260604_SHOP_SITE_SCOPED_SKU_PRICE_1&siteScopedCategoryFilter=20260608_SHOP_SITE_SCOPED_CATEGORY_FILTER_1&richTextGuidanceColor=20260604_SHOP_RICH_TEXT_GUIDANCE_COLOR_1&purchaseGuidanceMutexAlign=20260605_SHOP_PURCHASE_GUIDANCE_MUTEX_ALIGN_7&skuManualDelivery=20260605_SHOP_SKU_MANUAL_DELIVERY_1&manualDeliveryZeroStockDetail=20260607_SHOP_MANUAL_DELIVERY_ZERO_STOCK_DETAIL_1&soldOutDiscountStable=20260607_SHOP_SOLD_OUT_DISCOUNT_STABLE_2&restockChatDirectOpen=20260607_SHOP_RESTOCK_CHAT_DIRECT_OPEN_1&guidanceThemeText=20260607_SHOP_GUIDANCE_THEME_TEXT_1&richTextGuidanceStyle=20260619_SHOP_RICH_TEXT_GUIDANCE_STYLE_1&guidanceCopy=20260608_SHOP_GUIDANCE_COPY_4&purchaseMobileOpenViewportStable=20260608_SHOP_PURCHASE_MOBILE_OPEN_VIEWPORT_STABLE_1&shopFloatingMobileDock=20260608_SHOP_FLOATING_MOBILE_DOCK_1&inputPaste=20260609_INPUT_PASTE_1&cardSkuStockTotal=20260613_SHOP_CARD_SKU_STOCK_TOTAL_1&soldOutSkuSelectable=20260613_SHOP_SOLD_OUT_SKU_SELECTABLE_1&categoryDefaultFirst=20260614_SHOP_CATEGORY_DEFAULT_FIRST_1&emptyCatalogGuard=20260615_SHOP_EMPTY_CATALOG_GUARD_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1&maxDiscountQuantity=20260617_MAX_DISCOUNT_QUANTITY_1&discountMessageOrder=20260617_DISCOUNT_MESSAGE_ORDER_1&shopListChips=20260913_SHOP_LIST_ENTER_4&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1&guestModalHandoff=20260920_GUEST_MODAL_HANDOFF_1" defer></script>
 
     <script src="js/guest-query-password.js?v=20260921_GUEST_ORDER_ACCESS_A2_1" defer></script>
-    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_A2_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1&guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1&guestPromo=20260923_GUEST_PROMO_L1L2_1&guestTask21=20260920_GUEST_TASK_2_1_TERMINAL_RESTART_1&guestModalScrollLock=20260920_GUEST_MODAL_SCROLL_LOCK_1" defer></script>
+    <script src="js/guest-shop-client.js?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestOrderAccess=20260921_GUEST_ORDER_ACCESS_DIRECT_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1&guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1&guestPromo=20260923_GUEST_PROMO_L1L2_1&guestTask21=20260920_GUEST_TASK_2_1_TERMINAL_RESTART_1&guestModalScrollLock=20260920_GUEST_MODAL_SCROLL_LOCK_1" defer></script>
     <script src="js/shop-list-layout.js?v=20260913_SHOP_LIST_ENTER_4" defer></script>
 
     <!-- Chat Widget -->

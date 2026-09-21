@@ -3,7 +3,15 @@
 > 分支：`codex/guest-shop-promo-hardening`
 > 关联：`docs/guest-shop-promo-hardening-plan.md` §21（Dujiao-Next 先例对照）、§7（身份层）、
 > §22（本文对促销方案身份层的反哺修订，**冲突时以该节为准**）
-> 状态：设计合同，待你确认旋钮后开工。**本文不含任何已执行的 SQL；迁移文件只写盘。**
+> 状态：**历史设计合同，当前实现以文末 2.1 收口覆盖为准。** 本文不含任何已执行的 SQL；迁移文件只写盘。
+
+> **2.1 当前实现覆盖（优先于本文早期章节）：** 游客用户查询入口只有
+> `/guest-orders.html` 的**邮箱 + 查询密码**。商城待支付弹窗的「找回订单」只做
+> direct link，不再展开订单号/取货口令表单。公开 `/api/shop/guest/recover` 与
+> `/api/shop/guest/access/upgrade` 已移除；旧订单号 + 取货口令段落、A2/G3 双入口
+> 方案和相关端点仅保留为历史设计/历史验收背景，不得当作当前能力、降级路径或
+> 启用前置。服务端 `claim_secret_hash` / HttpOnly claim proof 仍是当前订单履约的
+> 内部安全证明，不是用户查询凭证，不能展示、复制或作为用户输入。
 
 ---
 
@@ -22,7 +30,7 @@
 
 | # | 诉求 | 本文落点 |
 |---|---|---|
-| R1 | 放弃「订单号 + 取货口令」找回订单 | §4、§13（旧订单保留双模式，新订单不再展示口令） |
+| R1 | 放弃「订单号 + 取货口令」找回订单 | §4、§13（当前已删除；旧方案只作历史记录） |
 | R2 | 改用「邮箱 + 自设查询密码」，下单必填 | §5、§6、§12 |
 | R3 | 查订单和取卡密都要 email + password | §11、§12 |
 | R4 | 登录用户照常弹「我的钱包 → 订单记录」 | §11.1（**零改动**，明确列为不可回归项） |
@@ -42,7 +50,7 @@
 | 失败计数 `claim_attempt_count` 用**乐观 CAS 循环**递增（避免读改写丢增量），上限 `MAX_CLAIM_FAILURE_ATTEMPTS` | `guest-shop.js:recordClaimFailure` |
 | 订单号不存在与口令错误返回**同一个错误**（防订单 oracle） | `guest-shop.js:1653-1654` 注释明写 |
 | 邮箱只存**哈希** `buyer_contact_hash`，明文不落库；今天邮箱还是选填 | `guest-shop.js:832-837 hashContact`、`:1410 allowOptionalContact: true` |
-| 找回 UI：弹窗内「订单号 + 取货口令」两个输入框 + 找回按钮 | `shop.html:766-772` |
+| 历史找回 UI：弹窗内「订单号 + 取货口令」两个输入框 + 找回按钮 | `shop.html:766-772`（旧候选，当前已删除） |
 | 口令一次性展示面板 | `shop.html:757-764` |
 | 前端契约测试禁止 guest 脚本出现 `supabase / access_token / Authorization:`、`localStorage`、`claim_secret` | `tests/guest-shop-frontend-contract.test.js:50-58` |
 | 管理端已有游客订单页 | `server/api-handlers/admin/shop/guest-orders.js` |
@@ -115,7 +123,7 @@
 │   GET  /api/shop/guest/orders        → 订单列表 + 分页              │
 │   GET  /api/shop/guest/orders/:no    → 订单详情                     │
 │   GET  /api/shop/guest/orders/:no/delivery → 卡密（受同一凭证保护） │
-│   折叠区：旧订单用「订单号 + 取货口令」找回（§13）                  │
+│   （无旧订单号 + 取货口令折叠区；历史方案见 §13）                   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -128,8 +136,10 @@
   作为查表键。**绝不新增明文邮箱列**，这是现有隐私基线，不能退。
 - **D3 密码不可逆、加盐、慢哈希。** scrypt，per-row 32 字节随机盐，格式
   `scrypt$N$r$p$salt_b64$hash_b64`，DB CHECK 约束前缀。
-- **D4 旧订单不迁移、不失效。** `claim_secret_hash` 与 `/api/shop/guest/recover` **保留**，
-  新页面提供折叠的「旧订单找回」入口。新订单不再向用户展示口令（但列继续写，作为客服 break-glass，见 §13.3）。
+- **D4 当前不提供旧用户查询迁移入口。** 旧版的 `/api/shop/guest/recover`、
+  `guest/access/upgrade` 和订单号 + 取货口令 UI 均已移除。当前订单仍可保留
+  `claim_secret_hash` 与 HttpOnly claim proof 供履约链路使用，但它们不是用户查询
+  凭证，也不得由公开查询页或建单响应展示；历史订单如需人工处理走客服/运营内部流程。
 
 ---
 
@@ -212,8 +222,8 @@ ALTER TABLE public.guest_shop_orders
 CREATE INDEX IF NOT EXISTS guest_shop_orders_buyer_idx
     ON public.guest_shop_orders (buyer_id, created_at DESC);
 -- 邮箱从「选填」变「必填」：新订单必须能定位到买家凭证分组。
--- 不能对历史行加 NOT NULL：历史订单 buyer_id 保持 NULL，继续走既有
--- claim-secret 通道（/api/shop/guest/recover），升级路径见 §13.2。
+-- 不能对历史行加 NOT NULL：历史订单 buyer_id 保持 NULL；公开买家查询不再
+-- 接受 claim-secret，历史核验只走客服/运营内部流程（见 §13）。
 ```
 
 > **A0 实现差异（以迁移文件为准）**：草案曾写
@@ -671,21 +681,14 @@ X-Guest-Order-Credential: <base64url(email_lower_trimmed + "\n" + password)>
   这是 §7.1 选用 `X-Guest-Order-Credential` 而非 `Authorization: Guest` 的直接原因。
 - 页脚/帮助区加「游客订单查询」链接。
 
-#### 11.2.1 A2 实际落地范围（**面板删除推迟到 G3**，本节为权威）
+#### 11.2.1 A2 实际落地范围（历史记录，已于 2.1 收口时退役）
 
-A2 采**纯增量**落地：新链路上线，旧链路一行不删。
+> 本节只保留早期 A2 候选的审计背景，不是当前实现合同。2026-09-21 的 2.1 收口已删除旧兼容面板、旧恢复脚本和历史订单升级入口；若本节与文首“2.1 当前实现覆盖”冲突，以文首为准。
 
-| 项 | A2 状态 | 说明 |
-|---|---|---|
-| `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css` | ✅ 已落地 | 独立精简页，不引 supabase、不引商城页运行时；脚本带 `?v=20260921_GUEST_ORDER_ACCESS_A2_1` |
-| `shop.html` 弹窗内「使用邮箱 + 查询密码查询订单与卡密」入口（`guestCashOrdersPageLink`） | ✅ 已落地 | 默认 `hidden`，仅在 `buyer_credential_required` 时显示 |
-| `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` 及其 JS 分支 | ⛔ **保留**（G3 再删） | 开关关闭时用户仍需靠「订单号 + 取货口令」找回历史订单（§13.1）。现在就删 = 在灰度期自断唯一可用的找回路径。契约测试对这两个 id 的 `match` 断言**原样保留** |
-| 订单卡上的「立即支付」（待支付单跳支付） | ⏸ **推迟** | 需要先确定「游客二次支付」是否复用现有 `guest/preview` 下单幂等键；A2 只展示状态，不提供再次支付入口，避免出现两条可下单路径 |
-| 页脚/帮助区「游客订单查询」链接 | ⏸ 推迟到 G3 | 与面板删除同批处理，避免开关关闭时暴露一个 404 页面入口 |
-
-> **G3 的验收条件**：`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED=true` 且 §16.4 实机证据归档后，
-> 才允许删面板 + 改契约测试断言 + 上页脚链接。删除时同一 PR 内必须把
-> `tests/guest-shop-frontend-contract.test.js` 的 panel `match` 断言改为 `doesNotMatch`。
+- `guest-orders.html` 与 `js/guest-orders-client.js` 当前只承载邮箱 + 查询密码链路。
+- `shop.html` 的「找回订单」是到 `/guest-orders.html` 的普通导航链接，不再展开旧表单。
+- `guestCashRecoveryPanel`、`guestCashRecoveryCodePanel`、`guest/recover` 和 `guest/access/upgrade` 均不存在。
+- 待支付订单在查询页只展示服务端状态；“恢复待支付 checkout”仍是后续 P1 设计项，不得通过重复建单隐式实现。
 
 ### 11.3 下单表单新增字段（文案定稿）
 
@@ -739,9 +742,9 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 | POST | `/api/shop/guest/access/logout` | 无 | **新增（A2 已落地）**：注销会话 cookie。**不受功能开关门禁**，否则关开关会把持有效 cookie 的用户卡死 |
 | POST | `/api/shop/guest/access/login` | 无 | **新增**：显式校验凭证，成功返回一个**短时会话 cookie**（见下），失败走 §8 锁定 |
 | POST | `/api/shop/guest/access/reset` | 无（body: token + email + password） | **新增（A3 已落地）**：消费管理台签发的一次性链接并设置新查询密码。扁平键 `guest/access/reset`。失败统一 `403 guest_reset_invalid` |
-| POST | `/api/shop/guest/access/upgrade` | 无（body: orderNo + recoveryCode + email + password） | **新增（A3 已落地）**：§13.2 历史订单自助升级为密码访问。扁平键 `guest/access/upgrade`。**复用 `recover` 的配额键**，因为它花的是同一个取货口令 |
+| POST | `/api/shop/guest/access/upgrade` | — | **已移除（2.1）**：历史订单升级入口不再公开提供。 |
 | GET/POST | `/api/admin?route=shop/guest-buyer-access` | 管理员（`shop.manage`） | **新增（A3 已落地）**：GET `?orderNo=` 读买家访问状态；POST `{action, orderNo, confirm:true, reason}` 执行三个动作之一 |
-| POST | `/api/shop/guest/recover` | 无（body: orderNo + recoveryCode） | **保留**，仅服务历史订单 |
+| POST | `/api/shop/guest/recover` | — | **已移除（2.1）**：订单号 + 取货口令不再是买家查询方式。 |
 | GET | `/api/shop/guest/claim` | 现有 claim 通道 | **保留** |
 
 **关于「每次请求都带密码」vs「登录后发会话」**：
@@ -785,10 +788,10 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 > **真实 `issueResetToken()` 产物**双向验证——sha256 hex 必须通过，
 > 43 字符 base64url 明文 token 必须被拒。这道约束就是「不小心把明文 token 存进库」的最后一道闸。
 >
-> **Fix B（A3 期间的健壮性修复，非偏差）**：`accessUpgrade` 与
-> `buyer-access-admin.normalizeBuyerRow` 都改为**幂等归一化**——同一订单重复提交
-> 解析到同一分组并返回成功，而不是第二次因为「已有 `buyer_id`」报 409。
-> §13.2 的幂等承诺靠这个成立；409 只保留给「解析出**不同**分组」这一种真冲突。
+> **历史 Fix B（A3 期间的健壮性修复，当前端点已退役）**：早期 `accessUpgrade` 与
+> `buyer-access-admin.normalizeBuyerRow` 曾改为幂等归一化——同一订单重复提交
+> 解析到同一分组并返回成功。该记录仅解释旧候选测试，当前 `accessUpgrade` 公开端点
+> 已删除，不能据此恢复自助升级路径。
 >
 > **D-10 是「校验器坏了」，不是「被校验物坏了」**：迁移 `20260920` 一行未改、**无需重跑**，只需重跑修复后的 `20260920_verify_guest_shop_buyer_credentials.sql`（只读、可重复执行）。
 > 规则已写进该文件头部的「RULE FOR PROBE AUTHORS」段：**被探测文本自身存正则源码的约束（`guest_shop_buyers_pwd_format` / `guest_shop_buyers_hash_check` / `guest_shop_access_resets_token_check`），只能用 `strpos()` / `LIKE` 字面量探针，禁止 `~`**。
@@ -798,47 +801,33 @@ A2 采**纯增量**落地：新链路上线，旧链路一行不删。
 
 ## 13. 迁移与兼容
 
-### 13.1 历史订单
+### 13.1–13.2 历史订单兼容与自助升级（已移除）
 
-- 历史行 `buyer_id IS NULL`，仍只能用「订单号 + 取货口令」找回。
-- 新页面底部折叠区：`使用订单号 + 取货口令找回（适用于 2026-09 之前的订单）`，
-  提交到现有 `/api/shop/guest/recover`，**零改动**。
+早期设计曾允许历史订单通过“订单号 + 取货口令”找回，再自助升级为邮箱 + 查询密码。该方案已于 2.1 收口时整体删除：
 
-### 13.2 历史订单升级为密码访问（可选，用户自助）— A3 已落地
+- 公开查询页不再显示历史兼容折叠区。
+- `/api/shop/guest/recover` 与 `/api/shop/guest/access/upgrade` 不再注册，也没有 Vercel entrypoint。
+- 历史订单如需人工核验，必须走客服/运营内部流程；不得向买家恢复旧口令查询入口。
 
-- 折叠区内加「为这笔订单设置查询密码」：验证订单号 + 取货口令成功后，
-  要求输入邮箱 + 新查询密码 → 创建/关联 `guest_shop_buyers` → 回填 `buyer_id`。
-  端点 `POST /api/shop/guest/access/upgrade`，前端 `guestOrdersUpgrade*` 子表单。
-- 幂等：同一订单重复设置返回同一结果；解析出**不同**分组 → `409 guest_order_already_bound`，
-  需客服处理（见 §12.1 Fix B：「已有 `buyer_id`」本身不再报 409，否则幂等承诺不成立）。
-- **两因子顺序与配额**：取货口令走**与 `/guest/recover` 完全相同**的
-  `verifyClaimSecret` + `recordClaimFailure` 预算（同一个 `recover` 配额键），
-  所以升级端点不会变成取货口令的第二个不计次猜测面；邮箱+密码走
-  `resolveBuyerGroupForOrder`（下单路径的解析器），因此**白拿** §8.1 锁定、
-  per-IP 预算、§8.4 等开销校验与 §6.4 分组上限，不重新实现任何一条。
-- **站点取自订单，绝不取自 body**：凭证分组键是 `(site, contact_hash)`，
-  让客户端选站点等于允许一个取货口令在订单从未下过的站点里铸分组。
-- 管理台**不代做**升级：GET `shop/guest-buyer-access` 对未绑定订单返回
-  `bound:false` + 可直接照读的话术（引导买家自助升级），三个写动作一律 `409`。
+### 13.3 新订单履约 claim proof（不是用户查询入口）
 
-### 13.3 新订单是否还生成取货口令
-
-**生成，但不展示。** 理由：
+**服务端可继续生成并哈希保存，但绝不作为用户查询凭证。** 理由：
 
 - `claim_secret_hash` 是现有 webhook / claim 链路的既有依赖，删列风险大、收益小；
-- 它是**唯一的客服 break-glass 通道**（§10.5 的一次性找回链接依赖它）；
-- 不展示给用户 ⇒ 用户视角上「订单号 + 口令」这条路已经消失，符合 R1。
+- 它只用于当前订单履约的服务端证明（包括 HttpOnly claim proof），不用于公开查单；
+- 任何 `recovery_code`/claim secret 都不得出现在买家页面、公开查询响应、URL、日志或可复制控件中。
 
-对应改动：删除 `guestCashRecoveryCodePanel` 的展示逻辑与 `showRecoveryCode` 调用，
-但保留服务端 `deriveClaimSecretFromIdempotencyKey` / `hashClaimSecret` / `setClaimProofCookie`。
+对应改动：删除 `guestCashRecoveryCodePanel` 的展示逻辑与 `showRecoveryCode` 调用；
+如履约实现仍需要，则仅保留服务端 `deriveClaimSecretFromIdempotencyKey` /
+`hashClaimSecret` / `setClaimProofCookie`，不要恢复公开 recover 路由。
 契约测试里 `doesNotMatch(client, /claimSecret|claim_secret/)` 的断言**保持不变**
 （因为客户端本来就不该出现），只需删掉对 `guestCashRecoveryCodePanel` 的 `match` 断言。
 
-### 13.4 灰度期共存
+### 13.4 灰度期（当前仅邮箱密码链路）
 
 - 开关 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`：
-  - `false`：下单表单不显示查询密码字段，`email` 仍选填，新页面返回 404 → **完全等于现状**；
-  - `true`：新链路生效，旧链路（recover/claim）继续可用。
+  - `false`：下单表单不显示查询密码字段，新页面/买家访问 API 按既定 fail-closed 行为处理；不得重新暴露旧查询入口；
+  - `true`：邮箱 + 查询密码链路生效；履约 `claim` 通道仍是内部安全证明，不是查询入口。
 - 开关默认 `false`，**部署不等于启用**（对齐 `AGENTS.md`）。
 
 ---
@@ -935,8 +924,8 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 |---|---|---|
 | G0 | ✅ **已完成（2026-09-18）**：迁移文件写盘**并已由用户落库** + readiness 扩展，开关全关 | ✅ 全量测试基线不退化（3333 通过 / 0 失败）；三步 verify **24 行全 PASS**（`docs/guest-shop-promo-evidence.md` §1）；线上行为**零变化** |
 | G1 | 内部开启 `BUYER_CREDENTIAL_ENABLED`，仅自己下单验证 | 下单/查询/详情/卡密全链路截图归档 |
-| G2 | 开启新页面，旧弹窗入口并存 | 历史订单仍可用口令找回 |
-| G3 | 删除弹窗内口令面板，新页面成为唯一入口 | 客服工单量对比 |
+| G2（历史记录） | 开启新页面，旧弹窗入口并存 | 早期候选阶段；不代表当前能力 |
+| G3（历史记录） | 删除弹窗内口令面板，新页面成为唯一入口 | 该迁移动作已在 2.1 收口完成；旧口令入口已移除 |
 | G4 | 与促销 L2 合并，`buyer_id` 成为配额主判据 | 促销方案 §15.4 实机证据 |
 
 ---
@@ -1043,7 +1032,7 @@ GUEST_SHOP_PROMO_ENABLED=false                 # 促销主闸（促销方案 K1�
 | K33 | 邮箱命中注册账号时的处置 | **允许下单 + 允许促销 + 同价**（`registered_user_match` 只记录） | — | **已按你的意见定稿**：废弃原「禁促销」设计，因为它是杀熟且有合规风险（§10.1、促销方案 §22.5）。反杀熟硬约束 H1–H4 必须有测试覆盖 |
 | K33b | 是否做「仅限新客」定向券 | **不做** | 做/不做 | **本轮不做**。真要做必须是券级、商家主动勾选、规则公开明示的独立功能，不能是平台按身份自动加价 |
 | K34 | 新订单是否仍生成取货口令（不展示） | **是** | 是/否 | **是**，客服 break-glass 需要它 |
-| K35 | 历史订单自助升级为密码访问 | **开** | 开/关 | 开 |
+| K35（已废弃） | 历史订单自助升级为密码访问 | **关闭** | 开/关 | 关闭；历史订单走人工核验，不恢复公开迁移入口 |
 | K36 | 审计表保留期 | 30 天 | 7~180 | **30** |
 | K37 | 游客订单是否发通知邮件 | **关** | 关/开 | **先关**；开启前必须先做「每邮箱每日发信上限」，否则会变成邮件轰炸工具 |
 | K38 | 单邮箱凭证分组上限（§6.4） | **3** | 1~5 | **3**。设 1 等于「忘密码就买不了」，会在 OTP 上线前形成购买墙；设过大则放任抢占 |
@@ -1079,7 +1068,7 @@ A1  下单表单收集查询密码 + scrypt 存储 + buyer upsert + 订单关联
 A2  /guest-orders.html + js/guest-orders-client.js + 列表/详情/卡密接口
       └─ 含 §8 全部防爆破 + §9 错误语义 + §16.2 契约测试
 A3  管理台：解锁 / 一次性找回链接（✅ 已落地，不做临时密码，见 D-7）；
-      历史订单自助升级（§13.2）
+      历史未绑定订单只走人工核验（公开迁移入口已移除）
 ─────────────── 以上为 2.0 订单访问，可独立上线 ───────────────
 L0  促销 DDL + 策略表 + readiness（促销方案）
 L1  游客阶梯价 + 闪购（**无状态价格规则，不依赖身份层**，§21.5-1）
@@ -1103,8 +1092,8 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
 | A1b | ✅ 已完成 | `24759bf13` | 凭证分组原子分配 RPC（K38=3 上限、防抢占）、等开销防预言机、登录失败/锁定阶段机 |
 | A1c | ✅ 已完成 | `1b8cfd372` | 下单链路接通：`preview` 回 `buyer_credential_required`、订单表单收集查询密码、服务端权威强度校验、`buyer_id` 绑定到订单（RPC 复核 `(buyer_id, site, contact_hash)` 三元组，不匹配即 fail-closed） |
 | **A2** | ✅ **已完成** | `1b8cfd372` | `guest-orders.html` + `js/guest-orders-client.js` + `css/guest-orders.css`；`guest/order`、`guest/delivery`、`guest/access/login`、`guest/access/logout` 四个扁平路由 + `guest/orders` 的 GET 列表分支；`__Host-gs-acc` 会话 cookie；「帮我生成」生成器 `js/guest-query-password.js` |
-| G3 | ⏸ 未开始 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel` + 改契约断言 + 页脚入口（**必须等开关打开且实机证据归档后**，见 §11.2.1） |
-| **A3** | ✅ **已完成** | `5496a47c9` | 管理台 `shop/guest-buyer-access`（GET 状态 + 三个写动作）+ 游客异常队列行内「买家访问」弹窗；`guest_shop_access_resets` 迁移文件写盘（**未执行**）；公开端点 `guest/access/reset`（一次性链接消费）与 `guest/access/upgrade`（§13.2 自助升级）；`guest-orders.html` 找回卡片 + 历史订单升级子表单。**不做**管理员临时密码（D-7） |
+| G3（历史记录） | ✅ 已收口 | — | 删除 `guestCashRecoveryPanel` / `guestCashRecoveryCodePanel`、旧公开 recover/upgrade 路由并将邮箱 + 查询密码设为唯一用户查询入口；早期“未开始”状态已废弃 |
+| **A3（历史记录）** | ✅ **已完成部分能力；旧升级入口已移除** | `5496a47c9` | 管理台 `shop/guest-buyer-access` 与 `guest/access/reset` 的审计/重置能力保留；早期记录中的 `guest/access/upgrade`、历史订单升级子表单属于已移除方案，不是当前 API |
 | **A0-verify-FIX** | ✅ 已完成 | `bbf5705a6` | `20260920_verify_guest_shop_buyer_credentials.sql` 假 FAIL 修复（D-10）：三个约束探针改为字面量 / 数值化 + 文件头新增「RULE FOR PROBE AUTHORS」；新增 `tests/guest-shop-verify-probe-contract.test.js`（11 条静态重放）与 `tests/guest-shop-create-order-signature-compat.test.js`（5 条，钉住「迁移先落库、代码后发布」的兼容性）；实机三步校验记录归档到 `docs/guest-shop-promo-evidence.md` §1，**三步 24 行全 PASS**（步骤 1 见 §1.5、步骤 2 见 §1.7、步骤 3 见 §1.2）。全量 `npm run test:security`：**3333 通过 / 0 失败**（基线 3317 + 11 + 5）。**迁移文件未改、无需重跑**；探针修复后同日复跑该 verify，**11/11 全 PASS**（evidence §1.5），三步校验 24 行全绿 |
 | **A0-verify-INV** | ✅ 已完成 | `c33e420af` | 行清单冻结补齐 + 行数勘误：`tests/guest-shop-verify-probe-contract.test.js` 的「verify 行清单冻结」断言此前只覆盖 `20260920`(11) 与 `20260922`(7)，**A1b 不在册**，导致文档把步骤 2 记成 5 行、三步总数记成 23 行；现补上 `checkNames(SOURCES.a1bVerify)` 的 6 项断言，三个 verify 全部在册（11 + 6 + 7 = **24 行**）。用户实机输出的步骤 2 六行逐行归档到 `docs/guest-shop-promo-evidence.md` §1.7，§1.1 与本文档三处计数同步改为 24。变异验证：把 verify 里的 `upsert_fn_grants` 改名 → 该测试立即红（10 pass / 1 fail），还原后 `git diff` 为空。**迁移与 verify SQL 一行未改、无需重跑。** 全量 `npm run test:security`：**3333 通过 / 0 失败**（条数不变，新增的是既有测试内的断言） |
 | L0–L4 / A4 | ⏸ 未开始 | — | 促销侧与 OTP，见 §19 |
@@ -1137,12 +1126,13 @@ L 系列动 `discount_codes`/定价 resolver/库存闸）。**A4 必须在 L2 �
   一次性链接**不落 localStorage / sessionStorage / cookie / console / `<a href>` / 地址栏**，
   关窗即清 token 与 DOM；写按钮初始 `disabled`，需原因 ≥8 字 **且** 勾选身份核实，
   提交前**再校验一次**（不信任 UI 状态），一次操作后复选框自动取消防连点。
-- `tests/guest-shop-public-route-contract.test.js`（+1 条）：`guest/access/reset` 与
-  `guest/access/upgrade` 两个扁平键在共享 dispatcher 上绑定，且两个 Vercel 入口
-  都在 `.vercelignore` 内。
-- `tests/guest-shop-frontend-contract.test.js`（+若干条）：找回卡片 / 升级子表单的新 id 清单、
-  `autocomplete="new-password"`、两个新端点、**token 剥离**断言
-  （`searchParams.delete('reset')` + `history.replaceState`，禁止把 `?reset=` 回写地址栏）。
+- `tests/guest-shop-public-route-contract.test.js`（历史记录）：早期曾断言
+  `guest/access/reset` 与 `guest/access/upgrade` 两个扁平键在共享 dispatcher 上绑定；
+  当前合同只保留 `guest/access/reset`，`guest/access/upgrade` 已移除且不得重新注册。
+- `tests/guest-shop-frontend-contract.test.js`（历史记录）：早期曾覆盖找回卡片 / 升级
+  子表单与两个新端点；当前合同只覆盖邮箱 + 查询密码入口、reset token 剥离
+  （`searchParams.delete('reset')` + `history.replaceState`，禁止把 `?reset=` 回写地址栏），
+  不得重新加入旧升级表单。
 
 **A2 测试覆盖（全量 `npm run test:security`：3261 通过 / 0 失败）**
 

@@ -956,7 +956,6 @@ test('hosted frontend verification aligns Vercel asset versions with the KVM4 re
             '<section id="guestOrdersFeatureGate"></section>',
             '<div id="guestOrdersProtectedContent"></div>',
             '<form id="guestOrdersQueryForm"></form>',
-            '<div id="guestOrdersLegacyPanel"></div>',
             `<link rel="stylesheet" href="css/guest-orders.css?v=${expectedVersion}">`,
             `<script src="./js/guest-orders-client.js?v=${expectedVersion}"></script>`
         ].join('\n');
@@ -1015,7 +1014,6 @@ test('the async production gate replaces local page presence with hosted commit-
             '<div id="guestOrdersFeatureGate"></div>',
             '<div id="guestOrdersProtectedContent"></div>',
             '<form id="guestOrdersQueryForm"></form>',
-            '<div id="guestOrdersLegacyPanel"></div>',
             `<link rel="stylesheet" href="css/guest-orders.css?v=${expectedVersion}">`,
             `<script src="./js/guest-orders-client.js?v=${expectedVersion}"></script>`
         ].join('\n');
@@ -1094,7 +1092,6 @@ test('hosted frontend verification fails closed on commit drift or missing relea
             '<div id="guestOrdersFeatureGate"></div>',
             '<div id="guestOrdersProtectedContent"></div>',
             '<form id="guestOrdersQueryForm"></form>',
-            '<div id="guestOrdersLegacyPanel"></div>',
             '<script src="./js/guest-orders-client.js?v=bbbbbbbbbbbb"></script>'
         ].join('\n');
         const drift = await inspectHostedBuyerCredentialFrontend({

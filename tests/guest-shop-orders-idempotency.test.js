@@ -831,7 +831,7 @@ test('unknown-create resume returns a review handle without checkout or another 
     assert.equal(res.payload.order.order_no, ORDER_NO);
     assert.equal(res.payload.payment_status, 'review');
     assert.equal(res.payload.checkout, null);
-    assert.match(res.payload.order.recovery_code, /^[A-Za-z0-9_-]{40,200}$/u);
+    assert.equal(Object.hasOwn(res.payload.order, 'recovery_code'), false);
     assert.equal(calls.create, 0);
     assert.deepEqual(state.rpcCalls, []);
 });
@@ -1103,7 +1103,7 @@ test('a stale creation lease is fail-closed and never issues a second provider o
 });
 
 
-test('idempotent create retry re-emits the same recovery code and never leaks the stored hash', async () => {
+test('idempotent create retry keeps the same order response contract and never leaks claim material', async () => {
     const checkoutUrl = 'https://pay.example.test/checkout?id=existing';
     const { handlers } = createHandlers({
         payment: makePayment({
@@ -1119,10 +1119,6 @@ test('idempotent create retry re-emits the same recovery code and never leaks th
         })
     });
     const key = 'idem-key-recovery-0000001';
-    const expected = defaultSecurity.deriveClaimSecretFromIdempotencyKey(key, {
-        site: 'cn',
-        env: { GUEST_SHOP_CLAIM_DERIVATION_PEPPER: DERIVATION_PEPPER }
-    });
     const first = createResponse();
     await handlers.orders(request(key), first);
     const second = createResponse();
@@ -1131,9 +1127,10 @@ test('idempotent create retry re-emits the same recovery code and never leaks th
     assert.equal(second.statusCode, 200);
     assert.equal(first.payload.replayed, true);
     assert.equal(second.payload.replayed, true);
-    assert.equal(first.payload.order.recovery_code, expected);
-    assert.equal(second.payload.order.recovery_code, expected);
-    assert.match(expected, /^[A-Za-z0-9_-]{40,200}$/u);
+    assert.equal(Object.hasOwn(first.payload.order, 'recovery_code'), false);
+    assert.equal(Object.hasOwn(second.payload.order, 'recovery_code'), false);
+    assert.equal(first.payload.order.order_no, ORDER_NO);
+    assert.equal(second.payload.order.order_no, ORDER_NO);
     assert.doesNotMatch(JSON.stringify(first.payload), /claim_secret_hash|hmac-sha256|stored-claim-hash/);
     assert.doesNotMatch(JSON.stringify(second.payload), /claim_secret_hash|hmac-sha256|stored-claim-hash/);
 });

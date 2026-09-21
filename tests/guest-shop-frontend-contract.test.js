@@ -172,14 +172,16 @@ test('guest checkout uses only the public cash endpoints and same-origin cookie 
     assert.match(client, /const ORDER_ENDPOINT = ['"]\/api\/shop\/guest\/orders['"];/);
     assert.match(client, /const STATUS_ENDPOINT = ['"]\/api\/shop\/guest\/status['"];/);
     assert.match(client, /const CLAIM_ENDPOINT = ['"]\/api\/shop\/guest\/claim['"];/);
-    assert.match(client, /const RECOVERY_ENDPOINT = ['"]\/api\/shop\/guest\/recover['"];/);
     assert.match(client, /credentials:\s*['"]same-origin['"]/);
     assert.match(client, /cache:\s*['"]no-store['"]/);
     assert.doesNotMatch(client, /localStorage/);
     assert.doesNotMatch(client, /supabase|access_token|Authorization\s*:/i);
     assert.doesNotMatch(client, /X-Guest-Claim-Secret|claimSecret|claim_secret/);
-    assert.match(markup, /id="guestCashRecoveryCodePanel"/);
-    assert.match(markup, /id="guestCashRecoveryPanel"/);
+    // The checkout modal has one lookup destination. The standalone page is
+    // credential-first too; the old public order-number + pickup-code path is gone.
+    assert.doesNotMatch(client, /\/api\/shop\/guest\/recover|guestCashRecoverBtn|guestCashRecovery(OrderNo|Code)/);
+    assert.doesNotMatch(markup, /guestCashRecovery(CodePanel|Panel)|guestCashRecovery(OrderNo|CodeInput)/);
+    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"/);
 });
 
 test('guest order creation clamps quantity to the server cap and keeps secret material out of browser persistence and URLs', () => {
@@ -257,7 +259,7 @@ test('the guest promo UI ships hidden, the preview stays code-free and every dis
     );
 });
 
-test('Task 2.1 binds preview, create and recovery responses to the view that started them', () => {
+test('Task 2.1 binds preview and create responses to the view that started them', () => {
     assert.match(client, /viewGeneration: 0,[\s\S]*actionGeneration: 0,[\s\S]*quoteGeneration: 0,/);
     assert.match(
         client,
@@ -279,7 +281,7 @@ test('Task 2.1 binds preview, create and recovery responses to the view that sta
     assert.match(previewSource, /await requestJson[\s\S]*if \(!isCurrentPreviewRequest\(request\)\) return \{ available: false, reason: 'stale' \};[\s\S]*renderPreview/);
 
     const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function recoverOrder()', createStart);
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     assert.ok(createStart >= 0 && createEnd > createStart, 'createOrder must stay a standalone function');
     const createSource = client.slice(createStart, createEnd);
     const createLock = createSource.indexOf('state.requestInFlight = true;');
@@ -302,18 +304,16 @@ test('Task 2.1 binds preview, create and recovery responses to the view that sta
     assert.doesNotMatch(staleCreateSource, /recovery_code|showRecoveryCode|renderCheckout|startPolling/);
     assert.match(createSource, /finally \{\s*state\.requestInFlight = false;\s*renderGuestActions\(\);/);
 
-    const recoverStart = client.indexOf('async function recoverOrder() {');
-    const recoverEnd = client.indexOf('\n    async function fetchStatus', recoverStart);
-    assert.ok(recoverStart >= 0 && recoverEnd > recoverStart, 'recoverOrder must stay a standalone function');
-    const recoverSource = client.slice(recoverStart, recoverEnd);
-    assert.match(recoverSource, /stopPolling\(\);\s*invalidateView\(\);\s*const operation = beginAction\(\);/);
-    assert.match(recoverSource, /await requestJson\(RECOVERY_ENDPOINT[\s\S]*if \(!isCurrentAction\(operation\) \|\| !isModalVisible\(\)\) return;[\s\S]*state\.orderNo =/);
-    assert.match(recoverSource, /catch \(error\) \{\s*if \(!isCurrentAction\(operation\)\) return;/);
+    // The payment modal no longer owns a recovery request. Its separate
+    // "找回订单" link navigates to the credential-first guest-orders page;
+    // the removed public recovery flow cannot race this checkout view.
+    assert.doesNotMatch(client, /async function recoverOrder\s*\(/);
+    assert.doesNotMatch(client, /RECOVERY_ENDPOINT|guestCashRecoverBtn|guestCashRecovery/);
 });
 
 test('an unknown create result can only replay the original server-held checkout intent', () => {
     const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function recoverOrder()', createStart);
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     assert.ok(createStart >= 0 && createEnd > createStart, 'createOrder must stay a standalone function');
     const createSource = client.slice(createStart, createEnd);
     assert.match(
@@ -364,7 +364,7 @@ test('checkout intent inspection and acknowledgement stay recoverable when brows
     assert.match(ackSource, /credentials|requestJson\(ORDER_ENDPOINT/);
 
     const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function recoverOrder()', createStart);
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     const createSource = client.slice(createStart, createEnd);
     assert.match(createSource, /if \(!attempt\.intentId\) \{[\s\S]*await inspectCheckoutIntent\(attempt\.context/);
     assert.match(
@@ -415,23 +415,19 @@ test('Task 2.1 status polling is single-flight and an invalid checkout stays unk
     assert.match(checkoutSource, /if \(!valid\) \{[\s\S]*state\.checkout = null;[\s\S]*state\.paymentCreationUnknown = true;[\s\S]*'payment_creation_unknown'[\s\S]*return false;/);
 
     const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function recoverOrder()', createStart);
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     const createSource = client.slice(createStart, createEnd);
     assert.match(createSource, /const checkoutReady = !replayNeedsReview && payload\.checkout[\s\S]*\? renderCheckout\(payload\.checkout\)[\s\S]*: false;/);
     assert.match(createSource, /if \(replayNeedsReview\) \{[\s\S]*suppressUnsafeCheckout\(\);[\s\S]*'payment_creation_unknown'[\s\S]*stopPolling\(\);\s*return;/);
     assert.match(createSource, /if \(!checkoutReady && !state\.paymentConfirmed\) \{[\s\S]*state\.paymentCreationUnknown = true;[\s\S]*'payment_creation_unknown'[\s\S]*stopPolling\(\);\s*return;/);
 
-    const recoverStart = client.indexOf('async function recoverOrder() {');
-    const recoverEnd = client.indexOf('\n    async function fetchStatus', recoverStart);
-    const recoverSource = client.slice(recoverStart, recoverEnd);
-    assert.match(recoverSource, /else if \(!checkoutReady\) \{\s*state\.paymentCreationUnknown = true;[\s\S]*'payment_creation_unknown'/);
     assert.match(pollSource, /else if \(state\.paymentCreationUnknown\) \{[\s\S]*'payment_creation_unknown'[\s\S]*shouldContinue = false;/);
 });
 
-test('Task 2.1 renders all five primary actions from one policy with real hidden and busy states', () => {
+test('Task 2.1 renders checkout actions and a credential-first lookup link with real hidden and busy states', () => {
     assert.match(markup, /id="guestCashPurchaseModal"[^>]*hidden[^>]*aria-hidden="true"/);
     assert.match(markup, /id="guestCashPurchaseDialog"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="guestCashPurchaseTitle"[^>]*aria-describedby="guestCashSubtitle guestCashState"/);
-    assert.match(markup, /id="guestCashStorageWarning"[^>]*role="status"[^>]*hidden[^>]*>此浏览器无法暂存订单。请保存订单号和取货口令；刷新或换页后可用“找回订单”继续。</);
+    assert.match(markup, /id="guestCashStorageWarning"[^>]*role="status"[^>]*hidden[^>]*>此浏览器无法暂存订单。请保持当前页面；查询能力开启后可用邮箱 \+ 查询密码继续。</);
     for (const id of [
         'guestCashPurchaseDismissBtn',
         'guestCashCreateOrderBtn',
@@ -441,17 +437,17 @@ test('Task 2.1 renders all five primary actions from one policy with real hidden
     ]) {
         assert.match(markup, new RegExp(`id="${id}"`), `missing primary guest action ${id}`);
     }
-    assert.match(
-        markup,
-        /id="guestCashShowRecoveryBtn"[^>]*aria-controls="guestCashRecoveryPanel"[^>]*aria-expanded="false"/
-    );
+    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"[^>]*data-guest-order-access="primary"/);
+    assert.doesNotMatch(markup, /id="guestCashShowRecoveryBtn"[^>]*(?:aria-controls|aria-expanded|type="button")/);
+    assert.doesNotMatch(client, /closest\(['"]#guestCashShowRecoveryBtn['"]\)/);
+    assert.doesNotMatch(markup, /guestCashRecoveryPanel|guestCashRecoveryOrderNo|guestCashRecoveryCodeInput/);
 
     const policyStart = client.indexOf('function deriveGuestActionPolicy(snapshot = state) {');
     const policyEnd = client.indexOf('\n    function applyActionPolicy', policyStart);
     assert.ok(policyStart >= 0 && policyEnd > policyStart, 'deriveGuestActionPolicy must stay a standalone function');
     const policySource = client.slice(policyStart, policyEnd);
-    assert.match(policySource, /const canAdoptDetachedCheckout = !hasOrder[\s\S]*Boolean\(snapshot\.detachedCheckout\)[\s\S]*!creating[\s\S]*!recovering/);
-    assert.match(policySource, /const canResumeUnknownCreate = !hasOrder[\s\S]*Boolean\(snapshot\.pendingCreateAttempt\)[\s\S]*snapshot\.paymentCreationUnknown === true \|\| snapshot\.pendingCreateAttempt\?\.unresolved === true[\s\S]*!creating[\s\S]*!recovering/);
+    assert.match(policySource, /const canAdoptDetachedCheckout = !hasOrder[\s\S]*Boolean\(snapshot\.detachedCheckout\)[\s\S]*!creating/);
+    assert.match(policySource, /const canResumeUnknownCreate = !hasOrder[\s\S]*Boolean\(snapshot\.pendingCreateAttempt\)[\s\S]*snapshot\.paymentCreationUnknown === true \|\| snapshot\.pendingCreateAttempt\?\.unresolved === true[\s\S]*!creating[\s\S]*!inspectingIntent/);
     assert.match(policySource, /const canCreate = !hasOrder[\s\S]*!snapshot\.paymentCreationUnknown[\s\S]*\['configure', 'error'\]\.includes\(status\)/);
     assert.match(policySource, /const canQuery = hasOrder[\s\S]*!delivered[\s\S]*status !== 'configure'/);
     assert.match(policySource, /const canLeaveOrder = hasOrder[\s\S]*status === 'awaiting_payment'[\s\S]*!snapshot\.paymentConfirmed[\s\S]*!snapshot\.paymentCreationUnknown/);
@@ -461,18 +457,13 @@ test('Task 2.1 renders all five primary actions from one policy with real hidden
     assert.match(policySource, /query: \{[\s\S]*visible: canQuery,[\s\S]*disabled: checking \|\| snapshot\.claimInFlight === true,[\s\S]*busy: checking/);
     assert.match(policySource, /abandon: \{[\s\S]*visible: canLeaveOrder,[\s\S]*label: '离开当前订单'/);
     assert.match(policySource, /const unresolvedLocalCreate = Boolean\(snapshot\.detachedCheckout\)[\s\S]*snapshot\.pendingCreateAttempt[\s\S]*snapshot\.paymentCreationUnknown === true[\s\S]*snapshot\.pendingCreateAttempt\?\.unresolved === true/);
-    assert.match(policySource, /recover: \{[\s\S]*visible: true,[\s\S]*disabled: creating \|\| recovering \|\| inspectingIntent \|\| unresolvedLocalCreate,[\s\S]*busy: recovering/);
 
     const openStart = client.indexOf('function openGuestModal(');
     const openEnd = client.indexOf('\n    function closeGuestModal()', openStart);
     const openSource = client.slice(openStart, openEnd);
     assert.match(openSource, /if \(!state\.orderNo && state\.detachedCheckout\) \{[\s\S]*hydrateCheckout\(detached\);[\s\S]*context = null;/);
 
-    const recoverStart = client.indexOf('async function recoverOrder() {');
-    const recoverEnd = client.indexOf('\n    async function fetchStatus', recoverStart);
-    const recoverSource = client.slice(recoverStart, recoverEnd);
-    assert.match(recoverSource, /if \(state\.detachedCheckout[\s\S]*state\.pendingCreateAttempt[\s\S]*请先确认上一笔订单结果/);
-    assert.match(recoverSource, /state\.pendingCreateAttempt = null;\s*state\.detachedCheckout = null;/);
+    assert.doesNotMatch(client, /async function recoverOrder\s*\(/);
 
     const applyStart = client.indexOf('function applyActionPolicy(buttonId, policy');
     const applyEnd = client.indexOf('\n    function syncConfigureControls()', applyStart);
@@ -482,7 +473,7 @@ test('Task 2.1 renders all five primary actions from one policy with real hidden
     assert.match(applySource, /button\.setAttribute\('aria-disabled', policy\.disabled \? 'true' : 'false'\)/);
     assert.match(applySource, /button\.setAttribute\('aria-busy', policy\.busy \? 'true' : 'false'\)/);
 
-    assert.match(client, /function renderGuestActions\(\) \{\s*const policy = deriveGuestActionPolicy\(\);[\s\S]*policy\.dismiss[\s\S]*policy\.create[\s\S]*policy\.query[\s\S]*policy\.abandon[\s\S]*policy\.recover/);
+    assert.match(client, /function renderGuestActions\(\) \{\s*const policy = deriveGuestActionPolicy\(\);[\s\S]*policy\.dismiss[\s\S]*policy\.create[\s\S]*policy\.query[\s\S]*policy\.abandon/);
     assert.match(client, /function handleGuestModalKeydown\(event\) \{[\s\S]*event\.key === 'Escape'[\s\S]*closeGuestModal\(\)[\s\S]*event\.key !== 'Tab'[\s\S]*focusable/);
     assert.match(client, /function focusGuestModal\(\) \{[\s\S]*modalFocusableElements\(\)[\s\S]*first\.focus\(\)/);
     assert.match(client, /document\.addEventListener\('keydown', handleGuestModalKeydown\)/);
@@ -490,6 +481,9 @@ test('Task 2.1 renders all five primary actions from one policy with real hidden
     assert.match(client, /modal\.setAttribute\('aria-hidden', 'true'\)/);
     assert.match(client, /function noteSessionStorageUnavailable\(\) \{[\s\S]*state\.sessionStorageUnavailable = true;[\s\S]*syncSessionStorageWarning\(\);/);
     assert.match(client, /function syncSessionStorageWarning\(\) \{[\s\S]*guestCashStorageWarning/);
+    assert.match(client, /state\.buyerCredentialRequired[\s\S]*请保存下单邮箱和查询密码[\s\S]*请保持当前页面；查询能力开启后可用邮箱 \+ 查询密码继续/);
+    assert.match(client, /function syncGuestOrdersLink\(\) \{[\s\S]*new URL\(['"]\/guest-orders\.html['"][\s\S]*searchParams\.set\(['"]order_no['"], orderNo\)/);
+    assert.doesNotMatch(client, /syncGuestOrdersLink[\s\S]{0,1200}(?:email|password|recoveryCode)/i);
     assert.match(styles, /\.guest-shop-modal__field\[hidden\] \{ display: none !important; \}/);
     assert.match(styles, /\.guest-shop-modal__actions > \.shop-btn\[hidden\] \{ display: none !important; \}/);
 });
@@ -523,8 +517,7 @@ test('delivered guest orders drop their resumable handle but keep the payload vi
     const closeSource = client.slice(closeStart, closeEnd);
     assert.doesNotMatch(closeSource, /clearCompletedCheckout|resetOrderUi|setText\('guestCashDeliveredContent'/);
     assert.match(closeSource, /state\.status === 'delivered'[\s\S]*!state\.deliveryCopied[\s\S]*发货内容尚未复制/);
-    assert.match(closeSource, /const recoveryCodeNotCopied = state\.status === 'delivered'[\s\S]*Boolean\(state\.recoveryCode && !state\.recoveryCodeCopied\)/);
-    assert.match(closeSource, /deliveryNotCopied \|\| recoveryCodeNotCopied[\s\S]*取货口令尚未复制或保存/);
+    assert.doesNotMatch(closeSource, /recoveryCode|recovery_code|取货口令/);
     assert.match(client, /setStateMessage\('支付已确认，订单已发货。', 'delivered'\)[\s\S]*clearStoredCheckoutAfterAcknowledgement\(\)/);
     assert.match(client, /async function maybeRestoreReturn\(\)[\s\S]*const restoredOrderNo = state\.orderNo[\s\S]*state\.orderNo !== restoredOrderNo/);
     assert.match(client, /restoredOrder\.payment_status[\s\S]*restoredOrder\.fulfillment_status[\s\S]*clearCompletedCheckout\(\)/);
@@ -546,14 +539,14 @@ test('terminal guest orders require an explicit local reset before a new order c
         assert.match(client, new RegExp(`['\"]${status}['\"]`), `missing terminal status ${status}`);
     }
     assert.match(terminalSource, /fulfillmentStatus !== 'delivered'/);
-    assert.match(terminalSource, /snapshot\.recoverInFlight !== true[\s\S]*snapshot\.statusRequestInFlight !== true[\s\S]*snapshot\.claimInFlight !== true[\s\S]*snapshot\.paymentCreationUnknown !== true/);
+    assert.match(terminalSource, /snapshot\.requestInFlight !== true[\s\S]*snapshot\.statusRequestInFlight !== true[\s\S]*snapshot\.claimInFlight !== true[\s\S]*snapshot\.paymentCreationUnknown !== true/);
 
     const resetStart = client.indexOf('function returnTerminalOrderToConfiguration() {');
     const resetEnd = client.indexOf('\n    function showOrderNo', resetStart);
     assert.ok(resetStart >= 0 && resetEnd > resetStart, 'terminal reset must stay a standalone local transition');
     const resetSource = client.slice(resetStart, resetEnd);
     assert.match(resetSource, /isRestartableTerminalOrder\(\)/);
-    assert.match(resetSource, /取货口令尚未复制或保存/);
+    assert.doesNotMatch(resetSource, /recoveryCode|recovery_code|取货口令/);
     assert.match(resetSource, /clearStoredCheckout\(\)[\s\S]*state\.orderNo = ['"]['"][\s\S]*state\.checkoutIntentId = ['"]['"]/);
     assert.match(resetSource, /不会取消服务端订单或立即释放库存。旧付款码不可再付/);
     assert.match(resetSource, /previousContextKey !== context\.contextKey[\s\S]*resetPromoSelection\(\)/);
@@ -561,7 +554,7 @@ test('terminal guest orders require an explicit local reset before a new order c
     assert.doesNotMatch(resetSource, /ORDER_ENDPOINT|requestJson\(|fetch\s*\(/);
 
     const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function recoverOrder()', createStart);
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     const createSource = client.slice(createStart, createEnd);
     assert.match(createSource, /if \(isRestartableTerminalOrder\(\)\) \{\s*returnTerminalOrderToConfiguration\(\);\s*return;/);
     assert.match(client, /setHidden\('guestCashTerminalRestartHint', !policy\.create\.restartTerminal\)/);
@@ -686,20 +679,19 @@ test('created guest orders surface the non-secret order number in the existing s
     assert.match(client, /showOrderNo\(state\.orderNo\)/);
 });
 
-test('recovery code is displayed once, never persisted, and recover retries do not expect a new code', () => {
-    assert.match(markup, /口令只显示一次，本站不会再次展示/);
-    assert.match(client, /showRecoveryCode\(order\.recovery_code\)/);
-    assert.match(client, /Create retries may re-emit the same derived code/);
-    assert.match(client, /if \(state\.recoveryCode\) return;/);
-    assert.match(client, /resetOrderUi\(\{ preserveRecovery: Boolean\(state\.recoveryCode\) \}\)/);
-    assert.match(client, /function resetOrderUi\(\{ preserveRecovery = false \} = \{\}\)/);
-    assert.match(client, /state\.recoveryCode = ''/);
+test('the payment modal never displays or handles the legacy pickup-code recovery flow', () => {
+    // A new order is queried through the standalone credential-first page.
+    // Claim proof remains an internal fulfillment mechanism only; no secret is
+    // rendered, copied, persisted, or sent by this payment modal.
+    assert.doesNotMatch(markup, /guestCashRecovery(CodePanel|Panel)|guestCashRecoveryCode|口令只显示一次/);
+    assert.doesNotMatch(client, /RECOVERY_ENDPOINT|showRecoveryCode|recoveryCode|recovery_code|guestCashRecover/);
+    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"/);
     const persistStart = client.indexOf('function persistCheckoutRecord(record)');
     const persistEnd = client.indexOf('\n    function hydrateCheckout', persistStart);
     assert.ok(persistStart >= 0 && persistEnd > persistStart, 'checkout persistence must stay isolated');
     const persistedCheckout = client.slice(persistStart, persistEnd);
     assert.doesNotMatch(persistedCheckout, /recoveryCode|recovery_code|claim/i);
-    assert.match(client, /body:\s*JSON\.stringify\(\{\s*orderNo,\s*recoveryCode\s*\}\)/);
+    assert.doesNotMatch(client, /body:\s*JSON\.stringify\(\{\s*orderNo,\s*recoveryCode\s*\}\)/);
     const eyebrowStart = styles.indexOf('.guest-shop-modal__eyebrow');
     assert.ok(eyebrowStart >= 0, 'guest checkout eyebrow must reuse shop styles');
     const eyebrowRule = styles.slice(eyebrowStart, styles.indexOf('}', eyebrowStart) + 1);
@@ -794,7 +786,7 @@ test('unpaid guest orders can be left locally without implying a cancel RPC', ()
     assert.match(client, /function isAbandonableOrder\(\)[\s\S]*state\.paymentConfirmed/);
     assert.match(client, /当前订单已确认付款或已发货，不能离开/);
     assert.match(client, /请勿再支付旧付款码/);
-    assert.match(client, /const unsavedRecoveryWarning = state\.recoveryCode && !state\.recoveryCodeCopied[\s\S]*取货口令尚未复制或保存/);
+    assert.doesNotMatch(client, /unsavedRecoveryWarning|recoveryCodeCopied|取货口令尚未复制或保存/);
     assert.match(client, /target\.closest\(['"]#guestCashAbandonOrderBtn['"]\)/);
     assert.match(client, /#guestCashPurchaseCloseBtn, #guestCashPurchaseDismissBtn/);
 
@@ -943,7 +935,7 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
     assert.match(client, /async function copyText\(value, button, \{ doneEl = '', copiedClass = '' \} = \{\}\) \{/);
     assert.match(client, /copyText\(element\('guestCashNowAddress'\)\?\.textContent \|\| '', addressButton, \{ doneEl: 'guestCashNowCopyFeedback' \}\)/);
     assert.match(client, /copyText\(\s*element\('guestCashDeliveredContent'\)\?\.textContent \|\| '',\s*deliveryButton,\s*\{ copiedClass: 'is-copied' \}\s*\)\.then\(\(\) => \{ state\.deliveryCopied = true; \}\)/);
-    assert.match(client, /copyText\(element\('guestCashRecoveryCode'\)\?\.textContent \|\| '', recoveryCopyButton\)[\s\S]*state\.recoveryCodeCopied = true/);
+    assert.doesNotMatch(client, /guestCashRecoveryCode|recoveryCopyButton|recoveryCodeCopied/);
 });
 
 // ---------------------------------------------------------------------------
@@ -1089,7 +1081,7 @@ test('the shop modal collects the query password only when the server says it is
     assert.match(markup, /id="guestCashOrderPasswordNote"[^>]*role="status"[^>]*hidden/);
     assert.match(markup, /id="guestCashToggleOrderPasswordBtn"[^>]*aria-pressed="false"/);
     assert.match(markup, /id="guestCashGenerateOrderPasswordBtn"[^>]*>帮我生成</);
-    assert.match(markup, /id="guestCashOrdersPageLink"[^>]*href="\/guest-orders\.html"[^>]*hidden/);
+    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"[^>]*data-guest-order-access="primary"/);
     assert.match(styles, /\.guest-shop-modal__pw-checks/);
     assert.match(styles, /\.guest-shop-modal__pw-btn/);
     assert.match(styles, /\.guest-shop-modal__pw-note/);
@@ -1103,14 +1095,14 @@ test('the shop modal collects the query password only when the server says it is
     assert.ok(generatorIndex >= 0, 'js/guest-query-password.js must be mounted');
     assert.ok(guestClientIndex > generatorIndex, 'the generator must load before the guest client');
     assert.match(markup, /js\/guest-query-password\.js\?v=20260921_GUEST_ORDER_ACCESS_A2_1/);
-    assert.match(markup, /guestOrderAccess=20260921_GUEST_ORDER_ACCESS_A2_1/);
+    assert.match(markup, /guestOrderAccess=20260921_GUEST_ORDER_ACCESS_DIRECT_1/);
 
     // Client: the switch is driven ONLY by the server's preview flag, never by a
     // client-side guess, so the server stays authoritative (§6.1.4).
     assert.match(client, /buyerCredentialRequired:\s*false,/);
     assert.match(client, /state\.buyerCredentialRequired = preview\?\.buyer_credential_required === true;/);
     assert.match(client, /setHidden\('guestCashOrderPasswordField', !required\);/);
-    assert.match(client, /setHidden\('guestCashOrdersPageLink', !required\);/);
+    assert.doesNotMatch(client, /guestCashOrdersPageLink|setHidden\(['"]guestCashShowRecoveryBtn/);
     assert.match(client, /setText\('guestCashContactHint', required/);
     assert.match(client, /pendingIntentRequiresEmail/);
     assert.match(client, /'必填，用于查询订单'/);
@@ -1155,7 +1147,7 @@ test('the query password travels once in the order body and is never persisted, 
     // Plaintext is dropped after the server has accepted the request and on
     // modal close, so it never outlives the request that needed it.
     const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function recoverOrder()', createStart);
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     assert.ok(createStart > 0 && createEnd > createStart, 'createOrder must stay a standalone function');
     assert.match(client.slice(createStart, createEnd), /clearOrderPassword\(\)/);
     const closeStart = client.indexOf('function closeGuestModal(');
@@ -1192,18 +1184,11 @@ test('the guest order lookup page is a lean standalone page with no account runt
         'guestOrdersPageInfo', 'guestOrdersPrevBtn', 'guestOrdersNextBtn',
         'guestOrdersDetail', 'guestOrdersDetailRows', 'guestOrdersDeliveryContent',
         'guestOrdersCopyDeliveryBtn', 'guestOrdersLoadDeliveryBtn',
-        'guestOrdersLegacyToggleBtn', 'guestOrdersLegacyPanel',
-        'guestOrdersLegacyOrderNo', 'guestOrdersLegacyCode', 'guestOrdersLegacyBtn',
         // A3 §10.5 one-time reset-link card
         'guestOrdersResetCard', 'guestOrdersResetForm', 'guestOrdersResetEmail',
         'guestOrdersResetPassword', 'guestOrdersResetPasswordConfirm',
         'guestOrdersResetToggleBtn', 'guestOrdersResetGenerateBtn',
         'guestOrdersResetPolicy', 'guestOrdersResetSubmitBtn',
-        // A3 §13.2 historical-order self-upgrade
-        'guestOrdersUpgradeEmail', 'guestOrdersUpgradePassword',
-        'guestOrdersUpgradePasswordConfirm', 'guestOrdersUpgradeToggleBtn',
-        'guestOrdersUpgradeGenerateBtn', 'guestOrdersUpgradePolicy',
-        'guestOrdersUpgradeContent', 'guestOrdersUpgradeBtn', 'guestOrdersUpgradeResult'
     ]) {
         assert.match(ordersPage, new RegExp(`id="${id}"`), `guest-orders.html is missing #${id}`);
     }
@@ -1213,16 +1198,7 @@ test('the guest order lookup page is a lean standalone page with no account runt
     assert.match(ordersPage, /id="guestOrdersEmail"[^>]*type="email"/);
     assert.match(ordersPage, /id="guestOrdersQueryForm"[^>]*novalidate/);
     assert.match(ordersPage, /id="guestOrdersProtectedContent"[^>]*hidden[^>]*aria-hidden="true"/);
-    assert.match(ordersPage, /id="guestOrdersUpgradeContent"[^>]*hidden[^>]*aria-hidden="true"/);
-
-    // The feature gate controls only the new email/password surfaces. Historical
-    // order-number + pickup-code recovery must remain visible during an OFF switch,
-    // an availability failure, or a temporarily older Verify deployment.
-    const protectedStart = ordersPage.indexOf('id="guestOrdersProtectedContent"');
-    const protectedClose = ordersPage.indexOf('\n        </div>\n\n        <!--\n          §13.4', protectedStart);
-    const legacyStart = ordersPage.indexOf('<section class="guest-orders-card guest-orders-legacy">');
-    assert.ok(protectedStart >= 0 && protectedClose > protectedStart, 'the new order-access wrapper must close explicitly');
-    assert.ok(legacyStart > protectedClose, 'legacy recovery must stay outside the new order-access feature gate');
+    assert.doesNotMatch(ordersPage, /guestOrdersLegacy|guestOrdersUpgrade|订单号\s*\+\s*取货口令|历史订单/);
 
     // A3: the two credential-MINTING forms must ask a password manager for a NEW
     // password (the opposite of the lookup field), and the reset card must start
@@ -1230,9 +1206,7 @@ test('the guest order lookup page is a lean standalone page with no account runt
     // so a hand-typed /guest-orders.html?reset=xxx cannot pre-open a form.
     assert.match(ordersPage, /id="guestOrdersResetCard"[^>]*hidden/);
     assert.match(ordersPage, /id="guestOrdersResetPassword"[\s\S]{0,200}autocomplete="new-password"/);
-    assert.match(ordersPage, /id="guestOrdersUpgradePassword"[\s\S]{0,200}autocomplete="new-password"/);
     assert.doesNotMatch(ordersPage, /id="guestOrdersReset[^>]*autocomplete="current-password"/);
-    assert.doesNotMatch(ordersPage, /id="guestOrdersUpgrade[^>]*autocomplete="current-password"/);
     // The page must not advertise the reset link as a self-service entry point:
     // it exists only in a support message from an admin (§10.5).
     assert.doesNotMatch(ordersPage, /href="[^"]*\?reset=/);
@@ -1253,7 +1227,7 @@ test('the guest order lookup page is a lean standalone page with no account runt
     assert.ok(siteConfig >= 0, 'site-config must be mounted');
     assert.ok(generator > siteConfig, 'the generator must load after site-config');
     assert.ok(pageClient > generator, 'the lookup client must load after the generator');
-    assert.match(ordersPage, /js\/guest-orders-client\.js\?v=20260924_GUEST_ORDERS_RETRY_1&legacyRecovery=20260920_GUEST_LEGACY_RECOVERY_1/);
+    assert.match(ordersPage, /js\/guest-orders-client\.js\?v=20260924_GUEST_ORDERS_CREDENTIAL_ONLY_1/);
     assert.doesNotMatch(ordersPage, /<script(?![^>]*\bdefer\b)[^>]*js\/guest-orders-client\.js/);
     assert.match(ordersStyles, /body\.guest-orders-page/);
     assert.match(ordersStyles, /\.guest-orders-gate/);
@@ -1296,10 +1270,8 @@ test('the lookup client stays isolated from the account auth system and never wr
         "'/api/shop/guest/delivery'",
         "'/api/shop/guest/access/login'",
         "'/api/shop/guest/access/logout'",
-        // A3: the one-time reset link (§10.5) and the §13.2 historical-order
-        // self-upgrade ride the same public flat-key dispatcher.
+        // A3: the one-time reset link (§10.5) rides the same public flat-key dispatcher.
         "'/api/shop/guest/access/reset'",
-        "'/api/shop/guest/access/upgrade'"
     ]) {
         assert.ok(code.includes(endpoint), `the lookup client must call ${endpoint}`);
     }
@@ -1312,20 +1284,17 @@ test('the lookup client stays isolated from the account auth system and never wr
     assert.ok(initBody.indexOf('consumeUrlResetToken()') < initBody.indexOf('bindBaseListeners()'),
         'reset tokens must leave the URL before any listeners or requests run');
     assert.ok(initBody.indexOf('bindBaseListeners()') < initBody.indexOf('await initializeOrderAccessPage()'),
-        'legacy recovery and retry must bind before the new credential feature probe');
+        'retry must bind before the new credential feature probe');
     const baseListenersStart = code.indexOf('function bindBaseListeners()');
     const baseListenersEnd = code.indexOf('\n    function initializeOrderAccessFeatures()', baseListenersStart);
     const baseListenersBody = code.slice(baseListenersStart, baseListenersEnd);
     assert.match(baseListenersBody, /if \(state\.baseListenersBound\) return;/);
-    assert.match(baseListenersBody, /guestOrdersLegacyToggleBtn/);
-    assert.match(baseListenersBody, /guestOrdersLegacyBtn/);
     assert.match(baseListenersBody, /guestOrdersFeatureRetryBtn/);
     const gateStart = code.indexOf('function setOrderAccessPageAvailable(');
     const gateEnd = code.indexOf('\n    function setBusy(', gateStart);
     const gateBody = code.slice(gateStart, gateEnd);
     assert.match(gateBody, /setHidden\('guestOrdersProtectedContent', !state\.pageAvailable\)/);
-    assert.match(gateBody, /setHidden\('guestOrdersUpgradeContent', !state\.pageAvailable\)/);
-    assert.doesNotMatch(gateBody, /guestOrdersLegacy(?:Toggle|Panel|Btn|OrderNo|Code)/);
+    assert.doesNotMatch(gateBody, /guestOrdersLegacy|guestOrdersUpgrade/);
     assert.match(code, /searchParams\.set\('order_no', orderNo\)/);
     assert.doesNotMatch(code, /searchParams\.set\(\s*['"](?:password|orderPassword|credential|secret|token|email)/i);
     assert.doesNotMatch(code, /history\.(?:push|replace)State\([^)]*(?:password|credential|secret)/i);
@@ -1348,111 +1317,13 @@ test('the lookup client stays isolated from the account auth system and never wr
     // canonical field spelling each, so the server cannot be probed with an
     // alternative normalization (§16.1).
     assert.match(code, /body: JSON\.stringify\(\{ token, email, password, site:/);
-    assert.match(code, /body: JSON\.stringify\(\{ orderNo, recoveryCode, email, password, site:/);
+    assert.doesNotMatch(code, /guest\/recover|access\/upgrade|recoveryCode|recovery_code/);
     assert.doesNotMatch(code, /reset_token\s*:/);
     // K26 is mirrored locally through the shared module, never re-implemented
     // here, and never weakened by a Math.random generator.
     assert.match(code, /globalThis\.GuestQueryPassword/);
     assert.match(code, /policyFailure\(/);
     assert.match(code, /foldFullwidth\(/);
-});
-
-test('legacy recovery remains interactive when the new credential availability probe fails', async () => {
-    for (const availabilityFailure of ['http_404', 'network_error']) {
-        const elements = new Map();
-        const requests = [];
-        const makeElement = (id) => {
-            const listeners = new Map();
-            const attributes = new Map();
-            if (id === 'guestOrdersLegacyToggleBtn') attributes.set('aria-expanded', 'false');
-            return {
-                id,
-                hidden: ['guestOrdersProtectedContent', 'guestOrdersUpgradeContent', 'guestOrdersLegacyPanel'].includes(id),
-                disabled: false,
-                value: '',
-                textContent: '',
-                dataset: {},
-                setAttribute(name, value) { attributes.set(name, String(value)); },
-                getAttribute(name) { return attributes.get(name) ?? null; },
-                removeAttribute(name) { attributes.delete(name); },
-                addEventListener(type, listener) { listeners.set(type, listener); },
-                dispatch(type) { listeners.get(type)?.({ currentTarget: this, target: this }); },
-                querySelector() { return null; },
-                appendChild() {}
-            };
-        };
-        const document = {
-            readyState: 'complete',
-            getElementById(id) {
-                if (!elements.has(id)) elements.set(id, makeElement(id));
-                return elements.get(id);
-            },
-            addEventListener() {},
-            createElement(tagName) { return makeElement(tagName); }
-        };
-        const window = {
-            document,
-            location: { href: 'https://www.fatherkey.com/guest-orders.html' },
-            history: { replaceState() {} },
-            SiteConfig: { site: 'cn' },
-            setTimeout,
-            clearTimeout
-        };
-        const fetch = async (url, options = {}) => {
-            requests.push({ url, options });
-            if (url.endsWith('/access/availability')) {
-                if (availabilityFailure === 'network_error') throw new Error('offline');
-                return { ok: false, status: 404, async json() { return { success: false }; } };
-            }
-            if (url.endsWith('/recover')) {
-                return {
-                    ok: true,
-                    status: 200,
-                    async json() {
-                        return {
-                            success: true,
-                            order: {
-                                order_no: 'GS-LEGACY-1',
-                                payment_status: 'pending',
-                                fulfillment_status: 'pending'
-                            }
-                        };
-                    }
-                };
-            }
-            throw new Error(`unexpected request: ${url}`);
-        };
-        window.window = window;
-        const context = {
-            window,
-            document,
-            fetch,
-            URL,
-            URLSearchParams,
-            setTimeout,
-            clearTimeout,
-            console
-        };
-        vm.runInNewContext(ordersClient, context, { filename: 'js/guest-orders-client.js' });
-        await new Promise((resolve) => setImmediate(resolve));
-
-        assert.equal(document.getElementById('guestOrdersProtectedContent').hidden, true);
-        assert.equal(document.getElementById('guestOrdersUpgradeContent').hidden, true);
-        const toggle = document.getElementById('guestOrdersLegacyToggleBtn');
-        const panel = document.getElementById('guestOrdersLegacyPanel');
-        toggle.dispatch('click');
-        assert.equal(panel.hidden, false, `${availabilityFailure}: legacy panel should expand`);
-
-        document.getElementById('guestOrdersLegacyOrderNo').value = 'GS-LEGACY-1';
-        document.getElementById('guestOrdersLegacyCode').value = 'R'.repeat(48);
-        document.getElementById('guestOrdersLegacyBtn').dispatch('click');
-        await new Promise((resolve) => setImmediate(resolve));
-
-        const recoverRequest = requests.find((entry) => entry.url.endsWith('/recover'));
-        assert.ok(recoverRequest, `${availabilityFailure}: recover request should still be sent`);
-        assert.equal(recoverRequest.options.method, 'POST');
-        assert.match(document.getElementById('guestOrdersLegacyResult').textContent, /已找回订单 GS-LEGACY-1/);
-    }
 });
 
 test('a reset link survives a failed availability probe and resumes in place after retry', async () => {
@@ -1465,7 +1336,6 @@ test('a reset link survives a failed availability probe and resumes in place aft
     const initiallyHidden = new Set([
         'guestOrdersFeatureRetryBtn',
         'guestOrdersProtectedContent',
-        'guestOrdersUpgradeContent',
         'guestOrdersResetCard',
         'guestOrdersResultCard',
         'guestOrdersSavedHint',
@@ -1475,7 +1345,6 @@ test('a reset link survives a failed availability probe and resumes in place aft
     const makeElement = (id) => {
         const listeners = new Map();
         const attributes = new Map();
-        if (id === 'guestOrdersLegacyToggleBtn') attributes.set('aria-expanded', 'false');
         return {
             id,
             hidden: initiallyHidden.has(id),
@@ -1586,17 +1455,12 @@ test('a reset link survives a failed availability probe and resumes in place aft
     assert.equal(availabilityAttempts, 2);
     assert.equal(retryButton.hidden, true);
     assert.equal(document.getElementById('guestOrdersProtectedContent').hidden, false);
-    assert.equal(document.getElementById('guestOrdersUpgradeContent').hidden, false);
     assert.equal(document.getElementById('guestOrdersResetCard').hidden, false,
         'retry success should resume the reset flow without a refresh');
     assert.equal(document.getElementById('guestOrdersQueryCard').hidden, true);
     assert.equal(document.getElementById('guestOrdersResetEmail').focused, true);
 
     assert.equal(retryButton.listenerCount('click'), 1, 'retry must bind once');
-    assert.equal(document.getElementById('guestOrdersLegacyToggleBtn').listenerCount('click'), 1,
-        'legacy toggle must bind once');
-    assert.equal(document.getElementById('guestOrdersLegacyBtn').listenerCount('click'), 1,
-        'legacy recovery must bind once');
     assert.equal(document.getElementById('guestOrdersResetForm').listenerCount('submit'), 1,
         'protected reset listeners must bind once after availability succeeds');
 

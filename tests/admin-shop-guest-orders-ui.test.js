@@ -140,8 +140,10 @@ test('buyer access is selected by order number only, never by a typed email', ()
     assert.doesNotMatch(access, /id="[^"]*[Ee]mail/);
     assert.doesNotMatch(access, /\bemail\w*\s*:/);
     assert.doesNotMatch(access, /orderNo:\s*(?:email|contact)/i);
-    // §13.2：未绑定订单给出自助升级话术，管理台不代设密码
+    // 2.1：未绑定订单只给人工核验/一次性找回链接话术，不恢复旧入口
     assert.match(access, /尚未绑定查询密码/);
+    assert.match(access, /一次性找回链接/);
+    assert.doesNotMatch(access, /自助升级|订单号\s*\+\s*取货口令/);
     assert.doesNotMatch(access, /action:\s*'(?:reset_password|set_password|reset_guest_password)'/);
     assert.doesNotMatch(access, /temp(?:orary)?_password/i);
 });

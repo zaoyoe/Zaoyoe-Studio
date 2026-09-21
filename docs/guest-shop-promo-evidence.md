@@ -13,6 +13,12 @@
 > 3. verify 脚本只读、可重复执行；「FAIL」的含义先按
 >    `docs/guest-shop-order-access-2.0.md` §12.1 D-10 排查**探针自身**，再怀疑迁移。
 
+> **2.1 当前入口口径（2026-09-21）：** 本文件早期 A0–A3 记录中的“订单号 +
+> 取货口令”、`guest/recover` 和 `guest/access/upgrade` 只作为历史设计/数据库审计
+> 证据保留，不能证明或恢复当前买家能力。当前唯一用户查询入口是邮箱 + 查询密码；
+> 公开旧路由和旧页面已移除。`claim_secret_hash` / HttpOnly claim proof 的履约用途
+> 不受此收口影响，但不得展示为用户查询凭证。
+
 ---
 
 ## 1. 订单访问 2.0：迁移落库与 verify（A0–A3）
@@ -92,10 +98,10 @@ verify 行清单冻结（20260920 共 11 行、20260922 共 7 行）。
       （预期 `--fail-on-not-ready` 仍返回 `3`，**禁止 `|| true` 绕过**）
 - [ ] §15.3 G1：内部开启 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 后，自测下单 / 查询 / 详情 / 卡密全链路截图
 - [ ] 登录失败阶梯锁定触发截图（§8.1）
-- [ ] 历史订单「订单号 + 取货口令」找回仍可用的截图（§13.1 不可回归项）
+- [x] ~~历史订单「订单号 + 取货口令」找回仍可用的截图（§13.1 不可回归项）~~ → **不适用**：旧用户查询模式已移除；历史订单如需核验走客服/运营内部流程，不再补做公开入口截图
 - [ ] 登录用户「我的钱包 → 订单记录」零改动截图（§11.1 不可回归项）
 
-> 以上全部归档前，**不得宣称订单访问 2.0 可启用**；发布仍须走 `AGENTS.md` 的游客专用分支 + 四链路流程，
+> 以上适用项全部归档前，**不得宣称邮箱 + 查询密码链路可启用**；发布仍须走 `AGENTS.md` 的游客专用分支 + 四链路流程，
 > 且必须等用户明确下达部署指令。
 
 ### 1.5 步骤 1 复跑逐行结果（探针修复后，**11/11 全 PASS**）
@@ -130,9 +136,11 @@ verify 行清单冻结（20260920 共 11 行、20260922 共 7 行）。
 - **无重载歧义**（第 8 行）：`single_overload: true` + `legacy_12_param_signature_absent: true` 证明旧的 12 参签名
   已彻底移除；否则攻击者可以直接调旧签名绕过 `p_buyer_id` 绑定校验。`security_definer` + `search_path_pinned`
   防止靠搜索路径劫持函数。
-- **历史订单不被误伤**（第 7、11 行）：`column_nullable_for_history` + `foreign_key_on_delete_set_null` +
-  `buyer_id_has_no_not_null` + `no_backfill_trigger_on_orders` —— 老订单 `buyer_id IS NULL`，仍走
-  「订单号 + 取货口令」（§13.1 不可回归项），迁移**没有回填、没有加 NOT NULL、没有建触发器、没有建清理任务**。
+- **历史订单数据不被迁移误改**（第 7、11 行）：`column_nullable_for_history` +
+  `foreign_key_on_delete_set_null` + `buyer_id_has_no_not_null` + `no_backfill_trigger_on_orders`
+  —— 老订单可保持 `buyer_id IS NULL`，迁移**没有回填、没有加 NOT NULL、没有建触发器、
+  没有建清理任务**。这是数据库结构的历史审计事实，不代表仍提供订单号 + 取货口令公开查询；
+  当前用户查询统一走邮箱 + 查询密码，历史订单人工核验走内部流程。
 - **防爆破取证就位**（第 4、5 行）：`locked_idx` 支撑 §8.1 阶梯锁扫描；`guest_shop_access_attempts` 的
   contact / ip 双索引支撑双维度锁定；`outcome_allows_credential_conflict` 让「凭证分组冲突」可取证。
 - **行为中立已实证**（第 2、11 行）：`unexpected_denormalised_columns: []` 说明没有偷偷存明文邮箱/密码，

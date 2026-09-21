@@ -317,27 +317,6 @@ html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
     font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* --- legacy recovery (§13.4) -------------------------------------------- */
-.guest-orders-legacy { padding: 0; overflow: hidden; }
-.guest-orders-legacy-toggle {
-    width: 100%; display: flex; align-items: center; gap: 9px;
-    padding: 16px 20px; border: 0; background: none;
-    color: var(--go-muted); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
-}
-.guest-orders-legacy-toggle:hover { color: var(--go-accent); }
-.guest-orders-legacy-caret { margin-left: auto; transition: transform .18s ease; }
-.guest-orders-legacy-toggle[aria-expanded="true"] .guest-orders-legacy-caret { transform: rotate(180deg); }
-.guest-orders-legacy-panel {
-    display: flex; flex-direction: column; gap: 12px;
-    padding: 0 20px 20px;
-    border-top: 1px solid var(--go-border);
-    padding-top: 16px;
-}
-.guest-orders-legacy-panel .guest-orders-secondary-btn { align-self: flex-start; }
-.guest-orders-legacy-result { font-size: 12.5px; line-height: 1.7; color: var(--go-muted); overflow-wrap: anywhere; }
-.guest-orders-legacy-result[data-tone="ok"] { color: var(--go-ok); }
-.guest-orders-legacy-result[data-tone="danger"] { color: var(--go-danger); }
-
 /* --- §10.5 one-time reset link (A3) ------------------------------------- */
 /* The card is only ever shown by the client after it has read ?reset=, so the
    accent border doubles as "you arrived from a support link" affordance. */
@@ -350,27 +329,13 @@ html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
 .guest-orders-field-action-row .guest-orders-link-btn { font-size: 12px; }
 .guest-orders-field-action-row .guest-orders-link-btn i { margin-right: 4px; }
 
-/* --- shared password-policy line (reset + §13.2 upgrade) ------------------ */
+/* --- reset password-policy line ----------------------------------------- */
 .guest-orders-policy {
     grid-column: 1 / -1;
     margin: 0; font-size: 12px; line-height: 1.7; color: var(--go-muted);
 }
 .guest-orders-policy[data-tone="danger"] { color: var(--go-danger); }
 .guest-orders-policy[data-tone="ok"] { color: var(--go-ok); }
-
-/* --- §13.2 historical-order self-upgrade (A3) ----------------------------- */
-.guest-orders-upgrade {
-    display: flex; flex-direction: column; gap: 12px;
-    margin-top: 16px; padding-top: 16px;
-    border-top: 1px dashed var(--go-border);
-}
-.guest-orders-upgrade-title {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 13px; font-weight: 650; color: var(--go-text);
-}
-.guest-orders-upgrade-title i { color: var(--go-accent); }
-.guest-orders-upgrade .guest-orders-tip { margin: 0; }
-.guest-orders-upgrade .guest-orders-secondary-btn { align-self: flex-start; }
 
 /* --- footer ------------------------------------------------------------- */
 .guest-orders-footer { font-size: 12px; line-height: 1.8; color: var(--go-muted); text-align: center; }
