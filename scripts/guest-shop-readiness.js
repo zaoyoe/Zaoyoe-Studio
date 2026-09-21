@@ -73,7 +73,6 @@ const REQUIRED_REPO_FILES = Object.freeze([
     'api/shop/guest/preview.js',
     'api/shop/guest/orders.js',
     'api/shop/guest/status.js',
-    'api/shop/guest/recover.js',
     'api/shop/guest/claim.js',
     'api/shop/guest/webhooks/zpay.js',
     'api/shop/guest/webhooks/nowpayments.js',
@@ -482,8 +481,7 @@ const GUEST_ORDERS_PAGE_CONTRACT_MARKERS = Object.freeze([
     '<body class="guest-orders-page">',
     'id="guestOrdersFeatureGate"',
     'id="guestOrdersProtectedContent"',
-    'id="guestOrdersQueryForm"',
-    'id="guestOrdersLegacyPanel"'
+    'id="guestOrdersQueryForm"'
 ]);
 const GUEST_ORDERS_CLIENT_CONTRACT_MARKERS = Object.freeze([
     "const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';",
@@ -672,7 +670,7 @@ async function inspectHostedBuyerCredentialFrontend({
     }
 
     return [
-        buildCheck('buyer_credentials', 'frontend:guest-orders.html', true, 'hosted_verified', 'Vercel 游客订单查询页可达且关键凭证/旧订单恢复结构完整。', {
+        buildCheck('buyer_credentials', 'frontend:guest-orders.html', true, 'hosted_verified', 'Vercel 游客订单查询页可达且关键邮箱凭证查询结构完整。', {
             hosted_url: pageUrl,
             deployment_surface: 'vercel',
             blocking: false,
@@ -2211,11 +2209,10 @@ function inspectRepo(repoRoot = REPO_ROOT) {
     checks.push(router.includes("'guest/preview'")
         && router.includes("'guest/orders'")
         && router.includes("'guest/status'")
-        && router.includes("'guest/recover'")
         && router.includes("'guest/claim'")
         && router.includes("'guest/webhooks/zpay'")
         && router.includes("'guest/webhooks/nowpayments'")
-        ? buildCheck('repo', 'guest-routes-registered', true, 'present', '游客 preview/order/status/recover/claim 与 provider webhook 路由均已注册。', { blocking: false, severity: 'info' })
+        ? buildCheck('repo', 'guest-routes-registered', true, 'present', '游客 preview/order/status/claim 与 provider webhook 路由均已注册。', { blocking: false, severity: 'info' })
         : invalidCheck('repo', 'guest-routes-registered', 'api/public.js 未完整注册游客路由。'));
 
     const handler = read('server/api-handlers/public/guest-shop.js');

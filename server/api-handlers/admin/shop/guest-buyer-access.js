@@ -5,7 +5,7 @@
  *
  * Contract: docs/guest-shop-order-access-2.0.md
  *   §10.5  管理台：解锁登录锁定 / 生成一次性找回链接
- *   §13.2  历史订单（buyer_id IS NULL）由用户自助升级，管理台不代设密码
+ *   2.1     历史未绑定订单必须走人工核验，不提供公开迁移入口
  *   §6.4   buyer_id 是访问主体；contact_hash 不是可信身份因子
  *   §18    AGENTS.md 禁令：不得在日志/审计/聊天中打印密码或链接
  *
@@ -206,9 +206,10 @@ async function handleRead(req) {
             bound: false,
             buyer: null,
             resets: [],
-            // §13.2: tell the operator what to say to the buyer instead of
-            // leaving a dead end.
-            hint: '该订单尚未绑定查询密码，请引导用户在游客订单页自助升级（订单号 + 取货口令）。'
+            // 2.1: public migration was removed. Keep the operator on the
+            // internal, identity-verified support path instead of sending the
+            // buyer to a dead endpoint.
+            hint: '该订单尚未绑定查询密码。请先人工核验买家身份，再由管理员生成一次性找回链接；不要向买家提供历史凭证查询入口。'
         };
     }
     const resets = await loadResetRows(supabase, resolved.buyer.id);

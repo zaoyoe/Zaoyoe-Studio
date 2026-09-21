@@ -395,7 +395,6 @@ function fixtureDelayMs(pathname, scenario, action = '') {
     if (scenario === 'creating' && pathname === '/api/shop/guest/orders'
         && (!action || action === 'commit')) return 1400;
     if (scenario === 'checking' && pathname === '/api/shop/guest/status') return 1400;
-    if (scenario === 'recovering' && pathname === '/api/shop/guest/recover') return 1400;
     return 0;
 }
 
@@ -476,20 +475,6 @@ async function handleGuestFixture(req, res, pathname) {
         const order = orderFor(
             scenario === 'configure' ? 'awaiting_payment' : scenario,
             selectionForOrderNo(orderNo)
-        );
-        sendGuestFixtureJson(req, res, pathname, scenario, 200, {
-            success: true,
-            order,
-            checkout: order.payment_status === 'pending' ? checkout() : null
-        });
-        return true;
-    }
-    if (pathname === '/api/shop/guest/recover' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const selection = selectionForOrderNo(body.orderNo || body.order_no);
-        const order = orderFor(
-            scenario === 'configure' ? 'awaiting_payment' : scenario,
-            selection
         );
         sendGuestFixtureJson(req, res, pathname, scenario, 200, {
             success: true,

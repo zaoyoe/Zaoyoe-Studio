@@ -10,7 +10,6 @@ const PAYMENT_ID = '44444444-4444-4444-8444-444444444444';
 const PRODUCT_ID = '55555555-5555-4555-8555-555555555555';
 const SKU_ID = '66666666-6666-4666-8666-666666666666';
 const ORDER_NO = 'GS20260913-000001';
-const VALID_RECOVERY_CODE = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abc';
 
 function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -183,7 +182,7 @@ function createHandlers(options = {}) {
         DEFAULT_JSON_BODY_LIMIT: 16 * 1024,
         readJsonBodyWithLimit(req) { return JSON.parse(req.body || '{}'); },
         verifyClaimSecret(secret, storedHash) {
-            return (secret === 'valid-secret' || secret === VALID_RECOVERY_CODE) && storedHash === 'stored-claim-hash';
+            return secret === 'valid-secret' && storedHash === 'stored-claim-hash';
         }
     };
     const handlers = createGuestShopHandlers({
@@ -211,14 +210,6 @@ function statusRequest(secret) {
         method: 'GET',
         query: { orderNo: ORDER_NO },
         headers: secret === undefined ? {} : { 'x-guest-claim-secret': secret }
-    };
-}
-
-function recoverRequest(recoveryCode = VALID_RECOVERY_CODE) {
-    return {
-        method: 'POST',
-        body: JSON.stringify({ orderNo: ORDER_NO, recoveryCode }),
-        headers: { 'content-type': 'application/json' }
     };
 }
 
@@ -258,27 +249,6 @@ test('authorized pending status reconstructs an allowlisted checkout', async () 
     assert.doesNotMatch(serialized, /claim_secret|provider_token|arbitrary_sensitive_value|stored-claim-hash/);
     assert.doesNotMatch(serialized, /recovery_code|query_password_hash|delivery_content|card_secret|must-not-leak/);
     assert.doesNotMatch(serialized, /provider_metadata/);
-});
-
-test('cross-device recovery requires order number plus high-entropy code and sets cookie', async () => {
-    const { handlers, state } = createHandlers();
-    const response = createResponse();
-    await handlers.recover(recoverRequest(), response);
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.payload.success, true);
-    assert.equal(response.payload.recovered, true);
-    assert.equal(response.payload.order.order_no, ORDER_NO);
-    assert.equal(response.payload.order.site, 'cn');
-    assert.equal(response.payload.order.product_id, PRODUCT_ID);
-    assert.equal(response.payload.order.sku_id, SKU_ID);
-    assert.equal(response.payload.order.product_name, 'Cross-device product');
-    assert.equal(response.payload.order.sku_name, 'Annual plan');
-    assert.equal(response.payload.order.provider, 'zpay');
-    assert.equal(response.payload.order.channel, 'alipay');
-    assert.equal(response.payload.checkout.provider, 'zpay');
-    assert.match(String(response.headers['set-cookie'] || ''), /guest_claim_proof=/);
-    assert.equal(state.paymentReads, 1);
-    assert.doesNotMatch(JSON.stringify(response.payload), /claim_secret|recovery_code|query_password_hash|delivery_content|card_secret|stored-claim-hash|must-not-leak/);
 });
 
 test('status omits provider context when the payment intent is not bound to the order', async () => {
@@ -324,15 +294,6 @@ test('status never falls back to provider metadata for an invalid payment key', 
     assert.doesNotMatch(JSON.stringify(response.payload), /provider_metadata|must-not-leak-provider-token/);
 });
 
-test('cross-device recovery rejects malformed or invalid code before payment lookup', async () => {
-    const { handlers, state } = createHandlers();
-    const response = createResponse();
-    await handlers.recover(recoverRequest('short'), response);
-    assert.equal(response.statusCode, 403);
-    assert.equal(response.payload.code, 'guest_claim_invalid');
-    assert.equal(state.paymentReads, 0);
-});
-
 test('invalid status proof is rejected before payment lookup or checkout reconstruction', async () => {
     const { handlers, state } = createHandlers();
     const response = createResponse();
@@ -367,23 +328,6 @@ test('authorized terminal status returns its bound channel without reconstructin
     assert.equal(state.paymentReads, 1);
 });
 
-test('terminal recovery returns its bound channel without a checkout', async () => {
-    const { handlers, state } = createHandlers({
-        order: makeOrder({ payment_status: 'expired', fulfillment_status: 'pending' })
-    });
-    const response = createResponse();
-
-    await handlers.recover(recoverRequest(), response);
-
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.payload.order.payment_status, 'expired');
-    assert.equal(response.payload.order.provider, 'zpay');
-    assert.equal(response.payload.order.channel, 'alipay');
-    assert.equal(Object.hasOwn(response.payload, 'checkout'), false);
-    assert.equal(state.paymentReads, 1);
-    assert.doesNotMatch(JSON.stringify(response.payload), /provider_metadata|must-not-leak/);
-});
-
 test('authorized status fails closed when the stored checkout URL is not HTTPS', async () => {
     const { handlers } = createHandlers({
         payment: makePayment({
@@ -403,35 +347,4 @@ test('authorized status fails closed when the stored checkout URL is not HTTPS',
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload.success, true);
     assert.equal(Object.prototype.hasOwnProperty.call(response.payload, 'checkout'), false);
-});
-
-test('cross-device recovery is idempotent and never re-emits the recovery code', async () => {
-    const { handlers, state } = createHandlers();
-    const first = createResponse();
-    const second = createResponse();
-
-    await handlers.recover(recoverRequest(), first);
-    await handlers.recover(recoverRequest(), second);
-
-    assert.equal(first.statusCode, 200);
-    assert.equal(second.statusCode, 200);
-    assert.equal(first.payload.recovered, true);
-    assert.equal(second.payload.recovered, true);
-    assert.equal(state.paymentReads, 2);
-    assert.match(String(first.headers['set-cookie'] || ''), /guest_claim_proof=/);
-    assert.match(String(second.headers['set-cookie'] || ''), /guest_claim_proof=/);
-    assert.doesNotMatch(JSON.stringify(first.payload), /recovery_code|claim_secret|stored-claim-hash/);
-    assert.doesNotMatch(JSON.stringify(second.payload), /recovery_code|claim_secret|stored-claim-hash/);
-});
-
-test('status after recovery still withholds the recovery code', async () => {
-    const { handlers } = createHandlers();
-    const recovered = createResponse();
-    await handlers.recover(recoverRequest(), recovered);
-    const status = createResponse();
-    await handlers.status(statusRequest(VALID_RECOVERY_CODE), status);
-
-    assert.equal(status.statusCode, 200);
-    assert.equal(status.payload.order.order_no, ORDER_NO);
-    assert.doesNotMatch(JSON.stringify(status.payload), /recovery_code|claim_secret|stored-claim-hash/);
 });

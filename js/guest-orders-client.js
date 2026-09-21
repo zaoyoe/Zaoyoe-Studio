@@ -23,15 +23,10 @@
     const LOGIN_ENDPOINT = '/api/shop/guest/access/login';
     const LOGOUT_ENDPOINT = '/api/shop/guest/access/logout';
     // Order Access 2.0 (A3). `reset` spends the admin-issued one-time link
-    // (§10.5); `upgrade` is the §13.2 historical-order self-service that turns
-    // orderNo + pickup code into email + query-password access. Flat keys like
-    // every other guest route: the shared dispatcher has no path parameters.
+    // (§10.5). Flat keys like every other guest route: the shared dispatcher has
+    // no path parameters.
     const RESET_ENDPOINT = '/api/shop/guest/access/reset';
-    const UPGRADE_ENDPOINT = '/api/shop/guest/access/upgrade';
     const ACCESS_AVAILABILITY_ENDPOINT = '/api/shop/guest/access/availability';
-    // Legacy (§13.4) historical-order path: order number + one-time pickup code.
-    const RECOVER_ENDPOINT = '/api/shop/guest/recover';
-    const CLAIM_ENDPOINT = '/api/shop/guest/claim';
     const CREDENTIAL_HEADER = 'X-Guest-Order-Credential';
     const AUTH_STORAGE_KEY = 'guest_order_auth';
     const AUTH_STORAGE_VERSION = 1;
@@ -122,13 +117,12 @@
         state.pageAvailable = available === true;
         setHidden('guestOrdersFeatureGate', state.pageAvailable);
         setHidden('guestOrdersProtectedContent', !state.pageAvailable);
-        setHidden('guestOrdersUpgradeContent', !state.pageAvailable);
         setHidden('guestOrdersFeatureRetryBtn', state.pageAvailable);
         if (!state.pageAvailable) {
             setText('guestOrdersFeatureGateTitle', '邮箱密码查询暂未开放');
             setText(
                 'guestOrdersFeatureGateMessage',
-                message || '你仍可使用下方的「订单号 + 取货口令」找回历史订单。'
+                message || '邮箱 + 查询密码订单查询暂未开放，请稍后重试或联系客服。'
             );
         }
     }
@@ -308,7 +302,7 @@
     function describeError(error) {
         const base = error?.message || '查询失败，请稍后重试';
         if (error?.code === 'guest_feature_disabled') {
-            return '游客订单查询尚未开放。历史订单可以用下方的「订单号 + 取货口令」找回。';
+            return '游客订单查询尚未开放，请稍后重试或联系客服。';
         }
         if (error?.code === 'guest_order_credentials_invalid') {
             return `${base}。同一邮箱最多保留 3 套互不可见的查询凭证，请使用下单当时设置的那一个。`;
@@ -424,7 +418,11 @@
                 actions.appendChild(deliveryButton);
             } else if (normalizeText(order.payment_status).toLowerCase() === 'pending'
                 || normalizeText(order.payment_status).toLowerCase() === 'created') {
-                actions.appendChild(createNode('span', 'guest-orders-item-no', '未完成支付：请回到商城重新下单'));
+                actions.appendChild(createNode(
+                    'span',
+                    'guest-orders-item-no',
+                    '订单仍待支付：请勿重复下单或付款；如需继续处理，请联系支持'
+                ));
             }
             item.appendChild(actions);
 
@@ -846,7 +844,7 @@
     }
 
     /**
-     * After a successful reset/upgrade the buyer is already signed in (the
+     * After a successful reset the buyer is already signed in (the
      * endpoint set the session cookie), so hand the page back to the normal
      * lookup flow with the new credential pre-filled and the list loaded.
      */
@@ -868,9 +866,6 @@
         const base = describeError(error);
         if (error?.code === 'guest_reset_invalid') {
             return '找回链接无效或已过期。链接有效期 15 分钟且只能使用一次，请联系客服重新签发。';
-        }
-        if (error?.code === 'guest_claim_invalid') {
-            return '订单号或取货口令不正确，请核对后重试。连续输错会临时锁定该订单。';
         }
         if (error?.code === 'guest_buyer_credential_conflict') {
             return '该邮箱的查询凭证已达上限（同一邮箱最多 3 套）。请换一个邮箱，或联系客服处理。';
@@ -942,160 +937,9 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // Order Access 2.0 (A3) — §13.2 historical-order self-upgrade
-    // ------------------------------------------------------------------
-
-    /**
-     * Same two legacy factors as the recover button above, spent once to attach a
-     * query password to the order. The server takes the site from the ORDER, so
-     * the site sent here is only a hint and cannot move the credential group.
-     */
-    async function handleUpgradeSubmit() {
-        if (state.busy) return;
-        const policyId = 'guestOrdersUpgradePolicy';
-        const resultId = 'guestOrdersUpgradeResult';
-        const orderNo = normalizeText(element('guestOrdersLegacyOrderNo')?.value, 200);
-        const recoveryCode = normalizeText(element('guestOrdersLegacyCode')?.value, 200);
-        const email = normalizeText(element('guestOrdersUpgradeEmail')?.value, 320).toLowerCase();
-        const password = foldPassword(element('guestOrdersUpgradePassword'));
-        const confirm = foldPassword(element('guestOrdersUpgradePasswordConfirm'));
-
-        if (!orderNo || !recoveryCode) {
-            showFormMessage(resultId, '请先在上方填写订单号和取货口令', 'danger');
-            return;
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
-            showFormMessage(resultId, '', '');
-            showFormMessage(policyId, '请输入正确的邮箱地址', 'danger');
-            return;
-        }
-        if (!syncPolicyLine(policyId, password, confirm)) return;
-        showFormMessage(resultId, '', '');
-
-        const button = element('guestOrdersUpgradeBtn');
-        state.busy = true;
-        if (button) { button.disabled = true; button.dataset.label = button.textContent; button.textContent = '正在设置...'; }
-        try {
-            const payload = await requestJson(UPGRADE_ENDPOINT, {
-                method: 'POST',
-                body: JSON.stringify({ orderNo, recoveryCode, email, password, site: currentSite() })
-            });
-            const alreadyBound = payload?.already_bound === true;
-            showError('');
-            await finishCredentialSetup(email, password, normalizeSite(payload?.site) || currentSite());
-            showFormMessage(resultId, alreadyBound
-                ? `订单 ${normalizeText(payload?.order_no || orderNo, 200)} 之前已设置过查询密码，已为你直接登录。`
-                : `已为订单 ${normalizeText(payload?.order_no || orderNo, 200)} 设置查询密码，以后用邮箱 + 查询密码即可查询。`,
-            'ok');
-            // The pickup code has done its job; clearing it removes the only
-            // copy of a one-time secret from a page the buyer may leave open.
-            const codeInput = element('guestOrdersLegacyCode');
-            if (codeInput) codeInput.value = '';
-            const passwordInput = element('guestOrdersUpgradePassword');
-            const confirmInput = element('guestOrdersUpgradePasswordConfirm');
-            if (passwordInput) passwordInput.value = '';
-            if (confirmInput) confirmInput.value = '';
-            syncPolicyLine(policyId, '', undefined);
-        } catch (error) {
-            showFormMessage(resultId, describeCredentialError(error), 'danger');
-        } finally {
-            state.busy = false;
-            if (button) {
-                button.disabled = false;
-                if (button.dataset.label) button.textContent = button.dataset.label;
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Legacy path (§13.4): order number + one-time pickup code
-    // ------------------------------------------------------------------
-    async function handleLegacyRecover() {
-        const button = element('guestOrdersLegacyBtn');
-        const result = element('guestOrdersLegacyResult');
-        const orderNo = normalizeText(element('guestOrdersLegacyOrderNo')?.value, 200);
-        const recoveryCode = normalizeText(element('guestOrdersLegacyCode')?.value, 200);
-        if (result) { result.hidden = false; result.dataset.tone = ''; }
-        if (!orderNo || !recoveryCode) {
-            if (result) { result.textContent = '请输入订单号和取货口令'; result.dataset.tone = 'danger'; }
-            return;
-        }
-        if (button) button.disabled = true;
-        try {
-            const payload = await requestJson(RECOVER_ENDPOINT, {
-                method: 'POST',
-                body: JSON.stringify({ orderNo, recoveryCode })
-            });
-            const order = payload?.order || {};
-            if (result) {
-                result.dataset.tone = 'ok';
-                result.textContent = `已找回订单 ${normalizeText(order.order_no || orderNo, 200)}`
-                    + `（${statusLabel(PAYMENT_LABELS, order.payment_status).text}`
-                    + ` / ${statusLabel(FULFILLMENT_LABELS, order.fulfillment_status).text}）。`;
-                if (isDeliverable(order)) appendLegacyClaimButton(result, normalizeText(order.order_no || orderNo, 200));
-                else if (payload?.checkout) {
-                    result.textContent += ' 该订单仍未完成支付，请回到商城页面继续支付。';
-                }
-            }
-        } catch (error) {
-            if (result) {
-                result.dataset.tone = 'danger';
-                result.textContent = describeError(error);
-            }
-        } finally {
-            if (button) button.disabled = false;
-        }
-    }
-
-    /**
-     * The recover response sets the same HttpOnly proof cookie the shop modal
-     * uses, so the legacy claim endpoint can be called straight from here
-     * without this page ever seeing the pickup code again.
-     */
-    function appendLegacyClaimButton(container, orderNo) {
-        const existing = container.querySelector('[data-legacy-claim]');
-        if (existing) existing.remove();
-        const button = createNode('button', 'guest-orders-secondary-btn', '查看发货内容');
-        button.type = 'button';
-        button.dataset.legacyClaim = '1';
-        button.addEventListener('click', async () => {
-            button.disabled = true;
-            try {
-                const payload = await requestJson(CLAIM_ENDPOINT, {
-                    method: 'POST',
-                    body: JSON.stringify({ orderNo })
-                });
-                const pre = createNode('pre', 'guest-orders-delivery-content');
-                pre.textContent = normalizeText(payload?.content || '', 20000);
-                container.appendChild(pre);
-                button.remove();
-            } catch (error) {
-                container.appendChild(createNode('div', 'guest-orders-legacy-result', describeError(error)));
-                button.disabled = false;
-            }
-        });
-        container.appendChild(button);
-    }
-
-    function toggleLegacyPanel() {
-        const button = element('guestOrdersLegacyToggleBtn');
-        const panel = element('guestOrdersLegacyPanel');
-        if (!button || !panel) return;
-        const expanded = button.getAttribute('aria-expanded') === 'true';
-        button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-        panel.hidden = expanded;
-    }
-
-    // ------------------------------------------------------------------
     function bindBaseListeners() {
         if (state.baseListenersBound) return;
         state.baseListenersBound = true;
-        // Legacy recovery predates the email/password feature switch. Bind it
-        // before probing that switch so an unavailable or older Verify release
-        // cannot strand buyers who still hold an order number + pickup code.
-        element('guestOrdersLegacyToggleBtn')?.addEventListener('click', toggleLegacyPanel);
-        element('guestOrdersLegacyBtn')?.addEventListener('click', () => { void handleLegacyRecover(); });
         element('guestOrdersFeatureRetryBtn')?.addEventListener('click', () => {
             void initializeOrderAccessPage();
         });
@@ -1158,23 +1002,6 @@
                 syncPolicyLine('guestOrdersResetPolicy',
                     foldPassword(element('guestOrdersResetPassword')),
                     foldPassword(element('guestOrdersResetPasswordConfirm')));
-            });
-        }
-
-        // --- A3 §13.2 historical-order self-upgrade ------------------------
-        element('guestOrdersUpgradeBtn')?.addEventListener('click', () => { void handleUpgradeSubmit(); });
-        element('guestOrdersUpgradeToggleBtn')?.addEventListener('click', (event) => {
-            togglePasswordVisibility(event.currentTarget, 'guestOrdersUpgradePassword', '查询密码');
-        });
-        element('guestOrdersUpgradeGenerateBtn')?.addEventListener('click', (event) => {
-            void generateIntoFields(event.currentTarget, 'guestOrdersUpgradePassword',
-                'guestOrdersUpgradePasswordConfirm', 'guestOrdersUpgradePolicy');
-        });
-        for (const id of ['guestOrdersUpgradePassword', 'guestOrdersUpgradePasswordConfirm']) {
-            element(id)?.addEventListener('input', () => {
-                syncPolicyLine('guestOrdersUpgradePolicy',
-                    foldPassword(element('guestOrdersUpgradePassword')),
-                    foldPassword(element('guestOrdersUpgradePasswordConfirm')));
             });
         }
 

@@ -441,7 +441,7 @@ npm run reconcile:guest-shop
 
 ## 跨设备找回与凭证
 
-订单号只能查询非敏感状态，不能单独取货。跨设备必须提供高熵取货口令或人工核验；口令仅存 HMAC，不能进入 URL、日志、埋点或支付 metadata。当前设备优先使用 `Secure; HttpOnly; SameSite=Lax` Cookie。
+跨设备查询统一进入 `/guest-orders.html`，使用下单邮箱 + 查询密码；订单号只能作为已认证会话中的可选筛选/定位条件，不能单独查询或取货。历史未绑定订单如需处理，走客服/运营人工核验，并由管理员签发一次性找回链接。订单履约仍由服务端 `Secure; HttpOnly; SameSite=Lax` claim proof 授权；取货凭证只用于履约和内部 break-glass，不得展示、复制或进入 URL、日志、埋点、支付 metadata。
 
 ## 关闭游客开关与回滚
 

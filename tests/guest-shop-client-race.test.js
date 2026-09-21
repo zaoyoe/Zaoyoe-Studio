@@ -306,11 +306,13 @@ function createRuntime({
         getElementById(id) {
             const key = String(id);
             if (!elements.has(key)) {
-                const tagName = key === 'guestCashPaymentChannel'
+                const tagName = key === 'guestCashShowRecoveryBtn'
+                    ? 'a'
+                    : (key === 'guestCashPaymentChannel'
                     ? 'select'
-                    : (key.includes('Btn') ? 'button' : 'div');
+                    : (key.includes('Btn') ? 'button' : 'div'));
                 const node = new FakeElement(document, tagName, key);
-                if (key === 'guestCashPurchaseModal' || key === 'guestCashRecoveryPanel') node.hidden = true;
+                if (key === 'guestCashPurchaseModal') node.hidden = true;
                 if (key === 'guestCashQuantity') node.value = '1';
                 if (key === 'guestCashOrderPassword') node.type = 'password';
                 elements.set(key, node);
@@ -482,7 +484,6 @@ function createOrderPayload(orderNo, currentPurchase = purchase()) {
             expires_at: FUTURE_EXPIRY,
             payment_status: 'pending',
             fulfillment_status: 'pending',
-            recovery_code: 'R'.repeat(48)
         },
         checkout: {
             provider: 'zpay',
@@ -1050,128 +1051,6 @@ test('status query in flight disables local leave and preserves the order for a 
     assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
 });
 
-test('a synthetic create click cannot race an in-flight recovery request', async () => {
-    const currentPurchase = purchase();
-    const pendingRecovery = deferred();
-    let recoveryCalls = 0;
-    let createCalls = 0;
-    const runtime = createRuntime({
-        purchase: currentPurchase,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
-            if (parsed.pathname.endsWith('/recover')) {
-                recoveryCalls += 1;
-                return pendingRecovery.promise;
-            }
-            if (parsed.pathname.endsWith('/orders')) {
-                createCalls += 1;
-                return jsonResponse(createOrderPayload('GUEST-RACE-CREATE-1', currentPurchase));
-            }
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, currentPurchase);
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-RECOVER-RACE-1';
-    runtime.element('guestCashRecoveryCodeInput').value = 'R'.repeat(48);
-    runtime.click('guestCashRecoverBtn');
-    await waitFor(() => recoveryCalls === 1, 'recovery request did not start');
-
-    assert.equal(runtime.element('guestCashRecoverBtn').disabled, true);
-    assert.equal(runtime.element('guestCashPurchaseDismissBtn').disabled, false);
-    // Event dispatch in this harness intentionally bypasses native disabled
-    // button behavior; createOrder must still enforce the same single-flight
-    // boundary at its execution layer.
-    runtime.click('guestCashCreateOrderBtn');
-    assert.equal(createCalls, 0);
-
-    pendingRecovery.resolve(jsonResponse({
-        ...createOrderPayload('GUEST-RECOVER-RACE-1', currentPurchase),
-        order: {
-            ...createOrderPayload('GUEST-RECOVER-RACE-1', currentPurchase).order,
-            recovery_code: undefined
-        }
-    }));
-    await waitFor(
-        () => runtime.element('guestCashOrderNo').textContent === 'GUEST-RECOVER-RACE-1',
-        'recovery did not settle after the competing create was ignored'
-    );
-    assert.equal(createCalls, 0);
-});
-
-test('recovering order B while order A status is in flight isolates A and resumes polling B', async () => {
-    const purchaseA = purchase();
-    const purchaseB = purchase({
-        productId: 'product-b',
-        productSkuId: 'sku-b',
-        productName: 'Recovered Product B',
-        productNameEn: 'Recovered Product B',
-        productSkuName: 'Recovered SKU B'
-    });
-    const oldStatus = deferred();
-    const statusOrderNumbers = [];
-    let createCount = 0;
-    const runtime = createRuntime({
-        purchase: purchaseA,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(purchaseA));
-            if (parsed.pathname.endsWith('/orders')) {
-                createCount += 1;
-                return jsonResponse(createOrderPayload('GUEST-A-0001', purchaseA));
-            }
-            if (parsed.pathname.endsWith('/recover')) {
-                return jsonResponse({
-                    ...createOrderPayload('GUEST-B-0002', purchaseB),
-                    order: {
-                        ...createOrderPayload('GUEST-B-0002', purchaseB).order,
-                        recovery_code: undefined
-                    }
-                });
-            }
-            if (parsed.pathname.endsWith('/status')) {
-                const orderNo = parsed.searchParams.get('orderNo');
-                statusOrderNumbers.push(orderNo);
-                if (orderNo === 'GUEST-A-0001') return oldStatus.promise;
-                if (orderNo === 'GUEST-B-0002') return jsonResponse(statusPayload(orderNo, purchaseB));
-            }
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, purchaseA);
-    runtime.click('guestCashCreateOrderBtn');
-    await waitFor(() => statusOrderNumbers.includes('GUEST-A-0001'), 'order A did not begin polling');
-    assert.equal(createCount, 1);
-
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-B-0002';
-    runtime.element('guestCashRecoveryCodeInput').value = 'B'.repeat(48);
-    runtime.click('guestCashRecoverBtn');
-    await waitFor(
-        () => runtime.element('guestCashOrderNo').textContent === 'GUEST-B-0002',
-        'order B was not recovered while order A was in flight'
-    );
-    assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
-
-    oldStatus.resolve(jsonResponse(statusPayload('GUEST-A-0001', purchaseA, {
-        payment_status: 'confirmed',
-        fulfillment_status: 'delivered',
-        product_name: 'STALE PRODUCT A'
-    })));
-    await flushEventLoop();
-    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-B-0002');
-    assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
-    assert.notEqual(runtime.element('guestCashProductName').textContent, 'STALE PRODUCT A');
-    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, 'GUEST-B-0002');
-    await runtime.runImmediateTimers();
-
-    await waitFor(
-        () => statusOrderNumbers.includes('GUEST-B-0002'),
-        'the status single-flight lock released, but polling was not resumed for recovered order B'
-    );
-});
-
 for (const failureMode of ['network failure', 'HTTP 503']) {
     test(`${failureMode} without an order number confirms the original server-held intent`, async () => {
         const purchaseA = purchase();
@@ -1254,7 +1133,6 @@ test('a late unknown create error survives modal close and reopens on the frozen
     const firstCreate = deferred();
     const createBodies = [];
     let statusCalls = 0;
-    let recoverCalls = 0;
     const runtime = createRuntime({
         purchase: purchaseA,
         fetchImpl: async (url, options = {}) => {
@@ -1273,10 +1151,6 @@ test('a late unknown create error survives modal close and reopens on the frozen
             if (parsed.pathname.endsWith('/status')) {
                 statusCalls += 1;
                 return jsonResponse(statusPayload('GUEST-LATE-UNKNOWN-1', purchaseA));
-            }
-            if (parsed.pathname.endsWith('/recover')) {
-                recoverCalls += 1;
-                throw new Error('recover must stay blocked while an unknown create is unresolved');
             }
             throw new Error(`Unexpected request: ${parsed.pathname}`);
         }
@@ -1301,14 +1175,6 @@ test('a late unknown create error survives modal close and reopens on the frozen
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseA.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseA.productSkuName);
     assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '确认原订单结果');
-    assert.equal(runtime.element('guestCashShowRecoveryBtn').disabled, true);
-    assert.equal(runtime.element('guestCashRecoverBtn').disabled, true);
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-OTHER-1';
-    runtime.element('guestCashRecoveryCodeInput').value = 'R'.repeat(48);
-    runtime.click('guestCashRecoverBtn');
-    await flushEventLoop();
-    assert.equal(recoverCalls, 0);
-
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => createBodies.length === 2);
     assert.deepEqual(createBodies[1], createBodies[0]);
@@ -1317,66 +1183,6 @@ test('a late unknown create error survives modal close and reopens on the frozen
     assert.equal(runtime.uuidCount(), 0);
     await waitFor(() => statusCalls === 1);
     assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-LATE-UNKNOWN-1');
-});
-
-test('failed recovery restores order A checkout and polling instead of exposing a new-create state', async () => {
-    const purchaseA = purchase();
-    const statusOrderNumbers = [];
-    let createCalls = 0;
-    let recoverCalls = 0;
-    const runtime = createRuntime({
-        purchase: purchaseA,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(purchaseA));
-            if (parsed.pathname.endsWith('/orders')) {
-                createCalls += 1;
-                return jsonResponse(createOrderPayload('GUEST-KEEP-A', purchaseA));
-            }
-            if (parsed.pathname.endsWith('/recover')) {
-                recoverCalls += 1;
-                return jsonResponse({
-                    success: false,
-                    code: 'guest_recovery_invalid',
-                    message: '订单或取货口令不正确'
-                }, { status: 403 });
-            }
-            if (parsed.pathname.endsWith('/status')) {
-                const orderNo = parsed.searchParams.get('orderNo');
-                statusOrderNumbers.push(orderNo);
-                return jsonResponse(statusPayload(orderNo, purchaseA));
-            }
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, purchaseA);
-    runtime.click('guestCashCreateOrderBtn');
-    await waitFor(() => statusOrderNumbers.length === 1);
-    await flushEventLoop();
-    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-KEEP-A');
-    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, false);
-    assert.equal(runtime.element('guestCashZpayQrImage').hidden, false);
-    const originalQrImage = runtime.element('guestCashZpayQrImage').src;
-
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-FAIL-B';
-    runtime.element('guestCashRecoveryCodeInput').value = 'B'.repeat(48);
-    runtime.click('guestCashRecoverBtn');
-
-    await waitFor(
-        () => recoverCalls === 1 && statusOrderNumbers.length >= 2,
-        'failed recovery did not restart polling for the original order'
-    );
-    assert.deepEqual([...new Set(statusOrderNumbers)], ['GUEST-KEEP-A']);
-    assert.equal(createCalls, 1);
-    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-KEEP-A');
-    assert.equal(runtime.element('guestCashProductName').textContent, purchaseA.productName);
-    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, false);
-    assert.equal(runtime.element('guestCashZpayQrImage').hidden, false);
-    assert.equal(runtime.element('guestCashZpayQrImage').src, originalQrImage);
-    assert.equal(runtime.element('guestCashCreateOrderBtn').hidden, true);
-    assert.equal(runtime.element('guestCashCheckStatusBtn').hidden, false);
-    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, 'GUEST-KEEP-A');
 });
 
 test('status review suppresses an existing checkout and does not schedule another poll', async () => {
@@ -1480,157 +1286,6 @@ test('confirmed manual-fulfillment states clear a prior checkout without losing 
             assert.deepEqual(runtime.scheduledTasks(), []);
         });
     }
-});
-
-test('recovery disclosure focuses its order field and modal close clears entered credentials', async () => {
-    const currentPurchase = purchase();
-    const runtime = createRuntime({
-        purchase: currentPurchase,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, currentPurchase);
-    runtime.click('guestCashShowRecoveryBtn');
-
-    assert.equal(runtime.element('guestCashRecoveryPanel').hidden, false);
-    assert.equal(runtime.element('guestCashShowRecoveryBtn').getAttribute('aria-expanded'), 'true');
-    assert.equal(runtime.document.activeElement, runtime.element('guestCashRecoveryOrderNo'));
-
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-RECOVER-CLOSE-1';
-    runtime.element('guestCashRecoveryCodeInput').value = 'x'.repeat(48);
-    runtime.click('guestCashPurchaseDismissBtn');
-
-    assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
-    assert.equal(runtime.element('guestCashRecoveryPanel').hidden, true);
-    assert.equal(runtime.element('guestCashRecoveryPanel').getAttribute('aria-hidden'), 'true');
-    assert.equal(runtime.element('guestCashShowRecoveryBtn').getAttribute('aria-expanded'), 'false');
-    assert.equal(runtime.element('guestCashRecoveryOrderNo').value, '');
-    assert.equal(runtime.element('guestCashRecoveryCodeInput').value, '');
-});
-
-test('successful recovery clears entered credentials and collapses the recovery panel', async () => {
-    const currentPurchase = purchase();
-    const recoveredOrderNo = 'GUEST-RECOVER-CLEAR-1';
-    let recoveryCalls = 0;
-    const runtime = createRuntime({
-        purchase: currentPurchase,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
-            if (parsed.pathname.endsWith('/recover')) {
-                recoveryCalls += 1;
-                return jsonResponse(createOrderPayload(recoveredOrderNo, currentPurchase));
-            }
-            if (parsed.pathname.endsWith('/status')) {
-                return jsonResponse(statusPayload(recoveredOrderNo, currentPurchase));
-            }
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, currentPurchase);
-    runtime.click('guestCashShowRecoveryBtn');
-    runtime.element('guestCashRecoveryOrderNo').value = recoveredOrderNo;
-    runtime.element('guestCashRecoveryCodeInput').value = 'x'.repeat(48);
-    runtime.click('guestCashRecoverBtn');
-    await waitFor(
-        () => recoveryCalls === 1 && runtime.element('guestCashOrderNo').textContent === recoveredOrderNo,
-        'successful recovery did not settle'
-    );
-
-    assert.equal(runtime.element('guestCashRecoveryPanel').hidden, true);
-    assert.equal(runtime.element('guestCashShowRecoveryBtn').getAttribute('aria-expanded'), 'false');
-    assert.equal(runtime.element('guestCashRecoveryOrderNo').value, '');
-    assert.equal(runtime.element('guestCashRecoveryCodeInput').value, '');
-});
-
-test('leaving an unpaid order clears entered recovery credentials', async () => {
-    const currentPurchase = purchase();
-    const orderNo = 'GUEST-ABANDON-CLEAR-1';
-    const runtime = createRuntime({
-        purchase: currentPurchase,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
-            if (parsed.pathname.endsWith('/orders')) return jsonResponse(createOrderPayload(orderNo, currentPurchase));
-            if (parsed.pathname.endsWith('/status')) return jsonResponse(statusPayload(orderNo, currentPurchase));
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, currentPurchase);
-    runtime.click('guestCashCreateOrderBtn');
-    await waitFor(
-        () => runtime.element('guestCashAbandonOrderBtn').hidden === false,
-        'the unpaid order did not become leaveable'
-    );
-
-    runtime.click('guestCashShowRecoveryBtn');
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-ABANDON-RECOVERY-1';
-    runtime.element('guestCashRecoveryCodeInput').value = 'x'.repeat(48);
-    runtime.click('guestCashAbandonOrderBtn');
-
-    assert.notEqual(runtime.element('guestCashOrderNo').textContent, orderNo);
-    assert.equal(runtime.element('guestCashRecoveryPanel').hidden, true);
-    assert.equal(runtime.element('guestCashShowRecoveryBtn').getAttribute('aria-expanded'), 'false');
-    assert.equal(runtime.element('guestCashRecoveryOrderNo').value, '');
-    assert.equal(runtime.element('guestCashRecoveryCodeInput').value, '');
-});
-
-test('recovery review never renders the returned checkout and never starts polling', async () => {
-    const purchaseA = purchase();
-    const purchaseB = purchase({
-        productId: 'product-review',
-        productSkuId: 'sku-review',
-        productName: 'Review Product',
-        productNameEn: 'Review Product',
-        productSkuName: 'Review SKU'
-    });
-    let recoverCalls = 0;
-    let statusCalls = 0;
-    const runtime = createRuntime({
-        purchase: purchaseA,
-        fetchImpl: async (url) => {
-            const parsed = new URL(url, 'https://www.fatherkey.com');
-            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(purchaseA));
-            if (parsed.pathname.endsWith('/recover')) {
-                recoverCalls += 1;
-                const payload = createOrderPayload('GUEST-RECOVER-REVIEW', purchaseB);
-                payload.order.payment_status = 'review';
-                payload.checkout.qrcode_url = 'https://payments.example.test/recovery-must-not-render';
-                return jsonResponse(payload);
-            }
-            if (parsed.pathname.endsWith('/status')) {
-                statusCalls += 1;
-                return jsonResponse(statusPayload('GUEST-RECOVER-REVIEW', purchaseB));
-            }
-            throw new Error(`Unexpected request: ${parsed.pathname}`);
-        }
-    });
-
-    await openCheckout(runtime, purchaseA);
-    runtime.element('guestCashRecoveryOrderNo').value = 'GUEST-RECOVER-REVIEW';
-    runtime.element('guestCashRecoveryCodeInput').value = 'C'.repeat(48);
-    runtime.click('guestCashRecoverBtn');
-    await waitFor(
-        () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown'
-    );
-    await flushEventLoop();
-
-    assert.equal(recoverCalls, 1);
-    assert.equal(statusCalls, 0);
-    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-RECOVER-REVIEW');
-    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
-    assert.equal(runtime.element('guestCashZpayPanel').hidden, true);
-    assert.equal(runtime.element('guestCashZpayQrImage').hidden, true);
-    assert.equal(runtime.element('guestCashZpayQrImage').src, '');
-    assert.equal(runtime.element('guestCashCreateOrderBtn').hidden, true);
-    assert.equal(runtime.element('guestCashCheckStatusBtn').hidden, false);
-    assert.deepEqual(runtime.scheduledTasks(), []);
 });
 
 test('unknown-create resume renders a terminal result without exposing the returned checkout', async () => {
@@ -1738,7 +1393,6 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.equal(createBodies.length, 1, 'rejecting confirmation must not create a replacement order');
     assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-TERMINAL-A');
     assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, 'GUEST-TERMINAL-A');
-    assert.match(runtime.confirmMessages.at(-1), /取货口令尚未复制或保存/);
     assert.match(runtime.confirmMessages.at(-1), /不会取消服务端订单或立即释放库存/);
     assert.match(runtime.confirmMessages.at(-1), /旧付款码不可再付/);
 
@@ -1755,7 +1409,6 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseB.productSkuName);
     assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '创建支付订单');
     assert.equal(runtime.element('guestCashTerminalRestartHint').hidden, true);
-    assert.equal(runtime.element('guestCashRecoveryCode').textContent, '');
 
     const freshRuntime = createRuntime({
         purchase: purchaseB,
@@ -1774,7 +1427,7 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.equal(lastPrepare.body.skuId, purchaseB.productSkuId);
 });
 
-test('closing delivered content asks before discarding an un-copied recovery code', async () => {
+test('closing delivered content asks before discarding un-copied delivery content', async () => {
     const currentPurchase = purchase();
     const runtime = createRuntime({
         purchase: currentPurchase,
@@ -1804,5 +1457,4 @@ test('closing delivered content asks before discarding an un-copied recovery cod
 
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, false);
     assert.match(runtime.confirmMessages.at(-1), /发货内容尚未复制/);
-    assert.match(runtime.confirmMessages.at(-1), /取货口令尚未复制或保存/);
 });

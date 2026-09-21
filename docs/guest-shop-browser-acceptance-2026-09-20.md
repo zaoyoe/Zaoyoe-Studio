@@ -4,6 +4,13 @@
 
 ## 1. 结论与证据边界
 
+> **当前能力口径（2026-09-21 收口）：** 本文早期记录中的 `recovering`、
+> “订单号 + 取货口令”兼容区和 `guest/access/upgrade` 只代表旧候选的历史证据，
+> 不再是当前产品能力或验收路径。当前游客用户查询只有 `/guest-orders.html` 的
+> **邮箱 + 查询密码**链路；公开 `/api/shop/guest/recover` 与
+> `/api/shop/guest/access/upgrade` 已从当前候选移除。当前订单履约仍可使用服务端
+> claim proof，但它不是用户查询入口，也不得展示或作为用户输入。
+
 - 已确认：桌面 `configure` 的商品、金额、渠道、五按钮完整计算样式和初始焦点；积分弹窗到游客弹窗的交接不会留下第二个 active overlay。`Escape` 关闭后焦点返回可见商品的直接「购买」按钮。
 - 已确认：`creating` 延迟窗口中的创建按钮会同步 `disabled=true` 与 `aria-busy=true`；快速双击只发送一条本地 `/orders` 请求。修复后的当前合同还要求 D「稍后处理」保持可用，但该瞬时浏览器断言尚未签署。
 - 待闭合：其余状态的逐项按钮矩阵、自动轮询停止条件、多标签、回跳新标签、移动横竖屏、亮/暗主题、`sessionStorage` 不可用和隐私模式。
@@ -53,7 +60,7 @@
 ### 2.2 2026-09-20 续测夹具 smoke 证据
 
 - `8017` 当前只有一个监听实例；验收前已执行 `POST /fixture/audit/reset`，并在 intent 协议更新后重启夹具以避免旧进程继续提供旧响应格式。
-- 本地 `creating` 夹具的 `POST /api/shop/guest/orders` 返回 `201`，端到端延迟约 `1.402s`；本地 `recovering` 夹具的 `POST /api/shop/guest/recover` 返回 `200`，端到端延迟约 `1.409s`。
+- 历史夹具记录曾覆盖 `creating` 的 `POST /api/shop/guest/orders`（端到端延迟约 `1.402s`）和旧版 `recovering` 的 `POST /api/shop/guest/recover`（约 `1.409s`）；后者属于本次 direct-link 收口前的历史证据，不再代表当前商城弹窗行为。
 - 当前脚本的只读 smoke 还验证了 `prepare → inspect → commit`：响应先设置 `fixture-gs-intent` HttpOnly cookie，后续两次请求携带同一夹具会话，去敏 audit 仅出现各一条 `prepare`、`inspect`、`commit`。
 - 去敏 audit 没有真实 API、支付渠道或数据库请求。
 - 这些是夹具/网络延迟证据，不能替代浏览器瞬时 DOM、焦点、`disabled`/`aria-busy` 或迟到响应隔离证据；对应浏览器项目仍保持 `NOT RUN`/`PARTIAL`。
@@ -72,6 +79,8 @@
 
 ## 3. 五按钮记录口径
 
+> **2.1 增量更新（2026-09-21）：** 商城待支付弹窗的 `R`「找回订单」现为直接链接 `/guest-orders.html`，默认且唯一使用邮箱 + 查询密码；弹窗内不再展开订单号 + 取货口令旧表单，也不展示 `recovery_code`。旧兼容区、公开 `/guest/recover` 和历史订单升级接口均已移除；本文早期记录中的旧 `recovering` 只作为历史证据，不属于当前状态矩阵。
+
 五个动作统一缩写如下：
 
 | 缩写 | DOM | 预期动作 |
@@ -80,7 +89,7 @@
 | C | `#guestCashCreateOrderBtn` | 创建支付订单；未知创建结果时可变为「确认原订单结果」 |
 | Q | `#guestCashCheckStatusBtn` | 查询支付状态；终态/人工处理态可变为「刷新处理状态」 |
 | A | `#guestCashAbandonOrderBtn` | 离开当前订单；不宣称取消或释放库存 |
-| R | 页脚 `#guestCashShowRecoveryBtn`；展开后的提交按钮 `#guestCashRecoverBtn` | 前者展开找回面板，后者提交订单号与取货口令 |
+| R | 页脚链接 `#guestCashShowRecoveryBtn` | 直接导航到 `/guest-orders.html`；该页默认使用邮箱 + 查询密码，商城弹窗不发起 `/guest/recover` |
 
 每格最终必须记录：`hidden`、计算后的 `display`、`disabled`、`aria-busy`、可见文案、是否可通过 Tab 聚焦。仅看到按钮或仅检查 DOM `hidden` 均不足以签署。
 
@@ -90,11 +99,11 @@
 
 | 场景/状态 | D | C | Q | A | R | 自动轮询 | 本轮结果 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `configure` | 可见 | 可见 | 隐藏 | 隐藏 | 可见 | 否 | `PASS-LOCAL` |
-| `creating` | 可见、应可用（未签署） | 可见、busy | 隐藏 | 隐藏 | 可见但 disabled | 否 | `PARTIAL`（双击单飞已证；D 瞬时可用性待 IAB 复测） |
-| `awaiting_payment` | 可见 | 隐藏 | 可见 | 可见 | 可见 | 待归档 | `PARTIAL`（视觉与语义通过；计算样式/ARIA/轮询待补） |
-| `checking` | 可见 | 隐藏 | 可见、busy | 隐藏 | 可见 | 是 | `PASS-LOCAL`（自动与人工查询单飞） |
-| `recovering` | 待测 | 待测 | 待测 | 待测 | 待测 busy | 否 | `NOT RUN` |
+| `configure` | 可见 | 可见 | 隐藏 | 隐藏 | 可见、可导航 | 否 | `PASS-LOCAL` |
+| `creating` | 可见、应可用（未签署） | 可见、busy | 隐藏 | 隐藏 | 可见、可导航（无 busy/disabled） | 否 | `PARTIAL`（双击单飞已证；D 瞬时可用性待 IAB 复测） |
+| `awaiting_payment` | 可见 | 隐藏 | 可见 | 可见 | 可见、可导航 | 待归档 | `PARTIAL`（视觉与语义通过；计算样式/ARIA/轮询待补） |
+| `checking` | 可见 | 隐藏 | 可见、busy | 隐藏 | 可见、可导航 | 是 | `PASS-LOCAL`（自动与人工查询单飞） |
+| `legacy recovering` | 不适用 | 不适用 | 不适用 | 不适用 | 不适用 | 否 | `REMOVED`（旧用户查询模式已删除；历史记录不可作为当前能力） |
 | `review/payment_creation_unknown` | 待测 | 待测 | 待测 | 待测 | 待测 | 否/按人工策略 | `NOT RUN` |
 | `confirmed + pending/fulfilling` | 待测 | 待测 | 待测 | 待测 | 待测 | 是 | `NOT RUN` |
 | `paid_unfulfillable` | 待测 | 待测 | 待测 | 待测 | 待测 | 否 | `NOT RUN` |
@@ -136,7 +145,7 @@
 | 检查项 | 观察值 | 结果 |
 | --- | --- | --- |
 | C | 可见，`display:flex`、`disabled=true`、`aria-busy=true`，文案进入处理中状态 | `PASS-LOCAL` |
-| D、页脚 R | 修复前标签观察到均 disabled；当前代码合同为 D `disabled=false`、R `disabled=true`，Q/A 为 `hidden + display:none` | `PARTIAL` |
+| D、页脚 R | 修复前标签观察到均 disabled；当前代码合同为 D `disabled=false`、R 为普通导航链接（无 `disabled`/`aria-busy`），Q/A 为 `hidden + display:none` | `PARTIAL` |
 | 单飞 | 夹具 audit 的本场景 `/api/shop/guest/orders` 仅 1 条 | `PASS-LOCAL` |
 | 关闭策略 | D 被禁用，但 Escape/backdrop 与 D 的策略尚未统一验收 | `PARTIAL` |
 
@@ -154,7 +163,7 @@
 | C | 隐藏 | `PARTIAL`（计算 `display` 待补） |
 | Q | 「查询支付状态」可见 | `PARTIAL`（disabled/ARIA/Tab 待补） |
 | A | 「离开当前订单」可见；提示明确不取消服务端订单、不立即释放库存 | `PARTIAL`（disabled/ARIA/Tab 待补） |
-| R | 「找回订单」可见 | `PARTIAL`（disabled/ARIA/Tab 待补） |
+| R | 「找回订单」为可聚焦导航链接，点击进入邮箱 + 查询密码页 | `PARTIAL`（真实导航/Tab 待补） |
 | 二维码 | 显示本机 `LOCAL FIXTURE` 占位 QR，没有访问真实 provider | `PASS-LOCAL` |
 | 倒计时 | 尚未单独归档读数与到期行为 | `NOT RUN` |
 | 自动轮询 | 尚未记录 `/fixture/audit` 中 status 请求次数与停止条件 | `NOT RUN` |
@@ -169,7 +178,7 @@
 | 检查项 | 观察值 | 结果 |
 | --- | --- | --- |
 | Q | 可见，`display:flex`、`disabled=true`、`aria-busy=true`，文案为「查询中...」 | `PASS-LOCAL` |
-| D、页脚 R | 均可见可用；C/A 为 `hidden + display:none` | `PASS-LOCAL` |
+| D、页脚 R | 均可见可用；R 为普通导航链接；C/A 为 `hidden + display:none` | `PASS-LOCAL` |
 | 订单语义 | 合成订单仍为待支付，checkout 面板保持显示，未被 `checking` 瞬态错误覆盖 | `PASS-LOCAL` |
 | 单飞 | audit 中仅有首个自动 `/status` 和一条双击人工查单，共 2 条；没有第二条人工并发请求 | `PASS-LOCAL` |
 | 状态标签 | `checking` 是请求在途 UI，不是夹具可持久化后端状态；页面稳定状态仍为待支付 | `PASS-LOCAL`（按正确口径） |
@@ -180,9 +189,9 @@
 | --- | --- | --- | --- |
 | 双击创建 | `creating` 延迟约 1.4 秒，快速双击 C | 仅 1 次 `/orders`；同一幂等尝试；C disabled + `aria-busy=true` | `PASS-LOCAL`（夹具只审计路径，不能读取幂等键） |
 | 查询单飞 | `checking` 延迟约 1.4 秒，快速连点 Q | 同时最多 1 次 `/status`；Q disabled + `aria-busy=true` | `PASS-LOCAL`（首查 + 双击人工查单共 2 条） |
-| 找回单飞 | `recovering` 延迟约 1.4 秒，连点 R 并尝试 C | 仅 1 次 `/recover`；不得并发创建 | `NOT RUN` |
+| 找回入口导航 | 点击 R 后进入 `/guest-orders.html`，新页默认显示邮箱 + 查询密码表单；商城页 audit 不出现 `/guest/recover` | 目标链接正确、旧弹窗无请求/无旧 DOM | `NOT RUN` |
 | 切商品旧响应隔离 | A 的 preview/status 在途时切到商品 B | 迟到 A 响应不得覆盖 B 的名称、SKU、`¥0.04` 或渠道 | `NOT RUN` |
-| 关闭弹窗后的迟到响应 | create/recover 在途时点 D/Escape | 弹窗保持关闭；迟到响应不得重开或污染新上下文；安全订单句柄策略符合合同 | `NOT RUN` |
+| 关闭弹窗后的迟到响应 | create/status 在途时点 D/Escape | 弹窗保持关闭；迟到响应不得重开或污染新上下文；安全订单句柄策略符合合同 | `NOT RUN` |
 | 同订单双标签 | 两个 IAB 标签打开同一夹具订单 | 不双发、不双 claim、不互相清除新句柄；请求数可审计 | `NOT RUN` |
 | 回跳新标签 | 新标签打开安全 return URL | 回跳不等于支付成功；无敏感参数；先查服务端状态 | `NOT RUN` |
 | `sessionStorage` 不可用 | 禁用/抛出 storage 访问 | 页面可降级且给出恢复提示，不白屏、不泄露凭证 | `NOT RUN` |
@@ -240,7 +249,7 @@
 - 阶段状态：`Task 2.1=20%`、`阶段 1=complete`、`阶段 2=默认关闭生产发布 in_progress`；自动化为 `PASS-LOCAL`，完整真实浏览器矩阵仍为 `NOT RUN/INCOMPLETE`，作为分层 backlog 保留。
 
 - [ ] 补齐 §4 全部状态的五按钮字段、真实文案、焦点和轮询结果。
-- [ ] 补齐 `creating/checking/recovering` 三种延迟态的 `disabled` 和 `aria-busy`。
+- [ ] 补齐 `creating/checking` 两种延迟态的 `disabled` 和 `aria-busy`；R 仅需验证普通链接的 Tab/导航行为。
 - [ ] 完成商品 A→B 的旧响应隔离和同订单双标签时间线。
 - [ ] 完成新标签回跳与敏感 URL 参数检查。
 - [ ] 完成桌面键盘、读屏、亮/暗主题。

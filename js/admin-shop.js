@@ -3533,7 +3533,7 @@ Example output format:
                         </span>
                         买家访问
                     </h3>
-                    <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(normalizedOrderNo)}。处理游客买家的查询密码访问问题：解锁登录锁定、生成一次性找回链接、撤销链接。后台不显示邮箱、查询密码、卡密或取货口令。</p>
+                    <p class="shop-guest-exception-ops-hint">订单 ${this.escapeHtml(normalizedOrderNo)}。处理游客买家的查询密码访问问题：解锁登录锁定、生成一次性找回链接、撤销链接。后台不显示邮箱、查询密码、卡密或其他敏感凭证。</p>
                     <div id="guestBuyerAccessState" class="shop-guest-buyer-access-state">
                         <p class="shop-guest-buyer-access-note">正在读取买家访问状态…</p>
                     </div>
@@ -3644,13 +3644,13 @@ Example output format:
         const site = String(payload.site || '').trim().toUpperCase() || '—';
 
         if (!payload.bound) {
-            // §13.2：历史订单由买家自助升级，管理台不代设密码。给出可直接照读的话术。
+            // 2.1：历史未绑定订单只允许人工核验和管理员一次性找回链接。
             stateBox.innerHTML = `
                 <div class="shop-guest-buyer-access-flag shop-guest-buyer-access-flag--warn">
                     <i class="fas fa-circle-info" aria-hidden="true"></i>
                     <div>
                         <strong>该订单尚未绑定查询密码</strong>
-                        <p>${this.escapeHtml(payload.hint || '请引导买家在游客订单页自助升级（订单号 + 取货口令）。')}</p>
+                        <p>${this.escapeHtml(payload.hint || '该订单尚未绑定查询密码。请先人工核验买家身份，再由管理员生成一次性找回链接；不要向买家提供历史凭证查询入口。')}</p>
                     </div>
                 </div>
                 <dl class="shop-guest-buyer-access-facts">
