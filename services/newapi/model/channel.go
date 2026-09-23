@@ -290,7 +290,7 @@ func (channel *Channel) GetModels() []string {
 	if channel.Models == "" {
 		return []string{}
 	}
-	return strings.Split(strings.Trim(channel.Models, ","), ",")
+	return splitAndTrimCSV(channel.Models)
 }
 
 func (channel *Channel) GetGroups() []string {
