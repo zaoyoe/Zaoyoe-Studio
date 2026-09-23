@@ -310,7 +310,7 @@ describe('API key regional restriction gate', () => {
       assert.equal(link.target, '_blank')
       assert.equal(link.rel, 'noopener noreferrer')
     }
-    assert.equal(document.querySelector('[data-testid="key-management"]'), null)
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
 
     assert.equal(document.querySelector('[role="checkbox"]'), null)
     const passwordInput = document.querySelector<HTMLInputElement>(
@@ -358,6 +358,63 @@ describe('API key regional restriction gate', () => {
       allowed: true,
       securityProof: 'password-proof',
     })
+  })
+
+  test('resumes protected creation after create-time password confirmation', async () => {
+    let createAllowed: ApiKeyCreationAuthorization | null = null
+    apiClient.get = async (_url, config) =>
+      apiResponse({
+        ...allowedStatus,
+        confirmation_required: config?.params?.scope === 'api_key_create',
+      })
+    apiClient.post = async () => ({
+      data: {
+        success: true,
+        data: {
+          proof_token: 'create-time-proof',
+          expires_at: Math.floor(Date.now() / 1000) + 300,
+          method: 'password',
+          scope: 'api_key.create',
+        },
+      },
+    })
+
+    await renderGate((authorization) => {
+      createAllowed = authorization
+    })
+    await waitForCondition(
+      () => document.querySelector('[data-testid="key-management"]') !== null,
+      'API key management did not load'
+    )
+
+    const createButton = findButton('Attempt protected creation')
+    assert.ok(createButton)
+    await act(async () => createButton.click())
+    await waitForCondition(
+      () => findButton('Verify and Continue') !== null,
+      'Create-time confirmation dialog did not open'
+    )
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
+    assert.equal(createAllowed, null)
+
+    const passwordInput = document.querySelector<HTMLInputElement>(
+      '#regional-restriction-password'
+    )
+    assert.ok(passwordInput)
+    await changeInput(passwordInput, 'Correct Password 123')
+    const confirmButton = findButton('Verify and Continue')
+    assert.ok(confirmButton)
+    await act(async () => confirmButton.click())
+
+    await waitForCondition(
+      () => createAllowed !== null,
+      'Original creation submit did not resume after confirmation'
+    )
+    assert.deepEqual(createAllowed, {
+      allowed: true,
+      securityProof: 'create-time-proof',
+    })
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
   })
 
   test('renders only the legal links enabled by the administrator', async () => {
@@ -424,7 +481,7 @@ describe('API key regional restriction gate', () => {
       'Incorrect-password error was not shown'
     )
 
-    assert.equal(document.querySelector('[data-testid="key-management"]'), null)
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
     assert.equal(passwordInput.getAttribute('aria-invalid'), 'true')
   })
 
@@ -470,6 +527,63 @@ describe('API key regional restriction gate', () => {
     assert.ok(document.body.textContent?.includes('API Key Use Confirmation'))
   })
 
+  test('resumes protected creation after create-time password confirmation', async () => {
+    let createAllowed: ApiKeyCreationAuthorization | null = null
+    apiClient.get = async (_url, config) =>
+      apiResponse({
+        ...allowedStatus,
+        confirmation_required: config?.params?.scope === 'api_key_create',
+      })
+    apiClient.post = async () => ({
+      data: {
+        success: true,
+        data: {
+          proof_token: 'create-time-proof',
+          expires_at: Math.floor(Date.now() / 1000) + 300,
+          method: 'password',
+          scope: 'api_key.create',
+        },
+      },
+    })
+
+    await renderGate((authorization) => {
+      createAllowed = authorization
+    })
+    await waitForCondition(
+      () => document.querySelector('[data-testid="key-management"]') !== null,
+      'API key management did not load'
+    )
+
+    const createButton = findButton('Attempt protected creation')
+    assert.ok(createButton)
+    await act(async () => createButton.click())
+    await waitForCondition(
+      () => findButton('Verify and Continue') !== null,
+      'Create-time confirmation dialog did not open'
+    )
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
+    assert.equal(createAllowed, null)
+
+    const passwordInput = document.querySelector<HTMLInputElement>(
+      '#regional-restriction-password'
+    )
+    assert.ok(passwordInput)
+    await changeInput(passwordInput, 'Correct Password 123')
+    const confirmButton = findButton('Verify and Continue')
+    assert.ok(confirmButton)
+    await act(async () => confirmButton.click())
+
+    await waitForCondition(
+      () => createAllowed !== null,
+      'Original creation submit did not resume after confirmation'
+    )
+    assert.deepEqual(createAllowed, {
+      allowed: true,
+      securityProof: 'create-time-proof',
+    })
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
+  })
+
   test('renders only the legal links enabled by the administrator', async () => {
     apiClient.get = async () =>
       apiResponse({
@@ -484,7 +598,9 @@ describe('API key regional restriction gate', () => {
 
     await renderGate()
     await waitForCondition(
-      () => document.body.textContent?.includes('API Key Use Confirmation') === true,
+      () =>
+        document.body.textContent?.includes('API Key Use Confirmation') ===
+        true,
       'Confirmation dialog did not open'
     )
 
@@ -494,7 +610,7 @@ describe('API key regional restriction gate', () => {
     assert.deepEqual(labels, ['Privacy', 'Refund'])
   })
 
-  test('does not render API key management when the current region is blocked', async () => {
+  test('keeps API key management mounted behind the blocked-region dialog', async () => {
     apiClient.get = async () =>
       apiResponse({
         ...allowedStatus,
@@ -513,7 +629,7 @@ describe('API key regional restriction gate', () => {
       'Blocked dialog did not open'
     )
 
-    assert.equal(document.querySelector('[data-testid="key-management"]'), null)
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
     assert.equal(findButton('Verify and Continue'), null)
     assert.equal(document.querySelector('#regional-restriction-password'), null)
   })
@@ -555,6 +671,6 @@ describe('API key regional restriction gate', () => {
 
     assert.deepEqual(scopes, ['api_key_page', 'api_key_create'])
     assert.equal(createAllowedCount, 0)
-    assert.equal(document.querySelector('[data-testid="key-management"]'), null)
+    assert.ok(document.querySelector('[data-testid="key-management"]'))
   })
 })

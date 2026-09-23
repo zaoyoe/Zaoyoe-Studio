@@ -339,6 +339,9 @@ export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
   const [status, setStatus] = useState<RegionalRestrictionStatus | null>(null)
   const [passwordProof, setPasswordProof] =
     useState<ApiKeyPasswordProof | null>(null)
+  const [pendingAuthorization, setPendingAuthorization] = useState<
+    ((authorization: ApiKeyCreationAuthorization) => void) | null
+  >(null)
 
   useEffect(() => {
     let active = true
@@ -388,7 +391,11 @@ export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
         setStatus(nextStatus)
         setPasswordProof(null)
         setMode('confirmation')
-        return { allowed: false }
+        // Keep the create form mounted while the user verifies their password,
+        // then resume the original submit with the one-time proof.
+        return new Promise<ApiKeyCreationAuthorization>((resolve) => {
+          setPendingAuthorization(() => resolve)
+        })
       } catch {
         return { allowed: true }
       }
@@ -397,20 +404,26 @@ export function RegionalRestrictionGate(props: RegionalRestrictionGateProps) {
   const handleConfirm = (proof: ApiKeyPasswordProof) => {
     setPasswordProof(proof)
     setMode('allowed')
+    setPendingAuthorization(null)
+    pendingAuthorization?.({
+      allowed: true,
+      securityProof: proof.proof_token,
+    })
   }
 
   if (mode === 'checking') return <RegionalRestrictionLoading />
 
-  if (mode === 'confirmation' || mode === 'blocked') {
-    return (
-      <RegionalRestrictionDialog
-        key={`${mode}:${JSON.stringify(status)}`}
-        mode={mode}
-        status={status}
-        onConfirm={handleConfirm}
-      />
-    )
-  }
-
-  return props.children({ checkApiKeyCreation })
+  return (
+    <>
+      {props.children({ checkApiKeyCreation })}
+      {(mode === 'confirmation' || mode === 'blocked') && (
+        <RegionalRestrictionDialog
+          key={`${mode}:${JSON.stringify(status)}`}
+          mode={mode}
+          status={status}
+          onConfirm={handleConfirm}
+        />
+      )}
+    </>
+  )
 }
