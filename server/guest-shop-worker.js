@@ -698,6 +698,28 @@ function createGuestShopWorker({
         });
     }
 
+    async function releaseTerminalRefundLease(order, statePatch, options) {
+        try {
+            const released = await releaseLease(order, 'refund', statePatch, options);
+            if (!released) {
+                logger?.warn?.('[GuestShopWorker] terminal refund recorded but lease release was not confirmed', {
+                    order_id: normalizeText(order.id, 80),
+                    refund_status: normalizeText(statePatch?.refund_status, 40)
+                });
+            }
+        } catch (error) {
+            // The refund RPC is the financial source of truth. Lease cleanup is
+            // housekeeping: if it fails, let the lease expire naturally rather
+            // than re-entering the provider-error path and rewriting a terminal
+            // refund as failed/retry_waiting.
+            logger?.error?.('[GuestShopWorker] terminal refund recorded but lease release failed', {
+                order_id: normalizeText(order.id, 80),
+                refund_status: normalizeText(statePatch?.refund_status, 40),
+                error: safeErrorMessage(error)
+            });
+        }
+    }
+
     async function processRefund(order, context = {}) {
         if (order.refund_status === 'succeeded' || order.refund_status === 'manual_review') {
             return { status: 'skipped', reason: 'refund_terminal' };
@@ -764,7 +786,7 @@ function createGuestShopWorker({
             const success = result?.success === true || ['refunded', 'succeeded', 'success'].includes(String(result?.status || '').toLowerCase());
             if (success) {
                 await recordRefund(order, 'succeeded', result?.provider_ref || result?.provider_order_no || result?.transaction_id || payment.provider_order_no, null, null);
-                await releaseLease(workingOrder, 'refund', {
+                await releaseTerminalRefundLease(workingOrder, {
                     refund_status: 'succeeded',
                     refund_next_attempt_at: null,
                     refund_last_error_code: null,
@@ -775,12 +797,12 @@ function createGuestShopWorker({
 
             if (result?.supported === false || result?.code === 'guest_refund_not_supported' || result?.status === 'blocked') {
                 await recordRefund(order, 'manual_review', result?.provider_ref || null, result?.code || 'guest_refund_not_supported', result?.message || '需人工退款核验');
-                await releaseLease(workingOrder, 'refund', {
+                await releaseTerminalRefundLease(workingOrder, {
                     refund_status: 'manual_review',
                     refund_next_attempt_at: null,
                     refund_last_error_code: result?.code || 'guest_refund_not_supported',
-                    refund_last_error_message: '需人工退款核验'
-                }, { terminal: true, patch: { last_error_code: result?.code || 'guest_refund_not_supported', last_error_message: '需人工退款核验' } });
+                    refund_last_error_message: result?.message || '需人工退款核验'
+                }, { terminal: true, patch: { last_error_code: result?.code || 'guest_refund_not_supported', last_error_message: result?.message || '需人工退款核验' } });
                 return { status: 'manual_review', attempt: nextAttempt };
             }
 
