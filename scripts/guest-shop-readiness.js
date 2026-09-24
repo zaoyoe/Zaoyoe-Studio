@@ -116,7 +116,8 @@ const REQUIRED_TEST_FILES = Object.freeze([
     'tests/guest-shop-reconcile.test.js',
     'tests/guest-shop-status-recovery.test.js',
     'tests/guest-shop-frontend-contract.test.js',
-    'tests/guest-shop-public-route-contract.test.js'
+    'tests/guest-shop-public-route-contract.test.js',
+    'tests/guest-shop-task-2-1-closeout-contract.test.js'
 ]);
 
 const BUYER_CREDENTIAL_MIGRATION = 'supabase/migrations/20260920_guest_shop_buyer_credentials.sql';

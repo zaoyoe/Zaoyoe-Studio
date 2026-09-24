@@ -63,6 +63,7 @@ const shopProfitLedgerBackfillHandler = require('../server/api-handlers/admin/sh
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
 const shopGuestOrdersHandler = require('../server/api-handlers/admin/shop/guest-orders');
+const shopPromoStatusHandler = require('../server/api-handlers/admin/shop/promo-status');
 // Order Access 2.0 (A3) §10.5: unlock a buyer's login lock, issue/revoke the
 // one-time query-password reset link. Keyed by order_no, never by email.
 const shopGuestBuyerAccessHandler = require('../server/api-handlers/admin/shop/guest-buyer-access');
@@ -70,6 +71,7 @@ const paymentsActionsHandler = require('../server/api-handlers/admin/payments/ac
 const paymentsBatchActionsHandler = require('../server/api-handlers/admin/payments/batch-actions');
 const paymentsCleanupHandler = require('../server/api-handlers/admin/payments/cleanup');
 const paymentsShopRefundHandler = require('../server/api-handlers/admin/payments/shop-refund');
+const paymentsShopRefundReconcileHandler = require('../server/api-handlers/admin/payments/shop-refund-reconcile');
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
 const settingsCodexConfigHandler = require('../server/api-handlers/admin/settings/codex-config');
 const settingsDiscountTriggerOptionsHandler = require('../server/api-handlers/admin/settings/discount-trigger-options');
@@ -195,12 +197,14 @@ const ROUTE_HANDLERS = {
     'shop/delivery-actions': shopDeliveryActionsHandler,
     'shop/delivery-tasks': shopDeliveryTasksHandler,
     'shop/guest-orders': shopGuestOrdersHandler,
+    'shop/promo-status': shopPromoStatusHandler,
     'shop/guest-buyer-access': shopGuestBuyerAccessHandler,
     'shop/delivery-strategy': shopDeliveryTasksHandler,
     'payments/actions': paymentsActionsHandler,
     'payments/batch-actions': paymentsBatchActionsHandler,
     'payments/cleanup': paymentsCleanupHandler,
     'payments/shop-refund': paymentsShopRefundHandler,
+    'payments/shop-refund-reconcile': paymentsShopRefundReconcileHandler,
     'payments/summary': paymentsSummaryHandler,
     'users/blocks': usersBlocksHandler,
     'users/manage': usersManageHandler
