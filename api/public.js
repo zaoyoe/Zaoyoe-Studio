@@ -220,10 +220,6 @@ function createRouteHandlersForScope(scope) {
             }),
             'guest/preview': guestHandlers.preview,
             'guest/orders': guestHandlers.orders,
-            'guest/checkout-batches': guestHandlers.checkoutBatches,
-            'guest/checkout-batches/status': guestHandlers.checkoutBatchStatus,
-            'guest/checkout-batches/cancel': guestHandlers.checkoutBatchCancel,
-            'guest/checkout-batches/claim': guestHandlers.checkoutBatchClaim,
             'guest/status': guestHandlers.status,
             'guest/claim': guestHandlers.claim,
             // Order Access 2.0 (A2). resolveRoute() lowercases the path and joins
