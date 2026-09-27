@@ -220,9 +220,28 @@ function createRouteHandlersForScope(scope) {
             }),
             'guest/preview': guestHandlers.preview,
             'guest/orders': guestHandlers.orders,
+            'guest/checkout-batches': guestHandlers.checkoutBatches,
+            'guest/checkout-batches/status': guestHandlers.checkoutBatchStatus,
+            'guest/checkout-batches/cancel': guestHandlers.checkoutBatchCancel,
+            'guest/checkout-batches/claim': guestHandlers.checkoutBatchClaim,
             'guest/status': guestHandlers.status,
-            'guest/recover': guestHandlers.recover,
+            'guest/cancel': guestHandlers.cancel,
             'guest/claim': guestHandlers.claim,
+            // Order Access 2.0 (A2). resolveRoute() lowercases the path and joins
+            // segments with '/', so it cannot express ':orderNo' path params; the
+            // detail/delivery routes are flat keys that read order_no from the
+            // query string. All of them answer 404 while the buyer-credential
+            // switch is off, so registering the keys is behaviour-neutral.
+            'guest/order': guestHandlers.order,
+            'guest/delivery': guestHandlers.delivery,
+            'guest/access/availability': guestHandlers.accessAvailability,
+            'guest/access/login': guestHandlers.accessLogin,
+            'guest/access/logout': guestHandlers.accessLogout,
+            // Order Access 2.0 (A3). `reset` spends the admin-issued one-time
+            // link (§10.5). Historical-order self-upgrade is intentionally not
+            // exposed: email + query password is the only buyer-facing lookup
+            // path.
+            'guest/access/reset': guestHandlers.accessReset,
             // KVM4 routes /api/shop/* through this shared dispatcher.  Keep
             // the worker behind its dedicated secret gate in both Vercel and
             // the shared Express path; never expose it through the regular

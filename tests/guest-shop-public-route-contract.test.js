@@ -12,6 +12,7 @@ function createMockResponse() {
     const state = { statusCode: 200, headers: {}, body: '' };
     return {
         status(code) { state.statusCode = code; return this; },
+        set statusCode(code) { state.statusCode = code; },
         setHeader(name, value) { state.headers[String(name).toLowerCase()] = value; return this; },
         end(value = '') { state.body = String(value); return this; },
         get statusCode() { return state.statusCode; },
@@ -52,8 +53,13 @@ async function withPublicHandler(callback) {
                         preview: async (_req, res) => res.end('preview'),
                         orders: async (_req, res) => res.end('orders'),
                         status: async (_req, res) => res.end('status'),
-                        recover: async (_req, res) => res.end('recover'),
                         claim: async (_req, res) => res.end('claim'),
+                        order: async (_req, res) => res.end('order'),
+                        delivery: async (_req, res) => res.end('delivery'),
+                        accessAvailability: async (_req, res) => res.end('access-availability'),
+                        accessLogin: async (_req, res) => res.end('access-login'),
+                        accessLogout: async (_req, res) => res.end('access-logout'),
+                        accessReset: async (_req, res) => res.end('access-reset'),
                         webhook: async (_req, res, provider) => {
                             res.status(200);
                             res.end(`webhook:${provider}`);
@@ -107,13 +113,83 @@ test('shared public dispatcher exposes the secret-gated guest worker route', asy
     });
 });
 
-test('shared public dispatcher exposes the cross-device guest recovery route', async () => {
+test('shared public dispatcher no longer exposes the legacy guest recovery route', async () => {
     await withPublicHandler(async (handler) => {
         const res = createMockResponse();
         await handler({ method: 'POST', url: '/api/public?scope=shop&route=guest/recover' }, res);
-        assert.equal(res.statusCode, 200);
-        assert.equal(res.body, 'recover');
+        assert.equal(res.statusCode, 404);
+        assert.deepEqual(JSON.parse(res.body), {
+            success: false,
+            message: 'Public route not found'
+        });
     });
+});
+
+/**
+ * Order Access 2.0 (A2). docs/guest-shop-order-access-2.0.md §12 sketched REST
+ * path params (/guest/orders/:orderNo), but the shared dispatcher's
+ * resolveRoute() lowercases the path and joins segments with '/', so it has no
+ * parameter slots. The routes are therefore flat keys and carry order_no in the
+ * query string. Registering them is behaviour-neutral: every one answers
+ * 404 guest_feature_disabled while GUEST_SHOP_BUYER_CREDENTIAL_ENABLED is off
+ * (covered by tests/guest-shop-order-access-endpoints.test.js).
+ */
+test('shared public dispatcher exposes the flat-key guest order access routes', async () => {
+    await withPublicHandler(async (handler) => {
+        for (const [route, body] of [
+            ['guest/order', 'order'],
+            ['guest/delivery', 'delivery'],
+            ['guest/access/availability', 'access-availability'],
+            ['guest/access/login', 'access-login'],
+            ['guest/access/logout', 'access-logout'],
+            // The one-time reset link remains a support/admin recovery path.
+            ['guest/access/reset', 'access-reset'],
+        ]) {
+            const res = createMockResponse();
+            await handler({ method: 'GET', url: `/api/public?scope=shop&route=${route}&order_no=GS20260921-000001` }, res);
+            assert.equal(res.statusCode, 200, `${route} must be bound`);
+            assert.equal(res.body, body);
+        }
+    });
+});
+
+test('the guest order list route keeps its existing binding so the cookie session can reuse it', async () => {
+    await withPublicHandler(async (handler) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', url: '/api/public?scope=shop&route=guest/orders' }, res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'orders');
+    });
+});
+
+test('guest order access Vercel entrypoints bind the shared handlers and stay out of the deploy', () => {
+    const ignored = fs.readFileSync(path.join(repoRoot, '.vercelignore'), 'utf8')
+        .split(/\r?\n/)
+        .map((line) => line.trim());
+    for (const [relativePath, handlerName] of [
+        ['api/shop/guest/order.js', 'order'],
+        ['api/shop/guest/delivery.js', 'delivery'],
+        ['api/shop/guest/access/availability.js', 'accessAvailability'],
+        ['api/shop/guest/access/login.js', 'accessLogin'],
+        ['api/shop/guest/access/logout.js', 'accessLogout'],
+        ['api/shop/guest/access/reset.js', 'accessReset']
+    ]) {
+        const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+        assert.match(
+            source,
+            /createGuestShopHandlers\(\{[\s\S]*?\}\)\.\w+/,
+            `${relativePath} must build its handler through createGuestShopHandlers`
+        );
+        assert.ok(
+            source.endsWith(`.${handlerName};\n`) || source.includes(`).${handlerName};`),
+            `${relativePath} must export the ${handlerName} handler`
+        );
+        assert.equal(
+            ignored.includes(relativePath),
+            true,
+            `.vercelignore should exclude the standalone guest-shop entrypoint ${relativePath}`
+        );
+    }
 });
 
 test('provider-specific Vercel guest webhook entrypoints retain explicit provider binding', () => {
@@ -129,10 +205,10 @@ test('claim endpoint contract rejects secrets in the JSON body', () => {
     assert.doesNotMatch(source, /body\.claimSecret\s*\|\|\s*body\.claim_secret/);
 });
 
-test('recover.js Vercel entrypoint binds the shared recover handler', () => {
-    const recover = fs.readFileSync(path.join(repoRoot, 'api/shop/guest/recover.js'), 'utf8');
+test('legacy recovery Vercel entrypoints are removed', () => {
     const ignored = fs.readFileSync(path.join(repoRoot, '.vercelignore'), 'utf8');
-    assert.match(recover, /createGuestShopHandlers\([\s\S]*\)\.recover/);
-    assert.match(ignored, /api\/shop\/guest\/recover\.js/);
+    for (const relativePath of ['api/shop/guest/recover.js', 'api/shop/guest/access/upgrade.js']) {
+        assert.equal(fs.existsSync(path.join(repoRoot, relativePath)), false, `${relativePath} must be deleted`);
+        assert.equal(ignored.includes(relativePath), false, `${relativePath} must not remain in .vercelignore`);
+    }
 });
-
