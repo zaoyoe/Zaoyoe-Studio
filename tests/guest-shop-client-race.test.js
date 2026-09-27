@@ -6,6 +6,11 @@ const vm = require('node:vm');
 
 const CLIENT_PATH = path.resolve(__dirname, '../js/guest-shop-client.js');
 const CLIENT_SOURCE = fs.readFileSync(CLIENT_PATH, 'utf8');
+<<<<<<< HEAD
+const QR_PATH = path.resolve(__dirname, '../js/vendor/qrcode-generator-2.0.4.js');
+const QR_SOURCE = fs.readFileSync(QR_PATH, 'utf8');
+=======
+>>>>>>> https-origin/main
 const STORAGE_KEY = 'guest_shop_checkout_v1';
 const FUTURE_EXPIRY = '2099-01-01T00:00:00.000Z';
 
@@ -91,6 +96,25 @@ class FakeElement {
         return child;
     }
 
+<<<<<<< HEAD
+    // Element.append is what the payment capsules use. ParentNode.append also
+    // accepts strings; keep that so a later label tweak does not break the fixture.
+    append(...nodes) {
+        nodes.forEach((node) => {
+            if (node == null) return;
+            if (typeof node === 'string' || typeof node === 'number') {
+                const text = this.ownerDocument.createElement('#text');
+                text.textContent = String(node);
+                this.appendChild(text);
+                return;
+            }
+            if (node.parentElement && node.parentElement !== this) node.remove();
+            this.appendChild(node);
+        });
+    }
+
+=======
+>>>>>>> https-origin/main
     remove() {
         if (this.parentElement) {
             this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
@@ -172,6 +196,13 @@ function matchesSelector(element, selector) {
             if (part.startsWith('#')) return element.id === part.slice(1);
             if (part.startsWith('.')) return element.classList.contains(part.slice(1));
             if (part === '[data-pw-check]') return Boolean(element.dataset.pwCheck);
+<<<<<<< HEAD
+            const roleMatch = part.match(/^\[role="([^"]+)"\]$/u);
+            if (roleMatch) return element.getAttribute('role') === roleMatch[1];
+            const paymentKeyMatch = part.match(/^\[data-payment-key="([^"]+)"\]$/u);
+            if (paymentKeyMatch) return element.dataset.paymentKey === paymentKeyMatch[1];
+=======
+>>>>>>> https-origin/main
             return element.tagName.toLowerCase() === part.toLowerCase();
         });
 }
@@ -306,11 +337,17 @@ function createRuntime({
         getElementById(id) {
             const key = String(id);
             if (!elements.has(key)) {
+<<<<<<< HEAD
+                const tagName = key === 'guestCashPaymentChannel'
+                    ? 'select'
+                    : (key.includes('Btn') ? 'button' : 'div');
+=======
                 const tagName = key === 'guestCashShowRecoveryBtn'
                     ? 'a'
                     : (key === 'guestCashPaymentChannel'
                     ? 'select'
                     : (key.includes('Btn') ? 'button' : 'div'));
+>>>>>>> https-origin/main
                 const node = new FakeElement(document, tagName, key);
                 if (key === 'guestCashPurchaseModal') node.hidden = true;
                 if (key === 'guestCashQuantity') node.value = '1';
@@ -394,7 +431,13 @@ function createRuntime({
     window.window = window;
     window.globalThis = window;
 
+<<<<<<< HEAD
+    const context = vm.createContext(window);
+    vm.runInContext(QR_SOURCE, context, { filename: QR_PATH });
+    vm.runInContext(CLIENT_SOURCE, context, { filename: CLIENT_PATH });
+=======
     vm.runInNewContext(CLIENT_SOURCE, window, { filename: CLIENT_PATH });
+>>>>>>> https-origin/main
 
     return {
         window,
@@ -407,6 +450,12 @@ function createRuntime({
         },
         click(id) {
             const modal = document.getElementById('guestCashPurchaseModal');
+<<<<<<< HEAD
+            if (id === 'guestCashCreateOrderBtn') {
+                return clickPaymentOption(this, 'zpay:alipay');
+            }
+=======
+>>>>>>> https-origin/main
             return modal.dispatch('click', document.getElementById(id));
         },
         runImmediateTimers() {
@@ -450,6 +499,22 @@ function contextFor(currentPurchase, site = 'cn') {
     };
 }
 
+<<<<<<< HEAD
+function paymentOption(runtime, key = 'zpay:alipay') {
+    const container = runtime.element('guestCashPaymentOptions');
+    const option = container.children.find((child) => child.dataset.paymentKey === key)
+        || container.children[0];
+    assert.ok(option, `payment option ${key} must be rendered`);
+    return option;
+}
+
+function clickPaymentOption(runtime, key = 'zpay:alipay') {
+    const option = paymentOption(runtime, key);
+    return option.dispatch('click', option);
+}
+
+=======
+>>>>>>> https-origin/main
 function previewPayload(currentPurchase) {
     return {
         success: true,
@@ -465,6 +530,10 @@ function previewPayload(currentPurchase) {
             payable_amount: 10
         },
         payment_channels: ['zpay:alipay'],
+<<<<<<< HEAD
+        payment_providers: { zpay: { surcharge_rate: 0 } },
+=======
+>>>>>>> https-origin/main
         buyer_credential_required: false,
         quantity_cap: 1,
         discount_enabled: false
@@ -514,6 +583,47 @@ function statusPayload(orderNo, currentPurchase = purchase(), overrides = {}) {
     };
 }
 
+<<<<<<< HEAD
+function batchStatusPayload(orderNo, overrides = {}) {
+    return {
+        success: true,
+        order_no: orderNo,
+        site: 'cn',
+        total_amount: '0.02',
+        payment_status: 'pending',
+        fulfillment_status: 'pending',
+        expires_at: FUTURE_EXPIRY,
+        items: [{ item_index: 0 }, { item_index: 1 }],
+        checkout: {
+            provider: 'zpay',
+            channel: 'alipay',
+            checkout_url: `https://payments.example.test/${orderNo}`,
+            qrcode_image_url: `https://payments.example.test/${orderNo}/qr.png`
+        },
+        ...overrides
+    };
+}
+
+function storedBatch(orderNo, overrides = {}) {
+    return {
+        version: 3,
+        orderNo,
+        site: 'cn',
+        batchMode: true,
+        batchEntries: [
+            { productId: 'product-a', skuId: 'sku-a', quantity: 1 },
+            { productId: 'product-b', skuId: 'sku-b', quantity: 1 }
+        ],
+        batchTotal: 0.02,
+        expiresAt: FUTURE_EXPIRY,
+        provider: 'zpay',
+        channel: 'alipay',
+        ...overrides
+    };
+}
+
+=======
+>>>>>>> https-origin/main
 function jsonResponse(payload, { status = 200 } = {}) {
     return {
         ok: status >= 200 && status < 300,
@@ -559,6 +669,164 @@ async function openCheckout(runtime, currentPurchase) {
     await flushEventLoop();
 }
 
+<<<<<<< HEAD
+test('a failed provider QR image falls back to a locally generated payment QR', async () => {
+    const currentPurchase = purchase();
+    const paymentUrl = 'https://payments.example.test/qr-local-fallback';
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url) => {
+            const pathname = new URL(url, 'https://www.fatherkey.com').pathname;
+            if (pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (pathname.endsWith('/orders')) {
+                const payload = createOrderPayload('GUEST-QR-LOCAL', currentPurchase);
+                payload.checkout.qrcode_url = paymentUrl;
+                payload.checkout.qrcode_image_url = 'https://images.example.test/unavailable.png';
+                return jsonResponse(payload);
+            }
+            if (pathname.endsWith('/status')) return jsonResponse(statusPayload('GUEST-QR-LOCAL', currentPurchase));
+            throw new Error(`Unexpected request: ${pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime);
+    const image = runtime.element('guestCashZpayQrImage');
+    await waitFor(() => image.src === 'https://images.example.test/unavailable.png');
+    image.onerror();
+
+    assert.match(image.src, /^data:image\/svg\+xml;charset=utf-8,/);
+    assert.match(decodeURIComponent(image.src.split(',')[1]), /<svg[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+    assert.equal(image.hidden, false);
+    assert.equal(runtime.element('guestCashZpayQrFallback').hidden, true);
+    assert.equal(runtime.element('guestCashZpayQrFallbackLink').hidden, true);
+
+    image.onerror();
+    assert.equal(image.hidden, true);
+    assert.equal(runtime.element('guestCashZpayQrFallback').hidden, false);
+    assert.equal(runtime.element('guestCashZpayQrFallbackLink').hidden, false);
+    assert.equal(runtime.element('guestCashZpayQrFallbackLink').href, paymentUrl);
+});
+
+test('a payment URL without a provider image renders a local QR immediately', async () => {
+    const currentPurchase = purchase();
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url) => {
+            const pathname = new URL(url, 'https://www.fatherkey.com').pathname;
+            if (pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (pathname.endsWith('/orders')) return jsonResponse(createOrderPayload('GUEST-QR-DIRECT', currentPurchase));
+            if (pathname.endsWith('/status')) return jsonResponse(statusPayload('GUEST-QR-DIRECT', currentPurchase));
+            throw new Error(`Unexpected request: ${pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime);
+    const image = runtime.element('guestCashZpayQrImage');
+    await waitFor(() => image.src.startsWith('data:image/svg+xml'));
+    assert.equal(image.hidden, false);
+    assert.equal(runtime.element('guestCashZpayQrFallbackLink').hidden, true);
+});
+
+test('a changed server quote requires a fresh click before prepare or commit', async () => {
+    const currentPurchase = purchase();
+    let previewCount = 0;
+    let price = 10;
+    const actions = [];
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                previewCount += 1;
+                const payload = previewPayload(currentPurchase);
+                payload.price.subtotal = price;
+                return jsonResponse(payload);
+            }
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                actions.push(body.checkoutAction);
+                return jsonResponse(createOrderPayload('GUEST-REPRICE-1', currentPurchase));
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    assert.equal(runtime.element('guestCashPrice').textContent, '¥10.10');
+    price = 12;
+
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashState').textContent.includes('报价已变化'));
+
+    assert.equal(previewCount, 3, 'availability probe plus uncached create re-quote are expected');
+    assert.equal(runtime.element('guestCashPrice').textContent, '¥12.12');
+    assert.deepEqual(actions, [], 'changed quote must stop before prepare or commit');
+    assert.equal(paymentOption(runtime).disabled, false);
+
+    clickPaymentOption(runtime);
+    await waitFor(() => actions.includes('commit'));
+    // The fixture handles `prepare` itself so it never reaches fetchImpl's
+    // provider-order branch. Assert the externally visible provider call and
+    // the complete checkout action log separately.
+    assert.deepEqual(actions, ['commit']);
+    assert.deepEqual(
+        runtime.checkoutActions().map((entry) => entry.action).slice(0, 3),
+        ['inspect', 'prepare', 'commit']
+    );
+});
+
+test('a quote change detected by commit refreshes the quote and requires a second explicit click', async () => {
+    const currentPurchase = purchase();
+    let price = 10;
+    let commitCount = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                const payload = previewPayload(currentPurchase);
+                payload.price.subtotal = price;
+                return jsonResponse(payload);
+            }
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                if (body.checkoutAction === 'commit' && commitCount++ === 0) {
+                    price = 12;
+                    return jsonResponse({
+                        success: false,
+                        code: 'guest_checkout_quote_changed',
+                        message: '商品报价已变化，请重新确认后再创建订单'
+                    }, { status: 409 });
+                }
+                return jsonResponse(createOrderPayload('GUEST-REPRICE-COMMIT-1', currentPurchase));
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    assert.equal(runtime.element('guestCashPrice').textContent, '¥10.10');
+
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashState').textContent.includes('报价已变化'));
+    await waitFor(() => runtime.element('guestCashPrice').textContent === '¥12.12');
+
+    const actionsAfterRequote = runtime.checkoutActions().map((entry) => entry.action);
+    assert.deepEqual(actionsAfterRequote, ['inspect', 'prepare', 'commit']);
+    assert.equal(paymentOption(runtime).disabled, false);
+
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.sessionStorage.snapshot(STORAGE_KEY)?.orderNo === 'GUEST-REPRICE-COMMIT-1');
+    assert.deepEqual(
+        runtime.checkoutActions().map((entry) => entry.action).filter((action) => action !== 'ack'),
+        ['inspect', 'prepare', 'commit', 'prepare', 'commit']
+    );
+});
+
+=======
+>>>>>>> https-origin/main
 test('double create clicks share one prepare/commit intent and one provider-order attempt', async () => {
     const currentPurchase = purchase();
     const pendingCreate = deferred();
@@ -578,8 +846,13 @@ test('double create clicks share one prepare/commit intent and one provider-orde
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
 
     await waitFor(() => calls.filter((call) => call.path.endsWith('/orders')).length === 1,
         'the first commit request did not start');
@@ -590,7 +863,11 @@ test('double create clicks share one prepare/commit intent and one provider-orde
     assert.match(submitted.intentId, /^ci\.[A-Za-z0-9_-]{24,96}$/u);
     assert.equal(Object.prototype.hasOwnProperty.call(submitted, 'idempotencyKey'), false);
     assert.deepEqual(runtime.checkoutActions().map((entry) => entry.action), ['inspect', 'prepare', 'commit']);
+<<<<<<< HEAD
+    assert.equal(paymentOption(runtime).disabled, true);
+=======
     assert.equal(runtime.element('guestCashCreateOrderBtn').getAttribute('aria-busy'), 'true');
+>>>>>>> https-origin/main
 
     pendingCreate.resolve(jsonResponse(createOrderPayload('GUEST-DOUBLE-1', currentPurchase)));
     await waitFor(
@@ -616,7 +893,11 @@ test('a terminal snapshot retries a failed intent ack without creating another o
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.checkoutActions().filter((entry) => entry.action === 'ack').length === 1,
         'the initial intent ack did not fail in the fixture'
@@ -659,7 +940,11 @@ test('a terminal snapshot queues an ack retry when the first ack is still in fli
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.checkoutActions().filter((entry) => entry.action === 'ack').length === 1,
         'the initial ack did not enter the in-flight state'
@@ -707,7 +992,11 @@ test('delivered content keeps the local handle until a queued ack succeeds', asy
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.checkoutActions().filter((entry) => entry.action === 'ack').length === 1,
         'the initial delivered-order ack did not enter the in-flight state'
@@ -770,13 +1059,31 @@ test('a delayed preview cannot paint product A after the purchase context moved 
 
     previewA.resolve(jsonResponse(previewPayload(purchaseA)));
     const firstResult = await firstProbe;
+<<<<<<< HEAD
+    assert.deepEqual({ ...firstResult }, {
+        available: false,
+        reason: 'stale',
+        discountEnabled: false,
+        quantityCap: 1
+    });
+=======
     assert.deepEqual({ ...firstResult }, { available: false, reason: 'stale' });
+>>>>>>> https-origin/main
     await waitFor(() => previewRequests.includes(purchaseB.productId));
     assert.notEqual(runtime.element('guestCashProductName').textContent, purchaseA.productName);
 
     previewB.resolve(jsonResponse(previewPayload(purchaseB)));
     const secondResult = await secondProbe;
+<<<<<<< HEAD
+    assert.deepEqual({ ...secondResult }, {
+        available: true,
+        reason: 'available',
+        discountEnabled: false,
+        quantityCap: 1
+    });
+=======
     assert.deepEqual({ ...secondResult }, { available: true, reason: 'available' });
+>>>>>>> https-origin/main
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseB.productSkuName);
 });
@@ -812,7 +1119,10 @@ test('a delayed availability result cannot open guest checkout after its source 
     const result = await started;
     assert.equal(result.started, false);
     assert.equal(result.reason, 'source_stale');
+<<<<<<< HEAD
+=======
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
+>>>>>>> https-origin/main
     assert.equal(runtime.document.body.classList.contains('guest-shop-modal-open'), false);
 });
 
@@ -852,10 +1162,17 @@ test('a delayed status response cannot paint order A after the modal moves to pr
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    await waitFor(() => statusOrderNumbers.includes('GUEST-SWITCH-A'));
+
+    runtime.click('guestCashPurchaseModal');
+=======
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => statusOrderNumbers.includes('GUEST-SWITCH-A'));
 
     runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
     runtime.window.ShopClient.currentPurchase = { ...purchaseB };
     await openCheckout(runtime, purchaseB);
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
@@ -897,7 +1214,11 @@ test('checkout remains usable in memory when sessionStorage access throws', asyn
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'expired');
 
     assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-NO-STORAGE');
@@ -966,10 +1287,16 @@ test('closing during create keeps a late success out of the hidden view but pers
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    await waitFor(() => calls.filter((pathname) => pathname.endsWith('/orders')).length === 1);
+    runtime.click('guestCashPurchaseModal');
+=======
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => calls.filter((pathname) => pathname.endsWith('/orders')).length === 1);
     assert.equal(runtime.element('guestCashPurchaseDismissBtn').disabled, false);
     runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
 
     pendingCreate.resolve(jsonResponse(createOrderPayload('GUEST-LATE-1', currentPurchase)));
@@ -983,8 +1310,14 @@ test('closing during create keeps a late success out of the hidden view but pers
     assert.equal(calls.filter((pathname) => pathname.endsWith('/status')).length, 0);
     const saved = runtime.sessionStorage.snapshot(STORAGE_KEY);
     assert.deepEqual(Object.keys(saved).sort(), [
+<<<<<<< HEAD
+        'batchEntries', 'batchMode', 'batchTotal', 'channel', 'expiresAt',
+        'intentId', 'orderNo', 'productId', 'provider', 'savedAt', 'site',
+        'skuId', 'version'
+=======
         'channel', 'expiresAt', 'intentId', 'orderNo', 'productId', 'provider',
         'savedAt', 'site', 'skuId', 'version'
+>>>>>>> https-origin/main
     ]);
     assert.equal(saved.productId, currentPurchase.productId);
     assert.equal(saved.skuId, currentPurchase.productSkuId);
@@ -998,7 +1331,11 @@ test('closing during create keeps a late success out of the hidden view but pers
     assert.equal(runtime.element('guestCashSkuName').textContent, currentPurchase.productSkuName);
 });
 
+<<<<<<< HEAD
+test('background status query keeps action labels stable and preserves the order for a late confirmation', async () => {
+=======
 test('status query in flight disables local leave and preserves the order for a late confirmation', async () => {
+>>>>>>> https-origin/main
     const currentPurchase = purchase();
     const pendingStatus = deferred();
     let statusCalls = 0;
@@ -1019,7 +1356,11 @@ test('status query in flight disables local leave and preserves the order for a 
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => statusCalls === 1,
         'the created order did not begin its status request'
@@ -1027,6 +1368,17 @@ test('status query in flight disables local leave and preserves the order for a 
 
     const orderNo = runtime.element('guestCashOrderNo').textContent;
     assert.equal(orderNo, 'GUEST-STATUS-LEAVE-1');
+<<<<<<< HEAD
+    assert.equal(runtime.element('guestCashCheckStatusBtn').disabled, false);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'false');
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '查询支付状态');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+=======
     assert.equal(runtime.element('guestCashCheckStatusBtn').disabled, true);
     assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'true');
     assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
@@ -1038,6 +1390,7 @@ test('status query in flight disables local leave and preserves the order for a 
     assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
     assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
     assert.equal(runtime.element('guestCashState').dataset.state, 'awaiting_payment');
+>>>>>>> https-origin/main
 
     pendingStatus.resolve(jsonResponse(statusPayload(orderNo, currentPurchase, {
         payment_status: 'confirmed',
@@ -1051,6 +1404,323 @@ test('status query in flight disables local leave and preserves the order for a 
     assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
 });
 
+<<<<<<< HEAD
+test('cancellation wins over a late status response that started before the cancel request', async () => {
+    const currentPurchase = purchase();
+    const pendingStatus = deferred();
+    const pendingCancel = deferred();
+    let statusCalls = 0;
+    let cancelCalls = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (parsed.pathname.endsWith('/orders')) {
+                return jsonResponse(createOrderPayload('GUEST-CANCEL-RACE-1', currentPurchase));
+            }
+            if (parsed.pathname.endsWith('/status')) {
+                statusCalls += 1;
+                return pendingStatus.promise;
+            }
+            if (parsed.pathname.endsWith('/cancel')) {
+                cancelCalls += 1;
+                return pendingCancel.promise;
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime);
+    await waitFor(() => statusCalls === 1, 'the order did not start its status request');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+
+    runtime.click('guestCashAbandonOrderBtn');
+    await waitFor(() => cancelCalls === 1, 'the cancel request did not start while status was in flight');
+    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-CANCEL-RACE-1');
+    assert.equal(runtime.element('guestCashState').dataset.state, 'awaiting_payment');
+    assert.equal(runtime.element('guestCashState').textContent, '正在取消订单并释放库存...');
+
+    pendingStatus.resolve(jsonResponse(statusPayload('GUEST-CANCEL-RACE-1', currentPurchase, {
+        payment_status: 'confirmed',
+        fulfillment_status: 'pending'
+    })));
+    await flushEventLoop();
+    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-CANCEL-RACE-1');
+    assert.equal(runtime.element('guestCashState').textContent, '正在取消订单并释放库存...');
+    assert.equal(runtime.element('guestCashState').dataset.state, 'awaiting_payment');
+
+    pendingCancel.resolve(jsonResponse({ success: true, cancelled: true }));
+    await flushEventLoop();
+    assert.equal(runtime.element('guestCashOrderNo').textContent, '-');
+    assert.equal(runtime.element('guestCashState').dataset.state, 'configure');
+    assert.equal(runtime.element('guestCashState').textContent, '订单已取消，库存已释放。请重新选择支付方式创建新订单。');
+});
+
+test('refresh restores a two-item batch payment QR and cancels through the batch route', async () => {
+    const orderNo = 'GCB-20260927000000-ABCDEF123456';
+    const requests = [];
+    const runtime = createRuntime({
+        purchase: purchase(),
+        storageInitial: { [STORAGE_KEY]: JSON.stringify(storedBatch(orderNo)) },
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            requests.push({ path: parsed.pathname, method: String(options.method || 'GET').toUpperCase() });
+            if (parsed.pathname.endsWith('/checkout-batches/status')) {
+                return jsonResponse(batchStatusPayload(orderNo));
+            }
+            if (parsed.pathname.endsWith('/checkout-batches/cancel')) {
+                assert.equal(JSON.parse(options.body).orderNo, orderNo);
+                return jsonResponse({ success: true, cancelled: true, order_no: orderNo });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await waitFor(() => runtime.element('guestCashZpayQrImage').src === `https://payments.example.test/${orderNo}/qr.png`);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, false);
+    assert.equal(runtime.element('guestCashProductName').textContent, '购物车批量结算');
+    assert.equal(runtime.element('guestCashSkuName').textContent, '2 件商品');
+    assert.equal(runtime.element('guestCashZpayQrImage').src, `https://payments.example.test/${orderNo}/qr.png`);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+    runtime.click('guestCashAbandonOrderBtn');
+    await waitFor(() => runtime.sessionStorage.snapshot(STORAGE_KEY) === null);
+    assert.equal(requests.filter((request) => request.path.endsWith('/checkout-batches/cancel')).length, 1);
+    assert.equal(requests.filter((request) => request.path === '/api/shop/guest/cancel').length, 0);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, '-');
+});
+
+test('a paid batch discovered during cancellation refreshes status and claims delivery', async () => {
+    const orderNo = 'GCB-20260927000000-PAIDONCANCEL1';
+    const requests = [];
+    const runtime = createRuntime({
+        purchase: purchase(),
+        storageInitial: { [STORAGE_KEY]: JSON.stringify(storedBatch(orderNo)) },
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            const method = String(options.method || 'GET').toUpperCase();
+            requests.push({
+                path: parsed.pathname,
+                method,
+                forceProviderRefresh: parsed.searchParams.has('force_provider_refresh')
+            });
+            if (parsed.pathname.endsWith('/checkout-batches/status')) {
+                if (parsed.searchParams.has('force_provider_refresh')) {
+                    return jsonResponse(batchStatusPayload(orderNo, {
+                        payment_status: 'confirmed',
+                        fulfillment_status: 'delivered',
+                        checkout: null
+                    }));
+                }
+                return jsonResponse(batchStatusPayload(orderNo));
+            }
+            if (parsed.pathname.endsWith('/checkout-batches/cancel')) {
+                return jsonResponse({
+                    success: false,
+                    code: 'guest_order_not_cancellable',
+                    message: '订单已付款或状态已变化，无法取消'
+                }, { status: 409 });
+            }
+            if (parsed.pathname.endsWith('/checkout-batches/claim')) {
+                return jsonResponse({
+                    success: true,
+                    order_no: orderNo,
+                    fulfilled_at: '2026-09-27T00:00:00.000Z',
+                    items: [{ item_index: 0, content: 'delivery-key-a' }, { item_index: 1, content: 'delivery-key-b' }]
+                });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await waitFor(() => runtime.element('guestCashZpayQrImage').src === `https://payments.example.test/${orderNo}/qr.png`);
+    runtime.click('guestCashAbandonOrderBtn');
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'delivered');
+
+    assert.equal(requests.filter((request) => request.path.endsWith('/checkout-batches/cancel')).length, 1);
+    assert.equal(requests.filter((request) => request.path.endsWith('/checkout-batches/status')
+        && request.forceProviderRefresh).length, 1);
+    assert.equal(requests.filter((request) => request.path.endsWith('/checkout-batches/claim')).length, 1);
+    assert.match(runtime.element('guestCashDeliveredContent').textContent, /delivery-key-a/u);
+    assert.match(runtime.element('guestCashDeliveredContent').textContent, /delivery-key-b/u);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+});
+
+test('a batch with a lost claim cookie stops auto-restoring after showing its order number once', async () => {
+    const orderNo = 'GCB-20260927000000-LOSTCOOKIE12';
+    const runtime = createRuntime({
+        purchase: purchase(),
+        storageInitial: { [STORAGE_KEY]: JSON.stringify(storedBatch(orderNo)) },
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/checkout-batches/status')) {
+                return jsonResponse({ success: false, code: 'guest_claim_invalid', message: '取货凭证无效' }, { status: 403 });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'manual_review');
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').hidden, true);
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+});
+
+test('a claim-proof failure during status polling clears the old QR and stops polling', async () => {
+    const orderNo = 'GCB-20260927000000-POLLCOOKIE1';
+    let statusCalls = 0;
+    const runtime = createRuntime({
+        purchase: purchase(),
+        storageInitial: { [STORAGE_KEY]: JSON.stringify(storedBatch(orderNo)) },
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/checkout-batches/status')) {
+                statusCalls += 1;
+                if (statusCalls === 1) return jsonResponse(batchStatusPayload(orderNo));
+                return jsonResponse({ success: false, code: 'guest_claim_invalid', message: '取货凭证无效' }, { status: 403 });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await waitFor(() => statusCalls === 2 && runtime.element('guestCashState').dataset.state === 'manual_review');
+
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+    assert.match(runtime.element('guestCashState').textContent, /凭证已失效/u);
+    assert.equal(runtime.element('guestCashZpayQrImage').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').hidden, true);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+    assert.deepEqual(runtime.scheduledTasks(), []);
+
+    runtime.click('guestCashCheckStatusBtn');
+    runtime.click('guestCashAbandonOrderBtn');
+    await flushEventLoop();
+    assert.equal(statusCalls, 2, 'an invalidated claim proof must not trigger another status request');
+});
+
+test('cancel with an invalid batch claim proof hides stale payment actions and QR', async () => {
+    const orderNo = 'GCB-20260927000000-CANCELPROOF1';
+    const requests = [];
+    const runtime = createRuntime({
+        purchase: purchase(),
+        storageInitial: { [STORAGE_KEY]: JSON.stringify(storedBatch(orderNo)) },
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            const method = String(options.method || 'GET').toUpperCase();
+            requests.push({ path: parsed.pathname, method });
+            if (parsed.pathname.endsWith('/checkout-batches/status')) {
+                return jsonResponse(batchStatusPayload(orderNo));
+            }
+            if (parsed.pathname.endsWith('/checkout-batches/cancel')) {
+                return jsonResponse({ success: false, code: 'guest_claim_invalid', message: '取货凭证无效' }, { status: 403 });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await waitFor(() => runtime.element('guestCashZpayQrImage').src === `https://payments.example.test/${orderNo}/qr.png`);
+    runtime.click('guestCashAbandonOrderBtn');
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'manual_review');
+
+    assert.equal(requests.filter((request) => request.path.endsWith('/checkout-batches/cancel')).length, 1);
+    assert.equal(runtime.element('guestCashState').textContent, '当前浏览器的订单凭证已失效，无法恢复付款二维码或取消订单。请勿重复付款，保留订单号联系客服核对。');
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+    assert.equal(runtime.element('guestCashZpayQrImage').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, true);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').hidden, true);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+});
+
+test('a transient background status failure keeps the unpaid-order actions in place', async () => {
+    const currentPurchase = purchase();
+    const pendingStatus = deferred();
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (parsed.pathname.endsWith('/orders')) {
+                return jsonResponse(createOrderPayload('GUEST-STATUS-RETRY-1', currentPurchase));
+            }
+            if (parsed.pathname.endsWith('/status')) return pendingStatus.promise;
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashAbandonOrderBtn').disabled);
+    pendingStatus.resolve(jsonResponse({ error: 'temporary_unavailable' }, { status: 503 }));
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'checking');
+
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '查询支付状态');
+    assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'false');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').textContent, '取消订单');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+});
+
+test('manual status check during background polling runs once and shows busy only for that check', async () => {
+    const currentPurchase = purchase();
+    const backgroundStatus = deferred();
+    const manualStatus = deferred();
+    const statusRequests = [];
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (parsed.pathname.endsWith('/orders')) {
+                return jsonResponse(createOrderPayload('GUEST-MANUAL-POLL-1', currentPurchase));
+            }
+            if (parsed.pathname.endsWith('/status')) {
+                statusRequests.push(parsed.searchParams.get('force_provider_refresh'));
+                return statusRequests.length === 1 ? backgroundStatus.promise : manualStatus.promise;
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime);
+    await waitFor(() => statusRequests.length === 1);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '查询支付状态');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+
+    runtime.click('guestCashCheckStatusBtn');
+    assert.equal(statusRequests.length, 1, 'the live provider query must wait for the current request');
+    assert.equal(
+        runtime.element('guestCashState').textContent,
+        '正在等待当前核验完成，将继续查询支付状态...',
+        'manual status checks must provide immediate feedback while a background check is active'
+    );
+    assert.equal(runtime.element('guestCashState').dataset.state, 'checking');
+    backgroundStatus.resolve(jsonResponse(statusPayload('GUEST-MANUAL-POLL-1', currentPurchase)));
+    await waitFor(() => statusRequests.length === 2);
+
+    assert.deepEqual(statusRequests, [null, '1']);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '查询中...');
+    assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'true');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+
+    manualStatus.resolve(jsonResponse(statusPayload('GUEST-MANUAL-POLL-1', currentPurchase)));
+    await flushEventLoop();
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '查询支付状态');
+    assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'false');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+});
+
+=======
+>>>>>>> https-origin/main
 for (const failureMode of ['network failure', 'HTTP 503']) {
     test(`${failureMode} without an order number confirms the original server-held intent`, async () => {
         const purchaseA = purchase();
@@ -1090,15 +1760,26 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
 
         await openCheckout(runtime, purchaseA);
         runtime.element('guestCashContact').value = 'original@example.com';
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+        await waitFor(
+            () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown',
+            'an indeterminate create did not expose the protected confirmation state'
+=======
         runtime.click('guestCashCreateOrderBtn');
         await waitFor(
             () => runtime.element('guestCashCreateOrderBtn').textContent === '确认原订单结果',
             'an indeterminate create did not expose the protected confirmation action'
+>>>>>>> https-origin/main
         );
 
         assert.equal(createBodies.length, 1);
         assert.equal(runtime.element('guestCashState').dataset.state, 'payment_creation_unknown');
+<<<<<<< HEAD
+        assert.equal(paymentOption(runtime).disabled, false);
+=======
         assert.equal(runtime.element('guestCashCreateOrderBtn').disabled, false);
+>>>>>>> https-origin/main
         assert.equal(runtime.element('guestCashPaymentChannel').disabled, true);
         assert.equal(runtime.uuidCount(), 0);
         assert.deepEqual(Object.keys(createBodies[0]).sort(), [
@@ -1108,7 +1789,11 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
         runtime.window.ShopClient.currentPurchase = { ...purchaseB };
         runtime.element('guestCashContact').value = 'original@example.com';
         runtime.element('guestCashPaymentChannel').children[0].dataset.channel = 'wxpay';
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
         runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
 
         await waitFor(() => createBodies.length === 2, 'the original create request was not replayed');
         assert.deepEqual(createBodies[1], createBodies[0]);
@@ -1121,6 +1806,246 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
     });
 }
 
+<<<<<<< HEAD
+test('contact storage preflight failure is shown as a definite pre-create error', async () => {
+    const currentPurchase = purchase();
+    const commitBodies = [];
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) return jsonResponse(previewPayload(currentPurchase));
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                if (body.checkoutAction === 'commit') {
+                    commitBodies.push(body);
+                    return jsonResponse({
+                        success: false,
+                        code: 'guest_contact_storage_unavailable',
+                        message: '游客订单联系信息暂不可用，请稍后重试'
+                    }, { status: 503 });
+                }
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    runtime.element('guestCashContact').value = 'buyer@example.com';
+    clickPaymentOption(runtime);
+
+    await waitFor(
+        () => runtime.element('guestCashState').dataset.state === 'error',
+        'a pre-create contact-storage error was left in the unknown-payment state'
+    );
+    assert.equal(commitBodies.length, 1);
+    assert.equal(runtime.element('guestCashState').dataset.state, 'error');
+    assert.match(runtime.element('guestCashState').textContent, /联系信息暂不可用/u);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+});
+
+test('a low-value USDT provider rejection clears the failed checkout before the next purchase', async () => {
+    const currentPurchase = purchase();
+    const commitBodies = [];
+    let previewCount = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                previewCount += 1;
+                return jsonResponse({
+                    ...previewPayload(currentPurchase),
+                    payment_channels: ['nowpayments:usdtbsc'],
+                    payment_providers: { nowpayments: { surcharge_rate: 0.01 } },
+                    price: {
+                        quantity: 1,
+                        subtotal: 0.01,
+                        payable_amount: 0.0101,
+                        currency: 'CNY'
+                    }
+                });
+            }
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                if (body.checkoutAction === 'commit') {
+                    commitBodies.push(body);
+                    return jsonResponse({
+                        success: false,
+                        code: 'guest_provider_create_failed',
+                        message: '金额过低，无法创建支付订单'
+                    }, { status: 502 });
+                }
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime, 'nowpayments:usdtbsc');
+    await waitFor(
+        () => runtime.element('guestCashState').dataset.state === 'error',
+        'the low-value provider rejection did not settle as a definite error'
+    );
+    await flushEventLoop();
+
+    assert.equal(commitBodies.length, 1);
+    assert.equal(previewCount >= 2, true, 'the confirmation flow must re-quote before commit');
+    assert.equal(runtime.element('guestCashOrderNo').textContent, '-');
+    assert.equal(runtime.element('guestCashOrderNoRow').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowpaymentsPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowAddress').textContent, '');
+    assert.equal(runtime.element('guestCashZpayCountdown').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+    assert.equal(paymentOption(runtime, 'nowpayments:usdtbsc').disabled, false);
+
+    // A subsequent product click must stay in the fresh confirmation phase;
+    // it must not inspect or restore the rejected payment as a wallet stage.
+    runtime.click('guestCashPurchaseModal');
+    await flushEventLoop();
+    await openCheckout(runtime, currentPurchase);
+    assert.equal(runtime.element('guestCashOrderNoRow').hidden, true);
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, false);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowAddress').textContent, '');
+});
+
+test('a missing USDT checkout credential is a definite failure and cannot restore the old payment stage', async () => {
+    const currentPurchase = purchase();
+    const commitBodies = [];
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                return jsonResponse({
+                    ...previewPayload(currentPurchase),
+                    payment_channels: ['nowpayments:usdtbsc'],
+                    payment_providers: { nowpayments: { surcharge_rate: 0.01 } }
+                });
+            }
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                if (body.checkoutAction === 'commit') {
+                    commitBodies.push(body);
+                    return jsonResponse({
+                        success: false,
+                        code: 'guest_provider_checkout_missing',
+                        message: 'NOWPayments 未返回 USDT 钱包地址'
+                    }, { status: 502 });
+                }
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime, 'nowpayments:usdtbsc');
+    await waitFor(
+        () => runtime.element('guestCashState').dataset.state === 'error',
+        'a missing provider checkout credential was left in the unknown-payment state'
+    );
+    await flushEventLoop();
+
+    assert.equal(commitBodies.length, 1);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, '-');
+    assert.equal(runtime.element('guestCashOrderNoRow').hidden, true);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowpaymentsPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowAddress').textContent, '');
+    assert.equal(runtime.element('guestCashZpayCountdown').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY), null);
+    assert.equal(paymentOption(runtime, 'nowpayments:usdtbsc').disabled, false);
+
+    await openCheckout(runtime, currentPurchase);
+    assert.equal(runtime.element('guestCashOrderNoRow').hidden, true);
+    assert.equal(runtime.element('guestCashConfigurePanel').hidden, false);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowAddress').textContent, '');
+});
+
+test('a pending USDT order without a wallet address never becomes a waiting-payment checkout', async () => {
+    const currentPurchase = purchase();
+    let statusCalls = 0;
+    const runtime = createRuntime({
+        purchase: currentPurchase,
+        fetchImpl: async (url, options = {}) => {
+            const parsed = new URL(url, 'https://www.fatherkey.com');
+            if (parsed.pathname.endsWith('/preview')) {
+                return jsonResponse({
+                    ...previewPayload(currentPurchase),
+                    payment_channels: ['nowpayments:usdtbsc'],
+                    payment_providers: { nowpayments: { surcharge_rate: 0.01 } }
+                });
+            }
+            if (parsed.pathname.endsWith('/orders')) {
+                const body = JSON.parse(options.body || '{}');
+                if (body.checkoutAction === 'commit') {
+                    const payload = createOrderPayload('GUEST-USDT-NO-WALLET', currentPurchase);
+                    payload.order.provider = 'nowpayments';
+                    payload.order.channel = 'usdtbsc';
+                    payload.checkout = {
+                        provider: 'nowpayments',
+                        channel: 'usdtbsc',
+                        payment_id: 'np-payment-1',
+                        pay_address: '0x1234567890abcdef1234567890abcdef12345678',
+                        pay_amount: 1.25,
+                        pay_currency: 'USDTBSC'
+                    };
+                    return jsonResponse(payload);
+                }
+            }
+            if (parsed.pathname.endsWith('/status')) {
+                statusCalls += 1;
+                return jsonResponse(statusPayload('GUEST-USDT-NO-WALLET', currentPurchase, {
+                    provider: 'nowpayments',
+                    channel: 'usdtbsc',
+                    payment_status: 'pending',
+                    fulfillment_status: 'pending'
+                }));
+            }
+            if (parsed.pathname.endsWith('/cancel')) {
+                return jsonResponse({ success: true, cancelled: true });
+            }
+            throw new Error(`Unexpected request: ${parsed.pathname}`);
+        }
+    });
+
+    await openCheckout(runtime, currentPurchase);
+    clickPaymentOption(runtime, 'nowpayments:usdtbsc');
+    await waitFor(() => statusCalls === 1, 'the USDT order did not start its status request');
+    await waitFor(
+        () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown',
+        'a pending USDT order without checkout was shown as ordinary awaiting payment'
+    );
+
+    assert.match(runtime.element('guestCashState').textContent, /支付凭证不可用/u);
+    assert.doesNotMatch(runtime.element('guestCashState').textContent, /等待支付确认/u);
+    assert.equal(runtime.element('guestCashCheckoutPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowpaymentsPanel').hidden, true);
+    assert.equal(runtime.element('guestCashNowAddress').textContent, '');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, false);
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
+    assert.deepEqual(runtime.scheduledTasks(), []);
+
+    runtime.click('guestCashCheckStatusBtn');
+    await waitFor(() => statusCalls === 2, 'manual status refresh did not run');
+    await waitFor(
+        () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown',
+        'manual status refresh restored the waiting-payment message'
+    );
+    assert.doesNotMatch(runtime.element('guestCashState').textContent, /等待支付确认/u);
+    assert.deepEqual(runtime.scheduledTasks(), []);
+
+    runtime.click('guestCashAbandonOrderBtn');
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'configure');
+    assert.equal(runtime.element('guestCashState').textContent, '订单已取消，库存已释放。请重新选择支付方式创建新订单。');
+    assert.equal(runtime.element('guestCashOrderNo').textContent, '-');
+});
+
+=======
+>>>>>>> https-origin/main
 test('a late unknown create error survives modal close and reopens on the frozen original context', async () => {
     const purchaseA = purchase();
     const purchaseB = purchase({
@@ -1157,16 +2082,26 @@ test('a late unknown create error survives modal close and reopens on the frozen
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    await waitFor(() => createBodies.length === 1);
+    runtime.click('guestCashPurchaseModal');
+=======
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => createBodies.length === 1);
     runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
 
     runtime.window.ShopClient.currentPurchase = { ...purchaseB };
     firstCreate.reject(new TypeError('late connection reset'));
     await firstCreate.promise.catch(() => undefined);
     await flushEventLoop();
+<<<<<<< HEAD
+    assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
+=======
     assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '确认原订单结果');
+>>>>>>> https-origin/main
     assert.equal(runtime.uuidCount(), 0);
 
     const reopened = await runtime.window.GuestShopCheckout.startGuestCheckout(contextFor(purchaseB));
@@ -1174,8 +2109,13 @@ test('a late unknown create error survives modal close and reopens on the frozen
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, false);
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseA.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseA.productSkuName);
+<<<<<<< HEAD
+    assert.equal(runtime.element('guestCashState').dataset.state, 'payment_creation_unknown');
+    clickPaymentOption(runtime);
+=======
     assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '确认原订单结果');
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => createBodies.length === 2);
     assert.deepEqual(createBodies[1], createBodies[0]);
     assert.equal(createBodies[1].checkoutAction, 'commit');
@@ -1214,7 +2154,11 @@ test('status review suppresses an existing checkout and does not schedule anothe
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown'
     );
@@ -1255,7 +2199,11 @@ test('confirmed manual-fulfillment states clear a prior checkout without losing 
             });
 
             await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
             runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
             await waitFor(() => statusCalls === 1, 'the initial status request did not start');
 
             assert.equal(runtime.element('guestCashCheckoutPanel').hidden, false);
@@ -1315,9 +2263,15 @@ test('unknown-create resume renders a terminal result without exposing the retur
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown');
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => runtime.element('guestCashCreateOrderBtn').textContent === '确认原订单结果');
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'expired');
     await flushEventLoop();
 
@@ -1375,6 +2329,20 @@ test('a terminal order must be explicitly returned to configuration before a cur
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'expired');
+
+    assert.equal(createBodies.length, 1);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-TERMINAL-A');
+    assert.equal(runtime.element('guestCashState').dataset.state, 'expired');
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '刷新处理状态');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, 'GUEST-TERMINAL-A');
+
+    runtime.window.ShopClient.currentPurchase = { ...purchaseB };
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => runtime.element('guestCashCreateOrderBtn').textContent === '回到配置后创建新订单');
 
@@ -1388,6 +2356,7 @@ test('a terminal order must be explicitly returned to configuration before a cur
 
     runtime.window.ShopClient.currentPurchase = { ...purchaseB };
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await flushEventLoop();
 
     assert.equal(createBodies.length, 1, 'rejecting confirmation must not create a replacement order');
@@ -1397,7 +2366,11 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.match(runtime.confirmMessages.at(-1), /旧付款码不可再付/);
 
     allowTerminalReset = true;
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => previewProducts.includes(purchaseB.productId), 'current SKU was not re-quoted after terminal reset');
 
     assert.equal(createBodies.length, 1, 'returning to configuration must not itself create a payment order');
@@ -1407,8 +2380,11 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.equal(runtime.element('guestCashConfigurePanel').hidden, false);
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseB.productSkuName);
+<<<<<<< HEAD
+=======
     assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '创建支付订单');
     assert.equal(runtime.element('guestCashTerminalRestartHint').hidden, true);
+>>>>>>> https-origin/main
 
     const freshRuntime = createRuntime({
         purchase: purchaseB,
@@ -1419,7 +2395,11 @@ test('a terminal order must be explicitly returned to configuration before a cur
     await flushEventLoop();
     assert.equal(freshRuntime.element('guestCashPurchaseModal').hidden, true);
 
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+=======
     runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => createBodies.length === 2, 'the second click did not create the replacement order');
     assert.equal(createBodies[1].checkoutAction, 'commit');
     const lastPrepare = runtime.checkoutActions().filter((entry) => entry.action === 'prepare').at(-1);
@@ -1450,10 +2430,17 @@ test('closing delivered content asks before discarding un-copied delivery conten
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
+    clickPaymentOption(runtime);
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'delivered');
+
+    runtime.click('guestCashPurchaseModal');
+=======
     runtime.click('guestCashCreateOrderBtn');
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'delivered');
 
     runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
 
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, false);
     assert.match(runtime.confirmMessages.at(-1), /发货内容尚未复制/);

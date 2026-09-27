@@ -10,6 +10,9 @@ const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 // from the SQL functions (see its header comment).
 const defaultGuestPromo = require('../../../api/_lib/guest-shop/promo');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
+const defaultContactEmail = require('../../../api/_lib/guest-shop/contact-email');
+const { loadStoredPaymentConfigs } = require('../../../api/_lib/payments/providers');
+const { channelMatchesAllowlist } = require('../../../api/_lib/payments/guest-shop-adapter');
 
 const GUEST_WEBHOOK_PROVIDERS = new Set(['zpay', 'nowpayments']);
 const FINAL_PAYMENT_STATUSES = new Set(['paid', 'confirmed', 'finished', 'success', 'succeeded', 'completed', 'captured']);
@@ -21,6 +24,29 @@ const NOWPAYMENTS_GUEST_PAY_CURRENCY = 'usdtbsc';
 // this rollout); an expired lease is treated as an unknown provider outcome,
 // never as permission to blindly create a second payment.
 const PAYMENT_CREATION_LEASE_CODE = 'payment_creation_in_progress';
+const DEFINITIVE_PAYMENT_CREATION_FAILURE_CODES = new Set([
+    'guest_provider_create_failed',
+    // The provider accepted the create request but returned no actionable
+    // payment credential (for example a NOWPayments response without a
+    // wallet address). This is terminal for checkout: there is nothing safe
+    // for the buyer to pay, so the held reservation must be released.
+    'guest_provider_checkout_missing',
+    'guest_payment_channel_unavailable',
+    'guest_payment_provider_disabled',
+    'guest_payment_provider_not_ready',
+    'guest_payment_provider_unavailable',
+    'guest_contact_storage_unavailable',
+    'guest_checkout_intent_missing',
+    'guest_checkout_intent_invalid',
+    'guest_checkout_intent_expired',
+    'guest_checkout_intent_contact_mismatch'
+]);
+
+function isDefinitivePaymentCreationFailureCode(value) {
+    return DEFINITIVE_PAYMENT_CREATION_FAILURE_CODES.has(
+        String(value || '').trim().toLowerCase()
+    );
+}
 const PAYMENT_CREATION_LEASE_VERSION = 'v1';
 const DEFAULT_PAYMENT_CREATION_LEASE_MS = 2 * 60 * 1000;
 const GUEST_CLAIM_COOKIE_NAME = 'guest_claim_proof';
@@ -33,11 +59,19 @@ const GUEST_CLAIM_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
 // claim cookie: an idempotency key can derive a claim secret, so it must never
 // be exposed to JavaScript, URLs, browser storage, telemetry, or logs.
 const GUEST_CHECKOUT_INTENT_COOKIE_NAME = '__Host-gs-checkout-intent';
+<<<<<<< HEAD
+const GUEST_CHECKOUT_INTENT_COOKIE_VERSION = 'v2';
+const GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS = 5 * 60;
+const GUEST_CHECKOUT_INTENT_MAX_AGE_SECONDS = 2 * 60 * 60
+    + GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS;
+const GUEST_CHECKOUT_INTENT_ACTIONS = new Set(['prepare', 'inspect', 'commit', 'ack', 'discard']);
+=======
 const GUEST_CHECKOUT_INTENT_COOKIE_VERSION = 'v1';
 const GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS = 5 * 60;
 const GUEST_CHECKOUT_INTENT_MAX_AGE_SECONDS = 2 * 60 * 60
     + GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS;
 const GUEST_CHECKOUT_INTENT_ACTIONS = new Set(['prepare', 'inspect', 'commit', 'ack']);
+>>>>>>> https-origin/main
 // Order Access 2.0 (§7.1 / §12): a short-lived session cookie issued by
 // POST /guest/access/login so the list/detail/delivery endpoints do not have to
 // re-send the query password on every request. The `__Host-` prefix is a browser
@@ -69,6 +103,7 @@ const DEFAULT_GUEST_WEBHOOK_GLOBAL_LIMIT = 1200;
 // unexpected lifetime or disable webhook abuse controls.
 const MIN_GUEST_ORDER_TTL_SECONDS = 300;
 const MAX_GUEST_ORDER_TTL_SECONDS = 7200;
+const MAX_GUEST_PROMO_ORDER_TTL_SECONDS = 600;
 const MIN_PAYMENT_CREATION_LEASE_MS = 30_000;
 const MAX_PAYMENT_CREATION_LEASE_MS = 15 * 60 * 1000;
 const MAX_GUEST_WEBHOOK_GLOBAL_LIMIT = 100_000;
@@ -135,6 +170,25 @@ function guestOrderTtlSeconds(env = process.env) {
     });
 }
 
+<<<<<<< HEAD
+function guestPromoOrderTtlSeconds(env = process.env) {
+    const promoTtl = parseGuestRuntimeInteger(env, 'GUEST_SHOP_PROMO_ORDER_TTL_SECONDS', {
+        defaultValue: 600,
+        min: MIN_GUEST_ORDER_TTL_SECONDS,
+        max: MAX_GUEST_PROMO_ORDER_TTL_SECONDS
+    });
+    const orderTtl = guestOrderTtlSeconds(env);
+    if (promoTtl > orderTtl) {
+        throw guestRuntimeConfigError(
+            'GUEST_SHOP_PROMO_ORDER_TTL_SECONDS/GUEST_SHOP_ORDER_TTL_SECONDS',
+            'promo<=order'
+        );
+    }
+    return promoTtl;
+}
+
+=======
+>>>>>>> https-origin/main
 // Operator ceiling for one guest order (promo L1). Unparsable or out-of-range
 // values degrade to 1, i.e. the pre-L1 behaviour, never to the maximum.
 function guestMaxQuantity(env = process.env) {
@@ -396,17 +450,55 @@ function normalizeCheckoutIntentRecord(value, security) {
     const expiresAt = String(value.expiresAt || '').trim();
     const contactHash = String(request.contactHash || '').trim();
     const credentialRequired = request.credentialRequired === true;
+<<<<<<< HEAD
+    const hasQuoteField = Object.prototype.hasOwnProperty.call(request, 'quote');
+    const quote = request.quote && typeof request.quote === 'object' && !Array.isArray(request.quote)
+        ? request.quote
+        : null;
+    const hasQuote = Boolean(quote);
+    const quoteMinor = Number(quote?.unitAmountMinor);
+    const quoteCurrency = String(quote?.currency || '').trim().toUpperCase();
+    const hasPaymentQuoteField = Object.prototype.hasOwnProperty.call(request, 'paymentQuote');
+    const paymentQuote = request.paymentQuote && typeof request.paymentQuote === 'object' && !Array.isArray(request.paymentQuote)
+        ? request.paymentQuote
+        : null;
+    const surchargeRate = Number(paymentQuote?.surchargeRate);
+    const hasPaymentQuote = Boolean(paymentQuote);
+    const surchargeLabel = typeof paymentQuote?.surchargeLabel === 'string'
+        ? paymentQuote.surchargeLabel.trim().slice(0, 40)
+        : '';
+=======
+>>>>>>> https-origin/main
     const provider = checkoutIntentPaymentKey(request.provider);
     const channel = checkoutIntentPaymentKey(request.channel);
     const issuedAtMs = Date.parse(issuedAt);
     const createDeadlineMs = Date.parse(createDeadlineAt);
     const expiresAtMs = Date.parse(expiresAt);
     const validContactHash = !contactHash || /^[A-Fa-f0-9]{64}$/u.test(contactHash);
+<<<<<<< HEAD
+    const validQuote = Number.isSafeInteger(quoteMinor)
+        && quoteMinor >= 1
+        && /^[A-Z]{3}$/u.test(quoteCurrency);
+    if (![1, 2].includes(value.v)
+        || (value.v === 2 && (!hasQuote || !hasPaymentQuote))
+=======
     if (value.v !== 1
+>>>>>>> https-origin/main
         || !/^ci\.[A-Za-z0-9_-]{24,96}$/u.test(intentId)
         || !validContactHash
         || !provider
         || !channel
+<<<<<<< HEAD
+        || (hasQuoteField && !hasQuote)
+        || (hasQuote && !validQuote)
+        || (hasPaymentQuoteField && !hasPaymentQuote)
+        || (hasPaymentQuote && (!Number.isFinite(surchargeRate)
+            || surchargeRate < 0
+            || surchargeRate > 0.1
+            || Math.round(surchargeRate * 10000) !== surchargeRate * 10000
+            || !surchargeLabel))
+=======
+>>>>>>> https-origin/main
         || !Number.isFinite(issuedAtMs)
         || !Number.isFinite(createDeadlineMs)
         || !Number.isFinite(expiresAtMs)
@@ -434,7 +526,12 @@ function normalizeCheckoutIntentRecord(value, security) {
         return null;
     }
     return {
+<<<<<<< HEAD
+        v: value.v,
+        legacyPaymentQuote: value.v === 1 || value.legacyPaymentQuote === true,
+=======
         v: 1,
+>>>>>>> https-origin/main
         intentId,
         idempotencyKey: normalized.idempotencyKey,
         issuedAt: new Date(issuedAtMs).toISOString(),
@@ -449,7 +546,13 @@ function normalizeCheckoutIntentRecord(value, security) {
             channel,
             discountCode: normalized.discountCode || '',
             contactHash,
+<<<<<<< HEAD
+            credentialRequired,
+            ...(hasQuote ? { quote: { unitAmountMinor: quoteMinor, currency: quoteCurrency } } : {}),
+            ...(hasPaymentQuote ? { paymentQuote: { surchargeRate, surchargeLabel } } : {})
+=======
             credentialRequired
+>>>>>>> https-origin/main
         }
     };
 }
@@ -457,7 +560,11 @@ function normalizeCheckoutIntentRecord(value, security) {
 function decryptCheckoutIntentCookie(value, security, env) {
     const source = String(value || '').trim();
     const parts = source.split('.');
+<<<<<<< HEAD
+    if (parts.length !== 4 || !['v1', GUEST_CHECKOUT_INTENT_COOKIE_VERSION].includes(parts[0])) return null;
+=======
     if (parts.length !== 4 || parts[0] !== GUEST_CHECKOUT_INTENT_COOKIE_VERSION) return null;
+>>>>>>> https-origin/main
     const key = checkoutIntentCookieKey(security, env);
     if (!key) return null;
     try {
@@ -469,6 +576,15 @@ function decryptCheckoutIntentCookie(value, security, env) {
         decipher.setAuthTag(tag);
         const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
         const parsed = JSON.parse(plaintext);
+<<<<<<< HEAD
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || `v${parsed.v}` !== parts[0]) {
+            return null;
+        }
+        // v1 intents predate payment quote binding. They may only recover an
+        // already-created order; they can never authorize a fresh order.
+        if (parts[0] === 'v1') parsed.legacyPaymentQuote = true;
+=======
+>>>>>>> https-origin/main
         return normalizeCheckoutIntentRecord(parsed, security);
     } catch (_) {
         return null;
@@ -1035,6 +1151,15 @@ function createGuestShopHandlers({
     // oracle), and an unmapped code returns null so the caller keeps the pre-L1
     // 500 instead of inventing a friendlier answer.
     function mapGuestCreateOrderError(error) {
+<<<<<<< HEAD
+        if (error?.code === 'guest_contact_storage_unavailable') {
+            return new security.GuestShopSecurityError('游客订单联系信息暂不可用，请稍后重试', {
+                statusCode: 503,
+                code: 'guest_contact_storage_unavailable'
+            });
+        }
+=======
+>>>>>>> https-origin/main
         const mapped = defaultGuestPromo.resolveGuestCreateOrderError(error);
         if (mapped) {
             const mappedError = new security.GuestShopSecurityError(mapped.message, {
@@ -1063,6 +1188,22 @@ function createGuestShopHandlers({
         return error;
     }
 
+<<<<<<< HEAD
+    function mapGuestCancelOrderError(error) {
+        const message = String(error?.message || '').trim().toLowerCase();
+        const code = String(error?.code || '').trim().toLowerCase();
+        if (message === 'guest_order_not_cancellable' || code === 'guest_order_not_cancellable'
+            || message === 'guest_checkout_batch_not_cancellable' || code === 'guest_checkout_batch_not_cancellable') {
+            return new security.GuestShopSecurityError('订单已付款或状态已变化，无法取消', {
+                statusCode: 409,
+                code: 'guest_order_not_cancellable'
+            });
+        }
+        return error;
+    }
+
+=======
+>>>>>>> https-origin/main
     function rateLimitUnavailable(res) {
         return sendJson(res, 503, {
             success: false,
@@ -1228,6 +1369,140 @@ function createGuestShopHandlers({
         return crypto.createHmac('sha256', pepper).update(String(value).trim().toLowerCase()).digest('hex');
     }
 
+    function contactStorageUnavailable(cause) {
+        const error = new Error('游客订单联系信息暂不可用，请稍后重试');
+        error.statusCode = 503;
+        error.code = 'guest_contact_storage_unavailable';
+        error.expose = true;
+        if (cause !== undefined) error.cause = cause;
+        return error;
+    }
+
+    function contactBindingConflict() {
+        return new security.GuestShopSecurityError('下单信息已变化，请重新提交', {
+            statusCode: 409,
+            code: 'guest_idempotency_conflict'
+        });
+    }
+
+    async function prepareGuestContactStorage(email) {
+        if (!email) return;
+        try {
+            defaultContactEmail.getEncryptionKey(env);
+            const db = getSupabase();
+            if (!db?.from) throw new Error('database unavailable');
+            const result = await db.from('guest_shop_order_contacts')
+                .select('guest_order_id')
+                .limit(1);
+            if (result?.error) throw result.error;
+        } catch (error) {
+            throw contactStorageUnavailable(error);
+        }
+    }
+
+    async function persistGuestOrderContact({ orderId, siteName, email, contactHash }) {
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        if (!normalizedEmail) return;
+        const normalizedOrderId = String(orderId || '').trim().toLowerCase();
+        const normalizedSite = String(siteName || '').trim().toLowerCase();
+        if (!normalizedOrderId || !['cn', 'intl'].includes(normalizedSite) || !contactHash) {
+            throw contactBindingConflict();
+        }
+
+        const db = getSupabase();
+        if (!db?.from) throw contactStorageUnavailable();
+        let orderResult;
+        try {
+            orderResult = await db.from('guest_shop_orders')
+                .select('id,site,buyer_contact_hash')
+                .eq('id', normalizedOrderId)
+                .maybeSingle();
+        } catch (error) {
+            throw contactStorageUnavailable(error);
+        }
+        if (orderResult?.error || !orderResult?.data) {
+            throw contactStorageUnavailable(orderResult?.error);
+        }
+
+        const storedOrder = orderResult.data;
+        if (String(storedOrder.site || '').trim().toLowerCase() !== normalizedSite
+            || !security.constantTimeEqual(String(storedOrder.buyer_contact_hash || ''), String(contactHash))) {
+            throw contactBindingConflict();
+        }
+
+        let encryptedEmail;
+        try {
+            encryptedEmail = defaultContactEmail.encryptContactEmail(normalizedEmail, {
+                orderId: normalizedOrderId,
+                site: normalizedSite,
+                env
+            });
+        } catch (error) {
+            throw contactStorageUnavailable(error);
+        }
+
+        let writeError = null;
+        try {
+            const inserted = await db.from('guest_shop_order_contacts')
+                .insert({
+                    guest_order_id: normalizedOrderId,
+                    site: normalizedSite,
+                    buyer_contact_hash: String(contactHash),
+                    encrypted_email: encryptedEmail
+                })
+                .select('guest_order_id')
+                .maybeSingle();
+            writeError = inserted?.error || null;
+        } catch (error) {
+            writeError = error;
+        }
+
+        // Insert-only semantics prevent a retry with another email from
+        // replacing the first contact. Re-read after a duplicate-key race and
+        // accept it only when its stored identity binding is unchanged.
+        let contactResult;
+        try {
+            contactResult = await db.from('guest_shop_order_contacts')
+                .select('site,buyer_contact_hash,encrypted_email')
+                .eq('guest_order_id', normalizedOrderId)
+                .maybeSingle();
+        } catch (error) {
+            throw contactStorageUnavailable(error);
+        }
+        if (contactResult?.error || !contactResult?.data) {
+            throw contactStorageUnavailable(writeError || contactResult?.error);
+        }
+        if (String(contactResult.data.site || '').trim().toLowerCase() !== normalizedSite
+            || !security.constantTimeEqual(
+                String(contactResult.data.buyer_contact_hash || ''),
+                String(contactHash)
+            )) {
+            throw contactBindingConflict();
+        }
+        const storedEmail = defaultContactEmail.decryptContactEmail(contactResult.data.encrypted_email, {
+            orderId: normalizedOrderId,
+            site: normalizedSite,
+            env
+        });
+        if (!storedEmail || !security.constantTimeEqual(storedEmail, normalizedEmail)) {
+            throw contactStorageUnavailable();
+        }
+    }
+
+    async function persistVerifiedGuestOrderContact(contact) {
+        try {
+            await persistGuestOrderContact(contact);
+            return true;
+        } catch (error) {
+            // The caller has already authenticated or derived the exact order
+            // contact binding. A storage outage must not strand a committed
+            // order before checkout can be recovered; binding conflicts still
+            // fail closed.
+            if (error?.code === 'guest_contact_storage_unavailable') return false;
+            throw error;
+        }
+    }
+
     function hashRequestAttribute(value) {
         const pepper = String(env.GUEST_SHOP_REQUEST_HASH_PEPPER || env.GUEST_SHOP_CLAIM_PEPPER || '').trim();
         if (!pepper || !value) return null;
@@ -1240,9 +1515,38 @@ function createGuestShopHandlers({
     // amount here: resolveGuestCreditUnitAmount returns a per-unit price.
     async function loadGuestSkuPricing({ supabase, productId, skuId, siteName, quantity = null }) {
         if (!supabase?.from) throw Object.assign(new Error('数据库服务不可用'), { statusCode: 503, expose: false });
+<<<<<<< HEAD
+        const productSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
+        const scheduledProductSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_start,flash_sale_start_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
+        let productQuery = await supabase.from('shop_products')
+            .select(scheduledProductSelect)
+=======
         const productQuery = await supabase.from('shop_products')
             .select('id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity')
+>>>>>>> https-origin/main
             .eq('id', productId).maybeSingle();
+        const productErrorText = [
+            productQuery.error?.message,
+            productQuery.error?.details,
+            productQuery.error?.hint,
+            productQuery.error?.code
+        ].filter(Boolean).join(' ').toLowerCase();
+        const missingFlashSaleStartColumn = /flash_sale_start(?:_intl)?/u.test(productErrorText)
+            && (
+                productErrorText.includes('does not exist')
+                || productErrorText.includes('not exist')
+                || productErrorText.includes('undefined column')
+                || productErrorText.includes('schema cache')
+                || productErrorText.includes('could not find')
+            );
+        if (productQuery.error && missingFlashSaleStartColumn) {
+            // Preserve the pre-schedule price behavior during the migration
+            // window. Admin writes refuse to save a non-NULL start against this
+            // schema, and the create-order RPC remains the final price authority.
+            productQuery = await supabase.from('shop_products')
+                .select(productSelect)
+                .eq('id', productId).maybeSingle();
+        }
         if (productQuery.error) throw productQuery.error;
         const product = productQuery.data;
         const skuQuery = await supabase.from('shop_product_skus')
@@ -1287,6 +1591,8 @@ function createGuestShopHandlers({
             productQuantityRulesIntl: product?.quantity_rules_intl,
             productFlashSalePrice: product?.flash_sale_price,
             productFlashSalePriceIntl: product?.flash_sale_price_intl,
+            productFlashSaleStart: product?.flash_sale_start,
+            productFlashSaleStartIntl: product?.flash_sale_start_intl,
             productFlashSaleEnd: product?.flash_sale_end,
             productFlashSaleEndIntl: product?.flash_sale_end_intl
         });
@@ -1333,6 +1639,573 @@ function createGuestShopHandlers({
             });
         }
         return admin.parseJsonBody(req);
+    }
+
+    function batchError(message, code = 'guest_checkout_batch_invalid', statusCode = 400) {
+        return new security.GuestShopSecurityError(message, { code, statusCode });
+    }
+
+    function batchRows(data) {
+        if (Array.isArray(data)) return data;
+        return data && typeof data === 'object' ? [data] : [];
+    }
+
+    async function loadCheckoutBatch(batchNo) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const result = await db.from('guest_shop_checkout_batches').select('*')
+            .eq('batch_no', String(batchNo || '').trim()).maybeSingle();
+        if (result?.error) throw result.error;
+        if (!result?.data) throw new security.GuestShopSecurityError('取货凭证无效', {
+            statusCode: 403, code: 'guest_claim_invalid'
+        });
+        return result.data;
+    }
+
+    async function loadCheckoutBatchPayment(batch) {
+        const db = getSupabase();
+        const result = await db.from('guest_shop_checkout_payments').select('*')
+            .eq('batch_id', batch.id).maybeSingle();
+        if (result?.error) throw result.error;
+        return result?.data || null;
+    }
+
+    function checkoutBatchNeedsExpiry(batch, payment) {
+        const expiresAtMs = Date.parse(String(batch?.expires_at || '').trim());
+        return batch?.payment_status === 'pending'
+            && ['pending', 'created'].includes(String(payment?.status || '').trim().toLowerCase())
+            && Number.isFinite(expiresAtMs)
+            && expiresAtMs <= Date.now();
+    }
+
+    async function expireCheckoutBatchIfNeeded(batch, payment) {
+        if (!checkoutBatchNeedsExpiry(batch, payment)) {
+            return { batch, payment, expired: false };
+        }
+        const db = getSupabase();
+        if (!db?.rpc) throw guestDatabaseUnavailableError();
+        const swept = await db.rpc('fn_guest_shop_expire_checkout_batches', { p_limit: 50 });
+        if (swept?.error) throw swept.error;
+        const latestBatch = await loadCheckoutBatch(batch.batch_no);
+        const latestPayment = await loadCheckoutBatchPayment(latestBatch);
+        return {
+            batch: latestBatch,
+            payment: latestPayment,
+            expired: latestBatch.payment_status === 'expired'
+        };
+    }
+
+    async function persistCheckoutBatchStatusQueryMetadata(payment, patch) {
+        const db = getSupabase();
+        if (!db?.from || !payment?.id) return;
+        const next = { ...storedPlainObject(payment.provider_metadata) };
+        for (const [key, value] of Object.entries(patch || {})) {
+            if (value !== undefined) next[key] = value;
+        }
+        payment.provider_metadata = next;
+        try {
+            await db.from('guest_shop_checkout_payments').update({
+                provider_metadata: next,
+                updated_at: new Date().toISOString()
+            }).eq('id', payment.id);
+        } catch (_) {
+            // Query throttling is best effort; provider verification still
+            // controls whether a payment can be confirmed.
+        }
+    }
+
+    async function claimConfirmedCheckoutBatch(batch, db = getSupabase()) {
+        if (!batch || batch.payment_status !== 'confirmed' || batch.fulfillment_status === 'delivered') return batch;
+        const claimed = await db.rpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batch.id });
+        if (claimed?.error && !['guest_order_not_delivered', 'guest_inventory_not_reservable']
+            .includes(String(claimed.error.message || ''))) throw claimed.error;
+        return await loadCheckoutBatch(batch.batch_no).catch(() => batch);
+    }
+
+    async function attemptGuestCheckoutBatchPaymentStatusQuery({
+        batch,
+        payment,
+        forceProviderRefresh = false,
+        bypassThrottle = false
+    } = {}) {
+        const db = getSupabase();
+        if (!db?.from || !payment?.id) return { refreshed: false, reason: 'missing_payment_order' };
+        const provider = String(payment.provider || '').trim().toLowerCase();
+        if (!GUEST_WEBHOOK_PROVIDERS.has(provider)) return { refreshed: false, reason: 'unsupported_provider' };
+        if (typeof paymentAdapter?.queryGuestPayment !== 'function') return { refreshed: false, reason: 'adapter_unavailable' };
+        if (GUEST_STATUS_QUERY_RESOLVED_PAYMENT_STATUSES.has(String(payment.status || '').trim().toLowerCase())) {
+            return { refreshed: false, reason: 'already_resolved' };
+        }
+
+        const metadata = storedPlainObject(payment.provider_metadata);
+        const lastQueryMs = Date.parse(String(metadata.query_verified_at || metadata.status_poll_query_at || ''));
+        const throttleMs = forceProviderRefresh === true
+            ? GUEST_STATUS_QUERY_FORCE_THROTTLE_MS
+            : GUEST_STATUS_QUERY_THROTTLE_MS;
+        if (!bypassThrottle && Number.isFinite(lastQueryMs) && Date.now() - lastQueryMs < throttleMs) {
+            return { refreshed: false, reason: 'query_throttled', nextAllowedMs: lastQueryMs + throttleMs };
+        }
+
+        const merchantOrderNo = normalizeWebhookReference(payment.merchant_order_no, 200);
+        const providerOrderNo = normalizeWebhookReference(payment.provider_order_no || merchantOrderNo, 300);
+        const providerPaymentId = normalizeWebhookReference(metadata.payment_id || metadata.provider_payment_id, 120);
+        const observedSite = normalizeWebhookReference(payment.site, 16).toLowerCase();
+        const observedCurrency = normalizeWebhookReference(payment.currency, 8).toUpperCase();
+        const expectedAmount = normalizeGuestCashPrice(payment.expected_amount, security, observedCurrency);
+        const batchAmount = normalizeGuestCashPrice(batch?.total_amount, security, observedCurrency);
+        if (payment.batch_id !== batch?.id || merchantOrderNo !== batch?.batch_no
+            || String(payment.provider_metadata?.provider || provider).trim().toLowerCase() !== provider
+            || String(payment.provider_metadata?.purpose || 'shop_direct').trim().toLowerCase() !== 'shop_direct'
+            || payment.site !== batch?.site || batch?.currency !== observedCurrency
+            || !merchantOrderNo || !providerOrderNo || !expectedAmount || !batchAmount
+            || expectedAmount.minor !== batchAmount.minor
+            || !['cn', 'intl'].includes(observedSite)
+            || !['CNY', 'USD'].includes(observedCurrency)) {
+            return { refreshed: false, reason: 'invalid_payment_binding' };
+        }
+
+        let live = null;
+        try {
+            live = await paymentAdapter.queryGuestPayment({
+                provider,
+                channel: normalizeWebhookReference(payment.channel, 80).toLowerCase() || provider,
+                site: observedSite,
+                providerOrderNo,
+                merchantOrderNo,
+                paymentId: providerPaymentId,
+                providerPaymentId,
+                metadata
+            });
+        } catch (error) {
+            const nowIso = new Date().toISOString();
+            await persistCheckoutBatchStatusQueryMetadata(payment, {
+                query_status: null,
+                query_error_code: normalizeWebhookReference(error?.code, 120) || 'guest_status_query_failed',
+                query_verified_at: nowIso,
+                status_poll_query_at: nowIso
+            });
+            return { refreshed: false, reason: 'query_error' };
+        }
+        if (!live || live.supported === false) {
+            const nowIso = new Date().toISOString();
+            await persistCheckoutBatchStatusQueryMetadata(payment, {
+                query_status: null,
+                query_error_code: 'guest_status_query_unsupported',
+                query_verified_at: nowIso,
+                status_poll_query_at: nowIso
+            });
+            return { refreshed: false, reason: 'query_unavailable' };
+        }
+
+        const observedStatus = String(live.final_status || live.status || '').trim().toLowerCase();
+        const observedAmount = normalizeObservedAmount(live.paid_amount ?? live.amount);
+        const liveProviderOrderNo = normalizeWebhookReference(live.provider_order_no || providerOrderNo, 300);
+        const quote = providerQuoteChecks(provider, live, payment, security);
+        const binding = security.verifyPaymentBinding({
+            expectedMerchantOrderNo: merchantOrderNo,
+            expectedProvider: provider,
+            expectedPurpose: 'shop_direct',
+            expectedSite: observedSite,
+            expectedCurrency: observedCurrency,
+            expectedAmountMinor: expectedAmount.minor,
+            received: {
+                merchantOrderNo: normalizeWebhookReference(live.merchant_order_no, 200) || merchantOrderNo,
+                provider,
+                purpose: String(live.purpose || 'shop_direct').trim().toLowerCase(),
+                site: observedSite,
+                currency: observedCurrency,
+                paidAmount: provider === 'nowpayments' ? expectedAmount.amount : observedAmount,
+                finalStatus: observedStatus
+            }
+        });
+        const verified = binding.valid === true && quote.valid === true && isFinalPaymentStatus(observedStatus);
+        const nowIso = new Date().toISOString();
+        await persistCheckoutBatchStatusQueryMetadata(payment, {
+            query_status: observedStatus || null,
+            query_status_raw: normalizeWebhookReference(live.status_raw, 80) || null,
+            query_error_code: verified ? null : 'guest_status_query_not_confirmed',
+            query_verified_at: nowIso,
+            status_poll_query_at: nowIso
+        });
+        if (!verified || !liveProviderOrderNo) {
+            return { refreshed: false, reason: 'not_verified', providerChecked: true, providerStatus: observedStatus };
+        }
+
+        const eventKey = statusQueryEventKey(provider, { paymentId: payment.id });
+        const redactedPayload = typeof security.redactGuestPaymentPayload === 'function'
+            ? security.redactGuestPaymentPayload(live.response_payload || {})
+            : {};
+        const eventRow = {
+            payment_order_id: null,
+            merchant_order_no: merchantOrderNo,
+            provider,
+            event_key: eventKey,
+            provider_event_id: eventKey,
+            provider_order_no: liveProviderOrderNo,
+            event_type: GUEST_STATUS_QUERY_EVENT_TYPE,
+            observed_status: observedStatus,
+            observed_site: observedSite,
+            observed_currency: observedCurrency,
+            observed_amount: expectedAmount.amount,
+            observed_purpose: 'shop_direct',
+            payload_redacted: { provider, status: observedStatus, query: storedPlainObject(redactedPayload) },
+            body_sha256: crypto.createHash('sha256').update(JSON.stringify({
+                event_key: eventKey,
+                payment_id: payment.id,
+                batch_id: batch.id,
+                provider_order_no: liveProviderOrderNo,
+                merchant_order_no: merchantOrderNo,
+                status: observedStatus,
+                amount: expectedAmount.amount
+            })).digest('hex'),
+            signature_version: 'query_api',
+            signature_verified: true,
+            amount_verified: true,
+            currency_verified: true,
+            final_status_verified: true,
+            processing_status: 'verified',
+            error_code: null
+        };
+        let eventId = null;
+        try {
+            const existing = await db.from('guest_shop_payment_events').select('*')
+                .eq('provider', provider).eq('event_key', eventKey).maybeSingle();
+            if (existing?.error) return { refreshed: false, reason: 'event_lookup_failed' };
+            if (existing?.data) eventId = existing.data.id || null;
+            else {
+                const inserted = await db.from('guest_shop_payment_events').insert(eventRow).select('*').single();
+                if (inserted?.error) {
+                    if (!isUniqueViolation(inserted.error)) return { refreshed: false, reason: 'event_insert_failed' };
+                    const raced = await db.from('guest_shop_payment_events').select('*')
+                        .eq('provider', provider).eq('event_key', eventKey).maybeSingle();
+                    eventId = raced?.data?.id || null;
+                } else eventId = inserted.data?.id || null;
+            }
+        } catch (_) {
+            return { refreshed: false, reason: 'event_write_failed' };
+        }
+        if (!eventId) return { refreshed: false, reason: 'event_reference_missing' };
+
+        try {
+            const confirmed = await db.rpc('fn_guest_shop_confirm_checkout_batch_payment', {
+                p_payment_id: payment.id,
+                p_provider: provider,
+                p_provider_order_no: liveProviderOrderNo,
+                p_observed_amount: provider === 'nowpayments' ? payment.expected_amount : observedAmount,
+                p_observed_status: observedStatus
+            });
+            if (confirmed?.error) return { refreshed: false, reason: 'confirm_failed', providerChecked: true, providerStatus: observedStatus };
+            await db.from('guest_shop_payment_events').update({
+                processing_status: 'processed',
+                processed_at: nowIso,
+                updated_at: nowIso
+            }).eq('id', eventId);
+            let refreshedBatch = await loadCheckoutBatch(batch.batch_no);
+            refreshedBatch = await claimConfirmedCheckoutBatch(refreshedBatch, db);
+            return { refreshed: true, batch: refreshedBatch, providerChecked: true, providerStatus: observedStatus };
+        } catch (_) {
+            return { refreshed: false, reason: 'confirm_failed', providerChecked: true, providerStatus: observedStatus };
+        }
+    }
+
+    function batchClaimSecret(batch, req) {
+        const secret = claimSecretFromCookie(req, { order_no: batch.batch_no, expires_at: batch.expires_at }, security, env);
+        if (!secret || !security.verifyClaimSecret(secret, batch.claim_secret_hash, { env })) {
+            throw new security.GuestShopSecurityError('取货凭证无效', { statusCode: 403, code: 'guest_claim_invalid' });
+        }
+        return secret;
+    }
+
+    async function releaseCheckoutBatch(batchId, reason = 'payment_create_failed') {
+        const db = getSupabase();
+        if (!db?.from) return;
+        try {
+            const reservations = await db.from('guest_shop_checkout_reservations')
+                .select('inventory_id').eq('batch_id', batchId).eq('status', 'held');
+            for (const row of reservations?.data || []) {
+                await db.from('shop_inventory').update({ status: 'available' })
+                    .eq('id', row.inventory_id).eq('status', 'reserve');
+                await db.from('guest_shop_checkout_reservations').update({
+                    status: 'released', released_at: new Date().toISOString(), release_reason: reason
+                }).eq('batch_id', batchId).eq('inventory_id', row.inventory_id).eq('status', 'held');
+            }
+            await db.from('guest_shop_checkout_batches').update({
+                payment_status: 'failed', fulfillment_status: 'failed',
+                last_error_code: 'guest_provider_create_failed',
+                last_error_message: String(reason).slice(0, 500), updated_at: new Date().toISOString()
+            }).eq('id', batchId).in('payment_status', ['pending', 'created']);
+        } catch (_) { /* durable worker/admin reconciliation handles leftovers */ }
+    }
+
+    async function checkoutBatches(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
+        if (!(await limit(req, res, 'checkout-batches', { limit: 12 }))) return;
+        try {
+            const body = await parseJson(req);
+            const allowed = new Set(['site', 'provider', 'channel', 'items', 'idempotencyKey', 'idempotency_key']);
+            const discountKeys = new Set([
+                'discountCode', 'discount_code', 'discountAmount', 'discount_amount',
+                'finalTotal', 'final_total', 'appliedDiscount', 'applied_discount'
+            ]);
+            if (Object.keys(body || {}).some((key) => discountKeys.has(key))) {
+                throw batchError('游客现金批量结算暂不支持未验证优惠，请清除优惠后重试', 'guest_checkout_discount_unsupported', 409);
+            }
+            for (const key of Object.keys(body || {})) if (!allowed.has(key)) throw batchError('批量结算字段不允许');
+            const siteName = normalizeSiteValue(body.site);
+            const provider = String(body.provider || '').trim().toLowerCase();
+            const channel = String(body.channel || provider).trim().toLowerCase();
+            if (!GUEST_WEBHOOK_PROVIDERS.has(provider) || !channel || ['mock', 'test', 'fake'].includes(channel)) {
+                throw batchError('支付通道不可用', 'guest_invalid_payment_provider');
+            }
+            const rawItems = Array.isArray(body.items) ? body.items : [];
+            if (!rawItems.length || rawItems.length > 50) throw batchError('购物车商品无效');
+            const items = rawItems.map((item) => {
+                if (!item || typeof item !== 'object' || Array.isArray(item)) throw batchError('购物车商品无效');
+                const keys = Object.keys(item);
+                if (keys.some((key) => discountKeys.has(key))) {
+                    throw batchError('游客现金批量结算暂不支持未验证优惠，请清除优惠后重试', 'guest_checkout_discount_unsupported', 409);
+                }
+                if (keys.some((key) => !['productId', 'skuId', 'quantity'].includes(key))) throw batchError('购物车商品字段不允许');
+                const productId = security.normalizeUuid(item.productId, 'productId');
+                const skuId = security.normalizeUuid(item.skuId, 'skuId');
+                const quantity = Number(item.quantity ?? 1);
+                if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) throw batchError('购买数量无效');
+                return { productId, skuId, quantity };
+            });
+            const idempotencyKey = security.normalizeGuestIdempotencyKey(body.idempotencyKey || body.idempotency_key);
+            const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ site: siteName, provider, channel, items }), 'utf8').digest('hex');
+            const claimSecret = security.deriveClaimSecretFromIdempotencyKey(idempotencyKey, { site: siteName, env });
+            const claimHash = security.hashClaimSecret(claimSecret, { env });
+            const db = getSupabase();
+            if (!db?.rpc) throw guestDatabaseUnavailableError();
+            const created = await db.rpc('fn_guest_shop_create_checkout_batch', {
+                p_site: siteName, p_items: items, p_idempotency_key: idempotencyKey,
+                p_request_fingerprint: fingerprint, p_claim_secret_hash: claimHash,
+                p_provider: provider, p_channel: channel, p_ttl_seconds: guestOrderTtlSeconds(env)
+            });
+            if (created?.error) {
+                const raw = String(created.error.message || '').trim();
+                const stock = raw.match(/^guest_checkout_stock_insufficient:([^:]*):([^:]*):(\d+):(\d+)$/u);
+                if (stock) throw batchError(`商品“${stock[1]}${stock[2] ? `（${stock[2]}）` : ''}”库存不足，当前可用 ${stock[4]} 件`, 'guest_checkout_stock_insufficient', 409);
+                const known = {
+                    guest_product_unavailable: ['商品暂不支持游客购买', 409],
+                    guest_sku_unavailable: ['商品规格暂不支持游客购买', 409],
+                    guest_delivery_mode_unsupported: ['商品暂不支持游客自动发货', 409],
+                    guest_payment_channel_unavailable: ['当前支付通道未被商品允许', 409],
+                    guest_checkout_discount_unsupported: ['游客现金批量结算暂不支持未验证优惠，请清除优惠后重试', 409],
+                    guest_checkout_batch_invalid: ['购物车结算参数无效', 400],
+                    guest_checkout_batch_invalid_item: ['购物车商品信息已失效，请刷新购物车后重试', 409],
+                    guest_credit_price_unavailable: ['商品价格暂不可用，请刷新购物车后重试', 409],
+                    guest_idempotency_conflict: ['购物车结算内容已变化，请重新打开结算', 409],
+                    guest_invalid_payment_provider: ['支付方式不可用，请重新选择', 400],
+                    guest_invalid_order_ttl: ['游客订单配置暂不可用，请稍后重试', 503]
+                }[raw];
+                if (known) throw batchError(known[0], raw, known[1]);
+                throw Object.assign(new Error('购物车结算失败'), { statusCode: 500, code: 'guest_shop_request_failed', expose: false });
+            }
+            const row = batchRows(created.data)[0];
+            if (!row?.batch_id || !row?.merchant_order_no) throw guestDatabaseUnavailableError();
+            const batch = { id: row.batch_id, batch_no: row.batch_no, site: row.site, currency: row.currency, total_amount: row.total_amount, expires_at: row.expires_at };
+            let payment = await loadCheckoutBatchPayment(batch);
+            let checkout = null;
+            if (String(payment?.status || 'pending') === 'pending') {
+                if (typeof paymentAdapter?.createGuestPayment !== 'function') throw batchError('游客支付通道尚未配置', 'guest_payment_provider_unavailable', 503);
+                try {
+                    checkout = await paymentAdapter.createGuestPayment({
+                        order: { id: batch.id, order_no: batch.batch_no, site: batch.site, currency: batch.currency, total_amount: row.total_amount, snapshot_product_name: '购物车商品', guest_payment_channels: [] },
+                        provider, channel, site: batch.site, currency: batch.currency, amount: row.total_amount,
+                        allowedChannels: ['zpay', 'nowpayments', `${provider}:${channel}`], req, env
+                    });
+                    const patch = checkout?.payment_order_patch;
+                    if (!patch?.provider_order_no) throw batchError('支付订单引用缺失', 'guest_provider_reference_missing', 502);
+                    const updated = await db.from('guest_shop_checkout_payments').update({
+                        provider_order_no: patch.provider_order_no, checkout_reference: patch.checkout_reference || null,
+                        provider_metadata: patch.provider_metadata || {}, status: 'created', updated_at: new Date().toISOString()
+                    }).eq('id', payment.id).eq('status', 'pending').select('*').maybeSingle();
+                    if (updated?.error) throw updated.error;
+                    payment = updated?.data || await loadCheckoutBatchPayment(batch);
+                } catch (error) {
+                    const definitive = ['guest_provider_create_failed', 'guest_payment_channel_unavailable', 'guest_payment_provider_not_ready', 'guest_provider_checkout_missing'].includes(String(error?.code || ''));
+                    if (definitive) await releaseCheckoutBatch(batch.id, error.message);
+                    throw error;
+                }
+            } else {
+                checkout = payment?.provider_metadata ? { provider: payment.provider, channel: payment.channel, ...(payment.provider_metadata || {}), amount: payment.expected_amount, currency: payment.currency } : null;
+            }
+            const itemPayload = row.items || [];
+            const proofExpiresAt = new Date(Date.now() + GUEST_CLAIM_COOKIE_MAX_AGE_SECONDS * 1000).toISOString();
+            setClaimProofCookie(req, res, { order_no: row.batch_no, expires_at: proofExpiresAt }, claimSecret, security, env);
+            return sendJson(res, 201, { success: true, batch: { batch_no: row.batch_no, total_amount: row.total_amount, currency: row.currency, expires_at: row.expires_at, payment_status: payment?.status || row.payment_status, items: itemPayload }, order_no: row.batch_no, checkout });
+        } catch (error) { return failResponse(res, error, '购物车结算失败'); }
+    }
+
+    async function checkoutBatchStatus(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
+        if (!(await limit(req, res, 'checkout-batches-status', { limit: 60 }))) return;
+        try {
+            let batch = await loadCheckoutBatch(queryValue(req, 'orderNo') || queryValue(req, 'batchNo') || queryValue(req, 'batch_no'));
+            batchClaimSecret(batch, req);
+            const db = getSupabase();
+            let payment = await loadCheckoutBatchPayment(batch);
+            const expiry = await expireCheckoutBatchIfNeeded(batch, payment);
+            batch = expiry.batch;
+            payment = expiry.payment;
+            if (!expiry.expired && batch.payment_status === 'pending' && ['pending', 'created'].includes(String(payment?.status || '').toLowerCase())) {
+                await attemptGuestCheckoutBatchPaymentStatusQuery({
+                    batch,
+                    payment,
+                    forceProviderRefresh: forceProviderRefreshRequested(req)
+                });
+                batch = await loadCheckoutBatch(batch.batch_no);
+                payment = await loadCheckoutBatchPayment(batch);
+            }
+            if (batch.payment_status === 'confirmed' && batch.fulfillment_status !== 'delivered') {
+                batch = await claimConfirmedCheckoutBatch(batch, db);
+            }
+            const items = await db.from('guest_shop_checkout_items').select('*').eq('batch_id', batch.id).order('item_index');
+            if (items?.error) throw items.error;
+            const checkout = batch.payment_status === 'pending' && payment?.status === 'created'
+                && payment.batch_id === batch.id && payment.merchant_order_no === batch.batch_no
+                ? buildStoredCheckout({ ...batch, order_no: batch.batch_no }, payment, { allowUsd: true })
+                : null;
+            return sendJson(res, 200, { success: true, order_no: batch.batch_no, site: batch.site, payment_status: batch.payment_status, fulfillment_status: batch.fulfillment_status, refund_status: batch.refund_status, total_amount: batch.total_amount, currency: batch.currency, expires_at: batch.expires_at, fulfilled_at: batch.fulfilled_at, items: items.data || [], checkout });
+        } catch (error) { return failResponse(res, error, '订单状态查询失败'); }
+    }
+
+    async function checkoutBatchCancel(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
+        if (!(await limit(req, res, 'checkout-batches-cancel', { limit: 12 }))) return;
+        try {
+            const body = await parseJson(req);
+            if (Object.keys(body || {}).some((key) => !['orderNo', 'order_no'].includes(key))) {
+                throw batchError('取消请求字段不允许', 'guest_cancel_invalid_request');
+            }
+            const batch = await loadCheckoutBatch(body.orderNo || body.order_no);
+            batchClaimSecret(batch, req);
+            const db = getSupabase();
+            if (!db?.rpc) throw guestDatabaseUnavailableError();
+            let payment = await loadCheckoutBatchPayment(batch);
+            const expiry = await expireCheckoutBatchIfNeeded(batch, payment);
+            const activeBatch = expiry.batch;
+            payment = expiry.payment;
+            if (activeBatch.payment_status === 'expired'
+                && ['guest_checkout_batch_expired', 'guest_checkout_batch_cancelled'].includes(String(activeBatch.last_error_code || '').trim())) {
+                return sendJson(res, 200, { success: true, cancelled: true, expired: true, order_no: activeBatch.batch_no });
+            }
+            if (expiry.expired) {
+                return sendJson(res, 200, { success: true, cancelled: true, expired: true, order_no: activeBatch.batch_no });
+            }
+            if (activeBatch.payment_status === 'pending' && ['pending', 'created'].includes(String(payment?.status || '').toLowerCase())) {
+                const refresh = await attemptGuestCheckoutBatchPaymentStatusQuery({
+                    batch: activeBatch,
+                    payment,
+                    forceProviderRefresh: true,
+                    bypassThrottle: true
+                });
+                const latestBatch = await loadCheckoutBatch(activeBatch.batch_no);
+                if (refresh.refreshed || latestBatch.payment_status === 'confirmed') {
+                    await claimConfirmedCheckoutBatch(latestBatch, db);
+                    throw new security.GuestShopSecurityError('订单已付款或状态已变化，无法取消', {
+                        statusCode: 409,
+                        code: 'guest_order_not_cancellable'
+                    });
+                }
+                const safeUnpaidStatuses = new Set(['pending', 'failed', 'expired', 'cancelled']);
+                if (refresh.providerChecked !== true || !safeUnpaidStatuses.has(String(refresh.providerStatus || '').toLowerCase())) {
+                    throw new security.GuestShopSecurityError('暂时无法确认支付渠道状态，订单未取消。请查询支付状态后重试；如已付款，请保留订单号联系客服。', {
+                        statusCode: 409,
+                        code: 'guest_payment_verification_required'
+                    });
+                }
+            } else if (activeBatch.payment_status !== 'pending' || !['pending', 'created'].includes(String(payment?.status || '').toLowerCase())) {
+                throw new security.GuestShopSecurityError('订单已付款或状态已变化，无法取消', {
+                    statusCode: 409,
+                    code: 'guest_order_not_cancellable'
+                });
+            }
+            const result = await db.rpc('fn_guest_shop_cancel_checkout_batch', {
+                p_batch_id: batch.id,
+                p_reason: 'buyer_cancelled'
+            });
+            if (result?.error) throw result.error;
+            return sendJson(res, 200, { success: true, cancelled: true, order_no: batch.batch_no });
+        } catch (error) { return failResponse(res, mapGuestCancelOrderError(error), '取消订单失败'); }
+    }
+
+    async function checkoutBatchClaim(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
+        if (!(await limit(req, res, 'checkout-batches-claim', { limit: 20 }))) return;
+        try {
+            const body = await parseJson(req);
+            if (Object.keys(body || {}).some((key) => !['orderNo', 'order_no'].includes(key))) throw batchError('领取请求字段不允许');
+            const batch = await loadCheckoutBatch(body.orderNo || body.order_no || queryValue(req, 'orderNo'));
+            batchClaimSecret(batch, req);
+            if (batch.payment_status !== 'confirmed') return sendJson(res, 409, { success: false, code: 'guest_payment_not_confirmed', message: '订单尚未支付完成' });
+            if (batch.fulfillment_status !== 'delivered') return sendJson(res, 409, { success: false, code: 'guest_order_not_delivered', message: batch.fulfillment_status === 'paid_unfulfillable' ? '支付成功但库存异常，请联系客服处理' : '订单尚未完成发货' });
+            const db = getSupabase();
+            const claimed = await db.rpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batch.id });
+            if (claimed?.error) throw claimed.error;
+            const grouped = {};
+            for (const item of claimed.data || []) {
+                const key = `${item.item_index}:${item.product_name}:${item.sku_name}`;
+                (grouped[key] ||= []).push(item.content);
+            }
+            return sendJson(res, 200, { success: true, order_no: batch.batch_no, fulfilled_at: batch.fulfilled_at, items: claimed.data || [], fulfillment: Object.entries(grouped).map(([key, content]) => ({ key, content })) });
+        } catch (error) { return failResponse(res, error, '领取订单失败'); }
+    }
+
+    async function processCheckoutBatchWebhook({ req, res, provider, payload, rawBody, db, lookupReference }) {
+        let paymentResult = null;
+        const references = [...new Set([lookupReference, provider === 'nowpayments' ? String(payload.payment_id || payload.id || '').trim() : ''].filter(Boolean))];
+        for (const reference of references) {
+            if (paymentResult?.data) break;
+            paymentResult = await db.from('guest_shop_checkout_payments').select('*')
+                .eq('provider', provider).eq('merchant_order_no', reference).maybeSingle();
+            if (paymentResult?.error) throw paymentResult.error;
+            if (!paymentResult?.data) {
+                paymentResult = await db.from('guest_shop_checkout_payments').select('*')
+                    .eq('provider', provider).eq('provider_order_no', reference).maybeSingle();
+                if (paymentResult?.error) throw paymentResult.error;
+            }
+        }
+        const payment = paymentResult?.data;
+        if (!payment) return false;
+        const verifier = paymentAdapter?.verifyGuestWebhook || paymentAdapter?.verifyWebhook;
+        const parser = paymentAdapter?.parseGuestWebhook || paymentAdapter?.parseWebhook;
+        if (typeof verifier !== 'function' || typeof parser !== 'function') throw webhookError('支付通道未配置', 'guest_payment_provider_unavailable', 503, false);
+        const verification = await verifier({ provider, payload, rawBody, headers: req.headers || {}, signature: provider === 'zpay' ? payload.sign : webhookHeader(req, 'x-nowpayments-sig'), site: payment.site, expectedPayment: { ...payment, merchant_order_no: payment.merchant_order_no, expected_amount: payment.expected_amount }, requestOrigin: '', requestHost: webhookHeader(req, 'host'), env });
+        const normalized = await parser({ provider, payload, site: payment.site, env });
+        const observedStatus = String(normalized?.final_status || normalized?.status || '').trim().toLowerCase();
+        const providerOrderNo = normalizeWebhookReference(normalized?.provider_order_no || normalized?.provider_payment_id || payload.out_trade_no || payload.order_id || '');
+        const observedAmount = normalizeObservedAmount(normalized?.amount ?? normalized?.paid_amount);
+        const expectedCurrency = String(payment.currency || '').trim().toUpperCase();
+        const expectedAmount = normalizeGuestCashPrice(payment.expected_amount, security, expectedCurrency);
+        const quote = providerQuoteChecks(provider, normalized, payment, security);
+        const amountOk = provider === 'nowpayments'
+            ? quote.valid
+            : expectedAmount !== null
+                && observedAmount !== null
+                && amountMinorMatches(security, expectedAmount.amount, observedAmount, expectedCurrency);
+        const currencyOk = provider === 'nowpayments'
+            ? quote.valid
+            : String(normalized?.currency || expectedCurrency).trim().toUpperCase() === expectedCurrency;
+        const valid = verification?.valid === true && isFinalPaymentStatus(observedStatus) && amountOk && currencyOk
+            && providerOrderNo && (!payment.provider_order_no || payment.provider_order_no === providerOrderNo);
+        if (!valid) return sendJson(res, 202, { success: true, accepted: false });
+        const confirmed = await db.rpc('fn_guest_shop_confirm_checkout_batch_payment', {
+            p_payment_id: payment.id, p_provider: provider, p_provider_order_no: providerOrderNo,
+            p_observed_amount: provider === 'nowpayments' ? payment.expected_amount : observedAmount.amount,
+            p_observed_status: observedStatus
+        });
+        if (confirmed?.error) throw confirmed.error;
+        const batchId = payment.batch_id;
+        const claimed = await db.rpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batchId });
+        if (claimed?.error && !['guest_order_not_delivered', 'guest_inventory_not_reservable'].includes(String(claimed.error.message || ''))) throw claimed.error;
+        return sendJson(res, 200, { success: true, accepted: true, batch_order_no: payment.merchant_order_no, fulfillment_status: claimed?.error ? 'fulfilling' : 'delivered' });
     }
 
     function paymentIdentity(order, payment) {
@@ -1502,7 +2375,12 @@ function createGuestShopHandlers({
             ]),
             inspect: new Set(['checkoutAction']),
             commit: new Set(['checkoutAction', 'intentId', 'email', 'orderPassword']),
+<<<<<<< HEAD
+            ack: new Set(['checkoutAction', 'intentId']),
+            discard: new Set(['checkoutAction', 'intentId'])
+=======
             ack: new Set(['checkoutAction', 'intentId'])
+>>>>>>> https-origin/main
         };
         const allowed = fieldsByAction[action];
         for (const field of Object.keys(body || {})) {
@@ -1581,6 +2459,13 @@ function createGuestShopHandlers({
             && request.provider === candidate.provider
             && request.channel === candidate.channel
             && request.discountCode === candidate.discountCode
+<<<<<<< HEAD
+            && request.quote?.unitAmountMinor === candidate.quote?.unitAmountMinor
+            && request.quote?.currency === candidate.quote?.currency
+            && request.paymentQuote?.surchargeRate === candidate.paymentQuote?.surchargeRate
+            && request.paymentQuote?.surchargeLabel === candidate.paymentQuote?.surchargeLabel
+=======
+>>>>>>> https-origin/main
             && contactMatches;
     }
 
@@ -1592,7 +2477,48 @@ function createGuestShopHandlers({
         return `ci.${crypto.randomBytes(30).toString('base64url')}`;
     }
 
+<<<<<<< HEAD
+    async function loadCheckoutPaymentQuote({ siteName, provider, channel, allowedChannels }) {
+        if (!channelMatchesAllowlist(provider, channel, allowedChannels)) {
+            throw checkoutIntentError('当前支付通道未被商品允许', {
+                statusCode: 409,
+                code: 'guest_payment_channel_unavailable'
+            });
+        }
+        let stored;
+        try {
+            stored = await loadStoredPaymentConfigs(getSupabase(), { site: siteName });
+        } catch (cause) {
+            throw checkoutIntentError('支付报价暂不可用，请稍后重试', {
+                statusCode: 503,
+                code: 'guest_checkout_payment_quote_unavailable',
+                expose: false
+            });
+        }
+        const config = stored?.paymentChannels?.providers?.[provider];
+        if (!config || config.enabled !== true) {
+            throw checkoutIntentError('支付通道暂不可用，请重新选择', {
+                statusCode: 503,
+                code: 'guest_payment_provider_unavailable'
+            });
+        }
+        const surchargeRate = defaultGuestPricing.resolveGuestSurchargeRate(
+            config.surcharge_rate,
+            defaultGuestPricing.defaultGuestProviderSurcharge(provider).surcharge_rate
+        );
+        const rawSurchargeLabel = typeof config.surcharge_label === 'string'
+            ? config.surcharge_label.trim()
+            : '';
+        const surchargeLabel = rawSurchargeLabel
+            ? rawSurchargeLabel.slice(0, 40)
+            : defaultGuestPricing.defaultGuestProviderSurcharge(provider).surcharge_label;
+        return { surchargeRate, surchargeLabel };
+    }
+
+    async function normalizeCheckoutIntentPrepareRequest(body) {
+=======
     function normalizeCheckoutIntentPrepareRequest(body) {
+>>>>>>> https-origin/main
         const siteName = normalizeSiteValue(body.site);
         const provider = checkoutIntentPaymentKey(
             checkoutIntentAlias(body, 'provider', ['providerKey', 'provider_key'])
@@ -1636,6 +2562,19 @@ function createGuestShopHandlers({
                 expose: false
             });
         }
+<<<<<<< HEAD
+        const quote = await loadGuestSkuPricing({
+            supabase: getSupabase(),
+            productId: normalized.productId,
+            skuId: normalized.skuId,
+            siteName,
+            quantity: normalized.quantity
+        });
+        const paymentQuote = await loadCheckoutPaymentQuote({
+            siteName, provider, channel, allowedChannels: quote.channels
+        });
+=======
+>>>>>>> https-origin/main
         return {
             site: normalized.site,
             productId: normalized.productId,
@@ -1645,7 +2584,13 @@ function createGuestShopHandlers({
             channel,
             discountCode: normalized.discountCode || '',
             contactHash,
+<<<<<<< HEAD
+            credentialRequired,
+            quote: { unitAmountMinor: quote.unitAmountMinor, currency: quote.currency },
+            paymentQuote
+=======
             credentialRequired
+>>>>>>> https-origin/main
         };
     }
 
@@ -1654,7 +2599,11 @@ function createGuestShopHandlers({
         const createDeadlineAt = new Date(nowMs + GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS * 1000).toISOString();
         const expiresAt = new Date(nowMs + (GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS + orderTtlSeconds) * 1000).toISOString();
         return {
+<<<<<<< HEAD
+            v: 2,
+=======
             v: 1,
+>>>>>>> https-origin/main
             intentId: checkoutIntentId(),
             idempotencyKey: checkoutIntentIdempotencyKey(),
             issuedAt: new Date(nowMs).toISOString(),
@@ -1685,7 +2634,11 @@ function createGuestShopHandlers({
     }
 
     async function prepareCheckoutIntent(req, res, body, orderTtlSeconds) {
+<<<<<<< HEAD
+        const candidate = await normalizeCheckoutIntentPrepareRequest(body);
+=======
         const candidate = normalizeCheckoutIntentPrepareRequest(body);
+>>>>>>> https-origin/main
         let existing = readCheckoutIntent(req);
         // A prepare intent is a short create lease, not a two-hour checkout
         // reservation. Once the five-minute commit window has elapsed, retain
@@ -1777,19 +2730,50 @@ function createGuestShopHandlers({
         const contactHash = checkoutIntentContactHash(normalized.email, security, env);
         const storedContactHash = String(intent.request.contactHash || '');
         const candidateContactHash = String(contactHash || '');
+<<<<<<< HEAD
+        const storedOrder = await loadOrderForUnknownCreateResume(
+            intent.request.site,
+            intent.idempotencyKey
+        );
+        // A v1 cookie could be issued before buyer credentials were enabled and
+        // before prepare captured an email. Preserve recovery for that already
+        // created, still-unowned order: possession of the sealed high-entropy
+        // intent proves the browser holds the original idempotency key. If the
+        // order has a legacy contact hash, still require the submitted email to
+        // match it. This exception never authorizes a new order or an order that
+        // is already bound to a buyer group.
+        const legacyCredentiallessResume = intent.v === 1
+            && intent.request.credentialRequired !== true
+            && Boolean(storedOrder)
+            && !String(storedOrder.buyer_id || '').trim()
+            && (!String(storedOrder.buyer_contact_hash || '').trim()
+                || (Boolean(normalized.email)
+                    && security.constantTimeEqual(
+                        String(storedOrder.buyer_contact_hash),
+                        String(hashContact(normalized.email) || '')
+                    )));
+        const contactMatches = (!storedContactHash && !candidateContactHash)
+            || (Boolean(storedContactHash) && Boolean(candidateContactHash)
+                && security.constantTimeEqual(storedContactHash, candidateContactHash));
+        if (!contactMatches && !(legacyCredentiallessResume && !storedContactHash)) {
+=======
         const contactMatches = (!storedContactHash && !candidateContactHash)
             || (Boolean(storedContactHash) && Boolean(candidateContactHash)
                 && security.constantTimeEqual(storedContactHash, candidateContactHash));
         if (!contactMatches) {
+>>>>>>> https-origin/main
             throw checkoutIntentError('请使用创建该订单时填写的邮箱继续', {
                 statusCode: 403,
                 code: 'guest_checkout_intent_contact_mismatch'
             });
         }
+<<<<<<< HEAD
+=======
         const storedOrder = await loadOrderForUnknownCreateResume(
             intent.request.site,
             intent.idempotencyKey
         );
+>>>>>>> https-origin/main
         if (!storedOrder && Date.parse(intent.createDeadlineAt) <= Date.now()) {
             throw checkoutIntentError('该建单请求已过期，请重新确认商品后再试', {
                 statusCode: 409,
@@ -1813,6 +2797,13 @@ function createGuestShopHandlers({
                 // a replay, never a second reservation or provider payment intent.
                 resumeUnknown: true
             },
+<<<<<<< HEAD
+            quote: intent.request.quote,
+            paymentQuote: intent.request.paymentQuote || null,
+            legacyPaymentQuote: intent.legacyPaymentQuote === true,
+            legacyCredentiallessResume,
+=======
+>>>>>>> https-origin/main
             createDeadlineAt: intent.createDeadlineAt
         };
     }
@@ -1852,12 +2843,39 @@ function createGuestShopHandlers({
         return sendJson(res, 200, { success: true, acknowledged: true });
     }
 
+<<<<<<< HEAD
+    async function discardCheckoutIntent(req, res, body) {
+        const intent = readCheckoutIntent(req);
+        if (!intent) {
+            if (cookieHeaderValue(req, GUEST_CHECKOUT_INTENT_COOKIE_NAME)) clearCheckoutIntentCookie(res);
+            throw checkoutIntentError('未找到可取消的恢复请求，请重新确认商品后再试', {
+                statusCode: 409,
+                code: 'guest_checkout_intent_missing'
+            });
+        }
+        assertCheckoutIntentSelector(intent, body.intentId);
+        const order = await loadOrderForUnknownCreateResume(intent.request.site, intent.idempotencyKey);
+        if (order) {
+            // A real order keeps the sealed idempotency handle recoverable. This
+            // action only discards an orderless intent; actual order cancellation
+            // remains the separate unpaid-order cancellation flow.
+            throw checkoutIntentError('已找到原订单，请点击“确认原订单结果”继续恢复；本操作不会取消订单或释放库存', {
+                statusCode: 409,
+                code: 'guest_checkout_intent_order_exists'
+            });
+        }
+        clearCheckoutIntentCookie(res);
+        return sendJson(res, 200, { success: true, discarded: true });
+    }
+
+=======
+>>>>>>> https-origin/main
     function paymentStatusIsTerminal(status) {
         return ['confirmed', 'refunded', 'chargeback', 'expired', 'failed', 'amount_mismatch', 'overpaid', 'partial']
             .includes(String(status || '').trim().toLowerCase());
     }
 
-    function buildStoredCheckout(order, payment) {
+    function buildStoredCheckout(order, payment, { allowUsd = false } = {}) {
         const provider = String(payment?.provider || '').trim().toLowerCase();
         const channel = String(payment?.channel || provider).trim().toLowerCase();
         const metadata = storedPlainObject(payment?.provider_metadata);
@@ -1871,7 +2889,7 @@ function createGuestShopHandlers({
         }
         const currency = String(order?.currency || payment?.currency || '').trim().toUpperCase();
         const amountSnapshot = normalizeGuestCashPrice(order?.total_amount, security, currency);
-        if (!amountSnapshot || currency !== 'CNY') return null;
+        if (!amountSnapshot || (currency !== 'CNY' && !(allowUsd && currency === 'USD'))) return null;
         const amount = amountSnapshot.amount;
 
         if (provider === 'zpay') {
@@ -1970,7 +2988,23 @@ function createGuestShopHandlers({
         return null;
     }
 
+<<<<<<< HEAD
+    function appendPublicOrderError(snapshot, order) {
+        const code = String(order?.last_error_code || '').trim().toLowerCase();
+        // Public status responses may expose only the application's stable
+        // guest/payment error namespace. Provider payloads, SQLSTATEs and
+        // arbitrary worker diagnostics must stay server-side.
+        if (!/^(?:guest_|payment_creation_)[a-z0-9_.:-]{0,119}$/u.test(code)) return snapshot;
+        snapshot.last_error_code = code;
+        const message = String(order?.last_error_message || '').trim().slice(0, 500);
+        if (message) snapshot.last_error_message = message;
+        return snapshot;
+    }
+
+    function responseOrder(order, extras = {}) {
+=======
 function responseOrder(order, extras = {}) {
+>>>>>>> https-origin/main
         const result = {
             order_no: order.order_no,
             payment_order_id: order.payment_order_id,
@@ -1991,7 +3025,40 @@ function responseOrder(order, extras = {}) {
         if (quantity !== null) result.quantity = quantity;
         const breakdown = guestSnapshotBreakdown(order);
         if (breakdown) result.amount_breakdown = breakdown;
+<<<<<<< HEAD
+        return appendPublicOrderError(result, order);
+    }
+
+    function boundPublicPaymentContext(order, payment) {
+        if (!payment) return null;
+        try {
+            // Callers may only expose provider/channel from the exact payment
+            // intent bound to this guest order. Keep this check local to the
+            // serializer as defense in depth; arbitrary provider metadata is
+            // never part of the public snapshot.
+            paymentIdentity({
+                // Persisted guest_shop_orders rows do not carry the payment id;
+                // loadPaymentIntent obtains it from the uniquely bound payment
+                // row. RPC create results may still include payment_order_id.
+                payment_order_id: order?.payment_order_id || payment?.id,
+                order_id: order?.order_id || order?.id,
+                merchant_order_no: order?.order_no
+            }, payment);
+        } catch (_) {
+            return null;
+        }
+        const normalizePaymentKey = (value) => {
+            if (typeof value !== 'string') return '';
+            const normalized = value.toLowerCase();
+            return /^[a-z0-9][a-z0-9._:-]{0,79}$/u.test(normalized) ? normalized : '';
+        };
+        const provider = normalizePaymentKey(payment.provider);
+        const channel = normalizePaymentKey(payment.channel);
+        if (!provider || !channel) return null;
+        return { provider, channel };
+=======
         return result;
+>>>>>>> https-origin/main
     }
 
     function boundPublicPaymentContext(order, payment) {
@@ -2038,6 +3105,7 @@ function responseOrder(order, extras = {}) {
             currency: order.currency,
             expires_at: order.expires_at
         };
+        if (order.fulfilled_at) snapshot.fulfilled_at = order.fulfilled_at;
         const paymentPricing = storedGuestPaymentPricing(order, extras.payment, extras.computed);
         if (paymentPricing) snapshot.payment_pricing = paymentPricing;
         // Promo L1/L2, same rule as responseOrder: echoed only when the committed
@@ -2048,7 +3116,75 @@ function responseOrder(order, extras = {}) {
         if (breakdown) snapshot.amount_breakdown = breakdown;
         const paymentContext = boundPublicPaymentContext(order, extras.payment);
         if (paymentContext) Object.assign(snapshot, paymentContext);
+<<<<<<< HEAD
+        return appendPublicOrderError(snapshot, order);
+    }
+
+    async function respondToUnknownCreateResume({
+        req,
+        res,
+        storedOrder,
+        claimSecret,
+        provider,
+        channel
+    }) {
+        const order = {
+            ...storedOrder,
+            order_id: storedOrder.id,
+            merchant_order_no: storedOrder.order_no
+        };
+        const payment = await loadPaymentIntent(order);
+        order.payment_order_id = payment.id;
+        paymentIdentity(order, payment);
+        if (String(payment.provider || '').trim().toLowerCase() !== provider
+            || String(payment.channel || '').trim().toLowerCase() !== channel) {
+            throw unknownCreateConflict();
+        }
+
+        const paymentStatus = String(payment.status || '').trim().toLowerCase();
+        const orderPaymentStatus = String(order.payment_status || '').trim().toLowerCase();
+        let publicPaymentStatus = paymentStatus || orderPaymentStatus || 'review';
+        let checkout = null;
+
+        if (orderPaymentStatus === 'confirmed' || paymentStatus === 'confirmed') {
+            publicPaymentStatus = 'confirmed';
+        } else if (paymentStatusIsTerminal(orderPaymentStatus)) {
+            publicPaymentStatus = orderPaymentStatus;
+        } else if (paymentStatusIsTerminal(paymentStatus)) {
+            publicPaymentStatus = paymentStatus;
+        } else if (payment.provider_order_no
+            && ['created', 'review', 'pending'].includes(paymentStatus)) {
+            checkout = buildStoredCheckout(order, payment);
+            if (!checkout) {
+                // A provider reference without a reconstructable, allowlisted
+                // checkout is not safe to show. Persist review when possible and
+                // still return the order handle so the buyer can query it later.
+                await markPaymentCreationReview(
+                    order,
+                    'payment_creation_checkout_unrecoverable',
+                    '支付引用已存在但支付页面信息无法安全恢复'
+                );
+                publicPaymentStatus = 'review';
+            }
+        } else if (orderPaymentStatus === 'review' || paymentStatus === 'review') {
+            // The prior provider request may have succeeded without returning a
+            // reference. Never call the provider again from an unknown-result
+            // resume; expose only the order handle and its review state.
+            publicPaymentStatus = 'review';
+        }
+
+        setClaimProofCookie(req, res, order, claimSecret, security, env);
+        return sendJson(res, 200, {
+            success: true,
+            replayed: true,
+            resumed_unknown: true,
+            order: responseOrder(order, { payment, payment_pricing: storedGuestPaymentPricing(order, payment) }),
+            checkout,
+            payment_status: publicPaymentStatus
+        });
+=======
         return snapshot;
+>>>>>>> https-origin/main
     }
 
     async function respondToUnknownCreateResume({
@@ -2243,7 +3379,8 @@ function responseOrder(order, extras = {}) {
         netUnitAmount = null,
         provider,
         lease,
-        summaries = {}
+        summaries = {},
+        surchargeSnapshot = null
     }) {
         const current = await loadGuestOrderAmountRow(order);
         const listUnitAmount = current?.list_unit_amount ?? order?.list_unit_amount ?? null;
@@ -2266,14 +3403,26 @@ function responseOrder(order, extras = {}) {
         const baseUnitAmount = isNewRegime
             ? (netUnitAmount ?? current?.unit_amount)
             : creditAmount;
+<<<<<<< HEAD
+        const pricingSummaries = surchargeSnapshot
+            ? { [provider]: { surcharge_rate: surchargeSnapshot.surchargeRate, surcharge_label: surchargeSnapshot.surchargeLabel } }
+            : summaries;
+=======
+>>>>>>> https-origin/main
         const computed = isNewRegime
             ? defaultGuestPricing.resolveGuestOrderPayablePricing({
                 unitAmount: baseUnitAmount,
                 quantity,
                 providerKey: provider,
+<<<<<<< HEAD
+                summaries: pricingSummaries
+            })
+            : defaultGuestPricing.resolveGuestPayablePricing(baseUnitAmount, provider, pricingSummaries);
+=======
                 summaries
             })
             : defaultGuestPricing.resolveGuestPayablePricing(baseUnitAmount, provider, summaries);
+>>>>>>> https-origin/main
         if (!computed) {
             throw guestPayableAmountError('应付金额无效', 'guest_payable_amount_invalid');
         }
@@ -2438,11 +3587,14 @@ function responseOrder(order, extras = {}) {
     async function markPaymentCreationFailed(order, lease, code, message) {
         const db = getSupabase();
         if (!db?.from) return null;
+        const errorCode = String(code || '').trim() || 'guest_provider_create_failed';
+        const errorMessage = String(message || '支付创建失败').slice(0, 500);
+        const nowIso = new Date().toISOString();
         let query = db.from('guest_shop_payment_orders').update({
             status: 'failed',
-            last_error_code: code,
-            last_error_message: String(message || '支付创建失败').slice(0, 500),
-            updated_at: new Date().toISOString()
+            last_error_code: errorCode,
+            last_error_message: errorMessage,
+            updated_at: nowIso
         }).eq('id', String(order.payment_order_id))
             .eq('guest_order_id', String(order.order_id))
             .eq('merchant_order_no', String(order.merchant_order_no || order.order_no))
@@ -2453,6 +3605,34 @@ function responseOrder(order, extras = {}) {
         if (typeof query.select === 'function') query = query.select('id,status').maybeSingle();
         const result = await query;
         if (result?.error) return null;
+        // The payment row is not the public order state. Keep both rows in the
+        // same terminal state so a later status request cannot treat a
+        // rejected provider create as an unpaid checkout and reconstruct a
+        // payment page. The pending predicate prevents a late provider error
+        // from overwriting a payment that was confirmed concurrently.
+        const orderId = String(order.order_id || order.id || '').trim();
+        if (orderId) {
+            try {
+                let orderQuery = db.from('guest_shop_orders').update({
+                    payment_status: 'failed',
+                    last_error_code: errorCode,
+                    last_error_message: errorMessage,
+                    updated_at: nowIso
+                }).eq('id', orderId);
+                if (typeof orderQuery.in === 'function') {
+                    orderQuery = orderQuery.in('payment_status', ['pending', 'review']);
+                } else {
+                    orderQuery = orderQuery.eq('payment_status', 'pending');
+                }
+                if (typeof orderQuery.select === 'function') {
+                    orderQuery = orderQuery.select('id,payment_status,last_error_code').maybeSingle();
+                }
+                await orderQuery;
+            } catch (_) {
+                // The payment failure remains durable; status() performs the
+                // same guarded synchronization for an already-created order.
+            }
+        }
         return result?.data || null;
     }
 
@@ -2518,6 +3698,13 @@ function responseOrder(order, extras = {}) {
     async function orders(req, res, {
         skipRateLimit = false,
         internalBody = null,
+<<<<<<< HEAD
+        intentQuote = null,
+        intentPaymentQuote = null,
+        legacyPaymentQuote = false,
+        legacyCredentiallessResume = false,
+=======
+>>>>>>> https-origin/main
         intentCreateDeadlineAt = ''
     } = {}) {
         setGuestSensitiveHeaders(res);
@@ -2536,7 +3723,7 @@ function responseOrder(order, extras = {}) {
             // Validate all deployment-controlled timing values before parsing
             // or mutating an order.  In particular, a malformed TTL must not
             // reach the create RPC after it has acquired inventory.
-            const orderTtlSeconds = guestOrderTtlSeconds(env);
+            let orderTtlSeconds = guestOrderTtlSeconds(env);
             paymentCreationLeaseMs(env);
             // A commit has already consumed the external request body before it
             // reaches the legacy order core. Only the action dispatcher below
@@ -2551,6 +3738,10 @@ function responseOrder(order, extras = {}) {
                 if (action === 'inspect') return await inspectCheckoutIntent(req, res);
                 if (action === 'prepare') return await prepareCheckoutIntent(req, res, body, orderTtlSeconds);
                 if (action === 'ack') return await acknowledgeCheckoutIntent(req, res, body);
+<<<<<<< HEAD
+                if (action === 'discard') return await discardCheckoutIntent(req, res, body);
+=======
+>>>>>>> https-origin/main
 
                 // `commit` carries only a public selector plus the current buyer
                 // credentials. The sealed cookie supplies the product/payment
@@ -2562,6 +3753,13 @@ function responseOrder(order, extras = {}) {
                 return await orders(req, res, {
                     skipRateLimit: true,
                     internalBody: commit.body,
+<<<<<<< HEAD
+                    intentQuote: commit.quote,
+                    intentPaymentQuote: commit.paymentQuote,
+                    legacyPaymentQuote: commit.legacyPaymentQuote,
+                    legacyCredentiallessResume: commit.legacyCredentiallessResume,
+=======
+>>>>>>> https-origin/main
                     intentCreateDeadlineAt: commit.createDeadlineAt
                 });
             }
@@ -2613,6 +3811,13 @@ function responseOrder(order, extras = {}) {
                 allowOptionalContact: true,
                 allowDiscountCode: resumeUnknown || discountEnabled
             });
+            // C-D5: a promotion order gets a shorter reservation window so an
+            // abandoned discounted checkout cannot hold inventory and budget
+            // for the full ordinary-order TTL. The database migration repeats
+            // this invariant for callers that bypass this HTTP process.
+            if (normalized.discountCode) {
+                orderTtlSeconds = guestPromoOrderTtlSeconds(env);
+            }
             // Derive the credential from the high-entropy idempotency key. The
             // client still receives it only in the creation response, but a
             // retry after a lost response derives the same value and therefore
@@ -2637,7 +3842,13 @@ function responseOrder(order, extras = {}) {
                 : null;
             const resumeUnknownOrder = async (storedOrder) => {
                 assertUnknownCreateOrderBinding(storedOrder, normalized, claimHash);
+<<<<<<< HEAD
+                let verifiedContactHash = null;
+                if ((credentialEnabled || Boolean(storedOrder.buyer_id))
+                    && !(legacyCredentiallessResume && !String(storedOrder.buyer_id || '').trim())) {
+=======
                 if (credentialEnabled || Boolean(storedOrder.buyer_id)) {
+>>>>>>> https-origin/main
                     const email = String(normalized.email || '').trim().toLowerCase();
                     const orderPassword = typeof rawOrderPassword === 'string' ? rawOrderPassword : '';
                     if (!email || !orderPassword) {
@@ -2662,6 +3873,24 @@ function responseOrder(order, extras = {}) {
                         )) {
                         throw guestCredentialsInvalidError();
                     }
+<<<<<<< HEAD
+                    verifiedContactHash = auth.contactHash;
+                } else if (normalized.email && !legacyCredentiallessResume) {
+                    // Credentialless legacy orders still have an HMAC binding.
+                    // Persist the recoverable contact only if the durable order
+                    // row matches this submitted address; never attach a new
+                    // address to an order whose original binding is absent.
+                    verifiedContactHash = hashContact(normalized.email);
+                }
+                if (normalized.email && verifiedContactHash) {
+                    await persistVerifiedGuestOrderContact({
+                        orderId: storedOrder.id,
+                        siteName,
+                        email: normalized.email,
+                        contactHash: verifiedContactHash
+                    });
+=======
+>>>>>>> https-origin/main
                 }
                 return await respondToUnknownCreateResume({
                     req,
@@ -2708,6 +3937,15 @@ function responseOrder(order, extras = {}) {
                     allowDiscountCode: discountEnabled
                 });
             }
+<<<<<<< HEAD
+            if (legacyPaymentQuote) {
+                throw checkoutIntentError('结账报价版本已过期，请重新确认后再试', {
+                    statusCode: 409,
+                    code: 'guest_checkout_intent_expired'
+                });
+            }
+=======
+>>>>>>> https-origin/main
             const pricing = await loadGuestSkuPricing({
                 supabase: getSupabase(),
                 productId: normalized.productId,
@@ -2715,6 +3953,37 @@ function responseOrder(order, extras = {}) {
                 siteName,
                 quantity: normalized.quantity
             });
+<<<<<<< HEAD
+            let validatedPaymentQuote = intentPaymentQuote;
+            if (!validatedPaymentQuote) {
+                validatedPaymentQuote = await loadCheckoutPaymentQuote({
+                    siteName, provider, channel, allowedChannels: pricing.channels
+                });
+            }
+            if (intentQuote && (intentQuote.currency !== pricing.currency
+                || intentQuote.unitAmountMinor !== pricing.unitAmountMinor)) {
+                throw checkoutIntentError('商品报价已变化，请重新确认后再创建订单', {
+                    statusCode: 409,
+                    code: 'guest_checkout_quote_changed'
+                });
+            }
+            if (intentPaymentQuote) {
+                const currentPaymentQuote = await loadCheckoutPaymentQuote({
+                    siteName,
+                    provider,
+                    channel,
+                    allowedChannels: pricing.channels
+                });
+                if (currentPaymentQuote.surchargeRate !== intentPaymentQuote.surchargeRate
+                    || currentPaymentQuote.surchargeLabel !== intentPaymentQuote.surchargeLabel) {
+                    throw checkoutIntentError('支付报价已变化，请重新确认后再创建订单', {
+                        statusCode: 409,
+                        code: 'guest_checkout_quote_changed'
+                    });
+                }
+            }
+=======
+>>>>>>> https-origin/main
             const fingerprint = security.buildGuestRequestFingerprint({
                 ...normalized,
                 unitAmount: pricing.unitAmount,
@@ -2725,6 +3994,25 @@ function responseOrder(order, extras = {}) {
             const expiredAfterPricing = await loadExpiredIntentOrderOrThrow();
             if (expiredAfterPricing) return await resumeUnknownOrder(expiredAfterPricing);
 
+<<<<<<< HEAD
+            // Check email persistence only after all lookup-first recovery
+            // paths. If an order appeared while this preflight ran, recover it
+            // by the same idempotency key before returning the storage error.
+            try {
+                await prepareGuestContactStorage(normalized.email);
+            } catch (error) {
+                if (resumeUnknown) {
+                    const lateOrder = await loadOrderForUnknownCreateResume(
+                        siteName,
+                        normalized.idempotencyKey
+                    );
+                    if (lateOrder) return await resumeUnknownOrder(lateOrder);
+                }
+                throw error;
+            }
+
+=======
+>>>>>>> https-origin/main
             // Order Access 2.0 (§6.4): resolve the credential group that will own
             // this order. While the switch is OFF this is a no-op and the order
             // keeps the legacy non-strict contact hash (or null), so the path is
@@ -2786,6 +4074,133 @@ function responseOrder(order, extras = {}) {
             if (error) throw error;
             const order = Array.isArray(data) ? data[0] : data;
             if (!order?.order_id) throw new Error('订单创建失败');
+            if (normalized.email) {
+                await persistVerifiedGuestOrderContact({
+                    orderId: order.order_id,
+                    siteName,
+                    email: normalized.email,
+                    contactHash: buyerContactHash
+                });
+            }
+
+            async function releaseCreatedReservation(reason) {
+                const db = getSupabase();
+                if (!db?.from || !db?.rpc) return false;
+                try {
+                    const released = await db.rpc('guest_shop_release_held_reservations', {
+                        p_order_id: order.order_id,
+                        p_reason: String(reason || 'payment_create_failed').slice(0, 120)
+                    });
+                    if (released?.error) return false;
+                    // The RPC returns the number of reservation rows it
+                    // actually transitioned from held to released. A
+                    // successful PostgREST call can still return zero without
+                    // an error (for example when a conditional update matched
+                    // no rows), so checking only `error` would let this path
+                    // report a clean release while inventory remains held.
+                    let releasedCount = released?.data;
+                    if (Array.isArray(releasedCount)) {
+                        releasedCount = releasedCount.length === 1
+                            && releasedCount[0]
+                            && typeof releasedCount[0] === 'object'
+                            ? Object.values(releasedCount[0])[0]
+                            : releasedCount[0];
+                    } else if (releasedCount && typeof releasedCount === 'object') {
+                        releasedCount = Object.values(releasedCount)[0];
+                    }
+                    const count = Number(releasedCount);
+                    if (!Number.isSafeInteger(count) || count <= 0) return false;
+
+                    // A bulk release can legitimately return a positive count
+                    // while another row remains held (for example if a
+                    // concurrent worker changed one reservation between the
+                    // scan and the RPC). Confirm the durable post-condition
+                    // before treating the mismatch as safely released.
+                    const remaining = await db.from('guest_shop_inventory_reservations')
+                        .select('id')
+                        .eq('order_id', String(order.order_id))
+                        .eq('status', 'held');
+                    if (remaining?.error) return false;
+                    const remainingRows = remaining?.data;
+                    const hasRemaining = Array.isArray(remainingRows)
+                        ? remainingRows.length > 0
+                        : Boolean(remainingRows && (remainingRows.id || Object.keys(remainingRows).length));
+                    return !hasRemaining;
+                } catch (_) {
+                    return false;
+                }
+            }
+
+            async function markPricingParityReview() {
+                const db = getSupabase();
+                if (!db?.from) return false;
+                const hasExactlyOneAffectedRow = (result) => {
+                    if (result?.error) return false;
+                    // PostgREST returns `count` when the select requests an
+                    // exact count. Keep the returned id as a compatibility
+                    // fallback for adapters that omit count, but never accept
+                    // an explicit zero (or a multi-row response).
+                    if (result && result.count !== null && result.count !== undefined) {
+                        return Number(result.count) === 1
+                            && Boolean(result.data && !Array.isArray(result.data) && result.data.id);
+                    }
+                    return Boolean(result?.data && !Array.isArray(result.data) && result.data.id);
+                };
+                try {
+                    const now = new Date().toISOString();
+                    const paymentUpdate = await db.from('guest_shop_payment_orders').update({
+                        last_error_code: 'guest_pricing_parity_mismatch',
+                        last_error_message: '订单定价与报价不一致，需人工核对',
+                        updated_at: now
+                    }).eq('id', String(order.payment_order_id))
+                        .eq('guest_order_id', String(order.order_id))
+                        .eq('merchant_order_no', String(order.order_no || order.merchant_order_no))
+                        .eq('purpose', 'shop_direct')
+                        .eq('status', 'pending')
+                        .select('id', { count: 'exact' })
+                        .maybeSingle();
+                    if (!hasExactlyOneAffectedRow(paymentUpdate)) return false;
+                    const orderUpdate = await db.from('guest_shop_orders').update({
+                        payment_status: 'review',
+                        updated_at: now
+                    }).eq('id', String(order.order_id))
+                        .eq('payment_status', 'pending')
+                        .select('id', { count: 'exact' })
+                        .maybeSingle();
+                    return hasExactlyOneAffectedRow(orderUpdate);
+                } catch (_) {
+                    return false;
+                }
+            }
+
+            // Promo L1/L2 amount-regime detection and parity gate.
+            //
+            // list_unit_amount IS NOT NULL identifies a row written by the promo
+            // create RPC; NULL identifies a pre-L1 row (or a replay of one), which
+            // keeps the legacy fee-folded shape and is deliberately skipped here.
+            //
+            // For a new row the database must agree with the price this process
+            // quoted and with the quantity the buyer asked for. A replay can only
+            // reach this point with an identical request fingerprint, and that
+            // fingerprint already pins quantity + unitAmountMinor, so the gate can
+            // never trip on a legitimate retry: it only fires when the SQL and Node
+            // resolvers disagree, in which case creating a payment would charge an
+            // amount nobody quoted. Fail closed for reconciliation instead.
+            const orderListUnitAmount = order?.list_unit_amount;
+            const isNewRegimeOrder = orderListUnitAmount !== null && orderListUnitAmount !== undefined;
+            if (isNewRegimeOrder
+                && (Number(order.quantity) !== normalized.quantity
+                    || !defaultGuestPricing.moneyAmountsEqual(orderListUnitAmount, pricing.unitAmount))) {
+                const marked = await markPricingParityReview();
+                if (!marked) {
+                    throw guestPayableAmountError('订单定价异常，已进入人工核对', 'guest_pricing_parity_review_required');
+                }
+                const released = await releaseCreatedReservation('pricing_parity_mismatch');
+                if (!released) {
+                    throw guestPayableAmountError('订单定价异常，库存或促销额度待人工核对', 'guest_pricing_parity_review_required');
+                }
+                throw guestPayableAmountError('订单定价与报价不一致', 'guest_pricing_parity_mismatch');
+            }
 
             // Promo L1/L2 amount-regime detection and parity gate.
             //
@@ -2822,6 +4237,11 @@ function responseOrder(order, extras = {}) {
                 });
             }
 
+<<<<<<< HEAD
+            const paymentProviderSummaries = validatedPaymentQuote
+                ? { [provider]: { surcharge_rate: validatedPaymentQuote.surchargeRate, surcharge_label: validatedPaymentQuote.surchargeLabel } }
+                : {};
+=======
             async function releaseCreatedReservation(reason) {
                 const db = getSupabase();
                 if (!db?.from || !db?.rpc) return false;
@@ -2844,6 +4264,7 @@ function responseOrder(order, extras = {}) {
                 supabase: getSupabase(),
                 siteName
             });
+>>>>>>> https-origin/main
             // New-regime rows price the surcharge on the NET ORDER TOTAL
             // (unit*quantity, discount already applied by the database) and keep
             // unit_amount un-folded, so the replay/response payload must be built
@@ -2950,7 +4371,8 @@ function responseOrder(order, extras = {}) {
                 netUnitAmount: order.unit_amount,
                 provider,
                 lease: creationLease,
-                summaries: paymentProviderSummaries
+                summaries: paymentProviderSummaries,
+                surchargeSnapshot: validatedPaymentQuote
             });
             if (!persistResult.ok) {
                 await clearPaymentCreationLease(order, creationLease);
@@ -2983,12 +4405,23 @@ function responseOrder(order, extras = {}) {
                     // order whose card is sold to somebody else.
                     const code = String(error?.code || '').toLowerCase();
                     const definitive = code === 'guest_provider_create_failed'
+                        || code === 'guest_provider_checkout_missing'
                         || code === 'guest_payment_channel_unavailable'
                         || code === 'guest_payment_provider_disabled'
                         || code === 'guest_payment_provider_not_ready';
                     if (definitive) {
-                        await markPaymentCreationFailed(order, creationLease, code || 'guest_provider_create_failed', '支付通道拒绝创建');
+                        await markPaymentCreationFailed(
+                            order,
+                            creationLease,
+                            code || 'guest_provider_create_failed',
+                            error?.message || '支付通道拒绝创建'
+                        );
                         await releaseCreatedReservation(`payment_create_failed:${code || 'provider_rejected'}`);
+                        // This intent now points at a terminal failed order.
+                        // Keeping it in the browser would make the next
+                        // purchase attempt resume the rejected order instead
+                        // of starting a fresh checkout.
+                        clearCheckoutIntentCookie(res);
                     } else {
                         await markPaymentCreationReview(order, 'payment_creation_unknown', '支付创建结果未知，请对账确认', creationLease);
                     }
@@ -2997,6 +4430,7 @@ function responseOrder(order, extras = {}) {
             } else {
                 await markPaymentCreationFailed(order, creationLease, 'guest_payment_provider_unavailable', '游客支付通道尚未配置');
                 await releaseCreatedReservation('payment_provider_unavailable');
+                clearCheckoutIntentCookie(res);
                 throw Object.assign(new Error('游客支付通道尚未配置'), { statusCode: 503, code: 'guest_payment_provider_unavailable', expose: true });
             }
             // Bind provider references only to the exact payment row created by
@@ -3544,6 +4978,7 @@ function responseOrder(order, extras = {}) {
             let checkout = null;
             const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
             const fulfillmentStatus = String(order.fulfillment_status || '').trim().toLowerCase();
+            const db = getSupabase();
             // A refreshed tab may have only the non-sensitive order handle in
             // sessionStorage. Reconstruct the checkout from server-owned,
             // allowlisted provider metadata after the claim cookie has been
@@ -3563,7 +4998,44 @@ function responseOrder(order, extras = {}) {
                         order_id: order.id,
                         merchant_order_no: order.order_no
                     });
-                    if (!paymentStatusIsTerminal(paymentStatus)) {
+                    const storedPaymentStatus = String(payment?.status || '').trim().toLowerCase();
+                    const paymentErrorCode = String(payment?.last_error_code || '').trim().toLowerCase();
+                    const orderErrorCode = String(order?.last_error_code || '').trim().toLowerCase();
+                    const definitiveCreateFailure =
+                        isDefinitivePaymentCreationFailureCode(paymentErrorCode)
+                        || isDefinitivePaymentCreationFailureCode(orderErrorCode);
+                    // Older deployments could persist the payment failure while
+                    // leaving the order row pending. Repair that narrow,
+                    // fail-closed mismatch before any checkout reconstruction;
+                    // a rejected provider create must never be polled as an
+                    // unpaid order or expose a phantom wallet stage.
+                    if ((storedPaymentStatus === 'failed' || definitiveCreateFailure)
+                        && ['pending', 'review', 'created'].includes(paymentStatus)) {
+                        const errorCode = String(
+                            paymentErrorCode || orderErrorCode || 'guest_provider_create_failed'
+                        ).trim();
+                        const errorMessage = String(payment?.last_error_message || '支付通道拒绝创建').slice(0, 500);
+                        try {
+                            let repair = db.from('guest_shop_orders').update({
+                                payment_status: 'failed',
+                                last_error_code: errorCode,
+                                last_error_message: errorMessage,
+                                updated_at: new Date().toISOString()
+                            }).eq('id', String(order.id));
+                            if (typeof repair.in === 'function') repair = repair.in('payment_status', ['pending', 'review']);
+                            await repair;
+                        } catch (_) {
+                            // The response still uses the terminal projection;
+                            // a later status request can retry this repair.
+                        }
+                        order = {
+                            ...order,
+                            payment_status: 'failed',
+                            last_error_code: errorCode,
+                            last_error_message: errorMessage
+                        };
+                    }
+                    if (!paymentStatusIsTerminal(String(order.payment_status || '').trim().toLowerCase())) {
                         checkout = buildStoredCheckout(order, payment);
                     }
                 } catch (_) {
@@ -3574,13 +5046,18 @@ function responseOrder(order, extras = {}) {
                     payment = null;
                     checkout = null;
                 }
+                const effectivePaymentStatus = String(order.payment_status || '').trim().toLowerCase();
                 // A provider callback can be lost, delayed, or dropped. Mirror
                 // the logged-in wallet recharge flow and actively query the
                 // provider from this endpoint so a genuinely paid order can
                 // self-heal without an operator touching the row.
                 const shouldRefreshProvider = payment
                     && fulfillmentStatus !== 'delivered'
+<<<<<<< HEAD
+                    && (!paymentStatusIsTerminal(effectivePaymentStatus) || effectivePaymentStatus === 'confirmed');
+=======
                     && (!paymentStatusIsTerminal(paymentStatus) || paymentStatus === 'confirmed');
+>>>>>>> https-origin/main
                 if (shouldRefreshProvider) {
                     const refresh = await attemptGuestPaymentStatusQuery({
                         order,
@@ -3612,6 +5089,46 @@ function responseOrder(order, extras = {}) {
         } catch (error) { return failResponse(res, error); }
     }
 
+<<<<<<< HEAD
+    async function cancel(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        if (!(await limit(req, res, 'cancel', { limit: 12 }))) return;
+        try {
+            const body = await parseJson(req);
+            for (const key of Object.keys(body || {})) {
+                if (!['orderNo', 'order_no'].includes(key)) {
+                    throw new security.GuestShopSecurityError('取消请求字段不允许', {
+                        statusCode: 400,
+                        code: 'guest_cancel_invalid_request'
+                    });
+                }
+            }
+            const order = await loadOrderByNo(body.orderNo || body.order_no);
+            await authorizeClaim(req, order);
+            const db = getSupabase();
+            if (!db?.rpc) throw guestDatabaseUnavailableError();
+            const result = await db.rpc('fn_guest_shop_cancel_order', {
+                p_order_id: order.id,
+                p_reason: 'buyer_cancelled'
+            });
+            if (result?.error) throw result.error;
+            const refreshed = await loadOrderByNo(order.order_no);
+            return sendJson(res, 200, {
+                success: true,
+                cancelled: true,
+                order: publicOrderSnapshot(refreshed)
+            });
+        } catch (error) {
+            return failResponse(res, mapGuestCancelOrderError(error));
+        }
+    }
+
+=======
+>>>>>>> https-origin/main
     async function claim(req, res) {
         setGuestSensitiveHeaders(res);
         if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendJson(res, 405, { success: false, message: 'Method not allowed' }); }
@@ -3632,7 +5149,12 @@ function responseOrder(order, extras = {}) {
                 return sendJson(res, 409, { success: false, code: 'guest_order_not_delivered', message: '订单尚未完成发货' });
             }
             const content = await loadClaimedContent(order);
-            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
+            return sendJson(res, 200, {
+                success: true,
+                order_no: order.order_no,
+                ...(order.fulfilled_at ? { fulfilled_at: order.fulfilled_at } : {}),
+                content
+            });
         } catch (error) { return failResponse(res, error); }
     }
 
@@ -4069,6 +5591,442 @@ function responseOrder(order, extras = {}) {
         } catch (error) { return failResponse(res, error); }
     }
 
+<<<<<<< HEAD
+=======
+    // ------------------------------------------------------------------
+    // Order Access 2.0 (A2): buyer-credential session + list/detail/delivery.
+    //
+    // Everything in this block is gated behind BOTH the credential and
+    // standalone-page switches. With either switch off each new route answers
+    // 404 and the GET branch on /guest/orders is not even reachable, so the
+    // deployed behaviour stays byte-identical to today (§13.4 / §15.1).
+    // ------------------------------------------------------------------
+
+    function buyerFeatureDisabledError() {
+        // 404, not 403: an unreleased endpoint must not be distinguishable from
+        // a route that never existed, otherwise the route map itself advertises
+        // the rollout state of the credential feature.
+        return Object.assign(new Error('接口不存在'), {
+            statusCode: 404, code: 'guest_feature_disabled', expose: true
+        });
+    }
+
+    function isGuestOrderAccessEnabled() {
+        return defaultBuyerCredentials.isBuyerCredentialEnabled(env)
+            && defaultBuyerCredentials.isGuestOrdersPageEnabled(env);
+    }
+
+    function ensureGuestOrderAccessEnabled() {
+        if (!isGuestOrderAccessEnabled()) throw buyerFeatureDisabledError();
+    }
+
+    async function orderAccessAvailability(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureGuestOrderAccessEnabled();
+            // The page only needs a fail-closed capability acknowledgement; no
+            // buyer, order, rollout detail or configuration values are exposed.
+            return sendJson(res, 200, { success: true, enabled: true });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    function guestCredentialsInvalidError() {
+        // §9.1: ONE code and ONE message cover "unknown email", "wrong password"
+        // and "this email has no guest order". The real reason only ever reaches
+        // guest_shop_access_attempts.outcome, never the body, header or log.
+        return new security.GuestShopSecurityError('邮箱或查询密码不正确', {
+            statusCode: 403, code: 'guest_order_credentials_invalid'
+        });
+    }
+
+    function guestOrderLockedError() {
+        return new security.GuestShopSecurityError('尝试次数过多，请稍后再试', {
+            statusCode: 423, code: 'guest_order_locked'
+        });
+    }
+
+    function guestOrderRateLimitedError() {
+        return new security.GuestShopSecurityError('操作过于频繁，请稍后再试', {
+            statusCode: 429, code: 'guest_rate_limited'
+        });
+    }
+
+    function guestOrderNotFoundError() {
+        return new security.GuestShopSecurityError('未找到该订单', {
+            statusCode: 404, code: 'guest_order_not_found'
+        });
+    }
+
+    function guestDatabaseUnavailableError() {
+        return Object.assign(new Error('游客订单数据库不可用'), {
+            statusCode: 503, code: 'guest_database_unavailable', expose: false
+        });
+    }
+
+    /**
+     * §8.1 shared login path. POST /guest/access/login and the per-request
+     * X-Guest-Order-Credential header both funnel through here, which is the
+     * only reason the two channels share one lock budget, one audit stream and
+     * one equal-cost scrypt. Bypassing it would hand an attacker a second,
+     * uncounted guessing surface.
+     */
+    async function resolveBuyerSessionFromPassword({ req, email, password, siteName }) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const rawPassword = typeof password === 'string' ? password : '';
+        // Throws a 503 expose:false misconfiguration error on a malformed knob,
+        // so a typo can never silently widen the budget to "unlimited".
+        const settings = defaultBuyerCredentials.resolveBuyerCredentialSettings(env);
+        const contactHash = security.hashGuestContact(normalizedEmail, { env, strict: true });
+        const ipHash = hashRequestAttribute(clientIpForRateLimit(req));
+        const deviceHash = hashRequestAttribute(req?.headers?.['user-agent'] || '');
+        const audit = async (outcome, buyerId = null) => {
+            // Evidence only. A failed insert must never flip an auth decision in
+            // either direction, so this is isolated from the caller's outcome.
+            try {
+                await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                    supabase: db, site: siteName, contactHash, buyerId, ipHash, deviceHash, outcome
+                });
+            } catch (_) { /* best effort by contract */ }
+        };
+
+        // The IP budget is evaluated BEFORE any group read or scrypt: a spraying
+        // attacker is cut off cheaply and cannot use latency as an email oracle.
+        const ipFailures = await defaultBuyerCredentials.countRecentIpFailures({
+            supabase: db,
+            ipHash,
+            windowSeconds: settings.loginWindowSeconds,
+            budget: settings.ipMaxFailures
+        });
+        if (ipFailures >= settings.ipMaxFailures) {
+            await audit('rate_limited');
+            throw guestOrderRateLimitedError();
+        }
+
+        const rows = await defaultBuyerCredentials.loadBuyerGroups({
+            supabase: db, site: siteName, contactHash
+        });
+
+        // A lock on ANY group of the contact locks the whole contact, and is
+        // checked before scrypt so a locked contact is both cheap and free of a
+        // timing side channel (§8.1).
+        const lockedRow = defaultBuyerCredentials.findActiveBuyerLock(rows);
+        if (lockedRow) {
+            await audit('locked', lockedRow.id || null);
+            throw guestOrderLockedError();
+        }
+
+        const { matched, needsRehash } = defaultBuyerCredentials
+            .verifyBuyerPasswordAcrossGroups(rawPassword, rows, security);
+        if (matched) {
+            // §10.4 (A4) will retire guest access for a merged group. Nothing
+            // writes merged_into_user_id yet, so this is the fail-closed guard:
+            // a merged group answers exactly like a wrong password, reusing the
+            // unified 403 and the existing outcome enum rather than inventing a
+            // distinguishable signal.
+            if (matched.mergedIntoUserId) {
+                await audit('bad_password', matched.id);
+                throw guestCredentialsInvalidError();
+            }
+            await defaultBuyerCredentials.resetBuyerLoginFailures({
+                supabase: db, site: siteName, contactHash, rows
+            });
+            let rehashed = false;
+            if (needsRehash) {
+                rehashed = await defaultBuyerCredentials.rehashBuyerPasswordIfNeeded({
+                    supabase: db, row: matched, password: rawPassword, security
+                }) === true;
+            }
+            await audit('success', matched.id);
+            // buyer_id (never contact_hash) is the authorization subject, so a
+            // group=2 session cannot read group=1 orders or card content
+            // (§6.4.2). The cookie payload below carries this same id.
+            //
+            // passwordVersion must reflect the value the row holds AFTER the
+            // §6.2 transparent rehash, not the one we read: the rehash bumps it,
+            // and a cookie minted with the stale number would be rejected by the
+            // very next authenticated read. `rehashBuyerPasswordIfNeeded` is a
+            // best-effort CAS (it returns false when the hash was already
+            // current or when the write lost a race), so the version is derived
+            // from its actual outcome through the SAME formula the writer used.
+            return {
+                buyerId: matched.id,
+                contactHash,
+                passwordVersion: rehashed
+                    ? defaultBuyerCredentials.nextBuyerPasswordVersion(matched.passwordVersion)
+                    : matched.passwordVersion
+            };
+        }
+
+        const failure = await defaultBuyerCredentials.registerBuyerLoginFailure({
+            supabase: db, site: siteName, contactHash, rows, settings
+        });
+        await audit(rows.length === 0 ? 'unknown_email' : 'bad_password');
+        if (failure?.locked) throw guestOrderLockedError();
+        throw guestCredentialsInvalidError();
+    }
+
+    /**
+     * §9.2: ownership is proven by buyer_id and every non-match collapses to
+     * 404 — never 403 — so detail/delivery cannot be used as an order-number
+     * existence oracle.
+     */
+    async function loadOwnedGuestOrder(buyerId, orderNo) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const normalized = String(orderNo || '').trim();
+        if (!normalized) throw guestOrderNotFoundError();
+        const result = await db.from('guest_shop_orders').select('*')
+            .eq('order_no', normalized)
+            .eq('buyer_id', String(buyerId))
+            .maybeSingle();
+        if (result?.error) throw result.error;
+        if (!result?.data) throw guestOrderNotFoundError();
+        return result.data;
+    }
+
+    /**
+     * §10.5 / deviation D-8: the session cookie is a CACHED authorization, not
+     * a standing one. Its AES-GCM tag proves we minted it; it cannot prove the
+     * credential group is still in the state it was in when we minted it. So
+     * every cookie-authenticated read re-validates four things against
+     * `guest_shop_buyers`:
+     *
+     *   row exists            -> the group was not deleted
+     *   merged_into_user_id   -> §10.4 retired guest access; fail closed
+     *   locked_until          -> a lock raised on ANOTHER device after this
+     *                            cookie was issued must still cut this one off,
+     *                            otherwise §8.1's lock would only protect the
+     *                            login endpoint and not the data it guards
+     *   password_version == pv-> THE revocation handle. An admin issuing a reset
+     *                            link, a buyer completing a reset, or a §6.2
+     *                            transparent rehash all move it, and every
+     *                            outstanding cookie for that group dies with it
+     *
+     * Cost: one indexed primary-key read per authenticated request, only while
+     * the credential switch is on (with it off, order/delivery answer 404 before
+     * authentication and the GET list branch is unreachable). That is the price
+     * of making "revoke a guest session" mean something, and it is strictly
+     * cheaper than the scrypt the header channel pays on every request.
+     *
+     * All four failures collapse to the SAME unified 403 as a wrong password
+     * (§9.1), except the lock (423, matching login) and a database error (503,
+     * retryable — an outage must not read as "your credentials are wrong").
+     */
+    async function validateSessionBuyer(session) {
+        const db = getSupabase();
+        if (!db?.from) throw guestDatabaseUnavailableError();
+        const buyerId = String(session?.buyerId || '').trim();
+        // A malformed id can only come from our own minting, so treat it as an
+        // invalid session rather than letting a 404 escape the unified 403.
+        if (!defaultBuyerAccessAdmin.isUuid(buyerId)) throw guestCredentialsInvalidError();
+        let row = null;
+        try {
+            row = await defaultBuyerAccessAdmin.loadBuyerRowById({ supabase: db, buyerId });
+        } catch (_) {
+            // Past the UUID check the only throw is a database error.
+            throw guestDatabaseUnavailableError();
+        }
+        if (!row) throw guestCredentialsInvalidError();
+        if (row.mergedIntoUserId) throw guestCredentialsInvalidError();
+        if (defaultBuyerAccessAdmin.isBuyerLocked(row)) throw guestOrderLockedError();
+        if (Number(row.passwordVersion) !== Number(session.pv)) throw guestCredentialsInvalidError();
+        return {
+            buyerId: row.id,
+            contactHash: row.contactHash,
+            passwordVersion: row.passwordVersion
+        };
+    }
+
+    /**
+     * §7.1 transport rules for the credential endpoints:
+     *   - query-string credentials are rejected outright, so they can never end
+     *     up in an access log, a proxy log or a Referer header;
+     *   - the session cookie wins when present, which is what lets a
+     *     browser-native navigation (card download) work without a custom
+     *     header;
+     *   - otherwise the X-Guest-Order-Credential header is verified through the
+     *     shared login path, keeping one lock budget.
+     */
+    async function authenticateGuestOrderAccess(req) {
+        for (const name of ['email', 'order_password', 'orderPassword', 'password']) {
+            const value = queryValue(req, name);
+            if (value === undefined || value === null || String(value) === '') continue;
+            // Audit the attempt with the real site when it parses; an unparseable
+            // site is skipped rather than written as a row that the NOT NULL /
+            // CHECK constraint would reject anyway. The 400 is returned either
+            // way, so audit failure cannot weaken the rejection.
+            let auditSite = '';
+            try {
+                auditSite = security.normalizeGuestSite(queryValue(req, 'site'));
+            } catch (_) { auditSite = ''; }
+            if (auditSite) {
+                try {
+                    await defaultBuyerCredentials.recordBuyerAccessAttempt({
+                        supabase: getSupabase(),
+                        site: auditSite,
+                        contactHash: null,
+                        buyerId: null,
+                        ipHash: hashRequestAttribute(clientIpForRateLimit(req)),
+                        deviceHash: hashRequestAttribute(req?.headers?.['user-agent'] || ''),
+                        outcome: 'rate_limited'
+                    });
+                } catch (_) { /* best effort */ }
+            }
+            throw new security.GuestShopSecurityError('不支持通过 URL 传递查询凭证', {
+                statusCode: 400, code: 'guest_credential_malformed', field: name
+            });
+        }
+
+        const session = decryptAccessCookie(
+            cookieHeaderValue(req, GUEST_ACCESS_COOKIE_NAME), security, env
+        );
+        // Cookie wins over the header (§7.1) but is NOT trusted on its own: see
+        // validateSessionBuyer for the four re-validations and why a cookie
+        // without them would make §8.1's lock and §10.5's reset unenforceable.
+        if (session) return validateSessionBuyer(session);
+
+        const header = req?.headers?.[security.GUEST_ORDER_CREDENTIAL_HEADER];
+        if (header) {
+            // parseGuestOrderCredentialHeader throws 400 guest_credential_malformed
+            // for anything non-canonical, including the non-canonical base64url
+            // re-encodings (§16.1).
+            const parsed = security.parseGuestOrderCredentialHeader(header);
+            return resolveBuyerSessionFromPassword({
+                req,
+                email: parsed.email,
+                password: parsed.password,
+                siteName: normalizeSiteValue(queryValue(req, 'site'))
+            });
+        }
+        throw guestCredentialsInvalidError();
+    }
+
+    function guestOrderListSnapshot(order) {
+        return {
+            ...publicOrderSnapshot(order),
+            site: order.site || '',
+            quantity: Number(order.quantity) || 1,
+            unit_amount: order.unit_amount === undefined || order.unit_amount === null
+                ? null : order.unit_amount,
+            created_at: order.created_at || null,
+            // §11.2: the guest orders page renders two discount lines (coupon /
+            // campaign). A2 shipped the container; L2 now fills the coupon line
+            // from the database-committed discount_amount, and a legacy row stays
+            // null so the client renders nothing instead of a misleading
+            // "已优惠 0.00".
+            coupon_discount: guestSnapshotDiscount(order),
+            // L1 tier/flash pricing is committed AS the list unit price, not as a
+            // separable amount, so there is nothing honest to render here. It
+            // stays null until a campaign-discount column exists.
+            promo_discount: null
+        };
+    }
+
+    function parsePositiveQueryInt(value, { defaultValue, min, max }) {
+        const raw = String(value ?? '').trim();
+        if (!raw) return defaultValue;
+        if (!/^\d+$/u.test(raw)) return defaultValue;
+        const parsed = Number(raw);
+        if (!Number.isSafeInteger(parsed)) return defaultValue;
+        return Math.min(max, Math.max(min, parsed));
+    }
+
+    async function listOrders(req, res) {
+        // Read budget 30/min (§8.1). Taken before authentication so an
+        // unauthenticated spray still consumes the coarse limiter.
+        if (!(await limit(req, res, 'guest-orders-read', { limit: 30 }))) return;
+        try {
+            const auth = await authenticateGuestOrderAccess(req);
+            const db = getSupabase();
+            if (!db?.from) throw guestDatabaseUnavailableError();
+            const page = parsePositiveQueryInt(queryValue(req, 'page'), { defaultValue: 1, min: 1, max: 10_000 });
+            const pageSize = parsePositiveQueryInt(queryValue(req, 'pageSize') ?? queryValue(req, 'page_size'), {
+                defaultValue: 20, min: 1, max: 50
+            });
+            // Promo L1/L2 columns feed the §11.2 discount line and the amount
+            // breakdown. They are database-owned values; the client only renders
+            // them and never recomputes an amount from them.
+            const fields = 'order_no,site,total_amount,currency,quantity,unit_amount,'
+                + 'list_unit_amount,discount_amount,discount_code,payment_fee_amount,'
+                + 'payment_status,fulfillment_status,refund_status,expires_at,created_at';
+            let query = db.from('guest_shop_orders').select(fields, { count: 'exact' });
+            // buyer_id is unique per (site, contact_hash), so it already implies
+            // the site; no extra site filter is needed or wanted.
+            query = query.eq('buyer_id', String(auth.buyerId));
+            const orderNo = String(queryValue(req, 'order_no') || queryValue(req, 'orderNo') || '').trim();
+            if (orderNo) query = query.eq('order_no', orderNo);
+            if (typeof query.order === 'function') query = query.order('created_at', { ascending: false });
+            if (typeof query.range === 'function') {
+                query = query.range((page - 1) * pageSize, page * pageSize - 1);
+            } else if (typeof query.limit === 'function') {
+                query = query.limit(pageSize);
+            }
+            const result = await query;
+            if (result?.error) throw result.error;
+            const rows = Array.isArray(result?.data) ? result.data : [];
+            const total = Number.isFinite(Number(result?.count)) && result?.count !== null
+                ? Number(result.count) : rows.length;
+            return sendJson(res, 200, {
+                success: true,
+                orders: rows.map(guestOrderListSnapshot),
+                pagination: { page, page_size: pageSize, total }
+            });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function orderDetail(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureGuestOrderAccessEnabled();
+            if (!(await limit(req, res, 'guest-orders-read', { limit: 30 }))) return;
+            const auth = await authenticateGuestOrderAccess(req);
+            const order = await loadOwnedGuestOrder(
+                auth.buyerId,
+                queryValue(req, 'order_no') || queryValue(req, 'orderNo')
+            );
+            return sendJson(res, 200, { success: true, order: guestOrderListSnapshot(order) });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+    async function delivery(req, res) {
+        setGuestSensitiveHeaders(res);
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, { success: false, message: 'Method not allowed' });
+        }
+        try {
+            ensureGuestOrderAccessEnabled();
+            // Card content is the highest-value payload on the guest surface, so
+            // it gets a tighter budget than the list endpoint.
+            if (!(await limit(req, res, 'guest-orders-delivery', { limit: 20 }))) return;
+            const auth = await authenticateGuestOrderAccess(req);
+            const order = await loadOwnedGuestOrder(
+                auth.buyerId,
+                queryValue(req, 'order_no') || queryValue(req, 'orderNo')
+            );
+            const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+            const fulfillmentStatus = String(order.fulfillment_status || '').trim().toLowerCase();
+            if (paymentStatus !== 'confirmed' || fulfillmentStatus !== 'delivered') {
+                return sendJson(res, 409, {
+                    success: false, code: 'guest_order_not_ready', message: '订单尚未完成发货'
+                });
+            }
+            const content = await loadClaimedContent(order);
+            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
+        } catch (error) { return failResponse(res, error); }
+    }
+
+>>>>>>> https-origin/main
     async function accessLogin(req, res) {
         setGuestSensitiveHeaders(res);
         if (req.method !== 'POST') {
@@ -4330,6 +6288,8 @@ function responseOrder(order, extras = {}) {
             if (!db) throw webhookError('数据库服务不可用', 'guest_database_unavailable', 503, false);
             const lookupReference = String(merchantHint || '').trim();
             let payment = null;
+            const batchHandled = await processCheckoutBatchWebhook({ req, res, provider, payload, rawBody, db, lookupReference });
+            if (batchHandled) return;
             if (lookupReference) {
                 payment = await db.from('guest_shop_payment_orders')
                     .select('*').eq('merchant_order_no', lookupReference).maybeSingle();
@@ -4419,7 +6379,15 @@ function responseOrder(order, extras = {}) {
     return {
         preview,
         orders,
+        checkoutBatches,
+        checkoutBatchStatus,
+        checkoutBatchCancel,
+        checkoutBatchClaim,
         status,
+<<<<<<< HEAD
+        cancel,
+=======
+>>>>>>> https-origin/main
         claim,
         webhook,
         // Order Access 2.0 (A2). All of these answer 404
@@ -4447,8 +6415,13 @@ module.exports = {
     _private: {
         MAX_GUEST_CASH_PRICE_MINOR,
         MAX_GUEST_ORDER_TTL_SECONDS,
+        MAX_GUEST_PROMO_ORDER_TTL_SECONDS,
         MAX_PAYMENT_CREATION_LEASE_MS,
         guestMaxQuantity,
+<<<<<<< HEAD
+        guestPromoOrderTtlSeconds,
+=======
+>>>>>>> https-origin/main
         guestOrderTtlSeconds,
         guestSnapshotBreakdown,
         guestSnapshotDiscount,
