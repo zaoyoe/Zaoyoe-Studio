@@ -220,8 +220,12 @@ function createRouteHandlersForScope(scope) {
             }),
             'guest/preview': guestHandlers.preview,
             'guest/orders': guestHandlers.orders,
+            'guest/checkout-batches': guestHandlers.checkoutBatches,
+            'guest/checkout-batches/status': guestHandlers.checkoutBatchStatus,
+            'guest/checkout-batches/cancel': guestHandlers.checkoutBatchCancel,
+            'guest/checkout-batches/claim': guestHandlers.checkoutBatchClaim,
             'guest/status': guestHandlers.status,
-            'guest/recover': guestHandlers.recover,
+            'guest/cancel': guestHandlers.cancel,
             'guest/claim': guestHandlers.claim,
             // KVM4 routes /api/shop/* through this shared dispatcher.  Keep
             // the worker behind its dedicated secret gate in both Vercel and
