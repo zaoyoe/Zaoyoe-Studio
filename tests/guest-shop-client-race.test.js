@@ -6,8 +6,11 @@ const vm = require('node:vm');
 
 const CLIENT_PATH = path.resolve(__dirname, '../js/guest-shop-client.js');
 const CLIENT_SOURCE = fs.readFileSync(CLIENT_PATH, 'utf8');
+<<<<<<< HEAD
 const QR_PATH = path.resolve(__dirname, '../js/vendor/qrcode-generator-2.0.4.js');
 const QR_SOURCE = fs.readFileSync(QR_PATH, 'utf8');
+=======
+>>>>>>> https-origin/main
 const STORAGE_KEY = 'guest_shop_checkout_v1';
 const FUTURE_EXPIRY = '2099-01-01T00:00:00.000Z';
 
@@ -93,6 +96,7 @@ class FakeElement {
         return child;
     }
 
+<<<<<<< HEAD
     // Element.append is what the payment capsules use. ParentNode.append also
     // accepts strings; keep that so a later label tweak does not break the fixture.
     append(...nodes) {
@@ -109,6 +113,8 @@ class FakeElement {
         });
     }
 
+=======
+>>>>>>> https-origin/main
     remove() {
         if (this.parentElement) {
             this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
@@ -190,10 +196,13 @@ function matchesSelector(element, selector) {
             if (part.startsWith('#')) return element.id === part.slice(1);
             if (part.startsWith('.')) return element.classList.contains(part.slice(1));
             if (part === '[data-pw-check]') return Boolean(element.dataset.pwCheck);
+<<<<<<< HEAD
             const roleMatch = part.match(/^\[role="([^"]+)"\]$/u);
             if (roleMatch) return element.getAttribute('role') === roleMatch[1];
             const paymentKeyMatch = part.match(/^\[data-payment-key="([^"]+)"\]$/u);
             if (paymentKeyMatch) return element.dataset.paymentKey === paymentKeyMatch[1];
+=======
+>>>>>>> https-origin/main
             return element.tagName.toLowerCase() === part.toLowerCase();
         });
 }
@@ -328,9 +337,17 @@ function createRuntime({
         getElementById(id) {
             const key = String(id);
             if (!elements.has(key)) {
+<<<<<<< HEAD
                 const tagName = key === 'guestCashPaymentChannel'
                     ? 'select'
                     : (key.includes('Btn') ? 'button' : 'div');
+=======
+                const tagName = key === 'guestCashShowRecoveryBtn'
+                    ? 'a'
+                    : (key === 'guestCashPaymentChannel'
+                    ? 'select'
+                    : (key.includes('Btn') ? 'button' : 'div'));
+>>>>>>> https-origin/main
                 const node = new FakeElement(document, tagName, key);
                 if (key === 'guestCashPurchaseModal') node.hidden = true;
                 if (key === 'guestCashQuantity') node.value = '1';
@@ -414,9 +431,13 @@ function createRuntime({
     window.window = window;
     window.globalThis = window;
 
+<<<<<<< HEAD
     const context = vm.createContext(window);
     vm.runInContext(QR_SOURCE, context, { filename: QR_PATH });
     vm.runInContext(CLIENT_SOURCE, context, { filename: CLIENT_PATH });
+=======
+    vm.runInNewContext(CLIENT_SOURCE, window, { filename: CLIENT_PATH });
+>>>>>>> https-origin/main
 
     return {
         window,
@@ -429,9 +450,12 @@ function createRuntime({
         },
         click(id) {
             const modal = document.getElementById('guestCashPurchaseModal');
+<<<<<<< HEAD
             if (id === 'guestCashCreateOrderBtn') {
                 return clickPaymentOption(this, 'zpay:alipay');
             }
+=======
+>>>>>>> https-origin/main
             return modal.dispatch('click', document.getElementById(id));
         },
         runImmediateTimers() {
@@ -475,6 +499,7 @@ function contextFor(currentPurchase, site = 'cn') {
     };
 }
 
+<<<<<<< HEAD
 function paymentOption(runtime, key = 'zpay:alipay') {
     const container = runtime.element('guestCashPaymentOptions');
     const option = container.children.find((child) => child.dataset.paymentKey === key)
@@ -488,6 +513,8 @@ function clickPaymentOption(runtime, key = 'zpay:alipay') {
     return option.dispatch('click', option);
 }
 
+=======
+>>>>>>> https-origin/main
 function previewPayload(currentPurchase) {
     return {
         success: true,
@@ -503,7 +530,10 @@ function previewPayload(currentPurchase) {
             payable_amount: 10
         },
         payment_channels: ['zpay:alipay'],
+<<<<<<< HEAD
         payment_providers: { zpay: { surcharge_rate: 0 } },
+=======
+>>>>>>> https-origin/main
         buyer_credential_required: false,
         quantity_cap: 1,
         discount_enabled: false
@@ -553,6 +583,7 @@ function statusPayload(orderNo, currentPurchase = purchase(), overrides = {}) {
     };
 }
 
+<<<<<<< HEAD
 function batchStatusPayload(orderNo, overrides = {}) {
     return {
         success: true,
@@ -591,6 +622,8 @@ function storedBatch(orderNo, overrides = {}) {
     };
 }
 
+=======
+>>>>>>> https-origin/main
 function jsonResponse(payload, { status = 200 } = {}) {
     return {
         ok: status >= 200 && status < 300,
@@ -636,6 +669,7 @@ async function openCheckout(runtime, currentPurchase) {
     await flushEventLoop();
 }
 
+<<<<<<< HEAD
 test('a failed provider QR image falls back to a locally generated payment QR', async () => {
     const currentPurchase = purchase();
     const paymentUrl = 'https://payments.example.test/qr-local-fallback';
@@ -791,6 +825,8 @@ test('a quote change detected by commit refreshes the quote and requires a secon
     );
 });
 
+=======
+>>>>>>> https-origin/main
 test('double create clicks share one prepare/commit intent and one provider-order attempt', async () => {
     const currentPurchase = purchase();
     const pendingCreate = deferred();
@@ -810,8 +846,13 @@ test('double create clicks share one prepare/commit intent and one provider-orde
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
 
     await waitFor(() => calls.filter((call) => call.path.endsWith('/orders')).length === 1,
         'the first commit request did not start');
@@ -822,7 +863,11 @@ test('double create clicks share one prepare/commit intent and one provider-orde
     assert.match(submitted.intentId, /^ci\.[A-Za-z0-9_-]{24,96}$/u);
     assert.equal(Object.prototype.hasOwnProperty.call(submitted, 'idempotencyKey'), false);
     assert.deepEqual(runtime.checkoutActions().map((entry) => entry.action), ['inspect', 'prepare', 'commit']);
+<<<<<<< HEAD
     assert.equal(paymentOption(runtime).disabled, true);
+=======
+    assert.equal(runtime.element('guestCashCreateOrderBtn').getAttribute('aria-busy'), 'true');
+>>>>>>> https-origin/main
 
     pendingCreate.resolve(jsonResponse(createOrderPayload('GUEST-DOUBLE-1', currentPurchase)));
     await waitFor(
@@ -848,7 +893,11 @@ test('a terminal snapshot retries a failed intent ack without creating another o
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.checkoutActions().filter((entry) => entry.action === 'ack').length === 1,
         'the initial intent ack did not fail in the fixture'
@@ -891,7 +940,11 @@ test('a terminal snapshot queues an ack retry when the first ack is still in fli
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.checkoutActions().filter((entry) => entry.action === 'ack').length === 1,
         'the initial ack did not enter the in-flight state'
@@ -939,7 +992,11 @@ test('delivered content keeps the local handle until a queued ack succeeds', asy
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.checkoutActions().filter((entry) => entry.action === 'ack').length === 1,
         'the initial delivered-order ack did not enter the in-flight state'
@@ -1002,23 +1059,31 @@ test('a delayed preview cannot paint product A after the purchase context moved 
 
     previewA.resolve(jsonResponse(previewPayload(purchaseA)));
     const firstResult = await firstProbe;
+<<<<<<< HEAD
     assert.deepEqual({ ...firstResult }, {
         available: false,
         reason: 'stale',
         discountEnabled: false,
         quantityCap: 1
     });
+=======
+    assert.deepEqual({ ...firstResult }, { available: false, reason: 'stale' });
+>>>>>>> https-origin/main
     await waitFor(() => previewRequests.includes(purchaseB.productId));
     assert.notEqual(runtime.element('guestCashProductName').textContent, purchaseA.productName);
 
     previewB.resolve(jsonResponse(previewPayload(purchaseB)));
     const secondResult = await secondProbe;
+<<<<<<< HEAD
     assert.deepEqual({ ...secondResult }, {
         available: true,
         reason: 'available',
         discountEnabled: false,
         quantityCap: 1
     });
+=======
+    assert.deepEqual({ ...secondResult }, { available: true, reason: 'available' });
+>>>>>>> https-origin/main
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseB.productSkuName);
 });
@@ -1054,6 +1119,10 @@ test('a delayed availability result cannot open guest checkout after its source 
     const result = await started;
     assert.equal(result.started, false);
     assert.equal(result.reason, 'source_stale');
+<<<<<<< HEAD
+=======
+    assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
+>>>>>>> https-origin/main
     assert.equal(runtime.document.body.classList.contains('guest-shop-modal-open'), false);
 });
 
@@ -1093,10 +1162,17 @@ test('a delayed status response cannot paint order A after the modal moves to pr
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     await waitFor(() => statusOrderNumbers.includes('GUEST-SWITCH-A'));
 
     runtime.click('guestCashPurchaseModal');
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    await waitFor(() => statusOrderNumbers.includes('GUEST-SWITCH-A'));
+
+    runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
     runtime.window.ShopClient.currentPurchase = { ...purchaseB };
     await openCheckout(runtime, purchaseB);
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
@@ -1138,7 +1214,11 @@ test('checkout remains usable in memory when sessionStorage access throws', asyn
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'expired');
 
     assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-NO-STORAGE');
@@ -1207,9 +1287,16 @@ test('closing during create keeps a late success out of the hidden view but pers
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     await waitFor(() => calls.filter((pathname) => pathname.endsWith('/orders')).length === 1);
     runtime.click('guestCashPurchaseModal');
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    await waitFor(() => calls.filter((pathname) => pathname.endsWith('/orders')).length === 1);
+    assert.equal(runtime.element('guestCashPurchaseDismissBtn').disabled, false);
+    runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
 
     pendingCreate.resolve(jsonResponse(createOrderPayload('GUEST-LATE-1', currentPurchase)));
@@ -1223,9 +1310,14 @@ test('closing during create keeps a late success out of the hidden view but pers
     assert.equal(calls.filter((pathname) => pathname.endsWith('/status')).length, 0);
     const saved = runtime.sessionStorage.snapshot(STORAGE_KEY);
     assert.deepEqual(Object.keys(saved).sort(), [
+<<<<<<< HEAD
         'batchEntries', 'batchMode', 'batchTotal', 'channel', 'expiresAt',
         'intentId', 'orderNo', 'productId', 'provider', 'savedAt', 'site',
         'skuId', 'version'
+=======
+        'channel', 'expiresAt', 'intentId', 'orderNo', 'productId', 'provider',
+        'savedAt', 'site', 'skuId', 'version'
+>>>>>>> https-origin/main
     ]);
     assert.equal(saved.productId, currentPurchase.productId);
     assert.equal(saved.skuId, currentPurchase.productSkuId);
@@ -1239,7 +1331,11 @@ test('closing during create keeps a late success out of the hidden view but pers
     assert.equal(runtime.element('guestCashSkuName').textContent, currentPurchase.productSkuName);
 });
 
+<<<<<<< HEAD
 test('background status query keeps action labels stable and preserves the order for a late confirmation', async () => {
+=======
+test('status query in flight disables local leave and preserves the order for a late confirmation', async () => {
+>>>>>>> https-origin/main
     const currentPurchase = purchase();
     const pendingStatus = deferred();
     let statusCalls = 0;
@@ -1260,7 +1356,11 @@ test('background status query keeps action labels stable and preserves the order
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => statusCalls === 1,
         'the created order did not begin its status request'
@@ -1268,6 +1368,7 @@ test('background status query keeps action labels stable and preserves the order
 
     const orderNo = runtime.element('guestCashOrderNo').textContent;
     assert.equal(orderNo, 'GUEST-STATUS-LEAVE-1');
+<<<<<<< HEAD
     assert.equal(runtime.element('guestCashCheckStatusBtn').disabled, false);
     assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'false');
     assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '查询支付状态');
@@ -1277,6 +1378,19 @@ test('background status query keeps action labels stable and preserves the order
 
     assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
     assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+=======
+    assert.equal(runtime.element('guestCashCheckStatusBtn').disabled, true);
+    assert.equal(runtime.element('guestCashCheckStatusBtn').getAttribute('aria-busy'), 'true');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+
+    // A synthetic click mirrors the event-handler path even though the action is
+    // hidden. The execution guard must keep the local order and recovery handle.
+    runtime.click('guestCashAbandonOrderBtn');
+    assert.equal(runtime.element('guestCashOrderNo').textContent, orderNo);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, orderNo);
+    assert.equal(runtime.element('guestCashState').dataset.state, 'awaiting_payment');
+>>>>>>> https-origin/main
 
     pendingStatus.resolve(jsonResponse(statusPayload(orderNo, currentPurchase, {
         payment_status: 'confirmed',
@@ -1290,6 +1404,7 @@ test('background status query keeps action labels stable and preserves the order
     assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
 });
 
+<<<<<<< HEAD
 test('cancellation wins over a late status response that started before the cancel request', async () => {
     const currentPurchase = purchase();
     const pendingStatus = deferred();
@@ -1604,6 +1719,8 @@ test('manual status check during background polling runs once and shows busy onl
     assert.equal(runtime.element('guestCashAbandonOrderBtn').disabled, false);
 });
 
+=======
+>>>>>>> https-origin/main
 for (const failureMode of ['network failure', 'HTTP 503']) {
     test(`${failureMode} without an order number confirms the original server-held intent`, async () => {
         const purchaseA = purchase();
@@ -1643,15 +1760,26 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
 
         await openCheckout(runtime, purchaseA);
         runtime.element('guestCashContact').value = 'original@example.com';
+<<<<<<< HEAD
     clickPaymentOption(runtime);
         await waitFor(
             () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown',
             'an indeterminate create did not expose the protected confirmation state'
+=======
+        runtime.click('guestCashCreateOrderBtn');
+        await waitFor(
+            () => runtime.element('guestCashCreateOrderBtn').textContent === '确认原订单结果',
+            'an indeterminate create did not expose the protected confirmation action'
+>>>>>>> https-origin/main
         );
 
         assert.equal(createBodies.length, 1);
         assert.equal(runtime.element('guestCashState').dataset.state, 'payment_creation_unknown');
+<<<<<<< HEAD
         assert.equal(paymentOption(runtime).disabled, false);
+=======
+        assert.equal(runtime.element('guestCashCreateOrderBtn').disabled, false);
+>>>>>>> https-origin/main
         assert.equal(runtime.element('guestCashPaymentChannel').disabled, true);
         assert.equal(runtime.uuidCount(), 0);
         assert.deepEqual(Object.keys(createBodies[0]).sort(), [
@@ -1661,7 +1789,11 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
         runtime.window.ShopClient.currentPurchase = { ...purchaseB };
         runtime.element('guestCashContact').value = 'original@example.com';
         runtime.element('guestCashPaymentChannel').children[0].dataset.channel = 'wxpay';
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+        runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
 
         await waitFor(() => createBodies.length === 2, 'the original create request was not replayed');
         assert.deepEqual(createBodies[1], createBodies[0]);
@@ -1674,6 +1806,7 @@ for (const failureMode of ['network failure', 'HTTP 503']) {
     });
 }
 
+<<<<<<< HEAD
 test('contact storage preflight failure is shown as a definite pre-create error', async () => {
     const currentPurchase = purchase();
     const commitBodies = [];
@@ -1911,6 +2044,8 @@ test('a pending USDT order without a wallet address never becomes a waiting-paym
     assert.equal(runtime.element('guestCashOrderNo').textContent, '-');
 });
 
+=======
+>>>>>>> https-origin/main
 test('a late unknown create error survives modal close and reopens on the frozen original context', async () => {
     const purchaseA = purchase();
     const purchaseB = purchase({
@@ -1947,16 +2082,26 @@ test('a late unknown create error survives modal close and reopens on the frozen
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     await waitFor(() => createBodies.length === 1);
     runtime.click('guestCashPurchaseModal');
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    await waitFor(() => createBodies.length === 1);
+    runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
 
     runtime.window.ShopClient.currentPurchase = { ...purchaseB };
     firstCreate.reject(new TypeError('late connection reset'));
     await firstCreate.promise.catch(() => undefined);
     await flushEventLoop();
+<<<<<<< HEAD
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, true);
+=======
+    assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '确认原订单结果');
+>>>>>>> https-origin/main
     assert.equal(runtime.uuidCount(), 0);
 
     const reopened = await runtime.window.GuestShopCheckout.startGuestCheckout(contextFor(purchaseB));
@@ -1964,8 +2109,13 @@ test('a late unknown create error survives modal close and reopens on the frozen
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, false);
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseA.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseA.productSkuName);
+<<<<<<< HEAD
     assert.equal(runtime.element('guestCashState').dataset.state, 'payment_creation_unknown');
     clickPaymentOption(runtime);
+=======
+    assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '确认原订单结果');
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => createBodies.length === 2);
     assert.deepEqual(createBodies[1], createBodies[0]);
     assert.equal(createBodies[1].checkoutAction, 'commit');
@@ -2004,7 +2154,11 @@ test('status review suppresses an existing checkout and does not schedule anothe
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(
         () => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown'
     );
@@ -2045,7 +2199,11 @@ test('confirmed manual-fulfillment states clear a prior checkout without losing 
             });
 
             await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+            runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
             await waitFor(() => statusCalls === 1, 'the initial status request did not start');
 
             assert.equal(runtime.element('guestCashCheckoutPanel').hidden, false);
@@ -2105,9 +2263,15 @@ test('unknown-create resume renders a terminal result without exposing the retur
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'payment_creation_unknown');
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    await waitFor(() => runtime.element('guestCashCreateOrderBtn').textContent === '确认原订单结果');
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'expired');
     await flushEventLoop();
 
@@ -2165,6 +2329,7 @@ test('a terminal order must be explicitly returned to configuration before a cur
     });
 
     await openCheckout(runtime, purchaseA);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'expired');
 
@@ -2177,6 +2342,21 @@ test('a terminal order must be explicitly returned to configuration before a cur
 
     runtime.window.ShopClient.currentPurchase = { ...purchaseB };
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    await waitFor(() => runtime.element('guestCashCreateOrderBtn').textContent === '回到配置后创建新订单');
+
+    assert.equal(createBodies.length, 1);
+    assert.equal(runtime.element('guestCashOrderNo').textContent, 'GUEST-TERMINAL-A');
+    assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '回到配置后创建新订单');
+    assert.equal(runtime.element('guestCashCheckStatusBtn').textContent, '刷新处理状态');
+    assert.equal(runtime.element('guestCashAbandonOrderBtn').hidden, true);
+    assert.equal(runtime.element('guestCashTerminalRestartHint').hidden, false);
+    assert.equal(runtime.sessionStorage.snapshot(STORAGE_KEY).orderNo, 'GUEST-TERMINAL-A');
+
+    runtime.window.ShopClient.currentPurchase = { ...purchaseB };
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await flushEventLoop();
 
     assert.equal(createBodies.length, 1, 'rejecting confirmation must not create a replacement order');
@@ -2186,7 +2366,11 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.match(runtime.confirmMessages.at(-1), /旧付款码不可再付/);
 
     allowTerminalReset = true;
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => previewProducts.includes(purchaseB.productId), 'current SKU was not re-quoted after terminal reset');
 
     assert.equal(createBodies.length, 1, 'returning to configuration must not itself create a payment order');
@@ -2196,6 +2380,11 @@ test('a terminal order must be explicitly returned to configuration before a cur
     assert.equal(runtime.element('guestCashConfigurePanel').hidden, false);
     assert.equal(runtime.element('guestCashProductName').textContent, purchaseB.productName);
     assert.equal(runtime.element('guestCashSkuName').textContent, purchaseB.productSkuName);
+<<<<<<< HEAD
+=======
+    assert.equal(runtime.element('guestCashCreateOrderBtn').textContent, '创建支付订单');
+    assert.equal(runtime.element('guestCashTerminalRestartHint').hidden, true);
+>>>>>>> https-origin/main
 
     const freshRuntime = createRuntime({
         purchase: purchaseB,
@@ -2206,7 +2395,11 @@ test('a terminal order must be explicitly returned to configuration before a cur
     await flushEventLoop();
     assert.equal(freshRuntime.element('guestCashPurchaseModal').hidden, true);
 
+<<<<<<< HEAD
     clickPaymentOption(runtime);
+=======
+    runtime.click('guestCashCreateOrderBtn');
+>>>>>>> https-origin/main
     await waitFor(() => createBodies.length === 2, 'the second click did not create the replacement order');
     assert.equal(createBodies[1].checkoutAction, 'commit');
     const lastPrepare = runtime.checkoutActions().filter((entry) => entry.action === 'prepare').at(-1);
@@ -2237,10 +2430,17 @@ test('closing delivered content asks before discarding un-copied delivery conten
     });
 
     await openCheckout(runtime, currentPurchase);
+<<<<<<< HEAD
     clickPaymentOption(runtime);
     await waitFor(() => runtime.element('guestCashState').dataset.state === 'delivered');
 
     runtime.click('guestCashPurchaseModal');
+=======
+    runtime.click('guestCashCreateOrderBtn');
+    await waitFor(() => runtime.element('guestCashState').dataset.state === 'delivered');
+
+    runtime.click('guestCashPurchaseDismissBtn');
+>>>>>>> https-origin/main
 
     assert.equal(runtime.element('guestCashPurchaseModal').hidden, false);
     assert.match(runtime.confirmMessages.at(-1), /发货内容尚未复制/);

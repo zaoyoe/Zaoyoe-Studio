@@ -594,6 +594,7 @@ const ShopClient = {
     purchaseModalPageFrozen: false,
     purchaseModalBaseScrollY: 0,
     purchaseModalOwnsFullScrollLock: false,
+    guestCashHandoffGeneration: 0,
     categoryProductsCache: {},
     categoryProductsPromises: {},
     allProductsCache: null,
@@ -647,6 +648,13 @@ const ShopClient = {
     discountAssetsRequestControllers: new Map(),
     discountAssetsPrefetchHandle: null,
     discountAssetsCacheUserKey: null,
+    // Guest cash entry merge state. shopAuthStateKnown is null until resolved,
+    // then true/false. The probe cache drives the merged primary-action label and
+    // the hidden quantity/discount stages for logged-out visitors only.
+    shopAuthStateKnown: null,
+    guestCashEntryProbe: null,
+    guestCashEntryProbedKey: '',
+    guestCashEntryProbeToken: 0,
     shopDiscountEngagementSeenKeys: new Set(),
     productStockSnapshot: new Map(),
     cartAbandonEngagementTimer: null,
@@ -3480,7 +3488,11 @@ const ShopClient = {
         }
 
         try {
-            const result = client.auth.onAuthStateChange(() => {
+            const result = client.auth.onAuthStateChange((_event, session) => {
+                this.shopAuthStateKnown = Boolean(session && session.access_token);
+                this.guestCashEntryProbe = null;
+                this.guestCashEntryProbedKey = '';
+                this.syncGuestCashEntryStage();
                 window.setTimeout(() => {
                     void this.setupStorefrontRealtime({ force: true, reason: 'auth_change' });
                 }, 120);
@@ -5899,12 +5911,240 @@ const ShopClient = {
 
     getPurchaseStageCopy: function (stage = 'configure') {
         const isEn = (window.i18n?.getCurrentLanguage() || 'zh') === 'en';
+        const guestCashActive = this.isGuestCashEntryActive();
         return {
             title: window.i18n?.t('shop.confirmRedeem') || (isEn ? 'Confirm Purchase' : '确认兑换'),
-            nextLabel: isEn ? 'Redeem' : '兑换',
+            nextLabel: guestCashActive
+                ? (window.i18n?.t('shop.guestCashBuyNow') || (isEn ? 'Buy now' : '立即购买'))
+                : (isEn ? 'Redeem' : '兑换'),
             backLabel: isEn ? 'Back to Edit' : '返回修改',
             confirmLabel: isEn ? 'Redeem' : '兑换'
         };
+    },
+
+    // --- Guest cash entry (merged into the primary action for logged-out users) ---
+    // The standalone "游客购买" button was removed. For a logged-out visitor on a
+    // product that supports guest cash payment, the primary "兑换" action becomes
+    // "立即购买" and routes into the isolated guest checkout instead of the login
+    // prompt. Every helper below is a no-op for authenticated users, so the points
+    // redeem flow stays byte-for-byte unchanged.
+
+    getGuestCashEntrySelection: function () {
+        const purchase = this.currentPurchase;
+        const productId = String(purchase?.productId || '').trim();
+        const skuId = String(purchase?.productSkuId || '').trim();
+        if (!productId || !skuId) return null;
+        return { productId, skuId, site: this.getCurrentShopSite() };
+    },
+
+    isGuestCashEntryActive: function () {
+        if (this.shopAuthStateKnown !== false) return false;
+        const probe = this.guestCashEntryProbe;
+        if (!probe || probe.available !== true) return false;
+        if (this.isShopCurrentPurchaseManualDelivery()) return false;
+        if (this.isShopCurrentPurchaseSoldOut()) return false;
+        const selection = this.getGuestCashEntrySelection();
+        return Boolean(selection)
+            && probe.productId === selection.productId
+            && probe.skuId === selection.skuId
+            && probe.site === selection.site;
+    },
+
+    resolveShopAuthState: async function () {
+        try {
+            const client = this.getShopSupabaseClient();
+            const { data: { session } = {} } = await client.auth.getSession();
+            this.shopAuthStateKnown = Boolean(session && session.access_token);
+        } catch (_error) {
+            this.shopAuthStateKnown = null;
+        }
+        return this.shopAuthStateKnown;
+    },
+
+    // Synchronously hydrate the merged guest entry from the bridge cache. Without
+    // this the primary action would render "兑换" for one pass and only flip to
+    // "立即购买" after the async probe settles, which is visible when a visitor
+    // reopens a product already probed earlier in the same page session.
+    hydrateGuestCashEntryFromBridge: function () {
+        if (this.shopAuthStateKnown !== false) return;
+        const bridge = window.GuestShopCheckout;
+        if (!bridge || typeof bridge.peekAvailability !== 'function') return;
+        const selection = this.getGuestCashEntrySelection();
+        if (!selection || this.isShopCurrentPurchaseManualDelivery() || this.isShopCurrentPurchaseSoldOut()) return;
+        const probeKey = [selection.site, selection.productId, selection.skuId].join('|');
+        if (this.guestCashEntryProbedKey === probeKey) return;
+        let peeked = null;
+        try {
+            peeked = bridge.peekAvailability();
+        } catch (_error) {
+            return;
+        }
+        if (!peeked) return;
+        // The bridge only caches definitive answers, so a peek hit is authoritative.
+        this.guestCashEntryProbedKey = probeKey;
+        this.guestCashEntryProbeToken = (this.guestCashEntryProbeToken || 0) + 1;
+        this.guestCashEntryProbe = {
+            productId: selection.productId,
+            skuId: selection.skuId,
+            site: selection.site,
+            available: Boolean(peeked.available),
+            reason: peeked.reason || ''
+        };
+    },
+
+    // Fire-and-forget probe of guest cash availability for the current selection.
+    // Idempotent per selection (guarded by guestCashEntryProbedKey) so it is safe
+    // to call from setPurchaseStage without re-entering itself.
+    maybeProbeGuestCashEntry: function () {
+        if (this.shopAuthStateKnown !== false) {
+            this.guestCashEntryProbe = null;
+            this.guestCashEntryProbedKey = '';
+            return;
+        }
+        const modal = document.getElementById('shopPurchaseModal');
+        if (!modal || modal.hidden) return;
+        const bridge = window.GuestShopCheckout;
+        if (!bridge || typeof bridge.probeAvailability !== 'function') return;
+        const selection = this.getGuestCashEntrySelection();
+        if (!selection || this.isShopCurrentPurchaseManualDelivery() || this.isShopCurrentPurchaseSoldOut()) {
+            this.guestCashEntryProbe = null;
+            this.guestCashEntryProbedKey = '';
+            return;
+        }
+        const probeKey = [selection.site, selection.productId, selection.skuId].join('|');
+        if (this.guestCashEntryProbedKey === probeKey) return;
+        this.guestCashEntryProbedKey = probeKey;
+        const token = (this.guestCashEntryProbeToken = (this.guestCashEntryProbeToken || 0) + 1);
+        void Promise.resolve(bridge.probeAvailability()).then((result) => {
+            if (token !== this.guestCashEntryProbeToken) return;
+            const current = this.getGuestCashEntrySelection();
+            if (!current
+                || current.productId !== selection.productId
+                || current.skuId !== selection.skuId
+                || current.site !== selection.site) {
+                return;
+            }
+            this.guestCashEntryProbe = {
+                productId: selection.productId,
+                skuId: selection.skuId,
+                site: selection.site,
+                available: Boolean(result && result.available),
+                reason: (result && result.reason) || ''
+            };
+            this.syncGuestCashEntryStage();
+        }).catch(() => {
+            if (token === this.guestCashEntryProbeToken) {
+                this.guestCashEntryProbe = null;
+                this.guestCashEntryProbedKey = '';
+            }
+        });
+    },
+
+    // Re-render the open purchase modal after guest availability/auth resolves.
+    syncGuestCashEntryStage: function () {
+        const modal = document.getElementById('shopPurchaseModal');
+        if (!modal || modal.hidden || !this.currentPurchase) return;
+        if (this.isGuestCashEntryActive()) {
+            this.applyGuestCashEntryQuantity();
+        }
+        this.setPurchaseStage(this.currentPurchase.stage || 'configure');
+    },
+
+    // Guest cash orders are a single unit and cannot use points coupons, so
+    // collapse the quantity to 1 and keep the (informational) points total honest.
+    applyGuestCashEntryQuantity: function () {
+        const purchase = this.currentPurchase;
+        if (!purchase) return;
+        const quantityInput = document.getElementById('purchaseQuantity');
+        const alreadySingle = Number(purchase.quantity || 1) === 1
+            && (!quantityInput || quantityInput.value === '1');
+        if (alreadySingle) return;
+        purchase.quantity = 1;
+        if (quantityInput) quantityInput.value = '1';
+        // Reuse the canonical quantity repricing so tiered/flash-sale unit prices and
+        // the pricing waterfall stay correct, but skip the coupon asset refresh: a
+        // logged-out visitor cannot apply points coupons and must not pay for that call.
+        this.updatePriceForQuantity(1, { refreshDiscountAssets: false });
+    },
+
+    // Resolve auth state on modal open, then re-render so the merged guest entry
+    // can activate without waiting for a click.
+    refreshGuestCashEntryForOpenModal: async function () {
+        await this.resolveShopAuthState();
+        const modal = document.getElementById('shopPurchaseModal');
+        if (!modal || modal.hidden || !this.currentPurchase) return;
+        this.setPurchaseStage(this.currentPurchase.stage || 'configure');
+    },
+
+    // Routes a logged-out primary-action click into the isolated guest checkout.
+    // Returns { started, reason }; the caller falls back to the login prompt when
+    // guest cash checkout did not start.
+    // Deliberately emits no analytics: window.UserEventTracker.track() drops every
+    // event without an authenticated user, and this path only runs for logged-out
+    // visitors. Guest funnel metrics need an unauthenticated server-side event path,
+    // which is out of scope here.
+    startGuestCashCheckout: async function () {
+        const bridge = window.GuestShopCheckout;
+        if (!bridge || typeof bridge.startGuestCheckout !== 'function') {
+            return { started: false, reason: 'bridge_unavailable' };
+        }
+        // The availability probe is asynchronous and the points modal cleanup may
+        // discard currentPurchase before it resolves. Capture a visible external
+        // return target now so closing the guest dialog never leaves focus on body.
+        const returnFocusTarget = this.findGuestCashReturnFocusTarget();
+        const sourceModal = document.getElementById('shopPurchaseModal');
+        const sourcePurchase = this.currentPurchase;
+        const sourceProductId = String(sourcePurchase?.productId || '').trim();
+        const sourceSkuId = String(sourcePurchase?.productSkuId || '').trim();
+        const handoffGeneration = Number(this.guestCashHandoffGeneration || 0) + 1;
+        this.guestCashHandoffGeneration = handoffGeneration;
+        const shouldOpenGuestModal = () => this.guestCashHandoffGeneration === handoffGeneration
+            && this.currentPurchase === sourcePurchase
+            && String(this.currentPurchase?.productId || '').trim() === sourceProductId
+            && String(this.currentPurchase?.productSkuId || '').trim() === sourceSkuId
+            && sourceModal?.hidden !== true
+            && sourceModal?.classList?.contains('active') === true;
+        try {
+            const canHandoffScrollLock = Boolean(window.iOSScrollLock);
+            const result = await bridge.startGuestCheckout(undefined, {
+                deferScrollLock: canHandoffScrollLock,
+                shouldOpen: shouldOpenGuestModal
+            });
+            if (result && result.started) {
+                // The guest checkout owns the next interaction surface. Close
+                // the points-purchase modal that launched it so two overlays
+                // cannot compete for focus, scroll locking, or backdrop clicks.
+                // Keep one continuous lock across the handoff; releasing the
+                // purchase lock first makes iOS restore the page underneath the
+                // newly opened guest dialog.
+                this.closePurchaseModal({
+                    scrollLockHandoffTarget: canHandoffScrollLock
+                        ? document.getElementById('guestCashPurchaseModal')
+                        : null
+                });
+                bridge.setModalReturnFocusTarget?.(returnFocusTarget);
+                window.requestAnimationFrame(() => bridge.focusGuestModal?.());
+                return { started: true, reason: result.reason || 'available' };
+            }
+            return { started: false, reason: (result && result.reason) || 'unavailable' };
+        } catch (error) {
+            return { started: false, reason: 'bridge_error' };
+        }
+    },
+
+    findGuestCashReturnFocusTarget: function () {
+        const productId = String(this.currentPurchase?.productId || '').trim();
+        if (!productId) return null;
+        const candidates = Array.from(document.querySelectorAll('[data-shop-action="buy-product"][data-product-id]'));
+        const isVisibleCandidate = (candidate) => String(candidate.dataset?.productId || '').trim() === productId
+            && candidate.hidden !== true
+            && candidate.getAttribute?.('aria-hidden') !== 'true'
+            && (typeof candidate.getClientRects !== 'function' || candidate.getClientRects().length > 0);
+        // A product tile can be a nested pseudo-button plus a real purchase button.
+        // Prefer the real control the keyboard user can operate directly.
+        return candidates.find((candidate) => candidate.matches?.('button') && isVisibleCandidate(candidate))
+            || candidates.find(isVisibleCandidate)
+            || null;
     },
 
     getCurrentPurchaseFlashSalePricingContext: function () {
@@ -6125,10 +6365,12 @@ const ShopClient = {
         const nextBtn = document.getElementById('nextPurchaseStepBtn');
         const confirmBtn = document.getElementById('confirmPurchaseBtn');
         const quantityInput = document.getElementById('purchaseQuantity');
+        this.hydrateGuestCashEntryFromBridge();
         const copy = this.getPurchaseStageCopy(nextStage);
         const isPurchaseProcessing = this.purchaseProcessing === true;
         const isManualDelivery = this.isShopCurrentPurchaseManualDelivery();
         const isSoldOut = this.isShopCurrentPurchaseSoldOut();
+        const guestCashActive = this.isGuestCashEntryActive();
 
         this.currentPurchase.stage = nextStage;
 
@@ -6152,6 +6394,19 @@ const ShopClient = {
                 && (!isUsageStage || hasUsageInstructions);
             this.setElementHidden(element, !shouldShow);
         });
+
+        // Guest cash orders are always a single unit and cannot use points coupons,
+        // so collapse the quantity and coupon stages while the merged guest entry is
+        // active. Applied after the shared pass so the generic predicate is untouched.
+        if (guestCashActive) {
+            document.querySelectorAll(
+                '#shopPurchaseModal .shop-purchase-stage-quantity, #shopPurchaseModal .shop-purchase-stage-discount'
+            ).forEach((element) => {
+                if (element instanceof HTMLElement) {
+                    this.setElementHidden(element, true);
+                }
+            });
+        }
 
         if (stageTitle) {
             stageTitle.textContent = this.getCurrentPurchaseDisplayName();
@@ -6204,10 +6459,11 @@ const ShopClient = {
         }
 
         if (quantityInput) {
-            quantityInput.disabled = isPurchaseProcessing || isManualDelivery || isSoldOut;
+            quantityInput.disabled = isPurchaseProcessing || isManualDelivery || isSoldOut || guestCashActive;
         }
 
         this.syncPurchaseDiscountInteractivity();
+        this.maybeProbeGuestCashEntry();
     },
 
     proceedPurchaseConfirmation: function () {
@@ -8226,6 +8482,7 @@ const ShopClient = {
                 await this.loadCategoryFilters();
                 await this.loadProducts();
                 this.bindShopRealtimeAuthSync();
+                void this.resolveShopAuthState();
                 void this.setupStorefrontRealtime({ reason: 'shop_init' });
 
                 // Clear prefetch references
@@ -12666,7 +12923,7 @@ const ShopClient = {
         document.body.scrollTop = 0;
     },
 
-    unfreezePurchaseModalPage: function () {
+    unfreezePurchaseModalPage: function ({ restoreScroll = true } = {}) {
         if (!this.purchaseModalPageFrozen) return;
 
         const restoreScrollY = Math.max(0, Math.round(this.purchaseModalBaseScrollY || 0));
@@ -12706,9 +12963,30 @@ const ShopClient = {
         this.purchaseModalPageFrozen = false;
         this.purchaseModalBaseScrollY = 0;
 
-        requestAnimationFrame(() => {
+        if (restoreScroll) {
+            requestAnimationFrame(() => {
+                window.scrollTo(0, restoreScrollY);
+            });
+        }
+    },
+
+    handoffPurchaseModalScrollLock: function (target) {
+        if (!target?.classList?.contains('active') || !window.iOSScrollLock) return false;
+
+        if (this.purchaseModalPageFrozen) {
+            const restoreScrollY = Math.max(0, Math.round(this.purchaseModalBaseScrollY || 0));
+            this.unfreezePurchaseModalPage({ restoreScroll: false });
             window.scrollTo(0, restoreScrollY);
+            document.documentElement.scrollTop = restoreScrollY;
+            document.body.scrollTop = restoreScrollY;
+        }
+        // lockLight updates the current modal without dropping the existing
+        // background lock or its saved page position. Keeping guest checkout a
+        // light owner also lets a temporary full-lock auth overlay restore it.
+        window.iOSScrollLock.lockLight(target, {
+            restoreScrollDuringViewport: true
         });
+        return true;
     },
 
     lockPurchaseModalKeyboardPage: function () {
@@ -13383,6 +13661,7 @@ const ShopClient = {
         this.renderPurchaseUsageInstructions();
         this.renderPurchaseConfirmationStage();
         this.setPurchaseStage('configure');
+        void this.refreshGuestCashEntryForOpenModal();
         this.bindPurchaseModalControlTapFallbacks();
         this.resetPurchaseModalOpeningSettledStages(modal);
         this.markPurchaseModalOpeningStaggerStages(modal);
@@ -13440,9 +13719,11 @@ const ShopClient = {
         });
     },
 
-    closePurchaseModal: function () {
+    closePurchaseModal: function (options = {}) {
         const modal = document.getElementById('shopPurchaseModal');
         if (!modal) return;
+        this.guestCashHandoffGeneration = Number(this.guestCashHandoffGeneration || 0) + 1;
+        const scrollLockHandoffTarget = options?.scrollLockHandoffTarget || null;
         const activeInput = this.getActivePurchaseModalInput();
         activeInput?.blur();
         this.runShopModalCloseChromeCleanup({
@@ -13468,11 +13749,14 @@ const ShopClient = {
         modal.classList.remove('has-purchase-notes-expanded');
         modal.classList.remove('has-purchase-usage');
         modal.classList.remove('has-purchase-usage-expanded');
-        // Unlock background scroll on mobile Safari
-        if (this.purchaseModalPageFrozen) {
-            this.unfreezePurchaseModalPage();
-        } else if (window.iOSScrollLock) {
-            window.iOSScrollLock.unlock();
+        // Unlock background scroll, unless another already-open modal adopts it.
+        const scrollLockHandedOff = this.handoffPurchaseModalScrollLock(scrollLockHandoffTarget);
+        if (!scrollLockHandedOff) {
+            if (this.purchaseModalPageFrozen) {
+                this.unfreezePurchaseModalPage();
+            } else if (window.iOSScrollLock) {
+                window.iOSScrollLock.unlock();
+            }
         }
         this.purchaseModalOwnsFullScrollLock = false;
         this.purchaseModalBaseScrollY = 0;
@@ -13943,9 +14227,18 @@ const ShopClient = {
             }
 
             const token = await this.getAccessToken();
+            this.shopAuthStateKnown = Boolean(token);
             if (!token) {
+                // The standalone "游客购买" button is gone: for a logged-out visitor
+                // this primary action *is* the guest cash entry when the product
+                // supports it, and falls back to the login prompt otherwise.
+                // The coupon sync above resolves immediately without a token, so
+                // this adds no latency for guests and keeps the logged-in path intact.
+                const guestEntry = await this.startGuestCashCheckout();
                 restoreIdleButtonState();
-                this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+                if (!guestEntry.started && guestEntry.reason !== 'source_stale') {
+                    this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+                }
                 return;
             }
 

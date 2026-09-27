@@ -94,7 +94,11 @@ const SHARED_PUBLIC_FUNCTION_WRAPPERS = [
 ];
 
 const GUEST_SHOP_STANDALONE_FUNCTIONS = [
+    'api/shop/guest/access/login.js',
+    'api/shop/guest/access/logout.js',
     'api/shop/guest/claim.js',
+    'api/shop/guest/delivery.js',
+    'api/shop/guest/order.js',
     'api/shop/guest/orders.js',
     'api/shop/guest/preview.js',
     'api/shop/guest/status.js',

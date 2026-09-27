@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 
 const {
+    GUEST_QUANTITY_HARD_CEILING,
     GuestShopSecurityError,
     assertIdempotencyFingerprint,
     buildGuestRequestFingerprint,
@@ -21,6 +22,7 @@ const {
     isIdempotencyConflict,
     moneyMinorEqual,
     multiplyMoneyMinor,
+    normalizeGuestDiscountCode,
     normalizeGuestIdempotencyKey,
     normalizeGuestOrderInput,
     normalizeGuestSite,
@@ -43,6 +45,15 @@ function expectCode(callback, code) {
     assert.throws(callback, (error) => {
         assert.ok(error instanceof GuestShopSecurityError);
         assert.equal(error.code, code);
+        return true;
+    });
+}
+
+function expectGuestShopError(callback, code, statusCode) {
+    assert.throws(callback, (error) => {
+        assert.ok(error instanceof GuestShopSecurityError);
+        assert.equal(error.code, code);
+        assert.equal(error.statusCode, statusCode);
         return true;
     });
 }
@@ -70,7 +81,10 @@ test('guest site and order input validation is strict and server-bindable', () =
         quantity: 1,
         site: 'cn',
         currency: 'CNY',
-        idempotencyKey: 'guest-order-00000001'
+        idempotencyKey: 'guest-order-00000001',
+        // L2: an empty string means "no code". The create handler passes it
+        // through as p_discount_code, where NULLIF(...,'') restores NULL.
+        discountCode: ''
     });
     expectCode(() => normalizeGuestOrderInput({
         productId: PRODUCT_ID,
@@ -94,6 +108,72 @@ test('guest site and order input validation is strict and server-bindable', () =
         site: 'intl',
         idempotencyKey: 'guest-order-00000004'
     }, { site: 'cn' }), 'site_mismatch');
+
+    // L2: the code is normalized inside the validator so the value entering the
+    // request fingerprint is always canonical, and so a code sent while the
+    // switch is OFF fails closed instead of being silently dropped.
+    assert.deepEqual(normalizeGuestOrderInput({
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 1,
+        site: 'cn',
+        idempotencyKey: 'guest-order-00000005',
+        discount_code: ' welcome10 '
+    }, { site: 'cn', quantityMax: 1, allowDiscountCode: true }), {
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 1,
+        site: 'cn',
+        currency: 'CNY',
+        idempotencyKey: 'guest-order-00000005',
+        discountCode: 'WELCOME10'
+    });
+    expectGuestShopError(() => normalizeGuestOrderInput({
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 1,
+        site: 'cn',
+        idempotencyKey: 'guest-order-00000006',
+        discountCode: 'WELCOME10'
+    }, { site: 'cn', quantityMax: 1 }), 'guest_discount_disabled', 403);
+    expectGuestShopError(() => normalizeGuestOrderInput({
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 1,
+        site: 'cn',
+        idempotencyKey: 'guest-order-00000007',
+        discountCode: '\u0000bad'
+    }, { site: 'cn', quantityMax: 1, allowDiscountCode: true }), 'guest_invalid_discount_code', 400);
+    expectGuestShopError(() => normalizeGuestOrderInput({
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 1,
+        site: 'cn',
+        idempotencyKey: 'guest-order-00000008',
+        discountCode: 'X'.repeat(51)
+    }, { site: 'cn', quantityMax: 1, allowDiscountCode: true }), 'guest_invalid_discount_code', 400);
+    assert.equal(normalizeGuestDiscountCode(undefined), '');
+    assert.equal(normalizeGuestDiscountCode('  '), '');
+    assert.equal(normalizeGuestDiscountCode({ code: 'x' }), null);
+
+    // L1: quantityMax is clamped by the hard ceiling before the RPC sees it, so
+    // a mis-set GUEST_SHOP_MAX_QUANTITY can never ask for a quantity that
+    // guest_shop_orders_quantity_check would reject.
+    assert.equal(GUEST_QUANTITY_HARD_CEILING, 5);
+    expectGuestShopError(() => normalizeGuestOrderInput({
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 6,
+        site: 'cn',
+        idempotencyKey: 'guest-order-00000009'
+    }, { site: 'cn', quantityMax: 50 }), 'invalid_quantity', 400);
+    assert.equal(normalizeGuestOrderInput({
+        productId: PRODUCT_ID,
+        skuId: SKU_ID,
+        quantity: 5,
+        site: 'cn',
+        idempotencyKey: 'guest-order-00000010'
+    }, { site: 'cn', quantityMax: 50 }).quantity, 5);
 });
 
 test('integer-cent money parser rejects floating point ambiguity and unsafe values', () => {

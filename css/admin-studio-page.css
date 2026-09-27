@@ -10672,6 +10672,272 @@ body.admin-access-pending,
     font-size: 0.78rem;
 }
 
+/* Guest Shop Order Access 2.0 (A3) — 管理台「买家访问」弹窗。
+   docs/guest-shop-order-access-2.0.md §10.5 / §13.2。
+   刻意不给一次性链接任何"好看"的强调色：它应当看起来像危险品，
+   而不是像可以随手截图存档的普通信息。 */
+.shop-guest-buyer-access-modal {
+    width: min(620px, 100%);
+    max-height: min(86vh, 780px);
+    overflow-y: auto;
+}
+
+.shop-guest-exception-action--access:hover,
+.shop-guest-exception-action--access:focus-visible {
+    border-color: rgba(129, 140, 248, 0.7);
+    color: #c7d2fe;
+}
+
+.shop-guest-buyer-access-state {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.shop-guest-buyer-access-note {
+    margin: 0;
+    color: rgba(203, 213, 225, 0.78);
+    font-size: 0.8rem;
+    line-height: 1.55;
+}
+
+.shop-guest-buyer-access-error {
+    margin: 0;
+    color: #fecaca;
+    font-size: 0.84rem;
+    line-height: 1.5;
+}
+
+.shop-guest-buyer-access-subtitle {
+    margin: 0 0 8px;
+    color: var(--admin-studio-text, #dbe7f5);
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.shop-guest-buyer-access-flag {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-left-width: 3px;
+    border-radius: 8px;
+    background: rgba(30, 40, 60, 0.5);
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+.shop-guest-buyer-access-flag strong {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--admin-studio-text, #dbe7f5);
+    font-size: 0.84rem;
+}
+
+.shop-guest-buyer-access-flag p {
+    margin: 0;
+    color: rgba(203, 213, 225, 0.78);
+}
+
+.shop-guest-buyer-access-flag i {
+    margin-top: 2px;
+}
+
+.shop-guest-buyer-access-flag--warn {
+    border-left-color: #f59e0b;
+}
+
+.shop-guest-buyer-access-flag--warn i {
+    color: #fbbf24;
+}
+
+.shop-guest-buyer-access-flag--danger {
+    border-left-color: #ef4444;
+    background: rgba(120, 40, 40, 0.24);
+}
+
+.shop-guest-buyer-access-flag--danger i {
+    color: #f87171;
+}
+
+.shop-guest-buyer-access-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px 14px;
+    margin: 0;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(30, 40, 60, 0.4);
+}
+
+.shop-guest-buyer-access-facts div {
+    min-width: 0;
+}
+
+.shop-guest-buyer-access-facts dt {
+    color: rgba(203, 213, 225, 0.62);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+}
+
+.shop-guest-buyer-access-facts dd {
+    margin: 2px 0 0;
+    color: var(--admin-studio-text, #dbe7f5);
+    font-size: 0.84rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
+}
+
+.shop-guest-buyer-access-resets {
+    min-width: 0;
+}
+
+.shop-guest-buyer-access-resets .shop-table {
+    width: 100%;
+    margin: 0;
+}
+
+.shop-guest-buyer-access-table th,
+.shop-guest-buyer-access-table td {
+    font-size: 0.78rem;
+    vertical-align: top;
+}
+
+.shop-guest-buyer-access-badge {
+    display: inline-flex;
+    padding: 2px 7px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    white-space: nowrap;
+}
+
+.shop-guest-buyer-access-badge--pending {
+    color: #fde68a;
+}
+
+.shop-guest-buyer-access-badge--used,
+.shop-guest-buyer-access-badge--revoked,
+.shop-guest-buyer-access-badge--expired {
+    color: #cbd5e1;
+}
+
+.shop-guest-buyer-access-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.shop-guest-buyer-access-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: rgba(203, 213, 225, 0.82);
+    font-size: 0.8rem;
+    line-height: 1.5;
+    cursor: pointer;
+}
+
+.shop-guest-buyer-access-confirm input[type="checkbox"] {
+    margin-top: 2px;
+    flex: none;
+}
+
+.shop-guest-buyer-access-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.shop-guest-buyer-access-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(30, 40, 60, 0.5);
+    color: var(--admin-studio-text, #dbe7f5);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.shop-guest-buyer-access-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.shop-guest-buyer-access-action:not(:disabled):hover,
+.shop-guest-buyer-access-action:not(:disabled):focus-visible {
+    border-color: rgba(107, 158, 206, 0.78);
+}
+
+.shop-guest-buyer-access-action--unlock:not(:disabled):hover {
+    border-color: rgba(251, 191, 36, 0.7);
+    color: #fde68a;
+}
+
+.shop-guest-buyer-access-action--issue:not(:disabled):hover {
+    border-color: rgba(248, 113, 113, 0.7);
+    color: #fecaca;
+}
+
+.shop-guest-buyer-access-action--revoke:not(:disabled):hover {
+    border-color: rgba(148, 163, 184, 0.7);
+    color: #e2e8f0;
+}
+
+.shop-guest-buyer-access-result {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 12px;
+    border: 1px dashed rgba(248, 113, 113, 0.55);
+    border-radius: 10px;
+    background: rgba(120, 40, 40, 0.16);
+}
+
+.shop-guest-buyer-access-link-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.shop-guest-buyer-access-link-input {
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.6);
+    color: #e2e8f0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.76rem;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+    .shop-guest-buyer-access-modal {
+        width: min(100%, 100%);
+        max-height: 90vh;
+    }
+
+    .shop-guest-buyer-access-buttons {
+        flex-direction: column;
+    }
+
+    .shop-guest-buyer-access-action {
+        justify-content: center;
+    }
+}
+
 @media (max-width: 768px) {
     .shop-guest-exceptions-toolbar-shell {
         padding: 20px 0;

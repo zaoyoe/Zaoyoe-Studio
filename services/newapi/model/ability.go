@@ -193,9 +193,30 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 	return filtered
 }
 
+// splitAndTrimCSV normalizes comma-separated channel model and group values.
+// Model identifiers must be byte-for-byte consistent across channel abilities,
+// /v1/models discovery, and relay requests.
+func splitAndTrimCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, exists := seen[part]; exists {
+			continue
+		}
+		seen[part] = struct{}{}
+		result = append(result, part)
+	}
+	return result
+}
+
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
-	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	models_ := splitAndTrimCSV(channel.Models)
+	groups_ := splitAndTrimCSV(channel.Group)
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {
@@ -266,8 +287,8 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	}
 
 	// Then add new abilities
-	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	models_ := splitAndTrimCSV(channel.Models)
+	groups_ := splitAndTrimCSV(channel.Group)
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {

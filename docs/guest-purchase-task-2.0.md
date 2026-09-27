@@ -1,28 +1,33 @@
-# 游客现金直付购买：任务 2.0 执行合同
+# 游客现金直付购买：任务 2.1 执行合同（2.0 增量升级）
+
+> **当前计划版本：2.1（2026-09-19）**。本文件路径暂保留为 `docs/guest-purchase-task-2.0.md`，仅为兼容既有引用；本文件从本行起的新增规范以 2.1 为准。§12–§60 是 2.0 的历史证据，不回写成新的事实，也不另建第二份执行源。
 
 > 工作目录：`/Volumes/chao/AI/xianyu_profit_calculator`  
-> 当前分支：`codex/guest-shop-cash-purchase`（从最新 `origin/main` 派生）  
+> 2.0 历史基线分支：`codex/guest-shop-cash-purchase`（从当时最新 `origin/main` 派生）；2.1 实施必须从届时最新 `https-origin/main` 新建专用 `codex/guest-shop-*` 分支
 > 任务 1.0 看板：`docs/guest-purchase-execution-taskboard.md`（冻结，不再作为执行源）  
 > 运行手册：`docs/guest-shop-payment-fulfillment-runbook.md`  
 > 部署规范：`AGENTS.md`
 
-## 0. 任务 2.0 是什么
+## 0. 任务 2.1 是什么
 
 任务 1.0 已经完成核心方案、数据库、独立订单/支付/预占、回调验签、异步履约、取货凭证、自动化契约和只读后台异常列表。它停在 **代码/自动化收口 → 真实环境接线**，按原看板保守口径为 **82%**。
 
-任务 2.0 不是重做 1.0，而是把剩余工作收成一份可执行、可验收、不允许停在 99% 的合同。进度从 0 重新计算，但 1.0 已完成项默认继承，不重复开发。
+任务 2.0 不是重做 1.0，而是把剩余工作收成一份可执行、可验收、不允许停在 99% 的合同。任务 2.1 是在 2.0 基线之上的增量升级：不重算 2.0 历史进度，不把自动化全绿当成真实环境完成，并把本次审查发现的收银台动作语义、状态机、竞态、身份恢复、开关门禁和运营护栏纳入同一份执行合同。
+
+2.1 的核心判断是：当前弹窗并非“按钮都有就算完成”。「稍后处理」是隐藏本地界面，「关闭当前订单」是清理本地句柄而不是服务端取消；创建支付结果未知、主动查单并发、找回订单跨商品展示和隐藏按钮的 CSS 显隐都可能造成重复付款、错误商品或错误状态。因此，2.1 先完成 P0 闭环和证据，再谈扩大促销、件数或游客商品范围。
 
 ### 0.1 进度口径
 
-- 当前总进度：**48%**（A 8% + B 12% + C 10% + F 10% + H 8%）
-- 当前阶段：`D 真实支付矩阵执行中`（D3-01/D3-13/D3-17/D3-04/D3-03/D3-02/D3-05/D3-06/D3-07/D3-20/D3-11/D3-12/D3-10/D3-19/D3-18/D3-14/D3-15/D3-09 PASS；D3-08 BLOCKED+ZPay currency is site-derived；D3-16 未开始）。**INTL USDT 成功路径暂停。** 当前插队修游客应付金额：第 54 节站内二维码+倒计时、第 55 节「关闭当前订单」已落地；第 56 节让支付宝/USDT 自动加 1% 通道手续费，禁止用户手改应付金额。总进度仍 48%，禁止写成 99%
-- 阻断原因：D 仍未完成。**不是代码卡死。** 用户要求先暂停 INTL USDT，修游客支付宝 UX。第 54 节已禁止打开支付宝官方下载页。第 55 节根因是未付款单写在 `sessionStorage` `guest_shop_checkout_v1`。第 56 节根因是应付金额只展示商品价，未自动加易支付/NOWPayments 1% 手续费，用户少付则 webhook 金额校验失败、不会发货。已让前端/服务端在 stored `0%` 时回退到 1%，创建支付时把应付金额写入 `unit_amount` / `expected_amount` / `payment_pricing`。INTL 成功支付等该 UX 验收后再恢复。不得用 mock 顶 D，不得再打开第二个游客商品，不要退 D3-01，不要付款旧超时单/已过期发票。
-- 当前执行者动作：第 56 节已让支付宝/USDT 自动加 1% 通道手续费（CSS cache bust 仍是 `20260916_GUEST_PAYABLE_FEE_2`）；第 57 节补齐游客「主动查单」自愈闭环，`js/guest-shop-client.js` cache bust 升到 `20260916_GUEST_STATUS_ACTIVE_REFRESH_1`，修复未发布（仍在 `codex/guest-shop-cash-purchase` 工作区）。INTL USDT 暂停。下一步：硬刷新 http://localhost:8000/shop.html（CN，不要 `?site=intl`）。若自动弹出未付款单，点「关闭当前订单」后重新创建；应付金额应是商品价 + 1%（测试 SKU `¥0.01` 向上取整为 `¥0.02`），不要在支付宝里手改金额。不要付款旧 GS 单。该 UX 验收通过后再恢复 INTL USDT。
-- 进度按下方阶段权重计算，不按文件数量，不用“基本完成”。
-- 被用户、SQL、沙箱账号、真实设备或 KVM4 权限阻断时，状态记为 `blocked`，并写明责任人和证据缺口。禁止把 blocked 写成 99%。
-- 只有第 0.2 节全部满足，才能从任何 90%+ 数字改成 **100%**。
+- **任务 2.1 是当前唯一执行版本，当前总进度为 80%（4/5 阶段完成）。** 阶段 1「代码与合同」、阶段 2「默认关闭生产发布」、阶段 3「指定 SKU 游客启用」和阶段 4「用户主导自测」已完成；阶段 5「后续扩展与收口」已进入 `in_progress`，但尚未计入额外百分比。
+- **任务 2.0 的 48% 已冻结为历史快照。** 它只说明当时 A–J 合同执行到哪里，不再参与 2.1 计分，也不阻塞默认关闭发布或指定 SKU 的独立启用评审。§12–§60 内重复出现的 48% 均按历史运行日志解释，不再动态更新。
+- 2.1 五阶段各占 20%，状态只使用 `not_started / in_progress / blocked / complete / deferred`。`blocked` 和 `NOT RUN` 都不等于通过，但未启用功能的证据缺口也不会阻塞不包含该功能的阶段。
+- 每阶段都有独立退出条件；通过的证据绑定一个固定候选或生产 commit。只有代码、配置、环境、选定 SKU 或事故事实发生变化时才重开对应阶段，不因 `main` 后续自然前进而循环重验。
+- 默认关闭生产发布和游客商品启用分开计分。阶段 2 完成只证明代码已安全发布且所有游客开关保持原状态；阶段 3 才审查并启用一个明确的 product/SKU。
+- 当前事实：指定「测试」SKU 已在 production commit `e8c514cb7d1d9fdf455b1461aabbc8d5be285674` 上通过游客 preview；邮箱+查询密码与游客订单查询页已启用，「测试 2」游客入口已关闭。用户已完成 CN、单件、原价 ¥0.01、应付 ¥0.02 的真实下单、支付、自动发货和邮箱+查询密码查询自测并确认无异常。本轮不执行 SQL、不重复创建或支付订单；订单号、邮箱、查询密码和交付凭证不写入仓库。
 
-### 0.2 任务 2.0 完成标准（全部满足才是 100%）
+### 0.2 任务 2.0 历史完成标准（仅供追溯）
+
+以下十项是旧 2.0 合同的历史完成定义，不是 2.1 阶段 2 或阶段 3 的整体验收门。2.1 只按第 1 节和 §61.9 的分层门禁执行；与当前发布或所选 SKU 无关的 INTL、促销、多件、凭证、全量设备矩阵和未来功能不得被重新解释为当前硬门。
 
 1. 游客入口、预览、服务端重算价格、原子预占、独立现金支付、回调验签、worker 履约、凭证取货均在生产拓扑上工作：前端在 Vercel，API/webhook/worker 在 KVM4 Verify Server。
 2. 登录用户积分购买、折扣、购物车、后台原有订单/库存流程无回归。
@@ -31,11 +36,11 @@
 5. 后台异常订单可筛选、可定位；写操作（退款/补发/解锁）有 RBAC、二次确认、原因和审计。没有写路径不得宣称运营完成。
 6. 桌面和移动端视觉验收通过，UI 使用现有 `premium-modal` / `shop-btn` / 商城 token，不引入突兀英文 eyebrow 或新的视觉体系。
 7. KVM4 guest-shop worker 已在最新 `main` 对应的 verify 发布上安装，timer 证据齐全；安装器未改 canonical root，未执行 SQL。
-8. 只灰度 **一个** 低价值、非共享、自动发货 SKU；观察期指标达标后，关闭开关回滚演练成功。
+8. 只灰度**已批准白名单 SKU 集合**；每个 SKU 都必须低价值、非共享、自动发货且未公开上架。按批次和指标扩围，任何一个 SKU 都能单独关闭并完成回滚演练；“一个 SKU”仅是第一批保守起点，不是永久数量上限。
 9. 最终验收记录、风险清单、运行手册和上线/回滚步骤已归档。
-10. 用户在本文件第 J 节签署“可以启用该灰度 SKU”。在此之前游客商品必须保持关闭。
+10. 用户在本文件第 J 节签署“可以启用该白名单灰度 SKU 集合”。在此之前公开/灰度游客商品必须保持关闭；§60.8.2 已确认的内部沙箱商品只能按白名单和本合同资质要求保留，不得误当成公开启用。
 
-不满足任何一条，总进度最高只能记到 **90%**，不能记 100%。
+旧合同曾规定不满足任何一条时 2.0 不能记 100%；该规则随 2.0 一并冻结。它不改变当时记录的 2.1 阶段进度，也不覆盖 §61.9 针对发布、基础 SKU 和扩展功能分别定义的退出条件。
 
 ### 0.3 硬性规则
 
@@ -47,33 +52,32 @@
 - 不把自动化全绿误报成生产已就绪。
 - 不把 secret、卡密、claim token、recovery_code 明文写入日志或最终回复。
 - 前端改动必须复用现有商城风格；发现突兀再当场改，不等到最后视觉阶段才发现。
-- 每完成一步必须按第 11 节格式汇报，并回写本文件的待执行清单。
+- 每个阶段退出时按第 11 节格式汇报，并只更新第 0.1 节、第 1 节及对应证据记录；不再为每个命令向历史正文追加运行日志。
 
 ### 0.4 已冻结的 1.0 基线（继承，不重做）
 
-- 数据库：基础迁移、atomic RPC、preflight 8/8、postflight 10/10 已由用户执行。`orphan_payment_events=0`，游客订单/支付/预占=0，启用游客商品=0。
+- 数据库：基础迁移、atomic RPC、preflight 8/8、postflight 10/10 已由用户执行。`orphan_payment_events=0`，游客订单/支付/预占=0 是 **1.0 历史基线**，启用游客商品=0 也只是当时快照；当前运维状态以 §60.8.2 的 `operator_state_review`、Admin Studio 开关和 §61.9/§61.10 白名单闸门为准。
 - 独立表：`guest_shop_orders` / `guest_shop_payment_orders` / `guest_shop_payment_events` / `guest_shop_inventory_reservations`。
 - 独立用途：`shop_direct`。不走 `fn_purchase_shop_item`，不混充值积分入账。
 - 生产拓扑：Vercel 前端 + `/api/shop/*` 反代到 `verify-api.fatherkey.com`。
-- 游客商品默认关闭。
+- 游客商品默认关闭；当前运维开关状态不以本条历史基线推断，须按 §60.8.2 的动态管理员开关和 §61.9 的发布/启用闸门复核。
 
 ---
 
-## 1. 阶段总览
+## 1. 任务 2.1 阶段总览（当前唯一计分表）
 
 | 阶段 | 内容 | 权重 | 状态 | 退出条件 |
 | --- | --- | ---: | --- | --- |
-| A | 分支隔离、部署规范、2.0 合同 | 8% | 已完成 | 专用分支基于最新 main；AGENTS.md 含游客发布禁令 |
-| B | 代码/自动化/恢复语义/UI 契约收口 | 12% | 已完成 | 完整测试、静态检查、readiness 契约、恢复语义测试通过 |
-| C | 后台写路径：RBAC、二次确认、审计 | 10% | 已完成 | 退款/补发/解锁有权限、确认、原因、审计测试；20260914 SQL 5/5 PASS |
-| D | 真实支付沙箱矩阵 | 18% | in_progress | D3-01/D3-13/D3-17/D3-04/D3-03/D3-02/D3-05/D3-06/D3-07/D3-20/D3-11/D3-12/D3-10 PASS；D3-08 BLOCKED+ZPay currency is site-derived；其余 D3 未完成。20260916 已 3/3 PASS。不得用 mock 顶 D |
-| E | 真实数据库并发与限流 | 8% | 未开始 | 最后一张卡、预占释放、回调竞态有数据库证据 |
-| F | KVM4 worker 安装与健康 | 10% | 已完成 | 最新 main 上 timer/journal 证据；密钥已写入且不回显；部署规范含 env_file 重建 |
-| G | 桌面/移动视觉验收 | 8% | 未开始 | 清单状态均有截图，风格不突兀 |
-| H | 告警、对账、退款/隐私政策 | 8% | 已完成 | 阈值、值班入口、政策文本就绪 |
-| I | 低价值 SKU 灰度 | 10% | 未开始 | 单一 SKU、指标达标、关闭开关可停新单 |
-| J | 回滚演练与最终签署 | 8% | 未开始 | 用户签署；此时才允许打开该灰度 SKU |
+| 1 | 代码与合同 | 20% | **complete** | P0 安全切片、按钮语义、自动化 `516/516` 和 2.1 分层合同完成；扩展项明确关闭或延期 |
+| 2 | 默认关闭生产发布 | 20% | **complete** | PR #656 完成默认关闭发布，后续 PR #659 合入最新 `main`；Vercel、Verify、Sub2API、guest-shop worker 四链当前绑定 production commit `e8c514cb7d1d9fdf455b1461aabbc8d5be285674` 且健康；未执行 SQL |
+| 3 | 指定 SKU 游客启用 | 20% | **complete** | 精确 product/SKU 通过 operator review 和 §61.9 基础安全门；仅该 SKU 使用邮箱+查询密码链路，扩展开关保持关闭 |
+| 4 | 观察与回滚 | 20% | **complete (operator-led)** | 用户自测已确认金额、支付、自动发货和邮箱+查询密码查询正常；固定 24 小时/最多 5 单窗口已取消，不自动创建订单或持续监控 |
+| 5 | 后续扩展与收口 | 20% | **in_progress** | 指定 SKU 回滚演练与最终运营归档已完成；促销及其后扩展仍按责任矩阵和用户批准的顺序推进 |
 | **合计** |  | **100%** |  |  |
+
+阶段 1 已在 2026-09-20 以发布候选代码和 `516/516` 游客商城自动化基线完成；阶段 2 已由 §61.14 的四链证据完成，阶段 3/4 的生产启用与用户自测结果见 §61.19–§61.20。当前进度仍为 **80%**，剩余 **1/5 阶段，20%**；不再等待固定观察窗口。指定 SKU 回滚演练和最终运营归档已完成，阶段 5 剩余工作转为按用户顺序推进的促销及后续扩展，不把延期项误记为已完成。
+
+下方 A–J、§12–§60 和早期 K 表述均是 2.0/实施历史，保留用于审计，不再构成当前计分表或一揽子阻断门。若历史段落与本节或 §61.9 冲突，以本节和 §61.9 为准。
 
 ---
 
@@ -86,7 +90,7 @@
 - [x] 游客购买未提交改动随工作区带到新分支
 - [x] `AGENTS.md` 增加 Guest Shop Deployment Rules：禁止功能分支 prod deploy；发布≠启用；四条链路；worker 必须等 verify 到最新 main；禁止部署时执行 SQL
 - [x] 运行手册增加“发布不等于启用”
-- [x] 本文件成为 2.0 执行合同
+- [x] 本文件成为 2.0 执行合同；2026-09-19 起新增 §61，内容版本升级为 2.1，路径保持兼容
 - [x] 回写 `AGENTS.md` / `docs/kvm4-verify-server-deploy.md` / `docs/guest-shop-payment-fulfillment-runbook.md` / `docs/vercel-release-checklist.md`：改 `.env` 后必须 `docker compose up -d --no-deps --force-recreate --no-build verify-server` 重载 `env_file`；禁止 `docker restart`；禁止打印 secret；禁止复用 `CRON_SECRET`
 
 ### 持续约束（A 已完成，全程有效）
@@ -101,9 +105,17 @@
 
 ---
 
-## B. 代码/自动化/恢复语义/UI 契约收口
+## B. 代码/自动化/恢复语义/UI 契约收口（2.0 历史记录）
 
-### B1. 恢复语义冻结（本轮已定稿）
+> 本节的恢复、recover 路由和口令展示条目是旧 2.0 候选的审计记录；它们不再描述
+> 当前 2.1 入口。当前用户查询统一使用邮箱 + 查询密码，旧公开查询/升级路由已移除；
+> 服务端 claim proof 的履约用途不受影响。
+
+### B1. 恢复语义冻结（2.0 历史记录，2.1 已移除公开旧入口）
+
+> 本节记录早期 2.0 的订单号 + 取货口令恢复合同，仅用于审计当时的实现与证据。
+> 它不是当前用户能力；2.1 当前合同以 §61.4.5 和 §61.16 为准，邮箱 + 查询密码
+> 是唯一用户查询入口，公开 `recover` / `access/upgrade` 已移除。
 
 `recovery_code` **不是**一次性消耗令牌。
 
@@ -199,7 +211,7 @@
 - [x] 游客购买代码已按 AGENTS.md 从专用分支 PR 合入最新 `main`，Vercel + KVM4 Verify 已发布该 commit。发布不等于启用游客商品，也不得在发布过程执行 SQL
 - [x] KVM4 游客专用密钥已写入 `/opt/zaoyoe-verify-server/.env`（mode `0600`，不回显、不复用 `CRON_SECRET`）；verify-server 已重建加载 `env_file`；guest-shop worker timer 已启动且空 tick 成功
 - [x] 可见浏览器已接上：Codex in-app browser 打开 `http://localhost:8000/shop.html`，游客购买弹窗可操作
-- [x] 内部测试 SKU 已确认：Gemini「测试 2」/ 规格「测试」；`product_id=c16212d8-6ad8-4b3c-831c-3cc68b2d7a52`；`sku_id=db8cc9bd-898a-49ff-adb4-cc07f94d7d8f`；`price_points=0.01`；`delivery_type=KEY`；自动发货；非共享；库存 42。不得再开第二个
+- [x] 内部测试 SKU 已确认：Gemini「测试 2」/ 规格「测试」；`product_id=c16212d8-6ad8-4b3c-831c-3cc68b2d7a52`；`sku_id=db8cc9bd-898a-49ff-adb4-cc07f94d7d8f`；`price_points=0.01`；`delivery_type=KEY`；自动发货；非共享；库存 42。~~不得再开第二个~~【2026-09-19 更新：计数上限作废——游客商品数由 Admin Studio 游客开关动态决定，无固定上限；每个被打开的商品仍须低价值/非共享/自动发货且不得公开上架。见 §60.8.2 / 证据 §2.10.2】
 - [x] CN ZPay：现有配置没有独立沙箱，实际走现网 `zpayz.cn` + 支付宝。D3-01 按现网 ¥0.01 执行，不把沙箱缺失写成 PASS
 - [x] INTL NOWPayments：现有配置也是现网 `api.nowpayments.io` / `usdtbsc`，没有沙箱密钥。20260916 已执行 3/3 PASS，INTL create-order 闸门已解除。测试 SKU 已涨到 `price_points=144`（现网 min ≈ `$19.05` USD），已能建成 `usdtbsc` 发票。网络仍固定 `usdtbsc`，商品标价 CNY，USDT 按充值同一套汇率折算，不得把 USD quote 当结算币种。当前成功支付发票已过期且 `actually_paid=0`，不得再付旧地址
 - [x] 游客公开商品保持关闭。当前库里已有 **1** 个 `allow_guest_purchase=true`（用户确认主动打开为测试准备，非代码故障）。D 结束后若未进入 I，必须先关掉该 SKU
@@ -295,8 +307,10 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 - [ ] 桌面：刷新恢复（无口令回吐）
 - [ ] 移动端同样 7 项，底部 sheet、按钮全宽
 - [ ] 支付 App 切回
-- [ ] 关闭浏览器后用订单号+口令找回
+- [ ] 关闭浏览器后用邮箱 + 查询密码找回（不保存凭证、不把凭证写入 URL）
 - [ ] 亮色/暗色主题都不刺眼，不出现英文 `Guest checkout`
+- [ ] 按 §61.3 逐状态截图五个动作：稍后处理、创建支付订单、查询支付状态、离开/取消、找回订单；同时记录 computed `display`、disabled、focus 和 `aria-busy`
+- [ ] `configure/creating/awaiting_payment/checking/review/confirmed/paid_unfulfillable/dead_letter/delivered` 与全部支付/退款终态均有真实文案，不把 review/金额异常/退款误标成“支付超时”
 
 发现突兀立刻改 CSS/文案，再继续下一张截图。
 
@@ -324,8 +338,9 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 ## I. 低价值 SKU 灰度
 
 - [ ] 选择一个低价值、非共享、自动发货、非人工发货 SKU
-- [ ] 仅该 SKU 打开游客购买，其余保持关闭
+- [ ] 按 Admin Studio 白名单逐批打开游客购买；每个 SKU 单独记录资质、operator review 和开关，不以固定商品数量替代审核
 - [ ] 观察成功率、发货延迟、预占占用、`paid_unfulfillable`、退款失败
+- [ ] §61.3 五按钮状态矩阵、未知支付、迟到付款和跨设备恢复证据均已归档后，才允许扩大范围
 - [ ] 预设阈值未达成则关闭该 SKU，不扩大范围
 
 ---
@@ -333,12 +348,13 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 ## J. 回滚演练与最终签署
 
 - [ ] 关闭游客开关：新单拒绝，已付款继续履约/退款
+- [ ] 验证关闭的是业务开关而非客户端“关闭当前订单”；`review`/未知支付订单保留对账线索
 - [ ] 不执行数据库 rollback
 - [ ] 归档最终验收记录（日期、commit、四条链路、沙箱证据、截图索引）
-- [ ] 用户签署：允许启用该灰度 SKU
-- [ ] 只有签署后才打开该 SKU
+- [ ] 用户签署：允许启用已审计的白名单灰度 SKU 集合
+- [ ] 只有签署后才按白名单逐个打开对应 SKU
 
-**100% 只在本节最后两项完成后标记。**
+**历史说明：** 本节属于旧 2.0 A–J 模型，不再决定 2.1 百分比。当前启用顺序和签署条件以第 1 节五阶段及 §61.9 为准。
 
 ---
 
@@ -656,7 +672,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 
 1. ~~用户在目标 Supabase 执行 20260915 SQL~~ 已执行
 2. ~~用户只重跑修正后的 verify~~ 已重跑：1-7 PASS，第 8 项 REVIEW（`enabled_count=1`）
-3. ~~verify 前不要打开内部测试 SKU~~ 用户已主动打开 1 个商品做测试准备，非代码故障；不得再开第二个，也不得公开上架
+3. ~~verify 前不要打开内部测试 SKU~~ 用户已主动打开 1 个商品做测试准备，非代码故障；~~不得再开第二个~~，也不得公开上架【2026-09-19 更新：计数上限作废——数量由 Admin Studio 游客开关动态决定；资质三条与「不得公开上架」保留。见 §60.8.2 / 证据 §2.10.2】
 4. 仍保持 D `blocked`，直到确认该 SKU 低价值/非共享/自动发货，并且 CN ZPay 沙箱、INTL NOWPayments 沙箱（`usdtbsc`）、可见浏览器/真机齐套
 
 ### 风险和修正
@@ -675,7 +691,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 - [ ] 确认该 SKU 低价值、非共享、自动发货，不是公开主推
 - [ ] 未齐套沙箱/真机前禁止真实付款；本地弹层不等于 D 开始
 - [ ] 不从功能分支 vercel prod deploy；发布仍须走 AGENTS.md
-- [ ] 不得再打开第二个游客商品，不得公开上架
+- [ ] ~~不得再打开第二个游客商品~~（2026-09-19 更新：计数上限作废，数量由 Admin Studio 游客开关动态决定，见 §60.8.2），不得公开上架
 - [ ] D 仍缺：CN ZPay 沙箱、INTL NOWPayments 沙箱、可见浏览器/真机
 - [ ] G 视觉验收、E 真实并发、I 灰度、J 回滚签署均未开始
 
@@ -730,7 +746,7 @@ D0 的 CN 可见浏览器/测试 SKU 已齐。阶段 D 仍是 `in_progress`，�
 - [x] 用户重跑修正后的 verify 并回传
 - [x] 不重跑 20260915 迁移
 - [ ] 不从功能分支部署
-- [ ] 不得再打开第二个游客商品，不得公开上架
+- [ ] ~~不得再打开第二个游客商品~~（2026-09-19 更新：计数上限作废，数量由 Admin Studio 游客开关动态决定，见 §60.8.2），不得公开上架
 
 ## 25. 2026-09-15 verify 闸门关闭 + 用户确认 1 个测试商品（不开始 D）
 
@@ -779,7 +795,7 @@ WHERE allow_guest_purchase IS TRUE;
 
 2. 若该商品是公开/高价值/共享库存/人工发货，先在 Admin Studio 关掉，另选一个内部测试 SKU
 3. 补齐 D0 剩余项：CN ZPay 沙箱、INTL NOWPayments 沙箱（网络固定 `usdtbsc`）、主线程可见浏览器或真机
-4. 齐套前不得真实付款，不得发布功能分支，不得再开第二个游客商品
+4. 齐套前不得真实付款，不得发布功能分支，~~不得再开第二个游客商品~~（2026-09-19 更新：计数上限作废，数量由 Admin Studio 游客开关动态决定，见 §60.8.2）
 
 ### 风险和修正
 
@@ -3034,3 +3050,919 @@ Codex 不代执行。
 本轮**不需要用户执行 SQL**。不要重跑 20260913 / 20260914 / 20260915 / 20260916 / 20260917 / 20260918 / 20260919。
 
 Codex 不代执行。
+
+## 58. 2026-09-17 商品详情弹窗移除「游客购买」按钮，未登录时并入主按钮
+
+### 本轮做了什么
+
+- 用户要求：商城 → 单个商品详情弹窗里**移除「游客购买」按钮**；未登录时把游客购买能力**并入「兑换」主按钮**。用户明确不要「未登录可直接现金购买」提示行，并要求在下达部署指令前**不发布**。
+- 旧行为（两个问题）：
+  1. `js/guest-shop-client.js` 用 `window.setInterval(syncPurchaseButton, 350)` 轮询商城购买弹窗来决定 `#guestCashPurchaseBtn` 显隐，**完全不看登录状态**，所以已登录用户也会看到「游客购买」。
+  2. 「兑换」在未登录时只会 `promptLoginForPurchase()` 弹登录框，游客链路必须靠第二个按钮才能进入。
+- 新行为：
+  - `/Volumes/chao/AI/xianyu_profit_calculator/shop.html`：删除 `#guestCashPurchaseBtn`（连带 `shop-guest-cash-purchase-btn` 类名，仓库里已无任何残留引用）；`js/guest-shop-client.js` 的 cache bust 采用叠加形态 `?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`（保留 #649 的 token，其三条契约断言按子串仍能匹配）；`js/shop-client.js` 追加 `&guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`（保留原 `?v=20260520_SHOP_CARD_PROMPT_BREATHE_3` 前缀，多个测试按子串断言它）。CSS 的 `guestPayableFee` 参数本轮未改。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/js/guest-shop-client.js`：删掉 `syncPurchaseButton` / `handlePurchaseButtonClick` / 350ms 轮询 / capture 点击监听；`loadPreview()` 不再操作按钮，改为返回 `{ available, reason }`；新增只读桥接
+    `window.GuestShopCheckout = { peekAvailability, probeAvailability, startGuestCheckout }`，按 `contextKey` 缓存可用性并去重 in-flight 探测。`loadPreview` 改为**串行队列**（`previewQueue` + `runPreviewRequest`），所以「加载中」不会再被当成「不可用」；瞬时失败（`pending` / `rate_limited` / `preview_error`）**不写缓存**，后续点击可重试。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/js/shop-client.js`：由它独家判断登录态（`shopAuthStateKnown`，`onAuthStateChange` + `getSession()` 维护）。仅当 **已确认未登录** + 探测到游客可购 + 选择项一致时 `isGuestCashEntryActive()` 才为真，此时主按钮文案切「立即购买 / Buy now」，并隐藏数量与优惠码两个 stage、锁定数量输入为 1（游客单固定 `quantity: 1` 且不支持积分券）。`confirmPurchase` 保持原有顺序「优惠码同步 → 取 token」，只在 `!token` 分支改为先 `startGuestCashCheckout()`，未启动才回落 `promptLoginForPurchase()`。**没有**新增埋点：`window.UserEventTracker.track()` 在没有登录用户时直接 `return null`，而这条路径只在未登录时执行，加了也永远打不上；游客漏斗指标需要一条匿名的服务端事件通道，本轮不做。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/lang/zh.json` / `lang/en.json`：新增 `shop.guestCashBuyNow`（立即购买 / Buy now）。
+- 隔离不变量保持：`js/guest-shop-client.js` 仍不含 `supabase` / `access_token` / `Authorization` / `localStorage` / `Math.random()`，`STORAGE_VERSION` 仍是 3，也不再引用 `shopPurchaseModal`。登录态判断全部留在 `shop-client.js`。
+- **已登录用户路径逐字未变**：所有游客分支都以 `shopAuthStateKnown !== false` 或 `guestCashActive` 为前置条件，积分兑换、优惠码同步、购物车结算的既有契约测试全部保持原样通过。
+
+### 证据
+
+- `tests/guest-shop-frontend-contract.test.js`：**18/18 PASS**（基线 17/17，新增「merged logged-out entry」契约）。原第 21 行的 `#guestCashPurchaseBtn` 断言改为「必须不存在」；三处版本号断言改为同时匹配 `20260917_GUEST_POLL_RATE_LIMIT_SAFE_1` 与追加的 `guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1`。
+- 全仓回归 `node --test --test-force-exit tests/*.test.js`：**3156 pass / 0 fail**。
+- 过程中发现并修回两处真实回归（都来自最初把 token 检查提到优惠码同步之前）：
+  - `tests/shop-discount-preview-selection-regression.test.js`「coupon-list sync a short chance before buying without a coupon」
+  - `tests/shop-purchase-guidance-regression.test.js`「refreshes latest notes and versions prefetched product snapshots」
+  两者都按既有契约的字面顺序断言 `waitForPurchaseDiscountAssetsBeforeSubmit()` → `getAccessToken()` → `if (!token)`，以及 `setPurchaseStage` 里的 `shouldShow` 谓词。已恢复原顺序（未登录时优惠码请求本就直接返回空 payload，不发网络请求，因此没有额外延迟），并把游客专属的 stage 隐藏挪到通用遍历之后。
+
+### 本轮没做什么
+
+- 已 rebase 到最新 `main`（`2424dcc14`，含 #649 轮询限流修复、#650 worker 安装工作流）。冲突只有两处：`shop.html` 的 guest 脚本 cache bust（改为叠加两个 token）与契约测试的同名断言（改为同时断言两个 token）；`js/guest-shop-client.js` 自动合并，#649 的 `SMART_POLL_INTERVALS` 硬下限与本轮的 `loadPreview` 串行队列/桥接互不重叠。
+- 没有部署：没有推分支、没有开/合 PR、没有 `vercel deploy`、没有触发 KVM4 任何链路、没有安装或启动 guest-shop worker。用户明确要求等指令。
+- 没有执行任何 SQL，没有新增迁移。
+- 没有打开游客商品/SKU 开关，没有改 `allow_guest_purchase`。
+- 没有按用户要求添加「未登录可直接现金购买」提示行（契约测试里反向断言它不存在）。
+- 没有给**已登录**用户新增现金购买入口。这是一个产品决策缺口：积分不足的登录用户现在只剩积分兑换一条路。本轮按用户原始诉求只处理未登录场景，未擅自扩权。
+
+### 风险和修正
+
+- **登录用户失去现金出路。** 现状：改完后已登录用户看不到任何现金购买入口（旧版反而能看到「游客购买」）。修正建议：在积分不足报错处补一个「改用现金购买」入口，或让登录用户走已有的钱包充值。等产品确认后再做。
+- **游客模式下金额摘要仍显示积分。** 数量锁定为 1，摘要按单价积分展示，但点下去是人民币/USDT 现金支付，存在语义落差。本轮按用户要求不加提示行；如需彻底消除，建议游客模式下把摘要区切成现金口径，这是后续可选项。
+- **可用性探测失败会回落登录框。** 预览接口 5xx / 限速时，未登录用户点主按钮会看到登录提示而不是游客收银台。已做到瞬时失败不缓存、下次点击重试；仍属 fail-closed，符合「发布不等于启用」的保守口径。
+- **购物车结算未动。** `shopCartCheckout` 仍要求登录，本轮没有把游客能力接进购物车。
+
+### 进度
+
+- 总进度仍记 **48%**（A+B+C+F+H）。本轮是 P0-5 前端 UI 的入口收敛，不是 D 阶段推进。100% 只在第 J 节用户签署之后。
+
+### 下一步
+
+1. 用户在本地硬刷新 `http://localhost:8010/shop.html`（CN，不要 `?site=intl`；`:8010` 是 `codex/guest-shop-entry-merge` 工作树的 `scripts/local-preview-server.js`，`:8000` 服务的是主仓库另一个分支，看不到本轮改动），**退出登录**后打开一个已开启游客支付的商品：主按钮应为「立即购买」，且看不到数量/优惠码两块；点击直接进入游客收银台。
+2. 同一商品**登录后**再看：主按钮应为「兑换」，数量与优惠码恢复，走积分流程，且**不再出现**任何现金购买入口。
+3. 未开启游客支付 / 人工发货 / 售罄 / 预览失败四种商品，未登录点击应回落登录弹窗。
+4. 上述 UI 验收通过后，再由用户下达部署指令；届时按 `AGENTS.md` 走 `codex/guest-shop-entry-merge` → PR → `main` → 四条链路，不得从功能分支 `vercel deploy --prod`。
+5. 产品决策待确认：是否给已登录用户保留现金购买入口。
+
+### SQL 状态
+
+本轮**不需要用户执行 SQL**。不要重跑 20260913 / 20260914 / 20260915 / 20260916 / 20260917 / 20260918 / 20260919。
+
+Codex 不代执行。
+
+## 59. 2026-09-19 游客促销 L1+L2 合并批：阶梯价/闪购/优惠码全部服务端定价，附带时代感知探针修复
+
+### 本轮做了什么
+
+- 用户指令是「按『L1+L2 合并一批』开工」，并沿用既有红线：**安全第一、绝不零元购、防掏鸟蛋、防刷**；
+  所有折扣**只走服务端定价**，客户端不参与金额计算；阶梯价与闪购的库存/限购/幂等校验全部保留。
+- 按 `docs/guest-shop-promo-hardening-plan.md` §14 的分期表，「L1+L2 合并一批」等价于
+  **L1 + L2 + L3 的「定价权威」部分同批交付**。§14 明确禁止 L2/L3 拆开发布：拆开就会出现
+  「前端能报价、后端不认账」→ `amount_mismatch` → **已付款不发货**。**L4（后台运营界面）不在本批。**
+- 库侧（新增 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`，3531 行）：
+  - **L1**：`guest_shop_resolve_credit_unit_amount` 放开 `p_quantity`，阶梯价/闪购与登录用户走**同一个 resolver**
+    （积分与现金等值，游客因此能享受登录用户的阶梯价与闪购）；`fn_guest_shop_create_order` 一条语句预占 N 行卡密。
+  - **L1 件数四处取小**：`min(env GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity,
+    product.max_purchase_quantity, 5)` —— 运维调高 env **永远不可能**放宽某个 SKU 的上限。
+  - **L2**：`fn_guest_shop_evaluate_discount`（只读试算）+ `fn_guest_shop_reserve_discount`（原子扣减）；
+    `discount_codes` 加 `guest_*` 五列做券级硬预算；新增 `guest_shop_promo_budget`（站点级日预算）、
+    `guest_shop_discount_redemptions`（身份配额台账，按 `buyer_contact_hash` 计数）、
+    `guest_shop_promo_breaker` + `_events`（熔断，**只有 closed/open 两值，无半开**，人工恢复）。
+  - **L3 定价权威**：create-order 内**重算**金额，并用 `guest_shop_orders_amount_check` 一次性钉住五条红线 ——
+    ① `unit_amount > 0 AND total_amount > 0`（**任何情况下都不存在 0 元单**）；
+    ② `discount_amount < ROUND(list_unit_amount * quantity, 2)`（**零元购地板**，折扣必须**严格小于**折前总额）；
+    ③ `discount_amount <= 折前总额 * 0.5`（**单笔最多折 50%**）；
+    ④ `payment_fee_amount <= unit_amount*quantity*0.1 + 0.01`（通道费硬顶 10%）；
+    ⑤ `total_amount = unit_amount*quantity + payment_fee_amount`（金额三者必须自洽）。
+    另有 `guest_shop_orders_quantity_check`（1..5）、`discount_codes_guest_caps_check`
+    （让「超发的游客额度」在数据库层**不可表示**）。四张新表全部 `ENABLE ROW LEVEL SECURITY` +
+    `REVOKE FROM PUBLIC, anon, authenticated`，七个促销函数全部 `SECURITY DEFINER` + `SET search_path` + 非 `IMMUTABLE` + **各自唯一重载**。
+  - **签名变更**：`fn_guest_shop_create_order` 13 → **15** 参（新增 `p_quantity INTEGER DEFAULT 1`、
+    `p_discount_code TEXT DEFAULT NULL`）。旧 13 参签名被**精确 DROP**，DEFAULT 参数**连续排在末尾**
+    （否则 PostgREST 具名调用无法解析）。
+- 应用侧：
+  - `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop/promo.js`（新，510 行）：开关解析 + 券码/数量归一化 + 展示整形。
+    **红线写在文件头注释里：本模块永远不计算金额**，每个价格/折扣/手续费都由 SQL 函数产出；
+    本文件的取值只能让游客通道**更严**，不可能更松（所有 cap 取 env 与数据库上限的 `min()`，
+    env 解析失败一律**降级到 P0 行为**：数量 1、不带券码）。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop/runtime-config.js`：新增 `GUEST_SHOP_MAX_QUANTITY`
+    （integer，default **1**，min 1，max **5** = 数据库 CHECK 硬顶）；`GUEST_SHOP_DISCOUNT_ENABLED`（boolean，default **OFF**，
+    解析不出真假值即视为 OFF）。生效折扣开关 = `GUEST_SHOP_DISCOUNT_ENABLED` **AND** `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/api/_lib/guest-shop/security.js`：fingerprint 扩展为含
+    `quantity` + 归一化券码 + 折扣额，换券或换数量重放 → `guest_idempotency_conflict`（不是覆盖旧单）。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/server/api-handlers/public/guest-shop.js`（+491/−70）：
+    preview 只回 `quantity_cap` / `discount_enabled` 等**能力标志**，绝不回可被信任的金额；
+    create 路径服务端重算并落库。
+  - `/Volumes/chao/AI/xianyu_profit_calculator/shop.html` + `/Volumes/chao/AI/xianyu_profit_calculator/js/guest-shop-client.js`（+495/−8）：
+    数量步进器与优惠码区块**默认 `hidden`**，只有 `GET /guest/preview` 报 `quantity_cap >= 2` / `discount_enabled` 才显示；
+    preview 的 `URLSearchParams` 白名单**只有** `site/productId/skuId/quantity`（券码**不进 URL**，§17 第 8 条）；
+    切换商品/SKU 时 `resetPromoSelection` 清空数量与券码；cache bust 叠加 `guestPromo=20260923_GUEST_PROMO_L1L2_1`。
+    隔离不变量保持：`js/guest-shop-client.js` 仍不含 `supabase` / `access_token` / `Authorization` / `Math.random()`。
+- **错误码对外归一（C-E6）**：券生命周期的一切细码（含 `guest_discount_code_rejected`）对外**只**呈现
+  `guest_discount_unavailable` 一个中性 400，不泄漏 `SQLSTATE` 与内部细码，防止券码枚举探测。
+- **附带修复：时代感知探针（D-10 同类事故第二次）。** 15 参签名让两个**已归档**的 verify 探针假 FAIL ——
+  它们把「13 参」「固定 1 件」写死在字面量里。修法是**改成时代感知，而不是再钉一个新常量**：
+  `20260920_verify` 的 `fn`/`fn_grants` 改按 `pronamespace+proname` 解析、新增 `fn_era` CTE
+  （`a0_signature` 13 参 / `l1l2_signature` 15 参），键名 `new_13_param_signature_present` → `known_signature_present`、
+  `quantity_still_hardcoded_to_one` → `quantity_policy_matches_era`，`arity` 期望值由 `fn_era` 推导（`min(arity)`）；
+  `20260921_verify` 的 `create_order_rpc_still_13_params` → `create_order_rpc_known_signature`（两个时代命中其一）。
+  **`20260920` / `20260921` / `20260922` 三个迁移一行未改，不需要重跑**；改的始终是校验器。
+
+### 证据
+
+- 全量回归 `npm run test:security`：**3361 tests / 3361 pass / 0 fail**，`EXIT=0`（`main` 基线 3156，**+205**）。
+  开发中出现过一次 **3314** 读数，诊断为 `--test-force-exit` 在高负载下的**瞬时少计**，随后三次连续运行稳定 3361；
+  已登记而不追猎（证据文档 §2.7）。
+- 聚焦测试全部本机复跑核实：promo-error-contract **9/9**（新）、frontend-contract **26/26**（基线 25）、
+  create-order-signature-compat **15/15**（原 8 + 新 §5 的 7）、buyer-order-credentials **31/31**、
+  verify-probe-contract **11/11**、readiness **28/28**、credit-pricing **13/13**、security **10/10**、
+  orders-idempotency **7/7**、order-access-endpoints **43/43**。聚焦小计 **120/120**。
+- 就绪度 `node scripts/guest-shop-readiness.js --json`：**296 项检查全部 `ok:true`**，`invalid_count` **0**，
+  `warning_count` 5（全是「本地无 `.env.production` / 无 production 标识 / 两个 pepper 未配置 / NOWPayments 退款需人工」，
+  属本地环境的预期告警），`manual_review_count` **14 → 20**（新增 6 项全在 `promo` 组），`ok: true`、**`ready: false`**。
+  `--fail-on-invalid` 退出 **0**；`--fail-on-not-ready` 退出 **3** —— **这是本批的正确终态，不是待修故障**
+  （没有实机证据就不该 ready；§17 第 9 条禁止用 `|| true` 绕过）。
+- 新增 `promo` 就绪度组共 **108** 项：迁移 81 present / 17 absent（禁令）+ env 旋钮 + 客户端券码泄漏静态扫描 +
+  6 项 `manual_review`。其中 `no-phantom-percent-knob` 禁令专门防止运维去配一个**不存在**的
+  `GUEST_SHOP_DISCOUNT_MAX_PERCENT`（早期草稿提过，**未实现**；要收紧单券用 `guest_max_uses` /
+  `guest_max_total_discount`，要收紧整站用 `guest_shop_promo_budget.daily_budget_cny`，
+  要提高 50% 本身只能改迁移并重跑 verify）。
+- 时代感知探针的守门员（两道，均已跑绿）：compat 测试 **§5 的 7 例**自动从迁移推导出**每一个历史签名**，
+  断言归档 verify 认识当前签名、**绝不发明任何迁移没装过的签名**、按函数名而非精确签名解析、已退役键名保持退役、
+  arity 的 CASE 覆盖当前时代；readiness 新增要求项 `verify-era-aware-signature` / `verify-known-signature-key` /
+  `verify-era-aware-quantity`，禁止项 `verify-no-signature-pinned-cte` / `verify-no-era-pinned-arity` /
+  `verify-retired-13-param-key` / `verify-retired-quantity-key`（A0）与 `verify-a1b-era-aware-rpc` /
+  `verify-a1b-retired-rpc-key`（A1b）。
+- 文档：`docs/guest-shop-promo-hardening-plan.md` 新增 **§23**（实现记录与 6 项偏差，**冲突时以 §23 为准**）；
+  `docs/guest-shop-promo-evidence.md` 新增 **§2**（本批证据，含 22 行 verify 待跑清单【**2026-09-19 勘误：首次执行后已升级为 23 行，见 §60**】、§15.4 九项 0/9 登记表、
+  4 个待排除文件的说明）与 §1.5 / §1.7 的两段探针勘误；`docs/guest-shop-payment-fulfillment-runbook.md` +159 行。
+
+### 本轮没做什么
+
+- **没有部署**：没有推分支、没有开/合 PR、没有 `vercel deploy`、没有触发 KVM4 任何链路、没有安装或启动 guest-shop worker。
+  用户明确要求等指令。改动**至今未提交**。
+- **没有执行任何 SQL**。`20260923` 迁移与 22 行 verify 只写成文件，绝对路径已交付（§2.4），由用户执行。
+  【**2026-09-19 后续**：用户已执行，22 行报 20 PASS / 2 FAIL，两处均为探针缺陷，已修为 23 行 —— 见 **§60**。】
+- **没有打开任何开关、没有启用游客商品/SKU**：`GUEST_SHOP_DISCOUNT_ENABLED` 默认 OFF，`GUEST_SHOP_MAX_QUANTITY` 默认 **1**。
+  即使代码发布，游客单仍固定 1 件、仍不带券码，行为与 P0 一致。
+- **本批没有 quote 端点**（偏差 1，§23.2）：`POST /api/shop/guest/quote`、`p_mode='quote'`、quote 令牌绑定与
+  `guest_quote_stale` 全部延后。折扣改为在 **create 时**服务端应用并校验，券不可用即统一 400
+  `guest_discount_unavailable`，**不产生订单行**。代价是用户「下单后才知道券不能用」，属可接受的体验折衷。
+- **C-D3（库存占比闸）/ C-D4（并发未付款单闸）/ C-D5（促销单 TTL）未实现**（偏差 4，§23.5）。
+  这三项是放开 `GUEST_SHOP_MAX_QUANTITY >= 2` 的**前置条件**，因此该值**本批禁止调高**。
+- **L4 后台运营界面未开工**：券的 `allow_guest`、游客预算、熔断状态与人工恢复目前没有 UI，
+  熔断恢复只能由运维手工执行 `SELECT public.fn_guest_shop_promo_set_breaker('closed', '<actor>', '<reason>')`。
+- **§7.4 阶梯锁定退避未实现**（偏差 6，§23.7）：由 24h 台账配额 + 熔断替代。
+- **A4（邮箱 OTP + 游客订单并入账号）未做**：按 §22.3 必须排在本批之后。
+- **提交时必须排除 4 个无关未跟踪文件**：`DEPLOYMENT_STEPS.md`、`deploy-guest-shop-worker.sh`、
+  `kvm4-deployment-guide.md`、`kvm4-env-template.txt`。它们是 2026-09-17 的部署草稿/包装脚本，非本批产物；
+  `kvm4-deployment-guide.md` 自身首行即标注「本文件已作废（v1 草稿）」，`deploy-guest-shop-worker.sh`
+  绕过 `AGENTS.md` 规定的 `npm run deploy:kvm4:*` 与 host installer 路径。**不得随本批进入 `main`。**
+
+### 风险和修正
+
+- **最大风险：多件（quantity ≥ 2）在 C-D3/C-D4 缺席下会被刷库存。** 现状：件数上限虽由四处取小钳制，
+  但「批量创建不付款单占住卡密」这条攻击路径**没有闸**。修正：`GUEST_SHOP_MAX_QUANTITY` 保持 **1** 直到
+  C-D3/C-D4/C-D5 落地；§15.4 第 7 项在此之前**必然不通过**，不要把它当作偶发失败去绕过。
+- **零元购已被数据库层堵死，但依赖迁移真的落库。** `guest_shop_orders_amount_check` 的五条红线在**数据库**里，
+  迁移未执行时它们并不存在。修正：启用前必须看到 §2.5 第 2、9、12、22 行 PASS，不接受「代码里已经写了」作为证据。
+- **假 FAIL 会再次发生，只要有人再往探针里钉常量。** 本轮已是 D-10 同类事故**第二次**。修正：compat §5
+  从迁移**自动推导**每一个历史签名（不再手抄），readiness 用禁止项挡住「按精确签名解析 CTE」「arity 写死 13」
+  「已退役键名复活」三种写法。下次再犯会先在 CI 里红，而不是在用户的 SQL editor 里红。
+- **没有 quote 端点意味着券失败发生在下单时。** 用户填了券、点了购买，才知道券不可用。修正：对外只回一个中性
+  `guest_discount_unavailable`（不泄漏是「券不存在」「已用尽」还是「不允许游客」，防枚举）；若运营反馈失败率过高，
+  再按 §23.10 第 3 项补 quote 端点。
+- **熔断无半开、且没有 UI。** 促销被打停后不会自动恢复，运维必须手工执行 SQL 函数。这是**刻意的**保守选择
+  （自动半开会让攻击者用定时探测把熔断变成周期性放闸）。修正：L4 落地前，把恢复 SQL 写进 runbook（已 +159 行）。
+- **客户端只信服务端标志，但 preview 仍可能被限速/5xx。** 此时数量与券码区块保持 `hidden`，游客退回单件无券下单 ——
+  fail-closed，符合「发布不等于启用」的口径。
+
+### 进度
+
+- 总进度仍记 **48%**（A+B+C+F+H）。**本批属于促销加固批次（L1+L2），不在 A–J 阶段记账内，不计入总进度**；
+  D 仍 `in_progress`（INTL 成功支付仍未入账）。100% 只在第 J 节用户签署之后。
+- 促销加固自身的口径按 §17 第 12 条：**没有 §15.4 实机证据，不得宣称游客促销「完成」或「可启用」**。
+  当前状态是「代码 + 迁移文件 + 22 行 verify【**勘误：现为 23 行，见 §60**】 + 自动化守门员 + 就绪度扫描全部就位并跑绿，
+  实机证据 **0/9**、迁移**未落库**」，`ready:false` / 退出码 3 就是这个状态的机器可读表达。
+
+### 下一步
+
+1. **用户执行迁移**（写操作，落库后行为仍中立，因为开关默认关闭）：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`
+2. **用户执行 verify**（只读、可重复，**22 行**【**已被 §60 取代：现为 23 行，第 1–22 行须 PASS，第 23 行 PASS/REVIEW**】），把输出贴回来由我归档进证据文档 §2.5：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`
+   必须看到 PASS 的四行：`orders_amount_check`(2)、`function_arity_single_overload`(9)、
+   `zero_purchase_guards`(12)、`promo_function_guards`(22)。
+   【**2026-09-19 已执行**：这四行里 (2)(9)(22) PASS，(12) 因探针缺陷假 FAIL，已修，待复跑 —— 见 **§60**。】
+3. 如需在同一座库上重跑**已归档**的两个旧 verify，用修复后的版本，并预期看到新键名与 `arity: 15`：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260920_verify_guest_shop_buyer_credentials.sql`（11 行）、
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260921_verify_guest_shop_buyer_group_upsert.sql`（6 行）。
+   **A0 的三个迁移不需要重跑。**
+4. **用户执行 §15.4 九项沙箱实机验证**（第 7 项需先补 C-D3/C-D4；第 5、6 项是 §22.5 反杀熟守门员，**不可删除**）。
+5. 上述完成后，由用户下达**明确部署指令**，我才按 `AGENTS.md` 的游客购买流程发布：专用分支 → PR → `main` →
+   **四条链路**（Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker），
+   不得从功能分支 `vercel deploy --prod`。
+6. **发布 ≠ 启用**。启用另需 §14 的灰度许可签署 + §15.4 实机证据归档；回滚用**开关**，不用 DB 回滚（§17 第 10 条）。
+7. 后续批次（§23.10）：L4 后台运营界面 → C-D3/C-D4/C-D5（多件前置）→ 可选 quote 端点 → 可选 §7.4 阶梯退避 → A4。
+
+### SQL 状态
+
+本轮**新增 2 个 SQL 文件待用户执行**（§59「下一步」第 1、2 条），Codex **不代执行**。
+
+不要重跑 20260913 / 20260914 / 20260915 / 20260916 / 20260917 / 20260918 / 20260919 /
+20260920 / 20260921 / 20260922 这十个迁移 —— 其中 `20260920` / `20260921` / `20260922` 三个**迁移**本批一行未改
+（只改了同名的 **verify 探针**，探针只读、可重复执行，重跑不是重跑迁移）。
+
+
+---
+
+## 60. 2026-09-19 促销 verify 首次实机执行：22 行报 2 FAIL，两处均为**探针缺陷**（D-10 第 3、4 类），已升级为 23 行
+
+> 日期口径：真实执行日 **2026-09-19**（与 §59 同日、晚于其归档）。代码注释里出现的
+> 「2026-09-23」沿用迁移文件名 `20260923_*` 的序号日期，指的是**同一个事件**，不是另一天。
+
+### 60.1 用户实机输出（原样登记）
+
+- 迁移 `20260923_guest_shop_promo_l1l2.sql`：**已在目标 Supabase 落库**。
+- verify `20260923_verify_guest_shop_promo_l1l2.sql`：首次执行，**22 行 → 20 PASS / 2 FAIL**。
+- FAIL 行 1：第 **12** 行 `zero_purchase_guards`，15 个键里唯一为 `false` 的是 `evaluate_is_read_only`
+  （observed `false` / expected `true`），其余 14 键全 `true`。
+- FAIL 行 2：第 **16** 行 `no_side_effects`，唯一不符的是 `guest_products_enabled`
+  （observed **2** / expected **0**），其余 6 键全 `true`、`writable_browser_policies` 为 `[]`。
+
+### 60.2 结论：**迁移一行未改**，两处都是 verify 探针自身的缺陷
+
+| # | FAIL 位置 | 根因 | D-10 类别 | 修法 |
+|---|---|---|---|---|
+| 1 | 第 12 行 `zero_purchase_guards.evaluate_is_read_only` | `pg_proc.prosrc` **原样保留函数自己的 SQL 注释**。`fn_guest_shop_evaluate_discount` 在说明原子性时写了 “deduction is the atomic UPDATE pair in `fn_guest_shop_reserve_discount`”，退役探针 `prosrc ~* UPDATE` 把这句**注释**当成了 DML，于是判定一个真正只读的函数「会写库」 | **第 3 类**：注释文本被当作可执行代码 | 新增 CTE `fn_code`，先剥 `--` 行注释与 `/* */` 块注释再扫描；本文件**所有**函数体探针（正向与负向）统一改跑 `fn_code`，避免「只被注释满足的正向探针」这一更危险的同源假 PASS |
+| 2 | 第 16 行 `no_side_effects.guest_products_enabled` | 把**运维状态**（已开放游客结账的商品数）钉成常量 `0`。用户为测试开了 2 个商品，这是人的决定，任何迁移都无权、也无法把它变回 0 | **第 4 类**：把运维状态钉死成常量 | 第 16 行只保留**机制**断言 `promo_functions_never_write_products`（任何 `guest_shop*` 函数都不得写 `shop_products`）；实时状态挪到**新增的第 23 行** `operator_state_review`，输出 `PASS` 或 `REVIEW` |
+
+两处都符合 D-10 的既有结论：**报 FAIL 的是校验器，不是被校验的对象**（同类事故第 1、2 次见 §1.3 / §1.5 / §1.7）。
+处置方式也一致：**不重跑迁移**，只重跑修复后的 verify（只读、可重复执行）。
+
+### 60.3 「剥注释」为什么不会把真缺陷放过去（安全性证明）
+
+这是本轮唯一需要论证的改动方向 —— 剥注释天然是**放松**扫描，必须证明它只影响注释、不影响正文：
+
+1. **字面量扫描**：用引号感知扫描器取出仓库里全部 **53** 个 `guest_shop*` 函数体中的字符串/美元引用字面量，
+   其中包含 `--` 或 `/*` 的字面量数 = **0** → 剥注释不可能吃掉任何被断言的正文文本。
+2. **探针静态重放**：把全部函数体探针分别在 raw `prosrc` 与 `fn_code` 上重放，**正向探针结果逐一相同**；
+   唯一发生变化的是那条负向只读 DML 探针（`FAIL → PASS`），正是本次要修的目标。
+   **不存在任何 `PASS → FAIL` 方向的漂移。**
+3. **反向保险**：`fn_code` 定义为 `SELECT f.*, regexp_replace(...) AS code FROM guest_fns f`，是 `guest_fns` 的**严格超集**，
+   `prosrc` 仍在；将来若某条探针确实需要原文（例如断言注释本身存在），可继续用 `prosrc`。
+4. **fail-closed 键**：verify 内保留证明「剥注释没有把函数体剥空」的键；
+   守门员测试 `tests/guest-shop-verify-probe-contract.test.js` **§7** 逐字验证剥注释逻辑保住字符串字面量与美元引用体、只丢散文，
+   并断言四个 verify 脚本**全部只读**。
+5. **规则入档**：文件头 `RULE FOR PROBE AUTHORS` 从 3 类扩到 **4 类**，并写明
+   「正向体探针在 raw 与 fn_code 上结果相同；唯一刻意的例外是负向只读 DML 探针（FAIL→PASS）；
+   任何体探针都不得因剥注释而向 PASS→FAIL 方向漂移」。
+
+**明确禁止的两种「修法」**（都会把安全断言换掉而不是修探针，已在 readiness 里设为禁止项）：
+删掉 `fn_guest_shop_evaluate_discount` 里那句原子性说明注释；或直接删掉 `evaluate_is_read_only` 断言。
+
+### 60.4 本轮变更清单（全部 amend 进 `codex/guest-shop-promo-l1l2` 顶端那**一个**提交）
+
+| 文件 | 变更 |
+|---|---|
+| `supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql` | **22 行 → 23 行**，1279 → **1433** 行；新增 `fn_code` CTE 并把全部体探针切过去；第 16 行改为机制断言；新增第 23 行 `operator_state_review`；文件头规则 3 扩写 + 新增规则 4。**仍是单条只读语句**（libpg-query 解析：1 statement） |
+| `supabase/migrations/20260923_guest_shop_promo_l1l2.sql` | **只改 §9 运维注释**（说明 23 行、第 1–22 行须 PASS、第 23 行 REVIEW 语义）。**DDL / 函数体 / CHECK / 索引 / 权限一行未动** |
+| `tests/guest-shop-verify-probe-contract.test.js` | 11 → **19** 例（+8）。新增 §7「体探针必须剥注释」与 §8「运维状态不得钉死」；「四个 verify 全部只读」；冻结行清单补到 **23** 个促销行名；顺带修掉 `password_hash` 用例约 12% 的偶发变红（注入确定性 `+` / `/`）。连跑 ×5 稳定、flake 测试 ×40 稳定 |
+| `scripts/guest-shop-readiness.js` | 新增 **9** 条 `PROMO_VERIFY_REQUIREMENTS` + **3** 条 `PROMO_VERIFY_PROHIBITIONS`；修正 `promo-schema-applied` 文案（23 行 + REVIEW 语义）。checks **296 → 308**（`promo` 组 108 → **120**），`invalid 0`、`manual_review 20`（不变）、`ready:false`（不变） |
+| `tests/guest-shop-readiness.test.js` | 28 → **29** 例。促销 verify 篡改测试新增 **7** 个 fail-closed 变体（含「行名必须全局替换，只换第一处会假绿」的守卫） |
+| `docs/*` | 本节（§60）+ `docs/guest-shop-promo-evidence.md` §2.1/§2.2/§2.3/§2.4/§2.5/§2.7/§2.8 计数与状态更新、新增 **§2.9** 归档首次 20 PASS / 2 FAIL + 新增 **§2.10** 待复跑清单 + `docs/guest-shop-payment-fulfillment-runbook.md` 启用前置清单第 2 条 |
+
+**顺带修掉一个提交完整性缺陷**：§59 那个提交实际只含 **26** 个文件，
+`tests/guest-shop-readiness.test.js` 与 `tests/guest-shop-verify-probe-contract.test.js` 的改动**只留在工作区、没进提交**
+（源码进了、对应守门员测试没进 —— 正是「守门员没随规则一起上线」这类最危险的漏项）。
+本轮 amend 已把两者补进**同一个**提交，完整口径为 **4 个新文件 + 24 个已跟踪文件改动 = 28 个文件**。
+证据文档 §2.1 的文件表已按 `git show --numstat` 重新生成，并写明「+/− 是快照、会随 amend 漂移，
+权威口径是 numstat；稳定的只有文件清单与 4/24/28 这三个计数」—— 与本批「不写死 commit hash」是同一条纪律。
+
+全量回归：`npm run test:security` **3361 → 3370 pass / 0 fail**（+9 = 探针合同 +8、readiness +1），满足「pass 只增不减、fail 恒为 0」；
+**连续两次独立运行均为 3370 / 3370 / 0 fail、`EXIT=0`**（第二次在全部文档改完之后跑，确认文档改动没有踩到任何 `docs` 区就绪度断言）。
+就绪度退出码：`--fail-on-invalid` = **0**，`--fail-on-not-ready` = **3**（仍是**预期的 fail-closed**，不得 `|| true` 绕过）。
+
+### 60.5 ⚠️ 必须请用户当面确认的运维状态（第 23 行点名的内容）
+
+verify 第 23 行报出 **`guest_products_enabled = 2`**，而 §59 之前的既有口径是 **1** 个
+（§45 附近的常设规则原文：「用户已主动打开 1 个商品做测试准备，非代码故障；**不得再开第二个**，也不得公开上架」）。
+
+第 23 行会把这两个商品**逐一点名**（光有计数无法据此行动 —— 1 → 2 的增量正是这样发现的），请核对后二选一：
+
+- **若是有意开启**（例如新加的沙箱测试 SKU）：把该 SKU 写进白名单说明并更新上面那条常设规则；
+  同时确认它满足「低价值 / 非共享 / 自动发货」三条，且**未公开上架**。
+- **若是误开**：立刻关掉（`allow_guest_purchase = false`）。
+  按 §17 第 10 条，**回滚游客结账的正确方式是关开关，不是 DB 回滚，也不是 Vercel 回滚。**
+
+**在用户确认之前**：`GUEST_SHOP_MAX_QUANTITY` 保持 **1**、`GUEST_SHOP_DISCOUNT_ENABLED` 保持 **OFF**、
+`guest_shop_promo_budget` 保持 `enabled=false / daily_budget_cny=0`、熔断保持 `closed`。
+Codex **不代为打开任何开关、不执行任何 SQL**。
+
+### 60.6 下一步（替换 §59「下一步」第 2 条）
+
+1. **用户复跑修复后的 verify**（只读、可重复执行，**23 行**）：
+   `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`
+   预期：**第 1–22 行全 PASS，第 23 行 `operator_state_review` 为 PASS 或 REVIEW**。
+   仍必须逐行看到 PASS 的四行：`orders_amount_check`(2)、`function_arity_single_overload`(9)、
+   `zero_purchase_guards`(12)、`promo_function_guards`(22)。
+2. 把 23 行输出贴回来，由我归档进 `docs/guest-shop-promo-evidence.md` **§2.10**
+   （首次的 20 PASS / 2 FAIL 已作为 D-10 第 3、4 类事故归档在 **§2.9**，**保留不删**，作为探针纪律的实证锚点）。
+3. 按 §60.5 确认第 23 行的运维状态。
+4. 其余顺序**不变**：§15.4 九项沙箱实机验证（第 7 项需先补 C-D3/C-D4；第 5、6 项是反杀熟守门员，不可删除）
+   → 用户下达**明确部署指令** → 按 `AGENTS.md` 走专用分支 + **四条链路** → **发布 ≠ 启用**（启用另需 §14 灰度许可签署）。
+
+### 60.7 风险和修正
+
+- **风险：探针「变绿」比「变红」更危险。** 剥注释是放松扫描，若有人顺手把正向探针也切到 `fn_code`
+  却不做重放证明，就可能造出「只被注释满足」的假 PASS。修正：§60.3 的 5 条证明 + 守门员测试 §7 把
+  「字面量不含注释标记」「正向探针两种口径结果相同」「不得 PASS→FAIL 漂移」全部固化成断言。
+- **风险：第 23 行 REVIEW 被误读成「迁移失败」或被误读成「可以忽略」。** 修正：verify 文件头、迁移 §9、
+  runbook 启用前置清单第 2 条、readiness 的 `promo-schema-applied` 文案**四处**同时写明 REVIEW 语义
+  （= 必须有人逐条核对列出的运维状态，≠ 迁移失败），并由 readiness 禁止项挡住「删掉 REVIEW 分支」的写法。
+- **风险：篡改测试的 needle 过期导致空转假绿。** 本轮真的踩到一次：行名替换只换了第一处
+  （`checks` CTE 里换了、最后的判分 `CASE` 里没换），闸门仍然命中，测试却绿着。修正：改为**全局替换**，
+  并在每个变体后加 `assert.notEqual(tampered, realVerify)`，篡改没生效就直接红。
+- **不变的红线**：安全第一、绝不零元购、防掏鸟蛋、防刷。本轮**没有**为了让输出变绿而弱化任何一条安全断言：
+  零元购地板、50% 折扣硬顶、通道费 10% 硬顶、15 参唯一重载、`evaluate` 只读、白名单 + 配额闸、
+  原子扣预算与计数 —— 全部**原样保留**，只修了它们的**观测方式**。
+
+### 60.8 2026-09-19 后续：23 行 verify **复跑闭合** + 第 23 行用户裁决 + §9.5 parity 交付
+
+> 本节晚于 §60.1–§60.7 归档，记录三件事：①修复后的 23 行 verify 已由用户**复跑**并闭合；
+> ②第 23 行 `operator_state_review` 的 REVIEW 已由用户**当面裁决**；③补上 §9.5 要求的
+> **≥40 条黄金向量 parity 测试 + 配套只读 SQL**。详细逐行读数与权威边界见
+> `docs/guest-shop-promo-evidence.md` **§2.10 / §2.11**（本节只做索引与决策登记，不重复证据）。
+
+#### 60.8.1 复跑结果（替换 §60.6 第 1、2 条的「待复跑」状态）
+
+- 用户已用 §2.9.6 升级后的 **23 行**版 `20260923_verify_guest_shop_promo_l1l2.sql` 复跑（**未重跑迁移**，
+  落库版本与当前文件在 DDL / 函数体 / CHECK / 索引 / 权限上逐字等价）。
+- 结果：**第 1–22 行全 PASS（22/0），第 23 行 `operator_state_review` = REVIEW**。用户回执「验证结果符合预期」。
+- 与「绝不零元购」直接相关的四行 `orders_amount_check`(2)、`function_arity_single_overload`(9)、
+  `zero_purchase_guards`(12)、`promo_function_guards`(22) **复跑全部 PASS**；首跑假 FAIL 的 (12) 修复后兑现
+  （§2.9.2 / §60.2），第 16 行改机制断言后亦 PASS（§2.9.3）。**首跑 20 PASS / 2 FAIL 归档（§2.9）保留不删。**
+- 归档位：`docs/guest-shop-promo-evidence.md` **§2.10.1**（原样登记复跑输出）。
+
+#### 60.8.2 第 23 行 REVIEW 的用户裁决（运维状态，**推翻旧常设规则的「固定 1 个」前提**）
+
+第 23 行点名 `guest_products_enabled = 2`：`52246f1d-…-581296f43de9`「测试」、`c16212d8-…-3cc68b2d7a52`「测试 2」，
+均 `is_active=true`、`guest_skus=0`、未公开上架；`guest_skus_enabled=0`、`guest_discount_codes_open=0`。用户裁决：
+
+- **保留这 2 个游客商品**（本人手动开启的沙箱测试商品）。
+- **关键澄清**：某商品是否属于游客商品，**取决于管理员在 Admin Studio 里打开了哪个商品的游客开关**，
+  是**动态、管理员可控**的，**既不是固定 1 个、也不是固定 2 个**。
+- 据此**作废旧常设规则中的「计数上限」一句**（§45 附近原文「用户已主动打开 1 个商品做测试准备……
+  **不得再开第二个**，也不得公开上架」里的「不得再开第二个」），改为：「**游客商品数量由管理员开关决定，
+  无固定上限；但每一个被打开的商品都必须满足低价值 / 非共享 / 自动发货，且未公开上架**」。
+  **「不得公开上架」与三条资质要求原样保留。**
+- **REVIEW 机制保留不删**：第 23 行继续逐次点名当前所有游客商品（而非只给计数），供每次复跑人工对账 ——
+  这正是 1 → 2 增量当初被发现的机制（§2.9.5 / §60.5），不因计数上限作废而削弱。
+- **技术护栏一条未弱化**：`GUEST_SHOP_MAX_QUANTITY=1`、`GUEST_SHOP_DISCOUNT_ENABLED=OFF`、
+  `guest_shop_promo_budget` `enabled=false / daily_budget_cny=0`、熔断 `closed`。Codex **不代为打开任何开关、
+  不执行任何 SQL、不部署**。
+- 常设规则同步更新处（注解 / 取代而非删除，保留审计轨迹）：本文档第 **202 / 659 / 678 / 733 / 782** 行、
+  `docs/guest-shop-promo-evidence.md` **§2.9.5**。归档位：**§2.10.2**。
+
+#### 60.8.3 §9.5 黄金向量 parity 交付（readiness `promo-parity-evidence` 硬证据之一）
+
+| 交付物 | 绝对路径 | 规模 | 实测状态 |
+|---|---|---|---|
+| parity 测试 | `/Volumes/chao/AI/xianyu_profit_calculator/tests/guest-shop-pricing-parity.test.js` | 380 行 / 9 例 / **74 条黄金向量**（A32·B10·C20·D12） | `node --test` **9 pass / 0 fail** |
+| 配套只读 SQL | `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_parity.sql` | 120 行 / **单条** `WITH...SELECT` / 32 条 group-A fixture | libpg-query `statements: 1`；注释外无任何写关键字 |
+
+- 权威边界：`resolveGuestCreditUnitAmount` 是 SQL resolver 的**只读镜像**，只算单价 / 列表价（基础 / 闪购 / 阶梯），
+  **从不算折扣**；`buildGuestAmountBreakdown` 只整形 **DB 已返回**的金额，零值 / 负值 / 不自洽（`net+fee≠total`）
+  一律 **fail-closed 返回 null**；件数天花板 resolver `99`、breakdown/order `5`，越界 env **降级到 1 绝不放大**。
+- 防漂移：配套 SQL 由测试源码生成，group-A VALUES 与 JS fixture 逐字一致（32/32），`p_now` 两侧统一
+  `'2026-09-14T12:00:00.000Z'`；测试断言 SQL 文件存在、含每个 group-A id、剥注释后无写关键字。
+- resolver 仅 `GRANT service_role`，配套 SQL 由用户在 SQL Editor 执行，**Codex 不执行**。
+- 归档位：`docs/guest-shop-promo-evidence.md` **§2.11**（含权威边界、防漂移、回归读数）。
+
+#### 60.8.4 回归读数（本机实测，2026-09-19）
+
+```text
+node --test --test-force-exit tests/guest-shop-pricing-parity.test.js  →  tests 9  pass 9  fail 0
+npm run test:security                                                  →  tests 3379 pass 3379 fail 0  EXIT=0
+node scripts/guest-shop-readiness.js --json     →  checks 308  ok 308/308  invalid 0  warning 5  manual_review 20  ready false
+node scripts/guest-shop-readiness.js --fail-on-invalid    →  EXIT 0
+node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预期的 fail-closed，禁止 || true 绕过）
+```
+
+全量 **3370 → 3379**（+9 = parity 9 例），满足「pass 只增不减、fail 恒为 0」。本轮首跑曾报 `tests 3340`，
+第二次独立运行即恢复 `3379`，属 §2.7 / 证据文档 §2.11.3 登记的**瞬时少计**，以复跑后的 3379 为权威，不追猎、不改测试。
+
+#### 60.8.5 状态与下一步（替换 §60.6）
+
+- **§2.10 复跑已闭合、§2.11 parity 已交付**；但 `ready` 仍为 **false**：`promo-parity-evidence` 只满足
+  「≥40 条黄金向量」一半，**§15.4 九项沙箱实机验证仍 0/9**（§2.6），故**不得宣称完成或可启用**。
+- 接下来严格按序：① **用户执行 §15.4 九项沙箱实机验证**（第 7 项需先补 C-D3/C-D4；第 5、6 项是反杀熟守门员，
+  不可删除）→ ② 用户下达**明确部署指令** → ③ 按 `AGENTS.md` 走专用分支 + **四条链路** →
+  ④ **发布 ≠ 启用**（启用另需 §14 灰度许可签署）。Codex **不执行 SQL、不打开开关、不部署**，直至用户明确下令。
+
+---
+
+## 61. 2026-09-19 任务 2.1：游客收银台五按钮、身份恢复与运行护栏升级计划
+
+> **状态：阶段 1、2 已完成，2.1 总进度 40%。** 安全切片已经由 PR #656 发布并完成四链同 commit 验证；这仍不把自动化或默认关闭发布误报为指定 SKU 启用完成。P0-C 的短期「离开」语义和 P0-D 的终态展示已有前置切片；剩余证据按 §61.9 分层使用，当前进入阶段 3 的精确 SKU 与凭证能力评审。
+
+### 61.1 审查结论：按钮存在，不等于动作闭环完整
+
+本节最初以用户提供的游客结账弹窗截图，以及当时的 `shop.html`、`js/guest-shop-client.js`、`server/api-handlers/public/guest-shop.js` 和 `api/public.js` 为证据。下表保留审查基线和风险判断；本轮实施后的准确状态以 §61.7–§61.10 的实施记录和未闭合证据为准：
+
+| 动作 | 当前实现 | 严重度 | 主要风险 | 2.1 判断 |
+| --- | --- | --- | --- | --- |
+| 「稍后处理」 | `closeGuestModal()` 只清输入框、停止轮询/倒计时并隐藏弹窗；订单、cookie、`sessionStorage` 和库存预占保留；刷新时还可能自动恢复弹窗 | P2（语义）/P1（竞态） | 用户以为订单暂停或取消；隐藏弹窗后异步创建/找回响应仍可能写入旧状态；“稍后”是否自动弹出没有明确承诺 | 保留“离开页面”能力，但必须改文案、提示、自动恢复说明和代数隔离 |
+| 「创建支付订单」 | 有服务端重算、幂等键、原子预占和 provider lease；但锁在首个 `await loadPreview()` 之后才建立，且无效支付 QR/地址的错误状态可能被后续“订单已创建”文案覆盖 | P1 | 双击/快速点击可并发预览或创建；服务端已建单但客户端超时/丢响应时，界面没有订单号和恢复入口；没有可支付凭证时却继续引导付款 | 先锁请求，再预览；未知结果和无效 checkout 必须进入 `review` 并提供找回路径，禁止重复付款 |
+| 「查询支付状态」 | 后端有 claim 校验、主动查单、节流和 worker kick；按钮每次点击都 `resetWindow + force_provider_refresh`，无前端互斥 | P1 | 快速连点并发查渠道、触发限流；`review`/终态仍可能显示普通查询；状态文案可能把金额异常/退款显示成超时 | 统一状态机、busy/debounce、终态映射和手动重试上限 |
+| 「关闭当前订单」 | `abandonCurrentOrder()` 只清本地句柄；没有 `/guest/cancel` 路由或取消 RPC，服务端预占等 TTL 释放；该分支还需显式清除查询密码 | **P0** | 按钮名暗示订单已关闭；旧付款码在 TTL 内仍可能付款，造成 `paid_unfulfillable`/退款；`review`、未知金额等状态可能被清掉本地证据，旧密码可能污染下一次下单 | 在真正取消能力上线前不得使用“关闭订单”语义；短期改成“离开当前订单”，长期再做有条件幂等取消 |
+| 「找回订单」（历史基线） | 旧链路曾为订单号+取货口令；邮箱+查询密码入口曾按开关显示 | P1 | 旧链路与新链路并存会造成入口歧义、跨商品上下文污染和凭证泄露 | **2.1 已收口为邮箱 + 查询密码唯一入口**；旧 panel、公开 recover/upgrade 和双链路分流均已删除；服务端只返回 allowlist 快照，不泄露凭证 |
+
+另有一个纯 UI 闸门：`.shop-btn` 在作者样式中强制 `display:flex`，而五个按钮主要依赖 HTML `hidden`。如果没有显式的 `.guest-shop-modal__actions .shop-btn[hidden] { display:none !important; }`，计算样式可能覆盖隐藏意图，导致“不该出现的按钮”仍占位或可聚焦。契约测试必须检查计算样式，不只检查 DOM 属性。
+
+**“线上像回退老版本”的首要判定：** 当前生产表现还可能只是 fail-closed 开关，而不是代码回滚。`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`、`GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED`、`GUEST_SHOP_DISCOUNT_ENABLED` 未启用时，预览会返回 `buyer_credential_required:false`、`discount_enabled:false`，`GUEST_SHOP_MAX_QUANTITY` 默认 1；查询 API 也可能返回 `guest_feature_disabled`。2.1 要求先记录 commit、env 开关、preview 响应和页面/API 门禁，再判断是否真回退；禁止靠手工改前端或直接打开所有开关“验证”。
+
+### 61.2 2.1 设计原则与范围
+
+1. **一个状态机、一个动作策略。** 所有按钮的显隐、禁用、文案、`aria-*` 和轮询策略由同一个 `deriveGuestActionPolicy(state)`（名称可调整）输出；禁止在几十个事件分支里各自 `setHidden()` 形成漂移。
+2. **服务端状态优先。** 商品、SKU、站点、数量、阶梯价、优惠、手续费、应付金额、支付终态、库存和退款状态均由服务端/数据库裁决，客户端只渲染经过 allowlist 的快照。
+3. **未知不等于未支付。** provider 超时、响应丢失、回写失败、金额/币种无法核对统一进入 `review/payment_creation_unknown`，不得显示“请继续付款”、不得释放可能已付款的预占，也不得允许盲目重新创建。
+4. **无破坏性假动作。** 没有服务端取消和渠道状态确认时，客户端只能“离开当前页面”；不能声称订单已关闭、不能声称库存已释放、不能抹掉用户唯一恢复线索。
+5. **凭证分层。** 凭证开关开启时，邮箱 + 查询密码是唯一用户查询入口；`claim_secret_hash` 与 HttpOnly claim proof 仅服务履约和内部 break-glass。任何 status/claim/access 响应都不得回吐 `recovery_code`、密码、claim token、卡密或原始 provider payload。
+6. **发布、配置、启用三者分离。** 代码部署成功不代表邮箱凭证、查询页、优惠码或多件购买已开启；readiness、页面门禁和 Admin Studio 开关必须能准确反映实际运行状态。
+
+### 61.3 目标状态机与五按钮矩阵
+
+符号：`✓` = 可用；`—` = 隐藏；`忙` = 显示但必须锁定；`条件` = 只有满足行内条件才可用。以下是 2.1 的目标合同，当前实现未全部满足前不得宣称完成。
+
+| 状态 | 自动轮询 | 稍后处理 D | 创建支付 C | 查询状态 Q | 离开/取消 A | 找回 R | 必须显示的事实 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `configure`（尚未建单） | 否 | ✓ | ✓ | — | — | ✓ | 当前商品、SKU、服务端报价、支付方式 |
+| `creating`（预览/建单中） | 否 | 条件：标记当前代数失效 | 忙 | — | — | 忙/— | 正在创建；禁止第二个 idempotency key |
+| `awaiting_payment`（已建单、已知未付款） | 是 | ✓（仅离开，不取消） | — | ✓（节流） | 条件：短期本地离开；长期仅真取消 API | ✓ | 订单号、应付金额、渠道、过期时间、不可重复付款提示 |
+| `checking`（查单/发货核验中） | 是 | ✓ | — | 忙/节流 | —，除非服务端明确仍未付款 | ✓ | “正在核验”，不能误报成功或超时 |
+| `review/payment_creation_unknown` | 否或按人工策略 | ✓ | — | ✓（人工刷新，受限） | — | ✓ | “支付结果未知/人工对账”，保留订单号和客服入口 |
+| `confirmed + pending/fulfilling` | 是 | ✓ | — | ✓（刷新发货状态） | — | ✓ | 已确认付款、发货阶段、退款/补发说明 |
+| `confirmed + paid_unfulfillable/dead_letter` | 否 | ✓ | — | 条件：刷新人工处理状态 | — | ✓ | 库存/履约异常、退款或人工补发进度、客服入口 |
+| `failed/expired/refunded/chargeback/amount_mismatch/overpaid/partial` | 否 | ✓ | 条件：先回到配置并明确新单 | ✓：仅查详情/退款状态 | —；不能把已收款单当未付款清掉 | ✓ | 真实终态、金额/退款状态；不得统一套“支付超时” |
+| `delivered` | 否 | 条件：已复制或有可用恢复路径后关闭 | 条件：关闭已完成展示后重新购买 | — | — | ✓ | 卡密、发货状态、复制操作 |
+| `recovering`（找回请求中） | 否（先停旧代数） | 条件：离开后响应不得回写 | — | — | — | 忙 | 找回进度；禁止旧订单 UI 与新响应交叉 |
+
+矩阵补充规则：
+
+- `D` 关闭弹窗不会释放服务端预占；按钮旁必须明确“仅离开本页，旧付款码不要再付，库存按 TTL 释放”（若未来真取消 API 上线，另行替换文案）。
+- `Q` 在同一订单同一时刻最多一个请求；自动轮询达到 15 分钟上限后停止，手动查询只恢复一个受限窗口，不得无限绕过 provider throttle。
+- `A` 对 `review`、未知支付、已收款、金额异常、退款/争议、`claimInFlight` 一律禁用或要求人工确认；不能仅依据客户端 `paymentConfirmed=false` 判断“未付款”。
+- `R` 不能直接覆盖活动订单；必须先停旧轮询、清理旧 checkout/context，或要求用户确认在新窗口找回。
+- `delivered` 的 D 动作必须保护未复制的发货内容；关闭不是删除，除非查询页/邮箱密码恢复已经实际可用并通过实机验证。
+
+### 61.4 五个动作的执行合同
+
+#### 61.4.1 「稍后处理」：离开，不是暂停/取消
+
+- 保留本地订单句柄和 HttpOnly claim cookie，以便同一设备重开后继续；密码输入框立即清空，口令不写存储。
+- 在按钮或状态区写明：**“仅离开当前页面，不会取消订单，不会立即释放库存，也不会发送付款成功通知。”**
+- 当前邮箱提示中的“获取发货通知”只有在真实通知链路、退订、失败告警和隐私留存都上线后才能保留；在此之前改为“用于查询订单”，不得让用户以为离开弹窗后一定会收到邮件。
+- 点击时递增 `viewGeneration`/`pollGeneration`，使尚未返回的 preview/create/recover 响应失效；隐藏弹窗后不得新建轮询。
+- 已 `delivered` 时不得用同一个“稍后处理”动作静默清掉尚未复制的卡密；应改成“关闭已发货内容”并二次确认，或在有可用邮箱密码/订单查询恢复路径时才允许关闭。
+- 刷新、重开、跨标签和 `sessionStorage` 不可用时，必须分别有可理解的恢复路径；是否自动弹出恢复窗口要在文案中明确，不得让“稍后处理”既像离开又像强制下次弹出。
+
+#### 61.4.2 「创建支付订单」：幂等、未知结果可恢复
+
+- 在**第一个异步操作之前**取得全局 request lock、禁用按钮并记录 context/quote generation；双击、键盘 Enter、重复事件只能进入一次。
+- preview、create、provider-create、回写每一层都携带同一个 idempotency key；响应丢失时重试只能得到同一订单，不得再开库存预占或支付意图。
+- provider 超时或回写失败时，返回/渲染 `review/payment_creation_unknown`，尽可能提供已安全返回的订单号；若无法返回订单号，下一次同 key 的 status/recover 必须可定位，不得只给“创建失败，请重试”。
+- 错误文案必须引导“先查询/找回，勿重复付款”，并区分可重试的校验错误、需要人工对账的未知结果和不可重试的终态。
+- `renderCheckout()` 发现二维码、支付地址或金额无效时，必须保留 `manual_review/error`，停止“完成付款”引导和轮询；不能被随后统一的 `awaiting_payment` 文案覆盖。
+
+#### 61.4.3 「查询支付状态」：单飞、节流、终态准确
+
+- 前端 `statusRequestInFlight` + `aria-busy` + disabled 防止连续点击；已有请求未结束时再次点击只聚焦状态提示，不再发 GET。
+- `force_provider_refresh=1` 只用于手动动作的首个请求，后续回到普通轮询；服务端节流/限流被命中时显示下一次可查时间。
+- 明确记录 `GET /guest/status` 不是纯读：它可能触发 provider 查单、写支付事件、confirm 和 worker kick；这些副作用必须幂等、可观测，并纳入限流/审计，而不是让前端无限刷新掩盖问题。
+- `review` 不显示“等待支付确认”；`amount_mismatch/overpaid/partial/refunded/chargeback` 不显示 ZPay“付款已超时”；`paid_unfulfillable/dead_letter` 显示人工处理进度而非继续打渠道。
+- 终态停止自动轮询；按钮要么隐藏，要么改成明确的“刷新处理状态”，不能让用户误以为再次查询会重新付款。
+
+#### 61.4.4 「关闭当前订单」：两阶段决策
+
+**短期（2.1 P0，未有服务端取消前）：**
+
+- 将按钮改名为「离开当前订单」或「暂时离开」，保留本地句柄清理，但不宣称服务端订单已关闭。
+- 对已知未付款且无 provider 创建未知状态的订单，二次确认后才清理本地 UI；确认框明确旧码不可再付、预占按 TTL 释放。
+- 对 `review`、provider 未知、金额异常、已确认付款、退款/争议、人工履约和任何 claim in flight 隐藏/禁用，并保留订单号与客服路径。
+- 清理本地订单时同步清空邮箱/查询密码输入和临时生成密码；不得把上一个买家的凭证带入换 SKU、换邮箱后的新单。
+- 如果取货口令刚生成但用户尚未确认已复制/保存，不能让“离开”静默清掉唯一口令；应先要求确认已保存，且仍不得把口令写入 storage、URL 或日志。
+
+**长期（2.1 P1，若产品确实需要“关闭订单”）：**
+
+- 新增 claim 授权的幂等 cancel endpoint/RPC，仅允许订单所有者、明确未付款、未过期且没有 provider 未知状态时调用。
+- 服务端原子更新订单状态、支付意图、预占和优惠额度；释放库存必须可审计、可重试、不可重复释放。
+- provider 已创建但不能撤销时，不做本地假取消，转 `review` 并等待渠道查单；迟到付款必须进入退款/人工队列，不能发货。
+- 增加跨标签、迟到 webhook、取消与 worker 竞态测试后，才可恢复“关闭当前订单”名称。
+
+#### 61.4.5 「找回订单」：邮箱 + 查询密码唯一入口
+
+- 当前 2.1 主入口（无论商城弹窗当前订单是否待支付）统一导航到 `/guest-orders.html`；该页只展示并提交邮箱 + 查询密码。
+- 订单号 + 取货口令的公开查询、旧兼容面板、`guest/recover` 和 `guest/access/upgrade` 均已移除；不得因凭证开关关闭、availability 不可达或接口异常而回退到旧查询模式。
+- `/guest-orders.html` 的登录、列表、详情和发货查询必须先隔离旧页面上下文；响应回来后只允许匹配当前请求代数和当前买家会话的结果更新 UI。
+- 从 `sessionStorage` 或回跳恢复时先进入 `checking`，不能因默认状态短暂显示“确认商品信息”并同时展示旧查询按钮；首个服务端 snapshot 决定最终面板。
+- `publicOrderSnapshot` 至少返回经 allowlist 的 `site/product_id/sku_id/product_name/sku_name/provider/channel/amount/currency/payment_status/fulfillment_status/refund_status/expires_at`；不返回 recovery code、密码、原始 payload 或卡密。
+- 找回已过期、已退款、已发货、金额异常等终态时直接渲染真实终态，不先闪现“正在核验”；不得沿用商城页当前商品或旧二维码。
+- 服务端 `claim_secret_hash` 与 HttpOnly claim proof 仅服务履约和内部 break-glass，不是买家查询入口；不得在公开页面、建单响应或客服以外的用户流程中展示。
+
+### 61.5 身份、开关与促销的 2.1 补强项
+
+这些不是按钮代码的“顺手优化”，而是决定游客体验是否会再次看起来像回退老版本的运行条件，必须纳入同一计划：
+
+| 优先级 | 缺口 | 2.1 交付与验收 |
+| --- | --- | --- |
+| P0 | 生产凭证开关未开时，邮箱显示可选、密码隐藏；查询页 API 可能 404，但静态 `/guest-orders.html` 仍可直接访问 | readiness、preview、API、静态页面四者同源；开关 OFF 时页面有明确受控提示/不可操作，ON 时才展示邮箱+密码和查询入口；分别留存 OFF/ON 实测证据 |
+| P0 | 邮箱+查询密码目标链路仍允许回退到可选邮箱的旧行为；密码策略虽有 P1–P10 代码，但尚未完成生产 G1 证据 | 凭证开关 ON 时邮箱和查询密码均必填，服务端强制 8 位及四类字符/弱密码拒绝；同一邮箱同价同券，身份字段不得进入定价；下单、支付、查询、发货、锁定、重置全链路实测通过 |
+| P1 | CAPTCHA 只有阈值/错误码，公开处理器和前端未真正接线 | 先做威胁模型和成本评估，再决定接入或明确限流替代；不能把“有配置项”当成已防刷 |
+| P1 | 邮箱未做 OTP 所有权验证；`registered_user_match` 目前公开下单传 `null` | 在不改变同价/同券原则的前提下补记录链路；OTP/并入账号单独做 A4，不把未验证邮箱描述成已验证身份 |
+| P1（已收口） | 旧 recovery code 与邮箱密码双入口并存（历史缺口） | 删除旧查询/升级入口；邮箱 + 查询密码成为唯一用户查询链路；claim proof 仅服务履约，不回吐旧口令 |
+| P0/P1 | `GUEST_SHOP_MAX_QUANTITY` 仍为 1；C-D3 库存占比、C-D4 并发未付款单、C-D5 促销 TTL 尚未完成 | 在三项通过前不得调高数量，不得开启多件阶梯价；每项有最后一张库存、批量占用、释放和优惠额度证据 |
+| P1 | 阶梯价、闪购、优惠码需要与登录用户价格 resolver 保持一致，但 parity 实机与 quote 语义仍未完全闭合 | 以服务端/数据库 resolver 为唯一价格源，覆盖基础价、阶梯、闪购、同价同券、手续费和限购向量；前端只展示结果，不能让游客因身份而加价 |
+| P1 | 少付/金额异常尚未统一写入促销熔断事件；日预算耗尽无通知 | 将金额异常、重复拒绝、预算耗尽接入 breaker/audit/告警；告警必须含匿名订单维度，不含凭证/卡密 |
+| P1 | L4 后台运营 UI 未做，券额度/预算/熔断只能 SQL 操作 | 复用 Admin Studio，提供 RBAC、二次确认、原因、审计和只读状态；没有 UI/审计不得宣称促销运营完成 |
+| P2 | 无独立 quote 端点；优惠码到 create 才知道结果 | 先完成服务端 create 原子校验；再评估 quote token/过期/绑定，不能为改善提示而引入可重放折扣票据 |
+| P2 | 已登录用户无现金购买入口、购物车游客结算未做 | 作为独立产品决策，不在 2.1 P0 偷渡；先评估积分/现金、库存和优惠语义是否一致 |
+
+### 61.6 竞态、隐私与可访问性验收
+
+- **上下文代数：** 延迟 preview 时切换 SKU、站点、数量、优惠码或关闭弹窗；旧响应必须被丢弃，不能覆盖新商品价格、渠道、身份开关或 quote。
+- **请求互斥：** create/status/access 各自单飞；跨动作（查询进行中点创建、创建进行中点关闭、关闭后旧响应回来）必须按 generation 拒绝过期结果。
+- **多页面：** 同一订单在两个标签页操作时，不得双发、双 claim 或互相清除新句柄；`storage` 不可用、隐私模式、回跳新标签均有降级提示。
+- **回跳安全：** return URL 只携带非敏感订单句柄；回跳不等于支付成功；站点、商品和 claim 仍由服务器校验。
+- **焦点与读屏：** modal 关闭后焦点回到触发按钮；busy/错误/状态使用 `aria-live`，隐藏按钮不可聚焦；移动端按钮顺序与点击热区可用。
+- **匿名观测：** 记录 `action`、`outcome`、`state`、耗时、provider/channel 的最小匿名指标（如 `create_unknown`、`status_refresh`、`local_abandon`、`recover`）；禁止记录订单凭证、邮箱、密码、claim/recovery code、二维码原文和卡密。
+
+### 61.7 实施顺序与交付物
+
+| 批次 | 工作包 | 依赖 | 退出条件 |
+| --- | --- | --- | --- |
+| 2.1-P0-A | 状态机/按钮策略与 CSS hidden 修复 | 无 | 目标矩阵逐状态可计算；hidden、disabled、focus、aria 契约测试通过 |
+| 2.1-P0-B | create/status/access 单飞、代数隔离、未知结果恢复 | P0-A | 双击、丢响应、延迟 preview、跨 SKU、隐藏弹窗响应测试通过；无重复支付/预占 |
+| 2.1-P0-C | “离开”短期语义或真正 cancel API 设计落地 | P0-B、产品决策 | 没有服务端取消时不再出现误导性“关闭”；若做 cancel，RPC/审计/迟到支付竞态全绿 |
+| 2.1-P0-D | 终态/退款/人工处理映射和恢复快照 | P0-B | §61.3 列出的全部支付/履约/退款终态都有正确文案、按钮和轮询行为；跨商品找回不串单 |
+| 2.1-P0-E | 运行开关与静态查询页门禁 | P0-D | OFF/ON 两套生产-like 实测；readiness 与页面/API 一致；默认仍 fail-closed |
+| 2.1-P1-A | 邮箱密码 G1、CAPTCHA 决策、旧入口收口 | P0-E | 邮箱密码全链路实机证据；未验证邮箱不冒充已验证身份；旧入口删除已完成，剩余仅为实机证据与风险决策 |
+| 2.1-P1-B | C-D3/C-D4/C-D5、金额异常熔断、预算告警 | P0-D | 多件/并发/TTL/少付/预算的真实证据齐全；数量和优惠开关仍按门禁开启 |
+| 2.1-P1-C | L4 Admin Studio 运营与审计 | P1-B | RBAC、二次确认、原因、审计、恢复和只读监控可用 |
+| 2.1-P2 | quote、登录现金购买、购物车、体验优化 | P1 完成后 | 单独产品评审和灰度，不阻塞 P0 安全闭环，也不能绕过其门禁 |
+
+#### 61.7.1 本轮实施记录（P0-A/P0-B 部分实施）
+
+以下均为代码和自动化证据，不能替代 §61.8 的实机/沙箱证据，也不表示对应工作包已满足全部退出条件：
+
+- **unknown-create 同键恢复：** 浏览器现在只提交 `prepare → commit` 和不带敏感字段的 `inspect/ack` 动作；服务端在内部把同一 intent 映射为显式 `resumeUnknown:true` 恢复分支，并在实时价格、库存 RPC 和支付渠道调用前按 `site + idempotency_key` 查旧单。商品、SKU、数量、优惠码、claim 派生值、渠道以及已绑定的买家/联系方式不一致时 fail-closed，凭证订单仍执行共享密码认证和锁定预算且不新分配买家组。命中旧单只返回数据库持久化的安全 checkout；`review` 且无 provider reference 时返回订单句柄、该 create 响应允许的恢复口令和 `checkout:null`；过期、失败、退款等终态优先，不能重新暴露旧付款码。未命中旧单时才按当前数量/优惠开关走正常创建，自动化断言不会重复调用 provider 或新增预占。
+- **客户端竞态隔离：** unknown 重试复用原幂等键和不可变请求字段；create/status/access 使用单飞与 generation/context 校验隔离迟到响应。关闭弹窗后的迟到 unknown 不再把界面卡在“正在确认”；查询与旧 poll 交叉、延迟 preview、双击 create 和切换商品上下文已有定向覆盖。处于 unknown/detached 状态时禁止“找回订单”切单，恢复成功、离开、终态或上下文重置会清理 detached 状态。
+- **查单期间离开保护：** 手动或自动 `/status` 请求在途时，策略层隐藏“离开当前订单”，执行层的 `isAbandonableOrder()` 也拒绝清理本地订单句柄；迟到的 `confirmed`/`review` 响应因此仍可落到原订单。动态回归覆盖了查询按钮 busy、订单号与 `sessionStorage` 保留，以及迟到确认不被旧离开动作污染。
+- **弹窗可访问性前置：** 游客弹窗补齐 `aria-hidden` 开关、`aria-describedby` 状态关联、打开后的首个可用控件焦点、Escape 关闭和 Tab 循环；关闭仍恢复触发器焦点。该切片已纳入前端合同测试，但真实读屏、移动键盘和视觉焦点截图仍属于 §61.8 未闭合证据。
+- **短期离开语义：** 前端已把「关闭当前订单」改为「离开当前订单」，确认文案明确这不会取消服务端订单、不会立即释放库存，并警告旧付款码不要再付；本轮没有新增 cancel API，因此 P0-C 整批仍未完成。
+- **恢复终态展示：** create 恢复路径可直接渲染 `expired`、`failed`、`refunded` 等终态并抑制 checkout，不再把旧二维码/地址重新展示为可付款；完整的 §61.3 支付、履约、退款和人工处理矩阵仍需继续逐项验收，因此 P0-D 仍未完成。
+- **orderless intent 的 fail-closed 边界：** `prepare` 产生的无订单 intent 在约 5 分钟 commit 窗口内不会被客户端静默清除；关闭弹窗后若响应可能仍在途，服务端继续保留该 intent，暂时阻止换 SKU/重新 prepare，以避免重复预占或重复支付。当前没有新增宽松的 `abort` 动作，也不把“离开当前订单”解释为取消。后续若要缩短阻塞，必须设计仅限“确认无订单且无 provider 请求在途”的服务端原子 abort，并补跨标签、迟到响应和 provider 竞态证据；在此之前保持 fail-closed。
+- **自动化结果（各套件单独运行，子集数字不累加）：** 早期切片的 `482/482`、`13/13`、`43/43`、`25/25`、`30/30`、`22/22`、`509/509` 及 `512/512` 仅作为历史记录保留，不再作为当前门禁。当前发布候选权威基线为 `516/516`；这些结果仍只证明代码/合同层行为，不证明指定 SKU、真实渠道或邮箱密码开关已完成启用。
+
+**2026-09-20 续做记录：** 在 §61.7.1 的切片上补入查单在途离开保护、找回在途合成创建保护和弹窗键盘/ARIA 前置；正式站只做只读商城列表与「测试」商品详情核对，未触发游客建单、支付或开关变更。P0-A/P0-B、实机状态矩阵和运行开关门禁仍未闭合。
+
+**2026-09-20 续做记录（本轮）：** 本地浏览器夹具统一收口到 `127.0.0.1:8017`，清理了旧 `8014` 监听实例，避免审计计数和延迟窗口被两个夹具进程混合。该轮中间读数 `493/493` 和其后的 `509/509` 均已被下一条 `512/512` 复测取代。夹具 smoke 已确认 `creating` 建单延迟约 `1.402s`、`recovering` 找回延迟约 `1.409s`，各自仅一条去敏请求，但不能替代浏览器瞬时 DOM 证据。真实 IAB 已有 `390x844` 竖屏布局 `PASS-LOCAL`，但创建/找回在途瞬时窗口、横屏、双标签、回跳、存储禁用、读屏和亮暗主题仍未签署，不能据此关闭 §61.8 或启用游客商品。
+
+**2026-09-20 续做记录（intent 加固后复测）：** 全量 `node --test tests/guest-shop-*.test.js` 为 `511/511`；客户端竞态 + 前端合同定向套件为 `58/58`；checkout intent、状态恢复与主动查单定向套件为 `59/59`；订单访问、公开路由与 readiness 门禁定向套件为 `83/83`。`node --check server/api-handlers/public/guest-shop.js` 与 `git diff --check` 均通过。新增/更新的 `prepare → commit → inspect → ack`、生产 Origin/Fetch-Metadata 校验、claim proof 绑定、unknown-create 同键恢复，以及终态/发货状态下 ack 失败重试均只证明代码/合同层安全性质；真实 HTTPS 浏览器 Cookie 回传、多标签/移动横屏/回跳、真实 provider、数据库和运行开关仍未闭合，不能据此关闭 §61.8 或启用游客商品。
+
+**2026-09-20 下一阶段启动复测：** 重新执行 `node --test tests/guest-shop-*.test.js`，当前 glob 实际收集 `512` 项，结果 `512/512 PASS`，退出码为 0。此前 `511/511` 保留为上一轮历史基线；本次新增测试纳入当前门禁。8017 受控夹具已启动并可打开商城页，已通过 `POST /fixture/audit/reset` 清空去敏审计；本轮尚未完成逐状态真实 DOM 断言，故不把夹具启动记为矩阵通过。
+
+### 61.7.2 本轮本地门禁证据（2026-09-19）
+
+- 启动只读本地预览 `http://127.0.0.1:8011`：`/api/shop/catalog?site=cn&language=zh&view=full` 返回 `success=true`，目录快照为 23 个商品、7 个分类；未改目录和任何商品开关。
+- OFF 门禁：本地默认凭证开关关闭时，`POST /api/shop/guest/access/login` 返回 `404 guest_feature_disabled`；`/guest-orders.html` 静态页面返回 `200`，页面/API 仍需由前端开关和服务端门禁共同决定可操作性。
+- readiness：`npm run readiness:guest-shop -- --fail-on-invalid` 返回 `PASS (automated)`、`findings: none`、`operational_ready=false`、`manual_review_count=20`；本地没有 production env/database，因此不能据此放行游客商品。
+- ON 代码级矩阵：使用非生产的合成环境值运行 `runReadiness`，`GUEST_SHOP_BUYER_CREDENTIAL_ENABLED=true` 与 `GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED=true` 均被识别为 `enabled`，没有硬失败；仍有 22 项 manual review，未触碰真实环境变量、数据库或开关。
+- 定向门禁测试 `tests/guest-shop-order-access-endpoints.test.js`、`tests/guest-shop-public-route-contract.test.js`、`tests/guest-shop-readiness.test.js` 共 `83/83` 通过；这组结果与当前 `516/516` 游客商城套件一样，只证明代码/合同，不替代真实浏览器、数据库和 provider 证据。
+
+### 61.7.3 本地预览与低价测试商品复核（2026-09-19）
+
+- `http://127.0.0.1:8011/healthz` 返回 HTTP 200。该 preview 按 `scripts/local-preview-server.js` 加载 `server/.env.staging`、`server/.env`、`.env.local` 和 `.vercel/.env.production.local`；其中 production-local 配置参与解析，且项目既有记录说明本地 preview 使用共享 Supabase。它不是隔离的支付沙箱；任何建单都按真实数据库/支付渠道写入处理。
+- 目录 GET 返回 23 个商品。当前 `¥0.01` 的「测试」实际为 `product_id=52246f1d-b98d-4920-9129-581296f43de9`、`sku_id=cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`，不是此前备案的内部商品。
+- §2.10 备案的「测试 2 / 测试」仍是 `product_id=c16212d8-6ad8-4b3c-831c-3cc68b2d7a52`、`sku_id=db8cc9bd-898a-49ff-adb4-cc07f94d7d8f`，当前目录价为 CNY 144。对这两个商品分别执行只读 guest preview GET，均返回 `success=true`、`buyer_credential_required=false`、`quantity_cap=1`、`discount_enabled=false`、支付渠道 `zpay/nowpayments`、通道费率 1%。因此当前 API 接受两个商品进入游客报价，与历史单 SKU 记录不一致；在 Admin Studio 白名单/当前运行状态核清前，不得创建 ¥0.01 商品的订单或据此认定其已获测试批准。
+- ¥0.01 商品按当前 1% 通道费规则，预计应付额向上取整为 ¥0.02。此次只读取 `/healthz`、catalog 和两条 preview；未调用 create-order/status/recover、未创建订单、未支付、未执行 SQL、未修改商品开关。
+- 本轮浏览器只确认商城列表页可见；购买弹窗内逐状态显隐、键盘焦点、ARIA 与双标签/回跳的可见验收仍未完成，继续按 §61.8 保持未闭合。
+- 2026-09-20 按用户明确授权，在正式站点 `https://www.fatherkey.com/api/shop/guest/orders` 为「测试 / 默认规格」提交一次游客建单：`product_id=52246f1d-b98d-4920-9129-581296f43de9`、`sku_id=cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`、`provider=zpay`、`channel=alipay`、数量 1；HTTP 201，订单号 `GS20260919160122435663839CB0983`，响应金额 `0.02 CNY`，已生成支付凭证，仍未付款。未记录恢复口令、二维码、支付 URL 或 claim 凭证；临时响应文件已清理。该笔订单只作为本轮按钮/支付前状态验收，不得重复付款或重复建单。
+- **本次建单的验收边界：** 请求由正式站点 API 完成，没有把响应中的 claim cookie 写入用户浏览器；状态/找回接口要求 claim 证明，因此当前浏览器不能安全地回显这笔订单的付款凭证。不得为弥补这一点再建第二笔订单，也不得猜测或手工拼接支付 URL；该单按未付款订单正常等待 TTL 释放，浏览器端完整「建单→回显→支付前暂停」证据仍未闭合。
+
+### 61.8 测试与真实证据清单
+
+本节是**分层证据目录**，不是要求在默认关闭发布或单个基础 SKU 启用前把所有条目一次跑完。证据按实际开启的站点、provider 和功能选取：阶段 2 只需要代码与默认关闭发布门；阶段 3 只需要所选 SKU、CN 基础购买和本次实际开启的凭证能力；INTL、促销、多件、完整辅助技术矩阵等只阻塞对应扩展。已绑定固定 commit 且代码、配置、环境未变化的有效证据可以复用，不重复执行。
+
+**自动化最小集合：**
+
+- `tests/guest-shop-frontend-contract.test.js`：五按钮 DOM/文案/hidden 计算样式、状态策略、无 WAP 误跳转、`aria-busy`、缓存版本。
+- 新增状态机合同测试：覆盖 `configure/creating/awaiting_payment/checking/review/confirmed/paid_unfulfillable/dead_letter/delivered` 及 `expired/failed/refunded/chargeback/amount_mismatch/overpaid/partial`。
+- 新增异步竞态测试：延迟 preview、双击 create、响应丢失、recover 与旧 poll 交叉、关闭弹窗后旧响应、切换 SKU/站点/数量；每项断言旧 generation 不得写 DOM/状态。
+- `tests/guest-shop-orders-idempotency.test.js`、`tests/guest-shop-status-recovery.test.js`、`tests/guest-shop-status-active-refresh.test.js`：补 provider unknown、终态快照、查单单飞和限流退避断言。
+- 后端/API 合同：cancel（若实施）、claim 授权、迟到 webhook、金额异常、退款悬挂、`publicOrderSnapshot` allowlist、静态页面门禁和匿名 telemetry 脱敏。
+- readiness：开关 OFF/ON、worker、凭证、查询页、促销和 operator state 分层显示；`--fail-on-not-ready` 的非零退出保持 fail-closed，不得用 `|| true` 绕过。
+
+**本轮后仍缺的证据：**
+
+- §61.3 每个状态的完整自动化映射和桌面/移动真实浏览器证据尚未逐项签署；当前 `516/516` 只能证明代码回归，不能替代矩阵验收。
+- 人为断网后的真实 provider 同单恢复、真实库存/预占数量、迟到付款/退款与人工履约结果尚未留证；不得用 mock provider 的“不重复调用”断言顶替。
+- 双标签/新标签回跳、`sessionStorage` 禁用、隐私模式、跨标签句柄竞争、键盘/读屏、focus 和亮暗主题证据尚未归档。
+- `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 与 `GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED` 的 OFF/ON 组合，及 preview、静态查询页、API、readiness、Admin Studio 的一致性尚未做 production-like 证据。
+- 默认关闭发布已完成并归档于 §61.14；本轮仍未新增/扩大游客商品、未运行新真实支付。阶段 3 尚缺精确 SKU operator review、邮箱密码链路生产前置和启用后的聚焦证据。
+
+**实机/沙箱分层集合：**
+
+1. **基础 CN / 指定 SKU：** 配置→创建→站内二维码→付款→主动查单→confirmed→worker→delivered。
+2. **基础直接安全：** 创建响应人为断网后，重开/找回得到同一订单，不重复扣款、不重复占库。
+3. 点击「稍后处理」：旧单可恢复，明确不取消；隐藏期间的异步响应不污染新 SKU。
+4. 点击「离开当前订单」：旧付款码被警告；迟到付款进入人工/退款，不发货。
+5. 快速连点「查询支付状态」：只有一个 provider 查询，按钮显示 busy，终态停止轮询。
+6. review、金额不足/多付、expired、refunded、paid_unfulfillable、dead_letter：逐一核对文案、按钮、退款/客服入口。
+7. **凭证功能开启时：** 清 cookie/换设备后只按邮箱+查询密码找回；跨商品找回不显示当前商品的二维码和金额。凭证关闭时本项不阻塞不含凭证的发布，但本任务阶段 3 若按目标开启强制邮箱密码，则必须完成对应聚焦证据。
+8. **浏览器扩展：** sessionStorage 禁用、移动端回跳、新标签、双标签并发、键盘/读屏和亮暗主题截图；未涉及的设备/辅助技术缺口保留在扩展 backlog，不阻塞默认关闭发布。
+9. **所启用功能的运行开关：** OFF/ON、静态 `/guest-orders.html`、API 404/200、preview 字段和 Admin Studio 开关保持一致。关闭中的促销、多件或 INTL 不要求伪造 ON 证据。
+
+每条证据必须登记：环境、commit、站点、SKU、订单号（可脱敏）、起止时间、状态转移、按钮矩阵结果、provider 事件数量、库存/履约结果、截图路径和是否涉及真实资金；不得登记口令、卡密、claim token、邮箱或二维码原文。
+
+### 61.9 发布、启用与回滚闸门
+
+#### 61.9.1 阶段 2：默认关闭生产发布门
+
+- 代码只能从专用游客购买分支经 PR 合入当时最新 `main`；不从功能分支直接 `vercel deploy --prod`，不在部署中执行 SQL。
+- 发布前固定候选 commit，相关自动化全绿、`git diff --check`、生产构建/静态合同和 `readiness --fail-on-invalid` 通过；确认部署动作不会修改商品/SKU 白名单、数据库开关或功能开关。
+- 发布后必须把 Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker 四条链路和 `.current-release` 绑定到同一个 `main` commit，并确认健康状态。
+- §61.8 的完整真实浏览器、真实付款、INTL、促销、多件、读屏和多设备矩阵**不是默认关闭发布的前置**。它们保持 `NOT RUN` 不得被写成 PASS，但也不得阻止代码在开关不变的前提下发布。
+- 阶段 2 的完成只表示“代码已发布且默认/既有开关状态未被扩大”，不表示任何游客商品已获启用许可。
+
+#### 61.9.2 阶段 3：指定 SKU 基础启用门
+
+只评审本次明确选定的 product/SKU 和实际启用配置，不要求无关历史矩阵或未来扩展先完成。启用前必须同时满足：
+
+1. 阶段 2 已完成，生产四链仍指向同一固定 `main` commit。
+2. operator review 记录精确 product ID、SKU ID、站点、价格和责任人；SKU 为低价值、非共享、自动发货、可单独关闭，且不会因目录状态误开放其他商品。
+3. 服务端定价和金额校验、未确认付款不发货、订单/支付/provider/claim 绑定、幂等创建/恢复、库存单发和敏感凭证不回显等直接安全不变量已有当前 commit 的自动化或有效既有证据。
+4. 启用配置明确记录。当前目标为 CN、单件、原价、指定 SKU；优惠码、多件和未审计站点保持关闭。若同时开启强制邮箱密码，则 focused 证据必须确认 preview 要求凭证、缺失/弱凭证被服务端拒绝、密码不回显且找回链路可用。
+5. 启用前写明阶段 4 的观察窗口、最小样本、停止阈值和关闭 SKU 的负责人；用户对精确 product/SKU 与配置作明确确认后，才执行单独的启用动作并记录前后状态。
+
+#### 61.9.3 扩展功能门与回滚
+
+- INTL provider、优惠码、`quantity > 1`、凭证迁移/G3、完整设备与辅助技术覆盖、quote、购物车等，只在开启对应能力前补齐各自证据；关闭或 `deferred` 时不阻塞 CN 单件基础 SKU。
+- 回滚优先关闭受影响商品/SKU 或功能开关；已付款订单继续履约或退款，不能用 DB rollback、Vercel-only rollback 或清客户端 storage 假装回滚。
+- 若发现重复支付、错误商品、未付款发货、迟到付款发货、claim 泄露、库存未释放或状态文案误导，立即关受影响 SKU/开关，保留证据并进入人工对账；不得继续扩大灰度。
+
+### 61.10 2.1 完成定义与当前待办
+
+2.1 以第 1 节五阶段为唯一完成定义。每阶段满足自身退出条件后计 20%；后续阶段出现的新证据缺口不会倒扣已经绑定固定 commit 的阶段，除非代码、配置、环境、选定 SKU 或事故变化使原证据失效。
+
+- [x] **阶段 1：代码与合同。** 五按钮/竞态/恢复安全切片、`516/516` 游客商城自动化基线和分层门禁已归档。
+- [x] **阶段 2：默认关闭生产发布。** PR #656 的默认关闭发布已完成；后续 PR #659 的生产提交 `e8c514cb7d1d9fdf455b1461aabbc8d5be285674` 四链验证见 §61.19；未执行 SQL。
+- [x] **阶段 3：指定 SKU 游客启用。** 仅对 `52246f1d-b98d-4920-9129-581296f43de9` / `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d` 启用 CN 单件原价游客购买；邮箱+查询密码链路已强制生效，「测试 2」保持关闭。
+- [x] **阶段 4：用户主导自测。** 用户已确认 ¥0.02 应付、支付、自动发货和邮箱+查询密码查询均正常；固定观察窗口不再执行，结果见 §61.20。
+- [ ] **阶段 5：后续扩展与收口（进行中）。** 本轮已把所有延期项收敛为有限清单，并为每项指定责任角色、重启条件和证据产物；剩余工作只包括最终运营归档，以及在获得明确停用确认后执行一次指定 SKU 回滚演练。延期本身可以完成本阶段，不要求无限实现所有未来设想。
+
+当前下一步是完成 §61.21 的有限范围归档，并在用户明确授权停用窗口后执行一次指定 SKU 回滚演练。回滚演练不能与当前正常生产购买混为一谈；在授权前不修改商品开关、不执行 SQL、不创建订单，也不支付历史未付款订单。
+
+### 61.11 2026-09-20 阶段性交付边界
+
+本轮阶段性实现可交付范围已经收口为“代码安全切片 + 本地受控夹具基线”，不等同于 2.1 完成或游客商品启用：
+
+- [x] 五按钮统一策略、`hidden`/`disabled`/`aria-busy`、焦点恢复和 Escape/Tab 前置实现。
+- [x] create/status/access 单飞、代数隔离、unknown-create 同键恢复、终态旧支付凭证抑制实现。
+- [x] `sessionStorage` 降级提示、找回凭证清理、短期「离开当前订单」语义实现。
+- [x] 本地 `8017` 夹具、去敏 audit、延迟 smoke 和历史 `512/512` 自动化基线；发布候选补强后的当前基线为 `516/516`（`511/511`、`512/512` 保留为历史读数）。
+- [ ] 真实 IAB 的在途瞬时断言、完整终态矩阵、横屏/主题/读屏、多标签和回跳证据。
+- [ ] production-like 开关/readiness/Admin Studio 一致性、真实 provider/库存/worker 与发布链路证据。
+
+因此本节是阶段 1 的交付证据。未完成项继续保留在 §61.8，并按 §61.9 分层使用；它们不再被整体解释为阶段 2 的发布前置。
+
+**本节不新增 SQL、不执行 SQL、不打开游客商品、不启动新的真实支付。** 任何需要数据库变更的取消、OTP、促销或告警方案，先写成独立 SQL 文件并由用户执行，再更新本合同的证据状态。
+
+### 61.12 下一阶段启动：默认关闭生产发布
+
+阶段 1 已完成，下一阶段正式进入阶段 2。当前工作顺序固定如下：
+
+1. **冻结发布候选：** 审查当前脏工作区，区分本任务文件与无关修改；在专用 `codex/guest-shop-*` 分支形成可审查 commit，不吞并或回退用户改动。
+2. **本地门禁：** 对候选 commit 运行相关自动化、`git diff --check`、生产构建/静态合同及 `readiness --fail-on-invalid`；记录扩展开关仍关闭或保持既有值。
+3. **PR 与合并：** 推送专用分支，创建或更新 PR 到当时最新 `main`，检查可接受后合并；禁止从功能分支手动执行 Vercel production deploy。
+4. **四链验证：** 等 Vercel Git 集成、KVM4 Verify Server 和 KVM4 Sub2API 完成；verify 到同一 commit 后再按规范验证 guest-shop worker。确认 `.current-release`、健康检查和容器状态。
+5. **阶段归档：** 记录固定 production commit、四链结果和开关前后状态。阶段 2 到此结束；不得在该部署动作中执行 SQL 或打开游客商品。
+
+阶段 2 退出条件是 §61.9.1 全部满足。浏览器验收文档中剩余的 `NOT RUN/INCOMPLETE` 继续诚实保留，既不冒充 PASS，也不阻塞默认关闭发布。阶段 2 完成后，才进入指定 SKU 的 §61.9.2 审查和单独启用动作。
+
+### 61.13 2026-09-20 发布候选前端阻断收口
+
+在冻结阶段 2 候选前，独立审查发现并闭合三项不能带入发布的回归；这些修复不改变任何生产商品或功能开关：
+
+- [x] `shop-client.js`、`guest-shop-client.js`、`ios-scroll-lock.js` 和 `guest-orders-client.js` 都有本批独立 cache-buster，避免一年 `immutable` 缓存继续运行旧弹窗交接或旧查询页逻辑。
+- [x] （历史记录）旧“订单号 + 取货口令”恢复区曾移出邮箱密码能力门禁；该候选策略已被 2.1 收口 supersede。当前旧恢复区、升级表单和公开 `/guest/recover` 均已删除，任何 availability/开关异常都不得回退到旧入口。
+- [x] 积分购买弹窗到游客弹窗采用连续滚动锁交接；共享锁按 modal owner 释放，游客弹窗关闭不得误释放后来打开的认证/公告弹窗。慢 availability 响应在打开游客弹窗前复核来源 modal、同一 purchase 对象、product/SKU 和 handoff generation，来源已关闭或切换时返回 `source_stale`，不再幽灵打开或错误弹登录。
+- [x] 连续 `purchase -> guest -> auth` 弹窗交接只把仍连接 DOM 且保持 `active` 的 modal 记为可恢复 owner；已失活 purchase 不再挤占唯一恢复槽，关闭 auth 后 guest 仍持有背景滚动锁。
+- [x] 一次性 reset token 在从 URL 清除后立即只存入内存；availability 瞬时失败会提供原地重试，成功后继续展开 reset card，不刷新、不把 token 放回 URL，legacy/retry/受保护监听均只绑定一次。
+- [x] 行为回归覆盖 availability `404`/网络失败下的旧恢复、reset token `503 -> retry -> submit`、慢探测来源失效、滚动锁 owner 恢复；本轮风险聚焦回归 `72/72 PASS`。
+- [x] 发布候选复测为游客商城套件 `516/516 PASS`、全量安全套件 `3450/3450 PASS`；readiness `findings: none` 且保持 `operational_ready=false`。从 Git 暂存区导出的隔离快照构建生成 812 个静态文件，5 个未跟踪草稿/诱饵均未进入候选。
+
+本节的候选已通过 PR #656 合入并完成 §61.14 的四链验证，因此阶段 2 已由 `in_progress` 更新为 `complete`，Task 2.1 总进度为 **40%**。该结论只覆盖默认关闭发布，不代表指定 SKU 或邮箱密码链路已完成启用。
+
+### 61.14 2026-09-20 阶段 2 生产发布归档
+
+- **候选与合并：** 专用分支候选 `3204aea885d0aba3422b89d86be7a98c86cccea4` 经 PR #656 的 11 项检查全部通过后正常合并；未使用 `--admin`。固定 production commit 为 `40da7b557659b0f097a478437cb9034138f2ea2e`。
+- **Vercel production：** deployment `dpl_6Br5GJ8fBpJpurmMobntfqfbKUrf` 为 `READY`，target 为 `production`，Git source 为 `main` / `40da7b557659b0f097a478437cb9034138f2ea2e`。线上 `shop.html` 和 `guest-orders.html` 静态资源版本均已改写为 `v=40da7b557659`，重试按钮与本批 modal cache marker 可见。
+- **KVM4 Verify Server：** GitHub Actions run `35507620953` 成功；`/opt/zaoyoe-verify-server/.current-release` 等于 production commit，容器 `zaoyoe-verify-server` healthy，内外 `/healthz` 均正常，`.env` 权限为 `0600`。
+- **KVM4 Sub2API / NewAPI：** run `35507620930` 首次因 GitHub runner 到 SSH 端口连续超时而失败，未上传/切换 release；同一 run 的 failed-job rerun（attempt 2）成功。`/opt/sub2api/.current-release` 等于 production commit，`sub2api`、PostgreSQL、Redis 均 healthy，`https://new.fatherkey.com/health` 正常，`sub2api-legacy` 不存在。
+- **KVM4 guest-shop worker：** host installer 已落地的 timer 为 enabled + active，最近 service 结果 `success`、退出码 0；发布后 30 分钟窗口内检出 360 条 systemd 成功标记（同一次 tick 可产生多条标记，不把它误报为订单数）。KVM4 health watchdog active。本批未重跑 installer，也未修改 worker secret。
+- **生产 readiness 口径：** 完整仓库本地 `--fail-on-invalid` 为 `findings: none`。生产容器内检查确认 claim/contact/request peppers 均已配置且未复用 service-role secret；唯一 3 个 `invalid` 是 compact verify image 按设计不携带的 host-only worker 脚本/service/timer，`AGENTS.md` 明确该情况不算启动失败，且对应 host units 已由上一条实况验证。凭证开关和查询页开关都未设置，保持默认关闭。
+- **开关前后状态：** 指定「测试」商品在发布前后都返回 `success=true` 的生产 preview，数量上限 1、优惠关闭、邮箱密码要求关闭、渠道仍为 ZPay/NOWPayments；本部署没有执行 SQL、没有调用商品/功能开关写接口、没有创建或支付订单。`/api/shop/guest/access/availability` 返回预期的 `404 guest_feature_disabled`，证明邮箱密码查询尚未启用而非前端回退。
+
+阶段 2 退出条件已经全部满足。阶段 3 只评审「测试」商品 `52246f1d-b98d-4920-9129-581296f43de9`、SKU `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`（不是「测试 2」）；下一步先完成 operator review、数据库迁移存在性证明、凭证开关配置方案和阶段 4 观察/停止阈值，未经再次精确确认不改生产开关。
+
+### 61.15 2026-09-20 阶段 3 生产事实、范围冲突与阶段 4 草案
+
+> **历史快照（已被覆盖）：** 本节记录的是 2026-09-20 启用前的评审状态。“当前”进度、前置条件和阶段 4 草案只适用于当时；发布、指定 SKU 启用和用户自测完成后的现行结论以 §61.19–§61.20、文件顶部和 §1 阶段总览为准。后续读者不得将本节的 40% 或固定 24 小时/最多 5 单观察重新解释为当前阻塞门。
+
+本节是阶段 3 启用前的只读审查快照。采样时最新生产 `main` 记录为 `b2c0590e3fc68b37b09a248e6e2d3423007a9cb5`；§61.14 绑定固定 commit 的阶段 2 证据继续有效，不因 `main` 自然前进而循环重验。以下事实不等于启用批准，本轮没有执行 SQL、没有修改商品或功能开关，也没有创建、支付或修改订单。
+
+#### 61.15.1 指定商品与库存 operator review
+
+本阶段唯一目标保持为 Gemini 分组下的「测试」，不是「测试 2」：
+
+| 项目 | 只读生产事实 | 阶段 3 判断 |
+| --- | --- | --- |
+| Product | `52246f1d-b98d-4920-9129-581296f43de9`；名称「测试」；active；已出现在公开商城目录；`allow_guest_purchase=true` | 商品游客入口当前已经打开，不能把后续动作描述成“首次打开商品” |
+| SKU | `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`；名称「默认规格」；active；`allow_guest_purchase=null` | SKU 继承商品级游客开关；当前没有独立 SKU 级凭证隔离 |
+| 价格与范围 | 商品价 ¥0.01；按当前费率预计支付宝应付 ¥0.02；仅 1 个 active SKU | 满足低价值首批条件；阶段 3 仍限定 CN、单件、原价，不开启优惠、多件或未审计站点 |
+| 发货 | `delivery_type=KEY`；Product/SKU 均不是人工发货 | 满足自动发货前置 |
+| 库存来源 | 自有库存池；没有其他 SKU 来源；216 条库存中 168 `available`、48 `sold`，全部 `is_shared=false` | 满足非共享前置；启用后仍须核对预占、售出和释放守恒 |
+
+既有未付款订单 `GS20260919160122435663839CB0983` 仍为 pending，但对应预占已进入 `released/expired`。它不是可继续验收的活动付款单：不得支付、修改、补回调或用它重复建单；阶段 4 只统计用户再次明确批准启用后产生的新订单。
+
+#### 61.15.2 数据库与凭证能力证据
+
+通过只读生产 REST schema 探针已确认：
+
+- `guest_shop_buyers`、`guest_shop_access_attempts`、`guest_shop_access_resets` 均存在；
+- `guest_shop_orders.buyer_id` 存在；
+- `fn_guest_shop_create_order` 是当前 15 参数版本，包含 buyer 与 promo 参数。
+
+这些结果证明凭证数据模型和当前建单 RPC 已存在，不证明所有新增迁移、数据保留策略或生产开关已经生效。本轮没有执行 SQL；任何待执行迁移仍必须由用户在受控 SQL Editor 中执行并以独立 verify 文件验收。
+
+当前生产 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 和 `GUEST_SHOP_GUEST_ORDERS_PAGE_ENABLED` 均未设置，按默认值保持 OFF；`/api/shop/guest/access/availability` 返回 `404 guest_feature_disabled` 是预期的 fail-closed 行为。因此“购买弹窗没有强制邮箱和查询密码”不是代码回退，而是生产凭证能力尚未开启。开启前仍须以同一候选验证 preview 强制凭证、缺失/弱凭证被服务端拒绝、密码不回显、查询页/API 同源可用以及失败计数和阶梯锁定。
+
+#### 61.15.3 CAPTCHA 明确延期，不得误报已实现
+
+当前实现没有客户端 challenge token、CAPTCHA provider 配置、服务端 `siteverify` 校验或约定的 HTTP 428 challenge 闭环。现有 IP 限流、买家失败计数和阶梯锁定是纵深防护，不能被描述成 CAPTCHA。
+
+- CAPTCHA 状态记为 `deferred / manual_review`；readiness 必须继续如实显示人工评审，不能改写成 PASS。
+- 若首批灰度不接 CAPTCHA，必须由用户明确接受“24 小时且最多 5 单”的剩余防刷风险并登记责任人；没有该确认不得进入阶段 4。
+- 完整 CAPTCHA 以后作为独立扩展能力实施，届时补 token 生命周期、provider 故障策略、服务端校验、防重放和真实浏览器证据；它不因本次延期而被永久删除。
+
+#### 61.15.4 全局凭证开关的第二商品范围冲突
+
+凭证与查询页主开关是全局能力，不是 product/SKU 级开关。当前至少有两个商品可成功进入游客 preview：
+
+| 商品 | Product / SKU | 开启全局凭证后的影响 |
+| --- | --- | --- |
+| 本阶段「测试」 | `52246f1d-b98d-4920-9129-581296f43de9` / `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d` | 本阶段预期范围 |
+| 非本阶段「测试 2」 | `c16212d8-6ad8-4b3c-831c-3cc68b2d7a52` / `db8cc9bd-898a-49ff-adb4-cc07f94d7d8f` | 也会被同时切换到邮箱密码链路，超出当前单 SKU 批准范围 |
+
+因此启用凭证前必须二选一并留存前后状态：
+
+1. **推荐：** 先关闭「测试 2」的游客购买入口，只保留本阶段「测试」进入 preview，再开启全局凭证与查询页能力；或
+2. 对「测试 2」完成与本节同等级的 operator review，并由用户明确把它纳入本次范围。
+
+在用户选择前不得开启全局凭证开关。若发生回滚，应关闭受影响商品的游客入口；不能仅关闭凭证开关后继续让商品以“邮箱可选、密码隐藏”的旧流程接单。
+
+#### 61.15.5 阶段 4 有界观察草案（启用前必须确认）
+
+观察范围拟固定为：从精确启用动作完成时起连续 **24 小时**，最多接受 **5 笔新游客订单**，任一上限先到即停止继续放量并进行对账；不把 §61.15.1 的旧 pending 单计入样本，也不为凑样本自动建单或自动付款。若 24 小时内没有至少 1 笔真实已付款且完成履约的订单，只能记录“流量不足”，不得把支付/履约观察写成 PASS；延长窗口或安排新支付必须再次取得用户明确确认。
+
+以下任一条件命中即停止，不等待 24 小时或第 5 单：
+
+- 任意错误商品/SKU/站点/金额、重复订单或 provider 支付、未确认付款发货、同一库存双发、敏感凭证/邮箱/密码/claim 泄露或跨买家/跨商品找回；
+- 任意新 `paid_unfulfillable`、`dead_letter`、退款失败、异常 `amount_mismatch/partial/overpaid`，或已确认付款连续两个 worker 调度周期仍未进入预期履约/人工处理状态；
+- 任意缺失或弱查询密码被服务端接受、锁定预算失效、查询页/API/preview 开关状态不一致；
+- 库存、预占、支付、订单或 provider 对账出现 1 条无法解释的差异，过期预占超过既定 TTL 加一个 worker 调度周期仍未释放；
+- Vercel/Verify/Sub2API/worker 任一必要链路不健康、release commit 漂移，或 create/status/access 连续两次出现服务端失败。
+
+停止动作固定为：立即关闭受影响商品/SKU 的游客购买入口，停止新单；保留并对账在途单，已付款单继续履约或退款，不做数据库回滚，不清客户端状态冒充回滚。达到 5 单但没有异常属于计划内停表复核，不记为事故。
+
+启用前仍须由用户明确指定并记录三类责任人：**商品开关与紧急关闭负责人、支付/退款与在途单负责人、技术监控与证据归档负责人**。当前三项均为 `pending_confirmation`；责任人、联系方式/值守窗口、第二商品处理选择和 CAPTCHA 风险接受未确认前，阶段 3 不得记为 complete。
+
+#### 61.15.6 测试基线与当前结论
+
+- 阶段 1 固定基线仍是游客商城自动化 `516/516 PASS`，绑定其当时发布候选；它不因后续增加测试而改写。
+- 阶段 3 当前本地候选为游客商城 `545/545 PASS`、全量安全 `3479/3479 PASS`；隔离 worktree 的 Vercel 构建成功生成 812 个静态文件。这是包含本阶段补强的候选读数，不与 `516` 相加，也不代表这些未发布改动已在生产生效。
+- 本候选已补齐访问审计 retention 的独立开关、每十分钟最多 `10 × 1000` 行的有界 worker 清理、错误/积压 HTTP 503、凭证 ON + retention OFF 的持续运行时 503 互锁，以及 read-only verify 对 service-role 内部守卫、事务 advisory lock、唯一函数重载、有效角色权限和精确有效 `(created_at ASC, id ASC)` 索引的检查。KVM4 compact image 仅将 3 个 host-only systemd 资产降为人工核验，源码检出缺失仍硬失败；hosted 页面还必须与 `server/.release-commit` 对齐。
+- 在该历史快照时，Task 2.1 进度仍为 **40%**。阶段 3 已完成目标 SKU、库存和数据库的只读事实核验，但仍缺候选发布、待执行迁移的用户侧验证、第二商品范围选择、CAPTCHA 剩余风险接受、三类责任人和精确启用确认。上述项目后来由 §61.19–§61.20 按当前范围收口；本段不得用于覆盖现行 80% 进度或重新引入固定观察门。
+
+### 61.16 2026-09-21 待支付弹窗找回入口收口（2.1 增量）
+
+本次变更响应真实生产验收中发现的交互歧义：在待支付订单弹窗点击「找回订单」时，旧版会展开“订单号 + 取货口令”表单，使新订单看起来仍在走旧流程。当前合同更新为：
+
+- [x] 商城待支付弹窗的「找回订单」改为直接跳转 `/guest-orders.html`，该页以**邮箱 + 查询密码**作为新订单的默认查询入口；不再由商城弹窗内的脚本调用 `/api/shop/guest/recover`。
+- [x] 从商城弹窗移除旧订单号/取货口令输入区、旧取货口令展示与复制控件，以及相关未保存口令提示；当前订单履约所需的服务端 claim proof 与用户查询凭证分离，公开建单/查询响应不展示 `recovery_code`。
+- [x] `guest-orders.html` 底部折叠的历史订单兼容区、公开 `/api/shop/guest/recover` 和历史订单升级接口一并移除；商城弹窗和独立查询页均不再提供订单号 + 取货口令查询。
+- [x] 为商城脚本增加独立 cache-buster `guestOrderAccess=20260921_GUEST_ORDER_ACCESS_DIRECT_1`，避免 immutable CDN 继续执行旧弹窗脚本。
+- [x] 前端合同/竞态测试改为验证 direct link、无旧弹窗 DOM/endpoint/凭证泄露；服务端合同同步验证旧公开端点与 Vercel 入口不存在。
+- [x] 当前订单号作为不含凭证的非敏感定位参数随链接传递（若格式有效），并保留当前 `site` 覆盖参数；邮箱、查询密码、claim/recovery code 均不得进入 URL。
+
+因此，旧的 §61.13 “A2 期间商城弹窗保留历史恢复区”只作为历史发布记录，不再描述当前 2.1 目标行为；与本节冲突时以本节为准。此变更不改商品、SKU、支付、数据库或生产开关，也不改变当时快照的 **40%** 进度；它是阶段 3 的体验与证据补强，仍需按 §61.9 完成发布、真实订单和观察门禁。该待办状态随后由 §61.19–§61.20 覆盖。
+
+> **待支付订单边界：** 当前 `/guest-orders.html` 的邮箱+密码查询用于查看订单状态与已发货内容；它不会在本次变更中重建待支付订单的 checkout，也不会自动创建新订单。查询到待支付订单时不得提示用户重复付款或无提示地重复下单；待支付 checkout resume 作为后续 P1 设计项单独评审。
+
+### 61.17 2026-09-21 旧用户查询入口移除收口
+
+- [x] 删除公开 `guest/recover`、`guest/access/upgrade` Vercel 入口、共享 dispatcher 注册和对应 handler；`.vercelignore`、readiness、浏览器夹具同步移除旧依赖。
+- [x] 删除商城弹窗和独立查询页的订单号/历史凭证表单、旧 claim 展示/复制逻辑与升级脚本；「找回订单」只导航 `/guest-orders.html`，邮箱 + 查询密码是唯一用户查询入口。
+- [x] 删除无调用方的历史订单绑定 helper；管理台未绑定订单只提示人工核验和管理员一次性找回链接，不再引导公开迁移入口。
+- [x] 建单/幂等响应不再返回 `recovery_code`；服务端 `claim_secret_hash`、HttpOnly claim proof 和履约 `claim` 通道保留，职责不变。
+- [x] 定向访问/前端/管理台/readiness 回归 `212/212 PASS`；完整游客商城套件 `522/522 PASS`；`node --check`、`git diff --check` 通过；readiness `findings: none`，但 `operational_ready=false` 仍保持默认关闭。
+
+本次收口子任务完成时，Task 2.1 的历史快照进度仍为 **40%**：当时未执行 SQL、未提交/部署、未启用商品、未启动新的 worker，也没有把阶段 3 或阶段 4 误记为完成。后续阶段 3/4 已由 §61.19–§61.20 完成；旧入口移除本身当时不替代邮箱密码启用、真实支付或 24 小时/最多 5 单观察。
+
+### 61.18 2026-09-21 用户确认：观察改为用户自测
+
+用户明确确认：不需要本合同原拟的连续 24 小时、最多 5 笔新游客订单观察窗口，后续由用户自行下单测试。自本节起，§61.15.5 的固定窗口只作为被覆盖的历史草案，不再作为阶段 3 启用或阶段 4 推进前的等待条件。
+
+- 阶段 4 当前状态记为 `deferred` / `operator-led`，不是失败，也不要求 Codex 自动创建订单、支付或持续监控。
+- 用户自测至少应记录：精确 product/SKU、CN/单件/原价、实际应付金额、订单号、支付结果、发货结果，以及邮箱 + 查询密码查询结果；不得在聊天、日志或证据中提交邮箱、密码、claim token、卡密、二维码或支付密钥。
+- 阶段 4 仍保留即时停止原则：若用户测试发现错误商品/金额、重复支付、未付款发货、库存双发、凭证泄露、`amount_mismatch`、`paid_unfulfillable`、`dead_letter` 或退款异常，应立即关闭受影响 SKU 并进入人工对账。
+- 用户自测结果回传并归档后，阶段 4 可直接按结果记为 `complete` 或 `blocked`；不以“等待 24 小时”替代证据，也不把没有测试结果写成 PASS。
+
+以上是用户自测前的阶段性计划记录；发布、开关核验、指定 SKU 启用和用户自测已分别在 §61.19–§61.20 完成，当前下一步以 §61.20 的阶段 5 清单为准。
+
+### 61.19 2026-09-21 发布后邮箱密码链路与指定 SKU 核验
+
+本节覆盖 §61.18 之后已经完成的发布与只读验收；与更早的“未发布/开关未生效”记录冲突时，以本节为准。此次没有执行 SQL、没有创建或支付新订单，也没有在部署动作中修改商品开关。
+
+- [x] 专用分支 PR #659 已合并到最新 `main`；生产提交为 `e8c514cb7d1d9fdf455b1461aabbc8d5be285674`。
+- [x] Vercel production `Ready`，别名包含 `https://www.fatherkey.com`；Verify Server 工作流 `35562079830`、Sub2API 工作流 `35562079887`、安全检查 `35562079951` 均以同一 `main` 提交成功。
+- [x] KVM4 Verify 与 Sub2API 的 `.current-release` 均等于该提交；Verify `/healthz`、NewAPI `/health` 正常；Verify、NewAPI、PostgreSQL、Redis 容器 healthy；`sub2api-legacy` 未运行。
+- [x] 已有 guest-shop worker timer 保持 `enabled/active/waiting`，最近 oneshot 结果为 `success`；本轮未重复安装或启动新的 worker。
+- [x] 生产只读 API：`/api/shop/guest/access/availability` 返回 `enabled=true`；指定「测试」商品 `52246f1d-b98d-4920-9129-581296f43de9` / SKU `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d` 的 preview 返回 `buyer_credential_required=true`、`quantity_cap=1`、`discount_enabled=false`、CN 支付渠道为 ZPay/NOWPayments。
+- [x] 非本阶段「测试 2」preview 返回 `409 guest_product_unavailable`；这证明其游客入口已关闭。它仍可作为普通积分商品出现在目录中，不应把目录可见性误判为游客启用。
+- [x] 新标签真实浏览器验收：指定「测试」弹窗显示“接收通知邮箱 必填”和“查询密码 必填”，应付金额为 `¥0.02`（商品 `¥0.01` + 费率向上取整的 `¥0.01`）；弹窗内没有订单号/取货口令表单，点击“找回订单”直接进入 `/guest-orders`。
+- [x] `/guest-orders` 主查询表单只有邮箱、查询密码和可选订单号；没有旧取货口令兼容入口。部署前遗留浏览器标签的旧 DOM 不作为证据，刷新或新标签后的生产页面为准。
+
+当前结论（用户自测前快照）：**邮箱+查询密码运行开关已经在生产生效，且仅指定「测试」SKU通过游客 preview；当时阶段 3 等待用户新订单自测，阶段 4 为 `deferred / operator-led`。** 该快照已由 §61.20 的成功自测记录覆盖，当前总进度以文件顶部和 §61.20 为准。
+
+下一步（用户自测前快照）是创建一笔新的 CN、单件、原价「测试」订单并回传脱敏结果；该动作已由用户完成，结果见 §61.20。不要回传邮箱、查询密码、claim token、卡密、二维码或支付密钥。
+
+### 61.20 2026-09-21 用户自测通过与当前剩余范围
+
+本节是当前有效状态，覆盖 §61.19 中“等待用户自测”的快照。用户已确认在正式商城完成指定「测试」商品的聚焦自测：邮箱和查询密码均按必填新链路提交，应付金额为 **¥0.02**，支付成功、自动发货成功，并能使用同一邮箱+查询密码查询到订单状态；未发现金额、重复支付、未付款发货或凭证泄露问题。这是用户自测声明，不是 Codex 自动化或后台日志证据；它满足本阶段约定的 operator-led 验收方式。出于最小化敏感信息原则，本仓库不保存邮箱、查询密码、claim token、卡密、二维码或订单号明文；需要审计时由运营人员在受控系统补录脱敏订单标识。
+
+本次记录只证明当前 CN、单件、原价、指定 SKU 的用户主导验收通过，不等于 CAPTCHA、全量值守、全设备矩阵或扩展运营能力已经完成。§61.15.3/§61.15.5 中针对持续观察、CAPTCHA 和责任人的要求在本次范围记为 `deferred / manual_review`，扩大白名单或接入相关能力前必须重新评审。
+
+- [x] 阶段 3：指定 product/SKU 已启用，强制邮箱+查询密码链路生效，非目标「测试 2」游客入口关闭。
+- [x] 阶段 4：用户自测通过；按用户明确决定，不再等待连续 24 小时或最多 5 单观察，也不由 Codex 自动创建、支付或持续监控订单。
+- [x] §61.15.3 的 CAPTCHA、持续值守责任人和固定观察窗口不作为本次 CN 单件用户自测的完成条件；CAPTCHA 与责任人登记保留为 `deferred / manual_review` 待办，在扩大范围或接入 CAPTCHA 前重新评审，不把未提供的风险签署误记为已完成。
+- [x] 回滚演练：用户在明确停用窗口执行了指定「测试」SKU 的关闭验证；游客 preview 返回 `success=false`、`code=guest_product_unavailable`，证明新游客订单被拒绝。未执行 SQL、未创建新订单、未支付历史未付款订单，且未触碰「测试 2」。在途已付款单的履约/退款由既有运行手册处理，本次演练不修改历史订单。
+- [ ] 阶段 5 扩展与收口：已进入 `in_progress`，见下表。延期清单、责任角色、重启条件和最小证据产物已定稿；指定 SKU 回滚演练已完成，仍需完成最终运营归档。
+
+| 未完成项 | 当前处理 | 重新启动/完成条件 |
+| --- | --- | --- |
+| INTL / NOWPayments 真实支付 | `deferred` | 明确站点、provider、退款责任人，完成 provider 沙箱/真实支付和对账证据 |
+| CAPTCHA 与邮箱所有权增强 | `deferred / manual_review` | 接入 challenge、服务端校验、防重放、故障策略和真实浏览器证据；或由运营正式记录风险接受 |
+| 优惠码、阶梯价、闪购、促销 TTL | `deferred` | 完成 quote、服务端重算、预算/过期/并发不变量及 Admin Studio 运营合同 |
+| `quantity > 1`、购物车、独立 quote、登录用户现金购买 | `deferred` | 为库存预占、拆单/合单、金额和履约边界补齐专属设计、自动化和实机证据 |
+| 完整多设备/多标签/无障碍矩阵 | `deferred` | 补齐移动端、新标签/隐私模式、键盘/读屏、主题和回跳证据；不作为当前单 SKU 的阻塞门 |
+| Admin Studio 运营、审计、退款/补发/解锁与告警 | `deferred` | 完成 RBAC、二次确认、审计留痕、异常告警和回滚演练 |
+
+因此，当前按五阶段计分仍为 **80%（4/5）**，阶段 5 已从 `not_started` 进入 `in_progress`，但尚未计入额外百分比；剩余 20% 已被收敛为有限的延期/归档工作。当前指定「测试」SKU 的 CN 单件游客购买链路已完成并可继续由用户自行测试。
+
+### 61.21 2026-09-21 阶段 5 有限范围与责任矩阵
+
+本节把阶段 5 从开放式愿望清单收敛为可结束的工作包。`deferred` 是有意的范围决策，不是失败；任何延期项只有在表中触发条件满足后才重启，不因 `main` 前进、浏览器旧标签或历史 2.0 记录自动重开。
+
+| 工作包 | 当前决定 | 责任角色 | 只有满足以下条件才重启 | 最小证据产物 |
+| --- | --- | --- | --- | --- |
+| INTL / NOWPayments | `deferred` | 支付运营 + 财务 | 明确站点、provider、退款责任人和值守窗口 | provider 沙箱/低价值真实支付、回调、对账、人工退款记录 |
+| CAPTCHA / 邮箱所有权 | `deferred / manual_review` | 安全负责人 + 产品负责人 | 出现滥用信号，或正式接受未验证邮箱风险并批准接入 | challenge 服务端校验、防重放、降级策略和真实浏览器证据 |
+| 优惠码 / 阶梯价 / 闪购 TTL | `deferred` | 商品运营 + 后端负责人 | 明确预算、券规则和运营责任人 | quote/重算不变量、并发/过期测试、Admin Studio 合同及 SQL verify |
+| `quantity > 1` / 购物车 / quote / 登录用户现金购买 | `deferred` | 商品架构负责人 + 履约负责人 | 有拆单/合单、库存预占、金额和履约设计评审 | 专属 API/数据库设计、并发自动化、移动端实测和对账证据 |
+| 多设备 / 多标签 / 无障碍完整矩阵 | `deferred` | 前端 QA + 可访问性负责人 | 进入正式质量发布或扩大白名单范围 | 新标签、隐私模式、键盘、读屏、横竖屏、主题和回跳记录 |
+| Admin Studio 运营能力 | `deferred` | 运营负责人 + 后端负责人 | 需要扩大白名单，或出现退款/补发/死信人工处置 | RBAC、二次确认、审计、告警、单笔补发/退款和回滚演练 |
+| 指定 SKU 回滚演练 | `complete` | 商品开关负责人 + 支付/退款负责人 | 已完成；后续若重新启用必须重新走 §61.9.2 精确 SKU 评审 | 关闭后 preview 返回 `guest_product_unavailable`；无数据库回滚、无新订单、未触碰「测试 2」 |
+
+本阶段不执行：不新增 SQL、不从功能分支部署、不重复创建或支付历史订单、不在没有明确停用窗口的情况下关闭「测试」SKU、不把本地夹具或自动化测试写成生产证据。指定 SKU 回滚演练已有用户提供的生产证据；完成最终运营归档后，阶段 5 才可从 `in_progress` 更新为 `complete`。在此之前总进度保持 **80%**，不会循环等待固定时长。
+
+### 61.22 2026-09-21 指定 SKU 回滚演练完成证据
+
+用户在生产环境关闭指定「测试」商品（`52246f1d-b98d-4920-9129-581296f43de9`）及 SKU（`cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`）的游客入口后，重新请求游客商品能力接口，返回：
+
+```json
+{"success":false,"code":"guest_product_unavailable","message":"商品暂不支持游客购买"}
+```
+
+该结果满足“关闭开关后新游客单被拒绝”的回滚证据。此次只验证入口门禁，不创建订单、不支付、不执行 SQL，不改变历史已付款订单，也未操作「测试 2」。若后续重新启用该 SKU，必须重新执行 §61.9.2 的 product/SKU 精确评审和用户确认；本证据不构成重新启用许可。
+
+### 61.23 2026-09-21 阶段 5 指定 SKU 运营归档完成
+
+- [x] 已将指定「测试」商品/SKU 的回滚记录归档到 [`docs/guest-shop-stage5-rollback-archive.md`](./guest-shop-stage5-rollback-archive.md)。归档包含精确 product/SKU、CN/CNY/单件范围、关闭前后状态、`guest_product_unavailable` 生产证据、历史已付款与未付款订单边界、责任角色和重新启用条件。
+- [x] 已新增 [`scripts/guest-shop-stage5-archive.js`](../scripts/guest-shop-stage5-archive.js) 作为规范化、确定性的归档合同：重复使用同一归档 ID 和相同内容返回同一记录，内容冲突 fail-closed；禁止邮箱、查询密码、claim/取货凭证、卡密、二维码、支付密钥和原始响应等敏感字段进入归档。
+- [x] 已新增 [`tests/guest-shop-stage5-archive.test.js`](../tests/guest-shop-stage5-archive.test.js)，覆盖精确 product/SKU、关闭状态、生产拒绝码、订单边界、幂等、冲突和脱敏；与阶段 5 合同测试一起通过。
+- [x] 本次归档没有执行 SQL、部署、创建/支付订单或重新启用游客商品；不把历史订单继续履约/退款写成此次新增实测结论。
+
+运营归档子项现已完成。阶段 5 总状态仍保持 `in_progress`，因为用户要求的促销、多件/购物车/quote/登录用户现金购买、Admin Studio、设备无障碍矩阵和 INTL/NOWPayments 仍需按后续工作包逐项实现和验收。

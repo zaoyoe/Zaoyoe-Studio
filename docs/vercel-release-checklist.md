@@ -79,7 +79,7 @@
 - 游客购买相关发布必须同时验证四条链路：Vercel production、KVM4 Verify Server、KVM4 Sub2API、KVM4 guest-shop worker。worker 只能在 verify 的 `.current-release` 已经等于最新 `main` 之后安装或启动
 - 改 KVM4 `/opt/zaoyoe-verify-server/.env` 的 `GUEST_SHOP_*` 后，必须 `docker compose up -d --no-deps --force-recreate --no-build verify-server` 重载 compose `env_file`。`docker restart` 不会重读 `.env`。禁止打印 secret，禁止复用 `CRON_SECRET`
 - 回滚游客购买：关闭该商品/SKU 的游客开关。不是数据库 rollback，也不是 Vercel-only rollback
-- 规范正文：`AGENTS.md`、`docs/kvm4-verify-server-deploy.md`、`docs/guest-shop-payment-fulfillment-runbook.md`、`docs/guest-purchase-task-2.0.md`
+- 规范正文：`AGENTS.md`、`docs/kvm4-verify-server-deploy.md`、`docs/guest-shop-payment-fulfillment-runbook.md`、`docs/guest-purchase-task-2.0.md`（当前任务 2.1 内容版本）
 
 ## 2. 标准发布流程
 

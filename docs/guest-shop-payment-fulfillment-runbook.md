@@ -22,11 +22,145 @@
 - 不得把自动化全绿、readiness 默认退出码 0、或三条链路 Ready 当成可以启用游客购买；
 - 关闭游客开关是业务回滚；数据库回滚和 Vercel-only rollback 都不是游客购买的标准回滚。
 
-执行合同见 `docs/guest-purchase-task-2.0.md`。
+执行合同见 `docs/guest-purchase-task-2.0.md`（当前内容版本为任务 2.1；文件名为兼容既有引用而保留）。
 
 ## 游客应付金额
 
-游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额，必须先点「关闭当前订单」再重新创建；少付不会 confirm，也不会发货。
+游客支付宝（ZPay）和 USDT（NOWPayments）的应付金额必须自动等于 **商品价 + 1% 通道手续费**。后台 stored `surcharge_rate=0` 或空值时回退 1%，不要让用户在支付宝/钱包里手改金额。测试 SKU `¥0.01` 加 1% 后向上取整为 `¥0.02`，这是预期。旧未付款会话仍是旧金额；可用「离开当前订单」清除本地界面后重新创建，但该动作不会取消服务端旧单，也不要再支付旧付款码。少付不会 confirm，也不会发货。
+
+
+## 游客促销：阶梯价 / 闪购（L1）与优惠码（L2）
+
+> 设计合同见 `docs/guest-shop-promo-hardening-plan.md`；**本批次的实现记录与偏差见该文档 §23，冲突以 §23 为准**。
+> 迁移与 verify 脚本（**Codex 不执行 SQL，由运维/用户在目标库手工执行**）：
+>
+> - `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_guest_shop_promo_l1l2.sql`
+> - `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260923_verify_guest_shop_promo_l1l2.sql`（**只读**，**23 行**检查，可重复执行；第 1–22 行必须 PASS，第 23 行 `operator_state_review` 为 PASS 或 REVIEW）
+>
+> **发布不等于启用**：本批所有开关默认关闭，代码上线后游客结账的线上行为与之前**逐字一致**。
+
+### 应付金额口径（本批之后）
+
+新制度订单（`guest_shop_orders.list_unit_amount IS NOT NULL`）：
+
+```text
+list_unit_amount              折前单价（阶梯价/闪购已由 SQL resolver 命中）
+list_amount  = list_unit_amount * quantity
+discount_amount               券折扣（>= 0，且严格小于 list_amount）
+unit_amount  = 折后净单价
+payment_fee_amount = 按「折后净额」计算的通道费（支付宝/USDT，1%，向上取整到分）
+total_amount = unit_amount * quantity + payment_fee_amount      <-- 买家实付
+```
+
+旧制度订单（`list_unit_amount IS NULL`，本批之前创建的行）**保持原样**：通道费折进 `unit_amount`、
+`payment_fee_amount = 0`、`quantity = 1`。**不要**给旧行回显「已优惠 ¥0.00」或「手续费 ¥0.00」，
+前端与订单接口都按 `list_unit_amount` 是否为 NULL 区分两种制度。
+
+数据库层 `guest_shop_orders_amount_check` 钉死了：`total_amount > 0`（**永不产生 0 元单**）、
+折扣**严格小于**折前总额（零元购地板）、折扣**不超过折前总额的 50%**、通道费**不超过 10% + 0.01**、
+且三者必须自洽。**任何一条被违反都会写入失败**，这是最后一道闸，不依赖应用层正确。
+
+> ⚠️ 本批**没有**折扣率 env 旋钮，`discount_codes` **也没有**折扣率列。50% 硬顶是唯一的折扣率边界。
+> 收紧单券用 `guest_max_uses` / `guest_max_total_discount`；收紧整站用
+> `guest_shop_promo_budget.daily_budget_cny`；提高 50% 本身只能改迁移并重跑 verify。
+
+### 开关矩阵（默认全关，任何一项关闭都退回原价购买）
+
+| 开关 | 位置 | 默认 | 生效方式 | 关闭时的行为 |
+|---|---|---|---|---|
+| `GUEST_SHOP_DISCOUNT_ENABLED` | KVM4 `.env` | 未设置 = 关 | **需重建容器**（`env_file` 只被 `--force-recreate` 重读） | 提交券码 → **403 `guest_discount_disabled`**（不是静默丢弃）；无券下单不受影响 |
+| `GUEST_SHOP_MAX_QUANTITY` | KVM4 `.env` | `1`（`min=1`, `max=5`） | 需重建容器 | `1` = 每单只预占一行库存，阶梯价最多命中 qty=1 规则，与 L1 之前一致 |
+| `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` | KVM4 `.env` | `false` | 需重建容器 | **L2 的硬前置**：关着的时候 `discount_enabled` 恒为 false（折扣无法归属身份，数据库会抛 `guest_discount_identity_required`） |
+| `guest_shop_promo_budget.enabled` + `daily_budget_cny` | DB（每站一行） | `false` / `0` | **即时** | gate 返回 `guest_promo_budget_closed`，游客只能原价购买（**这是有意的 fail-closed，不是故障**） |
+| `guest_shop_promo_breaker.state` | DB（单行） | `closed` | **即时** | `open` = 所有游客折扣被拒（原价购买不受影响），readiness 判为 NOT_READY（退出码 3） |
+| `discount_codes.allow_guest` | DB（每券） | `false` | **即时** | 该券对游客不可用；`guest_max_uses = 0` 同样表示**关闭**而不是无限 |
+
+`discount_enabled` 由 preview 接口下发，取值是
+`GUEST_SHOP_DISCOUNT_ENABLED && GUEST_SHOP_BUYER_CREDENTIAL_ENABLED`；
+`quantity_cap` 是
+`min(GUEST_SHOP_MAX_QUANTITY, sku.guest_max_quantity, product.guest_max_quantity, product.max_purchase_quantity, 5)` 的**生效值**。
+前端只按这两个值显隐控件，**不做任何金额计算**。
+
+### 促销 / 多件扩展启用前置清单（按顺序，缺一不可）
+
+本清单只约束优惠码、阶梯价/闪购和 `quantity > 1`。它不阻塞已按任务 2.1 §61.9 通过直接安全门的 CN、原价、单件基础 SKU，也不阻塞所有扩展开关保持关闭的生产发布。
+
+1. 在目标 Supabase 执行 `20260923_guest_shop_promo_l1l2.sql`（必须在 `20260922_guest_shop_access_resets.sql` **之后**）。
+2. 执行 `20260923_verify_guest_shop_promo_l1l2.sql`（**23 行**），确认 **第 1–22 行全 PASS**，把输出归档到
+   `docs/guest-shop-promo-evidence.md`（归档前抹掉密钥、claim token、卡密正文、查询密码明文）。
+   第 23 行 `operator_state_review` **不是** PASS/FAIL 判定，它把实时运维状态（已开放游客结账的商品/SKU 数、
+   `GUEST_SHOP_MAX_QUANTITY`、`GUEST_SHOP_DISCOUNT_ENABLED` 等）打印出来交人工确认：
+   看到 `REVIEW` 表示「必须有人逐条核对列出的状态是有意为之」，**不代表迁移失败**；
+   看到 `FAIL` 才是迁移问题。运维状态由人决定，迁移无权钉死，所以它单列一行。
+3. `npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid` 必须退出 **0** 且 `findings: none`。
+4. 逐项完成 readiness 输出的 **6 项 `promo` manual_review**：schema 已应用、预算已开、熔断 closed、
+   **脏券扫描**（不得存在 `allow_guest=true` 且 `guest_max_uses=0` 或 `guest_max_total_discount<=0` 的券）、
+   **SKU 件数扫描**、parity 证据已归档。
+5. 改 `.env` 后必须先暂停 KVM4 health watchdog，再执行
+   `cd /opt/zaoyoe-verify-server && docker compose up -d --no-deps --force-recreate --no-build verify-server`；
+   确认 `/healthz` 后恢复 watchdog。**禁止用 `docker restart` 或 `docker compose restart`，两者都不会重读 `env_file`。**
+6. 只有以上全部完成，才可以按 §14 的灰度许可为已通过基础门的**指定 SKU + 指定券码**开启促销或多件。`--fail-on-not-ready` 返回 `3` 是该扩展启用前的**预期**结果，不得用 `|| true` 绕过。
+
+> **禁止只改 env 就把 `GUEST_SHOP_MAX_QUANTITY` 调到 ≥2**：库存占比闸（C-D3）与并发未付款单闸（C-D4）
+> 本批**未实现**（见 `docs/guest-shop-promo-hardening-plan.md` §23.5）。放开多件之前必须先补这两道闸并重新归档证据。
+
+### 运营错误码速查
+
+买家侧**只会**看到「对外码」，细码只写审计与内部错误对象（`failResponse` 只序列化
+`success/code/message`，细码不可能出现在响应里）。
+
+| 对外码 | HTTP | 买家看到 | 运营含义 / 处置 |
+|---|---|---|---|
+| `guest_discount_unavailable` | 400 | 优惠码不可用 | **C-E6 统一码**：券不存在 / 未开游客 / 过期 / 未生效 / 站点或范围不符 / 次数或金额预算耗尽 / 身份超限 / 熔断中 / 折后低于地板 / 预占竞态，**全部收敛到这一个码**（防枚举）。查具体原因看 `guest_shop_promo_breaker_events` 与订单审计，**不要**给买家更细的文案 |
+| `guest_invalid_discount_code` | 400 | 优惠码格式无效 | Node 层格式闸（`^[A-Z0-9][A-Z0-9_-]{0,49}$`）。频繁出现说明有人在撞库或前端有输入污染 |
+| `guest_discount_disabled` | 403 | 游客优惠码通道未开启 | 开关关着却收到了券码。**不是故障**，但若量大说明前端显隐与开关不同步 |
+| `guest_quantity_not_allowed` | 400 | 购买数量不可用 | 超出四处取小的生效上限。检查 `GUEST_SHOP_MAX_QUANTITY` 与该 SKU 的 `guest_max_quantity` |
+| `guest_pricing_parity_mismatch` | 400 | 价格已更新，请重试 | **最高优先级告警**：JS 展示镜像与 SQL 权威价不一致。出现即说明定价链路分叉，**立即关闭全部促销开关并跳闸**，再排查 |
+| `guest_promo_budget_closed` / `guest_promo_halted` | — | （内部细码，对外呈现为 `guest_discount_unavailable`） | 分别是「站点日预算未开/已打满」与「熔断跳闸」。前者是配置状态，后者需要人工恢复 |
+| `guest_discount_identity_required` | — | （内部细码） | 折扣无法归属身份：`buyer_contact_hash` 缺失或不是 64-hex。通常是凭证开关关着却开了折扣开关 |
+| `guest_discount_rate_limited` | — | （内部细码，对外呈现为 `guest_discount_unavailable`） | 24h 配额命中：每身份默认 **3 次**、每 IP 默认 **10 次**（函数内硬夹 10 / 50） |
+
+**本批没有 quote 端点**：券码只在 `POST /api/shop/guest/orders` 的 body 里校验一次，
+校验失败 = 一次失败的下单（**不写订单行**，预占的券预算与库存在同一事务内回滚），
+前端收到上述折扣类错误后会**主动撤回**折扣显示。因此不存在「前端持有一份可篡改/过期的报价」，
+但也意味着买家是**点了购买才知道券不能用**。preview 的参数白名单只有
+`site` / `productId` / `skuId` / `quantity`，**不含券码**；券码永不进 URL、query、`localStorage`、`sessionStorage` 或缓存键。
+
+### 熔断（`guest_shop_promo_breaker`）
+
+- 状态只有 `closed` / `open`，**没有半开、没有自动恢复**（能跳闸的攻击者也能等冷却）。
+- 阈值就在行上，可不改迁移调整：`mismatch_trip_threshold=3`（金额不一致，**最高优先级**）、
+  `identity_trip_threshold=20`、`trip_window_seconds=900`（滚动 15 分钟）。
+  CHECK 夹住范围（1–100 / 1–1000 / 60–86400），写不出「第一个事件就永久跳闸」。
+- 人工恢复（**只能由运维执行，需记录 actor 与 reason**）：
+
+  ```sql
+  SELECT public.fn_guest_shop_promo_set_breaker('closed', '<操作者标识>', '<恢复原因>');
+  ```
+
+- 只读状态快照（无 PII、无密钥、不写库）：`SELECT public.fn_guest_shop_promo_status();`
+- 跳闸期间**原价购买不受影响**，只有折扣被拒。
+
+### 预算与配额归还
+
+- 扣减是原子的：`fn_guest_shop_reserve_discount` 在同一事务里更新
+  `discount_codes.guest_used_count` / `guest_discount_total`、站点日预算已用额，并写
+  `guest_shop_discount_redemptions` 台账一行；余量不足则一行都不更新。
+- 归还是幂等的：`fn_guest_shop_return_discount_reservation` 靠台账行的 `returned_at` 判重，
+  **反复退款不会把券预算刷回无限**。订单过期释放、后台退款、履约失败都走同一条归还路径。
+- 台账只存哈希（`buyer_contact_hash` 64-hex、`request_ip_hash`），**不存明文邮箱、密码、claim secret 或卡密**；
+  RLS 开启、浏览器侧零权限、仅 `service_role`。
+- 配额按 `buyer_contact_hash` **跨该邮箱的全部凭证分组并集**计数，**不按 `buyer_id`**
+  （否则不停新建凭证分组就能无限刷新额度）。
+
+### 紧急停机（三条互相独立的路径，任一即可）
+
+1. `GUEST_SHOP_DISCOUNT_ENABLED=false` + 重建容器（需重启，最彻底）；
+2. `UPDATE public.guest_shop_promo_budget SET enabled=false WHERE site='<site>'`（**即时**，只停该站）；
+3. `UPDATE public.discount_codes SET allow_guest=false WHERE code='<CODE>'`（**即时**，只停单券）。
+
+停机后**已创建**的促销单继续按原金额履约或退款，不要改价、不要手工改 `total_amount`
+（会撞上金额 CHECK，并让对账与 webhook 校验失败）。
 
 
 ## 上线前配置与 readiness
@@ -45,6 +179,28 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 claim pepper、`CRON_SECRET` 或 `SUPABASE_SERVICE_ROLE_KEY`。生产禁止内存限流，必须启用持久化限流并在目标
 Supabase 中确认 `take_rate_limit_tokens` RPC、权限和存储表可用。
 
+### 凭证与访问审计保留矩阵
+
+`GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED` 是独立的数据生命周期开关，默认
+`false`。它不能跟随 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 自动关闭，否则凭证回滚后已存在的
+`guest_shop_access_attempts` 会永久停止清理。
+
+| 凭证开关 | retention 开关 | 允许状态 | 运维含义 |
+|---|---|---|---|
+| OFF | OFF / 未设置 | 允许（默认） | 不产生新的凭证访问审计，也不运行 retention RPC |
+| ON | OFF / 未设置 | **禁止** | readiness 硬失败；不得开启凭证能力 |
+| ON | ON | 条件允许 | 必须先应用 `20260924_guest_shop_access_attempt_retention.sql`，并用只读 `20260924_verify_guest_shop_access_attempt_retention.sql` 取得 **7/7 PASS** |
+| OFF | ON | 允许且是凭证回滚后的必需状态 | 停止凭证入口，但继续按保留期清理历史访问审计 |
+
+启用顺序固定为：由用户/数据库运维应用 retention migration；运行只读 verify 并归档
+**7/7 PASS**；先设置 `GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED=true`；按下节流程重建
+`verify-server` 并观察 worker；最后才可在独立批准后开启凭证和查询页开关。Codex 发布过程不执行
+这些 SQL，也不把 migration 文件存在误报成目标库已应用。
+
+凭证回滚时关闭 `GUEST_SHOP_BUYER_CREDENTIAL_ENABLED` 和查询页开关，但 retention 必须保持 ON，
+worker/timer 也必须继续运行。只有从凭证关闭时刻起已经跨过配置的保留期、历史行已按该保留期清理，
+且没有 retention 错误或积压证据后，才可另行关闭 retention 开关。
+
 worker 只能使用专用 `GUEST_SHOP_WORKER_SECRET` 调用：
 
 ```text
@@ -60,6 +216,12 @@ Verify Server 的 `.env` 显式设置 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED=
 `VERIFY_SERVER_WORKERS_ENABLED` 为真时生效；Vercel/serverless 永远不启用。即时 kick
 不是可靠性边界：systemd timer 仍必须保留并运行，负责进程重启、网络错误和 kick 失败后的兜底。
 
+kick 路径的跟踪日志由 `GUEST_SHOP_IMMEDIATE_FULFILLMENT_DEBUG` 控制，**默认关闭**，只在核对
+发货延迟时临时打开。它只经仓库结构化 logger 输出订单 ID 与耗时，不写任何文件，也不输出
+claim token、卡片或 provider payload。不要重新引入 `/tmp/worker-kick.log` 之类的同步文件写：
+阻塞式 I/O 落在买家轮询的请求路径上，与降延迟目标相反；已确认订单会被每次 status 轮询重复
+kick，日志量会随买家流量放大。
+
 游客支付 adapter 走 `resolvePaymentProviderSecrets`：优先读后台 stored secret，
 `.env` 里的 `ZPAY_PKEY` / `NOWPAYMENTS_API_KEY` 只是回退。KVM4 `.env` 没有这两项
 不等于支付密钥缺失；登录支付能跑是预期现象。不要为了“看起来齐套”把登录支付密钥
@@ -71,12 +233,15 @@ compose `env_file` 只在创建容器时加载。写入或轮换 `GUEST_SHOP_*` 
 watchdog，再执行：
 
 ```bash
+systemctl stop zaoyoe-kvm4-health-watchdog.timer zaoyoe-kvm4-health-watchdog.service
 cd /opt/zaoyoe-verify-server
 docker compose up -d --no-deps --force-recreate --no-build verify-server
 curl -fsS http://127.0.0.1:3001/healthz
+systemctl start zaoyoe-kvm4-health-watchdog.timer
 ```
 
-`docker restart` 不会重读 `env_file`，容器会继续用旧密钥，worker 会 401/503。
+`docker restart` 和 `docker compose restart` 都不会重读 `env_file`，容器会继续用旧开关或密钥，
+worker 会 401/503。
 重建时不要 `--build`，也不要顺手 recreate 其他 worker。命令、journal 和聊天里
 都不要打印 secret。compact verify 镜像可能不含 `deploy/kvm4/guest-shop-worker/*`；
 那不是启动失败，host 安装器落地的 systemd unit 才是调度来源。
@@ -110,6 +275,14 @@ journalctl -u zaoyoe-guest-shop-worker.service -n 50 --no-pager
 `/opt/zaoyoe-verify-server/.env`（权限 `0600`）。若 timer 连续返回 503/超时，先停止 timer，
 保留订单和支付证据，再按下方死信/退款流程处理。该安装脚本不执行 SQL，也不负责开启游客商品。
 
+retention 每十分钟最多连续清理 10 批、每批最多 1000 行。清理配置/RPC/结果异常时，worker 返回
+HTTP 503 和稳定码 `guest_access_audit_cleanup_failed`；10 批后仍有 `has_more=true` 时返回 HTTP 503
+和 `guest_access_audit_backlog_degraded`。该次履约扫描仍按幂等规则完成，响应中的
+`worker_run_success=true` 不得被误读为 retention 健康，也不得因此批量重放订单。systemd oneshot
+会记录 failed/HTTP 503；用 `journalctl -u zaoyoe-guest-shop-worker.service` 确认失败时间，再从
+`zaoyoe-verify-server` 容器日志的 `maintenance degraded` 记录核对稳定码、批次数、删除数与
+`has_more`。在错误或积压消失前不得扩大游客商品或关闭 retention。
+
 上线前执行只读检查：
 
 ```bash
@@ -120,7 +293,7 @@ npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-inva
 自动化硬错误；即使进程返回 0，也不代表可以打开游客商品。provider 启用状态、商品 allowlist、
 限流 RPC 和支付平台后台配置仍必须由值班人员人工核对。
 
-需要把 readiness 当作“启用前”硬闸门时，再显式开启严格模式：
+需要把 readiness 当作“当前功能启用前”的聚合检查时，再显式开启严格模式：
 
 ```bash
 npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-invalid --fail-on-not-ready
@@ -130,10 +303,9 @@ npm run readiness:guest-shop -- --env-file server/.env.production --fail-on-inva
 表示 `--fail-on-not-ready` 发现 `operational_ready=false`（未识别 production、仍有人工/数据库
 复核项或存在其他未闭环证据）。当前脚本是刻意不连接数据库/provider 的离线检查器，因此在
 人工证据尚未接线时，严格模式返回 `3` 是预期的 fail-closed 结果；不得用 `|| true` 忽略，也不得
-据此打开游客商品。只有在目标 Supabase、支付平台、KVM4 worker 和沙箱证据均归档后，才可将严格
-模式作为发布/启用检查的一部分。
-
-readiness 未完成人工复核不得打开游客商品。
+把缺失证据对应的功能打开。聚合 `operational_ready=false` 不阻塞扩展开关保持关闭的发布，也不自动
+阻塞 CN、原价、单件基础 SKU；基础 SKU 仍必须通过任务 2.1 §61.9.2 的直接安全门。只有要开启的
+provider、站点、凭证、促销或多件功能，其对应人工项才是该功能的硬门。
 
 ZPay 与 NOWPayments 控制台的 callback 必须分别指向：
 
@@ -148,8 +320,9 @@ NOWPayments 游客网络固定为 `usdtbsc`。游客商品标价始终是人民�
 当成订单结算币种。NOWPayments 退款暂按人工队列处理，核对收款地址、
 金额、交易哈希和出款凭证后再完成退款；不把自动退款视为已就绪。
 
-20260915 积分价 SQL 已在目标库执行；verify 1-7 PASS。第 8 项 `REVIEW` 只表示当前有 1 个商品
-开了 `allow_guest_purchase`，不是约束失败。内部测试最多保留这一个低价值、非共享、自动发货 SKU；
+20260915 积分价 SQL 已在目标库执行；verify 1-7 PASS。第 8 项 `REVIEW` 当时只表示有 1 个商品
+开了 `allow_guest_purchase`，不是约束失败，也不是当前商品数量的权威快照。现行状态必须通过
+Admin Studio/operator review 按精确 product/SKU 复核；每个开放 SKU 都应是低价值、非共享、自动发货且可单独关闭。
 不得据此公开上架，也不得再跑 20260913 / 20260914 / 20260915 迁移。
 
 20260916 / 20260917 / 20260918 / 20260919 已在目标库执行（verify 分别 3/3、4/4、6/6、6/6 PASS）。
@@ -206,6 +379,9 @@ npm run reconcile:guest-shop
 ## 隐私、保留与删除
 
 游客现金购买只保存取货口令与联系方式的 HMAC 或哈希。财务、支付、退款与争议记录在争议处理期内不删除，并依法保留至义务届满。当前设备取货凭证使用 HttpOnly Cookie。告警、对账和后台列表都不得回显明文口令或卡密。
+
+凭证访问审计默认保留 30 天（允许配置范围 7–180 天），由独立 retention 开关控制。关闭凭证功能
+不等于删除或停止清理：按上面的回滚矩阵继续运行 worker，直到历史访问审计跨过保留窗口并完成清理。
 
 ## 回调丢失或 provider 已付款、本地未确认
 
@@ -265,11 +441,15 @@ npm run reconcile:guest-shop
 
 ## 跨设备找回与凭证
 
-订单号只能查询非敏感状态，不能单独取货。跨设备必须提供高熵取货口令或人工核验；口令仅存 HMAC，不能进入 URL、日志、埋点或支付 metadata。当前设备优先使用 `Secure; HttpOnly; SameSite=Lax` Cookie。
+跨设备查询统一进入 `/guest-orders.html`，使用下单邮箱 + 查询密码；订单号只能作为已认证会话中的可选筛选/定位条件，不能单独查询或取货。历史未绑定订单如需处理，走客服/运营人工核验，并由管理员签发一次性找回链接。订单履约仍由服务端 `Secure; HttpOnly; SameSite=Lax` claim proof 授权；取货凭证只用于履约和内部 break-glass，不得展示、复制或进入 URL、日志、埋点、支付 metadata。
 
 ## 关闭游客开关与回滚
 
 关闭商品游客开关后，API 应拒绝新游客订单；已付款订单继续由 worker 履约或退款。数据库迁移不回滚、不删除业务记录。恢复开关前先确认死信、退款和库存异常队列已有人负责。
+
+若同时回滚邮箱 + 查询密码能力，只关闭凭证与查询页开关；
+`GUEST_SHOP_BUYER_ACCESS_AUDIT_RETENTION_ENABLED` 保持 `true`，并继续运行 guest-shop worker。
+完成保留期清理后再单独评审是否关闭 retention，禁止在同一次紧急回滚中一起关闭三个开关。
 
 ## 证据留存
 

@@ -482,7 +482,7 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
-        /unfreezePurchaseModalPage:\s*function \(\) \{[\s\S]*document\.documentElement\.classList\.remove\('shop-purchase-modal-lock'\);[\s\S]*document\.body\.classList\.remove\('shop-purchase-modal-lock'\);[\s\S]*'--shop-purchase-theme-chrome-color': '',[\s\S]*metaTheme\.removeAttribute\('data-shop-purchase-theme-lock'\);[\s\S]*metaTheme\.removeAttribute\('data-mobile-theme-lock'\);[\s\S]*window\.applySiteThemeChrome\(theme, \{ forceRepaint: true \}\);/,
+        /unfreezePurchaseModalPage:\s*function \(\{ restoreScroll = true \} = \{\}\) \{[\s\S]*document\.documentElement\.classList\.remove\('shop-purchase-modal-lock'\);[\s\S]*document\.body\.classList\.remove\('shop-purchase-modal-lock'\);[\s\S]*'--shop-purchase-theme-chrome-color': '',[\s\S]*metaTheme\.removeAttribute\('data-shop-purchase-theme-lock'\);[\s\S]*metaTheme\.removeAttribute\('data-mobile-theme-lock'\);[\s\S]*window\.applySiteThemeChrome\(theme, \{ forceRepaint: true \}\);/,
         'purchase modal should release its theme chrome lock immediately when closing'
     );
 
@@ -566,7 +566,7 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
-        /closePurchaseModal:\s*function \(\) \{[\s\S]*activeInput\?\.blur\(\);[\s\S]*modal\.classList\.add\('shop-purchase-force-hidden'\);\s+modal\.hidden = true;\s+modal\.classList\.remove\('active'\);\s+void modal\.offsetHeight;[\s\S]*this\.detachPurchaseModalViewportSync\(\);[\s\S]*this\.detachPurchaseModalKeyboardDock\(\);[\s\S]*if \(this\.purchaseModalPageFrozen\) \{[\s\S]*this\.unfreezePurchaseModalPage\(\);/,
+        /closePurchaseModal:\s*function \(options = \{\}\) \{[\s\S]*activeInput\?\.blur\(\);[\s\S]*modal\.classList\.add\('shop-purchase-force-hidden'\);\s+modal\.hidden = true;\s+modal\.classList\.remove\('active'\);\s+void modal\.offsetHeight;[\s\S]*this\.detachPurchaseModalViewportSync\(\);[\s\S]*this\.detachPurchaseModalKeyboardDock\(\);[\s\S]*const scrollLockHandedOff = this\.handoffPurchaseModalScrollLock\(scrollLockHandoffTarget\);[\s\S]*if \(!scrollLockHandedOff\) \{[\s\S]*if \(this\.purchaseModalPageFrozen\) \{[\s\S]*this\.unfreezePurchaseModalPage\(\);/,
         'purchase modal should force-hide before cleanup and lock release so the address-bar white area disappears in the close frame'
     );
 

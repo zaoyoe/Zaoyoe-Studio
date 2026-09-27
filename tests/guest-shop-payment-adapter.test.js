@@ -639,3 +639,54 @@ test('NOWPayments status query does not fall back to quote fields for settlement
     assert.equal(queried.status, 'review');
     assert.equal(queried.effective_status, 'review');
 });
+
+test('ZPay guest refund classifies an insufficient seller balance as manual review', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 0,
+        msg: '卖家余额不足'
+    }));
+    const result = await adapter.refundGuestPayment({
+        provider: 'zpay',
+        site: 'cn',
+        providerOrderNo: 'GS20260917-000001',
+        merchantOrderNo: 'GS20260917-000001',
+        money: '9.09'
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'guest_refund_provider_balance_insufficient');
+    assert.equal(result.message, '卖家余额不足');
+});
+
+test('ZPay guest refund classifies an explicit provider rejection as manual review', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 400,
+        msg: '该订单已退款或不可退款'
+    }));
+    const result = await adapter.refundGuestPayment({
+        provider: 'zpay',
+        site: 'cn',
+        providerOrderNo: 'GS20260917-000002',
+        merchantOrderNo: 'GS20260917-000002',
+        money: '1.00'
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.code, 'guest_refund_provider_rejected');
+});
+
+test('ZPay guest refund keeps an empty unclassified failure retryable', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        msg: ''
+    }));
+    const result = await adapter.refundGuestPayment({
+        provider: 'zpay',
+        site: 'cn',
+        providerOrderNo: 'GS20260917-000003',
+        merchantOrderNo: 'GS20260917-000003',
+        money: '1.00'
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.code, 'guest_refund_result_unknown');
+});

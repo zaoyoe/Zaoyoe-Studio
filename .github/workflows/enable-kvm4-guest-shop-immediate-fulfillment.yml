@@ -1,0 +1,378 @@
+name: Enable KVM4 Guest Shop Immediate Fulfillment
+
+on:
+  workflow_dispatch:
+    inputs:
+      enabled:
+        description: 'true = arm the 1-3s kick path; false = fall back to the 10s timer only'
+        type: boolean
+        default: true
+      unban_ip:
+        description: 'Optional operator public IP to unban in fail2ban (empty = report ban state only)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# Shares the KVM4 deploy group so an env_file reload never overlaps a deploy
+# that is already recreating containers.
+concurrency:
+  group: deploy-kvm4-main
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply guest-shop immediate fulfillment flag on KVM4
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.ref == 'refs/heads/main'
+    env:
+      KVM4_HOST: ${{ vars.KVM4_HOST || '76.13.188.218' }}
+      KVM4_PORT: ${{ vars.KVM4_PORT || '2222' }}
+      KVM4_USER: ${{ vars.KVM4_USER || 'root' }}
+      KVM4_KEY: /tmp/kvm4_flag_key_${{ github.run_id }}
+      FLAG_VALUE: ${{ inputs.enabled && 'true' || 'false' }}
+      UNBAN_IP: ${{ inputs.unban_ip }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH access
+        env:
+          KVM4_SSH_PRIVATE_KEY: ${{ secrets.KVM4_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "${KVM4_SSH_PRIVATE_KEY:-}" ]]; then
+            echo "::error title=Missing GitHub secret::Set KVM4_SSH_PRIVATE_KEY in repository secrets before dispatching this workflow."
+            exit 1
+          fi
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KVM4_SSH_PRIVATE_KEY" > "$KVM4_KEY"
+          chmod 600 "$KVM4_KEY"
+
+          {
+            printf 'Host %s\n' "$KVM4_HOST"
+            printf '  Port %s\n' "$KVM4_PORT"
+            printf '  User %s\n' "$KVM4_USER"
+            printf '  IdentityFile %s\n' "$KVM4_KEY"
+            printf '  StrictHostKeyChecking accept-new\n'
+            printf '  UserKnownHostsFile %s/.ssh/known_hosts\n' "$HOME"
+          } > "$HOME/.ssh/config"
+          chmod 600 "$HOME/.ssh/config"
+
+      - name: Pin checkout to latest main
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git fetch origin main
+          git checkout -B main origin/main
+          MAIN_SHA="$(git rev-parse HEAD)"
+          echo "main sha: $MAIN_SHA"
+          echo "MAIN_SHA=$MAIN_SHA" >> "$GITHUB_ENV"
+
+      - name: Preflight, diagnose SSH lockout and decide
+        id: preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          curl -fsS --retry 5 --retry-delay 3 https://verify-api.fatherkey.com/healthz > /dev/null
+          echo "PASS  public https://verify-api.fatherkey.com/healthz"
+
+          OUT=/tmp/preflight.txt
+          ssh "$KVM4_USER@$KVM4_HOST" 'bash -s' "$MAIN_SHA" "$FLAG_VALUE" "${UNBAN_IP:-}" > "$OUT" <<'REMOTE'
+          set -Eeuo pipefail
+
+          EXPECT="${1:-}"
+          WANT="${2:-true}"
+          UNBAN="${3:-}"
+          ROOT=/opt/zaoyoe-verify-server
+          KEY=GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED
+
+          die()  { echo "PREFLIGHT FAIL: $*" >&2; exit 1; }
+          pass() { echo "PASS  $*"; }
+
+          [[ -n "$EXPECT" ]] || die "expected main sha not supplied"
+          [[ "$WANT" == "true" || "$WANT" == "false" ]] || die "flag value must be true or false"
+          [[ -d "$ROOT" ]] || die "$ROOT missing; deploy the verify server first"
+          [[ -f "$ROOT/.env" ]] || die "$ROOT/.env missing"
+
+          # AGENTS.md: verify must already be on the commit we are about to
+          # reload env_file for.
+          CURRENT="$(tr -d '[:space:]' < "$ROOT/.current-release" 2>/dev/null || echo MISSING)"
+          echo "verify .current-release: $CURRENT"
+          [[ "$CURRENT" == "$EXPECT" ]] || die "verify server is on $CURRENT, main is $EXPECT"
+          pass "verify .current-release == main"
+
+          MODE="$(stat -c '%a' "$ROOT/.env")"
+          echo ".env mode: $MODE"
+          [[ "$MODE" == "600" ]] || die ".env mode must be 600, got $MODE"
+          pass ".env mode 0600"
+
+          # Length only.  Secret values are never printed.
+          LEN="$(sed -n 's/^GUEST_SHOP_WORKER_SECRET=//p' "$ROOT/.env" | head -1 | tr -d '\r\n' | wc -c | tr -d '[:space:]')"
+          echo "host .env GUEST_SHOP_WORKER_SECRET length: ${LEN:-0}"
+          [[ "${LEN:-0}" -ge 32 ]] || die "GUEST_SHOP_WORKER_SECRET missing or shorter than 32"
+          pass "host .env worker secret length ok"
+
+          HEALTH="$(docker inspect -f '{{.State.Health.Status}}' zaoyoe-verify-server 2>/dev/null || echo missing)"
+          echo "verify container health: $HEALTH"
+          [[ "$HEALTH" == "healthy" ]] || die "verify container health is $HEALTH"
+          pass "verify container healthy"
+
+          if docker ps --format '{{.Names}}' | grep -qi 'sub2api-legacy'; then
+            die "removed sub2api-legacy bridge container is running"
+          fi
+          pass "no sub2api-legacy bridge"
+
+          curl -fsS -m 10 http://127.0.0.1:3001/healthz > /dev/null || die "loopback 127.0.0.1:3001/healthz failed"
+          pass "loopback 127.0.0.1:3001/healthz"
+
+          CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 10 http://127.0.0.1:3001/api/shop/guest/worker)"
+          echo "unauthenticated worker probe: HTTP $CODE"
+          [[ "$CODE" == "401" ]] || die "expected HTTP 401 from the worker secret gate, got $CODE"
+          pass "worker route present and secret gate armed"
+
+          echo "guest-shop worker timer: enabled=$(systemctl is-enabled zaoyoe-guest-shop-worker.timer 2>&1) active=$(systemctl is-active zaoyoe-guest-shop-worker.timer 2>&1)"
+
+          # The desired value is never echoed: only whether host .env and the
+          # container already match it.
+          HOST_LINES="$(grep -c "^${KEY}=" "$ROOT/.env" || true)"
+          HOST_WANT="$(grep -c "^${KEY}=${WANT}$" "$ROOT/.env" || true)"
+          echo "host .env ${KEY} lines: ${HOST_LINES:-0} (already desired: ${HOST_WANT:-0})"
+
+          IN_CONTAINER="$(docker exec zaoyoe-verify-server sh -c "printf %s \"\${${KEY}:-}\"" 2>/dev/null || true)"
+          CONTAINER_OK=0
+          if [[ "$IN_CONTAINER" == "$WANT" ]]; then
+            pass "container flag already matches the desired state"
+            CONTAINER_OK=1
+          else
+            echo "INFO  container flag differs from the desired state"
+          fi
+
+          # Read-only diagnosis of why an operator IP may be locked out of sshd.
+          if command -v fail2ban-client >/dev/null 2>&1; then
+            JAILS="$(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' ' ')"
+            echo "fail2ban jails: ${JAILS:-none}"
+            for j in ${JAILS:-}; do
+              echo "fail2ban $j banned: $(fail2ban-client status "$j" 2>/dev/null | sed -n 's/.*Banned IP list:[[:space:]]*//p')"
+            done
+          else
+            echo "fail2ban-client not installed"
+          fi
+          if [[ -n "$UNBAN" ]]; then
+            echo "iptables rules mentioning the operator ip: $(iptables -S 2>/dev/null | grep -cF "$UNBAN" || true)"
+            echo "nft rules mentioning the operator ip: $(nft list ruleset 2>/dev/null | grep -cF "$UNBAN" || true)"
+          fi
+          MAXSTART="$( { sshd -T 2>/dev/null || /usr/sbin/sshd -T 2>/dev/null || true; } | awk '/^maxstartups/{print $2}')"
+          echo "sshd maxstartups: ${MAXSTART:-unknown}"
+
+          if [[ "${HOST_WANT:-0}" -ge 1 && "$CONTAINER_OK" == "1" ]]; then
+            echo "DECISION need_recreate=false"
+          else
+            echo "DECISION need_recreate=true"
+          fi
+          echo "PREFLIGHT PASS"
+          REMOTE
+
+          cat "$OUT"
+          NEED="$(sed -n 's/^DECISION need_recreate=//p' "$OUT" | tail -1)"
+          if [[ "$NEED" != "true" && "$NEED" != "false" ]]; then
+            echo "::error title=Preflight::remote script reported no DECISION line"
+            exit 1
+          fi
+          echo "need_recreate=$NEED" >> "$GITHUB_OUTPUT"
+
+      - name: Optionally unban the operator IP
+        if: ${{ inputs.unban_ip != '' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh "$KVM4_USER@$KVM4_HOST" 'bash -s' "$UNBAN_IP" <<'REMOTE'
+          set -Eeuo pipefail
+          IP="${1:-}"
+          [[ -n "$IP" ]] || { echo "no operator ip supplied" >&2; exit 1; }
+          if ! command -v fail2ban-client >/dev/null 2>&1; then
+            echo "fail2ban-client not installed; nothing to unban"
+            exit 0
+          fi
+          JAILS="$(fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' ' ')"
+          for j in ${JAILS:-}; do
+            echo "unban $IP in jail $j:"
+            fail2ban-client set "$j" unbanip "$IP" 2>&1 || true
+          done
+          for j in ${JAILS:-}; do
+            echo "fail2ban $j banned now: $(fail2ban-client status "$j" 2>/dev/null | sed -n 's/.*Banned IP list:[[:space:]]*//p')"
+          done
+          REMOTE
+
+      - name: Backup and apply the flag to host .env
+        if: steps.preflight.outputs.need_recreate == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh "$KVM4_USER@$KVM4_HOST" 'bash -s' "$FLAG_VALUE" <<'REMOTE'
+          set -Eeuo pipefail
+          WANT="${1:-true}"
+          ROOT=/opt/zaoyoe-verify-server
+          KEY=GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED
+          F="$ROOT/.env"
+
+          if [[ "$WANT" != "true" && "$WANT" != "false" ]]; then
+            echo "refusing to write an unexpected flag value" >&2
+            exit 1
+          fi
+
+          mkdir -p "$ROOT/backups"
+          BAK="$ROOT/backups/env.$(date -u +%Y%m%d%H%M%S).bak"
+          install -o root -g root -m 0600 "$F" "$BAK"
+          echo "PASS  backup $(basename "$BAK") written with mode $(stat -c '%a' "$BAK")"
+
+          # Never echo the key material onto the command line or into history.
+          if [[ -n "$(tail -c 1 "$F" 2>/dev/null || true)" ]]; then
+            printf '\n' >> "$F"
+            echo "PASS  normalized a missing trailing newline"
+          fi
+
+          if grep -q "^${KEY}=" "$F"; then
+            sed -i "s/^${KEY}=.*/${KEY}=${WANT}/" "$F"
+            echo "PASS  existing ${KEY} line updated"
+          else
+            printf '%s=%s\n' "$KEY" "$WANT" >> "$F"
+            echo "PASS  ${KEY} appended"
+          fi
+
+          chmod 600 "$F"
+          MODE="$(stat -c '%a' "$F")"
+          if [[ "$MODE" != "600" ]]; then
+            echo ".env mode is $MODE after edit" >&2
+            exit 1
+          fi
+          TOTAL="$(grep -c "^${KEY}=" "$F" || true)"
+          DESIRED="$(grep -c "^${KEY}=${WANT}$" "$F" || true)"
+          if [[ "${TOTAL:-0}" != "1" || "${DESIRED:-0}" != "1" ]]; then
+            echo "expected exactly one ${KEY} line set as desired (total=${TOTAL:-0} desired=${DESIRED:-0})" >&2
+            exit 1
+          fi
+          echo "PASS  host .env flag applied (value not printed)"
+          REMOTE
+
+      - name: Reload env_file (pause watchdog, force-recreate verify-server)
+        if: steps.preflight.outputs.need_recreate == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh "$KVM4_USER@$KVM4_HOST" 'bash -s' "$FLAG_VALUE" <<'REMOTE'
+          set -Eeuo pipefail
+          WANT="${1:-true}"
+          ROOT=/opt/zaoyoe-verify-server
+          KEY=GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED
+          WT=zaoyoe-kvm4-health-watchdog.timer
+          WS=zaoyoe-kvm4-health-watchdog.service
+
+          echo "watchdog before: timer=$(systemctl is-active "$WT" 2>&1) service=$(systemctl is-active "$WS" 2>&1)"
+          systemctl stop "$WT" "$WS" || true
+          echo "PASS  health watchdog paused"
+
+          cd "$ROOT"
+          # AGENTS.md: only force-recreate rereads compose env_file.
+          # `docker restart` / `docker compose restart` would keep the stale env.
+          docker compose up -d --no-deps --force-recreate --no-build verify-server
+
+          OK=0
+          LAST=unknown
+          for i in $(seq 1 30); do
+            sleep 5
+            LAST="$(docker inspect -f '{{.State.Health.Status}}' zaoyoe-verify-server 2>/dev/null || echo missing)"
+            if [[ "$LAST" == "healthy" ]] && curl -fsS -m 5 http://127.0.0.1:3001/healthz > /dev/null 2>&1; then
+              echo "PASS  healthy and loopback healthz ok after ~$((i * 5))s"
+              OK=1
+              break
+            fi
+          done
+          if [[ "$OK" != "1" ]]; then
+            echo "verify-server did not become healthy within 150s (last health: $LAST)" >&2
+            exit 1
+          fi
+
+          IN_CONTAINER="$(docker exec zaoyoe-verify-server sh -c "printf %s \"\${${KEY}:-}\"" 2>/dev/null || true)"
+          if [[ "$IN_CONTAINER" != "$WANT" ]]; then
+            echo "container flag did not take effect after force-recreate" >&2
+            exit 1
+          fi
+          echo "PASS  container flag matches the desired state (value not printed)"
+
+          echo "running containers: $(docker ps --format '{{.Names}}' | tr '\n' ' ')"
+          if docker ps --format '{{.Names}}' | grep -qi 'sub2api-legacy'; then
+            echo "removed sub2api-legacy bridge container reappeared" >&2
+            exit 1
+          fi
+          echo "RELOAD PASS"
+          REMOTE
+
+      - name: Ensure the health watchdog is running again
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh "$KVM4_USER@$KVM4_HOST" 'bash -s' <<'REMOTE'
+          set -uo pipefail
+          WT=zaoyoe-kvm4-health-watchdog.timer
+          WS=zaoyoe-kvm4-health-watchdog.service
+          systemctl start "$WT"
+          echo "watchdog after: timer=$(systemctl is-active "$WT" 2>&1) enabled=$(systemctl is-enabled "$WT" 2>&1) service=$(systemctl is-active "$WS" 2>&1)"
+          if [[ "$(systemctl is-active "$WT" 2>&1)" != "active" ]]; then
+            echo "WATCHDOG FAIL: $WT is not active" >&2
+            exit 1
+          fi
+          echo "PASS  health watchdog resumed"
+          REMOTE
+
+      - name: Fulfillment gate and worker evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh "$KVM4_USER@$KVM4_HOST" 'bash -s' "$FLAG_VALUE" <<'REMOTE'
+          set -uo pipefail
+          WANT="${1:-true}"
+          FLAG=0
+          WORKERS=0
+          NOVERCEL=0
+
+          if docker exec zaoyoe-verify-server sh -c 'test "${GUEST_SHOP_IMMEDIATE_FULFILLMENT_ENABLED:-}" = "true"'; then FLAG=1; fi
+          if docker exec zaoyoe-verify-server sh -c 'test "${VERIFY_SERVER_WORKERS_ENABLED:-}" = "true"'; then WORKERS=1; fi
+          if docker exec zaoyoe-verify-server sh -c 'test -z "${VERCEL_ENV:-}"'; then NOVERCEL=1; fi
+          echo "gate: immediate_fulfillment=$FLAG workers_enabled=$WORKERS vercel_env_empty=$NOVERCEL"
+
+          if [[ "$WANT" == "true" ]]; then
+            if [[ "$FLAG" == "1" && "$WORKERS" == "1" && "$NOVERCEL" == "1" ]]; then
+              echo "PASS  1-3s kick path armed (isGuestShopImmediateFulfillmentEnabled == true)"
+            else
+              echo "GATE FAIL: expected all three conditions to hold" >&2
+              exit 1
+            fi
+          else
+            if [[ "$FLAG" == "0" ]]; then
+              echo "PASS  kick path disarmed; 10s timer fallback only"
+            else
+              echo "GATE FAIL: flag is still truthy after a rollback request" >&2
+              exit 1
+            fi
+          fi
+
+          echo "guest-shop worker timer: enabled=$(systemctl is-enabled zaoyoe-guest-shop-worker.timer 2>&1) active=$(systemctl is-active zaoyoe-guest-shop-worker.timer 2>&1)"
+          echo "worker service: result=$(systemctl show zaoyoe-guest-shop-worker.service -p Result --value) exit=$(systemctl show zaoyoe-guest-shop-worker.service -p ExecMainStatus --value) last=$(systemctl show zaoyoe-guest-shop-worker.service -p ExecMainStartTimestamp --value)"
+          systemctl list-timers --all --no-pager | grep -E 'NEXT|guest-shop-worker' || true
+          journalctl -u zaoyoe-guest-shop-worker.service -n 10 --no-pager 2>&1 | tail -10 || true
+          docker logs --since 10m zaoyoe-verify-server 2>&1 | grep -Ei 'guestshop|immediate|kicker' | tail -20 || true
+          REMOTE
+
+          curl -fsS --retry 5 --retry-delay 3 https://verify-api.fatherkey.com/healthz
+          echo
+          echo "PASS  public https://verify-api.fatherkey.com/healthz after reload"

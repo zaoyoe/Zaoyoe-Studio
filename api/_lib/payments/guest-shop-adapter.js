@@ -1397,16 +1397,25 @@ function createGuestShopPaymentAdapter({
         }, typeof options.fetchImpl === 'function' ? { fetchImpl: options.fetchImpl } : { fetchImpl: defaultFetchImpl });
         const payload = result.response?.data && typeof result.response.data === 'object' ? result.response.data : {};
         const success = String(payload.code ?? '').trim() === '1';
+        const providerMessage = text(payload.msg, success ? '退款成功' : '易支付退款失败', 240);
+        const providerMessageLower = providerMessage.toLowerCase();
+        const balanceInsufficient = /卖家余额不足|余额不足|insufficient\s+(?:seller\s+)?balance|insufficient\s+funds|insufficient\s+merchant\s+balance/i.test(providerMessageLower);
+        const providerRejected = !success && (balanceInsufficient || String(payload.code ?? '').trim() !== '');
+        const refundStatus = success ? 'refunded' : (providerRejected ? 'blocked' : 'unknown');
+        const refundCode = success
+            ? null
+            : (balanceInsufficient ? 'guest_refund_provider_balance_insufficient' : (providerRejected ? 'guest_refund_provider_rejected' : 'guest_refund_result_unknown'));
         return {
             supported: true,
             success,
             provider,
             purpose: GUEST_PURPOSE,
-            status: success ? 'refunded' : 'unknown',
+            status: refundStatus,
+            code: refundCode,
             merchant_order_no: text(payload.out_trade_no || merchantOrderNo, '', MAX_ORDER_REFERENCE_LENGTH) || null,
             provider_order_no: text(payload.out_trade_no || orderNo, '', MAX_PROVIDER_REFERENCE_LENGTH) || null,
             transaction_id: text(payload.trade_no || tradeNo, '', MAX_PROVIDER_REFERENCE_LENGTH) || null,
-            message: text(payload.msg, success ? '退款成功' : '易支付退款失败', 240),
+            message: providerMessage,
             response_payload: payload
         };
     }
