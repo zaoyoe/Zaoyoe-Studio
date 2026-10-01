@@ -1021,9 +1021,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1';",
+        "const VERSION = '20260928_WALLET_AMOUNT_STYLE_RESTORE_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260928_WALLET_AMOUNT_STYLE_RESTORE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1&zeroPercentCoupon=20260617_ZERO_PERCENT_COUPON_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -3994,7 +3994,7 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopClientSource,
-        /if \(empty\) \{[\s\S]*?this\.gridTransitionActiveUntil = 0;[\s\S]*?container\.innerHTML = '';[\s\S]*?container\.classList\.add\('is-empty'\);[\s\S]*?container\.appendChild\(this\.buildEmptyStateElement\(\)\);[\s\S]*?this\.clearMobileProductFocus\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?const previousCardState = new Map/,
+        /if \(empty\) \{\s*this\.gridTransitionActiveUntil = 0;\s*container\.innerHTML = '';\s*container\.classList\.add\('is-empty'\);\s*container\.appendChild\(this\.buildEmptyStateElement\(\{ searchQuery \}\)\);\s*this\.clearMobileProductFocus\(\);(?:\s*this\.syncMobileProductFocusMode\(\);)?\s*return;\s*\}\s*const previousCardState = new Map/,
         'empty storefront states should render immediately without product-card exit or empty-state enter animation'
     );
     assert.match(
@@ -12067,15 +12067,15 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         );
     }
 
-    assert.doesNotMatch(
+    assert.match(
         shopSource,
-        /allBtn\.textContent = '全部'|dataset\.category = 'all'/,
-        'admin shop product category filters should not inject the legacy all tab'
+        /allButton\.textContent = '全部'[\s\S]*allButton\.dataset\.category = 'all'/,
+        'admin shop product category filters should keep the all-products tab'
     );
     assert.match(
         shopSource,
-        /normalizeCurrentProductCategory: function \(categories = this\.categoryData\) \{[\s\S]*const fallbackCategory = String\(sortedCategories\[0\]\?\.name \|\| ''\)\.trim\(\);[\s\S]*this\.currentCategory = fallbackCategory;/,
-        'admin shop product filters should default to the first admin-ordered category'
+        /normalizeCurrentProductCategory: function \(categories = this\.categoryData\) \{[\s\S]*this\.currentCategory = 'all';[\s\S]*return 'all';/,
+        'admin shop product filters should default to the complete catalog'
     );
 
     assert.equal(shopSource.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated handlers');
@@ -14921,7 +14921,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260716_WALLET_EXACT_BALANCE_CUSTOM_TOOLTIP_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260928_WALLET_AMOUNT_STYLE_RESTORE_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {

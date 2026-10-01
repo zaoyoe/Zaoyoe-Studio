@@ -10,6 +10,8 @@ const defaultGuestPricing = require('../../../api/_lib/guest-shop/pricing');
 // from the SQL functions (see its header comment).
 const defaultGuestPromo = require('../../../api/_lib/guest-shop/promo');
 const defaultRequestSecurity = require('../../../api/_lib/request-security');
+const { isOrderScopedZpayCheckoutUrl } = require('../../../api/_lib/payments/guest-shop-adapter');
+const { loadProductGuidanceRow, buildProductGuidancePayload } = require('./shop');
 
 const GUEST_WEBHOOK_PROVIDERS = new Set(['zpay', 'nowpayments']);
 const FINAL_PAYMENT_STATUSES = new Set(['paid', 'confirmed', 'finished', 'success', 'succeeded', 'completed', 'captured']);
@@ -37,7 +39,7 @@ const GUEST_CHECKOUT_INTENT_COOKIE_VERSION = 'v1';
 const GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS = 5 * 60;
 const GUEST_CHECKOUT_INTENT_MAX_AGE_SECONDS = 2 * 60 * 60
     + GUEST_CHECKOUT_INTENT_CREATE_DEADLINE_SECONDS;
-const GUEST_CHECKOUT_INTENT_ACTIONS = new Set(['prepare', 'inspect', 'commit', 'ack']);
+const GUEST_CHECKOUT_INTENT_ACTIONS = new Set(['prepare', 'inspect', 'commit', 'ack', 'discard']);
 // Order Access 2.0 (§7.1 / §12): a short-lived session cookie issued by
 // POST /guest/access/login so the list/detail/delivery endpoints do not have to
 // re-send the query password on every request. The `__Host-` prefix is a browser
@@ -1021,6 +1023,21 @@ function createGuestShopHandlers({
         });
     }
 
+    function logCheckoutBatchFailure(error) {
+        // The public response deliberately hides 5xx internals. Keep a
+        // non-sensitive failure category in server logs so a local checkout
+        // failure can be traced without logging claim material, request data,
+        // provider payloads, or a gateway URL.
+        const rawCode = String(error?.code || '').trim();
+        const knownCode = /^(?:guest_[a-z0-9_]+|42P01|42702|42501|P0001)$/u.test(rawCode)
+            ? rawCode
+            : 'unclassified';
+        console.warn('[guest-shop] checkout batch failed', {
+            category: knownCode,
+            status: Number(error?.statusCode) || 500
+        });
+    }
+
     // Promo L1/L2 (plan §11.2 / C-E6). fn_guest_shop_create_order signals every
     // rejection as a bare `RAISE EXCEPTION 'guest_*'`, which arrives here as a
     // PostgREST error whose `code` is the SQLSTATE and whose `message` is the
@@ -1253,9 +1270,19 @@ function createGuestShopHandlers({
     // amount here: resolveGuestCreditUnitAmount returns a per-unit price.
     async function loadGuestSkuPricing({ supabase, productId, skuId, siteName, quantity = null }) {
         if (!supabase?.from) throw Object.assign(new Error('数据库服务不可用'), { statusCode: 503, expose: false });
-        const productQuery = await supabase.from('shop_products')
-            .select('id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity')
+        const productSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
+        const scheduledProductSelect = 'id,name,is_active,allow_guest_purchase,delivery_type,manual_delivery,guest_payment_channels,quantity_rules,quantity_rules_intl,flash_sale_price,flash_sale_price_intl,flash_sale_start,flash_sale_start_intl,flash_sale_end,flash_sale_end_intl,guest_max_quantity,max_purchase_quantity';
+        let productQuery = await supabase.from('shop_products')
+            .select(scheduledProductSelect)
             .eq('id', productId).maybeSingle();
+        const productErrorText = [productQuery.error?.message, productQuery.error?.details,
+            productQuery.error?.hint, productQuery.error?.code].filter(Boolean).join(' ').toLowerCase();
+        if (productQuery.error && /flash_sale_start(?:_intl)?/u.test(productErrorText)
+            && /does not exist|not exist|undefined column|schema cache|could not find/u.test(productErrorText)) {
+            productQuery = await supabase.from('shop_products')
+                .select(productSelect)
+                .eq('id', productId).maybeSingle();
+        }
         if (productQuery.error) throw productQuery.error;
         const product = productQuery.data;
         const skuQuery = await supabase.from('shop_product_skus')
@@ -1300,6 +1327,8 @@ function createGuestShopHandlers({
             productQuantityRulesIntl: product?.quantity_rules_intl,
             productFlashSalePrice: product?.flash_sale_price,
             productFlashSalePriceIntl: product?.flash_sale_price_intl,
+            productFlashSaleStart: product?.flash_sale_start,
+            productFlashSaleStartIntl: product?.flash_sale_start_intl,
             productFlashSaleEnd: product?.flash_sale_end,
             productFlashSaleEndIntl: product?.flash_sale_end_intl
         });
@@ -1357,6 +1386,112 @@ function createGuestShopHandlers({
         return data && typeof data === 'object' ? [data] : [];
     }
 
+    function batchPaymentPricingSnapshot(batch, payment) {
+        const metadata = storedPlainObject(batch?.metadata);
+        const pricing = storedPlainObject(metadata.payment_pricing);
+        const payable = defaultGuestPricing.roundMoneyAmount(
+            pricing.payable_amount,
+            null
+        );
+        const base = defaultGuestPricing.roundMoneyAmount(
+            pricing.base_amount,
+            null
+        );
+        if (!(payable > 0) || !(base > 0)
+            || !defaultGuestPricing.moneyAmountsEqual(batch?.total_amount, payable)
+            || (payment && !defaultGuestPricing.moneyAmountsEqual(payment.expected_amount, payable))) {
+            return null;
+        }
+        return {
+            base_amount: base,
+            payment_fee_amount: defaultGuestPricing.roundMoneyAmount(pricing.payment_fee_amount, 0) || 0,
+            payment_fee_rate: defaultGuestPricing.normalizeSurchargeRate(pricing.payment_fee_rate, 0),
+            payment_fee_label: String(pricing.payment_fee_label || '通道手续费').slice(0, 40),
+            payable_amount: payable
+        };
+    }
+
+    async function persistCheckoutBatchPayableAmounts(batch, payment, summaries) {
+        const db = getSupabase();
+        if (!db?.from || !batch?.id || !payment?.id) throw guestDatabaseUnavailableError();
+        // The batch snapshot is authoritative even if a previous request
+        // updated it but failed before repairing the payment row. Reuse that
+        // committed quote and reconcile the payment amount instead of adding a
+        // second fee to an already payable total.
+        const existing = batchPaymentPricingSnapshot(batch, null);
+        const computed = existing
+            ? {
+                baseAmount: existing.base_amount,
+                surchargeAmount: existing.payment_fee_amount,
+                surchargeRate: existing.payment_fee_rate,
+                surchargeLabel: existing.payment_fee_label,
+                payableAmount: existing.payable_amount,
+                payload: existing
+            }
+            : defaultGuestPricing.resolveGuestPayablePricing(
+                batch.total_amount,
+                payment.provider,
+                summaries
+            );
+        if (!computed || !(computed.payableAmount > 0)) {
+            throw Object.assign(new Error('批量订单定价暂不可用'), {
+                statusCode: 503,
+                code: 'guest_payable_amount_persist_failed',
+                expose: true
+            });
+        }
+        const payload = computed.payload
+            || defaultGuestPricing.buildGuestPaymentPricingPayload(computed);
+        const metadata = {
+            ...storedPlainObject(batch.metadata),
+            payment_pricing: payload
+        };
+        const targetAmount = computed.payableAmount;
+
+        if (!existing || !defaultGuestPricing.moneyAmountsEqual(batch.total_amount, targetAmount)) {
+            const updatedBatch = await db.from('guest_shop_checkout_batches')
+                .update({ total_amount: targetAmount, metadata, updated_at: new Date().toISOString() })
+                .eq('id', batch.id)
+                .eq('payment_status', 'pending')
+                .select('*')
+                .maybeSingle();
+            if (updatedBatch?.error) throw updatedBatch.error;
+            if (updatedBatch?.data) Object.assign(batch, updatedBatch.data);
+        } else if (!batch.metadata?.payment_pricing) {
+            const updatedBatch = await db.from('guest_shop_checkout_batches')
+                .update({ metadata, updated_at: new Date().toISOString() })
+                .eq('id', batch.id)
+                .eq('payment_status', 'pending')
+                .select('*')
+                .maybeSingle();
+            if (updatedBatch?.error) throw updatedBatch.error;
+            if (updatedBatch?.data) Object.assign(batch, updatedBatch.data);
+        }
+
+        const updatedPayment = await db.from('guest_shop_checkout_payments')
+            .update({ expected_amount: targetAmount, updated_at: new Date().toISOString() })
+            .eq('id', payment.id)
+            .eq('status', 'pending')
+            .select('*')
+            .maybeSingle();
+        if (updatedPayment?.error) throw updatedPayment.error;
+        if (updatedPayment?.data) Object.assign(payment, updatedPayment.data);
+        else {
+            const latestPayment = await loadCheckoutBatchPayment(batch);
+            if (latestPayment) Object.assign(payment, latestPayment);
+        }
+
+        const verified = batchPaymentPricingSnapshot(batch, payment);
+        if (!verified) {
+            throw Object.assign(new Error('批量订单应付金额写入失败，请稍后重试'), {
+                statusCode: 503,
+                code: 'guest_payable_amount_persist_failed',
+                expose: true
+            });
+        }
+        return { pricing: verified, batch, payment };
+    }
+
     async function loadCheckoutBatch(batchNo) {
         const db = getSupabase();
         if (!db?.from) throw guestDatabaseUnavailableError();
@@ -1377,9 +1512,42 @@ function createGuestShopHandlers({
         return result?.data || null;
     }
 
+    const BATCH_CONFIRMATION_FAILED = 'guest_checkout_batch_confirmation_failed';
+    const BATCH_CONFIRMATION_MESSAGE = '支付渠道已确认付款，订单正在核对。请勿重复付款或取消订单，可稍后查询处理结果。';
+    const BATCH_FULFILLMENT_PENDING = 'guest_checkout_batch_fulfillment_pending';
+    const BATCH_FULFILLMENT_MESSAGE = '支付已确认，正在等待发货处理。请稍后查询，勿重复付款。';
+
+    function batchConfirmationPending(batch, payment) {
+        return batch?.payment_status !== 'confirmed'
+            && (batch?.last_error_code === BATCH_CONFIRMATION_FAILED || payment?.last_error_code === BATCH_CONFIRMATION_FAILED);
+    }
+
+    async function recordBatchConfirmationFailure(batch, payment, eventId = null) {
+        const db = getSupabase();
+        const patch = { last_error_code: BATCH_CONFIRMATION_FAILED, last_error_message: BATCH_CONFIRMATION_MESSAGE, updated_at: new Date().toISOString() };
+        // The verified-event trigger holds payment + inventory atomically.
+        // These guarded updates also provide explicit diagnostics, without
+        // overwriting a concurrent confirmation, refund or terminal state.
+        for (const [table, id, column, statuses] of [
+            ['guest_shop_checkout_payments', payment.id, 'status', ['pending', 'created', 'review']],
+            ['guest_shop_checkout_batches', batch.id, 'payment_status', ['pending', 'review']]
+        ]) {
+            try { await db.from(table).update({ ...patch, [column]: 'review' }).eq('id', id).in(column, statuses); } catch (_) { /* verified event remains durable */ }
+        }
+        if (eventId) {
+            try {
+                await db.from('guest_shop_payment_events').update({
+                    processing_status: 'retry', error_code: BATCH_CONFIRMATION_FAILED, updated_at: patch.updated_at
+                }).eq('id', eventId).in('processing_status', ['verified', 'retry']);
+            } catch (_) { /* do not hide the known provider result */ }
+        }
+        return { refreshed: false, reason: 'confirm_failed', confirmationPending: true, providerChecked: true, providerStatus: 'paid' };
+    }
+
     function checkoutBatchNeedsExpiry(batch, payment) {
         const expiresAtMs = Date.parse(String(batch?.expires_at || '').trim());
         return batch?.payment_status === 'pending'
+            && !batchConfirmationPending(batch, payment)
             && ['pending', 'created'].includes(String(payment?.status || '').trim().toLowerCase())
             && Number.isFinite(expiresAtMs)
             && expiresAtMs <= Date.now();
@@ -1427,6 +1595,21 @@ function createGuestShopHandlers({
         if (claimed?.error && !['guest_order_not_delivered', 'guest_inventory_not_reservable']
             .includes(String(claimed.error.message || ''))) throw claimed.error;
         return await loadCheckoutBatch(batch.batch_no).catch(() => batch);
+    }
+
+    async function tryClaimConfirmedCheckoutBatch(batch, db = getSupabase()) {
+        try {
+            return { batch: await claimConfirmedCheckoutBatch(batch, db), error: null };
+        } catch (error) {
+            // Payment confirmation is durable. A transient worker/database
+            // failure must not turn the status endpoint into a payment-query
+            // error or make the buyer retry payment. Keep the order paid and
+            // expose a retryable fulfilment state to the next poll.
+            return {
+                batch: await loadCheckoutBatch(batch?.batch_no).catch(() => batch),
+                error
+            };
+        }
     }
 
     async function attemptGuestCheckoutBatchPaymentStatusQuery({
@@ -1506,7 +1689,17 @@ function createGuestShopHandlers({
 
         const observedStatus = String(live.final_status || live.status || '').trim().toLowerCase();
         const observedAmount = normalizeObservedAmount(live.paid_amount ?? live.amount);
-        const liveProviderOrderNo = normalizeWebhookReference(live.provider_order_no || providerOrderNo, 300);
+        const reportedMerchantOrderNo = normalizeWebhookReference(live.merchant_order_no, 200);
+        const reportedProviderOrderNo = normalizeWebhookReference(live.provider_order_no, 300);
+        const liveProviderOrderNo = reportedProviderOrderNo || providerOrderNo;
+        if ((reportedMerchantOrderNo && reportedMerchantOrderNo !== merchantOrderNo)
+            || (reportedProviderOrderNo && payment.provider_order_no
+                && reportedProviderOrderNo !== payment.provider_order_no)
+            || (live.provider && String(live.provider).trim().toLowerCase() !== provider)
+            || (live.site && String(live.site).trim().toLowerCase() !== observedSite)
+            || (live.currency && String(live.currency).trim().toUpperCase() !== observedCurrency)) {
+            return { refreshed: false, reason: 'invalid_provider_binding' };
+        }
         const quote = providerQuoteChecks(provider, live, payment, security);
         const binding = security.verifyPaymentBinding({
             expectedMerchantOrderNo: merchantOrderNo,
@@ -1593,26 +1786,32 @@ function createGuestShopHandlers({
         }
         if (!eventId) return { refreshed: false, reason: 'event_reference_missing' };
 
+        let confirmed;
         try {
-            const confirmed = await db.rpc('fn_guest_shop_confirm_checkout_batch_payment', {
+            confirmed = await db.rpc('fn_guest_shop_confirm_checkout_batch_payment', {
                 p_payment_id: payment.id,
                 p_provider: provider,
                 p_provider_order_no: liveProviderOrderNo,
                 p_observed_amount: provider === 'nowpayments' ? payment.expected_amount : observedAmount,
                 p_observed_status: observedStatus
             });
-            if (confirmed?.error) return { refreshed: false, reason: 'confirm_failed', providerChecked: true, providerStatus: observedStatus };
-            await db.from('guest_shop_payment_events').update({
-                processing_status: 'processed',
-                processed_at: nowIso,
-                updated_at: nowIso
-            }).eq('id', eventId);
-            let refreshedBatch = await loadCheckoutBatch(batch.batch_no);
-            refreshedBatch = await claimConfirmedCheckoutBatch(refreshedBatch, db);
-            return { refreshed: true, batch: refreshedBatch, providerChecked: true, providerStatus: observedStatus };
         } catch (_) {
-            return { refreshed: false, reason: 'confirm_failed', providerChecked: true, providerStatus: observedStatus };
+            return await recordBatchConfirmationFailure(batch, payment, eventId);
         }
+        if (confirmed?.error) return await recordBatchConfirmationFailure(batch, payment, eventId);
+        await db.from('guest_shop_payment_events').update({
+            processing_status: 'processed', error_code: null,
+            processed_at: nowIso, updated_at: nowIso
+        }).eq('id', eventId);
+        const refreshedBatch = await loadCheckoutBatch(batch.batch_no);
+        const claimResult = await tryClaimConfirmedCheckoutBatch(refreshedBatch, db);
+        return {
+            refreshed: true,
+            batch: claimResult.batch,
+            fulfillmentPending: Boolean(claimResult.error),
+            providerChecked: true,
+            providerStatus: observedStatus
+        };
     }
 
     function batchClaimSecret(batch, req) {
@@ -1713,16 +1912,35 @@ function createGuestShopHandlers({
             }
             const row = batchRows(created.data)[0];
             if (!row?.batch_id || !row?.merchant_order_no) throw guestDatabaseUnavailableError();
-            const batch = { id: row.batch_id, batch_no: row.batch_no, site: row.site, currency: row.currency, total_amount: row.total_amount, expires_at: row.expires_at };
+            const batch = await loadCheckoutBatch(row.batch_no);
             let payment = await loadCheckoutBatchPayment(batch);
             let checkout = null;
+            let paymentPricing = batchPaymentPricingSnapshot(batch, payment);
+            if (String(payment?.status || 'pending').toLowerCase() === 'pending') {
+                const paymentProviderSummaries = await defaultGuestPricing.loadGuestPaymentProviderSummaries({
+                    supabase: db,
+                    siteName
+                });
+                const persisted = await persistCheckoutBatchPayableAmounts(
+                    batch,
+                    payment,
+                    paymentProviderSummaries
+                );
+                paymentPricing = persisted.pricing;
+            }
             if (String(payment?.status || 'pending') === 'pending') {
                 if (typeof paymentAdapter?.createGuestPayment !== 'function') throw batchError('游客支付通道尚未配置', 'guest_payment_provider_unavailable', 503);
                 try {
                     checkout = await paymentAdapter.createGuestPayment({
-                        order: { id: batch.id, order_no: batch.batch_no, site: batch.site, currency: batch.currency, total_amount: row.total_amount, snapshot_product_name: '购物车商品', guest_payment_channels: [] },
-                        provider, channel, site: batch.site, currency: batch.currency, amount: row.total_amount,
-                        allowedChannels: ['zpay', 'nowpayments', `${provider}:${channel}`], req, env
+                        order: { id: batch.id, order_no: batch.batch_no, site: batch.site, currency: batch.currency, total_amount: paymentPricing.payable_amount, snapshot_product_name: '购物车商品', guest_payment_channels: [] },
+                        provider, channel, site: batch.site, currency: batch.currency, amount: paymentPricing.payable_amount,
+                        allowedChannels: ['zpay', 'nowpayments', `${provider}:${channel}`],
+                        // A batch must have an order-specific link. An
+                        // image-only ZPay response is often the gateway's
+                        // temporary shared image, never a payment credential.
+                        requireOrderScopedCheckout: true,
+                        req,
+                        env
                     });
                     const patch = checkout?.payment_order_patch;
                     if (!patch?.provider_order_no) throw batchError('支付订单引用缺失', 'guest_provider_reference_missing', 502);
@@ -1733,18 +1951,38 @@ function createGuestShopHandlers({
                     if (updated?.error) throw updated.error;
                     payment = updated?.data || await loadCheckoutBatchPayment(batch);
                 } catch (error) {
-                    const definitive = ['guest_provider_create_failed', 'guest_payment_channel_unavailable', 'guest_payment_provider_not_ready', 'guest_provider_checkout_missing'].includes(String(error?.code || ''));
+                    const definitive = ['guest_provider_create_failed', 'guest_payment_channel_unavailable', 'guest_payment_provider_not_ready', 'guest_provider_checkout_missing', 'guest_provider_checkout_invalid'].includes(String(error?.code || ''));
                     if (definitive) await releaseCheckoutBatch(batch.id, error.message);
                     throw error;
                 }
             } else {
-                checkout = payment?.provider_metadata ? { provider: payment.provider, channel: payment.channel, ...(payment.provider_metadata || {}), amount: payment.expected_amount, currency: payment.currency } : null;
+                checkout = buildStoredCheckout(
+                    { ...batch, order_no: batch.batch_no },
+                    payment,
+                    { requireOrderScopedZpay: true }
+                );
             }
             const itemPayload = row.items || [];
             const proofExpiresAt = new Date(Date.now() + GUEST_CLAIM_COOKIE_MAX_AGE_SECONDS * 1000).toISOString();
             setClaimProofCookie(req, res, { order_no: row.batch_no, expires_at: proofExpiresAt }, claimSecret, security, env);
-            return sendJson(res, 201, { success: true, batch: { batch_no: row.batch_no, total_amount: row.total_amount, currency: row.currency, expires_at: row.expires_at, payment_status: payment?.status || row.payment_status, items: itemPayload }, order_no: row.batch_no, checkout });
-        } catch (error) { return failResponse(res, error, '购物车结算失败'); }
+            return sendJson(res, 201, {
+                success: true,
+                batch: {
+                    batch_no: batch.batch_no,
+                    total_amount: batch.total_amount,
+                    currency: batch.currency,
+                    expires_at: batch.expires_at,
+                    payment_status: payment?.status || row.payment_status,
+                    payment_pricing: paymentPricing,
+                    items: itemPayload
+                },
+                order_no: batch.batch_no,
+                checkout
+            });
+        } catch (error) {
+            logCheckoutBatchFailure(error);
+            return failResponse(res, error, '购物车结算失败');
+        }
     }
 
     async function checkoutBatchStatus(req, res) {
@@ -1756,28 +1994,66 @@ function createGuestShopHandlers({
             batchClaimSecret(batch, req);
             const db = getSupabase();
             let payment = await loadCheckoutBatchPayment(batch);
-            const expiry = await expireCheckoutBatchIfNeeded(batch, payment);
-            batch = expiry.batch;
-            payment = expiry.payment;
-            if (!expiry.expired && batch.payment_status === 'pending' && ['pending', 'created'].includes(String(payment?.status || '').toLowerCase())) {
-                await attemptGuestCheckoutBatchPaymentStatusQuery({
+            let refresh = null;
+            // Query before expiry: reaching the local deadline is not evidence
+            // that the provider was never paid.
+            if ((batch.payment_status === 'pending' && ['pending', 'created'].includes(String(payment?.status || '').toLowerCase()))
+                || batchConfirmationPending(batch, payment)) {
+                refresh = await attemptGuestCheckoutBatchPaymentStatusQuery({
                     batch,
                     payment,
-                    forceProviderRefresh: forceProviderRefreshRequested(req)
+                    forceProviderRefresh: forceProviderRefreshRequested(req),
+                    // A verified payment awaiting a transient database/RPC
+                    // confirmation must be retryable immediately. The normal
+                    // provider-query throttle applies to unpaid polling, but
+                    // would strand a paid cart behind the reconciliation error.
+                    bypassThrottle: batchConfirmationPending(batch, payment)
                 });
-                batch = await loadCheckoutBatch(batch.batch_no);
+                batch = refresh?.batch || await loadCheckoutBatch(batch.batch_no);
                 payment = await loadCheckoutBatchPayment(batch);
             }
-            if (batch.payment_status === 'confirmed' && batch.fulfillment_status !== 'delivered') {
-                batch = await claimConfirmedCheckoutBatch(batch, db);
+            if (!refresh?.confirmationPending && refresh?.providerChecked
+                && ['pending', 'failed', 'expired', 'cancelled'].includes(refresh.providerStatus)) {
+                const expiry = await expireCheckoutBatchIfNeeded(batch, payment);
+                batch = expiry.batch;
+                payment = expiry.payment;
             }
+            let fulfillmentPending = refresh?.fulfillmentPending === true;
+            if (batch.payment_status === 'confirmed' && batch.fulfillment_status !== 'delivered') {
+                const claimResult = await tryClaimConfirmedCheckoutBatch(batch, db);
+                batch = claimResult.batch;
+                fulfillmentPending = batch.fulfillment_status !== 'delivered'
+                    && (fulfillmentPending || Boolean(claimResult.error));
+            }
+            if (batch.fulfillment_status === 'delivered') fulfillmentPending = false;
             const items = await db.from('guest_shop_checkout_items').select('*').eq('batch_id', batch.id).order('item_index');
             if (items?.error) throw items.error;
             const checkout = batch.payment_status === 'pending' && payment?.status === 'created'
+                && !refresh?.confirmationPending && !batchConfirmationPending(batch, payment)
                 && payment.batch_id === batch.id && payment.merchant_order_no === batch.batch_no
-                ? buildStoredCheckout({ ...batch, order_no: batch.batch_no }, payment, { allowUsd: true })
+                ? buildStoredCheckout({ ...batch, order_no: batch.batch_no }, payment, { requireOrderScopedZpay: true })
                 : null;
-            return sendJson(res, 200, { success: true, order_no: batch.batch_no, site: batch.site, payment_status: batch.payment_status, fulfillment_status: batch.fulfillment_status, refund_status: batch.refund_status, total_amount: batch.total_amount, currency: batch.currency, expires_at: batch.expires_at, fulfilled_at: batch.fulfilled_at, items: items.data || [], checkout });
+            return sendJson(res, 200, {
+                success: true,
+                order_no: batch.batch_no,
+                site: batch.site,
+                payment_status: batch.payment_status,
+                fulfillment_status: batch.fulfillment_status,
+                refund_status: batch.refund_status,
+                last_error_code: refresh?.confirmationPending || batchConfirmationPending(batch, payment)
+                    ? BATCH_CONFIRMATION_FAILED
+                    : (fulfillmentPending ? BATCH_FULFILLMENT_PENDING : null),
+                last_error_message: refresh?.confirmationPending || batchConfirmationPending(batch, payment)
+                    ? BATCH_CONFIRMATION_MESSAGE
+                    : (fulfillmentPending ? BATCH_FULFILLMENT_MESSAGE : null),
+                total_amount: batch.total_amount,
+                currency: batch.currency,
+                payment_pricing: batchPaymentPricingSnapshot(batch, payment),
+                expires_at: batch.expires_at,
+                fulfilled_at: batch.fulfilled_at,
+                items: items.data || [],
+                checkout
+            });
         } catch (error) { return failResponse(res, error, '订单状态查询失败'); }
     }
 
@@ -1795,17 +2071,23 @@ function createGuestShopHandlers({
             const db = getSupabase();
             if (!db?.rpc) throw guestDatabaseUnavailableError();
             let payment = await loadCheckoutBatchPayment(batch);
-            const expiry = await expireCheckoutBatchIfNeeded(batch, payment);
-            const activeBatch = expiry.batch;
-            payment = expiry.payment;
+            const activeBatch = batch;
             if (activeBatch.payment_status === 'expired'
                 && ['guest_checkout_batch_expired', 'guest_checkout_batch_cancelled'].includes(String(activeBatch.last_error_code || '').trim())) {
                 return sendJson(res, 200, { success: true, cancelled: true, expired: true, order_no: activeBatch.batch_no });
             }
-            if (expiry.expired) {
-                return sendJson(res, 200, { success: true, cancelled: true, expired: true, order_no: activeBatch.batch_no });
+            // A verified provider event has already crossed the point where
+            // releasing inventory is safe. Do not query/confirm again from the
+            // cancel button: the status action owns the retry and keeps the
+            // reconciliation attempt available for a transient RPC failure.
+            if (batchConfirmationPending(activeBatch, payment)) {
+                throw new security.GuestShopSecurityError(BATCH_CONFIRMATION_MESSAGE, {
+                    statusCode: 409,
+                    code: BATCH_CONFIRMATION_FAILED
+                });
             }
-            if (activeBatch.payment_status === 'pending' && ['pending', 'created'].includes(String(payment?.status || '').toLowerCase())) {
+            if ((activeBatch.payment_status === 'pending' && ['pending', 'created'].includes(String(payment?.status || '').toLowerCase()))
+                || batchConfirmationPending(activeBatch, payment)) {
                 const refresh = await attemptGuestCheckoutBatchPaymentStatusQuery({
                     batch: activeBatch,
                     payment,
@@ -1819,6 +2101,9 @@ function createGuestShopHandlers({
                         statusCode: 409,
                         code: 'guest_order_not_cancellable'
                     });
+                }
+                if (refresh.confirmationPending || batchConfirmationPending(latestBatch, await loadCheckoutBatchPayment(latestBatch))) {
+                    throw new security.GuestShopSecurityError(BATCH_CONFIRMATION_MESSAGE, { statusCode: 409, code: BATCH_CONFIRMATION_FAILED });
                 }
                 const safeUnpaidStatuses = new Set(['pending', 'failed', 'expired', 'cancelled']);
                 if (refresh.providerChecked !== true || !safeUnpaidStatuses.has(String(refresh.providerStatus || '').toLowerCase())) {
@@ -1838,7 +2123,7 @@ function createGuestShopHandlers({
                 p_reason: 'buyer_cancelled'
             });
             if (result?.error) throw result.error;
-            return sendJson(res, 200, { success: true, cancelled: true, order_no: batch.batch_no });
+            return sendJson(res, 200, { success: true, cancelled: true, expired: true, order_no: batch.batch_no });
         } catch (error) { return failResponse(res, mapGuestCancelOrderError(error), '取消订单失败'); }
     }
 
@@ -1856,12 +2141,22 @@ function createGuestShopHandlers({
             const db = getSupabase();
             const claimed = await db.rpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batch.id });
             if (claimed?.error) throw claimed.error;
+            const rows = Array.isArray(claimed.data) ? claimed.data : [];
+            const guidance = await loadGuestProductGuidance(rows.map((item) => item.product_id), batch.site);
+            const items = rows.map((item) => {
+                const productGuidance = guidance.get(String(item.product_id || '').trim()) || {};
+                return {
+                    ...item,
+                    purchase_notes: productGuidance.purchaseNotes || '',
+                    usage_instructions: productGuidance.usageInstructions || ''
+                };
+            });
             const grouped = {};
-            for (const item of claimed.data || []) {
+            for (const item of items) {
                 const key = `${item.item_index}:${item.product_name}:${item.sku_name}`;
                 (grouped[key] ||= []).push(item.content);
             }
-            return sendJson(res, 200, { success: true, order_no: batch.batch_no, fulfilled_at: batch.fulfilled_at, items: claimed.data || [], fulfillment: Object.entries(grouped).map(([key, content]) => ({ key, content })) });
+            return sendJson(res, 200, { success: true, order_no: batch.batch_no, fulfilled_at: batch.fulfilled_at, items, fulfillment: Object.entries(grouped).map(([key, content]) => ({ key, content })) });
         } catch (error) { return failResponse(res, error, '领取订单失败'); }
     }
 
@@ -1900,15 +2195,59 @@ function createGuestShopHandlers({
         const currencyOk = provider === 'nowpayments'
             ? quote.valid
             : String(normalized?.currency || expectedCurrency).trim().toUpperCase() === expectedCurrency;
-        const valid = verification?.valid === true && isFinalPaymentStatus(observedStatus) && amountOk && currencyOk
+        const binding = expectedAmount && normalized ? security.verifyPaymentBinding({
+            expectedMerchantOrderNo: payment.merchant_order_no,
+            expectedProvider: provider,
+            expectedPurpose: 'shop_direct',
+            expectedSite: payment.site,
+            expectedCurrency,
+            expectedAmountMinor: expectedAmount.minor,
+            received: {
+                merchantOrderNo: normalizeWebhookReference(normalized.merchant_order_no, 200),
+                provider,
+                purpose: normalized.purpose,
+                site: payment.site,
+                currency: expectedCurrency,
+                paidAmount: provider === 'nowpayments' ? expectedAmount.amount : observedAmount,
+                finalStatus: observedStatus
+            }
+        }) : { valid: false };
+        const valid = verification?.valid === true && binding.valid === true && quote.valid === true
+            && isFinalPaymentStatus(observedStatus) && amountOk && currencyOk
             && providerOrderNo && (!payment.provider_order_no || payment.provider_order_no === providerOrderNo);
         if (!valid) return sendJson(res, 202, { success: true, accepted: false });
-        const confirmed = await db.rpc('fn_guest_shop_confirm_checkout_batch_payment', {
-            p_payment_id: payment.id, p_provider: provider, p_provider_order_no: providerOrderNo,
-            p_observed_amount: provider === 'nowpayments' ? payment.expected_amount : observedAmount.amount,
-            p_observed_status: observedStatus
-        });
-        if (confirmed?.error) throw confirmed.error;
+        const digest = crypto.createHash('sha256').update(rawBody || JSON.stringify(payload)).digest('hex');
+        const eventKey = `checkout_batch_webhook:${payment.id}:${digest}`;
+        const inserted = await db.from('guest_shop_payment_events').insert({
+            payment_order_id: null, merchant_order_no: payment.merchant_order_no,
+            provider, event_key: eventKey, provider_order_no: providerOrderNo,
+            event_type: 'checkout_batch_webhook', observed_status: observedStatus,
+            observed_site: payment.site, observed_currency: expectedCurrency,
+            observed_amount: expectedAmount.amount, observed_purpose: 'shop_direct',
+            payload_redacted: { provider, status: observedStatus }, body_sha256: digest,
+            signature_verified: true, amount_verified: true, currency_verified: true,
+            final_status_verified: true, processing_status: 'verified'
+        }).select('id').single();
+        if (inserted?.error && !isUniqueViolation(inserted.error)) throw inserted.error;
+        const existing = inserted?.data ? inserted : await db.from('guest_shop_payment_events')
+            .select('id').eq('provider', provider).eq('event_key', eventKey).maybeSingle();
+        if (existing?.error || !existing?.data?.id) throw webhookError('支付事件记录暂不可用', 'guest_payment_event_unavailable', 503, false);
+        const eventId = existing.data.id;
+        try {
+            const confirmed = await db.rpc('fn_guest_shop_confirm_checkout_batch_payment', {
+                p_payment_id: payment.id, p_provider: provider, p_provider_order_no: providerOrderNo,
+                p_observed_amount: provider === 'nowpayments' ? payment.expected_amount : observedAmount,
+                p_observed_status: observedStatus
+            });
+            if (confirmed?.error) throw confirmed.error;
+        } catch (_) {
+            await recordBatchConfirmationFailure({ id: payment.batch_id }, payment, eventId);
+            return sendJson(res, 503, { success: false, code: BATCH_CONFIRMATION_FAILED, message: BATCH_CONFIRMATION_MESSAGE });
+        }
+        await db.from('guest_shop_payment_events').update({
+            processing_status: 'processed', error_code: null,
+            processed_at: new Date().toISOString(), updated_at: new Date().toISOString()
+        }).eq('id', eventId);
         const batchId = payment.batch_id;
         const claimed = await db.rpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batchId });
         if (claimed?.error && !['guest_order_not_delivered', 'guest_inventory_not_reservable'].includes(String(claimed.error.message || ''))) throw claimed.error;
@@ -2082,7 +2421,8 @@ function createGuestShopHandlers({
             ]),
             inspect: new Set(['checkoutAction']),
             commit: new Set(['checkoutAction', 'intentId', 'email', 'orderPassword']),
-            ack: new Set(['checkoutAction', 'intentId'])
+            ack: new Set(['checkoutAction', 'intentId']),
+            discard: new Set(['checkoutAction', 'intentId'])
         };
         const allowed = fieldsByAction[action];
         for (const field of Object.keys(body || {})) {
@@ -2432,12 +2772,43 @@ function createGuestShopHandlers({
         return sendJson(res, 200, { success: true, acknowledged: true });
     }
 
+    async function discardCheckoutIntent(req, res, body) {
+        const intent = readCheckoutIntent(req);
+        if (!intent) {
+            if (cookieHeaderValue(req, GUEST_CHECKOUT_INTENT_COOKIE_NAME)) clearCheckoutIntentCookie(res);
+            return sendJson(res, 200, { success: true, discarded: true });
+        }
+        assertCheckoutIntentSelector(intent, body.intentId);
+        let order;
+        try {
+            order = await loadOrderForUnknownCreateResume(
+                intent.request.site,
+                intent.idempotencyKey
+            );
+        } catch (_) {
+            throw checkoutIntentError('暂时无法确认原订单，请稍后重试', {
+                statusCode: 503,
+                code: 'guest_checkout_intent_unavailable',
+                expose: false
+            });
+        }
+        if (order) {
+            return sendJson(res, 409, {
+                success: false,
+                code: 'guest_checkout_intent_order_exists',
+                message: '已找到原订单，请点击“确认原订单结果”继续恢复。'
+            });
+        }
+        clearCheckoutIntentCookie(res);
+        return sendJson(res, 200, { success: true, discarded: true });
+    }
+
     function paymentStatusIsTerminal(status) {
         return ['confirmed', 'refunded', 'chargeback', 'expired', 'failed', 'amount_mismatch', 'overpaid', 'partial']
             .includes(String(status || '').trim().toLowerCase());
     }
 
-    function buildStoredCheckout(order, payment) {
+    function buildStoredCheckout(order, payment, { requireOrderScopedZpay = false } = {}) {
         const provider = String(payment?.provider || '').trim().toLowerCase();
         const channel = String(payment?.channel || provider).trim().toLowerCase();
         const metadata = storedPlainObject(payment?.provider_metadata);
@@ -2455,10 +2826,23 @@ function createGuestShopHandlers({
         const amount = amountSnapshot.amount;
 
         if (provider === 'zpay') {
-            const checkoutUrl = storedHttpsUrl(metadata.checkout_url || payment.checkout_reference, env);
-            if (!checkoutUrl) return null;
-            const qrcodeUrl = storedHttpsUrl(metadata.qrcode_url, env) || null;
+            const checkoutCandidate = storedHttpsUrl(metadata.checkout_url || payment.checkout_reference, env);
+            const qrcodeCandidate = storedHttpsUrl(metadata.qrcode_url, env) || null;
+            // A batch response may be reconstructed long after creation. Keep
+            // the same concrete-link check used during creation: stored batch
+            // links came from the current signed payment request and may use
+            // opaque provider tokens rather than exposing an order number.
+            const checkoutUrl = requireOrderScopedZpay
+                && !isOrderScopedZpayCheckoutUrl(checkoutCandidate)
+                ? ''
+                : checkoutCandidate;
+            const qrcodeUrl = requireOrderScopedZpay
+                && !isOrderScopedZpayCheckoutUrl(qrcodeCandidate)
+                ? null
+                : qrcodeCandidate;
             const imageUrl = storedHttpsUrl(metadata.qrcode_image_url, env) || null;
+            if (!checkoutUrl && !qrcodeUrl && (!imageUrl || requireOrderScopedZpay)) return null;
+            const qrcodeImageUrl = requireOrderScopedZpay ? null : imageUrl;
             return {
                 supported: true,
                 provider,
@@ -2469,7 +2853,7 @@ function createGuestShopHandlers({
                 checkout_url: checkoutUrl,
                 payment_url: checkoutUrl,
                 qrcode_url: qrcodeUrl,
-                qrcode_image_url: imageUrl,
+                qrcode_image_url: qrcodeImageUrl,
                 amount,
                 amount_text: amount.toFixed(2),
                 currency,
@@ -2479,7 +2863,7 @@ function createGuestShopHandlers({
                     channel,
                     checkout_url: checkoutUrl,
                     qrcode_url: qrcodeUrl,
-                    qrcode_image_url: imageUrl,
+                    qrcode_image_url: qrcodeImageUrl,
                     amount,
                     currency
                 }
@@ -3131,6 +3515,7 @@ function responseOrder(order, extras = {}) {
                 if (action === 'inspect') return await inspectCheckoutIntent(req, res);
                 if (action === 'prepare') return await prepareCheckoutIntent(req, res, body, orderTtlSeconds);
                 if (action === 'ack') return await acknowledgeCheckoutIntent(req, res, body);
+                if (action === 'discard') return await discardCheckoutIntent(req, res, body);
 
                 // `commit` carries only a public selector plus the current buyer
                 // credentials. The sealed cookie supplies the product/payment
@@ -3735,6 +4120,30 @@ function responseOrder(order, extras = {}) {
         });
     }
 
+    async function loadGuestProductGuidance(productIds = [], site = 'cn') {
+        const ids = [...new Set((Array.isArray(productIds) ? productIds : [])
+            .map((value) => String(value || '').trim())
+            .filter((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)))];
+        if (!ids.length) return new Map();
+        const db = getSupabase();
+        if (!db?.from) return new Map();
+        const guidance = await Promise.all(ids.map(async (id) => {
+            try {
+                const { data, error } = await loadProductGuidanceRow(db, id);
+                if (error) return [id, {}];
+                const payload = buildProductGuidancePayload(data || {}, site);
+                return [id, {
+                    purchaseNotes: payload.purchase_notes || '',
+                    usageInstructions: payload.usage_instructions || ''
+                }];
+            } catch (_) {
+                // Optional guidance must never block delivery of a paid card.
+                return [id, {}];
+            }
+        }));
+        return new Map(guidance);
+    }
+
     async function loadClaimedContent(order) {
         const db = getSupabase();
         if (!db) throw Object.assign(new Error('游客履约数据库不可用'), {
@@ -3773,7 +4182,23 @@ function responseOrder(order, extras = {}) {
             if (!rows.length || contents.some((text) => typeof text !== 'string')) {
                 throw guestInventoryConsistencyError();
             }
-            return contents.length === 1 ? contents[0] : contents.join('\n\n');
+            const guidance = await loadGuestProductGuidance([order.product_id], order.site);
+            const productGuidance = guidance.get(String(order.product_id || '').trim()) || {};
+            const items = rows.map((row) => ({
+                product_id: order.product_id || null,
+                sku_id: order.sku_id || null,
+                product_name: order.snapshot_product_name || '商品',
+                sku_name: order.snapshot_sku_name || '',
+                quantity: 1,
+                content: row.content,
+                purchase_notes: productGuidance.purchaseNotes || '',
+                usage_instructions: productGuidance.usageInstructions || ''
+            }));
+            return {
+                content: contents.length === 1 ? contents[0] : contents.join('\n\n'),
+                items,
+                guidance: productGuidance
+            };
         }
 
         // Keep a compatibility path for thin local/test adapters that do not
@@ -3803,7 +4228,23 @@ function responseOrder(order, extras = {}) {
             }
             contents.push(inventory.data.content);
         }
-        return contents.length === 1 ? contents[0] : contents.join('\n\n');
+        const guidance = await loadGuestProductGuidance([order.product_id], order.site);
+        const productGuidance = guidance.get(String(order.product_id || '').trim()) || {};
+        const items = contents.map((value) => ({
+            product_id: order.product_id || null,
+            sku_id: order.sku_id || null,
+            product_name: order.snapshot_product_name || '商品',
+            sku_name: order.snapshot_sku_name || '',
+            quantity: 1,
+            content: value,
+            purchase_notes: productGuidance.purchaseNotes || '',
+            usage_instructions: productGuidance.usageInstructions || ''
+        }));
+        return {
+            content: contents.length === 1 ? contents[0] : contents.join('\n\n'),
+            items,
+            guidance: productGuidance
+        };
     }
 
     // fn_guest_shop_list_delivered_content reports an undeliverable order as a
@@ -4248,8 +4689,8 @@ function responseOrder(order, extras = {}) {
             if (order.fulfillment_status !== 'delivered' || order.payment_status !== 'confirmed') {
                 return sendJson(res, 409, { success: false, code: 'guest_order_not_delivered', message: '订单尚未完成发货' });
             }
-            const content = await loadClaimedContent(order);
-            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
+            const delivery = await loadClaimedContent(order);
+            return sendJson(res, 200, { success: true, order_no: order.order_no, ...delivery, fulfilled_at: order.fulfilled_at });
         } catch (error) { return failResponse(res, error); }
     }
 
@@ -4681,8 +5122,8 @@ function responseOrder(order, extras = {}) {
                     success: false, code: 'guest_order_not_ready', message: '订单尚未完成发货'
                 });
             }
-            const content = await loadClaimedContent(order);
-            return sendJson(res, 200, { success: true, order_no: order.order_no, content });
+            const delivery = await loadClaimedContent(order);
+            return sendJson(res, 200, { success: true, order_no: order.order_no, ...delivery, fulfilled_at: order.fulfilled_at });
         } catch (error) { return failResponse(res, error); }
     }
 
@@ -4971,6 +5412,10 @@ function responseOrder(order, extras = {}) {
                 payment = await db.from('guest_shop_payment_orders')
                     .select('*').eq('provider', provider).eq('checkout_reference', providerCallbackReference).maybeSingle();
                 if (payment.error) throw payment.error;
+            }
+            if (!payment?.data) {
+                const batchResult = await processCheckoutBatchWebhook({ req, res, provider, payload, rawBody, db, lookupReference });
+                if (batchResult !== false) return batchResult;
             }
             // Merchant-order lookup is not provider-scoped, so a NOWPayments
             // IPN can hit a ZPay row (and vice versa). Binding that row to a

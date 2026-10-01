@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const express = require('express');
 const dotenv = require('dotenv');
 
@@ -22,6 +23,19 @@ const LOCAL_PREVIEW_NO_STORE_EXTENSIONS = new Set([
     '.css',
     '.json'
 ]);
+
+function resolveLocalPreviewSourceCommit(repoRoot) {
+    try {
+        const commit = execFileSync(
+            'git',
+            ['-C', path.resolve(repoRoot), 'rev-parse', 'HEAD'],
+            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+        ).trim();
+        return /^[0-9a-f]{40}$/u.test(commit) ? commit : 'unknown';
+    } catch (_) {
+        return 'unknown';
+    }
+}
 
 function setLocalPreviewNoStoreHeaders(res) {
     if (!res || typeof res.setHeader !== 'function') {
@@ -477,6 +491,7 @@ function createLocalPreviewApp(options = {}) {
     const baseEnv = options.baseEnv || process.env;
     const previewEnv = withLocalPreviewEnvDefaults(loadPreviewEnv(envFiles, baseEnv));
     const smokeResultStore = options.smokeResultStore || createSmokeResultStore();
+    const sourceCommit = resolveLocalPreviewSourceCommit(repoRoot);
 
     applyPreviewEnvToProcess(previewEnv);
 
@@ -516,7 +531,8 @@ function createLocalPreviewApp(options = {}) {
         res.json({
             status: 'ok',
             service: 'local-preview-server',
-            port
+            port,
+            sourceCommit
         });
     });
 
@@ -760,14 +776,17 @@ function createLocalPreviewApp(options = {}) {
 
     return {
         app,
-        port
+        port,
+        sourceCommit
     };
 }
 
 if (require.main === module) {
     const { app, port } = createLocalPreviewApp();
+    const sourceCommit = resolveLocalPreviewSourceCommit(path.resolve(__dirname, '..'));
     const listenHost = resolveLocalPreviewListenHost();
     const onListening = () => {
+        console.log(`[local-preview] source-commit=${sourceCommit}`);
         if (listenHost) {
             console.log(`[local-preview] http://${listenHost}:${port}`);
             return;
@@ -805,6 +824,7 @@ module.exports = {
     neutralizeLocalPreviewProductionRuntime,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,
+    resolveLocalPreviewSourceCommit,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
     shouldCaptureNewApiSupportRawBody,

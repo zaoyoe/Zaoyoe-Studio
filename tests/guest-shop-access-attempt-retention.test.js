@@ -160,7 +160,7 @@ test('worker endpoint fails the credential-on retention-off combination closed w
         assert.equal(body.access_audit_cleanup.error, 'access_audit_retention_required');
         assert.equal(body.access_audit_cleanup.backlog_degraded, true);
     }
-    assert.equal(databaseCalls, 6, 'ordinary fulfillment reads continue, but no retention RPC may run');
+    assert.equal(databaseCalls, 10, 'ordinary fulfillment, batch-expiry, and batch-candidate work continues, but no retention RPC may run');
 });
 
 test('credentials off with retention on drains bounded batches and uses the configured cutoff', async () => {
@@ -263,7 +263,7 @@ test('mid-sweep RPC failure preserves completed work and does not stop order sca
     const summary = await instance.runOnce({ limit: 20, runAccessAuditCleanup: true });
     assert.equal(summary.success, true);
     assert.equal(summary.scanned, 0);
-    assert.equal(orderReads, 2);
+    assert.equal(orderReads, 3);
     assert.equal(summary.access_audit_cleanup.batches, 1);
     assert.equal(summary.access_audit_cleanup.deleted_count, 1000);
     assert.equal(summary.access_audit_cleanup.has_more, true);

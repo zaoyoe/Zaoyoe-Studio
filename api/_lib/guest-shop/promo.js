@@ -257,6 +257,12 @@ const GUEST_INVENTORY_UNAVAILABLE_RESPONSE = Object.freeze({
     message: '库存不足，请稍后再试'
 });
 
+const GUEST_PROMO_SAFETY_LIMIT_RESPONSE = Object.freeze({
+    statusCode: 409,
+    code: 'guest_promo_safety_limit',
+    message: '暂时不能创建订单。这个商品当前可售数量较少，或你还有未支付的游客订单。请稍后再试。'
+});
+
 const GUEST_ORDER_STATE_INVALID_RESPONSE = Object.freeze({
     statusCode: 409,
     code: 'guest_order_state_invalid',
@@ -361,6 +367,8 @@ const GUEST_CREATE_ORDER_ERROR_CONTRACT = Object.freeze({
     guest_inventory_source_invalid: GUEST_INVENTORY_UNAVAILABLE_RESPONSE,
     guest_inventory_source_unavailable: GUEST_INVENTORY_UNAVAILABLE_RESPONSE,
     guest_inventory_source_snapshot_failed: GUEST_INVENTORY_UNAVAILABLE_RESPONSE,
+    guest_stock_hold_limit: GUEST_PROMO_SAFETY_LIMIT_RESPONSE,
+    guest_open_orders_limit: GUEST_PROMO_SAFETY_LIMIT_RESPONSE,
     guest_reservation_count_mismatch: GUEST_ORDER_STATE_INVALID_RESPONSE,
     // Raised by fn_guest_shop_reserve_discount when the order row it was handed
     // does not exist. Unreachable from a well-formed create (the RPC creates the

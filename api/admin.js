@@ -63,6 +63,7 @@ const shopProfitLedgerBackfillHandler = require('../server/api-handlers/admin/sh
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
 const shopGuestOrdersHandler = require('../server/api-handlers/admin/shop/guest-orders');
+const shopGuestOrderSensitiveDetailHandler = require('../server/api-handlers/admin/shop/guest-order-sensitive-detail');
 const shopPromoStatusHandler = require('../server/api-handlers/admin/shop/promo-status');
 // Order Access 2.0 (A3) §10.5: unlock a buyer's login lock, issue/revoke the
 // one-time query-password reset link. Keyed by order_no, never by email.
@@ -197,6 +198,7 @@ const ROUTE_HANDLERS = {
     'shop/delivery-actions': shopDeliveryActionsHandler,
     'shop/delivery-tasks': shopDeliveryTasksHandler,
     'shop/guest-orders': shopGuestOrdersHandler,
+    'shop/guest-order-sensitive-detail': shopGuestOrderSensitiveDetailHandler,
     'shop/promo-status': shopPromoStatusHandler,
     'shop/guest-buyer-access': shopGuestBuyerAccessHandler,
     'shop/delivery-strategy': shopDeliveryTasksHandler,

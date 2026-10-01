@@ -71,7 +71,7 @@ test('public shop catalog normalizes marketing pricing for the requested site', 
     );
     assert.match(
         handlerSource,
-        /normalizeShopCatalogProductForSite[\s\S]*quantity_rules: quantityRules \?\? null,[\s\S]*flash_sale_price: flashSalePrice \?\? null,[\s\S]*flash_sale_end: flashSaleEnd \|\| null/,
+        /normalizeShopCatalogProductForSite[\s\S]*quantity_rules: quantityRules \?\? null,[\s\S]*flash_sale_price: flashSale\.price \?\? null,[\s\S]*flash_sale_start: flashSale\.start \|\| null,[\s\S]*flash_sale_end: flashSale\.end \|\| null/,
         'public catalog should expose normalized marketing fields to the storefront'
     );
     assert.match(

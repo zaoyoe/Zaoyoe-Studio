@@ -11,6 +11,8 @@ const taskboardPath = path.join(repoRoot, 'docs', 'guest-purchase-execution-task
 const archivePath = path.join(repoRoot, 'docs', 'guest-shop-stage5-rollback-archive.md');
 const archiveScriptPath = path.join(repoRoot, 'scripts', 'guest-shop-stage5-archive.js');
 const archiveTestPath = path.join(repoRoot, 'tests', 'guest-shop-stage5-archive.test.js');
+const stageFiveManualPath = path.join(repoRoot, 'docs', 'guest-shop-stage5-remaining-operations-manual.md');
+const stageFiveChecklistPath = path.join(repoRoot, 'docs', 'guest-shop-stage5-external-acceptance-checklist.md');
 
 function read(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -19,7 +21,8 @@ function read(relativePath) {
 function stageFiveSection(plan) {
     const start = plan.indexOf('### 61.21 2026-09-21 阶段 5 有限范围与责任矩阵');
     assert.notEqual(start, -1, 'Task 2.1 must keep the bounded Stage 5 decision section');
-    return plan.slice(start);
+    const nextHeading = plan.indexOf('\n### ', start + 1);
+    return plan.slice(start, nextHeading === -1 ? plan.length : nextHeading);
 }
 
 function tableRows(section) {
@@ -80,4 +83,24 @@ test('Task 2.1 Stage 5 closeout stays bounded and auditable', () => {
     assert.ok(fs.existsSync(archiveScriptPath), 'Stage 5 archive contract implementation must exist');
     assert.ok(fs.existsSync(archiveTestPath), 'Stage 5 archive regression test must exist');
     assert.match(plan, /阶段 5 指定 SKU 运营归档完成/u);
+});
+
+test('Stage 5 acceptance docs follow the current checkout flow and applicability rules', () => {
+    const manual = fs.readFileSync(stageFiveManualPath, 'utf8');
+    const checklist = fs.readFileSync(stageFiveChecklistPath, 'utf8');
+
+    for (const source of [manual, checklist]) {
+        assert.match(source, /适用性分流/u, 'Stage 5 docs must decide applicability before asking for a sample');
+        assert.match(source, /没有单独的「预览」按钮/u, 'Stage 5 docs must describe automatic quote refresh');
+        assert.match(source, /(?:点击|选择).*付款方式.*创建(?:订单|provider order)/u, 'Stage 5 docs must describe payment-method order creation');
+        assert.match(source, /C3[\s\S]{0,240}N\/A/u, 'reader support must stay outside the current Stage 5 gate');
+        assert.match(source, /没有批准.*provider[\s\S]{0,120}N\/A/u, 'provider-dependent checks must have an explicit N/A path');
+        assert.match(source, /重新适用的触发条件|重新打开对应项目/u, 'N/A must not become an unowned permanent TODO');
+        assert.doesNotMatch(source, /^\s*\d+\.\s+.*(?:点击「创建支付订单」|执行 preview)/mu, 'acceptance steps must not require removed controls');
+        assert.match(source, /字段标记.*查询密码|查询密码.*字段标记/u, 'credential steps must follow the current product configuration');
+    }
+
+    assert.match(manual, /「D1-多件原子预占-测试 \/ D1-成功路径」/u);
+    assert.match(manual, /点击「取消订单」/u);
+    assert.match(checklist, /quantity=2[\s\S]{0,180}记 `N\/A`/u);
 });

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const html = fs.readFileSync(path.resolve(__dirname, '../admin-studio.html'), 'utf8');
 const script = fs.readFileSync(path.resolve(__dirname, '../js/admin-shop.js'), 'utf8');
@@ -31,6 +32,62 @@ test('shop admin exposes a guest exception tab with an operations column', () =>
     assert.doesNotMatch(view, /<th>定位<\/th>/);
     assert.match(script, /SHOP_TAB_IDS:\s*\[[\s\S]*?['"]guest-exceptions['"]/);
     assert.match(script, /buildAdminShopUrl\('shop\/guest-orders'/);
+});
+
+test('guest exception layout uses the full table width and constrains long order numbers', () => {
+    const view = guestExceptionViewHtml();
+    assert.match(css, /\.shop-guest-promo-status\s*\{[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*none/);
+    assert.match(css, /\.shop-guest-exceptions-summary\s*\{[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*none/);
+    assert.match(css, /\.shop-guest-exceptions-notice\s*\{[\s\S]*?width:\s*100%[\s\S]*?max-width:\s*none/);
+    assert.match(css, /\.shop-guest-exceptions-table-container\s*\{[\s\S]*?width:\s*100%/);
+    assert.match(css, /\.shop-table--guest-exceptions\s*\{[\s\S]*?table-layout:\s*fixed/);
+    assert.match(css, /\.shop-guest-exception-order-no\s*\{[\s\S]*?max-width:\s*100%[\s\S]*?word-break:\s*break-word/);
+    assert.match(view, /class="shop-table shop-table--orders shop-table--guest-exceptions"/);
+});
+
+test('clearing the guest exception order number removes the previous orderNo filter', async () => {
+    const start = script.indexOf('loadGuestOrderExceptions: async function (');
+    const close = script.indexOf('\n    },', start);
+    assert.ok(start >= 0 && close > start, 'guest exception loader must exist');
+    const methodSource = script.slice(start, close + 6);
+    const elements = new Map([
+        ['guestExceptionsTableBody', { innerHTML: '' }],
+        ['guestExceptionQueryInput', { value: '' }],
+        ['guestExceptionFilter', { value: 'any' }],
+        ['guestExceptionProvider', { value: '' }],
+        ['guestExceptionsNotice', { hidden: false, textContent: '' }],
+        ['guestExceptionsSummary', { textContent: '' }]
+    ]);
+    const requestedParams = [];
+    const document = { getElementById: (id) => elements.get(id) || null };
+    const loader = vm.runInNewContext(`({${methodSource}}).loadGuestOrderExceptions`, {
+        document,
+        GUEST_ORDER_EXCEPTION_KEYS: [],
+        window: { AdminSiteFilter: { getSiteFilter: () => 'cn' } }
+    });
+    const controller = {
+        shopTabLoadGeneration: { 'guest-exceptions': 0 },
+        guestExceptionsRequestToken: 0,
+        guestExceptionsPage: 1,
+        guestExceptionsPageSize: 20,
+        guestExceptionQuery: 'OLD-ORDER-123',
+        guestExceptionFilter: 'any',
+        guestExceptionProvider: '',
+        loadGuestOrdersViaAdminApi: async (params) => {
+            requestedParams.push(params);
+            return { rows: [], count: 0, summary: {} };
+        },
+        renderGuestExceptionRows() {},
+        renderGuestExceptionSummary() {},
+        renderPagination() {},
+        escapeHtml: (value) => String(value)
+    };
+
+    await loader.call(controller, 1);
+
+    assert.equal(controller.guestExceptionQuery, '');
+    assert.equal(requestedParams.length, 1);
+    assert.equal(Object.hasOwn(requestedParams[0], 'orderNo'), false);
 });
 
 test('guest exception UI keeps secrets out of rendering and uses the existing confirm modal', () => {

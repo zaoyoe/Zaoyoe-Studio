@@ -57,10 +57,14 @@ function parseTimestamp(value) {
     return NaN;
 }
 
-function isFlashSaleActive(end, now) {
+function isFlashSaleActive(start, end, now) {
+    const startMs = start == null || start === '' ? null : parseTimestamp(start);
     const endMs = parseTimestamp(end);
     const nowMs = parseTimestamp(now);
-    return Number.isFinite(endMs) && Number.isFinite(nowMs) && endMs > nowMs;
+    return Number.isFinite(endMs)
+        && Number.isFinite(nowMs)
+        && (startMs === null || (Number.isFinite(startMs) && startMs <= nowMs))
+        && endMs > nowMs;
 }
 
 function parseQuantityRules(rules) {
@@ -134,6 +138,7 @@ function resolveGuestCreditUnitAmount(input = {}) {
     let base;
     let quantityRules;
     let flashPrice;
+    let flashStart;
     let flashEnd;
     if (site === 'intl') {
         base = firstPositiveAmount(input.skuPricePointsIntl, input.skuPricePoints);
@@ -143,18 +148,20 @@ function resolveGuestCreditUnitAmount(input = {}) {
         flashPrice = hasIntlFlash
             ? toFiniteNumber(input.productFlashSalePriceIntl)
             : toFiniteNumber(input.productFlashSalePrice);
+        flashStart = hasIntlFlash ? input.productFlashSaleStartIntl : input.productFlashSaleStart;
         flashEnd = hasIntlFlash ? input.productFlashSaleEndIntl : input.productFlashSaleEnd;
     } else {
         base = firstPositiveAmount(input.skuPricePoints);
         quantityRules = cnQuantityRules;
         flashPrice = toFiniteNumber(input.productFlashSalePrice);
+        flashStart = input.productFlashSaleStart;
         flashEnd = input.productFlashSaleEnd;
     }
     if (base === null || base <= 0) return null;
 
     const now = input.now == null ? new Date() : input.now;
 
-    if (isFlashSaleActive(flashEnd, now) && flashPrice !== null) {
+    if (isFlashSaleActive(flashStart, flashEnd, now) && flashPrice !== null) {
         base = Math.min(base, flashPrice);
     } else {
         for (const rule of parseQuantityRules(quantityRules)) {

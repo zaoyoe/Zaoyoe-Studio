@@ -69,8 +69,8 @@ function makeRows(overrides = {}) {
             provider: 'zpay',
             purpose: 'shop_direct',
             provider_order_no: PROVIDER_ORDER_NO,
-            checkout_url: 'https://pay.example.test/checkout',
-            qrcode_url: 'https://pay.example.test/qr',
+            checkout_url: `https://pay.example.test/checkout/${BATCH_NO}`,
+            qrcode_url: `https://pay.example.test/qr/${BATCH_NO}`,
             qrcode_image_url: 'https://pay.example.test/qr.png',
             ...overrides.paymentMetadata
         },
@@ -80,7 +80,7 @@ function makeRows(overrides = {}) {
     return { batch, payment, items };
 }
 
-function createSupabase(rows) {
+function createSupabase(rows, { confirmFailuresRemaining = 0, claimError = null } = {}) {
     const tables = {
         guest_shop_checkout_batches: [rows.batch],
         guest_shop_checkout_payments: [rows.payment],
@@ -116,6 +116,10 @@ function createSupabase(rows) {
             )));
             if (operation === 'insert') {
                 const inserted = (Array.isArray(patch) ? patch : [patch]).map((row) => ({ id: crypto.randomUUID(), ...row }));
+                if (table === 'guest_shop_payment_events' && inserted.some((row) => tableRows.some((current) =>
+                    current.provider === row.provider && current.event_key === row.event_key))) {
+                    return { data: null, error: { code: '23505', message: 'duplicate event key' } };
+                }
                 for (const row of inserted) tableRows.push(row);
                 return { data: inserted, error: null };
             }
@@ -141,6 +145,10 @@ function createSupabase(rows) {
         async rpc(name, args) {
             calls.push({ name, args: clone(args) });
             if (name === 'fn_guest_shop_confirm_checkout_batch_payment') {
+                if (confirmFailuresRemaining > 0) {
+                    confirmFailuresRemaining -= 1;
+                    return { data: null, error: { code: '42702', message: 'column reference payment_status is ambiguous' } };
+                }
                 rows.payment.status = 'confirmed';
                 rows.payment.paid_amount = args.p_observed_amount;
                 rows.payment.provider_order_no = args.p_provider_order_no;
@@ -148,6 +156,9 @@ function createSupabase(rows) {
                 return { data: [{ batch_id: BATCH_ID, batch_no: BATCH_NO, payment_status: 'confirmed' }], error: null };
             }
             if (name === 'fn_guest_shop_claim_checkout_batch') {
+                if (claimError) {
+                    return { data: null, error: { ...claimError } };
+                }
                 rows.batch.fulfillment_status = 'delivered';
                 rows.batch.fulfilled_at = '2026-09-27T00:00:00.000Z';
                 return { data: [], error: null };
@@ -188,9 +199,9 @@ function response() {
     };
 }
 
-function createHandlers({ live, overrides = {} } = {}) {
+function createHandlers({ live, overrides = {}, confirmFailuresRemaining = 0, claimError = null, webhookAdapter = {} } = {}) {
     const rows = makeRows(overrides);
-    const supabase = createSupabase(rows);
+    const supabase = createSupabase(rows, { confirmFailuresRemaining, claimError });
     let providerQueries = 0;
     const handlers = createGuestShopHandlers({
         admin: {
@@ -204,7 +215,8 @@ function createHandlers({ live, overrides = {} } = {}) {
         },
         security,
         paymentAdapter: {
-            async queryGuestPayment() { providerQueries += 1; return clone(live); }
+            async queryGuestPayment() { providerQueries += 1; return clone(live); },
+            ...webhookAdapter
         },
         env: ENV
     });
@@ -238,6 +250,32 @@ function livePayment(overrides = {}) {
     };
 }
 
+function webhookRequest({ amount = '0.03', signature = 'valid-signature' } = {}) {
+    const body = new URLSearchParams({
+        pid: '10001', out_trade_no: BATCH_NO, trade_no: PROVIDER_ORDER_NO,
+        trade_status: 'TRADE_SUCCESS', money: amount, sign_type: 'MD5', sign: signature
+    }).toString();
+    return {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: Buffer.from(body, 'utf8')
+    };
+}
+
+function batchWebhookAdapter() {
+    return {
+        async verifyGuestWebhook({ payload }) { return { valid: payload.sign === 'valid-signature', signature_version: 'MD5' }; },
+        async parseGuestWebhook({ payload }) {
+            return {
+                merchant_order_no: payload.out_trade_no,
+                provider_order_no: payload.trade_no,
+                purpose: 'shop_direct', currency: 'CNY', amount: Number(payload.money),
+                final_status: 'paid'
+            };
+        }
+    };
+}
+
 test('batch status confirms a verified provider payment and claims the whole batch', async () => {
     const fixture = createHandlers({ live: livePayment() });
     const res = response();
@@ -267,6 +305,58 @@ test('batch status leaves an unpaid payment pending and throttles repeated provi
     await fixture.handlers.checkoutBatchStatus(fixture.req(), second);
     assert.equal(second.payload.payment_status, 'pending');
     assert.equal(fixture.providerQueries(), 1);
+});
+
+test('batch status never reconstructs an image-only ZPay checkout', async () => {
+    const fixture = createHandlers({
+        live: livePayment({ status: 'pending', final_status: 'pending' }),
+        overrides: {
+            paymentMetadata: {
+                checkout_url: '',
+                qrcode_url: '',
+                qrcode_image_url: 'https://pay.example.test/shared-loading-image.png'
+            }
+        }
+    });
+
+    const res = response();
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.checkout, null);
+    assert.equal(fixture.providerQueries(), 1);
+});
+
+test('batch status rejects root or local ZPay URLs but replays the stored opaque payment URL', async () => {
+    for (const paymentMetadata of [
+        { checkout_url: 'https://pay.example.test/', qrcode_url: 'https://pay.example.test/' },
+        { checkout_url: 'http://localhost:8000/pay', qrcode_url: 'http://localhost:8000/pay' }
+    ]) {
+        const fixture = createHandlers({
+            live: livePayment({ status: 'pending', final_status: 'pending' }),
+            overrides: { paymentMetadata }
+        });
+        const res = response();
+        await fixture.handlers.checkoutBatchStatus(fixture.req(), res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.payload.checkout, null);
+    }
+
+    const fixture = createHandlers({
+        live: livePayment({ status: 'pending', final_status: 'pending' }),
+        overrides: {
+            paymentMetadata: {
+                checkout_url: 'https://pay.example.test/checkout?token=provider-opaque-token',
+                qrcode_url: 'https://pay.example.test/qr?token=provider-opaque-token'
+            }
+        }
+    });
+    const res = response();
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.checkout?.checkout_url, 'https://pay.example.test/checkout?token=provider-opaque-token');
+    assert.equal(res.payload.checkout?.qrcode_url, 'https://pay.example.test/qr?token=provider-opaque-token');
 });
 
 test('batch status rejects a provider amount mismatch without confirming payment', async () => {
@@ -306,9 +396,9 @@ test('batch cancel releases inventory only after the provider confirms an unpaid
     assert.equal(fixture.supabase.calls.at(-1).name, 'fn_guest_shop_cancel_checkout_batch');
 });
 
-test('batch status expires an unpaid batch before querying the provider', async () => {
+test('batch status checks the provider before expiring an unpaid batch', async () => {
     const fixture = createHandlers({
-        live: livePayment(),
+        live: livePayment({ status: 'pending', final_status: 'pending' }),
         overrides: { batch: { expires_at: '2020-01-01T00:00:00.000Z' } }
     });
     const res = response();
@@ -318,15 +408,15 @@ test('batch status expires an unpaid batch before querying the provider', async 
     assert.equal(res.statusCode, 200);
     assert.equal(res.payload.payment_status, 'expired');
     assert.equal(fixture.rows.payment.status, 'expired');
-    assert.equal(fixture.providerQueries(), 0);
+    assert.equal(fixture.providerQueries(), 1);
     assert.deepEqual(fixture.supabase.calls.map((call) => call.name), [
         'fn_guest_shop_expire_checkout_batches'
     ]);
 });
 
-test('batch cancel treats an expired unpaid batch as safely cancelled', async () => {
+test('batch cancel treats a provider-verified expired unpaid batch as cancelled', async () => {
     const fixture = createHandlers({
-        live: livePayment(),
+        live: livePayment({ status: 'pending', final_status: 'pending' }),
         overrides: { batch: { expires_at: '2020-01-01T00:00:00.000Z' } }
     });
     const res = response();
@@ -337,8 +427,129 @@ test('batch cancel treats an expired unpaid batch as safely cancelled', async ()
     assert.equal(res.payload.cancelled, true);
     assert.equal(res.payload.expired, true);
     assert.equal(fixture.rows.batch.payment_status, 'expired');
-    assert.equal(fixture.providerQueries(), 0);
-    assert.deepEqual(fixture.supabase.calls.map((call) => call.name), [
-        'fn_guest_shop_expire_checkout_batches'
-    ]);
+    assert.equal(fixture.providerQueries(), 1);
+    assert.deepEqual(fixture.supabase.calls.map((call) => call.name), ['fn_guest_shop_cancel_checkout_batch']);
+});
+
+test('paid amount includes the channel fee and can confirm the complete batch', async () => {
+    const fixture = createHandlers({
+        live: livePayment({ amount: 0.03, paid_amount: 0.03 }),
+        overrides: {
+            batch: { total_amount: '0.03' },
+            payment: { expected_amount: '0.03' }
+        }
+    });
+    const res = response();
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), res);
+    assert.equal(res.payload.payment_status, 'confirmed');
+    assert.equal(res.payload.fulfillment_status, 'delivered');
+    assert.equal(fixture.supabase.calls[0].args.p_observed_amount, 0.03);
+    assert.equal(fixture.supabase.tables.guest_shop_payment_events[0].observed_amount, 0.03);
+});
+
+test('a paid batch with a failed confirmation remains protected and can be retried', async () => {
+    // Cancellation must not consume a confirmation retry once a verified
+    // provider event has put the batch into reconciliation review. The next
+    // status query is the single retry that should recover the batch.
+    const fixture = createHandlers({ live: livePayment(), confirmFailuresRemaining: 1 });
+    const first = response();
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), first);
+    assert.equal(first.statusCode, 200);
+    assert.equal(first.payload.payment_status, 'review');
+    assert.equal(first.payload.last_error_code, 'guest_checkout_batch_confirmation_failed');
+    assert.equal(first.payload.checkout, null);
+    assert.equal(fixture.rows.payment.status, 'review');
+    assert.equal(fixture.supabase.tables.guest_shop_payment_events[0].processing_status, 'retry');
+    assert.equal(fixture.supabase.calls.some((call) => call.name === 'fn_guest_shop_expire_checkout_batches'), false);
+
+    const cancelled = response();
+    await fixture.handlers.checkoutBatchCancel(fixture.req('POST', { orderNo: BATCH_NO }), cancelled);
+    assert.equal(cancelled.statusCode, 409);
+    assert.equal(cancelled.payload.code, 'guest_checkout_batch_confirmation_failed');
+    assert.equal(fixture.supabase.calls.some((call) => call.name === 'fn_guest_shop_cancel_checkout_batch'), false);
+
+    const recovered = response();
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), recovered);
+    assert.equal(recovered.payload.payment_status, 'confirmed');
+    assert.equal(recovered.payload.fulfillment_status, 'delivered');
+    assert.equal(fixture.supabase.tables.guest_shop_payment_events[0].processing_status, 'processed');
+});
+
+test('a confirmed payment with a fulfilment RPC failure stays paid and retryable', async () => {
+    const fixture = createHandlers({
+        live: livePayment(),
+        claimError: { code: '57014', message: 'statement timeout' }
+    });
+    const res = response();
+
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.payload.payment_status, 'confirmed');
+    assert.equal(res.payload.fulfillment_status, 'pending');
+    assert.equal(res.payload.last_error_code, 'guest_checkout_batch_fulfillment_pending');
+    assert.equal(res.payload.last_error_message, '支付已确认，正在等待发货处理。请稍后查询，勿重复付款。');
+    assert.equal(fixture.rows.payment.status, 'confirmed');
+    assert.equal(fixture.supabase.calls.filter((call) => call.name === 'fn_guest_shop_claim_checkout_batch').length, 2);
+});
+
+test('a paid provider response cannot be expired solely because the deadline passed', async () => {
+    const fixture = createHandlers({
+        live: livePayment(),
+        overrides: { batch: { expires_at: '2020-01-01T00:00:00.000Z' } }
+    });
+    const res = response();
+    await fixture.handlers.checkoutBatchStatus(fixture.req(), res);
+    assert.equal(res.payload.payment_status, 'confirmed');
+    assert.equal(fixture.supabase.calls.some((call) => call.name === 'fn_guest_shop_expire_checkout_batches'), false);
+});
+
+test('a mismatched provider order reference cannot confirm or authorize cancellation', async () => {
+    const fixture = createHandlers({ live: livePayment({ provider_order_no: 'another-provider-order', status: 'pending', final_status: 'pending' }) });
+    const res = response();
+    await fixture.handlers.checkoutBatchCancel(fixture.req('POST', { orderNo: BATCH_NO }), res);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.payload.code, 'guest_payment_verification_required');
+    assert.equal(fixture.supabase.calls.length, 0);
+});
+
+test('batch webhook confirms the fee-inclusive amount and repeated callbacks are idempotent', async () => {
+    const fixture = createHandlers({
+        live: null,
+        overrides: {
+            batch: { total_amount: '0.03' },
+            payment: { expected_amount: '0.03' }
+        },
+        webhookAdapter: batchWebhookAdapter()
+    });
+    const first = response();
+    await fixture.handlers.webhook(webhookRequest(), first, 'zpay');
+    assert.equal(first.statusCode, 200);
+    assert.equal(first.payload.accepted, true);
+    assert.equal(fixture.supabase.calls[0].args.p_observed_amount, 0.03);
+    assert.equal(fixture.rows.batch.payment_status, 'confirmed');
+    assert.equal(fixture.rows.batch.fulfillment_status, 'delivered');
+    assert.equal(fixture.supabase.tables.guest_shop_payment_events[0].observed_amount, 0.03);
+
+    const repeated = response();
+    await fixture.handlers.webhook(webhookRequest(), repeated, 'zpay');
+    assert.equal(repeated.statusCode, 200);
+    assert.equal(fixture.supabase.tables.guest_shop_payment_events.length, 1);
+});
+
+test('batch webhook rejects a wrong signature or amount without confirming payment', async () => {
+    const fixture = createHandlers({
+        live: null,
+        overrides: { batch: { total_amount: '0.03' }, payment: { expected_amount: '0.03' } },
+        webhookAdapter: batchWebhookAdapter()
+    });
+    for (const request of [webhookRequest({ signature: 'forged' }), webhookRequest({ amount: '0.02' })]) {
+        const res = response();
+        await fixture.handlers.webhook(request, res, 'zpay');
+        assert.equal(res.statusCode, 202);
+        assert.equal(res.payload.accepted, false);
+    }
+    assert.equal(fixture.rows.batch.payment_status, 'pending');
+    assert.equal(fixture.supabase.calls.length, 0);
+    assert.equal(fixture.supabase.tables.guest_shop_payment_events.length, 0);
 });

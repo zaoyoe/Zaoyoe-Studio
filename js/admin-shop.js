@@ -354,6 +354,7 @@ const ShopAdmin = {
     guestExceptionProvider: '',
     guestExceptionQuery: '',
     guestExceptionsRequestToken: 0,
+    guestPromoStatusRequestToken: 0,
     focusedOrderId: '',
     currentOrderDetailId: '',
     orderDetailRequestToken: 0,
@@ -430,11 +431,13 @@ const ShopAdmin = {
         cn: {
             quantityRules: 'quantity_rules',
             flashSalePrice: 'flash_sale_price',
+            flashSaleStart: 'flash_sale_start',
             flashSaleEnd: 'flash_sale_end'
         },
         intl: {
             quantityRules: 'quantity_rules_intl',
             flashSalePrice: 'flash_sale_price_intl',
+            flashSaleStart: 'flash_sale_start_intl',
             flashSaleEnd: 'flash_sale_end_intl'
         }
     },
@@ -3270,6 +3273,292 @@ Example output format:
         return payload;
     },
 
+    loadGuestOrderSensitiveDetail: async function (orderNo) {
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!normalizedOrderNo) throw new Error('缺少游客订单号');
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/guest-order-sensitive-detail', { orderNo: normalizedOrderNo }),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) throw new Error(payload.message || '敏感订单详情加载失败');
+        return payload;
+    },
+
+    renderGuestOrderSensitiveDetail: function (payload = {}) {
+        const escape = (v) => this.escapeHtml(v == null || v === '' ? '—' : String(v));
+        const field = (label, value, tone = '') => `<div class="shop-guest-sensitive-field${tone ? ` shop-guest-sensitive-field--${tone}` : ''}"><span class="shop-guest-sensitive-label">${escape(label)}</span><span class="shop-guest-sensitive-value">${escape(value)}</span></div>`;
+        const order = payload.order || {};
+        const inventories = Array.isArray(payload.inventories) ? payload.inventories : [];
+        const inventory = inventories[0] || null;
+        const inventoryReadError = payload.section_errors?.inventory || '';
+        const reservation = payload.reservation || null;
+        const paymentEventCount = Number.isFinite(payload.payment_event_count) ? payload.payment_event_count : 0;
+        const webhookStatus = payload.webhook_raw_body_status === 'not_saved_hash_only' ? '未保存原文；仅保留脱敏 payload 和 body_sha256' : '已保存';
+        const inventoryCards = inventories.map((item, index) => {
+            const content = String(item?.content || '').trim();
+            const inventoryId = String(item?.id || '').trim();
+            return `<div class="shop-guest-sensitive-inventory">
+                <div class="shop-guest-sensitive-inventory__header"><strong>第 ${index + 1} 张</strong><span>${escape(item?.status)}</span></div>
+                <div class="shop-guest-sensitive-inventory__content">${escape(content)}</div>
+                <div class="shop-guest-sensitive-inventory__actions">
+                    ${inventoryId ? `<button type="button" class="shop-order-detail-inline-btn" data-shop-action="inventory-show-detail" data-inventory-id="${this.escapeForAttr(inventoryId)}">库存详情</button>` : ''}
+                    ${content ? `<button type="button" class="shop-order-detail-inline-btn" data-shop-action="inventory-detail-copy-main" data-content="${this.escapeForAttr(content)}">复制</button>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+        return `<div class="shop-guest-sensitive-panel" data-sensitive-order="${this.escapeForAttr(order.order_no || '')}">
+            <div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-user-shield"></i> 管理员敏感排障信息</div></div>
+            <p class="shop-guest-exception-ops-hint">卡密仅在本次详情会话显示，页面不会保存到本地；只展示当前订单关联的库存内容和必要诊断状态。</p>
+            <div class="shop-guest-sensitive-fields">
+                <div class="shop-guest-sensitive-field shop-guest-sensitive-field--content"><span class="shop-guest-sensitive-label">卡密 / 库存内容</span><div class="shop-guest-sensitive-inventories">${inventoryCards || escape(inventoryReadError ? `库存读取失败：${inventoryReadError}` : '未关联库存')}</div></div>
+                ${field('库存状态', inventories.length ? inventories.map((item) => `${item.status || '—'}${item.is_shared ? ' · 共享库存' : ' · 独占库存'}`).join('；') : (inventoryReadError ? '库存读取失败' : '未关联库存'))}
+                ${field('领取口令明文', order.claim_secret_plaintext_status === 'not_saved_unrecoverable' ? '未保存明文，无法从 claim_secret_hash 恢复' : order.claim_secret_plaintext, 'content')}
+                ${field('claim secret 校验', order.claim_secret_hash_present ? '已保存哈希（不可逆）' : '未保存')}
+                ${field('claim secret 尝试次数', order.claim_attempt_count == null ? '—' : order.claim_attempt_count)}
+                ${field('预占状态', reservation?.status || reservation?.reservation_status || '未关联预占')}
+                ${field('预占库存引用', reservation?.inventory_id || inventory?.id || '—')}
+                ${field('webhook 事件', paymentEventCount ? `${paymentEventCount} 条已记录` : '无记录')}
+                ${field('原始 webhook body', webhookStatus)}
+            </div>
+        </div>`;
+    },
+
+    revealGuestOrderSensitiveDetail: async function (button) {
+        const orderNo = String(button?.dataset?.orderNo || '').trim();
+        if (!orderNo) return;
+        if (!window.confirm('敏感信息包含发货卡密、库存内容及订单领取诊断信息。确认仅为排障目的显示？')) return;
+        button.disabled = true;
+        button.textContent = '正在加载…';
+        try {
+            const payload = await this.loadGuestOrderSensitiveDetail(orderNo);
+            const panel = document.createElement('div');
+            panel.innerHTML = this.renderGuestOrderSensitiveDetail(payload);
+            const target = document.querySelector('#guestExceptionSensitiveDetail');
+            if (target) target.replaceWith(panel.firstElementChild);
+            button.remove();
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = '显示敏感详情';
+            window.alert?.(error?.message || '敏感订单详情加载失败');
+        }
+    },
+
+    openGuestExceptionDetail: async function ({ orderNo } = {}) {
+        const normalizedOrderNo = String(orderNo || '').trim();
+        if (!normalizedOrderNo) return;
+        this.closeDynamicModal('guestExceptionDetailModal');
+        const overlay = document.createElement('div');
+        overlay.id = 'guestExceptionDetailModal';
+        overlay.dataset.shopOverlayClose = 'dynamic-modal';
+        overlay.dataset.modalId = 'guestExceptionDetailModal';
+        overlay.className = 'shop-order-content-overlay';
+        overlay.innerHTML = `<div id="guestExceptionDetailShell" class="shop-order-content-shell">${this.buildGuestExceptionDetailLoadingMarkup(normalizedOrderNo)}</div>`;
+        this.bindOverlayDismiss(overlay, () => this.closeDynamicModal('guestExceptionDetailModal'));
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('is-visible'));
+        try {
+            const payload = await this.loadGuestOrdersViaAdminApi({
+                site: 'all',
+                exception: 'all',
+                orderNo: normalizedOrderNo,
+                page: 1,
+                pageSize: 1
+            });
+            const row = Array.isArray(payload?.rows) ? payload.rows.find((item) => String(item?.order_no || '').trim() === normalizedOrderNo) : null;
+            const shell = overlay.querySelector('#guestExceptionDetailShell');
+            if (shell) shell.innerHTML = row
+                ? this.renderGuestExceptionDetailBody(row)
+                : this.buildGuestExceptionDetailErrorMarkup('未找到该游客订单', normalizedOrderNo);
+        } catch (error) {
+            const shell = overlay.querySelector('#guestExceptionDetailShell');
+            if (shell) shell.innerHTML = this.buildGuestExceptionDetailErrorMarkup(error?.message || '游客订单详情加载失败', normalizedOrderNo);
+        }
+    },
+
+    buildGuestExceptionDetailLoadingMarkup: function (orderNo) {
+        const field = (width) => `<span class="shop-guest-detail-loading__field ${this.getShopSkeletonWidthClass(width)}"></span>`;
+        const section = (kind, count) => `<div class="shop-order-detail-section shop-order-detail-section--${kind}"><div class="shop-guest-detail-loading__fields">${Array.from({ length: count }, (_, index) => field(index % 2 ? '62%' : '84%')).join('')}</div></div>`;
+        return `<div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar shop-guest-detail-loading">
+            <div class="shop-order-content-header shop-order-detail-header"><div><div class="shop-order-detail-eyebrow">Guest Order</div><h3 class="shop-order-content-title">游客订单详情</h3><div class="shop-order-content-meta">订单号：${this.escapeHtml(orderNo)}</div></div>
+            <button type="button" class="shop-order-content-close" data-shop-action="guest-exception-detail-close" aria-label="关闭">&times;</button></div>
+            <div class="shop-order-content-body shop-order-detail-body"><div class="shop-guest-detail-loading__hero">${field('70%')}${field('42%')}</div>
+            <div class="shop-order-detail-grid shop-guest-detail-loading__grid">${section('guest-summary', 6)}${section('guest-payment', 5)}${section('guest-inventory', 4)}${section('guest-timeline', 5)}${section('guest-fulfillment', 6)}${section('profit', 7)}</div></div>
+        </div>`;
+    },
+
+    buildGuestExceptionDetailErrorMarkup: function (message, orderNo) {
+        return `<div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+            <div class="shop-order-content-header shop-order-detail-header"><div><div class="shop-order-detail-eyebrow">Guest Order</div><h3 class="shop-order-content-title">游客订单详情</h3></div>
+            <button type="button" class="shop-order-content-close" data-shop-action="guest-exception-detail-close" aria-label="关闭">&times;</button></div>
+            <div class="shop-order-content-body shop-order-detail-body"><div class="shop-order-detail-empty"><div class="shop-order-detail-empty__title">详情加载失败</div><div class="shop-order-detail-empty__summary">${this.escapeHtml(message || '游客订单详情加载失败')}</div><div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${this.escapeHtml(orderNo)}</code></div></div></div>
+        </div>`;
+    },
+
+    renderGuestOrderFulfillmentSection: function (row = {}) {
+        const value = (v) => this.escapeHtml(v == null || v === '' ? '—' : String(v));
+        const time = (v) => v ? value(new Date(v).toLocaleString('zh-CN')) : '—';
+        const kv = (label, v) => `<div><span>${this.escapeHtml(label)}</span><strong>${v}</strong></div>`;
+        const badge = (label, tone = 'muted') => `<span class="shop-order-detail-badge shop-order-detail-badge--${tone}">${this.escapeHtml(label)}</span>`;
+        const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const reservation = String(row?.reservation_status || '').trim().toLowerCase();
+        const reservationRow = String(row?.reservation_row_status || '').trim().toLowerCase();
+        const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
+        const refund = String(row?.refund_status || '').trim().toLowerCase();
+        const errorCode = row?.last_error_code || row?.payment_last_error_code || '';
+        const errorMessage = row?.last_error_message || row?.payment_last_error_message || '';
+        const recentError = [errorCode, errorMessage].filter((item) => item != null && String(item).trim()).join('：');
+        const pills = [
+            badge(`支付 ${this.formatGuestExceptionStatus(row.payment_status)}`, payment === 'confirmed' ? 'success' : 'warn'),
+            badge(`预占 ${this.formatGuestExceptionStatus(row.reservation_status)}`, reservation === 'consumed' ? 'success' : reservation === 'held' ? 'warn' : 'muted'),
+            badge(`库存行 ${this.formatGuestExceptionStatus(row.reservation_row_status)}`, reservationRow === 'consumed' ? 'success' : reservationRow === 'held' ? 'warn' : 'muted'),
+            badge(`履约 ${this.formatGuestExceptionStatus(row.fulfillment_status)}`, fulfillment === 'delivered' ? 'success' : fulfillment === 'paid_unfulfillable' ? 'danger' : 'warn'),
+            badge(`退款 ${this.formatGuestExceptionStatus(row.refund_status)}`, refund === 'succeeded' ? 'success' : ['failed', 'manual_review'].includes(refund) ? 'danger' : 'muted')
+        ].join('');
+        const actions = `<button type="button" class="guest-exception-copy-order shop-guest-exception-copy-order shop-order-detail-inline-btn" data-shop-action="guest-exception-copy-order" data-order-no="${this.escapeForAttr(row.order_no || '')}" title="复制游客订单号" aria-label="复制游客订单号"><i class="fas fa-copy" aria-hidden="true"></i> 复制订单号</button>${this.renderGuestExceptionWriteButtons(row)}${this.renderGuestBuyerAccessButton(row)}`;
+
+        return `<div class="shop-order-detail-section shop-order-detail-section--guest-fulfillment">
+            <div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-truck-fast"></i> 履约与动作</div></div>
+            <div class="shop-order-detail-hero__pills">${pills || '<span class="shop-order-detail-empty-inline">暂无履约上下文</span>'}</div>
+            <div class="shop-order-detail-kv">
+                ${kv('最近错误', value(recentError))}
+                ${kv('最近更新', time(row.updated_at))}
+                ${kv('发货完成', time(row.fulfilled_at))}
+                ${kv('预占截止', time(row.reserved_until))}
+                ${kv('订单到期', time(row.expires_at))}
+                ${kv('支付记录', value(row.payment_row_status))}
+            </div>
+            <p class="shop-guest-exception-ops-hint">动作仍按二次确认、权限校验和审计流程执行，打开详情不会自动写入订单。</p>
+            <div class="shop-order-detail-inline-actions">${actions}</div>
+        </div>`;
+    },
+
+    renderGuestOrderProfitDetailSection: function (row = {}) {
+        const profit = row?.profit_attribution && typeof row.profit_attribution === 'object'
+            ? row.profit_attribution
+            : (row?.profit && typeof row.profit === 'object' ? row.profit : {});
+        const hasNumber = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+        const firstNumber = (...values) => values.find((value) => hasNumber(value));
+        const currency = String(profit.currency || row.currency || 'CNY').trim().toUpperCase() || 'CNY';
+        const money = (value) => hasNumber(value)
+            ? `${currency} ${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+            : '待核对';
+        const amount = (label, value, detail = '') => `<div><span>${this.escapeHtml(label)}</span><strong>${this.escapeHtml(money(value))}</strong>${detail ? `<em>${this.escapeHtml(detail)}</em>` : ''}</div>`;
+        const revenue = firstNumber(profit.recognized_revenue_amount, profit.recognized_revenue_cny, profit.revenue_cny, row.paid_amount);
+        const gross = firstNumber(profit.gross_amount, profit.gross_amount_cny, profit.gross_revenue_cny, row.total_amount);
+        const expected = firstNumber(row.expected_amount, profit.expected_amount_cny);
+        const discount = firstNumber(profit.discount_cny, profit.discount_amount_cny, row.discount_amount)
+            ?? (hasNumber(gross) && hasNumber(expected) ? Math.max(0, Number(gross) - Number(expected)) : null);
+        const fee = firstNumber(profit.payment_fee_cny, profit.payment_fee_amount, row.payment_fee_amount);
+        const cost = firstNumber(profit.recognized_cost_cny, profit.purchase_cost_cny, profit.inventory_cost_cny, row.purchase_cost_cny,
+            Number(row.quantity || 1) === 1 ? row.inventory_purchase_unit_cost_cny : null);
+        const net = firstNumber(profit.net_profit_cny, profit.gross_profit_cny)
+            ?? (hasNumber(revenue) && hasNumber(cost) ? Number(revenue) - Number(cost) : null);
+        const refunded = ['succeeded', 'refunded', 'full_refund'].includes(String(row.refund_status || '').trim().toLowerCase()) || profit.refunded === true;
+        const tone = refunded ? 'refunded' : (hasNumber(net) && Number(net) < 0 ? 'loss' : hasNumber(net) && Number(net) > 0 ? 'profit' : 'neutral');
+        const coverage = String(profit.cost_coverage || row.cost_coverage || (hasNumber(cost) ? 'complete' : (row.inventory_id ? 'no_cost' : 'no_inventory'))).trim().toLowerCase();
+        const coverageLabel = { complete: '成本完整', partial: '部分缺成本', no_cost: '缺少成本', no_inventory: '未关联库存' }[coverage] || '待核对';
+        const coverageTone = coverage === 'complete' ? 'success' : coverage === 'no_inventory' || coverage === 'no_cost' ? 'warn' : 'neutral';
+        const reconciliation = profit.reconciliation_status || row.reconciliation_status || row.ledger_status || (refunded ? '已退款待对账' : '待核对');
+        const notes = Array.isArray(profit.notes) ? profit.notes.filter(Boolean) : [];
+        if (!notes.length) notes.push(hasNumber(cost) ? '成本已从后台归因字段读取。' : '游客订单摘要未返回采购成本，净利润需在对账数据补齐后确认。');
+        const itemCosts = Array.isArray(profit.item_costs) ? profit.item_costs.filter(Boolean) : [];
+        const itemCostMarkup = itemCosts.length
+            ? `<div class="shop-order-profit-cost-list">${itemCosts.map((item) => `<div class="shop-order-profit-cost-row shop-order-profit-cost-row--${item.cost_status === 'costed' ? 'costed' : 'missing'}"><span>${this.escapeHtml(item.product_name || item.inventory_id || '库存')}</span><strong>${this.escapeHtml(item.cost_status === 'costed' ? money(item.purchase_unit_cost_cny) : '缺成本')}</strong><em>${this.escapeHtml(item.source_batch_id ? `批次 ${item.source_batch_id}` : '未记录批次')}</em></div>`).join('')}</div>`
+            : '';
+
+        return `<div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--profit-${tone}">
+            <div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-scale-balanced"></i> 利润与对账</div><div class="shop-order-detail-hero__pills">${this.renderDeliveryMetaBadge('游客现金订单', 'neutral')}${this.renderDeliveryMetaBadge(coverageLabel, coverageTone)}</div></div>
+            <div class="shop-order-profit-summary">
+                <div class="shop-order-profit-summary__primary shop-order-profit-summary__primary--${tone}"><span>净利润</span><strong>${this.escapeHtml(money(net))}</strong><em>${this.escapeHtml(String(reconciliation))}</em></div>
+                ${amount('确认收入', revenue, `实付 ${money(row.paid_amount)}`)}
+                ${amount('订单应付', expected, `原价 ${money(gross)}`)}
+                ${amount('优惠影响', discount)}
+                ${amount('支付手续费', fee)}
+                ${amount('确认成本', cost)}
+                <div><span>退款影响</span><strong>${refunded ? '已冲销' : '未退款'}</strong><em>${this.escapeHtml(this.formatGuestExceptionStatus(row.refund_status))}</em></div>
+                <div><span>对账状态</span><strong>${this.escapeHtml(String(reconciliation))}</strong><em>${this.escapeHtml(coverageLabel)}</em></div>
+            </div>
+            <div class="shop-order-profit-notes"><div class="shop-order-profit-note">商品毛利为订单估算，不是支付平台的实际结算费或最终净结算额。</div>${notes.map((note) => `<div class="shop-order-profit-note">${this.escapeHtml(note)}</div>`).join('')}</div>
+            ${itemCostMarkup}
+        </div>`;
+    },
+
+    renderGuestOrderRefundTimelineEvent: function (row = {}) {
+        const refund = String(row?.refund_status || '').trim().toLowerCase();
+        const payment = String(row?.payment_status || '').trim().toLowerCase();
+        const fulfillment = String(row?.fulfillment_status || '').trim().toLowerCase();
+        const succeeded = ['succeeded', 'refunded', 'full_refund'].includes(refund);
+        const failed = ['failed', 'manual_review'].includes(refund);
+        const pending = refund === 'pending';
+        if (!succeeded && !failed && !pending && payment !== 'refunded') return '';
+        const tone = succeeded || payment === 'refunded' ? 'success' : failed ? 'danger' : 'warn';
+        const parsedRefundAt = new Date(row?.refunded_at || '');
+        const time = Number.isFinite(parsedRefundAt.getTime())
+            ? parsedRefundAt.toLocaleString('zh-CN')
+            : '退款时间未单独记录';
+        const conflict = failed && payment === 'refunded' ? '支付记录显示已退款，请核对订单退款状态' : '';
+        const label = succeeded || payment === 'refunded' ? '退款' : this.formatGuestExceptionStatus(refund);
+        return `<div class="shop-guest-order-refund-event shop-guest-order-refund-event--${tone}" data-refund-state="${this.escapeForAttr(payment === 'refunded' ? 'refunded' : refund)}">
+            <span>${this.escapeHtml(label)}</span><strong>${this.escapeHtml(time)}</strong>
+            <small>${this.escapeHtml(conflict || (fulfillment === 'delivered' ? '已发货订单' : ''))}</small>
+        </div>`;
+    },
+
+    renderGuestExceptionDetailBody: function (row = {}) {
+        const status = (value) => this.escapeHtml(this.formatGuestExceptionStatus(value));
+        const value = (v) => this.escapeHtml(v == null || v === '' ? '—' : String(v));
+        const time = (v) => v ? value(new Date(v).toLocaleString('zh-CN')) : '—';
+        const amount = (v) => v == null || v === '' ? '—' : value(`${row.currency || ''} ${v}`.trim());
+        const kv = (label, v) => `<div class="shop-order-detail-kv"><span>${this.escapeHtml(label)}</span><strong>${v}</strong></div>`;
+        const badge = (label, tone = 'muted') => `<span class="shop-order-detail-badge shop-order-detail-badge--${tone}">${this.escapeHtml(label)}</span>`;
+        const exception = this.getGuestExceptionMeta(row.exception_key || 'normal');
+        const exceptionTone = exception.tone === 'success' ? 'success' : (exception.tone === 'danger' ? 'danger' : 'warn');
+        const orderContextPills = [
+            badge(`站点 ${String(row.site || '').toUpperCase() || '—'}`, 'neutral'),
+            badge(`数量 ${row.quantity == null ? '—' : row.quantity}`, 'muted'),
+            row.provider ? badge(`通道 ${String(row.provider).toUpperCase()}`, 'processing') : '',
+            row.channel ? badge(`渠道 ${row.channel}`, 'muted') : ''
+        ].filter(Boolean).join('');
+        const verificationPills = [
+            row.sign_verified === true ? badge('签名已校验', 'success') : row.sign_verified === false ? badge('签名未校验', 'danger') : '',
+            row.amount_verified === true ? badge('金额已校验', 'success') : row.amount_verified === false ? badge('金额未校验', 'danger') : '',
+            row.currency_verified === true ? badge('币种已校验', 'success') : row.currency_verified === false ? badge('币种未校验', 'danger') : ''
+        ].filter(Boolean).join('');
+        const verificationGroups = `<div class="shop-order-detail-hero__group shop-order-detail-hero__group--context"><span class="shop-order-detail-hero__group-label">订单环境</span><div class="shop-order-detail-hero__group-pills">${orderContextPills}</div></div><div class="shop-order-detail-hero__group shop-order-detail-hero__group--verification"><span class="shop-order-detail-hero__group-label">支付校验</span><div class="shop-order-detail-hero__group-pills">${verificationPills || badge('暂无校验结果', 'muted')}</div></div>`;
+        const paymentPills = [
+            badge(`支付 ${this.formatGuestExceptionStatus(row.payment_status)}`, row.payment_status === 'confirmed' ? 'success' : 'warn'),
+            badge(`支付记录 ${this.formatGuestExceptionStatus(row.payment_row_status)}`, row.payment_row_status === 'confirmed' ? 'success' : 'muted'),
+            badge(`退款 ${this.formatGuestExceptionStatus(row.refund_status)}`, row.refund_status === 'succeeded' ? 'success' : ['failed', 'manual_review'].includes(String(row.refund_status || '').toLowerCase()) ? 'danger' : 'muted')
+        ].join('');
+        const reservationPills = [
+            badge(`预占 ${this.formatGuestExceptionStatus(row.reservation_status)}`, row.reservation_status === 'consumed' ? 'success' : 'muted'),
+            badge(`预占行 ${this.formatGuestExceptionStatus(row.reservation_row_status)}`, row.reservation_row_status === 'held' ? 'warn' : row.reservation_row_status === 'consumed' ? 'success' : 'muted'),
+            badge(`履约 ${this.formatGuestExceptionStatus(row.fulfillment_status)}`, row.fulfillment_status === 'delivered' ? 'success' : row.fulfillment_status === 'paid_unfulfillable' ? 'danger' : 'warn')
+        ].join('');
+        const errorMarkup = row.last_error_code || row.last_error_message || row.payment_last_error_code || row.payment_last_error_message
+            ? `<div class="shop-order-detail-section shop-order-detail-section--danger"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-triangle-exclamation"></i> 错误与复核信息</div></div>${kv('订单错误码', value(row.last_error_code))}${kv('订单错误说明', value(row.last_error_message))}${kv('支付错误码', value(row.payment_last_error_code))}${kv('支付错误说明', value(row.payment_last_error_message))}${kv('异常分类', value(exception.label))}${kv('分类原因', value(row.exception_reason))}</div>`
+            : '';
+        const fulfillmentMarkup = this.renderGuestOrderFulfillmentSection(row);
+        const profitMarkup = this.renderGuestOrderProfitDetailSection(row);
+        const refundTimelineEvent = this.renderGuestOrderRefundTimelineEvent(row);
+        return `<div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
+            <div class="shop-order-content-header shop-order-detail-header"><div><div class="shop-order-detail-eyebrow">Guest Order</div><h3 class="shop-order-content-title">游客订单详情</h3><div class="shop-order-content-meta">订单号：<code class="shop-order-content-order-id">${value(row.order_no)}</code></div></div><div class="shop-order-detail-inline-actions"><button type="button" class="shop-order-content-close" data-shop-action="guest-exception-detail-close" aria-label="关闭">&times;</button></div></div>
+            <div class="shop-order-content-body shop-order-detail-body">
+                <div class="shop-order-detail-hero"><div><div class="shop-order-detail-hero__title">${value(row.snapshot_product_name || row.product_id)}</div><div class="shop-order-detail-hero__subtitle">${value(row.snapshot_sku_name || row.sku_id)} · ${value(String(row.site || '').toUpperCase())}</div></div><div class="shop-order-detail-hero__pills">${badge(exception.label, exceptionTone)}${verificationGroups}</div></div>
+                <div class="shop-order-detail-grid">
+                    <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-receipt"></i> 订单与金额</div></div>${kv('商品', value(row.snapshot_product_name || row.product_id))}${kv('规格', value(row.snapshot_sku_name || row.sku_id))}${kv('商品 ID', value(row.product_id))}${kv('SKU ID', value(row.sku_id))}${kv('数量', value(row.quantity))}${kv('币种', value(row.currency))}${kv('单价', amount(row.unit_amount))}${kv('订单总额', amount(row.total_amount))}${kv('应付金额', amount(row.expected_amount))}${kv('实付金额', amount(row.paid_amount))}</div>
+                    <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-credit-card"></i> 支付与退款</div></div><div class="shop-order-detail-hero__pills">${paymentPills}</div>${kv('支付平台', value(row.provider))}${kv('支付渠道', value(row.channel))}${kv('支付订单 ID', value(row.payment_order_id))}${kv('支付平台订单号', value(row.provider_order_no))}${kv('最后支付事件', time(row.last_event_at))}</div>
+                    <div class="shop-order-detail-section"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-boxes-stacked"></i> 库存与预占</div></div><div class="shop-order-detail-hero__pills">${reservationPills}</div>${kv('预占 ID', value(row.reservation_id))}${kv('库存引用 ID', value(row.inventory_id))}${kv('预占截止', time(row.reserved_until))}${kv('订单到期', time(row.expires_at))}<p class="shop-guest-exception-ops-hint">库存内容、卡密、claim secret 和 webhook 原文属于敏感排障资料，默认隐藏，需管理员显式确认后按订单加载。</p><div id="guestExceptionSensitiveDetail" class="shop-guest-sensitive-placeholder"><button type="button" class="shop-guest-exception-action shop-guest-exception-action--sensitive shop-order-detail-inline-btn" data-shop-action="guest-exception-sensitive-detail" data-order-no="${this.escapeForAttr(row.order_no || "")}"><i class="fas fa-eye" aria-hidden="true"></i> 显示敏感详情</button></div></div>
+                    <div class="shop-order-detail-section shop-order-detail-section--guest-timeline"><div class="shop-order-detail-section__header"><div class="shop-order-detail-section__title"><i class="fas fa-clock"></i> 时间线</div></div><div class="shop-order-detail-grid shop-order-detail-grid--secondary">${kv('创建', time(row.created_at))}${kv('支付', time(row.paid_at))}${kv('发货', time(row.fulfilled_at))}${kv('最近更新', time(row.updated_at))}${kv('最后事件', time(row.last_event_at))}</div>${refundTimelineEvent}</div>
+                </div>
+                ${errorMarkup}
+                ${fulfillmentMarkup}
+                ${profitMarkup}
+            </div></div>`;
+    },
+
+
     copyGuestExceptionOrder: async function (button) {
         const orderNo = String(button?.dataset?.orderNo || '').trim();
         if (!orderNo) return;
@@ -3948,7 +4237,7 @@ Example output format:
             const site = String(row.site || '').trim().toUpperCase() || '—';
             const amount = row.total_amount == null ? '—' : `${row.currency || ''} ${row.total_amount}`.trim();
             const updated = row.updated_at ? new Date(row.updated_at).toLocaleString('zh-CN') : '—';
-            return `<tr class="shop-order-row shop-guest-exception-row">
+            return `<tr class="shop-order-row shop-guest-exception-row" data-shop-action="guest-exception-row-detail" data-order-no="${this.escapeForAttr(orderNo)}" title="点击查看订单详情">
                 <td data-label="游客订单"><div class="shop-guest-exception-order-no">${this.escapeHtml(orderNo || '—')}</div><div class="shop-guest-exception-muted">游客现金单</div></td>
                 <td data-label="商品 / 站点"><div>${this.escapeHtml(product)}</div><div class="shop-guest-exception-muted">${this.escapeHtml(sku ? `${sku} · ${site}` : site)}</div></td>
                 <td data-label="支付"><div>${this.escapeHtml(this.formatGuestExceptionStatus(row.payment_status))}</div><div class="shop-guest-exception-muted">${this.escapeHtml(amount)}</div></td>
@@ -3969,6 +4258,91 @@ Example output format:
         }).join('');
     },
 
+    formatGuestPromoEventKind: function (kind) {
+        const labels = {
+            amount_mismatch: '金额不匹配',
+            identity_limit_hit: '身份限额命中',
+            budget_exhausted: '预算耗尽',
+            code_exhausted: '券额度耗尽',
+            manual_open: '人工打开熔断',
+            manual_close: '人工关闭熔断',
+            auto_open: '自动打开熔断'
+        };
+        return labels[String(kind || '').trim()] || '未知事件';
+    },
+
+    renderGuestPromoStatus: function (payload) {
+        const message = document.getElementById('guestPromoStatusMessage');
+        const budgetsContainer = document.getElementById('guestPromoStatusBudgets');
+        const eventsContainer = document.getElementById('guestPromoStatusEvents');
+        if (!message || !budgetsContainer || !eventsContainer) return;
+
+        if (!payload?.success || payload.available !== true) {
+            message.textContent = '状态暂不可用；请刷新后重试。';
+            budgetsContainer.innerHTML = '';
+            eventsContainer.textContent = '状态暂不可用';
+            return;
+        }
+
+        const breakerState = payload.breaker?.state === 'open' ? '已打开' : '已关闭';
+        const breakerTone = payload.breaker?.state === 'open' ? 'danger' : 'success';
+        const breakerTime = payload.breaker?.state === 'open' && payload.breaker?.opened_at
+            ? ` · ${new Date(payload.breaker.opened_at).toLocaleString('zh-CN')}`
+            : '';
+        message.innerHTML = `<span class="shop-guest-promo-status-breaker shop-guest-promo-status-breaker--${breakerTone}">促销熔断：${this.escapeHtml(breakerState)}</span><span>预算日期：${this.escapeHtml(payload.budget_date || '—')}</span>${this.escapeHtml(breakerTime)}`;
+
+        const siteLabels = { cn: 'CN', intl: 'INTL' };
+        const budgets = Array.isArray(payload.budgets) ? payload.budgets : [];
+        budgetsContainer.innerHTML = budgets.map((budget) => {
+            const site = String(budget?.site || '').toLowerCase();
+            if (!Object.prototype.hasOwnProperty.call(siteLabels, site)) return '';
+            const enabled = budget.enabled === true ? '已启用' : '已关闭';
+            return `<div class="shop-guest-promo-status-budget"><strong>${siteLabels[site]}</strong><span>状态：${enabled}</span><span>日预算：¥${this.escapeHtml(String(budget.daily_budget_cny ?? '—'))}</span><span>已用：¥${this.escapeHtml(String(budget.spent_cny ?? '—'))}</span><span>剩余：¥${this.escapeHtml(String(budget.remaining_cny ?? '—'))}</span>${budget.stale_date ? '<span class="shop-guest-exception-muted">显示当前预算日口径</span>' : ''}</div>`;
+        }).join('');
+
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        if (!events.length) {
+            eventsContainer.textContent = '最近没有安全事件';
+            return;
+        }
+        eventsContainer.innerHTML = `<ul>${events.map((event) => {
+            const occurredAt = event?.occurred_at ? new Date(event.occurred_at).toLocaleString('zh-CN') : '—';
+            const site = event?.site === 'cn' ? 'CN' : event?.site === 'intl' ? 'INTL' : '全站';
+            return `<li><span>#${this.escapeHtml(String(event?.id ?? '—'))}</span><span>${this.escapeHtml(this.formatGuestPromoEventKind(event?.kind))}</span><span>${site}</span><time>${this.escapeHtml(occurredAt)}</time></li>`;
+        }).join('')}</ul>`;
+    },
+
+    loadGuestPromoStatus: async function () {
+        const token = (this.guestPromoStatusRequestToken || 0) + 1;
+        this.guestPromoStatusRequestToken = token;
+        const message = document.getElementById('guestPromoStatusMessage');
+        const budgets = document.getElementById('guestPromoStatusBudgets');
+        const events = document.getElementById('guestPromoStatusEvents');
+        if (message) message.textContent = '正在读取状态…';
+        if (budgets) budgets.innerHTML = '';
+        if (events) events.textContent = '正在读取…';
+
+        try {
+            const response = await (window.AdminApi?.fetch || fetch)(
+                this.buildAdminShopUrl('shop/promo-status'),
+                { credentials: 'include', cache: 'no-store' }
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (token !== this.guestPromoStatusRequestToken) return { stale: true };
+            if (!response.ok || !payload.success) {
+                this.renderGuestPromoStatus({ success: false, available: false });
+                return { success: false };
+            }
+            this.renderGuestPromoStatus(payload);
+            return payload;
+        } catch (_) {
+            if (token === this.guestPromoStatusRequestToken) {
+                this.renderGuestPromoStatus({ success: false, available: false });
+            }
+            return { success: false };
+        }
+    },
+
     loadGuestOrderExceptions: async function (page = 1, options = {}) {
         const tbody = document.getElementById('guestExceptionsTableBody');
         if (!tbody) return { count: 0, rows: [] };
@@ -3977,7 +4351,7 @@ Example output format:
         const loadGeneration = Number(this.shopTabLoadGeneration['guest-exceptions'] || 0);
         this.guestExceptionsPage = Math.max(1, Number.parseInt(page, 10) || 1);
         const queryInput = document.getElementById('guestExceptionQueryInput');
-        const query = String(options.queryOverride !== undefined ? options.queryOverride : queryInput?.value || this.guestExceptionQuery || '').trim();
+        const query = String(options.queryOverride !== undefined ? options.queryOverride : queryInput ? queryInput.value : this.guestExceptionQuery || '').trim();
         this.guestExceptionQuery = query;
         if (queryInput && queryInput.value !== query) queryInput.value = query;
         const filter = String(options.filterOverride || this.guestExceptionFilter || 'any').trim().toLowerCase();
@@ -4098,9 +4472,11 @@ Example output format:
             return currentCategory;
         }
 
-        const fallbackCategory = String(sortedCategories[0]?.name || '').trim();
-        this.currentCategory = fallbackCategory;
-        return fallbackCategory;
+        // The product workspace opens on the complete catalog. Category-specific
+        // views are opt-in through the filter buttons; defaulting to the first
+        // category hides valid products and breaks the all-products smoke path.
+        this.currentCategory = 'all';
+        return 'all';
     },
 
     syncProductCategoryFilterButtons: function () {
@@ -4714,7 +5090,10 @@ Example output format:
             case 'orders':
                 return this.runShopTabLoader(normalizedTab, () => this.searchOrders(this.ordersPage || 1));
             case 'guest-exceptions':
-                return this.runShopTabLoader(normalizedTab, () => this.loadGuestOrderExceptions(this.guestExceptionsPage || 1));
+                return this.runShopTabLoader(normalizedTab, () => Promise.all([
+                    this.loadGuestOrderExceptions(this.guestExceptionsPage || 1),
+                    this.loadGuestPromoStatus()
+                ]));
             case 'fulfillment':
                 return this.runShopTabLoader(normalizedTab, () => this.loadDeliveryTasks(this.deliveryTaskPage || 1));
             default:
@@ -5342,9 +5721,21 @@ Example output format:
                     this.invalidateShopTabCache('guest-exceptions');
                     this.loadGuestOrderExceptions(this.guestExceptionsPage || 1);
                     break;
+                case 'guest-promo-status-refresh':
+                    void this.loadGuestPromoStatus();
+                    break;
                 case 'guest-exceptions-summary-filter':
                     this.guestExceptionFilter = actionEl.dataset.guestExceptionFilter || 'any';
                     this.loadGuestOrderExceptions(1);
+                    break;
+                case 'guest-exception-row-detail':
+                    void this.openGuestExceptionDetail({ orderNo: actionEl.dataset.orderNo });
+                    break;
+                case 'guest-exception-detail-close':
+                    this.closeDynamicModal('guestExceptionDetailModal');
+                    break;
+                case 'guest-exception-sensitive-detail':
+                    void this.revealGuestOrderSensitiveDetail(actionEl);
                     break;
                 case 'guest-exception-copy-order':
                     void this.copyGuestExceptionOrder(actionEl);
@@ -6110,6 +6501,14 @@ Example output format:
             console.log('Categories for filters:', this.categoryData);
 
             container.innerHTML = '';
+
+            const allButton = document.createElement('button');
+            allButton.className = `filter-tab${this.currentCategory === 'all' ? ' active' : ''}`;
+            allButton.textContent = '全部';
+            allButton.dataset.shopAction = 'product-filter-category';
+            allButton.dataset.category = 'all';
+            container.appendChild(allButton);
+
             const categories = this.getSortedAdminProductCategories(this.categoryData);
             this.normalizeCurrentProductCategory(categories);
 
@@ -8878,11 +9277,19 @@ Example output format:
 
     isAdminProductFlashSaleActive: function (product = {}) {
         const marketingFields = this.getMarketingFieldMap();
-        const flashPrice = Number(product?.[marketingFields.flashSalePrice]);
+        const flashPriceValue = product?.[marketingFields.flashSalePrice];
+        const flashPrice = Number(flashPriceValue);
+        const flashStartValue = product?.[marketingFields.flashSaleStart];
+        const hasFlashStart = flashStartValue !== null && flashStartValue !== undefined && flashStartValue !== '';
+        const flashStartMs = hasFlashStart ? Date.parse(flashStartValue) : null;
         const flashEndMs = Date.parse(product?.[marketingFields.flashSaleEnd] || '');
-        return Number.isFinite(flashPrice)
+        return flashPriceValue !== null
+            && flashPriceValue !== undefined
+            && flashPriceValue !== ''
+            && Number.isFinite(flashPrice)
             && flashPrice >= 0
             && Number.isFinite(flashEndMs)
+            && (!hasFlashStart || (Number.isFinite(flashStartMs) && flashStartMs <= Date.now()))
             && flashEndMs > Date.now();
     },
 
@@ -9778,10 +10185,19 @@ Example output format:
         );
 
         document.getElementById('prodFlashSalePrice').value = data?.[marketingFields.flashSalePrice] != null ? data[marketingFields.flashSalePrice] : '';
+        if (data?.[marketingFields.flashSaleStart]) {
+            const date = new Date(data[marketingFields.flashSaleStart]);
+            document.getElementById('prodFlashSaleStart').value = Number.isFinite(date.getTime())
+                ? new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
+                : '';
+        } else {
+            document.getElementById('prodFlashSaleStart').value = '';
+        }
         if (data?.[marketingFields.flashSaleEnd]) {
             const date = new Date(data[marketingFields.flashSaleEnd]);
-            const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-            document.getElementById('prodFlashSaleEnd').value = localIso;
+            document.getElementById('prodFlashSaleEnd').value = Number.isFinite(date.getTime())
+                ? new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
+                : '';
         } else {
             document.getElementById('prodFlashSaleEnd').value = '';
         }
@@ -10432,6 +10848,7 @@ Example output format:
 
             // Reset marketing fields
             document.getElementById('prodFlashSalePrice').value = '';
+            document.getElementById('prodFlashSaleStart').value = '';
             document.getElementById('prodFlashSaleEnd').value = '';
 
             // Reset delivery fields
@@ -11071,6 +11488,7 @@ Example output format:
                 // Marketing fields
                 [marketingFields.quantityRules]: null,
                 [marketingFields.flashSalePrice]: null,
+                [marketingFields.flashSaleStart]: null,
                 [marketingFields.flashSaleEnd]: null
             };
 
@@ -11117,9 +11535,21 @@ Example output format:
                 payload[marketingFields.flashSalePrice] = parseInt(flashPriceRaw);
             }
 
+            const flashStartRaw = document.getElementById('prodFlashSaleStart').value;
+            if (flashStartRaw) {
+                payload[marketingFields.flashSaleStart] = new Date(flashStartRaw).toISOString();
+            }
+
             const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
             if (flashEndRaw) {
                 payload[marketingFields.flashSaleEnd] = new Date(flashEndRaw).toISOString();
+            }
+
+            if (flashStartRaw && flashEndRaw && new Date(flashStartRaw).getTime() >= new Date(flashEndRaw).getTime()) {
+                const message = '秒杀开始时间必须早于结束时间';
+                failSaveFeedback();
+                this.setProductSaveInlineError(message);
+                return;
             }
 
             try {
@@ -16758,7 +17188,7 @@ Example output format:
             : '<div class="shop-order-profit-note">当前订单暂无额外对账提示。</div>';
 
         return `
-            <div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--profit-${tone}">
+            <div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--point-profit shop-order-detail-section--profit-${tone}">
                 <div class="shop-order-detail-section__header">
                     <div class="shop-order-detail-section__title"><i class="fas fa-scale-balanced"></i> 利润与对账</div>
                     <div class="shop-order-detail-hero__pills">
@@ -17189,7 +17619,7 @@ Example output format:
                     </div>
 
                     <div class="shop-order-detail-grid">
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-inventory">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-boxes-stacked"></i> 库存与内容</div>
                                 <div class="shop-order-detail-inline-actions">
@@ -17204,7 +17634,7 @@ Example output format:
                             <div class="shop-order-content-box shop-order-detail-content-box">${itemsMarkup}</div>
                         </div>
 
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-fulfillment">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-truck-fast"></i> 履约与动作</div>
                             </div>
@@ -17230,7 +17660,7 @@ Example output format:
                     ${profitMarkup}
 
                     <div class="shop-order-detail-grid shop-order-detail-grid--secondary">
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-tickets">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-life-ring"></i> 工单摘要</div>
                                 <div class="shop-order-detail-hero__pills">
@@ -17241,7 +17671,7 @@ Example output format:
                             <div class="shop-order-detail-list">${ticketMarkup}</div>
                         </div>
 
-                        <div class="shop-order-detail-section">
+                        <div class="shop-order-detail-section shop-order-detail-section--point-risk">
                             <div class="shop-order-detail-section__header">
                                 <div class="shop-order-detail-section__title"><i class="fas fa-shield-halved"></i> 风控摘要</div>
                                 <div class="shop-order-detail-hero__pills">

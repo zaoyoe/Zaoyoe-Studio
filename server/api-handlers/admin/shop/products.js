@@ -193,6 +193,8 @@ function getFullSelectAttempts() {
             'usage_instructions_intl_zh',
             'flash_sale_price',
             'flash_sale_price_intl',
+            'flash_sale_start',
+            'flash_sale_start_intl',
             'flash_sale_end',
             'flash_sale_end_intl'
         ].join(', ')
