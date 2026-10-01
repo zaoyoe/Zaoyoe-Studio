@@ -10512,12 +10512,93 @@ body.admin-access-pending,
 
 /* Guest cash-order anomaly queue: visually aligned with the existing shop
    orders/fulfillment surfaces. Write actions reuse the copy-button token. */
+.shop-guest-promo-status {
+    width: 100%;
+    max-width: none;
+    margin: 0 0 16px;
+    padding: 14px;
+    color: var(--admin-studio-text, #dbe7f5);
+    background: rgba(30, 40, 60, 0.42);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+}
+
+.shop-guest-promo-status-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.shop-guest-promo-status-heading h3,
+.shop-guest-promo-status-events h4 {
+    margin: 0;
+}
+
+.shop-guest-promo-status-heading p {
+    margin: 4px 0 0;
+    color: #aebed0;
+    font-size: 0.88rem;
+}
+
+.shop-guest-promo-status-message {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.shop-guest-promo-status-breaker--success { color: #86efac; }
+.shop-guest-promo-status-breaker--danger { color: #fca5a5; }
+
+.shop-guest-promo-status-budgets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+}
+
+.shop-guest-promo-status-budget {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 10px 12px;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 7px;
+    font-size: 0.88rem;
+}
+
+.shop-guest-promo-status-budget strong { width: 100%; color: #fff; }
+
+.shop-guest-promo-status-events { margin-top: 14px; }
+.shop-guest-promo-status-events ul {
+    display: grid;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.shop-guest-promo-status-events li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    color: #cbd5e1;
+    font-size: 0.82rem;
+}
+
+.shop-guest-promo-status-events li span:first-child {
+    color: #94a3b8;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .shop-guest-exceptions-summary {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 10px;
-    margin: 0 auto 16px;
-    max-width: 1060px;
+    width: 100%;
+    max-width: none;
+    margin: 0 0 16px;
 }
 
 .shop-guest-exception-metric {
@@ -10572,9 +10653,14 @@ body.admin-access-pending,
 }
 
 .shop-guest-exception-order-no {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.84rem;
+    line-height: 1.35;
     overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .shop-guest-exception-muted {
@@ -10584,8 +10670,9 @@ body.admin-access-pending,
 }
 
 .shop-guest-exceptions-notice {
-    max-width: 1060px;
-    margin: 0 auto 12px;
+    width: 100%;
+    max-width: none;
+    margin: 0 0 12px;
     padding: 10px 12px;
     border-left: 3px solid #f59e0b;
     color: #fde68a;
@@ -10593,9 +10680,27 @@ body.admin-access-pending,
     font-size: 0.85rem;
 }
 
+.shop-guest-exceptions-table-container {
+    width: 100%;
+    max-width: none;
+}
+
+.shop-table--guest-exceptions {
+    table-layout: fixed;
+}
+
 .shop-table--guest-exceptions th,
 .shop-table--guest-exceptions td {
     vertical-align: top;
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.shop-table--guest-exceptions td > *,
+.shop-table--guest-exceptions th > * {
+    min-width: 0;
+    max-width: 100%;
 }
 
 .shop-table--guest-exceptions th:nth-child(1),
@@ -10957,6 +11062,14 @@ body.admin-access-pending,
 
     .shop-guest-exceptions-search-bar .shop-orders-toolbar-actions {
         justify-content: flex-end;
+    }
+
+    .shop-guest-promo-status-heading {
+        flex-direction: column;
+    }
+
+    .shop-guest-promo-status-heading button {
+        align-self: flex-end;
     }
 
     .shop-guest-exceptions-summary {
@@ -16888,6 +17001,93 @@ html[data-theme="light"] #module-homepage .btn-sm.btn-danger {
     #discountGenerateModal .admin-discount-form-modal__select-dropdown--time {
         width: 100%;
     }
+}
+
+.shop-order-detail-section--point-inventory { --point-detail-accent: 44, 176, 151; }
+.shop-order-detail-section--point-fulfillment { --point-detail-accent: 75, 145, 222; }
+.shop-order-detail-section--point-tickets { --point-detail-accent: 224, 163, 63; }
+.shop-order-detail-section--point-risk { --point-detail-accent: 211, 113, 117; }
+.shop-order-detail-section--point-profit { --point-detail-accent: 105, 170, 123; }
+.shop-order-detail-modal :is(
+    .shop-order-detail-section--point-inventory,
+    .shop-order-detail-section--point-fulfillment,
+    .shop-order-detail-section--point-tickets,
+    .shop-order-detail-section--point-risk,
+    .shop-order-detail-section--point-profit
+) {
+    border-top: 2px solid rgba(var(--point-detail-accent), 0.68);
+}
+html[data-theme="light"] .shop-order-detail-modal :is(
+    .shop-order-detail-section--point-inventory,
+    .shop-order-detail-section--point-fulfillment,
+    .shop-order-detail-section--point-tickets,
+    .shop-order-detail-section--point-risk,
+    .shop-order-detail-section--point-profit
+) {
+    border-top-color: rgba(var(--point-detail-accent), 0.85);
+}
+
+.shop-order-detail-section--guest-summary { border-top: 2px solid #51bca9; }
+.shop-order-detail-section--guest-payment { border-top: 2px solid #6aa8df; }
+.shop-order-detail-section--guest-inventory { border-top: 2px solid #d6aa66; }
+.shop-order-detail-section--guest-timeline { border-top: 2px solid #80b6a0; }
+.shop-order-detail-section--guest-fulfillment { border-top: 2px solid #6aafd4; }
+.shop-order-detail-section--profit:not(.shop-order-detail-section--point-profit) { border-top: 2px solid #9bbd78; }
+
+.shop-guest-detail-loading__hero,
+.shop-guest-detail-loading__fields {
+    display: grid;
+    gap: 12px;
+}
+.shop-guest-detail-loading__hero { margin-bottom: 20px; }
+.shop-guest-detail-loading__field {
+    display: block;
+    height: 16px;
+    max-width: 100%;
+    border-radius: 4px;
+    background: rgba(148, 163, 184, 0.18);
+    animation: shop-guest-detail-pulse 1.4s ease-in-out infinite;
+}
+@keyframes shop-guest-detail-pulse {
+    50% { opacity: 0.48; }
+}
+html[data-theme="light"] .shop-guest-detail-loading__field { background: rgba(71, 85, 105, 0.16); }
+
+.shop-guest-order-refund-event {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+    margin-top: 16px;
+    padding: 12px;
+    border-left: 3px solid currentColor;
+    background: rgba(255, 255, 255, 0.045);
+}
+.shop-guest-order-refund-event--success { color: #69c9a2; }
+.shop-guest-order-refund-event--danger { color: #ed8b86; }
+.shop-guest-order-refund-event--warn { color: #e6c16f; }
+.shop-guest-order-refund-event small { width: 100%; }
+html[data-theme="light"] .shop-guest-order-refund-event--success,
+html:not([data-theme="dark"]) .shop-guest-order-refund-event--success { color: #247e61; }
+html[data-theme="light"] .shop-guest-order-refund-event--danger { color: #af433f; }
+html[data-theme="light"] .shop-guest-order-refund-event--warn { color: #926e23; }
+html[data-theme="light"] .shop-guest-order-refund-event { background: rgba(15, 23, 42, 0.035); }
+
+.shop-guest-sensitive-panel { min-width: 0; color: inherit; }
+.shop-guest-sensitive-fields,
+.shop-guest-sensitive-inventories { display: grid; gap: 12px; min-width: 0; }
+.shop-guest-sensitive-field { min-width: 0; overflow-wrap: anywhere; }
+.shop-guest-sensitive-label { display: block; margin-bottom: 6px; opacity: 0.7; }
+.shop-guest-sensitive-inventory { padding: 12px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 6px; }
+.shop-guest-sensitive-inventory__header,
+.shop-guest-sensitive-inventory__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.shop-guest-sensitive-inventory__header { justify-content: space-between; }
+.shop-guest-sensitive-inventory__content { white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0; }
+html[data-theme="light"] .shop-guest-sensitive-inventory { border-color: rgba(71, 85, 105, 0.25); background: rgba(255, 255, 255, 0.55); }
+
+@media (max-width: 640px) {
+    .shop-guest-detail-loading__grid { grid-template-columns: minmax(0, 1fr); }
+    .shop-guest-sensitive-inventory__actions > button { max-width: 100%; }
 }
 
 @media (max-width: 720px) {
@@ -64584,4 +64784,711 @@ html[data-theme="light"] #module-homepage .hp-support-icon-pill {
         align-items: flex-start;
         flex-direction: column;
     }
+}
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_READABILITY_1
+   Keep status and verification metadata visually grouped instead of rendering
+   as one undifferentiated text run. */
+.shop-guest-promo-status-message {
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid rgba(96, 165, 250, 0.18);
+    border-radius: 10px;
+    background: rgba(96, 165, 250, 0.06);
+}
+
+.shop-guest-promo-status-message > span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    font-weight: 600;
+}
+
+.shop-guest-promo-status-message .shop-guest-promo-status-breaker--success {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(74, 222, 128, 0.28);
+}
+
+.shop-guest-promo-status-message .shop-guest-promo-status-breaker--danger {
+    background: rgba(248, 113, 113, 0.12);
+    border-color: rgba(248, 113, 113, 0.28);
+}
+
+.shop-guest-promo-status-budget {
+    position: relative;
+    gap: 8px;
+    padding: 12px 14px;
+    background: rgba(15, 23, 42, 0.46);
+    border-color: rgba(96, 165, 250, 0.18);
+}
+
+.shop-guest-promo-status-budget strong {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    letter-spacing: 0.04em;
+}
+
+.shop-guest-promo-status-budget span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 3px 8px;
+    border-radius: 7px;
+    background: rgba(148, 163, 184, 0.1);
+    color: #dbeafe;
+}
+
+.shop-guest-promo-status-budget span:nth-of-type(1) { color: #86efac; background: rgba(34, 197, 94, 0.1); }
+.shop-guest-promo-status-budget span:nth-of-type(2),
+.shop-guest-promo-status-budget span:nth-of-type(3),
+.shop-guest-promo-status-budget span:nth-of-type(4) { color: #bfdbfe; }
+
+.shop-order-detail-modal .shop-order-detail-hero {
+    padding: 16px;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(61, 90, 128, 0.28), rgba(30, 41, 59, 0.3));
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__subtitle {
+    margin-top: 6px;
+    color: #bfdbfe;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__pills {
+    align-content: flex-start;
+}
+
+.shop-order-detail-modal .shop-order-detail-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 4px 9px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    color: #dbeafe;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.3;
+}
+
+.shop-order-detail-modal .shop-order-detail-badge--success {
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(74, 222, 128, 0.28);
+}
+
+.shop-order-detail-modal .shop-order-detail-badge--warn,
+.shop-order-detail-modal .shop-order-detail-badge--processing {
+    color: #bfdbfe;
+    background: rgba(96, 165, 250, 0.12);
+    border-color: rgba(96, 165, 250, 0.28);
+}
+
+.shop-order-detail-modal .shop-order-detail-badge--danger {
+    color: #fecaca;
+    background: rgba(248, 113, 113, 0.12);
+    border-color: rgba(248, 113, 113, 0.28);
+}
+
+.shop-order-detail-modal .shop-order-detail-section {
+    border-color: rgba(96, 165, 250, 0.16);
+    box-shadow: 0 8px 22px rgba(2, 8, 23, 0.12);
+}
+
+.shop-order-detail-modal .shop-order-detail-section__title i {
+    color: #7dd3fc;
+}
+
+/* Guest exception detail actions: the detail modal uses text buttons while
+   the table keeps compact icon-only actions at 30px. */
+.shop-order-detail-modal .shop-guest-exception-copy-order,
+.shop-order-detail-modal .shop-guest-exception-action--sensitive {
+    display: inline-flex;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: 34px;
+    padding: 8px 12px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-message,
+html:not([data-theme="dark"]) .shop-guest-promo-status-message {
+    background: #f8fafc;
+    border-color: rgba(59, 130, 246, 0.18);
+}
+
+html[data-theme="light"] .shop-guest-promo-status-message > span,
+html:not([data-theme="dark"]) .shop-guest-promo-status-message > span {
+    background: #eef2f7;
+    border-color: rgba(100, 116, 139, 0.18);
+    color: #334155;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-message .shop-guest-promo-status-breaker--success,
+html:not([data-theme="dark"]) .shop-guest-promo-status-message .shop-guest-promo-status-breaker--success {
+    background: #ecfdf3;
+    border-color: rgba(22, 163, 74, 0.24);
+    color: #15803d;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-budget,
+html:not([data-theme="dark"]) .shop-guest-promo-status-budget {
+    background: #f8fafc;
+    border-color: rgba(59, 130, 246, 0.16);
+}
+
+html[data-theme="light"] .shop-guest-promo-status-budget strong,
+html:not([data-theme="dark"]) .shop-guest-promo-status-budget strong {
+    border-bottom-color: rgba(100, 116, 139, 0.18);
+}
+
+html[data-theme="light"] .shop-guest-promo-status-budget span,
+html:not([data-theme="dark"]) .shop-guest-promo-status-budget span {
+    background: #eef2f7;
+    color: #475569;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-budget span:nth-of-type(1),
+html:not([data-theme="dark"]) .shop-guest-promo-status-budget span:nth-of-type(1) {
+    background: #ecfdf3;
+    color: #15803d;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero {
+    background: linear-gradient(135deg, #eff6ff, #f8fafc);
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__title,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__title {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__subtitle,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__subtitle {
+    color: #475569;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-badge,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-badge {
+    background: #f1f5f9;
+    border-color: rgba(100, 116, 139, 0.2);
+    color: #475569;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-badge--success,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-badge--success {
+    background: #ecfdf3;
+    border-color: rgba(22, 163, 74, 0.24);
+    color: #15803d;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-badge--warn,
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-badge--processing,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-badge--warn,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-badge--processing {
+    background: #eff6ff;
+    border-color: rgba(59, 130, 246, 0.22);
+    color: #1d4ed8;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-badge--danger,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-badge--danger {
+    background: #fef2f2;
+    border-color: rgba(220, 38, 38, 0.2);
+    color: #b91c1c;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-section__title i,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-section__title i {
+    color: #2563eb;
+}
+
+html[data-theme="light"] .shop-guest-promo-status,
+html:not([data-theme="dark"]) .shop-guest-promo-status {
+    color: #334155;
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.1);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+html[data-theme="light"] .shop-guest-promo-status-heading p,
+html:not([data-theme="dark"]) .shop-guest-promo-status-heading p {
+    color: #64748b;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-budget,
+html:not([data-theme="dark"]) .shop-guest-promo-status-budget {
+    background: #f8fafc;
+    border-color: rgba(15, 23, 42, 0.1);
+    color: #475569;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-budget strong,
+html:not([data-theme="dark"]) .shop-guest-promo-status-budget strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-events li,
+html:not([data-theme="dark"]) .shop-guest-promo-status-events li {
+    color: #475569;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-events li span:first-child,
+html:not([data-theme="dark"]) .shop-guest-promo-status-events li span:first-child {
+    color: #64748b;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-breaker--success,
+html:not([data-theme="dark"]) .shop-guest-promo-status-breaker--success {
+    color: #15803d;
+}
+
+html[data-theme="light"] .shop-guest-promo-status-breaker--danger,
+html:not([data-theme="dark"]) .shop-guest-promo-status-breaker--danger {
+    color: #b91c1c;
+}
+
+html[data-theme="light"] .shop-guest-exception-metric,
+html:not([data-theme="dark"]) .shop-guest-exception-metric {
+    color: #334155;
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.1);
+}
+
+html[data-theme="light"] .shop-guest-exception-metric:hover,
+html[data-theme="light"] .shop-guest-exception-metric.is-active,
+html:not([data-theme="dark"]) .shop-guest-exception-metric:hover,
+html:not([data-theme="dark"]) .shop-guest-exception-metric.is-active {
+    background: #f8fafc;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.3);
+}
+
+html[data-theme="light"] .shop-guest-exception-metric strong,
+html:not([data-theme="dark"]) .shop-guest-exception-metric strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .shop-guest-exception-metric--danger strong,
+html:not([data-theme="dark"]) .shop-guest-exception-metric--danger strong,
+html[data-theme="light"] .shop-guest-exception-badge--danger,
+html:not([data-theme="dark"]) .shop-guest-exception-badge--danger {
+    color: #b91c1c;
+}
+
+html[data-theme="light"] .shop-guest-exception-metric--warning strong,
+html:not([data-theme="dark"]) .shop-guest-exception-metric--warning strong,
+html[data-theme="light"] .shop-guest-exception-badge--warning,
+html:not([data-theme="dark"]) .shop-guest-exception-badge--warning {
+    color: #b45309;
+}
+
+html[data-theme="light"] .shop-guest-exception-badge--muted,
+html[data-theme="light"] .shop-guest-exception-metric--muted strong,
+html:not([data-theme="dark"]) .shop-guest-exception-badge--muted,
+html:not([data-theme="dark"]) .shop-guest-exception-metric--muted strong,
+html[data-theme="light"] .shop-guest-exception-muted,
+html:not([data-theme="dark"]) .shop-guest-exception-muted {
+    color: #64748b;
+}
+
+html[data-theme="light"] .shop-guest-exceptions-notice,
+html:not([data-theme="dark"]) .shop-guest-exceptions-notice {
+    color: #92400e;
+    background: #fffbeb;
+    border-left-color: #f59e0b;
+}
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_READABILITY_2
+   Separate order context from payment verification so dense metadata remains
+   scannable on both wide and narrow detail dialogs. */
+.shop-order-detail-modal .shop-order-detail-hero__pills {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px;
+    min-width: min(100%, 420px);
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.18);
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-label {
+    color: #93c5fd;
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__group,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__group {
+    background: rgba(255, 255, 255, 0.72);
+    border-color: rgba(100, 116, 139, 0.2);
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__group-label,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__group-label {
+    color: #2563eb;
+}
+
+@media (max-width: 720px) {
+    .shop-order-detail-modal .shop-order-detail-hero__pills {
+        grid-template-columns: 1fr;
+        min-width: 0;
+    }
+}
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_READABILITY_3
+   Keep the hero metadata as one compact information rail. */
+.shop-order-detail-modal .shop-order-detail-hero {
+    grid-template-columns: minmax(190px, 0.72fr) minmax(0, 1.28fr);
+    gap: 20px;
+    align-items: start;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__pills {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 8px 10px;
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge {
+    grid-column: 1 / -1;
+    justify-self: start;
+    min-height: 28px;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    padding: 7px 9px;
+    border-radius: 10px;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-label {
+    flex: none;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+@media (max-width: 900px) {
+    .shop-order-detail-modal .shop-order-detail-hero {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .shop-order-detail-modal .shop-order-detail-hero__pills {
+        grid-template-columns: 1fr;
+    }
+
+    .shop-order-detail-modal .shop-order-detail-hero__group {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+}
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_READABILITY_4
+   Use the open space below the product title for one left-aligned metadata
+   rail, instead of floating the pills in a detached right column. */
+.shop-order-detail-modal .shop-order-detail-hero {
+    display: block;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero > div {
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    align-content: flex-start;
+    gap: 7px;
+    margin-top: 16px;
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge {
+    flex: 0 0 auto;
+    min-height: 28px;
+    padding: 4px 12px;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    width: fit-content;
+    max-width: 100%;
+    padding: 5px 7px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.16);
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row .shop-order-detail-hero__group-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 10px;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row .shop-order-detail-hero__group-pills {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row .shop-order-detail-badge {
+    min-height: 25px;
+    padding: 3px 8px;
+    font-size: 11px;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__metadata-row,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+    background: rgba(255, 255, 255, 0.64);
+}
+
+@media (max-width: 720px) {
+    .shop-order-detail-modal .shop-order-detail-hero__metadata,
+    .shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+        width: 100%;
+    }
+}
+
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_ORDER_BLUE
+   Match decorative blue accents in the guest order detail to the order number
+   link color while keeping semantic success/error colors unchanged. */
+.shop-order-detail-modal .shop-order-detail-hero {
+    border-color: rgba(96, 165, 250, 0.18);
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.075), rgba(148, 163, 184, 0.035));
+}
+
+.shop-order-detail-modal .shop-order-detail-section__title i,
+.shop-order-detail-modal .shop-order-detail-hero__group-label {
+    color: #60a5fa;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+    border-color: rgba(96, 165, 250, 0.15);
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge--processing {
+    color: #60a5fa;
+    background: rgba(96, 165, 250, 0.09);
+    border-color: rgba(96, 165, 250, 0.2);
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero {
+    border-color: rgba(96, 165, 250, 0.22);
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.055), #f8fafc 72%);
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-section__title i,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-section__title i,
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__group-label,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__group-label {
+    color: #60a5fa;
+}
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_MUTED_ACCENTS
+   Soften decorative blue accents to match the restrained order-status palette. */
+.shop-order-detail-modal .shop-order-detail-hero {
+    border-color: rgba(100, 116, 139, 0.22);
+    background: linear-gradient(135deg, rgba(100, 116, 139, 0.09), rgba(148, 163, 184, 0.035));
+}
+
+.shop-order-detail-modal .shop-order-detail-section__title i,
+.shop-order-detail-modal .shop-order-detail-hero__group-label {
+    color: #7892b2;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+    border-color: rgba(100, 116, 139, 0.2);
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge--processing,
+.shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge--warn {
+    color: #647b98;
+    background: rgba(100, 116, 139, 0.09);
+    border-color: rgba(100, 116, 139, 0.2);
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero {
+    border-color: rgba(100, 116, 139, 0.2);
+    background: linear-gradient(135deg, rgba(148, 163, 184, 0.1), #f8fafc 72%);
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-section__title i,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-section__title i,
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__group-label,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__group-label {
+    color: #71839a;
+}
+
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge--processing,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge--processing,
+html[data-theme="light"] .shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge--warn,
+html:not([data-theme="dark"]) .shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge--warn {
+    color: #64748b;
+    background: #f1f5f9;
+    border-color: rgba(100, 116, 139, 0.18);
+}
+
+/* 20261001_ADMIN_GUEST_EXCEPTION_ELEGANT_PALETTE
+   A restrained mist-blue / mint / coral palette for the guest order detail. */
+.shop-order-detail-modal .shop-order-detail-hero {
+    border-color: rgba(126, 184, 239, 0.28);
+    background: linear-gradient(135deg, rgba(231, 241, 250, 0.92), rgba(248, 250, 252, 0.96));
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-label,
+.shop-order-detail-modal .shop-order-detail-section__title i {
+    color: #6f8eac;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+    border-color: rgba(151, 174, 198, 0.28);
+    background: rgba(255, 255, 255, 0.62);
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge,
+.shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge--warn {
+    color: #61758b;
+    background: #edf3f8;
+    border-color: #d3e0eb;
+}
+
+.shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge--processing {
+    color: #6886a4;
+    background: #eaf2f9;
+    border-color: #c7dced;
+}
+
+.shop-order-detail-modal .shop-order-detail-badge--success {
+    color: #32806b;
+    background: #e8f6f0;
+    border-color: #bfe5d5;
+}
+
+.shop-order-detail-modal .shop-order-detail-badge--danger {
+    color: #c26b68;
+    background: #fff0ef;
+    border-color: #f3c9c5;
+}
+
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-hero {
+    border-color: rgba(126, 184, 239, 0.24);
+    background: linear-gradient(135deg, rgba(38, 55, 72, 0.9), rgba(27, 38, 52, 0.96));
+}
+
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-hero__metadata-row {
+    border-color: rgba(126, 184, 239, 0.18);
+    background: rgba(31, 45, 60, 0.72);
+}
+
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge,
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-hero__pills > .shop-order-detail-badge--warn {
+    color: #b5c9dc;
+    background: rgba(126, 154, 181, 0.16);
+    border-color: rgba(160, 184, 207, 0.24);
+}
+
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-hero__group-pills .shop-order-detail-badge--processing {
+    color: #a9c8e5;
+    background: rgba(126, 184, 239, 0.14);
+    border-color: rgba(126, 184, 239, 0.28);
+}
+
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-badge--success {
+    color: #9ed8c2;
+    background: rgba(82, 176, 143, 0.16);
+    border-color: rgba(103, 205, 166, 0.28);
+}
+
+html[data-theme="dark"] .shop-order-detail-modal .shop-order-detail-badge--danger {
+    color: #f0aaa4;
+    background: rgba(214, 111, 104, 0.15);
+    border-color: rgba(240, 145, 137, 0.28);
 }

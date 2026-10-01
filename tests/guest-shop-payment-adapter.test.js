@@ -212,6 +212,117 @@ test('ZPay checkout uses immutable server amount and excludes claim/user metadat
     assert.equal(form.get('param').includes('points'), false);
 });
 
+test('ZPay never treats an image field or gateway origin as the payment QR payload', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        payurl: 'https://zpayz.cn/pay/checkout?id=real-order',
+        img: 'https://zpayz.cn/static/qr-placeholder.png'
+    }));
+    const result = await adapter.createGuestPayment({
+        order: makeOrder(),
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        amount: '12.34',
+        allowedChannels: ['zpay']
+    });
+
+    assert.equal(result.checkout_url, 'https://zpayz.cn/pay/checkout?id=real-order');
+    assert.equal(result.qrcode_url, 'https://zpayz.cn/pay/checkout?id=real-order');
+    assert.equal(result.qrcode_image_url, 'https://zpayz.cn/static/qr-placeholder.png');
+    assert.notEqual(result.checkout_url, 'https://zpayz.cn');
+});
+
+test('ZPay keeps an image-looking payurl as the order payment URL for local QR generation', async () => {
+    const paymentUrl = 'https://zpayz.cn/pay/order/GS-IMAGE-LOOKING.png?token=order-specific';
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        payurl: paymentUrl,
+        img: 'https://zpayz.cn/static/qr-placeholder.png'
+    }));
+    const result = await adapter.createGuestPayment({
+        order: makeOrder(),
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        amount: '12.34',
+        allowedChannels: ['zpay']
+    });
+
+    assert.equal(result.checkout_url, paymentUrl);
+    assert.equal(result.qrcode_url, paymentUrl);
+    assert.equal(result.qrcode_image_url, 'https://zpayz.cn/static/qr-placeholder.png');
+});
+
+test('ZPay can display an image-only response without encoding the image URL as a QR', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        img: 'https://zpayz.cn/static/qr.png'
+    }));
+    const result = await adapter.createGuestPayment({
+        order: makeOrder(),
+        provider: 'zpay',
+        channel: 'alipay',
+        site: 'cn',
+        amount: '12.34',
+        allowedChannels: ['zpay']
+    });
+
+    assert.equal(result.checkout_url, '');
+    assert.equal(result.qrcode_url, null);
+    assert.equal(result.qrcode_image_url, 'https://zpayz.cn/static/qr.png');
+});
+
+test('ZPay batch checkout rejects an image-only response before it can be rendered as a QR', async () => {
+    const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        img: 'https://zpayz.cn/static/qr.png'
+    }));
+
+    await assert.rejects(
+        () => adapter.createGuestPayment({
+            order: makeOrder(),
+            provider: 'zpay',
+            channel: 'alipay',
+            site: 'cn',
+            amount: '12.34',
+            allowedChannels: ['zpay'],
+            requireOrderScopedCheckout: true
+        }),
+        (error) => error?.code === 'guest_provider_checkout_invalid'
+    );
+});
+
+test('ZPay batch checkout rejects generic or local URLs and accepts an opaque cashier payment URL', async () => {
+    for (const responsePayload of [
+        { code: 1, payurl: 'http://localhost:8000/' },
+        { code: 1, qrcode: 'https://zpayz.cn/' }
+    ]) {
+        const adapter = makeAdapter(zpayConfig(), { zpay_pkey: ZPAY_SECRET }, async () => responseJson(responsePayload));
+        await assert.rejects(
+            () => adapter.createGuestPayment({
+                order: makeOrder(), provider: 'zpay', channel: 'alipay', site: 'cn',
+                amount: '12.34', allowedChannels: ['zpay'], requireOrderScopedCheckout: true
+            }),
+            (error) => error?.code === 'guest_provider_checkout_invalid'
+        );
+    }
+
+    const order = makeOrder({ order_no: 'GCB-20260929010420-7E3E7BC2EDF8' });
+    const checkoutUrl = 'https://cashier.zpayz.cn/pay/checkout?token=opaque-provider-token';
+    const adapter = makeAdapter(zpayConfig({ checkout_url: 'https://gateway.zpayz.cn' }), { zpay_pkey: ZPAY_SECRET }, async () => responseJson({
+        code: 1,
+        payurl: checkoutUrl
+    }));
+    const result = await adapter.createGuestPayment({
+        order, provider: 'zpay', channel: 'alipay', site: 'cn', amount: '12.34',
+        allowedChannels: ['zpay'], requireOrderScopedCheckout: true
+    });
+    assert.equal(result.checkout_url, checkoutUrl);
+    assert.equal(result.qrcode_url, checkoutUrl);
+    assert.equal(result.qrcode_image_url, null);
+});
+
 test('trusted guest amount prefers expected_amount over catalog total_amount', () => {
     const payable = getTrustedOrderAmount({
         expected_amount: '12.47',

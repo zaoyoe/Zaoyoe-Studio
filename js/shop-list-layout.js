@@ -9,6 +9,7 @@
     const state = {
         view: 'list',
         query: '',
+        gridQuery: '',
         layoutMode: 'desktop',
         pendingAnimate: false,
         hooked: false,
@@ -31,6 +32,10 @@
 
     function shopClient() {
         return window.ShopClient || null;
+    }
+
+    function normalizeSite(value) {
+        return String(value || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
     }
 
     function prefersReducedMotion() {
@@ -237,18 +242,23 @@
             });
     }
 
+    function filterSearchProducts(products, searchQuery = state.query) {
+        const shop = shopClient();
+        const query = String(searchQuery || '').trim().toLowerCase();
+        const catalog = Array.isArray(products) ? products : [];
+        if (!shop || !query) return catalog;
+        return catalog.filter((product) => {
+            const name = typeof shop.getLocalizedProductName === 'function' ? shop.getLocalizedProductName(product) : (product?.name || '');
+            const desc = typeof shop.getLocalizedProductDescription === 'function' ? shop.getLocalizedProductDescription(product) : (product?.description || '');
+            const category = getCategoryLabel(product?.category);
+            return `${name} ${desc} ${category}`.toLowerCase().includes(query);
+        });
+    }
+
     function getVisibleProducts() {
         const shop = shopClient();
         if (!shop) return [];
-        const query = state.query.trim().toLowerCase();
-        if (query) {
-            return getAllProducts().filter((product) => {
-                const name = typeof shop.getLocalizedProductName === 'function' ? shop.getLocalizedProductName(product) : (product?.name || '');
-                const desc = typeof shop.getLocalizedProductDescription === 'function' ? shop.getLocalizedProductDescription(product) : (product?.description || '');
-                const category = getCategoryLabel(product?.category);
-                return `${name} ${desc} ${category}`.toLowerCase().includes(query);
-            });
-        }
+        if (state.query.trim()) return filterSearchProducts(getAllProducts());
         const category = String(shop.currentCategory || '').trim();
         if (typeof shop.getCachedProductsForCategory === 'function') {
             const cached = shop.getCachedProductsForCategory(category);
@@ -261,6 +271,7 @@
         const shop = shopClient();
         const products = getVisibleProducts();
         if (products.length) return false;
+        if (state.query.trim() && Array.isArray(shop?.allProductsCache)) return false;
         const grid = document.getElementById('userShopGrid');
         if (grid?.querySelector('.shop-card[data-product-id]')) return false;
         if (grid?.querySelector('.skeleton-card, .skeleton')) return true;
@@ -322,10 +333,11 @@
         return Boolean(tiered?.lowestRule);
     }
 
-    function listChipsMarkup(product, fulfillment, pricingState) {
+    function listChipsMarkup(product, fulfillment, pricingState, priceMarkup = '') {
         const shop = shopClient();
         if (shop && typeof shop.buildShopProductCardChipsMarkup === 'function') {
-            return shop.buildShopProductCardChipsMarkup(product, fulfillment, pricingState);
+            const chipsMarkup = shop.buildShopProductCardChipsMarkup(product, fulfillment, pricingState);
+            return chipsMarkup.replace('<div class="list-chips">', `<div class="list-chips">${priceMarkup}`);
         }
         const labels = copy();
         const stock = listStockMeta(product, fulfillment);
@@ -341,7 +353,7 @@
         chips.push(fulfillment.manualDelivery
             ? `<span class="list-chip list-chip--online">${escapeHtml(labels.online)}</span>`
             : `<span class="list-chip list-chip--auto">${escapeHtml(labels.auto)}</span>`);
-        return `<div class="list-chips">${chips.join('')}</div>`;
+        return `<div class="list-chips">${priceMarkup}${chips.join('')}</div>`;
     }
 
     window.ShopListLayout = Object.assign(window.ShopListLayout || {}, {
@@ -466,7 +478,7 @@
                         ${categoryChip}
                         <strong>${escapeHtml(displayName)}</strong>
                         <p>${escapeHtml(displayDesc || '')}</p>
-                        ${listChipsMarkup(product, fulfillment, pricingState)}
+                        ${listChipsMarkup(product, fulfillment, pricingState, `<div class="list-price list-price--inline list-chip list-chip--price"><span class="list-price__symbol" aria-hidden="true">￥</span><span class="list-price__value">${escapeHtml(priceValue)}</span></div>`)}
                     </div>
                 </div>
                 <div class="list-metrics">
@@ -489,6 +501,24 @@
         };
         setListDrawer(false);
         const open = async () => {
+            // The public shop has two order-query experiences. Resolve the
+            // browser session at click time so a signed-out visitor never gets
+            // sent into the wallet modal (which can only serve point orders).
+            let session = null;
+            try {
+                const client = window.supabaseClient || window.supabase;
+                if (client?.auth?.getSession) {
+                    const result = await client.auth.getSession();
+                    session = result?.data?.session || null;
+                }
+            } catch (error) {
+                console.warn('[ShopListLayout] Failed to resolve auth state:', error?.message || error);
+            }
+            if (!session?.access_token) {
+                const site = normalizeSite(window.ShopClient?.currentSite || new URL(window.location.href).searchParams.get('site') || 'cn');
+                window.location.assign(`/guest-orders.html?site=${encodeURIComponent(site)}`);
+                return;
+            }
             let walletModal = null;
             if (typeof window.ZaoyoeWalletModalBootstrap?.open === 'function') {
                 walletModal = await window.ZaoyoeWalletModalBootstrap.open('orders', context);
@@ -521,11 +551,10 @@
         if (desktopTitle) desktopTitle.textContent = title || labels.catalog;
     }
 
-    function syncListIndicator({ animate = false } = {}) {
-        const listFilters = $('#listCategoryFilters');
-        if (!listFilters) return;
-        const indicator = listFilters.querySelector('.list-aside__indicator');
-        const active = listFilters.querySelector('.filter-tab.active');
+    function syncCategoryIndicator(container, { animate = false } = {}) {
+        if (!container) return;
+        const indicator = container.querySelector('.list-aside__indicator');
+        const active = container.querySelector('.filter-tab.active');
         if (!indicator || !active) return;
         const top = active.offsetTop;
         const height = active.offsetHeight;
@@ -541,49 +570,95 @@
         indicator.dataset.placed = '1';
     }
 
+    function syncListIndicator(options = {}) {
+        syncCategoryIndicator($('#listCategoryFilters'), options);
+    }
+
+    function syncGridIndicator(options = {}) {
+        syncCategoryIndicator($('#shopCategoryFilters'), options);
+    }
+
     function ensureListIndicatorObserver() {
         const listFilters = $('#listCategoryFilters');
-        if (!listFilters || listFilters.dataset.observed === '1') return;
-        listFilters.dataset.observed = '1';
-        if (typeof ResizeObserver !== 'function') return;
-        indicatorObserver = new ResizeObserver(() => syncListIndicator({ animate: false }));
-        indicatorObserver.observe(listFilters);
+        const gridFilters = $('#shopCategoryFilters');
+        if (listFilters) listFilters.dataset.observed = '1';
+        if (gridFilters) gridFilters.dataset.indicatorObserved = '1';
+        if (typeof ResizeObserver !== 'function' || indicatorObserver) return;
+        indicatorObserver = new ResizeObserver(() => {
+            syncListIndicator({ animate: false });
+            syncGridIndicator({ animate: false });
+        });
+        if (listFilters) indicatorObserver.observe(listFilters);
+        if (gridFilters) indicatorObserver.observe(gridFilters);
+    }
+
+    function syncCategoryTab(tab, entry, current) {
+        if (!tab || !entry) return;
+        const isActive = entry.name === current;
+        tab.className = `filter-tab${isActive ? ' active' : ''}`;
+        tab.type = 'button';
+        tab.dataset.shopCategory = entry.name;
+        tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+
+        let label = tab.querySelector('[data-list-category-label]');
+        let count = tab.querySelector('[data-list-category-count]');
+        if (!label || !count || tab.children.length !== 2) {
+            label = document.createElement('span');
+            label.dataset.listCategoryLabel = '';
+            count = document.createElement('span');
+            count.className = 'count';
+            count.dataset.listCategoryCount = '';
+            tab.replaceChildren(label, count);
+        }
+        label.textContent = entry.label;
+        count.textContent = String(countProductsInCategory(entry.name));
+    }
+
+    function renderCategoryContainer(container, entries, current, { withIndicator = false } = {}) {
+        if (!container) return;
+        const existingTabs = $all('.filter-tab[data-shop-category]', container);
+        const canPatchInPlace = entries.length > 0
+            && existingTabs.length === entries.length
+            && existingTabs.every((tab, index) => tab.dataset.shopCategory === entries[index].name)
+            && (withIndicator ? Boolean(container.querySelector('.list-aside__indicator')) : !container.querySelector('.list-aside__indicator'));
+
+        if (canPatchInPlace) {
+            existingTabs.forEach((tab, index) => syncCategoryTab(tab, entries[index], current));
+            return;
+        }
+
+        container.innerHTML = (withIndicator ? '<span class="list-aside__indicator" aria-hidden="true"></span>' : '') + entries.map((entry) => {
+            const isActive = entry.name === current;
+            return `<button class="filter-tab${isActive ? ' active' : ''}" type="button" data-shop-category="${escapeAttribute(entry.name)}" aria-pressed="${isActive ? 'true' : 'false'}">
+                <span data-list-category-label>${escapeHtml(entry.label)}</span>
+                <span class="count" data-list-category-count>${countProductsInCategory(entry.name)}</span>
+            </button>`;
+        }).join('');
     }
 
     function renderFilters({ animateListIndicator = false } = {}) {
         const listFilters = $('#listCategoryFilters');
+        const gridFilters = $('#shopCategoryFilters');
         const shop = shopClient();
-        if (!listFilters || !shop) return;
+        if ((!listFilters && !gridFilters) || !shop) return;
         const entries = getCategoryEntries();
-        const current = String(shop.currentCategory || '');
-        const existingTabs = $all('.filter-tab[data-shop-category]', listFilters);
-        const canPatchInPlace = entries.length > 0
-            && existingTabs.length === entries.length
-            && existingTabs.every((tab, index) => tab.dataset.shopCategory === entries[index].name);
-
-        if (canPatchInPlace) {
-            existingTabs.forEach((tab, index) => {
-                const entry = entries[index];
-                const isActive = entry.name === current;
-                tab.classList.toggle('active', isActive);
-                tab.dataset.shopCategory = entry.name;
-                tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-                const label = tab.querySelector('[data-list-category-label]');
-                const count = tab.querySelector('[data-list-category-count]');
-                if (label) label.textContent = entry.label;
-                if (count) count.textContent = String(countProductsInCategory(entry.name));
-            });
-        } else {
-            listFilters.innerHTML = '<span class="list-aside__indicator" aria-hidden="true"></span>' + entries.map((entry) => {
-                const isActive = entry.name === current;
-                return `<button class="filter-tab${isActive ? ' active' : ''}" type="button" data-shop-category="${escapeAttribute(entry.name)}" aria-pressed="${isActive ? 'true' : 'false'}">
-                    <span data-list-category-label>${escapeHtml(entry.label)}</span>
-                    <span class="count" data-list-category-count>${countProductsInCategory(entry.name)}</span>
-                </button>`;
-            }).join('');
+        if (!entries.length) {
+            if (listFilters && !listFilters.querySelector('.list-aside__indicator')) {
+                listFilters.innerHTML = '<span class="list-aside__indicator" aria-hidden="true"></span>';
+            }
+            return;
         }
+        const current = typeof shop.normalizeCurrentShopCategoryFromEntries === 'function'
+            ? shop.normalizeCurrentShopCategoryFromEntries(entries)
+            : String(shop.currentCategory || '');
+
+        renderCategoryContainer(listFilters, entries, current, { withIndicator: true });
+        renderCategoryContainer(gridFilters, entries, current, { withIndicator: true });
         ensureListIndicatorObserver();
-        requestAnimationFrame(() => syncListIndicator({ animate: animateListIndicator }));
+        requestAnimationFrame(() => {
+            syncListIndicator({ animate: animateListIndicator });
+            syncGridIndicator({ animate: animateListIndicator });
+        });
     }
 
     function paintList() {
@@ -703,13 +778,17 @@
             renderFilters({ animateListIndicator: false });
             renderList({ animate: false });
             requestAnimationFrame(() => syncListIndicator({ animate: false }));
+        } else {
+            renderFilters({ animateListIndicator: false });
+            refreshGridSearch();
+            requestAnimationFrame(() => syncListIndicator({ animate: false }));
         }
     }
 
     function syncFromShop({ animate = false } = {}) {
         if (!state.ready) return;
         applyLayoutClasses();
-        renderFilters({ animateListIndicator: animate && effectiveView() === 'list' });
+        renderFilters({ animateListIndicator: animate });
         if (effectiveView() === 'list') {
             renderList({
                 animate: animate && !state.query.trim()
@@ -771,12 +850,31 @@
         if (!changed) {
             renderList({ animate: effectiveView() === 'list' });
             updateCategoryTitles();
+            refreshGridSearch();
             return;
         }
-        state.pendingAnimate = effectiveView() === 'list';
+        state.gridQuery = '';
+        state.pendingAnimate = !prefersReducedMotion();
+        // A short category (for example GPT) can make the sticky containing
+        // block shorter than the previous category. Start the new category at
+        // the document top on desktop so the sidebar is never constrained by
+        // the old long-list scroll position. Mobile keeps its existing drawer
+        // flow and must not be repositioned here.
+        if (!isMobileLayout() && typeof window.scrollTo === 'function') {
+            window.scrollTo(0, 0);
+        }
         const gridBtn = $all('#shopCategoryFilters .filter-tab[data-shop-category]')
             .find((button) => button.dataset.shopCategory === name);
         shop.filterCategory(name, gridBtn || undefined);
+    }
+
+    function refreshGridSearch() {
+        if (effectiveView() !== 'grid') return;
+        const query = state.query.trim();
+        if (!query && !state.gridQuery) return;
+        state.gridQuery = query;
+        // Keep card construction, pricing, purchases and transitions in ShopClient.
+        void shopClient()?.loadProducts?.();
     }
 
     function applyListSearch() {
@@ -784,7 +882,8 @@
         state.query = input ? String(input.value || '') : '';
         renderList({ animate: false });
         updateCategoryTitles();
-        ensureAllProductsForSearch();
+        if (effectiveView() === 'grid') refreshGridSearch();
+        else ensureAllProductsForSearch();
     }
 
     function hookShopClient() {
@@ -807,9 +906,7 @@
         if (typeof originalFilterCategory === 'function') {
             shop.filterCategory = function hookedFilterCategory(category, btn) {
                 const result = originalFilterCategory.apply(this, arguments);
-                if (effectiveView() === 'list') {
-                    renderFilters({ animateListIndicator: true });
-                }
+                renderFilters({ animateListIndicator: !prefersReducedMotion() });
                 return result;
             };
         }
@@ -865,6 +962,16 @@
     }
 
     function bind() {
+        // Capture grid category clicks before ShopClient's legacy container
+        // listener so both views enter the same selectCategory path.
+        document.addEventListener('click', (event) => {
+            const gridCategoryBtn = event.target.closest?.('#shopCategoryFilters .filter-tab[data-shop-category]');
+            if (!gridCategoryBtn) return;
+            event.preventDefault();
+            event.stopPropagation();
+            selectCategory(gridCategoryBtn.dataset.shopCategory || '');
+        }, true);
+
         document.addEventListener('click', (event) => {
             const viewBtn = event.target.closest?.('[data-view-target]');
             if (viewBtn) {
@@ -894,10 +1001,10 @@
                 return;
             }
 
-            const listCategoryBtn = event.target.closest?.('#listCategoryFilters .filter-tab[data-shop-category]');
-            if (listCategoryBtn) {
+            const categoryBtn = event.target.closest?.('#listCategoryFilters .filter-tab[data-shop-category]');
+            if (categoryBtn) {
                 event.preventDefault();
-                selectCategory(listCategoryBtn.dataset.shopCategory || '');
+                selectCategory(categoryBtn.dataset.shopCategory || '');
                 return;
             }
 
@@ -932,6 +1039,10 @@
         window.addEventListener('languageChanged', () => {
             syncStaticCopy();
             syncFromShop({ animate: false });
+            refreshGridSearch();
+        });
+
+        window.addEventListener('resize', () => {
         });
 
         if (window.matchMedia) {
@@ -941,6 +1052,8 @@
                 if (effectiveView() === 'list') {
                     renderFilters({ animateListIndicator: false });
                     renderList({ animate: false });
+                } else {
+                    refreshGridSearch();
                 }
             };
             if (typeof media.addEventListener === 'function') media.addEventListener('change', onChange);
@@ -967,6 +1080,8 @@
             setView,
             syncFromShop,
             getView: () => effectiveView(),
+            getSearchQuery: () => state.query.trim(),
+            filterSearchProducts,
             listChipsMarkup
         });
     }

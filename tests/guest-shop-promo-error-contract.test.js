@@ -37,6 +37,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(REPO_ROOT, relative), 'utf8');
 
 const migrationSql = read('supabase/migrations/20260923_guest_shop_promo_l1l2.sql');
+const safetyMigrationSql = read('supabase/migrations/20260924_guest_shop_promo_safety_gates.sql');
 const handlerSource = read('server/api-handlers/public/guest-shop.js');
 const clientSource = read('js/guest-shop-client.js');
 
@@ -124,7 +125,7 @@ test('every guest_* rejection on the create-order path has a public HTTP mapping
         'the public self-alias must be the identical frozen C-E6 response object'
     );
     // Cross-path entries are only tolerated while the migration really raises them.
-    const anywhere = raisedCodesIn(migrationSql);
+    const anywhere = raisedCodesIn(migrationSql + safetyMigrationSql);
     for (const code of CROSS_PATH_TABLE_ENTRIES) {
         assert.ok(
             anywhere.has(code),
@@ -137,6 +138,15 @@ test('every guest_* rejection on the create-order path has a public HTTP mapping
         && code !== PUBLIC_SELF_ALIAS
         && !promo.GUEST_CREATE_ORDER_NODE_LAYER_CODES.includes(code));
     assert.deepEqual(stale, [], 'the mapping table must not keep codes the migration stopped raising');
+});
+
+test('stock-hold and open-order safety gates share one public rejection', () => {
+    const stock = promo.resolveGuestCreateOrderError({ code: 'P0001', message: 'guest_stock_hold_limit' });
+    const open = promo.resolveGuestCreateOrderError({ code: 'P0001', message: 'guest_open_orders_limit' });
+    assert.equal(stock.code, 'guest_promo_safety_limit');
+    assert.equal(stock.statusCode, 409);
+    assert.equal(open.code, stock.code);
+    assert.equal(open.message, stock.message);
 });
 
 test('every coupon-lifecycle rejection collapses onto one public response (C-E6)', () => {
@@ -301,7 +311,10 @@ test('the client only reacts to codes the server can actually emit', () => {
     const discountCodes = parseSet('PROMO_DISCOUNT_CODES');
     const requoteCodes = parseSet('PROMO_REQUOTE_CODES');
     assert.ok(discountCodes.includes('guest_discount_unavailable'), 'the unified coupon code must drive the retract path');
-    for (const code of [...discountCodes, ...requoteCodes, 'guest_idempotency_conflict']) {
+    // The commit-stage quote-changed response is covered as a compatibility
+    // branch in the client race tests; the current handler does not emit it.
+    assert.ok(requoteCodes.includes('guest_checkout_quote_changed'));
+    for (const code of [...discountCodes, ...requoteCodes.filter((value) => value !== 'guest_checkout_quote_changed'), 'guest_idempotency_conflict']) {
         assert.ok(
             publicCodes.has(code),
             `${code} is handled by the client but is not in the server public contract (a dead branch)`

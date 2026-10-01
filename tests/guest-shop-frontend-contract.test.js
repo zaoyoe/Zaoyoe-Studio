@@ -25,6 +25,13 @@ const ordersStyles = read('css/guest-orders.css');
 const passwordModuleSource = read('js/guest-query-password.js');
 const iosScrollLockSource = read('js/ios-scroll-lock.js');
 
+function guestCheckoutModalMarkup() {
+    const start = markup.indexOf('id="guestCashPurchaseModal"');
+    const end = markup.indexOf('<div class="modal-overlay" id="shopCartCheckoutModal">', start);
+    assert.ok(start >= 0 && end > start, 'guest checkout modal markup must have a clear boundary');
+    return markup.slice(start, end);
+}
+
 /**
  * Comments are prose; code is the contract. The guest scripts legitimately
  * document WHY supabase / Authorization / localStorage.setItem are forbidden,
@@ -80,11 +87,50 @@ test('shop page mounts the isolated guest cash checkout after the authenticated 
     );
     assert.match(markup, /id="nextPurchaseStepBtn"[^>]*class="shop-btn shop-btn-primary"/);
     assert.match(markup, /id="guestCashPurchaseModal"[^>]*hidden/);
+    assert.match(markup, /id="guestCashState"[^>]*hidden/);
+    assert.match(markup, /<footer id="guestCashActionFooter"[^>]*hidden/);
     assert.match(markup, /id="guestCashDeliveredContent"[^>]*class="guest-shop-modal__delivery-content"/);
     assert.match(styles, /\.guest-shop-modal__content/);
+    assert.match(
+        styles,
+        /html\[data-theme="dark"\] body\.shop-page \.guest-shop-modal__payment-option \{[\s\S]*?background: rgba\(30,41,59,.88\);[\s\S]*?color: #e2e8f0;/
+    );
+    assert.match(
+        styles,
+        /html\[data-theme="dark"\] body\.shop-page \.guest-shop-modal__payment-option\[aria-checked="true"\] \{[\s\S]*?background: rgba\(56,189,248,.14\);/
+    );
+    assert.match(
+        styles,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__payment-option \{[\s\S]*?background: #fff;[\s\S]*?color: #1e293b;/
+    );
     assert.match(styles, /@media \(max-width: 600px\)[\s\S]*\.guest-shop-modal__actions/);
     assert.match(styles, /\.guest-shop-modal__content \{[\s\S]*?overflow-y: auto;[\s\S]*?scroll-padding-bottom: 88px;/);
-    assert.match(styles, /\.guest-shop-modal__actions \{[\s\S]*?position: sticky;[\s\S]*?bottom: 0;[\s\S]*?background: inherit;/);
+    assert.match(
+        styles,
+        /\.guest-shop-modal__content \{[\s\S]*?background:\s*\n\s*linear-gradient\(180deg, rgba\(14, 20, 29, 0\.96\) 0%, rgba\(8, 12, 18, 0\.98\) 100%\)[\s\S]*?border: 1px solid rgba\(255, 255, 255, 0\.08\) !important;/
+    );
+    assert.match(
+        styles,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__content \{[\s\S]*?background: rgba\(255, 255, 255, 0\.96\) !important;[\s\S]*?border: 1px solid var\(--shop-light-border\) !important;/
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 600px\) \{[\s\S]*?\.guest-shop-modal__content \{[\s\S]*?width: calc\(100% - 40px\) !important;[\s\S]*?max-width: 620px !important;[\s\S]*?border-radius: 30px !important;/
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 768px\) \{[\s\S]*?#shopPurchaseModal \.modal-content,[\s\S]*?#guestCashPurchaseModal #guestCashPurchaseDialog\.premium-modal \{[\s\S]*?width: min\(calc\(100% - 28px\), 620px\) !important;[\s\S]*?max-width: 620px !important;/
+    );
+    assert.match(
+        styles,
+        /@media \(min-width: 769px\) and \(max-width: 900px\) \{[\s\S]*?#shopPurchaseModal \.modal-content,[\s\S]*?#guestCashPurchaseModal #guestCashPurchaseDialog\.premium-modal \{[\s\S]*?width: min\(calc\(100% - 56px\), 760px\) !important;[\s\S]*?max-width: 760px !important;/
+    );
+    assert.match(
+        styles,
+        /@media \(min-width: 901px\) \{[\s\S]*?#shopPurchaseModal \.modal-content,[\s\S]*?#guestCashPurchaseModal #guestCashPurchaseDialog\.premium-modal \{[\s\S]*?width: min\(calc\(100% - 64px\), 1040px\) !important;[\s\S]*?max-width: 1040px !important;/
+    );
+    assert.match(styles, /\.guest-shop-modal__actions \{[\s\S]*?position: sticky;[\s\S]*?bottom: 0;/);
+    assert.match(styles, /\.guest-shop-modal__actions\[hidden\] \{ display: none !important; \}/);
     assert.match(markup, /js\/shop-client\.js[^\"]*guestModalHandoff=20260920_GUEST_MODAL_HANDOFF_1/);
     assert.match(markup, /js\/guest-shop-client\.js[^\"]*guestModalScrollLock=20260920_GUEST_MODAL_SCROLL_LOCK_1/);
     assert.match(markup, /js\/ios-scroll-lock\.js[^\"]*guestModalOwner=20260920_GUEST_MODAL_OWNER_1/);
@@ -103,27 +149,31 @@ test('the logged-out guest cash entry is merged into the primary purchase action
     // It exposes only a routing bridge, and that bridge stays free of auth material.
     assert.match(
         client,
-        /window\.GuestShopCheckout = \{\s*peekAvailability,\s*probeAvailability,\s*startGuestCheckout,\s*setModalReturnFocusTarget,\s*focusGuestModal\s*\};/
+        /window\.GuestShopCheckout = \{\s*peekAvailability,\s*probeAvailability,\s*isDiscountCodeFormat,\s*startGuestCheckout,\s*startGuestBatchCheckout,\s*setModalReturnFocusTarget,\s*focusGuestModal\s*\};/
     );
     assert.match(client, /function peekAvailability\(context = getPurchaseContext\(\)\) \{/);
     assert.match(client, /async function probeAvailability\(context = getPurchaseContext\(\)\) \{/);
-    assert.match(client, /async function startGuestCheckout\([\s\S]*?context = getPurchaseContext\(\),[\s\S]*?\{ deferScrollLock = false, shouldOpen = null \} = \{\}[\s\S]*?\) \{/);
+    assert.match(client, /async function startGuestCheckout\([\s\S]*?context = getPurchaseContext\(\),[\s\S]*?deferScrollLock = false,[\s\S]*?shouldOpen = null,[\s\S]*?discountCode = '',[\s\S]*?replaceDiscountCode = false[\s\S]*?\} = \{\}[\s\S]*?\) \{/);
     assert.match(client, /if \(typeof shouldOpen === 'function'\) \{[\s\S]*?sourceStillValid = shouldOpen\(\) === true;[\s\S]*?reason: 'source_stale'/);
     assert.match(client, /const TRANSIENT_AVAILABILITY_REASONS = new Set\(\['pending', 'rate_limited', 'preview_error', 'stale'\]\);/);
     assert.match(client, /if \(!TRANSIENT_AVAILABILITY_REASONS\.has\(normalized\.reason\)\) \{/);
 
-    // shop-client.js owns the auth decision and only routes logged-out visitors.
+    // shop-client.js owns the auth decision and also honors a guest-cash cart entry
+    // when the visitor already has an authenticated shop session.
     assert.match(shopClient, /shopAuthStateKnown: null,/);
-    assert.match(
-        shopClient,
-        /isGuestCashEntryActive: function \(\) \{\s*if \(this\.shopAuthStateKnown !== false\) return false;/
-    );
+    assert.match(shopClient, /getGuestCashEntryContext: function \(\) \{[\s\S]*?contextKey: \[selection\.site, selection\.productId, selection\.skuId\]\.join\(':\'\)/);
+    assert.match(shopClient, /isGuestCashEntryCandidate: function \(\) \{[\s\S]*?purchase\.guestCashEligible === true && this\.shopAuthStateKnown !== true;/);
+    assert.match(shopClient, /isGuestCashEntryActive: function \(\) \{\s*if \(!this\.isGuestCashEntryCandidate\(\)\) return false;/);
     assert.match(shopClient, /startGuestCashCheckout: async function \(\) \{/);
     assert.match(shopClient, /window\.GuestShopCheckout/);
+    assert.match(shopClient, /formatValidator\(normalizedCode\) !== true/);
+    assert.match(shopClient, /currentPurchase\.guestCashDiscountCodeFormatValid = true/);
     assert.match(
         shopClient,
-        /const returnFocusTarget = this\.findGuestCashReturnFocusTarget\(\);[\s\S]*?const shouldOpenGuestModal = \(\) => this\.guestCashHandoffGeneration === handoffGeneration[\s\S]*?sourceModal\?\.classList\?\.contains\('active'\) === true;[\s\S]*?const result = await bridge\.startGuestCheckout\(undefined, \{[\s\S]*?deferScrollLock: canHandoffScrollLock,[\s\S]*?shouldOpen: shouldOpenGuestModal[\s\S]*?if \(result && result\.started\) \{[\s\S]*?this\.closePurchaseModal\(\{[\s\S]*?scrollLockHandoffTarget:[\s\S]*?guestCashPurchaseModal[\s\S]*?bridge\.setModalReturnFocusTarget\?\.\(returnFocusTarget\);[\s\S]*?window\.requestAnimationFrame\(\(\) => bridge\.focusGuestModal\?\.\(\)\);/
+        /const returnFocusTarget = this\.findGuestCashReturnFocusTarget\(\);[\s\S]*?const sourceGuestContext = this\.getGuestCashEntryContext\(\);[\s\S]*?const shouldOpenGuestModal = \(\) => this\.guestCashHandoffGeneration === handoffGeneration[\s\S]*?sourceModal\?\.classList\?\.contains\('active'\) === true;[\s\S]*?const result = await bridge\.startGuestCheckout\(sourceGuestContext, \{[\s\S]*?deferScrollLock: canHandoffScrollLock,[\s\S]*?shouldOpen: shouldOpenGuestModal[\s\S]*?if \(result && result\.started\) \{[\s\S]*?this\.closePurchaseModal\(\{[\s\S]*?scrollLockHandoffTarget:[\s\S]*?guestCashPurchaseModal[\s\S]*?bridge\.setModalReturnFocusTarget\?\.\(returnFocusTarget\);[\s\S]*?window\.requestAnimationFrame\(\(\) => bridge\.focusGuestModal\?\.\(\)\);/
     );
+    assert.match(client, /function discardIdleBatchDraftForSingleContext\(context\) \{[\s\S]*?!state\.batchMode[\s\S]*?state\.batchMode = false;[\s\S]*?state\.batchEntries = \[\];/);
+    assert.match(client, /async function probeAvailability\(context = getPurchaseContext\(\)\) \{[\s\S]*?discardIdleBatchDraftForSingleContext\(context\);/);
     assert.match(shopClient, /handoffPurchaseModalScrollLock: function \(target\) \{[\s\S]*?unfreezePurchaseModalPage\(\{ restoreScroll: false \}\)[\s\S]*?window\.scrollTo\(0, restoreScrollY\)[\s\S]*?iOSScrollLock\.lockLight\(target/);
     assert.match(shopClient, /const scrollLockHandedOff = this\.handoffPurchaseModalScrollLock\(scrollLockHandoffTarget\);[\s\S]*?if \(!scrollLockHandedOff\) \{/);
     assert.match(client, /function lockGuestModalScroll\(modal\) \{[\s\S]*?iOSScrollLock\.lockLight\(modal/);
@@ -136,12 +186,17 @@ test('the logged-out guest cash entry is merged into the primary purchase action
     assert.match(client, /const trigger = isUsableReturnFocusTarget\(state\.lastTriggerElement\)[\s\S]*?: fallbackReturnFocusTarget\(\);/);
     assert.match(
         shopClient,
-        /const token = await this\.getAccessToken\(\);[\s\S]*?if \(!token\) \{[\s\S]*?const guestEntry = await this\.startGuestCashCheckout\(\);[\s\S]*?if \(!guestEntry\.started && guestEntry\.reason !== 'source_stale'\) \{[\s\S]*?this\.promptLoginForPurchase\(/
+        /const token = await this\.getAccessToken\(\);[\s\S]*?if \(!token\) \{[\s\S]*?const guestEntry = await this\.startGuestCashCheckout\(\);[\s\S]*?if \(!guestEntry\.started[\s\S]*?guestEntry\.reason !== 'source_stale'[\s\S]*?guestEntry\.reason !== 'discount_format_not_checked'[\s\S]*?this\.promptLoginForPurchase\(/
     );
-    // Guest cash orders are one unit without coupons, so both stages collapse.
+    // Guest cash keeps the shared quantity and promo controls visible. The
+    // server preview supplies the quantity cap and whether code entry is enabled.
     assert.match(
         shopClient,
-        /if \(guestCashActive\) \{\s*document\.querySelectorAll\(\s*'#shopPurchaseModal \.shop-purchase-stage-quantity, #shopPurchaseModal \.shop-purchase-stage-discount'\s*\)/
+        /if \(guestCashActive\) this\.syncGuestCashEntryQuantity\(\);/
+    );
+    assert.match(
+        shopClient,
+        /const guestDiscountEnabled = guestCashActive && this\.guestCashEntryProbe\?\.discountEnabled === true;[\s\S]*setElementHidden\(discountStage, false\);[\s\S]*expandPurchaseDiscountDetails\(discountStage\)/
     );
     // The bridge cache is read synchronously before the stage copy is computed so
     // the merged label does not flash "兑换" on a reopened, already-probed product.
@@ -150,21 +205,79 @@ test('the logged-out guest cash entry is merged into the primary purchase action
         shopClient,
         /this\.hydrateGuestCashEntryFromBridge\(\);\s*\n\s*const copy = this\.getPurchaseStageCopy\(nextStage\);/
     );
-    assert.match(shopClient, /nextLabel: guestCashActive/);
+    assert.match(shopClient, /const guestCashEntryVisible = this\.isGuestCashEntryActive\(\) \|\| this\.isGuestCashEntryProbePending\(\);[\s\S]*?nextLabel: guestCashEntryVisible/);
     assert.equal(zhLang.shop.guestCashBuyNow, '立即购买');
     assert.equal(enLang.shop.guestCashBuyNow, 'Buy now');
 
-    // Guest orders are one unit, so the quantity is collapsed through the canonical
-    // repricing path without paying for a coupon asset refresh.
+    // Guest quantity changes respect the preview cap and use the canonical
+    // repricing path without requesting points-coupon assets.
     assert.match(
         shopClient,
-        /applyGuestCashEntryQuantity: function \(\) \{[\s\S]*?this\.updatePriceForQuantity\(1, \{ refreshDiscountAssets: false \}\);/
+        /syncGuestCashEntryQuantity: function \(\) \{[\s\S]*?const quantityCap = this\.getGuestCashQuantityCap\(\);[\s\S]*?const nextQuantity = Math\.min\(currentQuantity, quantityCap\);[\s\S]*?this\.updatePriceForQuantity\(nextQuantity, \{ refreshDiscountAssets: false \}\);/
     );
-    assert.match(shopClient, /quantityInput\.disabled = isPurchaseProcessing \|\| isManualDelivery \|\| isSoldOut \|\| guestCashActive;/);
+    assert.match(shopClient, /quantityInput\.disabled = isPurchaseProcessing \|\| isManualDelivery \|\| isSoldOut;/);
+    assert.doesNotMatch(
+        shopClient,
+        /quantityInput\.disabled = [^;]*guestProbePending/,
+        'a late guest availability probe must not lock the quantity input'
+    );
+    assert.match(shopClient, /const locked = isPurchaseProcessing \|\| isManualDelivery;/);
+    assert.doesNotMatch(shopClient, /const atGuestBoundary = guestCashActive/);
+    assert.doesNotMatch(shopClient, /const soldOutIncrease = isSoldOut && delta > 0;/);
+    assert.match(shopClient, /if \(newQty === currentQuantity\) \{\s*return;\s*\}/);
+    assert.match(shopClient, /if \(refreshDiscountAssets[\s\S]*!this\.isGuestCashEntryActive\(\)/);
+    assert.doesNotMatch(
+        shopClient,
+        /const locked = [^;]*guestProbePending/,
+        'a late guest availability probe must not lock quantity +/- controls'
+    );
+    assert.match(shopClient, /quantity: Math\.max\(1, Number\.parseInt\(String\(sourcePurchase\?\.quantity \|\| '1'\), 10\) \|\| 1\)/);
+    assert.match(markup, /class="[^"]*shop-purchase-stage-quantity/);
+    assert.match(markup, /class="[^"]*shop-purchase-stage-discount/);
+    assert.match(
+        styles,
+        /#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-stage-quantity\[hidden\] \{\s*display:\s*none !important;/
+    );
 
     // The user explicitly rejected an explanatory hint line for logged-out visitors.
     assert.doesNotMatch(shopClient, /未登录可直接现金购买/);
     assert.doesNotMatch(markup, /未登录可直接现金购买/);
+});
+
+test('cart checkout routes guest cash, wallet, and mixed items to separate payment branches', () => {
+    assert.match(
+        shopClient,
+        /getCartCheckoutPaymentMode: function \(entries = this\.getCartEntries\(\)\) \{[\s\S]*?const hasGuestCash = normalizedEntries\.some\(\(entry\) => entry\?\.guestPurchasable === true\);[\s\S]*?const hasWallet = normalizedEntries\.some\(\(entry\) => entry\?\.guestPurchasable !== true\);[\s\S]*?if \(hasGuestCash && hasWallet\) return 'mixed';[\s\S]*?return hasGuestCash \? 'guest_cash' : 'wallet';/s
+    );
+    assert.match(
+        shopClient,
+        /openCartCheckoutModal: function \(\)[\s\S]*?if \(paymentMode === 'mixed'\) \{[\s\S]*?this\.showShopToast\(this\.getCartCopy\(\)\.mixedCheckoutToast, 'error'\);[\s\S]*?const modal = document\.getElementById\('shopCartCheckoutModal'\);/s
+    );
+    assert.match(
+        shopClient,
+        /openPurchaseModalFromCartEntry: function \(entry\)[\s\S]*?forceGuestCash: entry\.guestPurchasable === true,/s
+    );
+    assert.match(
+        shopClient,
+        /confirmCartCheckout: async function \(\)[\s\S]*?if \(paymentMode === 'mixed'\) \{[\s\S]*?this\.showShopToast\(this\.getCartCopy\(\)\.mixedCheckoutToast, 'error'\);[\s\S]*?if \(paymentMode === 'guest_cash'\) \{[\s\S]*?this\.getGuestCashBatchDiscountEntry\(entries\)[\s\S]*?this\.closeCartCheckoutModal\(\);[\s\S]*?this\.closeCart\(\);[\s\S]*?bridge\.startGuestBatchCheckout\(entries\)[\s\S]*?\.then\(/s
+    );
+    assert.match(
+        shopClient,
+        /bindCartCheckoutModalTapFallbacks: function \(\)[\s\S]*?confirmCartCheckout\(\)/s
+    );
+    assert.match(
+        shopClient,
+        /data-shop-cart-action.*checkout|action === 'checkout'[\s\S]*?void this\.confirmCartCheckout\(\);/s
+    );
+    assert.match(shopClient, /handleGuestShopDelivered: function \(event\)[\s\S]*?consumePurchasedCartQuantity\(/s);
+    assert.match(
+        client,
+        /window\.dispatchEvent\(new CustomEvent\('zaoyoe:guest-shop-closed',[\s\S]*?delivered: wasDelivered,[\s\S]*?productId: closedProductId,[\s\S]*?skuId: closedSkuId/s
+    );
+    assert.match(
+        shopClient,
+        /if \(this\.currentPurchase\?\.forceGuestCash === true\) \{[\s\S]*?const guestEntry = await this\.startGuestCashCheckout\(\);[\s\S]*?return;[\s\S]*?\}\s*\n\s*const token = await this\.getAccessToken\(\);/s
+    );
 });
 
 test('guest checkout uses only the public cash endpoints and same-origin cookie credentials', () => {
@@ -181,7 +294,7 @@ test('guest checkout uses only the public cash endpoints and same-origin cookie 
     // credential-first too; the old public order-number + pickup-code path is gone.
     assert.doesNotMatch(client, /\/api\/shop\/guest\/recover|guestCashRecoverBtn|guestCashRecovery(OrderNo|Code)/);
     assert.doesNotMatch(markup, /guestCashRecovery(CodePanel|Panel)|guestCashRecovery(OrderNo|CodeInput)/);
-    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"/);
+    assert.doesNotMatch(markup, /guestCashShowRecoveryBtn/);
 });
 
 test('guest order creation clamps quantity to the server cap and keeps secret material out of browser persistence and URLs', () => {
@@ -212,14 +325,26 @@ test('the guest promo UI ships hidden, the preview stays code-free and every dis
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
     assert.match(markup, /guestPromo=20260923_GUEST_PROMO_L1L2_1/);
 
-    // Every promo surface is `hidden` in the markup itself, not merely hidden by
-    // JS on load: with the switches off - or if the script dies before
-    // syncPromoUi runs - the modal must render exactly the pre-L1 layout.
-    assert.match(markup, /id="guestCashQuantityField" class="guest-shop-modal__field" hidden/);
-    assert.match(markup, /id="guestCashDiscountField" class="guest-shop-modal__field" hidden/);
+    // Quantity-only promo controls remain hidden in the guest modal itself.
+    // Guest discount-code entry reuses the purchase-details dialog and stays
+    // server-gated there until the current SKU's availability preview completes.
+    const guestCheckoutMarkup = guestCheckoutModalMarkup();
+    assert.doesNotMatch(guestCheckoutMarkup, /id="guestCashQuantityField"/);
+    assert.doesNotMatch(guestCheckoutMarkup, /id="guestCashQuantity(?:Minus|Plus|Hint)"/);
     assert.match(markup, /id="guestCashQuantityRow" class="guest-shop-modal__summary-row" hidden/);
     assert.match(markup, /id="guestCashCouponRow"[^>]*hidden/);
     assert.match(markup, /id="guestCashPromoRow"[^>]*hidden/);
+    assert.doesNotMatch(markup, /id="guestCashDiscountField"/);
+    assert.match(markup, /<input id="guestCashDiscountCode" type="hidden"/);
+    const purchaseModalStart = markup.indexOf('id="shopPurchaseModal"');
+    const guestModalStart = markup.indexOf('id="guestCashPurchaseModal"');
+    const cartModalStart = markup.indexOf('id="shopCartCheckoutModal"', guestModalStart);
+    assert.ok(purchaseModalStart >= 0 && guestModalStart > purchaseModalStart && cartModalStart > guestModalStart);
+    const purchaseModalMarkup = markup.slice(purchaseModalStart, guestModalStart);
+    const guestModalMarkup = markup.slice(guestModalStart, cartModalStart);
+    assert.match(purchaseModalMarkup, /<input type="text" id="purchaseDiscountCode"/);
+    assert.match(guestModalMarkup, /<input id="guestCashDiscountCode" type="hidden"/);
+    assert.doesNotMatch(guestModalMarkup, /<input[^>]+type="text"[^>]*(?:discount|coupon)|<input[^>]+(?:discount|coupon)[^>]+type="text"/iu);
     // `hidden` must win over the flex display the modal CSS gives these fields.
     assert.match(styles, /\.guest-shop-modal__field\[hidden\] \{ display: none !important; \}/);
 
@@ -235,15 +360,27 @@ test('the guest promo UI ships hidden, the preview stays code-free and every dis
         previewSource,
         /const query = new URLSearchParams\(\{\s*site: context\.site,\s*productId: context\.productId,\s*skuId: context\.skuId,\s*quantity: String\(request\.quantity\)\s*\}\);/
     );
-    assert.doesNotMatch(previewSource, /discount|coupon|promo|searchParams\.set|\.append\(/iu);
+    assert.doesNotMatch(
+        previewSource,
+        /\bdiscountCode\b|\bdiscount_code\b|\bcoupon(?:Code)?\b|\bpromo(?:Code)?\b|(?:query|searchParams)\.(?:set|append)\(|\.append\(/iu
+    );
 
-    // The only signal that unlocks the code field is the server's own preview
-    // flag, and the state literal defaults it closed.
+    // The only signal that unlocks the guest code path is the server's preview
+    // flag, and the state literal defaults it closed. The shared purchase modal
+    // shows a disabled coupon-entry loading state while that preview is pending.
     assert.match(client, /discountEnabled: false,/);
     assert.match(client, /state\.discountEnabled = preview\?\.discount_enabled === true;/);
     assert.match(
         client,
-        /const enabled = state\.discountEnabled === true;\s*\n\s*setHidden\('guestCashDiscountField', !enabled\);/
+        /function syncPromoUi\(preview\) \{[\s\S]*state\.discountEnabled = preview\?\.discount_enabled === true;[\s\S]*syncDiscountUi\(\);/
+    );
+    assert.match(
+        client,
+        /function syncDiscountUi\(\) \{[\s\S]*const enabled = state\.discountEnabled === true;[\s\S]*if \(!enabled\) \{[\s\S]*input\.value = '';[\s\S]*return;/
+    );
+    assert.match(
+        shopClient,
+        /const guestDiscountEnabled = guestCashActive && this\.guestCashEntryProbe\?\.discountEnabled === true;[\s\S]*setElementHidden\(discountStage, false\);[\s\S]*setElementHidden\(document\.getElementById\('purchaseDiscountAssetsPanel'\), true\)/
     );
     // A disabled gate wipes whatever was typed, so a code can never survive from
     // an enabled SKU into a later createOrder body.
@@ -251,6 +388,9 @@ test('the guest promo UI ships hidden, the preview stays code-free and every dis
     // createOrder consults the same gate right before building the body - the
     // code is sent only when the server enabled the discount channel.
     assert.match(client, /const discountCode = state\.discountEnabled \? discountCodeValue\(\) : '';/);
+    assert.match(shopClient, /discountCode: discountCodeEnabled && discountCodeFormatAccepted \? formatAcceptedDiscountCode : ''/);
+    assert.match(client, /if \(replaceDiscountCode === true && handoffCode && !isDiscountCodeFormat\(handoffCode\)\)/);
+    assert.match(client, /applyPendingDiscountHandoff\(context, preview\)/);
     // Switching product/SKU resets the gate and drops the typed code, because
     // eligibility, caps and tiers are all per-SKU.
     assert.match(
@@ -287,8 +427,11 @@ test('Task 2.1 binds preview and create responses to the view that started them'
     const createLock = createSource.indexOf('state.requestInFlight = true;');
     const createFirstAwait = createSource.indexOf('await ');
     assert.ok(createLock >= 0 && createLock < createFirstAwait, 'the create single-flight lock must be acquired before the first await');
-    assert.match(createSource, /state\.requestInFlight = true;[\s\S]*const operation = beginAction\(\);[\s\S]*const quoteGeneration = state\.quoteGeneration;[\s\S]*await loadPreview\(context\)/);
-    assert.match(createSource, /await loadPreview\(context\);[\s\S]*!isCurrentAction\(operation\)[\s\S]*quoteGeneration !== state\.quoteGeneration[\s\S]*contextKey/);
+    assert.match(createSource, /state\.requestInFlight = true;[\s\S]*const operation = beginAction\(\);[\s\S]*const quoteGeneration = state\.quoteGeneration;[\s\S]*await refreshPreview\(context\)/);
+    assert.match(createSource, /await refreshPreview\(context\);[\s\S]*!isCurrentAction\(operation\)[\s\S]*quoteGeneration !== state\.quoteGeneration[\s\S]*contextKey/);
+    assert.match(createSource, /previouslyAcknowledgedQuote[\s\S]*refreshedQuoteFingerprint[\s\S]*商品报价已变化，请核对新的应付金额后再次点击付款方式。/);
+    assert.match(client, /guest_checkout_quote_changed/);
+    assert.match(client, /function refreshPreview\(context\)[\s\S]*request\.forceRefresh = true/);
     assert.match(
         createSource,
         /const safeCheckoutRecord = \{\s*orderNo,\s*site: context\.site,\s*productId: context\.productId,\s*skuId: context\.skuId,\s*productName:[\s\S]*skuName:[\s\S]*expiresAt: order\.expires_at,\s*provider: payment\.provider,\s*channel: payment\.channel,\s*intentId: attempt\?\.intentId\s*\};/
@@ -304,9 +447,8 @@ test('Task 2.1 binds preview and create responses to the view that started them'
     assert.doesNotMatch(staleCreateSource, /recovery_code|showRecoveryCode|renderCheckout|startPolling/);
     assert.match(createSource, /finally \{\s*state\.requestInFlight = false;\s*renderGuestActions\(\);/);
 
-    // The payment modal no longer owns a recovery request. Its separate
-    // "找回订单" link navigates to the credential-first guest-orders page;
-    // the removed public recovery flow cannot race this checkout view.
+    // The payment modal no longer owns a recovery request or a second lookup
+    // link; the shop-level order query control is the single lookup entry.
     assert.doesNotMatch(client, /async function recoverOrder\s*\(/);
     assert.doesNotMatch(client, /RECOVERY_ENDPOINT|guestCashRecoverBtn|guestCashRecovery/);
 });
@@ -331,6 +473,23 @@ test('an unknown create result can only replay the original server-held checkout
     assert.match(createSource, /const prepared = await requestJson\(ORDER_ENDPOINT,[\s\S]*body: JSON\.stringify\(prepareBody\)/);
     assert.match(createSource, /body: JSON\.stringify\(body\)/);
     assert.match(client, /function createResultIsUnknown\(error,[\s\S]*if \(DEFINITIVE_CREATE_FAILURE_CODES\.has\(code\)\) return false;\s*if \(retryingUnknown\) return true;/);
+    assert.match(
+        client,
+        /const DEFINITIVE_CREATE_FAILURE_CODES = new Set\(\[[\s\S]*['"]guest_provider_checkout_missing['"][\s\S]*\]\);/
+    );
+    for (const code of [
+        'guest_promo_safety_limit',
+        'guest_inventory_unavailable',
+        'guest_inventory_source_invalid',
+        'guest_inventory_source_unavailable',
+        'guest_inventory_source_snapshot_failed',
+        'guest_product_unavailable',
+        'guest_sku_unavailable',
+        'guest_quantity_not_allowed',
+        'guest_delivery_mode_unsupported'
+    ]) {
+        assert.match(client, new RegExp(`['"]${code}['"]`, 'u'), `${code} must remain a definitive create failure`);
+    }
     assert.match(createSource, /const unknownResult = createResultIsUnknown\(error,[\s\S]*if \(unknownResult && attempt\) \{[\s\S]*attempt\.unresolved = true;/);
     const persistStart = client.indexOf('function persistCheckoutRecord(record)');
     const persistEnd = client.indexOf('\n    function hydrateCheckout', persistStart);
@@ -376,6 +535,33 @@ test('checkout intent inspection and acknowledgement stay recoverable when brows
     assert.match(client, /setHidden\('guestCashStorageWarning', !state\.sessionStorageUnavailable\)/);
 });
 
+test('failed creates and stale recovery selectors are cleaned up safely', () => {
+    const clearStart = client.indexOf('function discardCheckoutIntentBestEffort(intentId) {');
+    const clearEnd = client.indexOf('\n    function clearFailedCheckoutContext', clearStart);
+    assert.ok(clearStart >= 0 && clearEnd > clearStart, 'failed-create intent cleanup helper must stay explicit');
+    const clearSource = client.slice(clearStart, clearEnd);
+    assert.match(clearSource, /checkoutAction: ['"]discard['"]/);
+    assert.match(clearSource, /intentId: selector/);
+
+    const createStart = client.indexOf('async function createOrder() {');
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
+    assert.ok(createStart >= 0 && createEnd > createStart, 'createOrder must stay a standalone function');
+    const createSource = client.slice(createStart, createEnd);
+    assert.match(createSource, /const definitiveCreateFailure = !unknownResult[\s\S]*DEFINITIVE_CREATE_FAILURE_CODES\.has/);
+    assert.match(createSource, /if \(definitiveCreateFailure\) clearFailedCheckoutContext\(attempt\?\.intentId\);/);
+
+    const discardStart = client.indexOf('async function discardPendingCheckoutIntent() {');
+    const discardEnd = client.indexOf('\n\n    function', discardStart);
+    assert.ok(discardStart >= 0 && discardEnd > discardStart, 'discard handler must stay a standalone function');
+    const discardSource = client.slice(discardStart, discardEnd);
+    assert.match(discardSource, /await inspectCheckoutIntent\(attempt\?\.context \|\| getPurchaseContext\(\), \{ announce: false \}\)/);
+    assert.match(discardSource, /guest_checkout_intent_invalid/);
+    assert.match(discardSource, /guest_checkout_intent_missing/);
+    assert.match(discardSource, /guest_checkout_intent_expired/);
+    assert.match(discardSource, /const refreshed = checkoutIntentId\(state\.pendingCreateAttempt\?\.intentId\)/);
+    assert.match(discardSource, /checkoutAction: ['"]discard['"]/);
+});
+
 test('Task 2.1 status polling is single-flight and an invalid checkout stays unknown', () => {
     assert.match(client, /statusRequestInFlight: false,/);
     assert.match(client, /statusRequestContext: null,\s*queuedStatusRequest: null,/);
@@ -385,13 +571,13 @@ test('Task 2.1 status polling is single-flight and an invalid checkout stays unk
     const pollSource = client.slice(pollStart, pollEnd);
     assert.match(
         pollSource,
-        /if \(state\.statusRequestInFlight\) \{\s*const active = state\.statusRequestContext;\s*if \(!active\s*\|\| active\.orderNo !== state\.orderNo\s*\|\| active\.generation !== state\.pollGeneration\) \{\s*state\.queuedStatusRequest = \{\s*orderNo: state\.orderNo,\s*generation: state\.pollGeneration,\s*forceProviderRefresh: forceProviderRefresh === true\s*\};\s*\}\s*renderGuestActions\(\);\s*return;\s*\}/
+        /if \(state\.statusRequestInFlight\) \{\s*const active = state\.statusRequestContext;\s*if \(!active\s*\|\| active\.orderNo !== state\.orderNo\s*\|\| active\.generation !== state\.pollGeneration\s*\|\| \(forceProviderRefresh && !state\.manualStatusRequestInFlight\)\) \{\s*state\.queuedStatusRequest = \{\s*orderNo: state\.orderNo,\s*generation: state\.pollGeneration,\s*forceProviderRefresh: forceProviderRefresh === true\s*\};\s*\}\s*renderGuestActions\(\);\s*return;\s*\}/
     );
     assert.match(
         pollSource,
         /if \(state\.statusRequestInFlight\) \{\s*const active = state\.statusRequestContext;\s*if \(!active\s*\|\| active\.orderNo !== expectedOrderNo\s*\|\| active\.generation !== generation\) \{\s*state\.queuedStatusRequest = \{\s*orderNo: expectedOrderNo,\s*generation,\s*forceProviderRefresh: forceProviderRefreshNext\s*\};\s*\}\s*return;\s*\}/
     );
-    assert.match(pollSource, /const requestContext = \{ orderNo: expectedOrderNo, generation \};\s*state\.pollActiveGeneration = generation;\s*state\.statusRequestInFlight = true;\s*state\.statusRequestContext = requestContext;\s*renderGuestActions\(\);/);
+    assert.match(pollSource, /state\.manualStatusRequestInFlight = forceProviderRefreshNext;\s*const requestContext = \{ orderNo: expectedOrderNo, generation \};\s*state\.pollActiveGeneration = generation;\s*state\.statusRequestInFlight = true;\s*state\.statusRequestContext = requestContext;\s*renderGuestActions\(\);/);
     assert.ok(
         pollSource.indexOf('state.statusRequestInFlight = true;') < pollSource.indexOf('await fetchStatus('),
         'the status lock must be acquired before issuing GET /status'
@@ -408,7 +594,7 @@ test('Task 2.1 status polling is single-flight and an invalid checkout stays unk
     );
     assert.match(client, /function stopPolling\(\) \{[\s\S]*state\.queuedStatusRequest = null;\s*\}/);
 
-    const checkoutStart = client.indexOf('function renderCheckout(checkout) {');
+    const checkoutStart = client.indexOf('function renderCheckout(checkout, { autoLaunch = false } = {}) {');
     const checkoutEnd = client.indexOf('\n    function selectedPayment()', checkoutStart);
     assert.ok(checkoutStart >= 0 && checkoutEnd > checkoutStart, 'renderCheckout must stay a standalone function');
     const checkoutSource = client.slice(checkoutStart, checkoutEnd);
@@ -417,28 +603,26 @@ test('Task 2.1 status polling is single-flight and an invalid checkout stays unk
     const createStart = client.indexOf('async function createOrder() {');
     const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
     const createSource = client.slice(createStart, createEnd);
-    assert.match(createSource, /const checkoutReady = !replayNeedsReview && payload\.checkout[\s\S]*\? renderCheckout\(payload\.checkout\)[\s\S]*: false;/);
+    assert.match(createSource, /const checkoutReady = !replayNeedsReview && payload\.checkout[\s\S]*\? renderCheckout\(payload\.checkout, \{ autoLaunch: true \}\)[\s\S]*: false;/);
     assert.match(createSource, /if \(replayNeedsReview\) \{[\s\S]*suppressUnsafeCheckout\(\);[\s\S]*'payment_creation_unknown'[\s\S]*stopPolling\(\);\s*return;/);
     assert.match(createSource, /if \(!checkoutReady && !state\.paymentConfirmed\) \{[\s\S]*state\.paymentCreationUnknown = true;[\s\S]*'payment_creation_unknown'[\s\S]*stopPolling\(\);\s*return;/);
 
     assert.match(pollSource, /else if \(state\.paymentCreationUnknown\) \{[\s\S]*'payment_creation_unknown'[\s\S]*shouldContinue = false;/);
 });
 
-test('Task 2.1 renders checkout actions and a credential-first lookup link with real hidden and busy states', () => {
+test('Task 2.1 renders payment-driven checkout and order-state actions', () => {
     assert.match(markup, /id="guestCashPurchaseModal"[^>]*hidden[^>]*aria-hidden="true"/);
-    assert.match(markup, /id="guestCashPurchaseDialog"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="guestCashPurchaseTitle"[^>]*aria-describedby="guestCashSubtitle guestCashState"/);
+    assert.match(markup, /id="guestCashPurchaseDialog"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="guestCashPurchaseTitle"/);
+    assert.doesNotMatch(markup, /id="guestCashPurchaseDialog"[^>]*aria-describedby=/, 'the removed subtitle must not remain as an accessible description target');
     assert.match(markup, /id="guestCashStorageWarning"[^>]*role="status"[^>]*hidden[^>]*>此浏览器无法暂存订单。请保持当前页面；查询能力开启后可用邮箱 \+ 查询密码继续。</);
     for (const id of [
-        'guestCashPurchaseDismissBtn',
-        'guestCashCreateOrderBtn',
         'guestCashCheckStatusBtn',
-        'guestCashAbandonOrderBtn',
-        'guestCashShowRecoveryBtn'
+        'guestCashAbandonOrderBtn'
     ]) {
-        assert.match(markup, new RegExp(`id="${id}"`), `missing primary guest action ${id}`);
+        assert.match(markup, new RegExp(`id="${id}"`), `missing guest order action ${id}`);
     }
-    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"[^>]*data-guest-order-access="primary"/);
-    assert.doesNotMatch(markup, /id="guestCashShowRecoveryBtn"[^>]*(?:aria-controls|aria-expanded|type="button")/);
+    assert.doesNotMatch(markup, /guestCashCreateOrderBtn|guestCashShowRecoveryBtn/);
+    assert.match(client, /function handlePaymentOptionClick\(option\) \{[\s\S]*?selectPaymentOption\(option\.key\);[\s\S]*?void createOrder\(\);/);
     assert.doesNotMatch(client, /closest\(['"]#guestCashShowRecoveryBtn['"]\)/);
     assert.doesNotMatch(markup, /guestCashRecoveryPanel|guestCashRecoveryOrderNo|guestCashRecoveryCodeInput/);
 
@@ -448,14 +632,12 @@ test('Task 2.1 renders checkout actions and a credential-first lookup link with 
     const policySource = client.slice(policyStart, policyEnd);
     assert.match(policySource, /const canAdoptDetachedCheckout = !hasOrder[\s\S]*Boolean\(snapshot\.detachedCheckout\)[\s\S]*!creating/);
     assert.match(policySource, /const canResumeUnknownCreate = !hasOrder[\s\S]*Boolean\(snapshot\.pendingCreateAttempt\)[\s\S]*snapshot\.paymentCreationUnknown === true \|\| snapshot\.pendingCreateAttempt\?\.unresolved === true[\s\S]*!creating[\s\S]*!inspectingIntent/);
-    assert.match(policySource, /const canCreate = !hasOrder[\s\S]*!snapshot\.paymentCreationUnknown[\s\S]*\['configure', 'error'\]\.includes\(status\)/);
     assert.match(policySource, /const canQuery = hasOrder[\s\S]*!delivered[\s\S]*status !== 'configure'/);
-    assert.match(policySource, /const canLeaveOrder = hasOrder[\s\S]*status === 'awaiting_payment'[\s\S]*!snapshot\.paymentConfirmed[\s\S]*!snapshot\.paymentCreationUnknown/);
-    assert.match(policySource, /dismiss: \{[\s\S]*visible: true,[\s\S]*disabled: false/);
+    assert.match(policySource, /const canLeaveOrder = hasOrder[\s\S]*\['awaiting_payment', 'checking', 'payment_creation_unknown'\]\.includes\(status\)[\s\S]*!snapshot\.paymentConfirmed/);
+    assert.doesNotMatch(policySource, /dismiss:/);
     assert.match(policySource, /const canRestartTerminalOrder = isRestartableTerminalOrder\(snapshot\);/);
-    assert.match(policySource, /create: \{[\s\S]*visible: canCreate \|\| canResumeUnknownCreate \|\| canAdoptDetachedCheckout[\s\S]*canRestartTerminalOrder[\s\S]*busy: creating \|\| inspectingIntent[\s\S]*restartTerminal: canRestartTerminalOrder/);
-    assert.match(policySource, /query: \{[\s\S]*visible: canQuery,[\s\S]*disabled: checking \|\| snapshot\.claimInFlight === true,[\s\S]*busy: checking/);
-    assert.match(policySource, /abandon: \{[\s\S]*visible: canLeaveOrder,[\s\S]*label: '离开当前订单'/);
+    assert.match(policySource, /query: \{[\s\S]*visible: canQuery,[\s\S]*disabled: manuallyChecking \|\| snapshot\.claimInFlight === true,[\s\S]*busy: manuallyChecking/);
+    assert.match(policySource, /abandon: \{[\s\S]*visible: canLeaveOrder,[\s\S]*disabled: !\['awaiting_payment', 'checking', 'payment_creation_unknown'\]\.includes\(status\)[\s\S]*busy: snapshot\.cancelRequestInFlight === true,[\s\S]*label: '取消订单'/);
     assert.match(policySource, /const unresolvedLocalCreate = Boolean\(snapshot\.detachedCheckout\)[\s\S]*snapshot\.pendingCreateAttempt[\s\S]*snapshot\.paymentCreationUnknown === true[\s\S]*snapshot\.pendingCreateAttempt\?\.unresolved === true/);
 
     const openStart = client.indexOf('function openGuestModal(');
@@ -473,7 +655,15 @@ test('Task 2.1 renders checkout actions and a credential-first lookup link with 
     assert.match(applySource, /button\.setAttribute\('aria-disabled', policy\.disabled \? 'true' : 'false'\)/);
     assert.match(applySource, /button\.setAttribute\('aria-busy', policy\.busy \? 'true' : 'false'\)/);
 
-    assert.match(client, /function renderGuestActions\(\) \{\s*const policy = deriveGuestActionPolicy\(\);[\s\S]*policy\.dismiss[\s\S]*policy\.create[\s\S]*policy\.query[\s\S]*policy\.abandon/);
+    assert.match(client, /function renderGuestActions\(\) \{\s*const policy = deriveGuestActionPolicy\(\);[\s\S]*policy\.query[\s\S]*policy\.abandon/);
+    assert.match(client, /checkoutAction: 'discard'/u);
+    assert.match(guestShopHandler, /const GUEST_CHECKOUT_INTENT_ACTIONS = new Set\(\['prepare', 'inspect', 'commit', 'ack', 'discard'\]\)/u);
+    assert.match(guestShopHandler, /discard: new Set\(\['checkoutAction', 'intentId'\]\)/u);
+    assert.match(guestShopHandler, /async function discardCheckoutIntent\(req, res, body\)/u);
+    assert.match(client, /const hasVisibleAction = policy\.query\.visible \|\| policy\.abandon\.visible;\s*setHidden\('guestCashActionFooter', !hasVisibleAction\);/);
+    assert.doesNotMatch(client, /setStateMessage\('正在检查未完成订单\.\.\.', 'configure'\)/);
+    assert.doesNotMatch(client, /setStateMessage\('正在确认商品信息\.\.\.', 'configure'\)/);
+    assert.doesNotMatch(client, /guestCashPurchaseCloseBtn|guestCashPurchaseDismissBtn|guestCashDismissHint|policy\.dismiss|稍后处理|关闭已发货内容/);
     assert.match(client, /function handleGuestModalKeydown\(event\) \{[\s\S]*event\.key === 'Escape'[\s\S]*closeGuestModal\(\)[\s\S]*event\.key !== 'Tab'[\s\S]*focusable/);
     assert.match(client, /function focusGuestModal\(\) \{[\s\S]*modalFocusableElements\(\)[\s\S]*first\.focus\(\)/);
     assert.match(client, /document\.addEventListener\('keydown', handleGuestModalKeydown\)/);
@@ -482,10 +672,16 @@ test('Task 2.1 renders checkout actions and a credential-first lookup link with 
     assert.match(client, /function noteSessionStorageUnavailable\(\) \{[\s\S]*state\.sessionStorageUnavailable = true;[\s\S]*syncSessionStorageWarning\(\);/);
     assert.match(client, /function syncSessionStorageWarning\(\) \{[\s\S]*guestCashStorageWarning/);
     assert.match(client, /state\.buyerCredentialRequired[\s\S]*请保存下单邮箱和查询密码[\s\S]*请保持当前页面；查询能力开启后可用邮箱 \+ 查询密码继续/);
-    assert.match(client, /function syncGuestOrdersLink\(\) \{[\s\S]*new URL\(['"]\/guest-orders\.html['"][\s\S]*searchParams\.set\(['"]order_no['"], orderNo\)/);
-    assert.doesNotMatch(client, /syncGuestOrdersLink[\s\S]{0,1200}(?:email|password|recoveryCode)/i);
+    assert.doesNotMatch(client, /syncGuestOrdersLink|guestCashShowRecoveryBtn/);
     assert.match(styles, /\.guest-shop-modal__field\[hidden\] \{ display: none !important; \}/);
     assert.match(styles, /\.guest-shop-modal__actions > \.shop-btn\[hidden\] \{ display: none !important; \}/);
+    assert.match(styles, /@media \(max-width: 600px\) \{[\s\S]*\.guest-shop-modal__actions \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+    assert.match(styles, /#guestCashOrderNo \{[^}]*font-size: 12px/);
+    assert.match(styles, /\.guest-shop-modal__summary-row strong \{[^}]*font-size: 12px[^}]*letter-spacing: \.015em/);
+    assert.match(styles, /#guestCashAbandonOrderBtn \{[^}]*background: rgba\(239,68,68/);
+    assert.match(styles, /\.guest-shop-modal__step\[data-step-key="configure"\] \.guest-shop-modal__step-index/);
+    assert.match(styles, /\.guest-shop-modal__step\[data-step-key="payment"\] \.guest-shop-modal__step-index/);
+    assert.match(styles, /\.guest-shop-modal__step\[data-step-key="delivery"\] \.guest-shop-modal__step-index/);
 });
 
 test('guest delivery is claim-gated by confirmed payment and delivered fulfillment', () => {
@@ -494,7 +690,13 @@ test('guest delivery is claim-gated by confirmed payment and delivered fulfillme
         /paymentStatus === ['"]confirmed['"] && fulfillmentStatus === ['"]delivered['"][\s\S]*await claimDelivery\(generation, expectedOrderNo\)/
     );
     assert.match(client, /CLAIM_ENDPOINT[\s\S]*method:\s*['"]POST['"][\s\S]*credentials:\s*['"]same-origin['"]/);
-    assert.match(client, /setText\(['"]guestCashDeliveredContent['"], payload\.content \|\| ['"]['"]\)/);
+    assert.match(client, /renderDeliveredContent\(isBatchOrder\(orderNo\)[\s\S]*?batchDeliveryContent\(payload\.items\)[\s\S]*?payload\.content \|\| ['"]['"]\)/);
+    assert.match(client, /function groupBatchDeliveryItems\(items\)/);
+    assert.match(client, /product_name \|\| item\?\.productName/);
+    assert.match(client, /guest-shop-modal__delivery-group/);
+    assert.match(client, /function batchDeliveryCopyText\(items\)/);
+    assert.match(styles, /\.guest-shop-modal__delivery-group-heading/);
+    assert.match(styles, /\.guest-shop-modal__delivery-group-items/);
     assert.doesNotMatch(client, /innerHTML\s*=\s*[^;]*payload\.content/);
     const claimStart = client.indexOf('async function claimDelivery(');
     const claimEnd = client.indexOf('\n    function calculateSmartPollInterval', claimStart);
@@ -504,10 +706,10 @@ test('guest delivery is claim-gated by confirmed payment and delivered fulfillme
     assert.match(claimSource, /expectedGeneration !== state\.pollGeneration \|\| state\.orderNo !== orderNo/);
     assert.match(claimSource, /clearStoredCheckoutAfterAcknowledgement\(\)/);
     assert.doesNotMatch(claimSource, /persistCheckout\(\)/);
-    assert.match(markup, /<pre id="guestCashDeliveredContent"/);
+    assert.match(markup, /<div id="guestCashDeliveredContent"[^>]*role="list"/);
 });
 
-test('delivered guest orders drop their resumable handle but keep the payload visible until the page is left', () => {
+test('delivered guest orders clear their resumable handle when the modal closes', () => {
     assert.match(client, /function clearCompletedCheckout\(\)/);
     assert.match(client, /function clearCompletedCheckout\(\)[\s\S]*state\.orderNo = ['"]['"][\s\S]*state\.status = ['"]configure['"][\s\S]*resetOrderUi\(\)/);
     assert.match(client, /function clearCompletedCheckout\(\)[\s\S]*clearStoredCheckout\(\)/);
@@ -515,20 +717,17 @@ test('delivered guest orders drop their resumable handle but keep the payload vi
     const closeEnd = client.indexOf('\n    function clearCompletedCheckout()', closeStart);
     assert.ok(closeStart >= 0 && closeEnd > closeStart, 'closeGuestModal must stay a standalone function');
     const closeSource = client.slice(closeStart, closeEnd);
-    assert.doesNotMatch(closeSource, /clearCompletedCheckout|resetOrderUi|setText\('guestCashDeliveredContent'/);
+    assert.match(closeSource, /state\.status === 'delivered'[\s\S]*clearCompletedCheckout\(\)/);
     assert.match(closeSource, /state\.status === 'delivered'[\s\S]*!state\.deliveryCopied[\s\S]*发货内容尚未复制/);
     assert.doesNotMatch(closeSource, /recoveryCode|recovery_code|取货口令/);
-    assert.match(client, /setStateMessage\('支付已确认，订单已发货。', 'delivered'\)[\s\S]*clearStoredCheckoutAfterAcknowledgement\(\)/);
+    assert.match(client, /setStateMessage\('', 'delivered'\)[\s\S]*clearStoredCheckoutAfterAcknowledgement\(\)/);
+    assert.doesNotMatch(client, /支付已确认，订单已发货。/);
     assert.match(client, /async function maybeRestoreReturn\(\)[\s\S]*const restoredOrderNo = state\.orderNo[\s\S]*state\.orderNo !== restoredOrderNo/);
     assert.match(client, /restoredOrder\.payment_status[\s\S]*restoredOrder\.fulfillment_status[\s\S]*clearCompletedCheckout\(\)/);
 });
 
-test('terminal guest orders require an explicit local reset before a new order can be created', () => {
-    assert.match(markup, /id="guestCashCreateOrderBtn"[^>]*aria-describedby="guestCashTerminalRestartHint"/);
-    assert.match(
-        markup,
-        /id="guestCashTerminalRestartHint"[^>]*hidden[^>]*>此操作只清除本地订单句柄，不会取消服务端订单或立即释放库存；旧付款码不可再付。回到配置后，需再次确认报价并创建新订单。</
-    );
+test('terminal guest orders require a payment-option click before a replacement order', () => {
+    assert.doesNotMatch(markup, /guestCashCreateOrderBtn|guestCashTerminalRestartHint/);
 
     const terminalStart = client.indexOf('function isRestartableTerminalOrder(snapshot = state) {');
     const terminalEnd = client.indexOf('\n    function deriveGuestActionPolicy', terminalStart);
@@ -553,13 +752,9 @@ test('terminal guest orders require an explicit local reset before a new order c
     assert.match(resetSource, /state\.preview = null[\s\S]*invalidatePreviewQuote\(\)[\s\S]*void loadPreview\(context\)/);
     assert.doesNotMatch(resetSource, /ORDER_ENDPOINT|requestJson\(|fetch\s*\(/);
 
-    const createStart = client.indexOf('async function createOrder() {');
-    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
-    const createSource = client.slice(createStart, createEnd);
-    assert.match(createSource, /if \(isRestartableTerminalOrder\(\)\) \{\s*returnTerminalOrderToConfiguration\(\);\s*return;/);
-    assert.match(client, /setHidden\('guestCashTerminalRestartHint', !policy\.create\.restartTerminal\)/);
-    assert.doesNotMatch(client, /\/api\/shop\/guest\/cancel/);
-    assert.doesNotMatch(client, /fn_guest_shop_cancel/);
+    assert.match(client, /function handlePaymentOptionClick\(option\) \{[\s\S]*if \(isRestartableTerminalOrder\(\)\) \{\s*returnTerminalOrderToConfiguration\(\);\s*return;\s*\}/);
+    assert.match(client, /const CANCEL_ENDPOINT = ['"]\/api\/shop\/guest\/cancel['"];/);
+    assert.match(client, /requestJson\(isBatchOrder\(orderNo\) \? BATCH_CANCEL_ENDPOINT : CANCEL_ENDPOINT,[\s\S]*method: 'POST'/);
 });
 
 test('payment return markers only restore an order handle and do not unlock delivery', () => {
@@ -656,6 +851,11 @@ test('manual status check forces a live provider query while background polling 
     assert.match(client, /let forceProviderRefreshNext = forceProviderRefresh === true/);
     assert.match(client, /fetchStatus\(\{\s*forceRefresh: forceProviderRefreshNext,\s*orderNo: expectedOrderNo\s*\}\)/);
     assert.match(client, /forceProviderRefreshNext = false/);
+    assert.match(
+        client,
+        /const statusButton = target\.closest\('#guestCashCheckStatusBtn'\);[\s\S]*?setStateMessage\([\s\S]*?正在查询支付状态，请稍候\.\.\.[\s\S]*?pollStatus\(\{ immediate: true, resetWindow: true, forceProviderRefresh: true \}\)/,
+        'manual status checks must show immediate feedback before polling'
+    );
     // The automatic poll path stays non-forced so it cannot bypass the server throttle.
     assert.match(client, /void pollStatus\(\{ immediate: true \}\)/);
 });
@@ -685,7 +885,7 @@ test('the payment modal never displays or handles the legacy pickup-code recover
     // rendered, copied, persisted, or sent by this payment modal.
     assert.doesNotMatch(markup, /guestCashRecovery(CodePanel|Panel)|guestCashRecoveryCode|口令只显示一次/);
     assert.doesNotMatch(client, /RECOVERY_ENDPOINT|showRecoveryCode|recoveryCode|recovery_code|guestCashRecover/);
-    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"/);
+    assert.doesNotMatch(markup, /guestCashShowRecoveryBtn/);
     const persistStart = client.indexOf('function persistCheckoutRecord(record)');
     const persistEnd = client.indexOf('\n    function hydrateCheckout', persistStart);
     assert.ok(persistStart >= 0 && persistEnd > persistStart, 'checkout persistence must stay isolated');
@@ -699,7 +899,7 @@ test('the payment modal never displays or handles the legacy pickup-code recover
     assert.match(markup, /class="modal-content premium-modal guest-shop-modal__content"/);
     assert.match(markup, /class="shop-btn shop-btn-primary"/);
     assert.match(markup, /class="shop-btn shop-btn-secondary"/);
-    assert.match(markup, /无需登录/);
+    assert.doesNotMatch(guestCheckoutModalMarkup(), /无需登录|游客购买/, 'the confirmation dialog must not repeat guest-only messaging');
     assert.doesNotMatch(markup, /Guest checkout/);
     assert.match(markup, /应付金额/);
     assert.match(client, /function formatAmount\(amount\)/);
@@ -707,20 +907,23 @@ test('the payment modal never displays or handles the legacy pickup-code recover
     assert.doesNotMatch(client, /currency:\s*'USD'/);
 });
 
-test('guest ZPay checkout hosts an in-page Alipay QR and countdown instead of opening WAP', () => {
+test('guest ZPay checkout hosts an in-page Alipay QR and hands mobile buyers to the Alipay app', () => {
     const guestModalStart = markup.indexOf('id="guestCashPurchaseModal"');
-    const guestModalEnd = markup.indexOf('id="guestCashPurchaseDismissBtn"');
+    const guestModalEnd = markup.indexOf('<div class="modal-overlay" id="shopCartCheckoutModal">', guestModalStart);
     assert.ok(guestModalStart >= 0 && guestModalEnd > guestModalStart, 'guest cash modal markup must exist');
     const guestModal = markup.slice(guestModalStart, guestModalEnd);
     assert.doesNotMatch(guestModal, /id="guestCashCheckoutLink"/);
     assert.doesNotMatch(guestModal, /打开支付页面/);
     assert.doesNotMatch(guestModal, /target="_blank"/);
     assert.match(markup, /id="guestCashZpayQrImage"[^>]*class="guest-shop-modal__qr-image"/);
-    assert.match(markup, /id="guestCashZpayCountdown"[^>]*class="guest-shop-modal__qr-countdown"/);
-    assert.match(markup, /id="guestCashZpayOpenBtn"[^>]*hidden/);
-    assert.match(markup, /请使用支付宝扫码支付/);
-    assert.match(markup, /打开支付宝支付/);
+    assert.match(markup, /id="guestCashZpayCountdown"[^>]*class="guest-shop-modal__state-countdown"/);
+    assert.match(markup, /id="guestCashStateMessage"/);
+    assert.match(markup, /付款剩余 <\/span><strong id="guestCashZpayCountdownValue"/);
+    assert.match(client, /const visibleMessage = active && !state\.stateMessage\.startsWith\('查询完成：'\)/);
+    assert.match(client, /付款剩余 \$\{state\.zpayCountdownText\}/);
+    assert.doesNotMatch(guestModal, /guestCashZpayOpenBtn|打开支付宝支付|请使用支付宝扫码支付/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
+    assert.match(markup, /guestDeliveryLightTheme=20260929_GUEST_DELIVERY_LIGHT_THEME_1/);
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
     // Asserted as an independent marker (same convention as the
     // `guestOrderAccess` marker below) so adding or reordering cache-buster
@@ -728,24 +931,34 @@ test('guest ZPay checkout hosts an in-page Alipay QR and countdown instead of op
     assert.match(markup, /guestEntryMerge=20260917_GUEST_ENTRY_MERGE_1/);
 
     assert.match(styles, /\.guest-shop-modal__qr-card/);
-    assert.match(styles, /\.guest-shop-modal__qr-countdown/);
+    assert.match(styles, /\.guest-shop-modal__state-countdown/);
+    assert.match(styles, /\.guest-shop-modal__state-countdown\[hidden\]\s*\{\s*display:\s*none\s*!important;/);
     assert.match(styles, /\.guest-shop-modal__qr-image/);
     assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__qr-card/);
     assert.doesNotMatch(markup, /href="css\/wallet\.css/);
 
     assert.match(client, /function checkoutDetails\(checkout\)/);
-    assert.match(client, /qrcodeUrl:\s*safePaymentUrl\(source\.qrcode_url\)/);
-    assert.match(client, /qrcodeImageUrl:\s*safePaymentUrl\(source\.qrcode_image_url \|\| source\.qrcode_img_url\)/);
+    assert.match(client, /qrcodeUrl:\s*safePaymentUrl\(source\.qrcode_url \|\| source\.qrcodeUrl\)/);
+    assert.match(client, /qrcodeImageUrl:\s*safePaymentUrl\(source\.qrcode_image_url \|\| source\.qrcode_img_url \|\| source\.qrcodeImageUrl\)/);
     assert.match(client, /function isHostedPaymentQrDesktopLayout\(\)/);
     assert.match(client, /function isMobileAlipayHandoff\(\)/);
     assert.match(client, /return isMobilePaymentBrowser\(\) && !isHostedPaymentQrDesktopLayout\(\);/);
-    assert.match(client, /function presentZpayHostedQr\(details\)/);
+    assert.match(client, /function presentZpayHostedQr\(details, \{ autoLaunch = false, qrRetryAttempt = 0 \} = \{\}\)/);
+    assert.match(client, /image\.onerror = \(\) => \{[\s\S]*二维码图片加载失败[\s\S]*setZpayStatus\('二维码暂时无法加载，请刷新页面或稍后重试。', 'error'\)/);
+    assert.doesNotMatch(client, /guestCashZpayOpenBtn|zpayOpenButton|desktopUrl/);
     assert.match(client, /function startZpayCountdown\(\)/);
     assert.match(client, /function buildQrImageUrl\(data, size = 240\)/);
-    assert.match(client, /hostedImageUrl = isMobileHandoff[\s\S]*details\.qrcodeImageUrl \|\| buildQrImageUrl\(qrcodeUrl \|\| checkoutUrl\)/);
+    assert.match(client, /hostname === 'localhost'[\s\S]*url\.pathname === '\/'[\s\S]*opaque token[\s\S]*return false;/);
+    assert.doesNotMatch(client, /comparable\.toLowerCase\(\)\.includes\(orderReference\)/);
+    assert.match(client, /const qrSource = qrcodeUrl \|\| \(isImageLikeUrl\(checkoutUrl\) \? '' : checkoutUrl\);\s*const localQrImageUrl = buildQrImageUrl\(qrSource\);[\s\S]*?const hostedImageUrl = localQrImageUrl/);
+    assert.match(client, /const orderScopedQr = Boolean\(/);
+    assert.match(client, /Boolean\(state\.batchMode \? orderScopedQr : \(orderScopedQr \|\| directImageFallback\)\)/);
+    assert.match(client, /!state\.batchMode && !qrSource && !isLikelyQrPlaceholder\(details\.qrcodeImageUrl\)/);
+    assert.match(client, /scheduleZpayQrRetry\(details, \{ autoLaunch, attempt: qrRetryAttempt \}\)/);
     assert.match(client, /alipays:\/\/platformapi\/startapp\?appId=20000067&url=/);
     assert.match(client, /window\.location\.href = launchUrl/);
-    assert.match(client, /if \(launchUrl && isMobileAlipayHandoff\(\)\)/);
+    assert.match(client, /if \(autoLaunch && launchUrl && state\.orderNo && state\.mobileAlipayHandoffOrderNo !== state\.orderNo\)[\s\S]*state\.mobileAlipayHandoffOrderNo = state\.orderNo;[\s\S]*window\.location\.href = launchUrl/);
+    assert.match(client, /renderCheckout\(payload\.checkout, \{ autoLaunch: true \}\)/);
     assert.match(client, /setHidden\('guestCashConfigurePanel', true\)/);
     assert.match(client, /presentZpaySuccess\(\)/);
     assert.doesNotMatch(client, /window\.open\s*\(/);
@@ -754,18 +967,15 @@ test('guest ZPay checkout hosts an in-page Alipay QR and countdown instead of op
     assert.doesNotMatch(client, /不要在电脑浏览器打开支付宝链接[\s\S]{0,80}window\.location/);
 });
 
-test('unpaid guest orders can be left locally without implying a cancel RPC', () => {
-    assert.match(markup, /id="guestCashPurchaseDismissBtn"[^>]*aria-describedby="guestCashDismissHint"/);
-    assert.match(markup, /id="guestCashDismissHint"[^>]*hidden[^>]*>“稍后处理”仅离开当前页面；如订单已创建，不会取消订单、不会立即释放库存，也不会发送付款成功通知。</);
+test('unpaid guest orders require a server cancellation before local cleanup', () => {
+    assert.doesNotMatch(markup, /id="guestCashPurchaseCloseBtn"|id="guestCashPurchaseDismissBtn"|id="guestCashDismissHint"|稍后处理|关闭已发货内容/);
+    assert.match(client, /if \(target === getModal\(\)\)/);
+    assert.match(client, /event\.key === 'Escape'[\s\S]*closeGuestModal\(\)/);
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*class="shop-btn shop-btn-secondary"/);
     assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*hidden/);
-    assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*aria-describedby="guestCashAbandonOrderHint"/);
-    assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*>离开当前订单</);
+    assert.match(markup, /id="guestCashAbandonOrderBtn"[^>]*>取消订单</);
     assert.doesNotMatch(markup, /id="guestCashAbandonOrderBtn"[^>]*>关闭当前订单</);
-    assert.match(
-        markup,
-        /id="guestCashAbandonOrderHint"[^>]*hidden[^>]*>此操作仅离开当前订单页面，不会取消服务端订单，也不会立即释放库存；离开后请勿再支付旧付款码。</
-    );
+    assert.doesNotMatch(markup, /guestCashAbandonOrderHint|此操作仅离开当前订单页面，不会取消服务端订单，也不会立即释放库存；离开后请勿再支付旧付款码/);
     assert.match(styles, /\.guest-shop-modal__actions > \.shop-btn\[hidden\] \{ display: none !important; \}/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
@@ -778,23 +988,51 @@ test('unpaid guest orders can be left locally without implying a cancel RPC', ()
 
     assert.match(client, /function clearStoredCheckout\(\)/);
     assert.match(client, /function isAbandonableOrder\(\)/);
-    assert.match(client, /function abandonCurrentOrder\(\)/);
+    assert.match(client, /async function abandonCurrentOrder\(\)/);
     assert.match(client, /storage\.removeItem\(STORAGE_KEY\)/);
     assert.match(client, /function abandonCurrentOrder\(\)[\s\S]*clearStoredCheckout\(\)/);
     assert.match(client, /function abandonCurrentOrder\(\)[\s\S]*state\.checkoutIntentId = ['"]['"]/);
-    assert.match(client, /function isAbandonableOrder\(\)[\s\S]*state\.status !== ['"]awaiting_payment['"]/);
+    assert.match(client, /function isAbandonableOrder\(\)[\s\S]*\['awaiting_payment', 'checking', 'payment_creation_unknown'\]\.includes\(state\.status\)/);
     assert.match(client, /function isAbandonableOrder\(\)[\s\S]*state\.paymentConfirmed/);
-    assert.match(client, /当前订单已确认付款或已发货，不能离开/);
-    assert.match(client, /请勿再支付旧付款码/);
+    assert.match(client, /当前订单已确认付款或已发货，不能取消/);
+    assert.match(client, /服务端会立即释放库存并作废旧付款码/);
     assert.doesNotMatch(client, /unsavedRecoveryWarning|recoveryCodeCopied|取货口令尚未复制或保存/);
     assert.match(client, /target\.closest\(['"]#guestCashAbandonOrderBtn['"]\)/);
-    assert.match(client, /#guestCashPurchaseCloseBtn, #guestCashPurchaseDismissBtn/);
+    assert.doesNotMatch(client, /guestCashPurchaseCloseBtn|guestCashPurchaseDismissBtn|guestCashDismissHint|policy\.dismiss|稍后处理|关闭已发货内容/);
 
-    assert.doesNotMatch(client, /\/api\/shop\/guest\/cancel/);
-    assert.doesNotMatch(client, /fn_guest_shop_cancel/);
+    assert.match(client, /const CANCEL_ENDPOINT = ['"]\/api\/shop\/guest\/cancel['"];/);
+    assert.match(client, /requestJson\(isBatchOrder\(orderNo\) \? BATCH_CANCEL_ENDPOINT : CANCEL_ENDPOINT,[\s\S]*method: 'POST'/);
+    assert.match(client, /state\.cancelRequestInFlight = true;[\s\S]*invalidateView\(\);[\s\S]*stopPolling\(\);/);
     assert.doesNotMatch(client, /window\.open\s*\(/);
     assert.doesNotMatch(markup, /id="guestCashCheckoutLink"/);
     assert.doesNotMatch(client, /guestCashCheckoutLink/);
+});
+
+test('guest payment QR omits the static waiting label', () => {
+    assert.match(markup, /id="guestCashZpayStatus"[^>]*role="status"[^>]*hidden[^>]*><\/div>/);
+    assert.match(client, /setZpayStatus\('', 'info'\);/);
+    assert.doesNotMatch(client, /setZpayStatus\('等待付款', 'info'\)/);
+});
+
+test('payment countdown cannot leak into cancellation or a fresh create attempt', () => {
+    const countdownStart = client.indexOf('function syncPaymentCountdownState() {');
+    const countdownEnd = client.indexOf('\n    function stopZpayCountdown()', countdownStart);
+    assert.ok(countdownStart >= 0 && countdownEnd > countdownStart, 'countdown renderer must stay isolated');
+    const countdownSource = client.slice(countdownStart, countdownEnd);
+    assert.match(countdownSource, /state\.status === 'awaiting_payment'[\s\S]*Boolean\(state\.orderNo\)[\s\S]*provider \|\| state\.checkout\?\.provider[\s\S]*=== 'zpay'/);
+    assert.match(countdownSource, /if \(valueEl && !active\) valueEl\.textContent = '';/);
+
+    const cancelStart = client.indexOf('async function abandonCurrentOrder() {');
+    const cancelEnd = client.indexOf('\n    function returnTerminalOrderToConfiguration()', cancelStart);
+    assert.ok(cancelStart >= 0 && cancelEnd > cancelStart, 'cancellation must stay isolated');
+    const cancelSource = client.slice(cancelStart, cancelEnd);
+    assert.match(cancelSource, /state\.cancelRequestInFlight = true;[\s\S]*stopZpayCountdown\(\);[\s\S]*setStateMessage\('正在取消订单并释放库存\.\.\.', 'awaiting_payment'\)/);
+
+    const createStart = client.indexOf('async function createOrder() {');
+    const createEnd = client.indexOf('\n    async function fetchStatus', createStart);
+    assert.ok(createStart >= 0 && createEnd > createStart, 'create flow must stay isolated');
+    const createSource = client.slice(createStart, createEnd);
+    assert.match(createSource, /当前商品不支持游客购买'[\s\S]*return;[\s\S]*stopZpayCountdown\(\);[\s\S]*state\.requestInFlight = true;/);
 });
 
 test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amounts', () => {
@@ -802,6 +1040,8 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(markup, /id="guestCashFeeRow"[^>]*hidden/);
     assert.match(markup, /id="guestCashFeeLabel"[^>]*>通道手续费</);
     assert.match(markup, /id="guestCashFeeAmount"/);
+    assert.match(markup, /class="guest-shop-modal__amount-header"[\s\S]*id="guestCashAmountLabel"[\s\S]*id="guestCashPrice"/);
+    assert.match(styles, /\.guest-shop-modal__amount-header[\s\S]*display: flex[\s\S]*justify-content: space-between/);
     assert.match(markup, /应付金额/);
     assert.match(markup, /guestPayableFee=20260916_GUEST_PAYABLE_FEE_2/);
     assert.match(markup, /js\/guest-shop-client\.js\?v=20260917_GUEST_POLL_RATE_LIMIT_SAFE_1/);
@@ -816,14 +1056,65 @@ test('guest checkout auto-adds a 1% channel fee to Alipay and USDT payable amoun
     assert.match(client, /surcharge_rate:\s*parsedRate > 0 \? parsedRate : fallbackRate/);
     assert.match(client, /function computePreviewPricing\(\)/);
     assert.match(client, /roundUpMoneyAmount\(baseAmount \* summary\.surcharge_rate\)/);
-    assert.match(client, /setText\(['"]guestCashPrice['"], formatAmount\(pricing\?\.payableAmount\)\)/);
+    assert.match(client, /setAmountValue\(['"]guestCashPrice['"], formatAmount\(pricing\?\.payableAmount\), \{ loading: amountLoading \}\)/);
     assert.match(client, /setHidden\(['"]guestCashFeeRow['"], !\(surchargeAmount > 0\)\)/);
     assert.doesNotMatch(client, /surcharge_rate:\s*normalizeSurchargeRate\(summary\?\.surcharge_rate, fallbackRate\)/);
 });
 
+test('guest checkout confirmation uses concise copy and accessible capsule payment options in light theme', () => {
+    const modal = guestCheckoutModalMarkup();
+    for (const removedCopy of [
+        '游客购买',
+        '无需登录',
+        '选择支付方式后创建订单，支付完成会自动核验并展示发货内容。',
+        '请设置一个只用于查询本站订单的密码，不要使用你在其他网站常用的密码。再次购买时请填写上次设置的查询密码；如果忘记了，直接设置一个新密码即可，原订单仍用原密码查询。',
+        '支付完成后，页面会自动核验支付回调并展示发货内容。回跳页面本身不会被视为支付成功。',
+        '请选择支付方式并创建订单'
+    ]) {
+        assert.ok(!modal.includes(removedCopy), `confirmation dialog should not include removed copy: ${removedCopy}`);
+    }
+
+    assert.match(modal, /<h3 id="guestCashPurchaseTitle" class="card-title guest-shop-modal__title-sr">确认订单<\/h3>/);
+    assert.doesNotMatch(modal, /id="guestCashSubtitle"|guest-shop-modal__subtitle/);
+    assert.match(modal, /<span id="guestCashPaymentLabel">付款方式<\/span>/);
+    assert.match(modal, /id="guestCashPaymentOptions"[^>]*role="radiogroup"[^>]*aria-labelledby="guestCashPaymentLabel"/);
+    assert.match(modal, /<select id="guestCashPaymentChannel"[^>]*hidden[^>]*aria-hidden="true"[^>]*tabindex="-1"><\/select>/);
+
+    assert.match(client, /button\.setAttribute\('role', 'radio'\)/);
+    assert.match(client, /radio\.setAttribute\('aria-checked', selected \? 'true' : 'false'\)/);
+    assert.match(client, /event\.key === 'ArrowRight'[\s\S]*event\.key === 'ArrowLeft'[\s\S]*event\.key === 'Home'[\s\S]*event\.key === 'End'/);
+    assert.match(client, /\['guestCashPaymentChannel', 'guestCashDiscountCode'\][\s\S]*node\.disabled = Boolean\(locked\)/);
+    assert.match(client, /paymentOptions\.querySelectorAll\('\[role="radio"\]'\)[\s\S]*radio\.disabled = Boolean\([\s\S]*?\)/);
+
+    assert.match(styles, /\.guest-shop-modal__payment-options \{[\s\S]*display: flex;[\s\S]*flex-wrap: wrap/);
+    assert.match(styles, /\.guest-shop-modal__payment-option \{[\s\S]*min-height: 42px/);
+    assert.match(styles, /\.guest-shop-modal__payment-option \{[\s\S]*border-radius: 999px/);
+    assert.match(styles, /\.guest-shop-modal__payment-loading \{[\s\S]*display: none;[\s\S]*width: 0;/);
+    assert.match(styles, /#guestCashPurchaseModal \.guest-shop-modal__payment-option \{[\s\S]*min-width: 0;/);
+    assert.match(styles, /\.guest-shop-modal__payment-option\.is-loading \.guest-shop-modal__payment-loading \{[\s\S]*display: inline-flex;[\s\S]*width: 22px;/);
+    assert.match(styles, /#guestCashPurchaseModal \.guest-shop-modal__payment-option\.is-loading \.guest-shop-modal__payment-icon,[\s\S]*?visibility: hidden;/);
+    assert.doesNotMatch(styles, /#guestCashPurchaseModal \.guest-shop-modal__payment-option\.is-loading \.guest-shop-modal__payment-icon,[\s\S]*?display: none;/);
+    assert.match(styles, /#guestCashPurchaseModal \.guest-shop-modal__payment-option\.is-loading \.guest-shop-modal__payment-loading \{[\s\S]*?position: absolute;[\s\S]*?inset: 0;[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/);
+    assert.match(styles, /#guestCashPurchaseModal \.guest-shop-modal__payment-option\.is-loading:disabled \{[\s\S]*?opacity: 1;/);
+    assert.match(styles, /html\[data-theme="dark"\] body\.shop-page \.guest-shop-modal__payment-option\[data-channel="alipay"\] \.guest-shop-modal__payment-icon \{[\s\S]*?background: #e8f1ff;[\s\S]*?color: #1677ff;[\s\S]*?filter: none;/);
+    assert.match(styles, /html\[data-theme="dark"\] body\.shop-page \.guest-shop-modal__payment-option\[data-channel="alipay"\] \.guest-shop-modal__payment-icon > i \{[\s\S]*?color: #1677ff;[\s\S]*?filter: none;/);
+    assert.match(client, /alipay: 'fa-brands fa-alipay'/);
+    assert.match(client, /iconGlyph\.src = 'assets\/tether-mark\.svg'/);
+    assert.doesNotMatch(client, /（NOWPayments）/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__payment-option \{[\s\S]*background: #fff[\s\S]*color: #1e293b/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__field input[\s\S]*color: #172033 !important[\s\S]*-webkit-text-fill-color: #172033 !important/);
+    assert.match(markup, /<span>邮箱 <small id="guestCashContactHint">可选<\/small><\/span>/);
+    assert.ok(
+        modal.indexOf('id="guestCashContact"') < modal.indexOf('id="guestCashPaymentOptions"'),
+        'email collection must appear before payment choices'
+    );
+    assert.match(markup, /<span>密码 <small>必填<\/small><\/span>/);
+    assert.doesNotMatch(guestCheckoutModalMarkup(), /接收通知邮箱|查询密码 <small>必填/);
+});
+
 test('the guest checkout modal mirrors the Dujiao payment and delivery layout', () => {
     const guestModalStart = markup.indexOf('id="guestCashPurchaseModal"');
-    const guestModalEnd = markup.indexOf('id="guestCashPurchaseDismissBtn"');
+    const guestModalEnd = markup.indexOf('<div class="modal-overlay" id="shopCartCheckoutModal">', guestModalStart);
     assert.ok(guestModalStart >= 0 && guestModalEnd > guestModalStart, 'guest cash modal markup must exist');
     const modal = markup.slice(guestModalStart, guestModalEnd);
 
@@ -831,8 +1122,9 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
     // reordering cache-buster params never silently invalidates it).
     assert.match(markup, /guestCheckoutUi=20260918_GUEST_CHECKOUT_DUJIAO_UI_1/);
 
-    // Payment.vue header: one title node + a muted subtitle the client swaps per phase.
-    assert.match(modal, /id="guestCashSubtitle"[^>]*class="guest-shop-modal__subtitle"/);
+    // Confirmation dialog: keep a concise title, with no subtitle or guest-only eyebrow.
+    assert.match(modal, /<h3 id="guestCashPurchaseTitle" class="card-title guest-shop-modal__title-sr">确认订单<\/h3>/);
+    assert.doesNotMatch(modal, /guestCashSubtitle|guest-shop-modal__subtitle|游客购买|无需登录/);
 
     // CheckoutSteps.vue -> a 3-step rail (确认订单 -> 支付 -> 发货). A guest single-product
     // flow has no cart, so the同构 mapping drops Dujiao's cart step.
@@ -843,14 +1135,22 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
     assert.equal((modal.match(/class="guest-shop-modal__step"/g) || []).length, 3, 'the rail keeps exactly three steps');
     assert.equal((modal.match(/guest-shop-modal__step-index/g) || []).length, 3);
     assert.equal((modal.match(/guest-shop-modal__step-label/g) || []).length, 3);
+    assert.doesNotMatch(modal, /guest-shop-modal__step-index[^>]*>\s*\d+\s*</);
 
-    // PaymentAmountBreakdown.vue -> payable hero + line items + in-card polling hint.
+    // PaymentAmountBreakdown.vue -> payable hero + line items.
     assert.match(modal, /class="guest-shop-modal__amount"/);
-    assert.match(modal, /class="guest-shop-modal__amount-label">应付金额</);
-    assert.match(modal, /id="guestCashPrice"[^>]*class="guest-shop-modal__amount-value"/);
+    assert.match(modal, /id="guestCashAmountLabel" class="guest-shop-modal__amount-label">应付金额</);
+    assert.match(client, /setText\('guestCashAmountLabel', status === 'delivered' \? '已付金额' : '应付金额'\)/);
+    assert.match(modal, /id="guestCashPrice"[^>]*class="guest-shop-modal__amount-value(?:\s+[^\"]+)?"/);
+    assert.match(modal, /id="guestCashPrice"[^>]*is-amount-placeholder[^>]*><span class="guest-amount-currency">￥<\/span><span class="guest-amount-digits">0\.00<\/span>/);
+    assert.match(styles, /@keyframes guest-amount-reveal/);
+    assert.doesNotMatch(styles, /@keyframes guest-amount-roll-up/);
+    assert.doesNotMatch(styles, /@keyframes guest-amount-reveal\s*\{[^}]*transform/);
+    assert.doesNotMatch(styles, /@keyframes guest-amount-placeholder-fade\s*\{[^}]*transform/);
+    assert.doesNotMatch(styles, /guest-amount-skeleton-pulse/);
     assert.match(modal, /class="guest-shop-modal__amount-rows"/);
-    assert.match(modal, /id="guestCashAmountFooter"[^>]*class="guest-shop-modal__amount-footer"[^>]*hidden/);
-    assert.match(modal, /id="guestCashPollingHint"[^>]*class="guest-shop-modal__hint"/);
+    assert.doesNotMatch(modal, /guestCashAmountFooter|guestCashPollingHint|正在自动核验支付结果，请保持此页面打开/);
+    assert.match(modal, /class="guest-shop-modal__order-overview"[\s\S]*class="guest-shop-modal__summary"[\s\S]*class="guest-shop-modal__amount"/);
     // Order meta rows Dujiao renders in its side card; hidden until an order exists.
     assert.match(modal, /id="guestCashStatusRow"[^>]*hidden/);
     assert.match(modal, /id="guestCashStatusValue"/);
@@ -871,13 +1171,14 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
     // The copy confirmation lives in its own node, never inside the address.
     assert.match(modal, /id="guestCashNowCopyFeedback"[^>]*class="guest-shop-modal__copy-feedback"[^>]*hidden/);
 
-    // GuestOrderDetail.vue fulfillment card -> head row (title + actions) then fact lines.
+    // Guest delivery reuses the wallet success-item rows. The shell only owns
+    // the all-cards copy action; type/status fact rows are intentionally absent.
     assert.match(modal, /id="guestCashDeliveryPanel"[^>]*class="guest-shop-modal__panel guest-shop-modal__delivery"[^>]*hidden/);
-    assert.match(modal, /class="guest-shop-modal__delivery-head"/);
     assert.match(modal, /class="guest-shop-modal__delivery-actions"/);
-    assert.match(modal, /id="guestCashCopyDeliveryBtn"[^>]*class="shop-btn shop-btn-secondary guest-shop-modal__delivery-copy"/);
-    assert.match(modal, /class="guest-shop-modal__delivery-fact"><span>发货类型<\/span><strong id="guestCashDeliveryType"/);
-    assert.match(modal, /class="guest-shop-modal__delivery-fact"><span>发货状态<\/span><strong id="guestCashDeliveryStatus"/);
+    assert.doesNotMatch(modal, /guest-shop-modal__delivery-title|fa-circle-check/);
+    assert.match(modal, /id="guestCashCopyDeliveryBtn"[^>]*class="guest-shop-modal__delivery-item-copy guest-shop-modal__delivery-copy"[^>]*aria-label="复制所有卡密"/);
+    assert.ok(modal.indexOf('class="guest-shop-modal__delivery-actions"') < modal.indexOf('id="guestCashDeliveredContent"'));
+    assert.doesNotMatch(modal, /guestCashDeliveryType|guestCashDeliveryStatus|guestCashDeliveryTime/);
 
     // The pre-Dujiao wrappers are gone from both markup and styles.
     assert.doesNotMatch(modal, /guest-shop-modal__payment-meta/);
@@ -898,15 +1199,36 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
         '.guest-shop-modal__crypto-list',
         '.guest-shop-modal__crypto-row:last-child',
         '.guest-shop-modal__copy-feedback',
-        '.guest-shop-modal__delivery-head',
-        '.guest-shop-modal__delivery-copy.is-copied',
-        '.guest-shop-modal__delivery-fact'
+        '.guest-shop-modal__delivery-actions',
+        '.guest-shop-modal__delivery-copy.is-copied'
     ]) {
-        assert.ok(styles.includes(sel), 'missing style rule: ' + sel);
+    assert.ok(styles.includes(sel), 'missing style rule: ' + sel);
     }
+    assert.match(styles, /\.guest-shop-modal__order-overview \{[\s\S]*display: grid/);
+    assert.match(styles, /@media \(min-width: 769px\) \{[\s\S]*\.guest-shop-modal__order-overview[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/);
     assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__amount/);
     assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__crypto-list/);
     assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__step-index/);
+    assert.match(styles, /--guest-step-rgb: 83,199,223;/);
+    assert.match(styles, /--guest-step-rgb: 169,151,231;/);
+    assert.match(styles, /--guest-step-rgb: 101,207,172;/);
+    assert.match(styles, /\.guest-shop-modal__step-index \{[\s\S]*width: 14px;[\s\S]*background: #94a3b8/);
+    assert.match(styles, /\.guest-shop-modal__step\.is-current \.guest-shop-modal__step-index \{[\s\S]*background: rgb\(var\(--guest-step-rgb\)\);[\s\S]*box-shadow: none/);
+    assert.doesNotMatch(styles, /\.guest-shop-modal__step-index \{[^}]*linear-gradient/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__actions \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
+    assert.match(styles, /\.guest-shop-modal__delivery-copy \{ min-width: 0; \}/);
+    assert.match(styles, /\.guest-shop-modal__delivery-copy-label \{ position: static;[\s\S]*white-space: nowrap/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page \.guest-shop-modal__delivery-content \{[\s\S]*linear-gradient\(180deg, #ffffff 0%, #f8fbff 100%\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page #guestCashPurchaseModal \.shop-success-item__copy-btn \{/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page #guestCashPurchaseModal \.shop-success-item__tag--notice \{/);
+    assert.match(styles, /#shopSuccessModal \.shop-success-item__tag--notice,\s*#guestCashPurchaseModal \.shop-success-item__tag--notice \{/);
+    assert.match(styles, /#shopSuccessModal \.shop-success-item__tag-label,\s*#guestCashPurchaseModal \.shop-success-item__tag-label \{/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page #guestCashPurchaseModal \.shop-success-item__content-card \.item-text/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) body\.shop-page #guestCashPurchaseModal \.shop-guidance-panel-copy \{/);
+    assert.match(client, /createdAt: state\.fulfilledAt/);
+    assert.doesNotMatch(client, /guestCashDeliveryType|guestCashDeliveryStatus|guestCashDeliveryTime/);
+    assert.match(styles, /#guestCashPurchaseModal \.shop-success-item__surface:hover,[\s\S]*box-shadow: none/);
+    assert.match(styles, /#guestCashPurchaseModal \.shop-success-item\.is-content-expanded \.shop-success-item__reveal-code \.shop-success-item__submeta-label/);
 
     // The client derives rail/meta/hint from one status table inside setStateMessage,
     // so a transient poll error can never walk a paid buyer back to 确认订单.
@@ -915,26 +1237,23 @@ test('the guest checkout modal mirrors the Dujiao payment and delivery layout', 
     assert.match(client, /const ORDER_STATUS_LABELS = \{/);
     assert.match(client, /function syncStepState\(phase\) \{/);
     assert.match(client, /function syncOrderMeta\(status = state\.status\) \{/);
-    assert.match(client, /function syncPollingHint\(status = state\.status\) \{/);
-    assert.match(client, /syncStepState\(STEP_PHASE_BY_STATUS\[status\] \|\| ''\);\s*\n\s*syncOrderMeta\(status\);\s*\n\s*syncPollingHint\(status\);/);
+    assert.doesNotMatch(client, /syncPollingHint|guestCashAmountFooter|guestCashPollingHint/);
+    assert.match(client, /syncStepState\(STEP_PHASE_BY_STATUS\[status\] \|\| ''\);\s*\n\s*syncOrderMeta\(status\);/);
     // Creating is still the configuration phase; error/manual_review preserve the
     // last meaningful phase instead of walking a paid buyer backwards.
     assert.match(client, /creating: 'configure'/);
     assert.doesNotMatch(client, /error: 'configure'|manual_review: 'configure'/);
 
-    // claimDelivery fills the two Dujiao fact lines with the only values guest checkout
-    // can ever serve (auto-delivery key product; POST /guest/claim returns content only).
-    assert.match(client, /setText\('guestCashDeliveryType', '卡密（自动发货）'\)/);
-    assert.match(client, /setText\('guestCashDeliveryStatus', '已发货'\)/);
-    // resetOrderUi clears them so a fresh 确认订单 never shows the last order's 已发货.
-    assert.match(client, /setText\('guestCashDeliveryType', '-'\)/);
-    assert.match(client, /setText\('guestCashDeliveryStatus', '-'\)/);
+    // Delivery time is rendered on each shared success-item row through createdAt.
+    assert.match(client, /createdAt: state\.fulfilledAt/);
 
     // copyText never overwrites the copied node and never wipes an icon button: the
     // wallet address confirms via a separate node, the delivery button via is-copied.
     assert.match(client, /async function copyText\(value, button, \{ doneEl = '', copiedClass = '' \} = \{\}\) \{/);
     assert.match(client, /copyText\(element\('guestCashNowAddress'\)\?\.textContent \|\| '', addressButton, \{ doneEl: 'guestCashNowCopyFeedback' \}\)/);
-    assert.match(client, /copyText\(\s*element\('guestCashDeliveredContent'\)\?\.textContent \|\| '',\s*deliveryButton,\s*\{ copiedClass: 'is-copied' \}\s*\)\.then\(\(\) => \{ state\.deliveryCopied = true; \}\)/);
+    assert.match(client, /copyText\(\s*deliveredContentForCopy\(\),\s*deliveryButton,\s*\{ copiedClass: 'is-copied' \}\s*\)\.then\(\(\) => \{ state\.deliveryCopied = true; \}\)/);
+    assert.match(client, /guest-shop-modal__delivery-item-copy/);
+    assert.match(styles, /\.guest-shop-modal__delivery-item-copy/);
     assert.doesNotMatch(client, /guestCashRecoveryCode|recoveryCopyButton|recoveryCodeCopied/);
 });
 
@@ -1081,7 +1400,7 @@ test('the shop modal collects the query password only when the server says it is
     assert.match(markup, /id="guestCashOrderPasswordNote"[^>]*role="status"[^>]*hidden/);
     assert.match(markup, /id="guestCashToggleOrderPasswordBtn"[^>]*aria-pressed="false"/);
     assert.match(markup, /id="guestCashGenerateOrderPasswordBtn"[^>]*>帮我生成</);
-    assert.match(markup, /<a id="guestCashShowRecoveryBtn"[^>]*href="\/guest-orders\.html"[^>]*data-guest-order-access="primary"/);
+    assert.doesNotMatch(markup, /guestCashShowRecoveryBtn/);
     assert.match(styles, /\.guest-shop-modal__pw-checks/);
     assert.match(styles, /\.guest-shop-modal__pw-btn/);
     assert.match(styles, /\.guest-shop-modal__pw-note/);
@@ -1102,10 +1421,11 @@ test('the shop modal collects the query password only when the server says it is
     assert.match(client, /buyerCredentialRequired:\s*false,/);
     assert.match(client, /state\.buyerCredentialRequired = preview\?\.buyer_credential_required === true;/);
     assert.match(client, /setHidden\('guestCashOrderPasswordField', !required\);/);
-    assert.doesNotMatch(client, /guestCashOrdersPageLink|setHidden\(['"]guestCashShowRecoveryBtn/);
+    assert.doesNotMatch(client, /guestCashOrdersPageLink|guestCashShowRecoveryBtn/);
     assert.match(client, /setText\('guestCashContactHint', required/);
     assert.match(client, /pendingIntentRequiresEmail/);
-    assert.match(client, /'必填，用于查询订单'/);
+    assert.match(client, /'必填'/);
+    assert.doesNotMatch(client, /必填，用于查询订单/);
     assert.match(client, /'可选'/);
     // Off path must actively wipe any plaintext left in the field.
     assert.match(client, /if \(!required\) clearOrderPassword\(\);/);
@@ -1164,7 +1484,7 @@ test('the query password travels once in the order body and is never persisted, 
     const refreshBody = client.slice(refreshStart, refreshEnd);
     assert.doesNotMatch(refreshBody, /createOrder|ORDER_ENDPOINT|requestJson|fetch\s*\(/);
     assert.match(refreshBody, /请点击「帮我生成」换一个/);
-    assert.match(refreshBody, /请妥善保存后再次点击「创建订单」/);
+    assert.match(refreshBody, /请妥善保存后再次点击付款方式/);
     // A password the buyer typed by hand is NEVER replaced without asking.
     assert.match(refreshBody, /if \(!current \|\| current !== state\.generatedOrderPassword\) \{/);
 });
@@ -1172,7 +1492,7 @@ test('the query password travels once in the order body and is never persisted, 
 test('the guest order lookup page is a lean standalone page with no account runtime', () => {
     assert.match(ordersPage, /<meta name="robots" content="noindex, nofollow">/);
     assert.match(ordersPage, /<body class="guest-orders-page">/);
-    assert.match(ordersPage, /css\/guest-orders\.css\?v=20260924_GUEST_ORDERS_RETRY_1/);
+    assert.match(ordersPage, /css\/guest-orders\.css\?v=20261001_GUEST_ORDERS_ACCENT_FOOTER_1/);
     for (const id of [
         'guestOrdersFeatureGate', 'guestOrdersFeatureGateMessage', 'guestOrdersFeatureRetryBtn',
         'guestOrdersProtectedContent',
@@ -1231,7 +1551,16 @@ test('the guest order lookup page is a lean standalone page with no account runt
     assert.doesNotMatch(ordersPage, /<script(?![^>]*\bdefer\b)[^>]*js\/guest-orders-client\.js/);
     assert.match(ordersStyles, /body\.guest-orders-page/);
     assert.match(ordersStyles, /\.guest-orders-gate/);
+    assert.match(ordersStyles, /--go-accent:\s*#7eb8ef/);
+    assert.match(ordersStyles, /\.guest-orders-shell[\s\S]*min-height:\s*100vh/);
+    assert.match(ordersStyles, /\.guest-orders-footer[\s\S]*margin-top:\s*auto/);
     assert.match(ordersStyles, /\.guest-orders-item-discounts:empty/);
+
+    // The standalone lookup page has no storefront/legal navigation. Its only
+    // footer content is the local-credential privacy reminder.
+    assert.doesNotMatch(ordersPage, /class="guest-orders-back"/);
+    assert.doesNotMatch(ordersPage, /href="\/shop\.html"|href="\/refund-policy\.html"|href="\/terms\.html"|href="\/privacy\.html"/);
+    assert.match(ordersPage, /<footer class="guest-orders-footer">\s*<p>查询凭证只保存在本机浏览器/);
 });
 
 test('the lookup client stays isolated from the account auth system and never writes the query password to storage or a URL', () => {

@@ -225,6 +225,7 @@ function createRouteHandlersForScope(scope) {
             'guest/checkout-batches/cancel': guestHandlers.checkoutBatchCancel,
             'guest/checkout-batches/claim': guestHandlers.checkoutBatchClaim,
             'guest/status': guestHandlers.status,
+            'guest/cancel': guestHandlers.cancel,
             'guest/claim': guestHandlers.claim,
             // Order Access 2.0 (A2). resolveRoute() lowercases the path and joins
             // segments with '/', so it cannot express ':orderNo' path params; the

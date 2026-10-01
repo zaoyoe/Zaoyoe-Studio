@@ -528,7 +528,7 @@ async function cmdBreaker({ supabase, options }) {
         ok: true,
         exitCode: 0,
         title: `fn_guest_shop_promo_set_breaker('${state}') → ${normalizeText(returned, 20)}`,
-        payload: { returned, breaker_after: status && status.breaker, budget_after: status && status.budget },
+        payload: { returned, breaker_after: status && status.breaker, budget_after: status && status.budgets },
         hint: state === 'open'
             ? '熔断已打开：所有游客抵扣被拒，但**原价游客结账不受影响**（这正是第 8 项要验的降级语义）。恢复：breaker closed --actor <名字> --yes'
             : '熔断已合上，审计行 manual_close 已由函数写入 guest_shop_promo_breaker_events。'

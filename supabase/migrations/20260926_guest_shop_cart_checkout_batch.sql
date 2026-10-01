@@ -456,7 +456,7 @@ BEGIN
     FOR v_item IN SELECT i.* FROM public.guest_shop_checkout_items i WHERE i.batch_id = p_batch_id ORDER BY i.item_index LOOP
         FOR v_res IN SELECT r.* FROM public.guest_shop_checkout_reservations r WHERE r.item_id = v_item.id ORDER BY r.created_at, r.id LOOP
             SELECT * INTO v_inv FROM public.shop_inventory WHERE id = v_res.inventory_id FOR UPDATE;
-            UPDATE public.shop_inventory SET status = 'sold', sold_at = COALESCE(sold_at, clock_timestamp()), updated_at = clock_timestamp() WHERE id = v_res.inventory_id AND status = 'reserve';
+            UPDATE public.shop_inventory SET status = 'sold', sold_at = COALESCE(sold_at, clock_timestamp()) WHERE id = v_res.inventory_id AND status = 'reserve';
             IF NOT FOUND THEN RAISE EXCEPTION 'guest_inventory_not_reservable'; END IF;
             UPDATE public.guest_shop_checkout_reservations SET status = 'consumed', consumed_at = clock_timestamp(), updated_at = clock_timestamp() WHERE id = v_res.id AND status = 'held';
             item_id := v_item.id; item_index := v_item.item_index; product_id := v_item.product_id; sku_id := v_item.sku_id;

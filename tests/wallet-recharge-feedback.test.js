@@ -69,7 +69,7 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /renderHostedPaymentQrTimeout\(detailOverlay\)/);
     assert.match(script, /isHostedPaymentTimeoutStatus\(statusResult = \{\}\)/);
     assert.match(script, /formatPaymentSuccessWithPoints\(pointsValue\)/);
-    assert.match(script, /支付成功，积分\+\{points\}/);
+    assert.match(script, /支付成功，\{points\}/);
     assert.doesNotMatch(script, /USDT-BEP20 付款信息已生成/);
     assert.doesNotMatch(script, /请在倒计时结束前完成转账，超时请重新发起支付。/);
     assert.doesNotMatch(script, /js-wallet-copy-usdt-address-bottom/);

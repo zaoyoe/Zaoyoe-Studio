@@ -64,6 +64,121 @@ function normalizeBoolean(value, fallback = false) {
     return fallback;
 }
 
+// Product guidance is shared by the authenticated shop handlers and the guest
+// fulfillment flow. Keep this at module scope so guest-shop can reuse it
+// without instantiating the authenticated handler closure.
+function normalizeGuidanceText(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function containsGuidanceCjkText(value) {
+    return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+}
+
+function normalizeGuidanceSite(value = 'cn') {
+    const normalized = String(value || 'cn').trim().toLowerCase();
+    return normalized === 'intl' || normalized === 'en' ? 'intl' : 'cn';
+}
+
+function normalizeGuidanceLanguage(value = 'zh') {
+    const normalized = String(value || 'zh').trim().toLowerCase();
+    return normalized === 'en' || normalized.startsWith('en-') ? 'en' : 'zh';
+}
+
+function resolveGuidanceLanguage(value = '', site = 'cn') {
+    const normalizedValue = String(value || '').trim();
+    if (normalizedValue) return normalizeGuidanceLanguage(normalizedValue);
+    return 'zh';
+}
+
+function resolveLocalizedGuidanceText(product = {}, baseField = '', guidanceSite = 'cn', language = '') {
+    const siteKey = normalizeGuidanceSite(guidanceSite);
+    const languageKey = String(language || '').trim()
+        ? normalizeGuidanceLanguage(language)
+        : resolveGuidanceLanguage('', siteKey);
+    const legacyText = normalizeGuidanceText(product?.[baseField]);
+    const zhText = normalizeGuidanceText(product?.[`${baseField}_zh`]);
+    const enText = normalizeGuidanceText(product?.[`${baseField}_en`]);
+    const intlText = normalizeGuidanceText(product?.[`${baseField}_intl`]);
+    const intlZhText = normalizeGuidanceText(product?.[`${baseField}_intl_zh`]);
+    if (siteKey === 'intl') {
+        if (languageKey === 'zh') return intlZhText || intlText || enText;
+        const candidate = intlText || enText;
+        return containsGuidanceCjkText(candidate) ? '' : candidate;
+    }
+    if (languageKey === 'en') return containsGuidanceCjkText(enText) ? '' : enText;
+    return zhText || legacyText;
+}
+
+function resolveSiteScopedGuidanceVisible(product = {}, baseField = '', guidanceSite = 'cn') {
+    const siteKey = normalizeGuidanceSite(guidanceSite);
+    const intlField = `show_${baseField}_intl`;
+    const baseVisible = product?.[`show_${baseField}`] === true;
+    if (siteKey === 'intl') {
+        if (Object.prototype.hasOwnProperty.call(product, intlField)) return product?.[intlField] === true;
+        return baseVisible && Boolean(resolveLocalizedGuidanceText(product, baseField, guidanceSite));
+    }
+    return baseVisible;
+}
+
+function hasProductGuidanceSourceText(product = {}, baseField = '') {
+    return [product?.[baseField], product?.[`${baseField}_zh`], product?.[`${baseField}_en`],
+        product?.[`${baseField}_intl`], product?.[`${baseField}_intl_zh`]]
+        .some((value) => normalizeGuidanceText(value).length > 0);
+}
+
+function buildProductGuidancePayload(product = {}, guidanceSite = 'cn', language = '') {
+    const showPurchaseNotes = resolveSiteScopedGuidanceVisible(product, 'purchase_notes', guidanceSite);
+    const showUsageInstructions = resolveSiteScopedGuidanceVisible(product, 'usage_instructions', guidanceSite);
+    const purchaseNotes = showPurchaseNotes ? resolveLocalizedGuidanceText(product, 'purchase_notes', guidanceSite, language) : '';
+    const usageInstructions = showUsageInstructions ? resolveLocalizedGuidanceText(product, 'usage_instructions', guidanceSite, language) : '';
+    return {
+        product_id: String(product?.id || '').trim() || null,
+        show_purchase_notes: showPurchaseNotes,
+        show_usage_instructions: showUsageInstructions,
+        purchase_notes: purchaseNotes,
+        usage_instructions: usageInstructions,
+        has_purchase_notes: showPurchaseNotes && hasProductGuidanceSourceText(product, 'purchase_notes'),
+        has_usage_instructions: showUsageInstructions && hasProductGuidanceSourceText(product, 'usage_instructions'),
+        purchase_notes_needs_translation: showPurchaseNotes && !purchaseNotes && hasProductGuidanceSourceText(product, 'purchase_notes'),
+        usage_instructions_needs_translation: showUsageInstructions && !usageInstructions && hasProductGuidanceSourceText(product, 'usage_instructions')
+    };
+}
+
+
+function getProductGuidanceSelectClause({ includeIdentity = false, mode = 'site', purchaseNotes = true } = {}) {
+    const fields = includeIdentity ? ['id', 'is_active'] : [];
+    if (purchaseNotes) {
+        if (mode === 'site') fields.push('show_purchase_notes', 'show_purchase_notes_intl', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en', 'purchase_notes_intl', 'purchase_notes_intl_zh');
+        else if (mode === 'bilingual') fields.push('show_purchase_notes', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en');
+        else fields.push('show_purchase_notes', 'purchase_notes');
+    }
+    if (mode === 'site') fields.push('show_usage_instructions', 'show_usage_instructions_intl', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en', 'usage_instructions_intl', 'usage_instructions_intl_zh');
+    else if (mode === 'bilingual') fields.push('show_usage_instructions', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en');
+    else fields.push('show_usage_instructions', 'usage_instructions');
+    return fields.join(', ');
+}
+
+async function loadProductGuidanceRow(dataSupabase, normalizedProductId, { includeIdentity = false } = {}) {
+    const selectAttempts = [
+        getProductGuidanceSelectClause({ includeIdentity, mode: 'site', purchaseNotes: true }),
+        getProductGuidanceSelectClause({ includeIdentity, mode: 'bilingual', purchaseNotes: true }),
+        getProductGuidanceSelectClause({ includeIdentity, mode: 'legacy', purchaseNotes: true }),
+        getProductGuidanceSelectClause({ includeIdentity, mode: 'legacy', purchaseNotes: false })
+    ];
+    let lastError = null;
+    for (const selectClause of selectAttempts) {
+        const query = dataSupabase.from('shop_products').select(selectClause).eq('id', normalizedProductId);
+        const { data, error } = includeIdentity ? await query.single() : await query.maybeSingle();
+        if (!error) return { data, error: null };
+        lastError = error;
+        const missing = ['purchase_notes', 'show_purchase_notes', 'show_purchase_notes_intl', 'purchase_notes_zh', 'purchase_notes_en', 'purchase_notes_intl', 'purchase_notes_intl_zh', 'show_usage_instructions_intl', 'usage_instructions_zh', 'usage_instructions_en', 'usage_instructions_intl', 'usage_instructions_intl_zh']
+            .some((field) => String(error?.message || '').toLowerCase().includes(field) && /does not exist|not exist|undefined column|schema cache/.test(String(error?.message || '').toLowerCase()));
+        if (!missing) return { data: null, error };
+    }
+    return { data: null, error: lastError };
+}
+
 function shouldBypassShopCatalogHotCache(req, requestUrl) {
     const headers = req?.headers || {};
     const cacheControl = String(headers['cache-control'] || headers['Cache-Control'] || '').toLowerCase();
@@ -112,6 +227,8 @@ function buildHomepageShopCatalogProduct(product = {}) {
         'manual_delivery',
         'category',
         'is_active',
+        'allow_guest_purchase',
+        'guest_payment_channels',
         'display_order',
         'image_cache_version',
         'updated_at',
@@ -537,6 +654,8 @@ function createShopHandlers({
             'usage_instructions_intl_zh',
             'flash_sale_price',
             'flash_sale_price_intl',
+            'flash_sale_start',
+            'flash_sale_start_intl',
             'flash_sale_end',
             'flash_sale_end_intl',
             'manual_delivery',
@@ -613,6 +732,17 @@ function createShopHandlers({
         }
 
         return product?.[baseField];
+    }
+
+    function getSiteScopedShopFlashSale(product = {}, currentSite = 'cn') {
+        const useIntl = currentSite === 'intl'
+            && (product.flash_sale_price_intl != null || product.flash_sale_end_intl != null);
+        const suffix = useIntl ? '_intl' : '';
+        return {
+            price: product[`flash_sale_price${suffix}`],
+            start: product[`flash_sale_start${suffix}`],
+            end: product[`flash_sale_end${suffix}`]
+        };
     }
 
     function normalizeShopSitePriceValue(rawValue) {
@@ -754,8 +884,7 @@ function createShopHandlers({
 
     function normalizeShopCatalogProductForSite(product = {}, currentSite = 'cn', language = '') {
         const quantityRules = getSiteScopedShopMarketingValue(product, 'quantity_rules', currentSite);
-        const flashSalePrice = getSiteScopedShopMarketingValue(product, 'flash_sale_price', currentSite);
-        const flashSaleEnd = getSiteScopedShopMarketingValue(product, 'flash_sale_end', currentSite);
+        const flashSale = getSiteScopedShopFlashSale(product, currentSite);
         const isIntlSite = currentSite === 'intl';
         const languageKey = resolveGuidanceLanguage(language, currentSite);
         const description = isIntlSite
@@ -803,8 +932,9 @@ function createShopHandlers({
             usage_instructions: resolveLocalizedGuidanceText(product, 'usage_instructions', currentSite, languageKey),
             manual_delivery: normalizeBoolean(product?.manual_delivery, false),
             quantity_rules: quantityRules ?? null,
-            flash_sale_price: flashSalePrice ?? null,
-            flash_sale_end: flashSaleEnd || null,
+            flash_sale_price: flashSale.price ?? null,
+            flash_sale_start: flashSale.start || null,
+            flash_sale_end: flashSale.end || null,
             ...(imageCacheVersion ? { image_cache_version: imageCacheVersion } : {}),
             inventory_skus: inventorySkus,
             skus
@@ -864,6 +994,7 @@ function createShopHandlers({
 
         try {
             const selectAttempts = [
+                'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, allow_guest_purchase, guest_payment_channels, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, inventory_source_sku_ids_intl, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, inventory_source_sku_ids, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
                 'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
@@ -889,6 +1020,8 @@ function createShopHandlers({
                     && !isMissingColumnError(response.error, 'inventory_source_sku_ids')
                     && !isMissingColumnError(response.error, 'inventory_source_sku_ids_intl')
                     && !isMissingColumnError(response.error, 'manual_delivery')
+                    && !isMissingColumnError(response.error, 'allow_guest_purchase')
+                    && !isMissingColumnError(response.error, 'guest_payment_channels')
                 ) {
                     break;
                 }
@@ -959,6 +1092,8 @@ function createShopHandlers({
                 'category',
                 'display_order',
                 'is_active',
+                'allow_guest_purchase',
+                'guest_payment_channels',
                 'updated_at',
                 'created_at'
             ].join(', '),
@@ -1049,6 +1184,8 @@ function createShopHandlers({
                 'tags',
                 'display_order',
                 'is_active',
+                'allow_guest_purchase',
+                'guest_payment_channels',
                 'quantity_rules',
                 'quantity_rules_intl',
                 'max_purchase_quantity',
@@ -1071,6 +1208,8 @@ function createShopHandlers({
                 'usage_instructions_intl_zh',
                 'flash_sale_price',
                 'flash_sale_price_intl',
+                'flash_sale_start',
+                'flash_sale_start_intl',
                 'flash_sale_end',
                 'flash_sale_end_intl',
                 'updated_at',
@@ -2834,170 +2973,6 @@ function createShopHandlers({
         };
     }
 
-    function normalizeGuidanceText(value) {
-        return typeof value === 'string' ? value.trim() : '';
-    }
-
-    function containsGuidanceCjkText(value) {
-        return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
-    }
-
-    function normalizeGuidanceSite(value = 'cn') {
-        const normalized = String(value || 'cn').trim().toLowerCase();
-        return normalized === 'intl' || normalized === 'en' ? 'intl' : 'cn';
-    }
-
-    function normalizeGuidanceLanguage(value = 'zh') {
-        const normalized = String(value || 'zh').trim().toLowerCase();
-        return normalized === 'en' || normalized.startsWith('en-') ? 'en' : 'zh';
-    }
-
-    function resolveGuidanceLanguage(value = '', site = 'cn') {
-        const normalizedValue = String(value || '').trim();
-        if (normalizedValue) {
-            return normalizeGuidanceLanguage(normalizedValue);
-        }
-        return 'zh';
-    }
-
-    function resolveLocalizedGuidanceText(product = {}, baseField = '', guidanceSite = 'cn', language = '') {
-        const siteKey = normalizeGuidanceSite(guidanceSite);
-        const languageKey = String(language || '').trim()
-            ? normalizeGuidanceLanguage(language)
-            : resolveGuidanceLanguage('', siteKey);
-        const legacyText = normalizeGuidanceText(product?.[baseField]);
-        const zhText = normalizeGuidanceText(product?.[`${baseField}_zh`]);
-        const enText = normalizeGuidanceText(product?.[`${baseField}_en`]);
-        const intlText = normalizeGuidanceText(product?.[`${baseField}_intl`]);
-        const intlZhText = normalizeGuidanceText(product?.[`${baseField}_intl_zh`]);
-
-        if (siteKey === 'intl') {
-            if (languageKey === 'zh') {
-                return intlZhText || intlText || enText;
-            }
-            const candidate = intlText || enText;
-            return containsGuidanceCjkText(candidate) ? '' : candidate;
-        }
-
-        if (languageKey === 'en') {
-            return containsGuidanceCjkText(enText) ? '' : enText;
-        }
-
-        return zhText || legacyText;
-    }
-
-    function resolveSiteScopedGuidanceVisible(product = {}, baseField = '', guidanceSite = 'cn') {
-        const siteKey = normalizeGuidanceSite(guidanceSite);
-        const intlField = `show_${baseField}_intl`;
-        const baseVisible = product?.[`show_${baseField}`] === true;
-        if (siteKey === 'intl') {
-            if (Object.prototype.hasOwnProperty.call(product, intlField)) {
-                return product?.[intlField] === true;
-            }
-            return baseVisible && Boolean(resolveLocalizedGuidanceText(product, baseField, guidanceSite));
-        }
-        return baseVisible;
-    }
-
-    function hasProductGuidanceSourceText(product = {}, baseField = '') {
-        return [
-            product?.[baseField],
-            product?.[`${baseField}_zh`],
-            product?.[`${baseField}_en`],
-            product?.[`${baseField}_intl`],
-            product?.[`${baseField}_intl_zh`]
-        ].some((value) => normalizeGuidanceText(value).length > 0);
-    }
-
-    function getProductGuidanceSelectClause({ includeIdentity = false, mode = 'site', purchaseNotes = true } = {}) {
-        const fields = includeIdentity ? ['id', 'is_active'] : [];
-        if (purchaseNotes) {
-            if (mode === 'site') {
-                fields.push('show_purchase_notes', 'show_purchase_notes_intl', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en', 'purchase_notes_intl', 'purchase_notes_intl_zh');
-            } else if (mode === 'bilingual') {
-                fields.push('show_purchase_notes', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en');
-            } else {
-                fields.push('show_purchase_notes', 'purchase_notes');
-            }
-        }
-        if (mode === 'site') {
-            fields.push('show_usage_instructions', 'show_usage_instructions_intl', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en', 'usage_instructions_intl', 'usage_instructions_intl_zh');
-        } else if (mode === 'bilingual') {
-            fields.push('show_usage_instructions', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en');
-        } else {
-            fields.push('show_usage_instructions', 'usage_instructions');
-        }
-        return fields.join(', ');
-    }
-
-    async function loadProductGuidanceRow(dataSupabase, normalizedProductId, { includeIdentity = false } = {}) {
-        const selectAttempts = [
-            getProductGuidanceSelectClause({ includeIdentity, mode: 'site', purchaseNotes: true }),
-            getProductGuidanceSelectClause({ includeIdentity, mode: 'bilingual', purchaseNotes: true }),
-            getProductGuidanceSelectClause({ includeIdentity, mode: 'legacy', purchaseNotes: true }),
-            getProductGuidanceSelectClause({ includeIdentity, mode: 'legacy', purchaseNotes: false })
-        ];
-
-        let lastError = null;
-        for (const selectClause of selectAttempts) {
-            const query = dataSupabase
-                .from('shop_products')
-                .select(selectClause)
-                .eq('id', normalizedProductId);
-            const { data, error } = includeIdentity
-                ? await query.single()
-                : await query.maybeSingle();
-
-            if (!error) {
-                return { data, error: null };
-            }
-
-            lastError = error;
-            const isGuidanceColumnMissing = [
-                'purchase_notes',
-                'show_purchase_notes',
-                'show_purchase_notes_intl',
-                'purchase_notes_zh',
-                'purchase_notes_en',
-                'purchase_notes_intl',
-                'purchase_notes_intl_zh',
-                'show_usage_instructions_intl',
-                'usage_instructions_zh',
-                'usage_instructions_en',
-                'usage_instructions_intl',
-                'usage_instructions_intl_zh'
-            ].some((field) => isMissingColumnError(error, field));
-            if (!isGuidanceColumnMissing) {
-                return { data: null, error };
-            }
-        }
-
-        return { data: null, error: lastError };
-    }
-
-    function buildProductGuidancePayload(product = {}, guidanceSite = 'cn', language = '') {
-        const showPurchaseNotes = resolveSiteScopedGuidanceVisible(product, 'purchase_notes', guidanceSite);
-        const showUsageInstructions = resolveSiteScopedGuidanceVisible(product, 'usage_instructions', guidanceSite);
-        const purchaseNotes = showPurchaseNotes
-            ? resolveLocalizedGuidanceText(product, 'purchase_notes', guidanceSite, language)
-            : '';
-        const usageInstructions = showUsageInstructions
-            ? resolveLocalizedGuidanceText(product, 'usage_instructions', guidanceSite, language)
-            : '';
-
-        return {
-            product_id: String(product?.id || '').trim() || null,
-            show_purchase_notes: showPurchaseNotes,
-            show_usage_instructions: showUsageInstructions,
-            purchase_notes: purchaseNotes,
-            usage_instructions: usageInstructions,
-            has_purchase_notes: showPurchaseNotes && hasProductGuidanceSourceText(product, 'purchase_notes'),
-            has_usage_instructions: showUsageInstructions && hasProductGuidanceSourceText(product, 'usage_instructions'),
-            purchase_notes_needs_translation: showPurchaseNotes && !purchaseNotes && hasProductGuidanceSourceText(product, 'purchase_notes'),
-            usage_instructions_needs_translation: showUsageInstructions && !usageInstructions && hasProductGuidanceSourceText(product, 'usage_instructions')
-        };
-    }
-
     function buildIdempotencyFingerprint({ userId, payload }) {
         const normalizedSelections = normalizeDiscountSelectionsInput({
             discountSelections: payload?.discountSelections
@@ -4688,5 +4663,7 @@ function createShopHandlers({
 }
 
 module.exports = {
-    createShopHandlers
+    createShopHandlers,
+    loadProductGuidanceRow,
+    buildProductGuidancePayload
 };

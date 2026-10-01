@@ -1871,7 +1871,13 @@
         },
 
         formatPointsWithUnit(value) {
-            return `${this.formatPoints(value)} ${this.tr('wallet.pointsUnit', '积分')}`;
+            return this.formatWalletAmount(value);
+        },
+
+        formatWalletAmount(value, { sign = '' } = {}) {
+            const numeric = this.normalizePointValue(value, 0);
+            const prefix = sign || '';
+            return `${prefix}￥${this.formatPoints(Math.abs(numeric))}`;
         },
 
         getLocalizedProductNameFromPayload(source = {}, fallback = '') {
@@ -1917,12 +1923,12 @@
 
             if (discountType === 'fixed' && Number.isFinite(discountValue) && discountValue > 0) {
                 if (isEnglish) {
-                    return this.tr('wallet.fixedOff', '{value} {unit} off', {
-                        value: this.formatPoints(discountValue),
-                        unit: this.tr('wallet.pointsUnit', '积分')
+                    return this.tr('wallet.fixedOff', '{value} off', {
+                        value: this.formatWalletAmount(discountValue),
+                        unit: ''
                     });
                 }
-                return explicitLabel || `立减 ${this.formatPoints(discountValue)} 积分`;
+                return explicitLabel || `立减 ${this.formatWalletAmount(discountValue)}`;
             }
 
             if (isEnglish && this.containsCjkText(explicitLabel)) {
@@ -2838,7 +2844,7 @@
                 rows.push(`
                     <div class="detail-row">
                         <span class="detail-label">${this.tr('wallet.originalPoints', '原价积分')}</span>
-                        <span class="detail-val">${this.formatPoints(grossAmount)} ${pointsUnit}</span>
+                        <span class="detail-val">${this.formatWalletAmount(grossAmount)}</span>
                     </div>
                 `);
             }
@@ -2856,7 +2862,7 @@
                 rows.push(`
                     <div class="detail-row">
                         <span class="detail-label">${this.tr('wallet.discountAmount', '优惠金额')}</span>
-                        <span class="detail-val highlight">-${this.formatPoints(discountAmount)} ${pointsUnit}</span>
+                        <span class="detail-val highlight">-${this.formatWalletAmount(discountAmount)}</span>
                     </div>
                 `);
             }
@@ -2897,9 +2903,10 @@
                 const currentVal = this.normalizePointValue(totalEl.dataset.value || totalEl.textContent || 0);
                 const newVal = this.normalizePointValue(normalizedBalance.total_balance);
                 if (animate) {
+                    totalEl.dataset.walletAmount = 'true';
                     this.animateValue(totalEl, currentVal, newVal, 800);
                 } else {
-                    totalEl.textContent = this.formatPoints(newVal);
+                    totalEl.textContent = this.formatWalletAmount(newVal);
                 }
                 totalEl.dataset.value = newVal;
                 this.applyExactPointsTooltip(
@@ -2912,7 +2919,7 @@
 
             const paidEl = document.getElementById('wallet-paid');
             if (paidEl) {
-                paidEl.textContent = this.formatPoints(normalizedBalance.paid_balance);
+                paidEl.textContent = this.formatWalletAmount(normalizedBalance.paid_balance);
                 this.applyExactPointsTooltip(
                     paidEl,
                     normalizedBalance.paid_balance,
@@ -2923,7 +2930,7 @@
 
             const bonusEl = document.getElementById('wallet-bonus');
             if (bonusEl) {
-                bonusEl.textContent = this.formatPoints(normalizedBalance.bonus_balance);
+                bonusEl.textContent = this.formatWalletAmount(normalizedBalance.bonus_balance);
                 this.applyExactPointsTooltip(
                     bonusEl,
                     normalizedBalance.bonus_balance,
@@ -3114,8 +3121,8 @@
         applyExactPointsTooltip(element, value, translationKey, fallback) {
             if (!element) return '';
             const tooltip = this.tr(translationKey, fallback, {
-                points: this.formatExactPoints(value)
-            });
+                points: `￥${this.formatExactPoints(value)}`
+            }).replace(/\s*(积分|points)\b/giu, '');
             element.removeAttribute('title');
             element.dataset.exactPoints = tooltip;
             element.setAttribute('aria-label', tooltip);
@@ -3136,8 +3143,8 @@
         formatPaymentSuccessWithPoints(pointsValue) {
             const normalizedPoints = this.normalizeOptionalPointValue(pointsValue);
             if (normalizedPoints !== null && normalizedPoints > 0) {
-                return this.tr('wallet.paymentSuccessWithPoints', '支付成功，积分+{points}', {
-                    points: this.formatPoints(normalizedPoints)
+                return this.tr('wallet.paymentSuccessWithPoints', '支付成功，{points}', {
+                    points: this.formatWalletAmount(normalizedPoints)
                 });
             }
             return this.tr('wallet.paymentSuccess', '支付成功');
@@ -4473,7 +4480,7 @@
                     ? `
                         <div class="detail-row">
                             <span class="detail-label">${this.tr('wallet.pointsToReceive', '到账积分')}</span>
-                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatPoints(pointsAmount)}</span>
+                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatWalletAmount(pointsAmount)}</span>
                         </div>
                     `
                     : '',
@@ -4657,7 +4664,7 @@
                     ? `
                         <div class="detail-row">
                             <span class="detail-label">${this.tr('wallet.pointsToReceive', '到账积分')}</span>
-                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatPoints(pointsAmount)}</span>
+                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatWalletAmount(pointsAmount)}</span>
                         </div>
                     `
                     : '',
@@ -5985,7 +5992,7 @@
                                         <div class="affiliate-stat-card affiliate-stat-card-rose">
                                             <div class="affiliate-stat-label"><i class="fas fa-chart-line"></i> ${this.tr('wallet.totalInviteeSpend', '累计贡献消费')}</div>
                                             <div class="affiliate-stat-value" id="affiliate-spend-total">0</div>
-                                            <div class="affiliate-stat-meta" id="affiliate-spend-meta">${this.tr('wallet.ongoingCommission', '持续返佣 {amount} {unit}', { amount: 0, unit: this.tr('wallet.pointsUnit', '积分') })}</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-spend-meta">${this.tr('wallet.ongoingCommission', '持续返佣 {amount}', { amount: this.formatWalletAmount(0) })}</div>
                                         </div>
                                     </div>
 
@@ -6553,9 +6560,8 @@
                 ? `
                     <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide">
                         <span>${this.tr('wallet.relatedOrder', '关联订单')}</span>
-                        <strong>${this.escapeHtml(relatedOrderName)}${Number(relatedOrder.discount_amount || 0) > 0 ? ` · ${this.tr('wallet.savedPoints', '节省 {amount} {unit}', {
-                            amount: this.formatPoints(relatedOrder.discount_amount),
-                            unit: this.tr('wallet.pointsUnit', '积分')
+                        <strong>${this.escapeHtml(relatedOrderName)}${Number(relatedOrder.discount_amount || 0) > 0 ? ` · ${this.tr('wallet.savedPoints', '节省 {amount}', {
+                            amount: this.formatWalletAmount(relatedOrder.discount_amount),
                         })}` : ''}</strong>
                     </div>
                 `
@@ -6754,7 +6760,7 @@
                     </button>
                     <div class="wallet-discount-assets-summary-card">
                         <span>${this.tr('wallet.savedTotal', '累计省下')}</span>
-                        <strong>${this.formatPoints(summary.saved_amount_total || 0)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</strong>
+                        <strong>${this.formatWalletAmount(summary.saved_amount_total || 0)}</strong>
                     </div>
                 </div>
                 <div class="wallet-discount-assets-list-shell">
@@ -8737,10 +8743,7 @@
         },
 
         getAffiliatePosterPointsText(value) {
-            const unit = this.tr('wallet.pointsUnit', '积分');
-            return this.isEnglishLanguage()
-                ? `${this.formatPoints(value)} ${unit}`
-                : `${this.formatPoints(value)}${unit}`;
+            return this.formatWalletAmount(value);
         },
 
         getPosterRewardBadgeText(stats = this.affiliateStats || {}, posterConfig = this.affiliatePosterConfig || {}) {
@@ -8761,7 +8764,7 @@
 
             return customTemplate
                 .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? this.getAffiliatePosterPointsText(safeRegistrationRewardPoints) : this.tr('wallet.notEnabled', '未开启'))
-                .replace(/\{registration_reward\}/g, this.formatPoints(safeRegistrationRewardPoints))
+                .replace(/\{registration_reward\}/g, this.formatWalletAmount(safeRegistrationRewardPoints))
                 .replace(/\{shop_commission\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\{shop_commission_rate\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\s+/g, ' ')
@@ -8838,7 +8841,7 @@
                     hint: this.tr('wallet.stageConsumedHint', '已完成首笔消费，持续返佣已开始'),
                     tone: 'success',
                     rewardText: grantedReward > 0
-                        ? this.tr('wallet.signupRewardPlus', '拉新奖励 +{points} {unit}', { points: this.formatPoints(grantedReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                        ? this.tr('wallet.signupRewardPlus', '拉新奖励 +{points}', { points: this.formatWalletAmount(grantedReward) }).trim()
                         : this.tr('wallet.stageConsumedReward', '已进入持续返佣阶段')
                 };
             }
@@ -8849,9 +8852,9 @@
                     hint: this.tr('wallet.stageRechargedHint', '已完成首充，等待首笔消费继续贡献返佣'),
                     tone: 'active',
                     rewardText: grantedReward > 0
-                        ? this.tr('wallet.signupRewardPlus', '拉新奖励 +{points} {unit}', { points: this.formatPoints(grantedReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                        ? this.tr('wallet.signupRewardPlus', '拉新奖励 +{points}', { points: this.formatWalletAmount(grantedReward) }).trim()
                         : (pendingReward > 0
-                            ? this.tr('wallet.rewardPending', '奖励待处理 {points} {unit}', { points: this.formatPoints(pendingReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                            ? this.tr('wallet.rewardPending', '奖励待处理 {points}', { points: this.formatWalletAmount(pendingReward) }).trim()
                             : this.tr('wallet.stageActivatedReward', '已进入激活阶段'))
                 };
             }
@@ -8859,11 +8862,11 @@
             return {
                 label: this.tr('wallet.stageRegisteredLabel', '已注册'),
                 hint: pendingReward > 0
-                    ? this.tr('wallet.pendingActivationReward', '等待首充激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                    ? this.tr('wallet.pendingActivationReward', '等待首充激活 {points}', { points: this.formatWalletAmount(pendingReward) }).trim()
                     : this.tr('wallet.stageRegisteredHint', '等待后续首充或消费'),
                 tone: 'pending',
                 rewardText: pendingReward > 0
-                    ? this.tr('wallet.rewardPending', '待激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                    ? this.tr('wallet.rewardPending', '待激活 {points}', { points: this.formatWalletAmount(pendingReward) }).trim()
                     : this.tr('wallet.noSignupReward', '当前无额外拉新奖励')
             };
         },
@@ -8897,7 +8900,6 @@
                 return;
             }
 
-            const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
             const notCompletedText = this.tr('wallet.notCompleted', '未完成');
             const notEnabledText = this.tr('wallet.notEnabled', '未开启');
             const newInviteeText = this.tr('wallet.newInvitee', '新邀请用户');
@@ -8912,30 +8914,30 @@
                 const firstRechargeAt = member.first_recharge_at ? this.formatOrderDateTime(member.first_recharge_at) : notCompletedText;
                 const firstPurchaseAt = member.first_purchase_at ? this.formatOrderDateTime(member.first_purchase_at) : notCompletedText;
                 const stageMeta = this.getAffiliateStageMeta(member);
-                const totalSpend = this.formatPoints(member.total_spend || 0);
-                const commissionEarned = this.formatPoints(member.commission_earned || 0);
+                const totalSpend = this.formatWalletAmount(member.total_spend || 0);
+                const commissionEarned = this.formatWalletAmount(member.commission_earned || 0);
                 const registrationRewardGranted = this.normalizePointValue(member.registration_reward_granted || 0);
                 const pendingReward = this.normalizePointValue(member.registration_reward_pending || 0);
                 const rewardText = registrationRewardGranted > 0
-                    ? `${this.formatPoints(registrationRewardGranted)} ${pointsUnit}`
+                    ? this.formatWalletAmount(registrationRewardGranted)
                     : (pendingReward > 0
-                        ? this.tr('wallet.rewardPending', '待激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: pointsUnit })
+                        ? this.tr('wallet.rewardPending', '待激活 {points}', { points: this.formatWalletAmount(pendingReward) }).trim()
                         : notEnabledText);
                 const lastOrderName = String(member.last_order_name || '').trim();
                 const lastOrderAmount = Number(member.last_order_amount);
                 const latestLabel = lastOrderName
-                    ? `${this.escapeHtml(lastOrderName)}${Number.isFinite(lastOrderAmount) ? ` · ${this.formatPoints(lastOrderAmount)} ${pointsUnit}` : ''}`
+                    ? `${this.escapeHtml(lastOrderName)}${Number.isFinite(lastOrderAmount) ? ` · ${this.formatWalletAmount(lastOrderAmount)}` : ''}`
                     : this.tr('wallet.registeredAt', '注册于 {date}', { date: this.escapeHtml(registeredAt) });
                 const badgeClass = `affiliate-member-badge affiliate-member-badge-${stageMeta.tone}`;
                 const avatarLabel = this.escapeHtml(displayName.charAt(0).toUpperCase() || 'U');
                 const avatarUrl = this.normalizeWalletAvatarUrl(member.avatar_url);
                 const secondaryLine = [maskedEmail, this.tr('wallet.registeredAt', '注册于 {date}', { date: registeredAt })].filter(Boolean).join(' · ');
-                const quickContribution = `${totalSpend} ${pointsUnit}`;
-                const quickCommission = `${commissionEarned} ${pointsUnit}`;
+                const quickContribution = totalSpend;
+                const quickCommission = commissionEarned;
                 const quickReward = registrationRewardGranted > 0
-                    ? `${this.formatPoints(registrationRewardGranted)} ${pointsUnit}`
+                    ? this.formatWalletAmount(registrationRewardGranted)
                     : (pendingReward > 0
-                        ? this.tr('wallet.rewardPending', '待激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: pointsUnit })
+                        ? this.tr('wallet.rewardPending', '待激活 {points}', { points: this.formatWalletAmount(pendingReward) }).trim()
                         : notEnabledText);
 
                 return `
@@ -8998,11 +9000,11 @@
                             <div class="affiliate-member-metrics">
                                 <div class="affiliate-member-metric">
                                     <span>${this.tr('wallet.totalContribution', '累计贡献')}</span>
-                                    <strong>${totalSpend} ${pointsUnit}</strong>
+                                    <strong>${totalSpend}</strong>
                                 </div>
                                 <div class="affiliate-member-metric">
                                     <span>${this.tr('wallet.commissionContribution', '返佣贡献')}</span>
-                                    <strong>${commissionEarned} ${pointsUnit}</strong>
+                                    <strong>${commissionEarned}</strong>
                                 </div>
                                 <div class="affiliate-member-metric">
                                     <span>${this.tr('wallet.signupReward', '拉新奖励')}</span>
@@ -9081,7 +9083,7 @@
                 ? this.tr('wallet.triggerFirstPayment', '完成首笔充值或消费')
                 : this.tr('wallet.triggerRegister', '完成注册');
             const guideText = this.getAffiliateRewardExplanation(stats);
-            const rewardPointsText = this.formatPoints(safeRegistrationReward);
+            const rewardPointsText = this.formatWalletAmount(safeRegistrationReward);
 
             if (rewardGuideEl) {
                 rewardGuideEl.setAttribute('data-tooltip', guideText);
@@ -9093,7 +9095,7 @@
                 descEl.innerHTML = `${this.tr('wallet.inviteDescWithReward', '分享专属链接邀请新用户。当好友注册并<strong>{trigger}</strong>后，您将获得 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--reward">{points} {unit}</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">{rate}</strong> 自动返佣。', {
                     trigger: this.escapeHtml(rewardTriggerText),
                     points: this.escapeHtml(rewardPointsText),
-                    unit: this.escapeHtml(this.tr('wallet.pointsUnit', '积分')),
+                    unit: '',
                     rate: this.escapeHtml(ratePercent)
                 })}<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
                 return;
@@ -9160,14 +9162,14 @@
 
                     if (commissionEl) {
                         commissionEl.textContent = Number.isFinite(totalRewards)
-                            ? this.formatPoints(totalRewards)
-                            : '0';
+                            ? this.formatWalletAmount(totalRewards)
+                            : '￥0';
                     }
 
                     if (rewardBreakdownEl) {
                         rewardBreakdownEl.textContent = this.tr('wallet.rewardBreakdown', '返佣 {commission} · 拉新 {registration}', {
-                            commission: this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0),
-                            registration: this.formatPoints(Number.isFinite(totalRegistrationRewards) ? totalRegistrationRewards : 0)
+                            commission: this.formatWalletAmount(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0),
+                            registration: this.formatWalletAmount(Number.isFinite(totalRegistrationRewards) ? totalRegistrationRewards : 0)
                         });
                     }
 
@@ -9193,15 +9195,14 @@
 
                     if (spendTotalEl) {
                         spendTotalEl.textContent = Number.isFinite(totalInviteeSpend)
-                            ? this.formatPoints(totalInviteeSpend)
-                            : '0';
+                            ? this.formatWalletAmount(totalInviteeSpend)
+                            : '￥0';
                     }
 
                     if (spendMetaEl) {
-                        spendMetaEl.textContent = this.tr('wallet.ongoingCommission', '持续返佣 {amount} {unit}', {
-                            amount: this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0),
-                            unit: this.tr('wallet.pointsUnit', '积分')
-                        });
+                        spendMetaEl.textContent = this.tr('wallet.ongoingCommission', '持续返佣 {amount}', {
+                            amount: this.formatWalletAmount(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0),
+                        }).trim();
                     }
 
                     this.affiliateStats = stats;
@@ -10176,7 +10177,6 @@
                         pkgContainer.innerHTML = `<div class="empty-text">${window.i18n?.t('wallet.noPackages') || '暂无套餐'}</div>`;
                     } else {
                         const isEnglish = window.i18n?.isEnglish?.();
-                        const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '分';
                         pkgContainer.innerHTML = packages.map(pkg => {
                             const displayName = isEnglish && pkg.name_en ? pkg.name_en : pkg.name;
                             return `
@@ -10186,7 +10186,7 @@
                                 'wallet-package-name': this.encodeActionValue(pkg.name)
                             })} aria-pressed="false">
                                 <div class="pkg-name">${displayName}</div>
-                                <div class="pkg-points">${this.formatPoints(pkg.points_amount)} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatPoints(pkg.bonus_points)}</span>` : ''}</div>
+                                <div class="pkg-points">${this.formatWalletAmount(pkg.points_amount)}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatWalletAmount(pkg.bonus_points)}</span>` : ''}</div>
                                 <div class="pkg-price" data-wallet-package-price>¥${pkg.price_cny}</div>
                             </button>
                         `}).join('');
@@ -10221,8 +10221,11 @@
          * Animate number
          */
         animateValue(obj, start, end, duration) {
+            const formatter = obj?.dataset?.walletAmount === 'true'
+                ? (value) => this.formatWalletAmount(value)
+                : (value) => this.formatPoints(value);
             if (start === end) {
-                obj.textContent = this.formatPoints(end);
+                obj.textContent = formatter(end);
                 return;
             }
             let startTimestamp = null;
@@ -10233,12 +10236,12 @@
                 const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
 
                 const value = this.normalizePointValue(easeProgress * (end - start) + start);
-                obj.textContent = this.formatPoints(value);
+                obj.textContent = formatter(value);
 
                 if (progress < 1) {
                     window.requestAnimationFrame(step);
                 } else {
-                    obj.textContent = this.formatPoints(end);
+                    obj.textContent = formatter(end);
                 }
             };
             window.requestAnimationFrame(step);
@@ -10542,14 +10545,12 @@
                         paymentChannels
                     );
                 const pendingMessage = providerKey === 'mock'
-                    ? this.tr('wallet.processingCustomMock', '正在处理 {points} {unit}（约 ¥{amount}）的模拟充值...', {
-                        points: this.formatPoints(normalizedAmount),
-                        unit: this.tr('wallet.pointsUnit', '积分'),
+                    ? this.tr('wallet.processingCustomMock', '正在处理 {points}（约 ¥{amount}）的模拟充值...', {
+                        points: this.formatWalletAmount(normalizedAmount),
                         amount: this.formatCny(quotedAmountCny)
                     })
-                    : this.tr('wallet.creatingCustomPayment', '正在为 {points} {unit}（约 ¥{amount}）创建支付请求...', {
-                        points: this.formatPoints(normalizedAmount),
-                        unit: this.tr('wallet.pointsUnit', '积分'),
+                    : this.tr('wallet.creatingCustomPayment', '正在为 {points}（约 ¥{amount}）创建支付请求...', {
+                        points: this.formatWalletAmount(normalizedAmount),
                         amount: this.formatCny(quotedAmountCny)
                     });
 
@@ -10646,15 +10647,14 @@
                                 points_amount: normalizedAmount,
                                 paid_amount: quotedAmountCny
                             });
-                            this.showToast(
-                                statusResult.message
-                                    || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points} {unit}（¥{amount}）', {
-                                        points: this.formatPoints(statusResult.points_amount || normalizedAmount),
-                                        unit: this.tr('wallet.pointsUnit', '积分'),
-                                        amount: this.formatCny(statusResult.paid_amount ?? paymentResult.paid_amount ?? quotedAmountCny)
-                                    })}`,
-                                'success'
-                            );
+                                    this.showToast(
+                                        statusResult.message
+                                            || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points}（¥{amount}）', {
+                                                points: this.formatWalletAmount(statusResult.points_amount || normalizedAmount),
+                                                amount: this.formatCny(statusResult.paid_amount ?? paymentResult.paid_amount ?? quotedAmountCny)
+                                            }).trim()}`,
+                                        'success'
+                                    );
                             this.invalidateOrderRecordsCache();
                             this.loadOrders({
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
@@ -10739,11 +10739,10 @@
 
                 this.showToast(
                     paymentResult.message
-                        || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points} {unit}（¥{amount}）', {
-                            points: this.formatPoints(normalizedAmount),
-                            unit: this.tr('wallet.pointsUnit', '积分'),
+                        || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points}（¥{amount}）', {
+                            points: this.formatWalletAmount(normalizedAmount),
                             amount: this.formatCny(paymentResult.paid_amount ?? quotedAmountCny)
-                        })}`,
+                        }).trim()}`,
                     'success'
                 );
 
@@ -11222,10 +11221,9 @@
                     this.playConfetti();
 
                     // Show message combining base and bonus (if any)
-                    let msg = `💰 ${this.tr('wallet.checkinReward', '签到奖励 +{points} {unit}', {
-                        points: this.formatPoints(data.points),
-                        unit: this.tr('wallet.pointsUnit', '积分')
-                    })}`;
+                    let msg = `💰 ${this.tr('wallet.checkinReward', '签到奖励 +{points}', {
+                        points: this.formatWalletAmount(data.points),
+                    }).trim()}`;
                     if (data.message && data.message !== '签到成功' && (!this.isEnglishLanguage() || !this.containsCjkText(data.message))) {
                         msg += `\\n${data.message}`; // Append the bonus message
                     }
@@ -11242,7 +11240,8 @@
                         const totalEl = document.getElementById('wallet-total');
                         if (totalEl) {
                             const normalizedBalance = this.normalizePointValue(data.new_balance);
-                            totalEl.textContent = this.formatPoints(normalizedBalance);
+                            totalEl.textContent = this.formatWalletAmount(normalizedBalance);
+                            totalEl.dataset.walletAmount = 'true';
                             totalEl.dataset.value = normalizedBalance;
                             this.applyExactPointsTooltip(
                                 totalEl,
@@ -11279,11 +11278,10 @@
             const checkinConfig = await this.loadCheckinConfig(true);
             const makeupCost = Math.max(0, Number(checkinConfig?.makeup_cost_points) || 0);
             const confirmMessage = makeupCost > 0
-                ? this.tr('wallet.confirmMakeup', '确认要补签 {date} 吗？\\n这将扣除 {cost} {unit}', {
+                ? this.tr('wallet.confirmMakeup', '确认要补签 {date} 吗？\\n这将扣除 {cost}', {
                     date: dateStr,
-                    cost: this.formatPoints(makeupCost),
-                    unit: this.tr('wallet.pointsUnit', '积分')
-                })
+                    cost: this.formatWalletAmount(makeupCost)
+                }).trim()
                 : this.tr('wallet.confirmMakeupFree', '确认要补签 {date} 吗？\\n当前补签不扣除积分', { date: dateStr });
 
             if (!confirm(confirmMessage)) {
@@ -11308,17 +11306,17 @@
                 if (error) throw error;
 
                 if (data.success) {
-                    this.showToast(`✅ ${this.tr('wallet.makeupSuccess', '补签成功! 扣除 {cost} {unit}', {
-                        cost: this.formatPoints(data.cost),
-                        unit: this.tr('wallet.pointsUnit', '积分')
-                    })}`, 'success');
+                    this.showToast(`✅ ${this.tr('wallet.makeupSuccess', '补签成功! 扣除 {cost}', {
+                        cost: this.formatWalletAmount(data.cost)
+                    }).trim()}`, 'success');
 
                     // Update balance display
                     if (data.new_balance !== undefined) {
                         const totalEl = document.getElementById('wallet-total');
                         if (totalEl) {
                             const normalizedBalance = this.normalizePointValue(data.new_balance);
-                            totalEl.textContent = this.formatPoints(normalizedBalance);
+                            totalEl.textContent = this.formatWalletAmount(normalizedBalance);
+                            totalEl.dataset.walletAmount = 'true';
                             totalEl.dataset.value = normalizedBalance;
                             this.applyExactPointsTooltip(
                                 totalEl,
@@ -11414,7 +11412,7 @@
                     input.value = '';
 
                     // Show success
-                    this.showToast(`✅ ${data.message} +${data.points}分`, 'success');
+                    this.showToast(`✅ ${data.message} ${this.formatWalletAmount(data.points, { sign: '+' })}`, 'success');
 
                     // Refresh balance and history
                     await this.loadData();
@@ -11502,7 +11500,7 @@
 
                     const label = document.createElement('div');
                     label.className = 'code-label';
-                    label.textContent = `您的兑换码（${data.points}积分）：`;
+                    label.textContent = `您的兑换码（${this.formatWalletAmount(data.points)}）：`;
 
                     const codeValue = document.createElement('div');
                     codeValue.className = 'code-value';
@@ -11755,7 +11753,7 @@
                                 <div class="history-date">${dateStr}</div>
                             </div>
                             <div class="history-amount ${item.amount > 0 ? 'positive' : 'negative'}">
-                                ${item.amount > 0 ? '+' : ''}${this.formatPoints(item.amount)}
+                                ${this.formatWalletAmount(item.amount, { sign: item.amount > 0 ? '+' : '-' })}
                             </div>
                         </div>
                         <div class="history-details"${this.buildDataAttributes({ 'wallet-action': 'history-details' })}>
@@ -12926,10 +12924,10 @@
 
                 // Determine amount display and color
                 if (signedAmount >= 0) {
-                    amountDisplay = `+${absAmountText} ${pointsUnit}`;
+                    amountDisplay = this.formatWalletAmount(signedAmount, { sign: '+' });
                     amountClass = 'positive';
                 } else {
-                    amountDisplay = `-${absAmountText} ${pointsUnit}`;
+                    amountDisplay = this.formatWalletAmount(signedAmount, { sign: '-' });
                     amountClass = 'negative';
                 }
 
@@ -13141,7 +13139,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
-                                <span class="detail-val highlight">-${this.formatPoints(totalPrice)} ${pointsUnit}</span>
+                                <span class="detail-val highlight">-${this.formatWalletAmount(totalPrice)}</span>
                             </div>
                             ${this.buildWalletShopOrderDiscountRows(previewOrder)}
                             <div class="detail-row wallet-detail-row--product">
@@ -13172,7 +13170,7 @@
         showPromptOrderDetail(orderId, promptName, price, createdAt, promptId) {
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
-            const priceText = this.formatPoints(price);
+            const priceText = this.formatWalletAmount(price);
 
             // Create modal overlay using same classes as shop order detail
             const detailOverlay = document.createElement('div');
@@ -13214,7 +13212,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
-                                <span class="detail-val highlight">-${priceText} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val highlight">-${priceText}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
@@ -13243,7 +13241,7 @@
         showRedeemOrderDetail(orderId, amount, createdAt, redeemCode) {
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
-            const amountText = this.formatPoints(amount);
+            const amountText = this.formatWalletAmount(amount);
 
             // Create modal overlay
             const detailOverlay = document.createElement('div');
@@ -13281,7 +13279,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.receivedPoints') || '获得积分'}</span>
-                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${amountText} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${amountText}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
@@ -13341,7 +13339,7 @@
                 }
 
                 const meta = this.getAffiliateRewardMeta(detail.reward_reason || reason, detail.reference_id || referenceId);
-                const rewardAmount = this.formatPoints(detail.reward_amount ?? amount ?? 0);
+                const rewardAmount = this.formatWalletAmount(detail.reward_amount ?? amount ?? 0);
                 const rewardTimeText = this.formatOrderDateTime(detail.reward_created_at || createdAt);
                 const inviteeName = String(detail.invitee_name || detail.invitee_username || detail.invitee_masked_email || '被邀请用户').trim();
                 const inviteeLine = [
@@ -13354,7 +13352,7 @@
                     : String(detail.source_name || '').trim();
                 const sourceAmount = Number(detail.source_amount);
                 const sourceAmountText = Number.isFinite(sourceAmount)
-                    ? `${this.formatPoints(sourceAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`
+                    ? this.formatWalletAmount(sourceAmount)
                     : '--';
                 const sourceTimeText = detail.source_created_at
                     ? this.formatOrderDateTime(detail.source_created_at)
@@ -13366,7 +13364,7 @@
                 const declaredCommissionRateText = Number.isFinite(declaredCommissionRate) ? `${this.formatPoints(declaredCommissionRate)}%` : '--';
                 const expectedRewardAmount = Number(detail.expected_reward_amount);
                 const expectedRewardText = Number.isFinite(expectedRewardAmount)
-                    ? `${this.formatPoints(expectedRewardAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`
+                    ? this.formatWalletAmount(expectedRewardAmount)
                     : '--';
                 const rewardAmountValue = Number(detail.reward_amount ?? amount ?? 0);
                 const rewardDelta = Number.isFinite(expectedRewardAmount)
@@ -13418,7 +13416,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.receivedPoints') || '获得积分'}</span>
-                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${this.escapeHtml(rewardAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${this.escapeHtml(rewardAmount)}</span>
                             </div>
                             ${meta.rewardType === 'commission' ? `
                             <div class="detail-row">
@@ -13442,7 +13440,7 @@
                                 <div class="wallet-warning-row">
                                     <i class="fas fa-triangle-exclamation wallet-warning-icon"></i>
                                     <div class="wallet-warning-text">
-                                        当前到账是 <strong>+${this.escapeHtml(rewardAmount)} 积分</strong>，但按配置比例应为 <strong>${this.escapeHtml(expectedRewardText)}</strong>。
+                                        当前到账是 <strong>+${this.escapeHtml(rewardAmount)}</strong>，但按配置比例应为 <strong>${this.escapeHtml(expectedRewardText)}</strong>。
                                         这通常说明数据库仍在按整数保存返佣，需要执行小数积分热修复。
                                     </div>
                                 </div>
@@ -13520,7 +13518,7 @@
                 : (isRedemptionReversal
                     ? this.getRedemptionReversalDisplayName(reason, referenceId)
                     : (window.i18n?.t('wallet.orderDetails') || '订单详情'));
-            const pointsLabel = `${normalizedAmount >= 0 ? '+' : '-'}${this.formatPoints(Math.abs(normalizedAmount))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`;
+            const pointsLabel = this.formatWalletAmount(normalizedAmount, { sign: normalizedAmount >= 0 ? '+' : '-' });
             const amountColor = normalizedAmount >= 0 ? '#10b981' : '#f87171';
             const pointsRowLabel = normalizedAmount >= 0
                 ? (window.i18n?.t('wallet.receivedPoints') || '获得积分')
@@ -13535,11 +13533,11 @@
                 ? `
                             <div class="detail-row">
                                 <span class="detail-label">${isRedemptionReversal ? '扣回前积分' : '到账前积分'}</span>
-                                <span class="detail-val">${this.escapeHtml(this.formatPoints(balanceBefore))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val">${this.escapeHtml(this.formatWalletAmount(balanceBefore))}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${isRedemptionReversal ? '扣回后积分' : '到账后积分'}</span>
-                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatPoints(balanceAfter))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatWalletAmount(balanceAfter))}</span>
                             </div>`
                 : '';
             const redemptionReversalDetailMarkup = isRedemptionReversal
@@ -13608,11 +13606,11 @@
                 ? `
                             <div class="detail-row">
                                 <span class="detail-label">${this.tr('wallet.balanceBeforeRefund', '退款前积分')}</span>
-                                <span class="detail-val">${this.escapeHtml(this.formatPoints(balanceBefore))} ${pointsUnit}</span>
+                                <span class="detail-val">${this.escapeHtml(this.formatWalletAmount(balanceBefore))}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${this.tr('wallet.balanceAfterRefund', '退款后积分')}</span>
-                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatPoints(balanceAfter))} ${pointsUnit}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatWalletAmount(balanceAfter))}</span>
                             </div>`
                 : '';
 
@@ -13655,7 +13653,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${this.tr('wallet.refundedPoints', '返还积分')}</span>
-                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${this.escapeHtml(this.formatPoints(normalizedAmount))} ${pointsUnit}</span>
+                                <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">+${this.escapeHtml(this.formatWalletAmount(normalizedAmount))}</span>
                             </div>
                             ${balanceSnapshotMarkup}
                             <div class="detail-row">
@@ -13785,7 +13783,7 @@
                             ` : ''}
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
-                                <span class="detail-val highlight">-${Math.abs(Number(pointsPaid) || Number(verifyLog?.points_deducted) || 0)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val highlight">-${this.formatWalletAmount(Math.abs(Number(pointsPaid) || Number(verifyLog?.points_deducted) || 0))}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
@@ -14045,7 +14043,7 @@
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
-                                    <span class="detail-val highlight">-${this.formatPoints(totalPrice)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                    <span class="detail-val highlight">-${this.formatWalletAmount(totalPrice)}</span>
                                 </div>
                                 ${this.buildWalletShopOrderDiscountRows(order)}
                                 ${productName ? `

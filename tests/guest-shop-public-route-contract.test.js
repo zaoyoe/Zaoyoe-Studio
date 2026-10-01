@@ -167,6 +167,14 @@ test('the guest order list route keeps its existing binding so the cookie sessio
     });
 });
 
+test('shared public dispatcher exposes the guest order cancellation route', async () => {
+    await withPublicHandler(async (handler) => {
+        const res = createMockResponse();
+        await handler({ method: 'POST', url: '/api/public?scope=shop&route=guest/cancel' }, res);
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'cancel');
+    });
+});
 test('guest order access Vercel entrypoints bind the shared handlers and stay out of the deploy', () => {
     const ignored = fs.readFileSync(path.join(repoRoot, '.vercelignore'), 'utf8')
         .split(/\r?\n/)

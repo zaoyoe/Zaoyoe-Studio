@@ -26,12 +26,12 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260927_SHOP_GUEST_PAYMENT_CHANNELS_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
         shopClientSource,
-        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?if \(!manualDelivery && !soldOut\) \{\s+void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+\}\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+manualDelivery,\s+soldOut\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?if \(!manualDelivery && !soldOut\) \{\s+void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+\}\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+guestCashEligible: options\?\.guestCashEligible === true,\s+manualDelivery,\s+soldOut\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
         'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
@@ -122,7 +122,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260912_SHOP_LIST_LAYOUT_SALES_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260927_SHOP_GUEST_PAYMENT_CHANNELS_1';/,
         'homepage shop prefetch should use the same sales-aware schema version'
     );
     assert.match(
@@ -207,7 +207,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&cartCalm=20260912_SHOP_CART_CALM_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
+        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3[^"\n]*cartCalm=20260912_SHOP_CART_CALM_3[^"\n]*shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.equal(
@@ -1019,12 +1019,12 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /#shopSuccessModal \.shop-success-item__tag--notice \{[\s\S]*background:\s*transparent;[\s\S]*#shopSuccessModal \.shop-success-item__tag--usage \{[\s\S]*background:\s*transparent;[\s\S]*\.shop-success-item__tag--notice\.is-active \{[\s\S]*background:\s*rgba\(255,\s*214,\s*102,\s*0\.14\);[\s\S]*\.shop-success-item__tag--usage\.is-active \{[\s\S]*background:\s*rgba\(34,\s*197,\s*94,\s*0\.14\);/s,
+        /#shopSuccessModal \.shop-success-item__tag--notice(?:\s*,\s*#guestCashPurchaseModal \.shop-success-item__tag--notice)?\s*\{[\s\S]*background:\s*transparent;[\s\S]*#shopSuccessModal \.shop-success-item__tag--usage(?:\s*,\s*#guestCashPurchaseModal \.shop-success-item__tag--usage)?\s*\{[\s\S]*background:\s*transparent;[\s\S]*\.shop-success-item__tag--notice\.is-active \{[\s\S]*background:\s*rgba\(255,\s*214,\s*102,\s*0\.14\);[\s\S]*\.shop-success-item__tag--usage\.is-active \{[\s\S]*background:\s*rgba\(34,\s*197,\s*94,\s*0\.14\);/s,
         'success modal guidance pills should be outline-only until selected'
     );
     assert.match(
         shopCssSource,
-        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__tag--notice \{[\s\S]*background:\s*transparent;[\s\S]*color:\s*#92400e;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__tag--usage \{[\s\S]*background:\s*transparent;[\s\S]*color:\s*#047857;[\s\S]*\.shop-success-item__tag--notice\.is-active \{[\s\S]*background:\s*#fff7ed;[\s\S]*\.shop-success-item__tag--usage\.is-active \{[\s\S]*background:\s*#ecfdf5;/s,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__tag--notice(?:\s*,\s*html:not\(\[data-theme="dark"\]\) body\.shop-page #guestCashPurchaseModal \.shop-success-item__tag--notice)?\s*\{[\s\S]*background:\s*transparent;[\s\S]*color:\s*#92400e;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__tag--usage(?:\s*,\s*html:not\(\[data-theme="dark"\]\) body\.shop-page #guestCashPurchaseModal \.shop-success-item__tag--usage)?\s*\{[\s\S]*background:\s*transparent;[\s\S]*color:\s*#047857;[\s\S]*\.shop-success-item__tag--notice\.is-active \{[\s\S]*background:\s*#fff7ed;[\s\S]*\.shop-success-item__tag--usage\.is-active \{[\s\S]*background:\s*#ecfdf5;/s,
         'light success modal guidance pills should match the cart outline and selected-fill treatment'
     );
     assert.doesNotMatch(
@@ -1116,5 +1116,19 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopCssSource,
         /\.shop-inline-style-attr-21\[hidden\],[\s\S]*\.shop-inline-style-attr-33\[hidden\],[\s\S]*\.shop-inline-style-attr-37\[hidden\]\s*\{\s*display:\s*none !important;/s,
         'guidance-related shells should only hide through the hidden attribute'
+    );
+});
+
+test('quantity controls process one touch once and tier pricing stays in the price area', () => {
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+    assert.match(
+        shopClientSource,
+        /let suppressClickUntil = 0;[\s\S]*event\?\.type === 'click'[\s\S]*suppressClickUntil[\s\S]*suppressClickUntil = Date\.now\(\) \+ 650/s,
+        'touch fallback must suppress the synthetic click that follows the same quantity tap'
+    );
+    assert.match(
+        shopClientSource,
+        /this\.renderModalProductName\(displayName\);[\s\S]*this\.renderPurchaseUnitPrice\(unitPrice\);/s,
+        'tier changes must not render a duplicate wholesale title badge'
     );
 });

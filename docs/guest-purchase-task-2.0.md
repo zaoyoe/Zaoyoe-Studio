@@ -3966,3 +3966,809 @@ node scripts/guest-shop-readiness.js --fail-on-not-ready  →  EXIT 3   （预�
 - [x] 本次归档没有执行 SQL、部署、创建/支付订单或重新启用游客商品；不把历史订单继续履约/退款写成此次新增实测结论。
 
 运营归档子项现已完成。阶段 5 总状态仍保持 `in_progress`，因为用户要求的促销、多件/购物车/quote/登录用户现金购买、Admin Studio、设备无障碍矩阵和 INTL/NOWPayments 仍需按后续工作包逐项实现和验收。
+### 61.54 2026-09-23 阶段 5 未完成项重新评估与新计划
+
+本节重新审视剩余事项的业务价值和可完成性。旧 S154 卡片、Task 2.0 的 A–J 矩阵和旧的「整卡 PASS」话术可作为参考，但不作为唯一门槛。用户已明确要求尽快完成收口并上线；闪购、阶梯价、促销等尚未完成项继续留在阶段 5 范围，不得擅自改列延期。安全边界仍然有效：未验证的能力在专属验收和部署前保持关闭。一次性成功支付不能证明预算耗尽拒绝、告警投递或其他未测能力。
+
+当前计划结论：阶段 5 包含现有目标中尚未交付的促销能力与上线收口。静态审计、代码/自动化补齐、沙箱实测、运营告警及部署按可并行工作包推进；实时状态无法证明时标未知，不用历史证据补位。上线按 AGENTS.md 的 main/PR/自动部署链执行，部署不代表打开促销或商品开关。
+
+当前已知安全基线：真实促销订单 `GS20260922120128080254E4D17280D` 已支付 9.09、confirmed 且 delivered；对应只读回读显示 CN 预算日仍为 2026-09-22、上限/已用均为 1.00，INTL 关闭，熔断 closed，CD7/CD3 游客开关均关闭。不会再次创建/支付订单、重开 SKU、滚动或清零预算，也不会修改账本或执行 SQL。
+
+需区分“证据已通过”和“口径待解释”：SBXPROMO10 ledger 有两行，一行 `open` 1.00、一行 `returned` 1.00；已付款订单仍有 `open` 行，符合成功兑换保留使用记录的设计，但在将来某日预算 rollover 后，旧日期 spent 不会通过 return RPC 冲减当前日期预算。不得把成功消费当作应归还款项，也不得手工改 ledger/计数。阶段 5 只核对迁移定义、订单 ID 映射与 readback 的口径一致性，并确认 2026-09-22 是测试留下的历史预算行；不改账、不将过期日预算当成当前可用额度。
+
+| 新顺序 | 工作 | 判断与执行边界 | 通过/完成证据 | 若无法完成 |
+| --- | --- | --- | --- | --- |
+| 1 | 促销账务、预算与安全闸审计 | 已完成代码/脱敏回读核对。接着核验闪购、阶梯价、促销实现、迁移落库状态、告警接口与 readiness 的差距；不改历史订单/预算 | 台账映射和 rollover 语义已记录；形成实现/迁移/测试缺口表和安全阻断清单 | 若迁移或预算语义未闭合，保持促销关闭，先修代码/验证 SQL，由用户执行目标库 SQL |
+| 2 | 当前生产配置与运行状态 | 取得可用只读运行路径后核实 production commit、游客 SKU、促销/INTL/数量开关、worker、告警目标；不得读取/输出 secret，不调用支付 provider 查询 | 时间戳与 production commit 绑定的脱敏快照；允许/关闭 SKU 与运行服务状态可解释 | 无只读权限则标出具体外部前置和负责人，继续完成不依赖它的代码/测试；不把旧快照当现状 |
+| 3 | 补齐阶段 5 功能与自动化 | 明确闪购、阶梯价、促销各自定义、价格边界、并发/TTL/预算、回滚方式；补齐缺失代码、迁移、readiness、单测与集成测试。保持游客数量上限 1，不在本步开生产开关 | 每项功能有可重复自动化测试、只读 schema verify 和默认关闭合同；`readiness` 对已选能力给出可解释结果 | 存在需求歧义时列出确切待确认规则；优先完成定义明确的闪购/阶梯价/促销基础切片 |
+| 4 | 沙箱实测与运营闭环 | 在隔离 sandbox 完成券抵扣、预算耗尽拒绝、熔断、过期归还、真实告警路由和 Admin Studio 权限/二次确认/审计。生产测试只限用户明确批准的 SKU、金额与窗口 | 脱敏订单/事件回读、告警送达证据、运营操作审计与回滚演练；历史 §2.6 保持原样，新增结果单独归档 | 沙箱预算或 provider 不可用时拆清外部阻塞，不能把代码测试替代成实机通过 |
+| 5 | 发布与上线收口 | 用专用 guest-shop 分支提交；按 AGENTS.md 推送、PR 到 main、检查后合并，验证 Vercel / Verify / Sub2API / worker 链。发布后仍默认关闭商品/促销；启用前单独做 §61.9 精确 SKU/operator review | 生产 commit、四条部署链路和健康证据；只有相应启用批准与验收完成后才开放选定能力 | 自动化部署或外部权限受阻时修复/等待该链，不在功能分支直接部署 |
+
+| 当前阶段工作包 | 状态 | 进入上线验收的条件 | 专项门槛 |
+| --- | --- | --- | --- |
+| 阶梯价 | `in_progress` | 价格规则经确认，服务端与展示一致，库存和金额测试通过 | 并发/边界价格、CN/INTL 隔离与回滚验证 |
+| 闪购 | `in_progress` | 起止时间、优先级、时区和原价回退规则明确且测试通过 | 时钟边界、并发抢购、过期恢复和运营回滚 |
+| 优惠促销/预算 | `in_progress` | schema verify、抵扣、预算拒绝、归还与告警验收通过 | 精确券/SKU 审核、沙箱账务与通知路由；生产默认关闭直到单独批准 |
+| 多件/购物车/quote | `in_progress` | 属于阶段 5 未完成范围；先完成数量/库存/退款原子性，再接购物车与短时效、会话绑定 quote；不得因当前数量上限为 1 而改列延期 | quantity>1 必须通过原子库存、订单金额/拆合单/退款；quote 需覆盖过期、重放、变价和重新确认 |
+| INTL / NOWPayments | `in_progress` | 属于阶段 5 未完成范围；按站点币种、支付适配器、回调和退款逐项实现并验收；能力未过专属门禁前保持关闭 | 币种/金额绑定、回调签名、退款责任、provider sandbox 和对账 |
+| Admin Studio 与告警 | `in_progress` | 运营入口/权限/二次确认/审计/告警投递有人负责且通过演练 | 不重复建设已存在功能，只补实际缺失部分 |
+| 设备与无障碍 | `in_progress` | 完成本次发布涉及页面的设备/键盘/读屏验收 | 用真实浏览器矩阵记录，不以静态测试代替 |
+
+执行限制：不得将未完成项自行延期，也不得把测试通过等同上线许可。按 AGENTS.md 执行 guest-shop 部署；部署过程中不执行 SQL、不打开任何游客商品或促销开关。沙箱建单/支付只能用隔离环境及明确授权的测试额度；历史生产订单、预算不改写。旧 §2.6 保持历史原貌，新证据追加到当前归档。
+
+#### 第 1 步完成记录：促销订单与预算/ledger 语义
+
+本轮只核对仓库迁移、用户已贴回的脱敏只读回读和订单状态，不连接数据库、不重复下单或支付。
+
+- `guest_shop_discount_redemptions` 以 `returned_at IS NULL` 表示兑换仍生效。成功付款不归还使用次数；到期、取消或退款才由 `fn_guest_shop_return_discount_reservation` 认领并返还。
+- 返还函数用 `UPDATE ... WHERE returned_at IS NULL` 做幂等认领；只有首次调用会扣回券计数并尝试返还同站点、当天预算。跨日后不修改新日期预算，台账保留返还时间和原因作为证据。
+- 因此 `SBXPROMO10` 一行 open 1.00、一行 returned 1.00 符合用户回读中的已付款单与旧过期单；当前计数 1、累计抵扣 1.00 与 open 的成功兑换一致。订单 `GS20260922120128080254E4D17280D` 的 9.09 支付/发货闭环与这行 open 台账一致。未发现需要手工调整账本的差异。
+- 预算回读日期为 2026-09-22，而本轮日期为 2026-09-23；这是带日期的历史状态，不能推算今日额度。不得改账、滚动、清零或恢复 20.00。
+
+**结论：第 1 步通过并关闭。** 主要隐患是把已付款兑换误当成应归还，或把昨日额度当成今日可用额度。未发现迁移语义或已贴回订单映射的矛盾。本结论不单独授权重启生产促销；促销、闪购、阶梯价仍需完成专属安全验收和上线审核。
+
+#### 更正记录（2026-09-23）
+
+用户指出从未同意把闪购、阶梯价、促销等事项延期。前版计划把这些工作标为延期，并建议仅以“当前范围结束”关闭阶段 5，超出了用户授权。该建议正式撤回：这些工作恢复为阶段 5 未完成范围，闪购/阶梯价/促销必须完成实现差距核验和专项验收；不得将阶段 5 标记 complete，直到用户明确目标项完成并满足各自上线门槛。旧 §61.20/§61.21 的延期矩阵只保留为历史记录，不再作为现行计划。
+
+#### 第 2 步完成记录：当前状态可证明范围
+
+截至本轮，最后一份生产/沙箱状态回读时间为 2026-09-22；支付回读只证明指定订单的状态，不是 2026-09-23 的全局开关快照。当前会话没有已配置的生产只读 API 凭证或安全主机状态采集结果。本轮未读取 `.env.production`、未调用生产 API、未 SSH、未连接数据库。
+
+以下实时项标为 **未知**：生产游客 SKU 精确名单、CD7/CD3 开关、促销主开关与今日预算、数量上限、worker timer/最近成功状态、告警发送目标。不得用 2026-09-22 的历史结果代替今天的状态。
+
+这些未知项不被解释为延期决定；它们是取得当前生产快照前的外部验证工作。已完成账务语义核对，接下来按表推进功能与沙箱验收。生产促销、闪购、阶梯价及其他游客 SKU 在各自通过专项验收、部署和精确启用审核前保持关闭。
+
+**结论：历史证据边界已归档；实时状态未知；不新增 SQL 请求，也不改变线上状态。本项保持进行中，后续需用只读路径补当前快照。**
+
+#### 第 3 步完成记录：最小运营处置闭环审查
+
+只读审查了 Admin Studio 任务板、guest-shop 运行手册、管理员路由和告警实现；没有登录后台、制造异常、操作订单或测试外部告警渠道。
+
+- 仓库已定义游客异常订单列表和管理员写操作入口，操作白名单包括退款申请、人工履约、死信解锁；运行手册要求退款/补发/解锁有权限门槛、二次确认和审计记录，且不得暴露卡密或凭证。
+- 独立 `guest_shop_monitor` 告警模块已存在；较早证据记载它没有 webhook/邮件/IM 投递目标。因此“代码会计算/记录告警”不等于“值班人员能收到告警”。当前投递目标和实际责任人没有本轮可验证证据，记为 `not verified`。
+- 指定 SKU 的开关关闭回滚证据和归档已完成；支付/退款/商品开关/技术告警的具体当班人员及联系路径仍未提供，不将角色标签冒充已落实的值班名单。
+
+**结论：后台处置能力的设计与入口已存在；线上角色权限和可达性、审计实测、告警投递及个人责任路径未验证。** 这不否定已有退款/补发/解锁代码，但当前不能声称完整运营值守闭环已实测。此项转为阶段 5 的运营闭环工作，需补告警通道和责任人证据；不制造生产异常，也不重复建设已有后台。
+
+#### 第 4 步：当前范围收口建议（已撤回）
+
+第 1 步已通过，第 2 步历史/实时边界已记录，第 3 步确认存在运维代码但外部投递和人员未验证。没有发现已付款订单的账务矛盾，也没有本轮证据表明 CN 单件主链路的回滚失效；同时，无法证明今天全局开关和 worker 状态，也无法宣称告警值守已落实。
+
+原“当前范围收口建议”撤回，不作为计划决策。阶段 5 仍以用户要求的尽快完成目标推进：先完成明确且可独立验证的促销/闪购/阶梯价与运营工作包，再按专用分支和 main 自动部署链路上线。多件/购物车、INTL 的本次范围需要结合已有实现、上线目标和外部 provider/库存约束做紧凑的范围确认；确认前保持开放问题，不能静默标延期。**阶段 5 不得在促销、闪购、阶梯价等用户明确点名工作未完成时标记 complete。**
+
+### 61.24 2026-09-22 阶段 5 促销安全闸代码收口（未落库）
+
+- [x] C-D3/C-D4/C-D5 的代码闸已写入 [`supabase/migrations/20260924_guest_shop_promo_safety_gates.sql`](../supabase/migrations/20260924_guest_shop_promo_safety_gates.sql)：同一 product 的 source-chain alias 按 `inventory_source_sku_id` 聚合并用 product 级事务锁；C-D4 按联系哈希/IP 对 `pending`、`created`、`review` 的有效持仓单统一限 2 笔；C-D5 同时约束订单 `expires_at` 和 reservation `reserved_until` 不超过 600 秒。订单和 reservation 的插入/更新均由同一延迟约束触发器覆盖。
+- [x] 已补充只读验证脚本 [`supabase/migrations/20260924_verify_guest_shop_promo_safety_gates.sql`](../supabase/migrations/20260924_verify_guest_shop_promo_safety_gates.sql)，检查触发器启用状态、目标函数、source-chain 统计和 reservation TTL；函数缺失时会显式返回 FAIL。
+- [x] 安全闸合同测试覆盖三道闸、只读 verify、C-D4「排除当前订单后其他订单满 2 笔即拒绝」以及 `function_security` 的 `prosecdef` / `proconfig` 判定。代码准备阶段曾记录 6/6，补上这两条后以 §61.25 的复跑为准，不再把 6/6 当成当前结果。
+- [x] 用户已在目标 Supabase 运行只读 verify，11 行全部 `ok=true`，详见 §61.25。这证明 20260924 闸门对象已在库中。Codex 不执行 SQL。促销开关、预算、熔断和 `GUEST_SHOP_MAX_QUANTITY` 仍保持关闭/1。schema verify 不能写成生产启用证据。
+- [x] 已禁止应用未跟踪的 `20260925_guest_shop_promo_gates.sql`。它是另一份历史草稿，不在 readiness 或当前执行顺序内；不得与 `20260924_guest_shop_promo_safety_gates.sql` 同时应用，也不得单独替代它。
+
+本次完成多件/促销启用前的代码安全闸准备，以及用户只读 verify 的归档。阶段 5 仍是 `in_progress`，Task 2.1 仍是 80%（4/5）。下一步按促销沙箱清单补实机并发、拒绝、过期释放、支付和运营证据；在此之前不部署、不启用游客促销或多件购买。
+
+### 61.25 2026-09-22 促销安全闸只读 verify 归档（11/11）
+
+用户在目标 Supabase 执行了只读脚本 [`supabase/migrations/20260924_verify_guest_shop_promo_safety_gates.sql`](../supabase/migrations/20260924_verify_guest_shop_promo_safety_gates.sql)。Codex 没有执行 SQL。脚本按 `check_name` 排序返回 11 行，全部 `ok=true`。先前交接里的「12/12」是计数错误，以本表为准。
+
+| check_name | ok | detail |
+| --- | --- | --- |
+| contact_index | true | open-contact index uses the global identity key |
+| deferred_trigger | true | constraint trigger is deferred until transaction commit |
+| function_security | true | prosecdef=true; search_path=public,pg_temp |
+| ip_index | true | open-IP index uses the global identity key |
+| open_order_guard | true | contact/IP open-order cap is present |
+| promo_reservation_ttl_guard | true | discounted reservations cannot outlive the 600-second order deadline |
+| reservation_deferred_trigger | true | reservation status and TTL updates are covered by the same deferred guard |
+| stock_gate_function | true | C-D3/C-D4/C-D5 trigger function exists |
+| stock_index | true | reservation source-snapshot stock-gate index exists |
+| stock_ratio_guard | true | guest stock hold ratio rejects at 20 percent |
+| ttl_hard_ceiling | true | discounted orders have a 600-second maximum TTL |
+
+边界：
+
+- 11/11 只证明闸门函数、两条延迟约束触发器、三个索引，以及 `SECURITY DEFINER` + `search_path=public,pg_temp` 已在目标库。它不是卡 7 实机拒绝 PASS，也不是促销或多件启用许可。
+- 实机并发、拒绝、过期释放、支付和运营证据仍未执行。阶段 5 保持 `in_progress`，Task 2.1 总进度保持 **80%（4/5）**。
+- `GUEST_SHOP_MAX_QUANTITY` 保持 1。促销开关、预算、熔断和游客商品开关保持关闭。
+- 不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。该文件是未跟踪历史草稿，不得与 20260924 迁移同时应用，也不得单独替代它。
+- `function_security` 的 detail 是 `prosecdef=true; search_path=public,pg_temp`。PostgreSQL 在 `search_path` 没有点名 `pg_catalog` 时会先搜索 `pg_catalog`，所以函数里未加 schema 的 `clock_timestamp()`、`hashtextextended()`、`pg_advisory_xact_lock()` 不会被 `public` 里的同名对象抢先解析。残留风险是以后若把 `pg_temp` 放到最前，或显式把 `public` 排在 `pg_catalog` 前面。本轮不改函数定义。
+
+本轮归档复跑：
+
+`node --test tests/guest-shop-promo-safety-gates.test.js tests/guest-shop-task-2-1-closeout-contract.test.js`：10/10 通过（安全闸合同 9，阶段 5 closeout 1，fail 0）。
+`node scripts/guest-shop-readiness.js --fail-on-invalid`：退出 0，`findings: none`，`operational_ready: false`，`manual_review_count: 21`。本次没有生产 env 文件，`production_like: false`，不能当成生产放行。
+`git diff --check`：通过。
+Codex 未执行 SQL，未部署，未启用游客商品、促销或多件购买。
+
+
+### 61.26 2026-09-22 卡 7 拒绝半项预检（未实机）
+
+- [x] 已核对 `fn_guest_shop_enforce_promo_safety_gates`：C-D5 才检查优惠码和优惠金额；C-D3/C-D4 对所有未过期的 `pending` / `created` / `review` 且 `reservation_status = held` 的游客单生效，包括原价、数量 1。
+- [x] 已核对预占状态：当前创建订单路径写入订单 `reservation_status = held`、预占行 `status = held`、库存 `status = reserve`，和闸门的计数条件一致。
+- [x] 已核对公开错误合同：`guest_stock_hold_limit` 与 `guest_open_orders_limit` 都映射为 `guest_promo_safety_limit`。`failResponse` 只序列化 `success/code/message`，买家看不到是哪一道闸。
+- [ ] 实机建单未执行。本机 8000 端口没有 preview。Codex 不执行 SQL，不启动带游客购买开关的 preview，不打开游客商品。
+
+雷点：
+
+- 非共享 source-chain 卡密 ≤ 5 张时，第一笔未付款单被 C-D3 拒绝；6 到 10 张时第二笔被 C-D3 拒绝。单独看 C-D4 至少要 11 张，否则第 3 笔之前已经失败。
+- `is_shared = true` 不进分子和分母。共享库存上的通过不能证明 C-D3。
+- 拒绝发生在延迟触发器、事务提交时，必须整笔回滚。报错后多出的 held 行是失败，不是证据。
+- 闸门已经在目标库。重新打开游客 SKU 后，原价单件也会命中这两道闸。这不是开促销，也不是把数量调到 2。
+
+本步没有修改闸门函数，没有把内部细码写入买家响应。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，Task 2.1 总进度保持 **80%（4/5）**。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+### 61.27 2026-09-22 卡 7 C-D4 HTTP 实机（库内回读已闭合）
+
+- [x] 本地 preview 报价确认「测试 2」为原价 ¥144、数量上限 1、优惠关闭。凭证开关这次是关的。
+- [x] 同一邮箱连续两笔原价不付款单创建成功：`GS2026092203042062438815D6D1931`、`GS20260922030428167558C70FFF67A`。应付都是 ¥145.44，优惠 ¥0。
+- [x] 第三笔 HTTP 409，`guest_promo_safety_limit`，响应没有订单号。
+- [x] 库内回读已于 2026-09-22 11:10（Asia/Shanghai）前执行。`supabase/sandbox/S154_cd4_reject_readback.sql` 段 4 八项全是 `true`。同一联系人、同一 IP、两笔原价 held、没有第三笔。建单前非共享可用卡 41，占比远低于 20%，拒绝归因到 C-D4。
+
+C-D4 拒绝半项闭合。卡 7 仍是 PARTIAL，因为 C-D3 没做，两笔的物理释放也还没回读。不要重跑旧段 4。过期释放的只读脚本是 `supabase/sandbox/S154_cd4_expiry_readback.sql`。未到当前 `expires_at` 不是失败。2026-09-22 11:34（Asia/Shanghai）提前脚本报「已经提前过了」并中止，没有改任何行。第二笔库内截止是 `2026-09-22 03:34:28.167897+00`，整秒字面量对不上，「仍在未来 3 分钟内」被误当成已提前。同一次过期回读差 9 秒，`seconds_until_later_expiry=9`、`within_ttl_expected=true`，安全项全是 true，不是失败。11:35 之后的过期回读段 6 已闭合：`both_expired=true`，`clock_layer_closed=true`，`release_layer_closed=true`，`both_reservations_released=true`，`both_inventory_available=true`，`cd3_stale_hold_count=0`，`cd4_contact_open_count=0`，`cd4_ip_open_count=0`，`seconds_until_later_expiry=-429`。原价、数量 1、未付款、未发货、无支付确认、无券台账、无第三笔仍全是 true。时钟层和物理释放都已闭合。这仍不是卡 7 PASS，因为 C-D3 还没做。不要在「测试」或「测试 2」上硬做 C-D3，164 张和 41 张都远低于 20% 的可观测区间，也不要改库存状态去凑 5 到 10 张。2026-09-22 预检已跑完：29 行，`use_for_cd3=true` 为 0。不要把那份预检当当前步骤重跑。2026-09-22 缺口脚本已跑完：五行，`only_switch_missing` 全部是 false。详见 `docs/guest-shop-promo-evidence.md` §2.18。不要重跑缺口脚本，不要写启用 SQL，不要建单，不要上架，不要开游客开关。真实商品和名称含「测试请勿兑换」的不要打开。这两笔的时钟层和物理释放都已闭合，库存已回到 `available`，不再占用 C-D3。不要为了做 C-D3 去压库存。不要付款，不要再为 C-D4 建单。`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.28 2026-09-22 卡 7 C-D4 过期释放回读（已闭合）
+
+- [x] 提前脚本误报后没有改行。原截止保持 11:34:20 和 11:34:28.167897（北京时间）。
+- [x] 截止后重跑 `supabase/sandbox/S154_cd4_expiry_readback.sql`。段 6：`clock_layer_closed=true`，`release_layer_closed=true`，两张预占 `released`，库存回到 `available`，陈旧 `reserve` 为 0，联系人/IP 开单数为 0。
+- [x] 两笔仍是原价、数量 1、未付款、未发货、无支付确认、无券台账、无第三笔。`seconds_until_later_expiry=-429`。
+- [ ] C-D3 未做。卡 7 继续 PARTIAL。
+
+不要重跑旧拒绝回读，不要再提前这两笔，不要付款。不要把「测试」或「测试 2」的库存改少来凑 C-D3。2026-09-22 预检已跑完：29 行，`use_for_cd3=true` 为 0。不要把那份预检当当前步骤重跑。缺口脚本已跑完，失败原因已拆开，详见 §61.30。`only_switch_missing` 全部是 false。不要重跑，不要建单，不要写启用 SQL。`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.29 2026-09-22 卡 7 C-D3 预检负结果（未建单）
+
+本节取代 §61.27 和 §61.28 末尾「下一步只跑预检」。
+
+- [x] 用户已执行 `supabase/sandbox/S154_cd3_preflight_readonly.sql`。29 行，`use_for_cd3=true` 为 0。Codex 没有执行 SQL。
+- [x] 预检备注已从笼统的「游客通道没开」拆成六个条件：商品上架、SKU 上架、游客开关、`delivery_type=KEY`、两边都不是人工发货、CN 单价大于 0。不必为了改备注重跑预检。
+- [x] 名称含「测试」且非共享 total 在 1 到 5 的五行，失败原因已由 `supabase/sandbox/S154_cd3_gap_readonly.sql` 拆开。五行 `only_switch_missing` 全部是 false。详见 §61.30。不要重跑。
+- [ ] C-D3 HTTP 未做。卡 7 继续 PARTIAL。
+
+`guest_ready=true` 的只有「测试 2」41 张和「测试」¥0.01 的 164 张。两行都会先撞 C-D4。1 到 5 张里还有 Gemini、小火箭、Apple id、租借、纪念碑谷和美国苹果 ID，这些不是候选。名称含「测试请勿兑换」的不要打开。¥1 / ¥2 的「测试」商品是 `690fd7f1-090d-4ffe-a5c3-88bf674fba7f`，不要和已开通的 ¥0.01 商品 `52246f1d-b98d-4920-9129-581296f43de9` 混用。
+
+缺口已经跑完，本节的「下一步」由 §61.30 取代。五行都不是只差游客开关。不要写启用 SQL，不要建单，不要改库存，不要上架，不要开游客开关。`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.30 2026-09-22 卡 7 C-D3 缺口已拆开（未建单）
+
+本节取代 §61.27、§61.28 和 §61.29 末尾「下一步只跑缺口脚本」。
+
+- [x] 用户已执行 `supabase/sandbox/S154_cd3_gap_readonly.sql`。5 行，`guest_ready` 全部 false，`only_switch_missing` 全部 false。Codex 没有执行 SQL。
+- [x] 五行都是商品未上架，并且游客开关在商品级关闭。SKU 开关是空，生效开关继承商品级 false。没有一行只差游客开关。
+- [x] 「测试 / 人工」还多了 SKU 人工发货。「测试请勿兑换 / 7米」商品和 SKU 都是人工发货。后者不要打开，也不要逐项补条件。
+- [ ] C-D3 HTTP 未做。卡 7 继续 PARTIAL。
+
+| 商品 / SKU | 单价 | total | 失败条件 | product_id / sku_id |
+|---|---|---|---|---|
+| 测试 / 人工 | 2.00 | 1 | 商品未上架、游客开关关闭、SKU 人工发货 | `690fd7f1-090d-4ffe-a5c3-88bf674fba7f` / `a93915ae-3f88-4cb3-8e89-aa832b4e5028` |
+| 测试 / 默认规格 | 1.00 | 3 | 商品未上架、游客开关关闭 | `690fd7f1-090d-4ffe-a5c3-88bf674fba7f` / `2a6a27c0-953d-49b9-a421-0d84f6be7021` |
+| 测试规格 / 默认规格 | 2.00 | 3 | 商品未上架、游客开关关闭 | `d2e832c8-f7c0-4a07-b492-6ed5e7e9d7ff` / `16d29e7d-22f4-4bf7-9cde-b6c8e59b9da1` |
+| 测试规格 / 测出 | 12.00 | 4 | 商品未上架、游客开关关闭 | `d2e832c8-f7c0-4a07-b492-6ed5e7e9d7ff` / `23078131-0af7-4d70-814c-e693c4021fd8` |
+| 测试请勿兑换 / 7米 | 6.00 | 3 | 商品未上架、游客开关关闭、商品和 SKU 都人工发货 | `875cdf10-cb5b-4f7f-baae-b747e318a8c3` / `da4fef2d-83c3-40e6-98ba-e6fc3986dc07` |
+
+打开 `690fd7f1-090d-4ffe-a5c3-88bf674fba7f` 的商品上架和商品级游客开关，只会让 ¥1、total 3 的「默认规格」变成 `guest_ready`；「人工」仍被 SKU 人工发货挡住。打开 `d2e832c8-f7c0-4a07-b492-6ed5e7e9d7ff` 的同一层，total 3 和 total 4 两行都会变成 `guest_ready`。不要开到已开通的 ¥0.01 商品 `52246f1d-b98d-4920-9129-581296f43de9`，164 张会先撞 C-D4。
+
+停。等明确指定某一个测试 SKU，并接受该商品需要上架、游客开关目前是商品级关闭。在此之前不要写启用 SQL，不要建单，不要上架，不要改库存。`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.31 2026-09-22 卡 7 C-D3 专用商品待确认（未建单）
+
+本节取代 §61.30 末尾「停。等明确指定某一个测试 SKU」。用户选择新建专用商品，不改「测试」「测试 2」「测试请勿兑换」，也不压 ¥0.01 / 164 张和 ¥144 / 41 张。2026-09-22 用户声明已在 Admin Studio 建好。当时 Codex 没有执行 SQL，库内确认还没贴回。确认和 HTTP 结果见 §61.32。不要按本节再跑确认 SQL，也不要再打第二笔。
+
+期望规格：商品名去掉首尾空白后正好是「沙箱CD3」；正好一个默认规格；KEY、自动发货；商品上架且游客开关打开；游客通道只开 ZPay；CN 单价 3.00；游客单次上限 1；单次限购为空或 1；无秒杀、无阶梯价；库存来源只有规格自己；非共享 available 正好 5；held 为 0；无共享库存；无其他状态的一次性库存；商品和规格 `stock_count` 都是 5；这个商品还没有游客订单。
+
+- [x] 用户已执行 `supabase/sandbox/S154_cd3_fixture_confirm_readonly.sql`。`confirm_verdict` 为「确认通过」。整行记在 §61.32。Codex 不执行。
+- [x] 确认通过后只打了一笔不付款原价单。commit 409 `guest_promo_safety_limit`，响应没有订单号。库内是否回滚还要靠回读。
+- [x] C-D3 拒绝半项已由 §61.33 的回读闭合。卡 7 历史偏差格继续 PARTIAL，不得改写成整卡 PASS。
+
+`confirm_verdict` 不是「确认通过」时，只按 `failed_conditions` 在 Admin Studio 改这一件商品。不要重跑 `S154_cd3_preflight_readonly.sql` 或 `S154_cd3_gap_readonly.sql`，不要重跑 C-D4 回读，不要写启用 SQL，不要改其他商品，不要为了凑 5 张去改库存状态。商品一旦上架并打开游客开关，会公开出现在中文商城，标价 ¥3；测完必须关掉游客开关。`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+### 61.32 2026-09-22 卡 7 C-D3 HTTP 已拒绝（回读已由 §61.33 闭合）
+
+本节取代 §61.31 的「还不能建单」。用户贴回 `supabase/sandbox/S154_cd3_fixture_confirm_readonly.sql`，正好 1 行，`confirm_verdict` 为「确认通过。贴回本行。仍然不要自行建单，不要付款。」Codex 没有执行 SQL。
+
+| 字段 | 值 |
+| --- | --- |
+| product_name / sku_name | 沙箱CD3 / 默认规格 |
+| product_id | `c373b8b7-ebce-4709-b8d4-c192abd36869` |
+| sku_id | `f928599e-30e8-4b3e-aa86-34ec09e2d659` |
+| price_points | 3.00 |
+| guest_ready / zpay_only | true / true |
+| checkout_channels | `["zpay"]` |
+| effective_guest_qty / max_purchase_quantity | 1 / 1 |
+| nonshared_available / guest_held_reserve / cd3_total | 5 / 0 / 5 |
+| shared_rows / nonshared_other / source_only_self | 0 / 0 / true |
+| product_stock_count / sku_stock_count | 5 / 5 |
+| existing_guest_orders | 0 |
+| nonshared_by_status | `{"available":5}` |
+| failed_conditions | null |
+
+确认之后只打了一笔不付款原价单。本地 preview 是 `http://127.0.0.1:8000`，站点 cn，provider `zpay`，channel `alipay`，不带优惠码。联系邮箱是沙箱地址 `cd3-boundary-20260922@sandbox.invalid`。没有开折扣开关，没有开凭证开关，没有改 `GUEST_SHOP_MAX_QUANTITY`。打完这一笔后 preview 已停，8000 不再监听。
+
+- preview 200：商品「沙箱CD3」，规格「默认规格」，金额 3 CNY，数量 1，小计 3，`quantity_cap=1`，`discount_enabled=false`，`buyer_credential_required=false`，通道只有 `zpay`。
+- prepare 200。
+- commit 409：`guest_promo_safety_limit`，文案「当前游客购买较多，请稍后再试」，`order` 为 null，没有付款。时间 2026-09-22 12:42（Asia/Shanghai）。
+
+公开码只从 `guest_stock_hold_limit` 和 `guest_open_orders_limit` 映射过来。买家响应仍然分不出 C-D3 和 C-D4。C-D4 要同一联系人哈希或同一 IP 哈希上已有至少 2 笔未过期未付款 held，才会先于 C-D3 拒绝。全库这种 held 少于 2 时，任何身份都到不了 C-D4。所以这笔记 409 还不能单独记成通过，必须等回读证明没有订单、5 张仍是 available，并且全库未过期未付款 held 少于 2。
+
+- [x] 确认通过，并且只打了一笔。HTTP 409，无订单号，未付款。
+- [x] 用户已执行 `supabase/sandbox/S154_cd3_reject_readback.sql`。整行和闭合结论见 §61.33。不要重跑。
+
+该回读已贴回。不要重跑本文件，不要第二笔，不要付款。当时的判据保留在下面，实际整行见 §61.33。
+
+- `readback_verdict` 以「C-D3 拒绝可归因」开头：C-D3 拒绝半项闭合。然后在 Admin Studio 关掉「沙箱CD3」的游客开关。不要写关闭 SQL。
+- 写着「不能排除 C-D4」或「状态不一致」：不要再试，不要付款，按行里的数字判断。
+- 不要重跑确认、预检、缺口脚本、C-D4 回读或提前脚本。不要第二笔。
+
+5 张边界是提交时把新预占计入 held：`1 * 100 >= 5 * 20`。拒绝必须整笔回滚。回读里只要出现订单、预占、支付行，或 available 不是 5，就是失败，不是拒绝成功。回读贴回时商品仍上架且游客开关开着。关掉开关的现行步骤见 §61.33。不要重跑本回读。`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.33 2026-09-22 卡 7 C-D3 拒绝回读已闭合（游客开关已由 §61.34 闭合）
+
+本节取代 §61.32 的「回读未贴回」。用户贴回 `supabase/sandbox/S154_cd3_reject_readback.sql`，正好 1 行。Codex 没有执行 SQL。`readback_verdict` 以「C-D3 拒绝可归因」开头。C-D3 拒绝半项闭合。卡 7 标题和历史偏差格继续 PARTIAL，不得改写成整卡 PASS。这次是原价、无券、无预算消耗，不能代替促销单 TTL 后库存与预算同时归还。
+
+| 字段 | 值 |
+| --- | --- |
+| target_present | true |
+| product_name / sku_name | 沙箱CD3 / 默认规格 |
+| product_id | `c373b8b7-ebce-4709-b8d4-c192abd36869` |
+| sku_id | `f928599e-30e8-4b3e-aa86-34ec09e2d659` |
+| price_points | 3.00 |
+| guest_orders_on_product | 0 |
+| payment_orders_on_product | 0 |
+| reservations_on_product | 0 |
+| nonshared_available | 5 |
+| guest_held_reserve | 0 |
+| shared_rows / nonshared_other | 0 / 0 |
+| product_stock_count / sku_stock_count | 5 / 5 |
+| live_open_guest_orders | 0 |
+| readback_verdict | C-D3 拒绝可归因。没有订单，5 张仍 available，全库未过期未付款 held 少于 2，C-D4 不可能先触发。不要再试，不要付款。测完关掉这件商品的游客开关。 |
+
+公开码 `guest_promo_safety_limit` 同时覆盖 C-D3 和 C-D4。C-D4 要同一联系人哈希或同一 IP 哈希上已有至少 2 笔未过期未付款 held。`live_open_guest_orders=0`，任何身份都到不了 C-D4。这件商品的订单、支付、预占都是 0，非共享 available 仍是 5。2026-09-22 12:42（Asia/Shanghai）那笔 409 已整笔回滚，记为 C-D3 拒绝。
+
+- [x] 回读整行满足「C-D3 拒绝可归因」。C-D3 拒绝半项闭合。
+- [x] 「沙箱CD3」的游客开关已关掉，回读见 §61.34。本节回读当时不看开关。
+
+不要重跑回读、确认、预检、缺口脚本、C-D4 回读或提前脚本。不要第二笔，不要付款，不要开券，不要改库存，不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+当时的现行步骤已经完成，结果见 §61.34。不要再关一次，也不要重跑开关回读。当时的步骤是：在 Admin Studio 打开商品「沙箱CD3」，取消勾选「允许游客购买」，保存。不要写关闭 SQL，也不要改价格、库存、上架或其他商品。规格上的 `allow_guest_purchase` 如果不是空，会盖过商品开关；规格如果单独勾了游客购买，也要取消。有效开关是 `COALESCE(sku.allow_guest_purchase, product.allow_guest_purchase, false)`。
+
+当时关完后再跑 `supabase/sandbox/S154_cd3_switch_off_readonly.sql`，全文一条 SELECT。期望正好 1 行。`switch_verdict` 以「游客开关已关」开头，这一步才算完成。该行已经贴回，见 §61.34。不要重跑。写着「还开着」才回到 Admin Studio 再关一次，不要用 SQL 关；这次不是这个结果。
+
+开关关掉之前，这件商品会公开出现在中文游客商城，标价 ¥3。现在游客结算进不去。商品仍上架，登录积分商城可能还能看到这 5 张；本步不要求下架。若要让商城完全看不到，再在 Admin Studio 关上架，仍然不要用 SQL。
+
+`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.34 2026-09-22 卡 7「沙箱CD3」游客开关已关
+
+本节取代 §61.33 的「游客开关还没关」。用户贴回 `supabase/sandbox/S154_cd3_switch_off_readonly.sql`，正好 1 行。Codex 没有执行 SQL。`switch_verdict` 以「游客开关已关」开头。游客开关关闭闭合。卡 7 标题和历史偏差格继续 PARTIAL，不得改写成整卡 PASS。这次仍是原价、无券、无预算消耗，不能代替促销单 TTL 后库存与预算同时归还。不要回写 `docs/guest-shop-promo-evidence.md` §2.6 的九项历史表。
+
+| 字段 | 值 |
+| --- | --- |
+| target_present | true |
+| product_name / sku_name | 沙箱CD3 / 默认规格 |
+| product_id | `c373b8b7-ebce-4709-b8d4-c192abd36869` |
+| sku_id | `f928599e-30e8-4b3e-aa86-34ec09e2d659` |
+| price_points | 3.00 |
+| product_active / sku_active | true / true |
+| product_allow_guest | false |
+| sku_allow_guest | null |
+| effective_guest | false |
+| guest_switch_off | true |
+| guest_orders_on_product | 0 |
+| payment_orders_on_product | 0 |
+| reservations_on_product | 0 |
+| nonshared_available | 5 |
+| guest_held_reserve | 0 |
+| shared_rows / nonshared_other | 0 / 0 |
+| product_stock_count / sku_stock_count | 5 / 5 |
+| switch_verdict | 游客开关已关。商品仍上架，登录积分商城可能还能看到这 5 张。本步不要求下架。不要再打开游客开关，不要建单，不要付款。 |
+
+本行的 `product_id` / `sku_id` 不在开关回读的输出列里。脚本按已确认的这两个 id 定位，`target_present=true`，商品名、规格名和单价都没变，所以身份沿用 §61.32 的确认行。
+
+有效开关是 `COALESCE(sku.allow_guest_purchase, product.allow_guest_purchase, false)`。商品级已是 false，规格级是空，所以 `effective_guest=false`，游客结算进不去。
+
+- [x] 整行满足「游客开关已关」。这一步闭合。
+- [x] 商品仍 `is_active=true`。本步不要求下架。登录积分商城可能还能看到这 5 张。若要隐藏，只能在 Admin Studio 关上架，不要用 SQL。
+
+不要重跑开关回读、C-D3 拒绝回读、确认、预检、缺口脚本、C-D4 回读或提前脚本。不要第二笔，不要付款，不要开券，不要改库存，不要再打开「沙箱CD3」的游客开关。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+「沙箱CD3」这一步到此停止。不新写建单 SQL，也不写改开关或下架 SQL。卡 7 剩下的促销 TTL 归还见 §61.35，先确认专用商品「沙箱CD7」；不能复用这件 5 张的「沙箱CD3」，也不能把它改名。
+
+`GUEST_SHOP_MAX_QUANTITY` 保持 1。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.35 2026-09-22 卡 7 促销 TTL 归还：先确认「沙箱CD7」（未建单）
+
+本节取代 §61.34 的「不开工促销」。只开工确认，不开工建单。Codex 没有执行 SQL。卡 7 标题和历史偏差格继续 PARTIAL，不得改写成整卡 PASS。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+专用商品不能复用「沙箱CD3」。那件只有 5 张，第一笔原价就会被 C-D3 拒绝，而且没有券、没有预算消耗。也不要把「测试」或「测试 2」拿来做：164 张和 41 张都会让第二笔继续过 C-D3。
+
+现行步骤：先在 Admin Studio 新建商品，再建好后只跑 `supabase/sandbox/S154_cd7_fixture_confirm_readonly.sql`。全文一条 SELECT。找不到商品也返回一行。通过判语必须是「确认通过。贴回本行。仍然不要自行建单，不要付款，不要开生产折扣开关。」确认通过前不要下单。
+
+期望规格：
+
+| 项 | 值 |
+| --- | --- |
+| 商品名 | 去掉首尾空白后正好「沙箱CD7」。不要改「沙箱CD3」的名字来顶替 |
+| 规格 | 正好一个，且是默认规格。规格名可用「默认规格」 |
+| 发货 | KEY，自动发货。商品和规格都不要人工发货 |
+| 上架 | 商品上架，规格上架 |
+| 游客开关 | 只开商品级。规格级留空，不要单独勾 |
+| 通道 | 只开 ZPay。不要 NOWPayments，不要 USDT |
+| 价格 | CN 单价正好 10.00。无秒杀，无阶梯价 |
+| 数量 | 游客单次上限 1。无限购，或限购 1 |
+| 库存 | 非共享 available 正好 6，held 为 0。无共享行，无其他状态。商品和规格 `stock_count` 都是 6。库存来源只有规格自己 |
+| 订单 | 这个商品还没有游客订单 |
+| 券 | 复用已有 `SBXPROMO10`。不要新建，不要跑 `S154_fixture_setup.sql` |
+| 预算 | CN 日预算开着且有效剩余至少 1.00。intl 预算保持关闭。熔断必须是 closed |
+| 「沙箱CD3」 | 游客开关仍关 |
+
+6 张是按已落库的闸门算的。提交时新预占已经计入：`held=1`、`total=6`，`1*100 < 6*20`，第一笔过 C-D3。第二笔是 `held=2`、`total=6`，`2*100 >= 6*20`，C-D3 拒绝。11 张时第二笔仍过闸（`2*100 < 11*20`），会多锁一张卡、多占 ¥1.00 预算，所以不要做成 11 张。确认通过后仍然只能准备 1 笔，不能连建两笔。本步连这一笔也不建。
+
+`SBXPROMO10` 必须仍是 percent、结算比例 90、游客开放、共享 `max_uses` 为 0（不限）、人群包为空、不是互斥券、站点 cn 或 all、范围全部商品、计价阶段 `order_discount`、不允许全免、生命周期 active、有效期覆盖现在。游客次数和金额余量都至少 1。¥10.00 的抵扣是 ¥1.00，商品净额 ¥9.00。这是券面净额，不是买家实付；ZPay 若有 1% 通道费，以后的应付会是 ¥9.09。本步不付款，不要为了对金额去改券。
+
+商品上架并打开游客开关后，会公开出现在中文游客商城，标价 ¥10。优惠开关没开时，原价仍然可以买走这 6 张。贴回前不要下单，也不要打开生产环境的 `GUEST_SHOP_DISCOUNT_ENABLED`。`GUEST_SHOP_MAX_QUANTITY` 保持 1。
+
+`confirm_verdict` 不是「确认通过」时，只按 `failed_conditions` 改这一件商品，或看券/预算/「沙箱CD3」开关那几项。不要重跑开关回读、C-D3 拒绝回读、C-D3 确认、预检、缺口、C-D4 回读或提前脚本。不要跑 `S154_fixture_setup.sql`，它会把券计数和日预算归零。不要调用 `guest_shop_promo_gate()`，SQL Editor 不是 service_role。不要应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+确认行已在 2026-09-22 贴回。随后只打了一笔促销 commit，公开响应是 500，见 §61.36。回读见 §61.37。不要再跑本确认。
+
+### 61.36 2026-09-22 卡 7「沙箱CD7」确认通过，促销 commit 返回 500（回读已由 §61.37 闭合）
+
+本节取代 §61.35 的「确认通过前不要下单」。用户贴回 `supabase/sandbox/S154_cd7_fixture_confirm_readonly.sql`，正好 1 行，`confirm_verdict` 以「确认通过」开头。Codex 没有执行 SQL。卡 7 标题和历史偏差格继续 PARTIAL，不得改写成整卡 PASS，也不要回写 `docs/guest-shop-promo-evidence.md` §2.6。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+| 字段 | 值 |
+| --- | --- |
+| 商品 / 规格 | 沙箱CD7 / 默认规格 |
+| product_id / sku_id | `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd` |
+| price_points | 10.00 |
+| guest_ready / effective_guest | true / true |
+| product_allow_guest / sku_allow_guest | true / null |
+| 非共享 available / held / shared / other / cd7_total | 6 / 0 / 0 / 0 / 6 |
+| source_only_self / checkout_channels / zpay_only | true / `["zpay"]` / true |
+| effective_guest_qty / max_purchase_quantity | 1 / 1 |
+| existing_guest_orders | 0 |
+| product_stock_count / sku_stock_count | 6 / 6 |
+| nonshared_by_status | `{"available":6}` |
+| one_hold_under_20 / second_hold_hits_cd3 | true / true |
+| 券 | `SBXPROMO10`，percent，结算比例 90，游客剩余 50 次 / ¥50.00 |
+| expected_discount_cny / expected_net_cny | 1.00 / 9.00 |
+| is_dirty_coupon / coupon_max_uses | false / 0 |
+| CN 预算 | breaker `closed`，enabled，日预算 20.00，已用 0.00，剩余 20.00，`cn_allows_1=true` |
+| intl | enabled=false，日预算 0.00，`intl_budget_closed=true` |
+| 「沙箱CD3」 | `cd3_effective_guest=false`，`cd3_switch_still_off=true` |
+| failed_conditions | null |
+| near_miss_names | 沙箱CD3 |
+
+确认通过后只打了 1 笔不付款促销单。本地 preview 的 preview 返回 200：商品名、规格名和两个 id 都匹配，金额 10 CNY，数量 1，`quantity_cap=1`，`discount_enabled=true`，`buyer_credential_required=true`，通道只有 `zpay`。prepare 返回 200。commit 返回 500 `guest_shop_request_failed`，文案「游客购买请求失败」，响应里没有订单号，也没有金额分解。时间是 2026-09-22 14:06（Asia/Shanghai）/ 06:06 UTC。站点 cn，provider `zpay`，channel `alipay`，券 `SBXPROMO10`，联系邮箱 `cd7-ttl-20260922@sandbox.invalid`。没有第二笔，没有付款。打完后本地 preview 已停。生产 `GUEST_SHOP_DISCOUNT_ENABLED` 没有打开，环境文件没有改。`GUEST_SHOP_MAX_QUANTITY` 仍是 1。
+
+公开 500 会吞掉 `guest_discount_amount_invalid`、`guest_invalid_order_ttl`、`guest_promo_order_ttl_invalid`，也会吞掉未映射的 `P0001`。这次响应里没有可引用的内部码。不要翻日志原文去补这个码，也不要把这次 500 当成成功单或卡 7 闭合。不要直接重跑建单脚本。
+
+当时的现行步骤已经完成，整行见 §61.37。不要再跑 `supabase/sandbox/S154_cd7_commit_probe_readonly.sql`。当时这份回读是全文一条 SELECT。找不到商品也返回一行。0 行不是预期。贴回的判语以「没有留下订单」开头，所以不要直接重跑 `/tmp/s154-cd7-one-order.js`。
+
+当时准备的另外两支都没有发生：以「已留下 1 笔未付款促销单」开头时不要再 commit、不要付款；其他判语则停住。这次不是这两支。
+
+不要重跑 CD7 确认、CD3 开关/拒绝/确认、预检、缺口、C-D4 回读或提前脚本。不要跑 `S154_fixture_setup.sql`，不要调用 `guest_shop_promo_gate()`，不要应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。不要改「沙箱CD3」「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。6 张库存里最多只能有 1 笔未付款预占。这件商品已经公开出现在中文游客商城，标价 ¥10；生产折扣关着时，别人仍可以按原价买走。
+
+
+### 61.37 2026-09-22 卡 7 促销 commit 回读：没有留下订单（时钟默认值当时待验证）
+
+本节取代 §61.36 的「回读未贴回」。用户贴回 `supabase/sandbox/S154_cd7_commit_probe_readonly.sql`，正好 1 行。Codex 没有执行 SQL。`readback_verdict` 以「没有留下订单」开头。完整判语是：没有留下订单。6 张仍 available，券计数和当日预算仍是 0。这不是成功单，也不要当成卡 7 闭合。
+
+当时文件顶部写的是现行记录见 §61.37。三行验证贴回后，现行记录见 §61.38。本节保留当时的门，不要把下面的步骤再跑一遍。
+
+卡 7 标题和历史偏差格继续 PARTIAL，不得改写成整卡 PASS，也不要回写 `docs/guest-shop-promo-evidence.md` §2.6。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+| 字段 | 值 |
+| --- | --- |
+| 商品 / 规格 | 沙箱CD7 / 默认规格，`target_present=true` |
+| product_id / sku_id | `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd` |
+| price_points | 10.00 |
+| guest_orders / orders_after_attempt / live_unpaid_holds | 0 / 0 / 0 |
+| paid_like / discounted / discount_amount_sum | 0 / 0 / 0 |
+| payment / reservations / held / released | 0 / 0 / 0 / 0 |
+| nonshared_available / guest_held_reserve / stock | 6 / 0 / 商品和规格都是 6 |
+| redemptions open / returned / open_discount_amount | 0 / 0 / 0 |
+| coupon_count / guest_used_count / guest_discount_total | 1 / 0 / 0.00 |
+| cn_effective_spent | 0.00 |
+| newest_* | 全部 null |
+
+含义：2026-09-22 14:06（Asia/Shanghai）那笔促销 commit 的公开 500 发生在写入提交之前，事务已整笔回滚。
+
+内部原因是 `guest_promo_order_ttl_invalid`。公开映射把它收成 500 `guest_shop_request_failed`，文案「游客购买请求失败」，响应里没有订单号。不要翻日志原文去补这个码。
+
+机制已经钉死，不需要再查库：
+
+- `guest_shop_orders.created_at` 在 `supabase/migrations/20260913_add_guest_shop_cash_purchase.sql` 仍是 `DEFAULT NOW()`。`NOW()` 等于 `transaction_timestamp()`，冻结在事务开始。
+- `fn_guest_shop_create_order` 在 `supabase/migrations/20260923_guest_shop_promo_l1l2.sql` 用 `v_now := clock_timestamp()`，再写 `v_expires_at := v_now + p_ttl_seconds`。15 参 INSERT 不写 `created_at`，所以用列默认值。预占的 `reserved_until` 写成同一个 `v_expires_at`。
+- 有券时 Node 把 TTL 改成 `guestPromoOrderTtlSeconds`。默认正好 600 秒，配置上限也是 600 秒。
+- `supabase/migrations/20260924_guest_shop_promo_safety_gates.sql` 的延迟触发器在提交时检查两处：`expires_at > created_at + 600 seconds`，以及 `reserved_until > LEAST(expires_at, created_at + 600 seconds)`。`v_now` 晚于事务起点，600 秒输入一定越界，于是抛 `guest_promo_order_ttl_invalid`。异常把整笔事务回滚，所以订单、预占、券计数和当日预算都是 0。
+
+表上还有 `CHECK (expires_at > created_at)`。这次没有留下订单，说明拒绝发生在延迟触发器，不是这条立即检查。`created_at` 若改到插入瞬间，仍会早于 `v_now + 600 seconds`，这条 CHECK 继续成立。
+
+已经排除、不要再按这些方向改：
+
+- `guest_invalid_order_ttl`：600 在 300 到 7200 秒以内，函数入口就会先拒绝更外的值。
+- `guest_discount_amount_invalid`：percent 90 是付 90%。¥10 抵扣 ¥1，净额 ¥9，50% 地板是 ¥5。不要把 90 改成别的含义。
+- C-D3：1 张预占对 6 张库存是 `100 >= 120`，为 false。C-D4 要同一身份上已有 2 笔未过期未付款 held，当时不满足。这两项对外是 409 `guest_promo_safety_limit`，不是 500。
+- 支付层失败会留下订单。这次 `newest_*` 全是 null。
+
+不要只把 Node 的 600 减 1 秒。不要改已经应用的 20260923，也不要整段替换建单函数。新迁移只有一条 `ALTER`：`supabase/migrations/20260926_guest_shop_promo_ttl_clock.sql` 把 `guest_shop_orders.created_at` 的默认值改成 `clock_timestamp()`。INSERT 省略该列时，默认值取插入瞬间，不早于函数入口的 `v_now`，于是 `expires_at` 不再晚于 `created_at + 600 seconds`。不改旧行，不加 DML，不开商品，不改券，不改库存。不要用 `supabase/migrations/20260925_guest_shop_promo_gates.sql` 代替这份迁移。
+
+现行步骤分两步，都由用户在 SQL editor 执行。Codex 不执行。
+
+1. 先跑 `supabase/migrations/20260926_guest_shop_promo_ttl_clock.sql`。
+2. 再跑 `supabase/migrations/20260926_verify_guest_shop_promo_ttl_clock.sql`。全文一条 SELECT，期望正好 3 行：`created_at_default`、`create_order_omits_created_at`、`create_order_uses_clock_timestamp`。三行都要 `ok=true`。把三行贴回。
+
+迁移还没执行时，第一行会是 `ok=false`，detail 多半是 `now()`。那不是验证脚本损坏，先跑迁移再重跑验证。验证通过前不要建单，不要付款，不要第二笔。
+
+验证三行都通过之后，才可以最多再准备 1 笔和 14:06 相同参数的促销 commit，用来证明同一个 600 秒输入现在能留下 1 笔未付款单。那一步还没开始。本步不要打，也不要先写建单脚本。
+
+不要重跑 CD7 确认、CD3 开关、拒绝、确认、预检、缺口、C-D4 回读、提前脚本，也不要重跑 `S154_cd7_commit_probe_readonly.sql`。不要跑 `S154_fixture_setup.sql`，不要调用 `guest_shop_promo_gate()`。不要改「沙箱CD3」「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。「沙箱CD7」已经公开出现在中文游客商城，标价 ¥10。生产折扣关着时，别人仍可以按原价买走这 6 张。6 张里最多只能有 1 笔未付款预占。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不要打开生产 `GUEST_SHOP_DISCOUNT_ENABLED`。
+
+
+### 61.38 2026-09-22 卡 7 时钟默认值已验证（下一笔尚未建单）
+
+本节取代 §61.37 的「验证还没贴回」。用户贴回 `supabase/migrations/20260926_verify_guest_shop_promo_ttl_clock.sql`，正好 3 行，全部 `ok=true`。Codex 没有执行 SQL。不要重跑迁移，也不要重跑这份验证。
+
+| check_name | ok | detail |
+| --- | --- | --- |
+| created_at_default | true | clock_timestamp() |
+| create_order_omits_created_at | true | 15-arg INSERT omits created_at |
+| create_order_uses_clock_timestamp | true | v_now is clock_timestamp and expires_at adds p_ttl_seconds |
+
+含义：`supabase/migrations/20260926_guest_shop_promo_ttl_clock.sql` 已生效。新行 `guest_shop_orders.created_at` 的默认值是插入瞬间的 `clock_timestamp()`。15 参 `fn_guest_shop_create_order` 仍不写 `created_at`。`v_now` 仍是 `clock_timestamp()`，`expires_at` 仍加上 `p_ttl_seconds`。
+
+这只证明默认值。2026-09-22 14:06（Asia/Shanghai）那笔公开 500 仍没有留下订单，内部原因仍是当时的 `guest_promo_order_ttl_invalid`。验证不等于留下订单。下一笔还没打，尚未建单。不要把卡 7 改成 PASS，不要回写 `docs/guest-shop-promo-evidence.md` §2.6。卡 7 继续 PARTIAL，不得改写成整卡 PASS。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+下一笔只准备 1 笔，不付款，不打第二笔。商品「沙箱CD7」/「默认规格」，product_id `5f940176-8059-443a-b5fd-79adc883a810`，sku_id `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`。站点 cn，provider `zpay`，channel `alipay`，数量 1，券 `SBXPROMO10`。联系邮箱沿用 `cd7-ttl-20260922@sandbox.invalid`。预期抵扣 ¥1.00，商品净额 ¥9.00。通道费可能让应付高于 9.00，不要用 `total_amount = 9` 当通过条件。`expires_at - created_at` 应大于 590 秒且不超过 600 秒。差太多就停，不要自行改 TTL，不要把 Node 的 600 改成 599。
+
+建单之前可以先跑一次持有回读，用来确认还是 0 笔。判语以「还没有这 1 笔」开头不是失败。建单之后 600 秒内再跑同一份。绝对路径是 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/sandbox/S154_cd7_promo_hold_readback.sql`。全文一条 SELECT。以「持有已闭合」开头才算这半步通过。过了截止但仍是 held，不是归还失败。
+
+到期后再跑 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/sandbox/S154_cd7_promo_expiry_readback.sql`。未到 `expires_at` 不是失败，判语以「仍在 TTL 内」开头。不要提前截止时间。库存和预算都归还时判语以「归还已闭合」开头，同时仍不是整卡 PASS。只归还一边是泄漏。两边都还没释放是 worker 还没跑，不是失败，不要手工改行。
+
+不要付款，不要开生产 `GUEST_SHOP_DISCOUNT_ENABLED`。不要重跑 CD7 确认、CD3 开关、拒绝、确认、预检、缺口、C-D4 回读、提前脚本、`S154_cd7_commit_probe_readonly.sql` 或时钟验证。不要跑 `S154_fixture_setup.sql`，不要调用 `guest_shop_promo_gate()`，不要应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。不要改「沙箱CD3」「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。「沙箱CD3」游客开关保持关闭。「沙箱CD7」仍公开标价 ¥10。`GUEST_SHOP_MAX_QUANTITY` 保持 1。
+
+### 61.39 2026-09-22 卡 7 留下 1 笔未付款促销单（持有回读还没贴回）
+
+本节取代 §61.38 的「下一笔尚未建单」。§61.38 保留时钟验证当时的记录，不要把那里的「尚未建单」再执行一遍。
+
+2026-09-22 15:34（Asia/Shanghai）基线回读已贴回，判语以「还没有这 1 笔」开头。随后只打了 1 笔未付款促销单，commit HTTP 201，订单号 `GS2026092207342938190F2B83D5ACF`。数量 1，标价 10.00，抵扣 1.00，商品净额 9.00，通道费 0.09，应付 9.09，券 `SBXPROMO10`。响应 `expires_at` 是 `2026-09-22T07:44:29.38158+00:00`（北京时间 15:44:29）。本地 preview 已停。生产 `GUEST_SHOP_DISCOUNT_ENABLED` 没有打开，也没有把 Node 的 600 改成 599。持有回读还没贴回，这不是持有闭合，也不是整卡 PASS。请立刻重跑 `supabase/sandbox/S154_cd7_promo_hold_readback.sql`。不要再打第二笔，不要付款，不要提前截止时间。
+
+商品仍是「沙箱CD7」/「默认规格」，product_id `5f940176-8059-443a-b5fd-79adc883a810`，sku_id `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`。站点 cn，provider `zpay`，channel `alipay`。联系邮箱仍是 `cd7-ttl-20260922@sandbox.invalid`。`expires_at - created_at` 是否大于 590 秒且不超过 600 秒，以持有回读的 `ttl_seconds` 为准，不要用订单号前缀代替。
+
+以「持有已闭合」开头才算这半步通过。过了截止但仍是 held，不是归还失败。到期后再跑 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/sandbox/S154_cd7_promo_expiry_readback.sql`。未到 `expires_at` 不是失败。不要提前截止时间。库存和预算都归还时判语以「归还已闭合」开头，同时仍不是整卡 PASS。
+
+不要付款，不要开生产 `GUEST_SHOP_DISCOUNT_ENABLED`。不要重跑这笔 commit，不要第二笔。卡 7 继续 PARTIAL，不得改写成整卡 PASS。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+### 61.40 2026-09-22 卡 7 持有回读已闭合（到期回读还没贴回）
+
+本节取代 §61.39 的「持有回读还没贴回」。上一节写入时的现行记录见 §61.39。不要再跑持有回读当作下一步，也不要重打那 1 笔。
+
+2026-09-22 持有回读已贴回，判语以「持有已闭合」开头。订单 `GS2026092207342938190F2B83D5ACF`，`created_at` `2026-09-22 07:34:29.534068+00`，`expires_at` `2026-09-22 07:44:29.38158+00`，`ttl_seconds` 599.848。大于 590 且不超过 600，通过。差出的 0.152 秒是 `created_at` 默认值略晚于 `v_now`，不要把 Node 的 600 改成 599。数量 1，站点 cn，未付款，未发货，抵扣 1.00，商品净额 9.00，通道费 0.09，应付 9.09，券 `SBXPROMO10`。非共享 available 5，游客 held 1，券两处计数和当日预算都是 1.00。`product_stock_count` 与 `sku_stock_count` 从 6 变为 5，是预占后的可售数，加上 held 仍是 6，不是丢卡。这只闭合持有半步。卡 7 继续 PARTIAL，不得改写成整卡 PASS。不要回写 §2.6。到期后再跑 `supabase/sandbox/S154_cd7_promo_expiry_readback.sql`。未到 `expires_at` 不是失败。两边都还没释放是 worker 还没跑，不是失败，不要手工改行。不要付款，不要再打第二笔，不要提前截止时间。
+
+通过行的关键数：`live_unpaid_holds=1`，`paid_like_orders=0`，`paid_like_payment_orders=0`，`confirmed_like_events=0`，`reserved_until_matches_expires=true`，`newest_inventory_status=reserve`，`open_redemptions=1`，`returned_redemptions=0`，`inventory_returned=false`，`budget_returned=false`。当时 `seconds_until_expiry` 是 77.702，所以贴回时仍在 TTL 内。
+
+到期回读绝对路径是 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/sandbox/S154_cd7_promo_expiry_readback.sql`。生产 worker 日历是每 10 秒一次。15:44:29 之前跑到「仍在 TTL 内」不是失败。过点后若判语以「两边都还没释放」开头，等下一次扫描再跑，不要手工改行，不要调用本地 worker 补做。以「归还已闭合」开头才算归还半步，同时仍不是整卡 PASS。只归还一边是泄漏。
+
+阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+
+### 61.41 2026-09-22 卡 7 促销到期归还已闭合（游客开关还没关）
+
+本节取代 §61.40 的「到期回读还没贴回」。上一节写入时的现行记录见 §61.40。不要再跑到期回读当作下一步，也不要重打那 1 笔。
+
+2026-09-22 到期回读已贴回，判语以「归还已闭合」开头。订单 `GS2026092207342938190F2B83D5ACF`，`expires_at` `2026-09-22 07:44:29.38158+00`（北京时间 15:44:29），`seconds_until_expiry` -128.353，`within_ttl=false`。`ttl_seconds` 仍是 599.848，不要把 Node 的 600 改成 599。预占行 `released`，释放原因 `expired`，对应库存行回到 `available`。非共享 available 6，游客 held 0，`product_stock_count` 与 `sku_stock_count` 都回到 6。持有期间这两级是 5，是可售数扣掉预占，不是丢卡。券 `guest_used_count`、`coupon_used_count`、`guest_discount_total` 都回到 0，`returned_redemptions=1`，`open_redemptions=0`，`open_discount_amount=0`。`cn_budget_date=2026-09-22`，`cn_budget_is_today=true`，`cn_spent_raw=0.00`，`cn_effective_spent=0.00`。`inventory_returned=true`，`budget_returned=true`。`paid_like_orders=0`，`paid_like_payment_orders=0`，`confirmed_like_events=0`。生产 worker 在这次回读前已经释放。没有手工改行，也没有调用本地 worker。
+
+订单行仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09，`payment_status=pending`，`discount_amount_sum=1.00`。这是下单时写下的金额，不是未归还的预算。不要把订单行改成 0，也不要付款。预占已经释放，现在付款会付到一笔已经释放的单上。
+
+这只闭合归还半步。C-D3、C-D4 的拒绝是在别的原价夹具上完成的。这一笔促销单本身被接受，然后过期，没有撞上拒绝闸。卡 7 继续 PARTIAL，不得改写成整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7 的历史偏差格。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+「沙箱CD7」游客开关还没关，中文游客商城仍公开标价 ¥10。生产折扣没开，原价仍能买走这 6 张。下一步只关这一件的游客开关：Admin Studio 打开「沙箱CD7」，取消「允许游客购买」并保存。规格上如果单独勾了，也要取消。不要写关闭 SQL，不要下架。关完后只跑 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/sandbox/S154_cd7_switch_off_readonly.sql`。全文一条 SELECT。`switch_verdict` 以「游客开关已关」开头才算完成。以「游客开关还开着」开头不是归还失败，关掉再跑。不要付款，不要再打一笔，不要提前截止时间，不要开生产 `GUEST_SHOP_DISCOUNT_ENABLED`。「沙箱CD3」游客开关保持关闭。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。
+
+
+### 61.42 2026-09-22 卡 7「沙箱CD7」游客开关已关
+
+本节取代 §61.41 的「游客开关还没关」。上一节写入时的现行记录见 §61.41。不要再关一次，也不要重跑开关回读。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd7_switch_off_readonly.sql`，正好 1 行。Codex 没有执行 SQL。`switch_verdict` 以「游客开关已关」开头。游客开关关闭闭合。卡 7 继续 PARTIAL，不得改写成整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7 的历史偏差格。
+
+| 字段 | 值 |
+| --- | --- |
+| target_present | true |
+| product_name / sku_name | 沙箱CD7 / 默认规格 |
+| product_id | `5f940176-8059-443a-b5fd-79adc883a810` |
+| sku_id | `c955f03a-8cd6-44b8-b751-06e2ad66d4cd` |
+| price_points | 10.00 |
+| product_active / sku_active | true / true |
+| product_allow_guest | false |
+| sku_allow_guest | null |
+| effective_guest | false |
+| guest_switch_off | true |
+| guest_orders_on_product | 1 |
+| paid_like_orders | 0 |
+| payment_orders_on_product | 1 |
+| paid_like_payment_orders | 0 |
+| confirmed_like_events | 0 |
+| reservations_on_product | 1 |
+| held_reservation_rows | 0 |
+| released_reservation_rows | 1 |
+| nonshared_available | 6 |
+| guest_held_reserve | 0 |
+| shared_rows / nonshared_other | 0 / 0 |
+| product_stock_count / sku_stock_count | 6 / 6 |
+| switch_verdict | 游客开关已关。商品仍上架，登录积分商城可能还能看到这 6 张。本步不要求下架。不要再打开游客开关，不要建单，不要付款。 |
+
+本行的 `product_id` / `sku_id` 不在开关回读的输出列里。脚本按已确认的这两个 id 定位，`target_present=true`，商品名、规格名和单价都没变，所以身份沿用 §61.36 的确认行。开关回读也不输出订单号。`guest_orders_on_product=1`，没有再打第二笔，所以这一笔仍是 §61.39 留下的 `GS2026092207342938190F2B83D5ACF`。
+
+有效开关是 `COALESCE(sku.allow_guest_purchase, product.allow_guest_purchase, false)`。商品级已是 false，规格级是空，所以 `effective_guest=false`，`guest_switch_off=true`，游客结算进不去。上面记成 `product_allow_guest=false`。
+
+订单行仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09，`payment_status=pending`。这是下单时写下的金额，不是未归还的预算。预占已经 `released`，释放原因是 `expired`。不要把订单行改成 0，也不要付款。现在付款会付到一笔已经释放的单上。
+
+- [x] 整行满足「游客开关已关」。这一步闭合。
+- [x] 商品和规格仍 `is_active=true`。本步不要求下架。登录积分商城可能还能看到这 6 张。若要隐藏，只能在 Admin Studio 关上架，不要用 SQL。
+
+这只闭合开关。C-D3、C-D4 的拒绝不在这一笔促销单上。这一笔被接受，然后过期，库存、券计数和当日预算已经归还。卡 7 继续 PARTIAL，不得改写成整卡 PASS。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+不要重跑开关回读、到期回读、持有回读、确认、预检、缺口脚本、C-D3 回读、C-D4 回读或提前脚本。不要再打开「沙箱CD7」的游客开关，不要建单，不要付款，不要提前截止时间，不要改库存，不要发货。不要再打开「沙箱CD3」（`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`）。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+卡 8 不作为下一步。它要打开全局促销熔断，并要求一笔不带券的原价购买。原价购买会把刚关上的游客开关再打开。生产 `GUEST_SHOP_DISCOUNT_ENABLED` 保持关闭。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。本步不新写 SQL。
+
+
+### 61.43 2026-09-22 卡 8 熔断基线（尚未贴回）
+
+本节取代 §61.42 的「卡 8 不作为下一步」。上一节写入时的现行记录见 §61.42。不要重跑开关回读，也不要重开游客开关。
+
+2026-09-22 用户要求按计划继续。九张卡的执行顺序是 6、1、4、5、2、3、7、8、9。卡 7 的开关关闭已经归档，下一张是卡 8。卡 8 的第 ① 步只记熔断起点，要求 `state=closed`。打开熔断、只读 `guest_promo_halted`、原价购买和合闸都不在这一步。
+
+现行步骤只跑 `/Volumes/chao/AI/xianyu_profit_calculator/supabase/sandbox/S154_cd8_breaker_baseline_readonly.sql`。全文一条 SELECT。它直接读 `guest_shop_promo_breaker`、`guest_shop_promo_breaker_events` 和 `guest_shop_promo_budget`，不调用 `fn_guest_shop_promo_status()`。SQL Editor 不是 service_role，调用那个函数会像之前一样报 `guest shop RPC requires service_role`。期望正好 1 行。`baseline_verdict` 以「基线通过」开头才算这半步。写着「缺行」或「熔断不是 closed」都不是邀请去修。不要补插熔断行，不要调用 `fn_guest_shop_promo_set_breaker`，不要跑工具箱的 `breaker`。
+
+`manual_open_count` 和 `manual_close_count` 是打开之前的起点。卡 8 后面要求这两类事件各加 1，用贴回后的差值，不要求现在是 0。预算列只是起点。CN 之前曾是 enabled、日预算 20.00、当日已用 0.00，intl 关闭。本步不改预算，也不把数字改回 0。
+
+数据库闸 `guest_shop_promo_gate` 先看熔断，再看预算。熔断不是 `closed` 或缺行时返回 `guest_promo_halted`。这条函数不读 `GUEST_SHOP_DISCOUNT_ENABLED`。所以以后用工具箱 `gate` 就能看见暂停，不必为了看见这个码去打开生产折扣开关。生产折扣保持关闭。
+
+卡 8 后半段仍不授权。熔断是全局的，`open` 会停掉所有游客抵扣，不只是 `SBXPROMO10`。原价购买要重新打开「沙箱CD7」的游客开关，中文游客商城会再次公开这 6 张，标价 ¥10。那一笔原价单还会占用 1 张库存。这两件事等基线贴回、并且单独确认之后才做。现在不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、应付 9.09，`payment_status=pending`。预占已经释放，释放原因是 `expired`。不要把订单行改成 0，也不要付款。现在付款会付到一笔已经释放的单上。
+
+- [ ] 基线回读还没贴回。贴回前不要打开熔断。
+- [x] 本步的 SQL 不写库。Codex 不执行 SQL。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7 或卡 8 的历史偏差格。§2.2 里卡 8 的 PASS 是预期归档模板，不是已完成证据。卡 9 还没开始。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+### 61.44 2026-09-22 卡 8 熔断基线已贴回，只打开熔断（打开结果尚未贴回）
+
+本节取代 §61.43 的「现行步骤只跑基线」。上一节写入时的现行记录见 §61.43。不要改写上一节的「尚未贴回」，也不要重跑基线 SQL。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd8_breaker_baseline_readonly.sql`，正好 1 行。Codex 没有执行 SQL。`baseline_verdict` 以「基线通过」开头。
+
+`breaker_present=true`，`breaker_state=closed`，`state_exclusive_ok=true`。`breaker_reason`、`opened_at`、`opened_by`、`closed_at`、`closed_by` 都是空。阈值仍是 `mismatch_trip_threshold=3`、`identity_trip_threshold=20`、`trip_window_seconds=900`。`event_count`、`manual_open_count`、`manual_close_count`、`auto_open_count`、`amount_mismatch_count`、`identity_limit_hit_count`、`budget_exhausted_count`、`code_exhausted_count` 全是 0。CN 预算在，`cn_enabled=true`，日预算 20.00，日期 2026-09-22，`cn_spent_cny=0.00`。intl 预算在但关闭，`intl_enabled=false`，日预算 0.00，日期 2026-09-22，已用 0.00。`manual_open_count=0` 和 `manual_close_count=0` 是这次各加 1 的起点，用差值，不要求绝对值等于 1。
+
+2026-09-22 基线已贴回，`baseline_verdict` 以「基线通过」开头。`breaker_state=closed`，`state_exclusive_ok=true`，事件计数全是 0，`manual_open_count=0`，`manual_close_count=0`。CN 日预算 20.00，当日已用 0.00，日期 2026-09-22，intl 关闭且日预算 0.00。现行步骤只打开熔断正好一次：`node supabase/sandbox/s154-guest-promo-toolbox.js breaker open --actor s154-card8 --reason "S154 第8项" --yes`。然后 `node supabase/sandbox/s154-guest-promo-toolbox.js gate --site cn --amount 1.00`。期望 `allowed=false`、code=`guest_promo_halted`。工具箱把这行印成「未通过 / 需要人工判读」是预期业务结果，退出码仍是 0，不要因此重试，也不要打开 `GUEST_SHOP_DISCOUNT_ENABLED`。最后跑 `supabase/sandbox/S154_cd8_breaker_open_readonly.sql`。全文一条 SELECT。`open_verdict` 以「打开半步通过」开头才算这半步。不要合闸，不要建单，不要付款。不要打开「沙箱CD7」或「沙箱CD3」。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 7 继续 PARTIAL。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+打开命令必须带这个 actor 和 reason，回读按这两个字面值核对。第二次再跑 open 时，函数看到状态已经是 open，不会再写一条 `manual_open`，但工具箱仍印成功。所以只能正好一次。不要用 `record-event` 伪造 `manual_open` 或 `manual_close`。SQL Editor 不是 service_role，不要在那里改熔断状态。
+
+`gate` 先看熔断，再看预算。熔断不是 `closed` 时返回 `guest_promo_halted`，这条函数不读生产折扣开关。看到「未通过」不要去打开 `GUEST_SHOP_DISCOUNT_ENABLED`。工具箱打开命令后面的说明会提到原价结账不受影响。那是整张卡 8 的后半段，不是这一步。原价购买会重新打开「沙箱CD7」，中文游客商城会再次公开 6 张 ¥10 的卡，并占用 1 张库存。本步不授权。
+
+熔断是全局的。open 期间所有游客抵扣都会被 `guest_promo_halted` 挡住，夹具 H-2 会拒绝执行，而且不会自动合闸。不要跑 `S154_fixture_setup.sql`。也不要跑 `S154_cleanup.sql`，它在 open 时会自己合闸并补一条 `manual_close`，这一步的计数就脏了。打开后马上贴回 gate 输出和只读 SQL 的那一行。合闸、原价单和卡 9 等这组结果贴回后再单独安排。
+
+工具箱打开结果里的 `budget_after` 以前读了不存在的 `status.budget`，状态函数实际返回的是 `status.budgets`，所以那一栏会是空，不代表预算行没了。本地工具箱已改读 `status.budgets`。预算以只读 SQL 为准。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。`product_allow_guest=false`，`sku_allow_guest` 为空。不要再打开。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09，`payment_status=pending`。预占已经释放，释放原因是 `expired`。不要把订单行改成 0，也不要付款。现在付款会付到一笔已经释放的单上。
+
+- [x] 基线 1 行已贴回，判语以「基线通过」开头。Codex 没有执行 SQL。
+- [ ] 打开熔断、gate 和打开回读还没贴回。贴回前不要合闸。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7 或卡 8 的历史偏差格。§2.2 里卡 8 的 PASS 是预期归档模板，不是已完成证据。卡 9 还没开始。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+### 61.45 2026-09-22 卡 8 打开半步已贴回，只合闸一次（合闸回读尚未贴回）
+
+本节取代 §61.44 的「打开结果尚未贴回」。上一节写入时的现行记录见 §61.44。不要改写上一节的「尚未贴回」，也不要再跑打开命令。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd8_breaker_open_readonly.sql`，正好 1 行。Codex 没有执行这条 SQL。`open_verdict` 以「打开半步通过」开头。
+
+`breaker_present=true`，`breaker_state=open`，`state_exclusive_ok=true`。`breaker_reason=S154 第8项`，`opened_by=s154-card8`，`opened_at=2026-09-22 09:00:51.533097+00`（北京时间 17:00:51）。`closed_at`、`closed_by` 为空。阈值 3 / 20 / 900。`event_count=1`，`manual_open_count=1`，`manual_close_count=0`，`manual_open_matched=1`，`auto_open_count=0`，`amount_mismatch_count=0`，`identity_limit_hit_count=0`，`budget_exhausted_count=0`，`code_exhausted_count=0`。CN 启用，日预算 20.00，已用 0.00，日期 2026-09-22。intl 关闭，日预算 0.00，已用 0.00。`cd7_effective_guest=false`，`cd3_effective_guest=false`。CD7 游客订单 1，付款类 0。CD3 游客订单 0。订单 `GS2026092207342938190F2B83D5ACF` 仍是 `payment_status=pending`，预占已释放，抵扣仍是 1.00。
+
+同一轮的只读 gate 已由 Codex 执行：`allowed=false`，code=`guest_promo_halted`，message=`优惠活动已暂停`，退出码 0。工具箱印「未通过 / 需要人工判读」是熔断打开后的预期，不是失败。不要为了把它改成通过而重开，也不要打开 `GUEST_SHOP_DISCOUNT_ENABLED`。
+
+2026-09-22 打开半步已贴回。合闸已经执行正好一次，不要再跑：`node supabase/sandbox/s154-guest-promo-toolbox.js breaker closed --actor s154-card8 --reason "S154 第8项恢复" --yes`。返回 `closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`（北京时间 17:18:20），熔断行 reason 为空是预期。随后 `node supabase/sandbox/s154-guest-promo-toolbox.js gate --site cn --amount 1.00` 已执行，`allowed=true`、code=`ok`，退出码 0。不要重复合闸。现行步骤只跑 `supabase/sandbox/S154_cd8_breaker_close_readonly.sql`。全文一条 SELECT。`close_verdict` 以「合闸半步通过」开头才算这半步。以「还是 open」开头表示合闸还没生效，不是失败，不要在 SQL Editor 里改状态。不要建单。
+
+合闸函数在状态已经是 open 时才写一行 `manual_close`。第二次再跑 closed，更新匹配不到行，不会再写审计，工具箱仍印成功。所以只能正好一次。不要用 `record-event` 伪造 `manual_close`。
+
+合闸会把熔断行的 `reason`、`opened_at`、`opened_by` 清成空，`closed_by` 写成 `s154-card8`，`closed_at` 写成当前时间。关闭原因「S154 第8项恢复」只留在 `manual_close` 事件的 detail 里，不留在熔断行。回读看到 `breaker_reason` 为空是预期，不要因此再合一次，也不要再打开来把原因写回去。
+
+不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。cleanup 发现 open 会自行合闸，reason 对不上，这一步的审计就脏了。合闸之后也不要跑 cleanup。
+
+原价购买不在这一步。它会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡并占用 1 张库存。卡 8 模板里的步骤④还没做，所以这次合闸之后整卡仍不是 PASS。为了保住 `manual_open=1` 这一次审计，不能为了补④再次打开。恢复后的原价单和促销单都不做。卡 9 等合闸回读贴回后再安排。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。不要改成 0，不要付款。
+
+- [x] 打开半步 1 行已贴回，判语以「打开半步通过」开头。Codex 没有执行这条 SQL。
+- [x] 合闸正好一次已执行，gate 为 `allowed=true`、code=`ok`。不要再合一次，不要再打开熔断。
+- [ ] 合闸回读还没贴回。贴回前不要建单，不要付款。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7 或卡 8 的历史偏差格。§2.2 里卡 8 的 PASS 是预期归档模板，不是已完成证据。卡 9 还没开始。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+### 61.46 2026-09-22 卡 8 合闸回读已贴回，卡 9 只读预算基线（基线尚未贴回）
+
+本节取代 §61.45 的「合闸回读还没贴回」。上一节写入时的现行记录见 §61.45。不要改写上一节的「合闸回读尚未贴回」，也不要改写上一节的「卡 9 还没开始」。那两句是上一节写入时的现行记录。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd8_breaker_close_readonly.sql`，正好 1 行。Codex 没有执行这条 SQL。`close_verdict` 以「合闸半步通过」开头。
+
+`breaker_present=true`，`breaker_state=closed`，`state_exclusive_ok=true`。`breaker_reason` 为空，`opened_by` 为空，`opened_at` 为空。`closed_at=2026-09-22 09:18:20.678679+00`（北京时间 17:18:20），`closed_by=s154-card8`。阈值 3 / 20 / 900。`event_count=2`，`manual_open_count=1`，`manual_close_count=1`，`manual_open_matched=1`，`manual_close_matched=1`，`auto_open_count=0`，`amount_mismatch_count=0`，`identity_limit_hit_count=0`，`budget_exhausted_count=0`，`code_exhausted_count=0`。CN 启用，日预算 20.00，已用 0.00，日期 2026-09-22。intl 关闭，日预算 0.00，已用 0.00。`cd7_effective_guest=false`，`cd3_effective_guest=false`。CD7 游客订单 1，付款类 0。CD3 游客订单 0。订单 `GS2026092207342938190F2B83D5ACF` 仍是 `payment_status=pending`，预占已释放，抵扣仍是 1.00。
+
+同一轮 gate 已是 `allowed=true`、code=`ok`，退出码 0。不要重跑 `node supabase/sandbox/s154-guest-promo-toolbox.js gate --site cn --amount 1.00` 来凑这一步。
+
+合闸已经执行正好一次，不要再跑：`node supabase/sandbox/s154-guest-promo-toolbox.js breaker closed --actor s154-card8 --reason "S154 第8项恢复" --yes`。第二次 closed 匹配不到行，不会新增 `manual_close`，工具箱仍印成功。不要用 `record-event` 伪造审计。看到熔断行 reason 为空是预期，关闭原因只在 manual_close 事件里。不要再合一次，不要打开熔断。
+
+现行步骤只跑 `supabase/sandbox/S154_cd9_budget_baseline_readonly.sql`。全文一条 SELECT，不调用 `fn_guest_shop_promo_status()`，也不调用 `fn_guest_shop_promo_set_breaker`。`baseline_verdict` 以「基线通过」开头才算这半步。写着「不是这次合闸」或「预算已经不是基线」都不是邀请去修。不要补事件，不要改预算。
+
+卡 9 的模板下一步是把 `S154_fixture_setup.sql` 的 `v_phase` 改成 `BUDGET_TIGHT`，重跑夹具，支付一笔正好 ¥1.00 的抵扣，再用只读 gate 看 `guest_promo_budget_exhausted`，然后做一笔不带券的原价购买。这一步全部不做。夹具会把 CN 日预算改成 1.00，并把 SBX 券计数和预算 spent 归零。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路没有接线，没有 webhook、邮件或 IM。「告警发出」以后只能记 N/A，不能据此把卡 9 写成整卡 PASS。
+
+订单行上的抵扣 1.00 是历史快照。到期归还之后，当日预算 spent 回到 0.00。不要把订单抵扣改成 0，也不要因为 spent 是 0 就去重跑夹具。不要跑夹具，也不要跑 cleanup。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。不要改成 0，不要付款。
+
+- [x] 合闸回读 1 行已贴回，判语以「合闸半步通过」开头。Codex 没有执行这条 SQL。
+- [x] 合闸正好一次已经留在审计里，gate 为 `allowed=true`、code=`ok`。不要再合一次，不要打开熔断。
+- [ ] 卡 9 只读预算基线还没贴回。贴回前不要改 `v_phase`，不要跑夹具或 cleanup，不要建单，不要付款。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS，模板步骤④的原价单没做。为了保住这一次 `manual_open` 审计，不能为了补④再次打开，否则 `manual_open` 会从 1 变成 2。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7、卡 8 或卡 9 的历史偏差格。§2.2 里卡 8 和卡 9 的结论是预期归档模板，不是已完成证据。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+### 61.47 2026-09-22 卡 9 只读预算基线已贴回（不切 BUDGET_TIGHT）
+
+本节取代 §61.46 的「基线尚未贴回」。上一节写入时的现行记录见 §61.46。不要改写上一节的「基线尚未贴回」，也不要改写上一节的「卡 9 只读预算基线还没贴回」。那两句是上一节写入时的现行记录。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd9_budget_baseline_readonly.sql`，正好 1 行。Codex 没有执行这条 SQL。`baseline_verdict` 以「基线通过」开头。
+
+`breaker_present=true`，`breaker_state=closed`，`state_exclusive_ok=true`。`breaker_reason` 为空，`opened_by` 为空，`opened_at` 为空。`closed_at=2026-09-22 09:18:20.678679+00`（北京时间 17:18:20），`closed_by=s154-card8`。阈值 3 / 20 / 900。`event_count=2`，`manual_open_count=1`，`manual_close_count=1`，`manual_open_matched=1`，`manual_close_matched=1`，`auto_open_count=0`，`amount_mismatch_count=0`，`identity_limit_hit_count=0`，`budget_exhausted_count=0`，`code_exhausted_count=0`。CN 预算行在，启用，日预算 20.00，已用 0.00，日期 2026-09-22。intl 预算行在，关闭，日预算 0.00，已用 0.00，日期 2026-09-22。「沙箱CD7」和「沙箱CD3」都在，游客开关都关。CD7 游客订单 1，付款类 0。CD3 游客订单 0。订单 `GS2026092207342938190F2B83D5ACF` 仍在，未付款，预占已释放，抵扣仍是 1.00。
+
+基线通过不等于卡 9 整卡 PASS。模板下一步才是把 `S154_fixture_setup.sql` 的 `v_phase` 改成 `BUDGET_TIGHT`，重跑夹具，支付一笔正好 ¥1.00 的抵扣，再用只读 gate 看 `guest_promo_budget_exhausted`，然后做一笔不带券的原价购买。这一轮全部不做。没有新的 SQL。
+
+夹具会把 CN 日预算从 20.00 改成 1.00，并把 SBX 券计数和预算 spent 归零。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路没有接线，没有 webhook、邮件或 IM。「告警发出」以后只能记 N/A，不能据此把卡 9 写成整卡 PASS。
+
+证据 §2.6 的九项历史表仍是全部未执行（0 / 9），卡 4 的券配额仍是「⬜ 未执行」。runbook 要求切 `BUDGET_TIGHT` 之前先把卡 4 的数字抄进归档。不要为了推进卡 9 去补做或改写卡 4，也不要回写 §2.6。
+
+卡 8 的原价单也没做。不要为了补步骤④再打开熔断，否则 `manual_open` 会从 1 变成 2。第二次 `breaker closed` 匹配不到行，工具箱仍印成功。不要用 `record-event` 伪造审计。
+
+订单行上的抵扣 1.00 是历史快照。到期归还之后，当日预算 spent 才是 0.00。不要把订单抵扣改成 0，也不要因为 spent 是 0 就去重跑夹具。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。不要打开熔断。不要调用 `fn_guest_shop_promo_status` 或 `fn_guest_shop_promo_set_breaker`。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。不要改成 0，不要付款。
+
+- [x] 卡 9 只读预算基线 1 行已贴回，判语以「基线通过」开头。Codex 没有执行这条 SQL。
+- [x] CN 日预算仍是 20.00，已用 0.00，日期 2026-09-22。intl 仍关闭。熔断仍是 closed，`manual_open=1`，`manual_close=1`。
+- [ ] 卡 9 仍不是整卡 PASS。这一轮不切 `BUDGET_TIGHT`，不跑夹具，不支付，不做原价购买。没有新的 SQL。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。卡 9 基线通过不是整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7、卡 8 或卡 9 的历史偏差格。§2.2 里卡 8 和卡 9 的结论是预期归档模板，不是已完成证据。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+### 61.48 2026-09-22 卡 9 基线已贴回，切预算前只读抄录（抄录尚未贴回）
+
+本节取代 §61.47 的「没有新的 SQL」。上一节写入时的现行记录见 §61.47。不要改写上一节的「没有新的 SQL」，也不要改写上一节的「基线通过不是整卡 PASS」。那两句是上一节写入时的现行记录。
+
+2026-09-22 卡 9 只读预算基线已贴回，`baseline_verdict` 以「基线通过」开头。上一节写入时这一轮没有新的 SQL。`breaker_state=closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`，`manual_open=1`，`manual_close=1`。CN 日预算仍是 20.00，已用 0.00，日期 2026-09-22，intl 仍关闭。抄录尚未贴回。现行步骤只跑 `supabase/sandbox/S154_cd9_card4_snapshot_readonly.sql`。全文一条 SELECT，不调用 `fn_guest_shop_promo_status()`，也不调用 `fn_guest_shop_promo_set_breaker`。`snapshot_verdict` 以「抄录通过」开头才算这半步。抄的是 `SBXPROMO10` 和 `SBXQUOTA2` 的游客计数、让利总额，以及按券汇总的台账行数和金额，不输出联系人或 IP。这不是卡 4 PASS。证据 §2.6 仍是全部未执行，卡 4 的券配额仍是「⬜ 未执行」。不要回写 §2.6。计数不是 0 时留下本行，这一轮仍不要切。写着异常不是邀请去修。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。卡 9 模板里的支付、`guest_promo_budget_exhausted` 和原价可买都不在这一步。夹具会把 CN 日预算从 20.00 改成 1.00 并归零计数。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路未接线，没有 webhook、邮件或 IM，不能据此把卡 9 写成整卡 PASS。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 8 合闸后仍不是整卡 PASS，不得改写成整卡 PASS。卡 7 继续 PARTIAL。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+上面把「没有新的 SQL」留在上一节。期望 `SBXPROMO10` 为 percent、结算比例 90、`guest_max_uses` 50、让利上限 50.00，`SBXQUOTA2` 为 percent、结算比例 90、`guest_max_uses` 2、让利上限 30.00。两边 `guest_used_count`、`used_count`、`guest_discount_total` 都应为 0。`SBXPROMO10` 台账应为 1 行已归还、抵扣 1.00；`SBXQUOTA2` 台账应为 0 行。这是脚本里的通过条件，不是已经贴回的新抄录。贴回前不要把它写进 §2.6。`discount_codes` 没有 `updated_at`，脚本不选它。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。不要改成 0，不要付款。
+
+- [x] 卡 9 只读预算基线 1 行已贴回，判语以「基线通过」开头。Codex 没有执行那条 SQL。
+- [ ] 切预算前的卡 4 抄录尚未贴回。贴回前不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具或 cleanup，不要建单，不要付款。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。卡 9 基线通过不是整卡 PASS。这不是卡 4 PASS。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+
+### 61.49 2026-09-22 切预算前卡 4 抄录已贴回（不切 BUDGET_TIGHT）
+
+本节取代 §61.48 的「抄录尚未贴回」。上一节写入时的现行记录见 §61.48。不要改写上一节的「抄录尚未贴回」，也不要改写上一节里那句尚未贴回时的现行步骤。那两句是上一节写入时的现行记录。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd9_card4_snapshot_readonly.sql`，正好 1 行。Codex 没有执行这条 SQL。`snapshot_verdict` 以「抄录通过」开头。
+
+`SBXPROMO10` 正好 1 行，类型 percent，结算比例 90，`allow_guest=true`，`guest_max_uses=50`，让利上限 50.00，`guest_used_count=0`，`guest_discount_total=0.00`，`max_uses=0`，`used_count=0`，`is_active=true`，`lifecycle_status=active`，站点 cn。台账 1 行且已归还，抵扣 1.00，未归还行 0，未归还金额 0。`SBXQUOTA2` 正好 1 行，类型 percent，结算比例 90，`allow_guest=true`，`guest_max_uses=2`，让利上限 30.00，`guest_used_count=0`，`guest_discount_total=0.00`，`max_uses=0`，`used_count=0`，`is_active=true`，`lifecycle_status=active`，站点 cn。台账 0 行，未归还和已归还金额都是 0。两边 `guest_used_count`、`used_count`、`guest_discount_total` 都是 0。
+
+`breaker_present=true`，`breaker_state=closed`，`state_exclusive_ok=true`。`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`（北京时间 17:18:20），`manual_open=1`，`manual_close=1`。通过判语只有在阈值仍是 3 / 20 / 900、其余事件种类都是 0、两种 manual 审计都匹配时才会出现。CN 启用，日预算 20.00，已用 0.00，日期 2026-09-22。intl 关闭，日预算 0.00，已用 0.00；通过判语同时要求 intl 日期仍是 2026-09-22。两个沙箱商品都在，游客开关都关。「沙箱CD7」游客订单 1，付款类 0。「沙箱CD3」游客订单 0。订单 `GS2026092207342938190F2B83D5ACF` 仍在，未付款，预占已释放，抵扣仍是 1.00。
+
+抄录通过不是卡 4 PASS，也不是卡 9 整卡 PASS。卡 9 基线通过不是整卡 PASS。证据 §2.6 仍是全部未执行（0/9），卡 4 的券配额仍是「⬜ 未执行」。不要回写 §2.6。这一轮没有新的 SQL。
+
+现有 `S154_fixture_setup.sql` 的 `v_phase` 仍是 `MAIN`。它仍指向「测试」`52246f1d-b98d-4920-9129-581296f43de9` / `cc5d1ea9-83db-4c88-8fa8-fe7040c7c80d`（¥0.01）和「测试 2」`c16212d8-6ad8-4b3c-831c-3cc68b2d7a52` / `db8cc9bd-898a-49ff-adb4-cc07f94d7d8f`（¥144.00）。重跑会把 CN 日预算从 20.00 改成 1.00，强制 intl 关闭，把 SBX 计数和 spent 归零，并按这两件旧商品的价格断言。¥1.00 的日预算只适用于抵扣正好 1.00 的「沙箱CD7」，不能靠重跑这份夹具切过去。这一轮不改夹具，也不另写预算 SQL。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。
+
+卡 9 模板里的支付、`guest_promo_budget_exhausted` 和原价可买都不在这一轮。原价购买会重新打开「沙箱CD7」，公开 6 张 ¥10 的卡。告警链路未接线，没有 webhook、邮件或 IM，不能据此把卡 9 写成整卡 PASS。写着异常不是邀请去修。不调用 `fn_guest_shop_promo_status()`，也不调用 `fn_guest_shop_promo_set_breaker`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。不要动「测试」「测试 2」「测试请勿兑换」，也不要动 ¥0.01 / 164 张和 ¥144 / 41 张。
+
+订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。不要改成 0，不要付款。
+
+- [x] 切预算前的卡 4 抄录正好 1 行已贴回，判语以「抄录通过」开头。Codex 没有执行这条 SQL。
+- [x] `SBXPROMO10` 与 `SBXQUOTA2` 的 `guest_used_count`、`used_count`、`guest_discount_total` 都是 0。`SBXPROMO10` 台账 1 行且已归还，抵扣 1.00；`SBXQUOTA2` 台账 0 行。
+- [ ] 这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是 0/9，卡 4 仍是「⬜ 未执行」。这一轮没有新的 SQL。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具或 cleanup。
+
+卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。卡 9 基线通过不是整卡 PASS。不要回写九项历史表（`docs/guest-shop-promo-evidence.md` §2.6），也不要改写 runbook 里卡 7、卡 8 或卡 9 的历史偏差格。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+### 61.50 2026-09-22 把 CN 日预算从 20.00 收到 1.00（结果尚未贴回，不切 BUDGET_TIGHT）
+
+本节取代 §61.49 的「也不另写预算 SQL」。上一节写入时的现行记录见 §61.49。不要改写上一节的「也不另写预算 SQL」，也不要改写上一节的「这一轮没有新的 SQL」。那两句是上一节写入时的现行记录。上一节不得出现 `S154_cd9_cd7_budget_tighten.sql`，也不得把这次收紧写成已经贴回。
+
+2026-09-22 切预算前的卡 4 抄录已经贴回。结果尚未贴回。整份执行 `supabase/sandbox/S154_cd9_cd7_budget_tighten.sql`。Codex 不执行这条 SQL。不要只跑最后一条 SELECT。执行前 CN 日预算仍是 20.00，已用 0.00，日期 2026-09-22。
+
+脚本是一个 `DO $cd9$` 加后面一条只读 SELECT。守卫放在 `$guard$` 里，`EXECUTE` 两次。只改已有 `site='cn'` 这一行：`SET daily_budget_cny = 1.00, updated_at = clock_timestamp()`。WHERE 同时要求启用、`ROUND(daily_budget_cny, 2) = 20.00`、`ROUND(spent_cny, 2) = 0.00`、`budget_date = DATE '2026-09-22'`。不新增行，不改已用、启用开关、日期、intl、券、台账、熔断、商品或游客开关。预算表没有触发器。这张表开了 RLS，而且没有策略；`anon` 和 `authenticated` 没有表权限。SQL Editor 以往能读，是因为编辑器角色绕过 RLS。若报「没有改到正好 1 行」，把报错贴回，不要加策略，也不要改去调用函数。
+
+`tighten_verdict` 有三种开头。这一次从 20.00 收到 1.00，以「收紧半步通过」开头。已经是 1.00，以「本次没有再改」开头，这次没有再写。单独重跑最后一条 SELECT，以「看不清」开头。不要把 20.00 写回去。第二次整份重跑看到「本次没有再改」不是失败。若 NOTICE 已经说收到 1.00，但判语是「看不清」，整份再跑，不要手工改数字。写着异常不是邀请去修。
+
+上海当天用 `now()` 转到 `Asia/Shanghai` 的日期，和门禁是同一个日界。不是 2026-09-22 就中止，不要猜数字。非日预算守卫失败也中止，事务撤回。已是 1.00 时只发 NOTICE，并 `set_config('s154.cd9_budget_tighten', 'already', false)`，不改行。是 20.00 时才更新；`GET DIAGNOSTICS` 必须正好 1 行，同一事务再跑守卫，必须停在 1.00 且其余守卫仍通过，否则撤回。成功才 `set_config('s154.cd9_budget_tighten', 'updated', false)`。第三参 `false` 是会话级，所以只跑最后一条 SELECT 会落进「看不清」。既不是 20.00 也不是 1.00 就中止。
+
+守卫同时重查现场。熔断 `closed`，`closed_by=s154-card8`，`closed_at=2026-09-22 09:18:20.678679+00`，reason 与 opened 为空，阈值仍是 3 / 20 / 900。事件正好 2。`manual_open` 的 actor=`s154-card8`、reason=`S154 第8项`、previous_state=`closed`；`manual_close` 的 reason=`S154 第8项恢复`、previous_state=`open`。其余种类都是 0。CN 启用，已用 0.00，日期 2026-09-22。intl 关闭，日预算 0.00，已用 0.00，日期仍是 2026-09-22。
+
+`SBXPROMO10` 与 `SBXQUOTA2` 都是 cn、percent、结算比例 90、active、`allow_guest=true`。前者游客次数 50、让利上限 50.00；后者游客次数 2、让利上限 30.00。两边 `guest_used_count`、`used_count`、`guest_discount_total` 都是 0。`SBXPROMO10` 台账 1 行且已归还，抵扣 1.00；`SBXQUOTA2` 台账 0 行。
+
+「沙箱CD7」是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，名称「沙箱CD7 / 默认规格」，`price_points=10.00`，游客开关关闭，游客订单 1，付款类 0。「沙箱CD3」是 `c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`，名称「沙箱CD3 / 默认规格」，单价 3.00，游客开关关闭，游客订单 0。订单 `GS2026092207342938190F2B83D5ACF` 仍是 cn、数量 1、pending、未发货、refund none、预占 released、标价 10.00、商品净额 9.00、通道费 0.09、应付 9.09、券 `SBXPROMO10`、抵扣 1.00。不要改成 0，不要付款。
+
+CN 日预算是全站上限，不是「沙箱CD7」私有。生产「测试」`52246f1d-b98d-4920-9129-581296f43de9`（¥0.01）游客入口可能仍开，「测试 2」`c16212d8-6ad8-4b3c-831c-3cc68b2d7a52` 是 ¥144。原价不消耗预算。打开「沙箱CD7」会公开 6 张 ¥10 的卡。门禁是已用加本笔大于日上限：0.00 + 1.00 可以通过，第二笔 1.00 才是 `guest_promo_budget_exhausted`。这一步两笔都不建。表 CHECK 要求已用不超过日上限（日上限为 0 时例外）。扣减时会把 `budget_date` 滚到当天并重置已用，但 `daily_budget_cny` 不会自动回到 20.00。1.00 过了 2026-09-22 也不会自己恢复。失败重跑不能自动恢复 20.00。
+
+`v_phase` 继续留在 `MAIN`。重跑 `S154_fixture_setup.sql` 会按「测试」¥0.01 和「测试 2」¥144 的旧价格断言，并归零计数。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具，也不要跑 `S154_fixture_setup.sql` 或 `S154_cleanup.sql`。
+
+告警链路未接线，没有 webhook、邮件或 IM，只能记 N/A，不能据此把卡 9 写成整卡 PASS。这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是全部未执行（0/9），卡 4 的券配额仍是「⬜ 未执行」。不要回写 §2.6。卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。卡 9 基线通过不是整卡 PASS。
+
+不调用 `fn_guest_shop_promo_status()`，不调用 `fn_guest_shop_promo_set_breaker`，也不调用 `guest_shop_promo_gate`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+- [ ] 结果尚未贴回。整份执行后把那 1 行贴回。Codex 不执行这条 SQL。
+- [ ] `tighten_verdict` 以「收紧半步通过」开头，或第二次整份重跑以「本次没有再改」开头。以「看不清」开头不是这半步完成。
+- [ ] 这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是 0/9。不要把 20.00 写回去，不要建单，不要付款。
+
+### 61.51 2026-09-22 CN 日预算已收到 1.00（收紧半步已贴回，不切 BUDGET_TIGHT）
+
+本节取代 §61.50 的「结果尚未贴回」。上一节写入时的现行记录见 §61.50。不要改写上一节的「结果尚未贴回」，也不要改写上一节里那句整份执行收紧脚本的现行步骤。那两句是上一节写入时的现行记录。上一节不得把这次收紧写成已经贴回。
+
+2026-09-22 用户贴回 `supabase/sandbox/S154_cd9_cd7_budget_tighten.sql`，正好 1 行。Codex 没有执行这条 SQL。`tighten_marker=updated`，`tighten_verdict` 以「收紧半步通过」开头。`breaker_state=closed`，`closed_by=s154-card8`。CN 启用，日预算 1.00，已用 0.00，日期 2026-09-22。intl 关闭，日预算 0.00，已用 0.00，日期 2026-09-22。不要重跑这份收紧脚本。第二次整份重跑看到「本次没有再改」不是失败，但这一轮不要再跑。不要把 20.00 写回去。以「看不清」开头仍然不是这半步的完成判语。写着异常不是邀请去修。这一轮没有新的 SQL。CN 日预算是全站上限，不是「沙箱CD7」私有。生产「测试」`52246f1d-b98d-4920-9129-581296f43de9`（¥0.01）游客入口可能仍开，「测试 2」`c16212d8-6ad8-4b3c-831c-3cc68b2d7a52` 是 ¥144。原价不消耗预算。打开「沙箱CD7」会公开 6 张 ¥10 的卡。0.00 加 1.00 可以通过门禁，第二笔 1.00 才是 `guest_promo_budget_exhausted`。这一轮两笔都不建。1.00 过了当天也不会自己回到 20.00。卡 9 模板里的支付、打满拒绝实机和原价可买都不在这一轮。支付和原价购买都会重新打开「沙箱CD7」。本贴回不授权。告警没有 webhook、邮件或 IM，只能记 N/A，不能据此把卡 9 写成整卡 PASS。这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是 0/9，卡 4 仍是「⬜ 未执行」。不要回写 §2.6。不要改 `v_phase`，不要切 `BUDGET_TIGHT`，不要跑夹具或 cleanup。不调用 `fn_guest_shop_promo_status()`，不调用 `fn_guest_shop_promo_set_breaker`，也不调用 `guest_shop_promo_gate`。不要打开熔断，不要打开「沙箱CD7」或「沙箱CD3」，不要建单，不要付款，不要开 `GUEST_SHOP_DISCOUNT_ENABLED`。订单 `GS2026092207342938190F2B83D5ACF` 的抵扣 1.00 不要改成 0。卡 7 继续 PARTIAL，不得改写成整卡 PASS。卡 8 合闸后仍不是整卡 PASS。卡 9 收紧半步通过不是整卡 PASS。`GUEST_SHOP_MAX_QUANTITY` 保持 1。不得应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。
+
+「沙箱CD7」仍是 `5f940176-8059-443a-b5fd-79adc883a810` / `c955f03a-8cd6-44b8-b751-06e2ad66d4cd`，单价 10.00，游客开关保持关闭。「沙箱CD3」保持关闭：`c373b8b7-ebce-4709-b8d4-c192abd36869` / `f928599e-30e8-4b3e-aa86-34ec09e2d659`。订单 `GS2026092207342938190F2B83D5ACF` 仍记着抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。阶段 5 保持 `in_progress`，总进度保持 **80%（4/5）**。
+
+- [x] 用户贴回收紧脚本，正好 1 行。`tighten_marker=updated`，`tighten_verdict` 以「收紧半步通过」开头。Codex 没有执行这条 SQL。
+- [x] CN 日预算是 1.00，已用 0.00，日期 2026-09-22。intl 仍关闭。熔断仍是 closed，`closed_by=s154-card8`。
+- [ ] 这不是卡 4 PASS，也不是卡 9 整卡 PASS。证据 §2.6 仍是 0/9。这一轮没有新的 SQL。不要把 20.00 写回去，不要建单，不要付款。
+
+### 61.52 2026-09-23 卡 9 已付款订单回读（结果尚未贴回）
+
+本节记录 2026-09-23 的支付回读。上一节其余记录保持原样，不要改写，也不要把收紧半步改写成整卡 PASS。§61.51 是历史记录，不再是当前步骤。
+
+用户报告订单 `GS20260922120128080254E4D17280D` 已支付 9.09。此前应付结果已贴回：`sites.cn`、ZPay 有效费率 0.01、标价 10.00、券抵扣 1.00、商品净额 9.00、通道费 0.09、应付 9.09。之前误把 `S154_probe_readonly.sql` 的注释标题「段 6 · 通道附加费」当成可执行 SQL，导致编辑器在中文「段」处报 42601；注释不是 SQL。卡 9 应付探针已有专用文件 `supabase/sandbox/S154_cd9_payable_probe_readonly.sql`，该结果已贴回，本轮不需重跑。
+
+本节记录用户已执行 `supabase/sandbox/S154_cd9_payment_readback.sql` 并贴回唯一一行。Codex 不连接数据库、不执行 SQL。不要选中说明标题执行，也不要执行 `S154_probe_readonly.sql` 的段 6。
+
+结果以 `readback_verdict` 为准，用户贴回订单 `GS20260922120128080254E4D17280D`，判语为「支付半步通过」。confirmed 与四个支付校验均为真，paid/expected/total 为 9.09，订单手续费和支付手续费均 0.09。库存已售出，订单 `delivered`、预占 `consumed`，且 `fulfilled_at` 存在。券/预算、旧订单、CD7/CD3 和熔断项均满足 SQL 的支付半步条件。预算日期仍为 2026-09-22，上限和已用均为 1.00；当前日期为 2026-09-23，不滚动日期、不清零。
+
+支付半步已通过，但卡 9 仍不是整卡 PASS：告警链路未接线，打满拒绝实机及原价可买未完成；卡 2 也未因这笔支付闭合。证据 §2.6 仍为 0/9，不回写历史表。阶段 5 保持 `in_progress`，总进度保持 80%（4/5）。不要改价、恢复 20.00、重跑预算收紧、打开熔断、建单、再次付款、踢 worker、跑夹具或 cleanup、应用 `supabase/migrations/20260925_guest_shop_promo_gates.sql`，或开启生产 `GUEST_SHOP_DISCOUNT_ENABLED`。`GUEST_SHOP_MAX_QUANTITY` 保持 1。
+
+2026-09-23 现行记录见 §61.53：2026-09-22 的支付半步通过（整卡仍未通过）。不要再次付款、不要重复付款或重试付款。阶段 5 总进度保持 80%（4/5）。
+
+### 61.53 2026-09-23 卡 9 支付半步回读已通过（不代表整卡 PASS）
+
+本节记录支付回读结果，并取代 §61.52 的等待执行指引。§61.52 原始用户报告与预期保留为历史，不要改写上一节。
+
+用户贴回订单 `GS20260922120128080254E4D17280D` 在 `supabase/sandbox/S154_cd9_payment_readback.sql` 的唯一一行，`readback_verdict` 以「支付半步通过」开头。目标商品和 SKU 存在，`source_channel=website_guest`，站点 cn/CNY，数量 1；订单状态和支付状态均为 confirmed。标价 10.00、抵扣 1.00、净额 9.00、手续费 0.09、订单总额/支付应付/实付均为 9.09。`sign_verified`、`amount_verified`、`currency_verified`、`final_status_verified` 全真，`payment_review=false`。
+
+订单履约 `delivered`，退款状态 none，订单和预占状态为 consumed，`fulfilled_at` 存在；该库存为 sold，预占行正好一行，非共享库存仍有 5 张 available。游客券 `SBXPROMO10` 计数为 1、累计抵扣 1.00，台账两行：当前单 open 1.00，旧单 returned 1.00；`SBXQUOTA2` 计数和台账均为 0。CN 预算日期是 2026-09-22，上限/已用都是 1.00；intl 保持关闭且额度/已用为 0。旧订单 `GS2026092207342938190F2B83D5ACF` 仍 pending、已释放、抵扣 1.00。CD7 游客单正好两笔，其中确认一笔；CD3 游客开关关闭且订单为 0。熔断仍 closed，`closed_by=s154-card8`，阈值 3/20/900，事件数 2。
+
+结果闭合的是卡 9 的支付半步，不是卡 9 整卡 PASS。告警链路仍未接线，打满拒绝实机与原价购买未完成；这笔促销订单也不闭合卡 2。预算日保持 2026-09-22，不要滚动到 2026-09-23、清零或恢复到 20.00。不要再次付款或建单，不要踢 worker，不要重开 CD7/CD3，不跑夹具或 cleanup，不改写 §2.6（仍为 0/9）。阶段 5 继续 `in_progress`，总进度 80%（4/5）。
+
+### 61.54 2026-09-28 阶段 5 代码侧收口复核
+
+本轮只做代码、契约和本地 Admin Studio 收口，不执行 SQL、不部署、不打开游客商品或促销/多件开关，不创建或支付订单。
+
+- [x] `npm run test:security` 全量通过：`3578/3578`，`0 fail`。
+- [x] 阶段 5 closeout 合同测试通过；Admin Shop 本地 smoke `8/8` 通过，覆盖商品工作台、分类筛选（含“全部”）、排序、分类编辑、库存列表、库存导入和批量释放。
+- [x] `node scripts/guest-shop-readiness.js --fail-on-invalid`：`findings: none`、`PASS (automated)`；`operational_ready=false`、`manual_review_count=20` 仍按人工/目标库证据缺口 fail-closed。
+- [x] 统一 2026-09-28 钱包金额展示的 loader 缓存键及旧契约断言，避免页面继续加载旧 wallet 脚本；未改动的 wallet.css 保留原缓存键。
+
+这次复核只关闭代码侧回归，不改变 A7、B、C、D、E、F 的外部验收状态，也不把人工复核项改写为 PASS。阶段 5 仍为 `in_progress`，总进度仍为 **80%（4/5）**。

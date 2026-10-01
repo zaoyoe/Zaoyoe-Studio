@@ -65,6 +65,7 @@ const REFUND_CANDIDATE_STATUSES = Object.freeze([
 // order paid for. It is a bound on the loop, never on an amount: the money was
 // committed by fn_guest_shop_create_order and is not recomputed here.
 const CANDIDATE_SELECT = 'id,order_no,site,currency,total_amount,quantity,payment_status,reservation_status,fulfillment_status,refund_status,expires_at,paid_at,fulfilled_at,updated_at,metadata';
+const CHECKOUT_BATCH_CANDIDATE_SELECT = 'id,batch_no,payment_status,fulfillment_status,updated_at,paid_at,fulfilled_at';
 // Mirror of guest_shop_orders_quantity_check. Raising it is a migration, not an
 // env change, so the loop bound can never be widened at runtime.
 const GUEST_ORDER_QUANTITY_CEILING = 5;
@@ -490,6 +491,71 @@ function createGuestShopWorker({
         return Array.from(byId.values())
             .sort((left, right) => String(left.updated_at || '').localeCompare(String(right.updated_at || '')))
             .slice(0, limit);
+    }
+
+    async function loadCheckoutBatchCandidates(limit) {
+        const db = requireDb();
+        let query = db.from('guest_shop_checkout_batches').select(CHECKOUT_BATCH_CANDIDATE_SELECT);
+        if (typeof query.eq !== 'function' || typeof query.in !== 'function') return [];
+        query = query.eq('payment_status', 'confirmed')
+            .in('fulfillment_status', ['pending', 'fulfilling', 'failed']);
+        if (typeof query.order === 'function') query = query.order('updated_at', { ascending: true });
+        if (typeof query.limit === 'function') query = query.limit(limit);
+        const result = await query;
+        if (result?.error) throw result.error;
+        return Array.isArray(result?.data) ? result.data : [];
+    }
+
+    async function loadCheckoutBatchById(batchId) {
+        const id = normalizeText(batchId, 160);
+        if (!id) return null;
+        const db = requireDb();
+        let query = db.from('guest_shop_checkout_batches')
+            .select(CHECKOUT_BATCH_CANDIDATE_SELECT)
+            .eq('id', id);
+        if (typeof query.maybeSingle === 'function') query = query.maybeSingle();
+        const result = await query;
+        if (result?.error) throw result.error;
+        return result?.data || null;
+    }
+
+    async function processCheckoutBatch(batch) {
+        if (!batch || !normalizeText(batch.id, 160)) {
+            return { status: 'skipped', reason: 'checkout_batch_missing' };
+        }
+        if (batch.payment_status !== 'confirmed') {
+            return { status: 'skipped', reason: 'payment_not_confirmed' };
+        }
+        if (batch.fulfillment_status === 'delivered') {
+            return { status: 'skipped', reason: 'fulfillment_terminal' };
+        }
+        try {
+            // The batch claim RPC is idempotent and consumes every held row in
+            // item order. It returns card content, so the worker deliberately
+            // keeps the result in process and only reads back the status.
+            await callRpc('fn_guest_shop_claim_checkout_batch', { p_batch_id: batch.id });
+            const latest = await loadCheckoutBatchById(batch.id);
+            if (latest?.fulfillment_status === 'delivered') {
+                return { status: 'delivered', batch_id: batch.id };
+            }
+            if (latest?.fulfillment_status === 'paid_unfulfillable') {
+                return { status: 'paid_unfulfillable', batch_id: batch.id };
+            }
+            const error = new Error('批量订单履约未确认');
+            error.code = 'guest_checkout_batch_fulfillment_unconfirmed';
+            error.retryable = true;
+            throw error;
+        } catch (error) {
+            logger?.warn?.('[GuestShopWorker] checkout batch fulfillment retry scheduled', {
+                batch_id: normalizeText(batch.id, 80),
+                code: safeErrorCode(error)
+            });
+            return {
+                status: 'retry_waiting',
+                batch_id: batch.id,
+                error_code: safeErrorCode(error, 'guest_checkout_batch_fulfillment_failed')
+            };
+        }
     }
 
     async function loadPayment(orderId) {
@@ -1073,6 +1139,15 @@ function createGuestShopWorker({
         }
     }
 
+    async function expireCheckoutBatches(limit) {
+        try {
+            return await callRpc('fn_guest_shop_expire_checkout_batches', { p_limit: limit });
+        } catch (error) {
+            logger?.error?.('[GuestShopWorker] expired checkout batch sweep failed', safeErrorMessage(error));
+            return { processed_count: 0, released_count: 0, error: safeErrorCode(error) };
+        }
+    }
+
     async function purgeExpiredAccessAttempts() {
         const base = {
             enabled: accessAuditRetention.enabled,
@@ -1195,6 +1270,7 @@ function createGuestShopWorker({
         const started = currentDate();
         const limit = normalizePositiveInteger(options.limit, config.batchSize, { min: 1, max: MAX_BATCH_SIZE });
         const expiry = await releaseExpiredReservations(limit);
+        const batchExpiry = await expireCheckoutBatches(limit);
         const accessAuditCleanup = options.runAccessAuditCleanup === true
             ? await purgeExpiredAccessAttempts()
             : {
@@ -1211,10 +1287,11 @@ function createGuestShopWorker({
                 skipped: 'not_scheduled'
             };
         const orders = await loadCandidates(limit);
+        const checkoutBatches = await loadCheckoutBatchCandidates(limit);
         const summary = {
             success: true,
             worker_name: name,
-            scanned: orders.length,
+            scanned: orders.length + checkoutBatches.length,
             processed: 0,
             delivered: 0,
             retry_waiting: 0,
@@ -1224,7 +1301,11 @@ function createGuestShopWorker({
             manual_review: 0,
             skipped: 0,
             errors: 0,
+            checkout_batches_scanned: checkoutBatches.length,
+            checkout_batches_delivered: 0,
+            checkout_batches_retry_waiting: 0,
             expired_reservations: Number(expiry?.released_count || 0),
+            expired_checkout_batches: Number(batchExpiry?.released_count || 0),
             expiry_unfulfillable: Number(expiry?.unfulfillable_count || 0),
             access_audit_cleanup: accessAuditCleanup,
             duration_ms: 0
@@ -1279,6 +1360,28 @@ function createGuestShopWorker({
                 });
             }
         }
+        for (const batch of checkoutBatches) {
+            try {
+                const result = await processCheckoutBatch(batch);
+                if (result.status === 'delivered') {
+                    summary.checkout_batches_delivered += 1;
+                    summary.delivered += 1;
+                } else if (result.status === 'retry_waiting') {
+                    summary.checkout_batches_retry_waiting += 1;
+                    summary.retry_waiting += 1;
+                } else if (result.status === 'paid_unfulfillable') {
+                    summary.paid_unfulfillable += 1;
+                }
+                if (result.status !== 'skipped') summary.processed += 1;
+            } catch (error) {
+                summary.errors += 1;
+                logger?.error?.('[GuestShopWorker] checkout batch processing failed', {
+                    batch_id: normalizeText(batch.id, 80),
+                    code: safeErrorCode(error),
+                    message: safeErrorMessage(error)
+                });
+            }
+        }
         summary.duration_ms = Math.max(0, currentDate().getTime() - started.getTime());
         return summary;
     }
@@ -1293,6 +1396,9 @@ function createGuestShopWorker({
         releaseExpiredReservations,
         purgeExpiredAccessAttempts,
         loadCandidates,
+        loadCheckoutBatchCandidates,
+        loadCheckoutBatchById,
+        processCheckoutBatch,
         config,
         workerName: name
     });

@@ -174,6 +174,20 @@ test('guest credit pricing applies tier rules and default-SKU product fallback',
     }), 7);
 });
 
+test('scheduled flash price starts inclusively and ends exclusively', () => {
+    const schedule = {
+        skuPricePoints: 10,
+        productFlashSalePrice: 7,
+        productFlashSaleStart: '2026-09-14T12:30:00.000Z',
+        productFlashSaleEnd: '2026-09-14T13:30:00.000Z',
+        skuQuantityRules: [{ qty: 1, price: 8 }]
+    };
+    assert.equal(price({ ...schedule, now: new Date('2026-09-14T12:29:59.999Z') }), 8);
+    assert.equal(price({ ...schedule, now: new Date('2026-09-14T12:30:00.000Z') }), 7);
+    assert.equal(price({ ...schedule, now: new Date('2026-09-14T13:30:00.000Z') }), 8);
+    assert.equal(price({ ...schedule, productFlashSaleStart: null }), 7);
+});
+
 test('guest payable pricing adds a rounded-up 1% surcharge on the credit price', () => {
     const alipay = resolveGuestPayablePricing(144, 'zpay');
     assert.equal(alipay.baseAmount, 144);

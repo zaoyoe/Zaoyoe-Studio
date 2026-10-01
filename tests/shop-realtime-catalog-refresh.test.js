@@ -64,7 +64,7 @@ test('shop realtime catalog refresh bypasses stale HTTP and worker caches', () =
     );
     assert.match(
         shopClient,
-        /if \(\(!data \|\| data\.length === 0\)[\s\S]*this\.shouldPreserveVisibleShopCatalogOnEmptyRefresh\(\{ forceRefresh, hasRenderedCards \}\)[\s\S]*Ignored empty product refresh while products are already visible/s,
+        /if \(\(!products \|\| products\.length === 0\)[\s\S]*this\.shouldPreserveVisibleShopCatalogOnEmptyRefresh\(\{ forceRefresh, hasRenderedCards \}\)[\s\S]*Ignored empty product refresh while products are already visible/s,
         'product refresh should not transition the grid to empty when a transient empty catalog arrives'
     );
     assert.match(

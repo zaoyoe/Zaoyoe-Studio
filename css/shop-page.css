@@ -1271,7 +1271,8 @@
             font-weight: 600;
         }
 
-        #shopSuccessModal .shop-success-item__tag--notice {
+        #shopSuccessModal .shop-success-item__tag--notice,
+        #guestCashPurchaseModal .shop-success-item__tag--notice {
             height: var(--shop-success-toolbar-height, 30px);
             min-height: var(--shop-success-toolbar-height, 30px);
             flex: 0 0 auto;
@@ -1288,7 +1289,8 @@
             background: transparent;
         }
 
-        #shopSuccessModal .shop-success-item__tag--usage {
+        #shopSuccessModal .shop-success-item__tag--usage,
+        #guestCashPurchaseModal .shop-success-item__tag--usage {
             height: var(--shop-success-toolbar-height, 30px);
             min-height: var(--shop-success-toolbar-height, 30px);
             flex: 0 0 auto;
@@ -1305,7 +1307,8 @@
             background: transparent;
         }
 
-        #shopSuccessModal .shop-success-item__tag-label {
+        #shopSuccessModal .shop-success-item__tag-label,
+        #guestCashPurchaseModal .shop-success-item__tag-label {
             display: inline-block;
             font-size: var(--shop-success-pill-font-size, 10px);
             line-height: 1;
@@ -5116,8 +5119,8 @@
 
             #shopSuccessModal .modal-content {
                 --shop-success-thumb-offset-y: 6px;
-                width: calc(100% - 24px) !important;
-                max-width: 680px !important;
+                width: calc(100% - 40px) !important;
+                max-width: 620px !important;
                 border-radius: 28px !important;
                 padding: 22px 16px calc(18px + env(safe-area-inset-bottom)) !important;
             }
@@ -5399,14 +5402,17 @@
             }
 
             #shopSuccessModal .shop-success-item__tag--notice,
-            #shopSuccessModal .shop-success-item__tag--usage {
+            #shopSuccessModal .shop-success-item__tag--usage,
+            #guestCashPurchaseModal .shop-success-item__tag--notice,
+            #guestCashPurchaseModal .shop-success-item__tag--usage {
                 min-height: var(--shop-success-toolbar-height, 26px);
                 height: var(--shop-success-toolbar-height, 26px);
                 padding: 0 9px;
                 font-size: var(--shop-success-pill-font-size, 10px);
             }
 
-            #shopSuccessModal .shop-success-item__tag-label {
+            #shopSuccessModal .shop-success-item__tag-label,
+            #guestCashPurchaseModal .shop-success-item__tag-label {
                 font-size: var(--shop-success-pill-font-size, 10px);
             }
 
@@ -5621,12 +5627,20 @@
             border: none;
             color: #fff;
             cursor: pointer;
-            transition: background 0.2s ease, transform 0.2s ease;
+            box-shadow: none;
+            transform: none;
+            filter: none;
+            transition: color 0.2s ease;
         }
 
-        .shop-order-history-view:hover {
-            background: rgba(255, 255, 255, 0.16);
-            transform: translateY(-1px);
+        @media (hover: hover) {
+            html body.shop-page .shop-order-history-view:hover {
+                color: #9ca3af;
+            }
+
+            html[data-theme="dark"] body.shop-page .shop-order-history-view:hover {
+                color: #6b7280;
+            }
         }
 
         #shopSuccessModal.has-usage-instructions .shop-success-actions {
@@ -6931,34 +6945,40 @@ html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-ite
     overflow: hidden;
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--notice {
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--notice,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice {
     background: transparent;
     border-color: rgba(245, 158, 11, 0.18);
     color: #92400e;
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--usage {
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--usage,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage {
     background: transparent;
     border-color: rgba(16, 185, 129, 0.16);
     color: #047857;
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--notice:hover {
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--notice:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice:hover {
     background: transparent;
     border-color: rgba(245, 158, 11, 0.26);
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--usage:hover {
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--usage:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage:hover {
     background: transparent;
     border-color: rgba(16, 185, 129, 0.24);
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--notice.is-active {
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--notice.is-active,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice.is-active {
     background: #fff7ed;
     border-color: rgba(245, 158, 11, 0.34);
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--usage.is-active {
+html:not([data-theme="dark"]) body.shop-page #shopSuccessModal .shop-success-item__tag--usage.is-active,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage.is-active {
     background: #ecfdf5;
     border-color: rgba(16, 185, 129, 0.3);
 }
@@ -8506,16 +8526,24 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 }
 
 .guest-shop-modal__content {
-    width: min(100%, 520px) !important;
-    max-width: 520px !important;
+    width: min(calc(100% - 40px), 620px) !important;
+    max-width: 620px !important;
     max-height: min(760px, calc(100dvh - 40px)) !important;
+    box-sizing: border-box;
+    background:
+        linear-gradient(180deg, rgba(14, 20, 29, 0.96) 0%, rgba(8, 12, 18, 0.98) 100%) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+        0 34px 80px rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
     padding: 24px !important;
     text-align: left;
     overflow-y: auto;
     scroll-padding-bottom: 88px;
 }
 
-.guest-shop-modal__header,
 .guest-shop-modal__summary-row,
 .guest-shop-modal__actions,
 .guest-shop-modal__address-row {
@@ -8523,13 +8551,21 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     align-items: center;
 }
 
-.guest-shop-modal__header,
 .guest-shop-modal__summary-row {
     justify-content: space-between;
     gap: 16px;
 }
-
-.guest-shop-modal__header { margin-bottom: 18px; }
+.guest-shop-modal__title-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 
 /* Dujiao alignment (Payment.vue header): one muted subtitle line under the
    title, swapped per phase by js/guest-shop-client.js. Deliberately not
@@ -8537,15 +8573,15 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
    subtitle is a full Chinese sentence rather than a label. */
 .guest-shop-modal__subtitle { margin: 6px 0 0; color: rgba(226,232,240,.62); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 
-/* Dujiao alignment (CheckoutSteps.vue): numbered pills, a connector bar before
-   every step except the first, and a check mark replacing the number once a
-   step is done. Dujiao drives status from a Vue computed; here js sets
+/* Dujiao alignment (CheckoutSteps.vue): clean phase dots and a connector bar
+   before every step except the first. Dujiao drives status from a Vue computed; here js sets
    is-done / is-current / is-upcoming plus aria-current="step" on the live step.
    Dujiao's keys are cart/checkout/payment; a guest single-product flow has no
    cart, so the rail is 确认订单 -> 支付 -> 发货. */
 .guest-shop-modal__steps {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
     margin: 0 0 16px;
     padding: 12px 14px;
     border: 1px solid rgba(255,255,255,.09);
@@ -8553,61 +8589,78 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     background: rgba(255,255,255,.045);
     list-style: none;
 }
-.guest-shop-modal__step { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-width: 0; }
-.guest-shop-modal__step + .guest-shop-modal__step { flex: 1 1 0; }
+.guest-shop-modal__step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; text-align: center; }
 .guest-shop-modal__step + .guest-shop-modal__step::before {
     content: "";
-    flex: 1 1 auto;
+    position: absolute;
+    top: 7px;
+    right: 50%;
+    width: 100%;
     height: 2px;
     border-radius: 999px;
     background: rgba(255,255,255,.14);
     transition: background-color .2s ease;
+    z-index: 0;
 }
 .guest-shop-modal__step.is-done::before,
-.guest-shop-modal__step.is-current::before { background: #3b82f6; }
+.guest-shop-modal__step.is-current::before { background: #53c7df; }
 .guest-shop-modal__step-index {
-    display: inline-flex;
     flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border: 2px solid rgba(255,255,255,.18);
+    display: block;
+    width: 14px;
+    height: 14px;
+    border: 0;
     border-radius: 50%;
-    color: rgba(226,232,240,.58);
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1;
-    transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+    background: #94a3b8;
+    position: relative;
+    z-index: 1;
+    transition: background-color .2s ease;
 }
 .guest-shop-modal__step.is-done .guest-shop-modal__step-index,
 .guest-shop-modal__step.is-current .guest-shop-modal__step-index {
-    border-color: transparent;
-    background: linear-gradient(135deg, #3b82f6, #2563eb);
-    color: #fff;
+    background: rgb(var(--guest-step-rgb));
+    box-shadow: none;
 }
-/* The number stays in the DOM (so a step can walk back on a reset) and is only
-   visually replaced by the tick, exactly like Dujiao's <Check v-if="done">. */
-.guest-shop-modal__step.is-done .guest-shop-modal__step-index { font-size: 0; }
-.guest-shop-modal__step.is-done .guest-shop-modal__step-index::after { content: "\2713"; font-size: 13px; font-weight: 700; }
-.guest-shop-modal__step-label { color: rgba(226,232,240,.58); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.guest-shop-modal__step-label { color: rgba(226,232,240,.58); font-size: 12px; font-weight: 600; line-height: 1.25; white-space: nowrap; }
 .guest-shop-modal__step.is-done .guest-shop-modal__step-label,
 .guest-shop-modal__step.is-current .guest-shop-modal__step-label { color: rgba(248,250,252,.94); font-weight: 600; }
+/* Each checkout phase has its own accent. */
+.guest-shop-modal__step[data-step-key="configure"] .guest-shop-modal__step-index { --guest-step-rgb: 83,199,223; }
+.guest-shop-modal__step[data-step-key="payment"] .guest-shop-modal__step-index { --guest-step-rgb: 169,151,231; }
+.guest-shop-modal__step[data-step-key="delivery"] .guest-shop-modal__step-index { --guest-step-rgb: 101,207,172; }
+.guest-shop-modal__step[data-step-key="payment"].is-done::before,
+.guest-shop-modal__step[data-step-key="payment"].is-current::before { background: #a997e7; }
+.guest-shop-modal__step[data-step-key="delivery"].is-done::before,
+.guest-shop-modal__step[data-step-key="delivery"].is-current::before { background: #65cfac; }
 .guest-shop-modal__eyebrow { margin: 0 0 4px; color: #93c5fd; font-size: 12px; letter-spacing: .02em; }
-.guest-shop-modal__close { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
 .guest-shop-modal__state { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(147,197,253,.16); border-radius: 10px; color: rgba(226,232,240,.78); font-size: 13px; }
+.guest-shop-modal__state-countdown { display: inline; white-space: nowrap; }
+.guest-shop-modal__state-countdown[hidden] { display: none !important; }
+.guest-shop-modal__state-countdown strong { color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 13px; font-weight: 800; letter-spacing: 0; }
+.guest-shop-modal__state-countdown.is-warning strong { color: #fde68a; }
+.guest-shop-modal__state-countdown.is-expired strong { color: #fecaca; }
 .guest-shop-modal__state[data-state="error"], .guest-shop-modal__state[data-state="manual_review"] { color: #fecaca; border-color: rgba(248,113,113,.35); }
 .guest-shop-modal__summary, .guest-shop-modal__panel { margin-top: 14px; padding: 14px; border: 1px solid rgba(255,255,255,.09); border-radius: 12px; background: rgba(255,255,255,.045); }
+.guest-shop-modal__order-overview { display: grid; gap: 14px; margin-top: 14px; }
+.guest-shop-modal__order-overview > .guest-shop-modal__summary,
+.guest-shop-modal__order-overview > .guest-shop-modal__amount { margin-top: 0; }
+@media (min-width: 769px) {
+    .guest-shop-modal__order-overview {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: stretch;
+    }
+}
 .guest-shop-modal__summary-row + .guest-shop-modal__summary-row { margin-top: 9px; }
 .guest-shop-modal__summary-row[hidden] { display: none !important; }
 .guest-shop-modal__summary-row span { color: rgba(226,232,240,.58); font-size: 13px; }
-.guest-shop-modal__summary-row strong { max-width: 72%; overflow-wrap: anywhere; text-align: right; }
+.guest-shop-modal__summary-row strong { max-width: 72%; overflow-wrap: anywhere; text-align: right; font-size: 12px; font-weight: 600; letter-spacing: .015em; line-height: 1.35; font-variant-numeric: tabular-nums; }
+#guestCashOrderNo { font-size: 12px; font-weight: 600; letter-spacing: .015em; line-height: 1.35; font-variant-numeric: tabular-nums; }
 
 /* Dujiao alignment (PaymentAmountBreakdown.vue): the payable figure is promoted
    to a hero number under an uppercase muted label, the line items sit below it
    as a compact 12px list, discounts read destructive, and the polling hint
-   moves into the same card under a divider. The countdown deliberately stays on
-   the QR card so one deadline never has two live timers. */
+   stays in the phase status line so the payment deadline is visible without
+   competing with the QR code. */
 .guest-shop-modal__amount {
     margin-top: 14px;
     padding: 14px;
@@ -8615,15 +8668,70 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     border-radius: 12px;
     background: rgba(255,255,255,.045);
 }
+.guest-shop-modal__amount-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+}
 .guest-shop-modal__amount-label { color: rgba(226,232,240,.58); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .guest-shop-modal__amount-value {
-    margin-top: 4px;
+    margin: 0;
+    max-width: 70%;
     color: #f8fafc;
     font-size: 26px;
     font-weight: 700;
     line-height: 1.2;
     letter-spacing: -.01em;
     overflow-wrap: anywhere;
+    text-align: right;
+}
+.guest-shop-modal__amount-value,
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong {
+    font-variant-numeric: tabular-nums;
+}
+.guest-shop-modal__amount-value.is-amount-placeholder,
+.guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-placeholder {
+    color: rgba(226,232,240,.46);
+}
+.guest-amount-digits { display: inline-block; }
+/* Keep the zero-value placeholder in view during the overlay's 300ms entrance.
+   The real quote then cross-fades at exactly the same position, so currency
+   symbols and digits do not slide as the amount becomes available. */
+#guestCashPurchaseModal.active .guest-shop-modal__amount-value.is-amount-revealing .guest-amount-digits,
+#guestCashPurchaseModal.active .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-revealing .guest-amount-digits {
+    position: relative;
+    display: inline-block;
+    animation: guest-amount-reveal .2s ease-out .3s both;
+    will-change: opacity;
+}
+#guestCashPurchaseModal.active .guest-shop-modal__amount-value.is-amount-revealing .guest-amount-digits::before,
+#guestCashPurchaseModal.active .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-revealing .guest-amount-digits::before {
+    content: attr(data-loading-amount);
+    position: absolute;
+    inset: 0;
+    color: rgba(226,232,240,.46);
+    pointer-events: none;
+    text-align: inherit;
+    animation: guest-amount-placeholder-fade .18s ease-out .3s both;
+}
+@keyframes guest-amount-reveal {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes guest-amount-placeholder-fade {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #guestCashPurchaseModal.active .guest-shop-modal__amount-value.is-amount-revealing .guest-amount-digits,
+    #guestCashPurchaseModal.active .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-revealing .guest-amount-digits {
+        animation: none;
+    }
+    #guestCashPurchaseModal.active .guest-shop-modal__amount-value.is-amount-revealing .guest-amount-digits::before,
+    #guestCashPurchaseModal.active .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-revealing .guest-amount-digits::before {
+        display: none;
+    }
 }
 .guest-shop-modal__amount-rows { display: grid; gap: 8px; margin-top: 14px; }
 /* Rows keep the modal's shared __summary-row idiom, but inside the breakdown
@@ -8637,6 +8745,94 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 .guest-shop-modal__amount-footer[hidden] { display: none !important; }
 .guest-shop-modal__field { display: grid; gap: 7px; margin-bottom: 13px; color: rgba(226,232,240,.82); font-size: 13px; }
 .guest-shop-modal__field input, .guest-shop-modal__field select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; background: rgba(15,23,42,.55); color: inherit; }
+
+.guest-shop-modal__payment-field { margin-bottom: 16px; }
+.guest-shop-modal__payment-field > span { font-weight: 600; }
+.guest-shop-modal__payment-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.guest-shop-modal__payment-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    min-width: 0;
+    min-height: 42px;
+    padding: 6px 11px;
+    border: 1px solid rgba(148,163,184,.26);
+    border-radius: 999px;
+    background: rgba(30,41,59,.88);
+    color: #e2e8f0;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.guest-shop-modal__payment-option:hover { border-color: rgba(148,163,184,.5); transform: translateY(-1px); }
+.guest-shop-modal__payment-option[aria-checked="true"] {
+    border-color: rgba(125,211,252,.72);
+    background: rgba(56,189,248,.14);
+    box-shadow: inset 0 0 0 1px rgba(125,211,252,.18), 0 3px 10px rgba(14,165,233,.14);
+}
+.guest-shop-modal__payment-option:focus-visible { outline: 3px solid rgba(125,211,252,.5); outline-offset: 2px; }
+.guest-shop-modal__payment-option:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+.guest-shop-modal__payment-icon {
+    display: inline-flex;
+    flex: 0 0 22px;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(96,165,250,.18);
+    color: #bfdbfe;
+    font-size: 16px;
+}
+.guest-shop-modal__payment-icon img { width: 16px; height: 16px; display: block; }
+.guest-shop-modal__payment-option[data-channel="alipay"] .guest-shop-modal__payment-icon { background: rgba(22,119,255,.16); color: #1677ff; }
+.guest-shop-modal__payment-option[data-channel="wxpay"] .guest-shop-modal__payment-icon { background: rgba(74,222,128,.16); color: #86efac; }
+.guest-shop-modal__payment-option[data-channel="qqpay"] .guest-shop-modal__payment-icon { background: rgba(129,140,248,.18); color: #c7d2fe; }
+.guest-shop-modal__payment-option[data-provider="nowpayments"] .guest-shop-modal__payment-icon { background: rgba(52,211,153,.16); color: #a7f3d0; }
+.guest-shop-modal__payment-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 1.35; }
+.guest-shop-modal__payment-option { position: relative; }
+.guest-shop-modal__payment-loading {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    width: 0;
+    height: 16px;
+    margin-left: 0;
+    transition: opacity .16s ease;
+}
+.guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-loading {
+    display: inline-flex;
+    flex: 0 0 22px;
+    width: 22px;
+    opacity: 1;
+    visibility: visible;
+}
+.guest-shop-modal__payment-loading i {
+    display: block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: guest-payment-dot-bounce .92s cubic-bezier(.33, .1, .28, 1) infinite;
+}
+.guest-shop-modal__payment-loading i:nth-child(2) { animation-delay: .14s; }
+.guest-shop-modal__payment-loading i:nth-child(3) { animation-delay: .28s; }
+@keyframes guest-payment-dot-bounce {
+    0%, 62%, 100% { transform: translateY(1px); opacity: .72; }
+    31% { transform: translateY(-3px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .guest-shop-modal__payment-loading i { animation: none; opacity: 1; transform: none; }
+}
+.guest-shop-modal__state:empty,
+.guest-shop-modal__state[hidden] { display: none !important; }
 .guest-shop-modal__hint { margin: 10px 0 0; color: rgba(226,232,240,.58); font-size: 12px; line-height: 1.6; }
 .guest-shop-modal__checkout-link { display: inline-flex; margin-top: 10px; color: #93c5fd; overflow-wrap: anywhere; }
 .guest-shop-modal__address-row { gap: 8px; margin-top: 10px; }
@@ -8751,34 +8947,32 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
    have already left behind. */
 .guest-shop-modal__field.is-invalid input { border-color: #f87171; }
 .guest-shop-modal__hint.is-error { color: #fca5a5; }
-/* Dujiao alignment (GuestOrderDetail.vue fulfillment card): title left and
-   action right on one head row instead of a full-width button under the
-   payload; 发货类型 / 发货状态 become muted fact lines above the payload box;
-   and the copy button flips to an emerald treatment plus a tick and label
-   while copied. Dujiao's 使用说明 block is deliberately not ported - guest
+/* Dujiao alignment (GuestOrderDetail.vue fulfillment card): fact lines first,
+   followed by a compact copy action and the payload box. The copy button flips
+   to an emerald treatment while copied. Dujiao's 使用说明 block is deliberately not ported - guest
    preview never returns product guidance, and exposing it to an
    unauthenticated buyer is a backend disclosure decision, not a styling one. */
-.guest-shop-modal__delivery-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 12px;
-}
-.guest-shop-modal__delivery-actions { display: flex; align-items: center; gap: 8px; }
-.guest-shop-modal__delivery-copy { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
-.guest-shop-modal__delivery-copy.is-copied {
-    border-color: rgba(16,185,129,.5);
-    background: rgba(16,185,129,.22);
-    color: #bbf7d0;
-}
-.guest-shop-modal__delivery-fact { display: flex; align-items: baseline; gap: 2px; color: rgba(226,232,240,.58); font-size: 13px; }
+.guest-shop-modal__delivery-actions { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 10px 0 12px; }
+.guest-shop-modal__delivery-copy { min-width: 0; }
+.guest-shop-modal__delivery-copy-label { position: static; width: auto; height: auto; padding: 0; margin: 0; overflow: visible; clip: auto; white-space: nowrap; border: 0; }
+.guest-shop-modal__delivery-copy.is-copied { border-color: rgba(16,185,129,.5); background: rgba(16,185,129,.22); color: #bbf7d0; }
+.guest-shop-modal__delivery-fact { display: flex; align-items: baseline; gap: 2px; color: rgba(226,232,240,.58); font-size: 12px; line-height: 1.35; }
 .guest-shop-modal__delivery-fact + .guest-shop-modal__delivery-fact { margin-top: 4px; }
 .guest-shop-modal__delivery-fact span::after { content: "\FF1A"; }
-.guest-shop-modal__delivery-fact strong { color: rgba(226,232,240,.82); font-weight: 600; }
-.guest-shop-modal__delivery-title { display: flex; gap: 8px; align-items: center; color: #86efac; font-weight: 600; }
-.guest-shop-modal__delivery-content { max-height: 260px; margin: 12px 0; padding: 12px; border-radius: 8px; background: rgba(0,0,0,.22); color: rgba(248,250,252,.92); white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.guest-shop-modal__delivery-fact strong { color: rgba(226,232,240,.82); font-size: 12px; font-weight: 600; letter-spacing: .015em; font-variant-numeric: tabular-nums; }
+.guest-shop-modal__delivery-content { display: grid; gap: 8px; max-height: 260px; margin: 12px 0; padding: 10px; border-radius: 10px; background: rgba(15,23,42,.12); color: rgba(248,250,252,.92); overflow: auto; }
+.guest-shop-modal__delivery-group { display: grid; gap: 8px; }
+.guest-shop-modal__delivery-group + .guest-shop-modal__delivery-group { margin-top: 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); }
+.guest-shop-modal__delivery-group-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; padding: 2px 2px 0; }
+.guest-shop-modal__delivery-group-product { color: rgba(248,250,252,.96); font-size: 13px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.guest-shop-modal__delivery-group-sku { color: rgba(186,230,253,.78); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.guest-shop-modal__delivery-group-items { display: grid; gap: 8px; }
+.guest-shop-modal__delivery-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 10px 10px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; background: rgba(0,0,0,.14); }
+.guest-shop-modal__delivery-item-content { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; white-space: pre-wrap; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.guest-shop-modal__delivery-item-copy { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 30px; padding: 5px 9px; border: 1px solid rgba(148,163,184,.28); border-radius: 8px; background: rgba(255,255,255,.08); color: inherit; cursor: pointer; font: inherit; font-size: 11px; }
+.guest-shop-modal__delivery-item-copy:hover,
+.guest-shop-modal__delivery-item-copy:focus-visible { border-color: rgba(52,211,153,.55); background: rgba(52,211,153,.14); color: #a7f3d0; }
+.guest-shop-modal__delivery-item-copy.is-copied { border-color: rgba(52,211,153,.55); background: rgba(52,211,153,.18); color: #a7f3d0; }
 .guest-shop-modal__actions {
     position: sticky;
     bottom: 0;
@@ -8787,13 +8981,18 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     flex-wrap: wrap;
     gap: 10px;
     margin-top: 18px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(148,163,184,.2);
-    background: inherit;
-    box-shadow: 0 -10px 18px rgba(15,23,42,.12);
+    padding-top: 4px;
+    border-top: 0;
+    background: transparent;
+    box-shadow: none;
 }
 .guest-shop-modal__actions .shop-btn { min-height: 42px; }
+.guest-shop-modal__actions[hidden] { display: none !important; }
 .guest-shop-modal__actions > .shop-btn[hidden] { display: none !important; }
+.guest-shop-modal__actions #guestCashAbandonOrderBtn:disabled { opacity: 1; }
+.guest-shop-modal__actions #guestCashAbandonOrderBtn { border-color: rgba(239,68,68,.36); background: rgba(239,68,68,.1); color: #fca5a5; }
+.guest-shop-modal__actions #guestCashAbandonOrderBtn:hover:not(:disabled),
+.guest-shop-modal__actions #guestCashAbandonOrderBtn:focus-visible { border-color: rgba(239,68,68,.62); background: rgba(239,68,68,.18); color: #fecaca; }
 
 
 .guest-shop-modal__qr {
@@ -8821,40 +9020,6 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     background: rgba(248, 113, 113, 0.12);
     color: #fecaca;
 }
-.guest-shop-modal__qr-countdown {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(148, 163, 184, 0.08);
-}
-.guest-shop-modal__qr-countdown[hidden] { display: none; }
-.guest-shop-modal__qr-countdown span {
-    font-size: 12px;
-    color: rgba(226, 232, 240, 0.62);
-}
-.guest-shop-modal__qr-countdown strong {
-    min-width: 0;
-    color: #e2e8f0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 22px;
-    font-weight: 800;
-    letter-spacing: 0;
-    text-align: right;
-}
-.guest-shop-modal__qr-countdown.is-warning {
-    border-color: rgba(251, 191, 36, 0.32);
-    background: rgba(251, 191, 36, 0.1);
-}
-.guest-shop-modal__qr-countdown.is-warning strong { color: #fde68a; }
-.guest-shop-modal__qr-countdown.is-expired {
-    border-color: rgba(248, 113, 113, 0.3);
-    background: rgba(248, 113, 113, 0.1);
-}
-.guest-shop-modal__qr-countdown.is-expired strong { color: #fecaca; }
 .guest-shop-modal__qr-card {
     position: relative;
     width: 100%;
@@ -8957,11 +9122,120 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 }
 
 
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__content { background: rgba(255,255,255,.97) !important; color: var(--shop-light-text); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__content {
+    background: rgba(255, 255, 255, 0.96) !important;
+    color: var(--shop-light-text);
+    border: 1px solid var(--shop-light-border) !important;
+    box-shadow:
+        0 34px 80px rgba(15, 23, 42, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.86) !important;
+}
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__summary,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__panel { border-color: rgba(148,163,184,.2); background: rgba(248,250,252,.82); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state {
+    border-color: rgba(148,163,184,.22);
+    background: rgba(248,250,252,.86);
+    color: #475569;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field { color: #334155; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input,
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select { background: #fff; border-color: rgba(148,163,184,.35); color: var(--shop-light-text); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select {
+    background: #fff !important;
+    border-color: rgba(148,163,184,.45) !important;
+    color: #172033 !important;
+    -webkit-text-fill-color: #172033 !important;
+    caret-color: #172033 !important;
+    opacity: 1 !important;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input::placeholder {
+    color: #94a3b8 !important;
+    -webkit-text-fill-color: #94a3b8 !important;
+    opacity: 1;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:focus,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select:focus {
+    border-color: #60a5fa;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.14);
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field input:disabled,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__field select:disabled {
+    background: #f1f5f9;
+    color: #64748b;
+    cursor: not-allowed;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option {
+    border-color: rgba(148,163,184,.32);
+    background: #fff;
+    color: #1e293b;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option:hover:not(:disabled) {
+    border-color: rgba(100,116,139,.56);
+    background: #f8fafc;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option[aria-checked="true"] {
+    border-color: rgba(59,130,246,.58);
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px rgba(59,130,246,.14), 0 4px 12px rgba(59,130,246,.08);
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option:focus-visible {
+    outline-color: rgba(37,99,235,.62);
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option:disabled {
+    background: #f1f5f9;
+    color: #64748b;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-icon { background: #dbeafe; color: #2563eb; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option[data-channel="alipay"] .guest-shop-modal__payment-icon { background: #e8f1ff; color: #1677ff; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option[data-channel="wxpay"] .guest-shop-modal__payment-icon { background: #dcfce7; color: #16a34a; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option[data-channel="qqpay"] .guest-shop-modal__payment-icon { background: #e0e7ff; color: #4f46e5; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__payment-option[data-provider="nowpayments"] .guest-shop-modal__payment-icon { background: #e1f5ed; color: #158f68; }
+
+/* Keep payment choices readable on the dark modal. The light-theme rules above
+   intentionally keep their paper-white treatment; this explicit selector also
+   wins over any shared button styles loaded later on the shop page. */
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option {
+    border-color: rgba(148,163,184,.28);
+    background: rgba(30,41,59,.88);
+    color: #e2e8f0;
+}
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option:hover:not(:disabled) {
+    border-color: rgba(148,163,184,.5);
+    background: rgba(51,65,85,.96);
+}
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[aria-checked="true"] {
+    border-color: rgba(125,211,252,.72);
+    background: rgba(56,189,248,.14);
+    box-shadow: inset 0 0 0 1px rgba(125,211,252,.18), 0 3px 10px rgba(14,165,233,.14);
+}
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option:focus-visible { outline-color: rgba(125,211,252,.5); }
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option:disabled {
+    background: rgba(30,41,59,.55);
+    color: #94a3b8;
+}
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-icon { background: rgba(96,165,250,.18); color: #bfdbfe; }
+/* Keep the Alipay mark identical across themes. A translucent blue surface
+   blends into the dark modal and shifts the official mark toward navy. */
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[data-channel="alipay"] .guest-shop-modal__payment-icon {
+    background: #e8f1ff;
+    color: #1677ff;
+    filter: none;
+    -webkit-text-fill-color: #1677ff;
+}
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[data-channel="alipay"] .guest-shop-modal__payment-icon > i {
+    color: #1677ff;
+    filter: none;
+    -webkit-text-fill-color: #1677ff;
+}
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[data-channel="wxpay"] .guest-shop-modal__payment-icon { background: rgba(74,222,128,.16); color: #86efac; }
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[data-channel="qqpay"] .guest-shop-modal__payment-icon { background: rgba(129,140,248,.18); color: #c7d2fe; }
+html[data-theme="dark"] body.shop-page .guest-shop-modal__payment-option[data-provider="nowpayments"] .guest-shop-modal__payment-icon { background: rgba(52,211,153,.16); color: #a7f3d0; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state[data-state="error"],
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state[data-state="manual_review"] {
+    border-color: rgba(220,38,38,.24);
+    background: #fef2f2;
+    color: #b91c1c;
+}
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__password-actions .guest-shop-modal__copy-btn { border-color: rgba(148,163,184,.35); background: #fff; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-checks { color: rgba(51,65,85,.66); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__pw-checks li.is-pass { color: #15803d; }
@@ -8983,15 +9257,20 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__steps,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount { border-color: rgba(148,163,184,.2); background: rgba(248,250,252,.82); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-value { color: #0f172a; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong { color: #334155; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-value.is-amount-placeholder,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-placeholder,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-value.is-amount-revealing .guest-amount-digits::before,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-rows .guest-shop-modal__summary-row strong.is-amount-revealing .guest-amount-digits::before { color: rgba(71,85,105,.56); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__row--discount strong { color: #dc2626; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__amount-footer { border-top-color: rgba(148,163,184,.24); }
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step-index { border-color: rgba(148,163,184,.45); color: #64748b; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step-index { border: 0; color: transparent; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-upcoming .guest-shop-modal__step-index { background: #cbd5e1; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step-label { color: #64748b; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-done .guest-shop-modal__step-label,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-current .guest-shop-modal__step-label { color: #0f172a; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step + .guest-shop-modal__step::before { background: rgba(148,163,184,.4); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-done::before,
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-current::before { background: #2563eb; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step.is-current::before { background: #53c7df; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-list { border-color: rgba(148,163,184,.24); background: rgba(255,255,255,.9); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-row { border-bottom-color: rgba(148,163,184,.22); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__crypto-value { color: #0f172a; }
@@ -9003,11 +9282,137 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-copy.is
     background: rgba(209,250,229,.7);
     color: #047857;
 }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-content {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    border: 1px solid rgba(125,169,215,.24);
+    color: #172b4d;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-item {
+    border-color: rgba(148,163,184,.22);
+    background: rgba(255,255,255,.82);
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-group + .guest-shop-modal__delivery-group { border-top-color: rgba(148,163,184,.24); }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-group-product { color: #172b4d; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-group-sku { color: #52708f; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-item-copy {
+    border-color: rgba(49,80,111,.18);
+    background: #fff;
+    color: #31506f;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-item-copy:hover,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-item-copy:focus-visible,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__delivery-item-copy.is-copied {
+    border-color: rgba(5,150,105,.35);
+    background: #ecfdf5;
+    color: #047857;
+}
+
+/* The guest delivery panel reuses the wallet success-item markup. Its base
+   rules are dark-first, so explicitly restyle the shared cards and controls in
+   the light modal to keep labels, copy icons, guidance pills, and card content
+   readable against the paper background. */
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item {
+    background: #ffffff;
+    border-color: rgba(148, 163, 184, 0.24);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__surface:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item.is-content-expanded .shop-success-item__surface { background: rgba(241, 245, 249, 0.72); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__title { color: #172033; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__thumb { background: #f1f5f9; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(148, 163, 184, 0.12); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__icon { background: #fff7ed; border-color: rgba(245, 158, 11, 0.24); color: #d97706; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__reveal-code,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__submeta,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__time { color: #64748b; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__reveal-code:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__reveal-code:focus-visible { color: #172033; text-shadow: none; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__copy-btn {
+    border-color: rgba(49, 80, 111, 0.18);
+    background: #f8fafc;
+    color: #31506f;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__copy-btn:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__copy-btn:focus-visible { border-color: rgba(49, 80, 111, 0.32); background: #eef5fb; color: #1e3a5f; box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag { color: #475569; border-color: rgba(148, 163, 184, 0.3); background: #f8fafc; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage {
+    height: var(--shop-success-toolbar-height, 30px);
+    min-height: var(--shop-success-toolbar-height, 30px);
+    flex: 0 0 auto;
+    align-self: center;
+    padding: 0 11px;
+    border-radius: 999px;
+    font-size: var(--shop-success-pill-font-size, 10px);
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    background: transparent;
+}
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag-label {
+    display: inline-block;
+    font-size: var(--shop-success-pill-font-size, 10px);
+    line-height: 1;
+    font-weight: inherit;
+    letter-spacing: 0;
+    transform: none;
+    white-space: nowrap;
+}
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice { border-color: rgba(245, 158, 11, 0.3); color: #92400e; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage { border-color: rgba(16, 185, 129, 0.28); color: #047857; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--notice.is-active { border-color: rgba(245, 158, 11, 0.42); background: #fff7ed; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__tag--usage.is-active { border-color: rgba(16, 185, 129, 0.38); background: #ecfdf5; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__content-panel { background: #f8fbff; border-color: rgba(125, 169, 215, 0.24); color: #1e293b; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__content-card,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__content-card[data-shop-copy-content]:hover { background: #ffffff; border-color: rgba(148, 163, 184, 0.28); color: #1e293b; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 3px 10px rgba(15, 23, 42, 0.04); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__content-card .item-text,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__content-card .item-text * { color: #1e293b; -webkit-text-fill-color: #1e293b; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__notes-panel,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-success-item__usage-panel { background: #ffffff; border-color: rgba(148, 163, 184, 0.28); color: #1e293b; }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-guidance-panel-copy { border-color: rgba(49, 80, 111, 0.16); background: #f8fafc; color: #31506f; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-guidance-panel-copy:hover,
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-guidance-panel-copy:focus-visible { border-color: rgba(49, 80, 111, 0.3); background: #eef5fb; color: #1e3a5f; box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08); }
+html:not([data-theme="dark"]) body.shop-page #guestCashPurchaseModal .shop-guidance-panel-content { color: #1e293b; }
+
+/* Guest delivery cards lift on hover/expand without a pressed-looking shadow.
+   The shared wallet success card keeps its richer treatment elsewhere. */
+#guestCashPurchaseModal .shop-success-item,
+#guestCashPurchaseModal .shop-success-item:hover,
+#guestCashPurchaseModal .shop-success-item.is-content-expanded {
+    box-shadow: none;
+}
+#guestCashPurchaseModal .shop-success-item__surface:hover,
+#guestCashPurchaseModal .shop-success-item__surface:active,
+#guestCashPurchaseModal .shop-success-item.is-content-expanded .shop-success-item__surface {
+    transform: translateY(-1px);
+    box-shadow: none;
+}
+
+/* The expanded card is already the affordance; hide the collapsed-state helper
+   so "点击查看卡密" is not repeated after the content is visible. */
+#guestCashPurchaseModal .shop-success-item.is-content-expanded .shop-success-item__reveal-code .shop-success-item__submeta-label {
+    display: none;
+}
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__summary-row span,
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__hint { color: rgba(51,65,85,.72); }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__actions {
-    border-top-color: rgba(148,163,184,.24);
-    box-shadow: 0 -10px 18px rgba(148,163,184,.12);
+    border-top-color: transparent;
+    background: transparent;
+    box-shadow: none;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__actions #guestCashAbandonOrderBtn {
+    border-color: rgba(220,38,38,.28);
+    background: #fef2f2;
+    color: #b91c1c;
+}
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__actions #guestCashAbandonOrderBtn:hover:not(:disabled),
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__actions #guestCashAbandonOrderBtn:focus-visible {
+    border-color: rgba(220,38,38,.5);
+    background: #fee2e2;
+    color: #991b1b;
 }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-status {
     background: rgba(248, 250, 252, 0.94);
@@ -9024,25 +9429,9 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-status.is-err
     border-color: rgba(248, 113, 113, 0.22);
     color: #dc2626;
 }
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown {
-    background: rgba(248, 250, 252, 0.94);
-    border-color: rgba(148, 163, 184, 0.2);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.88),
-        0 8px 18px rgba(148, 163, 184, 0.08);
-}
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown span { color: #64748b; }
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown strong { color: #334155; }
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown.is-warning {
-    background: rgba(254, 249, 195, 0.82);
-    border-color: rgba(245, 158, 11, 0.22);
-}
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown.is-warning strong { color: #b45309; }
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown.is-expired {
-    background: rgba(254, 242, 242, 0.9);
-    border-color: rgba(248, 113, 113, 0.22);
-}
-html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-countdown.is-expired strong { color: #dc2626; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state-countdown strong { color: #334155; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state-countdown.is-warning strong { color: #b45309; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__state-countdown.is-expired strong { color: #dc2626; }
 html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-card {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(243, 247, 252, 0.96) 100%);
     border-color: rgba(148, 163, 184, 0.18);
@@ -9070,27 +9459,42 @@ html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__qr-success-mark 
 
 
 @media (max-width: 600px) {
-    .guest-shop-modal { align-items: flex-end; padding: 12px; }
-    .guest-shop-modal__content { width: 100% !important; max-height: calc(100dvh - 24px) !important; padding: 20px !important; border-radius: 20px !important; scroll-padding-bottom: 220px; }
-    .guest-shop-modal__actions { display: grid; grid-template-columns: 1fr; }
+    .guest-shop-modal { align-items: flex-end; padding: 0; }
+    .guest-shop-modal__content {
+        width: calc(100% - 40px) !important;
+        max-width: 620px !important;
+        max-height: min(760px, calc(100dvh - 112px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+        border-radius: 30px !important;
+        padding: 24px 20px calc(20px + env(safe-area-inset-bottom)) !important;
+        scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
+    .guest-shop-modal__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     .guest-shop-modal__actions .shop-btn { width: 100%; }
+    .guest-shop-modal__actions .shop-btn { min-width: 0; padding-inline: 10px; font-size: 13px; white-space: nowrap; }
     .guest-shop-modal__qr-card { min-height: 240px; }
     .guest-shop-modal__qr-image { width: min(100%, 220px); }
-    .guest-shop-modal__qr-countdown strong { font-size: 18px; }
+    .guest-shop-modal__state-countdown strong { font-size: 13px; }
     .guest-shop-modal__qr-success-title { font-size: 22px; }
-    /* Dujiao hides the step labels below its sm breakpoint (hidden sm:inline) and
-       keeps only the numbered pills plus connectors. Same here. */
+    /* Keep the phase labels visible on mobile so each colored dot remains
+       self-explanatory without relying on color alone. */
     .guest-shop-modal__steps { padding: 10px 12px; }
-    .guest-shop-modal__step { gap: 0; }
-    .guest-shop-modal__step-label { display: none; }
-    .guest-shop-modal__step-index { width: 24px; height: 24px; }
-    .guest-shop-modal__step.is-done .guest-shop-modal__step-index::after { font-size: 12px; }
+    .guest-shop-modal__step { gap: 8px; }
+    .guest-shop-modal__step-label { display: block; font-size: 11px; }
+    .guest-shop-modal__step-index { width: 14px; height: 14px; }
     .guest-shop-modal__amount-value { font-size: 24px; }
-    /* Dujiao's fulfillment head is a single row; below 600px it stacks so the
-       copy button stays a full-width thumb target. */
-    .guest-shop-modal__delivery-head { flex-direction: column; align-items: stretch; }
-    .guest-shop-modal__delivery-actions .shop-btn { width: 100%; justify-content: center; }
+    .guest-shop-modal__delivery-actions { margin-top: 10px; }
 }
+
+/* Light theme phase connector accents mirror the colored phase circles. */
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="configure"] .guest-shop-modal__step-index,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="payment"] .guest-shop-modal__step-index,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="delivery"] .guest-shop-modal__step-index { border: 0; color: transparent; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="configure"].is-done::before,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="configure"].is-current::before { background: #53c7df; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="payment"].is-done::before,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="payment"].is-current::before { background: #a997e7; }
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="delivery"].is-done::before,
+html:not([data-theme="dark"]) body.shop-page .guest-shop-modal__step[data-step-key="delivery"].is-current::before { background: #65cfac; }
 
 #shopPurchaseModal .shop-purchase-stage-header {
     flex: 0 0 auto;
@@ -9780,6 +10184,14 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseDiscoun
     margin: 0 !important;
 }
 
+/* Author display:flex beats the UA [hidden] rule, so a logged-out guest
+   checkout kept showing the points quantity stepper. Guest orders stay at
+   one unit; the hidden attribute must actually remove the control. */
+#shopPurchaseModal .shop-purchase-stage-quantity[hidden],
+#shopPurchaseModal .shop-purchase-dock .shop-purchase-stage-quantity[hidden] {
+    display: none !important;
+}
+
 #shopPurchaseModal .shop-purchase-dock .shop-quantity-control {
     justify-content: center;
 }
@@ -10174,6 +10586,119 @@ body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-bt
     #shopPurchaseModal .modal-content {
         max-height: min(760px, calc(var(--shop-purchase-overlay-height, 100dvh) - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
     }
+}
+
+/* 20260926_GUEST_MODAL_WIDTH_PARITY_4
+   Keep the guest confirmation, payment, and delivery stages on the same
+   responsive width tracks as the points purchase detail modal. These rules
+   intentionally live after the historical modal overrides so the final
+   computed width stays identical at every viewport breakpoint. */
+@media (max-width: 768px) {
+    .guest-shop-modal {
+        padding: 0;
+    }
+
+    #shopPurchaseModal .modal-content,
+    #guestCashPurchaseModal #guestCashPurchaseDialog.premium-modal {
+        width: min(calc(100% - 28px), 620px) !important;
+        max-width: 620px !important;
+        box-sizing: border-box;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 900px) {
+    #shopPurchaseModal .modal-content,
+    #guestCashPurchaseModal #guestCashPurchaseDialog.premium-modal {
+        width: min(calc(100% - 56px), 760px) !important;
+        max-width: 760px !important;
+        box-sizing: border-box;
+    }
+}
+
+@media (min-width: 901px) {
+    #shopPurchaseModal .modal-content,
+    #guestCashPurchaseModal #guestCashPurchaseDialog.premium-modal {
+        width: min(calc(100% - 64px), 1040px) !important;
+        max-width: 1040px !important;
+        box-sizing: border-box;
+    }
+}
+
+/* Guest checkout stability and delivery interaction polish. Keep the
+   confirmation shell from resizing while its preview/payment controls settle,
+   then let the established modal scroll once the viewport is shorter. */
+#guestCashPurchaseModal #guestCashPurchaseDialog[data-phase="configure"] {
+    min-height: 560px;
+}
+
+@media (max-width: 600px) {
+    #guestCashPurchaseModal #guestCashPurchaseDialog[data-phase="configure"] {
+        min-height: min(560px, calc(100dvh - 112px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)));
+    }
+}
+
+/* Selecting a payment method is an in-place request. Preserve the pill's
+   footprint, but replace its copy and logo with the animated progress dots. */
+#guestCashPurchaseModal .guest-shop-modal__payment-option {
+    min-width: 0;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading {
+    justify-content: flex-start;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-icon,
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-name {
+    visibility: hidden;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading .guest-shop-modal__payment-loading {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    margin: 0;
+    color: #f8fafc;
+}
+#guestCashPurchaseModal .guest-shop-modal__payment-option.is-loading:disabled {
+    opacity: 1;
+}
+
+/* The guest delivery list is deliberately flat: no card shadow, lift, inset
+   highlight, or nested scroll trap should appear while a product is hovered or
+   expanded. The outer delivery list owns vertical scrolling for the whole
+   stack, including when the pointer is over guidance text. */
+#guestCashPurchaseModal .shop-success-item,
+#guestCashPurchaseModal .shop-success-item:hover,
+#guestCashPurchaseModal .shop-success-item.is-content-expanded,
+#guestCashPurchaseModal .shop-success-item *,
+#guestCashPurchaseModal .shop-success-item *:hover,
+#guestCashPurchaseModal .shop-success-item *:active,
+#guestCashPurchaseModal .shop-success-item *:focus-visible {
+    box-shadow: none !important;
+    filter: none !important;
+}
+#guestCashPurchaseModal .shop-success-item__surface,
+#guestCashPurchaseModal .shop-success-item__surface:hover,
+#guestCashPurchaseModal .shop-success-item__surface:active,
+#guestCashPurchaseModal .shop-success-item.is-content-expanded .shop-success-item__surface,
+#guestCashPurchaseModal .shop-success-item__copy-btn:hover,
+#guestCashPurchaseModal .shop-success-item__copy-btn:active,
+#guestCashPurchaseModal .shop-success-item__copy-btn:focus-visible {
+    transform: none !important;
+    background: transparent !important;
+}
+#guestCashPurchaseModal .shop-success-item__content-grid,
+#guestCashPurchaseModal .shop-success-item__content-panel,
+#guestCashPurchaseModal .shop-success-item__notes-panel,
+#guestCashPurchaseModal .shop-success-item__usage-panel,
+#guestCashPurchaseModal .shop-guidance-panel-content {
+    max-height: none !important;
+    overflow: visible !important;
+    overscroll-behavior: auto !important;
+}
+#guestCashPurchaseModal .shop-success-item__content-panel {
+    overflow: visible !important;
 }
 
 @media (min-width: 901px) {

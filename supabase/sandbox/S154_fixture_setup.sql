@@ -18,6 +18,7 @@
 --   H-2 熔断器（breaker）处于 open 时**拒绝执行**，不替你悄悄合闸。
 --       合闸必须走 fn_guest_shop_promo_set_breaker('closed', ...)，
 --       这样 guest_shop_promo_breaker_events 里才有 manual_close 审计行。
+--       命令示例：breaker closed --actor <名字>（仅用于已授权的恢复步骤）。
 --   H-3 不修改商品/SKU。若单价或库存不满足要求，脚本 RAISE 并告诉你去
 --       Admin Studio 改，而不是自己动手改生产商品。
 --
@@ -130,7 +131,7 @@ BEGIN
     IF COALESCE(v_breaker_state, 'closed') <> 'closed' THEN
         RAISE EXCEPTION
             'S154: 熔断器当前是 %，夹具拒绝在跳闸状态下改配置（否则你分不清"促销停了"是熔断还是预算）。'
-            '请先执行第 8 项的恢复步骤：SELECT public.fn_guest_shop_promo_set_breaker(''closed'', ''S154 沙箱恢复'', ''<你的名字>'');'
+            '请先执行第 8 项的恢复步骤：调用 fn_guest_shop_promo_set_breaker，将状态设为 closed，并填写恢复原因与操作者。'
             '（注意：SQL Editor 里直接调该函数需要 service_role 上下文，见 runbook §2.8）',
             v_breaker_state;
     END IF;

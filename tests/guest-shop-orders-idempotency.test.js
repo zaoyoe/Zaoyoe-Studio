@@ -743,6 +743,49 @@ test('checkout intent ack with the wrong selector leaves the recovery cookie int
     assert.equal(setCookies(ack).some((item) => /Max-Age=0/u.test(item)), false);
 });
 
+test('checkout intent discard clears an orderless recovery cookie without side effects', async () => {
+    const { state, calls, handlers } = createHandlers();
+    const prepare = createResponse();
+    await handlers.orders(checkoutRequest('prepare', {
+        site: 'cn', productId: PRODUCT_ID, skuId: SKU_ID,
+        quantity: 1, provider: 'zpay', channel: 'alipay'
+    }), prepare);
+    const cookie = checkoutIntentCookie(prepare);
+    const discard = createResponse();
+    await handlers.orders(checkoutRequest('discard', {
+        intentId: prepare.payload.intent.intent_id
+    }, cookie), discard);
+
+    assert.equal(discard.statusCode, 200);
+    assert.equal(discard.payload.discarded, true);
+    assert.equal(setCookies(discard).some((item) => /__Host-gs-checkout-intent=.*Max-Age=0/u.test(item)), true);
+    assert.equal(calls.create, 0);
+    assert.deepEqual(state.rpcCalls, []);
+});
+
+test('checkout intent discard preserves recovery when the original order exists', async () => {
+    const { state, calls, handlers } = createHandlers();
+    const prepare = createResponse();
+    await handlers.orders(checkoutRequest('prepare', {
+        site: 'cn', productId: PRODUCT_ID, skuId: SKU_ID,
+        quantity: 1, provider: 'zpay', channel: 'alipay'
+    }), prepare);
+    const cookie = checkoutIntentCookie(prepare);
+    const intentId = prepare.payload.intent.intent_id;
+    const commit = createResponse();
+    await handlers.orders(checkoutRequest('commit', { intentId }, cookie), commit);
+    assert.equal(commit.statusCode, 201);
+    assert.equal(calls.create, 1);
+
+    const discard = createResponse();
+    await handlers.orders(checkoutRequest('discard', { intentId }, cookie), discard);
+    assert.equal(discard.statusCode, 409);
+    assert.equal(discard.payload.code, 'guest_checkout_intent_order_exists');
+    assert.equal(setCookies(discard).some((item) => /__Host-gs-checkout-intent=.*Max-Age=0/u.test(item)), false);
+    assert.equal(calls.create, 1);
+    assert.equal(state.order.idempotency_key, state.rpcArgs.find((entry) => entry.name === 'fn_guest_shop_create_order')?.args.p_idempotency_key);
+});
+
 test('unknown-create resume bypasses mutable catalogue pricing and replays persisted checkout', async () => {
     const key = 'idem-key-resume-price-change-0001';
     const checkoutUrl = 'https://pay.example.test/checkout?id=resume-existing';
