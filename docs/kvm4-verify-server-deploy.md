@@ -1,8 +1,49 @@
 # KVM4 Verify Server Deployment
 
-KVM4 runs the persistent API and worker process behind `https://verify-api.zaoyoe.com`.
-The public site still enters through `https://www.zaoyoe.com`, and Vercel rewrites
-selected dynamic API paths to this service.
+KVM4 runs the persistent API and worker process behind `https://verify-api.fatherkey.com`.
+The public site enters through `https://www.fatherkey.com`, and Vercel rewrites
+selected dynamic API paths to this service. Older `zaoyoe.com` examples are
+historical references; production checks use the canonical routes above.
+
+## Release Integrity and Coordinated Verification
+
+Follow `AGENTS.md` Release Integrity and Recovery Rules and
+`docs/vercel-release-checklist.md` §1.2 before preparing a release. Preserve a
+readable backup before operations that could discard local work, and record the
+release branch, one declared remote, BASE, candidate SHA and complete file manifest.
+Never package a dirty checkout or copy selected local files over production.
+
+Normal releases use PR -> latest `main` -> the Vercel Git integration and both
+KVM4 Actions workflows. KVM4 is not an independent source of release commits.
+The deployment scripts currently enforce `origin/main`; on a manual recovery,
+verify that it identifies the same repository as the declared release remote
+and that their freshly fetched `main` SHAs agree. Do not switch remotes or weaken
+the guard to deploy an older commit.
+
+After merge, record the resulting latest `main` SHA separately from the candidate
+SHA. A release is complete only when all of these agree:
+
+- Vercel production alias `https://www.fatherkey.com` is Ready with that SHA.
+- `Deploy KVM4 Verify Server` and `Deploy KVM4 Sub2API` workflow runs for that
+  SHA have succeeded.
+- SSH readback of `/opt/zaoyoe-verify-server/.current-release` and
+  `/opt/sub2api/.current-release` equals that SHA; the verify container's
+  `/app/server/.release-commit` also matches.
+- Verify `/healthz` and NewAPI `https://new.fatherkey.com/health` are healthy;
+  NewAPI, PostgreSQL and Redis are healthy, and `sub2api-legacy` is not running.
+- For a guest-shop release, verify is on that commit before installing or
+  starting the worker. Verify the host worker files against that commit, the
+  approved timer state, recent service journal and applicable readiness result.
+
+Archive workflow run IDs, deployment identity, release markers and health
+results in the PR or linked release record. Re-fetch the declared remote during
+final verification; if `main` advances, reconcile the new scope and wait for all
+chains to follow it. Do not combine successes from different SHAs.
+
+On a mismatch, keep the release incomplete and investigate the commit source.
+Do not overwrite `.current-release`, deploy old snapshots, execute SQL or enable
+features to make checks appear green. A recovery deploy is only permitted from
+latest clean `main` after reconciliation; keep existing backups and data.
 
 ## What Gets Deployed
 
@@ -10,12 +51,19 @@ The deploy script builds a compact release from the latest clean `main`:
 
 - `package.json`
 - `package-lock.json`
+- `adapters/`
 - `api/`
 - `server/`
 - `js/`
 - `scripts/`
 - `docs/`
 - `supabase/`
+
+Check changed runtime files against the script's `PACKAGE_PATHS`, Docker build
+inputs and Vercel build/ignore rules. A compact API package does not need to
+include static frontend pages, but every changed surface must be included in
+its intended artifact. A missing runtime dependency is a release blocker;
+do not patch it by uploading individual working-tree files.
 
 Secrets are not packaged. Runtime secrets stay on KVM4 in:
 
@@ -25,7 +73,10 @@ Secrets are not packaged. Runtime secrets stay on KVM4 in:
 
 ## Deploy
 
-Run from local `main` after it has been fast-forwarded to `origin/main`:
+Normal deployment follows the Actions workflow below. Use this command only
+for emergency follow-up or workflow recovery after source reconciliation. Run
+from latest clean local `main`, aligned with freshly fetched `origin/main` and
+the declared release remote:
 
 ```bash
 npm run deploy:kvm4:verify
@@ -83,16 +134,24 @@ a temporary file on the runner, runs the same guarded deploy script used for
 manual deploys, then verifies:
 
 ```text
-https://verify-api.zaoyoe.com/healthz
-https://www.zaoyoe.com/api/payments/config?site=cn
-https://www.zaoyoe.com/api/shop/catalog?site=cn
+https://verify-api.fatherkey.com/healthz
+https://www.fatherkey.com/api/payments/config?site=cn
+https://www.fatherkey.com/api/shop/catalog?site=cn
 ```
 
 Manual deploy remains available for emergency use after `main` is current.
 
 ## Rollback
 
-Rollback to the previous release:
+Prefer a focused fix on latest `main` through the normal PR release path.
+Emergency rollback is an explicit recovery action: record the reason, target
+release and commit, preserve current work and data, and recheck every chain.
+Rolling back verify alone does not roll back Vercel or NewAPI and must not be
+reported as a complete release. Do not restore an old repository snapshot to
+resolve a single feature problem. Guest-shop rollback follows its product/SKU
+switch rules and never executes a database rollback.
+
+Rollback to the previous release in an emergency:
 
 ```bash
 npm run rollback:kvm4:verify
@@ -109,9 +168,9 @@ npm run rollback:kvm4:verify -- 20260519090000-abcdef12
 After deploy or rollback:
 
 ```bash
-curl -fsS https://verify-api.zaoyoe.com/healthz
-curl -fsS 'https://www.zaoyoe.com/api/payments/config?site=cn'
-curl -fsS 'https://www.zaoyoe.com/api/shop/catalog?site=cn'
+curl -fsS https://verify-api.fatherkey.com/healthz
+curl -fsS 'https://www.fatherkey.com/api/payments/config?site=cn'
+curl -fsS 'https://www.fatherkey.com/api/shop/catalog?site=cn'
 ```
 
 On KVM4:
@@ -145,8 +204,7 @@ journalctl -u zaoyoe-kvm4-health-watchdog.service --no-pager -n 80
 ## Guest Shop Worker
 
 Guest-shop API, webhooks, and the fulfillment worker run on KVM4 Verify Server,
-not on Vercel. Historical examples in this file still mention `zaoyoe.com`;
-current canonical guest-shop hostnames are:
+not on Vercel. The canonical guest-shop hostnames are:
 
 - `https://verify-api.fatherkey.com`
 - public `/api/shop/:path*` rewrite from Vercel production to that host
