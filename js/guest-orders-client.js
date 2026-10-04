@@ -485,12 +485,12 @@
             return { label: 'QQ钱包', icon: 'fa-brands fa-qq', key: 'qqpay' };
         }
         if (channel.includes('usdt') || channel.includes('crypto') || provider.includes('nowpayments') || feeLabel.includes('加密')) {
-            return { label: 'USDT / 加密货币', icon: 'fa-solid fa-coins', key: 'crypto' };
+            return { label: 'USDT', icon: 'fa-solid fa-coins', key: 'crypto' };
         }
         if (normalizeSite(order?.site || detail?.site) === 'intl' || normalizeText(order?.currency || detail?.currency).toUpperCase() === 'USD') {
             return { label: '加密货币', icon: 'fa-solid fa-coins', key: 'crypto' };
         }
-        return { label: '支付宝', icon: 'fa-brands fa-alipay', key: 'alipay' };
+        return { label: '在线支付', icon: 'fa-solid fa-credit-card', key: 'online' };
     }
 
     function resolveProductInfo(order, detail) {
@@ -710,6 +710,7 @@
 
     function createPaymentBadge(payment) {
         const badge = createNode('span', 'guest-orders-badge guest-orders-payment-badge');
+        if (payment?.key) badge.dataset.key = payment.key;
         const icon = document.createElement('i');
         icon.className = payment.icon;
         icon.setAttribute('aria-hidden', 'true');
@@ -895,6 +896,10 @@
                 renderThumbnailNode(thumbEl, productInfo);
             }
 
+            const badgeEl = itemEl.querySelector('.guest-orders-payment-badge');
+            if (badgeEl && payment.key) {
+                badgeEl.dataset.key = payment.key;
+            }
             const paymentLabelEl = itemEl.querySelector('.guest-orders-payment-badge-label');
             const paymentIconEl = itemEl.querySelector('.guest-orders-payment-badge i');
             if (paymentLabelEl && payment.label) {
@@ -941,9 +946,11 @@
         const rows = element('guestOrdersDetailRows');
         if (!rows || !detail) return;
         rows.textContent = '';
+        const payment = resolvePaymentMethod(detail, detail);
         const fields = [
             ['订单号', detail.order_no || '-', true],
             ['金额', formatAmount(detail.amount), false],
+            ['支付方式', payment?.label || '-', false],
             ['支付状态', statusLabel(PAYMENT_LABELS, detail.payment_status).text, false]
         ];
         if (normalizeText(detail.refund_status) && normalizeText(detail.refund_status) !== 'none') {

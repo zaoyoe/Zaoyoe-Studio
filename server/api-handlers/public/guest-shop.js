@@ -5246,9 +5246,10 @@ function responseOrder(order, extras = {}) {
         throw guestCredentialsInvalidError();
     }
 
-    function guestOrderListSnapshot(order) {
+    function guestOrderListSnapshot(order, extras = {}) {
+        const safeExtras = extras && typeof extras === 'object' ? extras : {};
         return {
-            ...publicOrderSnapshot(order),
+            ...publicOrderSnapshot(order, safeExtras),
             site: order.site || '',
             quantity: Number(order.quantity) || 1,
             unit_amount: order.unit_amount === undefined || order.unit_amount === null
@@ -5359,9 +5360,28 @@ function responseOrder(order, extras = {}) {
                 } catch (_) {}
             }
 
+            const orderNos = rows.filter((r) => !r.is_batch && r.order_no).map((r) => r.order_no);
+            if (orderNos.length > 0 && typeof db.from === 'function') {
+                try {
+                    const paymentResult = await db.from('guest_shop_payment_orders')
+                        .select('merchant_order_no,provider,channel')
+                        .in('merchant_order_no', orderNos);
+                    if (Array.isArray(paymentResult?.data) && paymentResult.data.length > 0) {
+                        const paymentByNo = new Map(paymentResult.data.map((p) => [p.merchant_order_no, p]));
+                        for (const row of rows) {
+                            if (!row.is_batch && row.order_no && paymentByNo.has(row.order_no)) {
+                                const payment = paymentByNo.get(row.order_no);
+                                if (!row.provider && payment.provider) row.provider = payment.provider;
+                                if (!row.channel && payment.channel) row.channel = payment.channel;
+                            }
+                        }
+                    }
+                } catch (_) {}
+            }
+
             return sendJson(res, 200, {
                 success: true,
-                orders: rows.map(guestOrderListSnapshot),
+                orders: rows.map((r) => guestOrderListSnapshot(r)),
                 pagination: { page, page_size: pageSize, total }
             });
         } catch (error) { return failResponse(res, error); }
@@ -5381,7 +5401,15 @@ function responseOrder(order, extras = {}) {
                 auth.buyerId,
                 queryValue(req, 'order_no') || queryValue(req, 'orderNo')
             );
-            return sendJson(res, 200, { success: true, order: guestOrderListSnapshot(order) });
+            let payment = null;
+            try {
+                payment = await loadPaymentIntent(order);
+            } catch (_) {}
+            if (payment) {
+                if (!order.provider && payment.provider) order.provider = payment.provider;
+                if (!order.channel && payment.channel) order.channel = payment.channel;
+            }
+            return sendJson(res, 200, { success: true, order: guestOrderListSnapshot(order, { payment }) });
         } catch (error) { return failResponse(res, error); }
     }
 

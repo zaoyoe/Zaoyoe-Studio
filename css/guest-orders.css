@@ -695,7 +695,10 @@ html[data-theme="dark"] .guest-orders-discount-line { color: #fb7185; }
     color: #07c160;
 }
 .guest-orders-payment-badge .fa-coins {
-    color: #f59e0b;
+    color: #26a17b;
+}
+.guest-orders-payment-badge .fa-credit-card {
+    color: var(--go-text-muted);
 }
 
 /* Main product preview row */
