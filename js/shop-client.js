@@ -14503,7 +14503,7 @@ const ShopClient = {
         const cap = Math.max(1, Number.parseInt(String(quantityCap || 1), 10) || 1);
         const message = this.isEnglishShopLocale()
             ? `Guest checkout is limited to ${cap} item${cap === 1 ? '' : 's'} per order. Log in to purchase more.`
-            : `游客单次限购 ${cap} 件；登录后可单次购买更多件。`;
+            : `游客用户最多可购 ${cap} 件，登录后可以购买多件。`;
         this.showShopToast(message, 'error');
     },
 
