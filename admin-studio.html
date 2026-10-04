@@ -13428,7 +13428,7 @@
                                 <div class="modern-form-group">
                                     <label class="modern-label" for="prodGuestMaxPurchaseQuantity">游客单次限购</label>
                                     <input type="number" id="prodGuestMaxPurchaseQuantity" class="modern-input" min="1" max="99" step="1" value="1" placeholder="默认 1">
-                                    <small class="form-hint">仅游客购买生效；最终还受游客环境上限、库存和 99 件安全上限限制。普通“单次限购”不会自动改变游客限购。</small>
+                                    <small class="form-hint">仅游客购买生效；最终还受游客环境上限、库存和 99 件安全上限限制。环境上限在服务器端环境变量 GUEST_SHOP_MAX_QUANTITY 中配置（位于 KVM4 /opt/zaoyoe-verify-server/.env，当前默认 3 件，若需调整请在该文件修改并重启服务）。普通“单次限购”不会自动改变游客限购。</small>
                                 </div>
                                 <div class="modern-form-group">
                                     <label class="modern-label">游客支付通道</label>

@@ -1919,8 +1919,16 @@
         const minus = element('guestCashQuantityMinus');
         const plus = element('guestCashQuantityPlus');
         if (minus) minus.disabled = locked || !multiUnit || quantity <= 1;
-        if (plus) plus.disabled = locked || !multiUnit || quantity >= cap;
-        setText('guestCashQuantityHint', multiUnit ? `单笔最多 ${cap} 件，价格按数量阶梯计算` : '');
+        if (plus) {
+            plus.disabled = locked || !multiUnit || quantity >= cap;
+            plus.title = quantity >= cap ? `游客用户最多可购 ${cap} 件，登录后可以购买多件` : '';
+        }
+        const hintText = !multiUnit
+            ? ''
+            : (quantity >= cap
+                ? `游客用户最多可购 ${cap} 件，登录后可以购买多件`
+                : `单笔最多 ${cap} 件，价格按数量阶梯计算`);
+        setText('guestCashQuantityHint', hintText);
     }
 
     function renderQuantityFact() {
@@ -1958,6 +1966,12 @@
         const parsed = Number.parseInt(digits, 10);
         if (!Number.isInteger(parsed) || parsed < 1) {
             syncQuantityUi();
+            return;
+        }
+        const cap = quantityCapValue();
+        if (parsed > cap) {
+            setQuantity(cap);
+            setStateMessage(`游客用户最多可购 ${cap} 件，登录后可以购买多件`, 'configure');
             return;
         }
         setQuantity(parsed);
@@ -5248,6 +5262,10 @@
         const quantityStepButton = target.closest('#guestCashQuantityMinus, #guestCashQuantityPlus');
         if (quantityStepButton) {
             event.preventDefault();
+            if (quantityStepButton.id === 'guestCashQuantityPlus' && normalizeQuantity(state.quantity) >= quantityCapValue()) {
+                setStateMessage(`游客用户最多可购 ${quantityCapValue()} 件，登录后可以购买多件`, 'configure');
+                return;
+            }
             if (!quantityStepButton.disabled) {
                 const delta = quantityStepButton.id === 'guestCashQuantityPlus' ? 1 : -1;
                 setQuantity(normalizeQuantity(state.quantity) + delta);
